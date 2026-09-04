@@ -6,8 +6,8 @@
 ## Current position
 
 - **Phase:** implementing
-- **Active slice:** 2 (neighborhoods + profiles) — COMPLETE (live check PASS 2026-09-04)
-- **Next action:** dispatch orchestrator-builder for slice 3 (drop-in feed + posting).
+- **Active slice:** 3 (drop-in feed + posting) — in progress
+- **Next action:** receive builder report → reviewer (plan slice 3 + diff) → verifier (npm run build && npm run test); then HUMAN applies 0005–0006 via dashboard → live posting check → close slice 3 → dispatch slice 4.
 
 ## Slices
 
@@ -15,7 +15,7 @@
 |---|---|---|---|
 | 1 tracer + auth + PWA | complete | commits f26edd1+5c7b422; reviewer PASS (4 non-blocking findings parked, see notes); verifier PASS (build exit 0, manifest in dist, 6/6 tests, combined cmd exit 0); LIVE CHECK PASS 2026-09-04 (probe ok, signup session, profile row inserted + read back, login session; marker live-verify-1788546611@gmail.com) | profiles migration owned by slice 1 (decisions log); migration SQL WRITTEN BUT NOT APPLIED to live project — escalated; non-blocking findings: README .env.example doc bug, db.ts module-scope env throw, non-idempotent policy DDL; live re-check 2026-09-04: PGRST205 persists minutes after dashboard apply — human dashboard verification required; no marker user created (run killed pre-signup); marker domain example.com rejected by project → use gmail.com; PGRST205 resolved by human dashboard apply + cache refresh 2026-09-04 |
 | 2 neighborhoods + profiles | complete | commits 9ff7aa6+a3abf09; reviewer PASS (4 non-blocking parked); verifier PASS (build exit 0, 14/14 tests, combined cmd exit 0); post-review SQL delta 017614e+51ee493 content-verified (8392cf3); LIVE CHECK PASS 2026-09-04 (probes ok first attempt; marker A: session + profile row + Ballard/Belltown memberships persisted + feed-gate condition; 0004 23505 proof via marker B; markers live-verify2-1788548418[-b]) | migrations 0002–0004 written by builder, applied by human via dashboard (no DB access on this machine); seed list gets human sanity-check at review; /onboarding route pinned as integration decision; seed list (22 entries) flagged for human sanity-check at review; seed list amended by human 2026-09-04: Beaverton + Interlawn removed (20 entries); post-review SQL delta by human: seed amendment 017614e + DO-block policy idempotency fix 51ee493; 0002–0004 applied live 2026-09-04 (dashboard, Success). |
-| 3 feed + posting | pending | | depends on 2 |
+| 3 feed + posting | in_progress | | blocks migration (0006) moved forward from slice 4 (feed AC requires the DB-level block filter; block UI stays in slice 4); 0005/0006 use DO-block idempotency per the logged lesson; migrations written by builder, applied by human via dashboard |
 | 4 detail + going-pings + trust | pending | | depends on 3 |
 | 5 mod tools + mobile polish | pending | | depends on 4; human founder flagged via one-time SQL |
 
@@ -31,6 +31,7 @@
 - Test artifacts in live project (intentional markers; no delete policy in V1 — optional human cleanup in dashboard): live-verify-1788546611@gmail.com (auth + profile row), live-verify2-1788548418@gmail.com (auth + profile row + 2 memberships), live-verify2-1788548418-b@gmail.com (auth user only).
 - Slice 2 parked findings (non-blocking): taken-handle retry reload dead-end (signed-in user, no profiles row — dashboard SQL recovery) is a candidate follow-up for slice 3+; createProfile handle-taken detection couples to constraint name profiles_display_name_key.
 - Post-review SQL delta (017614e, 51ee493) landed after the reviewer's PASS; builder content-verified the delta this turn; the live onboarding check is the behavioral proof.
+- Slice 3 live flow (posting → feed → block filter) unverifiable until human applies 0005–0006 via dashboard; builder code must be complete and build+test green regardless.
 
 ## Decisions log
 
@@ -46,6 +47,7 @@
 - 2026-09-04 — INTEGRATION (orchestrator): /onboarding is the pinned onboarding route path (plan's route list predated onboarding); onboarding gate = signed-in user with 0 memberships; slice 2's UserPage shows 'No posts yet' (playdates table lands in slice 3).
 - 2026-09-04 — SEED (human amendment): neighborhoods seed list amended — Beaverton + Interlawn removed; 0002 now 20 entries (human-approved, committed pre-apply).
 - 2026-09-04 — LESSON (human, post-apply): Postgres has no `CREATE POLICY ... IF NOT EXISTS` — IF NOT EXISTS is not valid for many DDL statement types. 0002/0003 fixed by human to DO-block policy idempotency (commit 51ee493) and applied live. RULE for all future migrations: wrap idempotent DDL in DO blocks or verify against real Postgres grammar; never assume IF NOT EXISTS exists for a statement type.
+- 2026-09-04 — INTEGRATION (orchestrator): slice 3 owns migrations 0005 (playdates + RLS) and 0006 (blocks + RLS) — the blocks table moves forward from slice 4 because slice 3's feed AC requires the DB-level block filter the plan pins; the block UI (block/unblock buttons) stays in slice 4. Feed 'today' boundary = client-local startOfToday (no GPS/timezone settings in V1). /new success navigates to the feed (the detail page lands in slice 4). playdates RLS includes host-only UPDATE/DELETE (capability only; no edit/delete UI until slice 4+).
 
 ## Escalations (waiting on human)
 
