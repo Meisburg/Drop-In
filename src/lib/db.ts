@@ -4,8 +4,11 @@ import type { Session } from '@supabase/supabase-js'
 import type {
   MembershipWithNeighborhood,
   Neighborhood,
+  Playdate,
+  PlaydateWithNeighborhood,
   Profile,
 } from './types'
+import { filterFeed, startOfTodayIso } from './feed'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -270,4 +273,148 @@ export class HandleTakenError extends Error {
     this.name = 'HandleTakenError'
     this.handle = handle
   }
+}
+
+// ---------------------------------------------------------------------------
+// Slice 3: playdates (drop-in feed + posting) + blocks.
+//
+// The playdates table (migration 0005) and blocks table (migration 0006)
+// may not exist in the live project until the human applies them via the
+// dashboard — every function here throws on that, and the pages render a
+// designed error state instead of crashing (same discipline as the
+// onboarding load-error).
+
+/**
+ * The ids of profiles the given profile has blocked (the blocks table's
+ * owner RLS only returns the caller's own rows, so no join to profiles is
+ * needed).
+ */
+export async function listBlockedHostIds(profileId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('blocks')
+    .select('blocked_profile_id')
+    .eq('blocker_profile_id', profileId)
+  if (error) throw error
+  return (data ?? []).map((row) => row.blocked_profile_id as string)
+}
+
+/**
+ * Raw upcoming-playdate query: in the given neighborhoods, starting at or
+ * after the cutoff, ordered by starts_at. The block filter (a PostgREST
+ * .not()) is applied only when the viewer actually has blocks — an empty
+ * .not('host_profile_id', 'in', '') would match nothing.
+ */
+async function queryUpcomingPlaydates(
+  neighborhoodIds: string[],
+  cutoffIso: string,
+  blockedHostIds: string[],
+): Promise<PlaydateWithNeighborhood[]> {
+  if (neighborhoodIds.length === 0) return []
+  let query = supabase
+    .from('playdates')
+    .select(
+      '*, neighborhood:neighborhoods!inner ( id, name ), host:profiles!inner ( id, display_name )',
+    )
+    .in('neighborhood_id', neighborhoodIds)
+    .gte('starts_at', cutoffIso)
+    .order('starts_at', { ascending: true })
+  if (blockedHostIds.length > 0) {
+    query = query.not('host_profile_id', 'in', blockedHostIds.join(','))
+  }
+  const { data, error } = await query
+  if (error) throw error
+  // Cast via unknown: without generated DB types, the embeds are inferred
+  // loosely (same pattern as listMemberships).
+  return (data ?? []) as unknown as PlaydateWithNeighborhood[]
+}
+
+/** Query + the pure filterFeed re-filter (defense in depth, unit-tested). */
+async function queryAndFilter(
+  neighborhoodIds: string[],
+  blockedHostIds: string[],
+  cutoffIso: string,
+): Promise<PlaydateWithNeighborhood[]> {
+  if (neighborhoodIds.length === 0) return []
+  const posts = await queryUpcomingPlaydates(neighborhoodIds, cutoffIso, blockedHostIds)
+  return filterFeed(
+    posts,
+    new Set(neighborhoodIds),
+    new Set(blockedHostIds),
+    cutoffIso,
+    new Date().toISOString(),
+  )
+}
+
+/**
+ * Today's feed for one profile (the / route): drop-ins in the profile's
+ * followed neighborhoods, starting today or later (client-local midnight),
+ * excluding posts by blocked hosts, ordered by starts_at.
+ */
+export async function listTodayFeed(profileId: string): Promise<PlaydateWithNeighborhood[]> {
+  const [memberships, blockedIds] = await Promise.all([
+    listMemberships(profileId),
+    listBlockedHostIds(profileId),
+  ])
+  return queryAndFilter(
+    memberships.map((m) => m.neighborhood_id),
+    blockedIds,
+    startOfTodayIso(),
+  )
+}
+
+/**
+ * Upcoming drop-ins in the given neighborhoods (the /browse chips),
+ * block-filtered by the current user, ordered by starts_at.
+ */
+export async function listUpcomingByNeighborhood(
+  neighborhoodIds: string[],
+  startOfTodayIso: string,
+): Promise<PlaydateWithNeighborhood[]> {
+  const { data: { user } } = await supabase.auth.getUser()
+  const blockedIds = user ? await listBlockedHostIds(user.id) : []
+  return queryAndFilter(neighborhoodIds, blockedIds, startOfTodayIso)
+}
+
+/** Input for createPlaydate (the /new form, after validation). */
+export interface NewPlaydateInput {
+  title: string
+  place: string
+  neighborhoodId: string
+  /** ISO 8601 (UTC) timestamps — the form's datetime-local values converted. */
+  startsAt: string
+  endsAt: string
+  /** Optional, advisory only (e.g. "best for 2-5"). */
+  ageHint?: string
+  details?: string
+}
+
+/**
+ * Post a drop-in as the signed-in user (host_profile_id = auth user id).
+ * Replicates createProfile's session guard: throws when there is no
+ * session. Returns the created row.
+ */
+export async function createPlaydate(input: NewPlaydateInput): Promise<Playdate> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (!user) throw new Error('No authenticated user — cannot post a drop-in.')
+
+  const { data, error } = await supabase
+    .from('playdates')
+    .insert({
+      host_profile_id: user.id,
+      title: input.title,
+      place: input.place,
+      neighborhood_id: input.neighborhoodId,
+      starts_at: input.startsAt,
+      ends_at: input.endsAt,
+      age_hint: input.ageHint ?? null,
+      details: input.details ?? null,
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return data as Playdate
 }

@@ -40,3 +40,25 @@ export interface Membership {
 export interface MembershipWithNeighborhood extends Membership {
   neighborhood: Neighborhood
 }
+
+/**
+ * A user's block: the blocker never sees the blocked user's posts
+ * (pinned data model in plan.md Interfaces: unique pair, slice 3
+ * migration 0006).
+ */
+export interface Block {
+  blocker_profile_id: string
+  blocked_profile_id: string
+}
+
+/** The host's public handle, joined into a playdate row (feed results). */
+export interface PlaydateHost {
+  id: string
+  display_name: string
+}
+
+/** A playdate with its neighborhood + host joined in (feed/browse results). */
+export interface PlaydateWithNeighborhood extends Playdate {
+  neighborhood: Neighborhood
+  host: PlaydateHost
+}
