@@ -1,8 +1,8 @@
 -- Slice 2: neighborhoods — seeded list of real Seattle neighborhoods
 -- (pinned data model in plan.md Interfaces: id, name; read-only in V1).
 --
--- Idempotent + re-paste-safe: the seed uses ON CONFLICT, and policies use
--- IF NOT EXISTS (Postgres 13+, available on Supabase).
+-- Idempotent + re-paste-safe: the seed uses ON CONFLICT; policy creation is
+-- wrapped in a DO block (Postgres has no CREATE POLICY IF NOT EXISTS).
 
 create table if not exists public.neighborhoods (
   id uuid primary key default gen_random_uuid(),
@@ -39,7 +39,18 @@ alter table public.neighborhoods enable row level security;
 
 -- Authenticated users can read the list; that is the only policy
 -- (read-only in V1 — no insert/update/delete).
-create policy if not exists "neighborhoods_select_authenticated"
-  on public.neighborhoods for select
-  to authenticated
-  using (true);
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'neighborhoods'
+      and policyname = 'neighborhoods_select_authenticated'
+  ) then
+    create policy "neighborhoods_select_authenticated"
+      on public.neighborhoods for select
+      to authenticated
+      using (true);
+  end if;
+end
+$$;
