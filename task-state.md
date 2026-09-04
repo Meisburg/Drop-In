@@ -6,14 +6,14 @@
 ## Current position
 
 - **Phase:** implementing
-- **Active slice:** 1 (tracer bullet + auth + PWA skeleton) — builder dispatched 2026-09-04
-- **Next action:** receive builder report → reviewer (plan slice 1 + diff) → verifier (npm run build && npm run test)
+- **Active slice:** 1 (tracer bullet + auth + PWA skeleton) — code complete, review+verify PASS
+- **Next action:** AWAITING HUMAN: apply supabase/migrations/0001_create_profiles.sql to the live Supabase project (dashboard SQL editor, or provide DATABASE_URL / supabase CLI access), then re-run the live signup check. After that: slice 2 dispatch.
 
 ## Slices
 
 | Slice | State | Evidence | Notes |
 |---|---|---|---|
-| 1 tracer + auth + PWA | in_progress | Supabase auth endpoint verified live 2026-09-04; credentials in .env (never commit) | profiles migration owned by slice 1 (decisions log) |
+| 1 tracer + auth + PWA | code complete (reviewer PASS, verifier PASS) | commits f26edd1+5c7b422; reviewer PASS (4 non-blocking findings, see notes); verifier: build exit 0 + manifest in dist, 6/6 tests, combined cmd exit 0 | profiles migration owned by slice 1 (decisions log); migration SQL WRITTEN BUT NOT APPLIED to live project — escalated; non-blocking findings: README .env.example doc bug, db.ts module-scope env throw, non-idempotent policy DDL |
 | 2 neighborhoods + profiles | pending | | human sanity-checks the Seattle neighborhood seed list at review |
 | 3 feed + posting | pending | | depends on 2 |
 | 4 detail + going-pings + trust | pending | | depends on 3 |
@@ -27,6 +27,7 @@
   slice 5 (mod tools) are the V1 answer; do not descope them.
 - PWA: manifest + minimal service worker only; no offline promises in V1.
 - If the live Supabase project is unreachable from this machine, slice 1's 'profile row created' cannot be verified → escalate to human (apply SQL via Supabase dashboard).
+- Slice 1 AC 'profile row created' unverifiable until human applies supabase/migrations/0001_create_profiles.sql (dashboard SQL editor or grant DB access); everything else verified.
 
 ## Decisions log
 
@@ -42,3 +43,4 @@
 ## Escalations (waiting on human)
 
 - DECISION 3: deployment target, deferred to V1.5 — not blocking
+- 2026-09-04 — SLICE 1 DB APPLY: apply supabase/migrations/0001_create_profiles.sql to live Supabase project. Options: (a) paste into Supabase dashboard SQL editor, or (b) provide Postgres DATABASE_URL / supabase CLI token for this machine. Live auth endpoint IS reachable; only the SQL-application path is missing.
