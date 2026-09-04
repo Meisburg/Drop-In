@@ -35,3 +35,8 @@ export interface Membership {
   profile_id: string
   neighborhood_id: string
 }
+
+/** A membership row with its neighborhood joined in (listMemberships result). */
+export interface MembershipWithNeighborhood extends Membership {
+  neighborhood: Neighborhood
+}

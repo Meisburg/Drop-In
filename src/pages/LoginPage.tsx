@@ -1,27 +1,39 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router'
+import { useSessionContext } from '../components/SessionProvider'
 import { LOGIN_PATH, resolveAuthRedirect } from '../lib/auth'
-import { createProfile, signOutUser, supabase, useSession } from '../lib/db'
+import { createProfile, HandleTakenError, signOutUser, supabase } from '../lib/db'
 
 /**
  * Login + signup. Signup collects display_name (the persistent public
  * handle) and creates the caller's profiles row after account creation.
+ * A taken handle is surfaced inline on the display_name field: the user
+ * stays on the page, fixes the name, and resubmits (the account and
+ * session already exist, so the retry re-runs profile creation only).
  */
 export function LoginPage() {
-  const { session, loading } = useSession()
+  const { session, loading } = useSessionContext()
   const navigate = useNavigate()
 
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
+  const [displayNameError, setDisplayNameError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  /**
+   * True while an account created on this page is still missing its
+   * profiles row (a taken handle). Keeps the "signed-in users bounce off
+   * /login" guard from unmounting the form mid-retry.
+   */
+  const [awaitingProfile, setAwaitingProfile] = useState(false)
 
-  // Signed-in users don't need the auth screen.
-  if (!loading && session !== null) {
+  // Signed-in users don't need the auth screen — unless we just signed them
+  // up and the profile row still needs (re)creation on this page.
+  if (!loading && session !== null && !awaitingProfile) {
     return <Navigate to={resolveAuthRedirect(LOGIN_PATH, true) ?? '/'} replace />
   }
 
@@ -30,6 +42,7 @@ export function LoginPage() {
     setBusy(true)
     setError(null)
     setNotice(null)
+    setDisplayNameError(null)
     try {
       if (mode === 'login') {
         const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -44,26 +57,43 @@ export function LoginPage() {
       const name = displayName.trim()
       if (name.length === 0) throw new Error('Please enter a display name.')
 
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-      })
-      if (signUpError) throw signUpError
+      // Set before the awaits below so the bounce-off guard above can't
+      // unmount the page while a session appears mid-signup.
+      setAwaitingProfile(true)
 
-      if (data.session) {
-        // Signed up and signed in → create the profiles row, then land on /.
-        try {
-          await createProfile(name)
-        } catch {
-          throw new Error(
-            'You signed in, but creating your profile failed. Sign out and sign up again.',
-          )
+      // First submit only: create the account. Retries after a taken
+      // handle skip this — the account (and session) already exist.
+      if (session === null) {
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
+        })
+        if (signUpError) {
+          setAwaitingProfile(false)
+          throw signUpError
         }
-        navigate('/', { replace: true })
-      } else {
-        // Email confirmation is on for this project: no session yet.
-        setNotice('Account created. Check your email to confirm, then sign in.')
+        if (data.session === null) {
+          // Defensive: if the project ever turns email confirmation on,
+          // there is no session yet (it is OFF for V1 — see decisions log).
+          setAwaitingProfile(false)
+          setNotice('Account created. Check your email to confirm, then sign in.')
+          return
+        }
       }
+
+      try {
+        await createProfile(name)
+      } catch (err) {
+        if (err instanceof HandleTakenError) {
+          // Stay on the page: the user fixes the name and resubmits.
+          setDisplayNameError(`“${name}” is already taken — pick a different display name.`)
+          return
+        }
+        setAwaitingProfile(false)
+        throw err
+      }
+      setAwaitingProfile(false)
+      navigate('/', { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')
     } finally {
@@ -91,15 +121,29 @@ export function LoginPage() {
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-slate-700">Display name</span>
               <input
-                className={inputClasses}
+                className={
+                  inputClasses + (displayNameError !== null ? ' border-red-400' : '')
+                }
                 value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
+                onChange={(e) => {
+                  setDisplayName(e.target.value)
+                  setDisplayNameError(null)
+                }}
                 placeholder="e.g. Sam at Green Lake"
                 required
                 maxLength={40}
                 autoComplete="nickname"
               />
+              {displayNameError ? (
+                <span className="text-sm text-red-600">{displayNameError}</span>
+              ) : null}
             </label>
+          ) : null}
+
+          {mode === 'signup' && session !== null ? (
+            <p className="text-sm text-slate-500">
+              Your account is created — pick a different display name and continue.
+            </p>
           ) : null}
 
           <label className="flex flex-col gap-1 text-sm">
@@ -154,6 +198,7 @@ export function LoginPage() {
             setMode(mode === 'login' ? 'signup' : 'login')
             setError(null)
             setNotice(null)
+            setDisplayNameError(null)
           }}
         >
           {mode === 'login' ? 'New here? Create an account' : 'Already have an account? Sign in'}
