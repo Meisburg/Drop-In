@@ -14,7 +14,6 @@ create table if not exists public.neighborhoods (
 insert into public.neighborhoods (name)
 values
   ('Ballard'),
-  ('Beaverton'),
   ('Belltown'),
   ('Capitol Hill'),
   ('Central District'),
@@ -23,7 +22,6 @@ values
   ('Fremont'),
   ('Green Lake'),
   ('Greenwood'),
-  ('Interlawn'),
   ('Laurelhurst'),
   ('Magnolia'),
   ('Madison Park'),
