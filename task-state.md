@@ -6,8 +6,8 @@
 ## Current position
 
 - **Phase:** implementing
-- **Active slice:** 3 (drop-in feed + posting) — in progress
-- **Next action:** receive builder report → reviewer (plan slice 3 + diff) → verifier (npm run build && npm run test); then HUMAN applies 0005–0006 via dashboard → live posting check → close slice 3 → dispatch slice 4.
+- **Active slice:** 3 (drop-in feed + posting) — code complete, reviewer PASS, verifier PASS
+- **Next action:** AWAITING HUMAN: apply supabase/migrations/0005_create_playdates.sql then 0006_create_blocks.sql via dashboard SQL editor (both DO-block guarded, paste-safe, re-runnable), then trigger a PostgREST schema-cache refresh. Then orchestrator runs the live posting check (marker host posts → viewer feed shows it → blocks row → viewer feed excludes it) → close slice 3 → dispatch slice 4.
 
 ## Slices
 
@@ -15,7 +15,7 @@
 |---|---|---|---|
 | 1 tracer + auth + PWA | complete | commits f26edd1+5c7b422; reviewer PASS (4 non-blocking findings parked, see notes); verifier PASS (build exit 0, manifest in dist, 6/6 tests, combined cmd exit 0); LIVE CHECK PASS 2026-09-04 (probe ok, signup session, profile row inserted + read back, login session; marker live-verify-1788546611@gmail.com) | profiles migration owned by slice 1 (decisions log); migration SQL WRITTEN BUT NOT APPLIED to live project — escalated; non-blocking findings: README .env.example doc bug, db.ts module-scope env throw, non-idempotent policy DDL; live re-check 2026-09-04: PGRST205 persists minutes after dashboard apply — human dashboard verification required; no marker user created (run killed pre-signup); marker domain example.com rejected by project → use gmail.com; PGRST205 resolved by human dashboard apply + cache refresh 2026-09-04 |
 | 2 neighborhoods + profiles | complete | commits 9ff7aa6+a3abf09; reviewer PASS (4 non-blocking parked); verifier PASS (build exit 0, 14/14 tests, combined cmd exit 0); post-review SQL delta 017614e+51ee493 content-verified (8392cf3); LIVE CHECK PASS 2026-09-04 (probes ok first attempt; marker A: session + profile row + Ballard/Belltown memberships persisted + feed-gate condition; 0004 23505 proof via marker B; markers live-verify2-1788548418[-b]) | migrations 0002–0004 written by builder, applied by human via dashboard (no DB access on this machine); seed list gets human sanity-check at review; /onboarding route pinned as integration decision; seed list (22 entries) flagged for human sanity-check at review; seed list amended by human 2026-09-04: Beaverton + Interlawn removed (20 entries); post-review SQL delta by human: seed amendment 017614e + DO-block policy idempotency fix 51ee493; 0002–0004 applied live 2026-09-04 (dashboard, Success). |
-| 3 feed + posting | in_progress | | blocks migration (0006) moved forward from slice 4 (feed AC requires the DB-level block filter; block UI stays in slice 4); 0005/0006 use DO-block idempotency per the logged lesson; migrations written by builder, applied by human via dashboard |
+| 3 feed + posting | code complete (reviewer PASS, verifier PASS); awaiting human DB apply | commits 81e8b1a+d97020b; reviewer PASS (per-statement DDL audit; 7 non-blocking parked, see notes); verifier PASS (build exit 0, 36/36 tests, combined cmd exit 0, all policy DDL DO-block guarded) | blocks migration (0006) moved forward from slice 4 (feed AC requires the DB-level block filter; block UI stays in slice 4); 0005/0006 use DO-block idempotency per the logged lesson; migrations written by builder, applied by human via dashboard |
 | 4 detail + going-pings + trust | pending | | depends on 3 |
 | 5 mod tools + mobile polish | pending | | depends on 4; human founder flagged via one-time SQL |
 
@@ -32,6 +32,8 @@
 - Slice 2 parked findings (non-blocking): taken-handle retry reload dead-end (signed-in user, no profiles row — dashboard SQL recovery) is a candidate follow-up for slice 3+; createProfile handle-taken detection couples to constraint name profiles_display_name_key.
 - Post-review SQL delta (017614e, 51ee493) landed after the reviewer's PASS; builder content-verified the delta this turn; the live onboarding check is the behavioral proof.
 - Slice 3 live flow (posting → feed → block filter) unverifiable until human applies 0005–0006 via dashboard; builder code must be complete and build+test green regardless.
+- Slice 3 live block-filter path unproven: the .not() DB filter for viewers with blocks rows is only covered by the pure filterFeed re-filter; the live check must create a real blocks row and confirm feed exclusion (reviewer finding #2).
+- Parked non-blocking findings (slice 3 review): created_at superset column in 0005; title counter trim cosmetic; unparseable datetime-local fallback error; unused Block type; missing trailing newlines in 0005/0006.
 
 ## Decisions log
 
@@ -55,3 +57,4 @@
 - 2026-09-04 — SLICE 1 DB APPLY: apply supabase/migrations/0001_create_profiles.sql to live Supabase project. Options: (a) paste into Supabase dashboard SQL editor, or (b) provide Postgres DATABASE_URL / supabase CLI token for this machine. Live auth endpoint IS reachable; only the SQL-application path is missing.
 - 2026-09-04 — SLICE 1 LIVE CHECK BLOCKED: PostgREST PGRST205 for public.profiles persists minutes after dashboard apply. Human dashboard steps (project matching VITE_SUPABASE_URL): confirm `profiles` in Database → Tables; if absent, re-paste supabase/migrations/0001_create_profiles.sql into the SQL editor and run it; if present, trigger a PostgREST schema-cache refresh (re-run a trivial DDL in the SQL editor, or restart the server); confirm email confirmation is OFF in Authentication settings. Then tell orchestrator 'done' → live check re-run → slice 1 closes → slice 2 dispatches. — RESOLVED 2026-09-04: human applied migration + cache refresh via dashboard; live check PASS (marker live-verify-1788546611@gmail.com).
 - 2026-09-04 — SLICE 2 DB APPLY: RESOLVED 2026-09-04. Seed sanity-check completed by human (list amended to 20 entries: Beaverton + Interlawn removed, 017614e). Apply initially failed on invalid `create policy if not exists` — human fixed 0002/0003 to DO-block policy idempotency (51ee493); 0002→0003→0004 then applied via dashboard: Success. Live onboarding check PASS (see slice 2 row evidence).
+- 2026-09-04 — SLICE 3 DB APPLY: human to paste 0005_create_playdates.sql then 0006_create_blocks.sql into the dashboard SQL editor (project matching VITE_SUPABASE_URL) and refresh the PostgREST schema cache. Both files are DO-block guarded (re-runnable) per the logged lesson. Then tell orchestrator 'done' → live posting check (host post + viewer feed + blocks exclusion) → close slice 3 → dispatch slice 4 (detail page + going-pings + trust basics).
