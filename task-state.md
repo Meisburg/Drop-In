@@ -7,14 +7,14 @@
 
 - **Phase:** implementing
 - **Active slice:** 2 (neighborhoods + profiles) — code complete, reviewer PASS, verifier PASS
-- **Next action:** AWAITING HUMAN: (1) sanity-check the 22-entry seed list in supabase/migrations/0002_create_neighborhoods.sql (flagged entries: Denny-Blaine, Central District, West Seattle); (2) apply 0002, 0003, 0004 IN THAT ORDER via dashboard SQL editor (project matching VITE_SUPABASE_URL); note 0004 fails if live data has duplicate display_names. Then orchestrator runs the live onboarding check → close slice 2 → dispatch slice 3.
+- **Next action:** AWAITING HUMAN: apply 0002 (amended, 20 seeds) → 0003 → 0004 via dashboard SQL editor, in that order. Then orchestrator runs the live onboarding check (marker signup → ≥1 neighborhood → memberships persist → feed gate) → close slice 2 → dispatch slice 3.
 
 ## Slices
 
 | Slice | State | Evidence | Notes |
 |---|---|---|---|
 | 1 tracer + auth + PWA | complete | commits f26edd1+5c7b422; reviewer PASS (4 non-blocking findings parked, see notes); verifier PASS (build exit 0, manifest in dist, 6/6 tests, combined cmd exit 0); LIVE CHECK PASS 2026-09-04 (probe ok, signup session, profile row inserted + read back, login session; marker live-verify-1788546611@gmail.com) | profiles migration owned by slice 1 (decisions log); migration SQL WRITTEN BUT NOT APPLIED to live project — escalated; non-blocking findings: README .env.example doc bug, db.ts module-scope env throw, non-idempotent policy DDL; live re-check 2026-09-04: PGRST205 persists minutes after dashboard apply — human dashboard verification required; no marker user created (run killed pre-signup); marker domain example.com rejected by project → use gmail.com; PGRST205 resolved by human dashboard apply + cache refresh 2026-09-04 |
-| 2 neighborhoods + profiles | code complete (reviewer PASS, verifier PASS); awaiting human DB apply | commits 9ff7aa6+a3abf09; reviewer PASS (4 non-blocking parked: seed sanity, reload-dead-end edge, constraint-name coupling, partial onboarding self-heal); verifier PASS (build exit 0, 14/14 tests, combined cmd exit 0) | migrations 0002–0004 written by builder, applied by human via dashboard (no DB access on this machine); seed list gets human sanity-check at review; /onboarding route pinned as integration decision; seed list (22 entries) flagged for human sanity-check at review |
+| 2 neighborhoods + profiles | code complete (reviewer PASS, verifier PASS); awaiting human DB apply | commits 9ff7aa6+a3abf09; reviewer PASS (4 non-blocking parked: seed sanity, reload-dead-end edge, constraint-name coupling, partial onboarding self-heal); verifier PASS (build exit 0, 14/14 tests, combined cmd exit 0) | migrations 0002–0004 written by builder, applied by human via dashboard (no DB access on this machine); seed list gets human sanity-check at review; /onboarding route pinned as integration decision; seed list (22 entries) flagged for human sanity-check at review; seed list amended by human 2026-09-04: Beaverton + Interlawn removed (20 entries). |
 | 3 feed + posting | pending | | depends on 2 |
 | 4 detail + going-pings + trust | pending | | depends on 3 |
 | 5 mod tools + mobile polish | pending | | depends on 4; human founder flagged via one-time SQL |
@@ -45,6 +45,7 @@
 - 2026-09-04 — INTEGRATION (orchestrator): `profiles` table migration (id, display_name, created_at + minimal RLS) is part of slice 1 because slice 1's acceptance criteria require 'profile row created'; slice 2 refines RLS + adds neighborhoods/memberships migrations.
 - 2026-09-04 — AUTH (human decision): email confirmation intentionally OFF for V1 (no email infrastructure until V2; restore confirmation or an invite flow before any real launch).
 - 2026-09-04 — INTEGRATION (orchestrator): /onboarding is the pinned onboarding route path (plan's route list predated onboarding); onboarding gate = signed-in user with 0 memberships; slice 2's UserPage shows 'No posts yet' (playdates table lands in slice 3).
+- 2026-09-04 — SEED (human amendment): neighborhoods seed list amended — Beaverton + Interlawn removed; 0002 now 20 entries (human-approved, committed pre-apply).
 
 ## Escalations (waiting on human)
 
