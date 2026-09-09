@@ -11,7 +11,7 @@
 
 ## Tooling note (2026-09-09)
 
-- Migrations are now applied by the orchestrator via **browser-use** (Python/CDP) instead of the human dashboard: `browser-use` (uv tool, v0.1.13) attaches to a CDP-enabled Chrome whose profile copy (`/tmp/opencode/chrome-cdp`) carries the Supabase session. Launcher: `/tmp/opencode/launch-cdp-chrome.sh`. Monaco editor content set via `monaco.editor.getEditors()[0].setValue(...)`; Run button clicked via JS. PostgREST schema cache refreshed automatically (no PGRST205 this time — REST served `playdates`/`blocks` at HTTP 200 within ~1 min of apply). open-computer-use was uninstalled (its key synthesis can't reach a Wayland Chrome).
+- Migrations are now applied by the orchestrator via **browser-use** (Python/CDP) instead of the human dashboard: `browser-use` (uv tool, v0.1.13) attaches to a CDP-enabled Chrome on `:9222`. **One-command rebuild: `scripts/cdp-migration-tooling.sh`** — it recreates the session-bearing profile copy (from `~/.config/google-chrome`, survives /tmp wipes + reboots) and launches the CDP Chrome; pass `stop` to kill it. If `:9222` is already up it fast-paths. Attach: `BU_CDP_URL=http://127.0.0.1:9222 browser-use <<'PY' ... PY`. Apply pattern: Monaco editor via `monaco.editor.getEditors()[0].setValue(<sql>)` + click the "Run Ctrl ↵" button via JS; both migrations return "Success". PostgREST schema cache auto-refreshes (no PGRST205 — REST served new tables at HTTP 200 within ~1 min). open-computer-use was uninstalled (its key synthesis can't reach a Wayland Chrome).
 
 ## Slices
 
