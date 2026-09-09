@@ -228,3 +228,9 @@ Pinned contracts every builder must respect (reviewers enforce these):
   home-neighborhood + drive-mile radius instead of followed-neighborhood
   tags. Existing-but-invisible to founder: ping toggle (host-hidden), host
   link on cards.
+- 2026-09-09 — V2 DECISIONS RESOLVED (founder): kids = FIRST NAME + AGE
+  only, never full names or gender (privacy pin holds); messaging =
+  public per-event COMMENTS with host replies (no DMs, zero-pressure soul
+  preserved); discovery = home ZIP code + drive-radius miles (no GPS —
+  follows the OfferUp/Facebook-Marketplace pattern, founder's call after
+  weighing browser-geolocation tradeoffs).
