@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
+import { HostAvatar } from '../components/DropInCard'
 import { ReportDialog } from '../components/ReportDialog'
 import { useSessionContext } from '../components/SessionProvider'
 import {
@@ -202,9 +203,10 @@ export function PlaydateDetailPage() {
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
           <Link
             to={`/u/${encodeURIComponent(detail.host.display_name)}`}
-            className="text-sm font-medium text-indigo-600"
+            className="flex items-center gap-2 text-sm font-medium text-indigo-600"
           >
-            Hosted by @{detail.host.display_name}
+            <HostAvatar host={detail.host} />
+            <span>Hosted by @{detail.host.display_name}</span>
           </Link>
           <button
             type="button"

@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import type { Session } from '@supabase/supabase-js'
 import type {
+  Kid,
   MembershipWithNeighborhood,
   Neighborhood,
   Playdate,
   PlaydateWithNeighborhood,
   Profile,
+  ProfileWithKids,
   Report,
 } from './types'
 import { filterFeed, queryUpcomingFeedWithClient, startOfTodayIso } from './feed'
@@ -265,15 +267,23 @@ export async function getProfile(id: string): Promise<Profile | null> {
   return (data as Profile | null) ?? null
 }
 
-/** Find a profile by its public display_name handle (null when unknown). */
-export async function getProfileByHandle(handle: string): Promise<Profile | null> {
+/**
+ * Find a profile by its public display_name handle, with its kids joined in
+ * (V2 ticket 02: first name + age only — the privacy pin). Null when unknown.
+ *
+ * The kids embed is pinned to the FK constraint name (PGRST201 lesson: pin
+ * FK hints in embeds) — `kids_profile_id_fkey` is the 0011 constraint. A
+ * plain (left) one-to-many embed: a profile with no kids gets an empty
+ * array, never a not-found.
+ */
+export async function getProfileByHandle(handle: string): Promise<ProfileWithKids | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('*')
+    .select('*, kids:kids!kids_profile_id_fkey ( id, first_name, age )')
     .eq('display_name', handle)
     .maybeSingle()
   if (error) throw error
-  return (data as Profile | null) ?? null
+  return (data as unknown as ProfileWithKids | null) ?? null
 }
 
 /** All seeded neighborhoods, ordered by name. */
@@ -521,7 +531,7 @@ export async function getPlaydateDetail(id: string): Promise<PlaydateWithNeighbo
   const { data, error } = await supabase
     .from('playdates')
     .select(
-      '*, neighborhood:neighborhoods!inner ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name )',
+      '*, neighborhood:neighborhoods!inner ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url )',
     )
     .eq('id', id)
     .maybeSingle()
@@ -776,4 +786,205 @@ export async function banProfile(profileId: string): Promise<void> {
   await issueModeratorUpdate(supabase, 'profiles', profileId, {
     banned_at: new Date().toISOString(),
   })
+}
+
+// ---------------------------------------------------------------------------
+// V2 slice 2 (ticket 02): avatars, bio, kids.
+//
+// The schema (migration 0011) may not be applied to the live project until
+// the orchestrator applies it — every function here throws on that, and the
+// pages render designed states instead of crashing (same discipline as
+// slices 1–5). Pure validators + caps are exported and unit-tested; the
+// Supabase-facing round-trips follow the injected-client discipline where
+// the house pattern has one.
+
+/** Avatar input cap (V2 ticket 02): files > 5 MB are rejected BEFORE upload. */
+export const AVATAR_MAX_BYTES = 5 * 1024 * 1024
+
+/** The avatar's stored size: client-resized to a 256px square before upload. */
+export const AVATAR_SIZE_PX = 256
+
+/** Bio cap (plan-v2 Interfaces: <= 500 chars; the 0011 CHECK is the backstop). */
+export const BIO_MAX_LENGTH = 500
+
+/** The kids cap per profile (plan-v2 Interfaces: app-enforced, not DB). */
+export const MAX_KIDS_PER_PROFILE = 5
+
+/**
+ * Pure avatar input validation: an error message, or null when valid.
+ * Rejects non-images and files over AVATAR_MAX_BYTES — the rejection happens
+ * before any upload (ticket AC: "> 5 MB rejected before upload").
+ */
+export function validateAvatarFile(file: File): string | null {
+  if (!file.type.startsWith('image/')) {
+    return 'Pick an image file (a photo) for the avatar.'
+  }
+  if (file.size > AVATAR_MAX_BYTES) {
+    return 'Keep the photo under 5 MB.'
+  }
+  return null
+}
+
+/** Pure bio validation (<= BIO_MAX_LENGTH characters after trim). */
+export function validateBio(bio: string): string | null {
+  if (bio.trim().length > BIO_MAX_LENGTH) {
+    return `Keep the bio to ${BIO_MAX_LENGTH} characters.`
+  }
+  return null
+}
+
+/**
+ * Pure kid-row validation (first name + age only — the privacy pin). Age is
+ * a whole number in 0–17: these are kids.
+ */
+export function validateKid(firstName: string, age: number): string | null {
+  if (firstName.trim().length === 0) {
+    return 'Give your kid a first name.'
+  }
+  if (!Number.isInteger(age) || age < 0 || age > 17) {
+    return 'Age must be a whole number from 0 to 17.'
+  }
+  return null
+}
+
+/**
+ * The profile items missing for the /profile nudge banner (V2 ticket 02):
+ * photo + bio + kids all present dismisses it. `kidsCount` is null when the
+ * kids load has not settled (it counts as not-present — the nudge is
+ * best-effort, never hides what is there).
+ */
+export type MissingProfileItem = 'photo' | 'bio' | 'kids'
+
+export function missingProfileItems(
+  profile: Pick<Profile, 'avatar_url' | 'bio'> | null,
+  kidsCount: number | null,
+): MissingProfileItem[] {
+  const missing: MissingProfileItem[] = []
+  const avatarUrl = profile?.avatar_url ?? null
+  const bio = profile?.bio ?? null
+  if (avatarUrl === null || avatarUrl === '') missing.push('photo')
+  if (bio === null || bio.trim() === '') missing.push('bio')
+  if (kidsCount === null || kidsCount === 0) missing.push('kids')
+  return missing
+}
+
+/**
+ * Client-side resize of an avatar to a 256px square (V2 ticket 02):
+ * center-crop to square, scale, encode as JPEG. Runs in the browser (canvas)
+ * — the network only sees the small result, never the original.
+ */
+export async function prepareAvatarFile(file: File): Promise<Blob> {
+  const bitmap = await createImageBitmap(file)
+  const size = AVATAR_SIZE_PX
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (ctx === null) throw new Error('Could not resize the photo (canvas unavailable).')
+  // Cover-crop: scale the photo to fill the square, center-crop the overflow.
+  const scale = Math.max(size / bitmap.width, size / bitmap.height)
+  const drawWidth = bitmap.width * scale
+  const drawHeight = bitmap.height * scale
+  ctx.drawImage(bitmap, (size - drawWidth) / 2, (size - drawHeight) / 2, drawWidth, drawHeight)
+  bitmap.close()
+  return await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob === null) reject(new Error('Could not encode the avatar image.'))
+        else resolve(blob)
+      },
+      'image/jpeg',
+      0.85,
+    )
+  })
+}
+
+/**
+ * Upload the signed-in user's avatar (V2 ticket 02): validate first (a
+ * > 5 MB file is rejected before any upload), client-resize to 256px,
+ * upload to the 'avatars' bucket at <uid>/avatar (the owner-scoped write
+ * policy from 0011 — no cross-user writes), then point
+ * profiles.avatar_url at the public URL. Returns the public URL.
+ */
+export async function uploadAvatar(profileId: string, file: File): Promise<string> {
+  const fileError = validateAvatarFile(file)
+  if (fileError !== null) throw new Error(fileError)
+  const blob = await prepareAvatarFile(file)
+  const objectPath = `${profileId}/avatar`
+  const { error } = await supabase.storage
+    .from('avatars')
+    .upload(objectPath, blob, { contentType: 'image/jpeg', upsert: true })
+  if (error) throw error
+  const { data } = supabase.storage.from('avatars').getPublicUrl(objectPath)
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .update({ avatar_url: data.publicUrl })
+    .eq('id', profileId)
+  if (profileError) throw profileError
+  return data.publicUrl
+}
+
+/** Update the caller's bio (V2 ticket 02): <= 500 chars, validated pure. */
+export async function updateBio(userId: string, bio: string): Promise<void> {
+  const bioError = validateBio(bio)
+  if (bioError !== null) throw new Error(bioError)
+  const { error } = await supabase
+    .from('profiles')
+    .update({ bio: bio.trim() })
+    .eq('id', userId)
+  if (error) throw error
+}
+
+/**
+ * One profile's kid rows, ordered by age (V2 ticket 02: first name + age
+ * only — the privacy pin; no full names or gender exist to fetch). The
+ * kids SELECT policy is open to any authenticated user (the public profile
+ * surface); a read failure (0011 not applied yet) throws, and the caller
+ * renders a designed state.
+ */
+export async function listKids(profileId: string): Promise<Kid[]> {
+  const { data, error } = await supabase
+    .from('kids')
+    .select('id, first_name, age')
+    .eq('profile_id', profileId)
+    .order('age', { ascending: true })
+  if (error) throw error
+  return (data ?? []) as unknown as Kid[]
+}
+
+/**
+ * Add a kid row (V2 ticket 02). The max-5 cap is app-enforced here (plan-v2
+ * Interfaces — not a DB constraint): the current count is read first, and
+ * a full profile's add throws before any insert. The owner-only INSERT
+ * policy (0011) is the DB wall for non-owners.
+ */
+export async function addKid(profileId: string, firstName: string, age: number): Promise<Kid> {
+  const existing = await listKids(profileId)
+  if (existing.length >= MAX_KIDS_PER_PROFILE) {
+    throw new Error(`You can add up to ${MAX_KIDS_PER_PROFILE} kids.`)
+  }
+  const kidError = validateKid(firstName, age)
+  if (kidError !== null) throw new Error(kidError)
+  const { data, error } = await supabase
+    .from('kids')
+    .insert({ profile_id: profileId, first_name: firstName.trim(), age })
+    .select()
+    .single()
+  if (error) throw error
+  return data as unknown as Kid
+}
+
+/**
+ * Remove a kid row (owner-only via the 0011 DELETE policy; the profile_id
+ * scope keeps a known id from ever touching another family's row). A
+ * non-owner delete is a silent RLS no-op (the logged PostgREST 2xx lesson)
+ * — the owner is the only caller.
+ */
+export async function removeKid(profileId: string, kidId: string): Promise<void> {
+  const { error } = await supabase
+    .from('kids')
+    .delete()
+    .eq('id', kidId)
+    .eq('profile_id', profileId)
+  if (error) throw error
 }

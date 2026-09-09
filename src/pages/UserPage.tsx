@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
+import { HostAvatar } from '../components/DropInCard'
 import { ReportDialog } from '../components/ReportDialog'
 import { useSessionContext } from '../components/SessionProvider'
 import { getBlockState, getProfileByHandle, toggleBlock } from '../lib/db'
-import type { Profile } from '../lib/types'
+import type { ProfileWithKids } from '../lib/types'
 
 type UserPageState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
   | { status: 'not-found' }
-  | { status: 'ready'; profile: Profile }
+  | { status: 'ready'; profile: ProfileWithKids }
 
 /**
  * /u/:handle — a profile's public face (slice 2) + the trust controls
@@ -129,8 +130,33 @@ export function UserPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h1 className="text-xl font-semibold text-slate-900">@{profile.display_name}</h1>
-        <p className="mt-1 text-sm text-slate-500">Here since {joined}.</p>
+        <div className="flex items-center gap-3">
+          <HostAvatar host={profile} />
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold text-slate-900">@{profile.display_name}</h1>
+            <p className="mt-1 text-sm text-slate-500">Here since {joined}.</p>
+          </div>
+        </div>
+        {profile.bio != null && profile.bio.trim() !== '' ? (
+          <p className="mt-3 whitespace-pre-line text-sm text-slate-700">{profile.bio}</p>
+        ) : null}
+      </div>
+
+      {/* V2 ticket 02: the kids list — first name + age ONLY (privacy pin:
+          no full names, no gender, anywhere in the schema or the UI). */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-base font-semibold text-slate-900">Kids</h2>
+        {profile.kids.length === 0 ? (
+          <p className="mt-1 text-sm text-slate-500">No kids listed.</p>
+        ) : (
+          <ul className="mt-2 flex flex-col gap-1">
+            {profile.kids.map((kid) => (
+              <li key={kid.id} className="text-sm text-slate-800">
+                {kid.first_name} · {kid.age}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {isOwnProfile ? null : (

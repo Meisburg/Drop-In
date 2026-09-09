@@ -20,6 +20,19 @@ export interface Profile {
    * live project is past 0009.
    */
   banned_at?: string | null
+  /**
+   * The profile's avatar (V2 ticket 02, migration 0011): the public URL of
+   * the client-resized 256px image in the 'avatars' bucket
+   * (avatars/<uid>/avatar). Optional: absent until the live project is
+   * past 0011.
+   */
+  avatar_url?: string | null
+  /**
+   * A short family bio (V2 ticket 02, migration 0011): <= 500 characters,
+   * app-capped + the DB backstop. Optional: absent until the live project
+   * is past 0011.
+   */
+  bio?: string | null
 }
 
 /** A drop-in playdate ("at this playground, 3–5, come by if you like"). */
@@ -61,6 +74,22 @@ export interface MembershipWithNeighborhood extends Membership {
 }
 
 /**
+ * A structured kid row (V2 ticket 02, migration 0011): first name + age
+ * ONLY — never full names, never gender (privacy pin, plan-v2 Interfaces).
+ */
+export interface Kid {
+  id: string
+  profile_id: string
+  first_name: string
+  age: number
+}
+
+/** A profile with its kids joined in (getProfileByHandle result, V2 ticket 02). */
+export interface ProfileWithKids extends Profile {
+  kids: Kid[]
+}
+
+/**
  * A user's block: the blocker never sees the blocked user's posts
  * (pinned data model in plan.md Interfaces: unique pair, slice 3
  * migration 0006).
@@ -74,6 +103,8 @@ export interface Block {
 export interface PlaydateHost {
   id: string
   display_name: string
+  /** The host's avatar public URL (V2 ticket 02 — the 40px round render). */
+  avatar_url?: string | null
 }
 
 /** A playdate with its neighborhood + host joined in (feed/browse results). */
