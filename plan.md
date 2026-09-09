@@ -207,3 +207,12 @@ Pinned contracts every builder must respect (reviewers enforce these):
   Tooling: browser-use LLM loop unusable on NInfer (vision/JSON 400s);
   LLM-free replacement committed at scripts/cdp-sql-runner.py (verified
   live on a SELECT).
+- 2026-09-09 — Human signed up ("Jon Meisburg"); first real-user session
+  exposed PGRST201: 0007's going_pings FK gave PostgREST two playdates→
+  profiles paths, so every `host:profiles!inner` embed 400s (feed + detail).
+  Fixed by pinning the embed to the FK hint
+  (`profiles!playdates_host_profile_id_fkey`, feed.ts + db.ts:483; commit
+  80f9b07; verified live with a real auth token). Lesson: mock-client tests
+  can't catch embed-ambiguity — real-DB smoke test required when a migration
+  adds an FK between two already-FK-linked tables. Founder flag applied +
+  verified via cdp-sql-runner (moderators=true); /mod is live.

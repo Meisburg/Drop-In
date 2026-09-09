@@ -7,7 +7,7 @@
 
 - **Phase:** V1 complete
 - **Active slice:** 5 (mod tools + mobile polish) — **COMPLETE** (code + review + verifier + DB apply + live check all PASS; orchestrator re-verified independently: build exit 0, 65/65 tests, commit 2eacd47, hidden_at/banned_at REST 200, 0010 trigger in repo)
-- **Next action:** FOUNDER FLAG BLOCKED ON SIGN-UP: no founder profile exists yet (live profiles table = 9 marker rows only, verified 2026-09-09 via CDP SELECT). Human signs up in the app with a permanent handle → orchestrator runs the founder-flag UPDATE via `scripts/cdp-sql-runner.py` and verifies moderators=true. Then /mod is live. Optional parked: 0011 self-elevation trigger + display_name length cap (both human calls).
+- **Next action:** V1 complete + founder flag APPLIED and VERIFIED 2026-09-09 (Jon Meisburg → moderators=true, returned-row proof; /mod is live). Feed PGRST201 fixed (commit 80f9b07) — Vite dev server running at http://localhost:5173 (log /tmp/opencode/playdate-dev.log); human should reload the feed. Remaining human calls (parked): 0011 self-elevation trigger, display_name length cap, marker-user cleanup (lv1–lv5 + 3 probe users created during the RLS diagnosis).
 
 ## Tooling note (2026-09-09)
 
@@ -44,6 +44,7 @@
 - Self-privilege-escalation hole (pre-existing 0001×0008 interaction, slice 5 reviewer finding): any authenticated user can set their own moderators=true via direct API. App never does this. Candidate 0011 trigger — human call.
 - display_name unbounded → 375px edge on handle-bearing buttons (ModPage ban row, UserPage block row). Product-level cap candidate — human call.
 - Test artifacts (lv5): live-verify5-1788977882@gmail.com (host profile), -b (viewer, banned_at SET — suspended on next session), -m (mod, moderators reverted false); orphaned B Ballard membership. All lv5 playdate/ping rows deleted, verified 0. Optional human cleanup.
+- RLS-diagnosis probe artifacts (2026-09-09): probe2–probe8 signup users + probe6/probe8 profile+membership rows (probe8 = Greenwood). No playdates. Optional human cleanup alongside lv1–lv5.
 
 ## Decisions log
 
@@ -70,7 +71,7 @@
 
 ## Escalations (waiting on human)
 
-- 2026-09-09 — FOUNDER FLAG: you have no profile row yet (never signed up — live table holds only test markers, verified by orchestrator via CDP SELECT). Action: sign up in the app (`npm run dev` → /login → signup with your display_name), then tell the orchestrator the handle; it runs `update public.profiles set moderators = true where display_name = '<handle>';` via `scripts/cdp-sql-runner.py` and verifies. /mod activates immediately after.
+- 2026-09-09 — FOUNDER FLAG: RESOLVED pending verification — human signed up ("Jon Meisburg", profile cd733843-1436-42d0-b205-284172578bdb, 1 membership Greenwood, moderators=false). Orchestrator to apply `update public.profiles set moderators = true where display_name = 'Jon Meisburg';` via cdp-sql-runner and confirm → then /mod is live for the human. — FLAG APPLIED + VERIFIED 2026-09-09 (row re-read: moderators=true).
 
 - DECISION 3: deployment target, deferred to V1.5 — not blocking
 - 2026-09-04 — SLICE 1 DB APPLY: apply supabase/migrations/0001_create_profiles.sql to live Supabase project. Options: (a) paste into Supabase dashboard SQL editor, or (b) provide Postgres DATABASE_URL / supabase CLI token for this machine. Live auth endpoint IS reachable; only the SQL-application path is missing.
