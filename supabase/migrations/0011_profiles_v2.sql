@@ -203,6 +203,9 @@ $$;
 -- under RLS). Moderators pass through — 0009's moderator UPDATE policies
 -- remain the grant. A non-moderator's own-row updates (display_name, bio,
 -- avatar_url) are untouched by the guard (neither locked column changes).
+-- Non-JWT roles (postgres, service_role — dashboard SQL, the CDP runner)
+-- have auth.uid() IS NULL and pass through: the pinned scope is
+-- moderators/postgres, so the DB operators keep the ban path.
 create or replace function public.profiles_self_elevation_guard()
 returns trigger
 language plpgsql
@@ -210,6 +213,10 @@ as $$
 declare
   actor_is_moderator boolean;
 begin
+  if auth.uid() is null then
+    return new;
+  end if;
+
   select p.moderators
     into actor_is_moderator
     from public.profiles p

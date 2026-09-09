@@ -238,7 +238,11 @@ export function ProfilePage() {
     // the pure validateKid before any insert.
     const age = newKidAge === '' ? NaN : Number(newKidAge)
     const kidError = validateKid(newKidName, age)
-    if (userId === null || kidsBusyId !== null || kidError !== null) return
+    if (userId === null || kidsBusyId !== null) return
+    if (kidError !== null) {
+      setKidsError(kidError)
+      return
+    }
     setKidsBusyId('add')
     setKidsError(null)
     try {
