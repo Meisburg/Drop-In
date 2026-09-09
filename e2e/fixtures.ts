@@ -56,8 +56,12 @@ export const MARKER_META_PATH = path.join(AUTH_DIR, 'marker.json')
 export interface MarkerMeta {
   email: string
   displayName: string
-  /** The seeded neighborhood (0002 seed list) the marker follows. */
+  /** The seeded neighborhood (0002 seed list) the marker's posts use (display label). */
   neighborhood: string
+  /** The marker's home zip (V2 slice 3 — the discovery center, set by the setup spec). */
+  homeZip: string
+  /** The marker's discovery radius in miles (V2 slice 3 — the pinned default). */
+  radiusMiles: number
 }
 
 export function readMarkerMeta(): MarkerMeta {

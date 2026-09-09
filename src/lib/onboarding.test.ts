@@ -9,12 +9,18 @@ import {
   type OnboardingGateState,
 } from './onboarding'
 
+/**
+ * Onboarding-gate tests (V2 slice 3: the gate keys on the home zip, not
+ * memberships — neighborhoods are display labels only, discovery is
+ * radius-based).
+ */
+
 describe('needsOnboarding', () => {
-  it('is true when the user has no memberships', () => {
+  it('is true when the user has no home zip', () => {
     expect(needsOnboarding(false)).toBe(true)
   })
 
-  it('is false when the user has at least one membership', () => {
+  it('is false when the user has a home zip', () => {
     expect(needsOnboarding(true)).toBe(false)
   })
 })
@@ -26,13 +32,13 @@ describe('resolveProtectedRedirect (protected routes)', () => {
     expect(resolveProtectedRedirect(false, true, '/u/jamie')).toBe('/login')
   })
 
-  it('sends signed-in users with 0 memberships to /onboarding', () => {
+  it('sends signed-in users without a home zip to /onboarding', () => {
     expect(resolveProtectedRedirect(true, false, '/')).toBe(ONBOARDING_PATH)
     expect(resolveProtectedRedirect(true, false, '/browse')).toBe(ONBOARDING_PATH)
     expect(resolveProtectedRedirect(true, false, '/profile')).toBe(ONBOARDING_PATH)
   })
 
-  it('lets signed-in users with memberships keep the intended route', () => {
+  it('lets signed-in users with a home zip keep the intended route', () => {
     expect(resolveProtectedRedirect(true, true, '/')).toBe(HOME_PATH)
     expect(resolveProtectedRedirect(true, true, '/browse')).toBe('/browse')
     expect(resolveProtectedRedirect(true, true, '/u/jamie')).toBe('/u/jamie')
@@ -45,11 +51,11 @@ describe('resolveOnboardingRedirect (the /onboarding route)', () => {
     expect(resolveOnboardingRedirect(false, true)).toBe('/login')
   })
 
-  it('sends signed-in users with memberships back to /', () => {
+  it('sends signed-in users with a home zip back to /', () => {
     expect(resolveOnboardingRedirect(true, true)).toBe(HOME_PATH)
   })
 
-  it('lets signed-in users without memberships stay on /onboarding', () => {
+  it('lets signed-in users without a home zip stay on /onboarding', () => {
     expect(resolveOnboardingRedirect(true, false)).toBeNull()
   })
 })
@@ -60,7 +66,7 @@ function gateState(over: Partial<OnboardingGateState> = {}): OnboardingGateState
     sessionLoading: false,
     profileLoading: false,
     signedIn: true,
-    hasMemberships: true,
+    homeZipSet: true,
     suspended: false,
     ...over,
   }
@@ -71,20 +77,20 @@ describe('resolveOnboardingGate (the shell gate, ticket 06 cold-load race)', () 
     expect(resolveOnboardingGate(gateState({ sessionLoading: true }))).toBe('loading')
   })
 
-  it('renders the loading state while a signed-in user\'s membership fetch is in flight (the race)', () => {
-    // A stale hasMemberships=false must NOT bounce the user to /onboarding
+  it('renders the loading state while a signed-in user\'s profile fetch is in flight (the race)', () => {
+    // A stale homeZipSet=false must NOT bounce the user to /onboarding
     // mid-load — that is the cold-load race this gate fixes.
     expect(
-      resolveOnboardingGate(gateState({ profileLoading: true, hasMemberships: false })),
+      resolveOnboardingGate(gateState({ profileLoading: true, homeZipSet: false })),
     ).toBe('loading')
   })
 
-  it('passes a settled signed-in user with memberships', () => {
+  it('passes a settled signed-in user with a home zip', () => {
     expect(resolveOnboardingGate(gateState({}))).toBe('pass')
   })
 
-  it('sends a settled signed-in user with no memberships to /onboarding', () => {
-    expect(resolveOnboardingGate(gateState({ hasMemberships: false }))).toBe('onboard')
+  it('sends a settled signed-in user without a home zip to /onboarding', () => {
+    expect(resolveOnboardingGate(gateState({ homeZipSet: false }))).toBe('onboard')
   })
 
   it('passes a settled signed-out user (the signed-out gate sends /login)', () => {

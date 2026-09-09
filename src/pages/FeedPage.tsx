@@ -2,45 +2,55 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { DropInCard } from '../components/DropInCard'
 import { useSessionContext } from '../components/SessionProvider'
-import { listTodayFeed } from '../lib/db'
+import { listRadiusFeed } from '../lib/db'
+import { DEFAULT_RADIUS_MILES } from '../lib/feed'
 import type { PlaydateWithNeighborhood } from '../lib/types'
 
 /**
- * / — today's drop-ins in the signed-in user's neighborhoods (slice 3).
- * Time-ordered, with a "Happening now" badge on live drop-ins. The feed
- * query (db.listTodayFeed) filters to followed neighborhoods, starts today
- * or later (client-local midnight), and never returns blocked hosts' posts.
+ * / — drop-ins within the signed-in user's home zip + radius (V2 slice 3:
+ * discovery is distance-based; neighborhoods are display labels only). The
+ * feed query (db.listRadiusFeed) fetches upcoming posts with the host's
+ * home zip pinned in the embed (PGRST201), applies the pure haversine
+ * radius filter (feed.filterFeed — unit-tested), and tags each survivor
+ * with its "N mi" distance for the card label.
  *
- * The playdates table (migration 0005) may not exist in the live project
- * until the human applies it via the dashboard — a failed query renders a
- * designed error state, never a crash (same discipline as the onboarding
- * load-error).
+ * The zip_coordinates + location columns live in migration 0012 (the live
+ * project may not have them yet) — a failed load renders a designed error
+ * state, never a crash (same discipline as the onboarding load-error).
  */
 export function FeedPage() {
-  const { session, loading } = useSessionContext()
+  const { session, loading, profile } = useSessionContext()
   const [posts, setPosts] = useState<PlaydateWithNeighborhood[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
+  // The viewer side of the radius filter: the profile's home zip + radius.
+  // The shell's onboarding gate keys on home_zip, so a settled signed-in
+  // session here has a zip; a null profile is the in-flight load state
+  // (ticket 06 cold-load race — never query before the profile settles).
   useEffect(() => {
-    if (loading || session === null) return
+    if (loading || session === null || profile === null) return
     let cancelled = false
     setPosts(null)
     setLoadError(null)
-    listTodayFeed(session.user.id)
+    const viewer = {
+      homeZip: profile.home_zip ?? null,
+      radiusMiles: profile.radius_miles ?? DEFAULT_RADIUS_MILES,
+    }
+    listRadiusFeed(viewer, session.user.id)
       .then((rows) => {
         if (!cancelled) setPosts(rows)
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setLoadError(err instanceof Error ? err.message : 'Could not load today’s drop-ins.')
+          setLoadError(err instanceof Error ? err.message : 'Could not load drop-ins near you.')
         }
       })
     return () => {
       cancelled = true
     }
-  }, [loading, session])
+  }, [loading, session, profile])
 
-  if (loading) {
+  if (loading || profile === null) {
     return (
       <div className="flex min-h-64 items-center justify-center text-sm text-slate-500">
         Loading…
@@ -73,7 +83,7 @@ export function FeedPage() {
       ) : posts.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
           <p className="text-sm text-slate-500">
-            Nothing happening in your neighborhoods today — post the first one.
+            Nothing happening near you today — post the first one.
           </p>
           <Link
             to="/new"

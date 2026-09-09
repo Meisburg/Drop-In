@@ -33,6 +33,20 @@ export interface Profile {
    * is past 0011.
    */
   bio?: string | null
+  /**
+   * The family's home zip (V2 slice 3, migration 0012): the discovery
+   * center — the feed shows drop-ins whose host sits within the viewer's
+   * radius of this zip (via zip_codes). Nullable: unset until onboarding
+   * (or /profile) sets it — the onboarding gate keys on it. Optional:
+   * absent until the live project is past 0012.
+   */
+  home_zip?: string | null
+  /**
+   * The discovery radius in miles (V2 slice 3, migration 0012): 2–35,
+   * default 5; the app offers the pinned options 2/5/10/20/35. Optional:
+   * absent until the live project is past 0012.
+   */
+  radius_miles?: number
 }
 
 /** A drop-in playdate ("at this playground, 3–5, come by if you like"). */
@@ -105,12 +119,22 @@ export interface PlaydateHost {
   display_name: string
   /** The host's avatar public URL (V2 ticket 02 — the 40px round render). */
   avatar_url?: string | null
+  /** The host's home zip (V2 slice 3 — the post's location; the radius filter's key). */
+  home_zip?: string | null
+  /** The host's discovery radius (V2 slice 3 — informational on the card). */
+  radius_miles?: number
 }
 
 /** A playdate with its neighborhood + host joined in (feed/browse results). */
 export interface PlaydateWithNeighborhood extends Playdate {
   neighborhood: Neighborhood
   host: PlaydateHost
+  /**
+   * The haversine distance, in miles, between the viewer's home zip and
+   * the host's home zip (V2 slice 3 — computed client-side by the pure
+   * feed.distanceMiles predicate; set on feed/browse results only).
+   */
+  distanceMiles?: number
 }
 
 /**

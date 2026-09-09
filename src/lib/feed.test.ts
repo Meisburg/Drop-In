@@ -5,7 +5,10 @@ import {
   computeStartIso,
   durationLabel,
   filterFeed,
+  formatDistanceLabel,
   formatTimeLabel,
+  haversineMiles,
+  hostDistanceMiles,
   isDuration,
   isHappeningNow,
   isHiddenPost,
@@ -13,13 +16,19 @@ import {
   PLAYDATE_DURATIONS_MINUTES,
   queryMyPlaydatesWithClient,
   queryUpcomingFeedWithClient,
+  RADIUS_MILES_OPTIONS,
   startOfTodayIso,
   stepTimeMinutes,
   TIME_STEP_MINUTES,
   toDuplicatePrefill,
+  validateHomeZip,
   validatePlaydateForm,
+  validateRadiusMiles,
+  withinRadius,
   type FeedPost,
   type PlaydateFormValues,
+  type RadiusViewer,
+  type ZipCoords,
 } from './feed'
 
 /**
@@ -38,8 +47,33 @@ function at(minutesAfterMidnight: number): string {
   return new Date(Date.parse(TODAY_ISO) + minutesAfterMidnight * 60_000).toISOString()
 }
 
-const FOLLOWED = new Set(['n1', 'n2'])
+/**
+ * The seeded gazetteer shape (V2 slice 3): the two known WA zips from
+ * migration 0012 — 98107 (West Seattle) and 98007 (Kirkland), ~11.5 mi
+ * apart — enough to exercise inside/outside-radius and the unknown-zip
+ * exclusion without a DB.
+ */
+const ZIP_COORDS: Map<string, ZipCoords> = new Map([
+  ['98107', { lat: 47.66757, lng: -122.37789 }],
+  ['98007', { lat: 47.61392, lng: -122.14378 }],
+])
+/** The viewer: home zip 98107, a generous 20-mi radius (98007 is inside it). */
+const VIEWER: RadiusViewer = { homeZip: '98107', radiusMiles: 20 }
+const NARROW_VIEWER: RadiusViewer = { homeZip: '98107', radiusMiles: 5 }
 const BLOCKED_HOSTS = new Set(['host-blocked'])
+
+/** A radius-feed post: the host's home zip (null = the host never set one). */
+function postAt(
+  hostZip: string | null,
+  hostProfileId: string,
+  minutesAfterMidnight: number,
+): FeedPost {
+  return {
+    host_profile_id: hostProfileId,
+    starts_at: at(minutesAfterMidnight),
+    host: hostZip === null ? { home_zip: null } : { home_zip: hostZip },
+  }
+}
 
 describe('startOfTodayIso (fixed clock, DST-agnostic local midnight)', () => {
   it('returns local midnight of the given day', () => {
@@ -96,59 +130,78 @@ describe('isHappeningNow (window checks)', () => {
   })
 })
 
-describe('filterFeed (feed invariants)', () => {
-  it('keeps only posts in followed neighborhoods', () => {
+describe('filterFeed (the radius-feed invariants, V2 slice 3)', () => {
+  it('keeps only posts whose host sits within the viewer\'s radius', () => {
+    // 98007 is ~11.5 mi from 98107: inside the 20-mi radius, outside 5.
+    const posts: FeedPost[] = [postAt('98007', 'h-far', 600), postAt('98107', 'h-near', 300)]
+    const wide = filterFeed(posts, VIEWER, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
+    expect(wide.map((p) => p.host_profile_id)).toEqual(['h-near', 'h-far']) // starts_at order
+    const narrow = filterFeed(posts, NARROW_VIEWER, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
+    expect(narrow.map((p) => p.host_profile_id)).toEqual(['h-near'])
+  })
+
+  it('excludes a host that has no home zip (coordinates are never invented)', () => {
     const posts: FeedPost[] = [
-      { neighborhood_id: 'n1', host_profile_id: 'h1', starts_at: at(600) },
-      { neighborhood_id: 'n9', host_profile_id: 'h2', starts_at: at(300) },
+      postAt(null, 'h-nozip', 300),
+      postAt('98107', 'h-ok', 400),
     ]
-    const result = filterFeed(posts, FOLLOWED, new Set(), TODAY_ISO, NOW_ISO)
-    expect(result.map((p) => p.host_profile_id)).toEqual(['h1'])
+    const result = filterFeed(posts, VIEWER, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
+    expect(result.map((p) => p.host_profile_id)).toEqual(['h-ok'])
+  })
+
+  it('excludes a host whose zip is missing from the gazetteer', () => {
+    const posts: FeedPost[] = [
+      postAt('12345', 'h-unknown', 300),
+      postAt('98107', 'h-ok', 400),
+    ]
+    const result = filterFeed(posts, VIEWER, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
+    expect(result.map((p) => p.host_profile_id)).toEqual(['h-ok'])
   })
 
   it('never returns posts hosted by a blocked profile', () => {
     const posts: FeedPost[] = [
-      { neighborhood_id: 'n1', host_profile_id: 'host-blocked', starts_at: at(600) },
-      { neighborhood_id: 'n1', host_profile_id: 'h1', starts_at: at(300) },
+      postAt('98107', 'host-blocked', 600),
+      postAt('98107', 'h1', 300),
     ]
-    const result = filterFeed(posts, FOLLOWED, BLOCKED_HOSTS, TODAY_ISO, NOW_ISO)
+    const result = filterFeed(posts, VIEWER, ZIP_COORDS, BLOCKED_HOSTS, TODAY_ISO, NOW_ISO)
     expect(result.map((p) => p.host_profile_id)).toEqual(['h1'])
   })
 
   it('drops posts that start before local midnight of today', () => {
     const posts: FeedPost[] = [
-      { neighborhood_id: 'n1', host_profile_id: 'h1', starts_at: at(-1) }, // yesterday
-      { neighborhood_id: 'n1', host_profile_id: 'h2', starts_at: at(0) }, // midnight exactly
-      { neighborhood_id: 'n1', host_profile_id: 'h3', starts_at: at(90) },
+      postAt('98107', 'h1', -1), // yesterday
+      postAt('98107', 'h2', 0), // midnight exactly
+      postAt('98107', 'h3', 90),
     ]
-    const result = filterFeed(posts, FOLLOWED, new Set(), TODAY_ISO, NOW_ISO)
+    const result = filterFeed(posts, VIEWER, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
     expect(result.map((p) => p.host_profile_id)).toEqual(['h2', 'h3'])
   })
 
   it('orders by starts_at ascending', () => {
     const posts: FeedPost[] = [
-      { neighborhood_id: 'n1', host_profile_id: 'a', starts_at: at(180) },
-      { neighborhood_id: 'n1', host_profile_id: 'b', starts_at: at(60) },
-      { neighborhood_id: 'n2', host_profile_id: 'c', starts_at: at(120) },
+      postAt('98107', 'a', 180),
+      postAt('98107', 'b', 60),
+      postAt('98007', 'c', 120),
     ]
-    const result = filterFeed(posts, FOLLOWED, new Set(), TODAY_ISO, NOW_ISO)
+    const result = filterFeed(posts, VIEWER, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
     expect(result.map((p) => p.host_profile_id)).toEqual(['b', 'c', 'a'])
   })
 
   it('applies all rules together and returns [] when nothing qualifies', () => {
-    const posts: FeedPost[] = [
-      { neighborhood_id: 'n9', host_profile_id: 'host-blocked', starts_at: at(-10) },
-    ]
-    expect(filterFeed(posts, FOLLOWED, BLOCKED_HOSTS, TODAY_ISO, NOW_ISO)).toEqual([])
+    const posts: FeedPost[] = [postAt('12345', 'host-blocked', -10)]
+    expect(filterFeed(posts, VIEWER, ZIP_COORDS, BLOCKED_HOSTS, TODAY_ISO, NOW_ISO)).toEqual([])
   })
 
   it('never returns posts hidden by a moderator (hidden_at set)', () => {
     const posts: FeedPost[] = [
-      { neighborhood_id: 'n1', host_profile_id: 'h1', starts_at: at(600), hidden_at: 'x' },
-      { neighborhood_id: 'n1', host_profile_id: 'h2', starts_at: at(300), hidden_at: null },
-      { neighborhood_id: 'n1', host_profile_id: 'h3', starts_at: at(400) }, // column absent (pre-0009)
+      postAt('98107', 'h1', 600),
+      postAt('98107', 'h2', 300),
+      postAt('98107', 'h3', 400),
     ]
-    const result = filterFeed(posts, FOLLOWED, new Set(), TODAY_ISO, NOW_ISO)
+    posts[0].hidden_at = 'x'
+    posts[1].hidden_at = null
+    // posts[2]: column absent (pre-0009)
+    const result = filterFeed(posts, VIEWER, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
     expect(result.map((p) => p.host_profile_id)).toEqual(['h2', 'h3'])
   })
 })
@@ -161,6 +214,103 @@ describe('isHiddenPost (the moderator-hide predicate)', () => {
   it('is false when hidden_at is null or absent', () => {
     expect(isHiddenPost({ hidden_at: null })).toBe(false)
     expect(isHiddenPost({})).toBe(false)
+  })
+})
+
+describe('haversineMiles (the pure distance predicate — no PostGIS)', () => {
+  it('is 0 for identical points', () => {
+    const a: ZipCoords = { lat: 47.6, lng: -122.3 }
+    expect(haversineMiles(a, a)).toBe(0)
+  })
+
+  it('measures the known WA pair (98107 West Seattle → 98007 Kirkland, ~11.5 mi)', () => {
+    const miles = haversineMiles(ZIP_COORDS.get('98107')!, ZIP_COORDS.get('98007')!)
+    expect(miles).toBeGreaterThan(11)
+    expect(miles).toBeLessThan(12.5)
+  })
+
+  it('is symmetric', () => {
+    expect(haversineMiles(ZIP_COORDS.get('98007')!, ZIP_COORDS.get('98107')!)).toBeCloseTo(
+      haversineMiles(ZIP_COORDS.get('98107')!, ZIP_COORDS.get('98007')!),
+      10,
+    )
+  })
+})
+
+describe('withinRadius (the boundary-inclusive predicate)', () => {
+  it('is true at and under the radius', () => {
+    expect(withinRadius(5, 5)).toBe(true)
+    expect(withinRadius(4.9, 5)).toBe(true)
+  })
+
+  it('is false beyond the radius', () => {
+    expect(withinRadius(5.1, 5)).toBe(false)
+  })
+})
+
+describe('formatDistanceLabel (the card "N mi" label — integer miles)', () => {
+  it('rounds to whole miles', () => {
+    expect(formatDistanceLabel(4.4)).toBe('4 mi')
+    expect(formatDistanceLabel(4.6)).toBe('5 mi')
+    expect(formatDistanceLabel(0)).toBe('0 mi')
+  })
+})
+
+describe('hostDistanceMiles (the feed key — null when unresolvable)', () => {
+  it('returns the haversine distance for a known host + viewer zip pair', () => {
+    const expected = haversineMiles(ZIP_COORDS.get('98107')!, ZIP_COORDS.get('98007')!)
+    expect(hostDistanceMiles('98007', VIEWER, ZIP_COORDS)).toBeCloseTo(expected, 10)
+  })
+
+  it('is null when the host has no home zip', () => {
+    expect(hostDistanceMiles(null, VIEWER, ZIP_COORDS)).toBeNull()
+    expect(hostDistanceMiles(undefined, VIEWER, ZIP_COORDS)).toBeNull()
+  })
+
+  it('is null when the viewer has no home zip', () => {
+    expect(hostDistanceMiles('98107', { homeZip: null, radiusMiles: 5 }, ZIP_COORDS)).toBeNull()
+  })
+
+  it('is null when either zip is missing from the gazetteer', () => {
+    expect(hostDistanceMiles('12345', VIEWER, ZIP_COORDS)).toBeNull()
+    expect(hostDistanceMiles('98107', { homeZip: '99999', radiusMiles: 5 }, ZIP_COORDS)).toBeNull()
+  })
+})
+
+describe('validateHomeZip (the onboarding /profile zip rules)', () => {
+  const KNOWN = new Set(['98107', '98007'])
+
+  it('requires a zip (empty after trim)', () => {
+    expect(validateHomeZip('   ', KNOWN)).toBe('Add your home zip.')
+  })
+
+  it('requires a 5-digit code', () => {
+    expect(validateHomeZip('981', KNOWN)).not.toBeNull()
+    expect(validateHomeZip('981070', KNOWN)).not.toBeNull()
+    expect(validateHomeZip('ab107', KNOWN)).not.toBeNull()
+  })
+
+  it('rejects a zip missing from the gazetteer', () => {
+    expect(validateHomeZip('12345', KNOWN)).not.toBeNull()
+  })
+
+  it('accepts a known zip (whitespace trimmed)', () => {
+    expect(validateHomeZip(' 98107 ', KNOWN)).toBeNull()
+  })
+})
+
+describe('validateRadiusMiles (the pinned 2–35 bounds, 0012 CHECK backstop)', () => {
+  it('accepts every pinned option', () => {
+    for (const miles of RADIUS_MILES_OPTIONS) {
+      expect(validateRadiusMiles(miles)).toBeNull()
+    }
+  })
+
+  it('rejects out-of-range and non-integer values', () => {
+    expect(validateRadiusMiles(1)).not.toBeNull()
+    expect(validateRadiusMiles(36)).not.toBeNull()
+    expect(validateRadiusMiles(2.5)).not.toBeNull()
+    expect(validateRadiusMiles(Number.NaN)).not.toBeNull()
   })
 })
 
@@ -215,38 +365,35 @@ function makeFeedMockClient(rows: unknown[] = []): {
   return { client: client as unknown as SupabaseClient, filters }
 }
 
-describe('queryUpcomingFeedWithClient (mocked supabase client)', () => {
+describe('queryUpcomingFeedWithClient (mocked supabase client, V2 slice 3: distance-based)', () => {
   const CUTOFF = '2026-09-04T00:00:00.000Z'
 
   it('always applies the .is("hidden_at", null) hidden filter', async () => {
     const { client, filters } = makeFeedMockClient()
-    await queryUpcomingFeedWithClient(client, ['n1', 'n2'], CUTOFF, [])
+    await queryUpcomingFeedWithClient(client, CUTOFF, [])
     expect(filters).toContain('is(hidden_at, null)')
   })
 
   it('applies the .not() block filter only when the viewer has blocks', async () => {
     const withBlocks = makeFeedMockClient()
-    await queryUpcomingFeedWithClient(withBlocks.client, ['n1'], CUTOFF, [
-      'h-bad',
-      'h-worse',
-    ])
+    await queryUpcomingFeedWithClient(withBlocks.client, CUTOFF, ['h-bad', 'h-worse'])
     expect(withBlocks.filters).toContain('not(host_profile_id, in, h-bad,h-worse)')
 
     const withoutBlocks = makeFeedMockClient()
-    await queryUpcomingFeedWithClient(withoutBlocks.client, ['n1'], CUTOFF, [])
+    await queryUpcomingFeedWithClient(withoutBlocks.client, CUTOFF, [])
     expect(withoutBlocks.filters.some((f) => f.startsWith('not('))).toBe(false)
   })
 
-  it('skips the query entirely when the viewer follows no neighborhoods', async () => {
-    const { client, filters } = makeFeedMockClient([{ id: 'pd-1' }])
-    expect(await queryUpcomingFeedWithClient(client, [], CUTOFF, [])).toEqual([])
-    expect(filters).toEqual([])
+  it('no longer filters by neighborhood (distance-based discovery — the radius runs client-side)', async () => {
+    const { client, filters } = makeFeedMockClient()
+    await queryUpcomingFeedWithClient(client, CUTOFF, [])
+    expect(filters.some((f) => f.startsWith('in('))).toBe(false)
   })
 
   it('returns the raw rows from the (mocked) query', async () => {
     const rows = [{ id: 'pd-1' }, { id: 'pd-2' }]
     const { client } = makeFeedMockClient(rows)
-    expect(await queryUpcomingFeedWithClient(client, ['n1'], CUTOFF, [])).toEqual(rows)
+    expect(await queryUpcomingFeedWithClient(client, CUTOFF, [])).toEqual(rows)
   })
 })
 

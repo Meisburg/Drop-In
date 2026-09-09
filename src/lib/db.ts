@@ -11,7 +11,16 @@ import type {
   ProfileWithKids,
   Report,
 } from './types'
-import { filterFeed, queryUpcomingFeedWithClient, startOfTodayIso } from './feed'
+import {
+  filterFeed,
+  hostDistanceMiles,
+  queryUpcomingFeedWithClient,
+  startOfTodayIso,
+  validateHomeZip,
+  validateRadiusMiles,
+  type RadiusViewer,
+  type ZipCoords,
+} from './feed'
 import {
   issueReportInsert,
   togglePingWithClient,
@@ -36,16 +45,23 @@ export interface SessionState {
   loading: boolean
   /** The signed-in user's profile row (null while loading / signed out). */
   profile: Profile | null
-  /** True when the current profile has at least one neighborhood membership. */
-  hasMemberships: boolean
   /**
-   * True while the signed-in user's profile + membership fetch is in flight
-   * (ticket 06: the onboarding-gate race). The app shell's gate renders its
-   * loading state while this is set, so a signed-in user with memberships
-   * is never bounced to /onboarding before the fetch settles. Derived:
-   * true whenever the settled load (if any) belongs to a different user
-   * than the current session — including the first fetch after a session
-   * is restored from storage or a new user signs in.
+   * True when the current profile's home zip is set (V2 slice 3: the
+   * onboarding gate keys on home_zip, not memberships — neighborhoods are
+   * display labels only, discovery is radius-based). Derived from the
+   * profile load; false until it settles (and when the column is absent —
+   * the documented DB-not-applied behavior).
+   */
+  homeZipSet: boolean
+/**
+   * True while the signed-in user's profile fetch is in flight
+   * (ticket 06: the onboarding-gate race; V2 slice 3: the gate reads
+   * home_zip off the same profile row, so one load settles both). The app
+   * shell's gate renders its loading state while this is set, so a
+   * signed-in user is never bounced to /onboarding before the fetch
+   * settles. Derived: true whenever the settled load (if any) belongs to a
+   * different user than the current session — including the first fetch
+   * after a session is restored from storage or a new user signs in.
    */
   profileLoading: boolean
   /**
@@ -88,7 +104,7 @@ export function useSession(): SessionState {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
   const [profile, setProfile] = useState<Profile | null>(null)
-  const [hasMemberships, setHasMemberships] = useState(false)
+  const [homeZipSet, setHomeZipSet] = useState(false)
   const [suspended, setSuspended] = useState(false)
   /**
    * The user id whose profile + membership load has settled (ticket 06).
@@ -132,7 +148,7 @@ export function useSession(): SessionState {
     const uid = current?.user?.id ?? null
     if (uid === null) {
       setProfile(null)
-      setHasMemberships(false)
+      setHomeZipSet(false)
       // No user → nothing is loaded for anyone; a re-sign-in must re-fetch.
       setProfileSettledFor(null)
       // suspended is sticky on purpose: a banned user who was just
@@ -154,20 +170,9 @@ export function useSession(): SessionState {
       // the Supabase-facing side (sign out, no app access).
       setSuspended(true)
       setProfile(null)
-      setHasMemberships(false)
+      setHomeZipSet(false)
       await signOutUser()
       return
-    }
-    let nextHasMemberships = false
-    try {
-      const { count, error } = await supabase
-        .from('memberships')
-        .select('profile_id', { count: 'exact', head: true })
-        .eq('profile_id', uid)
-      if (!error) nextHasMemberships = (count ?? 0) > 0
-    } catch {
-      // memberships table not applied yet / DB error: treat as no
-      // memberships, so the onboarding gate behaves once tables exist.
     }
     // Don't clobber state if the signed-in user changed mid-flight.
     const {
@@ -178,17 +183,19 @@ export function useSession(): SessionState {
     // (a different user signed in after a banned one was rejected).
     setSuspended(false)
     setProfile(nextProfile)
-    setHasMemberships(nextHasMemberships)
-    // Ticket 06: the membership load has settled for THIS user — the shell
-    // gate may now redirect (a load error still settles: the catch above
-    // treats a failed count as no memberships, the documented behavior).
+    // V2 slice 3: the onboarding gate keys on home_zip (off the same
+    // profile row — no separate query; a failed/absent column settles as
+    // unset, the documented DB-not-applied behavior).
+    setHomeZipSet(nextProfile?.home_zip != null && nextProfile.home_zip !== '')
+    // Ticket 06: the profile load has settled for THIS user — the shell
+    // gate may now redirect.
     setProfileSettledFor(uid)
   }, [])
 
   useEffect(() => {
     if (userId === null) {
       setProfile(null)
-      setHasMemberships(false)
+      setHomeZipSet(false)
       // Signed out → nothing is loaded; a later sign-in (even as the same
       // user) must re-fetch before the gate settles (ticket 06).
       setProfileSettledFor(null)
@@ -201,9 +208,9 @@ export function useSession(): SessionState {
     session,
     loading,
     profile,
-    hasMemberships,
-    // Ticket 06: the membership load is pending whenever a session is
-    // present but the settled load (if any) belongs to a different user.
+    homeZipSet,
+    // Ticket 06: the profile load is pending whenever a session is present
+    // but the settled load (if any) belongs to a different user.
     profileLoading: session !== null && profileSettledFor !== session.user.id,
     suspended,
     refresh,
@@ -394,73 +401,112 @@ export async function listBlockedHostIds(profileId: string): Promise<string[]> {
 }
 
 /**
- * Raw upcoming-playdate query: in the given neighborhoods, starting at or
- * after the cutoff, ordered by starts_at. The DB-level filters (the
- * .not() block filter — only when the viewer actually has blocks, and the
+ * Raw upcoming-playdate query (V2 slice 3): all posts starting at or after
+ * the cutoff, ordered by starts_at (the neighborhood filter is gone —
+ * discovery is radius-based). The DB-level filters (the .not() block
+ * filter — only when the viewer actually has blocks, and the
  * .is('hidden_at', null) hidden filter — slice 5) live in the injected-
  * client query (feed.queryUpcomingFeedWithClient, unit-tested with a mock).
  */
 async function queryUpcomingPlaydates(
-  neighborhoodIds: string[],
   cutoffIso: string,
   blockedHostIds: string[],
 ): Promise<PlaydateWithNeighborhood[]> {
-  const rows = await queryUpcomingFeedWithClient(
-    supabase,
-    neighborhoodIds,
-    cutoffIso,
-    blockedHostIds,
-  )
+  const rows = await queryUpcomingFeedWithClient(supabase, cutoffIso, blockedHostIds)
   // Cast via unknown: without generated DB types, the embeds are inferred
   // loosely (same pattern as listMemberships).
   return rows as unknown as PlaydateWithNeighborhood[]
 }
 
-/** Query + the pure filterFeed re-filter (defense in depth, unit-tested). */
-async function queryAndFilter(
-  neighborhoodIds: string[],
-  blockedHostIds: string[],
-  cutoffIso: string,
+/**
+ * The viewer's radius feed (V2 slice 3): posts whose HOST sits within the
+ * viewer's haversine radius (via the seeded zip map), starting today or
+ * later (client-local midnight), excluding posts by blocked hosts and
+ * hidden posts, ordered by starts_at — each survivor tagged with its
+ * `distanceMiles` for the card's "N mi" label. Used by both the / feed
+ * and /browse (the latter groups the same rows by day).
+ *
+ * Execution point (pinned choice, ticket 03): the distance predicate runs
+ * CLIENT-SIDE over a pinned-embed fetch (the host embed carries home_zip +
+ * radius_miles; the zip coordinates come from loadZipCodes) — plain
+ * haversine math, no PostGIS. The pure predicate (feed.haversineMiles /
+ * withinRadius / filterFeed) is the unit-tested guarantee.
+ *
+ * Pinned exclusion: a host with no home_zip, or with a zip missing from
+ * the gazetteer, is EXCLUDED — coordinates are never invented. A viewer
+ * with no home zip gets an empty feed (the onboarding gate keeps that
+ * state out of the routes; this is the defensive fallback).
+ */
+export async function listRadiusFeed(
+  viewer: RadiusViewer,
+  profileId: string,
 ): Promise<PlaydateWithNeighborhood[]> {
-  if (neighborhoodIds.length === 0) return []
-  const posts = await queryUpcomingPlaydates(neighborhoodIds, cutoffIso, blockedHostIds)
-  return filterFeed(
+  if (viewer.homeZip === null) return []
+  const [zipCoords, blockedIds] = await Promise.all([
+    loadZipCodes(),
+    listBlockedHostIds(profileId),
+  ])
+  const cutoffIso = startOfTodayIso()
+  const posts = await queryUpcomingPlaydates(cutoffIso, blockedIds)
+  const filtered = filterFeed(
     posts,
-    new Set(neighborhoodIds),
-    new Set(blockedHostIds),
+    viewer,
+    zipCoords,
+    new Set(blockedIds),
     cutoffIso,
     new Date().toISOString(),
   )
+  return filtered.map((post) => ({
+    ...post,
+    // Survivors always have a distance (filterFeed excludes nulls); the
+    // fallback only covers a host embed missing the zip entirely.
+    distanceMiles: hostDistanceMiles(post.host?.home_zip, viewer, zipCoords) ?? undefined,
+  }))
 }
 
 /**
- * Today's feed for one profile (the / route): drop-ins in the profile's
- * followed neighborhoods, starting today or later (client-local midnight),
- * excluding posts by blocked hosts, ordered by starts_at.
+ * The seeded gazetteer (V2 slice 3, the zip_codes table, migration 0012):
+ * zip → lat/lng, fetched once and cached for the SPA session (the WA
+ * extract is ~600 rows — trivially small; a re-fetch per feed load would
+ * be waste, not correctness). Throws when the table is missing (0012 not
+ * applied yet — the pages render their designed error state, house
+ * discipline).
  */
-export async function listTodayFeed(profileId: string): Promise<PlaydateWithNeighborhood[]> {
-  const [memberships, blockedIds] = await Promise.all([
-    listMemberships(profileId),
-    listBlockedHostIds(profileId),
-  ])
-  return queryAndFilter(
-    memberships.map((m) => m.neighborhood_id),
-    blockedIds,
-    startOfTodayIso(),
-  )
+let zipCodesCache: Promise<ReadonlyMap<string, ZipCoords>> | null = null
+export function loadZipCodes(): Promise<ReadonlyMap<string, ZipCoords>> {
+  zipCodesCache ??= (async () => {
+    const { data, error } = await supabase.from('zip_codes').select('zip, lat, lng')
+    if (error) throw error
+    const coords = new Map<string, ZipCoords>()
+    for (const row of (data ?? []) as Array<{ zip: string; lat: string | number; lng: string | number }>) {
+      coords.set(row.zip, { lat: Number(row.lat), lng: Number(row.lng) })
+    }
+    return coords
+  })()
+  return zipCodesCache
 }
 
 /**
- * Upcoming drop-ins in the given neighborhoods (the /browse chips),
- * block-filtered by the current user, ordered by starts_at.
+ * Save the caller's home zip + radius (V2 slice 3: onboarding's Continue +
+ * the /profile location card). Runs the pure validators first (the same
+ * defense in depth as uploadAvatar): the zip must be a 5-digit code in the
+ * seeded gazetteer and the radius an integer in 2–35 (the 0012 CHECK is
+ * the DB backstop).
  */
-export async function listUpcomingByNeighborhood(
-  neighborhoodIds: string[],
-  startOfTodayIso: string,
-): Promise<PlaydateWithNeighborhood[]> {
-  const { data: { user } } = await supabase.auth.getUser()
-  const blockedIds = user ? await listBlockedHostIds(user.id) : []
-  return queryAndFilter(neighborhoodIds, blockedIds, startOfTodayIso)
+export async function updateHomeZipRadius(
+  userId: string,
+  homeZip: string,
+  radiusMiles: number,
+): Promise<void> {
+  const zipError = validateHomeZip(homeZip, new Set((await loadZipCodes()).keys()))
+  if (zipError !== null) throw new Error(zipError)
+  const radiusError = validateRadiusMiles(radiusMiles)
+  if (radiusError !== null) throw new Error(radiusError)
+  const { error } = await supabase
+    .from('profiles')
+    .update({ home_zip: homeZip, radius_miles: radiusMiles })
+    .eq('id', userId)
+  if (error) throw error
 }
 
 /** Input for createPlaydate (the /new form, after validation). */

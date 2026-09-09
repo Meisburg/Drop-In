@@ -25,13 +25,13 @@ const MOD_PATH = '/mod'
 
 /**
  * All app routes (including /onboarding) require a session; a signed-in
- * user with 0 neighborhood memberships is sent to /onboarding first — but
- * only once the profile + membership load has settled: while any load is
- * in flight (the cold-load race, ticket 06) the shell renders its loading
- * state instead, so a signed-in member cold-loading a route is never
- * bounced through /onboarding → / and loses the requested route. The gate
- * decision itself lives in lib/onboarding.ts (resolveOnboardingGate,
- * unit-tested).
+ * user without a home zip is sent to /onboarding first (V2 slice 3: the
+ * gate keys on home_zip — neighborhoods are display labels only) — but
+ * only once the profile load has settled: while any load is in flight (the
+ * cold-load race, ticket 06) the shell renders its loading state instead,
+ * so a signed-in, zipped user cold-loading a route is never bounced
+ * through /onboarding → / and loses the requested route. The gate decision
+ * itself lives in lib/onboarding.ts (resolveOnboardingGate, unit-tested).
  *
  * Two slice-5 gates sit on top: a banned user (profile.banned_at set) is
  * rendered the suspended screen instead of any route (no app access), and
@@ -39,19 +39,20 @@ const MOD_PATH = '/mod'
  * guard, unit-tested; the reports RLS is the second wall).
  */
 function ProtectedShell() {
-  const { session, loading, profile, hasMemberships, suspended, profileLoading } =
+  const { session, loading, profile, homeZipSet, suspended, profileLoading } =
     useSessionContext()
   const { pathname } = useLocation()
 
-  // The onboarding-gate decision (ticket 06, pure + unit-tested in
-  // lib/onboarding.ts): 'loading' while the session/profile/membership
-  // loads are in flight, 'onboard' only once settled AND the user has no
-  // memberships, 'suspended' for a banned session (no app access).
+  // The onboarding-gate decision (ticket 06, V2 slice 3: keys on the home
+  // zip, pure + unit-tested in lib/onboarding.ts): 'loading' while the
+  // session/profile loads are in flight, 'onboard' only once settled AND
+  // the user's home zip is unset, 'suspended' for a banned session (no app
+  // access).
   const gate = resolveOnboardingGate({
     sessionLoading: loading,
     profileLoading,
     signedIn: session !== null,
-    hasMemberships,
+    homeZipSet,
     suspended,
   })
 
@@ -93,8 +94,8 @@ function ProtectedShell() {
   const signedIn = session !== null
   const redirect =
     pathname === ONBOARDING_PATH
-      ? resolveOnboardingRedirect(signedIn, hasMemberships)
-      : shellRedirect(signedIn, hasMemberships, pathname)
+      ? resolveOnboardingRedirect(signedIn, homeZipSet)
+      : shellRedirect(signedIn, homeZipSet, pathname)
   if (redirect !== null) return <Navigate to={redirect} replace />
 
   return (
@@ -143,10 +144,10 @@ function ProtectedShell() {
 /** A protected route bounces to its gate target unless it may render as-is. */
 function shellRedirect(
   signedIn: boolean,
-  hasMemberships: boolean,
+  homeZipSet: boolean,
   pathname: string,
 ): string | null {
-  const target = resolveProtectedRedirect(signedIn, hasMemberships, pathname)
+  const target = resolveProtectedRedirect(signedIn, homeZipSet, pathname)
   return target === pathname ? null : target
 }
 

@@ -26,6 +26,111 @@ export function startOfTodayIso(now: Date = new Date()): string {
 }
 
 /**
+ * A seeded zip coordinate (V2 slice 3, the zip_codes table): the plain
+ * haversine math needs only the lat/lng pair (no PostGIS — pinned).
+ */
+export interface ZipCoords {
+  lat: number
+  lng: number
+}
+
+/**
+ * The viewer side of the radius filter (V2 slice 3): their home zip + the
+ * radius they chose. `homeZip` null = not set (the onboarding gate keeps
+ * that state out of the feed; the filter itself treats it as "no posts").
+ */
+export interface RadiusViewer {
+  homeZip: string | null
+  radiusMiles: number
+}
+
+/** The radius options (pinned in plan-v2 Interfaces: 2/5/10/20/35). */
+export const RADIUS_MILES_OPTIONS = [2, 5, 10, 20, 35] as const
+
+/** The default radius (pinned: 5 miles). */
+export const DEFAULT_RADIUS_MILES = 5
+
+/** The DB backstop bounds (migration 0012 CHECK: between 2 and 35). */
+export const RADIUS_MIN_MILES = 2
+export const RADIUS_MAX_MILES = 35
+
+/**
+ * The haversine distance in miles between two lat/lng points (plain math,
+ * no PostGIS — the pinned radius contract). Pure + unit-tested: this is
+ * THE distance predicate of the radius feed (AC "pure distance predicate
+ * unit-tested"), mirrored by the card label and the within-radius filter.
+ */
+export function haversineMiles(a: ZipCoords, b: ZipCoords): number {
+  const R = 3958.8 // Earth radius, miles
+  const toRad = (deg: number) => (deg * Math.PI) / 180
+  const dLat = toRad(b.lat - a.lat)
+  const dLng = toRad(b.lng - a.lng)
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)))
+}
+
+/**
+ * The within-radius predicate: a post's host is reachable when the
+ * haversine distance is at most the viewer's radius (boundary inclusive).
+ */
+export function withinRadius(miles: number, radiusMiles: number): boolean {
+  return miles <= radiusMiles
+}
+
+/**
+ * The card distance label (pinned: integer miles, e.g. "4 mi").
+ */
+export function formatDistanceLabel(miles: number): string {
+  return `${Math.round(miles)} mi`
+}
+
+/**
+ * The distance, in miles, between the viewer's home zip and a post host's
+ * home zip, looked up in the seeded zip map. Null when either side is
+ * unresolvable (home zip unset, or the zip missing from the gazetteer) —
+ * the pinned rule: such a post is EXCLUDED from the radius feed, never
+ * given invented coordinates.
+ */
+export function hostDistanceMiles(
+  hostZip: string | null | undefined,
+  viewer: RadiusViewer,
+  zipCoords: ReadonlyMap<string, ZipCoords>,
+): number | null {
+  if (hostZip === null || hostZip === undefined || viewer.homeZip === null) return null
+  const host = zipCoords.get(hostZip)
+  const viewerCoords = zipCoords.get(viewer.homeZip)
+  if (host === undefined || viewerCoords === undefined) return null
+  return haversineMiles(viewerCoords, host)
+}
+
+/**
+ * Validate a home-zip entry (V2 slice 3): the shape is a 5-digit code and
+ * it must exist in the seeded gazetteer (zip_codes) — unknown zips show an
+ * inline error rather than saving. Pure + unit-tested.
+ */
+export function validateHomeZip(zip: string, knownZips: ReadonlySet<string>): string | null {
+  const trimmed = zip.trim()
+  if (trimmed.length === 0) return 'Add your home zip.'
+  if (!/^\d{5}$/.test(trimmed)) return 'Use a 5-digit zip code.'
+  if (!knownZips.has(trimmed)) return 'We don’t cover that zip yet — try one we serve.'
+  return null
+}
+
+/** Validate a radius choice (pinned options 2/5/10/20/35; DB CHECK 2–35). */
+export function validateRadiusMiles(radiusMiles: number): string | null {
+  if (
+    !Number.isInteger(radiusMiles) ||
+    radiusMiles < RADIUS_MIN_MILES ||
+    radiusMiles > RADIUS_MAX_MILES
+  ) {
+    return 'Pick a radius between 2 and 35 miles.'
+  }
+  return null
+}
+
+/**
  * A drop-in is "happening now" when starts_at <= now <= ends_at
  * (boundaries inclusive).
  */
@@ -39,13 +144,16 @@ export function isHappeningNow(
   return start <= now && now <= end
 }
 
-/** The shape filterFeed needs (Playdate and its joined variants qualify). */
+/**
+ * The shape filterFeed needs (Playdate and its joined variants qualify).
+ */
 export interface FeedPost {
-  neighborhood_id: string
   host_profile_id: string
   starts_at: string
   /** Set when a moderator has hidden the post (slice 5, migration 0009). */
   hidden_at?: string | null
+  /** The host's location fields (V2 slice 3 — present on the joined host). */
+  host?: { home_zip?: string | null }
 }
 
 /** A post is hidden when a moderator has set hidden_at (slice 5). */
@@ -54,16 +162,21 @@ export function isHiddenPost(post: { hidden_at?: string | null }): boolean {
 }
 
 /**
- * Filter posts down to the viewer's feed: in a followed neighborhood,
- * starting today or later (client-local midnight), not hosted by a blocked
- * profile, and not hidden by a moderator (hidden_at set) — ordered by
+ * Filter posts down to the viewer's radius feed (V2 slice 3): starting
+ * today or later (client-local midnight), not hosted by a blocked profile,
+ * not hidden by a moderator (hidden_at set), AND hosted by a family within
+ * the viewer's radius (haversine via the seeded zip map) — ordered by
  * starts_at ascending.
  *
- * The DB query (queryUpcomingFeedWithClient) applies the same rules (the
- * .not() block filter is skipped when the viewer has no blocks; the
- * .is('hidden_at', null) filter is always applied); this pure re-filter is
- * the unit-testable guarantee that a blocked host's post and a hidden post
- * can never reach the feed, plus the canonical ordering.
+ * Neighborhoods left the filter path in slice 3 (they are display labels
+ * only); discovery is distance-based. A post whose host has no home zip, or
+ * whose zip is missing from the gazetteer, is EXCLUDED (the pinned rule —
+ * coordinates are never invented).
+ *
+ * The DB query (queryUpcomingFeedWithClient) applies the time + hidden +
+ * block filters; this pure re-filter is the unit-testable guarantee that a
+ * blocked host's post, a hidden post, a past post, and a beyond-radius
+ * post can never reach the feed, plus the canonical ordering.
  *
  * `nowIso` is part of the pinned signature (it drives the "happening now"
  * badge in the UI); the filter itself only needs the start-of-today cutoff,
@@ -71,7 +184,8 @@ export function isHiddenPost(post: { hidden_at?: string | null }): boolean {
  */
 export function filterFeed<T extends FeedPost>(
   posts: T[],
-  followedNeighborhoodIds: ReadonlySet<string>,
+  viewer: RadiusViewer,
+  zipCoords: ReadonlyMap<string, ZipCoords>,
   blockedHostIds: ReadonlySet<string>,
   startOfTodayIso: string,
   nowIso: string,
@@ -79,43 +193,51 @@ export function filterFeed<T extends FeedPost>(
   void nowIso
   const todayStart = Date.parse(startOfTodayIso)
   return posts
-    .filter(
-      (post) =>
-        followedNeighborhoodIds.has(post.neighborhood_id) &&
+    .filter((post) => {
+      const distance = hostDistanceMiles(post.host?.home_zip, viewer, zipCoords)
+      return (
+        distance !== null &&
+        withinRadius(distance, viewer.radiusMiles) &&
         !blockedHostIds.has(post.host_profile_id) &&
         !isHiddenPost(post) &&
-        Date.parse(post.starts_at) >= todayStart,
-    )
+        Date.parse(post.starts_at) >= todayStart
+      )
+    })
     .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at))
 }
 
 /**
  * The raw DB feed query, against an injected Supabase client (mockable —
  * the same pattern as trust.togglePingWithClient / auth.hasActiveSession).
- * Upcoming playdates in the given neighborhoods (starts_at >= cutoff,
- * ordered by starts_at), with the DB-level filters applied:
+ * Upcoming playdates (starts_at >= cutoff, ordered by starts_at) with the
+ * DB-level filters applied:
  * - .is('hidden_at', null) — hidden posts vanish from the feed for
  *   everyone (slice 5; the pure filterFeed re-filter is the defense in
  *   depth, unit-tested)
  * - .not() on blocked hosts — only when the viewer actually has blocks (an
  *   empty .in() would match nothing; slice 3)
  *
+ * V2 slice 3: the neighborhood filter is GONE (distance-based discovery) —
+ * the query fetches all upcoming posts and the pure radius filter decides.
+ * Every embed path pins its FK hint (PGRST201 lesson): the host embed is
+ * pinned to `playdates_host_profile_id_fkey` (commit 80f9b07) and now also
+ * carries the host's home_zip + radius_miles — the radius filter's inputs.
+ * The zip coordinates themselves are a separate tiny fetch (zip_codes, the
+ * seeded gazetteer) because home_zip is a plain text column, not an FK.
+ *
  * The result rows keep their loose (untyped) shape; db.ts casts them to
  * PlaydateWithNeighborhood (same pattern as listMemberships).
  */
 export async function queryUpcomingFeedWithClient(
   client: SupabaseClient,
-  neighborhoodIds: string[],
   cutoffIso: string,
   blockedHostIds: string[],
 ): Promise<unknown[]> {
-  if (neighborhoodIds.length === 0) return []
   let query = client
     .from('playdates')
     .select(
-      '*, neighborhood:neighborhoods!inner ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url )',
+      '*, neighborhood:neighborhoods!inner ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip, radius_miles )',
     )
-    .in('neighborhood_id', neighborhoodIds)
     .gte('starts_at', cutoffIso)
     .order('starts_at', { ascending: true })
     .is('hidden_at', null)

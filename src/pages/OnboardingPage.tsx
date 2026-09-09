@@ -4,41 +4,43 @@ import { Navigate, useNavigate } from 'react-router'
 import { useSessionContext } from '../components/SessionProvider'
 import {
   addKid,
-  addMembership,
   BIO_MAX_LENGTH,
-  listNeighborhoods,
+  loadZipCodes,
   MAX_KIDS_PER_PROFILE,
   updateBio,
+  updateHomeZipRadius,
   uploadAvatar,
   validateAvatarFile,
   validateKid,
 } from '../lib/db'
+import { DEFAULT_RADIUS_MILES, RADIUS_MILES_OPTIONS, validateHomeZip } from '../lib/feed'
 import { resolveOnboardingRedirect } from '../lib/onboarding'
-import type { Neighborhood } from '../lib/types'
 
 /**
- * /onboarding — post-signup onboarding (slice 2): the neighborhood picker
- * (required, >= 1) + the V2 ticket-02 optional completion section
- * (photo + bio + kids).
+ * /onboarding — post-signup onboarding (slice 2; V2 slice 3).
  *
- * V2 slice 2 (ticket 02): the completion step is OPTIONAL — everything
- * below the picker may be skipped, and a parent who skips gets the
- * persistent nudge banner on /profile until photo + bio + kids are all
- * present. One Continue button saves the whole page (neighborhoods always;
- * photo/bio/kids only what was entered) and lands on the feed.
+ * V2 slice 3 (ticket 03): the neighborhood multi-select is GONE — the
+ * location step is a home zip (validated against the seeded zip_codes
+ * gazetteer; unknown zips show an inline error) + a radius picker (pinned
+ * options 2/5/10/20/35, default 5). Neighborhoods are display labels only;
+ * discovery is radius-based. Memberships stay in the schema but stop being
+ * created here.
  *
- * Mobile-first multi-select of the seeded Seattle neighborhoods; >= 1
- * required (Continue stays disabled until one is selected). Each selection
- * is written via addMembership, then the shared session state is refreshed
- * before leaving so the shell's gate sees the new memberships.
+ * The step is REQUIRED: a signed-in user without a home zip is gated to
+ * this page (the shell's onboarding gate keys on home_zip). One Continue
+ * button saves the location (always) + the V2 ticket-02 optional
+ * completion items (photo/bio/kids — only what was entered) and lands on
+ * the feed.
  */
 export function OnboardingPage() {
   const navigate = useNavigate()
-  const { session, loading, hasMemberships, refresh } = useSessionContext()
+  const { session, loading, homeZipSet, refresh } = useSessionContext()
 
-  const [neighborhoods, setNeighborhoods] = useState<Neighborhood[] | null>(null)
+  const [knownZips, setKnownZips] = useState<ReadonlySet<string> | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
+  const [homeZip, setHomeZip] = useState('')
+  const [zipError, setZipError] = useState<string | null>(null)
+  const [radiusMiles, setRadiusMiles] = useState<number>(DEFAULT_RADIUS_MILES)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -51,15 +53,19 @@ export function OnboardingPage() {
   const [kidRows, setKidRows] = useState<Array<{ name: string; age: string }>>([])
   const [kidsError, setKidsError] = useState<string | null>(null)
 
+  // The seeded gazetteer (zip_codes, migration 0012): the zip input is
+  // validated against it — an unknown zip shows an inline error instead of
+  // saving. A failed load (0012 not applied yet) renders the designed
+  // error state, never a crash (house discipline).
   useEffect(() => {
     let cancelled = false
-    listNeighborhoods()
-      .then((rows) => {
-        if (!cancelled) setNeighborhoods(rows)
+    loadZipCodes()
+      .then((coords) => {
+        if (!cancelled) setKnownZips(new Set(coords.keys()))
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setLoadError(err instanceof Error ? err.message : 'Could not load neighborhoods.')
+          setLoadError(err instanceof Error ? err.message : 'Could not load the zip list.')
         }
       })
     return () => {
@@ -75,20 +81,10 @@ export function OnboardingPage() {
     )
   }
 
-  // Self-contained guard: users who already have memberships (or are signed
+  // Self-contained guard: users who already have a home zip (or are signed
   // out) are bounced — the shell applies the same gate one level up.
-  const redirect = resolveOnboardingRedirect(session !== null, hasMemberships)
+  const redirect = resolveOnboardingRedirect(session !== null, homeZipSet)
   if (redirect !== null) return <Navigate to={redirect} replace />
-
-  function toggleNeighborhood(neighborhoodId: string) {
-    setError(null)
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(neighborhoodId)) next.delete(neighborhoodId)
-      else next.add(neighborhoodId)
-      return next
-    })
-  }
 
   // The avatar upload (V2 ticket 02): validated + resized client-side,
   // stored at avatars/<uid>/avatar. A failed upload (0011 not applied yet)
@@ -147,10 +143,18 @@ export function OnboardingPage() {
   }
 
   async function handleContinue() {
-    if (session === null || selected.size === 0 || saving) return
+    if (session === null || saving || knownZips === null) return
     const badKidRows = invalidKidRows()
     if (badKidRows.length > 0) {
       setKidsError(badKidRows.map((bad) => bad.message).join(' '))
+      return
+    }
+    // The location step is the onboarding requirement (V2 slice 3): the
+    // zip must be a 5-digit code in the seeded gazetteer; the radius is
+    // always one of the pinned options (the select can't produce another).
+    const locationError = validateHomeZip(homeZip, knownZips)
+    if (locationError !== null) {
+      setZipError(locationError)
       return
     }
     setSaving(true)
@@ -158,9 +162,7 @@ export function OnboardingPage() {
     setBioError(null)
     setKidsError(null)
     try {
-      for (const neighborhoodId of selected) {
-        await addMembership(session.user.id, neighborhoodId)
-      }
+      await updateHomeZipRadius(session.user.id, homeZip.trim(), radiusMiles)
       // The optional items (V2 ticket 02): only what was actually entered.
       // A failure here never traps onboarding (the items are optional —
       // the /profile nudge banner keeps the prompt) — but it is surfaced.
@@ -190,12 +192,12 @@ export function OnboardingPage() {
         }
       }
       // Refresh the shared session state before leaving so the shell's
-      // onboarding gate (and header) see the new memberships.
+      // onboarding gate (and header) see the new home zip.
       await refresh()
       navigate('/', { replace: true })
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'Could not save your neighborhoods. Try again.',
+        err instanceof Error ? err.message : 'Could not save your location. Try again.',
       )
     } finally {
       setSaving(false)
@@ -205,7 +207,7 @@ export function OnboardingPage() {
   if (loadError !== null) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-        <h1 className="text-xl font-semibold text-slate-900">Pick your neighborhoods</h1>
+        <h1 className="text-xl font-semibold text-slate-900">Set your location</h1>
         <p className="text-sm text-red-600">{loadError}</p>
       </div>
     )
@@ -216,38 +218,52 @@ export function OnboardingPage() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Pick your neighborhoods</h1>
+        <h1 className="text-xl font-semibold text-slate-900">Set your location</h1>
         <p className="mt-1 text-sm text-slate-500">
-          You’ll see drop-ins near where your kids hang out. Pick at least one — you can
-          change these anytime in your profile.
+          You’ll see drop-ins near your home zip, within your radius. You can change both
+          anytime in your profile.
         </p>
       </div>
 
-      {neighborhoods === null ? (
+      {knownZips === null ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500 shadow-sm">
-          Loading neighborhoods…
+          Loading the zip list…
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-2">
-          {neighborhoods.map((n) => {
-            const isSelected = selected.has(n.id)
-            return (
-              <button
-                key={n.id}
-                type="button"
-                aria-pressed={isSelected}
-                onClick={() => toggleNeighborhood(n.id)}
-                className={
-                  'rounded-lg border px-3 py-2 text-left text-sm transition-colors ' +
-                  (isSelected
-                    ? 'border-indigo-600 bg-indigo-50 font-medium text-indigo-700'
-                    : 'border-slate-300 bg-white text-slate-700')
-                }
-              >
-                {n.name}
-              </button>
-            )
-          })}
+        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-slate-700">Home zip</span>
+            <input
+              className={
+                'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                (zipError !== null ? 'border-red-400' : 'border-slate-300')
+              }
+              value={homeZip}
+              onChange={(e) => {
+                setHomeZip(e.target.value)
+                setZipError(null)
+              }}
+              placeholder="e.g. 98107"
+              inputMode="numeric"
+              maxLength={5}
+            />
+          </label>
+          {zipError !== null ? <p className="text-sm text-red-600">{zipError}</p> : null}
+
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-slate-700">Radius</span>
+            <select
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              value={radiusMiles}
+              onChange={(e) => setRadiusMiles(Number(e.target.value))}
+            >
+              {RADIUS_MILES_OPTIONS.map((miles) => (
+                <option key={miles} value={miles}>
+                  {miles} miles
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       )}
 
@@ -352,11 +368,11 @@ export function OnboardingPage() {
       <div className="flex flex-col gap-2">
         <button
           type="button"
-          disabled={selected.size === 0 || saving || neighborhoods === null}
+          disabled={saving || knownZips === null || homeZip.trim() === ''}
           onClick={() => void handleContinue()}
           className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
-          {saving ? 'Saving…' : selected.size > 0 ? `Continue (${selected.size})` : 'Continue'}
+          {saving ? 'Saving…' : 'Continue'}
         </button>
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
       </div>

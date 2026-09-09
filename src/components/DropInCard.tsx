@@ -1,5 +1,5 @@
 import { Link } from 'react-router'
-import { isHappeningNow } from '../lib/feed'
+import { formatDistanceLabel, isHappeningNow } from '../lib/feed'
 import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
 
 /**
@@ -12,6 +12,10 @@ import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
  *
  * V2 slice 2: the host line gains a 40px round avatar (the host's
  * avatar_url, with an initial-fallback circle when there is none).
+ *
+ * V2 slice 3: the card's meta line gains the radius feed's "N mi"
+ * distance label (integer miles, from the pure haversine predicate) when
+ * the post came through the radius feed (distanceMiles set).
  */
 export function DropInCard({
   playdate,
@@ -21,6 +25,13 @@ export function DropInCard({
   nowIso: string
 }) {
   const live = isHappeningNow(playdate, nowIso)
+  // The radius feed's per-post distance (V2 slice 3, the "N mi" label,
+  // integer miles — the pure haversine predicate in feed.ts). Undefined
+  // outside the radius feed (e.g. the detail page) → no label.
+  const distanceLabel =
+    playdate.distanceMiles !== undefined && playdate.distanceMiles !== null
+      ? formatDistanceLabel(playdate.distanceMiles)
+      : null
   return (
     <Link
       to={`/playdate/${playdate.id}`}
@@ -38,6 +49,7 @@ export function DropInCard({
         <p className="text-sm text-slate-700">{playdate.place}</p>
         <p className="text-sm text-slate-500">
           {playdate.neighborhood.name} · {formatTimeWindow(playdate.starts_at, playdate.ends_at)}
+          {distanceLabel !== null ? ` · ${distanceLabel}` : ''}
         </p>
         <div className="flex items-center gap-2">
           <HostAvatar host={playdate.host} />

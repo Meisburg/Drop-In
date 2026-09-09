@@ -4,27 +4,29 @@ import { useNavigate } from 'react-router'
 import { useSessionContext } from '../components/SessionProvider'
 import {
   addKid,
-  addMembership,
   BIO_MAX_LENGTH,
   HandleTakenError,
   listKids,
   listMemberships,
-  listNeighborhoods,
   MAX_KIDS_PER_PROFILE,
   missingProfileItems,
   removeKid,
-  removeMembership,
   supabase,
   updateBio,
   updateDisplayName,
+  updateHomeZipRadius,
   uploadAvatar,
   validateKid,
 } from '../lib/db'
-import { queryMyPlaydatesWithClient, toDuplicatePrefill } from '../lib/feed'
+import {
+  DEFAULT_RADIUS_MILES,
+  RADIUS_MILES_OPTIONS,
+  queryMyPlaydatesWithClient,
+  toDuplicatePrefill,
+} from '../lib/feed'
 import type {
   Kid,
   MembershipWithNeighborhood,
-  Neighborhood,
   Playdate,
 } from '../lib/types'
 
@@ -76,32 +78,46 @@ export function ProfilePage() {
   const [newKidName, setNewKidName] = useState('')
   const [newKidAge, setNewKidAge] = useState('')
 
-  const [neighborhoods, setNeighborhoods] = useState<Neighborhood[] | null>(null)
   const [memberships, setMemberships] = useState<MembershipWithNeighborhood[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [memberBusyId, setMemberBusyId] = useState<string | null>(null)
-  const [memberError, setMemberError] = useState<string | null>(null)
+
+  // V2 slice 3: the location card (home zip + radius — the discovery
+  // center). Seeded from the profile once it loads; user typing wins after.
+  const [homeZip, setHomeZip] = useState<string | null>(null)
+  const [radiusMiles, setRadiusMiles] = useState<number | null>(null)
+  const [locationError, setLocationError] = useState<string | null>(null)
+  const [locationSaved, setLocationSaved] = useState(false)
+  const [savingLocation, setSavingLocation] = useState(false)
 
   const [myPosts, setMyPosts] = useState<Playdate[] | null>(null)
   const [postsError, setPostsError] = useState<string | null>(null)
 
-  // Seed the handle + bio fields once the profile loads; user typing wins
-  // after.
+  // Seed the handle + bio + location fields once the profile loads; user
+  // typing wins after.
   useEffect(() => {
     if (name === null && profile !== null) setName(profile.display_name)
   }, [name, profile])
   useEffect(() => {
     if (bio === null && profile !== null) setBio(profile.bio ?? '')
   }, [bio, profile])
+  useEffect(() => {
+    if (homeZip === null && profile !== null) setHomeZip(profile.home_zip ?? '')
+  }, [homeZip, profile])
+  useEffect(() => {
+    if (radiusMiles === null && profile !== null) {
+      setRadiusMiles(profile.radius_miles ?? DEFAULT_RADIUS_MILES)
+    }
+  }, [radiusMiles, profile])
 
   useEffect(() => {
     if (userId === null) return
     let cancelled = false
     setLoadError(null)
-    Promise.all([listNeighborhoods(), listMemberships(userId)])
-      .then(([rows, userMemberships]) => {
+    // V2 slice 3: memberships are display labels only (they left the
+    // filter path) — the card renders what the user already follows.
+    listMemberships(userId)
+      .then((userMemberships) => {
         if (cancelled) return
-        setNeighborhoods(rows)
         setMemberships(userMemberships)
       })
       .catch((err: unknown) => {
@@ -165,7 +181,7 @@ export function ProfilePage() {
     )
   }
 
-  const memberIds = new Set((memberships ?? []).map((m) => m.neighborhood_id))
+  const memberNames = (memberships ?? []).map((m) => m.neighborhood.name)
 
   // The nudge banner (V2 ticket 02): persistent until photo + bio + kids
   // are all present (the pure missingProfileItems decides; the kids count
@@ -271,24 +287,28 @@ export function ProfilePage() {
     }
   }
 
-  async function toggleNeighborhood(neighborhoodId: string) {
-    if (userId === null || memberBusyId !== null) return
-    setMemberBusyId(neighborhoodId)
-    setMemberError(null)
+  /**
+   * V2 slice 3: save the location (home zip + radius). The pure validators
+   * (zip in the gazetteer, radius 2–35) run inside updateHomeZipRadius
+   * before any write; a failure surfaces inline. The session refresh lets
+   * the onboarding gate + feed see the new location.
+   */
+  async function handleSaveLocation(e: FormEvent) {
+    e.preventDefault()
+    const zip = (homeZip ?? '').trim()
+    const radius = radiusMiles ?? DEFAULT_RADIUS_MILES
+    if (userId === null || zip === '' || savingLocation) return
+    setSavingLocation(true)
+    setLocationError(null)
+    setLocationSaved(false)
     try {
-      if (memberIds.has(neighborhoodId)) {
-        await removeMembership(userId, neighborhoodId)
-      } else {
-        await addMembership(userId, neighborhoodId)
-      }
-      setMemberships(await listMemberships(userId))
+      await updateHomeZipRadius(userId, zip, radius)
       await refresh()
+      setLocationSaved(true)
     } catch (err) {
-      setMemberError(
-        err instanceof Error ? err.message : 'Could not update your neighborhoods.',
-      )
+      setLocationError(err instanceof Error ? err.message : 'Could not save your location.')
     } finally {
-      setMemberBusyId(null)
+      setSavingLocation(false)
     }
   }
 
@@ -387,6 +407,67 @@ export function ProfilePage() {
         >
           {savingName ? 'Saving…' : 'Save'}
         </button>
+      </form>
+
+      {/* V2 slice 3: the location card — the discovery center (home zip +
+          radius). The zip must be in the seeded gazetteer (the pure
+          validator runs inside updateHomeZipRadius); the radius is one of
+          the pinned options (2/5/10/20/35). */}
+      <form
+        className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+        onSubmit={handleSaveLocation}
+      >
+        <h2 className="text-base font-semibold text-slate-900">Location</h2>
+        <p className="text-sm text-slate-500">
+          You see drop-ins within this radius of your home zip.
+        </p>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-slate-700">Home zip</span>
+          <input
+            className={
+              'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+              (locationError !== null ? 'border-red-400' : 'border-slate-300')
+            }
+            value={homeZip ?? ''}
+            onChange={(e) => {
+              setHomeZip(e.target.value)
+              setLocationError(null)
+              setLocationSaved(false)
+            }}
+            placeholder="e.g. 98107"
+            inputMode="numeric"
+            maxLength={5}
+            disabled={savingLocation}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-slate-700">Radius</span>
+          <select
+            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+            value={radiusMiles ?? DEFAULT_RADIUS_MILES}
+            onChange={(e) => {
+              setRadiusMiles(Number(e.target.value))
+              setLocationError(null)
+              setLocationSaved(false)
+            }}
+            disabled={savingLocation}
+          >
+            {RADIUS_MILES_OPTIONS.map((miles) => (
+              <option key={miles} value={miles}>
+                {miles} miles
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="submit"
+          disabled={savingLocation || (homeZip ?? '').trim() === ''}
+          className="self-start rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        >
+          {savingLocation ? 'Saving…' : 'Save location'}
+        </button>
+        {locationError ? <p className="text-sm text-red-600">{locationError}</p> : null}
+        {locationSaved ? <p className="text-sm text-emerald-700">Location saved.</p> : null}
       </form>
 
       <form
@@ -508,40 +589,27 @@ export function ProfilePage() {
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">Neighborhoods</h2>
         <p className="mt-1 text-sm text-slate-500">
-          You see drop-ins in the neighborhoods you follow. Keep at least one.
+          Display only — discovery is by your home zip + radius (V2 slice 3).
         </p>
 
         {loadError !== null ? (
           <p className="mt-3 text-sm text-red-600">{loadError}</p>
-        ) : neighborhoods === null || memberships === null ? (
+        ) : memberships === null ? (
           <p className="mt-3 text-sm text-slate-500">Loading…</p>
+        ) : memberNames.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-500">No neighborhoods yet.</p>
         ) : (
-          <ul className="mt-3 flex flex-col gap-1">
-            {neighborhoods.map((n) => {
-              const isMember = memberIds.has(n.id)
-              const isBusy = memberBusyId === n.id
-              return (
-                <li key={n.id} className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5">
-                  <span className="text-sm text-slate-800">{n.name}</span>
-                  <button
-                    type="button"
-                    aria-pressed={isMember}
-                    disabled={isBusy}
-                    onClick={() => void toggleNeighborhood(n.id)}
-                    className={
-                      'rounded-md px-3 py-1 text-xs font-medium ' +
-                      (isMember ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-600') +
-                      (isBusy ? ' opacity-50' : '')
-                    }
-                  >
-                    {isBusy ? 'Updating…' : isMember ? 'Following' : 'Follow'}
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {memberNames.map((name) => (
+              <span
+                key={name}
+                className="rounded-full border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700"
+              >
+                {name}
+              </span>
+            ))}
+          </div>
         )}
-        {memberError ? <p className="mt-3 text-sm text-red-600">{memberError}</p> : null}
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">

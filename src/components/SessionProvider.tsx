@@ -21,7 +21,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   return <SessionContext.Provider value={sessionState}>{children}</SessionContext.Provider>
 }
 
-/** Shared session state (session, profile, hasMemberships, refresh). */
+/** Shared session state (session, profile, homeZipSet, refresh). */
 export function useSessionContext(): SessionState {
   const state = useContext(SessionContext)
   if (state === null) {
