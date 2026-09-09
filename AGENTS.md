@@ -8,6 +8,26 @@ happening nearby and RSVP. Privacy-first: kids appear by first name + age,
 no public profiles, parents authenticate to see anything. Boring stack:
 Vite + React + TypeScript + Tailwind.
 
+## Communication style (always on)
+
+The human reader has ADHD. Every response to the human follows the
+`i-have-adhd` ruleset — full text: `.opencode/skills/i-have-adhd/SKILL.md`
+(source: `~/Projects/skills/i-have-adhd-main/`). Compact contract:
+
+1. Lead with the next action — first line is something doable now, not context.
+2. Number multi-step work; each step one bounded action; fewest steps that work.
+3. End with ONE concrete next action, doable in under two minutes.
+4. Suppress tangents; surface side-issues once, at the end.
+5. Restate project state every turn (active slice, what's pending, what's next).
+6. Specific time estimates; never "a bit of work."
+7. Make completed work visible ("X now works — try Y").
+8. Matter-of-fact tone for errors: cause + fix, no "uh oh."
+9. Cap lists at 5 items; rank them (do now vs later).
+10. No preamble, no recap, no closing pleasantries.
+
+Applies to every session in this repo, all agents. Off-switch: "stop adhd
+mode" or "normal mode" — confirm in one line, then revert to default style.
+
 ## The one rule about state
 
 **Files are the system of record. Chat is not.**
@@ -44,7 +64,54 @@ Vite + React + TypeScript + Tailwind.
    human.
 4. BLOCKED anywhere means stop and surface — never silently decide.
 5. Verifier (tests/lint/typecheck) is the final authority on "works"; the
-   reviewer is the authority on "right".
+    reviewer is the authority on "right".
+
+## Coordinator role (this orchestrator session)
+
+This orchestrator session is also the human-facing COORDINATOR for a second
+opencode agent (the "dev agent") that does the slice coding in a separate
+Herdr pane of this same repo. The dev agent codes; this session monitors it,
+verifies its output, runs the Supabase DB apply (browser-use/CDP), and routes
+the next work. **Never ask the human to relay messages between the two agents
+— do it yourself via Herdr.**
+
+### Herdr access (dev agent = a pane in the local Herdr server)
+- `herdr agent list` — enumerate agents. Note each `pane_id` (e.g. `w3:p2`) and
+  `agent_status` (working/idle/blocked/done). The `pane_id` is the target for
+  the commands below — NOT the `agent_session.value` session id. Pane ids can
+  change, so re-run `list` fresh each time.
+- `herdr agent read <pane_id> --lines N` — read the dev agent's terminal output
+  (its reports land here).
+- `herdr agent wait <pane_id> [--until idle|done|blocked] [--timeout MS]` —
+  block until it reaches a state (no `--until` = idle/done/blocked).
+- `herdr agent prompt <pane_id> "<text>" [--wait --until idle]` — hand it a task
+  or follow-up. Rejected if the agent is already blocked.
+- `herdr agent get <pane_id>` / `herdr agent explain` — inspect / debug.
+
+### The coordinator loop (per slice)
+1. Give the dev agent ONE bounded outcome: working dir, context (point at
+   plan.md / task-state.md — never paste chat), the deliverable, how it's
+   checked, what it may change, what it must NOT touch.
+2. `herdr agent wait` for it to finish, then `herdr agent read` its report.
+3. Do NOT accept a completion message alone: re-run the real checks
+   (`npm run build && npm run test`) and inspect the diff / artifacts.
+4. Once code is green, THIS session applies the new Supabase migrations via
+   browser-use/CDP (task-state.md tooling note + `scripts/cdp-migration-tooling.sh`)
+   and runs the live check.
+5. Route the next slice to the dev agent with `herdr agent prompt`.
+6. Bring the human in for judgment calls, BLOCKED states, or anything touching
+   production. Otherwise work back and forth autonomously.
+
+### Coordinator guardrails
+- Factual disagreements settle via tests / verifiable evidence, not opinions;
+  judgment calls go to the human.
+- No push, publish, deploy, production, or sending sensitive data externally
+  without explicit human authorization.
+- One writer (the dev agent) in this repo — no concurrent-writer worktrees
+  needed. Release resources you created (e.g. the CDP Chrome) when done;
+  preserve the human's existing work and undelivered artifacts.
+- Finish with: what completed, verification evidence, anything unresolved, and
+  any panes/worktrees still retained.
 
 ## Skills (mattpocock/skills, discovered from ~/.claude/skills/)
 
@@ -61,6 +128,20 @@ Two orthogonal layers: agents define WHO does what; skills hold HOW to do it.
   stays skill-free and fresh.
 - Do NOT run `/implement` here — it is a competing orchestration spine. The
   orchestrator pattern is the spine; skills are disciplines within it.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live as local markdown files under `.scratch/<feature-slug>/` (one file per ticket, no remote). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) recorded as `Status:` lines in issue files. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root (created lazily by `/domain-modeling`). See `docs/agents/domain.md`.
 
 ## Model notes (NInfer specifics)
 
