@@ -6,8 +6,8 @@
 ## Current position
 
 - **Phase:** V2 implementing
-- **Active slice:** V2.1 (quick UX batch) — **code COMPLETE** (commit 8bdaeb2, 77/77 tests, human live check on :5173 pending). E2E foundation (ticket 00) COMPLETE this turn.
-- **Next action:** dispatch V2 slice 2 (profiles v2: avatars/bio/kids + migration 0011 incl. self-elevation trigger) to the dev agent. Standing rule: slices 2–5 ship 1–2 e2e specs; verifier runs npx playwright test + npm run build && npm run test.
+- **Active slice:** V2.2 (profiles v2, ticket 02) — **code + live COMPLETE** (commits b0981b1+c389ce4+4f3cc72; 102/102 unit, 6/6 e2e; 0011 + self-elevation trigger fix APPLIED LIVE 2026-09-09 via CDP; live: non-mod self-elevation 400 P0001, postgres ban path works, smoke probes 200).
+- **Next action:** dispatch V2 slice 3 (ticket 03, zip + radius discovery + migration 0012) to the dev agent. Standing rule: slices 3–5 ship 1–2 e2e specs; verifier runs npx playwright test + npm run build && npm run test.
 
 ## Tooling note (2026-09-09)
 
@@ -23,6 +23,8 @@
 | 3 feed + posting | complete | commits 81e8b1a+d97020b; reviewer PASS (per-statement DDL audit; 7 non-blocking parked, see notes); verifier PASS (build exit 0, 36/36 tests, combined cmd exit 0, all policy DDL DO-block guarded); 0005+0006 APPLIED LIVE 2026-09-09 via browser-use (Monaco setValue + Run, both "Success"); REST probe playdates+blocks HTTP 200; LIVE CHECK PASS 2026-09-09 (marker host posts drop-in → viewer feed shows it → blocks row created → viewer feed EXCLUDES it via DB-level .not() filter, closing reviewer finding #2; markers live-verify3-<epoch>[-b]@gmail.com) | blocks migration (0006) moved forward from slice 4 (feed AC requires the DB-level block filter; block UI stays in slice 4); 0005/0006 use DO-block idempotency per the logged lesson; applied by orchestrator via browser-use (CDP), not human dashboard (tooling note above); PostgREST cache auto-refreshed (no PGRST205) |
 | 4 detail + going-pings + trust | complete | commits f978858+1c8e5f4; reviewer PASS (5 non-blocking parked) + fix-review PASS (2 nits); verifier PASS (build exit 0, 49/49 tests, combined gate exit 0); 0007+0008 APPLIED LIVE 2026-09-09 via CDP (both "Success"; probes HTTP 200, no PGRST205); LIVE CHECK PASS (ping round-trip 1→0; non-moderator report SELECT 0 rows + INSERT 201; host self-ping INSERT 201 = documented DB gap; block .not() filter re-proven; markers live-verify4-1788975216[-b]@gmail.com); orchestrator re-verified independently (build+tests+REST) | 42501 fix: createReport RETURNING 403s under moderators-only SELECT RLS → plain insert (1c8e5f4) + regression tests incl. 42501 tripwire; 0008 owns profiles.moderators (slice 5 must expect it); CDP apply delegated to verifier agent (orchestrator session lacks terminal tool); parked: DropInCard button-in-Link, self-ping DB gap (slice 5 candidate), detail block filter client-side, UserPage 375px row tightness, unused GoingPing type |
 | 5 mod tools + mobile polish | complete | commit 2eacd47; reviewer PASS (3 non-blocking parked: self-elevation hole, handle-length 375px edge, pre-apply feed window); verifier PASS (build exit 0, 65/65 tests, combined gate exit 0); 0009+0010 APPLIED LIVE 2026-09-09 via CDP (both "Success"; DB objects verified); orchestrator re-verified independently (build+tests+REST 200 on hidden_at/banned_at; 0010 trigger file present); LIVE CHECK PASS (moderator hide 204 + feed hidden_at exclusion proven vs. unfiltered control; ban banned_at set; host self-ping rejected 400 P0001 "hosts cannot ping their own post" per human-decided trigger; non-mod hide = RLS silent no-op; markers live-verify5-1788977882[-b|-m]@gmail.com, mod flag reverted, lv5 rows deleted, Chrome released) | 0009 expects profiles.moderators from 0008 (documented); founder-flag UPDATE = human one-time SQL (NOT executed — waiting on human); hide/ban final in V1 (no unhide/unban UI); 0010 = BEFORE INSERT trigger (CHECK can't span tables), DO-block idempotency; PostgREST surfaces RLS-blocked 0-row UPDATEs as 2xx, never 403 (lesson) |
+| V2.1 quick UX batch (ticket 01) | complete | commit 8bdaeb2; 77/77 tests | report flag off cards, "This is your post" host panel, 30-min steppers + duration chips, duplicate prefill; no migrations |
+| V2.2 profiles v2 (ticket 02) | complete | commits b0981b1+c389ce4+4f3cc72; 102/102 unit, 6/6 e2e; 0011 + trigger fix APPLIED LIVE 2026-09-09 via CDP; live: non-mod 400 P0001 + postgres ban + smoke 200 | avatars (256px/≤5MB) + bio (≤500) + structured kids (first name+age, max 5) + onboarding step + nudge banner; 0011 = profiles cols + kids table + avatars bucket + self-elevation trigger; reviewer NEEDS_CHANGES (trigger blocked postgres) -> 4f3cc72 non-JWT pass-through, live-proven; marker lv6-1788991152 (banned_at set) |
 
 ## Open risks
 
@@ -46,6 +48,8 @@
 - Test artifacts (lv5): live-verify5-1788977882@gmail.com (host profile), -b (viewer, banned_at SET — suspended on next session), -m (mod, moderators reverted false); orphaned B Ballard membership. All lv5 playdate/ping rows deleted, verified 0. Optional human cleanup.
 - RLS-diagnosis probe artifacts (2026-09-09): probe2–probe8 signup users + probe6/probe8 profile+membership rows (probe8 = Greenwood). No playdates. Optional human cleanup alongside lv1–lv5.
 
+- Test artifact (lv6): live-verify marker lv6-1788991152@gmail.com (auth user 63a23f4e-63a9-48d8-91f8-98b8f0c6e0c4, profiles row, banned_at SET — suspended on next session). Optional human cleanup via CDP.
+- Untracked dirs (out of slice scope; orchestrator to decide tracking): .opencode/skills/, .scratch/guest-list/, .scratch/v3/.
 ## Decisions log
 
 - 2026-09-04 — Stack: Vite+React+TS+Tailwind, Supabase backend (auth + Postgres).
@@ -69,6 +73,7 @@
 - 2026-09-09 — INTEGRATION (orchestrator): 0009 (hidden_at/banned_at + moderator UPDATE policies) expects the moderators column from 0008 — no re-create. Founder flag stays a human-executed one-time UPDATE (statement in 0009 header; not run in the live pass).
 - 2026-09-09 — LIVE-LESSON: PostgREST surfaces RLS-blocked 0-row UPDATEs as 2xx (204 / 200+[]), never 403 — the RLS wall holds, the HTTP layer is silent; /mod's client route guard is the user-facing wall. CDP apply: destructive DDL needs the "Run query" confirm click + a follow-up SELECT to verify execution.
 
+- 2026-09-09 — V2 SLICE 2 (orchestrator): reviewer NEEDS_CHANGES on 0011 self-elevation trigger — the BEFORE UPDATE guard blocked EVERY non-moderator incl. postgres/service_role (auth.uid() is NULL via CDP/dashboard), which would break the ban path. Fix 4f3cc72: `if auth.uid() is null then return new` pass-through so only JWT non-moderators are locked out. Live-proven: non-mod self-elevation UPDATE -> 400 P0001; postgres banned_at UPDATE succeeds. LESSON: a trigger guard that must allow a server role must test auth.uid() IS NULL (non-JWT) separately from the moderator check.
 ## Escalations (waiting on human)
 
 - 2026-09-09 — FOUNDER FLAG: RESOLVED pending verification — human signed up ("Jon Meisburg", profile cd733843-1436-42d0-b205-284172578bdb, 1 membership Greenwood, moderators=false). Orchestrator to apply `update public.profiles set moderators = true where display_name = 'Jon Meisburg';` via cdp-sql-runner and confirm → then /mod is live for the human. — FLAG APPLIED + VERIFIED 2026-09-09 (row re-read: moderators=true).
