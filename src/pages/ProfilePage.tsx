@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
+import { useNavigate } from 'react-router'
 import { useSessionContext } from '../components/SessionProvider'
 import {
   addMembership,
@@ -7,9 +8,11 @@ import {
   listMemberships,
   listNeighborhoods,
   removeMembership,
+  supabase,
   updateDisplayName,
 } from '../lib/db'
-import type { MembershipWithNeighborhood, Neighborhood } from '../lib/types'
+import { queryMyPlaydatesWithClient, toDuplicatePrefill } from '../lib/feed'
+import type { MembershipWithNeighborhood, Neighborhood, Playdate } from '../lib/types'
 
 /**
  * /profile — the signed-in family's own page (slice 2): edit the
@@ -17,8 +20,16 @@ import type { MembershipWithNeighborhood, Neighborhood } from '../lib/types'
  * and manage neighborhood memberships (all neighborhoods listed, current
  * ones marked, add/remove). Saves refresh the shared session state so the
  * app-shell header picks up the changes.
+ *
+ * V2 slice 1: the "Your posts" list — the viewer's own drop-ins, newest
+ * first — each with a Duplicate action. Duplicate navigates to /new with
+ * router-state prefill of everything except the date/time (always
+ * re-entered). The own-posts query is the injected-client
+ * queryMyPlaydatesWithClient (feed.ts, unit-tested) run against the shared
+ * db.ts client — db.ts itself gains no new surface (slice constraint).
  */
 export function ProfilePage() {
+  const navigate = useNavigate()
   const { session, loading, profile, refresh } = useSessionContext()
   const userId = session?.user?.id ?? null
 
@@ -32,6 +43,9 @@ export function ProfilePage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [memberBusyId, setMemberBusyId] = useState<string | null>(null)
   const [memberError, setMemberError] = useState<string | null>(null)
+
+  const [myPosts, setMyPosts] = useState<Playdate[] | null>(null)
+  const [postsError, setPostsError] = useState<string | null>(null)
 
   // Seed the handle field once the profile loads; user typing wins after.
   useEffect(() => {
@@ -51,6 +65,29 @@ export function ProfilePage() {
       .catch((err: unknown) => {
         if (cancelled) return
         setLoadError(err instanceof Error ? err.message : 'Could not load your profile data.')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
+  // The "Your posts" list (V2 slice 1): the viewer's own drop-ins, newest
+  // first. A failed load (e.g. the playdates table not applied yet) renders
+  // a designed error, never a crash — same discipline as the rest of the
+  // page.
+  useEffect(() => {
+    if (userId === null) return
+    let cancelled = false
+    setMyPosts(null)
+    setPostsError(null)
+    queryMyPlaydatesWithClient(supabase, userId)
+      .then((rows) => {
+        if (cancelled) return
+        setMyPosts(rows as unknown as Playdate[])
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setPostsError(err instanceof Error ? err.message : 'Could not load your posts.')
       })
     return () => {
       cancelled = true
@@ -192,6 +229,52 @@ export function ProfilePage() {
         )}
         {memberError ? <p className="mt-3 text-sm text-red-600">{memberError}</p> : null}
       </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-base font-semibold text-slate-900">Your posts</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Duplicate one to re-post it — you always pick a new date and time.
+        </p>
+
+        {postsError !== null ? (
+          <p className="mt-3 text-sm text-red-600">{postsError}</p>
+        ) : myPosts === null ? (
+          <p className="mt-3 text-sm text-slate-500">Loading…</p>
+        ) : myPosts.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-500">No posts yet.</p>
+        ) : (
+          <ul className="mt-3 flex flex-col gap-1">
+            {myPosts.map((post) => (
+              <li
+                key={post.id}
+                className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-slate-800">{post.title}</p>
+                  <p className="text-xs text-slate-400">
+                    {formatPostWhen(post.starts_at)} · {post.place}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigate('/new', { state: { duplicate: toDuplicatePrefill(post) } })
+                  }
+                  className="shrink-0 rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200"
+                >
+                  Duplicate
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   )
+}
+
+/** Local "Sep 12 · 3 PM" for an own-post row. */
+function formatPostWhen(iso: string): string {
+  const d = new Date(iso)
+  return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${d.toLocaleTimeString(undefined, { hour: 'numeric' })}`
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useNavigate, useParams } from 'react-router'
 import { ReportDialog } from '../components/ReportDialog'
 import { useSessionContext } from '../components/SessionProvider'
 import {
@@ -9,7 +9,7 @@ import {
   hasPinged,
   togglePing,
 } from '../lib/db'
-import { isHiddenPost } from '../lib/feed'
+import { isHiddenPost, toDuplicatePrefill } from '../lib/feed'
 import type { PlaydateWithNeighborhood } from '../lib/types'
 
 type DetailState =
@@ -26,6 +26,12 @@ type DetailState =
  * host's handle linking to /u/:handle. The "We're going" ping toggle
  * (counts shown only, never a per-person attendee list) plus a report entry.
  *
+ * V2 slice 1: the post's own host sees an explicit "This is your post" panel
+ * with the going count and a Duplicate action (navigates to /new with
+ * router-state prefill of everything except the date/time — which is always
+ * re-entered) — never the ping button. Everyone else sees the unchanged
+ * "We're going" toggle + count.
+ *
  * The detail fetch is a direct lookup — the feed query's DB-level block
  * filter (slice 3) cannot cover this path — so a blocked host's post is
  * checked after the fetch and renders a hidden state, never the content.
@@ -38,6 +44,7 @@ type DetailState =
  */
 export function PlaydateDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const { session, loading: sessionLoading } = useSessionContext()
   const [state, setState] = useState<DetailState>({ status: 'loading' })
   const [reporting, setReporting] = useState(false)
@@ -210,13 +217,27 @@ export function PlaydateDetailPage() {
       </div>
 
       {isHost ? (
-        // The host sees the count, but cannot ping their own post (the
-        // client guard in db.togglePing — AC 4).
-        count !== null ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-sm text-slate-500">{goingCountLine(count)}</p>
+        // The host sees an explicit "This is your post" panel with the going
+        // count and a Duplicate action (V2 slice 1) — no ping button (the
+        // host cannot ping their own post: the client guard in
+        // db.togglePing, the 0010 DB trigger behind it).
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-indigo-900">This is your post</p>
+            <button
+              type="button"
+              onClick={() =>
+                navigate('/new', { state: { duplicate: toDuplicatePrefill(detail) } })
+              }
+              className="rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
+            >
+              Duplicate
+            </button>
           </div>
-        ) : null
+          <p className="mt-1 text-sm text-indigo-700">
+            {count !== null ? hostGoingCountLine(count) : 'No pings yet'}
+          </p>
+        </div>
       ) : (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <button
@@ -268,4 +289,10 @@ function formatTime(iso: string): string {
 function goingCountLine(count: number): string {
   if (count === 0) return 'Be the first — we’d love to see you'
   return `${count} ${count === 1 ? 'family' : 'families'} going — come say hi`
+}
+
+/** The host's own count line (it's your post — no "come say hi"). */
+function hostGoingCountLine(count: number): string {
+  if (count === 0) return 'No one has pinged yet'
+  return `${count} ${count === 1 ? 'family' : 'families'} going`
 }

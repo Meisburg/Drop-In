@@ -12,6 +12,7 @@ import { OnboardingPage } from './pages/OnboardingPage'
 import { PlaydateDetailPage } from './pages/PlaydateDetailPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { UserPage } from './pages/UserPage'
+import type { DuplicatePrefill } from './lib/types'
 
 /** The /mod route path (moderator tools, slice 5). */
 const MOD_PATH = '/mod'
@@ -122,6 +123,17 @@ function shellRedirect(
   return target === pathname ? null : target
 }
 
+/**
+ * The /new route (V2 slice 1): surfaces the duplicate-prefill router state
+ * (navigate('/new', { state: { duplicate } }) from a Duplicate action) as a
+ * typed prop — the page itself stays router-state-agnostic.
+ */
+function NewRoute() {
+  const { state } = useLocation()
+  const duplicate = (state as { duplicate?: DuplicatePrefill } | null)?.duplicate ?? null
+  return <NewPlaydatePage duplicate={duplicate} />
+}
+
 function NavTab({ to, label }: { to: string; label: string }) {
   return (
     <NavLink
@@ -144,7 +156,7 @@ export default function App() {
             <Route path="/" element={<FeedPage />} />
             <Route path="/browse" element={<BrowsePage />} />
             <Route path="/playdate/:id" element={<PlaydateDetailPage />} />
-            <Route path="/new" element={<NewPlaydatePage />} />
+            <Route path="/new" element={<NewRoute />} />
             <Route path="/onboarding" element={<OnboardingPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/u/:handle" element={<UserPage />} />

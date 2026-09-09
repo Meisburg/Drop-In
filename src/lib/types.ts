@@ -105,3 +105,19 @@ export interface Report {
   reason: string
   created_at: string
 }
+
+/**
+ * The /new duplicate-prefill (V2 slice 1, carried as router state on /new):
+ * everything from a post EXCEPT the date/time — the start date, start time,
+ * and duration are always re-entered by the user (pinned: the end is
+ * computed, never typed).
+ */
+export interface DuplicatePrefill {
+  title: string
+  place: string
+  neighborhoodId: string
+  /** Carried over from the source post's (nullable) age_hint; '' = none. */
+  ageHint: string
+  /** Carried over from the source post's (nullable) details; '' = none. */
+  details: string
+}

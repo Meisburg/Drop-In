@@ -1,11 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
+  computeEndIso,
+  computeStartIso,
+  durationLabel,
   filterFeed,
+  formatTimeLabel,
+  isDuration,
   isHappeningNow,
   isHiddenPost,
+  isSteppedTime,
+  PLAYDATE_DURATIONS_MINUTES,
+  queryMyPlaydatesWithClient,
   queryUpcomingFeedWithClient,
   startOfTodayIso,
+  stepTimeMinutes,
+  TIME_STEP_MINUTES,
+  toDuplicatePrefill,
   validatePlaydateForm,
   type FeedPost,
   type PlaydateFormValues,
@@ -154,9 +165,10 @@ describe('isHiddenPost (the moderator-hide predicate)', () => {
 })
 
 /**
- * Minimal mock of the client surface queryUpcomingFeedWithClient uses:
+ * Minimal mock of the client surface the injected-client queries use
+ * (queryUpcomingFeedWithClient, queryMyPlaydatesWithClient):
  * from('playdates') returns a recording query builder — every filter call
- * (.in, .gte, .order, .is, .not) is recorded, in order, so tests can
+ * (.in, .eq, .gte, .order, .is, .not) is recorded, in order, so tests can
  * assert the filter chain (the .is('hidden_at', null) hidden filter,
  * slice 5, sits on the same chain as the .not() block filter, slice 3).
  */
@@ -169,6 +181,10 @@ function makeFeedMockClient(rows: unknown[] = []): {
     select: (_cols: string) => builder,
     in: (col: string, values: string[]) => {
       filters.push(`in(${col}, ${values.join(',')})`)
+      return builder
+    },
+    eq: (col: string, value: unknown) => {
+      filters.push(`eq(${col}, ${String(value)})`)
       return builder
     },
     gte: (col: string, value: string) => {
@@ -234,13 +250,14 @@ describe('queryUpcomingFeedWithClient (mocked supabase client)', () => {
   })
 })
 
-describe('validatePlaydateForm (the /new form rules)', () => {
+describe('validatePlaydateForm (the /new form rules, V2 slice 1: date + stepper + chips)', () => {
   const valid: PlaydateFormValues = {
     title: 'Playground time',
     place: 'Green Lake',
     neighborhoodId: 'n1',
-    startsAt: '2026-09-04T15:00',
-    endsAt: '2026-09-04T17:00',
+    startDate: '2026-09-04',
+    startMinutes: 900, // 3:00 PM
+    durationMinutes: 90, // 1.5h chip
     ageHint: '',
     details: '',
   }
@@ -269,19 +286,28 @@ describe('validatePlaydateForm (the /new form rules)', () => {
     expect(validatePlaydateForm({ ...valid, neighborhoodId: '' }).neighborhoodId).toBeDefined()
   })
 
-  it('requires a start time', () => {
-    expect(validatePlaydateForm({ ...valid, startsAt: '' }).startsAt).toBeDefined()
+  it('requires a start date (and rejects an unparseable one)', () => {
+    expect(validatePlaydateForm({ ...valid, startDate: '' }).startDate).toBeDefined()
+    expect(validatePlaydateForm({ ...valid, startDate: 'not-a-date' }).startDate).toBeDefined()
   })
 
-  it('requires an end time', () => {
-    expect(validatePlaydateForm({ ...valid, endsAt: '' }).endsAt).toBeDefined()
+  it('requires the start time on the 30-minute grid', () => {
+    // Off-grid minutes (a typed-in 3:45) and out-of-range values fail.
+    expect(validatePlaydateForm({ ...valid, startMinutes: 945 }).startMinutes).toBeDefined()
+    expect(validatePlaydateForm({ ...valid, startMinutes: 1440 }).startMinutes).toBeDefined()
+    expect(validatePlaydateForm({ ...valid, startMinutes: -30 }).startMinutes).toBeDefined()
+    // Every grid point of the day passes.
+    for (let m = 0; m < 24 * 60; m += TIME_STEP_MINUTES) {
+      expect(validatePlaydateForm({ ...valid, startMinutes: m }).startMinutes).toBeUndefined()
+    }
   })
 
-  it('requires the end to be strictly after the start', () => {
-    expect(validatePlaydateForm({ ...valid, endsAt: valid.startsAt }).endsAt).toBeDefined()
-    expect(
-      validatePlaydateForm({ ...valid, endsAt: '2026-09-04T14:00' }).endsAt,
-    ).toBeDefined()
+  it('requires a duration chip', () => {
+    expect(validatePlaydateForm({ ...valid, durationMinutes: 0 }).durationMinutes).toBeDefined()
+    expect(validatePlaydateForm({ ...valid, durationMinutes: 45 }).durationMinutes).toBeDefined()
+    for (const m of PLAYDATE_DURATIONS_MINUTES) {
+      expect(validatePlaydateForm({ ...valid, durationMinutes: m }).durationMinutes).toBeUndefined()
+    }
   })
 
   it('leaves age_hint and details optional', () => {
@@ -289,5 +315,120 @@ describe('validatePlaydateForm (the /new form rules)', () => {
     expect(
       validatePlaydateForm({ ...valid, ageHint: 'best for 2-5', details: 'Bring water' }),
     ).toEqual({})
+  })
+})
+
+describe('duration math + the 30-minute stepper (pure, unit-tested)', () => {
+  it('isSteppedTime accepts exactly the 30-minute grid of one day', () => {
+    for (const m of [0, 30, 900, 1410]) expect(isSteppedTime(m)).toBe(true)
+    for (const m of [1, 45, 1440, -30, 90.5, Number.NaN]) {
+      expect(isSteppedTime(m)).toBe(false)
+    }
+  })
+
+  it('stepTimeMinutes steps ±30 and wraps at midnight', () => {
+    expect(stepTimeMinutes(900, TIME_STEP_MINUTES)).toBe(930)
+    expect(stepTimeMinutes(930, -TIME_STEP_MINUTES)).toBe(900)
+    expect(stepTimeMinutes(1410, TIME_STEP_MINUTES)).toBe(0) // 11:30 PM + 30
+    expect(stepTimeMinutes(0, -TIME_STEP_MINUTES)).toBe(1410) // 12:00 AM − 30
+  })
+
+  it('formatTimeLabel gives 12-hour labels, wrapping past midnight', () => {
+    expect(formatTimeLabel(0)).toBe('12:00 AM')
+    expect(formatTimeLabel(600)).toBe('10:00 AM')
+    expect(formatTimeLabel(930)).toBe('3:30 PM')
+    expect(formatTimeLabel(1410)).toBe('11:30 PM')
+    expect(formatTimeLabel(1470)).toBe('12:30 AM') // wraps
+  })
+
+  it('durationLabel names the chips (1h / 1.5h / 2h / 3h)', () => {
+    expect(PLAYDATE_DURATIONS_MINUTES.map(durationLabel)).toEqual(['1h', '1.5h', '2h', '3h'])
+  })
+
+  it('isDuration accepts exactly the chips', () => {
+    for (const m of PLAYDATE_DURATIONS_MINUTES) expect(isDuration(m)).toBe(true)
+    expect(isDuration(0)).toBe(false)
+    expect(isDuration(30)).toBe(false)
+    expect(isDuration(240)).toBe(false)
+  })
+
+  it('computeStartIso turns a local date + minutes into the UTC instant', () => {
+    const iso = computeStartIso('2026-09-04', 900) // local 3:00 PM
+    const parsed = new Date(iso)
+    // The instant must land at local 15:00 on 2026-09-04, whatever the
+    // machine's timezone (same fixed-local-date discipline as the feed tests).
+    expect(parsed.getFullYear()).toBe(2026)
+    expect(parsed.getMonth()).toBe(8)
+    expect(parsed.getDate()).toBe(4)
+    expect(parsed.getHours()).toBe(15)
+    expect(parsed.getMinutes()).toBe(0)
+  })
+
+  it('computeEndIso is start + duration (90-minute window)', () => {
+    const start = computeStartIso('2026-09-04', 900)
+    const end = computeEndIso('2026-09-04', 900, 90)
+    expect(Date.parse(end) - Date.parse(start)).toBe(90 * 60_000)
+    expect(new Date(end).getMinutes()).toBe(30)
+    expect(new Date(end).getHours()).toBe(16) // local 4:30 PM
+  })
+
+  it('computeEndIso rolls into the next day when the window passes midnight', () => {
+    const end = computeEndIso('2026-09-04', 1410, 180) // 11:30 PM + 3h
+    const start = computeStartIso('2026-09-04', 1410)
+    expect(Date.parse(end) - Date.parse(start)).toBe(180 * 60_000)
+    // Local 2:30 AM on the NEXT calendar day — never clamped.
+    const expected = new Date(2026, 8, 4, 23, 30).getTime() + 180 * 60_000
+    expect(Date.parse(end)).toBe(expected)
+  })
+})
+
+describe('toDuplicatePrefill (everything except the date/time)', () => {
+  it('carries the post fields and drops date/time', () => {
+    expect(
+      toDuplicatePrefill({
+        title: 'Playground time',
+        place: 'Green Lake',
+        neighborhood_id: 'n1',
+        age_hint: '2-5',
+        details: 'Bring water',
+      }),
+    ).toEqual({
+      title: 'Playground time',
+      place: 'Green Lake',
+      neighborhoodId: 'n1',
+      ageHint: '2-5',
+      details: 'Bring water',
+    })
+  })
+
+  it('maps null age_hint / details to empty strings', () => {
+    expect(
+      toDuplicatePrefill({
+        title: 'T',
+        place: 'P',
+        neighborhood_id: 'n1',
+        age_hint: null,
+        details: null,
+      }),
+    ).toEqual({ title: 'T', place: 'P', neighborhoodId: 'n1', ageHint: '', details: '' })
+  })
+})
+
+describe('queryMyPlaydatesWithClient (mocked supabase client)', () => {
+  it('queries the host\'s own posts, newest first', async () => {
+    const rows = [
+      { id: 'pd-2', host_profile_id: 'me', title: 'Later', neighborhood_id: 'n1' },
+      { id: 'pd-1', host_profile_id: 'me', title: 'Earlier', neighborhood_id: 'n1' },
+    ]
+    const { client, filters } = makeFeedMockClient(rows)
+    const result = await queryMyPlaydatesWithClient(client, 'me')
+    expect(result).toEqual(rows)
+    expect(filters).toContain('eq(host_profile_id, me)')
+    expect(filters).toContain('order(starts_at, false)')
+  })
+
+  it('returns [] when the host has no posts', async () => {
+    const { client } = makeFeedMockClient([])
+    expect(await queryMyPlaydatesWithClient(client, 'me')).toEqual([])
   })
 })
