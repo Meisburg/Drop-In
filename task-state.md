@@ -6,8 +6,8 @@
 ## Current position
 
 - **Phase:** V2 implementing
-- **Active slice:** V2.1 (quick UX batch) — **code COMPLETE** (commit 8bdaeb2; orchestrator re-verified: build exit 0, 77/77 tests; no migrations in this slice). Human live check on :5173 pending.
-- **Next action:** human tries /new steppers + chips, Duplicate, and the host panel in the browser → then dispatch V2 slice 2 (profiles v2: avatars/bio/kids + migration 0011 incl. self-elevation trigger). V2 workflow: grill (16 decisions) → spec (.scratch/v2/spec.md) → 5 tickets (.scratch/v2/issues/) → plan-v2.md — all human-approved.
+- **Active slice:** V2.1 (quick UX batch) — **code COMPLETE** (commit 8bdaeb2, 77/77 tests, human live check on :5173 pending). E2E foundation (ticket 00) COMPLETE this turn.
+- **Next action:** dispatch V2 slice 2 (profiles v2: avatars/bio/kids + migration 0011 incl. self-elevation trigger) to the dev agent. Standing rule: slices 2–5 ship 1–2 e2e specs; verifier runs npx playwright test + npm run build && npm run test.
 
 ## Tooling note (2026-09-09)
 

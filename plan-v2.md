@@ -156,3 +156,4 @@ Pinned contracts every builder must respect (reviewers enforce these):
   prefill via router state; 12 new pure-function tests). Orchestrator
   re-verified: build exit 0, 77/77 tests. No migrations (none planned).
   Ticket 01 checked in tracker. Next: human live check → slice 2 dispatch.
+- 2026-09-09 — E2E foundation approved (ticket 00, human). Playwright (Chromium, vite preview, marker storageState) gates the e2e specs of slices 2–5; standing rule: every V2 slice ships 1–2 e2e specs and the verifier runs npx playwright test alongside the pinned gate.

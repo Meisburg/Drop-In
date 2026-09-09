@@ -16,6 +16,12 @@ dist-ssr
 .env
 .env.*
 
+# Playwright e2e (V2 ticket 00) — marker storageState (session tokens)
+# and test artifacts, never commit
+e2e/.auth/
+test-results/
+playwright-report/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
