@@ -10,6 +10,11 @@ const SessionContext = createContext<SessionState | null>(null)
  * the route gates, and every page read this single shared state, so a
  * `refresh()` after a save (onboarding, profile edit) updates the header
  * and the onboarding gate everywhere at once.
+ *
+ * The shared state also carries the slice-5 banned-session gate: when the
+ * signed-in user's profile has banned_at set, useSession signs them out and
+ * sets `suspended`, and the shell (App.tsx) renders the suspended screen
+ * instead of any app route (no app access).
  */
 export function SessionProvider({ children }: { children: ReactNode }) {
   const sessionState = useSession()

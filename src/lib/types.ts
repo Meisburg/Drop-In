@@ -8,6 +8,18 @@ export interface Profile {
   id: string
   display_name: string
   created_at: string
+  /**
+   * Moderator flag (migration 0008; the one-time founder flag is manual
+   * SQL — see the 0009 header). Optional: absent until the live project
+   * is past 0008.
+   */
+  moderators?: boolean
+  /**
+   * Set when a moderator bans the profile (migration 0009). The session
+   * gate (useSession) rejects banned profiles. Optional: absent until the
+   * live project is past 0009.
+   */
+  banned_at?: string | null
 }
 
 /** A drop-in playdate ("at this playground, 3–5, come by if you like"). */
@@ -22,6 +34,13 @@ export interface Playdate {
   /** Advisory only, e.g. "best for 2-5". Nullable. */
   age_hint: string | null
   details: string | null
+  /**
+   * Set when a moderator hides the post (migration 0009). Null = visible;
+   * hidden posts vanish from the feed DB-level and render a hidden state
+   * on the detail page. Optional: absent until the live project is past
+   * 0009.
+   */
+  hidden_at?: string | null
 }
 
 /** A (seeded) Seattle neighborhood tag. */

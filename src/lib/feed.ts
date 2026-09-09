@@ -3,8 +3,13 @@
  *
  * Everything in here is free of React/Supabase so it can be tested without
  * a database or browser (see feed.test.ts). The Supabase-facing wrappers
- * live in db.ts and call these helpers.
+ * live in db.ts and call these helpers. The one exception is
+ * queryUpcomingFeedWithClient (slice 5): the raw feed query itself takes
+ * the Supabase client as a parameter (mocked in feed.test.ts — the same
+ * injected-client pattern as trust.togglePingWithClient) so the DB-level
+ * filter chain is unit-testable.
  */
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 /**
  * Client-local midnight of today as an ISO string.
@@ -38,17 +43,26 @@ export interface FeedPost {
   neighborhood_id: string
   host_profile_id: string
   starts_at: string
+  /** Set when a moderator has hidden the post (slice 5, migration 0009). */
+  hidden_at?: string | null
+}
+
+/** A post is hidden when a moderator has set hidden_at (slice 5). */
+export function isHiddenPost(post: { hidden_at?: string | null }): boolean {
+  return post.hidden_at != null
 }
 
 /**
  * Filter posts down to the viewer's feed: in a followed neighborhood,
- * starting today or later (client-local midnight), and not hosted by a
- * blocked profile — ordered by starts_at ascending.
+ * starting today or later (client-local midnight), not hosted by a blocked
+ * profile, and not hidden by a moderator (hidden_at set) — ordered by
+ * starts_at ascending.
  *
- * The DB query in db.ts applies the same rules (the .not() block filter is
- * skipped when the viewer has no blocks); this pure re-filter is the
- * unit-testable guarantee that a blocked host's post can never reach the
- * feed, plus the canonical ordering.
+ * The DB query (queryUpcomingFeedWithClient) applies the same rules (the
+ * .not() block filter is skipped when the viewer has no blocks; the
+ * .is('hidden_at', null) filter is always applied); this pure re-filter is
+ * the unit-testable guarantee that a blocked host's post and a hidden post
+ * can never reach the feed, plus the canonical ordering.
  *
  * `nowIso` is part of the pinned signature (it drives the "happening now"
  * badge in the UI); the filter itself only needs the start-of-today cutoff,
@@ -68,9 +82,48 @@ export function filterFeed<T extends FeedPost>(
       (post) =>
         followedNeighborhoodIds.has(post.neighborhood_id) &&
         !blockedHostIds.has(post.host_profile_id) &&
+        !isHiddenPost(post) &&
         Date.parse(post.starts_at) >= todayStart,
     )
     .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at))
+}
+
+/**
+ * The raw DB feed query, against an injected Supabase client (mockable —
+ * the same pattern as trust.togglePingWithClient / auth.hasActiveSession).
+ * Upcoming playdates in the given neighborhoods (starts_at >= cutoff,
+ * ordered by starts_at), with the DB-level filters applied:
+ * - .is('hidden_at', null) — hidden posts vanish from the feed for
+ *   everyone (slice 5; the pure filterFeed re-filter is the defense in
+ *   depth, unit-tested)
+ * - .not() on blocked hosts — only when the viewer actually has blocks (an
+ *   empty .in() would match nothing; slice 3)
+ *
+ * The result rows keep their loose (untyped) shape; db.ts casts them to
+ * PlaydateWithNeighborhood (same pattern as listMemberships).
+ */
+export async function queryUpcomingFeedWithClient(
+  client: SupabaseClient,
+  neighborhoodIds: string[],
+  cutoffIso: string,
+  blockedHostIds: string[],
+): Promise<unknown[]> {
+  if (neighborhoodIds.length === 0) return []
+  let query = client
+    .from('playdates')
+    .select(
+      '*, neighborhood:neighborhoods!inner ( id, name ), host:profiles!inner ( id, display_name )',
+    )
+    .in('neighborhood_id', neighborhoodIds)
+    .gte('starts_at', cutoffIso)
+    .order('starts_at', { ascending: true })
+    .is('hidden_at', null)
+  if (blockedHostIds.length > 0) {
+    query = query.not('host_profile_id', 'in', blockedHostIds.join(','))
+  }
+  const { data, error } = await query
+  if (error) throw error
+  return (data ?? []) as unknown[]
 }
 
 /** The /new form's field values (datetime-local strings, pre-conversion). */

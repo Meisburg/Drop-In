@@ -7,14 +7,16 @@ import type {
   Playdate,
   PlaydateWithNeighborhood,
   Profile,
+  Report,
 } from './types'
-import { filterFeed, startOfTodayIso } from './feed'
+import { filterFeed, queryUpcomingFeedWithClient, startOfTodayIso } from './feed'
 import {
   issueReportInsert,
   togglePingWithClient,
   validateReportReason,
   type ReportInsertPayload,
 } from './trust'
+import { issueModeratorUpdate, isProfileBanned } from './moderation'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -35,6 +37,14 @@ export interface SessionState {
   /** True when the current profile has at least one neighborhood membership. */
   hasMemberships: boolean
   /**
+   * True once the signed-in user's profile has banned_at set (slice 5):
+   * the session is rejected — the user is signed out and the shell renders
+   * the suspended state (no app access). Sticky within the SPA session so
+   * the screen survives the auto sign-out (a different, non-banned user
+   * signing in clears it).
+   */
+  suspended: boolean
+  /**
    * Re-fetch profile + membership count for the current user. Await it
    * before navigating after a save (onboarding, profile edits) so the
    * route gates and the app-shell header see fresh state.
@@ -52,12 +62,17 @@ export interface SessionState {
  * `<SessionProvider>` (src/components/SessionProvider.tsx) and consume the
  * shared instance via `useSessionContext()` so exactly one instance feeds
  * the header, the route gates, and every page.
+ *
+ * It also enforces the slice-5 banned-session gate: a profile with
+ * banned_at set is rejected (signed out, `suspended` set — the shell
+ * renders the suspended screen, no app access).
  */
 export function useSession(): SessionState {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [hasMemberships, setHasMemberships] = useState(false)
+  const [suspended, setSuspended] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -94,6 +109,9 @@ export function useSession(): SessionState {
     if (uid === null) {
       setProfile(null)
       setHasMemberships(false)
+      // suspended is sticky on purpose: a banned user who was just
+      // auto-signed-out keeps seeing the suspended screen (the shell
+      // renders it before the signed-out redirect).
       return
     }
     let nextProfile: Profile | null = null
@@ -102,6 +120,17 @@ export function useSession(): SessionState {
     } catch {
       // profiles table not applied yet / DB error: keep rendering without a
       // profile; individual pages surface their own load errors.
+    }
+    if (isProfileBanned(nextProfile)) {
+      // The banned-session gate (slice 5 AC: banned profiles cannot sign
+      // in): the profile's banned_at is set → reject the session. The
+      // decision itself is the pure isProfileBanned (unit-tested); this is
+      // the Supabase-facing side (sign out, no app access).
+      setSuspended(true)
+      setProfile(null)
+      setHasMemberships(false)
+      await signOutUser()
+      return
     }
     let nextHasMemberships = false
     try {
@@ -119,6 +148,9 @@ export function useSession(): SessionState {
       data: { session: after },
     } = await supabase.auth.getSession()
     if (after?.user?.id !== uid) return
+    // A fresh, non-banned profile load clears the sticky suspended flag
+    // (a different user signed in after a banned one was rejected).
+    setSuspended(false)
     setProfile(nextProfile)
     setHasMemberships(nextHasMemberships)
   }, [])
@@ -132,7 +164,7 @@ export function useSession(): SessionState {
     void refresh()
   }, [userId, refresh])
 
-  return { session, loading, profile, hasMemberships, refresh }
+  return { session, loading, profile, hasMemberships, suspended, refresh }
 }
 
 export async function signOutUser(): Promise<void> {
@@ -175,7 +207,13 @@ export async function createProfile(displayName: string): Promise<Profile> {
   return existing
 }
 
-/** Fetch one profile by id (null if not found / no access). */
+/**
+ * Fetch one profile by id (null if not found / no access). The `*` select
+ * also surfaces the moderation columns once applied (migration 0008:
+ * moderators; migration 0009: banned_at) — useSession's banned gate
+ * (isProfileBanned) and the /mod route guard (canModerate) read them from
+ * the shared profile here.
+ */
 export async function getProfile(id: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from('profiles')
@@ -306,32 +344,25 @@ export async function listBlockedHostIds(profileId: string): Promise<string[]> {
 
 /**
  * Raw upcoming-playdate query: in the given neighborhoods, starting at or
- * after the cutoff, ordered by starts_at. The block filter (a PostgREST
- * .not()) is applied only when the viewer actually has blocks — an empty
- * .not('host_profile_id', 'in', '') would match nothing.
+ * after the cutoff, ordered by starts_at. The DB-level filters (the
+ * .not() block filter — only when the viewer actually has blocks, and the
+ * .is('hidden_at', null) hidden filter — slice 5) live in the injected-
+ * client query (feed.queryUpcomingFeedWithClient, unit-tested with a mock).
  */
 async function queryUpcomingPlaydates(
   neighborhoodIds: string[],
   cutoffIso: string,
   blockedHostIds: string[],
 ): Promise<PlaydateWithNeighborhood[]> {
-  if (neighborhoodIds.length === 0) return []
-  let query = supabase
-    .from('playdates')
-    .select(
-      '*, neighborhood:neighborhoods!inner ( id, name ), host:profiles!inner ( id, display_name )',
-    )
-    .in('neighborhood_id', neighborhoodIds)
-    .gte('starts_at', cutoffIso)
-    .order('starts_at', { ascending: true })
-  if (blockedHostIds.length > 0) {
-    query = query.not('host_profile_id', 'in', blockedHostIds.join(','))
-  }
-  const { data, error } = await query
-  if (error) throw error
+  const rows = await queryUpcomingFeedWithClient(
+    supabase,
+    neighborhoodIds,
+    cutoffIso,
+    blockedHostIds,
+  )
   // Cast via unknown: without generated DB types, the embeds are inferred
   // loosely (same pattern as listMemberships).
-  return (data ?? []) as unknown as PlaydateWithNeighborhood[]
+  return rows as unknown as PlaydateWithNeighborhood[]
 }
 
 /** Query + the pure filterFeed re-filter (defense in depth, unit-tested). */
@@ -437,6 +468,13 @@ export async function createPlaydate(input: NewPlaydateInput): Promise<Playdate>
  * The detail-page payload for one playdate: the row with its neighborhood +
  * host handle joined in (null when not found / no access). Same shape as a
  * feed row (PlaydateWithNeighborhood).
+ *
+ * The `*` select also surfaces hidden_at once migration 0009 is applied.
+ * Unlike the feed (DB-level .is('hidden_at', null) filter), the detail
+ * path fetches the post directly — so the hidden check happens after the
+ * fetch (feed.isHiddenPost in the detail page; same client-side discipline
+ * as the slice-4 blocked-detail pattern). A hidden post renders the hidden
+ * state, never the content.
  */
 export async function getPlaydateDetail(id: string): Promise<PlaydateWithNeighborhood | null> {
   const { data, error } = await supabase
@@ -577,4 +615,124 @@ export async function toggleBlock(profileId: string): Promise<boolean> {
     .insert({ blocker_profile_id: user.id, blocked_profile_id: profileId })
   if (error && error.code !== '23505') throw error
   return true
+}
+
+// ---------------------------------------------------------------------------
+// Slice 5: moderator tools — the /mod report list, hide, ban.
+//
+// The moderation columns (migration 0009: playdates.hidden_at,
+// profiles.banned_at) and the moderator UPDATE policies may not exist in
+// the live project until the orchestrator applies 0009/0010 — every
+// function here throws on that, and the mod page renders a designed error
+// state instead of crashing (same discipline as slices 2–4). Reports are
+// SELECT-able by moderators only (migration 0008): a non-moderator gets 0
+// rows from listReports, and the /mod route guard (canModerate) keeps them
+// off the page in the first place.
+
+/** One report with its handles + the reported post's title joined in (/mod). */
+export interface ModReport {
+  /** The report row (pinned shape, migration 0008). */
+  report: Report
+  /** The reporter's display_name (null when the row is gone). */
+  reporter: string | null
+  /** The reported profile's display_name (post reports set the post's host). */
+  reported: string | null
+  /** The reported post's title (post reports only — null for profile reports). */
+  postTitle: string | null
+}
+
+/**
+ * The moderator report list, newest first, with the reporter's and
+ * reported profile's display names + the reported post's title joined in.
+ * Two follow-up fetches (profiles, playdates) both use SELECT policies
+ * open to any authenticated user, so only the reports read itself needs
+ * the moderators flag.
+ */
+export async function listReports(): Promise<ModReport[]> {
+  const { data, error } = await supabase
+    .from('reports')
+    .select('id, reporter_profile_id, playdate_id, reported_profile_id, reason, created_at')
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  const reports = (data ?? []) as Report[]
+
+  // Reporter/reported handles in one profiles fetch (a deleted profile's
+  // reference was nulled by the reports table's ON DELETE SET NULL, so an
+  // empty id set just means "no handles to join").
+  const profileIds = [
+    ...new Set(
+      reports
+        .flatMap((r) => [r.reporter_profile_id, r.reported_profile_id])
+        .filter((id): id is string => id !== null),
+    ),
+  ]
+  const handleById = new Map<string, string>()
+  if (profileIds.length > 0) {
+    const { data: profileRows, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, display_name')
+      .in('id', profileIds)
+    if (profileError) throw profileError
+    for (const row of (profileRows ?? []) as unknown as Array<{ id: string; display_name: string }>) {
+      handleById.set(row.id, row.display_name)
+    }
+  }
+
+  // The reported posts' titles (post reports only).
+  const playdateIds = [
+    ...new Set(
+      reports.map((r) => r.playdate_id).filter((id): id is string => id !== null),
+    ),
+  ]
+  const postById = new Map<string, string>()
+  if (playdateIds.length > 0) {
+    const { data: postRows, error: postError } = await supabase
+      .from('playdates')
+      .select('id, title')
+      .in('id', playdateIds)
+    if (postError) throw postError
+    for (const row of (postRows ?? []) as unknown as Array<{ id: string; title: string }>) {
+      postById.set(row.id, row.title)
+    }
+  }
+
+  return reports.map((report) => ({
+    report,
+    reporter:
+      report.reporter_profile_id !== null
+        ? handleById.get(report.reporter_profile_id) ?? null
+        : null,
+    reported:
+      report.reported_profile_id !== null
+        ? handleById.get(report.reported_profile_id) ?? null
+        : null,
+    postTitle:
+      report.playdate_id !== null ? postById.get(report.playdate_id) ?? null : null,
+  }))
+}
+
+/**
+ * Hide a post (moderator op, slice 5): set playdates.hidden_at. Hidden
+ * posts vanish from every feed (the DB-level filter) and render the hidden
+ * state on the detail page. No unhide in V1 (V1-minimum, documented in
+ * ModPage). Plain update, no .select() — see issueModeratorUpdate (42501
+ * discipline).
+ */
+export async function hidePlaydate(playdateId: string): Promise<void> {
+  await issueModeratorUpdate(supabase, 'playdates', playdateId, {
+    hidden_at: new Date().toISOString(),
+  })
+}
+
+/**
+ * Ban a profile (moderator op, slice 5): set profiles.banned_at. The
+ * session gate (useSession) signs the profile out and renders the
+ * suspended state. No unban in V1 (V1-minimum, documented in ModPage).
+ * Plain update, no .select() — see issueModeratorUpdate (42501
+ * discipline).
+ */
+export async function banProfile(profileId: string): Promise<void> {
+  await issueModeratorUpdate(supabase, 'profiles', profileId, {
+    banned_at: new Date().toISOString(),
+  })
 }

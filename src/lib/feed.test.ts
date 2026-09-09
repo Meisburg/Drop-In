@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   filterFeed,
   isHappeningNow,
+  isHiddenPost,
+  queryUpcomingFeedWithClient,
   startOfTodayIso,
   validatePlaydateForm,
   type FeedPost,
@@ -126,6 +129,108 @@ describe('filterFeed (feed invariants)', () => {
       { neighborhood_id: 'n9', host_profile_id: 'host-blocked', starts_at: at(-10) },
     ]
     expect(filterFeed(posts, FOLLOWED, BLOCKED_HOSTS, TODAY_ISO, NOW_ISO)).toEqual([])
+  })
+
+  it('never returns posts hidden by a moderator (hidden_at set)', () => {
+    const posts: FeedPost[] = [
+      { neighborhood_id: 'n1', host_profile_id: 'h1', starts_at: at(600), hidden_at: 'x' },
+      { neighborhood_id: 'n1', host_profile_id: 'h2', starts_at: at(300), hidden_at: null },
+      { neighborhood_id: 'n1', host_profile_id: 'h3', starts_at: at(400) }, // column absent (pre-0009)
+    ]
+    const result = filterFeed(posts, FOLLOWED, new Set(), TODAY_ISO, NOW_ISO)
+    expect(result.map((p) => p.host_profile_id)).toEqual(['h2', 'h3'])
+  })
+})
+
+describe('isHiddenPost (the moderator-hide predicate)', () => {
+  it('is true when hidden_at is set', () => {
+    expect(isHiddenPost({ hidden_at: '2026-09-09T00:00:00.000Z' })).toBe(true)
+  })
+
+  it('is false when hidden_at is null or absent', () => {
+    expect(isHiddenPost({ hidden_at: null })).toBe(false)
+    expect(isHiddenPost({})).toBe(false)
+  })
+})
+
+/**
+ * Minimal mock of the client surface queryUpcomingFeedWithClient uses:
+ * from('playdates') returns a recording query builder — every filter call
+ * (.in, .gte, .order, .is, .not) is recorded, in order, so tests can
+ * assert the filter chain (the .is('hidden_at', null) hidden filter,
+ * slice 5, sits on the same chain as the .not() block filter, slice 3).
+ */
+function makeFeedMockClient(rows: unknown[] = []): {
+  client: SupabaseClient
+  filters: string[]
+} {
+  const filters: string[] = []
+  const builder = {
+    select: (_cols: string) => builder,
+    in: (col: string, values: string[]) => {
+      filters.push(`in(${col}, ${values.join(',')})`)
+      return builder
+    },
+    gte: (col: string, value: string) => {
+      filters.push(`gte(${col}, ${value})`)
+      return builder
+    },
+    order: (col: string, opts: { ascending: boolean }) => {
+      filters.push(`order(${col}, ${opts.ascending})`)
+      return builder
+    },
+    is: (col: string, value: unknown) => {
+      filters.push(`is(${col}, ${String(value)})`)
+      return builder
+    },
+    not: (col: string, op: string, values: string) => {
+      filters.push(`not(${col}, ${op}, ${values})`)
+      return builder
+    },
+    then: (onfulfilled?: (value: { data: unknown[]; error: null }) => unknown) =>
+      Promise.resolve({ data: rows, error: null }).then(onfulfilled),
+  }
+  const client = {
+    from: (table: string) => {
+      if (table !== 'playdates') throw new Error(`unexpected table: ${table}`)
+      return builder
+    },
+  }
+  return { client: client as unknown as SupabaseClient, filters }
+}
+
+describe('queryUpcomingFeedWithClient (mocked supabase client)', () => {
+  const CUTOFF = '2026-09-04T00:00:00.000Z'
+
+  it('always applies the .is("hidden_at", null) hidden filter', async () => {
+    const { client, filters } = makeFeedMockClient()
+    await queryUpcomingFeedWithClient(client, ['n1', 'n2'], CUTOFF, [])
+    expect(filters).toContain('is(hidden_at, null)')
+  })
+
+  it('applies the .not() block filter only when the viewer has blocks', async () => {
+    const withBlocks = makeFeedMockClient()
+    await queryUpcomingFeedWithClient(withBlocks.client, ['n1'], CUTOFF, [
+      'h-bad',
+      'h-worse',
+    ])
+    expect(withBlocks.filters).toContain('not(host_profile_id, in, h-bad,h-worse)')
+
+    const withoutBlocks = makeFeedMockClient()
+    await queryUpcomingFeedWithClient(withoutBlocks.client, ['n1'], CUTOFF, [])
+    expect(withoutBlocks.filters.some((f) => f.startsWith('not('))).toBe(false)
+  })
+
+  it('skips the query entirely when the viewer follows no neighborhoods', async () => {
+    const { client, filters } = makeFeedMockClient([{ id: 'pd-1' }])
+    expect(await queryUpcomingFeedWithClient(client, [], CUTOFF, [])).toEqual([])
+    expect(filters).toEqual([])
+  })
+
+  it('returns the raw rows from the (mocked) query', async () => {
+    const rows = [{ id: 'pd-1' }, { id: 'pd-2' }]
+    const { client } = makeFeedMockClient(rows)
+    expect(await queryUpcomingFeedWithClient(client, ['n1'], CUTOFF, [])).toEqual(rows)
   })
 })
 

@@ -135,7 +135,9 @@ export function UserPage() {
 
       {isOwnProfile ? null : (
         <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
+          {/* 375px pass (slice 5, parked slice-4 finding): the row wraps
+              instead of forcing horizontal scroll with long handles. */}
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               aria-pressed={blocked}

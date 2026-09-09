@@ -9,12 +9,14 @@ import {
   hasPinged,
   togglePing,
 } from '../lib/db'
+import { isHiddenPost } from '../lib/feed'
 import type { PlaydateWithNeighborhood } from '../lib/types'
 
 type DetailState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
   | { status: 'not-found' }
+  | { status: 'hidden' }
   | { status: 'blocked'; handle: string }
   | { status: 'ready'; detail: PlaydateWithNeighborhood; count: number | null; going: boolean }
 
@@ -27,6 +29,8 @@ type DetailState =
  * The detail fetch is a direct lookup — the feed query's DB-level block
  * filter (slice 3) cannot cover this path — so a blocked host's post is
  * checked after the fetch and renders a hidden state, never the content.
+ * The same post-fetch discipline covers the slice-5 moderator hide
+ * (hidden_at set → the removed state, never the content).
  *
  * The going_pings table (migration 0007) may not exist in the live project
  * until the orchestrator applies it — a failed count/ping load hides the
@@ -50,6 +54,14 @@ export function PlaydateDetailPage() {
         if (cancelled) return
         if (detail === null) {
           setState({ status: 'not-found' })
+          return
+        }
+        // Slice 5: a moderator-hidden post (hidden_at set) renders the
+        // hidden state, never the content — the client-side check is the
+        // detail-path equivalent of the feed's DB-level .is('hidden_at',
+        // null) filter (same discipline as the slice-4 block check above).
+        if (isHiddenPost(detail)) {
+          setState({ status: 'hidden' })
           return
         }
         if (await getBlockState(detail.host.id)) {
@@ -127,6 +139,20 @@ export function PlaydateDetailPage() {
     )
   }
 
+  if (state.status === 'hidden') {
+    return (
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+        <h1 className="text-xl font-semibold text-slate-900">This drop-in has been removed</h1>
+        <p className="text-sm text-slate-500">
+          A moderator hid this post — it no longer shows up in feeds.
+        </p>
+        <Link to="/" className="text-sm text-indigo-600">
+          Back to today
+        </Link>
+      </div>
+    )
+  }
+
   if (state.status === 'blocked') {
     return (
       <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
@@ -166,7 +192,7 @@ export function PlaydateDetailPage() {
         {detail.details !== null ? (
           <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{detail.details}</p>
         ) : null}
-        <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
           <Link
             to={`/u/${encodeURIComponent(detail.host.display_name)}`}
             className="text-sm font-medium text-indigo-600"

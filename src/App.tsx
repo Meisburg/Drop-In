@@ -1,7 +1,8 @@
 import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router'
 import { SessionProvider, useSessionContext } from './components/SessionProvider'
 import { signOutUser } from './lib/db'
-import { ONBOARDING_PATH, resolveOnboardingRedirect, resolveProtectedRedirect } from './lib/onboarding'
+import { canModerate } from './lib/moderation'
+import { HOME_PATH, ONBOARDING_PATH, resolveOnboardingRedirect, resolveProtectedRedirect } from './lib/onboarding'
 import { BrowsePage } from './pages/BrowsePage'
 import { FeedPage } from './pages/FeedPage'
 import { LoginPage } from './pages/LoginPage'
@@ -12,13 +13,21 @@ import { PlaydateDetailPage } from './pages/PlaydateDetailPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { UserPage } from './pages/UserPage'
 
+/** The /mod route path (moderator tools, slice 5). */
+const MOD_PATH = '/mod'
+
 /**
  * All app routes (including /onboarding) require a session; a signed-in
  * user with 0 neighborhood memberships is sent to /onboarding first. The
  * gate decision itself lives in lib/onboarding.ts (unit-tested).
+ *
+ * Two slice-5 gates sit on top: a banned user (profile.banned_at set) is
+ * rendered the suspended screen instead of any route (no app access), and
+ * /mod only renders for moderator-flagged profiles (the pure canModerate
+ * guard, unit-tested; the reports RLS is the second wall).
  */
 function ProtectedShell() {
-  const { session, loading, profile, hasMemberships } = useSessionContext()
+  const { session, loading, profile, hasMemberships, suspended } = useSessionContext()
   const { pathname } = useLocation()
 
   if (loading) {
@@ -27,6 +36,30 @@ function ProtectedShell() {
         Loading…
       </div>
     )
+  }
+
+  // The banned-session gate (slice 5): useSession already signed the user
+  // out. Render the suspended screen instead of any route — including the
+  // signed-out redirect — so the ban stays visible (no app access).
+  if (suspended) {
+    return (
+      <div className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-slate-50 px-6 text-center">
+        <h1 className="text-xl font-semibold text-slate-900">Suspended</h1>
+        <p className="text-sm text-slate-500">
+          Your account was suspended by a moderator.
+        </p>
+        <Link to="/login" className="text-sm text-indigo-600">
+          Sign in with a different account
+        </Link>
+      </div>
+    )
+  }
+
+  // The /mod route guard (slice 5): only a loaded, moderator-flagged
+  // profile reaches the mod tools. A null profile (DB not applied / fetch
+  // failed) falls through to ModPage's own "can't verify" state.
+  if (session !== null && pathname === MOD_PATH && profile !== null && !canModerate(profile)) {
+    return <Navigate to={HOME_PATH} replace />
   }
 
   const signedIn = session !== null
