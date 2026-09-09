@@ -37,6 +37,16 @@ export interface SessionState {
   /** True when the current profile has at least one neighborhood membership. */
   hasMemberships: boolean
   /**
+   * True while the signed-in user's profile + membership fetch is in flight
+   * (ticket 06: the onboarding-gate race). The app shell's gate renders its
+   * loading state while this is set, so a signed-in user with memberships
+   * is never bounced to /onboarding before the fetch settles. Derived:
+   * true whenever the settled load (if any) belongs to a different user
+   * than the current session — including the first fetch after a session
+   * is restored from storage or a new user signs in.
+   */
+  profileLoading: boolean
+  /**
    * True once the signed-in user's profile has banned_at set (slice 5):
    * the session is rejected — the user is signed out and the shell renders
    * the suspended state (no app access). Sticky within the SPA session so
@@ -66,6 +76,11 @@ export interface SessionState {
  * It also enforces the slice-5 banned-session gate: a profile with
  * banned_at set is rejected (signed out, `suspended` set — the shell
  * renders the suspended screen, no app access).
+ *
+ * And it exposes `profileLoading` (ticket 06): true while the signed-in
+ * user's profile + membership fetch is in flight, so the shell's
+ * onboarding gate can render its loading state on a cold load instead of
+ * bouncing a signed-in member to /onboarding before the fetch settles.
  */
 export function useSession(): SessionState {
   const [session, setSession] = useState<Session | null>(null)
@@ -73,6 +88,13 @@ export function useSession(): SessionState {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [hasMemberships, setHasMemberships] = useState(false)
   const [suspended, setSuspended] = useState(false)
+  /**
+   * The user id whose profile + membership load has settled (ticket 06).
+   * `profileLoading` is derived from it: a session is present but the
+   * settled load belongs to someone else (or nobody — first fetch) → the
+   * membership load is still in flight.
+   */
+  const [profileSettledFor, setProfileSettledFor] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -109,6 +131,8 @@ export function useSession(): SessionState {
     if (uid === null) {
       setProfile(null)
       setHasMemberships(false)
+      // No user → nothing is loaded for anyone; a re-sign-in must re-fetch.
+      setProfileSettledFor(null)
       // suspended is sticky on purpose: a banned user who was just
       // auto-signed-out keeps seeing the suspended screen (the shell
       // renders it before the signed-out redirect).
@@ -153,18 +177,35 @@ export function useSession(): SessionState {
     setSuspended(false)
     setProfile(nextProfile)
     setHasMemberships(nextHasMemberships)
+    // Ticket 06: the membership load has settled for THIS user — the shell
+    // gate may now redirect (a load error still settles: the catch above
+    // treats a failed count as no memberships, the documented behavior).
+    setProfileSettledFor(uid)
   }, [])
 
   useEffect(() => {
     if (userId === null) {
       setProfile(null)
       setHasMemberships(false)
+      // Signed out → nothing is loaded; a later sign-in (even as the same
+      // user) must re-fetch before the gate settles (ticket 06).
+      setProfileSettledFor(null)
       return
     }
     void refresh()
   }, [userId, refresh])
 
-  return { session, loading, profile, hasMemberships, suspended, refresh }
+  return {
+    session,
+    loading,
+    profile,
+    hasMemberships,
+    // Ticket 06: the membership load is pending whenever a session is
+    // present but the settled load (if any) belongs to a different user.
+    profileLoading: session !== null && profileSettledFor !== session.user.id,
+    suspended,
+    refresh,
+  }
 }
 
 export async function signOutUser(): Promise<void> {

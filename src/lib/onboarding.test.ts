@@ -3,8 +3,10 @@ import {
   HOME_PATH,
   needsOnboarding,
   ONBOARDING_PATH,
+  resolveOnboardingGate,
   resolveOnboardingRedirect,
   resolveProtectedRedirect,
+  type OnboardingGateState,
 } from './onboarding'
 
 describe('needsOnboarding', () => {
@@ -49,5 +51,53 @@ describe('resolveOnboardingRedirect (the /onboarding route)', () => {
 
   it('lets signed-in users without memberships stay on /onboarding', () => {
     expect(resolveOnboardingRedirect(true, false)).toBeNull()
+  })
+})
+
+/** A settled gate state; override only what a case exercises. */
+function gateState(over: Partial<OnboardingGateState> = {}): OnboardingGateState {
+  return {
+    sessionLoading: false,
+    profileLoading: false,
+    signedIn: true,
+    hasMemberships: true,
+    suspended: false,
+    ...over,
+  }
+}
+
+describe('resolveOnboardingGate (the shell gate, ticket 06 cold-load race)', () => {
+  it('renders the loading state while the session read is in flight', () => {
+    expect(resolveOnboardingGate(gateState({ sessionLoading: true }))).toBe('loading')
+  })
+
+  it('renders the loading state while a signed-in user\'s membership fetch is in flight (the race)', () => {
+    // A stale hasMemberships=false must NOT bounce the user to /onboarding
+    // mid-load — that is the cold-load race this gate fixes.
+    expect(
+      resolveOnboardingGate(gateState({ profileLoading: true, hasMemberships: false })),
+    ).toBe('loading')
+  })
+
+  it('passes a settled signed-in user with memberships', () => {
+    expect(resolveOnboardingGate(gateState({}))).toBe('pass')
+  })
+
+  it('sends a settled signed-in user with no memberships to /onboarding', () => {
+    expect(resolveOnboardingGate(gateState({ hasMemberships: false }))).toBe('onboard')
+  })
+
+  it('passes a settled signed-out user (the signed-out gate sends /login)', () => {
+    expect(resolveOnboardingGate(gateState({ signedIn: false }))).toBe('pass')
+  })
+
+  it('renders the suspended screen for a banned session (no app access)', () => {
+    expect(resolveOnboardingGate(gateState({ suspended: true }))).toBe('suspended')
+  })
+
+  it('keeps the suspended screen even while a load is in flight', () => {
+    expect(
+      resolveOnboardingGate(gateState({ suspended: true, sessionLoading: true })),
+    ).toBe('suspended')
   })
 })

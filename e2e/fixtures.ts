@@ -141,13 +141,16 @@ export function localDatePlusDays(days: number): string {
 /**
  * Settle the page on `routePath` after a full (cold) navigation.
  *
- * The app's onboarding gate races the membership fetch on a cold page load:
- * the session (localStorage) is ready long before the profile + memberships
- * round-trip finishes, so the shell bounces a signed-in user through
- * /onboarding → / and the requested route is lost (existing app behavior,
- * logged in Risks of ticket 00 — not fixed here). Once the SPA state is
- * warm, a client-side navigation (the bottom nav tabs) reaches the route
- * without re-triggering the race.
+ * Historical note (ticket 00): the app's onboarding gate used to race the
+ * membership fetch on a cold page load (the shell bounced a signed-in
+ * user through /onboarding → / before the fetch landed), which is why
+ * this helper settles via the app's own navigation. Ticket 06 fixed the
+ * race — the gate now renders the shell's loading state until the fetch
+ * settles, so a fresh full-page load lands on its requested route
+ * directly (see e2e/onboarding-gate.e2e.ts, which deliberately skips
+ * this helper). settleOnRoute is kept for the existing specs and stays
+ * harmless: with the fix, the first `here()` check already holds and it
+ * returns after one beat.
  *
  * Reaching the URL is not enough: a cold-load redirect can still be in
  * flight (the document load event fires before the gate's client-side

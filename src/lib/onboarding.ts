@@ -54,3 +54,48 @@ export function resolveOnboardingRedirect(
   if (!needsOnboarding(hasMemberships)) return HOME_PATH
   return null
 }
+
+/** The app-shell's onboarding-gate decision (ticket 06: wait for the loads). */
+export type OnboardingGateDecision = 'suspended' | 'loading' | 'onboard' | 'pass'
+
+/** The session-layer state the onboarding gate decides from (useSession's shape). */
+export interface OnboardingGateState {
+  /** The persisted session read is in flight (useSession's `loading`). */
+  sessionLoading: boolean
+  /**
+   * The signed-in user's profile + membership fetch is in flight
+   * (useSession's `profileLoading`).
+   */
+  profileLoading: boolean
+  /** A session is present. */
+  signedIn: boolean
+  /** The settled membership count (only meaningful once the load has settled). */
+  hasMemberships: boolean
+  /** The signed-in user's profile is banned (the shell's suspended screen). */
+  suspended: boolean
+}
+
+/**
+ * The app-shell's onboarding-gate decision (ticket 06: cold-load race fix).
+ *
+ * On a full page load, the persisted session (localStorage) is ready long
+ * before the profile + membership fetch lands, so the gate must render the
+ * shell's loading state while any load is in flight and only redirect to
+ * /onboarding once the load has settled AND the user has no memberships —
+ * otherwise a signed-in member cold-loading /profile bounces through
+ * /onboarding → / and loses the requested route.
+ *
+ * - suspended (banned profile) → the suspended screen (no app access;
+ *   wins even while a load is in flight)
+ * - any load in flight → the loading state (never redirect mid-load)
+ * - settled + signed out → pass (the signed-out gate sends /login)
+ * - settled + signed in + 0 memberships → /onboarding
+ * - settled + signed in + ≥1 memberships → pass
+ */
+export function resolveOnboardingGate(state: OnboardingGateState): OnboardingGateDecision {
+  if (state.suspended) return 'suspended'
+  if (state.sessionLoading || (state.signedIn && state.profileLoading)) return 'loading'
+  if (!state.signedIn) return 'pass'
+  if (needsOnboarding(state.hasMemberships)) return 'onboard'
+  return 'pass'
+}

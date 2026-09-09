@@ -2,7 +2,13 @@ import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useLocat
 import { SessionProvider, useSessionContext } from './components/SessionProvider'
 import { signOutUser } from './lib/db'
 import { canModerate } from './lib/moderation'
-import { HOME_PATH, ONBOARDING_PATH, resolveOnboardingRedirect, resolveProtectedRedirect } from './lib/onboarding'
+import {
+  HOME_PATH,
+  ONBOARDING_PATH,
+  resolveOnboardingGate,
+  resolveOnboardingRedirect,
+  resolveProtectedRedirect,
+} from './lib/onboarding'
 import { BrowsePage } from './pages/BrowsePage'
 import { FeedPage } from './pages/FeedPage'
 import { LoginPage } from './pages/LoginPage'
@@ -19,8 +25,13 @@ const MOD_PATH = '/mod'
 
 /**
  * All app routes (including /onboarding) require a session; a signed-in
- * user with 0 neighborhood memberships is sent to /onboarding first. The
- * gate decision itself lives in lib/onboarding.ts (unit-tested).
+ * user with 0 neighborhood memberships is sent to /onboarding first — but
+ * only once the profile + membership load has settled: while any load is
+ * in flight (the cold-load race, ticket 06) the shell renders its loading
+ * state instead, so a signed-in member cold-loading a route is never
+ * bounced through /onboarding → / and loses the requested route. The gate
+ * decision itself lives in lib/onboarding.ts (resolveOnboardingGate,
+ * unit-tested).
  *
  * Two slice-5 gates sit on top: a banned user (profile.banned_at set) is
  * rendered the suspended screen instead of any route (no app access), and
@@ -28,21 +39,26 @@ const MOD_PATH = '/mod'
  * guard, unit-tested; the reports RLS is the second wall).
  */
 function ProtectedShell() {
-  const { session, loading, profile, hasMemberships, suspended } = useSessionContext()
+  const { session, loading, profile, hasMemberships, suspended, profileLoading } =
+    useSessionContext()
   const { pathname } = useLocation()
 
-  if (loading) {
-    return (
-      <div className="flex min-h-dvh items-center justify-center text-sm text-slate-500">
-        Loading…
-      </div>
-    )
-  }
+  // The onboarding-gate decision (ticket 06, pure + unit-tested in
+  // lib/onboarding.ts): 'loading' while the session/profile/membership
+  // loads are in flight, 'onboard' only once settled AND the user has no
+  // memberships, 'suspended' for a banned session (no app access).
+  const gate = resolveOnboardingGate({
+    sessionLoading: loading,
+    profileLoading,
+    signedIn: session !== null,
+    hasMemberships,
+    suspended,
+  })
 
   // The banned-session gate (slice 5): useSession already signed the user
   // out. Render the suspended screen instead of any route — including the
   // signed-out redirect — so the ban stays visible (no app access).
-  if (suspended) {
+  if (gate === 'suspended') {
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-slate-50 px-6 text-center">
         <h1 className="text-xl font-semibold text-slate-900">Suspended</h1>
@@ -52,6 +68,17 @@ function ProtectedShell() {
         <Link to="/login" className="text-sm text-indigo-600">
           Sign in with a different account
         </Link>
+      </div>
+    )
+  }
+
+  // The loading state (ticket 06): the persisted session and/or the
+  // profile + membership fetch is still in flight — render it, never
+  // redirect mid-load.
+  if (gate === 'loading') {
+    return (
+      <div className="flex min-h-dvh items-center justify-center text-sm text-slate-500">
+        Loading…
       </div>
     )
   }
