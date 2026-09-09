@@ -55,8 +55,13 @@ test('a host marker\'s drop-in reaches a viewer\'s radius feed with an "N mi" la
   const viewerPassword = `e2e-v-pw-${epoch}` // in-memory only — never written, never committed
 
   // The viewer: a second deterministic marker, signed up in a FRESH context
-  // (the default context carries the host marker's session).
-  const viewerContext = await browser.newContext({ baseURL: 'http://localhost:4173' })
+  // (the default context carries the host marker's session). The clean
+  // storageState overrides the project's merged marker state so the viewer
+  // starts signed-out.
+  const viewerContext = await browser.newContext({
+    baseURL: 'http://localhost:4173',
+    storageState: { cookies: [], origins: [] },
+  })
   const viewerPage = await viewerContext.newPage()
   await viewerPage.goto('/login')
   await viewerPage.getByRole('button', { name: 'New here? Create an account' }).click()
@@ -94,10 +99,13 @@ test('a host marker\'s drop-in reaches a viewer\'s radius feed with an "N mi" la
 
   // The viewer's radius feed shows the card WITH the "N mi" distance label
   // (integer miles — the pure haversine predicate, unit-tested in feed.ts).
+  // The label lives on the card's meta line (the "neighborhood · time · N mi"
+  // <p>); scope the check to it — the anchor's textContent glues the host's
+  // avatar initial right after "mi", which breaks the \b boundary.
   await viewerPage.reload()
   const card = viewerPage.locator('a').filter({ hasText: title }).first()
   await expect(card).toBeVisible()
-  await expect(card).toContainText(/\d+ mi\b/)
+  await expect(card.locator('p').filter({ hasText: /\d+ mi\b/ })).toBeVisible()
 
   await viewerContext.close()
 })
