@@ -6,11 +6,15 @@
 
 **Status:** ready-for-agent
 
-- [ ] Feed cards have no report flag; card layout stays clean at 375px
-- [ ] Detail page still has the Report button; filing a report works end-to-end
-- [ ] Host viewing own post sees "This is your post" + count, no ping button
-- [ ] Non-host still sees the "We're going" toggle and count (no regression)
-- [ ] /new: start time via steppers, duration via chips; end computed; invalid inputs show inline errors, nothing saved
-- [ ] /new validation is a reworked pure validator with unit tests (duration math covered)
-- [ ] Duplicate appears on own posts only (not others'), prefills /new, forces re-entry of date/time
-- [ ] npm run build && npm run test exit 0
+- [x] Feed cards have no report flag; card layout stays clean at 375px
+- [x] Detail page still has the Report button; filing a report works end-to-end
+- [x] Host viewing own post sees "This is your post" + count, no ping button
+- [x] Non-host still sees the "We're going" toggle and count (no regression)
+- [x] /new: start time via steppers, duration via chips; end computed; invalid inputs show inline errors, nothing saved
+- [x] /new validation is a reworked pure validator with unit tests (duration math covered)
+- [x] Duplicate appears on own posts only (not others'), prefills /new, forces re-entry of date/time
+- [x] npm run build && npm run test exit 0
+
+## Comments
+
+- 2026-09-09 — COMPLETE. Commit 8bdaeb2 (8 files: App.tsx routing for duplicate state, DropInCard flag removal, detail host panel, /new steppers+chips, ProfilePage duplicate list with queryMyPlaydatesWithClient). Verifier (orchestrator re-run): build exit 0, 77/77 tests (was 65 — 12 new tests covering 30-min grid, chips, end computation, prefill). All ACs traced in code by orchestrator. No migrations in this slice. Human live check pending (dev server :5173).

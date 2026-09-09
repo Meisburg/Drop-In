@@ -5,9 +5,9 @@
 
 ## Current position
 
-- **Phase:** V1 complete
-- **Active slice:** 5 (mod tools + mobile polish) — **COMPLETE** (code + review + verifier + DB apply + live check all PASS; orchestrator re-verified independently: build exit 0, 65/65 tests, commit 2eacd47, hidden_at/banned_at REST 200, 0010 trigger in repo)
-- **Next action:** V1 complete + founder flag APPLIED and VERIFIED 2026-09-09 (Jon Meisburg → moderators=true, returned-row proof; /mod is live). Feed PGRST201 fixed (commit 80f9b07) — Vite dev server running at http://localhost:5173 (log /tmp/opencode/playdate-dev.log); human should reload the feed. Remaining human calls (parked): 0011 self-elevation trigger, display_name length cap, marker-user cleanup (lv1–lv5 + 3 probe users created during the RLS diagnosis).
+- **Phase:** V2 implementing
+- **Active slice:** V2.1 (quick UX batch) — **code COMPLETE** (commit 8bdaeb2; orchestrator re-verified: build exit 0, 77/77 tests; no migrations in this slice). Human live check on :5173 pending.
+- **Next action:** human tries /new steppers + chips, Duplicate, and the host panel in the browser → then dispatch V2 slice 2 (profiles v2: avatars/bio/kids + migration 0011 incl. self-elevation trigger). V2 workflow: grill (16 decisions) → spec (.scratch/v2/spec.md) → 5 tickets (.scratch/v2/issues/) → plan-v2.md — all human-approved.
 
 ## Tooling note (2026-09-09)
 
