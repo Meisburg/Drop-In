@@ -46,7 +46,7 @@ function pngChunk(type: string, data: Buffer): Buffer {
   const out = Buffer.alloc(8 + data.length + 4)
   out.writeUInt32BE(data.length, 0)
   body.copy(out, 4)
-  out.writeUInt32BE(crc32(body), 4 + data.length)
+  out.writeUInt32BE(crc32(body), 8 + data.length)
   return out
 }
 
@@ -135,7 +135,10 @@ test.afterEach(async () => {
       body: JSON.stringify({ avatar_url: null }),
     })
     const query = `${url}/rest/v1/playdates?host_profile_id=eq.${userId}&select=id`
-    const del = await fetch(query, { method: 'DELETE', headers })
+    const del = await fetch(query, {
+      method: 'DELETE',
+      headers: { ...headers, Prefer: 'return=representation' },
+    })
     const deleted = del.ok ? ((await del.json()) as Array<Record<string, unknown>>) : []
     const check = await fetch(query, { headers })
     const remaining = check.ok ? ((await check.json()) as Array<Record<string, unknown>>) : null
