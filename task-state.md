@@ -6,8 +6,8 @@
 ## Current position
 
 - **Phase:** V2 implementing
-- **Active slice:** V2.2 (profiles v2, ticket 02) — **code + live COMPLETE** (commits b0981b1+c389ce4+4f3cc72; 102/102 unit, 6/6 e2e; 0011 + self-elevation trigger fix APPLIED LIVE 2026-09-09 via CDP; live: non-mod self-elevation 400 P0001, postgres ban path works, smoke probes 200).
-- **Next action:** dispatch V2 slice 3 (ticket 03, zip + radius discovery + migration 0012) to the dev agent. Standing rule: slices 3–5 ship 1–2 e2e specs; verifier runs npx playwright test + npm run build && npm run test.
+- **Active slice:** V2.3 (zip + radius, ticket 03) — **code + live COMPLETE** (commits e78f174+8ecdfbf; 120/120 unit, 8/8 e2e; 0012 APPLIED LIVE 2026-09-09 via CDP — 605-row WA zip seed; REST probes: host-embed distance path 200, no PGRST201).
+- **Next action:** SLICE 3.5 HUMAN GATE — two-user beta (founder + one other parent on real phones: post → ping → share-link once slice 4 lands). After the beta: dispatch V2 slice 4 (ticket 04, comments + migration 0013). Standing rule: slice 4 ships 1–2 e2e specs.
 
 ## Tooling note (2026-09-09)
 
@@ -25,6 +25,7 @@
 | 5 mod tools + mobile polish | complete | commit 2eacd47; reviewer PASS (3 non-blocking parked: self-elevation hole, handle-length 375px edge, pre-apply feed window); verifier PASS (build exit 0, 65/65 tests, combined gate exit 0); 0009+0010 APPLIED LIVE 2026-09-09 via CDP (both "Success"; DB objects verified); orchestrator re-verified independently (build+tests+REST 200 on hidden_at/banned_at; 0010 trigger file present); LIVE CHECK PASS (moderator hide 204 + feed hidden_at exclusion proven vs. unfiltered control; ban banned_at set; host self-ping rejected 400 P0001 "hosts cannot ping their own post" per human-decided trigger; non-mod hide = RLS silent no-op; markers live-verify5-1788977882[-b|-m]@gmail.com, mod flag reverted, lv5 rows deleted, Chrome released) | 0009 expects profiles.moderators from 0008 (documented); founder-flag UPDATE = human one-time SQL (NOT executed — waiting on human); hide/ban final in V1 (no unhide/unban UI); 0010 = BEFORE INSERT trigger (CHECK can't span tables), DO-block idempotency; PostgREST surfaces RLS-blocked 0-row UPDATEs as 2xx, never 403 (lesson) |
 | V2.1 quick UX batch (ticket 01) | complete | commit 8bdaeb2; 77/77 tests | report flag off cards, "This is your post" host panel, 30-min steppers + duration chips, duplicate prefill; no migrations |
 | V2.2 profiles v2 (ticket 02) | complete | commits b0981b1+c389ce4+4f3cc72; 102/102 unit, 6/6 e2e; 0011 + trigger fix APPLIED LIVE 2026-09-09 via CDP; live: non-mod 400 P0001 + postgres ban + smoke 200 | avatars (256px/≤5MB) + bio (≤500) + structured kids (first name+age, max 5) + onboarding step + nudge banner; 0011 = profiles cols + kids table + avatars bucket + self-elevation trigger; reviewer NEEDS_CHANGES (trigger blocked postgres) -> 4f3cc72 non-JWT pass-through, live-proven; marker lv6-1788991152 (banned_at set) |
+| V2.3 zip + radius (ticket 03) | complete | commits e78f174+8ecdfbf; 120/120 unit, 8/8 e2e; 0012 APPLIED LIVE 2026-09-09 via CDP (605-row WA seed); REST probes 200 (no PGRST201) | radius feed (haversine client-side over pinned host-embed, no PostGIS; post location = host home_zip, unknown zip excluded); "N mi" on cards; onboarding zip+radius replaces neighborhood picker (gate now home_zip-based; memberships display-only); /profile location card; 0012 = zip_codes WA seed (SimpleMaps v1.95.1 provenance) + profiles home_zip/radius_miles + RLS; reviewer PASS (4 cosmetic nits parked: comment city label, rejected-promise zip cache, doc typo, trailing newlines); 8ecdfbf = e2e infra fix (viewer context clean storageState); 3 dev-agent stalls -> /new reset + file-based briefs (see decisions log) |
 
 ## Open risks
 
@@ -50,6 +51,7 @@
 
 - Test artifact (lv6): live-verify marker lv6-1788991152@gmail.com (auth user 63a23f4e-63a9-48d8-91f8-98b8f0c6e0c4, profiles row, banned_at SET — suspended on next session). Optional human cleanup via CDP.
 - Untracked dirs (out of slice scope; orchestrator to decide tracking): .opencode/skills/, .scratch/guest-list/, .scratch/v3/.
+- Test artifacts (lv7 + e2e, 2026-09-09): lv7-1788993934@gmail.com (auth user e38cf785-04a0-4485-a6ce-aae98e34e389; profiles row home_zip 98109 / radius_miles 10); e2e markers e2e-1788993508 + e2e-1788993746 (auth + profile rows; playdate rows cleaned by spec); e2e-v-<epoch> viewer accounts persist by design (pending sweep). Optional human cleanup alongside lv1–lv6.
 ## Decisions log
 
 - 2026-09-04 — Stack: Vite+React+TS+Tailwind, Supabase backend (auth + Postgres).
@@ -74,6 +76,7 @@
 - 2026-09-09 — LIVE-LESSON: PostgREST surfaces RLS-blocked 0-row UPDATEs as 2xx (204 / 200+[]), never 403 — the RLS wall holds, the HTTP layer is silent; /mod's client route guard is the user-facing wall. CDP apply: destructive DDL needs the "Run query" confirm click + a follow-up SELECT to verify execution.
 
 - 2026-09-09 — V2 SLICE 2 (orchestrator): reviewer NEEDS_CHANGES on 0011 self-elevation trigger — the BEFORE UPDATE guard blocked EVERY non-moderator incl. postgres/service_role (auth.uid() is NULL via CDP/dashboard), which would break the ban path. Fix 4f3cc72: `if auth.uid() is null then return new` pass-through so only JWT non-moderators are locked out. Live-proven: non-mod self-elevation UPDATE -> 400 P0001; postgres banned_at UPDATE succeeds. LESSON: a trigger guard that must allow a server role must test auth.uid() IS NULL (non-JWT) separately from the moderator check.
+- 2026-09-09 — V2 SLICE 3 (orchestrator): post location = host's home_zip (V2 data model has no per-post location); unknown/missing host zip excluded from the radius feed (no invented coords). Zip seed = WA-only (605 rows, 98xxx, SimpleMaps v1.95.1 filtered to WA) instead of the 41K-row US extract (plan-v2 risk pre-decision; expandable later). Ops lesson: 3 dev-agent stalls on slice 3 (turns died mid-Write — output truncation in a bloated ~163K session). WORKAROUND NOW STANDARD: send "/new" as a STANDALONE herdr prompt (command form resets the opencode session; embedded in prose it is swallowed as chat), then a file-based brief (/tmp/*.txt) with <150-line write chunks; split large slices into small jobs. 0012 live-apply done by the verifier, not the dev agent.
 ## Escalations (waiting on human)
 
 - 2026-09-09 — FOUNDER FLAG: RESOLVED pending verification — human signed up ("Jon Meisburg", profile cd733843-1436-42d0-b205-284172578bdb, 1 membership Greenwood, moderators=false). Orchestrator to apply `update public.profiles set moderators = true where display_name = 'Jon Meisburg';` via cdp-sql-runner and confirm → then /mod is live for the human. — FLAG APPLIED + VERIFIED 2026-09-09 (row re-read: moderators=true).
