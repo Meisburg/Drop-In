@@ -212,7 +212,19 @@ Pinned contracts every builder must respect (reviewers enforce these):
   profiles paths, so every `host:profiles!inner` embed 400s (feed + detail).
   Fixed by pinning the embed to the FK hint
   (`profiles!playdates_host_profile_id_fkey`, feed.ts + db.ts:483; commit
-  80f9b07; verified live with a real auth token). Lesson: mock-client tests
+  80f9b07; verified live with a real auth token).   Lesson: mock-client tests
   can't catch embed-ambiguity — real-DB smoke test required when a migration
   adds an FK between two already-FK-linked tables. Founder flag applied +
   verified via cdp-sql-runner (moderators=true); /mod is live.
+- 2026-09-09 — V2 FEEDBACK LOG (founder, first-user pass): (1) ping toggle
+  invisible on own post — host view needs explicit "this is your post"
+  framing; (2) kids on profile (names/gender/ages) populating attendee +
+  host views; (3) DM/messaging host↔attendee (V1 non-goal, now wanted);
+  (4) report icon reads as "like" — rework; (5) time entry UX — 30-min
+  increments instead of raw datetime pickers; (6) duplicate a past drop-in;
+  (7) share to Signal/Messenger (Web Share API); (8) public post view for
+  signed-out users + signup-gated "I'm coming" (privacy-posture change);
+  (9) onboarding: photo + bio; (10) profile photos; (11) discovery by
+  home-neighborhood + drive-mile radius instead of followed-neighborhood
+  tags. Existing-but-invisible to founder: ping toggle (host-hidden), host
+  link on cards.
