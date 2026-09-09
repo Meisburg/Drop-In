@@ -9,6 +9,7 @@
  * Supabase-facing wrapper lives in db.ts.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Comment } from './types'
 
 /** What a ping toggle should do, decided purely (the caller executes it). */
 export type PingDecision = 'noop-host' | 'ping' | 'unping'
@@ -137,4 +138,76 @@ export async function issueReportInsert(
 ): Promise<void> {
   const { error } = await client.from('reports').insert(payload)
   if (error) throw error
+}
+
+// ---------------------------------------------------------------------------
+// V2 slice 4 (ticket 04): comment permissions — the pure seam.
+//
+// The detail page decides what it RENDERS from these (the delete button,
+// the moderator hide button, visibility); migration 0013's RLS is the WALL
+// (a non-privileged action is a silent no-op server-side — the logged
+// PostgREST 2xx lesson). planCommentAction-style: a pure decision, the
+// caller executes (same discipline as planPing / isHostBlocked).
+
+/**
+ * The context a comment action is decided against: the signed-in viewer,
+ * the event's host (a host may delete any comment on their own event),
+ * and the viewer's moderator flag (the shared profile from useSession —
+ * the same source the /mod route guard reads via canModerate).
+ */
+export interface CommentActionContext {
+  /** The signed-in viewer's profile id (= auth user id). */
+  viewerId: string
+  /** The event's host_profile_id (the host may delete any comment on it). */
+  hostId: string
+  /** The viewer's moderator flag (migration 0008 column). */
+  isModerator: boolean
+}
+
+/** What the signed-in viewer may do with ONE comment (decided purely). */
+export interface CommentActionPlan {
+  /** Delete (hard): the comment's author, or the event's host. */
+  canDelete: boolean
+  /** Hide (soft, writes hidden_at): moderators only (the /mod model). */
+  canHide: boolean
+  /**
+   * Visible: hidden_at is null. Hidden comments are invisible to everyone
+   * (the SELECT policy filters them DB-side; this is the pure mirror for
+   * rows that are somehow in hand).
+   */
+  canSee: boolean
+}
+
+/** The pure comment-permission decision for one comment (ticket 04 AC). */
+export function planCommentAction(
+  comment: Pick<Comment, 'author_profile_id' | 'hidden_at'>,
+  ctx: CommentActionContext,
+): CommentActionPlan {
+  // The author deletes their own comment; the EVENT HOST deletes any
+  // comment on their own event (both paths are the hard delete).
+  const canDelete = comment.author_profile_id === ctx.viewerId || ctx.viewerId === ctx.hostId
+  return {
+    canDelete,
+    canHide: ctx.isModerator,
+    canSee: comment.hidden_at === null,
+  }
+}
+
+/** Comment body cap (ticket 04: <= 500 chars; the 0013 CHECK is the backstop). */
+export const COMMENT_MAX_LENGTH = 500
+
+/**
+ * Validate a comment body (ticket 04 AC: empty rejected client- AND
+ * DB-side): non-empty after trim, at most COMMENT_MAX_LENGTH characters
+ * (the cap is on the raw body, matching the 0013 CHECK). Returns an error
+ * message, or null when the body is acceptable.
+ */
+export function validateCommentBody(body: string): string | null {
+  if (body.trim().length === 0) {
+    return 'Write a comment first — it cannot be empty.'
+  }
+  if (body.length > COMMENT_MAX_LENGTH) {
+    return `Keep comments to ${COMMENT_MAX_LENGTH} characters.`
+  }
+  return null
 }

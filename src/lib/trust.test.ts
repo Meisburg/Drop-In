@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
+  COMMENT_MAX_LENGTH,
   isHostBlocked,
   issueReportInsert,
+  planCommentAction,
   planPing,
   togglePingWithClient,
+  validateCommentBody,
   validateReportReason,
+  type CommentActionContext,
   type ReportInsertPayload,
 } from './trust'
 
@@ -244,5 +248,70 @@ describe('issueReportInsert (42501 regression: plain insert, no RETURNING)', () 
     // chain that resolves the 42501 error and reject — this test fails.
     await expect(issueReportInsert(client, REPORT_PAYLOAD)).resolves.toBeUndefined()
     expect(calls.select).toBe(0)
+  })
+})
+
+describe('planCommentAction (comment permissions, ticket 04)', () => {
+  const comment = { author_profile_id: 'author-1', hidden_at: null }
+  const stranger: CommentActionContext = { viewerId: 'stranger-1', hostId: 'host-1', isModerator: false }
+
+  it('the author can delete their own comment (and see it)', () => {
+    const plan = planCommentAction(comment, { ...stranger, viewerId: 'author-1' })
+    expect(plan.canDelete).toBe(true)
+    expect(plan.canHide).toBe(false)
+    expect(plan.canSee).toBe(true)
+  })
+
+  it('the event host can delete any comment on their event (incl. the author’s)', () => {
+    const plan = planCommentAction(comment, { ...stranger, viewerId: 'host-1' })
+    expect(plan.canDelete).toBe(true)
+    expect(plan.canHide).toBe(false)
+    expect(plan.canSee).toBe(true)
+  })
+
+  it('a stranger (neither author nor host) can neither delete nor hide', () => {
+    const plan = planCommentAction(comment, stranger)
+    expect(plan.canDelete).toBe(false)
+    expect(plan.canHide).toBe(false)
+    expect(plan.canSee).toBe(true)
+  })
+
+  it('a moderator can hide (and, as non-author non-host, not delete)', () => {
+    const plan = planCommentAction(comment, { ...stranger, isModerator: true })
+    expect(plan.canHide).toBe(true)
+    expect(plan.canDelete).toBe(false)
+  })
+
+  it('a moderator who is also the author can both delete and hide', () => {
+    const plan = planCommentAction(comment, { viewerId: 'author-1', hostId: 'host-1', isModerator: true })
+    expect(plan.canDelete).toBe(true)
+    expect(plan.canHide).toBe(true)
+  })
+
+  it('a hidden comment is not visible (canSee false — the soft-hide)', () => {
+    const plan = planCommentAction(
+      { author_profile_id: 'author-1', hidden_at: '2026-09-09T00:00:00Z' },
+      stranger,
+    )
+    expect(plan.canSee).toBe(false)
+  })
+})
+
+describe('validateCommentBody (empty + 500-char cap, ticket 04)', () => {
+  it('rejects an empty body', () => {
+    expect(validateCommentBody('')).not.toBeNull()
+  })
+
+  it('rejects a whitespace-only body', () => {
+    expect(validateCommentBody('   ')).not.toBeNull()
+  })
+
+  it('accepts a body up to and including the cap', () => {
+    expect(validateCommentBody('Is Max okay to bring?')).toBeNull()
+    expect(validateCommentBody('x'.repeat(COMMENT_MAX_LENGTH))).toBeNull()
+  })
+
+  it('rejects a body over the cap', () => {
+    expect(validateCommentBody('x'.repeat(COMMENT_MAX_LENGTH + 1))).not.toBeNull()
   })
 })

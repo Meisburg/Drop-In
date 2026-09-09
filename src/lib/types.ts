@@ -162,6 +162,29 @@ export interface Report {
 }
 
 /**
+ * A public comment on a drop-in (V2 ticket 04, migration 0013): the
+ * per-event question thread. body <= 500 chars (the 0013 CHECK is the DB
+ * backstop); hidden_at = the moderator soft-hide (the /mod model) — hidden
+ * comments are invisible to everyone (the SELECT policy's `hidden_at is
+ * null` filter; deletes are hard, hides are soft).
+ */
+export interface Comment {
+  id: string
+  playdate_id: string
+  author_profile_id: string
+  body: string
+  created_at: string
+  /** Set when a moderator hides the comment (migration 0013). Null = visible. */
+  hidden_at: string | null
+}
+
+/** A comment with its author joined in (listComments result, V2 ticket 04). */
+export interface CommentWithAuthor extends Comment {
+  /** The comment's author (avatar + handle — the 40px round render). */
+  author: PlaydateHost
+}
+
+/**
  * The /new duplicate-prefill (V2 slice 1, carried as router state on /new):
  * everything from a post EXCEPT the date/time — the start date, start time,
  * and duration are always re-entered by the user (pinned: the end is

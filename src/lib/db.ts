@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import type { Session } from '@supabase/supabase-js'
 import type {
+  CommentWithAuthor,
   Kid,
   MembershipWithNeighborhood,
   Neighborhood,
@@ -24,6 +25,7 @@ import {
 import {
   issueReportInsert,
   togglePingWithClient,
+  validateCommentBody,
   validateReportReason,
   type ReportInsertPayload,
 } from './trust'
@@ -1032,5 +1034,88 @@ export async function removeKid(profileId: string, kidId: string): Promise<void>
     .delete()
     .eq('id', kidId)
     .eq('profile_id', profileId)
+  if (error) throw error
+}
+
+// ---------------------------------------------------------------------------
+// V2 slice 4 (ticket 04): comments on events.
+//
+// The comments table (migration 0013) may not exist in the live project
+// until the orchestrator applies it — every function here throws on that,
+// and the detail page hides the comment section instead of crashing (same
+// discipline as the ping section in PlaydateDetailPage).
+
+/**
+ * A playdate's comment thread (V2 ticket 04): flat, chronological
+ * (created_at ascending), the author joined in (avatar + handle). The
+ * author embed is pinned to the FK constraint name (PGRST201 lesson):
+ * `comments_author_profile_id_fkey` is the 0013 constraint. Hidden
+ * comments never come back (the SELECT policy's `hidden_at is null`
+ * filter — the DB-level soft-hide).
+ */
+export async function listComments(playdateId: string): Promise<CommentWithAuthor[]> {
+  const { data, error } = await supabase
+    .from('comments')
+    .select(
+      'id, playdate_id, author_profile_id, body, created_at, hidden_at, author:profiles!comments_author_profile_id_fkey ( id, display_name, avatar_url )',
+    )
+    .eq('playdate_id', playdateId)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  // Cast via unknown: without generated DB types, the embed is inferred
+  // loosely (same pattern as listMemberships).
+  return (data ?? []) as unknown as CommentWithAuthor[]
+}
+
+/**
+ * Post a comment as the signed-in user (author_profile_id = auth user id —
+ * the 0013 INSERT policy is the wall for non-authors). The body is
+ * validated first with the pure validateCommentBody (same defense in depth
+ * as createReport): an empty/over-cap body throws before any insert (the
+ * 0013 CHECK is the DB backstop). Plain insert, no .select() — the caller
+ * re-fetches the thread for the new row (issueReportInsert discipline).
+ */
+export async function addComment(playdateId: string, body: string): Promise<void> {
+  const bodyError = validateCommentBody(body)
+  if (bodyError !== null) throw new Error(bodyError)
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (!user) throw new Error('No authenticated user — cannot comment on a drop-in.')
+
+  const { error } = await supabase
+    .from('comments')
+    .insert({ playdate_id: playdateId, author_profile_id: user.id, body: body.trim() })
+  if (error) throw error
+}
+
+/**
+ * Delete a comment (hard delete; ticket 04: the author deletes their own,
+ * the event's host deletes any comment on their event — the 0013 DELETE
+ * policy is the wall; the UI offers the button only per the pure
+ * planCommentAction, so a non-privileged delete is a silent RLS no-op —
+ * the logged PostgREST 2xx lesson).
+ */
+export async function deleteComment(commentId: string): Promise<void> {
+  const { error } = await supabase.from('comments').delete().eq('id', commentId)
+  if (error) throw error
+}
+
+/**
+ * Hide a comment (moderator op, ticket 04): set comments.hidden_at — the
+ * soft-hide (the /mod model; hidden comments are invisible to everyone via
+ * the SELECT policy). No unhide in V2 (mirrored from hidePlaydate's
+ * V1-minimum). Plain update, no .select() — the 42501 discipline: after
+ * the update the row is no longer visible to its own read-back (hidden_at
+ * set), so a RETURNING select would 42501 under the SELECT policy.
+ */
+export async function hideComment(commentId: string): Promise<void> {
+  const { error } = await supabase
+    .from('comments')
+    .update({ hidden_at: new Date().toISOString() })
+    .eq('id', commentId)
   if (error) throw error
 }

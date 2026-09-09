@@ -4,14 +4,20 @@ import { HostAvatar } from '../components/DropInCard'
 import { ReportDialog } from '../components/ReportDialog'
 import { useSessionContext } from '../components/SessionProvider'
 import {
+  addComment,
+  deleteComment,
   getBlockState,
   getGoingCount,
   getPlaydateDetail,
   hasPinged,
+  hideComment,
+  listComments,
   togglePing,
 } from '../lib/db'
 import { isHiddenPost, toDuplicatePrefill } from '../lib/feed'
-import type { PlaydateWithNeighborhood } from '../lib/types'
+import { canModerate } from '../lib/moderation'
+import { COMMENT_MAX_LENGTH, planCommentAction, validateCommentBody } from '../lib/trust'
+import type { CommentWithAuthor, PlaydateWithNeighborhood } from '../lib/types'
 
 type DetailState =
   | { status: 'loading' }
@@ -19,7 +25,14 @@ type DetailState =
   | { status: 'not-found' }
   | { status: 'hidden' }
   | { status: 'blocked'; handle: string }
-  | { status: 'ready'; detail: PlaydateWithNeighborhood; count: number | null; going: boolean }
+  | {
+      status: 'ready'
+      detail: PlaydateWithNeighborhood
+      count: number | null
+      going: boolean
+      /** The comment thread (null = not loaded — 0013 not applied, section hidden). */
+      comments: CommentWithAuthor[] | null
+    }
 
 /**
  * /playdate/:id — a drop-in's full details (slice 4): title, place,
@@ -39,6 +52,15 @@ type DetailState =
  * The same post-fetch discipline covers the slice-5 moderator hide
  * (hidden_at set → the removed state, never the content).
  *
+ * V2 slice 4 (ticket 04): a flat chronological comment thread under the
+ * post — any signed-in parent comments (<= 500 chars, empty rejected
+ * client-side), the author or the event's host deletes (the pure
+ * planCommentAction decides the buttons), moderators get a per-comment
+ * Hide (the soft-hide via hidden_at; no /mod comment list in V2 scope —
+ * hiding happens here, on the detail page). The comments table (0013)
+ * may not be applied yet: a failed thread load hides the section instead
+ * of crashing the page (the same discipline as the ping section above).
+ *
  * The going_pings table (migration 0007) may not exist in the live project
  * until the orchestrator applies it — a failed count/ping load hides the
  * ping section instead of crashing the page (same discipline as slices 2–3).
@@ -46,11 +68,16 @@ type DetailState =
 export function PlaydateDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { session, loading: sessionLoading } = useSessionContext()
+  const { session, loading: sessionLoading, profile } = useSessionContext()
   const [state, setState] = useState<DetailState>({ status: 'loading' })
   const [reporting, setReporting] = useState(false)
   const [pingBusy, setPingBusy] = useState(false)
   const [pingError, setPingError] = useState<string | null>(null)
+  // V2 slice 4: the comment composer (empty rejected client-side; the
+  // pure validateCommentBody is the second check in handleAddComment).
+  const [commentDraft, setCommentDraft] = useState('')
+  const [commentBusy, setCommentBusy] = useState(false)
+  const [commentError, setCommentError] = useState<string | null>(null)
 
   useEffect(() => {
     if (sessionLoading || session === null || id === undefined || id === '') return
@@ -76,14 +103,15 @@ export function PlaydateDetailPage() {
           setState({ status: 'blocked', handle: detail.host.display_name })
           return
         }
-        // The ping table may not be applied yet: a failed count/ping-state
-        // load just hides the ping section, it never hides the post itself.
-        const [count, going] = await Promise.all([
+        // The ping + comments tables may not be applied yet (0007 / 0013):
+        // a failed load just hides that section, never the post itself.
+        const [count, going, comments] = await Promise.all([
           getGoingCount(id).catch(() => null),
           hasPinged(id).catch(() => false),
+          listComments(id).catch(() => null),
         ])
         if (cancelled) return
-        setState({ status: 'ready', detail, count, going })
+        setState({ status: 'ready', detail, count, going, comments })
       } catch (err) {
         if (cancelled) return
         setState({
@@ -105,11 +133,78 @@ export function PlaydateDetailPage() {
     try {
       const going = await togglePing(detail.id)
       const count = await getGoingCount(detail.id)
-      setState({ status: 'ready', detail, count, going })
+      setState({ status: 'ready', detail, count, going, comments: state.comments })
     } catch (err) {
       setPingError(err instanceof Error ? err.message : 'Could not update your ping. Try again.')
     } finally {
       setPingBusy(false)
+    }
+  }
+
+  /**
+   * Post the composer's draft (V2 slice 4): the empty/over-cap rejection is
+   * the pure validateCommentBody (the DB CHECK is the backstop); a success
+   * re-fetches the thread for the new row (the insert is a plain chain —
+   * the issueReportInsert discipline, so the fresh row's author join comes
+   * back with the list).
+   */
+  async function handleAddComment() {
+    if (state.status !== 'ready' || commentBusy) return
+    const detail = state.detail
+    const bodyError = validateCommentBody(commentDraft)
+    if (bodyError !== null) {
+      setCommentError(bodyError)
+      return
+    }
+    setCommentBusy(true)
+    setCommentError(null)
+    try {
+      await addComment(detail.id, commentDraft)
+      setCommentDraft('')
+      const comments = await listComments(detail.id)
+      setState({ status: 'ready', detail, count: state.count, going: state.going, comments })
+    } catch (err) {
+      setCommentError(err instanceof Error ? err.message : 'Could not post your comment. Try again.')
+    } finally {
+      setCommentBusy(false)
+    }
+  }
+
+  /** Delete a comment (author or event host — the pure planCommentAction gates the button). */
+  async function handleDeleteComment(commentId: string) {
+    if (state.status !== 'ready' || commentBusy) return
+    const detail = state.detail
+    setCommentBusy(true)
+    setCommentError(null)
+    try {
+      await deleteComment(commentId)
+      const comments = (state.comments ?? []).filter((c) => c.id !== commentId)
+      setState({ status: 'ready', detail, count: state.count, going: state.going, comments })
+    } catch (err) {
+      setCommentError(err instanceof Error ? err.message : 'Could not delete that comment. Try again.')
+    } finally {
+      setCommentBusy(false)
+    }
+  }
+
+  /**
+   * Hide a comment (moderators only — the soft-hide via hidden_at, the /mod
+   * model). The hidden row is no longer SELECT-able (the policy filters
+   * it), so the row is dropped client-side to match the server's answer.
+   */
+  async function handleHideComment(commentId: string) {
+    if (state.status !== 'ready' || commentBusy) return
+    const detail = state.detail
+    setCommentBusy(true)
+    setCommentError(null)
+    try {
+      await hideComment(commentId)
+      const comments = (state.comments ?? []).filter((c) => c.id !== commentId)
+      setState({ status: 'ready', detail, count: state.count, going: state.going, comments })
+    } catch (err) {
+      setCommentError(err instanceof Error ? err.message : 'Could not hide that comment. Try again.')
+    } finally {
+      setCommentBusy(false)
     }
   }
 
@@ -180,6 +275,9 @@ export function PlaydateDetailPage() {
 
   const { detail, count, going } = state
   const isHost = session.user.id === detail.host_profile_id
+  // The moderator flag off the shared profile (same source the /mod route
+  // guard reads): true shows each comment's Hide action (ticket 04).
+  const isModerator = canModerate(profile)
 
   return (
     <div className="flex flex-col gap-4">
@@ -257,6 +355,108 @@ export function PlaydateDetailPage() {
           {pingError !== null ? <p className="mt-2 text-sm text-red-600">{pingError}</p> : null}
         </div>
       )}
+
+      {/* V2 slice 4 (ticket 04): the comment thread — flat, chronological,
+        author avatar (the HostAvatar shape) + handle linking to /u/:handle.
+        The per-comment buttons come from the pure planCommentAction; the
+        section is absent (null) until 0013 is applied — the page never
+        crashes on a missing table. */}
+      {state.comments !== null ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="text-base font-semibold text-slate-900">
+            Comments{state.comments.length > 0 ? ` (${state.comments.length})` : ''}
+          </h2>
+          {state.comments.length === 0 ? (
+            <p className="mt-2 text-sm text-slate-500">No comments yet — ask a question below.</p>
+          ) : (
+            <ul className="mt-3 flex flex-col gap-3">
+              {state.comments.map((comment) => {
+                const plan = planCommentAction(comment, {
+                  viewerId: session.user.id,
+                  hostId: detail.host_profile_id,
+                  isModerator,
+                })
+                return (
+                  <li key={comment.id} className="flex gap-3">
+                    <HostAvatar host={comment.author} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm">
+                        <Link
+                          to={`/u/${encodeURIComponent(comment.author.display_name)}`}
+                          className="font-medium text-indigo-600"
+                        >
+                          @{comment.author.display_name}
+                        </Link>
+                        <span className="ml-2 text-xs text-slate-400">
+                          {formatTime(comment.created_at)}
+                        </span>
+                      </p>
+                      <p className="mt-0.5 whitespace-pre-line text-sm text-slate-700">
+                        {comment.body}
+                      </p>
+                      {plan.canDelete || plan.canHide ? (
+                        <div className="mt-1 flex gap-3">
+                          {plan.canDelete ? (
+                            <button
+                              type="button"
+                              disabled={commentBusy}
+                              onClick={() => void handleDeleteComment(comment.id)}
+                              className="text-xs text-slate-400 transition-colors hover:text-red-600"
+                            >
+                              Delete
+                            </button>
+                          ) : null}
+                          {plan.canHide ? (
+                            <button
+                              type="button"
+                              disabled={commentBusy}
+                              onClick={() => void handleHideComment(comment.id)}
+                              className="text-xs text-slate-400 transition-colors hover:text-red-600"
+                            >
+                              Hide
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+
+          <div className="mt-4 border-t border-slate-100 pt-3">
+            <label htmlFor="comment-composer" className="text-xs font-medium text-slate-500">
+              Add a comment
+            </label>
+            <textarea
+              id="comment-composer"
+              rows={2}
+              value={commentDraft}
+              maxLength={COMMENT_MAX_LENGTH}
+              placeholder="Ask a question — e.g. “Is a stroller okay to bring?”"
+              onChange={(e) => setCommentDraft(e.target.value)}
+              className="mt-1 w-full resize-none rounded-lg border border-slate-200 p-2 text-sm text-slate-700 focus:border-indigo-300 focus:outline-none"
+            />
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <span className="text-xs text-slate-400">
+                {commentDraft.length}/{COMMENT_MAX_LENGTH}
+              </span>
+              <button
+                type="button"
+                disabled={commentBusy || commentDraft.trim().length === 0}
+                onClick={() => void handleAddComment()}
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {commentBusy ? 'Posting…' : 'Comment'}
+              </button>
+            </div>
+            {commentError !== null ? (
+              <p className="mt-2 text-sm text-red-600">{commentError}</p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {reporting ? (
         <ReportDialog
