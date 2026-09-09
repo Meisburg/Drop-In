@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   isHostBlocked,
+  issueReportInsert,
   planPing,
   togglePingWithClient,
   validateReportReason,
+  type ReportInsertPayload,
 } from './trust'
 
 /**
@@ -169,5 +171,78 @@ describe('isHostBlocked (the detail-path block filter)', () => {
   it('shows a post whose host is not blocked', () => {
     expect(isHostBlocked(post, new Set(['other']))).toBe(false)
     expect(isHostBlocked(post, new Set())).toBe(false)
+  })
+})
+
+/**
+ * Minimal mock of the client surface issueReportInsert uses: the insert
+ * chain records every .select() call (the 42501 tripwire). With
+ * modelRls42501, .select().single() resolves with the live behavior
+ * (REST probe 2026-09-09): a 42501 RLS violation, since INSERT ...
+ * RETURNING SELECTs the new row under the moderators-only reports
+ * SELECT policy.
+ */
+function makeReportsMockClient(modelRls42501: boolean): {
+  client: SupabaseClient
+  calls: { select: number; inserted: unknown[] }
+} {
+  const calls = { select: 0, inserted: [] as unknown[] }
+  const insertChain = {
+    select: () => {
+      calls.select += 1
+      if (modelRls42501) {
+        // Live behavior: the SELECT half of RETURNING is RLS-forbidden
+        // for non-moderators → 42501.
+        return {
+          single: async () => ({
+            data: null,
+            error: {
+              code: '42501',
+              message: 'new row violates row-level security policy for table "reports"',
+            },
+          }),
+        }
+      }
+      return { single: async () => ({ data: null, error: null }) }
+    },
+    then: (onfulfilled?: (value: { data: null; error: null }) => unknown) =>
+      Promise.resolve({ data: null, error: null }).then(onfulfilled),
+  }
+  const client = {
+    from: (table: string) => {
+      if (table !== 'reports') throw new Error(`unexpected table: ${table}`)
+      return {
+        insert: (payload: unknown) => {
+          calls.inserted.push(payload)
+          return insertChain
+        },
+      }
+    },
+  }
+  return { client: client as unknown as SupabaseClient, calls }
+}
+
+const REPORT_PAYLOAD: ReportInsertPayload = {
+  reporter_profile_id: 'u1',
+  playdate_id: PLAYDATE_ID,
+  reported_profile_id: 'host-1',
+  reason: 'Shared a home address instead of a public meet-up',
+}
+
+describe('issueReportInsert (42501 regression: plain insert, no RETURNING)', () => {
+  it('issues the reports INSERT without a .select() in the chain', async () => {
+    const { client, calls } = makeReportsMockClient(false)
+    await issueReportInsert(client, REPORT_PAYLOAD)
+    expect(calls.inserted).toEqual([REPORT_PAYLOAD])
+    expect(calls.select).toBe(0)
+  })
+
+  it('succeeds under a mock that models live 42501 for RETURNING (tripwire: re-adding .select() fails this test)', async () => {
+    const { client, calls } = makeReportsMockClient(true)
+    // A bare INSERT (no RETURNING) succeeds live (HTTP 201, verified).
+    // If anyone re-adds .select() to the insert, the helper would await a
+    // chain that resolves the 42501 error and reject — this test fails.
+    await expect(issueReportInsert(client, REPORT_PAYLOAD)).resolves.toBeUndefined()
+    expect(calls.select).toBe(0)
   })
 })

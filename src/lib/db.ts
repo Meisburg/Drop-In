@@ -7,10 +7,14 @@ import type {
   Playdate,
   PlaydateWithNeighborhood,
   Profile,
-  Report,
 } from './types'
 import { filterFeed, startOfTodayIso } from './feed'
-import { togglePingWithClient, validateReportReason } from './trust'
+import {
+  issueReportInsert,
+  togglePingWithClient,
+  validateReportReason,
+  type ReportInsertPayload,
+} from './trust'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -502,8 +506,14 @@ export interface ReportInput {
  * an empty/whitespace reason throws before any insert. A post report sets
  * playdate_id (reported_profile_id = the post's host, passed by the caller);
  * a profile report sets reported_profile_id only.
+ *
+ * The INSERT is issued on a plain chain, without .select()/.single() (42501
+ * regression — live probe 2026-09-09): a select on the insert chain becomes
+ * INSERT ... RETURNING, which SELECTs the new row under the moderators-only
+ * reports SELECT policy, so every non-moderator reporter got 42501. A bare
+ * INSERT succeeds; the caller (the report dialog) only needs success/failure.
  */
-export async function createReport(input: ReportInput): Promise<Report> {
+export async function createReport(input: ReportInput): Promise<void> {
   const reasonError = validateReportReason(input.reason)
   if (reasonError !== null) throw new Error(reasonError)
 
@@ -514,18 +524,13 @@ export async function createReport(input: ReportInput): Promise<Report> {
   if (userError) throw userError
   if (!user) throw new Error('No authenticated user — cannot file a report.')
 
-  const { data, error } = await supabase
-    .from('reports')
-    .insert({
-      reporter_profile_id: user.id,
-      playdate_id: input.playdateId ?? null,
-      reported_profile_id: input.profileId ?? null,
-      reason: input.reason.trim(),
-    })
-    .select()
-    .single()
-  if (error) throw error
-  return data as Report
+  const payload: ReportInsertPayload = {
+    reporter_profile_id: user.id,
+    playdate_id: input.playdateId ?? null,
+    reported_profile_id: input.profileId ?? null,
+    reason: input.reason.trim(),
+  }
+  await issueReportInsert(supabase, payload)
 }
 
 /** Whether the current user has blocked the given profile (blocks table, 0006). */
