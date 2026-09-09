@@ -480,7 +480,7 @@ export async function getPlaydateDetail(id: string): Promise<PlaydateWithNeighbo
   const { data, error } = await supabase
     .from('playdates')
     .select(
-      '*, neighborhood:neighborhoods!inner ( id, name ), host:profiles!inner ( id, display_name )',
+      '*, neighborhood:neighborhoods!inner ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name )',
     )
     .eq('id', id)
     .maybeSingle()

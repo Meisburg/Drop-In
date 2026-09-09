@@ -189,3 +189,21 @@ Pinned contracts every builder must respect (reviewers enforce these):
   replaces RSVPs; neighborhoods replace age-filtering as discovery; PWA +
   mobile-first added; moderation (reports/blocks/hidden/banned) added to V1.
   DECISION 1 resolved (Supabase live). Slice 1 unblocked.
+- 2026-09-09 — Slice 4 complete: detail page + going-pings + report/block UI
+  (f978858). Live check caught createReport 42501 (RETURNING under
+  moderators-only SELECT RLS) → fixed with plain insert (1c8e5f4);
+  0007/0008 applied live via CDP; 49/49 tests. Slice 5 unblocked;
+  profiles.moderators now exists via 0008.
+- 2026-09-09 — Slice 5 complete: /mod (report list, hide, ban) +
+  banned-session gate + 375px/empty/loading polish (2eacd47). 0009/0010
+  applied live via CDP; live check PASS (hide + ban enforced, host
+  self-ping rejected 400 P0001 per the human-decided trigger). 65/65
+  tests. **V1 DONE** — all five slices complete. Remaining human items:
+  founder-flag UPDATE (statement in 0009 header); optional 0011
+  (self-elevation guard) + display_name length cap parked as human calls.
+- 2026-09-09 — Founder flag attempt: UPDATE could not run — no founder
+  profile exists (live profiles = 9 marker rows only, verified via CDP
+  SELECT). Waiting on human sign-up, then orchestrator applies the flag.
+  Tooling: browser-use LLM loop unusable on NInfer (vision/JSON 400s);
+  LLM-free replacement committed at scripts/cdp-sql-runner.py (verified
+  live on a SELECT).

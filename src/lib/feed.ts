@@ -112,7 +112,7 @@ export async function queryUpcomingFeedWithClient(
   let query = client
     .from('playdates')
     .select(
-      '*, neighborhood:neighborhoods!inner ( id, name ), host:profiles!inner ( id, display_name )',
+      '*, neighborhood:neighborhoods!inner ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name )',
     )
     .in('neighborhood_id', neighborhoodIds)
     .gte('starts_at', cutoffIso)
