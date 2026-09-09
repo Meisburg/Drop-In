@@ -151,3 +151,8 @@ Pinned contracts every builder must respect (reviewers enforce these):
 
 - 2026-09-09 — plan-v2 drafted from approved tickets (01–05) + spec; slice 1
   unblocked; dev agent dispatch next.
+- 2026-09-09 — Slice 1 code complete: 8bdaeb2 (report flag off cards, "This
+  is your post" host panel, 30-min steppers + duration chips, duplicate
+  prefill via router state; 12 new pure-function tests). Orchestrator
+  re-verified: build exit 0, 77/77 tests. No migrations (none planned).
+  Ticket 01 checked in tracker. Next: human live check → slice 2 dispatch.
