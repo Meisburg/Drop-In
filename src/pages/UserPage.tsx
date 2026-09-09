@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { getProfileByHandle } from '../lib/db'
+import { ReportDialog } from '../components/ReportDialog'
+import { useSessionContext } from '../components/SessionProvider'
+import { getBlockState, getProfileByHandle, toggleBlock } from '../lib/db'
 import type { Profile } from '../lib/types'
 
 type UserPageState =
@@ -10,14 +12,20 @@ type UserPageState =
   | { status: 'ready'; profile: Profile }
 
 /**
- * /u/:handle — a profile's minimal public face (slice 2): the handle + a
- * posts area. The playdates table lands in slice 3, so the posts area
- * shows a "No posts yet" empty state (we deliberately do not create or
- * query playdates here). Unknown handles get a friendly not-found state.
+ * /u/:handle — a profile's public face (slice 2) + the trust controls
+ * (slice 4): a block/unblock toggle and a report entry, both hidden on your
+ * own profile page. Blocking hides the person's posts from your feed and
+ * detail views (the DB-level filter from slice 3); reporting files a
+ * moderator-only report (migration 0008).
  */
 export function UserPage() {
   const { handle } = useParams<{ handle: string }>()
+  const { session } = useSessionContext()
   const [state, setState] = useState<UserPageState>({ status: 'loading' })
+  const [blocked, setBlocked] = useState(false)
+  const [blockingBusy, setBlockingBusy] = useState(false)
+  const [blockError, setBlockError] = useState<string | null>(null)
+  const [reporting, setReporting] = useState(false)
 
   useEffect(() => {
     if (handle === undefined || handle === '') {
@@ -42,6 +50,40 @@ export function UserPage() {
       cancelled = true
     }
   }, [handle])
+
+  const profileId = state.status === 'ready' ? state.profile.id : null
+  const isOwnProfile = session !== null && profileId !== null && profileId === session.user.id
+
+  // The initial block state, for other people's profiles only. A failed
+  // read (blocks table not applied yet) leaves the toggle unpressed — the
+  // blocks table (migration 0006) ships with slice 3, so this is best-effort.
+  useEffect(() => {
+    if (profileId === null || isOwnProfile) return
+    let cancelled = false
+    getBlockState(profileId)
+      .then((hasBlock) => {
+        if (!cancelled) setBlocked(hasBlock)
+      })
+      .catch(() => {
+        // no-op: the toggle simply starts unpressed
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [profileId, isOwnProfile])
+
+  async function handleToggleBlock() {
+    if (profileId === null || blockingBusy) return
+    setBlockingBusy(true)
+    setBlockError(null)
+    try {
+      setBlocked(await toggleBlock(profileId))
+    } catch (err) {
+      setBlockError(err instanceof Error ? err.message : 'Could not update the block. Try again.')
+    } finally {
+      setBlockingBusy(false)
+    }
+  }
 
   if (state.status === 'loading') {
     return (
@@ -91,12 +133,58 @@ export function UserPage() {
         <p className="mt-1 text-sm text-slate-500">Here since {joined}.</p>
       </div>
 
+      {isOwnProfile ? null : (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-pressed={blocked}
+              disabled={blockingBusy}
+              onClick={() => void handleToggleBlock()}
+              className={
+                'rounded-lg border px-3 py-2 text-sm font-medium disabled:opacity-50 ' +
+                (blocked
+                  ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
+                  : 'border-slate-300 bg-white text-slate-700')
+              }
+            >
+              {blockingBusy
+                ? 'Updating…'
+                : blocked
+                  ? `Unblock @${profile.display_name}`
+                  : `Block @${profile.display_name}`}
+            </button>
+            <button
+              type="button"
+              onClick={() => setReporting(true)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-500"
+            >
+              Report
+            </button>
+          </div>
+          {blockError !== null ? <p className="text-sm text-red-600">{blockError}</p> : null}
+          {blocked ? (
+            <p className="text-xs text-slate-400">
+              Their drop-ins are hidden from your feed and detail pages.
+            </p>
+          ) : null}
+        </div>
+      )}
+
       <div>
         <h2 className="text-base font-semibold text-slate-900">Posts</h2>
         <div className="mt-2 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
           <p className="text-sm text-slate-500">No posts yet.</p>
         </div>
       </div>
+
+      {reporting && !isOwnProfile ? (
+        <ReportDialog
+          targetLabel={`@${profile.display_name}`}
+          profileId={profile.id}
+          onClose={() => setReporting(false)}
+        />
+      ) : null}
     </div>
   )
 }

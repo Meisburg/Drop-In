@@ -1,0 +1,110 @@
+/**
+ * Pure + client-injected trust logic (slice 4): going-pings, report
+ * validation, and the detail-path block filter.
+ *
+ * Pure decisions are free of React/Supabase so they can be tested without a
+ * database or browser (see trust.test.ts, matching the feed.ts / auth.ts
+ * convention). The ping round-trip takes the SupabaseClient as a parameter
+ * (mocked in tests — same pattern as auth.hasActiveSession); the
+ * Supabase-facing wrapper lives in db.ts.
+ */
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+/** What a ping toggle should do, decided purely (the caller executes it). */
+export type PingDecision = 'noop-host' | 'ping' | 'unping'
+
+/**
+ * Client guard (slice 4 AC: "host cannot ping own post"): the host of a
+ * post cannot ping their own post — the toggle is a no-op. Otherwise the
+ * toggle flips the ping's state.
+ */
+export function planPing(existingPing: boolean, isHost: boolean): PingDecision {
+  if (isHost) return 'noop-host'
+  return existingPing ? 'unping' : 'ping'
+}
+
+/**
+ * The "we're going" ping toggle, executed against the given Supabase client
+ * (injected so the upsert→delete round-trip is testable with a mock).
+ *
+ * Reads the post's host first and enforces the host-cannot-ping-own-post
+ * guard client-side (the DB has no such check by design — see migration
+ * 0007's comment). Returns the new state: true = going.
+ */
+export async function togglePingWithClient(
+  client: SupabaseClient,
+  playdateId: string,
+): Promise<boolean> {
+  const {
+    data: { user },
+    error: userError,
+  } = await client.auth.getUser()
+  if (userError) throw userError
+  if (!user) throw new Error('No authenticated user — cannot ping a drop-in.')
+
+  const { data: post, error: postError } = await client
+    .from('playdates')
+    .select('host_profile_id')
+    .eq('id', playdateId)
+    .maybeSingle()
+  if (postError) throw postError
+  // Cast via unknown: without generated DB types, rows are inferred loosely
+  // (same pattern as db.listMemberships).
+  const hostId = post === null ? null : (post as unknown as { host_profile_id: string }).host_profile_id
+  const isHost = hostId !== null && hostId === user.id
+
+  const { data: existing, error: existingError } = await client
+    .from('going_pings')
+    .select('profile_id')
+    .eq('playdate_id', playdateId)
+    .eq('profile_id', user.id)
+    .maybeSingle()
+  if (existingError) throw existingError
+
+  const decision = planPing(existing !== null, isHost)
+  if (decision === 'noop-host') return false
+
+  if (decision === 'unping') {
+    const { error: deleteError } = await client
+      .from('going_pings')
+      .delete()
+      .eq('playdate_id', playdateId)
+      .eq('profile_id', user.id)
+    if (deleteError) throw deleteError
+    return false
+  }
+  // 'ping': upsert on the unique pair — a concurrent insert of the same
+  // row (23505 on the primary key) already means "going".
+  const { error: upsertError } = await client
+    .from('going_pings')
+    .upsert({ playdate_id: playdateId, profile_id: user.id }, { onConflict: 'playdate_id,profile_id' })
+  if (upsertError && upsertError.code !== '23505') throw upsertError
+  return true
+}
+
+/**
+ * Validate a report reason (pinned: required, non-empty after trim).
+ * Returns an error message, or null when the reason is acceptable.
+ */
+export function validateReportReason(reason: string): string | null {
+  if (reason.trim().length === 0) {
+    return 'Tell us what happened — a reason is required.'
+  }
+  return null
+}
+
+/** The shape the detail-path block check needs (Playdate and its joined variants). */
+export interface DetailPost {
+  host_profile_id: string
+}
+
+/**
+ * Detail-path block filter (slice 4): the detail page fetches one playdate
+ * directly, so the feed query's .not() DB filter (slice 3) cannot cover it —
+ * the check happens after the fetch. A blocked host's post renders the
+ * hidden/blocked state, never the content (the same rule filterFeed applies
+ * in the feed; defense in depth, not a restructure of the feed filter).
+ */
+export function isHostBlocked(post: DetailPost, blockedHostIds: ReadonlySet<string>): boolean {
+  return blockedHostIds.has(post.host_profile_id)
+}

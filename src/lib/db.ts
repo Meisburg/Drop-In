@@ -7,8 +7,10 @@ import type {
   Playdate,
   PlaydateWithNeighborhood,
   Profile,
+  Report,
 } from './types'
 import { filterFeed, startOfTodayIso } from './feed'
+import { togglePingWithClient, validateReportReason } from './trust'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -417,4 +419,157 @@ export async function createPlaydate(input: NewPlaydateInput): Promise<Playdate>
     .single()
   if (error) throw error
   return data as Playdate
+}
+
+// ---------------------------------------------------------------------------
+// Slice 4: going-pings + reports + blocks (trust basics).
+//
+// The going_pings table (migration 0007) and reports table (migration 0008)
+// may not exist in the live project until the orchestrator applies them —
+// every function here throws on that, and the pages render a designed
+// error state instead of crashing (same discipline as slices 2–3).
+
+/**
+ * The detail-page payload for one playdate: the row with its neighborhood +
+ * host handle joined in (null when not found / no access). Same shape as a
+ * feed row (PlaydateWithNeighborhood).
+ */
+export async function getPlaydateDetail(id: string): Promise<PlaydateWithNeighborhood | null> {
+  const { data, error } = await supabase
+    .from('playdates')
+    .select(
+      '*, neighborhood:neighborhoods!inner ( id, name ), host:profiles!inner ( id, display_name )',
+    )
+    .eq('id', id)
+    .maybeSingle()
+  if (error) throw error
+  return (data as unknown as PlaydateWithNeighborhood | null) ?? null
+}
+
+/**
+ * Toggle the current user's "we're going" ping on a drop-in. Client guard:
+ * the host of a post cannot ping their own post (the call is a no-op and
+ * returns false). Returns the new state (true = going). The Supabase
+ * round-trip lives in trust.togglePingWithClient (client injected so it can
+ * be tested with a mock — see auth.hasActiveSession for the same pattern).
+ */
+export async function togglePing(playdateId: string): Promise<boolean> {
+  return togglePingWithClient(supabase, playdateId)
+}
+
+/**
+ * The friendly ping count for a drop-in (counts only — the UI never lists
+ * per-person attendees).
+ */
+export async function getGoingCount(playdateId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('going_pings')
+    .select('profile_id', { count: 'exact', head: true })
+    .eq('playdate_id', playdateId)
+  if (error) throw error
+  return count ?? 0
+}
+
+/** Whether the current user has pinged this drop-in (the toggle's state). */
+export async function hasPinged(playdateId: string): Promise<boolean> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) return false
+  const { data, error } = await supabase
+    .from('going_pings')
+    .select('profile_id')
+    .eq('playdate_id', playdateId)
+    .eq('profile_id', user.id)
+    .maybeSingle()
+  if (error) throw error
+  return data !== null
+}
+
+/** Input for createReport (a post report and/or a profile report). */
+export interface ReportInput {
+  /** Set for a post report (the post's host is the reported profile). */
+  playdateId?: string
+  /** Set for a profile report. */
+  profileId?: string
+  /** Required, non-empty after trim — validated before the insert. */
+  reason: string
+}
+
+/**
+ * File a report as the signed-in user (reporter_profile_id = auth user id).
+ * The reason is validated with the pure validateReportReason (unit-tested) —
+ * an empty/whitespace reason throws before any insert. A post report sets
+ * playdate_id (reported_profile_id = the post's host, passed by the caller);
+ * a profile report sets reported_profile_id only.
+ */
+export async function createReport(input: ReportInput): Promise<Report> {
+  const reasonError = validateReportReason(input.reason)
+  if (reasonError !== null) throw new Error(reasonError)
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (!user) throw new Error('No authenticated user — cannot file a report.')
+
+  const { data, error } = await supabase
+    .from('reports')
+    .insert({
+      reporter_profile_id: user.id,
+      playdate_id: input.playdateId ?? null,
+      reported_profile_id: input.profileId ?? null,
+      reason: input.reason.trim(),
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return data as Report
+}
+
+/** Whether the current user has blocked the given profile (blocks table, 0006). */
+export async function getBlockState(profileId: string): Promise<boolean> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) return false
+  const { data, error } = await supabase
+    .from('blocks')
+    .select('blocker_profile_id')
+    .eq('blocker_profile_id', user.id)
+    .eq('blocked_profile_id', profileId)
+    .maybeSingle()
+  if (error) throw error
+  return data !== null
+}
+
+/**
+ * Toggle the current user's block on a profile (blocker = the auth user).
+ * Returns the new state (true = now blocked). A concurrent block of the same
+ * pair (23505 on the primary key) counts as blocked.
+ */
+export async function toggleBlock(profileId: string): Promise<boolean> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (!user) throw new Error('No authenticated user — cannot block a profile.')
+
+  const blocked = await getBlockState(profileId)
+  if (blocked) {
+    const { error } = await supabase
+      .from('blocks')
+      .delete()
+      .eq('blocker_profile_id', user.id)
+      .eq('blocked_profile_id', profileId)
+    if (error) throw error
+    return false
+  }
+  const { error } = await supabase
+    .from('blocks')
+    .insert({ blocker_profile_id: user.id, blocked_profile_id: profileId })
+  if (error && error.code !== '23505') throw error
+  return true
 }

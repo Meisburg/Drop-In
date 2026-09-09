@@ -62,3 +62,27 @@ export interface PlaydateWithNeighborhood extends Playdate {
   neighborhood: Neighborhood
   host: PlaydateHost
 }
+
+/**
+ * A family's optional "we're going" ping for a drop-in (pinned data model in
+ * plan.md Interfaces: unique pair). Counts are shown only — the UI never
+ * lists per-person attendees.
+ */
+export interface GoingPing {
+  playdate_id: string
+  profile_id: string
+}
+
+/**
+ * A report of a post and/or a profile (pinned data model in plan.md
+ * Interfaces). playdate_id is set for a post report, reported_profile_id for
+ * a profile report; both are nullable. Visible to moderators only.
+ */
+export interface Report {
+  id: string
+  reporter_profile_id: string
+  playdate_id: string | null
+  reported_profile_id: string | null
+  reason: string
+  created_at: string
+}
