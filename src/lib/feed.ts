@@ -619,3 +619,30 @@ export function mapsHref(place: string, address: string | null | undefined): str
   if (trimmedAddress === '') return null
   return `https://www.google.com/maps?q=${encodeURIComponent(`${place}, ${trimmedAddress}`)}`
 }
+
+// ---------------------------------------------------------------------------
+// V3 slice 6 (ticket 09): the detail page's "Kids coming" line.
+
+/**
+ * The detail page's "Kids coming" line (V3 slice 6, ticket 09, migration
+ * 0022): "Bernie · 6, Lily · 4" — each kid is its first name + " · " +
+ * age (a null age renders the name only, never " · null"), kids joined
+ * with ", " in INPUT ORDER (the caller orders by name — db.
+ * listPlaydateKidNamesWithClient returns the rows name-ordered and the
+ * detail page hands them over as-is; this seam never re-sorts). 0 kids →
+ * null (the line is hidden — "Kids coming:" with nothing after is not a
+ * state, like a 0 going line). Empty-name kids are skipped (defensive
+ * guard — the 0011 first_name is NOT NULL, so a blank here is a data
+ * gap, not a render); if every kid is skipped, null. Names + ages ONLY —
+ * no photos (the kid-photo pin: photos render only in the profile kids
+ * list, never on the event line). Pure + unit-tested.
+ */
+export function kidsComingLine(
+  kids: ReadonlyArray<{ name: string; age: number | null }>,
+): string | null {
+  const lines = kids
+    .filter((kid) => kid.name.trim() !== '')
+    .map((kid) => (kid.age !== null ? `${kid.name} · ${kid.age}` : kid.name))
+  if (lines.length === 0) return null
+  return lines.join(', ')
+}

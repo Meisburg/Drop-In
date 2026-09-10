@@ -7,6 +7,7 @@ import type {
   MembershipWithNeighborhood,
   Neighborhood,
   Playdate,
+  PlaydateKid,
   PlaydateStatus,
   PlaydateWithNeighborhood,
   Profile,
@@ -283,7 +284,17 @@ export async function getProfile(id: string): Promise<Profile | null> {
 
 /**
  * Find a profile by its public display_name handle, with its kids joined in
- * (V2 ticket 02: first name + age only — the privacy pin). Null when unknown.
+ * (V2 ticket 02: first name + age — the privacy pin; V3 slice 6, ticket 09
+ * widens the surface: the kid photo + likes + the profile's interests,
+ * migration 0022). Null when unknown.
+ *
+ * Both the profile's `*` and the kids embed's `*` surface the new 0022
+ * columns (kids.avatar_url, kids.likes, profiles.interests) once 0022 is
+ * applied — undefined at runtime before then (the /u/:handle renders are
+ * null-safe, the pre-0016 status-column discipline). An explicit new-
+ * column list would 42703 the fetch pre-apply and break the page (the
+ * DB-not-applied discipline: /u/:handle stays green, the new lines simply
+ * stay hidden).
  *
  * The kids embed is pinned to the FK constraint name (PGRST201 lesson: pin
  * FK hints in embeds) — `kids_profile_id_fkey` is the 0011 constraint. A
@@ -293,7 +304,7 @@ export async function getProfile(id: string): Promise<Profile | null> {
 export async function getProfileByHandle(handle: string): Promise<ProfileWithKids | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('*, kids:kids!kids_profile_id_fkey ( id, first_name, age )')
+    .select('*, kids:kids!kids_profile_id_fkey ( * )')
     .eq('display_name', handle)
     .maybeSingle()
   if (error) throw error
@@ -526,7 +537,15 @@ export async function updateHomeZipRadius(
   if (error) throw error
 }
 
-/** Input for createPlaydate (the /new form, after validation). */
+/**
+ * Input for createPlaydate (the /new form, after validation).
+ *
+ * V3 slice 6 (ticket 09): the /new "Best for ages" field is REPLACED by
+ * the kids-you're-bringing picker (the playdate_kids table, migration
+ * 0022) — the age hint is no longer written from /new (the DB column
+ * stays; the duplicate prefill's dormant ageHint is pinned V2 and
+ * test-referenced).
+ */
 export interface NewPlaydateInput {
   title: string
   place: string
@@ -534,8 +553,6 @@ export interface NewPlaydateInput {
   /** ISO 8601 (UTC) timestamps — the form's datetime-local values converted. */
   startsAt: string
   endsAt: string
-  /** Optional, advisory only (e.g. "best for 2-5"). */
-  ageHint?: string
   details?: string
   /**
    * The optional street address (V3 slice 5, ticket 08, migration 0021):
@@ -569,7 +586,9 @@ export async function createPlaydate(input: NewPlaydateInput): Promise<Playdate>
       neighborhood_id: input.neighborhoodId,
       starts_at: input.startsAt,
       ends_at: input.endsAt,
-      age_hint: input.ageHint ?? null,
+      // V3 slice 6 (ticket 09): the age hint is no longer written from /new
+      // (the kids picker replaces the field; the DB column stays — the
+      // duplicate prefill carries it dormant, pinned V2).
       details: input.details ?? null,
       // V3 slice 5 (ticket 08): the optional address — undefined when empty,
       // so the key is OMITTED from the insert payload (pre-0021-apply a
@@ -1166,13 +1185,29 @@ export const BIO_MAX_LENGTH = 500
 export const MAX_KIDS_PER_PROFILE = 5
 
 /**
- * Pure avatar input validation: an error message, or null when valid.
- * Rejects non-images and files over AVATAR_MAX_BYTES — the rejection happens
- * before any upload (ticket AC: "> 5 MB rejected before upload").
+ * The kid "likes" cap (V3 slice 6, ticket 09, migration 0022): <= 100
+ * characters, UI pin — the caps are app-enforced (the UI wall), NO DB
+ * CHECK (the 0021 address lesson; 0022 adds the column plain).
+ */
+export const LIKES_MAX_LENGTH = 100
+
+/**
+ * The profile "interests" cap (V3 slice 6, ticket 09, migration 0022):
+ * <= 200 characters, UI pin — app-enforced, NO DB CHECK (the 0021
+ * address lesson; 0022 adds the column plain).
+ */
+export const INTERESTS_MAX_LENGTH = 200
+
+/**
+ * Pure photo input validation (the avatar + kid-photo machinery, V2
+ * ticket 02; the kid photo reuses it in V3 slice 6, ticket 09): an error
+ * message, or null when valid. Rejects non-images and files over
+ * AVATAR_MAX_BYTES — the rejection happens before any upload (ticket AC:
+ * "> 5 MB rejected before upload").
  */
 export function validateAvatarFile(file: File): string | null {
   if (!file.type.startsWith('image/')) {
-    return 'Pick an image file (a photo) for the avatar.'
+    return 'Pick an image file (a photo).'
   }
   if (file.size > AVATAR_MAX_BYTES) {
     return 'Keep the photo under 5 MB.'
@@ -1184,6 +1219,29 @@ export function validateAvatarFile(file: File): string | null {
 export function validateBio(bio: string): string | null {
   if (bio.trim().length > BIO_MAX_LENGTH) {
     return `Keep the bio to ${BIO_MAX_LENGTH} characters.`
+  }
+  return null
+}
+
+/**
+ * Pure kid-likes validation (V3 slice 6, ticket 09, migration 0022):
+ * <= LIKES_MAX_LENGTH characters after trim (the UI pin — no DB CHECK).
+ */
+export function validateKidLikes(likes: string): string | null {
+  if (likes.trim().length > LIKES_MAX_LENGTH) {
+    return `Keep likes to ${LIKES_MAX_LENGTH} characters.`
+  }
+  return null
+}
+
+/**
+ * Pure interests validation (V3 slice 6, ticket 09, migration 0022):
+ * <= INTERESTS_MAX_LENGTH characters after trim (the UI pin — no DB
+ * CHECK).
+ */
+export function validateInterests(interests: string): string | null {
+  if (interests.trim().length > INTERESTS_MAX_LENGTH) {
+    return `Keep interests to ${INTERESTS_MAX_LENGTH} characters.`
   }
   return null
 }
@@ -1255,6 +1313,34 @@ export async function prepareAvatarFile(file: File): Promise<Blob> {
 }
 
 /**
+ * The shared avatars-bucket upload core (V2 ticket 02; V3 slice 6,
+ * ticket 09 generalizes it for kid photos): client-resize the file to a
+ * 256px square (prepareAvatarFile — the network only ever sees the small
+ * result), upload to the 'avatars' bucket at `objectPath`, and return the
+ * public URL. The 0011 owner-scoped write policies (avatars_owner_insert
+ * / _update / _delete) key on (storage.foldername(name))[1] =
+ * auth.uid()::text — the path's FIRST folder must be the caller's own
+ * uid — so they cover EVERY path below `<uid>/`: the parent's own
+ * avatar (<uid>/avatar) AND the kid photo (<uid>/kids/<kidId>, the
+ * 0022 cover decision — the 0022 header is the audit record; no new
+ * storage policy). A cross-user write is rejected by the same
+ * first-folder check.
+ */
+async function uploadAvatarObject(
+  client: SupabaseClient,
+  objectPath: string,
+  file: File,
+): Promise<string> {
+  const blob = await prepareAvatarFile(file)
+  const { error } = await client.storage
+    .from('avatars')
+    .upload(objectPath, blob, { contentType: 'image/jpeg', upsert: true })
+  if (error) throw error
+  const { data } = client.storage.from('avatars').getPublicUrl(objectPath)
+  return data.publicUrl
+}
+
+/**
  * Upload the signed-in user's avatar (V2 ticket 02): validate first (a
  * > 5 MB file is rejected before any upload), client-resize to 256px,
  * upload to the 'avatars' bucket at <uid>/avatar (the owner-scoped write
@@ -1264,19 +1350,39 @@ export async function prepareAvatarFile(file: File): Promise<Blob> {
 export async function uploadAvatar(profileId: string, file: File): Promise<string> {
   const fileError = validateAvatarFile(file)
   if (fileError !== null) throw new Error(fileError)
-  const blob = await prepareAvatarFile(file)
-  const objectPath = `${profileId}/avatar`
-  const { error } = await supabase.storage
-    .from('avatars')
-    .upload(objectPath, blob, { contentType: 'image/jpeg', upsert: true })
-  if (error) throw error
-  const { data } = supabase.storage.from('avatars').getPublicUrl(objectPath)
+  const publicUrl = await uploadAvatarObject(supabase, `${profileId}/avatar`, file)
   const { error: profileError } = await supabase
     .from('profiles')
-    .update({ avatar_url: data.publicUrl })
+    .update({ avatar_url: publicUrl })
     .eq('id', profileId)
   if (profileError) throw profileError
-  return data.publicUrl
+  return publicUrl
+}
+
+/**
+ * Upload one of the owner's kid photos (V3 slice 6, ticket 09, migration
+ * 0022): the avatar machinery (validateAvatarFile + the 256px/≤5MB
+ * client-resize), stored in the 'avatars' bucket at <uid>/kids/<kidId>
+ * (the 0011 owner-scoped write policy's documented coverage — the 0022
+ * header), then point kids.avatar_url at the public URL. Returns the
+ * public URL. The kid-photo pin: this URL renders ONLY in the profile
+ * kids list (the 40px circle) — never on cards or event lines.
+ */
+export async function uploadKidPhoto(
+  profileId: string,
+  kidId: string,
+  file: File,
+): Promise<string> {
+  const fileError = validateAvatarFile(file)
+  if (fileError !== null) throw new Error(fileError)
+  const publicUrl = await uploadAvatarObject(supabase, `${profileId}/kids/${kidId}`, file)
+  const { error: kidError } = await supabase
+    .from('kids')
+    .update({ avatar_url: publicUrl })
+    .eq('id', kidId)
+    .eq('profile_id', profileId)
+  if (kidError) throw kidError
+  return publicUrl
 }
 
 /** Update the caller's bio (V2 ticket 02): <= 500 chars, validated pure. */
@@ -1291,16 +1397,42 @@ export async function updateBio(userId: string, bio: string): Promise<void> {
 }
 
 /**
- * One profile's kid rows, ordered by age (V2 ticket 02: first name + age
- * only — the privacy pin; no full names or gender exist to fetch). The
- * kids SELECT policy is open to any authenticated user (the public profile
- * surface); a read failure (0011 not applied yet) throws, and the caller
- * renders a designed state.
+ * Update the caller's interests (V3 slice 6, ticket 09, migration 0022):
+ * the profile update path gains the interests field (the existing
+ * display_name / bio / zip self-only UPDATE posture is unchanged — the
+ * 0020/0021 column-add lesson: the column rides the existing UPDATE
+ * policies, no RLS change, the <= INTERESTS_MAX_LENGTH cap is app-
+ * enforced). Validated pure first (the updateBio defense-in-depth
+ * pattern); an empty value clears the field (the /u/:handle line hides
+ * it). Pre-0022-apply the missing column 42703s; the caller (the
+ * profile edit) surfaces a designed error line, never a crash.
+ */
+export async function updateInterests(userId: string, interests: string): Promise<void> {
+  const interestsError = validateInterests(interests)
+  if (interestsError !== null) throw new Error(interestsError)
+  const { error } = await supabase
+    .from('profiles')
+    .update({ interests: interests.trim() })
+    .eq('id', userId)
+  if (error) throw error
+}
+
+/**
+ * One profile's kid rows, ordered by age (V2 ticket 02: first name + age —
+ * the privacy pin; no full names or gender exist to fetch). V3 slice 6
+ * (ticket 09, migration 0022) widens the surface: the `*` select also
+ * surfaces the optional kid photo (avatar_url) + likes once 0022 is
+ * applied (undefined at runtime before then — the renders are null-safe,
+ * the pre-0016 status-column discipline; an explicit new-column list would
+ * 42703 the load pre-apply and break the /new picker's designed empty
+ * state). The kids SELECT policy is open to any authenticated user (the
+ * public profile surface); a read failure (0011 not applied yet) throws,
+ * and the caller renders a designed state.
  */
 export async function listKids(profileId: string): Promise<Kid[]> {
   const { data, error } = await supabase
     .from('kids')
-    .select('id, first_name, age')
+    .select('*')
     .eq('profile_id', profileId)
     .order('age', { ascending: true })
   if (error) throw error
@@ -1342,6 +1474,146 @@ export async function removeKid(profileId: string, kidId: string): Promise<void>
     .eq('id', kidId)
     .eq('profile_id', profileId)
   if (error) throw error
+}
+
+/**
+ * The patch shape for updateKidWithClient (V3 slice 6, ticket 09,
+ * migration 0022): the kid's optional photo URL (normally written by
+ * uploadKidPhoto, which owns the storage round-trip) + the "likes"
+ * conversation starter (<= LIKES_MAX_LENGTH after trim — the UI pin; no
+ * DB CHECK, the 0021 address lesson).
+ */
+export interface KidPatch {
+  avatar_url?: string | null
+  likes?: string | null
+}
+
+/**
+ * Update one kid row (V3 slice 6, ticket 09, migration 0022), against an
+ * injected client (the house *WithClient pattern — mockable): the owner's
+ * kid editor's likes save (avatar_url is written directly by
+ * uploadKidPhoto). The 0011 kids_update_own policy (owner-only) is the DB
+ * wall — a non-owner write is a silent RLS no-op (the 0014 lesson); the
+ * owner is the only caller. The likes value is validated pure first (the
+ * updateBio defense-in-depth pattern); an empty/null likes is a clear (the
+ * /u/:handle line hides it). Pre-0022-apply the missing column 42703s;
+ * the caller (the profile kid editor) surfaces a designed error line,
+ * never a crash.
+ */
+export async function updateKidWithClient(
+  client: SupabaseClient,
+  kidId: string,
+  patch: KidPatch,
+): Promise<void> {
+  const payload: Record<string, string | null> = {}
+  if (patch.avatar_url !== undefined) payload.avatar_url = patch.avatar_url
+  if (patch.likes !== undefined) {
+    if (patch.likes !== null) {
+      const likesError = validateKidLikes(patch.likes)
+      if (likesError !== null) throw new Error(likesError)
+    }
+    payload.likes = patch.likes === null ? null : patch.likes.trim()
+  }
+  if (Object.keys(payload).length === 0) return
+  const { error } = await client.from('kids').update(payload).eq('id', kidId)
+  if (error) throw error
+}
+
+/** The default-client wrapper (the profile kid editor's likes save). */
+export async function updateKid(kidId: string, patch: KidPatch): Promise<void> {
+  return updateKidWithClient(supabase, kidId, patch)
+}
+
+// ---------------------------------------------------------------------------
+// V3 slice 6 (ticket 09): the per-post "kids you're bringing" selection
+// (migration 0022's playdate_kids) — the /new picker's write + the detail
+// page's "Kids coming" line read.
+
+/**
+ * A post's "Kids coming" rows (V3 slice 6, ticket 09, migration 0022),
+ * against an injected client (the trust.togglePingWithClient pattern —
+ * mockable in unit tests): the host's picked kids from playdate_kids,
+ * each mapped to name + age ONLY (the PlaydateKid privacy pin; the kid's
+ * avatar_url is deliberately NOT selected — the kid-photo pin: photos
+ * render only in the profile kids list, never on the event line). The
+ * kids embed joins on kid_id (the 0022 playdate_kids→kids FK); the rows
+ * come back ordered by name (the line's order — listPlaydateKidNames's
+ * callers pass the result straight to the pure feed.kidsComingLine,
+ * which keeps input order). A row with a vanished kid (the 0022 kid_id
+ * FK cascade normally prevents it) is skipped, defensively.
+ *
+ * The playdate_kids SELECT policy is open to any authenticated user
+ * (the 0022 playdate_kids_select_authenticated): the detail page is a
+ * signed-in surface; signed-out the query returns no rows (RLS) and the
+ * line simply stays hidden. Pre-0022-apply the missing-table 42P01
+ * throws; the caller (the detail page) catches and hides the line (the
+ * DB-not-applied discipline, same as the ping section).
+ */
+export async function listPlaydateKidNamesWithClient(
+  client: SupabaseClient,
+  playdateId: string,
+): Promise<PlaydateKid[]> {
+  const { data, error } = await client
+    .from('playdate_kids')
+    .select('id, kid:kids!playdate_kids_kid_id_fkey ( first_name, age )')
+    .eq('playdate_id', playdateId)
+  if (error) throw error
+  const rows = (data ?? []) as unknown as Array<{
+    id: string
+    kid: { first_name: string; age: number | null } | null
+  }>
+  return rows
+    .filter((row): row is { id: string; kid: { first_name: string; age: number | null } } =>
+      row.kid !== null,
+    )
+    .map((row) => ({
+      id: row.id,
+      name: row.kid.first_name,
+      age: row.kid.age,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/** The default-client wrapper (the detail page's "Kids coming" line). */
+export async function listPlaydateKidNames(playdateId: string): Promise<PlaydateKid[]> {
+  return listPlaydateKidNamesWithClient(supabase, playdateId)
+}
+
+/**
+ * Replace a post's "kids you're bringing" selection (V3 slice 6, ticket
+ * 09, migration 0022), against an injected client: delete the post's
+ * playdate_kids rows first, then insert the new selection (replace-on-
+ * duplicate — the duplicate flow re-posts with a fresh playdate row, so
+ * each post carries its own selection; an empty kidIds is a delete-only,
+ * i.e. the host picked no kids). 0022's RLS host-guards both writes:
+ * INSERT and DELETE pass only for the post's host (the
+ * playdate_kids_insert_host / _delete_host policies, the 0005
+ * host-scoped pattern on playdates.host_profile_id = auth.uid()); a
+ * non-host write is a silent RLS no-op (the 0014 lesson) — the /new
+ * picker is offered to the host only, the RLS is the wall. Plain
+ * delete/insert chains, no .select() (the 42501 discipline): the caller
+ * (the /new submit) only needs success/failure.
+ */
+export async function linkKidsToPlaydateWithClient(
+  client: SupabaseClient,
+  playdateId: string,
+  kidIds: string[],
+): Promise<void> {
+  const { error: deleteError } = await client
+    .from('playdate_kids')
+    .delete()
+    .eq('playdate_id', playdateId)
+  if (deleteError) throw deleteError
+  if (kidIds.length === 0) return
+  const { error: insertError } = await client
+    .from('playdate_kids')
+    .insert(kidIds.map((kidId) => ({ playdate_id: playdateId, kid_id: kidId })))
+  if (insertError) throw insertError
+}
+
+/** The default-client wrapper (the /new kids picker's submit). */
+export async function linkKidsToPlaydate(playdateId: string, kidIds: string[]): Promise<void> {
+  return linkKidsToPlaydateWithClient(supabase, playdateId, kidIds)
 }
 
 // ---------------------------------------------------------------------------

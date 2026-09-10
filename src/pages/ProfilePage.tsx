@@ -6,6 +6,8 @@ import {
   addKid,
   BIO_MAX_LENGTH,
   HandleTakenError,
+  INTERESTS_MAX_LENGTH,
+  LIKES_MAX_LENGTH,
   listKids,
   listMemberships,
   MAX_KIDS_PER_PROFILE,
@@ -15,8 +17,13 @@ import {
   updateBio,
   updateDisplayName,
   updateHomeZipRadius,
+  updateInterests,
+  updateKid,
   uploadAvatar,
+  uploadKidPhoto,
   validateKid,
+  validateKidLikes,
+  validateInterests,
 } from '../lib/db'
 import {
   DEFAULT_RADIUS_MILES,
@@ -78,6 +85,30 @@ export function ProfilePage() {
   const [newKidName, setNewKidName] = useState('')
   const [newKidAge, setNewKidAge] = useState('')
 
+  // V3 slice 6 (ticket 09, migration 0022): the per-kid photo + "likes"
+  // editor state. kidLikes seeds from the fresh rows (seedKidLikes — an
+  // in-flight local value wins over a re-list, the seed-once discipline,
+  // per kid); kidPhoto* is the row's own upload path (uploadKidPhoto —
+  // the 256px/≤5MB avatars-bucket round-trip), whose handleRefreshKids
+  // re-list lands the new avatar_url on the rows' 40px circles.
+  const [kidLikes, setKidLikes] = useState<Record<string, string>>({})
+  const [kidLikesBusyId, setKidLikesBusyId] = useState<string | null>(null)
+  const [kidLikesSavedId, setKidLikesSavedId] = useState<string | null>(null)
+  const [kidPhotoBusyId, setKidPhotoBusyId] = useState<string | null>(null)
+  const [kidPhotoSavedId, setKidPhotoSavedId] = useState<string | null>(null)
+  const [kidPhotoError, setKidPhotoError] = useState<string | null>(null)
+
+  // V3 slice 6 (ticket 09): the profile interests field (<= INTERESTS_MAX_LENGTH,
+  // trim; the db layer validates too — the updateBio defense-in-depth
+  // pattern). Seeded from the profile once it loads; user typing wins
+  // after. Pre-0022-apply the field is absent from the row (undefined →
+  // '') and the save 42703s (the designed error line, the DB-not-applied
+  // discipline).
+  const [interests, setInterests] = useState<string | null>(null)
+  const [interestsError, setInterestsError] = useState<string | null>(null)
+  const [interestsSaved, setInterestsSaved] = useState(false)
+  const [savingInterests, setSavingInterests] = useState(false)
+
   const [memberships, setMemberships] = useState<MembershipWithNeighborhood[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -100,6 +131,11 @@ export function ProfilePage() {
   useEffect(() => {
     if (bio === null && profile !== null) setBio(profile.bio ?? '')
   }, [bio, profile])
+  // V3 slice 6 (ticket 09): seed the interests field (pre-0022-apply the
+  // row lacks the column — undefined seeds '').
+  useEffect(() => {
+    if (interests === null && profile !== null) setInterests(profile.interests ?? '')
+  }, [interests, profile])
   useEffect(() => {
     if (homeZip === null && profile !== null) setHomeZip(profile.home_zip ?? '')
   }, [homeZip, profile])
@@ -139,7 +175,10 @@ export function ProfilePage() {
     setKidsError(null)
     listKids(userId)
       .then((rows) => {
-        if (!cancelled) setKids(rows)
+        if (!cancelled) {
+          setKids(rows)
+          setKidLikes(seedKidLikes(rows))
+        }
       })
       .catch((err: unknown) => {
         if (cancelled) return
@@ -249,6 +288,52 @@ export function ProfilePage() {
     }
   }
 
+  /**
+   * V3 slice 6 (ticket 09): save the interests field — <= INTERESTS_MAX_LENGTH
+   * after trim (the pure validator runs at render for the inline error and
+   * again inside updateInterests — defense in depth). A failed write
+   * (pre-0022-apply the column 42703s; a transient error) surfaces the
+   * designed error line; nothing is saved.
+   */
+  async function handleSaveInterests(e: FormEvent) {
+    e.preventDefault()
+    if (userId === null || savingInterests) return
+    if (validateInterests(interests ?? '') !== null) {
+      // The inline cap error is already visible; nothing is saved.
+      return
+    }
+    setSavingInterests(true)
+    setInterestsError(null)
+    setInterestsSaved(false)
+    try {
+      await updateInterests(userId, interests ?? '')
+      await refresh()
+      setInterestsSaved(true)
+    } catch (err) {
+      setInterestsError(err instanceof Error ? err.message : 'Could not save your interests.')
+    } finally {
+      setSavingInterests(false)
+    }
+  }
+
+  /**
+   * V3 slice 6 (ticket 09): re-list the kids after a kid photo upload
+   * (the fresh rows carry the new avatar_url — the rows' 40px circles
+   * update). A failed re-list surfaces the page's kids error line (the
+   * designed state); the row's own "Photo updated." confirmation already
+   * landed.
+   */
+  async function handleRefreshKids() {
+    if (userId === null) return
+    try {
+      const rows = await listKids(userId)
+      setKids(rows)
+      setKidLikes((prev) => seedKidLikes(rows, prev))
+    } catch (err) {
+      setKidsError(err instanceof Error ? err.message : 'Could not load your kids.')
+    }
+  }
+
   async function handleAddKid() {
     // An empty age field must not coerce to 0 (Number('') is 0) — NaN trips
     // the pure validateKid before any insert.
@@ -263,7 +348,9 @@ export function ProfilePage() {
     setKidsError(null)
     try {
       await addKid(userId, newKidName, age)
-      setKids(await listKids(userId))
+      const rows = await listKids(userId)
+      setKids(rows)
+      setKidLikes((prev) => seedKidLikes(rows, prev))
       setNewKidName('')
       setNewKidAge('')
     } catch (err) {
@@ -279,11 +366,72 @@ export function ProfilePage() {
     setKidsError(null)
     try {
       await removeKid(userId, kidId)
-      setKids(await listKids(userId))
+      const rows = await listKids(userId)
+      setKids(rows)
+      setKidLikes((prev) => seedKidLikes(rows, prev))
     } catch (err) {
       setKidsError(err instanceof Error ? err.message : 'Could not remove that kid. Try again.')
     } finally {
       setKidsBusyId(null)
+    }
+  }
+
+  /**
+   * V3 slice 6 (ticket 09, migration 0022): save one kid's "likes"
+   * (conversation starter, <= LIKES_MAX_LENGTH after trim). The pure
+   * validator runs at render for the inline cap error and again inside
+   * updateKid (the updateBio defense-in-depth pattern); the trimmed value
+   * lands in the local state so the input shows the saved form. A failed
+   * write (pre-0022-apply the column 42703s — the designed error line,
+   * the DB-not-applied discipline) surfaces the page's kids error line;
+   * nothing is saved.
+   */
+  async function handleSaveKidLikes(kidId: string) {
+    const likes = (kidLikes[kidId] ?? '').trim()
+    if (userId === null || kidLikesBusyId !== null) return
+    if (validateKidLikes(likes) !== null) {
+      // The inline cap error is already visible; nothing is saved.
+      return
+    }
+    setKidLikesBusyId(kidId)
+    setKidLikesSavedId(null)
+    try {
+      await updateKid(kidId, { likes })
+      setKidLikes((prev) => ({ ...prev, [kidId]: likes }))
+      setKidLikesSavedId(kidId)
+    } catch (err) {
+      setKidsError(err instanceof Error ? err.message : "Could not save that kid's likes. Try again.")
+    } finally {
+      setKidLikesBusyId(null)
+    }
+  }
+
+  /**
+   * V3 slice 6 (ticket 09, migration 0022): the row's kid photo upload —
+   * the avatar machinery (validateAvatarFile's 256px/≤5MB check runs
+   * inside uploadKidPhoto, the client-side 256px resize in the browser),
+   * stored in the 'avatars' bucket at <uid>/kids/<kidId>, then
+   * kids.avatar_url points at the public URL. The handleRefreshKids
+   * re-list lands the fresh avatar_url (the row's 40px circle updates);
+   * the row's own "Photo updated." confirmation already landed. A failed
+   * upload (the bucket write policy, a rejected file) surfaces the page's
+   * kids photo error line; nothing is saved.
+   */
+  async function handleKidPhotoChange(kidId: string, e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null
+    e.target.value = '' // allow re-picking the same file
+    if (userId === null || file === null || kidPhotoBusyId !== null) return
+    setKidPhotoBusyId(kidId)
+    setKidPhotoError(null)
+    setKidPhotoSavedId(null)
+    try {
+      await uploadKidPhoto(userId, kidId, file)
+      setKidPhotoSavedId(kidId)
+      await handleRefreshKids()
+    } catch (err) {
+      setKidPhotoError(err instanceof Error ? err.message : 'Could not upload that photo. Try again.')
+    } finally {
+      setKidPhotoBusyId(null)
     }
   }
 
@@ -507,10 +655,74 @@ export function ProfilePage() {
         {bioSaved ? <p className="text-sm text-emerald-700">Bio saved.</p> : null}
       </form>
 
+      {/* V3 slice 6 (ticket 09): the interests field (the conversation
+          starter — the /u/:handle line under the bio). <= INTERESTS_MAX_LENGTH
+          after trim; the inline error when over (the /new address
+          pattern — the pure validator is the single source of the
+          message) + the db layer's validator (defense in depth).
+          Pre-0022-apply the save 42703s (the column is missing live) —
+          the designed error line, the DB-not-applied discipline. */}
+      <form
+        className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+        onSubmit={handleSaveInterests}
+      >
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="flex items-center justify-between text-slate-700">
+            <span>Interests</span>
+            <span
+              className={
+                'text-xs ' +
+                (validateInterests(interests ?? '') !== null ? 'text-red-600' : 'text-slate-400')
+              }
+            >
+              {(interests ?? '').length}/{INTERESTS_MAX_LENGTH}
+            </span>
+          </span>
+          <textarea
+            className={
+              'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+              (validateInterests(interests ?? '') !== null || interestsError !== null
+                ? 'border-red-400'
+                : 'border-slate-300')
+            }
+            value={interests ?? ''}
+            onChange={(e) => {
+              setInterests(e.target.value)
+              setInterestsError(null)
+              setInterestsSaved(false)
+            }}
+            placeholder="What your family is into (optional)"
+            rows={2}
+            disabled={savingInterests}
+          />
+        </label>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-slate-400">
+            Shown under your bio on your profile.
+          </span>
+          <button
+            type="submit"
+            disabled={savingInterests || validateInterests(interests ?? '') !== null}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {savingInterests ? 'Saving…' : 'Save interests'}
+          </button>
+        </div>
+        {validateInterests(interests ?? '') !== null ? (
+          <p className="text-sm text-red-600">{validateInterests(interests ?? '')}</p>
+        ) : null}
+        {interestsError !== null ? (
+          <p className="text-sm text-red-600">{interestsError}</p>
+        ) : null}
+        {interestsSaved ? (
+          <p className="text-sm text-emerald-700">Interests saved.</p>
+        ) : null}
+      </form>
+
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">Kids</h2>
         <p className="mt-1 text-sm text-slate-500">
-          First name and age only — that’s all we ever show (up to {MAX_KIDS_PER_PROFILE}).
+          First name, age, an optional photo, and a “likes” line (up to {MAX_KIDS_PER_PROFILE}).
         </p>
 
         {kids === null ? (
@@ -518,28 +730,116 @@ export function ProfilePage() {
         ) : kids.length === 0 ? (
           <p className="mt-3 text-sm text-slate-500">No kids yet — add one below.</p>
         ) : (
-          <ul className="mt-3 flex flex-col gap-1">
-            {kids.map((kid) => (
-              <li
-                key={kid.id}
-                className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5"
-              >
-                <span className="text-sm text-slate-800">
-                  {kid.first_name} · {kid.age}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void handleRemoveKid(kid.id)}
-                  disabled={kidsBusyId !== null}
-                  className={
-                    'rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200 ' +
-                    (kidsBusyId === kid.id ? 'opacity-50' : '')
-                  }
+          <ul className="mt-3 flex flex-col gap-2">
+            {kids.map((kid) => {
+              // V3 slice 6 (ticket 09, migration 0022): the row's 40px kid
+              // photo (the kid's avatar_url — the uploadKidPhoto public
+              // URL — or the initial-fallback circle, the profile
+              // avatar's pattern). The kid-photo pin: it renders ONLY in
+              // this kids list — never on cards or event lines. The row
+              // wraps like the /new duration chips (the likes cluster
+              // takes the spare row at 375px); the "likes" input is
+              // <= LIKES_MAX_LENGTH (the pure validator's inline cap
+              // error, trim on save — the interests field's pattern).
+              const likesValue = kidLikes[kid.id] ?? ''
+              const likesCapError = validateKidLikes(likesValue)
+              return (
+                <li
+                  key={kid.id}
+                  className="flex flex-wrap items-center gap-2 rounded-lg px-2 py-1.5"
                 >
-                  {kidsBusyId === kid.id ? 'Removing…' : 'Remove'}
-                </button>
-              </li>
-            ))}
+                  {kid.avatar_url ? (
+                    <img
+                      src={kid.avatar_url}
+                      alt={`${kid.first_name}'s photo`}
+                      className="h-10 w-10 shrink-0 rounded-full object-cover"
+                    />
+                  ) : (
+                    <span
+                      aria-hidden
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-500"
+                    >
+                      {(kid.first_name.charAt(0) || '?').toUpperCase()}
+                    </span>
+                  )}
+                  <span className="shrink-0 text-sm text-slate-800">
+                    {kid.first_name} · {kid.age}
+                  </span>
+                  <label
+                    className={
+                      'shrink-0 cursor-pointer rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 ' +
+                      (kidPhotoBusyId === kid.id ? 'opacity-50' : '')
+                    }
+                  >
+                    {kidPhotoBusyId === kid.id
+                      ? 'Uploading…'
+                      : kid.avatar_url
+                        ? 'Change photo'
+                        : 'Add photo'}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      disabled={kidPhotoBusyId !== null}
+                      onChange={(e) => void handleKidPhotoChange(kid.id, e)}
+                    />
+                  </label>
+                  <div className="flex min-w-0 flex-1 basis-40 items-center gap-1.5">
+                    <input
+                      className={
+                        'min-w-0 flex-1 rounded-lg border px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                        (likesCapError !== null ? 'border-red-400' : 'border-slate-300')
+                      }
+                      value={likesValue}
+                      onChange={(e) => {
+                        setKidLikes((prev) => ({ ...prev, [kid.id]: e.target.value }))
+                        setKidLikesSavedId(null)
+                      }}
+                      placeholder="Likes… (optional)"
+                      disabled={kidLikesBusyId === kid.id}
+                    />
+                    {likesValue !== '' ? (
+                      <span
+                        className={
+                          'shrink-0 text-xs ' +
+                          (likesCapError !== null ? 'text-red-600' : 'text-slate-400')
+                        }
+                      >
+                        {likesValue.length}/{LIKES_MAX_LENGTH}
+                      </span>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => void handleSaveKidLikes(kid.id)}
+                      disabled={kidLikesBusyId !== null || likesCapError !== null}
+                      className="shrink-0 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                    >
+                      {kidLikesBusyId === kid.id ? 'Saving…' : 'Save'}
+                    </button>
+                    {kidLikesSavedId === kid.id ? (
+                      <span className="shrink-0 text-xs text-emerald-700">Saved.</span>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleRemoveKid(kid.id)}
+                    disabled={kidsBusyId !== null}
+                    className={
+                      'shrink-0 rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200 ' +
+                      (kidsBusyId === kid.id ? 'opacity-50' : '')
+                    }
+                  >
+                    {kidsBusyId === kid.id ? 'Removing…' : 'Remove'}
+                  </button>
+                  {kidPhotoSavedId === kid.id ? (
+                    <p className="w-full text-xs text-emerald-700">Photo updated.</p>
+                  ) : null}
+                  {likesCapError !== null ? (
+                    <p className="w-full text-sm text-red-600">{likesCapError}</p>
+                  ) : null}
+                </li>
+              )
+            })}
           </ul>
         )}
 
@@ -583,6 +883,9 @@ export function ProfilePage() {
             {kidsBusyId === 'add' ? 'Adding…' : 'Add kid'}
           </button>
         </div>
+        {kidPhotoError !== null ? (
+          <p className="mt-2 text-sm text-red-600">{kidPhotoError}</p>
+        ) : null}
         {kidsError !== null ? <p className="mt-2 text-sm text-red-600">{kidsError}</p> : null}
       </div>
 
@@ -659,4 +962,23 @@ export function ProfilePage() {
 function formatPostWhen(iso: string): string {
   const d = new Date(iso)
   return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${d.toLocaleTimeString(undefined, { hour: 'numeric' })}`
+}
+
+/**
+ * Seed the per-kid "likes" inputs from the fresh rows (V3 slice 6, ticket
+ * 09, migration 0022): an in-flight local value (existing) wins over the
+ * row's saved likes (a re-list must not clobber unsaved typing, the
+ * seed-once discipline, per kid); an absent value (pre-0022-apply the
+ * column is undefined, or a cleared field) seeds '' (the null-safe
+ * render, the pre-0016 discipline).
+ */
+function seedKidLikes(
+  rows: Kid[],
+  existing?: Record<string, string>,
+): Record<string, string> {
+  const next: Record<string, string> = {}
+  for (const row of rows) {
+    next[row.id] = existing?.[row.id] ?? row.likes ?? ''
+  }
+  return next
 }

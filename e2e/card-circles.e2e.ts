@@ -15,6 +15,13 @@
  * pinger: the "+N" overflow chip is absent (it appears only past the
  * 3-circle cap).
  *
+ * Before the host reload the spec waits on the DB: it polls REST
+ * going_pings (the broad authenticated SELECT, 0007; the marker's own
+ * JWT) until the ping row is visible — the feed's pings fetch is one-shot
+ * per load and the product intentionally has no live refresh after a
+ * toggle (the parked ticket-07 observation), so a reload that beats the
+ * viewer's upsert chain would see an empty feed.
+ *
  * Pre-0020-apply this spec is RED by design: listPingsForPosts selects
  * going_pings.created_at (migration 0020), which 42703s on the missing
  * column and the feed page degrades to no going lines (never a crash).
@@ -109,6 +116,43 @@ test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no 
   await expect(
     viewerCard.getByRole('button', { name: 'Going — tap to remove' }),
   ).toBeVisible()
+
+  // --- Deterministic gate: wait for the ping row to LAND before the host
+  // reload. The card's optimistic flip (the assertion above) resolves
+  // before the viewer's 4-call upsert chain commits, and the host reload
+  // below re-runs the feed's ONE-SHOT pings fetch (no live refresh after
+  // a toggle — the product behavior, parked ticket-07 observation). A
+  // reload that beats the upsert sees an empty feed and the "1 going"
+  // assertion misses its window. Poll REST going_pings (the broad
+  // authenticated SELECT, 0007) with the marker's own JWT (the same
+  // extraction the cleanup below uses) until the row is visible.
+  const { url: restUrl, anonKey } = readSupabaseEnv()
+  const { accessToken, userId } = readMarkerSession()
+  const restHeaders: Record<string, string> = {
+    apikey: anonKey,
+    Authorization: `Bearer ${accessToken}`,
+  }
+  await expect
+    .poll(
+      async () => {
+        // This run's post (newest first — a leftover post from a failed
+        // cleanup can't answer the poll with a stale ping row).
+        const postQuery =
+          `${restUrl}/rest/v1/playdates?host_profile_id=eq.${userId}` +
+          `&title=eq.${encodeURIComponent(title)}&order=created_at.desc&limit=1&select=id`
+        const postRes = await fetch(postQuery, { headers: restHeaders })
+        if (!postRes.ok) throw new Error(`playdates lookup HTTP ${postRes.status}`)
+        const posts = (await postRes.json()) as Array<{ id: string }>
+        if (posts.length === 0) return 0
+        const pingQuery = `${restUrl}/rest/v1/going_pings?playdate_id=eq.${posts[0].id}&select=profile_id`
+        const pingRes = await fetch(pingQuery, { headers: restHeaders })
+        if (!pingRes.ok) throw new Error(`going_pings poll HTTP ${pingRes.status}`)
+        const pings = (await pingRes.json()) as Array<Record<string, unknown>>
+        return pings.length
+      },
+      { timeout: 10_000 },
+    )
+    .toBeGreaterThanOrEqual(1)
 
   // --- The host's feed: the host's OWN post keeps the going line. The
   // viewer has no avatar → the fallback-initial circle (the display

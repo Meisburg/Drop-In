@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { useSessionContext } from '../components/SessionProvider'
-import { createPlaydate, listNeighborhoods } from '../lib/db'
+import { createPlaydate, listKids, listNeighborhoods, linkKidsToPlaydate } from '../lib/db'
 import {
   computeEndIso,
   computeStartIso,
@@ -14,7 +14,7 @@ import {
   validatePlaydateForm,
 } from '../lib/feed'
 import type { PlaydateFormErrors, PlaydateFormValues } from '../lib/feed'
-import type { DuplicatePrefill, Neighborhood } from '../lib/types'
+import type { DuplicatePrefill, Kid, Neighborhood } from '../lib/types'
 
 const TITLE_MAX_LENGTH = 80
 /** V3 slice 5 (ticket 08): the optional address field's cap (trim only, no DB CHECK). */
@@ -37,12 +37,22 @@ const emptyValues: PlaydateFormValues = {
  * Title (≤ 80 chars, live counter), place, neighborhood, and the start:
  * a date picker + a 30-minute-stepper time (no typing) + duration chips
  * (1h / 1.5h / 2h / 3h) — the end time is computed from start + duration,
- * never typed (pinned contract). Optional age hint + details.
+ * never typed (pinned contract). Optional details.
  *
  * V3 slice 5 (ticket 08): an optional "Address (optional)" field under
  * place (≤120 chars, trim only; an inline error when over). Empty (or
  * whitespace) = omitted from the insert (the address stays null) —
  * existing posts without an address are unaffected.
+ *
+ * V3 slice 6 (ticket 09): the old optional "Best for ages" section is
+ * REPLACED by "Kids you're bringing (optional)" — a multi-select of the
+ * host's own kids (chips: name + age, from the 0011 kids table). The
+ * age-hint field is gone from /new (the playdates.age_hint DB column
+ * stays, just unused in the UI — the duplicate prefill carries it
+ * dormant). On submit the selection lands in the 0022 playdate_kids
+ * table (replace-on-duplicate) right after the post is created; it
+ * shows on the detail page as the "Kids coming" line. No kids yet → a
+ * designed empty state + a link to /profile.
  *
  * Validation is the pure validatePlaydateForm; on invalid, inline field
  * errors and nothing is saved. On success the created post is visible in
@@ -58,7 +68,7 @@ const emptyValues: PlaydateFormValues = {
  */
 export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | null }) {
   const navigate = useNavigate()
-  const { loading } = useSessionContext()
+  const { loading, session } = useSessionContext()
   const [neighborhoods, setNeighborhoods] = useState<Neighborhood[] | null>(null)
   const [values, setValues] = useState<PlaydateFormValues>(() =>
     duplicate === null ? emptyValues : { ...emptyValues, ...duplicate },
@@ -71,6 +81,17 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
   // PlaydateFormValues — the /new form's pinned field set stays
   // untouched; the address is the page-local field below).
   const [address, setAddress] = useState('')
+  // V3 slice 6 (ticket 09): the kids picker — the host's own kids (the
+  // 0011 kids table). null = still loading; [] = none yet OR the load
+  // failed (pre-0011/0022-apply, the documented DB-not-applied
+  // discipline): both render the same designed empty state, never a crash.
+  const [kids, setKids] = useState<Kid[] | null>(null)
+  // The picker's selection (page-local until submit — nothing is saved
+  // until the post is created, then linkKidsToPlaydate lands it).
+  const [selectedKidIds, setSelectedKidIds] = useState<string[]>([])
+  // The session's user id (the kids table's profile_id — the same key
+  // ProfilePage's kids load uses).
+  const userId = session?.user?.id ?? null
 
   useEffect(() => {
     let cancelled = false
@@ -87,6 +108,33 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
       cancelled = true
     }
   }, [])
+
+  // V3 slice 6 (ticket 09): the host's own kids for the picker (fetched on
+  // mount, keyed on the session's user id — the ProfilePage kids-load
+  // pattern). A failed load (e.g. the kids table not applied yet)
+  // degrades to the designed empty state (add your kids), never a crash.
+  useEffect(() => {
+    if (userId === null) return
+    let cancelled = false
+    listKids(userId)
+      .then((rows) => {
+        if (!cancelled) setKids(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setKids([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
+  // V3 slice 6 (ticket 09): toggle a kid chip (multi-select, no cap — the
+  // host picks whichever of their own kids are coming).
+  function toggleKid(kidId: string) {
+    setSelectedKidIds((prev) =>
+      prev.includes(kidId) ? prev.filter((id) => id !== kidId) : [...prev, kidId],
+    )
+  }
 
   function update<K extends keyof PlaydateFormValues>(field: K, value: PlaydateFormValues[K]) {
     setValues((prev) => ({ ...prev, [field]: value }))
@@ -116,16 +164,26 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
       // UTC ISO before the timestamptz insert (the stored instant must be
       // the moment the parent meant, whatever their timezone). The end is
       // always computed (start + duration) — never typed.
-      await createPlaydate({
+      const createdPlaydate = await createPlaydate({
         title: values.title.trim(),
         place: values.place.trim(),
         neighborhoodId: values.neighborhoodId,
         startsAt: computeStartIso(values.startDate, values.startMinutes),
         endsAt: computeEndIso(values.startDate, values.startMinutes, values.durationMinutes),
-        ageHint: values.ageHint.trim() || undefined,
         details: values.details.trim() || undefined,
         address: trimmedAddress.length > 0 ? trimmedAddress : undefined,
       })
+      // V3 slice 6 (ticket 09): land the picker's selection in playdate_kids
+      // right after the create succeeds (replace-on-duplicate — the post is
+      // fresh, so this is effectively the insert). An empty selection
+      // skips the call: nothing to link, and the pre-0022-apply path stays
+      // green for kid-less posts (the 0021 address lesson — the picker's
+      // RED-by-design window only hits when kids ARE selected). If the
+      // link fails (e.g. 0022 not applied yet) the post stands but the
+      // submit surfaces the error — re-posting (Duplicate) re-links.
+      if (selectedKidIds.length > 0) {
+        await linkKidsToPlaydate(createdPlaydate.id, selectedKidIds)
+      }
       // The feed re-fetches on mount, so the new post appears immediately.
       navigate('/', { replace: true })
     } catch (err) {
@@ -327,18 +385,50 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
             ) : null}
           </div>
 
-          <label className="flex flex-col gap-1 text-sm">
+          {/* V3 slice 6 (ticket 09): the "Best for ages" section is REPLACED by the
+    "Kids you're bringing" picker — a multi-select of the host's own kids
+    (chips: name + age, 0011 kids table; the 375px layout wraps the chips
+    like the duration chips). The selection lands in playdate_kids on
+    submit (replace-on-duplicate) and shows on the detail page as the
+    "Kids coming" line. No kids yet → the designed empty state + the
+    /profile link (the kids are edited on the profile, V2 ticket 02). */}
+          <div className="flex flex-col gap-1 text-sm">
             <span className="text-slate-700">
-              Best for ages <span className="text-slate-400">(optional)</span>
+              Kids you're bringing <span className="text-slate-400">(optional)</span>
             </span>
-            <input
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-              value={values.ageHint}
-              onChange={(e) => update('ageHint', e.target.value)}
-              placeholder="e.g. 2–5"
-              autoComplete="off"
-            />
-          </label>
+            {kids === null ? (
+              <p className="text-sm text-slate-400">Loading your kids…</p>
+            ) : kids.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                Add your kids on your profile, then pick the ones coming along.{' '}
+                <Link to="/profile" className="text-indigo-600">
+                  Add kids
+                </Link>
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {kids.map((kid) => {
+                  const selected = selectedKidIds.includes(kid.id)
+                  return (
+                    <button
+                      key={kid.id}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => toggleKid(kid.id)}
+                      className={
+                        'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ' +
+                        (selected
+                          ? 'border-indigo-600 bg-indigo-600 text-white'
+                          : 'border-slate-300 bg-white text-slate-700')
+                      }
+                    >
+                      {kid.first_name} · {kid.age}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
 
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-slate-700">

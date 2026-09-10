@@ -16,10 +16,17 @@ import {
   hasPinged,
   hideComment,
   listComments,
+  listPlaydateKidNames,
   setPlaydateStatus,
   togglePing,
 } from '../lib/db'
-import { isHiddenPost, mapsHref, rainBadgeLabel, toDuplicatePrefill } from '../lib/feed'
+import {
+  isHiddenPost,
+  kidsComingLine,
+  mapsHref,
+  rainBadgeLabel,
+  toDuplicatePrefill,
+} from '../lib/feed'
 import { canModerate } from '../lib/moderation'
 import {
   COMMENT_MAX_LENGTH,
@@ -30,6 +37,7 @@ import {
 } from '../lib/trust'
 import type {
   CommentWithAuthor,
+  PlaydateKid,
   PlaydateStatus,
   PlaydateWithNeighborhood,
   PublicPlaydateDetail,
@@ -48,6 +56,14 @@ type DetailState =
       going: boolean
       /** The comment thread (null = not loaded — 0013 not applied, section hidden). */
       comments: CommentWithAuthor[] | null
+      /**
+       * V3 slice 6 (ticket 09): the "Kids coming" rows (the 0022
+       * playdate_kids selection, name-ordered — db.listPlaydateKidNames).
+       * null = not loaded — 0022 not applied (the 42P01 is caught in the
+       * load below) or the read failed: the line is hidden, never the
+       * post (the DB-not-applied discipline, same as the ping section).
+       */
+      kids: PlaydateKid[] | null
     }
   /**
    * V2 slice 5: the signed-out public surface (the get_public_playdate RPC
@@ -135,6 +151,15 @@ type DetailState =
  * gained the address as its 12th field — the signed-out read flows
  * through get_public_playdate). No address (null / pre-0021-apply
  * missing) → the place line stays plain text.
+ *
+ * V3 slice 6 (ticket 09, migration 0022): the "Kids coming" line below
+ * the ping section — the post's host-picked kids (the playdate_kids
+ * table), names + ages only, NO photos (the kid-photo pin: a kid photo
+ * renders only in the profile kids list). Authenticated view only: the
+ * signed-out public surface stays the 12-field get_public_playdate with
+ * no kids fetch (the ticket pin). Pre-0022-apply the table 42P01s; the
+ * caught load hides the line, never the post (the DB-not-applied
+ * discipline, same as the ping section).
  */
 export function PlaydateDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -212,15 +237,23 @@ export function PlaydateDetailPage() {
             setState({ status: 'blocked', handle: detail.host.display_name })
             return
           }
-          // The ping + comments tables may not be applied yet (0007 / 0013):
-          // a failed load just hides that section, never the post itself.
-          const [count, going, comments] = await Promise.all([
+          // The ping + comments + playdate_kids tables may not be applied
+          // yet (0007 / 0013 / 0022): a failed load just hides that
+          // section, never the post itself.
+          const [count, going, comments, kids] = await Promise.all([
             getGoingCount(id).catch(() => null),
             hasPinged(id).catch(() => false),
             listComments(id).catch(() => null),
+            // V3 slice 6 (ticket 09): the "Kids coming" rows (the 0022
+            // playdate_kids table). Authenticated view only — the
+            // signed-out public surface (the get_public_playdate 12-field
+            // payload) carries no kids data (the ticket pin). Pre-0022-
+            // apply the 42P01 is caught: the line stays hidden, the post
+            // never crashes (the DB-not-applied discipline).
+            listPlaydateKidNames(id).catch(() => null),
           ])
           if (cancelled) return
-          setState({ status: 'ready', detail, count, going, comments })
+          setState({ status: 'ready', detail, count, going, comments, kids })
         } catch (err) {
           if (cancelled) return
           setState({
@@ -558,7 +591,7 @@ export function PlaydateDetailPage() {
     )
   }
 
-  const { detail, count, going } = state
+  const { detail, count, going, kids } = state
   // Unreachable (the loading gate above renders Loading for a null session
   // with a 'ready' state — 'ready' only ever settles from a signed-in
   // load): an explicit guard so TS narrows session to non-null below.
@@ -596,6 +629,12 @@ export function PlaydateDetailPage() {
   // already going (a re-tap would unping, so the label tracks the real
   // state instead). Cleared by handlePingToggle (the tap happened).
   const confirmPing = pingIntent && !going
+  // V3 slice 6 (ticket 09): the "Kids coming" line — the pure
+  // feed.kidsComingLine over the name-ordered rows (null = hidden: the
+  // load is null (0022 not applied / failed) or the selection is empty —
+  // "Kids coming:" with nothing after is not a state, like a 0 going
+  // line). Names + ages only — NO photos (the kid-photo pin).
+  const kidsLine = kids !== null ? kidsComingLine(kids) : null
 
   /**
    * V2 slice 5: the signed-out public surface — EXACTLY the pinned public
@@ -855,6 +894,19 @@ export function PlaydateDetailPage() {
           {pingError !== null ? <p className="mt-2 text-sm text-red-600">{pingError}</p> : null}
         </div>
       )}
+
+      {/* V3 slice 6 (ticket 09): the "Kids coming" line — the post's
+          host-picked kids (the 0022 playdate_kids selection), below the
+          ping section. Names + ages ONLY — no photos (the kid-photo pin:
+          a kid photo renders only in the profile kids list, never on the
+          event line). Hidden when the load is null (0022 not applied —
+          the 42P01 is caught, the DB-not-applied discipline) or the
+          selection is empty (the 0-count "line" is not a state). */}
+      {kidsLine !== null ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-sm text-slate-700">Kids coming: {kidsLine}</p>
+        </div>
+      ) : null}
 
       {/* V2 slice 4 (ticket 04): the comment thread — flat, chronological,
         author avatar (the HostAvatar shape) + handle linking to /u/:handle.

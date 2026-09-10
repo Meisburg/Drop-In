@@ -47,6 +47,14 @@ export interface Profile {
    * absent until the live project is past 0012.
    */
   radius_miles?: number
+  /**
+   * The family's interests (V3 slice 6, ticket 09, migration 0022):
+   * <= 200 characters, app-capped (no DB CHECK — the 0021 address
+   * lesson). Shown as an interests line under the bio on /u/:handle.
+   * Optional: absent until the live project is past 0022 (undefined at
+   * runtime — the render is null-safe).
+   */
+  interests?: string | null
 }
 
 /**
@@ -120,17 +128,53 @@ export interface MembershipWithNeighborhood extends Membership {
 /**
  * A structured kid row (V2 ticket 02, migration 0011): first name + age
  * ONLY — never full names, never gender (privacy pin, plan-v2 Interfaces).
+ * V3 slice 6 (ticket 09, migration 0022) adds the optional photo + likes;
+ * both are optional fields: absent until the live project is past 0022
+ * (undefined at runtime — the renders are null-safe, the pre-0016
+ * status discipline).
  */
 export interface Kid {
   id: string
   profile_id: string
   first_name: string
   age: number
+  /**
+   * The kid's photo (V3 slice 6, ticket 09, migration 0022): the public
+   * URL of the client-resized 256px image in the 'avatars' bucket at
+   * <uid>/kids/<kidId> (the 0011 owner-scoped write policy's documented
+   * coverage — the 0022 header). Shown ONLY in the profile kids list
+   * (the /u/:handle 40px render) — never on cards or event lines (the
+   * kid-photo pin, human-approved 2026-09-09).
+   */
+  avatar_url?: string | null
+  /**
+   * The kid's "likes" (V3 slice 6, ticket 09, migration 0022): <= 100
+   * characters, app-capped (no DB CHECK — the 0021 address lesson); the
+   * conversation-starter line on /u/:handle.
+   */
+  likes?: string | null
 }
 
 /** A profile with its kids joined in (getProfileByHandle result, V2 ticket 02). */
 export interface ProfileWithKids extends Profile {
   kids: Kid[]
+}
+
+/**
+ * One row of the detail page's "Kids coming" line (V3 slice 6, ticket 09,
+ * migration 0022): the host's picked kid, mapped to name + age ONLY (the
+ * privacy pin; the kid's avatar_url is deliberately NOT selected — the
+ * kid-photo pin: photos render only in the profile kids list, never on
+ * the event line). `age` null = a defensive gap (the DB column is NOT
+ * NULL); the render shows the name only.
+ */
+export interface PlaydateKid {
+  /** The playdate_kids row's id (the embed's join key). */
+  id: string
+  /** The kid's first name (the 0011 first_name column). */
+  name: string
+  /** The kid's age (the 0011 age column; null = render the name only). */
+  age: number | null
 }
 
 /**

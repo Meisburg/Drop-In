@@ -19,6 +19,7 @@ import {
   isHiddenPost,
   isStartingSoon,
   isSteppedTime,
+  kidsComingLine,
   localDayKey,
   mapsHref,
   PLAYDATE_DURATIONS_MINUTES,
@@ -836,5 +837,38 @@ describe('mapsHref (V3 slice 5, ticket 08: the detail page\'s tappable Maps link
     expect(mapsHref('Green Lake playground', '  7200 4th Ave NE  ')).toBe(
       'https://www.google.com/maps?q=Green%20Lake%20playground%2C%207200%204th%20Ave%20NE',
     )
+  })
+})
+
+describe('kidsComingLine (V3 slice 6, ticket 09: the detail page\'s "Kids coming" line)', () => {
+  it('returns null for 0 kids (the line is hidden)', () => {
+    expect(kidsComingLine([])).toBeNull()
+  })
+
+  it('renders one kid as "Name · Age"', () => {
+    expect(kidsComingLine([{ name: 'Bernie', age: 6 }])).toBe('Bernie · 6')
+  })
+
+  it('joins kids with ", " in input order ("Bernie · 6, Lily · 4")', () => {
+    expect(
+      kidsComingLine([
+        { name: 'Bernie', age: 6 },
+        { name: 'Lily', age: 4 },
+      ]),
+    ).toBe('Bernie · 6, Lily · 4')
+  })
+
+  it('omits the age for a null age (never " · null")', () => {
+    expect(
+      kidsComingLine([
+        { name: 'Bernie', age: null },
+        { name: 'Lily', age: 4 },
+      ]),
+    ).toBe('Bernie, Lily · 4')
+  })
+
+  it('skips empty-name kids (and returns null when nothing remains)', () => {
+    expect(kidsComingLine([{ name: '   ', age: 6 }, { name: 'Lily', age: 4 }])).toBe('Lily · 4')
+    expect(kidsComingLine([{ name: '', age: 6 }])).toBeNull()
   })
 })

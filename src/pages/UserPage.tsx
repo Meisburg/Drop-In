@@ -140,21 +140,61 @@ export function UserPage() {
         {profile.bio != null && profile.bio.trim() !== '' ? (
           <p className="mt-3 whitespace-pre-line text-sm text-slate-700">{profile.bio}</p>
         ) : null}
+        {/* V3 slice 6 (ticket 09, migration 0022): the family's interests
+            line (the conversation starter under the bio — hidden when
+            empty/absent; pre-0022-apply the column is undefined, the
+            null-safe render, the pre-0016 discipline). */}
+        {profile.interests != null && profile.interests.trim() !== '' ? (
+          <p className="mt-2 text-sm text-slate-500">
+            Interests: {profile.interests}
+          </p>
+        ) : null}
       </div>
 
-      {/* V2 ticket 02: the kids list — first name + age ONLY (privacy pin:
-          no full names, no gender, anywhere in the schema or the UI). */}
+      {/* V2 ticket 02: the kids list (privacy pin: first name + age — no full
+          names, no gender, anywhere in the schema or the UI). V3 slice 6
+          (ticket 09, migration 0022): the row gains the 40px kid photo
+          (the kid's avatar_url, the uploadKidPhoto public URL, or the
+          initial-fallback circle — the HostAvatar pattern, the kid's
+          first name standing in for the display name) + the "likes" line
+          (hidden when empty/absent; pre-0022-apply the columns are
+          undefined, the null-safe render). The kid-photo pin: it renders
+          ONLY in this profile kids list — never on cards or event lines. */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">Kids</h2>
         {profile.kids.length === 0 ? (
           <p className="mt-1 text-sm text-slate-500">No kids listed.</p>
         ) : (
-          <ul className="mt-2 flex flex-col gap-1">
-            {profile.kids.map((kid) => (
-              <li key={kid.id} className="text-sm text-slate-800">
-                {kid.first_name} · {kid.age}
-              </li>
-            ))}
+          <ul className="mt-2 flex flex-col gap-2">
+            {profile.kids.map((kid) => {
+              const likes = kid.likes?.trim() ?? ''
+              return (
+                <li key={kid.id} className="flex flex-wrap items-center gap-2">
+                  {kid.avatar_url ? (
+                    <img
+                      src={kid.avatar_url}
+                      alt={`${kid.first_name}'s photo`}
+                      className="h-10 w-10 shrink-0 rounded-full object-cover"
+                    />
+                  ) : (
+                    <span
+                      aria-hidden
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-500"
+                    >
+                      {(kid.first_name.charAt(0) || '?').toUpperCase()}
+                    </span>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-slate-800">
+                      {kid.first_name} · {kid.age}
+                    </p>
+                    {likes !== '' ? (
+                      <p className="mt-0.5 text-xs text-slate-500">likes {likes}</p>
+                    ) : null}
+                  </div>
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>
