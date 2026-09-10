@@ -1,18 +1,23 @@
 /**
- * Spec (V3 ticket 02): host status — the muted state round-trips.
+ * Spec (V3 ticket 02; adapted by V3 ticket 06): host status — the muted
+ * state round-trips.
  *
  * The marker (signed in via the setup project, the host of its own post)
- * posts a drop-in, opens its detail page, and sets the status to RAINED
- * OUT via the "This is your post" panel (the ONLY status surface —
- * non-hosts + the signed-out view never render the control): the muted
- * "Rained out" chip appears on the detail page (next to the title) AND on
- * the feed card (the card re-fetches the row — the DB round-trip), then
- * the marker reverts to ON and the chip is gone (the event stayed in the
- * feed the whole time — no auto-expiry).
+ * posts a drop-in, opens its detail page, and sets the status to
+ * CANCELLED via the "This is your post" panel (the ONLY status surface —
+ * non-hosts + the signed-out view never render the control; the control
+ * is On / Cancelled only — the third option was trimmed by ticket 06 +
+ * migration 0019): the muted "Cancelled" chip appears on the detail page
+ * (next to the title) AND on the feed card (the card re-fetches the row
+ * — the DB round-trip), then the marker reverts to ON and the chip is
+ * gone (the event stayed in the feed the whole time — no auto-expiry).
  *
  * Pre-0016-apply this spec FAILS (the status column does not exist — the
  * panel's write throws, the error line renders instead of the chip): an
  * expected failure until the orchestrator applies migration 0016 live.
+ * Pre-0019-apply it STAYS GREEN: 'cancelled' is already allowed by
+ * 0016's CHECK (the 0019 trim only re-narrows the CHECK + converts the
+ * removed option's rows — 'cancelled' rows are untouched by it).
  *
  * Each spec creates its own marker playdate (the golden-path pattern, so
  * the detail page is a REAL row); best-effort afterEach cleanup deletes
@@ -61,7 +66,7 @@ async function postMarkerDropIn(page: Page, title: string): Promise<string> {
   return href
 }
 
-test('the host sets RAINED OUT — the muted state round-trips on the card + detail', async ({
+test('the host sets CANCELLED — the muted state round-trips on the card + detail', async ({
   page,
 }) => {
   const marker = readMarkerMeta()
@@ -69,7 +74,7 @@ test('the host sets RAINED OUT — the muted state round-trips on the card + det
   const detailPath = await postMarkerDropIn(page, title)
 
   // (a) The marker IS the host — the "This is your post" panel renders the
-  // status control (On / Rained out / Cancelled, the active option filled).
+  // status control (On / Cancelled, the active option filled).
   await page.goto(detailPath)
   await page.getByRole('heading', { name: title, exact: true }).waitFor()
   await expect(page.getByText('This is your post')).toBeVisible()
@@ -77,18 +82,18 @@ test('the host sets RAINED OUT — the muted state round-trips on the card + det
   // The chip is ABSENT while the status is 'on'.
   await expect(page.locator('h1 + span')).toHaveCount(0)
 
-  // (b) Set RAINED OUT — the muted chip appears on the detail page (next
+  // (b) Set CANCELLED — the muted chip appears on the detail page (next
   // to the title; the card/info card gray out — the event stays in the
   // feed, it is not removed).
-  await page.getByRole('button', { name: 'Rained out', exact: true }).click()
-  await expect(page.locator('h1 + span').getByText('Rained out', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Cancelled', exact: true }).click()
+  await expect(page.locator('h1 + span').getByText('Cancelled', { exact: true })).toBeVisible()
 
   // (c) The feed card carries the muted state too — a fresh feed load
   // re-fetches the row (the DB round-trip: the write persisted).
   await settleOnRoute(page, '/')
   const card = page.locator('a').filter({ hasText: title }).first()
   await expect(card).toBeVisible()
-  await expect(card.getByText('Rained out', { exact: true })).toBeVisible()
+  await expect(card.getByText('Cancelled', { exact: true })).toBeVisible()
 
   // (d) Revert to ON — the chip is gone (the host can flip back; no
   // auto-expiry anywhere).

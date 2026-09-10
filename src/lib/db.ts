@@ -817,6 +817,42 @@ export async function hasPinged(playdateId: string): Promise<boolean> {
   return data !== null
 }
 
+/**
+ * The playdate ids a user has pinged (V3 slice 3, ticket 06 — the feed
+ * card's "going" check toggle: one query gives every card its active
+ * state). Injected-client pattern (trust.togglePingWithClient: the
+ * client is a parameter so the round-trip is mockable in unit tests);
+ * the default wrapper below resolves the auth user.
+ */
+export async function listMyPingPostIdsWithClient(
+  client: SupabaseClient,
+  profileId: string,
+): Promise<ReadonlySet<string>> {
+  const { data, error } = await client
+    .from('going_pings')
+    .select('playdate_id')
+    .eq('profile_id', profileId)
+  if (error) throw error
+  const ids = new Set<string>()
+  for (const row of (data ?? []) as Array<{ playdate_id: string | null }>) {
+    if (row.playdate_id !== null && row.playdate_id !== undefined) ids.add(row.playdate_id)
+  }
+  return ids
+}
+
+/**
+ * The default-client wrapper (the feed's card check toggle): the signed-in
+ * user's own pings. Signed out → an empty set (the caller is a signed-in
+ * surface; the empty set just keeps the toggles inactive, never a crash).
+ */
+export async function listMyPingPostIds(): Promise<ReadonlySet<string>> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) return new Set<string>()
+  return listMyPingPostIdsWithClient(supabase, user.id)
+}
+
 /** Input for createReport (a post report and/or a profile report). */
 export interface ReportInput {
   /** Set for a post report (the post's host is the reported profile). */

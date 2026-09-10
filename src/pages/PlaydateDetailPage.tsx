@@ -59,14 +59,16 @@ type DetailState =
 /**
  * /playdate/:id — a drop-in's full details (slice 4): title, place,
  * neighborhood, human-readable start/end times, age hint, details, and the
- * host's handle linking to /u/:handle. The "We're going" ping toggle
+ * host's handle linking to /u/:handle. The "going" ping toggle
  * (counts shown only, never a per-person attendee list) plus a report entry.
  *
  * V2 slice 1: the post's own host sees an explicit "This is your post" panel
  * with the going count and a Duplicate action (navigates to /new with
  * router-state prefill of everything except the date/time — which is always
  * re-entered) — never the ping button. Everyone else sees the unchanged
- * "We're going" toggle + count.
+ * ping toggle + count (V3 slice 3, ticket 06: the labels are "Attend" /
+ * "✓ Going" — same toggle semantics, the green-600 fill tracks the
+ * going state).
  *
  * The detail fetch is a direct lookup — the feed query's DB-level block
  * filter (slice 3) cannot cover this path — so a blocked host's post is
@@ -99,11 +101,11 @@ type DetailState =
  * its URL from VITE_PUBLIC_BASE_URL, falling back to the window origin
  * before deployment.
  *
- * V3 slice 2 (ticket 02): the host sees a status control (On / Rained out
- * / Cancelled) inside the "This is your post" panel — the ONLY host-actions
+ * V3 slice 2 (ticket 02): the host sees a status control (On / Cancelled)
+ * inside the "This is your post" panel — the ONLY host-actions
  * surface, so the control is invisible to non-hosts (the RLS
  * playdates_update_host is the wall; a non-host API write is a silent
- * 0-row 2xx, the 0014 lesson). A rained-out / cancelled post renders the
+ * 0-row 2xx, the 0014 lesson). A cancelled post renders the
  * muted states (the chip near the title + the grayed info card — the
  * event STAYS in the feed; the host can revert, no auto-expiry). A
  * best-effort "Rain likely" badge (the pure rainBadgeLabel threshold on
@@ -111,6 +113,17 @@ type DetailState =
  * absent on error, no error state) sits beside the time row. The
  * signed-out public view (renderPublicView) stays the 11-field public
  * surface: no status, no badge (the 0015 pin holds).
+ *
+ * V3 slice 3 (ticket 06, the quick feedback batch): the status control
+ * trims to On / Cancelled (migration 0019 — the third option, redundant
+ * with Cancelled, is removed per feedback/v3.md #5; the muted chip
+ * renders for "Cancelled" only, the Open-Meteo badge is an independent
+ * forecast and stays); the ping
+ * button's copy is "Attend" (inactive) / "✓ Going" (active, green-600
+ * filled — same geometry, the toggle semantics unchanged); the
+ * "Best for …" age-hint line is out of the authenticated detail view
+ * (the DB column + the /new field stay — ticket 09 reworks /new; the
+ * signed-out public view keeps its 0015 field).
  */
 export function PlaydateDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -284,9 +297,10 @@ export function PlaydateDetailPage() {
   }
 
   /**
-   * V3 slice 2 (ticket 02): the host's status control (On / Rained out /
-   * Cancelled). The control renders in the host-only "This is your post"
-   * panel, so this is the only caller; the RLS playdates_update_host is
+   * V3 slice 2 (ticket 02; trimmed to On / Cancelled by V3 slice 3,
+   * ticket 06, migration 0019): the host's status control. The control
+   * renders in the host-only "This is your post" panel, so this is the
+   * only caller; the RLS playdates_update_host is
    * the wall (a non-host API write is a silent 0-row 2xx — the 0014
    * lesson). A failed write (0016 not applied → 42703; a transient
    * network error) surfaces a designed error line — the event STAYS in
@@ -555,8 +569,11 @@ export function PlaydateDetailPage() {
   // auto-expiry). The rain badge is the pure rainBadgeLabel threshold on
   // the best-effort probability (null = silently absent).
   const postStatus: PlaydateStatus = detail.status ?? 'on'
-  const statusChip =
-    postStatus === 'rained_out' ? 'Rained out' : postStatus === 'cancelled' ? 'Cancelled' : null
+  // V3 slice 3 (ticket 06, migration 0019): the muted chip renders for
+  // "Cancelled" only — the third status option (redundant with Cancelled,
+  // the origin-user feedback 2026-09-09) was trimmed; the Open-Meteo
+  // "Rain likely" badge is an independent forecast, not a status state.
+  const statusChip = postStatus === 'cancelled' ? 'Cancelled' : null
   const statusMuted = statusChip !== null
   const rainLabel = rainBadgeLabel(rainProbability)
   // V2 slice 5 (the zero-pressure soul): the stored ping intent highlights
@@ -643,10 +660,10 @@ export function PlaydateDetailPage() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        {/* V3 slice 2 (ticket 02): the muted-state chip (rained out /
-            cancelled) — rendered for every viewer; the host's explicit
-            state is information, not a removal (the event stays in the
-            feed). */}
+        {/* V3 slice 2 (ticket 02; V3 slice 3 trimmed it to "Cancelled"
+            only — migration 0019, ticket 06): the muted-state chip —
+            rendered for every viewer; the host's explicit state is
+            information, not a removal (the event stays in the feed). */}
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold text-slate-900">{detail.title}</h1>
           {statusChip !== null ? (
@@ -676,9 +693,10 @@ export function PlaydateDetailPage() {
             </span>
           ) : null}
         </p>
-        {detail.age_hint !== null ? (
-          <p className="mt-1 text-sm text-slate-500">Best for {detail.age_hint}</p>
-        ) : null}
+        {/* V3 slice 3 (ticket 06, feedback #4): the "Best for …" age-hint line
+            is out of the authenticated detail view — the DB column + the
+            /new field stay (ticket 09 reworks /new); the signed-out
+            public view keeps its 0015 field. */}
         {detail.details !== null ? (
           <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{detail.details}</p>
         ) : null}
@@ -731,11 +749,13 @@ export function PlaydateDetailPage() {
           <p className="mt-1 text-sm text-indigo-700">
             {count !== null ? hostGoingCountLine(count) : 'No pings yet'}
           </p>
-          {/* V3 slice 2 (ticket 02): the host's status control (On /
-              Rained out / Cancelled) — the ONLY status surface (this
-              panel renders for the host only; non-hosts + the signed-out
-              view never see it). The RLS playdates_update_host is the
-              wall; the active option shows the current state. */}
+          {/* V3 slice 2 (ticket 02; V3 slice 3, ticket 06 + migration
+               0019 trimmed the options to On / Cancelled — the third
+               option, redundant with Cancelled, was removed): the host's
+               status control — the ONLY status surface (this panel
+               renders for the host only; non-hosts + the signed-out
+               view never see it). The RLS playdates_update_host is the
+               wall; the active option shows the current state. */}
           <div className="mt-3 border-t border-indigo-100 pt-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-indigo-900">Status</p>
             <div className="mt-2 flex flex-wrap gap-2">
@@ -772,17 +792,17 @@ export function PlaydateDetailPage() {
             disabled={pingBusy || count === null}
             onClick={() => void handlePingToggle()}
             autoFocus={confirmPing}
-            className={`rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50${
-              confirmPing ? ' ring-2 ring-indigo-400 ring-offset-2' : ''
-            }`}
+            className={`rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50${
+              going ? ' bg-green-600' : ' bg-indigo-600'
+            }${confirmPing ? ' ring-2 ring-indigo-400 ring-offset-2' : ''}`}
           >
             {pingBusy
               ? 'Updating…'
               : confirmPing
                 ? 'Tap to confirm you’re coming'
                 : going
-                  ? 'You’re going'
-                  : 'We’re going'}
+                  ? '✓ Going'
+                  : 'Attend'}
           </button>
           {count !== null ? (
             <p className="mt-2 text-sm text-slate-500">{goingCountLine(count)}</p>
@@ -920,13 +940,15 @@ export function PlaydateDetailPage() {
 }
 
 /**
- * The host's status control options (V3 slice 2, ticket 02): the three
- * playdates.status values (0016) with their display labels. 'on' is the
- * DB default (the "it's on" state).
+ * The host's status control options (V3 slice 2, ticket 02; trimmed by
+ * V3 slice 3, ticket 06 + migration 0019): the playdates.status values
+ * with their display labels. 'on' is the DB default (the "it's on"
+ * state). The third option was removed as redundant with Cancelled (the
+ * origin-user feedback 2026-09-09, feedback/v3.md #5) — the Open-Meteo
+ * "Rain likely" badge is an independent forecast and is unaffected.
  */
 const HOST_STATUS_OPTIONS: ReadonlyArray<{ value: PlaydateStatus; label: string }> = [
   { value: 'on', label: 'On' },
-  { value: 'rained_out', label: 'Rained out' },
   { value: 'cancelled', label: 'Cancelled' },
 ]
 

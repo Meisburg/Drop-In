@@ -128,13 +128,10 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">Post a drop-in</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          “We’ll be at the park 3–5, come by if you like.” Open invitation, zero
-          pressure.
-        </p>
-      </div>
+      {/* V3 slice 3 (ticket 06, feedback #8): the "We'll be at the park
+          3–5, come by if you like." + "Open invitation, zero pressure."
+          helper line is out (the ticket's quick-feedback batch). */}
+      <h1 className="text-xl font-semibold text-slate-900">Post a drop-in</h1>
 
       {duplicate !== null ? (
         <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3">

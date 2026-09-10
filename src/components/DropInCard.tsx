@@ -26,21 +26,35 @@ import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
  * Cards never carry a per-card day label — the day section headers do.
  *
  * V3 slice 2 (ticket 02): a host-marked post (playdate.status
- * 'rained_out' / 'cancelled' — 0016) renders muted like an ended post:
- * the status chip takes the badge slot (the host's explicit state wins
- * over the time-based badges) + the grayed-out card (the event STAYS in
- * the feed — the host can revert; no auto-expiry). Pre-0016-apply the row
- * lacks the column (undefined → the normal styling). The optional
- * "Rain likely" badge (the rainLabel prop, from the page's best-effort
- * Open-Meteo fetch) renders in the same slot, independent of the status
- * (a forecast, not a state) — only Today-section cards get it (the page
- * decides; BrowsePage passes nothing new).
+ * 'cancelled' — 0016, trimmed to 'on' | 'cancelled' by 0019) renders
+ * muted like an ended post: the status chip takes the badge slot (the
+ * host's explicit state wins over the time-based badges) + the
+ * grayed-out card (the event STAYS in the feed — the host can revert;
+ * no auto-expiry). Pre-0016-apply the row lacks the column (undefined →
+ * the normal styling). The optional "Rain likely" badge (the rainLabel
+ * prop, from the page's best-effort Open-Meteo fetch) renders in the
+ * same slot, independent of the status (a forecast, not a state) — only
+ * Today-section cards get it (the page decides; BrowsePage passes
+ * nothing new).
+ *
+ * V3 slice 3 (ticket 06, the quick feedback batch): a 32px circular
+ * "going" check toggle in the card's top-right (the badge cluster's last
+ * item — appended, never shifting the content at 375px). Inactive:
+ * white bg + slate border + gray check; active (this post is pinged by
+ * the viewer): green-600 fill + white check. The click stops
+ * propagation + prevents the default so the card's <Link> still
+ * navigates when tapped elsewhere. Hidden (the pingToggle prop
+ * omitted) on the host's own posts (the detail's host panel covers it)
+ * and in the signed-out public view (DropInCard is not used there — the
+ * sign-up prompt stands in); the feed page owns the optimistic write
+ * path (toggle + revert on error, the detail page's behavior).
  */
 export function DropInCard({
   playdate,
   nowIso,
   startsSoon = false,
   rainLabel = null,
+  pingToggle,
 }: {
   playdate: PlaydateWithNeighborhood
   nowIso: string
@@ -48,17 +62,21 @@ export function DropInCard({
   startsSoon?: boolean
   /** V3 slice 2: the Today-section "Rain likely" badge (see above). */
   rainLabel?: string | null
+  /**
+   * V3 slice 3 (ticket 06): the card's "going" check toggle (see above).
+   * Omitted = no toggle (BrowsePage; the host's own posts; the signed-out
+   * public view never renders a DropInCard at all).
+   */
+  pingToggle?: DropInCardPingToggle
 }) {
   const live = isHappeningNow(playdate, nowIso)
   const ended = isEnded(playdate, nowIso)
-  // V3 slice 2 (ticket 02): the host's status chip (null = 'on' / the
-  // column is absent pre-0016-apply → the normal, non-muted styling).
-  const statusChip =
-    playdate.status === 'rained_out'
-      ? 'Rained out'
-      : playdate.status === 'cancelled'
-        ? 'Cancelled'
-        : null
+  // V3 slice 2 (ticket 02; trimmed by V3 slice 3, ticket 06 + migration
+  // 0019): the host's status chip (null = 'on' / the column is absent
+  // pre-0016-apply → the normal, non-muted styling). The chip renders
+  // for "Cancelled" only (the redundant option was removed — the muted
+  // styling stays); the "Rain likely" badge is an independent forecast.
+  const statusChip = playdate.status === 'cancelled' ? 'Cancelled' : null
   const muted = ended || statusChip !== null
   // The radius feed's per-post distance (V2 slice 3, the "N mi" label,
   // integer miles — the pure haversine predicate in feed.ts). Undefined
@@ -79,9 +97,12 @@ export function DropInCard({
         <div className="flex flex-wrap items-start justify-between gap-2">
           <h3 className="text-base font-semibold text-slate-900">{playdate.title}</h3>
           {/* The badge slot: the host's status chip first (the explicit
-              state wins — a "Rained out" post does not also say
+              state wins — a cancelled post does not also say
               "Happening now"), then the time-based badges, then the
-              independent "Rain likely" forecast badge. */}
+              independent "Rain likely" forecast badge, then the
+              "going" check toggle (V3 slice 3, ticket 06 — the
+              card's top-right circle; appended last so it never shifts
+              the badges or the content at 375px). */}
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
             {statusChip !== null ? (
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
@@ -105,6 +126,41 @@ export function DropInCard({
                 ☔ {rainLabel}
               </span>
             ) : null}
+            {pingToggle?.enabled ? (
+              <button
+                type="button"
+                aria-pressed={pingToggle.active}
+                aria-label={
+                  pingToggle.active ? 'Going — tap to remove' : 'Mark us as going'
+                }
+                disabled={pingToggle.busy}
+                onClick={(event) => {
+                  // The card is a <Link>: the toggle must NOT navigate —
+                  // prevent the default (the href) and stop the click from
+                  // reaching the card (the link still navigates when the
+                  // card itself is tapped).
+                  event.preventDefault()
+                  event.stopPropagation()
+                  if (!pingToggle.busy) pingToggle.onToggle()
+                }}
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors disabled:opacity-60 ${
+                  pingToggle.active
+                    ? 'border-green-600 bg-green-600 text-white'
+                    : 'border-slate-300 bg-white text-slate-400'
+                }`}
+              >
+                <svg
+                  viewBox="0 0 16 16"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  aria-hidden="true"
+                >
+                  <path d="M3.5 8.5 6.5 11.5 12.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            ) : null}
           </div>
         </div>
         <p className="text-sm text-slate-700">{playdate.place}</p>
@@ -122,6 +178,23 @@ export function DropInCard({
       </div>
     </Link>
   )
+}
+
+/**
+ * The card's "going" check toggle (V3 slice 3, ticket 06): the feed page
+ * owns the write path (the optimistic toggle + revert on error, the
+ * detail page's behavior) and hands each card its slice of the state.
+ * The card only renders — it never issues the query itself.
+ */
+export interface DropInCardPingToggle {
+  /** Render + enable (the caller confirmed a signed-in, non-host viewer). */
+  enabled: boolean
+  /** The viewer has pinged this post (the green-600 filled state). */
+  active: boolean
+  /** The write path is in flight (the circle is disabled while pending). */
+  busy: boolean
+  /** Issue the toggle (the feed's optimistic write path). */
+  onToggle: () => void
 }
 
 /**

@@ -11,6 +11,7 @@ import {
   localDayKey,
   rainBadgeLabel,
 } from '../lib/feed'
+import { listMyPingPostIds, togglePing } from '../lib/db'
 import type { PlaydateWithNeighborhood } from '../lib/types'
 
 /**
@@ -28,8 +29,18 @@ import type { PlaydateWithNeighborhood } from '../lib/types'
  * first and ended events are demoted behind them, grayed on the card; the
  * single soonest upcoming event gets a "Starts soon" badge when it starts
  * within 60 min (feed.isStartingSoon). The section headers are styled
- * paragraphs, NOT heading elements: the page title (<h1>Today</h1>) stays
- * the single "Today" heading the e2e specs pin on.
+ * paragraphs, NOT heading elements: the page title stays the single
+ * heading the e2e specs pin on.
+ *
+ * V3 slice 3 (ticket 06): the page h1 is "Near you" (feedback #3 — the
+ * old "Today" title was redundant with the first section header; the
+ * feed is radius-based, the day lives in the section headers). The
+ * cards' "going" check toggles get their state from ONE query (the
+ * viewer's own going_pings, fetched when the session settles — the
+ * optimistic toggle + revert on error, the detail page's behavior); the
+ * host's own posts render no toggle (the detail's host panel covers it),
+ * and the signed-out public view never renders a DropInCard (the
+ * sign-up prompt stands in).
  *
  * V3 slice 2 (ticket 02): the Today-section cards get a best-effort
  * "Rain likely" badge (the rainLabel prop — the Open-Meteo daily
@@ -51,6 +62,13 @@ export function FeedPage() {
   // rejects, so a failed fetch just leaves the label null (silently
   // absent, the zero-pressure soul).
   const [rainLabels, setRainLabels] = useState<Record<string, string | null>>({})
+  // V3 slice 3 (ticket 06): the viewer's own "going" pings (one query —
+  // every card's toggle state). null = not settled (a failed load
+  // degrades to an empty set: the toggles render inactive, never a
+  // crash — the zero-pressure soul).
+  const [myPingPostIds, setMyPingPostIds] = useState<ReadonlySet<string> | null>(null)
+  // One in-flight card toggle per feed (the write path round-trips).
+  const [pingBusyPostId, setPingBusyPostId] = useState<string | null>(null)
 
   // The viewer side of the radius filter: the profile's home zip + radius.
   // The shell's onboarding gate keys on home_zip, so a settled signed-in
@@ -78,6 +96,53 @@ export function FeedPage() {
       cancelled = true
     }
   }, [loading, session, profile])
+
+  // V3 slice 3 (ticket 06): the viewer's own "going" pings (one query —
+  // every card's toggle state). Fetched once when the session settles; a
+  // failed load degrades to an empty set (the toggles render inactive,
+  // never a crash — the zero-pressure soul). The feed load above runs
+  // against the settled session too, so both settle together.
+  useEffect(() => {
+    if (loading || session === null) return
+    let cancelled = false
+    setMyPingPostIds(null)
+    listMyPingPostIds()
+      .then((ids) => {
+        if (!cancelled) setMyPingPostIds(ids)
+      })
+      .catch(() => {
+        if (!cancelled) setMyPingPostIds(new Set<string>())
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [loading, session])
+
+  /**
+   * V3 slice 3 (ticket 06): the card's "going" check toggle — the
+   * existing ping write path (db.togglePing, the upsert→delete
+   * round-trip with the host-cannot-ping-own-post guard) with the
+   * detail page's behavior: an optimistic flip that reverts on error
+   * (the card shows no error line — zero pressure; the detail page
+   * keeps its own error surface). One in-flight toggle per feed.
+   */
+  async function handleCardPingToggle(postId: string) {
+    const base = myPingPostIds
+    if (base === null || pingBusyPostId !== null) return
+    const willBeActive = !base.has(postId)
+    setPingBusyPostId(postId)
+    setMyPingPostIds(withPingId(base, postId, willBeActive))
+    try {
+      const going = await togglePing(postId)
+      // Reconcile with the write path's authoritative result (a
+      // concurrent toggle elsewhere shows as-is, not the optimistic guess).
+      setMyPingPostIds((prev) => (prev === null ? prev : withPingId(prev, postId, going)))
+    } catch {
+      setMyPingPostIds((prev) => (prev === null ? prev : withPingId(prev, postId, !willBeActive)))
+    } finally {
+      setPingBusyPostId(null)
+    }
+  }
 
   // V3 slice 2 (ticket 02): the best-effort "Rain likely" labels for the
   // Today-section cards — one Open-Meteo fetch per distinct (host zip,
@@ -123,7 +188,7 @@ export function FeedPage() {
   if (loadError !== null) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-        <h1 className="text-xl font-semibold text-slate-900">Today</h1>
+        <h1 className="text-xl font-semibold text-slate-900">Near you</h1>
         <p className="text-sm text-red-600">{loadError}</p>
         <p className="text-xs text-slate-400">
           If you just signed up, the drop-in feed may not be set up on the server yet.
@@ -142,10 +207,30 @@ export function FeedPage() {
   // soonest gets the card's "Happening now" badge instead).
   const dayGroups = posts === null ? [] : groupByDay(posts, nowIso)
   const todayKey = localDayKey(nowIso)
+  // V3 slice 3 (ticket 06): the viewer id (the signed-in surface — cards
+  // only render once the session is settled, so non-null here) for the
+  // card toggle's "hide on your own posts" gate.
+  const viewerId = session === null ? null : session.user.id
+
+  /**
+   * V3 slice 3 (ticket 06): one card's "going" check toggle state.
+   * Omitted (undefined) while the ping query is unsettled or signed out;
+   * the host's own posts get no toggle (the detail's host panel covers
+   * it); the busy flag disables the circle while the write round-trips.
+   */
+  function buildCardPingToggle(post: PlaydateWithNeighborhood) {
+    if (myPingPostIds === null || viewerId === null) return undefined
+    return {
+      enabled: post.host_profile_id !== viewerId,
+      active: myPingPostIds.has(post.id),
+      busy: pingBusyPostId === post.id,
+      onToggle: () => void handleCardPingToggle(post.id),
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold text-slate-900">Today</h1>
+      <h1 className="text-xl font-semibold text-slate-900">Near you</h1>
 
       {posts === null ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500 shadow-sm">
@@ -187,6 +272,7 @@ export function FeedPage() {
                       nowIso={nowIso}
                       startsSoon={post.id === startsSoonId}
                       rainLabel={isToday ? (rainLabels[post.id] ?? null) : undefined}
+                      pingToggle={buildCardPingToggle(post)}
                     />
                   ))}
                   {ended.map((post) => (
@@ -195,6 +281,7 @@ export function FeedPage() {
                       playdate={post}
                       nowIso={nowIso}
                       rainLabel={isToday ? (rainLabels[post.id] ?? null) : undefined}
+                      pingToggle={buildCardPingToggle(post)}
                     />
                   ))}
                 </div>
@@ -205,4 +292,17 @@ export function FeedPage() {
       )}
     </div>
   )
+}
+
+/**
+ * The card toggle's set math (V3 slice 3, ticket 06): flip ONE post id's
+ * membership in the viewer's "going" pings (the optimistic flip's and the
+ * error-revert's shared helper — always a fresh set, never a mutation of
+ * the settled state).
+ */
+function withPingId(set: ReadonlySet<string>, postId: string, active: boolean): ReadonlySet<string> {
+  const next = new Set(set)
+  if (active) next.add(postId)
+  else next.delete(postId)
+  return next
 }

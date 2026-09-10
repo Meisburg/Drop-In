@@ -51,7 +51,7 @@ async function postMarkerDropIn(page: Page, title: string): Promise<void> {
   await expect(page.getByText('Ends 11:30 AM')).toBeVisible()
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
-  await page.getByRole('heading', { name: 'Today' }).waitFor()
+  await page.getByRole('heading', { name: 'Near you' }).waitFor()
 }
 
 /** The most-recent marker playdate id (the marker's own JWT — JWT-safe). */
@@ -106,7 +106,7 @@ test('a comment is visible to a second viewer, then the author’s delete remove
   await viewerPage.getByPlaceholder('e.g. 98107').fill(VIEWER_ZIP)
   await viewerPage.locator('select').first().selectOption({ label: '5 miles' })
   await viewerPage.getByRole('button', { name: /^Continue/ }).click()
-  await viewerPage.getByRole('heading', { name: 'Today' }).waitFor()
+  await viewerPage.getByRole('heading', { name: 'Near you' }).waitFor()
 
   // The viewer opens the same event (the detail path — a direct fetch,
   // authenticated-only) and sees the host's comment.

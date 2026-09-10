@@ -76,7 +76,7 @@ test('a host marker\'s drop-in reaches a viewer\'s radius feed with an "N mi" la
   await viewerPage.getByPlaceholder('e.g. 98107').fill(VIEWER_ZIP)
   await viewerPage.locator('select').first().selectOption({ label: VIEWER_RADIUS_LABEL })
   await viewerPage.getByRole('button', { name: /^Continue/ }).click()
-  await viewerPage.getByRole('heading', { name: 'Today' }).waitFor()
+  await viewerPage.getByRole('heading', { name: 'Near you' }).waitFor()
 
   // The host (the marker's signed-in context) posts a drop-in — the
   // golden-path pattern (steppers + chips; the neighborhood is a display

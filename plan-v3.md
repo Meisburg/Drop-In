@@ -110,7 +110,7 @@ Pinned contracts every builder must respect (reviewers enforce these):
   feed.ts (spec pin). **Orchestrator trust review before live apply** —
   residual vector (any authenticated user can read going_pings rows
   (profile_id) + profiles (display_name) directly and reconstruct names)
-  is documented in the 0018 header; accepted class: same personalization
+  is documented in the 0024 header; accepted class: same personalization
   data as blocks.
 - **Feedback overrides (2026-09-09, feedback/v3.md — origin-user pass + human calls):** card going line with up to 3 avatar circles (names stay detail-page-only) — overrides the V2 cards-count-only pin; host status options = On / Cancelled ("Rained out" removed; the Open-Meteo badge stays — an independent forecast); kid photos = YES (optional, owner-uploaded, profile-kids-list only — overrides the first-name-only pin, logged in task-state decisions); interests = free text (kid likes <=100, parent interests <=200); comment replies = one level, any authenticated user.
 
@@ -222,7 +222,7 @@ Pinned contracts every builder must respect (reviewers enforce these):
   gets no names); e2e spec: host sees guest list on a post with 2 pings.
 - **Acceptance criteria:** per ticket 05 in `.scratch/v3/issues/05-guest-list.md`
   — plus the orchestrator trust review before live apply (residual vector
-  documented in the 0018 header)
+  documented in the 0024 header)
 - **Verification command:** `npm run build && npm run test && npm run test:e2e`
 - **Depends on:** slices 1-6 (one-writer order) + founder read of ticket 05 (done 2026-09-09)
 

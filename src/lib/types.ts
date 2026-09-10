@@ -50,13 +50,17 @@ export interface Profile {
 }
 
 /**
- * The host's status for a drop-in (V3 slice 2, ticket 02, migration 0016):
- * 'on' is the default; 'rained_out' / 'cancelled' mute the card + detail
- * (the event STAYS in the feed — the host can revert; no auto-expiry).
- * Authenticated-only surface: 0015's get_public_playdate (the signed-out
- * public view) does NOT return it.
+ * The host's status for a drop-in (V3 slice 2, ticket 02, migration 0016;
+ * trimmed by V3 slice 3, ticket 06, migration 0019): 'on' is the default;
+ * 'cancelled' mutes the card + detail (the event STAYS in the feed — the
+ * host can revert; no auto-expiry). The third status option (redundant
+ * with Cancelled) was removed per origin-user feedback 2026-09-09
+ * (feedback/v3.md #5); the Open-Meteo "Rain likely" badge is an
+ * independent forecast, not a status state. Authenticated-only surface:
+ * 0015's get_public_playdate (the signed-out public view) does NOT
+ * return it.
  */
-export type PlaydateStatus = 'on' | 'rained_out' | 'cancelled'
+export type PlaydateStatus = 'on' | 'cancelled'
 
 /** A drop-in playdate ("at this playground, 3–5, come by if you like"). */
 export interface Playdate {
@@ -71,10 +75,10 @@ export interface Playdate {
   age_hint: string | null
   details: string | null
   /**
-   * The host's status (V3 slice 2, ticket 02, migration 0016): 'on' is
-   * the DB default; 'rained_out' / 'cancelled' render the muted states.
-   * Pre-0016-apply the `*` selects omit the column (undefined at runtime
-   * — the UI treats missing as 'on').
+   * The host's status (V3 slice 2, ticket 02, migration 0016; trimmed to
+   * 'on' | 'cancelled' by 0019, ticket 06): 'on' is the DB default;
+   * 'cancelled' renders the muted states. Pre-0016-apply the `*` selects
+   * omit the column (undefined at runtime — the UI treats missing as 'on').
    */
   status: PlaydateStatus
   /**

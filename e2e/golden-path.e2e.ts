@@ -50,7 +50,7 @@ test('post a drop-in via the V2 slice-1 UI, see it in the feed, clean it up', as
   // followed).
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
-  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible()
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
 })
 

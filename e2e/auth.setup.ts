@@ -55,7 +55,7 @@ setup('sign up the marker, onboard it (zip + radius), save the signed-in state',
 
   // Back on the feed — signed in, onboarded (home zip set). The header
   // handle proves the session + profile round-trip worked.
-  await page.getByRole('heading', { name: 'Today' }).waitFor()
+  await page.getByRole('heading', { name: 'Near you' }).waitFor()
   await expect(page.getByText(`@${displayName}`, { exact: true })).toBeVisible()
 
   // Set + verify the marker's location via REST (the marker's own JWT, read

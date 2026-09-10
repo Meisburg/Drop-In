@@ -106,7 +106,7 @@ test('marker uploads an avatar, sees the 40px round avatar on the feed card + /u
   await expect(page.getByText('Ends 11:30 AM')).toBeVisible()
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
-  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible()
 
   // The feed card renders the 40px round host avatar (not the fallback
   // initial circle — an <img> only exists when the upload worked).
