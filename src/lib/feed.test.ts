@@ -5,14 +5,19 @@ import {
   computeStartIso,
   durationLabel,
   filterFeed,
+  formatDayLabel,
   formatDistanceLabel,
   formatTimeLabel,
+  groupByDay,
   haversineMiles,
   hostDistanceMiles,
   isDuration,
+  isEnded,
   isHappeningNow,
   isHiddenPost,
+  isStartingSoon,
   isSteppedTime,
+  localDayKey,
   PLAYDATE_DURATIONS_MINUTES,
   queryMyPlaydatesWithClient,
   queryUpcomingFeedWithClient,
@@ -127,6 +132,151 @@ describe('isHappeningNow (window checks)', () => {
 
   it('is true at the end boundary (now === ends_at)', () => {
     expect(isHappeningNow(window, at(180))).toBe(true)
+  })
+})
+
+describe('localDayKey (the day-section key, DST-agnostic local day)', () => {
+  it('is the device-local YYYY-MM-DD of the instant', () => {
+    expect(localDayKey(NOW_ISO)).toBe('2026-09-04') // local 12:00
+    expect(localDayKey(at(0))).toBe('2026-09-04') // local midnight
+    expect(localDayKey(at(1439))).toBe('2026-09-04') // 11:59 PM
+    expect(localDayKey(at(1440))).toBe('2026-09-05') // 12:00 AM next day
+  })
+
+  it('never shifts with the machine timezone (fixed local date)', () => {
+    // Local 2026-01-15 23:59, whatever the machine timezone / DST state.
+    expect(localDayKey(new Date(2026, 0, 15, 23, 59).toISOString())).toBe('2026-01-15')
+  })
+})
+
+describe('formatDayLabel ("Today" / "Tomorrow" / "Sat, Sep 12")', () => {
+  it('is "Today" for the same local day (2026-09-04 is a Friday)', () => {
+    expect(formatDayLabel(at(1200), NOW_ISO)).toBe('Today') // local 8:00 PM
+  })
+
+  it('is "Tomorrow" for the next local day', () => {
+    expect(formatDayLabel(at(1500), NOW_ISO)).toBe('Tomorrow') // Sat 1:00 AM
+  })
+
+  it('rolls at the midnight boundary', () => {
+    expect(formatDayLabel(at(1439), NOW_ISO)).toBe('Today') // 11:59 PM
+    expect(formatDayLabel(at(1440), NOW_ISO)).toBe('Tomorrow') // 12:00 AM
+  })
+
+  it('is a fixed English "Www, Mmm D" label for later days (locale-independent)', () => {
+    // 2026-09-12 is a Saturday; 2026-12-25 is a Friday.
+    expect(formatDayLabel(new Date(2026, 8, 12, 15, 0).toISOString(), NOW_ISO)).toBe(
+      'Sat, Sep 12',
+    )
+    expect(formatDayLabel(new Date(2026, 11, 25, 9, 0).toISOString(), NOW_ISO)).toBe(
+      'Fri, Dec 25',
+    )
+  })
+
+  it('"Tomorrow" is the next local day even across a DST boundary (winter case)', () => {
+    const now = new Date(2026, 0, 15, 23, 30).toISOString()
+    expect(formatDayLabel(new Date(2026, 0, 16, 9, 0).toISOString(), now)).toBe('Tomorrow')
+  })
+})
+
+describe('isEnded (ends_at <= nowIso)', () => {
+  const window = { starts_at: at(60), ends_at: at(180) } // local 1:00 PM - 3:00 PM
+
+  it('is false while the window is still running', () => {
+    expect(isEnded(window, at(179))).toBe(false)
+  })
+
+  it('is true at the end boundary (now === ends_at)', () => {
+    expect(isEnded(window, at(180))).toBe(true)
+  })
+
+  it('is true after the end', () => {
+    expect(isEnded(window, at(181))).toBe(true)
+  })
+
+  it('is false before the start (an upcoming post is not ended)', () => {
+    expect(isEnded(window, at(0))).toBe(false)
+  })
+})
+
+describe('isStartingSoon (nowIso < starts_at <= nowIso + 60 min)', () => {
+  // NOW_ISO is local 12:00 PM (minute 720); the window is 12:01 PM - 1:00 PM.
+  it('is true just inside the 60-minute window', () => {
+    expect(isStartingSoon({ starts_at: at(721) }, NOW_ISO)).toBe(true) // 12:01 PM
+  })
+
+  it('is true at the window edge (starts exactly 60 min out)', () => {
+    expect(isStartingSoon({ starts_at: at(780) }, NOW_ISO)).toBe(true) // 1:00 PM
+  })
+
+  it('is false just beyond the window', () => {
+    expect(isStartingSoon({ starts_at: at(781) }, NOW_ISO)).toBe(false) // 1:01 PM
+  })
+
+  it('is false when the post has already started ("happening now" instead)', () => {
+    expect(isStartingSoon({ starts_at: at(719) }, NOW_ISO)).toBe(false) // 11:59 AM
+    expect(isStartingSoon({ starts_at: at(720) }, NOW_ISO)).toBe(false) // starts_at === nowIso
+  })
+
+  it('is false for a post that starts the next day', () => {
+    expect(isStartingSoon({ starts_at: at(1441) }, NOW_ISO)).toBe(false)
+  })
+})
+
+describe('groupByDay (the promoted day-section grouping, nowIso seam)', () => {
+  type DayPost = { id: string; starts_at: string }
+
+  it('groups starts_at-ascending posts by local day in ascending start-of-day order', () => {
+    const posts: DayPost[] = [
+      { id: 'a', starts_at: at(120) }, // Fri 2:00 AM (today)
+      { id: 'b', starts_at: at(1400) }, // Fri 11:20 PM
+      { id: 'c', starts_at: at(1500) }, // Sat 1:00 AM (tomorrow)
+      { id: 'd', starts_at: at(1560) }, // Sat 2:00 AM
+      { id: 'e', starts_at: at(2880 + 120) }, // Sun 2:00 PM
+    ]
+    const groups = groupByDay(posts, NOW_ISO)
+    expect(groups.map((g) => g.key)).toEqual(['2026-09-04', '2026-09-05', '2026-09-06'])
+    expect(groups.map((g) => g.label)).toEqual(['Today', 'Tomorrow', 'Sun, Sep 6'])
+    expect(groups[0].posts.map((p) => p.id)).toEqual(['a', 'b'])
+    expect(groups[1].posts.map((p) => p.id)).toEqual(['c', 'd'])
+    expect(groups[2].posts.map((p) => p.id)).toEqual(['e'])
+  })
+
+  it('labels far days with the fixed English "Www, Mmm D" form', () => {
+    const groups = groupByDay(
+      [{ id: 'x', starts_at: new Date(2026, 8, 12, 15, 0).toISOString() }],
+      NOW_ISO,
+    )
+    expect(groups[0].label).toBe('Sat, Sep 12')
+  })
+
+  it('keeps input order within a group', () => {
+    const groups = groupByDay(
+      [
+        { id: 'b', starts_at: at(1400) },
+        { id: 'a', starts_at: at(120) },
+      ],
+      NOW_ISO,
+    )
+    expect(groups).toHaveLength(1)
+    expect(groups[0].posts.map((p) => p.id)).toEqual(['b', 'a'])
+  })
+
+  it('collects non-contiguous same-day posts into one group (input order kept)', () => {
+    const groups = groupByDay(
+      [
+        { id: 't1', starts_at: at(120) },
+        { id: 'm', starts_at: at(1500) },
+        { id: 't2', starts_at: at(1400) },
+      ],
+      NOW_ISO,
+    )
+    expect(groups.map((g) => g.key)).toEqual(['2026-09-04', '2026-09-05'])
+    expect(groups[0].posts.map((p) => p.id)).toEqual(['t1', 't2'])
+  })
+
+  it('returns [] for an empty feed', () => {
+    expect(groupByDay([], NOW_ISO)).toEqual([])
   })
 })
 

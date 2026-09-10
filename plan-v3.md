@@ -245,3 +245,7 @@ Pinned contracts every builder must respect (reviewers enforce these):
   `.scratch/v3/issues/` (05 pending founder read). No builder dispatch until
   the two-user beta green light (plan-v2 slice 3.5). V3 migration numbering
   starts at 0016 (latest live = 0015, confirmed 2026-09-09).
+- 2026-09-09 — Human green light: "approve and run 1 and 2" — ticket 05
+  approved (status flipped to ready-for-agent); V3 slices 1-2 dispatched
+  (the green light supersedes the two-user beta gate for these slices; the
+  beta itself remains open, no deadline).

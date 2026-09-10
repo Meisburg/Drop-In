@@ -3,7 +3,7 @@ import { Link } from 'react-router'
 import { DropInCard } from '../components/DropInCard'
 import { useSessionContext } from '../components/SessionProvider'
 import { listRadiusFeed } from '../lib/db'
-import { DEFAULT_RADIUS_MILES } from '../lib/feed'
+import { DEFAULT_RADIUS_MILES, groupByDay } from '../lib/feed'
 import type { PlaydateWithNeighborhood } from '../lib/types'
 
 /**
@@ -11,8 +11,11 @@ import type { PlaydateWithNeighborhood } from '../lib/types'
  * radius (V2 slice 3: the neighborhood chips left the filter path —
  * neighborhoods are display labels on the cards, memberships stay in the
  * schema but no longer filter), grouped by local calendar day (Today /
- * Tomorrow / date label). Each card carries its "N mi" distance (the
- * pure haversine predicate, unit-tested in feed.ts).
+ * Tomorrow / "Sat, Sep 12" — the pure feed.groupByDay + feed.formatDayLabel
+ * seam, unit-tested in feed.test.ts; V3 slice 1 promoted it out of this
+ * page so the feed and browse share the single implementation). Each card
+ * carries its "N mi" distance (the pure haversine predicate, unit-tested
+ * in feed.ts).
  *
  * A failed query renders a designed error state, never a crash (the
  * zip_codes table + location columns land in migration 0012).
@@ -113,48 +116,4 @@ export function BrowsePage() {
       )}
     </div>
   )
-}
-
-interface DayGroup {
-  key: string
-  label: string
-  posts: PlaydateWithNeighborhood[]
-}
-
-/** Local-calendar-day key (YYYY-MM-DD in the device's timezone). */
-function localDayKey(iso: string): string {
-  const d = new Date(iso)
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${d.getFullYear()}-${month}-${day}`
-}
-
-/**
- * Group starts_at-ascending posts by local calendar day; labels are
- * "Today" / "Tomorrow" / a locale date. Posts are pre-sorted, so equal
- * days are contiguous.
- */
-function groupByDay(posts: PlaydateWithNeighborhood[], nowIso: string): DayGroup[] {
-  const todayKey = localDayKey(nowIso)
-  const tomorrow = new Date(nowIso)
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  const tomorrowKey = localDayKey(tomorrow.toISOString())
-  const groups: DayGroup[] = []
-  for (const post of posts) {
-    const key = localDayKey(post.starts_at)
-    const label =
-      key === todayKey
-        ? 'Today'
-        : key === tomorrowKey
-          ? 'Tomorrow'
-          : new Date(post.starts_at).toLocaleDateString(undefined, {
-              weekday: 'long',
-              month: 'short',
-              day: 'numeric',
-            })
-    const last = groups[groups.length - 1]
-    if (last !== undefined && last.key === key) last.posts.push(post)
-    else groups.push({ key, label, posts: [post] })
-  }
-  return groups
 }

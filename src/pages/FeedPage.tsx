@@ -3,7 +3,7 @@ import { Link } from 'react-router'
 import { DropInCard } from '../components/DropInCard'
 import { useSessionContext } from '../components/SessionProvider'
 import { listRadiusFeed } from '../lib/db'
-import { DEFAULT_RADIUS_MILES } from '../lib/feed'
+import { DEFAULT_RADIUS_MILES, groupByDay, isEnded, isStartingSoon, localDayKey } from '../lib/feed'
 import type { PlaydateWithNeighborhood } from '../lib/types'
 
 /**
@@ -13,6 +13,16 @@ import type { PlaydateWithNeighborhood } from '../lib/types'
  * home zip pinned in the embed (PGRST201), applies the pure haversine
  * radius filter (feed.filterFeed — unit-tested), and tags each survivor
  * with its "N mi" distance for the card label.
+ *
+ * V3 slice 1 (ticket 01): the flat list is rendered in day sections
+ * (feed.groupByDay, ascending start-of-day order) with section headers from
+ * feed.formatDayLabel ("Today" / "Tomorrow" / "Sat, Sep 12"). Within the
+ * Today section, upcoming events (non-ended, starts_at ascending) come
+ * first and ended events are demoted behind them, grayed on the card; the
+ * single soonest upcoming event gets a "Starts soon" badge when it starts
+ * within 60 min (feed.isStartingSoon). The section headers are styled
+ * paragraphs, NOT heading elements: the page title (<h1>Today</h1>) stays
+ * the single "Today" heading the e2e specs pin on.
  *
  * The zip_codes + location columns live in migration 0012 (the live
  * project may not have them yet) — a failed load renders a designed error
@@ -71,6 +81,15 @@ export function FeedPage() {
   }
 
   const nowIso = new Date().toISOString()
+  // V3 slice 1: day sections (feed.groupByDay, ascending start-of-day
+  // order). Only the Today section splits its posts: upcoming (non-ended,
+  // still starts_at-ascending) first, then ended demoted behind them (the
+  // card carries the grayed styling). The "Starts soon" badge goes on the
+  // single soonest upcoming event of the Today section — and only when it
+  // has not started yet and starts within 60 min (an already-started
+  // soonest gets the card's "Happening now" badge instead).
+  const dayGroups = posts === null ? [] : groupByDay(posts, nowIso)
+  const todayKey = localDayKey(nowIso)
 
   return (
     <div className="flex flex-col gap-4">
@@ -93,10 +112,37 @@ export function FeedPage() {
           </Link>
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          {posts.map((post) => (
-            <DropInCard key={post.id} playdate={post} nowIso={nowIso} />
-          ))}
+        <div className="flex flex-col gap-4">
+          {dayGroups.map((group) => {
+            const isToday = group.key === todayKey
+            const upcoming = isToday ? group.posts.filter((p) => !isEnded(p, nowIso)) : group.posts
+            const ended = isToday ? group.posts.filter((p) => isEnded(p, nowIso)) : []
+            const soonest = upcoming[0]
+            const startsSoonId =
+              isToday && soonest !== undefined && isStartingSoon(soonest, nowIso)
+                ? soonest.id
+                : null
+            return (
+              <section key={group.key} className="flex flex-col gap-2">
+                <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  {group.label}
+                </p>
+                <div className="flex flex-col gap-3">
+                  {upcoming.map((post) => (
+                    <DropInCard
+                      key={post.id}
+                      playdate={post}
+                      nowIso={nowIso}
+                      startsSoon={post.id === startsSoonId}
+                    />
+                  ))}
+                  {ended.map((post) => (
+                    <DropInCard key={post.id} playdate={post} nowIso={nowIso} />
+                  ))}
+                </div>
+              </section>
+            )
+          })}
         </div>
       )}
     </div>

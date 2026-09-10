@@ -144,6 +144,95 @@ export function isHappeningNow(
   return start <= now && now <= end
 }
 
+/** Fixed English weekday + month tables (the day labels are locale-independent). */
+const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
+const MONTHS_SHORT = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+] as const
+
+/**
+ * The local calendar day key (YYYY-MM-DD in the device's timezone) of an
+ * ISO instant (V3 ticket 01: the key the feed's day sections group on).
+ */
+export function localDayKey(iso: string): string {
+  const d = new Date(iso)
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${month}-${day}`
+}
+
+/**
+ * The day section header label (V3 ticket 01): "Today" when startIso falls
+ * on the same local calendar day as nowIso, "Tomorrow" when it falls on the
+ * NEXT local day, otherwise a locale-independent "Sat, Sep 12" label
+ * (short weekday + short month + day, from the fixed English tables above —
+ * the device locale is never consulted, so the label is stable across
+ * machines, test runs, and screenshots).
+ */
+export function formatDayLabel(startIso: string, nowIso: string): string {
+  const start = new Date(startIso)
+  const key = localDayKey(startIso)
+  if (key === localDayKey(nowIso)) return 'Today'
+  const tomorrow = new Date(nowIso)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  if (key === localDayKey(tomorrow.toISOString())) return 'Tomorrow'
+  return `${WEEKDAYS_SHORT[start.getDay()]}, ${MONTHS_SHORT[start.getMonth()]} ${start.getDate()}`
+}
+
+/**
+ * A post is ended when ends_at <= nowIso (V3 ticket 01: the feed's Today
+ * section demotes ended events behind the upcoming ones and the card grays
+ * them).
+ */
+export function isEnded(post: { ends_at: string }, nowIso: string): boolean {
+  return Date.parse(post.ends_at) <= Date.parse(nowIso)
+}
+
+/**
+ * A post starts soon when it has not started yet and starts within the
+ * next 60 minutes: nowIso < starts_at <= nowIso + 60 min (V3 ticket 01 —
+ * the "Starts soon" badge window). An already-started post is NOT "soon"
+ * (it is "happening now" instead).
+ */
+export function isStartingSoon(post: { starts_at: string }, nowIso: string): boolean {
+  const now = Date.parse(nowIso)
+  const start = Date.parse(post.starts_at)
+  return now < start && start <= now + 60 * 60_000
+}
+
+/** One local calendar day's group of posts (V3 ticket 01). */
+export interface DayGroup<T> {
+  key: string
+  label: string
+  posts: T[]
+}
+
+/**
+ * Group posts by local calendar day (V3 ticket 01 — promoted from
+ * BrowsePage's page-local groupByDay; this is the single implementation).
+ * Days appear in the order their FIRST post appears, so the canonical
+ * starts_at-ascending feed input yields ascending start-of-day groups.
+ * Labels come from formatDayLabel; the nowIso seam is the same as
+ * filterFeed's. Within a group, posts keep their input order.
+ */
+export function groupByDay<T extends { starts_at: string }>(
+  posts: T[],
+  nowIso: string,
+): DayGroup<T>[] {
+  const groups = new Map<string, DayGroup<T>>()
+  for (const post of posts) {
+    const key = localDayKey(post.starts_at)
+    const group = groups.get(key)
+    if (group === undefined) {
+      groups.set(key, { key, label: formatDayLabel(post.starts_at, nowIso), posts: [post] })
+    } else {
+      group.posts.push(post)
+    }
+  }
+  return [...groups.values()]
+}
+
 /**
  * The shape filterFeed needs (Playdate and its joined variants qualify).
  */

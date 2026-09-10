@@ -24,7 +24,7 @@ review before live apply.
 founder-approved design, pending founder read) + the two-user beta green
 light (plan-v2 slice 3.5).
 
-**Status:** needs-triage (founder read pending; design approved 2026-09-09)
+**Status:** ready-for-agent (founder approved 2026-09-09)
 
 - [ ] Migration 0018: `get_guest_list(uuid)` SECURITY DEFINER (stable, `set search_path = public, pg_temp`, EXECUTE to authenticated, `revoke ... from public`, DROP FUNCTION IF EXISTS + CREATE); returns pingers' display names ordered by ping created_at, only for host/pinger callers; header documents the broad-SELECT-stays decision + the residual vector; applied live via CDP after code green + orchestrator trust review
 - [ ] Pure `resolveGuestListVisibility(viewerIsHost, viewerHasPinged, count)` in feed.ts, unit-tested (spec seam)
@@ -38,3 +38,5 @@ light (plan-v2 slice 3.5).
 - [ ] npm run build && npm run test && npm run test:e2e exit 0
 
 ## Comments
+
+- 2026-09-09 — Founder read: APPROVED ("approve and run 1 and 2"). Slice 5 remains gated on slices 1-4 (one-writer) + the two-user beta green light (plan-v2 3.5).
