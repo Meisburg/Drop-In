@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import type { Session } from '@supabase/supabase-js'
+import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import type {
   CommentWithAuthor,
   Kid,
   MembershipWithNeighborhood,
   Neighborhood,
   Playdate,
+  PlaydateStatus,
   PlaydateWithNeighborhood,
   Profile,
   ProfileWithKids,
@@ -16,6 +17,7 @@ import type {
 import {
   filterFeed,
   hostDistanceMiles,
+  localDayKey,
   queryUpcomingFeedWithClient,
   startOfTodayIso,
   validateHomeZip,
@@ -568,6 +570,147 @@ export async function createPlaydate(input: NewPlaydateInput): Promise<Playdate>
 }
 
 // ---------------------------------------------------------------------------
+// V3 slice 2 (ticket 02): host status + the Open-Meteo rain badge.
+//
+// The status column (migration 0016) may not be applied to the live
+// project until the orchestrator applies it — the status write then throws
+// (42703, unknown column), and the detail page surfaces a designed error
+// line instead of crashing (same discipline as slices 2–5). The write is
+// host-only: RLS `playdates_update_host` (0005) is the wall — a non-host
+// API write is a silent 0-row 2xx (the 0014/PostgREST lesson), so the
+// client hides the control from non-hosts. Pre-0016-apply the `*` selects
+// omit the column (undefined at runtime — the UI treats missing as 'on').
+
+/**
+ * Set the host's status on a drop-in (V3 slice 2, ticket 02), against an
+ * injected client (the trust.togglePingWithClient pattern — mockable).
+ * Plain update, no RETURNING (42501 discipline: the playdates SELECT
+ * posture stays untouched — 0016 changes no SELECT policy). A non-host
+ * call is a silent RLS no-op (0 rows, 2xx), never an error — the DB wall
+ * is the backstop, the hidden control is the user-facing wall.
+ */
+export async function setPlaydateStatusWithClient(
+  client: SupabaseClient,
+  playdateId: string,
+  status: PlaydateStatus,
+): Promise<void> {
+  const { error } = await client
+    .from('playdates')
+    .update({ status })
+    .eq('id', playdateId)
+  if (error) throw error
+}
+
+/** The default-client wrapper (the detail page's host status control). */
+export async function setPlaydateStatus(
+  playdateId: string,
+  status: PlaydateStatus,
+): Promise<void> {
+  return setPlaydateStatusWithClient(supabase, playdateId, status)
+}
+
+/**
+ * The Open-Meteo daily rain-probability cache (V3 slice 2, ticket 02),
+ * keyed per (zip, local event date). Holds settled promises (never
+ * rejects — a failed attempt resolves to null AND is removed from the
+ * cache below, the zip-cache lesson e0d3756: a pinned rejection would
+ * need a page reload to clear).
+ */
+const rainProbabilityCache = new Map<string, Promise<number | null>>()
+
+/**
+ * One Open-Meteo daily fetch (no key, no location sensing — the plan pin):
+ * the event's LOCAL date (YYYY-MM-DD, the device timezone — V1's only
+ * timezone story) as a one-day range, timezone=auto. Throws on any
+ * HTTP/parse problem (the caller retries once, then settles null).
+ */
+async function openMeteoDailyMaxProbability(
+  lat: number,
+  lng: number,
+  dateYmd: string,
+): Promise<number> {
+  const url = new URL('https://api.open-meteo.com/v1/forecast')
+  url.searchParams.set('latitude', String(lat))
+  url.searchParams.set('longitude', String(lng))
+  url.searchParams.set('daily', 'precipitation_probability_max')
+  url.searchParams.set('timezone', 'auto')
+  url.searchParams.set('start_date', dateYmd)
+  url.searchParams.set('end_date', dateYmd)
+  const res = await fetch(url.toString())
+  if (!res.ok) throw new Error(`Open-Meteo HTTP ${res.status}`)
+  const payload = (await res.json()) as {
+    daily?: { precipitation_probability_max?: Array<number | null> }
+  }
+  const value = payload.daily?.precipitation_probability_max?.[0]
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    throw new Error('Open-Meteo returned no precipitation probability')
+  }
+  return value
+}
+
+/**
+ * The daily precipitation-probability max for a zip's event date
+ * (V3 slice 2, ticket 02): lat/lng from the 0012 client-side zip map
+ * (a zip missing from the gazetteer → null — coordinates are never
+ * invented, the radius feed's pinned rule). Best-effort per the plan
+ * pin:
+ * - ONE fetch per distinct (zip, event-date) — the module cache + the
+ *   in-flight dedupe (concurrent callers share the cached promise);
+ * - RETRY once on a failed fetch; a double failure (or an out-of-range
+ *   date Open-Meteo rejects) resolves null and is NOT cached, so the
+ *   next call retries — the zip-cache lesson (e0d3756);
+ * - null, NEVER throws, on any error (the "Rain likely" badge is
+ *   silently absent — no error state, the zero-pressure soul).
+ */
+export async function fetchRainProbabilityForZip(
+  zip: string,
+  eventDateIso: string,
+): Promise<number | null> {
+  const dateYmd = localDayKey(eventDateIso)
+  const key = `${zip}:${dateYmd}`
+  const pending = rainProbabilityCache.get(key)
+  if (pending !== undefined) return pending
+
+  // The in-flight promise (settled below, never rejects) is cached
+  // SYNCHRONOUSLY so a concurrent caller dedupes onto this fetch.
+  const inFlight = (async () => {
+    let coordsMap: ReadonlyMap<string, ZipCoords>
+    try {
+      coordsMap = await loadZipCodes()
+    } catch {
+      // The gazetteer fetch failed (0012 not applied / transient) —
+      // uncacheable: delete the in-flight entry so the NEXT call
+      // re-issues the fetch (the zip-cache lesson — never cache a
+      // rejection).
+      rainProbabilityCache.delete(key)
+      return null
+    }
+    const coords = coordsMap.get(zip)
+    if (coords === undefined) {
+      // Not in the seeded gazetteer — stable for the SPA session,
+      // cacheable (no invented coordinates).
+      return null
+    }
+    try {
+      return await openMeteoDailyMaxProbability(coords.lat, coords.lng, dateYmd)
+    } catch {
+      // One retry on failure (the plan pin).
+      try {
+        return await openMeteoDailyMaxProbability(coords.lat, coords.lng, dateYmd)
+      } catch {
+        // Double failure / out-of-range date → null, uncacheable: delete
+        // the in-flight entry so the NEXT call re-issues the fetch (the
+        // zip-cache lesson — never cache a rejection).
+        rainProbabilityCache.delete(key)
+        return null
+      }
+    }
+  })()
+  rainProbabilityCache.set(key, inFlight)
+  return inFlight
+}
+
+// ---------------------------------------------------------------------------
 // Slice 4: going-pings + reports + blocks (trust basics).
 //
 // The going_pings table (migration 0007) and reports table (migration 0008)
@@ -591,7 +734,10 @@ export async function getPlaydateDetail(id: string): Promise<PlaydateWithNeighbo
   const { data, error } = await supabase
     .from('playdates')
     .select(
-      '*, neighborhood:neighborhoods!inner ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url )',
+      // V3 slice 2 (ticket 02): the host embed also carries home_zip —
+      // the weather lookup's key (the post's location = the host's home
+      // zip, the V2 pin; the Open-Meteo fetch in the detail page).
+      '*, neighborhood:neighborhoods!inner ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip )',
     )
     .eq('id', id)
     .maybeSingle()

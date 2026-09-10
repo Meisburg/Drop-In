@@ -24,19 +24,42 @@ import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
  * (the single soonest upcoming event of the Today section that starts
  * within 60 min — the page decides who gets it, the card only renders it).
  * Cards never carry a per-card day label — the day section headers do.
+ *
+ * V3 slice 2 (ticket 02): a host-marked post (playdate.status
+ * 'rained_out' / 'cancelled' — 0016) renders muted like an ended post:
+ * the status chip takes the badge slot (the host's explicit state wins
+ * over the time-based badges) + the grayed-out card (the event STAYS in
+ * the feed — the host can revert; no auto-expiry). Pre-0016-apply the row
+ * lacks the column (undefined → the normal styling). The optional
+ * "Rain likely" badge (the rainLabel prop, from the page's best-effort
+ * Open-Meteo fetch) renders in the same slot, independent of the status
+ * (a forecast, not a state) — only Today-section cards get it (the page
+ * decides; BrowsePage passes nothing new).
  */
 export function DropInCard({
   playdate,
   nowIso,
   startsSoon = false,
+  rainLabel = null,
 }: {
   playdate: PlaydateWithNeighborhood
   nowIso: string
   /** V3 slice 1: the feed's Today-section "Starts soon" badge (see above). */
   startsSoon?: boolean
+  /** V3 slice 2: the Today-section "Rain likely" badge (see above). */
+  rainLabel?: string | null
 }) {
   const live = isHappeningNow(playdate, nowIso)
   const ended = isEnded(playdate, nowIso)
+  // V3 slice 2 (ticket 02): the host's status chip (null = 'on' / the
+  // column is absent pre-0016-apply → the normal, non-muted styling).
+  const statusChip =
+    playdate.status === 'rained_out'
+      ? 'Rained out'
+      : playdate.status === 'cancelled'
+        ? 'Cancelled'
+        : null
+  const muted = ended || statusChip !== null
   // The radius feed's per-post distance (V2 slice 3, the "N mi" label,
   // integer miles — the pure haversine predicate in feed.ts). Undefined
   // outside the radius feed (e.g. the detail page) → no label.
@@ -46,28 +69,43 @@ export function DropInCard({
       : null
   const cardClasses = [
     'block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-indigo-300',
-    ended ? 'opacity-60' : '',
+    muted ? 'opacity-60' : '',
   ]
     .filter((c) => c !== '')
     .join(' ')
   return (
     <Link to={`/playdate/${playdate.id}`} className={cardClasses}>
       <div className="flex flex-col gap-1">
-        <div className="flex items-start justify-between gap-2">
+        <div className="flex flex-wrap items-start justify-between gap-2">
           <h3 className="text-base font-semibold text-slate-900">{playdate.title}</h3>
-          {ended ? (
-            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
-              Ended
-            </span>
-          ) : live ? (
-            <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-              Happening now
-            </span>
-          ) : startsSoon ? (
-            <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-              Starts soon
-            </span>
-          ) : null}
+          {/* The badge slot: the host's status chip first (the explicit
+              state wins — a "Rained out" post does not also say
+              "Happening now"), then the time-based badges, then the
+              independent "Rain likely" forecast badge. */}
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+            {statusChip !== null ? (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+                {statusChip}
+              </span>
+            ) : ended ? (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+                Ended
+              </span>
+            ) : live ? (
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                Happening now
+              </span>
+            ) : startsSoon ? (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                Starts soon
+              </span>
+            ) : null}
+            {rainLabel !== null && rainLabel !== '' ? (
+              <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700">
+                ☔ {rainLabel}
+              </span>
+            ) : null}
+          </div>
         </div>
         <p className="text-sm text-slate-700">{playdate.place}</p>
         <p className="text-sm text-slate-500">

@@ -1,0 +1,128 @@
+/**
+ * Spec (V3 ticket 02): host status — the muted state round-trips.
+ *
+ * The marker (signed in via the setup project, the host of its own post)
+ * posts a drop-in, opens its detail page, and sets the status to RAINED
+ * OUT via the "This is your post" panel (the ONLY status surface —
+ * non-hosts + the signed-out view never render the control): the muted
+ * "Rained out" chip appears on the detail page (next to the title) AND on
+ * the feed card (the card re-fetches the row — the DB round-trip), then
+ * the marker reverts to ON and the chip is gone (the event stayed in the
+ * feed the whole time — no auto-expiry).
+ *
+ * Pre-0016-apply this spec FAILS (the status column does not exist — the
+ * panel's write throws, the error line renders instead of the chip): an
+ * expected failure until the orchestrator applies migration 0016 live.
+ *
+ * Each spec creates its own marker playdate (the golden-path pattern, so
+ * the detail page is a REAL row); best-effort afterEach cleanup deletes
+ * the marker's playdate rows via REST (the e2e-<epoch>/title prefix marks
+ * stragglers for the orchestrator's sweep).
+ */
+import { expect, test } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import {
+  localDatePlusDays,
+  readMarkerMeta,
+  readMarkerSession,
+  readSupabaseEnv,
+  settleOnRoute,
+} from './fixtures'
+
+/**
+ * Post a drop-in through the V2 slice-1 UI (the golden-path pattern:
+ * steppers + chips, end computed) as the marker (the signed-in default
+ * context), then return the feed card's detail href — a real /playdate/:id.
+ */
+async function postMarkerDropIn(page: Page, title: string): Promise<string> {
+  const marker = readMarkerMeta()
+  await page.goto('/new')
+  // A cold load can lose the route to the onboarding-gate race — settle on
+  // /new via the app's own navigation once the SPA state is warm.
+  await settleOnRoute(page, '/new')
+  await page.getByPlaceholder('e.g. Playground time at Green Lake').fill(title)
+  await page
+    .getByPlaceholder('e.g. Green Lake playground, near the boathouse')
+    .fill('E2E status lot')
+  await page.locator('select').selectOption({ label: marker.neighborhood })
+  await page.locator('input[type="date"]').fill(localDatePlusDays(1))
+  await page.getByRole('button', { name: 'Later start time' }).click()
+  await expect(page.getByText('10:30 AM', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '1h', exact: true }).click()
+  await expect(page.getByText('Ends 11:30 AM')).toBeVisible()
+  await page.getByRole('button', { name: 'Post drop-in' }).click()
+  await page.waitForURL('/')
+  const card = page.locator('a').filter({ hasText: title }).first()
+  await expect(card).toBeVisible()
+  const href = (await card.getAttribute('href')) ?? ''
+  if (!href.startsWith('/playdate/')) {
+    throw new Error(`The feed card for "${title}" has no detail href (got "${href}")`)
+  }
+  return href
+}
+
+test('the host sets RAINED OUT — the muted state round-trips on the card + detail', async ({
+  page,
+}) => {
+  const marker = readMarkerMeta()
+  const title = `e2e ${marker.displayName} host-status`
+  const detailPath = await postMarkerDropIn(page, title)
+
+  // (a) The marker IS the host — the "This is your post" panel renders the
+  // status control (On / Rained out / Cancelled, the active option filled).
+  await page.goto(detailPath)
+  await page.getByRole('heading', { name: title, exact: true }).waitFor()
+  await expect(page.getByText('This is your post')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'On', exact: true })).toBeVisible()
+  // The chip is ABSENT while the status is 'on'.
+  await expect(page.locator('h1 + span')).toHaveCount(0)
+
+  // (b) Set RAINED OUT — the muted chip appears on the detail page (next
+  // to the title; the card/info card gray out — the event stays in the
+  // feed, it is not removed).
+  await page.getByRole('button', { name: 'Rained out', exact: true }).click()
+  await expect(page.locator('h1 + span').getByText('Rained out', { exact: true })).toBeVisible()
+
+  // (c) The feed card carries the muted state too — a fresh feed load
+  // re-fetches the row (the DB round-trip: the write persisted).
+  await settleOnRoute(page, '/')
+  const card = page.locator('a').filter({ hasText: title }).first()
+  await expect(card).toBeVisible()
+  await expect(card.getByText('Rained out', { exact: true })).toBeVisible()
+
+  // (d) Revert to ON — the chip is gone (the host can flip back; no
+  // auto-expiry anywhere).
+  await page.goto(detailPath)
+  await page.getByRole('button', { name: 'On', exact: true }).click()
+  await expect(page.locator('h1 + span')).toHaveCount(0)
+})
+
+test.afterEach(async () => {
+  // Best-effort cleanup (per ticket): delete the HOST marker's playdate
+  // rows via REST with the marker's own JWT (host-only DELETE policy).
+  // A failure is logged, not fatal — the e2e- prefix marks the rows for
+  // the orchestrator's sweep.
+  try {
+    const { url, anonKey } = readSupabaseEnv()
+    const { accessToken, userId } = readMarkerSession()
+    const query = `${url}/rest/v1/playdates?host_profile_id=eq.${userId}&select=id`
+    const headers: Record<string, string> = {
+      apikey: anonKey,
+      Authorization: `Bearer ${accessToken}`,
+      Prefer: 'return=representation',
+    }
+    const del = await fetch(query, { method: 'DELETE', headers })
+    const check = await fetch(query, { headers })
+    const remaining = check.ok ? ((await check.json()) as Array<Record<string, unknown>>) : null
+    if (!del.ok || (remaining !== null && remaining.length > 0)) {
+      console.log(
+        `[e2e cleanup] FAILED — playdate delete HTTP ${del.status}, ` +
+          `${remaining?.length ?? '?'} remain (host ${userId}) — orchestrator sweep (e2e- prefix) will pick them up`,
+      )
+    } else {
+      console.log(`[e2e cleanup] ok — deleted host marker playdate row(s) (host ${userId})`)
+    }
+  } catch (err) {
+    console.log(`[e2e cleanup] FAILED (logged, best-effort): ${err instanceof Error ? err.message : err}`)
+  }
+})

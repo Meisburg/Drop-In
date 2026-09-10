@@ -49,6 +49,15 @@ export interface Profile {
   radius_miles?: number
 }
 
+/**
+ * The host's status for a drop-in (V3 slice 2, ticket 02, migration 0016):
+ * 'on' is the default; 'rained_out' / 'cancelled' mute the card + detail
+ * (the event STAYS in the feed — the host can revert; no auto-expiry).
+ * Authenticated-only surface: 0015's get_public_playdate (the signed-out
+ * public view) does NOT return it.
+ */
+export type PlaydateStatus = 'on' | 'rained_out' | 'cancelled'
+
 /** A drop-in playdate ("at this playground, 3–5, come by if you like"). */
 export interface Playdate {
   id: string
@@ -61,6 +70,13 @@ export interface Playdate {
   /** Advisory only, e.g. "best for 2-5". Nullable. */
   age_hint: string | null
   details: string | null
+  /**
+   * The host's status (V3 slice 2, ticket 02, migration 0016): 'on' is
+   * the DB default; 'rained_out' / 'cancelled' render the muted states.
+   * Pre-0016-apply the `*` selects omit the column (undefined at runtime
+   * — the UI treats missing as 'on').
+   */
+  status: PlaydateStatus
   /**
    * Set when a moderator hides the post (migration 0009). Null = visible;
    * hidden posts vanish from the feed DB-level and render a hidden state

@@ -21,6 +21,7 @@ import {
   PLAYDATE_DURATIONS_MINUTES,
   queryMyPlaydatesWithClient,
   queryUpcomingFeedWithClient,
+  rainBadgeLabel,
   RADIUS_MILES_OPTIONS,
   startOfTodayIso,
   stepTimeMinutes,
@@ -727,5 +728,25 @@ describe('queryMyPlaydatesWithClient (mocked supabase client)', () => {
   it('returns [] when the host has no posts', async () => {
     const { client } = makeFeedMockClient([])
     expect(await queryMyPlaydatesWithClient(client, 'me')).toEqual([])
+  })
+})
+
+describe('rainBadgeLabel (the "Rain likely" threshold, V3 ticket 02)', () => {
+  it('shows "Rain likely" exactly at the 50 threshold (>=, not >)', () => {
+    expect(rainBadgeLabel(50)).toBe('Rain likely')
+  })
+
+  it('shows "Rain likely" above the threshold', () => {
+    expect(rainBadgeLabel(72)).toBe('Rain likely')
+    expect(rainBadgeLabel(100)).toBe('Rain likely')
+  })
+
+  it('is null just below the threshold (no badge under 50%)', () => {
+    expect(rainBadgeLabel(49)).toBeNull()
+    expect(rainBadgeLabel(0)).toBeNull()
+  })
+
+  it('is null for a missing probability (a failed / out-of-range fetch — silently absent)', () => {
+    expect(rainBadgeLabel(null)).toBeNull()
   })
 })

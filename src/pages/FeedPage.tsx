@@ -2,8 +2,15 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { DropInCard } from '../components/DropInCard'
 import { useSessionContext } from '../components/SessionProvider'
-import { listRadiusFeed } from '../lib/db'
-import { DEFAULT_RADIUS_MILES, groupByDay, isEnded, isStartingSoon, localDayKey } from '../lib/feed'
+import { fetchRainProbabilityForZip, listRadiusFeed } from '../lib/db'
+import {
+  DEFAULT_RADIUS_MILES,
+  groupByDay,
+  isEnded,
+  isStartingSoon,
+  localDayKey,
+  rainBadgeLabel,
+} from '../lib/feed'
 import type { PlaydateWithNeighborhood } from '../lib/types'
 
 /**
@@ -24,6 +31,13 @@ import type { PlaydateWithNeighborhood } from '../lib/types'
  * paragraphs, NOT heading elements: the page title (<h1>Today</h1>) stays
  * the single "Today" heading the e2e specs pin on.
  *
+ * V3 slice 2 (ticket 02): the Today-section cards get a best-effort
+ * "Rain likely" badge (the rainLabel prop — the Open-Meteo daily
+ * probability for the post's HOST zip on the event date, the pure
+ * rainBadgeLabel threshold; the wrapper's per-(zip,date) cache +
+ * in-flight dedupe keeps it one fetch per distinct pair, silently absent
+ * on error). Other day sections (and BrowsePage) pass nothing new.
+ *
  * The zip_codes + location columns live in migration 0012 (the live
  * project may not have them yet) — a failed load renders a designed error
  * state, never a crash (same discipline as the onboarding load-error).
@@ -32,6 +46,11 @@ export function FeedPage() {
   const { session, loading, profile } = useSessionContext()
   const [posts, setPosts] = useState<PlaydateWithNeighborhood[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  // V3 slice 2 (ticket 02): the Today-section cards' "Rain likely" labels
+  // (post id → label; null = no badge). Best-effort — the wrapper never
+  // rejects, so a failed fetch just leaves the label null (silently
+  // absent, the zero-pressure soul).
+  const [rainLabels, setRainLabels] = useState<Record<string, string | null>>({})
 
   // The viewer side of the radius filter: the profile's home zip + radius.
   // The shell's onboarding gate keys on home_zip, so a settled signed-in
@@ -59,6 +78,39 @@ export function FeedPage() {
       cancelled = true
     }
   }, [loading, session, profile])
+
+  // V3 slice 2 (ticket 02): the best-effort "Rain likely" labels for the
+  // Today-section cards — one Open-Meteo fetch per distinct (host zip,
+  // event date) (the wrapper's module cache + in-flight dedupe; the
+  // marker's own post + any co-hosted events share a fetch). A host with
+  // no home zip (or a zip outside the 0012 gazetteer) gets no label —
+  // never an invented coordinate. Labels merge into the map by post id
+  // (a stale id from a previous load is harmless — it renders no card).
+  useEffect(() => {
+    if (posts === null) return
+    let cancelled = false
+    const todayKey = localDayKey(new Date().toISOString())
+    const todays = posts.filter((post) => localDayKey(post.starts_at) === todayKey)
+    if (todays.length === 0) return
+    void Promise.all(
+      todays.map(async (post) => {
+        const zip = post.host?.home_zip
+        if (typeof zip !== 'string' || zip === '') return [post.id, null] as const
+        const probability = await fetchRainProbabilityForZip(zip, post.starts_at)
+        return [post.id, rainBadgeLabel(probability)] as const
+      }),
+    ).then((entries) => {
+      if (cancelled) return
+      setRainLabels((prev) => {
+        const next: Record<string, string | null> = { ...prev }
+        for (const [id, label] of entries) next[id] = label
+        return next
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [posts])
 
   if (loading || profile === null) {
     return (
@@ -134,10 +186,16 @@ export function FeedPage() {
                       playdate={post}
                       nowIso={nowIso}
                       startsSoon={post.id === startsSoonId}
+                      rainLabel={isToday ? (rainLabels[post.id] ?? null) : undefined}
                     />
                   ))}
                   {ended.map((post) => (
-                    <DropInCard key={post.id} playdate={post} nowIso={nowIso} />
+                    <DropInCard
+                      key={post.id}
+                      playdate={post}
+                      nowIso={nowIso}
+                      rainLabel={isToday ? (rainLabels[post.id] ?? null) : undefined}
+                    />
                   ))}
                 </div>
               </section>

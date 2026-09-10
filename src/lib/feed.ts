@@ -516,3 +516,22 @@ export function toDuplicatePrefill(post: {
     details: post.details ?? '',
   }
 }
+
+// ---------------------------------------------------------------------------
+// V3 slice 2 (ticket 02): host status + the Open-Meteo rain badge.
+
+/** The "Rain likely" threshold (orchestrator pin): >= 50% daily precipitation probability. */
+export const RAIN_BADGE_THRESHOLD = 50
+
+/**
+ * The "Rain likely" badge label (V3 slice 2, ticket 02): the pure
+ * threshold decision — a daily precipitation probability of at least
+ * RAIN_BADGE_THRESHOLD (50) shows "Rain likely"; anything below, or a
+ * missing probability (null — a failed or out-of-range fetch), shows
+ * nothing (null: the badge is silently absent, no error state — the
+ * zero-pressure soul).
+ */
+export function rainBadgeLabel(probability: number | null): string | null {
+  if (probability === null) return null
+  return probability >= RAIN_BADGE_THRESHOLD ? 'Rain likely' : null
+}

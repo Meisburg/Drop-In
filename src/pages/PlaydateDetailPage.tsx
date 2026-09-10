@@ -7,6 +7,7 @@ import { LOGIN_PATH } from '../lib/auth'
 import {
   addComment,
   deleteComment,
+  fetchRainProbabilityForZip,
   getBlockState,
   getGoingCount,
   getPlaydateDetail,
@@ -15,9 +16,10 @@ import {
   hasPinged,
   hideComment,
   listComments,
+  setPlaydateStatus,
   togglePing,
 } from '../lib/db'
-import { isHiddenPost, toDuplicatePrefill } from '../lib/feed'
+import { isHiddenPost, rainBadgeLabel, toDuplicatePrefill } from '../lib/feed'
 import { canModerate } from '../lib/moderation'
 import {
   COMMENT_MAX_LENGTH,
@@ -26,7 +28,12 @@ import {
   planCommentAction,
   validateCommentBody,
 } from '../lib/trust'
-import type { CommentWithAuthor, PlaydateWithNeighborhood, PublicPlaydateDetail } from '../lib/types'
+import type {
+  CommentWithAuthor,
+  PlaydateStatus,
+  PlaydateWithNeighborhood,
+  PublicPlaydateDetail,
+} from '../lib/types'
 
 type DetailState =
   | { status: 'loading' }
@@ -91,6 +98,19 @@ type DetailState =
  * auto-ping). The Share button (Web Share API + copy-link fallback) builds
  * its URL from VITE_PUBLIC_BASE_URL, falling back to the window origin
  * before deployment.
+ *
+ * V3 slice 2 (ticket 02): the host sees a status control (On / Rained out
+ * / Cancelled) inside the "This is your post" panel — the ONLY host-actions
+ * surface, so the control is invisible to non-hosts (the RLS
+ * playdates_update_host is the wall; a non-host API write is a silent
+ * 0-row 2xx, the 0014 lesson). A rained-out / cancelled post renders the
+ * muted states (the chip near the title + the grayed info card — the
+ * event STAYS in the feed; the host can revert, no auto-expiry). A
+ * best-effort "Rain likely" badge (the pure rainBadgeLabel threshold on
+ * the Open-Meteo daily probability for the host's home_zip — silently
+ * absent on error, no error state) sits beside the time row. The
+ * signed-out public view (renderPublicView) stays the 11-field public
+ * surface: no status, no badge (the 0015 pin holds).
  */
 export function PlaydateDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -114,6 +134,13 @@ export function PlaydateDetailPage() {
   // flag) — the ping button highlights as "Tap to confirm you're coming";
   // the ping itself is always an explicit tap, never a silent auto-ping.
   const [pingIntent, setPingIntent] = useState(false)
+  // V3 slice 2 (ticket 02): the host's status control — its busy flag + a
+  // designed error line (a failed write never hides the event; zero
+  // pressure), and the best-effort rain probability (the "Rain likely"
+  // badge; null = silently absent — the fetch never rejects).
+  const [statusBusy, setStatusBusy] = useState(false)
+  const [statusError, setStatusError] = useState<string | null>(null)
+  const [rainProbability, setRainProbability] = useState<number | null>(null)
 
   useEffect(() => {
     if (id === undefined || id === '') return
@@ -203,6 +230,30 @@ export function PlaydateDetailPage() {
     }
   }, [id])
 
+  // V3 slice 2 (ticket 02): the best-effort "Rain likely" badge — the
+  // Open-Meteo daily probability for the HOST's home_zip on the event's
+  // local date (the post's location = the host's home zip, the V2 pin; the
+  // zip rides the detail's host embed). One fetch per (zip, date) — the
+  // wrapper's module cache + in-flight dedupe; the wrapper NEVER rejects
+  // (null on any error / out-of-range date → the badge is silently absent,
+  // the zero-pressure soul). An unset host zip → no fetch, never an
+  // invented coordinate.
+  const rainHostZip = state.status === 'ready' ? state.detail.host.home_zip : null
+  const rainEventDateIso = state.status === 'ready' ? state.detail.starts_at : null
+  useEffect(() => {
+    if (typeof rainHostZip !== 'string' || rainHostZip === '' || rainEventDateIso === null) {
+      return
+    }
+    let cancelled = false
+    setRainProbability(null)
+    void fetchRainProbabilityForZip(rainHostZip, rainEventDateIso).then((probability) => {
+      if (!cancelled) setRainProbability(probability)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [rainHostZip, rainEventDateIso])
+
   async function handlePingToggle() {
     if (state.status !== 'ready' || pingBusy) return
     const detail = state.detail
@@ -229,6 +280,36 @@ export function PlaydateDetailPage() {
       setPingError(err instanceof Error ? err.message : 'Could not update your ping. Try again.')
     } finally {
       setPingBusy(false)
+    }
+  }
+
+  /**
+   * V3 slice 2 (ticket 02): the host's status control (On / Rained out /
+   * Cancelled). The control renders in the host-only "This is your post"
+   * panel, so this is the only caller; the RLS playdates_update_host is
+   * the wall (a non-host API write is a silent 0-row 2xx — the 0014
+   * lesson). A failed write (0016 not applied → 42703; a transient
+   * network error) surfaces a designed error line — the event STAYS in
+   * the feed (zero pressure; the host can retry). The functional merge
+   * touches ONLY detail.status: the count / going + the comment thread
+   * settled in the meantime survive (the ping + comment ops' discipline).
+   */
+  async function handleSetStatus(status: PlaydateStatus) {
+    if (state.status !== 'ready' || statusBusy) return
+    const detail = state.detail
+    setStatusBusy(true)
+    setStatusError(null)
+    try {
+      await setPlaydateStatus(detail.id, status)
+      setState((prev) =>
+        prev.status === 'ready' && prev.detail.id === detail.id
+          ? { ...prev, detail: { ...prev.detail, status } }
+          : prev,
+      )
+    } catch (err) {
+      setStatusError(err instanceof Error ? err.message : 'Could not update the status. Try again.')
+    } finally {
+      setStatusBusy(false)
     }
   }
 
@@ -467,6 +548,17 @@ export function PlaydateDetailPage() {
   // The moderator flag off the shared profile (same source the /mod route
   // guard reads): true shows each comment's Hide action (ticket 04).
   const isModerator = canModerate(profile)
+  // V3 slice 2 (ticket 02): the post's status — pre-0016-apply the row
+  // lacks the column (undefined → treated as 'on'). A non-'on' status
+  // renders the muted states: the chip near the title + the grayed info
+  // card (the event STAYS in the feed — the host can revert, no
+  // auto-expiry). The rain badge is the pure rainBadgeLabel threshold on
+  // the best-effort probability (null = silently absent).
+  const postStatus: PlaydateStatus = detail.status ?? 'on'
+  const statusChip =
+    postStatus === 'rained_out' ? 'Rained out' : postStatus === 'cancelled' ? 'Cancelled' : null
+  const statusMuted = statusChip !== null
+  const rainLabel = rainBadgeLabel(rainProbability)
   // V2 slice 5 (the zero-pressure soul): the stored ping intent highlights
   // the button as an EXPLICIT confirm — but only while the visitor is not
   // already going (a re-tap would unping, so the label tracks the real
@@ -551,15 +643,38 @@ export function PlaydateDetailPage() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">{detail.title}</h1>
+        {/* V3 slice 2 (ticket 02): the muted-state chip (rained out /
+            cancelled) — rendered for every viewer; the host's explicit
+            state is information, not a removal (the event stays in the
+            feed). */}
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-xl font-semibold text-slate-900">{detail.title}</h1>
+          {statusChip !== null ? (
+            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+              {statusChip}
+            </span>
+          ) : null}
+        </div>
         <p className="mt-1 text-sm text-slate-500">
           {detail.place} · {detail.neighborhood.name}
         </p>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div
+        className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm${
+          statusMuted ? ' opacity-60' : ''
+        }`}
+      >
         <p className="text-sm text-slate-700">
           {formatDay(detail.starts_at)} · {formatTime(detail.starts_at)}–{formatTime(detail.ends_at)}
+          {/* V3 slice 2 (ticket 02): the best-effort "Rain likely" badge
+              (Open-Meteo, host's home zip, >= 50%) — silently absent when
+              the fetch fails or the probability is below the threshold. */}
+          {rainLabel !== null ? (
+            <span className="ml-2 inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 align-middle text-xs font-medium text-sky-700">
+              ☔ {rainLabel}
+            </span>
+          ) : null}
         </p>
         {detail.age_hint !== null ? (
           <p className="mt-1 text-sm text-slate-500">Best for {detail.age_hint}</p>
@@ -616,6 +731,38 @@ export function PlaydateDetailPage() {
           <p className="mt-1 text-sm text-indigo-700">
             {count !== null ? hostGoingCountLine(count) : 'No pings yet'}
           </p>
+          {/* V3 slice 2 (ticket 02): the host's status control (On /
+              Rained out / Cancelled) — the ONLY status surface (this
+              panel renders for the host only; non-hosts + the signed-out
+              view never see it). The RLS playdates_update_host is the
+              wall; the active option shows the current state. */}
+          <div className="mt-3 border-t border-indigo-100 pt-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-indigo-900">Status</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {HOST_STATUS_OPTIONS.map((option) => {
+                const active = postStatus === option.value
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={active}
+                    disabled={statusBusy}
+                    onClick={() => void handleSetStatus(option.value)}
+                    className={
+                      active
+                        ? 'rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50'
+                        : 'rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 disabled:opacity-50'
+                    }
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
+            {statusError !== null ? (
+              <p className="mt-2 text-sm text-red-600">{statusError}</p>
+            ) : null}
+          </div>
         </div>
       ) : (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -771,6 +918,17 @@ export function PlaydateDetailPage() {
     </div>
   )
 }
+
+/**
+ * The host's status control options (V3 slice 2, ticket 02): the three
+ * playdates.status values (0016) with their display labels. 'on' is the
+ * DB default (the "it's on" state).
+ */
+const HOST_STATUS_OPTIONS: ReadonlyArray<{ value: PlaydateStatus; label: string }> = [
+  { value: 'on', label: 'On' },
+  { value: 'rained_out', label: 'Rained out' },
+  { value: 'cancelled', label: 'Cancelled' },
+]
 
 /** Local day label, e.g. "Sat, Sep 12" (the device's timezone — V1). */
 function formatDay(iso: string): string {

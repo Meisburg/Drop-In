@@ -145,7 +145,8 @@ Pinned contracts every builder must respect (reviewers enforce these):
   `src/components/DropInCard.tsx`, `src/lib/db.ts` (`setPlaydateStatus` +
   weather fetch wrapper), `src/lib/feed.ts` (`rainBadgeLabel`),
   `src/lib/types.ts`, migration `supabase/migrations/0016_playdate_status.sql`,
-  `e2e/host-status.e2e.ts` (new spec)
+  `e2e/host-status.e2e.ts` (new spec), `src/pages/FeedPage.tsx` (rain badge
+  in Today-section), `src/lib/feed.test.ts` (rainBadgeLabel unit tests)
 - **Approach:** migration first (code green, then orchestrator CDP apply);
   db.ts host-only writer + pure `rainBadgeLabel`; status control in the
   "This is your post" panel; muted states on card/detail; weather badge
@@ -249,3 +250,11 @@ Pinned contracts every builder must respect (reviewers enforce these):
   approved (status flipped to ready-for-agent); V3 slices 1-2 dispatched
   (the green light supersedes the two-user beta gate for these slices; the
   beta itself remains open, no deadline).
+- 2026-09-09 — Slices 1-2 COMPLETE: 0449de6 (feed day sections;
+  160/160 unit + 12/12 e2e, reviewer PASS) + 7a705c8 (host status +
+  weather; 164/164 unit + 13/13 e2e, reviewer PASS). 0016 applied live
+  via the dashboard SQL API fallback (the Monaco SPA no longer hydrates
+  in the CDP Chrome — task-state tooling note). Live probes PASS: host
+  status round-trip (on→rained_out→on), non-host write silent 204
+  0-row (RLS wall), Open-Meteo reachable (HTTP 200). Slices 3-5 await
+  the human's green light (ticket 05 approved 2026-09-09).
