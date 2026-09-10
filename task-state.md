@@ -5,9 +5,9 @@
 
 ## Current position
 
-- **Phase:** V2 COMPLETE + housekeeping done — remaining: human beta gate (3.5) -> V3 dispatch
-- **Active slice:** none. All five V2 slices live (migrations 0011-0015 applied). Nit batch closed (e0d3756: zip-cache retry, state-closure + ping-intent cleanup, type fidelity, doc/label/newline fixes; 139/139 unit, 12/12 e2e). Full marker sweep 2026-09-09: 75 auth users + 64 profiles deleted via CDP (safety gate passed); live DB = founder only (2 profiles, 3 auth users, 1 founder post).
-- **Next action:** orchestrator: draft plan-v3.md + tickets 01-05 (parking lot priorities 1-4 + guest-list spec; ticket 05 pending human read). Then human: two-user beta (3.5, no deadline) -> green-light V3 dispatch.
+- **Phase:** V3 PLANNED — plan-v3.md + tickets 01-05 drafted (2026-09-09); no builder dispatch until the two-user beta green light (plan-v2 slice 3.5) + founder read of ticket 05 (blocks slice 5)
+- **Active slice:** none. V2 fully closed (0011-0015 live; nit batch e0d3756; full marker sweep; live DB = founder only). V3 plan drafted from `.scratch/v3/parking-lot.md` (priorities 1-4) + `.scratch/guest-list/spec.md`; tickets in `.scratch/v3/issues/` (05 status: needs-triage, founder read pending). V3 migration numbering starts at 0016 (latest live = 0015, confirmed by explorer 2026-09-09). Pinned in plan-v3 Interfaces: day sections (feed.ts pure fns, no migration), status column 0016 + Open-Meteo rain badge (>=50%, host home_zip, best-effort), ICS (no-migration) pure lib (public-surface fields only), retention 0017 (last_seen_at, app-side restamp) + hosted-count line, guest list 0018 (get_guest_list SECURITY DEFINER, broad SELECT stays for counts, orchestrator trust review pre-apply).
+- **Next action:** human: (1) two-user beta green light (plan-v2 3.5, no deadline), (2) read `.scratch/v3/issues/05-guest-list.md`. Then orchestrator: dispatch V3 slice 1 (ticket 01, feed day sections — no migration) to the dev agent.
 
 ## Tooling note (2026-09-09)
 
