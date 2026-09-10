@@ -15,6 +15,7 @@ dist-ssr
 # Environment (Supabase credentials — never commit)
 .env
 .env.*
+!.env.example
 
 # Playwright e2e (V2 ticket 00) — marker storageState (session tokens)
 # and test artifacts, never commit

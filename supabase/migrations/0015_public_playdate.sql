@@ -16,10 +16,10 @@
 -- going_pings — never the per-person rows).
 --
 -- Enumeration implication (documented per the pin): the anon SELECT on
--- playdates (USING true — posts are public content; the distribution
--- layer, the Share button, depends on it) lets a signed-out visitor
--- enumerate post titles/places/times and read one post directly. That is
--- intended. What stays CLOSED to anon:
+-- playdates (USING hidden_at is null — visible posts are public content;
+-- the distribution layer, the Share button, depends on it) lets a
+-- signed-out visitor enumerate post titles/places/times and read one
+-- post directly. That is intended. What stays CLOSED to anon:
 --   - profiles: no anon policy — the host handle + avatar reach anon ONLY
 --     through the SECURITY DEFINER function below, which projects exactly
 --     display_name + avatar_url (no bio, kids, home_zip, or any other
@@ -30,19 +30,27 @@
 --     (0008: moderators-only SELECT), kids, and every write path
 --     (neighborhoods is a 0002 seed list — it gains an anon READ of the
 --     display labels only; it has no write policy, so no role can write);
---   - hidden posts (0009's hidden_at) are filtered INSIDE the function —
---     a signed-out visitor gets not-found, never the content, so a
---     hidden post's existence is not confirmed to anon (the anon SELECT
---     policy itself stays USING true; the function is the wall).
+--   - hidden posts (0009's hidden_at) are excluded from BOTH the anon
+--     table read (the anon SELECT policy is hidden-aware: USING hidden_at
+--     is null) and the RPC (the function filters hidden_at is null — a
+--     signed-out visitor gets not-found), so a hidden post's existence is
+--     not confirmed to anon. Role-scoping: the policy is anon-only (TO
+--     anon), so authenticated direct reads of the table keep the existing
+--     0005 posture — hidden rows remain visible to signed-in direct table
+--     reads and are filtered in the app's feed query; unchanged by this
+--     slice.
 --   The feed's DB-level block filter (0006 blocks table) is a query-time
 --   filter, not a policy — it does not interact with the anon read.
 --
 -- Idempotent + re-paste-safe (2026-09-04 house lesson: no CREATE POLICY
 -- IF NOT EXISTS — the type + policies are DO-block guarded; the function
 -- is CREATE OR REPLACE; GRANT/REVOKE are themselves re-runnable).
--- No 42501 surface: the new SELECT policies are USING (true) (an UPDATE's
--- new row is admitted, never blocked) and they are anon-only (the
--- authenticated update/delete policies are untouched).
+-- No 42501 surface: the new SELECT policies are anon-only (TO anon) —
+-- Postgres never evaluates a role-scoped policy for a different role, so
+-- the authenticated update/delete paths are untouched (the 0014 lesson
+-- applies to a role's OWN policies only); the playdates anon policy's
+-- USING (hidden_at is null) can only exclude rows from the anon read,
+-- never block a write.
 
 -- 1) The composite row the RPC returns (the pinned public surface).
 do $$
@@ -70,8 +78,9 @@ begin
 end
 $$;
 
--- 2) Anon read of the playdate rows (posts are public content; see the
---    header for the enumeration note).
+-- 2) Anon read of the visible playdate rows (posts are public content;
+--    hidden posts are walled by the USING clause; see the header for the
+--    enumeration + hidden-post notes).
 do $$
 begin
   if not exists (
@@ -83,7 +92,7 @@ begin
     create policy "playdates_select_anon"
       on public.playdates for select
       to anon
-      using (true);
+      using (hidden_at is null);
   end if;
 end
 $$;
