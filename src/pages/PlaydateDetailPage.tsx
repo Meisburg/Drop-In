@@ -27,6 +27,7 @@ import {
   rainBadgeLabel,
   toDuplicatePrefill,
 } from '../lib/feed'
+import { buildIcs } from '../lib/ics'
 import { canModerate } from '../lib/moderation'
 import {
   COMMENT_MAX_LENGTH,
@@ -186,6 +187,16 @@ type DetailState =
  * count (parents + replies). Pre-apply, rows lack parent_id (treated as
  * null): the thread renders exactly as today, flat, with the Reply
  * buttons present.
+ *
+ * V3 slice 8 (ticket 03): "Add to calendar" beside Share in the info
+ * card's action row — builds the post's ICS file purely client-side
+ * (the pure buildIcs seam, ics.ts: UTC dates, RFC 5545 escaping +
+ * CRLF + 75-octet folding, the LOCATION line folding in "place,
+ * address" per the ticket 08 AC) and triggers a Blob download named
+ * playdate-<id>.ics (MIME text/calendar). Public-surface fields only —
+ * the button renders in the signed-in AND the signed-out (public)
+ * views (read-only, no new data exposure), and the row's flex-wrap
+ * keeps it fitting at 375px with no horizontal scroll.
  */
 export function PlaydateDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -452,6 +463,30 @@ export function PlaydateDetailPage() {
     } finally {
       setShareBusy(false)
     }
+  }
+
+  /**
+   * V3 slice 8 (ticket 03): "Add to calendar" — build the post's ICS
+   * file from the post already in hand (the pure buildIcs seam,
+   * ics.ts) and trigger a Blob download named playdate-<id>.ics (MIME
+   * text/calendar, createObjectURL + anchor click + revoke). Works in
+   * BOTH views: the signed-in 'ready' state hands over the
+   * PlaydateWithNeighborhood row, the signed-out 'public' state the
+   * 12-field PublicPlaydateDetail payload — public-surface fields only,
+   * so no new data crosses the anon boundary (the ticket pin).
+   */
+  function handleDownloadIcs() {
+    if (state.status !== 'ready' && state.status !== 'public') return
+    const detail = state.detail
+    const blob = new Blob([buildIcs(detail)], { type: 'text/calendar' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `playdate-${detail.id}.ics`
+    document.body.appendChild(anchor)
+    anchor.click()
+    document.body.removeChild(anchor)
+    URL.revokeObjectURL(url)
   }
 
   /**
@@ -780,14 +815,28 @@ export function PlaydateDetailPage() {
                 <span>Hosted by @{d.host_display_name}</span>
               ) : null}
             </span>
-            <button
-              type="button"
-              onClick={() => void handleShare()}
-              disabled={shareBusy}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
-            >
-              {shareCopied ? 'Copied' : 'Share'}
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void handleShare()}
+                disabled={shareBusy}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+              >
+                {shareCopied ? 'Copied' : 'Share'}
+              </button>
+              {/* V3 slice 8 (ticket 03): "Add to calendar" — the pure
+                  buildIcs Blob download, beside Share on the signed-out
+                  (public) surface too (the 12-field payload only — no
+                  new data exposure; the group's flex-wrap keeps the row
+                  fitting at 375px with no horizontal scroll). */}
+              <button
+                type="button"
+                onClick={handleDownloadIcs}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                Add to calendar
+              </button>
+            </div>
           </div>
         </div>
 
@@ -967,7 +1016,7 @@ export function PlaydateDetailPage() {
             <HostAvatar host={detail.host} />
             <span>Hosted by @{detail.host.display_name}</span>
           </Link>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={() => void handleShare()}
@@ -975,6 +1024,17 @@ export function PlaydateDetailPage() {
               className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 disabled:opacity-50"
             >
               {shareCopied ? 'Copied' : 'Share'}
+            </button>
+            {/* V3 slice 8 (ticket 03): "Add to calendar" — the pure
+                buildIcs Blob download, beside Share for every viewer
+                (the public-surface fields only; the row's flex-wrap
+                keeps it fitting at 375px with no horizontal scroll). */}
+            <button
+              type="button"
+              onClick={handleDownloadIcs}
+              className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900"
+            >
+              Add to calendar
             </button>
             <button
               type="button"
