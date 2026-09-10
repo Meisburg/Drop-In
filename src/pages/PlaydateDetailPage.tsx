@@ -32,8 +32,11 @@ import {
   COMMENT_MAX_LENGTH,
   PLAYDATE_PING_INTENT_KEY,
   PLAYDATE_RETURN_KEY,
+  groupCommentsForRender,
   planCommentAction,
   validateCommentBody,
+  type CommentActionContext,
+  type CommentActionPlan,
 } from '../lib/trust'
 import type {
   CommentWithAuthor,
@@ -160,6 +163,29 @@ type DetailState =
  * no kids fetch (the ticket pin). Pre-0022-apply the table 42P01s; the
  * caught load hides the line, never the post (the DB-not-applied
  * discipline, same as the ping section).
+ *
+ * V3 slice 7 (ticket 10, migration 0023): one-level comment replies —
+ * any signed-in parent can reply to a top-level comment (the 2026-09-09
+ * human call: open to ALL authenticated users, not host-only; no Reply
+ * affordance on a reply — the one-level pin, the pure
+ * planCommentAction's canReply). A reply renders one level indented
+ * (ml-8, the 24px HostAvatar) under its parent: the pure
+ * groupCommentsForRender (trust.ts) threads the flat row set — children
+ * in created_at order, a hidden parent's replies excluded (the mod's
+ * hide covers the thread, 0023 header (b)), orphan + reply-to-reply
+ * rows dropped (defense in depth; 0023 allows such rows at the DB
+ * level). The bottom composer gains a "Replying to @handle" mode with a
+ * Cancel affordance: the submit carries the parent's id as parent_id
+ * (db.addComment's optional third arg — omitted for a plain comment, so
+ * a pre-0023-apply reply submit 42703s and surfaces the existing error
+ * line — red-by-design until the orchestrator's live apply). Delete on
+ * a reply = the reply's author or the event host (the per-row plan; the
+ * parent's author is out — deleting the parent orphans its replies and
+ * the seam drops them, the render self-heals); the moderator Hide
+ * covers replies like comments. The header count stays the total row
+ * count (parents + replies). Pre-apply, rows lack parent_id (treated as
+ * null): the thread renders exactly as today, flat, with the Reply
+ * buttons present.
  */
 export function PlaydateDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -174,6 +200,12 @@ export function PlaydateDetailPage() {
   const [commentDraft, setCommentDraft] = useState('')
   const [commentBusy, setCommentBusy] = useState(false)
   const [commentError, setCommentError] = useState<string | null>(null)
+  // V3 slice 7 (ticket 10): the reply-to mode — the id of the top-level
+  // comment the bottom composer is answering (null = plain "Add a
+  // comment"). Set by a row's Reply button; cleared on submit, on
+  // Cancel, when the target is deleted or hidden (the handlers below),
+  // and on any fresh thread load (the id/session effect).
+  const [replyToId, setReplyToId] = useState<string | null>(null)
   // V2 slice 5: the share button (Web Share API where supported, the
   // copy-link fallback otherwise) + its "Copied" confirmation.
   const [shareBusy, setShareBusy] = useState(false)
@@ -196,6 +228,9 @@ export function PlaydateDetailPage() {
     if (sessionLoading) return
     let cancelled = false
     setState({ status: 'loading' })
+    // V3 slice 7 (ticket 10): a fresh load (a new post, a session change)
+    // never carries the reply-to mode over from the previous thread.
+    setReplyToId(null)
     if (session === null) {
       // V2 slice 5: the signed-out public surface — the SECURITY DEFINER
       // RPC (0015). A missing OR hidden post settles not-found (the
@@ -425,6 +460,13 @@ export function PlaydateDetailPage() {
    * re-fetches the thread for the new row (the insert is a plain chain —
    * the issueReportInsert discipline, so the fresh row's author join comes
    * back with the list).
+   *
+   * V3 slice 7 (ticket 10): in the reply-to mode the insert carries the
+   * target's id as parent_id (addComment's optional third arg — for a
+   * plain comment it stays undefined and the key is OMITTED from the
+   * payload, so a pre-0023-apply reply submit 42703s and surfaces the
+   * error line below, red-by-design until the live apply). A success
+   * clears the mode + the draft (the re-list keeps the settled thread).
    */
   async function handleAddComment() {
     if (state.status !== 'ready' || commentBusy) return
@@ -434,11 +476,16 @@ export function PlaydateDetailPage() {
       setCommentError(bodyError)
       return
     }
+    // V3 slice 7 (ticket 10): the reply-to target (addComment's optional
+    // third arg — null becomes undefined so the key is OMITTED from the
+    // payload for a plain comment, the pre-0023-apply discipline).
+    const parentId = replyToId ?? undefined
     setCommentBusy(true)
     setCommentError(null)
     try {
-      await addComment(detail.id, commentDraft)
+      await addComment(detail.id, commentDraft, parentId)
       setCommentDraft('')
+      setReplyToId(null)
       const comments = await listComments(detail.id)
       // Functional merge: the fresh thread replaces comments, but count/
       // going (and detail) survive as settled in the meantime — a comment
@@ -456,6 +503,19 @@ export function PlaydateDetailPage() {
     }
   }
 
+  /**
+   * V3 slice 7 (ticket 10): enter the reply-to mode — the bottom composer
+   * targets this top-level comment (the submit carries its id as
+   * parent_id). The affordance renders on top-level rows only (the pure
+   * planCommentAction's canReply — the one-level pin: a reply offers no
+   * Reply) and on visible rows only (a reply under a hidden parent would
+   * be excluded from the thread — the 0023 header (b) rule).
+   */
+  function handleReplyTo(commentId: string) {
+    setCommentError(null)
+    setReplyToId(commentId)
+  }
+
   /** Delete a comment (author or event host — the pure planCommentAction gates the button). */
   async function handleDeleteComment(commentId: string) {
     if (state.status !== 'ready' || commentBusy) return
@@ -464,6 +524,10 @@ export function PlaydateDetailPage() {
     setCommentError(null)
     try {
       await deleteComment(commentId)
+      // V3 slice 7 (ticket 10): the composer's reply-to target is gone —
+      // clear the mode (its replies orphan out of the render via the
+      // seam; no extra delete handling).
+      if (replyToId === commentId) setReplyToId(null)
       // The removal is computed off the LATEST settled thread (functional
       // merge), not the render-time closure — a delete in flight during an
       // add must not resurrect the pre-add thread (or clobber the
@@ -494,6 +558,11 @@ export function PlaydateDetailPage() {
     setCommentError(null)
     try {
       await hideComment(commentId)
+      // V3 slice 7 (ticket 10): hiding the reply-to target hides the
+      // thread it would sit under (the mod's hide covers the thread — the
+      // 0023 header (b) rule; the seam excludes the children) — clear
+      // the mode.
+      if (replyToId === commentId) setReplyToId(null)
       // Soft-hide (0014's model: the row stays, muted) — computed off the
       // LATEST settled thread (functional merge): a hide in flight during
       // an add must not resurrect the pre-add thread.
@@ -635,6 +704,24 @@ export function PlaydateDetailPage() {
   // "Kids coming:" with nothing after is not a state, like a 0 going
   // line). Names + ages only — NO photos (the kid-photo pin).
   const kidsLine = kids !== null ? kidsComingLine(kids) : null
+  // V2 slice 4 (ticket 04) + V3 slice 7 (ticket 10): the per-row comment
+  // action plan's context (the signed-in viewer, the event's host, the
+  // moderator flag) — shared by the top-level rows and their one-level
+  // replies (the delete rule is per row: a reply's delete = the reply's
+  // author or the host, never the parent's author).
+  const commentActionCtx: CommentActionContext = {
+    viewerId: session.user.id,
+    hostId: detail.host_profile_id,
+    isModerator,
+  }
+  // V3 slice 7 (ticket 10): the reply-to mode's target row (null when the
+  // mode is off, or the target left the thread — the mode only clears via
+  // the handlers / a fresh load, so a stale id simply falls back to the
+  // plain "Add a comment" composer).
+  const replyToAuthor =
+    replyToId !== null && state.comments !== null
+      ? (state.comments.find((c) => c.id === replyToId) ?? null)
+      : null
 
   /**
    * V2 slice 5: the signed-out public surface — EXACTLY the pinned public
@@ -724,6 +811,94 @@ export function PlaydateDetailPage() {
               Sign up to join in
             </Link>
           </p>
+        </div>
+      </div>
+    )
+  }
+
+  /**
+   * One render row of the comment thread (V2 slice 4 + V3 slice 7,
+   * ticket 10): a top-level comment OR a one-level reply — same shape,
+   * the reply with the 24px avatar (HostAvatar size="sm"). The per-row
+   * action buttons come from the pure planCommentAction: Delete (the
+   * row's author or the event host — per row, so a reply's delete is the
+   * REPLY's author or the host; the parent's author is out), Hide
+   * (moderators; never offered on an already-hidden row — no unhide in
+   * V2, the 0014 chip stays muted), and Reply — top-level rows only (the
+   * one-level pin, the plan's canReply) and never on a hidden row (a
+   * reply under a hidden parent is excluded from the thread — the 0023
+   * header (b) rule, the mod's hide covers the thread). 0014: hidden
+   * rows come back to moderators only (the SELECT policy's moderator
+   * branch) — rendered muted + chipped; non-moderators never receive
+   * them (RLS).
+   */
+  function renderCommentRow(
+    comment: CommentWithAuthor,
+    plan: CommentActionPlan,
+    isReply: boolean,
+  ) {
+    const isHidden = !plan.canSee
+    const showReply = plan.canReply && !isHidden
+    return (
+      <div className={`flex gap-3${isHidden ? ' opacity-60' : ''}`}>
+        <HostAvatar host={comment.author} size={isReply ? 'sm' : 'md'} />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm">
+            <Link
+              to={`/u/${encodeURIComponent(comment.author.display_name)}`}
+              className="font-medium text-indigo-600"
+            >
+              @{comment.author.display_name}
+            </Link>
+            {isHidden ? (
+              <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                Hidden by moderator
+              </span>
+            ) : (
+              <span className="ml-2 text-xs text-slate-400">
+                {formatTime(comment.created_at)}
+              </span>
+            )}
+          </p>
+          <p
+            className={`mt-0.5 whitespace-pre-line text-sm ${isHidden ? 'text-slate-400' : 'text-slate-700'}`}
+          >
+            {comment.body}
+          </p>
+          {plan.canDelete || (plan.canHide && !isHidden) || showReply ? (
+            <div className="mt-1 flex gap-3">
+              {plan.canDelete ? (
+                <button
+                  type="button"
+                  disabled={commentBusy}
+                  onClick={() => void handleDeleteComment(comment.id)}
+                  className="text-xs text-slate-400 transition-colors hover:text-red-600"
+                >
+                  Delete
+                </button>
+              ) : null}
+              {plan.canHide && !isHidden ? (
+                <button
+                  type="button"
+                  disabled={commentBusy}
+                  onClick={() => void handleHideComment(comment.id)}
+                  className="text-xs text-slate-400 transition-colors hover:text-red-600"
+                >
+                  Hide
+                </button>
+              ) : null}
+              {showReply ? (
+                <button
+                  type="button"
+                  disabled={commentBusy}
+                  onClick={() => handleReplyTo(comment.id)}
+                  className="text-xs text-slate-400 transition-colors hover:text-indigo-600"
+                >
+                  Reply
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
     )
@@ -908,11 +1083,19 @@ export function PlaydateDetailPage() {
         </div>
       ) : null}
 
-      {/* V2 slice 4 (ticket 04): the comment thread — flat, chronological,
-        author avatar (the HostAvatar shape) + handle linking to /u/:handle.
-        The per-comment buttons come from the pure planCommentAction; the
-        section is absent (null) until 0013 is applied — the page never
-        crashes on a missing table. */}
+      {/* V2 slice 4 (ticket 04): the comment thread — author avatar
+        (the HostAvatar shape) + handle linking to /u/:handle. The
+        per-row buttons come from the pure planCommentAction; the
+        section is absent (null) until 0013 is applied — the page
+        never crashes on a missing table.
+        V3 slice 7 (ticket 10): the thread groups — the pure
+        groupCommentsForRender (trust.ts) renders each top-level
+        comment with its one-level replies indented (ml-8, 24px
+        avatar); any signed-in parent gets the Reply affordance on a
+        top-level row (the composer's reply-to mode targets it — the
+        submit carries parent_id; pre-0023-apply that insert 42703s
+        and the error line surfaces, red-by-design until the live
+        apply); a reply offers no Reply (the one-level pin). */}
       {state.comments !== null ? (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="text-base font-semibold text-slate-900">
@@ -921,70 +1104,36 @@ export function PlaydateDetailPage() {
           {state.comments.length === 0 ? (
             <p className="mt-2 text-sm text-slate-500">No comments yet — ask a question below.</p>
           ) : (
+            // V3 slice 7 (ticket 10): the thread groups — the pure
+            // groupCommentsForRender (trust.ts) threads the flat row set:
+            // one group per top-level comment, its one-level replies under
+            // it (ml-8 indent, 24px avatar), children in created_at order;
+            // a hidden parent's group renders its muted row only (the
+            // children are excluded — the mod's hide covers the thread, the
+            // 0023 header (b) rule); a reply whose parent left the row set
+            // (or points at another reply — the one-level pin is
+            // client-side, 0023 allows such rows at the DB level) is
+            // dropped. Pre-0023-apply every row lacks parent_id (treated
+            // as null): the current flat thread renders unchanged.
             <ul className="mt-3 flex flex-col gap-3">
-              {state.comments.map((comment) => {
-                const plan = planCommentAction(comment, {
-                  viewerId: session.user.id,
-                  hostId: detail.host_profile_id,
-                  isModerator,
-                })
-                // 0014: hidden comments come back to moderators only (the
-                // SELECT policy's moderator branch) — render muted +
-                // chipped, and never offer Hide on an already-hidden row
-                // (no unhide in V2). Non-moderators never receive hidden
-                // rows (RLS).
-                const isHidden = !plan.canSee
+              {groupCommentsForRender(state.comments).map((group) => {
+                const parentPlan = planCommentAction(group.parent, commentActionCtx)
                 return (
-                  <li key={comment.id} className={`flex gap-3${isHidden ? ' opacity-60' : ''}`}>
-                    <HostAvatar host={comment.author} />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm">
-                        <Link
-                          to={`/u/${encodeURIComponent(comment.author.display_name)}`}
-                          className="font-medium text-indigo-600"
-                        >
-                          @{comment.author.display_name}
-                        </Link>
-                        {isHidden ? (
-                          <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
-                            Hidden by moderator
-                          </span>
-                        ) : (
-                          <span className="ml-2 text-xs text-slate-400">
-                            {formatTime(comment.created_at)}
-                          </span>
-                        )}
-                      </p>
-                      <p
-                        className={`mt-0.5 whitespace-pre-line text-sm ${isHidden ? 'text-slate-400' : 'text-slate-700'}`}
-                      >
-                        {comment.body}
-                      </p>
-                      {plan.canDelete || (plan.canHide && !isHidden) ? (
-                        <div className="mt-1 flex gap-3">
-                          {plan.canDelete ? (
-                            <button
-                              type="button"
-                              disabled={commentBusy}
-                              onClick={() => void handleDeleteComment(comment.id)}
-                              className="text-xs text-slate-400 transition-colors hover:text-red-600"
-                            >
-                              Delete
-                            </button>
-                          ) : null}
-                          {plan.canHide && !isHidden ? (
-                            <button
-                              type="button"
-                              disabled={commentBusy}
-                              onClick={() => void handleHideComment(comment.id)}
-                              className="text-xs text-slate-400 transition-colors hover:text-red-600"
-                            >
-                              Hide
-                            </button>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
+                  <li key={group.parent.id}>
+                    {renderCommentRow(group.parent, parentPlan, false)}
+                    {group.children.length > 0 ? (
+                      <ul className="ml-8 mt-2 flex flex-col gap-2">
+                        {group.children.map((child) => (
+                          <li key={child.id}>
+                            {renderCommentRow(
+                              child,
+                              planCommentAction(child, commentActionCtx),
+                              true,
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </li>
                 )
               })}
@@ -992,9 +1141,31 @@ export function PlaydateDetailPage() {
           )}
 
           <div className="mt-4 border-t border-slate-100 pt-3">
-            <label htmlFor="comment-composer" className="text-xs font-medium text-slate-500">
-              Add a comment
-            </label>
+            {replyToAuthor !== null ? (
+              // V3 slice 7 (ticket 10): the reply-to mode — the composer
+              // targets the parent (the submit carries its id as parent_id).
+              // Cancel clears the mode only (the draft stays, as a plain
+              // "Add a comment" below).
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-slate-500">
+                  Replying to{' '}
+                  <span className="font-semibold text-indigo-600">
+                    @{replyToAuthor.author.display_name}
+                  </span>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setReplyToId(null)}
+                  className="text-xs text-slate-400 transition-colors hover:text-slate-600"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <label htmlFor="comment-composer" className="text-xs font-medium text-slate-500">
+                Add a comment
+              </label>
+            )}
             <textarea
               id="comment-composer"
               rows={2}

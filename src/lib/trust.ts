@@ -9,7 +9,7 @@
  * Supabase-facing wrapper lives in db.ts.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Comment } from './types'
+import type { Comment, CommentWithAuthor } from './types'
 
 /** What a ping toggle should do, decided purely (the caller executes it). */
 export type PingDecision = 'noop-host' | 'ping' | 'unping'
@@ -158,17 +158,24 @@ export async function issueReportInsert(
 export interface CommentActionContext {
   /** The signed-in viewer's profile id (= auth user id). */
   viewerId: string
-  /** The event's host_profile_id (the host may delete any comment on it). */
+  /**
+   * The event's host_profile_id (the host may delete any comment OR reply
+   * on it — the per-row delete rule, V3 slice 7, ticket 10).
+   */
   hostId: string
   /** The viewer's moderator flag (migration 0008 column). */
   isModerator: boolean
 }
 
-/** What the signed-in viewer may do with ONE comment (decided purely). */
+/** What the signed-in viewer may do with ONE comment row (decided purely). */
 export interface CommentActionPlan {
-  /** Delete (hard): the comment's author, or the event's host. */
+  /**
+   * Delete (hard): the ROW's author, or the event's host — evaluated per
+   * row (a reply's delete = the REPLY's author or the host; the parent's
+   * author does NOT delete a reply; V3 slice 7, ticket 10).
+   */
   canDelete: boolean
-  /** Hide (soft, writes hidden_at): moderators only (the /mod model). */
+  /** Hide (soft, writes hidden_at): moderators only (the /mod model; covers replies, V3 slice 7). */
   canHide: boolean
   /**
    * Visible: hidden_at is null. Hidden comments are invisible to everyone
@@ -176,20 +183,41 @@ export interface CommentActionPlan {
    * rows that are somehow in hand).
    */
   canSee: boolean
+  /**
+   * Reply affordance (V3 slice 7, ticket 10 — the one-level pin): TRUE
+   * only for a TOP-LEVEL row (parent_id null — missing pre-0023-apply,
+   * the types.ts note), for ANY authenticated viewer: replies are open to
+   * all signed-in parents (the 2026-09-09 feedback call — no host/mod
+   * gate). A reply NEVER offers a reply (no reply-to-replies).
+   */
+  canReply: boolean
 }
 
-/** The pure comment-permission decision for one comment (ticket 04 AC). */
+/**
+ * The pure comment-permission decision for one comment (ticket 04 AC),
+ * extended in V3 slice 7 (ticket 10) with the reply affordance: delete is
+ * evaluated PER ROW (a reply's delete = the reply's author or the event's
+ * host — the parent's author does NOT delete a reply; the rule keys on the
+ * row's own author_profile_id, the 0023 header (d) pin), hide covers
+ * replies like comments, and canReply carries the one-level pin.
+ */
 export function planCommentAction(
-  comment: Pick<Comment, 'author_profile_id' | 'hidden_at'>,
+  comment: Pick<Comment, 'author_profile_id' | 'hidden_at' | 'parent_id'>,
   ctx: CommentActionContext,
 ): CommentActionPlan {
-  // The author deletes their own comment; the EVENT HOST deletes any
-  // comment on their own event (both paths are the hard delete).
+  // The ROW's author deletes their own row; the EVENT HOST deletes any row
+  // on their own event (both paths are the hard delete — for a reply the
+  // "author" is the reply's author, never the parent's).
   const canDelete = comment.author_profile_id === ctx.viewerId || ctx.viewerId === ctx.hostId
+  // Pre-0023-apply rows lack parent_id (undefined at runtime — the
+  // types.ts note): a missing value behaves as null (top-level), so the
+  // affordance is offered (Run C ships before the live apply).
+  const canReply = (comment.parent_id ?? null) === null
   return {
     canDelete,
     canHide: ctx.isModerator,
     canSee: comment.hidden_at === null,
+    canReply,
   }
 }
 
@@ -250,4 +278,113 @@ export function isPlaydateReturnTarget(stored: string | null): boolean {
   if (stored === null) return false
   const rest = stored.slice('/playdate/'.length)
   return stored.startsWith('/playdate/') && rest.length > 0 && !rest.includes('/')
+}
+
+// ---------------------------------------------------------------------------
+// V3 slice 7 (ticket 10): one-level comment replies — the pure seam.
+//
+// Migration 0023 (comments.parent_id + the reply-visibility RLS) is the
+// DB-side half; the detail page renders the thread from these — the same
+// discipline as planCommentAction / filterFeed: a pure decision over the
+// row set, the caller executes the render.
+
+/**
+ * One render group of the detail-page comment thread (V3 slice 7, ticket
+ * 10, migration 0023): a top-level comment + its one-level replies. The
+ * detail page renders `parent` with `children` indented under it (ml-8,
+ * 24px avatar); a hidden parent keeps its group with EMPTY children — the
+ * moderator's hide covers the thread (the muted parent row itself still
+ * renders as today's hidden-top-level chip, its replies don't; 0023
+ * header (b)). Pre-0023-apply every group's children is empty (the flat
+ * thread renders unchanged — Run C ships before the live apply).
+ */
+export interface CommentThreadGroup {
+  /** The group's top-level comment (it renders muted when hidden). */
+  parent: CommentWithAuthor
+  /** Replies to the parent, created_at ascending; empty when the parent is
+   * hidden (the hidden-parent exclusion) or no reply exists. */
+  children: CommentWithAuthor[]
+}
+
+/** created_at ascending; stable, so equal timestamps keep the input order. */
+function byCreatedAt(a: { created_at: string }, b: { created_at: string }): number {
+  return Date.parse(a.created_at) - Date.parse(b.created_at)
+}
+
+/**
+ * The thread's render groups (V3 slice 7, ticket 10): the flat
+ * per-playdate comment list that db.listComments returns (top-level
+ * comments + replies, created_at ascending — 0023 reuses the existing
+ * (playdate_id, created_at) index scan, 0023 header (e)) in, one
+ * CommentThreadGroup per top-level comment out. Pinned semantics:
+ *
+ * - ORDER: groups by the parent's created_at ascending; children by
+ *   created_at ascending (sorted internally, so the output contract holds
+ *   even if the input order ever stops being canonical; the sort is
+ *   stable, so equal timestamps keep the input order).
+ * - HIDDEN-PARENT EXCLUSION (0023 header (b)): when a parent is hidden
+ *   (hidden_at !== null), its replies are EXCLUDED from the output — the
+ *   group renders the muted parent row only, children empty (the
+ *   moderator's hide covers the thread; non-moderators never receive a
+ *   hidden parent from the DB, so this branch is the mod view + defense
+ *   in depth).
+ * - A HIDDEN REPLY itself (hidden_at set, parent visible) stays in its
+ *   group (the UI renders the muted chip — same as today's hidden
+ *   top-level).
+ * - ORPHAN DEFENSE: a reply whose parent_id is not present in the input
+ *   list is DROPPED (it forms no group and never renders). Post-apply the
+ *   DB makes this a no-op — the parent FK's ON DELETE CASCADE + 0023's
+ *   reply-visibility RLS — so this is pure defense in depth against a
+ *   malformed row set. A reply pointing at another reply (allowed by the
+ *   DB, 0023 header (a) — the one-level pin is client-side) answers a
+ *   child, never a group, so it is dropped too: there is no second indent
+ *   level.
+ * - PRE-APPLY (the types.ts note): before the live 0023 apply, rows lack
+ *   parent_id entirely (undefined at runtime) — a missing value behaves
+ *   as null, i.e. every row is top-level and every group's children empty:
+ *   the CURRENT flat thread renders correctly with no replies present.
+ *
+ * Empty input → empty output.
+ */
+export function groupCommentsForRender(
+  comments: ReadonlyArray<CommentWithAuthor>,
+): CommentThreadGroup[] {
+  const byId = new Map<string, CommentWithAuthor>()
+  for (const comment of comments) byId.set(comment.id, comment)
+
+  const parents: CommentWithAuthor[] = []
+  const repliesByParentId = new Map<string, CommentWithAuthor[]>()
+  for (const comment of comments) {
+    // Pre-0023-apply rows lack parent_id (undefined at runtime — the
+    // types.ts note): a missing value behaves as null (top-level).
+    const parentId = comment.parent_id ?? null
+    if (parentId === null) {
+      parents.push(comment)
+      continue
+    }
+    // Orphan defense (see the doc above): the parent must be in this
+    // thread's row set, otherwise the reply is dropped. (A reply pointing
+    // at another reply also lands here harmlessly: a reply is never a
+    // group, so it can never surface — the one-level pin.)
+    if (!byId.has(parentId)) continue
+    const siblings = repliesByParentId.get(parentId)
+    if (siblings === undefined) {
+      repliesByParentId.set(parentId, [comment])
+    } else {
+      siblings.push(comment)
+    }
+  }
+
+  parents.sort(byCreatedAt)
+  const groups: CommentThreadGroup[] = []
+  for (const parent of parents) {
+    // Hidden-parent exclusion (0023 header (b)): the mod's hide covers the
+    // thread — the muted parent row stays, its replies don't render.
+    const children =
+      parent.hidden_at !== null
+        ? []
+        : (repliesByParentId.get(parent.id) ?? []).slice().sort(byCreatedAt)
+    groups.push({ parent, children })
+  }
+  return groups
 }

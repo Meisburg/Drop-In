@@ -1632,12 +1632,18 @@ export async function linkKidsToPlaydate(playdateId: string, kidIds: string[]): 
  * comments come back to moderators only (0014: the SELECT policy is
  * `hidden_at is null OR moderator` — non-moderators never receive
  * hidden rows; the DB-level soft-hide holds for everyone else).
+ *
+ * V3 slice 7 (ticket 10, migration 0023): the row set also carries
+ * parent_id (the one-level reply parent — null = top-level; pre-apply
+ * the column is absent and a missing value behaves as null, the
+ * types.ts note), which the detail page threads with the pure
+ * groupCommentsForRender (trust.ts).
  */
 export async function listComments(playdateId: string): Promise<CommentWithAuthor[]> {
   const { data, error } = await supabase
     .from('comments')
     .select(
-      'id, playdate_id, author_profile_id, body, created_at, hidden_at, author:profiles!comments_author_profile_id_fkey ( id, display_name, avatar_url )',
+      'id, playdate_id, author_profile_id, body, created_at, hidden_at, parent_id, author:profiles!comments_author_profile_id_fkey ( id, display_name, avatar_url )',
     )
     .eq('playdate_id', playdateId)
     .order('created_at', { ascending: true })
@@ -1648,14 +1654,29 @@ export async function listComments(playdateId: string): Promise<CommentWithAutho
 }
 
 /**
- * Post a comment as the signed-in user (author_profile_id = auth user id —
- * the 0013 INSERT policy is the wall for non-authors). The body is
- * validated first with the pure validateCommentBody (same defense in depth
- * as createReport): an empty/over-cap body throws before any insert (the
- * 0013 CHECK is the DB backstop). Plain insert, no .select() — the caller
- * re-fetches the thread for the new row (issueReportInsert discipline).
+ * Post a comment (or a one-level reply, V3 ticket 10 / migration 0023)
+ * as the signed-in user (author_profile_id = auth user id — the 0013
+ * INSERT policy, comments_insert_own, is the wall for non-authors; it
+ * already admits ANY authenticated user to author a reply — the
+ * replies-open-to-all pin, human decision 2026-09-09). The body is
+ * validated first with the pure validateCommentBody (same defense in
+ * depth as createReport): an empty/over-cap body throws before any
+ * insert (the 0013 CHECK is the DB backstop). Plain insert, no .select()
+ * — the caller re-fetches the thread for the new row (issueReportInsert
+ * discipline).
+ *
+ * `parentId` (optional): the top-level comment this reply answers (the
+ * one-level pin — the client never offers a Reply affordance on a reply
+ * itself). When provided, the insert carries parent_id; when omitted,
+ * the key is OMITTED ENTIRELY — pre-0023-apply the column doesn't exist
+ * (sending parent_id: null would 42703), and post-apply an omitted key
+ * lands as the column's null default (a top-level comment).
  */
-export async function addComment(playdateId: string, body: string): Promise<void> {
+export async function addComment(
+  playdateId: string,
+  body: string,
+  parentId?: string,
+): Promise<void> {
   const bodyError = validateCommentBody(body)
   if (bodyError !== null) throw new Error(bodyError)
 
@@ -1666,9 +1687,16 @@ export async function addComment(playdateId: string, body: string): Promise<void
   if (userError) throw userError
   if (!user) throw new Error('No authenticated user — cannot comment on a drop-in.')
 
-  const { error } = await supabase
-    .from('comments')
-    .insert({ playdate_id: playdateId, author_profile_id: user.id, body: body.trim() })
+  const payload: {
+    playdate_id: string
+    author_profile_id: string
+    body: string
+    parent_id?: string
+  } = { playdate_id: playdateId, author_profile_id: user.id, body: body.trim() }
+  if (parentId !== undefined) {
+    payload.parent_id = parentId
+  }
+  const { error } = await supabase.from('comments').insert(payload)
   if (error) throw error
 }
 

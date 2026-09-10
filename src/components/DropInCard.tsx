@@ -264,18 +264,31 @@ export interface DropInCardPingToggle {
  * A 40px round host avatar (V2 ticket 02): the host's avatar_url when set,
  * otherwise a deterministic initial-fallback circle (the same shape the
  * comment list will reuse — "comments-ready" per the ticket AC).
+ *
+ * V3 slice 7 (ticket 10): `size` — 'md' (the default, 40px: every
+ * existing call site — the card's host line, the detail page's host line,
+ * /u/:handle, and top-level comment rows) or 'sm' (24px — the indented
+ * one-level reply rows under the detail page's comment thread).
  */
-export function HostAvatar({ host }: { host: PlaydateHost }) {
+export function HostAvatar({
+  host,
+  size = 'md',
+}: {
+  host: PlaydateHost
+  size?: 'md' | 'sm'
+}) {
+  const box = size === 'sm' ? 'h-6 w-6' : 'h-10 w-10'
+  const initialClass = size === 'sm' ? 'text-xs' : 'text-sm'
   return host.avatar_url !== undefined && host.avatar_url !== null && host.avatar_url !== '' ? (
     <img
       src={host.avatar_url}
       alt=""
-      className="h-10 w-10 shrink-0 rounded-full object-cover"
+      className={`${box} shrink-0 rounded-full object-cover`}
     />
   ) : (
     <span
       aria-hidden
-      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-500"
+      className={`flex ${box} shrink-0 items-center justify-center rounded-full bg-indigo-100 ${initialClass} font-semibold text-indigo-500`}
     >
       {(host.display_name.charAt(0) || '?').toUpperCase()}
     </span>

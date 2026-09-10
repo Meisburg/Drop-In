@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   COMMENT_MAX_LENGTH,
   buildShareUrl,
+  groupCommentsForRender,
   isHostBlocked,
   isPlaydateReturnTarget,
   issueReportInsert,
@@ -14,6 +15,7 @@ import {
   type CommentActionContext,
   type ReportInsertPayload,
 } from './trust'
+import type { CommentWithAuthor } from './types'
 
 /**
  * Trust-logic tests (slice 4): the ping-toggle round-trip against a mocked
@@ -254,7 +256,7 @@ describe('issueReportInsert (42501 regression: plain insert, no RETURNING)', () 
 })
 
 describe('planCommentAction (comment permissions, ticket 04)', () => {
-  const comment = { author_profile_id: 'author-1', hidden_at: null }
+  const comment = { author_profile_id: 'author-1', hidden_at: null, parent_id: null }
   const stranger: CommentActionContext = { viewerId: 'stranger-1', hostId: 'host-1', isModerator: false }
 
   it('the author can delete their own comment (and see it)', () => {
@@ -292,7 +294,7 @@ describe('planCommentAction (comment permissions, ticket 04)', () => {
 
   it('a hidden comment is not visible (canSee false — the soft-hide)', () => {
     const plan = planCommentAction(
-      { author_profile_id: 'author-1', hidden_at: '2026-09-09T00:00:00Z' },
+      { author_profile_id: 'author-1', hidden_at: '2026-09-09T00:00:00Z', parent_id: null },
       stranger,
     )
     expect(plan.canSee).toBe(false)
@@ -355,5 +357,170 @@ describe('isPlaydateReturnTarget (the stored "I\'m coming" return target)', () =
     expect(isPlaydateReturnTarget('/playdate/a/b')).toBe(false)
     expect(isPlaydateReturnTarget('/profile')).toBe(false)
     expect(isPlaydateReturnTarget('javascript:alert(1)')).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// V3 slice 7 (ticket 10, one-level comment replies): the thread-group seam
+// + the reply affordance. All pure inputs — no mocks, no database (house
+// style, matching the other blocks in this file).
+
+/** One CommentWithAuthor fixture (the seam's input; the author join minimal). */
+function makeComment(
+  id: string,
+  authorId: string,
+  createdAt: string,
+  opts: { parentId?: string | null; hiddenAt?: string | null } = {},
+): CommentWithAuthor {
+  return {
+    id,
+    playdate_id: 'pd-1',
+    author_profile_id: authorId,
+    body: `body of ${id}`,
+    created_at: createdAt,
+    hidden_at: opts.hiddenAt ?? null,
+    parent_id: opts.parentId ?? null,
+    author: { id: authorId, display_name: authorId },
+  }
+}
+
+describe('groupCommentsForRender (V3 slice 7, ticket 10 — thread groups)', () => {
+  it('nests a parent\'s replies under it, children in created_at order (a)', () => {
+    const p1 = makeComment('p1', 'u1', '2026-09-10T10:00:00Z')
+    const r1 = makeComment('r1', 'u2', '2026-09-10T10:05:00Z', { parentId: 'p1' })
+    const r2 = makeComment('r2', 'u3', '2026-09-10T10:10:00Z', { parentId: 'p1' })
+    const groups = groupCommentsForRender([p1, r1, r2])
+    expect(groups).toHaveLength(1)
+    expect(groups[0].parent.id).toBe('p1')
+    expect(groups[0].children.map((c) => c.id)).toEqual(['r1', 'r2'])
+  })
+
+  it('orders groups by the parent\'s created_at, children ascending (b)', () => {
+    // Deliberately non-canonical input order: the output contract must
+    // hold regardless (the seam sorts internally).
+    const p2 = makeComment('p2', 'u1', '2026-09-10T11:00:00Z')
+    const p1 = makeComment('p1', 'u2', '2026-09-10T10:00:00Z')
+    const r2 = makeComment('r2', 'u3', '2026-09-10T10:30:00Z', { parentId: 'p1' })
+    const r1 = makeComment('r1', 'u4', '2026-09-10T10:15:00Z', { parentId: 'p1' })
+    const groups = groupCommentsForRender([p2, p1, r2, r1])
+    expect(groups.map((g) => g.parent.id)).toEqual(['p1', 'p2'])
+    expect(groups[0].children.map((c) => c.id)).toEqual(['r1', 'r2'])
+    expect(groups[1].children).toEqual([])
+  })
+
+  it('excludes the replies of a hidden parent — the mod\'s hide covers the thread (c)', () => {
+    const p1 = makeComment('p1', 'u1', '2026-09-10T10:00:00Z', {
+      hiddenAt: '2026-09-10T12:00:00Z',
+    })
+    const r1 = makeComment('r1', 'u2', '2026-09-10T10:05:00Z', { parentId: 'p1' })
+    const r2 = makeComment('r2', 'u3', '2026-09-10T10:10:00Z', { parentId: 'p1' })
+    const groups = groupCommentsForRender([p1, r1, r2])
+    expect(groups).toHaveLength(1)
+    // The muted parent row stays (the mod view); its replies don't render.
+    expect(groups[0].parent.id).toBe('p1')
+    expect(groups[0].parent.hidden_at).toBe('2026-09-10T12:00:00Z')
+    expect(groups[0].children).toEqual([])
+  })
+
+  it('keeps a hidden reply under a visible parent (the UI renders the muted chip) (c)', () => {
+    const p1 = makeComment('p1', 'u1', '2026-09-10T10:00:00Z')
+    const r1 = makeComment('r1', 'u2', '2026-09-10T10:05:00Z', {
+      parentId: 'p1',
+      hiddenAt: '2026-09-10T12:00:00Z',
+    })
+    const groups = groupCommentsForRender([p1, r1])
+    expect(groups[0].children.map((c) => [c.id, c.hidden_at])).toEqual([
+      ['r1', '2026-09-10T12:00:00Z'],
+    ])
+  })
+
+  it('drops an orphan reply (its parent is not in the row set) (d)', () => {
+    const p1 = makeComment('p1', 'u1', '2026-09-10T10:00:00Z')
+    const orphan = makeComment('orphan', 'u2', '2026-09-10T10:05:00Z', {
+      parentId: 'gone',
+    })
+    const groups = groupCommentsForRender([p1, orphan])
+    expect(groups).toHaveLength(1)
+    expect(groups[0].children).toEqual([])
+  })
+
+  it('drops a reply-to-reply (its parent is a reply in the input — 0023 allows such rows at the DB level; the one-level pin is client-side) (d)', () => {
+    const p1 = makeComment('p1', 'u1', '2026-09-10T10:00:00Z')
+    const r1 = makeComment('r1', 'u2', '2026-09-10T10:05:00Z', { parentId: 'p1' })
+    const r2 = makeComment('r2', 'u3', '2026-09-10T10:10:00Z', { parentId: 'r1' })
+    const groups = groupCommentsForRender([p1, r1, r2])
+    expect(groups).toHaveLength(1)
+    expect(groups[0].parent.id).toBe('p1')
+    // A reply answers a child, never a group — there is no second
+    // indent level: r1 is the only child, r2 is dropped.
+    expect(groups[0].children.map((c) => c.id)).toEqual(['r1'])
+  })
+
+  it('renders no groups for an empty list (e)', () => {
+    expect(groupCommentsForRender([])).toEqual([])
+  })
+
+  it('treats a pre-apply row missing parent_id as top-level (f)', () => {
+    // Pre-0023-apply runtime shape: the DB doesn't return the column at
+    // all (undefined, not null — the cast models that; the types.ts note).
+    const preApplyRow = {
+      id: 'p1',
+      playdate_id: 'pd-1',
+      author_profile_id: 'u1',
+      body: 'Is Max okay to bring?',
+      created_at: '2026-09-10T10:00:00Z',
+      hidden_at: null,
+      author: { id: 'u1', display_name: 'u1' },
+    } as unknown as CommentWithAuthor
+    const groups = groupCommentsForRender([preApplyRow])
+    expect(groups).toHaveLength(1)
+    expect(groups[0].parent.id).toBe('p1')
+    expect(groups[0].children).toEqual([])
+  })
+})
+
+describe('planCommentAction (V3 slice 7 — the reply affordance, ticket 10)', () => {
+  const topLevel = { author_profile_id: 'author-1', hidden_at: null, parent_id: null }
+  const reply = { author_profile_id: 'reply-author', hidden_at: null, parent_id: 'top-1' }
+  const viewer = (viewerId: string, isModerator = false) => ({
+    viewerId,
+    hostId: 'host-1',
+    isModerator,
+  })
+
+  it('a third-party viewer can reply to a top-level comment (replies open to all) but not delete (g)', () => {
+    const plan = planCommentAction(topLevel, viewer('stranger-1'))
+    expect(plan.canReply).toBe(true)
+    expect(plan.canDelete).toBe(false)
+    expect(plan.canHide).toBe(false)
+  })
+
+  it('the host and a moderator can reply too (no host/mod gate — open to ALL authenticated users) (g)', () => {
+    expect(planCommentAction(topLevel, viewer('host-1')).canReply).toBe(true)
+    expect(planCommentAction(topLevel, viewer('mod-1', true)).canReply).toBe(true)
+  })
+
+  it('a reply offers no reply affordance (the one-level pin — no reply-to-replies) (h)', () => {
+    expect(planCommentAction(reply, viewer('stranger-1')).canReply).toBe(false)
+    expect(planCommentAction(reply, viewer('reply-author')).canReply).toBe(false)
+    expect(planCommentAction(reply, viewer('host-1')).canReply).toBe(false)
+  })
+
+  it("reply delete = the reply's author or the event host — the parent's author is out (i)", () => {
+    expect(planCommentAction(reply, viewer('reply-author')).canDelete).toBe(true)
+    expect(planCommentAction(reply, viewer('host-1')).canDelete).toBe(true)
+    expect(planCommentAction(reply, viewer('parent-author')).canDelete).toBe(false)
+    expect(planCommentAction(reply, viewer('stranger-1')).canDelete).toBe(false)
+  })
+
+  it('hide on a reply: moderators only, unchanged (the mod hide covers replies) (j)', () => {
+    expect(planCommentAction(reply, viewer('mod-1', true)).canHide).toBe(true)
+    expect(planCommentAction(reply, viewer('stranger-1')).canHide).toBe(false)
+  })
+
+  it('a top-level comment\'s delete is unchanged (the row\'s author or the host)', () => {
+    expect(planCommentAction(topLevel, viewer('author-1')).canDelete).toBe(true)
+    expect(planCommentAction(topLevel, viewer('host-1')).canDelete).toBe(true)
+    expect(planCommentAction(topLevel, viewer('stranger-1')).canDelete).toBe(false)
   })
 })

@@ -241,6 +241,10 @@ export interface Report {
  * backstop); hidden_at = the moderator soft-hide (the /mod model) — hidden
  * comments are invisible to non-moderators (the 0014 SELECT policy:
  * `hidden_at is null OR moderator`; deletes are hard, hides are soft).
+ * V3 ticket 10 (migration 0023): parent_id = the one-level reply parent
+ * (null = top-level; a reply answers a top-level comment — the one-level
+ * pin is enforced client-side, the DB allows no reply-to-replies UI, and
+ * deleting a parent hard-deletes its replies, the FK's ON DELETE CASCADE).
  */
 export interface Comment {
   id: string
@@ -250,6 +254,14 @@ export interface Comment {
   created_at: string
   /** Set when a moderator hides the comment (migration 0013). Null = visible. */
   hidden_at: string | null
+  /**
+   * One-level reply parent (V3 ticket 10, migration 0023): null = a
+   * top-level comment; otherwise the top-level comment this reply
+   * answers. Pre-0023-apply the DB won't return the field at all — a
+   * row missing it behaves as a top-level comment (client code treats a
+   * missing value as null).
+   */
+  parent_id: string | null
 }
 
 /** A comment with its author joined in (listComments result, V2 ticket 04). */
