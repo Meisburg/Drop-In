@@ -171,7 +171,52 @@ Pinned contracts every builder must respect (reviewers enforce these):
 - **Verification command:** npm run build && npm run test && npm run test:e2e
 - **Depends on:** slice 3 (one-writer order)
 
-### Slice 5: Add to calendar — ICS (ticket 03)
+### Slice 5: Address + Maps link (ticket 08)
+
+- **Objective:** an optional `playdates.address` column (migration 0021); /new gains an optional "Address (optional)" field (≤120 chars, trim); the detail page's place line becomes a tappable Google Maps link when an address is present; the public surface `get_public_playdate` extends 11 → 12 fields (adds `address`).
+- **Files in scope:** `supabase/migrations/0021_address.sql`, `src/pages/NewPlaydatePage.tsx`, `src/pages/PlaydateDetailPage.tsx`, `src/lib/db.ts`, `src/lib/types.ts`, `e2e/address-maps.e2e.ts` (new spec)
+- **Approach:** migration first (0021: `playdates.address text` nullable + `get_public_playdate` re-create (12 fields incl. address; same EXECUTE scoping to anon+authenticated + search_path pin + revoke-public; DROP FUNCTION + CREATE; DO-block idempotency; header documents the 11→12 pin change); orchestrator applies live after code green. /new optional address field (trim, ≤120, inline error when over). Detail place line tappable → `https://www.google.com/maps?q=<URL-encoded "place, address">` (new tab, rel="noopener"); the public (signed-out) view shows the link too. When ICS (Slice 8) lands, its LOCATION line folds in "place, address" when present.
+- **Acceptance criteria:**
+  - [ ] Migration 0021: `playdates.address text` (nullable) + `get_public_playdate` re-create (12 fields incl. address; same grants/search_path/revoke pattern; header documents the 11→12 change); DO-block idempotency; applied live after code green
+  - [ ] /new: optional address field (trim, ≤120 chars, inline error when over)
+  - [ ] Detail page: place line tappable → Google Maps link (new tab) when address present; the public (signed-out) view shows the link too
+  - [ ] When ticket 03 (ICS) lands: its LOCATION line folds in "place, address" when present (one-line change at that time)
+  - [ ] One new e2e spec: post with address → detail link renders the correct maps href
+- **Verification command:** `npm run build && npm run test && npm run test:e2e`
+- **Depends on:** slice 4 (one-writer order)
+
+### Slice 6: Kids v3 — kids you're bringing, photos, conversation starters (ticket 09)
+
+- **Objective:** /new: the "Best for ages (optional)" section is REPLACED by "Kids you're bringing (optional)" (a multi-select of your own kids from the kids table; the selection lands in the new `playdate_kids` table and shows as a "Kids coming" line on the detail page). Optional per-kid photos (owner-uploaded, avatars bucket `<uid>/kids/<kidId>`, shown ONLY in the profile kids list — never on cards/event lines). Conversation starters: kids "likes" (≤100 chars), profile "interests" (≤200 chars). Migration 0022.
+- **Files in scope:** `supabase/migrations/0022_kids_v3.sql`, `src/pages/NewPlaydatePage.tsx`, `src/pages/PlaydateDetailPage.tsx`, `src/pages/ProfilePage.tsx`, `src/pages/UserPage.tsx`, `src/lib/db.ts`, `src/lib/types.ts`, `e2e/kids-v3.e2e.ts` (new spec)
+- **Approach:** migration first (0022: `playdate_kids` (id, playdate_id FK ON DELETE CASCADE, kid_id FK ON DELETE CASCADE, unique pair) + `kids.avatar_url` (text, nullable) + `kids.likes` (text, nullable, ≤100) + `profiles.interests` (text, nullable, ≤200) + avatars-bucket write-policy check/extension to the `<uid>/kids/<kidId>` path (owner-scoped only); DO-block idempotent; orchestrator applies live after code green). /new kids picker (chips name+age; empty state "Add your kids on your profile" + /profile link; upsert the selection into playdate_kids on post create, replace-on-duplicate). Detail "Kids coming" line below the ping section (names + ages, no photos; hidden when 0). Profile kid editor gains photo upload (client-resized 256px/≤5MB) + a "likes" field; profile edit gains an "interests" field. /u/:handle kid rows show 40px photo (fallback initial) + name + age + likes line; parent interests line under the bio.
+- **Acceptance criteria:**
+  - [ ] Migration 0022: `playdate_kids` (id, playdate_id FK ON DELETE CASCADE, kid_id FK ON DELETE CASCADE, unique pair) + `kids.avatar_url` (text, nullable) + `kids.likes` (text, nullable, ≤100) + `profiles.interests` (text, nullable, ≤200) + avatars-bucket write policy check/extension for the `<uid>/kids/<kidId>` path (owner-scoped only); DO-block idempotent; applied live after code green
+  - [ ] /new: kids picker replaces the age section (multi-select chips name+age; empty state + /profile link); on post create, upsert the selection into playdate_kids (replace-on-duplicate)
+  - [ ] Detail page: "Kids coming" line below the ping section (names + ages, no photos; hidden when 0)
+  - [ ] Profile: kid editor gains photo upload (256px/≤5MB, avatars bucket `<uid>/kids/<kidId>`) + "likes" field; profile edit gains "interests" field
+  - [ ] /u/:handle: kid rows show 40px photo (fallback initial) + name + age + likes line; parent interests line under the bio
+  - [ ] One new e2e spec: pick kids on /new → "Kids coming" line on the detail page
+  - [ ] Reviewer pre-apply audit of 0022's avatars-bucket write policy (the human-approved kid-photo pin override) before the live apply
+- **Verification command:** `npm run build && npm run test && npm run test:e2e`
+- **Depends on:** slice 5 (one-writer order)
+
+### Slice 7: Comment replies — one level (ticket 10)
+
+- **Objective:** one-level replies on event comments — any signed-in parent can reply (not host-only); replies render indented under their parent; NO reply-to-replies (one-level pin). Migration 0023 (`comments.parent_id` + RLS).
+- **Files in scope:** `supabase/migrations/0023_comment_replies.sql`, `src/pages/PlaydateDetailPage.tsx`, `src/lib/db.ts`, `src/lib/feed.ts` (or `src/lib/trust.ts`), `src/lib/types.ts`, `e2e/comment-replies.e2e.ts` (new spec)
+- **Approach:** migration first (0023: `comments.parent_id` (uuid, nullable, references comments(id) ON DELETE CASCADE) + RLS (a reply is only visible when its parent is visible — the client hides replies under a hidden parent; the moderator hide path covers replies); DO-block idempotent; header documents the one-level pin + hidden-parent rule; orchestrator applies live after code green). Detail page "Reply" affordance on top-level comments (any authenticated user); the composer targets the parent (parent_id set); replies render one level indented (ml-8, 24px avatar); NO reply affordance on replies. Delete: reply author OR event host (the parent's author does NOT delete replies). Pure `groupCommentsForRender(comments)` seam (parents + nested children, children ordered created_at asc) + unit tests.
+- **Acceptance criteria:**
+  - [ ] Migration 0023: `comments.parent_id` + RLS amendments (DO-block idempotent; header documents the one-level pin + hidden-parent rule); applied live after code green
+  - [ ] Detail page: "Reply" affordance on top-level comments (any authenticated user); the composer targets the parent (parent_id set); replies render one level indented
+  - [ ] No reply affordance on replies (one-level pin)
+  - [ ] Delete: reply author OR event host; moderator hide covers replies
+  - [ ] Pure `groupCommentsForRender(comments)` in feed.ts (or trust.ts) + unit tests (nesting, ordering, hidden-parent exclusion)
+  - [ ] One new e2e spec: comment → reply → nested render + delete permission
+- **Verification command:** `npm run build && npm run test && npm run test:e2e`
+- **Depends on:** slice 6 (one-writer order)
+
+### Slice 8: Add to calendar — ICS (ticket 03)
 
 - **Objective:** "Add to calendar" on the detail page generates a valid ICS
   download from title/place/start/end/age_hint/details. Pure client-side,
@@ -183,9 +228,9 @@ Pinned contracts every builder must respect (reviewers enforce these):
   row; visible in signed-in and signed-out views.
 - **Acceptance criteria:** per ticket 03 in `.scratch/v3/issues/03-add-to-calendar-ics.md`
 - **Verification command:** `npm run build && npm run test && npm run test:e2e`
-- **Depends on:** serialized after slice 4 by the one-writer rule; both touch the detail page
+- **Depends on:** serialized after slice 7 by the one-writer rule; both touch the detail page; the ICS LOCATION line folds in "place, address" when present (the ticket 08 AC).
 
-### Slice 6: Host retention loop (ticket 04)
+### Slice 9: Host retention loop (ticket 04)
 
 - **Objective:** hosts get a reason to come back: "N new families pinged
   your drop-ins" banner (last_seen_at cursor, migration 0024) + "Hosted N
@@ -202,9 +247,9 @@ Pinned contracts every builder must respect (reviewers enforce these):
   (N > 0 only).
 - **Acceptance criteria:** per ticket 04 in `.scratch/v3/issues/04-host-retention.md`
 - **Verification command:** `npm run build && npm run test && npm run test:e2e`
-- **Depends on:** serialized after slice 5 by the one-writer rule
+- **Depends on:** serialized after slice 8 by the one-writer rule
 
-### Slice 7: Guest list — progressive disclosure on going pings (ticket 05)
+### Slice 10: Guest list — progressive disclosure on going pings (ticket 05)
 
 - **Objective:** host sees who pinged their event by name; pingers see
   co-attendee names; everyone else counts only. Migration 0025
@@ -224,7 +269,7 @@ Pinned contracts every builder must respect (reviewers enforce these):
   — plus the orchestrator trust review before live apply (residual vector
   documented in the 0025 header)
 - **Verification command:** `npm run build && npm run test && npm run test:e2e`
-- **Depends on:** slices 1-6 (one-writer order) + founder read of ticket 05 (done 2026-09-09)
+- **Depends on:** slices 1-9 (one-writer order) + founder read of ticket 05 (done 2026-09-09)
 
 ## Risks / open questions
 
@@ -276,3 +321,4 @@ Pinned contracts every builder must respect (reviewers enforce these):
   the human's green light (ticket 05 approved 2026-09-09).
 - 2026-09-09 — FEEDBACK TRIAGE: origin-user annotation pass (feedback/v3.md, 12 items) -> ticket 06 (quick batch: card check, "Near you" h1, detail age line out, Rained-out status out + 0019, /new helper out, Attend/✓Going copy) + ticket 07 (card going circles); new tickets 08 (address + maps, 0020), 09 (kids v3: picker + photos + interests, 0021), 10 (one-level replies, 0022). Dispatch: 06 -> 07 ("go 1-2" scope), then 08 -> 09 -> 10, then ICS/retention/guest-list renumbered to slices 5-7 (migrations 0023/0024). Human calls: kid photos YES (pin override logged), interests free text, replies open to anyone (one level).
 - 2026-09-09 — RENUMBER: going_pings has no created_at (0007) — new migration 0020 adds it (ticket 07 ordering + ticket 04 banner + guest-list RPC depend on it); the queue shifts one: address 0021, kids v3 0022, replies 0023, retention 0024, guest list 0025 (0019-0025 total).
+- 2026-09-09 — HANDOFF RE-PLAN (orchestrator): plan-v3 slices made self-contained for a fresh session — added Slices 5-7 (ticket 08 address + Maps / 0021, ticket 09 kids v3 / 0022, ticket 10 replies / 0023) with inlined acceptance criteria + verification command; renumbered ICS / retention / guest-list to Slices 8 / 9 / 10 (0024 / 0025). Dispatch queue (one-writer): 08 → 09 → 10 → 03 ICS → 04 retention (0024) → 05 guest list (0025 + pre-apply trust review). A new session resumes from plan-v3.md + task-state.md + .scratch/v3/issues/ only.
