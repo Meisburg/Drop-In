@@ -474,18 +474,28 @@ export async function listRadiusFeed(
  * extract is ~600 rows — trivially small; a re-fetch per feed load would
  * be waste, not correctness). Throws when the table is missing (0012 not
  * applied yet — the pages render their designed error state, house
- * discipline).
+ * discipline). A failed fetch does not stick around: the cache resets on
+ * rejection, so the next call retries (no page-reload required).
  */
 let zipCodesCache: Promise<ReadonlyMap<string, ZipCoords>> | null = null
 export function loadZipCodes(): Promise<ReadonlyMap<string, ZipCoords>> {
   zipCodesCache ??= (async () => {
-    const { data, error } = await supabase.from('zip_codes').select('zip, lat, lng')
-    if (error) throw error
-    const coords = new Map<string, ZipCoords>()
-    for (const row of (data ?? []) as Array<{ zip: string; lat: string | number; lng: string | number }>) {
-      coords.set(row.zip, { lat: Number(row.lat), lng: Number(row.lng) })
+    try {
+      const { data, error } = await supabase.from('zip_codes').select('zip, lat, lng')
+      if (error) throw error
+      const coords = new Map<string, ZipCoords>()
+      for (const row of (data ?? []) as Array<{ zip: string; lat: string | number; lng: string | number }>) {
+        coords.set(row.zip, { lat: Number(row.lat), lng: Number(row.lng) })
+      }
+      return coords
+    } catch (err) {
+      // A rejected fetch (e.g. 0012 not applied yet) would otherwise pin THIS
+      // rejected promise to the module cache forever — the only retry would be
+      // a full page reload. Reset the cache before rethrowing so the next
+      // call re-issues the fetch.
+      zipCodesCache = null
+      throw err
     }
-    return coords
   })()
   return zipCodesCache
 }

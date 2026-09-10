@@ -186,10 +186,21 @@ export function PlaydateDetailPage() {
 
   // V2 slice 5: the ping-intent flag (the stored "I'm coming" target from
   // the signed-out view). It highlights the ping button for THIS post only;
-  // handlePingToggle clears it (the explicit tap happened).
+  // handlePingToggle clears it (the explicit tap happened). An intent that
+  // never got its confirming tap is cleared on leaving the post (id change
+  // or unmount) — a stale intent must not re-highlight "Tap to confirm" on
+  // a later visit to the same post. The exception is the in-flight "I'm
+  // coming" return: its one-shot return target still points at this post
+  // (the shell clears it on landing), so that intent is kept.
   useEffect(() => {
     if (id === undefined || id === '') return
     setPingIntent(window.sessionStorage.getItem(PLAYDATE_PING_INTENT_KEY) === id)
+    return () => {
+      if (window.sessionStorage.getItem(PLAYDATE_RETURN_KEY) === `/playdate/${id}`) return
+      if (window.sessionStorage.getItem(PLAYDATE_PING_INTENT_KEY) === id) {
+        window.sessionStorage.removeItem(PLAYDATE_PING_INTENT_KEY)
+      }
+    }
   }, [id])
 
   async function handlePingToggle() {
@@ -204,7 +215,16 @@ export function PlaydateDetailPage() {
     try {
       const going = await togglePing(detail.id)
       const count = await getGoingCount(detail.id)
-      setState({ status: 'ready', detail, count, going, comments: state.comments })
+      // Functional merge: touch ONLY count/going (the thread settled in the
+      // meantime survives), and only for the post this toggle was issued
+      // against — a ping op in flight during a comment op must never
+      // clobber the post-op comments array (or a post we navigated away
+      // from).
+      setState((prev) =>
+        prev.status === 'ready' && prev.detail.id === detail.id
+          ? { ...prev, count, going }
+          : prev,
+      )
     } catch (err) {
       setPingError(err instanceof Error ? err.message : 'Could not update your ping. Try again.')
     } finally {
@@ -281,7 +301,15 @@ export function PlaydateDetailPage() {
       await addComment(detail.id, commentDraft)
       setCommentDraft('')
       const comments = await listComments(detail.id)
-      setState({ status: 'ready', detail, count: state.count, going: state.going, comments })
+      // Functional merge: the fresh thread replaces comments, but count/
+      // going (and detail) survive as settled in the meantime — a comment
+      // op in flight during a ping toggle must never clobber the
+      // post-toggle count (or a post we navigated away from).
+      setState((prev) =>
+        prev.status === 'ready' && prev.detail.id === detail.id
+          ? { ...prev, comments }
+          : prev,
+      )
     } catch (err) {
       setCommentError(err instanceof Error ? err.message : 'Could not post your comment. Try again.')
     } finally {
@@ -297,8 +325,15 @@ export function PlaydateDetailPage() {
     setCommentError(null)
     try {
       await deleteComment(commentId)
-      const comments = (state.comments ?? []).filter((c) => c.id !== commentId)
-      setState({ status: 'ready', detail, count: state.count, going: state.going, comments })
+      // The removal is computed off the LATEST settled thread (functional
+      // merge), not the render-time closure — a delete in flight during an
+      // add must not resurrect the pre-add thread (or clobber the
+      // post-add one, or a post we navigated away from).
+      setState((prev) =>
+        prev.status === 'ready' && prev.detail.id === detail.id
+          ? { ...prev, comments: (prev.comments ?? []).filter((c) => c.id !== commentId) }
+          : prev,
+      )
     } catch (err) {
       setCommentError(err instanceof Error ? err.message : 'Could not delete that comment. Try again.')
     } finally {
@@ -320,11 +355,20 @@ export function PlaydateDetailPage() {
     setCommentError(null)
     try {
       await hideComment(commentId)
+      // Soft-hide (0014's model: the row stays, muted) — computed off the
+      // LATEST settled thread (functional merge): a hide in flight during
+      // an add must not resurrect the pre-add thread.
       const now = new Date().toISOString()
-      const comments = (state.comments ?? []).map((c) =>
-        c.id === commentId ? { ...c, hidden_at: now } : c,
+      setState((prev) =>
+        prev.status === 'ready' && prev.detail.id === detail.id
+          ? {
+              ...prev,
+              comments: (prev.comments ?? []).map((c) =>
+                c.id === commentId ? { ...c, hidden_at: now } : c,
+              ),
+            }
+          : prev,
       )
-      setState({ status: 'ready', detail, count: state.count, going: state.going, comments })
     } catch (err) {
       setCommentError(err instanceof Error ? err.message : 'Could not hide that comment. Try again.')
     } finally {
@@ -461,7 +505,12 @@ export function PlaydateDetailPage() {
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
             <span className="flex items-center gap-2 text-sm font-medium text-slate-700">
               <PublicHostAvatar name={d.host_display_name} avatarUrl={d.host_avatar_url} />
-              <span>Hosted by @{d.host_display_name}</span>
+              {/* 0015's composite type is nullable text (the RPC's LEFT
+                  JOIN to profiles) — practically unreachable (the FK
+                  cascade), rendered null-safe. */}
+              {d.host_display_name !== null ? (
+                <span>Hosted by @{d.host_display_name}</span>
+              ) : null}
             </span>
             <button
               type="button"
@@ -757,7 +806,7 @@ function hostGoingCountLine(count: number): string {
  * the HostAvatar shape without the profile row (the public surface carries
  * only the host's display_name + avatar_url; no host.id crosses to anon).
  */
-function PublicHostAvatar({ name, avatarUrl }: { name: string; avatarUrl: string | null }) {
+function PublicHostAvatar({ name, avatarUrl }: { name: string | null; avatarUrl: string | null }) {
   return avatarUrl !== null && avatarUrl !== '' ? (
     <img
       src={avatarUrl}
@@ -769,7 +818,7 @@ function PublicHostAvatar({ name, avatarUrl }: { name: string; avatarUrl: string
       aria-hidden
       className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-500"
     >
-      {(name.charAt(0) || '?').toUpperCase()}
+      {(name?.charAt(0) || '?').toUpperCase()}
     </span>
   )
 }

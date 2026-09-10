@@ -218,7 +218,7 @@ export interface PublicPlaydateDetail {
   age_hint: string | null
   details: string | null
   neighborhood_name: string
-  host_display_name: string
+  host_display_name: string | null
   host_avatar_url: string | null
   going_count: number
 }

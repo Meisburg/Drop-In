@@ -14,7 +14,7 @@ import type { PlaydateWithNeighborhood } from '../lib/types'
  * radius filter (feed.filterFeed — unit-tested), and tags each survivor
  * with its "N mi" distance for the card label.
  *
- * The zip_coordinates + location columns live in migration 0012 (the live
+ * The zip_codes + location columns live in migration 0012 (the live
  * project may not have them yet) — a failed load renders a designed error
  * state, never a crash (same discipline as the onboarding load-error).
  */

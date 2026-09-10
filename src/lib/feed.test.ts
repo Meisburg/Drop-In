@@ -49,7 +49,7 @@ function at(minutesAfterMidnight: number): string {
 
 /**
  * The seeded gazetteer shape (V2 slice 3): the two known WA zips from
- * migration 0012 — 98107 (West Seattle) and 98007 (Kirkland), ~11.5 mi
+ * migration 0012 — 98107 (West Seattle) and 98007 (Bellevue), ~11.5 mi
  * apart — enough to exercise inside/outside-radius and the unknown-zip
  * exclusion without a DB.
  */
@@ -223,7 +223,7 @@ describe('haversineMiles (the pure distance predicate — no PostGIS)', () => {
     expect(haversineMiles(a, a)).toBe(0)
   })
 
-  it('measures the known WA pair (98107 West Seattle → 98007 Kirkland, ~11.5 mi)', () => {
+  it('measures the known WA pair (98107 West Seattle → 98007 Bellevue, ~11.5 mi)', () => {
     const miles = haversineMiles(ZIP_COORDS.get('98107')!, ZIP_COORDS.get('98007')!)
     expect(miles).toBeGreaterThan(11)
     expect(miles).toBeLessThan(12.5)
