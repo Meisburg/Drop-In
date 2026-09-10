@@ -188,9 +188,11 @@ export function PlaydateDetailPage() {
   }
 
   /**
-   * Hide a comment (moderators only — the soft-hide via hidden_at, the /mod
-   * model). The hidden row is no longer SELECT-able (the policy filters
-   * it), so the row is dropped client-side to match the server's answer.
+   * Hide a comment (moderator op — the soft-hide via hidden_at, the /mod
+   * model). 0014: the widened SELECT policy (hidden_at is null OR
+   * moderator) keeps hidden rows readable by moderators, so the row
+   * stays in the thread in its muted hidden state (matching a re-fetch)
+   * instead of being dropped; non-moderators never see it (RLS).
    */
   async function handleHideComment(commentId: string) {
     if (state.status !== 'ready' || commentBusy) return
@@ -199,7 +201,10 @@ export function PlaydateDetailPage() {
     setCommentError(null)
     try {
       await hideComment(commentId)
-      const comments = (state.comments ?? []).filter((c) => c.id !== commentId)
+      const now = new Date().toISOString()
+      const comments = (state.comments ?? []).map((c) =>
+        c.id === commentId ? { ...c, hidden_at: now } : c,
+      )
       setState({ status: 'ready', detail, count: state.count, going: state.going, comments })
     } catch (err) {
       setCommentError(err instanceof Error ? err.message : 'Could not hide that comment. Try again.')
@@ -376,8 +381,14 @@ export function PlaydateDetailPage() {
                   hostId: detail.host_profile_id,
                   isModerator,
                 })
+                // 0014: hidden comments come back to moderators only (the
+                // SELECT policy's moderator branch) — render muted +
+                // chipped, and never offer Hide on an already-hidden row
+                // (no unhide in V2). Non-moderators never receive hidden
+                // rows (RLS).
+                const isHidden = !plan.canSee
                 return (
-                  <li key={comment.id} className="flex gap-3">
+                  <li key={comment.id} className={`flex gap-3${isHidden ? ' opacity-60' : ''}`}>
                     <HostAvatar host={comment.author} />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm">
@@ -387,14 +398,22 @@ export function PlaydateDetailPage() {
                         >
                           @{comment.author.display_name}
                         </Link>
-                        <span className="ml-2 text-xs text-slate-400">
-                          {formatTime(comment.created_at)}
-                        </span>
+                        {isHidden ? (
+                          <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                            Hidden by moderator
+                          </span>
+                        ) : (
+                          <span className="ml-2 text-xs text-slate-400">
+                            {formatTime(comment.created_at)}
+                          </span>
+                        )}
                       </p>
-                      <p className="mt-0.5 whitespace-pre-line text-sm text-slate-700">
+                      <p
+                        className={`mt-0.5 whitespace-pre-line text-sm ${isHidden ? 'text-slate-400' : 'text-slate-700'}`}
+                      >
                         {comment.body}
                       </p>
-                      {plan.canDelete || plan.canHide ? (
+                      {plan.canDelete || (plan.canHide && !isHidden) ? (
                         <div className="mt-1 flex gap-3">
                           {plan.canDelete ? (
                             <button
@@ -406,7 +425,7 @@ export function PlaydateDetailPage() {
                               Delete
                             </button>
                           ) : null}
-                          {plan.canHide ? (
+                          {plan.canHide && !isHidden ? (
                             <button
                               type="button"
                               disabled={commentBusy}

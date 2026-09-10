@@ -1050,8 +1050,9 @@ export async function removeKid(profileId: string, kidId: string): Promise<void>
  * (created_at ascending), the author joined in (avatar + handle). The
  * author embed is pinned to the FK constraint name (PGRST201 lesson):
  * `comments_author_profile_id_fkey` is the 0013 constraint. Hidden
- * comments never come back (the SELECT policy's `hidden_at is null`
- * filter — the DB-level soft-hide).
+ * comments come back to moderators only (0014: the SELECT policy is
+ * `hidden_at is null OR moderator` — non-moderators never receive
+ * hidden rows; the DB-level soft-hide holds for everyone else).
  */
 export async function listComments(playdateId: string): Promise<CommentWithAuthor[]> {
   const { data, error } = await supabase
@@ -1108,9 +1109,9 @@ export async function deleteComment(commentId: string): Promise<void> {
  * Hide a comment (moderator op, ticket 04): set comments.hidden_at — the
  * soft-hide (the /mod model; hidden comments are invisible to everyone via
  * the SELECT policy). No unhide in V2 (mirrored from hidePlaydate's
- * V1-minimum). Plain update, no .select() — the 42501 discipline: after
- * the update the row is no longer visible to its own read-back (hidden_at
- * set), so a RETURNING select would 42501 under the SELECT policy.
+ * V1-minimum). Plain update, no .select() — the 42501 discipline: pre-0014
+ * the RETURNING read-back of the new row 403'd under the SELECT policy;
+ * the plain chain stays the simple path.
  */
 export async function hideComment(commentId: string): Promise<void> {
   const { error } = await supabase

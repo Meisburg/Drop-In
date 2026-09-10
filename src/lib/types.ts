@@ -165,8 +165,8 @@ export interface Report {
  * A public comment on a drop-in (V2 ticket 04, migration 0013): the
  * per-event question thread. body <= 500 chars (the 0013 CHECK is the DB
  * backstop); hidden_at = the moderator soft-hide (the /mod model) — hidden
- * comments are invisible to everyone (the SELECT policy's `hidden_at is
- * null` filter; deletes are hard, hides are soft).
+ * comments are invisible to non-moderators (the 0014 SELECT policy:
+ * `hidden_at is null OR moderator`; deletes are hard, hides are soft).
  */
 export interface Comment {
   id: string
