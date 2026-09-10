@@ -110,8 +110,8 @@ Pinned contracts every builder must respect (reviewers enforce these):
   feed.ts (spec pin). **Orchestrator trust review before live apply** —
   residual vector (any authenticated user can read going_pings rows
   (profile_id) + profiles (display_name) directly and reconstruct names)
-is documented in the 0025 header; accepted class: same personalization
-   data as blocks.
+  is documented in the 0025 header; accepted class: same personalization
+  data as blocks.
 - **Feedback overrides (2026-09-09, feedback/v3.md — origin-user pass + human calls):** card going line with up to 3 avatar circles (names stay detail-page-only) — overrides the V2 cards-count-only pin; host status options = On / Cancelled ("Rained out" removed; the Open-Meteo badge stays — an independent forecast); kid photos = YES (optional, owner-uploaded, profile-kids-list only — overrides the first-name-only pin, logged in task-state decisions); interests = free text (kid likes <=100, parent interests <=200); comment replies = one level, any authenticated user.
 
 ## Slices
@@ -165,7 +165,7 @@ is documented in the 0025 header; accepted class: same personalization
 ### Slice 4: Card going circles (ticket 07)
 
 - **Objective:** cards show who's coming: "N going" + up to 3 pinger avatar circles + "+N" (avatars only — names stay on the detail guest list per ticket 05). Migration 0020 (going_pings.created_at).
-- **Files in scope:** src/components/DropInCard.tsx, src/pages/FeedPage.tsx, src/lib/db.ts (listPingerAvatarsWithClient), migration supabase/migrations/0020_going_pings_created_at.sql, src/lib/feed.ts (buildGoingLine), e2e/card-circles.e2e.ts (new spec)
+- **Files in scope:** src/components/DropInCard.tsx, src/pages/FeedPage.tsx, src/lib/db.ts (listPingsForPostsWithClient — single query, FK hint pinned), migration supabase/migrations/0020_going_pings_created_at.sql, src/lib/feed.ts (buildGoingLine), e2e/card-circles.e2e.ts (new spec)
 - **Approach:** migration 0020 first (going_pings.created_at — 0007's table has no timestamp; applied live after code green), then db query (going_pings + profiles avatar embed) + pure buildGoingLine seam first (unit tests), then the card line; the signed-out surface stays count-only.
 - **Acceptance criteria:** per ticket 07 in .scratch/v3/issues/07-card-going-circles.md
 - **Verification command:** npm run build && npm run test && npm run test:e2e
@@ -221,8 +221,8 @@ is documented in the 0025 header; accepted class: same personalization
   real-DB probes (host reads names, co-pinger reads names, third viewer
   gets no names); e2e spec: host sees guest list on a post with 2 pings.
 - **Acceptance criteria:** per ticket 05 in `.scratch/v3/issues/05-guest-list.md`
-— plus the orchestrator trust review before live apply (residual vector
-   documented in the 0025 header)
+  — plus the orchestrator trust review before live apply (residual vector
+  documented in the 0025 header)
 - **Verification command:** `npm run build && npm run test && npm run test:e2e`
 - **Depends on:** slices 1-6 (one-writer order) + founder read of ticket 05 (done 2026-09-09)
 
