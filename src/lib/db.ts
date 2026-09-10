@@ -537,6 +537,14 @@ export interface NewPlaydateInput {
   /** Optional, advisory only (e.g. "best for 2-5"). */
   ageHint?: string
   details?: string
+  /**
+   * The optional street address (V3 slice 5, ticket 08, migration 0021):
+   * <=120 chars, trimmed; UNDEFINED when empty (the /new field's
+   * "omit when empty" — the insert payload then carries no address key,
+   * so pre-0021-apply a post WITHOUT an address never touches the
+   * missing column; a post WITH one 42703s — the e2e's documented RED).
+   */
+  address?: string
 }
 
 /**
@@ -563,6 +571,11 @@ export async function createPlaydate(input: NewPlaydateInput): Promise<Playdate>
       ends_at: input.endsAt,
       age_hint: input.ageHint ?? null,
       details: input.details ?? null,
+      // V3 slice 5 (ticket 08): the optional address — undefined when empty,
+      // so the key is OMITTED from the insert payload (pre-0021-apply a
+      // post without an address is unaffected; one with an address 42703s
+      // — the e2e's documented RED-by-design pre-apply failure).
+      address: input.address,
     })
     .select()
     .single()

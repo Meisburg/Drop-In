@@ -601,3 +601,21 @@ export function buildGoingLine(
     overflow,
   }
 }
+
+// ---------------------------------------------------------------------------
+// V3 slice 5 (ticket 08): the detail page's tappable Google Maps link.
+
+/**
+ * The detail page's tappable Google Maps link (V3 slice 5, ticket 08):
+ * `https://www.google.com/maps?q=<URL-encoded "place, address">` — the
+ * query is the post's place + the street address, comma-joined. Returns
+ * null when the address is null, empty, or whitespace-only (no link — a
+ * query is never invented; the place line stays plain text). Pure +
+ * unit-tested (the e2e asserts the same href the app renders, via this
+ * seam).
+ */
+export function mapsHref(place: string, address: string | null | undefined): string | null {
+  const trimmedAddress = (address ?? '').trim()
+  if (trimmedAddress === '') return null
+  return `https://www.google.com/maps?q=${encodeURIComponent(`${place}, ${trimmedAddress}`)}`
+}

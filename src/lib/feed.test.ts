@@ -20,6 +20,7 @@ import {
   isStartingSoon,
   isSteppedTime,
   localDayKey,
+  mapsHref,
   PLAYDATE_DURATIONS_MINUTES,
   queryMyPlaydatesWithClient,
   queryUpcomingFeedWithClient,
@@ -808,5 +809,32 @@ describe('buildGoingLine (the card\'s going line, V3 ticket 07)', () => {
       'https://x/1.jpg',
       'https://x/2.jpg',
     ])
+  })
+})
+
+describe('mapsHref (V3 slice 5, ticket 08: the detail page\'s tappable Maps link)', () => {
+  it('URL-encodes the comma-joined "place, address" query (spaces + commas)', () => {
+    expect(mapsHref('Green Lake playground', '7200 4th Ave NE, Seattle')).toBe(
+      'https://www.google.com/maps?q=Green%20Lake%20playground%2C%207200%204th%20Ave%20NE%2C%20Seattle',
+    )
+  })
+
+  it('URL-encodes unicode in both halves', () => {
+    expect(mapsHref('Zürich Spielplatz', 'Café str. 12')).toBe(
+      'https://www.google.com/maps?q=Z%C3%BCrich%20Spielplatz%2C%20Caf%C3%A9%20str.%2012',
+    )
+  })
+
+  it('returns null for a null, empty, or whitespace-only address (no invented query)', () => {
+    expect(mapsHref('Green Lake playground', null)).toBeNull()
+    expect(mapsHref('Green Lake playground', undefined)).toBeNull()
+    expect(mapsHref('Green Lake playground', '')).toBeNull()
+    expect(mapsHref('Green Lake playground', '   ')).toBeNull()
+  })
+
+  it('uses the trimmed address in the query (a stored value is never whitespace-padded)', () => {
+    expect(mapsHref('Green Lake playground', '  7200 4th Ave NE  ')).toBe(
+      'https://www.google.com/maps?q=Green%20Lake%20playground%2C%207200%204th%20Ave%20NE',
+    )
   })
 })

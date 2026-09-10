@@ -17,6 +17,8 @@ import type { PlaydateFormErrors, PlaydateFormValues } from '../lib/feed'
 import type { DuplicatePrefill, Neighborhood } from '../lib/types'
 
 const TITLE_MAX_LENGTH = 80
+/** V3 slice 5 (ticket 08): the optional address field's cap (trim only, no DB CHECK). */
+const ADDRESS_MAX_LENGTH = 120
 const DAY_MINUTES = 24 * 60
 
 const emptyValues: PlaydateFormValues = {
@@ -36,6 +38,11 @@ const emptyValues: PlaydateFormValues = {
  * a date picker + a 30-minute-stepper time (no typing) + duration chips
  * (1h / 1.5h / 2h / 3h) — the end time is computed from start + duration,
  * never typed (pinned contract). Optional age hint + details.
+ *
+ * V3 slice 5 (ticket 08): an optional "Address (optional)" field under
+ * place (≤120 chars, trim only; an inline error when over). Empty (or
+ * whitespace) = omitted from the insert (the address stays null) —
+ * existing posts without an address are unaffected.
  *
  * Validation is the pure validatePlaydateForm; on invalid, inline field
  * errors and nothing is saved. On success the created post is visible in
@@ -60,6 +67,10 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  // V3 slice 5 (ticket 08): the optional address (kept out of
+  // PlaydateFormValues — the /new form's pinned field set stays
+  // untouched; the address is the page-local field below).
+  const [address, setAddress] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -90,6 +101,14 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
       setErrors(fieldErrors)
       return
     }
+    // V3 slice 5 (ticket 08): the optional address — trimmed, capped at
+    // 120 (the inline error below is the user-facing wall); empty =
+    // omitted from the insert (the address stays null).
+    const trimmedAddress = address.trim()
+    if (trimmedAddress.length > ADDRESS_MAX_LENGTH) {
+      // The inline field error is already visible; nothing is saved.
+      return
+    }
     setSubmitting(true)
     setSubmitError(null)
     try {
@@ -105,6 +124,7 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
         endsAt: computeEndIso(values.startDate, values.startMinutes, values.durationMinutes),
         ageHint: values.ageHint.trim() || undefined,
         details: values.details.trim() || undefined,
+        address: trimmedAddress.length > 0 ? trimmedAddress : undefined,
       })
       // The feed re-fetches on mount, so the new post appears immediately.
       navigate('/', { replace: true })
@@ -125,6 +145,13 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
 
   const titleLength = values.title.length
   const endTotal = values.startMinutes + values.durationMinutes
+  // V3 slice 5 (ticket 08): the address's inline error (≤120 after trim;
+  // computed at render, like the title's live counter — no separate
+  // error state).
+  const addressError =
+    address.trim().length > ADDRESS_MAX_LENGTH
+      ? `Keep the address to ${ADDRESS_MAX_LENGTH} characters.`
+      : null
 
   return (
     <div className="flex flex-col gap-4">
@@ -196,6 +223,29 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
             />
           </label>
           {errors.place ? <p className="text-sm text-red-600">{errors.place}</p> : null}
+
+          {/* V3 slice 5 (ticket 08): the optional address (≤120, trim
+              only) — under place. When present, the detail page's place
+              line becomes a tappable Google Maps link (host + signed-out
+              public views). */}
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-slate-700">
+              Address <span className="text-slate-400">(optional)</span>
+            </span>
+            <input
+              className={
+                'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                (addressError !== null ? 'border-red-400' : 'border-slate-300')
+              }
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="e.g. 7200 4th Ave NE, near the boathouse"
+              autoComplete="off"
+            />
+          </label>
+          {addressError !== null ? (
+            <p className="text-sm text-red-600">{addressError}</p>
+          ) : null}
 
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-slate-700">Neighborhood</span>

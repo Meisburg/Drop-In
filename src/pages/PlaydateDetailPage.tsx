@@ -19,7 +19,7 @@ import {
   setPlaydateStatus,
   togglePing,
 } from '../lib/db'
-import { isHiddenPost, rainBadgeLabel, toDuplicatePrefill } from '../lib/feed'
+import { isHiddenPost, mapsHref, rainBadgeLabel, toDuplicatePrefill } from '../lib/feed'
 import { canModerate } from '../lib/moderation'
 import {
   COMMENT_MAX_LENGTH,
@@ -111,8 +111,9 @@ type DetailState =
  * best-effort "Rain likely" badge (the pure rainBadgeLabel threshold on
  * the Open-Meteo daily probability for the host's home_zip — silently
  * absent on error, no error state) sits beside the time row. The
- * signed-out public view (renderPublicView) stays the 11-field public
- * surface: no status, no badge (the 0015 pin holds).
+ * signed-out public view (renderPublicView) stays the public surface
+ * (11 fields per the 0015 pin; V3 slice 5 extends it to 12 — the
+ * address, migration 0021): no status, no badge.
  *
  * V3 slice 3 (ticket 06, the quick feedback batch): the status control
  * trims to On / Cancelled (migration 0019 — the third option, redundant
@@ -124,6 +125,16 @@ type DetailState =
  * "Best for …" age-hint line is out of the authenticated detail view
  * (the DB column + the /new field stay — ticket 09 reworks /new; the
  * signed-out public view keeps its 0015 field).
+ *
+ * V3 slice 5 (ticket 08, migration 0021): when the post has an address
+ * (the /new "Address (optional)" field), the place line becomes a
+ * tappable Google Maps link (the pure mapsHref seam in feed.ts —
+ * "place, address" URL-encoded into the maps q= param; new tab +
+ * rel="noopener"). The render logic is SHARED: the link shows in the
+ * signed-in view AND the signed-out public view (the public surface
+ * gained the address as its 12th field — the signed-out read flows
+ * through get_public_playdate). No address (null / pre-0021-apply
+ * missing) → the place line stays plain text.
  */
 export function PlaydateDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -576,6 +587,10 @@ export function PlaydateDetailPage() {
   const statusChip = postStatus === 'cancelled' ? 'Cancelled' : null
   const statusMuted = statusChip !== null
   const rainLabel = rainBadgeLabel(rainProbability)
+  // V3 slice 5 (ticket 08): the place line's tappable Google Maps link
+  // (the pure mapsHref seam, feed.ts) — null when the post has no address
+  // (or pre-0021-apply, when the row lacks the column): plain text.
+  const placeMapsHref = mapsHref(detail.place, detail.address)
   // V2 slice 5 (the zero-pressure soul): the stored ping intent highlights
   // the button as an EXPLICIT confirm — but only while the visitor is not
   // already going (a re-tap would unping, so the label tracks the real
@@ -584,20 +599,38 @@ export function PlaydateDetailPage() {
 
   /**
    * V2 slice 5: the signed-out public surface — EXACTLY the pinned public
-   * fields (title, place, time window, age hint, details, neighborhood
-   * label, host handle + avatar, going count). Every action surface shows
+   * fields (title, place, address — the 12th field since V3 slice 5 /
+   * migration 0021 — time window, age hint, details, neighborhood label,
+   * host handle + avatar, going count). Every action surface shows
    * the sign-up prompt: the ping ("I'm coming" → the /login return path),
    * the auth-walled comment thread (no content, no composer), and reporting
    * (signed-in only — the reports RLS is the wall). The host line is plain
    * text: /u/:handle stays auth-walled, so no link out of here.
    */
   function renderPublicView(d: PublicPlaydateDetail) {
+    // V3 slice 5 (ticket 08): the place line's tappable Google Maps link
+    // (the public surface's 12th field, migration 0021) — null when the
+    // post has no address (or pre-0021-apply, when the 11-field payload
+    // omits it): the place line stays plain text.
+    const publicMapsHref = mapsHref(d.place, d.address)
     return (
       <div className="flex flex-col gap-4">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">{d.title}</h1>
           <p className="mt-1 text-sm text-slate-500">
-            {d.place} · {d.neighborhood_name}
+            {publicMapsHref !== null ? (
+              <a
+                href={publicMapsHref}
+                target="_blank"
+                rel="noopener"
+                className="font-medium text-indigo-600 hover:underline"
+              >
+                {d.place}
+              </a>
+            ) : (
+              d.place
+            )}{' '}
+            · {d.neighborhood_name}
           </p>
         </div>
 
@@ -673,7 +706,19 @@ export function PlaydateDetailPage() {
           ) : null}
         </div>
         <p className="mt-1 text-sm text-slate-500">
-          {detail.place} · {detail.neighborhood.name}
+          {placeMapsHref !== null ? (
+            <a
+              href={placeMapsHref}
+              target="_blank"
+              rel="noopener"
+              className="font-medium text-indigo-600 hover:underline"
+            >
+              {detail.place}
+            </a>
+          ) : (
+            detail.place
+          )}{' '}
+          · {detail.neighborhood.name}
         </p>
       </div>
 

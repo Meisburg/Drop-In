@@ -88,6 +88,16 @@ export interface Playdate {
    * 0009.
    */
   hidden_at?: string | null
+  /**
+   * The post's street address (V3 slice 5, ticket 08, migration 0021):
+   * optional (null when the host didn't type one); the /new field's cap
+   * is <=120 chars, trim only (no DB CHECK). When present, the detail
+   * page's place line becomes a tappable Google Maps link (the signed-out
+   * public view too — the 0021 12-field payload). Optional: absent until
+   * the live project is past 0021 (undefined at runtime — the UI treats
+   * missing as no address, the pre-0016 status discipline).
+   */
+  address?: string | null
 }
 
 /** A (seeded) Seattle neighborhood tag. */
@@ -233,6 +243,13 @@ export interface PublicPlaydateDetail {
   id: string
   title: string
   place: string
+  /**
+   * The post's address (V3 slice 5, ticket 08, migration 0021): the 12th
+   * public field (the 11 -> 12 pin change — the Maps link renders in the
+   * signed-out view). Pre-0021-apply the 11-field payload omits it
+   * (undefined at runtime — the render is null-safe: no link).
+   */
+  address?: string | null
   starts_at: string
   ends_at: string
   age_hint: string | null
