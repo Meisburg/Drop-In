@@ -1,7 +1,30 @@
 -- V3 slice 7 (ticket 10): one-level comment replies — comments.parent_id
 -- (uuid, nullable, self-referencing FK, ON DELETE CASCADE) + the 0014
--- SELECT-policy amendment (a reply is visible to non-moderators only when
--- its parent is visible).
+-- SELECT-policy amendment (a reply is visible to non-moderators only
+-- when its parent is visible).
+--
+-- FIX RUN 2026-09-10 (amended in place; the column/FK parts applied
+-- cleanly and stay — only the policy + this header change): the
+-- original parent-visibility check was a self-referencing subquery in
+-- the policy's USING, which 42P17'd live (root-cause note below). It is
+-- now the comment_parent_visible SECDEF helper (section 2, the 0015
+-- pattern).
+--
+-- ROOT-CAUSE NOTE (2026-09-10, live-proven twice via REST with a
+-- marker JWT — HTTP 500 42P17 on EVERY authenticated SELECT on
+-- comments; anon unaffected, the policy is TO authenticated): a policy
+-- whose USING references its own table makes Postgres's RLS rewrite
+-- recursive — the rewrite of a SELECT on comments expands the policy,
+-- which references comments, which re-expands the same policy -> 42P17
+-- "infinite recursion detected in policy for relation comments". The
+-- documented RLS-recursion escape hatch (the 0015 house pattern) is a
+-- SECURITY DEFINER helper: comment_parent_visible(uuid) — language sql,
+-- stable, search_path pinned (SECDEF hygiene: never inherits the
+-- caller's search_path), EXECUTE scoped to authenticated only (revoke
+-- public/anon). The policy rewrite sees a function call, not the table,
+-- so it terminates; the function runs as its owner (postgres), so the
+-- internal subquery is NOT RLS-expanded and reads the parent's true
+-- hidden_at.
 --
 -- Pinned decisions (plan-v3.md slice 7, ticket 10; human decision
 -- 2026-09-09 feedback call (c): replies open to ALL authenticated users,
@@ -14,32 +37,46 @@
 --     seam). Documented edge: an API-level insert with a HIDDEN
 --     parent_id succeeds, but the reply is invisible to non-moderators
 --     (its parent is hidden -> rule (b)) — harmless, V1.
---     ONE-LEVEL SCOPE (addendum): the parent-visibility subquery
---     (section 2) checks ONE level only — the pointed-at row's
---     hidden_at. A DB-allowed reply-to-reply row whose parent reply is
---     visible but whose top-level grandparent is hidden therefore stays
---     API-visible to non-moderators while the client seam
+--     ONE-LEVEL SCOPE (addendum): the parent-visibility check is now
+--     via the helper (one level only) — comment_parent_visible
+--     (section 2) inspects only the pointed-at row's hidden_at. A
+--     DB-allowed reply-to-reply row whose parent reply is visible but
+--     whose top-level grandparent is hidden therefore stays API-visible
+--     to non-moderators while the client seam
 --     (groupCommentsForRender's orphan defense) drops it from render —
 --     DB-allowed / client-enforced, no UI leak.
 -- (b) HIDDEN-PARENT RULE: a reply is visible to a NON-moderator only
 --     when its own hidden_at is null AND its parent's hidden_at is null
---     (the parent-visibility subquery below runs under RLS: for a
---     non-moderator it returns the parent only when the parent is itself
---     visible — a hidden parent's replies vanish with it; for a
---     moderator the mod branch short-circuits and sees everything).
+--     (the comment_parent_visible helper, section 2, inspects the
+--     pointed-at row's hidden_at directly — it runs as its owner,
+--     postgres, bypassing RLS, so it reads the parent's TRUE hidden_at;
+--     a hidden parent's replies vanish with it; for a moderator the mod
+--     branch short-circuits and sees everything).
 --     DELETING A PARENT HARD-DELETES ITS REPLIES: the FK's ON DELETE
 --     CASCADE (cascade enforcement is internal — no RLS involved, the
 --     replies' own RLS is bypassed by the cascade, which is intended).
+--     COUNTERFACTUAL: an FK-impossible orphan reply would evaluate
+--     comment_parent_visible as true (the not exists over the missing
+--     parent) and stay API-visible; orphans are impossible via the
+--     ON DELETE CASCADE self-FK, so this is documentation-only.
 -- (c) 0014 LESSON RE-CHECK: Postgres ALSO evaluates the SELECT policy's
---     USING against the NEW row of an UPDATE (42501, live-proven 2026-09-09).
---     The moderator hide path (0013's comments_update_moderators) sets
---     hidden_at on a top-level comment OR on a reply; the amended USING
---     keeps the 0014 mod branch FIRST — it admits that new row (a
---     moderator is the only role that can UPDATE a comment, and the
---     branch is row-independent), so no new 42501 surface. A
---     non-moderator can never reach the UPDATE path (the UPDATE policy
---     is moderator-only), so the non-mod branch's reply restriction
---     cannot 42501 an UPDATE either.
+--     USING against the NEW row of an UPDATE (42501, live-proven
+--     2026-09-09). The moderator hide path (0013's
+--     comments_update_moderators) sets hidden_at on a top-level
+--     comment OR on a reply; the amended USING keeps the 0014 mod
+--     branch FIRST — row-independent (no reference to the new row's
+--     columns) — so the re-check for the helper form is:
+--       (i)   mod-hide UPDATE on a TOP-LEVEL comment: the new row is
+--             admitted by the mod branch alone;
+--       (ii)  mod-hide on a REPLY: the mod branch admits the new row;
+--             if the helper IS evaluated on the new row, a visible
+--             parent returns true and a null pid returns true
+--             (not exists over id = null) — no error path either way;
+--       (iii) the non-mod branch CANNOT REACH the UPDATE path — the
+--             UPDATE policy is moderator-only, so a non-moderator never
+--             evaluates the non-mod branch on a new row.
+--     No new 42501 surface; and no 42P17 either — the RLS rewrite sees
+--     a function call (comment_parent_visible), not the comments table.
 -- (d) INSERT / DELETE / UPDATE policies are UNCHANGED — the WHY:
 --     - comments_insert_own (author_profile_id = auth.uid()) already
 --       allows ANY authenticated user to author a reply (the
@@ -70,13 +107,23 @@
 --
 -- Idempotent + re-paste-safe (2026-09-04 house lesson: no CREATE POLICY
 -- IF NOT EXISTS — the column add is ADD COLUMN IF NOT EXISTS inside a DO
--- block (the 0020/0021/0022 structure); the SELECT-policy re-create is
--- DROP POLICY IF EXISTS + a DO-block-guarded CREATE, the 0014 pattern,
--- both re-runnable).
+-- block (the 0020/0021/0022 structure); the helper is CREATE OR REPLACE
+-- + re-runnable GRANT/REVOKE (the 0015 structure, section 2); the
+-- SELECT-policy re-create is DROP POLICY IF EXISTS + a DO-block-guarded
+-- CREATE, the 0014 pattern — all three re-runnable).
 --
 -- Applied live after code green via the dashboard SQL API (the 0021 /
 -- 0022 header pattern; task-state's tooling note amendment #2 — the
 -- Monaco SPA is broken in the CDP Chrome).
+--
+-- RE-APPLY NOTE (2026-09-10 fix run): 0023 was live-applied as
+-- originally written and the live check proved the 42P17 defect
+-- (root-cause note above). RE-APPLYING THIS AMENDED FILE IS THE LIVE
+-- REPAIR: the column/FK section no-ops (ADD COLUMN IF NOT EXISTS), the
+-- helper is created (CREATE OR REPLACE), and the policy DROP + guarded
+-- CREATE replaces the 42P17-broken policy with the helper-based one.
+-- The re-apply is a later, separate orchestrator step (dashboard SQL
+-- API) — NOT part of the code gate.
 
 -- 1) The column (the 0021 DO-block house structure).
 do $$
@@ -86,12 +133,32 @@ begin
 end
 $$;
 
--- 2) The SELECT-policy amendment (the 0014 pattern: DROP IF EXISTS, then
+-- 2) The parent-visibility helper (the 0015 house SECDEF pattern:
+--    stable, search_path pinned, EXECUTE scoped + revoke public/anon).
+--    The policy rewrite sees this function call, not the comments table
+--    — no RLS re-expansion, no 42P17; the function runs as its owner
+--    (postgres), so the subquery reads the parent's true hidden_at with
+--    no RLS. Idempotent: CREATE OR REPLACE + re-runnable GRANT/REVOKE.
+create or replace function public.comment_parent_visible(pid uuid)
+returns boolean
+language sql stable
+security definer
+set search_path = public
+as $$
+  select not exists (
+    select 1 from public.comments p
+    where p.id = pid and p.hidden_at is not null
+  );
+$$;
+revoke execute on function public.comment_parent_visible(uuid) from public, anon;
+grant execute on function public.comment_parent_visible(uuid) to authenticated;
+
+-- 3) The SELECT-policy amendment (the 0014 pattern: DROP IF EXISTS, then
 --    the DO-block-guarded re-create). Top-level comments keep the 0014
 --    behavior (hidden_at is null, or moderator); replies add the parent-
---    visibility rule; the mod branch is first (0014's branch, clarity +
---    the 42501 re-check in header (c)); explicit parentheses for the
---    AND/OR precedence.
+--    visibility rule via the helper (section 2); the mod branch is
+--    first (0014's branch, clarity + the 42501 re-check in header (c));
+--    explicit parentheses for the AND/OR precedence.
 drop policy if exists "comments_select_authenticated" on public.comments;
 
 do $$
@@ -114,11 +181,7 @@ begin
           hidden_at is null
           and (
             parent_id is null
-            or exists (
-              select 1 from public.comments p
-              where p.id = comments.parent_id
-                and p.hidden_at is null
-            )
+            or public.comment_parent_visible(parent_id)
           )
         )
       );

@@ -5,9 +5,9 @@
 
 ## Current position
 
-- **Phase:** V3 TICKET 10 CODE COMPLETE — 0023 pending live apply (orchestrator, dashboard SQL API) + live check; marker sweep still due (10 e2e-* families, list in Open risks, + family 11 appended at the live-check close).
-- **Active slice:** none. V3.7 (ticket 10): commit 798b896 (0023 + types + db + trust seam + detail Reply UI + comment-replies e2e). 203/203 unit (7 files); pre-apply e2e gate: 14 green + red set 3 (comment-replies ×1 + comments ×2 — all section-hidden = 0023-pre-apply class, probe: REST `select parent_id` on comments 42703 "column does not exist"; cleanup probe-verified 0 playdate/comment rows). 0023 PENDING LIVE APPLY.
-- **Next action:** orchestrator: live-apply 0023 (dashboard SQL API — tooling note amendment #2) + run the post-apply e2e gate (live-check line: test:e2e with comment-replies + comments green, 0023 column + policy probe), then append sweep family (11) for the live-check run and close the row. Post-slice queue (one-writer): 03 ICS -> 04 retention (0024) -> 05 guest list (0025 + pre-apply trust review).
+- **Phase:** V3 TICKET 10 IN FIX — 0023 live-applied but the amended SELECT policy 42P17s (infinite recursion in RLS rewrite; live-proven: authenticated comment reads 500, comments section hidden app-wide; anon unaffected); 0023 being amended in place (SECDEF comment_parent_visible helper, the 0015 pattern) then re-applied.
+- **Active slice:** V3.7 ticket 10 fix run (amend 0023 + review + gate + re-apply + live check).
+- **Next action:** orchestrator: reviewer pass on the amended policy, build+unit gate, then live RE-APPLY of the amended 0023 (dashboard SQL API) + live check (authenticated listComments probe 200 + full e2e green + mod-hide round-trip), then close the V3.7 row + sweep families (10)(11)(12).
 
 ## Tooling note (2026-09-09)
 
