@@ -646,3 +646,24 @@ export function kidsComingLine(
   if (lines.length === 0) return null
   return lines.join(', ')
 }
+
+// ---------------------------------------------------------------------------
+// V3 slice 9 (ticket 04): the feed retention banner's cursor throttle.
+
+/**
+ * Whether the retention cursor (profiles.last_seen_at, V3 slice 9,
+ * ticket 04, migration 0024) is due for a restamp: no cursor yet (null
+ * — the first visit establishes it) or the cursor is at least `windowMs`
+ * old (the >= 1h throttle; the window itself is owned by the FeedPage
+ * call site). Pure + unit-tested; the restamp itself is the
+ * db.touchLastSeen fire-and-forget (pre-0024-apply it 42703s on the
+ * missing column — the caller swallows, the cursor just never lands).
+ */
+export function dueToRefreshLastSeen(
+  lastSeenIso: string | null,
+  nowIso: string,
+  windowMs: number,
+): boolean {
+  if (lastSeenIso === null) return true
+  return Date.parse(nowIso) - Date.parse(lastSeenIso) >= windowMs
+}

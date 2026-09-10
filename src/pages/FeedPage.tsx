@@ -1,17 +1,20 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { DropInCard } from '../components/DropInCard'
 import { useSessionContext } from '../components/SessionProvider'
 import {
+  countPingsOnMyPosts,
   fetchRainProbabilityForZip,
   listMyPingPostIds,
   listPingsForPosts,
   listRadiusFeed,
+  restampLastSeen,
   togglePing,
   type PingForPost,
 } from '../lib/db'
 import {
   DEFAULT_RADIUS_MILES,
+  dueToRefreshLastSeen,
   groupByDay,
   isEnded,
   isStartingSoon,
@@ -19,6 +22,14 @@ import {
   rainBadgeLabel,
 } from '../lib/feed'
 import type { PlaydateWithNeighborhood } from '../lib/types'
+
+/**
+ * The retention cursor's restamp window (V3 slice 9, ticket 04): the
+ * ticket's 1h pin — the call-site owner of the throttle window (the
+ * pure dueToRefreshLastSeen decides; the e2e + unit tests pin the
+ * behavior).
+ */
+const LAST_SEEN_WINDOW_MS = 60 * 60_000
 
 /**
  * / — drop-ins within the signed-in user's home zip + radius (V2 slice 3:
@@ -67,12 +78,25 @@ import type { PlaydateWithNeighborhood } from '../lib/types'
  * count-only there). A failed pings load (pre-0020-apply: the created_at
  * column is missing → 42703) degrades to no going lines, never a crash.
  *
+ * V3 slice 9 (ticket 04): the host retention banner — "N new families
+ * pinged your drop-ins" below the "Near you" h1 (db.countPingsOnMyPosts:
+ * pings on the host's OWN posts created after the retention cursor,
+ * profiles.last_seen_at, migration 0024; the 0020 created_at is the
+ * key). The cursor is restamped on mount when null or >= 1h stale (the
+ * pure dueToRefreshLastSeen throttle + db.restampLastSeen
+ * fire-and-forget — pre-0024-apply the restamp 42703s and is
+ * swallowed: the cursor never lands, the banner stays hidden, never a
+ * crash). Banner tap: restamp + session refresh + navigate to /profile
+ * (the fresh cursor lands in the shared session state, so the SPA back
+ * navigation sees it).
+ *
  * The zip_codes + location columns live in migration 0012 (the live
  * project may not have them yet) — a failed load renders a designed error
  * state, never a crash (same discipline as the onboarding load-error).
  */
 export function FeedPage() {
-  const { session, loading, profile } = useSessionContext()
+  const { session, loading, profile, refresh } = useSessionContext()
+  const navigate = useNavigate()
   const [posts, setPosts] = useState<PlaydateWithNeighborhood[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   // V3 slice 2 (ticket 02): the Today-section cards' "Rain likely" labels
@@ -95,6 +119,12 @@ export function FeedPage() {
   // column) degrades to empty groups — no going lines, never a crash
   // (the zero-pressure soul).
   const [pingsByPostId, setPingsByPostId] = useState<Record<string, PingForPost[]> | null>(null)
+  // V3 slice 9 (ticket 04): the host retention banner's count — pings on
+  // the host's OWN posts created after the retention cursor (0024's
+  // profiles.last_seen_at; the 0020 created_at is the key). null =
+  // unsettled (no banner render); a failed load degrades to 0 (the
+  // banner stays hidden — zero-pressure soul, no error state).
+  const [newPingCount, setNewPingCount] = useState<number | null>(null)
 
   // The viewer side of the radius filter: the profile's home zip + radius.
   // The shell's onboarding gate keys on home_zip, so a settled signed-in
@@ -175,6 +205,52 @@ export function FeedPage() {
       cancelled = true
     }
   }, [posts])
+
+  // V3 slice 9 (ticket 04): the retention banner's count — pings on the
+  // host's OWN posts created after the retention cursor (0024's
+  // profiles.last_seen_at; the 0020 created_at is the key). Fetched when
+  // the session + profile settle (re-fetches on a fresh profile load —
+  // the banner's baseline is the shared session state's cursor). The
+  // null-cursor pin: a null/absent cursor (pre-0024-apply) settles to 0
+  // (no query — the first visit establishes the baseline via the restamp
+  // below). A failed load degrades to 0 (hidden — zero-pressure soul, no
+  // error state).
+  useEffect(() => {
+    if (loading || session === null || profile === null) return
+    let cancelled = false
+    setNewPingCount(null)
+    countPingsOnMyPosts(session.user.id, profile.last_seen_at ?? null)
+      .then((count) => {
+        if (!cancelled) setNewPingCount(count)
+      })
+      .catch(() => {
+        if (!cancelled) setNewPingCount(0)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [loading, session, profile])
+
+  // V3 slice 9 (ticket 04): the mount restamp — fire-and-forget. Restamp
+  // the retention cursor when it is null or >= 1h stale (the pure
+  // dueToRefreshLastSeen throttle; LAST_SEEN_WINDOW_MS owns the window).
+  // Pre-0024-apply the restamp 42703s on the missing column — swallowed
+  // (the pinned fire-and-forget contract: the e2e's documented red point,
+  // never a crash).
+  useEffect(() => {
+    if (loading || session === null || profile === null) return
+    if (
+      !dueToRefreshLastSeen(
+        profile.last_seen_at ?? null,
+        new Date().toISOString(),
+        LAST_SEEN_WINDOW_MS,
+      )
+    ) return
+    void restampLastSeen(session.user.id).catch(() => {
+      /* Swallowed (the pinned fire-and-forget contract): pre-0024-apply the missing
+         column 42703s; the cursor never lands; the banner stays hidden. */
+    })
+  }, [loading, session, profile])
 
   /**
    * V3 slice 3 (ticket 06): the card's "going" check toggle — the
@@ -271,6 +347,21 @@ export function FeedPage() {
   const viewerId = session === null ? null : session.user.id
 
   /**
+   * V3 slice 9 (ticket 04): the retention banner tap — restamp the
+   * cursor (AWAITED, so the count window's baseline moves to now and
+   * the banner is gone on the next feed visit), land the fresh cursor
+   * in the shared session state (refresh — so the SPA back navigation
+   * sees it), then go to /profile (Your posts). Pre-apply the restamp
+   * 42703s → caught → the navigation still happens.
+   */
+  async function handleRetentionBannerTap() {
+    if (session === null) return
+    await restampLastSeen(session.user.id).catch(() => {})
+    await refresh().catch(() => {})
+    navigate('/profile')
+  }
+
+  /**
    * V3 slice 3 (ticket 06): one card's "going" check toggle state.
    * Omitted (undefined) while the ping query is unsettled or signed out;
    * the host's own posts get no toggle (the detail's host panel covers
@@ -300,6 +391,21 @@ export function FeedPage() {
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold text-slate-900">Near you</h1>
+
+      {/* V3 slice 9 (ticket 04): the host retention banner — the amber
+          nudge-banner pattern (ProfilePage's "Finish your profile"),
+          full-width + left-aligned. The copy is pinned VERBATIM (no
+          singular/plural variant). Hidden when the count is 0 or
+          unsettled. */}
+      {newPingCount !== null && newPingCount > 0 ? (
+        <button
+          type="button"
+          onClick={() => void handleRetentionBannerTap()}
+          className="w-full rounded-xl border border-amber-200 bg-amber-50 p-4 text-left text-sm text-amber-800"
+        >
+          {newPingCount} new families pinged your drop-ins
+        </button>
+      ) : null}
 
       {posts === null ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500 shadow-sm">

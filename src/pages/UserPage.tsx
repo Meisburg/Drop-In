@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router'
 import { HostAvatar } from '../components/DropInCard'
 import { ReportDialog } from '../components/ReportDialog'
 import { useSessionContext } from '../components/SessionProvider'
-import { getBlockState, getProfileByHandle, toggleBlock } from '../lib/db'
+import { countPostsByHost, getBlockState, getProfileByHandle, toggleBlock } from '../lib/db'
 import type { ProfileWithKids } from '../lib/types'
 
 type UserPageState =
@@ -18,6 +18,15 @@ type UserPageState =
  * own profile page. Blocking hides the person's posts from your feed and
  * detail views (the DB-level filter from slice 3); reporting files a
  * moderator-only report (migration 0008).
+ *
+ * V3 slice 9 (ticket 04): the "Hosted N drop-ins" credibility line under
+ * "Here since" (db.countPostsByHost: the all-time hosted count — computed
+ * behavioral history per the 2026-09-09 design verdict: NO two-sided
+ * reviews, NO vouching). The shared header render (the self view AND
+ * /u/:handle); hidden when N = 0 or unsettled (a failed load degrades to
+ * hidden — zero-pressure soul, never a crash). The hardcoded "No posts
+ * yet." posts block is a SEPARATE block (the N = 0 posts state) —
+ * untouched.
  */
 export function UserPage() {
   const { handle } = useParams<{ handle: string }>()
@@ -27,6 +36,12 @@ export function UserPage() {
   const [blockingBusy, setBlockingBusy] = useState(false)
   const [blockError, setBlockError] = useState<string | null>(null)
   const [reporting, setReporting] = useState(false)
+  // V3 slice 9 (ticket 04): the "Hosted N drop-ins" line's count — the
+  // all-time hosted count (db.countPostsByHost, NO status/end filters —
+  // the 2026-09-09 design verdict's computed behavioral history). null =
+  // unsettled (the line is hidden); a failed load degrades to hidden
+  // (zero-pressure soul, never a crash).
+  const [hostedCount, setHostedCount] = useState<number | null>(null)
 
   useEffect(() => {
     if (handle === undefined || handle === '') {
@@ -72,6 +87,27 @@ export function UserPage() {
       cancelled = true
     }
   }, [profileId, isOwnProfile])
+
+  // V3 slice 9 (ticket 04): the "Hosted N drop-ins" line — computed
+  // behavioral history (the 2026-09-09 design verdict: no reviews, no
+  // vouching): the all-time hosted count (db.countPostsByHost, NO
+  // status/end filters), fetched once per settled profile id. A failed
+  // load degrades to hidden (zero-pressure soul, never a crash).
+  useEffect(() => {
+    if (profileId === null) return
+    let cancelled = false
+    setHostedCount(null)
+    countPostsByHost(profileId)
+      .then((count) => {
+        if (!cancelled) setHostedCount(count)
+      })
+      .catch(() => {
+        if (!cancelled) setHostedCount(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [profileId])
 
   async function handleToggleBlock() {
     if (profileId === null || blockingBusy) return
@@ -135,6 +171,15 @@ export function UserPage() {
           <div className="min-w-0">
             <h1 className="text-xl font-semibold text-slate-900">@{profile.display_name}</h1>
             <p className="mt-1 text-sm text-slate-500">Here since {joined}.</p>
+            {/* V3 slice 9 (ticket 04): the "Hosted N drop-ins" line — the
+                shared header render (self view AND /u/:handle). Hidden
+                when 0 or unsettled; singular "Hosted 1 drop-in" when
+                N = 1 (the e2e AC pin). */}
+            {hostedCount !== null && hostedCount > 0 ? (
+              <p className="text-sm text-slate-500">
+                Hosted {hostedCount} {hostedCount === 1 ? 'drop-in' : 'drop-ins'}
+              </p>
+            ) : null}
           </div>
         </div>
         {profile.bio != null && profile.bio.trim() !== '' ? (

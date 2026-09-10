@@ -953,6 +953,107 @@ export async function listPingsForPosts(postIds: string[]): Promise<PingForPost[
   return listPingsForPostsWithClient(supabase, postIds)
 }
 
+// ---------------------------------------------------------------------------
+// V3 slice 9 (ticket 04): host retention loop.
+//
+// The retention cursor (migration 0024: profiles.last_seen_at) may not be
+// applied to the live project until the orchestrator applies it —
+// restampLastSeen then 42703s on the missing column, and the caller
+// (FeedPage's fire-and-forget restamp) catches + swallows it (the pinned
+// contract: never a crash — the e2e's documented red point, same
+// discipline as slices 2–7). The counts below ride on existing tables
+// (playdates, going_pings), so they are green pre-apply; it is the
+// cursor that gates the banner.
+
+/**
+ * The banner's N (V3 slice 9, ticket 04): the going_pings on the
+ * profile's OWN posts created after the cursor (`sinceIso`, the 0024
+ * last_seen_at; the 0020 created_at is the key), against an injected
+ * client (the trust.togglePingWithClient pattern — mockable in unit
+ * tests).
+ *
+ * Null-cursor pin: no baseline yet (the cursor is null/absent pre-apply)
+ * → 0 with NO query (the first visit establishes the baseline via the
+ * restamp, not a backfill). A host with 0 posts → 0, no going_pings
+ * query (an empty .in() would match nothing).
+ */
+export async function countPingsOnMyPostsWithClient(
+  client: SupabaseClient,
+  profileId: string,
+  sinceIso: string | null,
+): Promise<number> {
+  // Null-cursor pin: no baseline yet -> 0, no query (the first visit establishes it).
+  if (sinceIso === null) return 0
+  const { data, error } = await client
+    .from('playdates')
+    .select('id')
+    .eq('host_profile_id', profileId)
+  if (error) throw error
+  const postIds = ((data ?? []) as Array<{ id: string | null }>)
+    .map((row) => row.id)
+    .filter((id): id is string => id !== null && id !== undefined)
+  if (postIds.length === 0) return 0
+  const { count, error: countError } = await client
+    .from('going_pings')
+    .select('profile_id', { count: 'exact', head: true })
+    .in('playdate_id', postIds)
+    .gte('created_at', sinceIso)
+  if (countError) throw countError
+  return count ?? 0
+}
+
+/** The default-client wrapper (the feed's retention banner). */
+export async function countPingsOnMyPosts(profileId: string, sinceIso: string | null): Promise<number> {
+  return countPingsOnMyPostsWithClient(supabase, profileId, sinceIso)
+}
+
+/**
+ * The all-time hosted count (V3 slice 9, ticket 04): UserPage's "Hosted
+ * N drop-ins" line — computed behavioral history (the 2026-09-09 design
+ * verdict: NO reviews, NO vouching — trust transfers by repeated
+ * exposure, made visible). NO status/end filters (all-time, cancelled
+ * or ended posts included — the "behavioral" pin), against an injected
+ * client (the *WithClient pattern — mockable in unit tests).
+ */
+export async function countPostsByHostWithClient(
+  client: SupabaseClient,
+  profileId: string,
+): Promise<number> {
+  const { count, error } = await client
+    .from('playdates')
+    .select('id', { count: 'exact', head: true })
+    .eq('host_profile_id', profileId)
+  if (error) throw error
+  return count ?? 0
+}
+
+/** The default-client wrapper (UserPage's "Hosted N drop-ins" line). */
+export async function countPostsByHost(profileId: string): Promise<number> {
+  return countPostsByHostWithClient(supabase, profileId)
+}
+
+/**
+ * Restamp the retention cursor (V3 slice 9, ticket 04, migration 0024):
+ * set profiles.last_seen_at to now — a plain update, NO RETURNING (42501
+ * discipline — the profiles SELECT posture stays untouched; 0024
+ * changes no SELECT policy). Pre-0024-apply this 42703s on the missing
+ * column — call sites catch + swallow (the pinned fire-and-forget
+ * contract; the e2e's documented red point, never a crash — the cursor
+ * just never lands, the banner stays hidden).
+ */
+export async function touchLastSeen(client: SupabaseClient, profileId: string): Promise<void> {
+  const { error } = await client
+    .from('profiles')
+    .update({ last_seen_at: new Date().toISOString() })
+    .eq('id', profileId)
+  if (error) throw error
+}
+
+/** The default-client wrapper (the feed page's mount restamp, fire-and-forget). */
+export async function restampLastSeen(profileId: string): Promise<void> {
+  return touchLastSeen(supabase, profileId)
+}
+
 /** Input for createReport (a post report and/or a profile report). */
 export interface ReportInput {
   /** Set for a post report (the post's host is the reported profile). */

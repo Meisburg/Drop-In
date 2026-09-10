@@ -5,6 +5,7 @@ import {
   computeEndIso,
   computeStartIso,
   durationLabel,
+  dueToRefreshLastSeen,
   filterFeed,
   formatDayLabel,
   formatDistanceLabel,
@@ -41,6 +42,15 @@ import {
   type RadiusViewer,
   type ZipCoords,
 } from './feed'
+// V3 slice 9 (ticket 04): the retention db round-trips are unit-tested
+// here too — importing db.ts runs its module-scope Supabase client
+// creation (VITE_* env from the repo .env via Vite's env loading; the
+// db-v3.test.ts note — the suite already imports db.ts elsewhere).
+import {
+  countPingsOnMyPostsWithClient,
+  countPostsByHostWithClient,
+  touchLastSeen,
+} from './db'
 
 /**
  * Feed-logic tests (slice 3). All time-based cases are built relative to a
@@ -870,5 +880,202 @@ describe('kidsComingLine (V3 slice 6, ticket 09: the detail page\'s "Kids coming
   it('skips empty-name kids (and returns null when nothing remains)', () => {
     expect(kidsComingLine([{ name: '   ', age: 6 }, { name: 'Lily', age: 4 }])).toBe('Lily · 4')
     expect(kidsComingLine([{ name: '', age: 6 }])).toBeNull()
+  })
+})
+
+describe('dueToRefreshLastSeen (the >= 1h cursor throttle, V3 slice 9, ticket 04)', () => {
+  const NOW = '2026-09-10T12:00:00.000Z'
+  const WINDOW_MS = 3_600_000 // the 1h pin
+  const hoursAgo = (hours: number) =>
+    new Date(Date.parse(NOW) - hours * 3_600_000).toISOString()
+
+  it('is due when the cursor is null (the first visit establishes it)', () => {
+    expect(dueToRefreshLastSeen(null, NOW, WINDOW_MS)).toBe(true)
+  })
+
+  it('is not due within the window', () => {
+    expect(dueToRefreshLastSeen(hoursAgo(0.5), NOW, WINDOW_MS)).toBe(false)
+  })
+
+  it('is due exactly at the window (>=, not >)', () => {
+    expect(dueToRefreshLastSeen(hoursAgo(1), NOW, WINDOW_MS)).toBe(true)
+  })
+
+  it('is due beyond the window', () => {
+    expect(dueToRefreshLastSeen(hoursAgo(2), NOW, WINDOW_MS)).toBe(true)
+  })
+})
+
+/**
+ * Minimal recording mock of the client surface the V3 slice 9 (ticket
+ * 04) retention queries use (countPingsOnMyPostsWithClient,
+ * countPostsByHostWithClient, touchLastSeen — the makeFeedMockClient /
+ * db-v3.test.ts style): each from(table) returns a thenable builder
+ * recording every call (.select, .eq, .in, .gte, .update) in order, so
+ * tests can assert the query SHAPE — the playdates→going_pings
+ * sequence, countPostsByHost's no-filter count chain, and
+ * touchLastSeen's plain update. Results are table-keyed config (the
+ * counts ride on the select's count option).
+ */
+interface RetentionMockConfig {
+  /** The playdates select's exact count (countPostsByHost's N). */
+  playdatesCount?: number | null
+  /** Rows the playdates select returns (the post-id list). */
+  playdatesRows?: unknown[]
+  /** The going_pings select's exact count (the banner's N). */
+  goingPingsCount?: number | null
+  /** Models a failing playdates/going_pings query (pre-apply 42703). */
+  queryError?: { code: string; message: string }
+  /** Models a failing profiles update (pre-0024-apply missing column). */
+  updateError?: { code: string; message: string }
+}
+
+function makeRetentionMockClient(
+  config: RetentionMockConfig = {},
+): { client: SupabaseClient; calls: string[] } {
+  const calls: string[] = []
+  const asError = (err: { code: string; message: string } | undefined): Error | null =>
+    err === undefined
+      ? null
+      : Object.assign(new Error(err.message), { code: err.code })
+  const makeBuilder = (table: 'playdates' | 'going_pings' | 'profiles') => {
+    const builder = {
+      select: (cols: string, opts?: { count?: string; head?: boolean }) => {
+        calls.push(
+          opts?.count !== undefined
+            ? `${table}.select(${cols}, count:${opts.count})`
+            : `${table}.select(${cols})`,
+        )
+        return builder
+      },
+      eq: (col: string, value: unknown) => {
+        calls.push(`${table}.eq(${col}, ${String(value)})`)
+        return builder
+      },
+      in: (col: string, values: string[]) => {
+        calls.push(`${table}.in(${col}, ${values.join(',')})`)
+        return builder
+      },
+      gte: (col: string, value: string) => {
+        calls.push(`${table}.gte(${col}, ${value})`)
+        return builder
+      },
+      update: (payload: Record<string, unknown>) => {
+        calls.push(`${table}.update(${JSON.stringify(payload)})`)
+        return builder
+      },
+      then: (
+        onfulfilled?: (value: { data: unknown[]; error: unknown; count: number | null }) => unknown,
+      ) => {
+        const value =
+          table === 'playdates'
+            ? {
+                data: config.playdatesRows ?? ([] as unknown[]),
+                error: asError(config.queryError),
+                count: config.playdatesCount ?? null,
+              }
+            : table === 'going_pings'
+              ? {
+                  data: [] as unknown[],
+                  error: asError(config.queryError),
+                  count: config.goingPingsCount ?? null,
+                }
+              : {
+                  data: [] as unknown[],
+                  error: asError(config.updateError),
+                  count: null,
+                }
+        return Promise.resolve(value).then(onfulfilled)
+      },
+    }
+    return builder
+  }
+  const client = {
+    from: (table: string) => {
+      if (table !== 'playdates' && table !== 'going_pings' && table !== 'profiles') {
+        throw new Error(`unexpected table: ${table}`)
+      }
+      return makeBuilder(table as 'playdates' | 'going_pings' | 'profiles')
+    },
+  }
+  return { client: client as unknown as SupabaseClient, calls }
+}
+
+describe('countPingsOnMyPostsWithClient (the banner\'s N, V3 slice 9, ticket 04)', () => {
+  const SINCE = '2026-09-10T11:00:00.000Z'
+
+  it('returns 0 for a null cursor WITHOUT issuing any query', async () => {
+    const { client, calls } = makeRetentionMockClient({ playdatesRows: [{ id: 'pd-1' }] })
+    expect(await countPingsOnMyPostsWithClient(client, 'me', null)).toBe(0)
+    expect(calls).toEqual([])
+  })
+
+  it('returns 0 for a host with no posts (no going_pings query)', async () => {
+    const { client, calls } = makeRetentionMockClient({ playdatesRows: [] })
+    expect(await countPingsOnMyPostsWithClient(client, 'me', SINCE)).toBe(0)
+    expect(calls).toEqual(['playdates.select(id)', 'playdates.eq(host_profile_id, me)'])
+  })
+
+  it('counts the pings on the host\'s posts created after the cursor (the recorded chain)', async () => {
+    const { client, calls } = makeRetentionMockClient({
+      playdatesRows: [{ id: 'pd-1' }, { id: 'pd-2' }],
+      goingPingsCount: 3,
+    })
+    expect(await countPingsOnMyPostsWithClient(client, 'me', SINCE)).toBe(3)
+    expect(calls).toEqual([
+      'playdates.select(id)',
+      'playdates.eq(host_profile_id, me)',
+      'going_pings.select(profile_id, count:exact)',
+      'going_pings.in(playdate_id, pd-1,pd-2)',
+      'going_pings.gte(created_at, 2026-09-10T11:00:00.000Z)',
+    ])
+  })
+
+  it('rejects on a query error (the caller catches — the banner degrades to hidden)', async () => {
+    const { client } = makeRetentionMockClient({
+      queryError: { code: '42703', message: 'column "created_at" does not exist' },
+    })
+    await expect(countPingsOnMyPostsWithClient(client, 'me', SINCE)).rejects.toThrow(
+      'column "created_at" does not exist',
+    )
+  })
+})
+
+describe('countPostsByHostWithClient (the all-time hosted count, V3 slice 9, ticket 04)', () => {
+  it('returns the exact count; the recorded chain is select+eq ONLY (no status/end filter)', async () => {
+    const { client, calls } = makeRetentionMockClient({ playdatesCount: 4 })
+    expect(await countPostsByHostWithClient(client, 'me')).toBe(4)
+    expect(calls).toEqual(['playdates.select(id, count:exact)', 'playdates.eq(host_profile_id, me)'])
+  })
+
+  it('rejects on a query error (the caller degrades to a hidden line)', async () => {
+    const { client } = makeRetentionMockClient({
+      queryError: { code: '42P01', message: 'relation "playdates" does not exist' },
+    })
+    await expect(countPostsByHostWithClient(client, 'me')).rejects.toThrow(
+      'relation "playdates" does not exist',
+    )
+  })
+})
+
+describe('touchLastSeen (the fire-and-forget restamp, V3 slice 9, ticket 04)', () => {
+  it('issues a plain profiles update (no RETURNING) + the id filter', async () => {
+    const { client, calls } = makeRetentionMockClient()
+    await touchLastSeen(client, 'me')
+    // The last_seen_at value is "now-ish" (new Date().toISOString()) —
+    // assert the shape, not the timestamp.
+    expect(calls[0]).toContain('profiles.update(')
+    expect(calls[0]).toContain('"last_seen_at"')
+    expect(calls[1]).toBe('profiles.eq(id, me)')
+    expect(calls).toHaveLength(2)
+  })
+
+  it('rejects on a 42703 (pre-0024-apply missing column — the caller swallows)', async () => {
+    const { client } = makeRetentionMockClient({
+      updateError: { code: '42703', message: 'column "last_seen_at" does not exist' },
+    })
+    await expect(touchLastSeen(client, 'me')).rejects.toThrow(
+      'column "last_seen_at" does not exist',
+    )
   })
 })

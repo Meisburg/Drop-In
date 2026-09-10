@@ -55,6 +55,16 @@ export interface Profile {
    * runtime — the render is null-safe).
    */
   interests?: string | null
+  /**
+   * The retention cursor (V3 slice 9, ticket 04, migration 0024): the
+   * feed retention banner counts going_pings created after this
+   * instant on the profile's OWN posts. Restamped by the app (FeedPage
+   * mount when null or >= 1h stale, fire-and-forget; NO trigger — the
+   * 0024 header). Optional — absent until 0024 is applied live
+   * (undefined at runtime — the banner treats absence as no cursor
+   * yet, the pre-0016 status-column discipline).
+   */
+  last_seen_at?: string | null
 }
 
 /**
