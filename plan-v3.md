@@ -40,10 +40,7 @@ Pinned contracts every builder must respect (reviewers enforce these):
   Supabase, PWA). Gate on every slice: `npm run build && npm run test &&
   npm run test:e2e` (e2e house rule since V2: every slice runs the live
   Playwright suite serially; slices 2, 4, 5 each ship 1-2 new specs).
-- **Migrations:** 0016-0018 in `supabase/migrations/` (latest = 0015,
-  confirmed 2026-09-09). DO-block idempotency (2026-09-04 lesson);
-  orchestrator applies live via `scripts/cdp-sql-runner.py` after code green
-  (task-state tooling note).
+- **Migrations:** 0019-0024 in supabase/migrations/ (latest live = 0016 after V3.2). 0019 = status trim (ticket 06), 0020 = address + 12-field RPC (ticket 08), 0021 = kids v3 (ticket 09), 0022 = replies (ticket 10), 0023 = last_seen_at (retention), 0024 = get_guest_list (guest list). DO-block idempotency (2026-09-04 lesson); orchestrator applies live via the dashboard SQL API fallback (POST /database/query + bearer token — the Monaco SPA is broken in the CDP Chrome; task-state tooling note amendment #2) after code green.
 - **Pure seams (house style):** pure logic in `src/lib/feed.ts` + new
   `src/lib/ics.ts` (one pure domain file per concern, tests colocated);
   Supabase/external-facing functions use the injected-client pattern
@@ -84,7 +81,7 @@ Pinned contracts every builder must respect (reviewers enforce these):
   public-surface fields -> shown in the signed-out view too (read-only; no
   new data exposure).
 - **Retention (ticket 04):** `profiles.last_seen_at` timestamptz nullable
-  (migration 0017; app-side update — FeedPage mount restamps when null or
+  (migration 0023; app-side update — FeedPage mount restamps when null or
   >= 1h stale, fire-and-forget; NO trigger; 0009's any-column moderator
   UPDATE can write it — documented in the migration header, harmless
   cursor). FeedPage banner (amber `rounded-xl border` pattern, ProfilePage
@@ -94,7 +91,7 @@ Pinned contracts every builder must respect (reviewers enforce these):
   (renders only when N > 0; the hardcoded "No posts yet." block stays for
   N = 0). Design verdict (parking lot 2026-09-09): computed behavioral
   history — no reviews, no vouching.
-- **Guest list (ticket 05):** migration 0018 — SECURITY DEFINER
+- **Guest list (ticket 05):** migration 0024 — SECURITY DEFINER
   `get_guest_list(playdate_id)` following the 0015 pattern (stable,
   `set search_path = public, pg_temp`, EXECUTE to authenticated only,
   `revoke ... from public`, DROP FUNCTION IF EXISTS + CREATE for
@@ -115,6 +112,7 @@ Pinned contracts every builder must respect (reviewers enforce these):
   (profile_id) + profiles (display_name) directly and reconstruct names)
   is documented in the 0018 header; accepted class: same personalization
   data as blocks.
+- **Feedback overrides (2026-09-09, feedback/v3.md — origin-user pass + human calls):** card going line with up to 3 avatar circles (names stay detail-page-only) — overrides the V2 cards-count-only pin; host status options = On / Cancelled ("Rained out" removed; the Open-Meteo badge stays — an independent forecast); kid photos = YES (optional, owner-uploaded, profile-kids-list only — overrides the first-name-only pin, logged in task-state decisions); interests = free text (kid likes <=100, parent interests <=200); comment replies = one level, any authenticated user.
 
 ## Slices
 
@@ -155,7 +153,25 @@ Pinned contracts every builder must respect (reviewers enforce these):
 - **Verification command:** `npm run build && npm run test && npm run test:e2e`
 - **Depends on:** nothing (serialized after slice 1 by the one-writer rule)
 
-### Slice 3: Add to calendar — ICS (ticket 03)
+### Slice 3: Quick feedback batch (ticket 06)
+
+- **Objective:** the origin-user's quick asks: card "going" check toggle, h1 "Near you", detail age-hint line out, status On/Cancelled (migration 0019), /new helper text out, ping button "Attend" → "✓ Going".
+- **Files in scope:** src/components/DropInCard.tsx, src/pages/FeedPage.tsx, src/pages/PlaydateDetailPage.tsx, src/pages/NewPlaydatePage.tsx, src/lib/db.ts, src/lib/types.ts, e2e/host-status.e2e.ts (RAINED OUT → CANCELLED) + the heading-pin specs, migration supabase/migrations/0019_status_trim.sql
+- **Approach:** ticket 06's ACs; 0019 re-CHECKs status to ('on','cancelled') + converts 'rained_out' rows to 'on' (DO-block idempotent); the type union narrows; e2e pins updated.
+- **Acceptance criteria:** per ticket 06 in .scratch/v3/issues/06-quick-feedback-batch.md
+- **Verification command:** npm run build && npm run test && npm run test:e2e
+- **Depends on:** slice 2 (one-writer order)
+
+### Slice 4: Card going circles (ticket 07)
+
+- **Objective:** cards show who's coming: "N going" + up to 3 pinger avatar circles + "+N" (avatars only — names stay on the detail guest list per ticket 05). No migration.
+- **Files in scope:** src/components/DropInCard.tsx, src/pages/FeedPage.tsx, src/lib/db.ts (listPingerAvatarsWithClient), src/lib/feed.ts (buildGoingLine), e2e/card-circles.e2e.ts (new spec)
+- **Approach:** db query (going_pings + profiles avatar embed) + pure buildGoingLine seam first (unit tests), then the card line; the signed-out surface stays count-only.
+- **Acceptance criteria:** per ticket 07 in .scratch/v3/issues/07-card-going-circles.md
+- **Verification command:** npm run build && npm run test && npm run test:e2e
+- **Depends on:** slice 3 (one-writer order)
+
+### Slice 5: Add to calendar — ICS (ticket 03)
 
 - **Objective:** "Add to calendar" on the detail page generates a valid ICS
   download from title/place/start/end/age_hint/details. Pure client-side,
@@ -167,19 +183,18 @@ Pinned contracts every builder must respect (reviewers enforce these):
   row; visible in signed-in and signed-out views.
 - **Acceptance criteria:** per ticket 03 in `.scratch/v3/issues/03-add-to-calendar-ics.md`
 - **Verification command:** `npm run build && npm run test && npm run test:e2e`
-- **Depends on:** nothing (serialized after slice 2 by the one-writer rule;
-  both touch the detail page)
+- **Depends on:** serialized after slice 4 by the one-writer rule; both touch the detail page
 
-### Slice 4: Host retention loop (ticket 04)
+### Slice 6: Host retention loop (ticket 04)
 
 - **Objective:** hosts get a reason to come back: "N new families pinged
-  your drop-ins" banner (last_seen_at cursor, migration 0017) + "Hosted N
+  your drop-ins" banner (last_seen_at cursor, migration 0023) + "Hosted N
   drop-ins" computed-history line on UserPage.
 - **Files in scope:** `src/pages/FeedPage.tsx` (banner), `src/pages/UserPage.tsx`
   (count line), `src/lib/db.ts` (`countPingsOnMyPostsWithClient`,
   `countPostsByHostWithClient`, `touchLastSeen`), `src/lib/feed.ts`
   (`dueToRefreshLastSeen`), `src/lib/types.ts`, migration
-  `supabase/migrations/0017_profiles_last_seen.sql`, `e2e/host-retention.e2e.ts`
+  `supabase/migrations/0023_profiles_last_seen.sql`, `e2e/host-retention.e2e.ts`
   (new spec)
 - **Approach:** migration first (CDP apply after code green); db.ts
   injected-client queries; FeedPage mount restamp (>= 1h throttle,
@@ -187,18 +202,18 @@ Pinned contracts every builder must respect (reviewers enforce these):
   (N > 0 only).
 - **Acceptance criteria:** per ticket 04 in `.scratch/v3/issues/04-host-retention.md`
 - **Verification command:** `npm run build && npm run test && npm run test:e2e`
-- **Depends on:** nothing (serialized after slice 3 by the one-writer rule)
+- **Depends on:** serialized after slice 5 by the one-writer rule
 
-### Slice 5: Guest list — progressive disclosure on going pings (ticket 05)
+### Slice 7: Guest list — progressive disclosure on going pings (ticket 05)
 
 - **Objective:** host sees who pinged their event by name; pingers see
-  co-attendee names; everyone else counts only. Migration 0018
+  co-attendee names; everyone else counts only. Migration 0024
   (`get_guest_list` SECURITY DEFINER, 0015 pattern); orchestrator trust
   review before live apply.
 - **Files in scope:** `src/pages/PlaydateDetailPage.tsx` (guest-list block),
   `src/lib/db.ts` (`fetchGuestListWithClient`), `src/lib/feed.ts`
   (`resolveGuestListVisibility`), `src/lib/types.ts`, migration
-  `supabase/migrations/0018_get_guest_list.sql`, `e2e/guest-list.e2e.ts`
+  `supabase/migrations/0024_get_guest_list.sql`, `e2e/guest-list.e2e.ts`
   (new spec)
 - **Approach:** migration first (function only; broad SELECT policy stays);
   pure visibility seam (spec pin, unit tests); detail-page block below the
@@ -209,8 +224,7 @@ Pinned contracts every builder must respect (reviewers enforce these):
   — plus the orchestrator trust review before live apply (residual vector
   documented in the 0018 header)
 - **Verification command:** `npm run build && npm run test && npm run test:e2e`
-- **Depends on:** slices 1-4 (one-writer order) + founder read of ticket 05
-  (ticket 05 status: needs-triage, pending founder read)
+- **Depends on:** slices 1-6 (one-writer order) + founder read of ticket 05 (done 2026-09-09)
 
 ## Risks / open questions
 
@@ -226,16 +240,18 @@ Pinned contracts every builder must respect (reviewers enforce these):
   link cannot see "Rained out" — founder call to widen, not blocking.
 - **Guest-list residual vector:** any authenticated user can read
   going_pings rows (profile_id) + profiles (display_name) directly — a
-  determined viewer could reconstruct names. Documented in the 0018 header;
+  determined viewer could reconstruct names. Documented in the 0024 header;
   accepted (same personalization-data class as blocks). The slice-5 trust
   review re-confirms before apply.
 - **last_seen_at writable by moderators** (0009 any-column UPDATE policy) —
-  harmless cursor; documented in the 0017 header, no tightening in V3.
+  harmless cursor; documented in the 0023 header, no tightening in V3.
 - **Feed dedupe risk:** BrowsePage's `groupByDay` is page-local; slice 1
   must promote it to feed.ts and switch BrowsePage (reviewer enforces).
 - **e2e artifacts:** specs hit the live Supabase project serially and share
   the marker account — schedule a marker sweep after V3 (precedent: the V2
   full sweep 2026-09-09).
+- **Kid-photo pin override (human-approved 2026-09-09):** a minor's photo in a public parents' app — the first-name-only pin is overridden WITH RAILS (optional per kid, owner-uploaded, shown only in the profile kids list, avatars bucket owner-scoped writes). The reviewer audits the bucket policy in 0021 before apply.
+- **Card circles expose pinger avatars in the feed** (human-requested 2026-09-09; names stay detail-only per ticket 05's amended AC).
 
 ---
 
@@ -258,3 +274,4 @@ Pinned contracts every builder must respect (reviewers enforce these):
   status round-trip (on→rained_out→on), non-host write silent 204
   0-row (RLS wall), Open-Meteo reachable (HTTP 200). Slices 3-5 await
   the human's green light (ticket 05 approved 2026-09-09).
+- 2026-09-09 — FEEDBACK TRIAGE: origin-user annotation pass (feedback/v3.md, 12 items) -> ticket 06 (quick batch: card check, "Near you" h1, detail age line out, Rained-out status out + 0019, /new helper out, Attend/✓Going copy) + ticket 07 (card going circles); new tickets 08 (address + maps, 0020), 09 (kids v3: picker + photos + interests, 0021), 10 (one-level replies, 0022). Dispatch: 06 -> 07 ("go 1-2" scope), then 08 -> 09 -> 10, then ICS/retention/guest-list renumbered to slices 5-7 (migrations 0023/0024). Human calls: kid photos YES (pin override logged), interests free text, replies open to anyone (one level).

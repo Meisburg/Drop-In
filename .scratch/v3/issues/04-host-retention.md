@@ -5,7 +5,7 @@ without them the app is empty, and V1 gives a host zero pull to come back
 (their own post's ping count only appears if they visit it). Two pieces:
 (a) FeedPage banner "N new families pinged your drop-ins" — N =
 going_pings on MY posts created after `profiles.last_seen_at` (new cursor
-column, migration 0017; app-side restamp on feed mount when null or >= 1h
+column, migration 0023; app-side restamp on feed mount when null or >= 1h
 stale, fire-and-forget; NO trigger). Tap the banner -> /profile (Your
 posts) + restamp. (b) UserPage (self AND /u/:handle): a "Hosted N
 drop-ins" credibility line near "Here since" — computed behavioral history
@@ -18,7 +18,7 @@ is behavioral, not declared.
 
 **Status:** ready-for-agent
 
-- [ ] Migration 0017: `profiles.last_seen_at` timestamptz nullable; DO-block idempotency; header documents that moderators can write it (0009 any-column UPDATE policy) — harmless cursor, no tightening in V3; applied live via CDP after code green
+- [ ] Migration 0023: `profiles.last_seen_at` timestamptz nullable; DO-block idempotency; header documents that moderators can write it (0009 any-column UPDATE policy) — harmless cursor, no tightening in V3; applied live via CDP after code green
 - [ ] db.ts (injected-client pattern): `countPingsOnMyPostsWithClient(client, profileId, sinceIso)`, `countPostsByHostWithClient(client, profileId)`, `touchLastSeen(client, profileId)`
 - [ ] FeedPage: banner (amber `rounded-xl border` pattern, ProfilePage :333) when count > 0: "N new families pinged your drop-ins"; tap -> /profile + restamp; hidden when count = 0
 - [ ] Pure `dueToRefreshLastSeen(lastSeenIso, nowIso, windowMs)` in feed.ts, unit-tested (the >= 1h throttle)
@@ -27,3 +27,5 @@ is behavioral, not declared.
 - [ ] npm run build && npm run test && npm run test:e2e exit 0
 
 ## Comments
+
+- 2026-09-09 — Renumbered: migration 0017 → 0023 (feedback tickets 06-10 consume 0019-0022; see plan-v3 status log).
