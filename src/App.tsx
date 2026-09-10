@@ -185,7 +185,7 @@ function ProtectedShell() {
       {session !== null ? (
         <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white">
           <div className="mx-auto flex max-w-md">
-            <NavTab to="/" label="Today" />
+            <NavTab to="/" label="Nearby" />
             <NavTab to="/browse" label="Browse" />
             <NavTab to="/new" label="Post" />
             <NavTab to="/profile" label="Profile" />

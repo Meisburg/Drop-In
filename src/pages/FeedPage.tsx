@@ -2,7 +2,14 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { DropInCard } from '../components/DropInCard'
 import { useSessionContext } from '../components/SessionProvider'
-import { fetchRainProbabilityForZip, listRadiusFeed } from '../lib/db'
+import {
+  fetchRainProbabilityForZip,
+  listMyPingPostIds,
+  listPingsForPosts,
+  listRadiusFeed,
+  togglePing,
+  type PingForPost,
+} from '../lib/db'
 import {
   DEFAULT_RADIUS_MILES,
   groupByDay,
@@ -11,7 +18,6 @@ import {
   localDayKey,
   rainBadgeLabel,
 } from '../lib/feed'
-import { listMyPingPostIds, togglePing } from '../lib/db'
 import type { PlaydateWithNeighborhood } from '../lib/types'
 
 /**
@@ -49,6 +55,18 @@ import type { PlaydateWithNeighborhood } from '../lib/types'
  * in-flight dedupe keeps it one fetch per distinct pair, silently absent
  * on error). Other day sections (and BrowsePage) pass nothing new.
  *
+ * V3 slice 4 (ticket 07): the cards' going lines (feedback #1 — "it'd be
+ * cool to see their little circles"): one query for every visible post
+ * (db.listPingsForPosts: the going_pings rows + the pinger profiles
+ * embed, the FK hint pinned, ordered by the 0020 created_at); the rows
+ * are grouped by post and each card renders its group via the pure
+ * buildGoingLine ("N going" + up to 3 circles + a "+N" chip), replacing
+ * the old age-hint line. The host's own posts keep the line (the host
+ * sees who's coming); the signed-out public view never renders a
+ * DropInCard, so no circles cross to it (the 0015 going-count pin stays
+ * count-only there). A failed pings load (pre-0020-apply: the created_at
+ * column is missing → 42703) degrades to no going lines, never a crash.
+ *
  * The zip_codes + location columns live in migration 0012 (the live
  * project may not have them yet) — a failed load renders a designed error
  * state, never a crash (same discipline as the onboarding load-error).
@@ -69,6 +87,14 @@ export function FeedPage() {
   const [myPingPostIds, setMyPingPostIds] = useState<ReadonlySet<string> | null>(null)
   // One in-flight card toggle per feed (the write path round-trips).
   const [pingBusyPostId, setPingBusyPostId] = useState<string | null>(null)
+  // V3 slice 4 (ticket 07): the feed posts' "going" pings (the cards'
+  // going lines — "N going" + up to 3 avatar circles + a "+N" chip). The
+  // rows are grouped by post id (the card renders its own group via the
+  // pure buildGoingLine). null = not settled (the cards show no line
+  // yet); a failed load (pre-0020-apply: 42703 on the missing created_at
+  // column) degrades to empty groups — no going lines, never a crash
+  // (the zero-pressure soul).
+  const [pingsByPostId, setPingsByPostId] = useState<Record<string, PingForPost[]> | null>(null)
 
   // The viewer side of the radius filter: the profile's home zip + radius.
   // The shell's onboarding gate keys on home_zip, so a settled signed-in
@@ -117,6 +143,38 @@ export function FeedPage() {
       cancelled = true
     }
   }, [loading, session])
+
+  // V3 slice 4 (ticket 07): the cards' going lines — one query for every
+  // visible post (db.listPingsForPosts: the going_pings rows + the
+  // pinger profiles embed, the FK hint pinned, the 0020 created_at
+  // order). Fetched when the feed settles (re-fetches on a new feed
+  // load); the rows are grouped by post id — each card renders its own
+  // group. A failed load (pre-0020-apply: 42703 on the missing
+  // created_at column) degrades to empty groups (no going lines — the
+  // zero-pressure soul), never a crash.
+  useEffect(() => {
+    if (posts === null) return
+    let cancelled = false
+    setPingsByPostId(null)
+    const postIds = posts.map((post) => post.id)
+    listPingsForPosts(postIds)
+      .then((rows) => {
+        if (cancelled) return
+        const grouped: Record<string, PingForPost[]> = {}
+        for (const row of rows) {
+          const group = grouped[row.playdateId]
+          if (group === undefined) grouped[row.playdateId] = [row]
+          else group.push(row)
+        }
+        setPingsByPostId(grouped)
+      })
+      .catch(() => {
+        if (!cancelled) setPingsByPostId({})
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [posts])
 
   /**
    * V3 slice 3 (ticket 06): the card's "going" check toggle — the
@@ -228,6 +286,17 @@ export function FeedPage() {
     }
   }
 
+  /**
+   * V3 slice 4 (ticket 07): one card's going line data — the pings
+   * grouped for that post (in the 0020 created_at order). An empty array
+   * (no pings, or the query unsettled / signed out / failed) renders no
+   * line. Unlike the ping toggle, this is NOT hidden on the host's own
+   * posts — the host sees who's coming (the ticket pin).
+   */
+  function buildCardGoingPings(post: PlaydateWithNeighborhood) {
+    return pingsByPostId?.[post.id] ?? []
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold text-slate-900">Near you</h1>
@@ -273,6 +342,7 @@ export function FeedPage() {
                       startsSoon={post.id === startsSoonId}
                       rainLabel={isToday ? (rainLabels[post.id] ?? null) : undefined}
                       pingToggle={buildCardPingToggle(post)}
+                      goingPings={buildCardGoingPings(post)}
                     />
                   ))}
                   {ended.map((post) => (
@@ -282,6 +352,7 @@ export function FeedPage() {
                       nowIso={nowIso}
                       rainLabel={isToday ? (rainLabels[post.id] ?? null) : undefined}
                       pingToggle={buildCardPingToggle(post)}
+                      goingPings={buildCardGoingPings(post)}
                     />
                   ))}
                 </div>

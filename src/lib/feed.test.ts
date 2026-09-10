@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
+  buildGoingLine,
   computeEndIso,
   computeStartIso,
   durationLabel,
@@ -9,6 +10,7 @@ import {
   formatDistanceLabel,
   formatTimeLabel,
   groupByDay,
+  GOING_CIRCLE_LIMIT,
   haversineMiles,
   hostDistanceMiles,
   isDuration,
@@ -32,6 +34,7 @@ import {
   validateRadiusMiles,
   withinRadius,
   type FeedPost,
+  type GoingPinger,
   type PlaydateFormValues,
   type RadiusViewer,
   type ZipCoords,
@@ -748,5 +751,62 @@ describe('rainBadgeLabel (the "Rain likely" threshold, V3 ticket 02)', () => {
 
   it('is null for a missing probability (a failed / out-of-range fetch — silently absent)', () => {
     expect(rainBadgeLabel(null)).toBeNull()
+  })
+})
+
+describe('buildGoingLine (the card\'s going line, V3 ticket 07)', () => {
+  /** `n` pingers; withAvatars=false models the no-avatar fallback. */
+  function pingers(n: number, withAvatars = true): GoingPinger[] {
+    return Array.from({ length: n }, (_, i) => ({
+      avatarUrl: withAvatars ? `https://x/${i}.jpg` : null,
+      displayName: `p${i}`,
+    }))
+  }
+
+  it('is null for a count of 0 (the line is hidden — "0 going" is not a state)', () => {
+    expect(buildGoingLine(0, [], GOING_CIRCLE_LIMIT)).toBeNull()
+  })
+
+  it('labels exactly 3 pingers with no overflow', () => {
+    const line = buildGoingLine(3, pingers(3), GOING_CIRCLE_LIMIT)
+    expect(line).not.toBeNull()
+    expect(line!.label).toBe('3 going')
+    expect(line!.circles).toHaveLength(3)
+    expect(line!.circles).toEqual([
+      { avatarUrl: 'https://x/0.jpg', initial: 'P' },
+      { avatarUrl: 'https://x/1.jpg', initial: 'P' },
+      { avatarUrl: 'https://x/2.jpg', initial: 'P' },
+    ])
+    expect(line!.overflow).toBe(0)
+  })
+
+  it('caps at the limit with the "+N" overflow math (5 → 3 circles + "+2")', () => {
+    const line = buildGoingLine(5, pingers(5), GOING_CIRCLE_LIMIT)!
+    expect(line.circles).toHaveLength(3)
+    expect(line.overflow).toBe(2)
+    expect(line.label).toBe('5 going')
+  })
+
+  it('uses the display-name initial (upper-cased) when there is no avatar', () => {
+    const line = buildGoingLine(1, [{ avatarUrl: null, displayName: 'sam' }], GOING_CIRCLE_LIMIT)!
+    expect(line.circles).toEqual([{ avatarUrl: null, initial: 'S' }])
+  })
+
+  it('falls back to "?" for an empty display name', () => {
+    const line = buildGoingLine(1, [{ avatarUrl: null, displayName: '' }], GOING_CIRCLE_LIMIT)!
+    expect(line.circles).toEqual([{ avatarUrl: null, initial: '?' }])
+  })
+
+  it('labels a single pinger "1 going"', () => {
+    expect(buildGoingLine(1, pingers(1), GOING_CIRCLE_LIMIT)!.label).toBe('1 going')
+  })
+
+  it('keeps the pings\' order (the circles are the first `limit`)', () => {
+    const line = buildGoingLine(5, pingers(5), GOING_CIRCLE_LIMIT)!
+    expect(line.circles.map((c) => c.avatarUrl)).toEqual([
+      'https://x/0.jpg',
+      'https://x/1.jpg',
+      'https://x/2.jpg',
+    ])
   })
 })

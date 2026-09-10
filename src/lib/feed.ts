@@ -535,3 +535,69 @@ export function rainBadgeLabel(probability: number | null): string | null {
   if (probability === null) return null
   return probability >= RAIN_BADGE_THRESHOLD ? 'Rain likely' : null
 }
+
+// ---------------------------------------------------------------------------
+// V3 slice 4 (ticket 07): the card's going line — "N going" + circles.
+
+/**
+ * One pinger the card's going line shows (V3 slice 4, ticket 07): the
+ * pinger's avatar (public URL) + display name (the fallback-initial
+ * source). `avatarUrl` null = the card renders the initial-fallback
+ * circle. `displayName` is the fallback only — names never surface on the
+ * card (the guest list stays on the detail page per ticket 05).
+ */
+export interface GoingPinger {
+  avatarUrl: string | null
+  displayName: string
+}
+
+/** One circle in the going line (V3 slice 4, ticket 07). */
+export interface GoingCircle {
+  /** The pinger's avatar URL (null = the initial-fallback circle). */
+  avatarUrl: string | null
+  /** The fallback circle's initial (the display name's first char, upper). */
+  initial: string
+}
+
+/** The card's going line (V3 slice 4, ticket 07). Null = the line is hidden. */
+export interface GoingLine {
+  /** The "N going" label. */
+  label: string
+  /** The circles to show (at most `limit`), in ping order. */
+  circles: GoingCircle[]
+  /** The pingers beyond the shown circles (the "+N" chip; 0 = no chip). */
+  overflow: number
+}
+
+/** The card's circle cap (V3 slice 4, ticket 07: up to 3 circles + a "+N" chip). */
+export const GOING_CIRCLE_LIMIT = 3
+
+/**
+ * The card's going line (V3 slice 4, ticket 07): "N going" + up to
+ * `limit` pinger circles (avatar, or the display-name initial on a
+ * slate-200 circle when there is no avatar) + a "+N" overflow chip.
+ *
+ * Pure + unit-tested: the caller (the feed page) groups the pings by post
+ * and hands each card its group; this builds the renderable line.
+ * - count <= 0 → null (the line is hidden — "0 going" is not a state).
+ * - exactly `limit` circles shown; the rest collapse into `overflow`
+ *   (5 pingers, limit 3 → 3 circles + "+2").
+ * - a pinger with no avatar_url gets the initial-fallback circle.
+ */
+export function buildGoingLine(
+  count: number,
+  pingers: ReadonlyArray<GoingPinger>,
+  limit: number,
+): GoingLine | null {
+  if (count <= 0) return null
+  const circles = pingers.slice(0, limit).map((pinger) => ({
+    avatarUrl: pinger.avatarUrl,
+    initial: (pinger.displayName.charAt(0) || '?').toUpperCase(),
+  }))
+  const overflow = Math.max(0, count - circles.length)
+  return {
+    label: `${count} going`,
+    circles,
+    overflow,
+  }
+}

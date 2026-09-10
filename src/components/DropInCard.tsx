@@ -1,5 +1,12 @@
 import { Link } from 'react-router'
-import { formatDistanceLabel, isEnded, isHappeningNow } from '../lib/feed'
+import {
+  buildGoingLine,
+  formatDistanceLabel,
+  GOING_CIRCLE_LIMIT,
+  isEnded,
+  isHappeningNow,
+  type GoingPinger,
+} from '../lib/feed'
 import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
 
 /**
@@ -48,6 +55,17 @@ import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
  * and in the signed-out public view (DropInCard is not used there — the
  * sign-up prompt stands in); the feed page owns the optimistic write
  * path (toggle + revert on error, the detail page's behavior).
+ *
+ * V3 slice 4 (ticket 07): the card's age-hint line is REPLACED by the
+ * going line (feedback #1 — "it'd be cool to see their little circles"):
+ * "N going" + up to 3 pinger avatar circles (24px, -8px overlap) + a
+ * "+N" overflow chip. The circles are the pingers' avatars (the feed
+ * page's listPingsForPosts group, in the 0020 created_at order), with a
+ * display-name initial on a slate-200 circle as the fallback; names
+ * never surface on cards (the guest list stays on the detail page per
+ * ticket 05). count 0 → the line is hidden. The host's own posts keep
+ * the line (the host sees who's coming — unlike the ping toggle, which
+ * is hidden there).
  */
 export function DropInCard({
   playdate,
@@ -55,6 +73,7 @@ export function DropInCard({
   startsSoon = false,
   rainLabel = null,
   pingToggle,
+  goingPings = [],
 }: {
   playdate: PlaydateWithNeighborhood
   nowIso: string
@@ -68,6 +87,14 @@ export function DropInCard({
    * public view never renders a DropInCard at all).
    */
   pingToggle?: DropInCardPingToggle
+  /**
+   * V3 slice 4 (ticket 07): this post's pingers (the feed page's
+   * listPingsForPosts group, in ping order). Rendered as the card's
+   * going line (buildGoingLine: "N going" + up to 3 circles + a "+N"
+   * chip), replacing the old age-hint line. Empty (BrowsePage; no pings)
+   * = no line.
+   */
+  goingPings?: ReadonlyArray<GoingPinger>
 }) {
   const live = isHappeningNow(playdate, nowIso)
   const ended = isEnded(playdate, nowIso)
@@ -85,6 +112,10 @@ export function DropInCard({
     playdate.distanceMiles !== undefined && playdate.distanceMiles !== null
       ? formatDistanceLabel(playdate.distanceMiles)
       : null
+  // V3 slice 4 (ticket 07): the card's going line (null = hidden — no
+  // pings yet). The page owns the data (the listPingsForPosts group); the
+  // card applies the pure buildGoingLine with the 3-circle cap.
+  const goingLine = buildGoingLine(goingPings.length, goingPings, GOING_CIRCLE_LIMIT)
   const cardClasses = [
     'block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-indigo-300',
     muted ? 'opacity-60' : '',
@@ -172,8 +203,40 @@ export function DropInCard({
           <HostAvatar host={playdate.host} />
           <p className="text-sm text-slate-400">@{playdate.host.display_name}</p>
         </div>
-        {playdate.age_hint ? (
-          <p className="text-xs text-slate-500">Best for {playdate.age_hint}</p>
+        {goingLine !== null ? (
+          // V3 slice 4 (ticket 07): the going line replaces the old
+          // age-hint line — "N going" + up to 3 pinger circles (24px,
+          // -8px overlap) + the "+N" overflow chip. One row, no wrap at
+          // 375px (the badge slot above carries the wrap risk, not this
+          // line). The circles are the pingers' avatars; the fallback is
+          // the display-name initial on a slate-200 circle (names never
+          // surface on cards).
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-slate-500">{goingLine.label}</span>
+            <div className="flex items-center">
+              {goingLine.circles.map((circle, index) =>
+                circle.avatarUrl !== null && circle.avatarUrl !== '' ? (
+                  <img
+                    key={index}
+                    src={circle.avatarUrl}
+                    alt=""
+                    className={`h-6 w-6 rounded-full border-2 border-white object-cover${index > 0 ? ' -ml-2' : ''}`}
+                  />
+                ) : (
+                  <span
+                    key={index}
+                    aria-hidden="true"
+                    className={`flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-xs font-semibold text-slate-500${index > 0 ? ' -ml-2' : ''}`}
+                  >
+                    {circle.initial}
+                  </span>
+                ),
+              )}
+            </div>
+            {goingLine.overflow > 0 ? (
+              <span className="text-xs font-medium text-slate-400">+{goingLine.overflow}</span>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </Link>

@@ -22,6 +22,7 @@ import {
   startOfTodayIso,
   validateHomeZip,
   validateRadiusMiles,
+  type GoingPinger,
   type RadiusViewer,
   type ZipCoords,
 } from './feed'
@@ -851,6 +852,73 @@ export async function listMyPingPostIds(): Promise<ReadonlySet<string>> {
   } = await supabase.auth.getUser()
   if (user === null) return new Set<string>()
   return listMyPingPostIdsWithClient(supabase, user.id)
+}
+
+/**
+ * One ping of a feed post, with the pinger's profile joined in (V3 slice
+ * 4, ticket 07 — the card's going line: "N going" + the pinger circles).
+ * `avatarUrl` null = the card's initial-fallback circle; `displayName`
+ * feeds that fallback only (names never surface on cards — the guest list
+ * stays on the detail page per ticket 05).
+ */
+export interface PingForPost extends GoingPinger {
+  /** The post the ping is on. */
+  playdateId: string
+  /** The ping's created_at (migration 0020) — the circles' order key. */
+  createdAt: string
+}
+
+/**
+ * The pings for a set of posts (V3 slice 4, ticket 07), against an
+ * injected client (the trust.togglePingWithClient / feed.
+ * queryUpcomingFeedWithClient pattern — mockable in unit tests). One
+ * query: the going_pings rows for the given posts, with the pinger's
+ * profiles embed pinned to the FK constraint name (PGRST201 lesson: two
+ * playdates→profiles paths exist — `profiles!going_pings_profile_id_fkey`
+ * is the 0007 constraint), ordered by created_at (migration 0020) so the
+ * cards' circles are in ping order. The caller (the feed page) groups the
+ * rows by playdateId; each group feeds the pure buildGoingLine.
+ *
+ * Empty postIds → [] with NO query (an empty .in() would match nothing).
+ * Rows with a missing playdate_id or a vanished pinger profile are
+ * skipped (defensive — the 0007 FK cascade normally prevents the latter).
+ * Pre-0020-apply the created_at select 42703s; the caller (the feed page)
+ * catches and degrades to no going lines (the DB-not-applied discipline).
+ */
+export async function listPingsForPostsWithClient(
+  client: SupabaseClient,
+  postIds: string[],
+): Promise<PingForPost[]> {
+  if (postIds.length === 0) return []
+  const { data, error } = await client
+    .from('going_pings')
+    .select(
+      'playdate_id, created_at, profile:profiles!going_pings_profile_id_fkey ( avatar_url, display_name )',
+    )
+    .in('playdate_id', postIds)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  const rows = (data ?? []) as unknown as Array<{
+    playdate_id: string | null
+    created_at: string
+    profile: { avatar_url: string | null; display_name: string } | null
+  }>
+  return rows.flatMap((row) => {
+    if (row.playdate_id === null || row.profile === null) return []
+    return [
+      {
+        playdateId: row.playdate_id,
+        avatarUrl: row.profile.avatar_url ?? null,
+        displayName: row.profile.display_name,
+        createdAt: row.created_at,
+      },
+    ]
+  })
+}
+
+/** The default-client wrapper (the feed's card going lines). */
+export async function listPingsForPosts(postIds: string[]): Promise<PingForPost[]> {
+  return listPingsForPostsWithClient(supabase, postIds)
 }
 
 /** Input for createReport (a post report and/or a profile report). */
