@@ -14,6 +14,13 @@
 --     seam). Documented edge: an API-level insert with a HIDDEN
 --     parent_id succeeds, but the reply is invisible to non-moderators
 --     (its parent is hidden -> rule (b)) — harmless, V1.
+--     ONE-LEVEL SCOPE (addendum): the parent-visibility subquery
+--     (section 2) checks ONE level only — the pointed-at row's
+--     hidden_at. A DB-allowed reply-to-reply row whose parent reply is
+--     visible but whose top-level grandparent is hidden therefore stays
+--     API-visible to non-moderators while the client seam
+--     (groupCommentsForRender's orphan defense) drops it from render —
+--     DB-allowed / client-enforced, no UI leak.
 -- (b) HIDDEN-PARENT RULE: a reply is visible to a NON-moderator only
 --     when its own hidden_at is null AND its parent's hidden_at is null
 --     (the parent-visibility subquery below runs under RLS: for a

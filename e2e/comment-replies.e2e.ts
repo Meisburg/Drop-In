@@ -96,20 +96,6 @@ async function postMarkerDropIn(page: Page, title: string): Promise<string> {
   return href
 }
 
-/** The most-recent marker playdate id (the marker's own JWT — JWT-safe). */
-async function latestMarkerPlaydateId(): Promise<string> {
-  const { url, anonKey } = readSupabaseEnv()
-  const { accessToken, userId } = readMarkerSession()
-  const query = `${url}/rest/v1/playdates?host_profile_id=eq.${userId}&select=id&order=created_at.desc&limit=1`
-  const res = await fetch(query, {
-    headers: { apikey: anonKey, Authorization: `Bearer ${accessToken}` },
-  })
-  expect(res.ok).toBe(true)
-  const rows = (await res.json()) as Array<{ id: string }>
-  expect(rows.length).toBe(1)
-  return rows[0].id
-}
-
 /**
  * A fresh viewer marker: sign up + onboard (zip + radius) in a CLEAN
  * context (the comments.e2e.ts viewer pattern — the default context
