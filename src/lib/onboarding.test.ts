@@ -32,6 +32,13 @@ describe('resolveProtectedRedirect (protected routes)', () => {
     expect(resolveProtectedRedirect(false, true, '/u/jamie')).toBe('/login')
   })
 
+  it('lets signed-out visitors keep a public detail route (V2 slice 5 — no /onboarding detour)', () => {
+    // A signed-out visitor has no home zip — the onboarding bounce must NOT
+    // fire (it would detour through /onboarding, which bounces to /login —
+    // a redirect loop; the public detail page is the route's point).
+    expect(resolveProtectedRedirect(false, false, '/playdate/abc')).toBe('/playdate/abc')
+  })
+
   it('sends signed-in users without a home zip to /onboarding', () => {
     expect(resolveProtectedRedirect(true, false, '/')).toBe(ONBOARDING_PATH)
     expect(resolveProtectedRedirect(true, false, '/browse')).toBe(ONBOARDING_PATH)

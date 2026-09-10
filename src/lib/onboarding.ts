@@ -26,6 +26,8 @@ export function needsOnboarding(homeZipSet: boolean): boolean {
  * the intended path itself when the route may render as-is.
  *
  * - signed out → /login (delegates to resolveAuthRedirect; not duplicated)
+ *   — EXCEPT the public detail route (V2 slice 5), which resolveAuthRedirect
+ *   already allows signed-out
  * - signed in + home zip unset → /onboarding
  * - signed in + home zip set → intendedPath
  */
@@ -36,7 +38,10 @@ export function resolveProtectedRedirect(
 ): string {
   const authRedirect = resolveAuthRedirect(intendedPath, signedIn)
   if (authRedirect !== null) return authRedirect
-  if (needsOnboarding(homeZipSet)) return ONBOARDING_PATH
+  // The onboarding bounce is for SIGNED-IN users only (V2 slice 5): a
+  // signed-out visitor on a public detail route must not detour through
+  // /onboarding — which itself bounces to /login (a redirect loop).
+  if (signedIn && needsOnboarding(homeZipSet)) return ONBOARDING_PATH
   return intendedPath
 }
 

@@ -3,12 +3,15 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { HostAvatar } from '../components/DropInCard'
 import { ReportDialog } from '../components/ReportDialog'
 import { useSessionContext } from '../components/SessionProvider'
+import { LOGIN_PATH } from '../lib/auth'
 import {
   addComment,
   deleteComment,
   getBlockState,
   getGoingCount,
   getPlaydateDetail,
+  getPublicPlaydateDetail,
+  getShareUrl,
   hasPinged,
   hideComment,
   listComments,
@@ -16,8 +19,14 @@ import {
 } from '../lib/db'
 import { isHiddenPost, toDuplicatePrefill } from '../lib/feed'
 import { canModerate } from '../lib/moderation'
-import { COMMENT_MAX_LENGTH, planCommentAction, validateCommentBody } from '../lib/trust'
-import type { CommentWithAuthor, PlaydateWithNeighborhood } from '../lib/types'
+import {
+  COMMENT_MAX_LENGTH,
+  PLAYDATE_PING_INTENT_KEY,
+  PLAYDATE_RETURN_KEY,
+  planCommentAction,
+  validateCommentBody,
+} from '../lib/trust'
+import type { CommentWithAuthor, PlaydateWithNeighborhood, PublicPlaydateDetail } from '../lib/types'
 
 type DetailState =
   | { status: 'loading' }
@@ -33,6 +42,12 @@ type DetailState =
       /** The comment thread (null = not loaded — 0013 not applied, section hidden). */
       comments: CommentWithAuthor[] | null
     }
+  /**
+   * V2 slice 5: the signed-out public surface (the get_public_playdate RPC
+   * payload — nothing beyond the pinned public fields). Rendered when the
+   * page loads without a session.
+   */
+  | { status: 'public'; detail: PublicPlaydateDetail }
 
 /**
  * /playdate/:id — a drop-in's full details (slice 4): title, place,
@@ -64,6 +79,18 @@ type DetailState =
  * The going_pings table (migration 0007) may not exist in the live project
  * until the orchestrator applies it — a failed count/ping load hides the
  * ping section instead of crashing the page (same discipline as slices 2–3).
+ *
+ * V2 slice 5 (ticket 05): signed-out visitors open this route and see the
+ * public surface ONLY (the get_public_playdate RPC, migration 0015 — post
+ * fields + neighborhood label + host handle/avatar + going count; comments
+ * stay auth-walled, /u/:handle is not linked, every action surface shows
+ * the sign-up prompt). "I'm coming" stores the return target + a ping
+ * intent in session storage and hops to /login; the app shell applies the
+ * return once the onboarding gate settles, and the ping is an explicit
+ * highlighted tap after the return (the zero-pressure soul — no silent
+ * auto-ping). The Share button (Web Share API + copy-link fallback) builds
+ * its URL from VITE_PUBLIC_BASE_URL, falling back to the window origin
+ * before deployment.
  */
 export function PlaydateDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -78,56 +105,100 @@ export function PlaydateDetailPage() {
   const [commentDraft, setCommentDraft] = useState('')
   const [commentBusy, setCommentBusy] = useState(false)
   const [commentError, setCommentError] = useState<string | null>(null)
+  // V2 slice 5: the share button (Web Share API where supported, the
+  // copy-link fallback otherwise) + its "Copied" confirmation.
+  const [shareBusy, setShareBusy] = useState(false)
+  const [shareCopied, setShareCopied] = useState(false)
+  // V2 slice 5 (the zero-pressure soul): true when the visitor returned
+  // from the /login hop intending to ping THIS post (the stored ping-intent
+  // flag) — the ping button highlights as "Tap to confirm you're coming";
+  // the ping itself is always an explicit tap, never a silent auto-ping.
+  const [pingIntent, setPingIntent] = useState(false)
 
   useEffect(() => {
-    if (sessionLoading || session === null || id === undefined || id === '') return
+    if (id === undefined || id === '') return
+    if (sessionLoading) return
     let cancelled = false
     setState({ status: 'loading' })
-    ;(async () => {
-      try {
-        const detail = await getPlaydateDetail(id)
-        if (cancelled) return
-        if (detail === null) {
-          setState({ status: 'not-found' })
-          return
+    if (session === null) {
+      // V2 slice 5: the signed-out public surface — the SECURITY DEFINER
+      // RPC (0015). A missing OR hidden post settles not-found (the
+      // function returns NULL for both — a hidden post's existence is not
+      // confirmed to a signed-out visitor). Pre-0015-apply the RPC errors
+      // (the function does not exist yet) — the error state, same
+      // DB-not-applied discipline as slices 2–4.
+      ;(async () => {
+        try {
+          const pub = await getPublicPlaydateDetail(id)
+          if (cancelled) return
+          setState(pub === null ? { status: 'not-found' } : { status: 'public', detail: pub })
+        } catch (err) {
+          if (cancelled) return
+          setState({
+            status: 'error',
+            message: err instanceof Error ? err.message : 'Could not load this drop-in.',
+          })
         }
-        // Slice 5: a moderator-hidden post (hidden_at set) renders the
-        // hidden state, never the content — the client-side check is the
-        // detail-path equivalent of the feed's DB-level .is('hidden_at',
-        // null) filter (same discipline as the slice-4 block check above).
-        if (isHiddenPost(detail)) {
-          setState({ status: 'hidden' })
-          return
+      })()
+    } else {
+      ;(async () => {
+        try {
+          const detail = await getPlaydateDetail(id)
+          if (cancelled) return
+          if (detail === null) {
+            setState({ status: 'not-found' })
+            return
+          }
+          // Slice 5: a moderator-hidden post (hidden_at set) renders the
+          // hidden state, never the content — the client-side check is the
+          // detail-path equivalent of the feed's DB-level .is('hidden_at',
+          // null) filter (same discipline as the slice-4 block check above).
+          if (isHiddenPost(detail)) {
+            setState({ status: 'hidden' })
+            return
+          }
+          if (await getBlockState(detail.host.id)) {
+            setState({ status: 'blocked', handle: detail.host.display_name })
+            return
+          }
+          // The ping + comments tables may not be applied yet (0007 / 0013):
+          // a failed load just hides that section, never the post itself.
+          const [count, going, comments] = await Promise.all([
+            getGoingCount(id).catch(() => null),
+            hasPinged(id).catch(() => false),
+            listComments(id).catch(() => null),
+          ])
+          if (cancelled) return
+          setState({ status: 'ready', detail, count, going, comments })
+        } catch (err) {
+          if (cancelled) return
+          setState({
+            status: 'error',
+            message: err instanceof Error ? err.message : 'Could not load this drop-in.',
+          })
         }
-        if (await getBlockState(detail.host.id)) {
-          setState({ status: 'blocked', handle: detail.host.display_name })
-          return
-        }
-        // The ping + comments tables may not be applied yet (0007 / 0013):
-        // a failed load just hides that section, never the post itself.
-        const [count, going, comments] = await Promise.all([
-          getGoingCount(id).catch(() => null),
-          hasPinged(id).catch(() => false),
-          listComments(id).catch(() => null),
-        ])
-        if (cancelled) return
-        setState({ status: 'ready', detail, count, going, comments })
-      } catch (err) {
-        if (cancelled) return
-        setState({
-          status: 'error',
-          message: err instanceof Error ? err.message : 'Could not load this drop-in.',
-        })
-      }
-    })()
+      })()
+    }
     return () => {
       cancelled = true
     }
   }, [id, session, sessionLoading])
 
+  // V2 slice 5: the ping-intent flag (the stored "I'm coming" target from
+  // the signed-out view). It highlights the ping button for THIS post only;
+  // handlePingToggle clears it (the explicit tap happened).
+  useEffect(() => {
+    if (id === undefined || id === '') return
+    setPingIntent(window.sessionStorage.getItem(PLAYDATE_PING_INTENT_KEY) === id)
+  }, [id])
+
   async function handlePingToggle() {
     if (state.status !== 'ready' || pingBusy) return
     const detail = state.detail
+    // V2 slice 5: the explicit tap happened — clear the stored ping intent
+    // (the "Tap to confirm" highlight was its whole job).
+    window.sessionStorage.removeItem(PLAYDATE_PING_INTENT_KEY)
+    setPingIntent(false)
     setPingBusy(true)
     setPingError(null)
     try {
@@ -138,6 +209,54 @@ export function PlaydateDetailPage() {
       setPingError(err instanceof Error ? err.message : 'Could not update your ping. Try again.')
     } finally {
       setPingBusy(false)
+    }
+  }
+
+  /**
+   * V2 slice 5 (the zero-pressure soul): the signed-out "I'm coming" tap.
+   * Store BOTH the return target (the app shell applies it once the
+   * onboarding gate has settled — a new signup goes through zip+radius
+   * first) and the ping intent (the button highlights on return), then
+   * hop to /login. The ping itself is NEVER issued here — it stays an
+   * explicit tap after the return (no silent auto-ping).
+   */
+  function handleJoinIn() {
+    if (state.status !== 'public') return
+    const detail = state.detail
+    window.sessionStorage.setItem(PLAYDATE_RETURN_KEY, `/playdate/${detail.id}`)
+    window.sessionStorage.setItem(PLAYDATE_PING_INTENT_KEY, detail.id)
+    navigate(LOGIN_PATH)
+  }
+
+  /**
+   * V2 slice 5: Share — the Web Share API where supported, otherwise the
+   * copy-link fallback (clipboard API + textarea fallback) with the
+   * "Copied" confirmation. The URL is the pure buildShareUrl (db.getShareUrl:
+   * VITE_PUBLIC_BASE_URL, or the window origin before deployment).
+   */
+  async function handleShare() {
+    if (state.status !== 'ready' && state.status !== 'public') return
+    if (shareBusy) return
+    const detail = state.detail
+    const url = getShareUrl(detail.id)
+    setShareBusy(true)
+    setShareCopied(false)
+    try {
+      if (navigator.share !== undefined) {
+        try {
+          await navigator.share({ title: detail.title, url })
+          return
+        } catch {
+          // The share sheet was dismissed (or the platform rejected) —
+          // fall through to the copy fallback.
+        }
+      }
+      if (await copyToClipboard(url)) {
+        setShareCopied(true)
+        window.setTimeout(() => setShareCopied(false), 2000)
+      }
+    } finally {
+      setShareBusy(false)
     }
   }
 
@@ -213,12 +332,23 @@ export function PlaydateDetailPage() {
     }
   }
 
-  if (sessionLoading || session === null || state.status === 'loading') {
+  // V2 slice 5: signed-out visitors render the public view — the page is
+  // Loading only while its own loads are in flight (a stale 'ready' state
+  // with the session gone is one beat before the public load re-runs).
+  if (
+    sessionLoading ||
+    state.status === 'loading' ||
+    (session === null && state.status === 'ready')
+  ) {
     return (
       <div className="flex min-h-64 items-center justify-center text-sm text-slate-500">
         Loading…
       </div>
     )
+  }
+
+  if (state.status === 'public') {
+    return renderPublicView(state.detail)
   }
 
   if (state.status === 'error') {
@@ -279,10 +409,95 @@ export function PlaydateDetailPage() {
   }
 
   const { detail, count, going } = state
+  // Unreachable (the loading gate above renders Loading for a null session
+  // with a 'ready' state — 'ready' only ever settles from a signed-in
+  // load): an explicit guard so TS narrows session to non-null below.
+  if (session === null) {
+    return (
+      <div className="flex min-h-64 items-center justify-center text-sm text-slate-500">
+        Loading…
+      </div>
+    )
+  }
   const isHost = session.user.id === detail.host_profile_id
   // The moderator flag off the shared profile (same source the /mod route
   // guard reads): true shows each comment's Hide action (ticket 04).
   const isModerator = canModerate(profile)
+  // V2 slice 5 (the zero-pressure soul): the stored ping intent highlights
+  // the button as an EXPLICIT confirm — but only while the visitor is not
+  // already going (a re-tap would unping, so the label tracks the real
+  // state instead). Cleared by handlePingToggle (the tap happened).
+  const confirmPing = pingIntent && !going
+
+  /**
+   * V2 slice 5: the signed-out public surface — EXACTLY the pinned public
+   * fields (title, place, time window, age hint, details, neighborhood
+   * label, host handle + avatar, going count). Every action surface shows
+   * the sign-up prompt: the ping ("I'm coming" → the /login return path),
+   * the auth-walled comment thread (no content, no composer), and reporting
+   * (signed-in only — the reports RLS is the wall). The host line is plain
+   * text: /u/:handle stays auth-walled, so no link out of here.
+   */
+  function renderPublicView(d: PublicPlaydateDetail) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">{d.title}</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {d.place} · {d.neighborhood_name}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-sm text-slate-700">
+            {formatDay(d.starts_at)} · {formatTime(d.starts_at)}–{formatTime(d.ends_at)}
+          </p>
+          {d.age_hint !== null ? (
+            <p className="mt-1 text-sm text-slate-500">Best for {d.age_hint}</p>
+          ) : null}
+          {d.details !== null ? (
+            <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{d.details}</p>
+          ) : null}
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+            <span className="flex items-center gap-2 text-sm font-medium text-slate-700">
+              <PublicHostAvatar name={d.host_display_name} avatarUrl={d.host_avatar_url} />
+              <span>Hosted by @{d.host_display_name}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => void handleShare()}
+              disabled={shareBusy}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+            >
+              {shareCopied ? 'Copied' : 'Share'}
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm">
+          <button
+            type="button"
+            onClick={handleJoinIn}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+          >
+            I’m coming
+          </button>
+          <p className="mt-2 text-sm font-medium text-indigo-900">Sign up to join in</p>
+          <p className="mt-1 text-sm text-indigo-700">{goingCountLine(d.going_count)}</p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="text-base font-semibold text-slate-900">Comments</h2>
+          <p className="mt-2 text-sm text-slate-500">
+            Comments are for signed-in parents.{' '}
+            <Link to={LOGIN_PATH} className="font-medium text-indigo-600">
+              Sign up to join in
+            </Link>
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -311,13 +526,23 @@ export function PlaydateDetailPage() {
             <HostAvatar host={detail.host} />
             <span>Hosted by @{detail.host.display_name}</span>
           </Link>
-          <button
-            type="button"
-            onClick={() => setReporting(true)}
-            className="text-sm text-slate-400 transition-colors hover:text-slate-600"
-          >
-            Report
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void handleShare()}
+              disabled={shareBusy}
+              className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 disabled:opacity-50"
+            >
+              {shareCopied ? 'Copied' : 'Share'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setReporting(true)}
+              className="text-sm text-slate-400 transition-colors hover:text-slate-600"
+            >
+              Report
+            </button>
+          </div>
         </div>
       </div>
 
@@ -350,9 +575,18 @@ export function PlaydateDetailPage() {
             aria-pressed={going}
             disabled={pingBusy || count === null}
             onClick={() => void handlePingToggle()}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            autoFocus={confirmPing}
+            className={`rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50${
+              confirmPing ? ' ring-2 ring-indigo-400 ring-offset-2' : ''
+            }`}
           >
-            {pingBusy ? 'Updating…' : going ? 'You’re going' : 'We’re going'}
+            {pingBusy
+              ? 'Updating…'
+              : confirmPing
+                ? 'Tap to confirm you’re coming'
+                : going
+                  ? 'You’re going'
+                  : 'We’re going'}
           </button>
           {count !== null ? (
             <p className="mt-2 text-sm text-slate-500">{goingCountLine(count)}</p>
@@ -516,4 +750,59 @@ function goingCountLine(count: number): string {
 function hostGoingCountLine(count: number): string {
   if (count === 0) return 'No one has pinged yet'
   return `${count} ${count === 1 ? 'family' : 'families'} going`
+}
+
+/**
+ * V2 slice 5: the 40px round host avatar for the SIGNED-OUT public view —
+ * the HostAvatar shape without the profile row (the public surface carries
+ * only the host's display_name + avatar_url; no host.id crosses to anon).
+ */
+function PublicHostAvatar({ name, avatarUrl }: { name: string; avatarUrl: string | null }) {
+  return avatarUrl !== null && avatarUrl !== '' ? (
+    <img
+      src={avatarUrl}
+      alt=""
+      className="h-10 w-10 shrink-0 rounded-full object-cover"
+    />
+  ) : (
+    <span
+      aria-hidden
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-500"
+    >
+      {(name.charAt(0) || '?').toUpperCase()}
+    </span>
+  )
+}
+
+/**
+ * V2 slice 5: the copy-link fallback (the Share button's fallback path when
+ * the Web Share API is absent or the sheet is dismissed): the async
+ * clipboard API first, then the classic textarea + execCommand fallback.
+ * Returns whether the text actually landed in the clipboard.
+ */
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard !== undefined) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // Insecure context / permission denied — fall through to the
+    // textarea path below.
+  }
+  const area = document.createElement('textarea')
+  area.value = text
+  area.setAttribute('readonly', '')
+  area.style.position = 'fixed'
+  area.style.opacity = '0'
+  document.body.appendChild(area)
+  area.select()
+  let ok = false
+  try {
+    ok = document.execCommand('copy')
+  } catch {
+    ok = false
+  }
+  document.body.removeChild(area)
+  return ok
 }

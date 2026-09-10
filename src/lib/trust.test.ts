@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   COMMENT_MAX_LENGTH,
+  buildShareUrl,
   isHostBlocked,
+  isPlaydateReturnTarget,
   issueReportInsert,
   planCommentAction,
   planPing,
@@ -313,5 +315,45 @@ describe('validateCommentBody (empty + 500-char cap, ticket 04)', () => {
 
   it('rejects a body over the cap', () => {
     expect(validateCommentBody('x'.repeat(COMMENT_MAX_LENGTH + 1))).not.toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// V2 slice 5 (ticket 05, share + public event view): the pure seam.
+
+describe('buildShareUrl (VITE_PUBLIC_BASE_URL + the origin fallback, ticket 05)', () => {
+  it('uses the base URL when set (deployment, DECISION 3)', () => {
+    expect(buildShareUrl('pd-1', 'https://playdate.example', 'http://localhost:5173')).toBe(
+      'https://playdate.example/playdate/pd-1',
+    )
+  })
+
+  it('falls back to the window origin when the base URL is empty (placeholder-safe)', () => {
+    expect(buildShareUrl('pd-1', '', 'http://localhost:4173')).toBe(
+      'http://localhost:4173/playdate/pd-1',
+    )
+  })
+
+  it('ignores a whitespace-only base URL (the env var can be set-but-empty)', () => {
+    expect(buildShareUrl('pd-1', '  ', 'https://playdate.example')).toBe(
+      'https://playdate.example/playdate/pd-1',
+    )
+  })
+})
+
+describe('isPlaydateReturnTarget (the stored "I\'m coming" return target)', () => {
+  it('accepts exactly /playdate/<id>', () => {
+    expect(isPlaydateReturnTarget('/playdate/pd-1')).toBe(true)
+    expect(isPlaydateReturnTarget('/playdate/abc-123')).toBe(true)
+  })
+
+  it('rejects everything else (a tampered value is ignored, never navigated to)', () => {
+    expect(isPlaydateReturnTarget(null)).toBe(false)
+    expect(isPlaydateReturnTarget('')).toBe(false)
+    expect(isPlaydateReturnTarget('/playdate/')).toBe(false)
+    expect(isPlaydateReturnTarget('/playdate/abc-123/')).toBe(false)
+    expect(isPlaydateReturnTarget('/playdate/a/b')).toBe(false)
+    expect(isPlaydateReturnTarget('/profile')).toBe(false)
+    expect(isPlaydateReturnTarget('javascript:alert(1)')).toBe(false)
   })
 })

@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router'
 import { SessionProvider, useSessionContext } from './components/SessionProvider'
 import { signOutUser } from './lib/db'
@@ -18,6 +19,7 @@ import { OnboardingPage } from './pages/OnboardingPage'
 import { PlaydateDetailPage } from './pages/PlaydateDetailPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { UserPage } from './pages/UserPage'
+import { PLAYDATE_RETURN_KEY, isPlaydateReturnTarget } from './lib/trust'
 import type { DuplicatePrefill } from './lib/types'
 
 /** The /mod route path (moderator tools, slice 5). */
@@ -32,6 +34,14 @@ const MOD_PATH = '/mod'
  * so a signed-in, zipped user cold-loading a route is never bounced
  * through /onboarding → / and loses the requested route. The gate decision
  * itself lives in lib/onboarding.ts (resolveOnboardingGate, unit-tested).
+ *
+ * V2 slice 5 (ticket 05): /playdate/:id is the ONE public route — a
+ * signed-out visitor may open a drop-in's public surface (the page itself
+ * renders it; resolveAuthRedirect allows the path, the onboarding bounce
+ * is signed-in-only). The signed-out "I'm coming" flow stores a return
+ * target in session storage before the /login hop; this shell applies it
+ * only once the gate has settled ('pass' — after a new signup's
+ * /onboarding step, never during the ticket-06 loading state).
  *
  * Two slice-5 gates sit on top: a banned user (profile.banned_at set) is
  * rendered the suspended screen instead of any route (no app access), and
@@ -55,6 +65,19 @@ function ProtectedShell() {
     homeZipSet,
     suspended,
   })
+
+  // V2 slice 5: the signed-out "I'm coming" return target (stored in
+  // session storage BEFORE the /login hop by the public detail page; the
+  // keys + validator live in lib/trust.ts). This effect only BOOKS THE
+  // CLEANUP — it clears the one-shot key when the user lands on the target
+  // (the Navigate below does the hop; clearing here, not there, keeps the
+  // render pure and makes a re-render never re-apply).
+  useEffect(() => {
+    const stored = window.sessionStorage.getItem(PLAYDATE_RETURN_KEY)
+    if (stored !== null && stored === pathname) {
+      window.sessionStorage.removeItem(PLAYDATE_RETURN_KEY)
+    }
+  }, [pathname])
 
   // The banned-session gate (slice 5): useSession already signed the user
   // out. Render the suspended screen instead of any route — including the
@@ -91,6 +114,23 @@ function ProtectedShell() {
     return <Navigate to={HOME_PATH} replace />
   }
 
+  // V2 slice 5: apply the signed-out "I'm coming" return target — ONLY
+  // once the gate has SETTLED ('pass'), so a new signup's /onboarding
+  // step (the 'onboard' redirect) and the ticket-06 'loading' state are
+  // never navigated past (the pinned decision: the return lands AFTER the
+  // onboarding gate settles, with the ping still an explicit tap). The
+  // target is validated (isPlaydateReturnTarget — a tampered value is
+  // ignored, never navigated to); the effect above clears the one-shot
+  // key on landing.
+  const storedReturn = gate === 'pass' ? window.sessionStorage.getItem(PLAYDATE_RETURN_KEY) : null
+  if (
+    storedReturn !== null &&
+    isPlaydateReturnTarget(storedReturn) &&
+    storedReturn !== pathname
+  ) {
+    return <Navigate to={storedReturn} replace />
+  }
+
   const signedIn = session !== null
   const redirect =
     pathname === ONBOARDING_PATH
@@ -114,29 +154,44 @@ function ProtectedShell() {
                 @{profile.display_name}
               </Link>
             ) : null}
-            <button
-              type="button"
-              className="text-sm text-slate-500"
-              onClick={() => void signOutUser()}
-            >
-              Sign out
-            </button>
+            {session !== null ? (
+              <button
+                type="button"
+                className="text-sm text-slate-500"
+                onClick={() => void signOutUser()}
+              >
+                Sign out
+              </button>
+            ) : (
+              // V2 slice 5: the only route a signed-out visitor renders is
+              // the public detail page — a "Sign in" entry point instead of
+              // a sign-out control.
+              <Link to="/login" className="text-sm font-medium text-indigo-600">
+                Sign in
+              </Link>
+            )}
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-md px-4 py-4 pb-24">
+      <main
+        className={`mx-auto max-w-md px-4 py-4 ${session !== null ? 'pb-24' : 'pb-8'}`}
+      >
         <Outlet />
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-md">
-          <NavTab to="/" label="Today" />
-          <NavTab to="/browse" label="Browse" />
-          <NavTab to="/new" label="Post" />
-          <NavTab to="/profile" label="Profile" />
-        </div>
-      </nav>
+      {/* V2 slice 5: the bottom nav is app chrome — signed-out visitors
+        (public detail page only) see the sign-up CTAs in the page instead. */}
+      {session !== null ? (
+        <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white">
+          <div className="mx-auto flex max-w-md">
+            <NavTab to="/" label="Today" />
+            <NavTab to="/browse" label="Browse" />
+            <NavTab to="/new" label="Post" />
+            <NavTab to="/profile" label="Profile" />
+          </div>
+        </nav>
+      ) : null}
     </div>
   )
 }

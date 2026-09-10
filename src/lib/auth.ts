@@ -10,17 +10,30 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 export const LOGIN_PATH = '/login'
 
 /**
+ * A signed-out visitor may view ONE drop-in's public surface (V2 slice 5,
+ * ticket 05): /playdate/:id is the only public app route (the post's
+ * content, nothing more — the /u/:handle and comments routes stay
+ * auth-walled, the profiles table has no anon policy).
+ */
+export function isPublicDetailPath(pathname: string): boolean {
+  return /^\/playdate\/[^/]+\/?$/.test(pathname)
+}
+
+/**
  * Decide where the given pathname should send a user, or null if the route
  * may render as-is.
  *
  * - signed in: allow everything, except bounce signed-in users off /login to /
- * - signed out: allow only the public auth page, everything else → /login
+ * - signed out: allow the public auth page + one drop-in's public surface
+ *   (V2 slice 5), everything else → /login
  */
 export function resolveAuthRedirect(pathname: string, signedIn: boolean): string | null {
   if (signedIn) {
     return pathname === LOGIN_PATH ? '/' : null
   }
-  return pathname === LOGIN_PATH ? null : LOGIN_PATH
+  if (pathname === LOGIN_PATH) return null
+  if (isPublicDetailPath(pathname)) return null
+  return LOGIN_PATH
 }
 
 /**

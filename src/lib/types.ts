@@ -199,3 +199,26 @@ export interface DuplicatePrefill {
   /** Carried over from the source post's (nullable) details; '' = none. */
   details: string
 }
+
+/**
+ * The signed-out public surface for one drop-in (V2 slice 5, ticket 05,
+ * migration 0015): EXACTLY what the get_public_playdate RPC returns — the
+ * post's public fields + the neighborhood display label + the host's
+ * handle + avatar + the going count (a count, never the per-person rows).
+ * A missing OR hidden post yields null (not-found — a hidden post's
+ * existence is not confirmed to a signed-out visitor). No other profile,
+ * comment, or ping data crosses to anon (the privacy pin, plan-v2).
+ */
+export interface PublicPlaydateDetail {
+  id: string
+  title: string
+  place: string
+  starts_at: string
+  ends_at: string
+  age_hint: string | null
+  details: string | null
+  neighborhood_name: string
+  host_display_name: string
+  host_avatar_url: string | null
+  going_count: number
+}

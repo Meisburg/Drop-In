@@ -211,3 +211,43 @@ export function validateCommentBody(body: string): string | null {
   }
   return null
 }
+
+// ---------------------------------------------------------------------------
+// V2 slice 5 (ticket 05, share + public event view): the pure seam.
+
+/**
+ * The share URL for a drop-in (ticket 05): `${baseUrl}/playdate/<id>` when
+ * baseUrl (VITE_PUBLIC_BASE_URL) is set — deployment, DECISION 3 —
+ * otherwise the window origin (placeholder-safe before deployment: the
+ * dev/preview origin is the fallback). Pure so it is unit-testable.
+ */
+export function buildShareUrl(playdateId: string, baseUrl: string, origin: string): string {
+  const base = baseUrl.trim()
+  return `${base !== '' ? base : origin}/playdate/${playdateId}`
+}
+
+/**
+ * Session-storage key for the signed-out "I'm coming" return target
+ * (ticket 05 decision 4): the detail path stored BEFORE the /login hop;
+ * the app shell applies it only once the onboarding gate has settled.
+ */
+export const PLAYDATE_RETURN_KEY = 'playdate-return-target'
+
+/**
+ * Session-storage key for the ping intent (ticket 05 decision 4, the
+ * zero-pressure soul): the playdate id whose ping the returned visitor
+ * must EXPLICITLY confirm (the highlighted "Tap to confirm" button) —
+ * never a silent auto-ping.
+ */
+export const PLAYDATE_PING_INTENT_KEY = 'playdate-ping-intent'
+
+/**
+ * Whether a stored value is a valid playdate return target (the shell
+ * applies ONLY these — a tampered or stale value is ignored, never
+ * navigated to): exactly `/playdate/<id>` (a single non-empty segment).
+ */
+export function isPlaydateReturnTarget(stored: string | null): boolean {
+  if (stored === null) return false
+  const rest = stored.slice('/playdate/'.length)
+  return stored.startsWith('/playdate/') && rest.length > 0 && !rest.includes('/')
+}

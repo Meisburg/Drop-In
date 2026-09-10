@@ -10,6 +10,7 @@ import type {
   PlaydateWithNeighborhood,
   Profile,
   ProfileWithKids,
+  PublicPlaydateDetail,
   Report,
 } from './types'
 import {
@@ -23,6 +24,7 @@ import {
   type ZipCoords,
 } from './feed'
 import {
+  buildShareUrl,
   issueReportInsert,
   togglePingWithClient,
   validateCommentBody,
@@ -585,6 +587,38 @@ export async function getPlaydateDetail(id: string): Promise<PlaydateWithNeighbo
     .maybeSingle()
   if (error) throw error
   return (data as unknown as PlaydateWithNeighborhood | null) ?? null
+}
+
+/**
+ * The signed-out public surface for one drop-in (V2 slice 5, ticket 05,
+ * migration 0015): the SECURITY DEFINER get_public_playdate RPC — the
+ * post's public fields + neighborhood label + host handle/avatar + going
+ * count, and NOTHING else (no comments, no ping rows, no profile columns
+ * beyond the pinned two). Null when the post is missing OR hidden — a
+ * hidden post's existence is never confirmed to a signed-out visitor.
+ *
+ * No FK embeds on this path (the function projects the joins server-side),
+ * so there is nothing to pin (the PGRST201 discipline covers the existing
+ * embeds, which this slice does not touch). Pre-0015-apply the RPC 404s
+ * (the function does not exist yet) — the detail page's public load settles
+ * its error state, same DB-not-applied discipline as slices 2–4.
+ */
+export async function getPublicPlaydateDetail(id: string): Promise<PublicPlaydateDetail | null> {
+  const { data, error } = await supabase.rpc('get_public_playdate', { p_id: id })
+  if (error) throw error
+  return (data as unknown as PublicPlaydateDetail | null) ?? null
+}
+
+/**
+ * The share URL for a drop-in (V2 slice 5, ticket 05):
+ * VITE_PUBLIC_BASE_URL when set (deployment, DECISION 3), otherwise the
+ * window origin — placeholder-safe before deployment. The pure buildShareUrl
+ * decides the fallback (unit-tested in trust.test.ts); this is the
+ * Supabase/env-facing wrapper (the same injected-value seam the RPC above
+ * uses for its id).
+ */
+export function getShareUrl(playdateId: string): string {
+  return buildShareUrl(playdateId, import.meta.env.VITE_PUBLIC_BASE_URL ?? '', window.location.origin)
 }
 
 /**
