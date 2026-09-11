@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
-import type { ChangeEvent } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router'
 import { useSessionContext } from '../components/SessionProvider'
 import {
   addKid,
   BIO_MAX_LENGTH,
+  createProfile,
+  HandleTakenError,
   loadZipCodes,
   MAX_KIDS_PER_PROFILE,
   updateBio,
@@ -14,6 +16,7 @@ import {
   validateKid,
 } from '../lib/db'
 import { DEFAULT_RADIUS_MILES, RADIUS_MILES_OPTIONS, validateHomeZip } from '../lib/feed'
+import { suggestedHandle } from '../lib/oauth'
 import { resolveOnboardingRedirect } from '../lib/onboarding'
 
 /**
@@ -34,7 +37,21 @@ import { resolveOnboardingRedirect } from '../lib/onboarding'
  */
 export function OnboardingPage() {
   const navigate = useNavigate()
-  const { session, loading, homeZipSet, refresh } = useSessionContext()
+  const { session, loading, profile, homeZipSet, refresh } = useSessionContext()
+
+  // V4 slice 4 — the handle step (social sign-in only).
+  const suggested = suggestedHandle(
+    session?.user.user_metadata ?? null,
+    session?.user.email ?? null,
+  )
+  const [handle, setHandle] = useState('')
+  const [handleTouched, setHandleTouched] = useState(false)
+  const [handleError, setHandleError] = useState<string | null>(null)
+  const [handleBusy, setHandleBusy] = useState(false)
+  // The provider's name is a SUGGESTION, not a value: it stays until the user
+  // types, and the profiles_display_name_key constraint is what decides
+  // whether a handle is actually available.
+  const handleValue = handleTouched ? handle : suggested
 
   const [knownZips, setKnownZips] = useState<ReadonlySet<string> | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -202,6 +219,85 @@ export function OnboardingPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  /**
+   * Create the profiles row for a first-time social user. The email path does
+   * this on /login; an OAuth user comes back with a session and no row, and
+   * every write on this page (and everywhere else) assumes the row exists.
+   * refresh() re-reads the profile, so the location step below renders next.
+   */
+  async function handleCreateProfile(e: FormEvent) {
+    e.preventDefault()
+    const name = handleValue.trim()
+    if (name.length === 0) {
+      setHandleError('Please enter a display name.')
+      return
+    }
+    setHandleBusy(true)
+    setHandleError(null)
+    try {
+      await createProfile(name)
+      await refresh()
+    } catch (err) {
+      setHandleError(
+        err instanceof HandleTakenError
+          ? `“${name}” is already taken — pick a different display name.`
+          : err instanceof Error
+            ? err.message
+            : 'Could not save your display name. Try again.',
+      )
+    } finally {
+      setHandleBusy(false)
+    }
+  }
+
+  // V4 slice 4: no profiles row yet (a first-time social sign-in) → the handle
+  // step comes FIRST; the location step below can only write to an existing row.
+  if (profile === null) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Pick your display name</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            This is your handle — how other parents see you. It isn’t your email, and you can
+            change it later in your profile.
+          </p>
+        </div>
+        <form
+          className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+          onSubmit={(e) => void handleCreateProfile(e)}
+        >
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-slate-700">Display name</span>
+            <input
+              className={
+                'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                (handleError !== null ? 'border-red-400' : 'border-slate-300')
+              }
+              value={handleValue}
+              onChange={(e) => {
+                setHandle(e.target.value)
+                setHandleTouched(true)
+                setHandleError(null)
+              }}
+              placeholder="e.g. Sam at Green Lake"
+              required
+              maxLength={40}
+              autoComplete="nickname"
+            />
+          </label>
+          {handleError ? <p className="text-sm text-red-600">{handleError}</p> : null}
+          <button
+            type="submit"
+            disabled={handleBusy}
+            className="rounded-lg bg-indigo-600 px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {handleBusy ? 'Please wait…' : 'Continue'}
+          </button>
+        </form>
+      </div>
+    )
   }
 
   if (loadError !== null) {

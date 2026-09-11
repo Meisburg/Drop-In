@@ -36,6 +36,7 @@ import {
   type ReportInsertPayload,
 } from './trust'
 import { issueModeratorUpdate, isProfileBanned } from './moderation'
+import { oauthRedirectTo, probeOAuthProvider, type OAuthProvider } from './oauth'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -227,6 +228,36 @@ export function useSession(): SessionState {
 
 export async function signOutUser(): Promise<void> {
   await supabase.auth.signOut()
+}
+
+/**
+ * Start a social sign-in round-trip (V4 slice 4). On success Supabase
+ * redirects the browser to the provider and this promise never settles in a
+ * meaningful way; an error means the provider could not be reached — most
+ * often because it is not enabled for this project yet (the console setup in
+ * docs/social-login-setup.md). The caller renders oauthErrorMessage(error)
+ * inline, so a not-yet-configured provider is a sentence, never a no-op.
+ *
+ * A first-time OAuth user comes back with a session but NO profiles row (the
+ * email path creates it on /login) — the shell's onboarding gate sends them
+ * to /onboarding, whose handle step collects the display name.
+ */
+export async function signInWithOAuthProvider(provider: OAuthProvider): Promise<void> {
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: {
+      redirectTo: oauthRedirectTo(window.location.origin),
+      // Take the URL instead of being navigated to it: a provider that is not
+      // enabled would otherwise drop the user on Supabase's raw JSON error
+      // page (see probeOAuthProvider).
+      skipBrowserRedirect: true,
+    },
+  })
+  if (error) throw error
+  if (!data?.url) throw new Error('Could not start sign-in. Try again.')
+  const blocked = await probeOAuthProvider(data.url)
+  if (blocked !== null) throw new Error(blocked)
+  window.location.assign(data.url)
 }
 
 /**

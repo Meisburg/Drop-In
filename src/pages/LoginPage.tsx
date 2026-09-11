@@ -4,7 +4,14 @@ import { Navigate, useNavigate } from 'react-router'
 import { DropInMark } from '../components/DropInMark'
 import { useSessionContext } from '../components/SessionProvider'
 import { LOGIN_PATH, resolveAuthRedirect } from '../lib/auth'
-import { createProfile, HandleTakenError, signOutUser, supabase } from '../lib/db'
+import {
+  createProfile,
+  HandleTakenError,
+  signInWithOAuthProvider,
+  signOutUser,
+  supabase,
+} from '../lib/db'
+import { OAUTH_PROVIDERS, oauthErrorMessage, type OAuthProvider } from '../lib/oauth'
 
 /**
  * Login + signup. Signup collects display_name (the persistent public
@@ -102,6 +109,30 @@ export function LoginPage() {
     }
   }
 
+  /**
+   * V4 slice 4: hand the browser to the provider. A provider that is not
+   * enabled yet (the console setup in docs/social-login-setup.md) answers with
+   * "Unsupported provider: provider is not enabled" — surfaced inline as a
+   * sentence, never swallowed.
+   */
+  async function handleOAuth(provider: OAuthProvider) {
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      await signInWithOAuthProvider(provider)
+    } catch (err) {
+      setError(
+        oauthErrorMessage(
+          provider,
+          err instanceof Error ? err.message : 'Could not start sign-in.',
+        ),
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const inputClasses =
     'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200'
 
@@ -126,7 +157,30 @@ export function LoginPage() {
             : 'Pick a display name — it’s your persistent public handle.'}
         </p>
 
-        <form className="mt-4 flex flex-col gap-3" onSubmit={(e) => void handleSubmit(e)}>
+        {/* V4 slice 4: social sign-in first — it is one tap, and it is what a
+            parent arriving from a shared link will reach for. The email form
+            stays below as the fallback that always works. */}
+        <div className="mt-4 flex flex-col gap-2">
+          {OAUTH_PROVIDERS.map((provider) => (
+            <button
+              key={provider.id}
+              type="button"
+              disabled={busy}
+              onClick={() => void handleOAuth(provider.id)}
+              className="flex min-h-11 w-full items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 disabled:opacity-50"
+            >
+              {provider.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="my-4 flex items-center gap-3 text-xs text-slate-400">
+          <span className="h-px flex-1 bg-slate-200" />
+          or
+          <span className="h-px flex-1 bg-slate-200" />
+        </div>
+
+        <form className="flex flex-col gap-3" onSubmit={(e) => void handleSubmit(e)}>
           {mode === 'signup' ? (
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-slate-700">Display name</span>
