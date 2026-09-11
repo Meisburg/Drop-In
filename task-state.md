@@ -6,8 +6,29 @@
 ## Current position
 
 - **Phase:** V3 PLAN COMPLETE — all 10 slices + tickets 01-10 closed; 0025 (guest list) applied live 2026-09-11 and verified (coordinator-verifier finish after the headless run died at its .env read). REMAINING HUMAN ITEMS CLOSED 2026-09-11 by Hermes coordinator: (1) marker sweep — 173 e2e users + opsmoke.test deleted via dashboard SQL API (safety gate: founder profiles verified outside the set; child rows scoped to markers; FINAL live DB: 2 auth users [jonmeisburg, nicolemeisburg], 2 profiles, 2 playdates [Greenlake, both Jon's]; remaining ping/comment/memberships belong to Jon+Nicole — kept); (2) founder-flag SQL — already applied (profiles.moderators=true on 'Jon Meisburg' verified pre-sweep, no action needed). V3 FULLY CLOSED.
-- **Active slice:** none.
-- **Next action:** next planning round (beta or V4) is the human's call; no pending DB work.
+- **Active slice:** V4 slice 3 (splash screen). Slices 1–2 are committed; slice 4 (social login) is blocked on human-owned OAuth credentials.
+- **Next action:** build the splash screen (slice 3), then hand the human the Google/Facebook console checklist for slice 4.
+
+## V4 — "Drop In" mobile conversion (opened 2026-09-11)
+
+Plan: `plan-v4.md`. Human request (voice, 2026-09-11): make it feel like a phone
+app for Android + iOS, rename Playdate → **Drop In**, add a splash screen, add
+social login.
+
+| Slice | State | Evidence |
+|---|---|---|
+| V4.1 mobile polish | complete | `483b270`; build exit 0, 253/253 unit; `scripts/mobile-audit.mjs` green at 320/375/390/430px (no overflow, no <16px text control, no <44px target) — the audit found real defects on its first run (32px card toggle + steppers, 42px detail actions, 28px header links), all fixed |
+| V4.2 rename + logo | complete | `5a97eef`; manifest + <title> + header now "Drop In"; `DropInMark` inline SVG + `assets/drop-in-icon.svg` source + `scripts/build-icons.sh` (favicon, apple-touch 180, 192, 512, maskable 512); 253/253 unit. Found by looking at the real page: **/login renders outside the app shell and had NO page container** — the card ran edge-to-edge with zero padding — now a padded, centered, safe-area-aware screen with the brand mark (and no stray "Sign out") |
+| V4.2b bug fix | complete | `6e0530a`; a stale/mistyped `/playdate/<id>` link rendered a **phantom drop-in** — the public RPC answers a missing id with an all-null row over HTTP 200 (verified live), so `?? null` never fired and the page showed an epoch date + "null families going". `normalizePublicPlaydate` pure seam + 4 tests (257/257) |
+| V4.3 splash screen | pending | — |
+| V4.4 social login | blocked (human) | needs Google + Facebook OAuth clients and the Supabase provider config; client work not started |
+
+**Decisions still open (human):** D1 rename the share URL `/playdate/:id` →
+`/dropin/:id`? (default: keep — old links stay valid). D2 native store apps via
+Capacitor, or installable PWA only? (default: PWA for V4). D3 keep Facebook
+alongside Google? (default: build both, ship Google first).
+
+**No DB migrations in V4.1–V4.3.** Live DB untouched since the 2026-09-11 sweep.
 
 ## Tooling note (2026-09-09)
 
