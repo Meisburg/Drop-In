@@ -1240,7 +1240,14 @@ export function PlaydateDetailPage() {
             disabled={pingBusy || count === null}
             onClick={() => void handlePingToggle()}
             autoFocus={confirmPing}
-            className={`rounded-xl px-4 py-3 text-sm font-medium text-white disabled:opacity-50${
+            /* V6 (design jury item 5): the primary action leads by FILL and
+               WEIGHT, not by being taller. It was the same weight as its
+               outlined siblings and 2px shorter than them (they carry a
+               border), which is backwards: the most important control on the
+               page should not be the smallest one. The verb also now matches
+               the card's pill — "I'm going" / "Going" — instead of introducing
+               a third word for the same intent. */
+            className={`rounded-xl px-4 py-3 text-sm font-semibold text-white disabled:opacity-50${
               going ? ' bg-green-700' : ' bg-indigo-600'
             }${confirmPing ? ' ring-2 ring-indigo-400 ring-offset-2' : ''}`}
           >
@@ -1250,7 +1257,7 @@ export function PlaydateDetailPage() {
                 ? 'Tap to confirm you’re coming'
                 : going
                   ? '✓ Going'
-                  : 'Attend'}
+                  : 'I’m going'}
           </button>
           {count !== null ? (
             <p className="mt-2 text-sm text-slate-600">{goingCountLine(count)}</p>

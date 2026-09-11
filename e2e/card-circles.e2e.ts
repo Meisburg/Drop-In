@@ -112,9 +112,9 @@ test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no 
   // authoritative here because there is no concurrent toggle).
   const viewerCard = viewerPage.locator('a').filter({ hasText: title }).first()
   await expect(viewerCard).toBeVisible()
-  await viewerCard.getByRole('button', { name: 'Mark us as going' }).click()
+  await viewerCard.getByRole('button', { name: /^Say we’re going to/ }).click()
   await expect(
-    viewerCard.getByRole('button', { name: 'Going — tap to remove' }),
+    viewerCard.getByRole('button', { name: /^Going — tap to take it back$/ }),
   ).toBeVisible()
 
   // --- Deterministic gate: wait for the ping row to LAND before the host

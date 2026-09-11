@@ -100,9 +100,9 @@ test('the host retention loop: banner + "Hosted 1 drop-in" line (red by design p
 
   const viewerCard = viewerPage.locator('a').filter({ hasText: title }).first()
   await expect(viewerCard).toBeVisible()
-  await viewerCard.getByRole('button', { name: 'Mark us as going' }).click()
+  await viewerCard.getByRole('button', { name: /^Say we’re going to/ }).click()
   await expect(
-    viewerCard.getByRole('button', { name: 'Going — tap to remove' }),
+    viewerCard.getByRole('button', { name: /^Going — tap to take it back$/ }),
   ).toBeVisible()
 
   // --- Deterministic gate (the card-circles pattern): wait for the ping

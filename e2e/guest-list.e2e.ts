@@ -151,9 +151,9 @@ test('the host sees the named guest list on a post with 2 pings', async ({
     // toggle (the active state = the write round-tripped).
     const viewerCard = viewerPage.locator('a').filter({ hasText: title }).first()
     await expect(viewerCard).toBeVisible()
-    await viewerCard.getByRole('button', { name: 'Mark us as going' }).click()
+    await viewerCard.getByRole('button', { name: /^Say we’re going to/ }).click()
     await expect(
-      viewerCard.getByRole('button', { name: 'Going — tap to remove' }),
+      viewerCard.getByRole('button', { name: /^Going — tap to take it back$/ }),
     ).toBeVisible()
 
     // The DB gate (deterministic — the card's optimistic flip resolves
