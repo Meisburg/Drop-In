@@ -149,7 +149,7 @@ function ProtectedShell() {
         <div className="mx-auto flex max-w-md items-center justify-between px-4 py-1">
           <Link
             to="/"
-            className="flex min-h-11 items-center gap-2 text-lg font-bold text-indigo-600"
+            className="font-display flex min-h-11 items-center gap-2 text-lg font-bold text-indigo-600"
           >
             <DropInMark className="h-7 w-7" />
             Drop In

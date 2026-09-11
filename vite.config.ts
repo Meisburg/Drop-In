@@ -14,7 +14,14 @@ export default defineConfig({
       registerType: 'autoUpdate',
       // The iOS startup images are per-device and never fetched by the app
       // itself — precaching all 96KB of them would only slow the install.
-      workbox: { globIgnores: ['splash/**'] },
+      workbox: {
+        globIgnores: ['splash/**'],
+        // The default glob is js/css/html/ico/png/svg — without naming woff2 the
+        // display font would be missing from the precache and a cold OFFLINE
+        // load would fall back to system type (the shell itself still paints,
+        // which is exactly the kind of regression that hides).
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+      },
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Drop In',

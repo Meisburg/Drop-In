@@ -171,7 +171,7 @@ export function LoginPage() {
           mark lives here — and it is the first thing a new parent sees. */}
       <div className="flex flex-col items-center gap-2 pb-2">
         <DropInMark className="h-14 w-14 text-indigo-600" />
-        <p className="text-2xl font-bold text-indigo-600">Drop In</p>
+        <p className="font-display text-2xl font-bold text-indigo-600">Drop In</p>
         <p className="text-center text-sm text-slate-600">
           Drop-in playdates for Seattle families.
         </p>

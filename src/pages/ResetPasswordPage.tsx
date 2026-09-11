@@ -58,7 +58,7 @@ export function ResetPasswordPage() {
     <div className="pt-safe pb-safe mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-4 bg-slate-50 px-4">
       <div className="flex flex-col items-center gap-2 pb-2">
         <DropInMark className="h-14 w-14 text-indigo-600" />
-        <p className="text-2xl font-bold text-indigo-600">Drop In</p>
+        <p className="font-display text-2xl font-bold text-indigo-600">Drop In</p>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
