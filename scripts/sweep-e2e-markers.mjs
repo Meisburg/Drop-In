@@ -29,6 +29,11 @@ const page =
 if (page.url() === 'about:blank') {
   await page.goto('https://supabase.com/dashboard', { waitUntil: 'domcontentloaded' })
 }
+// The dashboard token has a 1-hour TTL and the page refreshes it on load, so a
+// token left over from an earlier run reads back as "JWT failed verification".
+// Reloading first makes the script work whenever Chrome is simply still open.
+await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {})
+await page.waitForTimeout(2500)
 const raw = await page.evaluate(() => window.localStorage.getItem('supabase.dashboard.auth.token'))
 await browser.close()
 
