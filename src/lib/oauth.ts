@@ -22,11 +22,28 @@ const PROVIDER_LABELS: Record<OAuthProvider, string> = {
   facebook: 'Facebook',
 }
 
-/** The providers offered on /login, in display order. */
-export const OAUTH_PROVIDERS: readonly OAuthProviderOption[] = [
-  { id: 'google', label: `Continue with ${PROVIDER_LABELS.google}` },
-  { id: 'facebook', label: `Continue with ${PROVIDER_LABELS.facebook}` },
-]
+const KNOWN_PROVIDERS: readonly OAuthProvider[] = ['google', 'facebook']
+
+/**
+ * Which providers this deployment actually offers (D3, decided 2026-09-11:
+ * ship Google, keep Facebook built but switched off). Driven by
+ * `VITE_OAUTH_PROVIDERS` so turning Facebook on later is a config change, not
+ * a code change — and so a button is never rendered for a provider the
+ * Supabase project does not have enabled.
+ *
+ * Unknown names are dropped rather than rendered; an empty or unset value
+ * falls back to Google, because a login screen with no way in is worse than a
+ * default.
+ */
+export function resolveOAuthProviders(raw: string | undefined): OAuthProviderOption[] {
+  const known: readonly string[] = KNOWN_PROVIDERS
+  const requested = (raw ?? '')
+    .split(',')
+    .map((name) => name.trim().toLowerCase())
+    .filter((name): name is OAuthProvider => known.includes(name))
+  const chosen: OAuthProvider[] = requested.length > 0 ? [...new Set(requested)] : ['google']
+  return chosen.map((id) => ({ id, label: `Continue with ${PROVIDER_LABELS[id]}` }))
+}
 
 /** The bare provider name, for messages ("Google sign-in isn't switched on"). */
 export function providerLabel(provider: OAuthProvider): string {

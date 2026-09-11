@@ -11,7 +11,10 @@ import {
   signOutUser,
   supabase,
 } from '../lib/db'
-import { OAUTH_PROVIDERS, oauthErrorMessage, type OAuthProvider } from '../lib/oauth'
+import { oauthErrorMessage, resolveOAuthProviders, type OAuthProvider } from '../lib/oauth'
+
+/** Which social buttons this deployment shows (VITE_OAUTH_PROVIDERS; Google by default). */
+const OAUTH_PROVIDERS = resolveOAuthProviders(import.meta.env.VITE_OAUTH_PROVIDERS)
 
 /**
  * Login + signup. Signup collects display_name (the persistent public

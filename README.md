@@ -50,6 +50,10 @@ catch are invisible in a desktop browser and in the unit tests.
   metadata is present, and a cold **offline** load still paints the app shell.
 - `bash scripts/build-icons.sh` / `node scripts/build-splash.mjs` —
   regenerate the app icons and the iOS startup images from their SVG sources.
+- `node scripts/sweep-e2e-markers.mjs <list|select|delete|verify>` — removes
+  the `e2e-*` accounts a Playwright run leaves in the live project. Needs the
+  CDP Chrome (`bash scripts/cdp-migration-tooling.sh`). `delete` refuses
+  unless the safety gate passes (no founder/moderator account in the set).
 
 ## Layout
 

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
-  OAUTH_PROVIDERS,
   oauthErrorMessage,
   oauthRedirectTo,
   probeOAuthProvider,
   providerLabel,
+  resolveOAuthProviders,
   suggestedHandle,
 } from './oauth'
 
@@ -68,13 +68,39 @@ describe('suggestedHandle', () => {
   })
 })
 
-describe('provider list', () => {
-  it('offers Google first, then Facebook, with human labels', () => {
-    expect(OAUTH_PROVIDERS.map((p) => p.id)).toEqual(['google', 'facebook'])
-    expect(OAUTH_PROVIDERS[0]?.label).toBe('Continue with Google')
+describe('resolveOAuthProviders', () => {
+  it('defaults to Google when the env value is unset or empty', () => {
+    expect(resolveOAuthProviders(undefined).map((p) => p.id)).toEqual(['google'])
+    expect(resolveOAuthProviders('').map((p) => p.id)).toEqual(['google'])
+    expect(resolveOAuthProviders('   ').map((p) => p.id)).toEqual(['google'])
   })
 
-  it('labels providers for messages', () => {
+  it('honours an explicit list, in the order given', () => {
+    expect(resolveOAuthProviders('google,facebook').map((p) => p.id)).toEqual([
+      'google',
+      'facebook',
+    ])
+    expect(resolveOAuthProviders('facebook').map((p) => p.id)).toEqual(['facebook'])
+  })
+
+  it('is case- and whitespace-tolerant and drops duplicates', () => {
+    expect(resolveOAuthProviders(' Google , google ,FACEBOOK ').map((p) => p.id)).toEqual([
+      'google',
+      'facebook',
+    ])
+  })
+
+  it('drops names it does not know rather than rendering a dead button', () => {
+    expect(resolveOAuthProviders('google,twitter,github').map((p) => p.id)).toEqual(['google'])
+    // ...but an all-unknown value still falls back to a usable default.
+    expect(resolveOAuthProviders('twitter').map((p) => p.id)).toEqual(['google'])
+  })
+
+  it('labels the buttons for humans', () => {
+    expect(resolveOAuthProviders('google,facebook').map((p) => p.label)).toEqual([
+      'Continue with Google',
+      'Continue with Facebook',
+    ])
     expect(providerLabel('facebook')).toBe('Facebook')
   })
 })

@@ -39,10 +39,28 @@ social login.
 | V4.4b signup regression fix | complete | found BY THE E2E GATE, not by review: the setup spec timed out waiting for "Set your location". `useSession` fetches the profile as soon as the session appears — for a brand-new account that is BEFORE the row exists, so it settles as null; LoginPage navigated with that stale null and the new handle step (profile === null) rendered a second name prompt for an email signup. Fix: await `refresh()` after `createProfile`, before navigating. **Full e2e 19/19 green** (was 1 failed / 18 not run) + build exit 0 + 275/275 unit. Marker family from the two runs: `e2e-1789148xxx` host (`b98e9ae8-23ee-44a9-a766-9b39849857f1`) + `e2e-v-1789148563-*` viewers — **sweep due** |
 | V4.4 social login | code complete; LIVE BLOCKED (human) | `19899d3`; 275/275 unit (18 new oauth tests). Live click against the real project proved the failure mode: an un-enabled provider answers 400+JSON instead of a 302, so the browser landed on Supabase's raw error page — `probeOAuthProvider` + `skipBrowserRedirect` now turn that into an inline sentence (verified live: "Google sign-in isn't switched on yet"). Handle step on /onboarding for first-time social users (session, no profiles row). Human checklist: `docs/social-login-setup.md` (Google Cloud + Meta + Supabase providers + redirect allowlist incl. the LAN dev URL) |
 
-**Decisions still open (human):** D1 rename the share URL `/playdate/:id` →
-`/dropin/:id`? (default: keep — old links stay valid). D2 native store apps via
-Capacitor, or installable PWA only? (default: PWA for V4). D3 keep Facebook
-alongside Google? (default: build both, ship Google first).
+**Decisions RESOLVED (human, 2026-09-11):**
+- **D1 — keep `/playdate/:id`.** Renaming buys nothing with no printed links and
+  would need a redirect layer; revisit at deploy time, where it is free (a new
+  domain is being introduced anyway and there is no legacy traffic to preserve).
+- **D2 — installable PWA, no store apps for V4.** The PWA already installs on
+  Android + iOS and the offline shell is verified. Apple's App Review Guideline
+  4.2 ("minimum functionality") is the rule that rejects thin website wrappers,
+  and iOS web push (16.4+, installed PWA) removes most of the reason to pay
+  $99/yr + $25. Capacitor is deferred until beta evidence says what is missing.
+  **Caveat: iOS web push has NOT been tested here.**
+- **D3 — Google only; Facebook built but switched OFF.** `/login` renders only
+  the providers listed in `VITE_OAUTH_PROVIDERS` (default `google`), so a button
+  is never shown for a provider the Supabase project has not enabled. Enabling
+  Facebook later = the console steps + one env value, no code change.
+
+**Marker sweep COMPLETE (2026-09-11, human go-ahead given):** 10 `e2e-*` accounts
+(the two V4 e2e runs) deleted via the dashboard SQL API — gate passed (0 founder
+overlap, all 10 profiles markers, zero child rows left; the specs had cleaned up
+after themselves). Live DB verified after: **2 auth users, 2 profiles, 2
+playdates, 0 e2e rows, founder moderator flag intact**. The sweep is now a
+repeatable, gated tool: `node scripts/sweep-e2e-markers.mjs <list|select|delete|verify>`
+(refuses to delete if any founder/moderator account is inside the set).
 
 **No DB migrations in V4.1–V4.3.** Live DB untouched since the 2026-09-11 sweep.
 

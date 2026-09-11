@@ -27,7 +27,19 @@ Project ref: `ayzvjwxbxyrcgyoeaxuk` (from `.env` → `VITE_SUPABASE_URL`).
    - Authorized JavaScript origins: not required.
 4. Copy the **Client ID** and **Client secret**.
 
-## 2. Facebook (≈20 minutes, optional — see D3 in plan-v4.md)
+## 2. Facebook (≈20 minutes, OPTIONAL — currently switched OFF)
+
+**Decision D3 (2026-09-11): ship Google only.** Facebook is fully built but the
+button is hidden by default, so you can skip this whole section and nothing is
+broken. To turn it on later:
+
+1. Do the steps below, then
+2. add `facebook` to `VITE_OAUTH_PROVIDERS` in `.env` (default: `google`)
+   and rebuild. The button appears only for providers this deployment lists —
+   a button for a provider that is switched off in Supabase can never sign
+   anyone in, which is why the two are kept in sync manually.
+
+### Facebook setup (only if you want it)
 
 1. https://developers.facebook.com → create an app → type **Consumer**.
 2. Add the **Facebook Login** product (Web).
