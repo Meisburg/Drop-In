@@ -21,7 +21,7 @@ import { OAUTH_PROVIDERS, oauthErrorMessage, type OAuthProvider } from '../lib/o
  * session already exist, so the retry re-runs profile creation only).
  */
 export function LoginPage() {
-  const { session, loading } = useSessionContext()
+  const { session, loading, refresh } = useSessionContext()
   const navigate = useNavigate()
 
   const [mode, setMode] = useState<'login' | 'signup'>('login')
@@ -100,6 +100,11 @@ export function LoginPage() {
         setAwaitingProfile(false)
         throw err
       }
+      // The shared session state fetched this user's profile BEFORE the row
+      // existed (a brand-new account settles as "no profile"), so re-read it
+      // now — otherwise the onboarding gate, and V4's handle step for
+      // social users, would see a stale null and ask for a name twice.
+      await refresh()
       setAwaitingProfile(false)
       navigate('/', { replace: true })
     } catch (err) {
