@@ -134,7 +134,7 @@ export function UserPage() {
     return (
       <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
         <p className="text-sm text-red-600">{state.message}</p>
-        <Link to="/" className="text-sm text-indigo-600">
+        <Link to="/" className="flex min-h-11 items-center text-sm text-indigo-600">
           Back to today
         </Link>
       </div>
@@ -150,7 +150,7 @@ export function UserPage() {
         <p className="text-sm text-slate-500">
           The handle may be a typo, or this family may not be on Drop In yet.
         </p>
-        <Link to="/" className="text-sm text-indigo-600">
+        <Link to="/" className="flex min-h-11 items-center text-sm text-indigo-600">
           Back to today
         </Link>
       </div>

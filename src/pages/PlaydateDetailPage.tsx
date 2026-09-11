@@ -688,7 +688,7 @@ export function PlaydateDetailPage() {
         <p className="text-xs text-slate-400">
           If you just signed up, the server setup may not be complete yet.
         </p>
-        <Link to="/" className="text-sm text-indigo-600">
+        <Link to="/" className="flex min-h-11 items-center text-sm text-indigo-600">
           Back to today
         </Link>
       </div>
@@ -700,7 +700,7 @@ export function PlaydateDetailPage() {
       <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
         <h1 className="text-xl font-semibold text-slate-900">We couldn’t find this drop-in</h1>
         <p className="text-sm text-slate-500">It may have been removed, or the link is a typo.</p>
-        <Link to="/" className="text-sm text-indigo-600">
+        <Link to="/" className="flex min-h-11 items-center text-sm text-indigo-600">
           Back to today
         </Link>
       </div>
@@ -714,7 +714,7 @@ export function PlaydateDetailPage() {
         <p className="text-sm text-slate-500">
           A moderator hid this post — it no longer shows up in feeds.
         </p>
-        <Link to="/" className="text-sm text-indigo-600">
+        <Link to="/" className="flex min-h-11 items-center text-sm text-indigo-600">
           Back to today
         </Link>
       </div>
@@ -730,7 +730,7 @@ export function PlaydateDetailPage() {
         </p>
         <Link
           to={`/u/${encodeURIComponent(state.handle)}`}
-          className="text-sm text-indigo-600"
+          className="flex min-h-11 items-center text-sm text-indigo-600"
         >
           View @{state.handle} to unblock
         </Link>

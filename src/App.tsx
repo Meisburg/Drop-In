@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router'
 import { DropInMark } from './components/DropInMark'
 import { SessionProvider, useSessionContext } from './components/SessionProvider'
+import { SplashScreen } from './components/SplashScreen'
 import { signOutUser } from './lib/db'
 import { canModerate } from './lib/moderation'
 import {
@@ -90,7 +91,7 @@ function ProtectedShell() {
         <p className="text-sm text-slate-500">
           Your account was suspended by a moderator.
         </p>
-        <Link to="/login" className="text-sm text-indigo-600">
+        <Link to="/login" className="flex min-h-11 items-center text-sm text-indigo-600">
           Sign in with a different account
         </Link>
       </div>
@@ -242,6 +243,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <SessionProvider>
+        {/* V4 slice 3: the cold-start splash sits ABOVE the routes so it covers
+            both the signed-out (login) and signed-in first paint. */}
+        <SplashScreen />
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route element={<ProtectedShell />}>

@@ -1,0 +1,71 @@
+import { useEffect, useState } from 'react'
+import { DropInMark } from './DropInMark'
+import { useSessionContext } from './SessionProvider'
+
+/**
+ * The cold-start splash (V4 slice 3) — two layers, deliberately:
+ *
+ *  1. `index.html` paints a static indigo splash inside #root, so the very
+ *     first frame (before the JS bundle has parsed) is already the brand
+ *     rather than a white flash. React clears that markup on mount.
+ *  2. This overlay continues from that exact frame — same colour, same mark,
+ *     same position — and decides when to get out of the way.
+ *
+ * Dismissal is "settled AND a floor, or a hard cap":
+ *  - the floor stops a fast session load from flashing the logo for 3 frames,
+ *  - the cap stops a slow network from holding the app hostage.
+ *
+ * It renders once per page load and is never re-shown on in-app navigation —
+ * that is what makes it feel like an app launch instead of a page transition.
+ */
+const MIN_VISIBLE_MS = 650
+const MAX_VISIBLE_MS = 2000
+const FADE_MS = 320
+
+export function SplashScreen() {
+  const { loading, profileLoading } = useSessionContext()
+  const [floorPassed, setFloorPassed] = useState(false)
+  const [capped, setCapped] = useState(false)
+  const [fading, setFading] = useState(false)
+  const [mounted, setMounted] = useState(true)
+
+  // Hand off from the static boot splash in index.html. React normally clears
+  // the container on mount, but removing it explicitly means the splash can
+  // never get stuck if that ever changes.
+  useEffect(() => {
+    document.getElementById('boot-splash')?.remove()
+  }, [])
+
+  useEffect(() => {
+    const floor = window.setTimeout(() => setFloorPassed(true), MIN_VISIBLE_MS)
+    const cap = window.setTimeout(() => setCapped(true), MAX_VISIBLE_MS)
+    return () => {
+      window.clearTimeout(floor)
+      window.clearTimeout(cap)
+    }
+  }, [])
+
+  const settled = !loading && !profileLoading
+  const done = capped || (settled && floorPassed)
+
+  useEffect(() => {
+    if (!done) return
+    setFading(true)
+    const unmount = window.setTimeout(() => setMounted(false), FADE_MS)
+    return () => window.clearTimeout(unmount)
+  }, [done])
+
+  if (!mounted) return null
+
+  return (
+    <div
+      aria-hidden="true"
+      data-testid="splash"
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-indigo-600 transition-opacity duration-300 motion-reduce:transition-none ${
+        fading ? 'pointer-events-none opacity-0' : 'opacity-100'
+      }`}
+    >
+      <DropInMark className="h-28 w-28 text-white" />
+    </div>
+  )
+}

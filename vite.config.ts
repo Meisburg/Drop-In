@@ -12,6 +12,9 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      // The iOS startup images are per-device and never fetched by the app
+      // itself — precaching all 96KB of them would only slow the install.
+      workbox: { globIgnores: ['splash/**'] },
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Drop In',
@@ -19,7 +22,9 @@ export default defineConfig({
         description:
           'Drop-in playdates for Seattle families — post a time and place, come by if you like.',
         theme_color: '#4f46e5',
-        background_color: '#ffffff',
+        // Matches the splash (index.html boot splash + SplashScreen) so
+        // Android's generated launch screen is the same brand frame.
+        background_color: '#4f46e5',
         display: 'standalone',
         start_url: '/',
         icons: [

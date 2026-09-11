@@ -10,10 +10,72 @@
       name="description"
       content="Drop In — drop-in playdates for Seattle families. Post a time and place; come by if you like."
     />
+    <!-- Installed-app behaviour (V4 slice 3): standalone launch on iOS, status
+         bar left to the system so the white header keeps readable text. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Drop In" />
+    <!-- iOS startup images (the native half of the splash). Regenerate with
+         scripts/build-splash.mjs — it prints these tags so the list can't drift. -->
+    <link
+      rel="apple-touch-startup-image"
+      href="/splash/1290x2796.png"
+      media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      href="/splash/1179x2556.png"
+      media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      href="/splash/1284x2778.png"
+      media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3)"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      href="/splash/1170x2532.png"
+      media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      href="/splash/1125x2436.png"
+      media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      href="/splash/828x1792.png"
+      media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2)"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      href="/splash/750x1334.png"
+      media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      href="/splash/1536x2048.png"
+      media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2)"
+    />
     <title>Drop In</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Static boot splash: the FIRST painted frame, before the JS bundle has
+           parsed — so a cold start is brand, never a white flash. SplashScreen
+           removes it on mount and continues from this exact frame. Keep the
+           colour in sync with bg-indigo-600 (#4f46e5). -->
+      <div
+        id="boot-splash"
+        style="position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #4f46e5"
+      >
+        <svg viewBox="0 0 64 64" width="112" height="112" aria-hidden="true">
+          <path d="M32 6 C32 6 19 25 19 34 a13 13 0 0 0 26 0 C45 25 32 6 32 6 Z" fill="#ffffff" />
+          <path d="M12 52 Q32 62 52 52" fill="none" stroke="#c7d2fe" stroke-width="5" stroke-linecap="round" />
+        </svg>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

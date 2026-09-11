@@ -97,7 +97,7 @@ export function ModPage() {
         <p className="text-sm text-slate-500">
           Moderator tools are only available to moderator-flagged accounts.
         </p>
-        <Link to="/" className="text-sm text-indigo-600">
+        <Link to="/" className="flex min-h-11 items-center text-sm text-indigo-600">
           Back to today
         </Link>
       </div>
