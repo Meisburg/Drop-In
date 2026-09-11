@@ -51,6 +51,20 @@ for (const [width, height] of VIEWPORTS) {
         const size = parseFloat(getComputedStyle(el).fontSize)
         if (size < 16) small.push(`${el.tagName.toLowerCase()}[${type ?? 'text'}] ${size}px`)
       }
+      // V6: nothing renders below 13px. First phone feedback was "the text is
+      // too small all over the place", and the scale fix is only real if it
+      // cannot silently regress.
+      const tinyText = []
+      const sizeHistogram = {}
+      for (const el of document.querySelectorAll('p, span, div, a, button, li, label, h1, h2, h3, strong')) {
+        const content = (el.textContent ?? '').trim()
+        // Leaf nodes only — a container inherits its children's text.
+        if (content.length === 0 || el.children.length > 0) continue
+        const size = parseFloat(getComputedStyle(el).fontSize)
+        sizeHistogram[size] = (sizeHistogram[size] ?? 0) + 1
+        if (size < 13) tinyText.push(`${el.tagName.toLowerCase()} "${content.slice(0, 24)}" ${size}px`)
+      }
+
       const smallTargets = []
       for (const el of document.querySelectorAll('button, a[href], label[for]')) {
         const rect = el.getBoundingClientRect()
@@ -66,6 +80,8 @@ for (const [width, height] of VIEWPORTS) {
         overflow: doc.scrollWidth - doc.clientWidth,
         small,
         smallTargets,
+        tinyText,
+        sizeHistogram,
       }
     })
 
@@ -73,6 +89,7 @@ for (const [width, height] of VIEWPORTS) {
     if (report.overflow > 1) problems.push(`overflow +${report.overflow}px`)
     if (report.small.length) problems.push(`<16px text: ${report.small.join(', ')}`)
     if (report.smallTargets.length) problems.push(`<44px targets: ${report.smallTargets.join(', ')}`)
+    if (report.tinyText.length) problems.push(`text below 13px: ${report.tinyText.join(', ')}`)
 
     if (problems.length) failures++
     console.log(

@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import type { ReactNode } from 'react'
 import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router'
 import { DropInMark } from './components/DropInMark'
 import { SessionProvider, useSessionContext } from './components/SessionProvider'
@@ -196,10 +197,10 @@ function ProtectedShell() {
       {session !== null ? (
         <nav className="pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white">
           <div className="mx-auto flex max-w-md">
-            <NavTab to="/" label="Nearby" />
-            <NavTab to="/browse" label="Browse" />
-            <NavTab to="/new" label="Post" />
-            <NavTab to="/profile" label="Profile" />
+            <NavTab to="/" label="Nearby" icon={<NavIcon path={NAV_ICONS.nearby} />} />
+            <NavTab to="/browse" label="Browse" icon={<NavIcon path={NAV_ICONS.browse} />} />
+            <NavTab to="/new" label="Post" icon={<NavIcon path={NAV_ICONS.post} />} />
+            <NavTab to="/profile" label="Profile" icon={<NavIcon path={NAV_ICONS.profile} />} />
           </div>
         </nav>
       ) : null}
@@ -228,17 +229,67 @@ function NewRoute() {
   return <NewPlaydatePage duplicate={duplicate} />
 }
 
-function NavTab({ to, label }: { to: string; label: string }) {
+/**
+ * One bottom-nav destination (V6).
+ *
+ * Two fixes from the first phone feedback, both about discoverability:
+ *  - icons above the labels, so the row reads as buttons rather than as words;
+ *  - a real ACTIVE state. The old className used Tailwind's `active:` variant,
+ *    which is the CSS :active (pressed) pseudo-class — it flashed on tap and
+ *    then forgot, so the tab you were on was never marked. NavLink's own
+ *    isActive is what we wanted all along.
+ *
+ * Labels drop to text-xs: with an icon carrying the shape, a 16px tab label
+ * would just make the bar tall.
+ */
+function NavTab({
+  to,
+  label,
+  icon,
+}: {
+  to: string
+  label: string
+  icon: ReactNode
+}) {
   return (
     <NavLink
       to={to}
       end={to === '/'}
-      className="flex-1 py-3 text-center text-sm font-medium text-slate-500 active:bg-indigo-50 active:text-indigo-600"
+      className={({ isActive }) =>
+        `flex min-h-14 flex-1 flex-col items-center justify-center gap-1 py-2 text-xs font-medium transition-colors ${
+          isActive ? 'text-indigo-600' : 'text-slate-500'
+        }`
+      }
     >
+      <span aria-hidden="true">{icon}</span>
       {label}
     </NavLink>
   )
 }
+
+/** Bottom-nav glyphs: 24px, stroked, currentColor — one visual family. */
+function NavIcon({ path }: { path: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-6 w-6"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d={path} />
+    </svg>
+  )
+}
+
+const NAV_ICONS = {
+  nearby: 'M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11Z M12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z',
+  browse: 'M4 6h16 M4 12h16 M4 18h16',
+  post: 'M12 5v14 M5 12h14',
+  profile: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z M5 20a7 7 0 0 1 14 0',
+} as const
 
 export default function App() {
   return (
