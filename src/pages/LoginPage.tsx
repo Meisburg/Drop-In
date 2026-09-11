@@ -179,7 +179,7 @@ export function LoginPage() {
           <button
             type="submit"
             disabled={busy}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-lg bg-indigo-600 px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
           >
             {busy
               ? 'Please wait…'
@@ -193,7 +193,7 @@ export function LoginPage() {
       <div className="flex items-center justify-between text-sm">
         <button
           type="button"
-          className="text-indigo-600"
+          className="py-3 text-indigo-600"
           onClick={() => {
             setMode(mode === 'login' ? 'signup' : 'login')
             setError(null)
@@ -205,7 +205,7 @@ export function LoginPage() {
         </button>
         <button
           type="button"
-          className="text-slate-500"
+          className="py-3 text-slate-500"
           onClick={() => void signOutUser()}
         >
           Sign out

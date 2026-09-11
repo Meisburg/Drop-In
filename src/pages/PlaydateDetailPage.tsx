@@ -879,7 +879,7 @@ export function PlaydateDetailPage() {
                 type="button"
                 onClick={() => void handleShare()}
                 disabled={shareBusy}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
               >
                 {shareCopied ? 'Copied' : 'Share'}
               </button>
@@ -891,7 +891,7 @@ export function PlaydateDetailPage() {
               <button
                 type="button"
                 onClick={handleDownloadIcs}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
               >
                 Add to calendar
               </button>
@@ -903,7 +903,7 @@ export function PlaydateDetailPage() {
           <button
             type="button"
             onClick={handleJoinIn}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+            className="rounded-lg bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
           >
             I’m coming
           </button>
@@ -1119,7 +1119,7 @@ export function PlaydateDetailPage() {
               onClick={() =>
                 navigate('/new', { state: { duplicate: toDuplicatePrefill(detail) } })
               }
-              className="rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
+              className="rounded-lg border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
             >
               Duplicate
             </button>
@@ -1148,8 +1148,8 @@ export function PlaydateDetailPage() {
                     onClick={() => void handleSetStatus(option.value)}
                     className={
                       active
-                        ? 'rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50'
-                        : 'rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 disabled:opacity-50'
+                        ? 'rounded-lg bg-indigo-600 px-3 py-3 text-sm font-medium text-white disabled:opacity-50'
+                        : 'rounded-lg border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 disabled:opacity-50'
                     }
                   >
                     {option.label}
@@ -1170,7 +1170,7 @@ export function PlaydateDetailPage() {
             disabled={pingBusy || count === null}
             onClick={() => void handlePingToggle()}
             autoFocus={confirmPing}
-            className={`rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50${
+            className={`rounded-lg px-4 py-3 text-sm font-medium text-white disabled:opacity-50${
               going ? ' bg-green-600' : ' bg-indigo-600'
             }${confirmPing ? ' ring-2 ring-indigo-400 ring-offset-2' : ''}`}
           >
@@ -1318,7 +1318,7 @@ export function PlaydateDetailPage() {
                 type="button"
                 disabled={commentBusy || commentDraft.trim().length === 0}
                 onClick={() => void handleAddComment()}
-                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                className="rounded-lg bg-indigo-600 px-3 py-3 text-sm font-medium text-white disabled:opacity-50"
               >
                 {commentBusy ? 'Posting…' : 'Comment'}
               </button>

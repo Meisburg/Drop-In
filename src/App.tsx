@@ -140,16 +140,16 @@ function ProtectedShell() {
 
   return (
     <div className="min-h-dvh bg-slate-50 text-slate-900">
-      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-md items-center justify-between px-4 py-3">
-          <Link to="/" className="text-lg font-bold text-indigo-600">
+      <header className="pt-safe sticky top-0 z-10 border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-md items-center justify-between px-4 py-1">
+          <Link to="/" className="flex min-h-11 items-center text-lg font-bold text-indigo-600">
             Playdate
           </Link>
           <div className="flex items-center gap-3">
             {profile ? (
               <Link
                 to={`/u/${encodeURIComponent(profile.display_name)}`}
-                className="max-w-32 truncate text-sm font-medium text-slate-700"
+                className="flex min-h-11 max-w-32 items-center truncate text-sm font-medium text-slate-700"
               >
                 @{profile.display_name}
               </Link>
@@ -157,7 +157,7 @@ function ProtectedShell() {
             {session !== null ? (
               <button
                 type="button"
-                className="text-sm text-slate-500"
+                className="flex min-h-11 items-center text-sm text-slate-500"
                 onClick={() => void signOutUser()}
               >
                 Sign out
@@ -166,7 +166,7 @@ function ProtectedShell() {
               // V2 slice 5: the only route a signed-out visitor renders is
               // the public detail page — a "Sign in" entry point instead of
               // a sign-out control.
-              <Link to="/login" className="text-sm font-medium text-indigo-600">
+              <Link to="/login" className="flex min-h-11 items-center text-sm font-medium text-indigo-600">
                 Sign in
               </Link>
             )}
@@ -175,7 +175,11 @@ function ProtectedShell() {
       </header>
 
       <main
-        className={`mx-auto max-w-md px-4 py-4 ${session !== null ? 'pb-24' : 'pb-8'}`}
+        className={`mx-auto max-w-md px-4 py-4 ${
+          session !== null
+            ? 'pb-[calc(6rem+env(safe-area-inset-bottom))]'
+            : 'pb-[calc(2rem+env(safe-area-inset-bottom))]'
+        }`}
       >
         <Outlet />
       </main>
@@ -183,7 +187,7 @@ function ProtectedShell() {
       {/* V2 slice 5: the bottom nav is app chrome — signed-out visitors
         (public detail page only) see the sign-up CTAs in the page instead. */}
       {session !== null ? (
-        <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white">
+        <nav className="pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white">
           <div className="mx-auto flex max-w-md">
             <NavTab to="/" label="Nearby" />
             <NavTab to="/browse" label="Browse" />

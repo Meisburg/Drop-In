@@ -471,12 +471,12 @@ function TimeStepper({
   onStep: (deltaMinutes: number) => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-300 px-2 py-1.5">
+    <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-300 px-1 py-0.5">
       <button
         type="button"
         aria-label="Earlier start time"
         onClick={() => onStep(-TIME_STEP_MINUTES)}
-        className="h-8 w-8 rounded-md text-lg text-slate-500 transition-colors hover:bg-slate-100"
+        className="h-11 w-11 rounded-md text-lg text-slate-500 transition-colors hover:bg-slate-100"
       >
         −
       </button>
@@ -487,7 +487,7 @@ function TimeStepper({
         type="button"
         aria-label="Later start time"
         onClick={() => onStep(TIME_STEP_MINUTES)}
-        className="h-8 w-8 rounded-md text-lg text-slate-500 transition-colors hover:bg-slate-100"
+        className="h-11 w-11 rounded-md text-lg text-slate-500 transition-colors hover:bg-slate-100"
       >
         +
       </button>

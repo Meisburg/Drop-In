@@ -1,1 +1,30 @@
 @import "tailwindcss";
+
+/*
+ * V4 slice 1 — mobile polish.
+ *
+ * The app runs full-bleed (viewport-fit=cover in index.html), so the notch and
+ * the home indicator are padded explicitly instead of being left to chance.
+ */
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/*
+ * iOS Safari zooms the whole viewport when a focused text control renders
+ * below 16px (our controls are text-sm = 14px). Deliberately UNLAYERED:
+ * unlayered declarations outrank everything Tailwind emits inside @layer, so
+ * this beats .text-sm without !important and without touching 15 call sites.
+ * Checkboxes/radios are excluded — no text, nothing to zoom for.
+ */
+@media (max-width: 640px) {
+  input:not([type='checkbox']):not([type='radio']),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}

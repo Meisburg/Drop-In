@@ -174,7 +174,7 @@ export function DropInCard({
                   event.stopPropagation()
                   if (!pingToggle.busy) pingToggle.onToggle()
                 }}
-                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors disabled:opacity-60 ${
+                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border transition-colors disabled:opacity-60 ${
                   pingToggle.active
                     ? 'border-green-600 bg-green-600 text-white'
                     : 'border-slate-300 bg-white text-slate-400'
@@ -182,7 +182,7 @@ export function DropInCard({
               >
                 <svg
                   viewBox="0 0 16 16"
-                  className="h-4 w-4"
+                  className="h-5 w-5"
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="2"

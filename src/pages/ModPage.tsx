@@ -228,7 +228,7 @@ function ReportCard({
               type="button"
               disabled={busyKey !== null}
               onClick={onHide}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 disabled:opacity-50"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-medium text-slate-700 disabled:opacity-50"
             >
               {busyKey === `hide:${report.playdate_id}` ? 'Hiding…' : 'Hide post'}
             </button>
@@ -247,14 +247,14 @@ function ReportCard({
                 type="button"
                 disabled={busyKey !== null}
                 onClick={onBan}
-                className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                className="rounded-lg bg-red-600 px-3 py-3 text-sm font-medium text-white disabled:opacity-50"
               >
                 {busyKey === `ban:${report.reported_profile_id}` ? 'Banning…' : 'Ban'}
               </button>
               <button
                 type="button"
                 onClick={onCancelConfirm}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-600"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm text-slate-600"
               >
                 Cancel
               </button>
@@ -264,7 +264,7 @@ function ReportCard({
               type="button"
               disabled={busyKey !== null}
               onClick={onConfirm}
-              className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-700 disabled:opacity-50"
+              className="rounded-lg border border-red-200 bg-white px-3 py-3 text-sm font-medium text-red-700 disabled:opacity-50"
             >
               Ban {reportedHandle}
             </button>
