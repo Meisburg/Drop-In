@@ -272,7 +272,7 @@ export function OnboardingPage() {
             <span className="text-slate-700">Display name</span>
             <input
               className={
-                'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
                 (handleError !== null ? 'border-red-400' : 'border-slate-300')
               }
               value={handleValue}
@@ -291,7 +291,7 @@ export function OnboardingPage() {
           <button
             type="submit"
             disabled={handleBusy}
-            className="rounded-lg bg-indigo-600 px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
           >
             {handleBusy ? 'Please wait…' : 'Continue'}
           </button>
@@ -331,7 +331,7 @@ export function OnboardingPage() {
             <span className="text-slate-700">Home zip</span>
             <input
               className={
-                'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
                 (zipError !== null ? 'border-red-400' : 'border-slate-300')
               }
               value={homeZip}
@@ -349,7 +349,7 @@ export function OnboardingPage() {
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-slate-700">Radius</span>
             <select
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
               value={radiusMiles}
               onChange={(e) => setRadiusMiles(Number(e.target.value))}
             >
@@ -374,7 +374,7 @@ export function OnboardingPage() {
         <div className="mt-3 flex flex-col gap-3">
           <div className="flex flex-col gap-1 text-sm">
             <span className="text-slate-700">Photo</span>
-            <label className="cursor-pointer self-start rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700">
+            <label className="cursor-pointer self-start rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700">
               {photoUploading ? 'Uploading…' : photoFile !== null ? 'Photo added' : 'Add a photo'}
               <input
                 type="file"
@@ -391,7 +391,7 @@ export function OnboardingPage() {
             <span className="text-slate-700">Bio</span>
             <textarea
               className={
-                'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
                 (bioError !== null ? 'border-red-400' : 'border-slate-300')
               }
               value={bio}
@@ -421,7 +421,7 @@ export function OnboardingPage() {
                 {kidRows.map((row, index) => (
                   <div key={index} className="flex items-center gap-2">
                     <input
-                      className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                      className="min-w-0 flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
                       value={row.name}
                       onChange={(e) => updateKidRow(index, { name: e.target.value })}
                       placeholder="First name"
@@ -431,7 +431,7 @@ export function OnboardingPage() {
                       type="number"
                       min={0}
                       max={17}
-                      className="w-20 shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                      className="w-20 shrink-0 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
                       value={row.age}
                       onChange={(e) => updateKidRow(index, { age: e.target.value })}
                       placeholder="Age"
@@ -466,7 +466,7 @@ export function OnboardingPage() {
           type="button"
           disabled={saving || knownZips === null || homeZip.trim() === ''}
           onClick={() => void handleContinue()}
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
           {saving ? 'Saving…' : 'Continue'}
         </button>

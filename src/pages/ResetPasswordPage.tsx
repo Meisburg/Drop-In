@@ -52,7 +52,7 @@ export function ResetPasswordPage() {
   }
 
   const inputClasses =
-    'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200'
+    'w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200'
 
   return (
     <div className="pt-safe pb-safe mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-4 bg-slate-50 px-4">
@@ -130,7 +130,7 @@ export function ResetPasswordPage() {
               <button
                 type="submit"
                 disabled={busy}
-                className="rounded-lg bg-indigo-600 px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
+                className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
               >
                 {busy ? 'Saving…' : 'Save and continue'}
               </button>

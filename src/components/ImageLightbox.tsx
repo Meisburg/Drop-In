@@ -89,7 +89,10 @@ export function PhotoButton({
   src,
   alt,
   children,
-  className = 'shrink-0 rounded-full',
+  // 44px minimum TAP AREA around a 40px photo: the visible avatar keeps its
+  // size, the target meets the floor. The mobile audit caught this at 40px the
+  // moment the contrast rule made it re-read every button.
+  className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-full',
 }: {
   src?: string | null
   alt: string

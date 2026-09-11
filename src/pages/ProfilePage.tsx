@@ -508,7 +508,7 @@ export function ProfilePage() {
               {((name ?? profile?.display_name ?? '?').charAt(0) || '?').toUpperCase()}
             </span>
           )}
-          <label className="cursor-pointer rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700">
+          <label className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700">
             {photoBusy ? 'Uploading…' : profile?.avatar_url ? 'Change photo' : 'Add a photo'}
             <input
               type="file"
@@ -531,7 +531,7 @@ export function ProfilePage() {
           <span className="text-slate-700">Display name</span>
           <input
             className={
-              'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+              'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
               (nameError !== null ? 'border-red-400' : 'border-slate-300')
             }
             value={name ?? ''}
@@ -551,7 +551,7 @@ export function ProfilePage() {
         <button
           type="submit"
           disabled={savingName || (name ?? '').trim() === ''}
-          className="self-start rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="self-start rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
           {savingName ? 'Saving…' : 'Save'}
         </button>
@@ -573,7 +573,7 @@ export function ProfilePage() {
           <span className="text-slate-700">Home zip</span>
           <input
             className={
-              'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+              'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
               (locationError !== null ? 'border-red-400' : 'border-slate-300')
             }
             value={homeZip ?? ''}
@@ -591,7 +591,7 @@ export function ProfilePage() {
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-slate-700">Radius</span>
           <select
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
             value={radiusMiles ?? DEFAULT_RADIUS_MILES}
             onChange={(e) => {
               setRadiusMiles(Number(e.target.value))
@@ -610,7 +610,7 @@ export function ProfilePage() {
         <button
           type="submit"
           disabled={savingLocation || (homeZip ?? '').trim() === ''}
-          className="self-start rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="self-start rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
           {savingLocation ? 'Saving…' : 'Save location'}
         </button>
@@ -626,7 +626,7 @@ export function ProfilePage() {
           <span className="text-slate-700">About</span>
           <textarea
             className={
-              'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+              'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
               (bioError !== null ? 'border-red-400' : 'border-slate-300')
             }
             value={bio ?? ''}
@@ -646,7 +646,7 @@ export function ProfilePage() {
           <button
             type="submit"
             disabled={savingBio}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
             {savingBio ? 'Saving…' : 'Save bio'}
           </button>
@@ -680,7 +680,7 @@ export function ProfilePage() {
           </span>
           <textarea
             className={
-              'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+              'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
               (validateInterests(interests ?? '') !== null || interestsError !== null
                 ? 'border-red-400'
                 : 'border-slate-300')
@@ -703,7 +703,7 @@ export function ProfilePage() {
           <button
             type="submit"
             disabled={savingInterests || validateInterests(interests ?? '') !== null}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
             {savingInterests ? 'Saving…' : 'Save interests'}
           </button>
@@ -746,7 +746,7 @@ export function ProfilePage() {
               return (
                 <li
                   key={kid.id}
-                  className="flex flex-wrap items-center gap-2 rounded-lg px-2 py-1.5"
+                  className="flex flex-wrap items-center gap-2 rounded-xl px-2 py-1.5"
                 >
                   {kid.avatar_url ? (
                     <img
@@ -787,7 +787,7 @@ export function ProfilePage() {
                   <div className="flex min-w-0 flex-1 basis-40 items-center gap-1.5">
                     <input
                       className={
-                        'min-w-0 flex-1 rounded-lg border px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                        'min-w-0 flex-1 rounded-xl border px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
                         (likesCapError !== null ? 'border-red-400' : 'border-slate-300')
                       }
                       value={likesValue}
@@ -846,7 +846,7 @@ export function ProfilePage() {
         <div className="mt-3 flex items-center gap-2">
           <input
             className={
-              'min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+              'min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
               (kidsError !== null ? 'border-red-400' : 'border-slate-300')
             }
             value={newKidName}
@@ -863,7 +863,7 @@ export function ProfilePage() {
             min={0}
             max={17}
             className={
-              'w-20 shrink-0 rounded-lg border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+              'w-20 shrink-0 rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
               (kidsError !== null ? 'border-red-400' : 'border-slate-300')
             }
             value={newKidAge}
@@ -932,7 +932,7 @@ export function ProfilePage() {
             {myPosts.map((post) => (
               <li
                 key={post.id}
-                className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5"
+                className="flex items-center justify-between gap-2 rounded-xl px-2 py-1.5"
               >
                 <div className="min-w-0">
                   <p className="truncate text-sm text-slate-800">{post.title}</p>

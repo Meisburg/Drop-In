@@ -244,7 +244,7 @@ export function DropInCard({
               }}
               className={`flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors disabled:opacity-60 ${
                 pingToggle.active
-                  ? 'border-green-600 bg-green-600 text-white'
+                  ? 'border-green-700 bg-green-700 text-white'
                   : 'border-slate-300 bg-white text-slate-700'
               }`}
             >
@@ -283,7 +283,7 @@ export function DropInCard({
 export interface DropInCardPingToggle {
   /** Render + enable (the caller confirmed a signed-in, non-host viewer). */
   enabled: boolean
-  /** The viewer has pinged this post (the green-600 filled state). */
+  /** The viewer has pinged this post (the green-700 filled state). */
   active: boolean
   /** The write path is in flight (the circle is disabled while pending). */
   busy: boolean

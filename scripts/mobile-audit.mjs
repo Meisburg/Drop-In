@@ -44,6 +44,53 @@ for (const [width, height] of VIEWPORTS) {
     await page.goto(BASE + route, { waitUntil: 'networkidle' })
     const report = await page.evaluate(() => {
       const doc = document.documentElement
+      // V6: WCAG AA contrast, measured on the rendered pixels rather than read
+      // off the class names. The design jury found a real failure my audit had
+      // missed — white on green-600 is 3.30:1 — so the check now lives here.
+      // Parse ANY css color by asking the browser to paint it: Tailwind v4
+      // emits oklch(), and getComputedStyle hands it back verbatim, so a naive
+      // number scrape reads 51.1/.262/276 as r/g/b — which reported indigo on
+      // white as 1.17:1. One painted pixel is exact for every color syntax.
+      const probe = document.createElement('canvas')
+      probe.width = 1
+      probe.height = 1
+      const probeCtx = probe.getContext('2d', { willReadFrequently: true })
+      const toRgb = (value) => {
+        if (value === undefined || value === null || value === '') return null
+        probeCtx.clearRect(0, 0, 1, 1)
+        probeCtx.fillStyle = '#000000'
+        probeCtx.fillStyle = String(value)
+        probeCtx.fillRect(0, 0, 1, 1)
+        const [r, g, b, a] = probeCtx.getImageData(0, 0, 1, 1).data
+        // A translucent layer's real color depends on the whole stack behind
+        // it; rather than guess, report it as unknown and skip the element.
+        if (a !== 255) return null
+        return [r, g, b]
+      }
+      const relLum = ([r, g, b]) => {
+        const f = (c) => {
+          const v = c / 255
+          return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+      }
+      const contrast = (a, b) => {
+        const l1 = relLum(a)
+        const l2 = relLum(b)
+        const hi = Math.max(l1, l2)
+        const lo = Math.min(l1, l2)
+        return (hi + 0.05) / (lo + 0.05)
+      }
+      const effectiveBg = (el) => {
+        let node = el
+        while (node !== null) {
+          const rgb = toRgb(getComputedStyle(node).backgroundColor)
+          if (rgb !== null) return rgb
+          node = node.parentElement
+        }
+        return [255, 255, 255]
+      }
+      const lowContrast = []
       const small = []
       for (const el of document.querySelectorAll('input, textarea, select')) {
         const type = el.getAttribute('type')
@@ -63,7 +110,22 @@ for (const [width, height] of VIEWPORTS) {
         const size = parseFloat(getComputedStyle(el).fontSize)
         sizeHistogram[size] = (sizeHistogram[size] ?? 0) + 1
         if (size < 14) tinyText.push(`${el.tagName.toLowerCase()} "${content.slice(0, 24)}" ${size}px`)
+        // AA: 3.0 is the floor for large text (>=24px, or >=18.66px bold).
+        const weight = Number(getComputedStyle(el).fontWeight) || 400
+        const isLarge = size >= 24 || (size >= 18.66 && weight >= 700)
+        const floor = isLarge ? 3 : 4.5
+        const fg = toRgb(getComputedStyle(el).color)
+        const bg = effectiveBg(el)
+        if (fg !== null) {
+          const ratio = contrast(fg, bg)
+          if (ratio < floor) {
+            lowContrast.push(
+              `${el.tagName.toLowerCase()} "${content.slice(0, 22)}" ${ratio.toFixed(2)}:1 (needs ${floor})`,
+            )
+          }
+        }
       }
+
 
       const smallTargets = []
       for (const el of document.querySelectorAll('button, a[href], label[for]')) {
@@ -81,6 +143,7 @@ for (const [width, height] of VIEWPORTS) {
         small,
         smallTargets,
         tinyText,
+        lowContrast,
         sizeHistogram,
       }
     })
@@ -90,6 +153,7 @@ for (const [width, height] of VIEWPORTS) {
     if (report.small.length) problems.push(`<16px text: ${report.small.join(', ')}`)
     if (report.smallTargets.length) problems.push(`<44px targets: ${report.smallTargets.join(', ')}`)
     if (report.tinyText.length) problems.push(`text below 14px: ${report.tinyText.join(', ')}`)
+    if (report.lowContrast.length) problems.push(`contrast: ${report.lowContrast.join(', ')}`)
 
     if (problems.length) failures++
     console.log(

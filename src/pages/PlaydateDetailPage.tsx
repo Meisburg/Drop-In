@@ -105,7 +105,7 @@ type DetailState =
  * router-state prefill of everything except the date/time — which is always
  * re-entered) — never the ping button. Everyone else sees the unchanged
  * ping toggle + count (V3 slice 3, ticket 06: the labels are "Attend" /
- * "✓ Going" — same toggle semantics, the green-600 fill tracks the
+ * "✓ Going" — same toggle semantics, the green-700 fill tracks the
  * going state).
  *
  * The detail fetch is a direct lookup — the feed query's DB-level block
@@ -158,7 +158,7 @@ type DetailState =
  * with Cancelled, is removed per feedback/v3.md #5; the muted chip
  * renders for "Cancelled" only, the Open-Meteo badge is an independent
  * forecast and stays); the ping
- * button's copy is "Attend" (inactive) / "✓ Going" (active, green-600
+ * button's copy is "Attend" (inactive) / "✓ Going" (active, green-700
  * filled — same geometry, the toggle semantics unchanged); the
  * "Best for …" age-hint line is out of the authenticated detail view
  * (the DB column + the /new field stay — ticket 09 reworks /new; the
@@ -923,7 +923,7 @@ export function PlaydateDetailPage() {
             {formatDay(d.starts_at)} · {formatTime(d.starts_at)}–{formatTime(d.ends_at)}
           </p>
           {d.age_hint !== null ? (
-            <p className="mt-1 text-sm text-slate-600">Best for {d.age_hint}</p>
+            <p className="mt-1 text-sm text-slate-600">Ages {d.age_hint}</p>
           ) : null}
           {d.details !== null ? (
             <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{d.details}</p>
@@ -943,7 +943,7 @@ export function PlaydateDetailPage() {
                 type="button"
                 onClick={() => void handleShare()}
                 disabled={shareBusy}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
               >
                 {shareCopied ? 'Copied' : 'Share'}
               </button>
@@ -955,7 +955,7 @@ export function PlaydateDetailPage() {
               <button
                 type="button"
                 onClick={handleDownloadIcs}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+                className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
               >
                 Add to calendar
               </button>
@@ -967,7 +967,7 @@ export function PlaydateDetailPage() {
           <button
             type="button"
             onClick={handleJoinIn}
-            className="rounded-lg bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+            className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
           >
             I’m coming
           </button>
@@ -977,12 +977,11 @@ export function PlaydateDetailPage() {
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="text-base font-semibold text-slate-900">Comments</h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Comments are for signed-in parents.{' '}
-            <Link to={LOGIN_PATH} className="font-medium text-indigo-600">
-              Sign up to join in
-            </Link>
-          </p>
+          {/* V6 (design jury, copy item): this used to end with a second
+              "Sign up to join in" — the same CTA as the card above, eight lines
+              away, and internally redundant ("sign up" + "join in"). One CTA
+              phrase per screen; this line just states the rule. */}
+          <p className="mt-2 text-sm text-slate-600">Comments are for signed-in parents.</p>
         </div>
       </div>
     )
@@ -1190,7 +1189,7 @@ export function PlaydateDetailPage() {
               onClick={() =>
                 navigate('/new', { state: { duplicate: toDuplicatePrefill(detail) } })
               }
-              className="rounded-lg border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
+              className="rounded-xl border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
             >
               Duplicate
             </button>
@@ -1219,8 +1218,8 @@ export function PlaydateDetailPage() {
                     onClick={() => void handleSetStatus(option.value)}
                     className={
                       active
-                        ? 'rounded-lg bg-indigo-600 px-3 py-3 text-sm font-medium text-white disabled:opacity-50'
-                        : 'rounded-lg border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 disabled:opacity-50'
+                        ? 'rounded-xl bg-indigo-600 px-3 py-3 text-sm font-medium text-white disabled:opacity-50'
+                        : 'rounded-xl border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 disabled:opacity-50'
                     }
                   >
                     {option.label}
@@ -1241,8 +1240,8 @@ export function PlaydateDetailPage() {
             disabled={pingBusy || count === null}
             onClick={() => void handlePingToggle()}
             autoFocus={confirmPing}
-            className={`rounded-lg px-4 py-3 text-sm font-medium text-white disabled:opacity-50${
-              going ? ' bg-green-600' : ' bg-indigo-600'
+            className={`rounded-xl px-4 py-3 text-sm font-medium text-white disabled:opacity-50${
+              going ? ' bg-green-700' : ' bg-indigo-600'
             }${confirmPing ? ' ring-2 ring-indigo-400 ring-offset-2' : ''}`}
           >
             {pingBusy
@@ -1405,7 +1404,7 @@ export function PlaydateDetailPage() {
               maxLength={COMMENT_MAX_LENGTH}
               placeholder="Ask a question — e.g. “Is a stroller okay to bring?”"
               onChange={(e) => setCommentDraft(e.target.value)}
-              className="mt-1 w-full resize-none rounded-lg border border-slate-200 p-2 text-sm text-slate-700 focus:border-indigo-300 focus:outline-none"
+              className="mt-1 w-full resize-none rounded-xl border border-slate-200 p-2 text-sm text-slate-700 focus:border-indigo-300 focus:outline-none"
             />
             <div className="mt-2 flex items-center justify-between gap-2">
               <span className="text-xs text-slate-500">
@@ -1415,7 +1414,7 @@ export function PlaydateDetailPage() {
                 type="button"
                 disabled={commentBusy || commentDraft.trim().length === 0}
                 onClick={() => void handleAddComment()}
-                className="rounded-lg bg-indigo-600 px-3 py-3 text-sm font-medium text-white disabled:opacity-50"
+                className="rounded-xl bg-indigo-600 px-3 py-3 text-sm font-medium text-white disabled:opacity-50"
               >
                 {commentBusy ? 'Posting…' : 'Comment'}
               </button>

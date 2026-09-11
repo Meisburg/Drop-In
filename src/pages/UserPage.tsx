@@ -261,7 +261,7 @@ export function UserPage() {
               disabled={blockingBusy}
               onClick={() => void handleToggleBlock()}
               className={
-                'rounded-lg border px-3 py-2 text-sm font-medium disabled:opacity-50 ' +
+                'rounded-xl border px-3 py-2 text-sm font-medium disabled:opacity-50 ' +
                 (blocked
                   ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
                   : 'border-slate-300 bg-white text-slate-700')
@@ -276,7 +276,7 @@ export function UserPage() {
             <button
               type="button"
               onClick={() => setReporting(true)}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600"
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600"
             >
               Report
             </button>

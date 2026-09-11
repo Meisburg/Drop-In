@@ -163,7 +163,7 @@ export function LoginPage() {
   }
 
   const inputClasses =
-    'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200'
+    'w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200'
 
   return (
     <div className="pt-safe pb-safe mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-4 bg-slate-50 px-4">
@@ -205,7 +205,7 @@ export function LoginPage() {
                   type="button"
                   disabled={busy}
                   onClick={() => void handleOAuth(provider.id)}
-                  className="flex min-h-11 w-full items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 disabled:opacity-50"
+                  className="flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 disabled:opacity-50"
                 >
                   {provider.label}
                 </button>
@@ -288,7 +288,7 @@ export function LoginPage() {
           <button
             type="submit"
             disabled={busy}
-            className="rounded-lg bg-indigo-600 px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
           >
             {busy
               ? 'Please wait…'

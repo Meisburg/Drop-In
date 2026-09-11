@@ -256,7 +256,7 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
             </span>
             <input
               className={
-                'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
                 (errors.title ? 'border-red-400' : 'border-slate-300')
               }
               value={values.title}
@@ -271,7 +271,7 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
             <span className="text-slate-700">Place</span>
             <input
               className={
-                'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
                 (errors.place ? 'border-red-400' : 'border-slate-300')
               }
               value={values.place}
@@ -292,7 +292,7 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
             </span>
             <input
               className={
-                'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
                 (addressError !== null ? 'border-red-400' : 'border-slate-300')
               }
               value={address}
@@ -309,7 +309,7 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
             <span className="text-slate-700">Neighborhood</span>
             <select
               className={
-                'w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                'w-full rounded-xl border bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
                 (errors.neighborhoodId ? 'border-red-400' : 'border-slate-300')
               }
               value={values.neighborhoodId}
@@ -333,7 +333,7 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
             <input
               type="date"
               className={
-                'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
                 (errors.startDate ? 'border-red-400' : 'border-slate-300')
               }
               value={values.startDate}
@@ -435,7 +435,7 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
               Details <span className="text-slate-500">(optional)</span>
             </span>
             <textarea
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
               rows={3}
               value={values.details}
               onChange={(e) => update('details', e.target.value)}
@@ -447,7 +447,7 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
             <button
               type="submit"
               disabled={submitting || neighborhoods === null}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               {submitting ? 'Posting…' : 'Post drop-in'}
             </button>
@@ -471,7 +471,7 @@ function TimeStepper({
   onStep: (deltaMinutes: number) => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-300 px-1 py-0.5">
+    <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-300 px-1 py-0.5">
       <button
         type="button"
         aria-label="Earlier start time"

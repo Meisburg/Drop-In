@@ -95,7 +95,7 @@ export function ReportDialog({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white"
+              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white"
             >
               Close
             </button>
@@ -117,7 +117,7 @@ export function ReportDialog({
                 placeholder="e.g. The post shared a home address instead of a public meet-up."
                 aria-invalid={reasonError !== null}
                 className={
-                  'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                  'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
                   (reasonError !== null ? 'border-red-400' : 'border-slate-300')
                 }
               />
@@ -128,14 +128,14 @@ export function ReportDialog({
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600"
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={submitting}
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
               >
                 {submitting ? 'Sending…' : 'Send report'}
               </button>
