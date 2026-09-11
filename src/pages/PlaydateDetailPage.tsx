@@ -70,17 +70,17 @@ type DetailState =
        * load below) or the read failed: the line is hidden, never the
        * post (the DB-not-applied discipline, same as the ping section).
        */
-kids: PlaydateKid[] | null
-       /**
-        * V3 slice 10 (ticket 05): the guest-list names (the 0025
-        * get_guest_list RPC — the pingers' display_names, created_at
-        * order). null = not loaded — 0025 not applied (the 404 is
-        * caught in the load below) or the read failed: the block is
-        * hidden, never the post (the DB-not-applied discipline, same
-        * as the ping / kids sections).
-        */
-       guestNames: string[] | null
-     }
+      kids: PlaydateKid[] | null
+      /**
+       * V3 slice 10 (ticket 05): the guest-list names (the 0025
+       * get_guest_list RPC — the pingers' display_names, created_at
+       * order). null = not loaded — 0025 not applied (the 404 is
+       * caught in the load below) or the read failed: the block is
+       * hidden, never the post (the DB-not-applied discipline, same
+       * as the ping / kids sections).
+       */
+      guestNames: string[] | null
+    }
   /**
    * V2 slice 5: the signed-out public surface (the get_public_playdate RPC
    * payload — nothing beyond the pinned public fields). Rendered when the

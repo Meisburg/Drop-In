@@ -12,9 +12,11 @@
 --     else gets an EMPTY set — names never cross to strangers (the V1
 --     zero-pressure surface for non-attendees stays exactly as shipped).
 --     auth.uid() inside a SECURITY DEFINER function reads the CALLER's
---     request.jwt (PostgREST sets it per request — the same mechanism
---     0010's host-self-ping trigger relies on, proven live), so the gate
---     keys off the calling user, not the definer role.
+--     PostgREST request.jwt (set per request) — proven live 2026-09-10 by
+--     0023's SECDEF helper `comment_parent_visible` (commit 90a159f,
+--     applied live; the live check's authenticated comment-read probes
+--     returning 200 are the proof) — so the gate keys off the calling user,
+--     not the definer role.
 -- (b) BROAD-SELECT-STAYS (the spec pin, plan-v3 Interfaces ticket 05):
 --     the existing `going_pings_select_authenticated` policy (using (true)
 --     — the count path) is UNCHANGED. getGoingCount (db.ts, the head/count
