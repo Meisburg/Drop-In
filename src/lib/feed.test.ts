@@ -9,6 +9,7 @@ import {
   filterFeed,
   formatDayLabel,
   formatDistanceLabel,
+  formatGuestLine,
   formatTimeLabel,
   groupByDay,
   GOING_CIRCLE_LIMIT,
@@ -28,6 +29,7 @@ import {
   queryUpcomingFeedWithClient,
   rainBadgeLabel,
   RADIUS_MILES_OPTIONS,
+  resolveGuestListVisibility,
   startOfTodayIso,
   stepTimeMinutes,
   TIME_STEP_MINUTES,
@@ -49,6 +51,7 @@ import {
 import {
   countPingsOnMyPostsWithClient,
   countPostsByHostWithClient,
+  fetchGuestListWithClient,
   touchLastSeen,
 } from './db'
 
@@ -1077,5 +1080,76 @@ describe('touchLastSeen (the fire-and-forget restamp, V3 slice 9, ticket 04)', (
     await expect(touchLastSeen(client, 'me')).rejects.toThrow(
       'column "last_seen_at" does not exist',
     )
+  })
+})
+
+/**
+ * Minimal mock of the client surface the ticket-05 guest-list RPC uses
+ * (fetchGuestListWithClient — db.ts): records the rpc(name, args) call and
+ * resolves a canned { data, error } (the 0025 pre-apply 404 is modeled by
+ * a non-null error; an empty/absent result by data null).
+ */
+function makeRpcMockClient(
+  result: { data?: unknown; error?: unknown },
+): { client: SupabaseClient; calls: Array<{ name: string; args: Record<string, unknown> }> } {
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = []
+  const client = {
+    rpc: (name: string, args: Record<string, unknown>) => {
+      calls.push({ name, args })
+      return Promise.resolve({ data: result.data ?? null, error: result.error ?? null })
+    },
+  }
+  return { client: client as unknown as SupabaseClient, calls }
+}
+
+describe('resolveGuestListVisibility (V3 slice 10, ticket 05)', () => {
+  it('shows the named list for the host (count > 0)', () => {
+    expect(resolveGuestListVisibility(true, false, 2)).toBe(true)
+  })
+  it('shows the named list for a pinger (count > 0)', () => {
+    expect(resolveGuestListVisibility(false, true, 1)).toBe(true)
+  })
+  it('hides the named list from a stranger (count-only)', () => {
+    expect(resolveGuestListVisibility(false, false, 5)).toBe(false)
+  })
+  it('hides the named list when count = 0 (even for the host)', () => {
+    expect(resolveGuestListVisibility(true, false, 0)).toBe(false)
+  })
+})
+
+describe('formatGuestLine (V3 slice 10, ticket 05)', () => {
+  it('host: up to 3 names then "+ N more"', () => {
+    expect(formatGuestLine(['A', 'B', 'C'], null, true)).toBe('Going: A, B, C')
+    expect(formatGuestLine(['A', 'B', 'C', 'D', 'E'], null, true)).toBe(
+      'Going: A, B, C + 2 more',
+    )
+  })
+  it('pinger: "You" + the others (self dropped)', () => {
+    expect(formatGuestLine(['me', 'B', 'C'], 'me', false)).toBe('You, B, C')
+    expect(formatGuestLine(['me', 'B', 'C', 'D', 'E'], 'me', false)).toBe(
+      'You, B, C + 2 more',
+    )
+  })
+  it('a pinger who is the only attendee renders just "You"', () => {
+    expect(formatGuestLine(['me'], 'me', false)).toBe('You')
+  })
+  it('a pinger whose own name is absent from the list: "You" + all', () => {
+    expect(formatGuestLine(['B', 'C'], 'me', false)).toBe('You, B, C')
+  })
+})
+
+describe('fetchGuestListWithClient (V3 slice 10, ticket 05)', () => {
+  it('returns the names array (and records the rpc call)', async () => {
+    const { client, calls } = makeRpcMockClient({ data: ['a', 'b'] })
+    await expect(fetchGuestListWithClient(client, 'p1')).resolves.toEqual(['a', 'b'])
+    expect(calls).toEqual([{ name: 'get_guest_list', args: { p_id: 'p1' } }])
+  })
+  it('a null/empty result -> []', async () => {
+    const { client } = makeRpcMockClient({ data: null })
+    await expect(fetchGuestListWithClient(client, 'p1')).resolves.toEqual([])
+  })
+  it('propagates the rpc error (pre-0025-apply 404)', async () => {
+    const { client } = makeRpcMockClient({ error: new Error('404: function does not exist') })
+    await expect(fetchGuestListWithClient(client, 'p1')).rejects.toThrow()
   })
 })

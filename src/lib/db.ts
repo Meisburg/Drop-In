@@ -1054,6 +1054,44 @@ export async function restampLastSeen(profileId: string): Promise<void> {
   return touchLastSeen(supabase, profileId)
 }
 
+// ---------------------------------------------------------------------------
+// V3 slice 10 (ticket 05): the guest list — the get_guest_list RPC.
+//
+// The SECURITY DEFINER function (migration 0025) may not be applied to the
+// live project until the orchestrator applies it — the RPC 404s pre-apply
+// (the function does not exist yet), and the caller (the detail page's
+// guest-list block) catches and the block stays hidden (the DB-not-applied
+// discipline, same as the ping / kids / comments sections). The count path
+// (getGoingCount, the broad authenticated SELECT) is UNCHANGED by this
+// function (the 0025 header's broad-SELECT-stays pin).
+
+/**
+ * The named guest list for a drop-in (V3 slice 10, ticket 05, migration
+ * 0025): the SECURITY DEFINER get_guest_list RPC — the pingers'
+ * display_names (ordered by ping created_at), and ONLY for the post's
+ * host or a pinger (the function returns an empty set to everyone else,
+ * so names never cross to strangers). An empty array when the caller has
+ * no access OR there are no pings. Pre-0025-apply the RPC 404s (the
+ * function does not exist yet) — the caller catches and the guest-list
+ * block stays hidden (the DB-not-applied discipline, same as the ping /
+ * kids / comments sections). The count path (getGoingCount, the broad
+ * authenticated SELECT) is UNCHANGED by this function (the 0025 header's
+ * broad-SELECT-stays pin) and keeps working for every viewer.
+ */
+export async function fetchGuestListWithClient(
+  client: SupabaseClient,
+  playdateId: string,
+): Promise<string[]> {
+  const { data, error } = await client.rpc('get_guest_list', { p_id: playdateId })
+  if (error) throw error
+  return (data as unknown as string[] | null) ?? []
+}
+
+/** The default-client wrapper (the detail page's guest-list block). */
+export async function fetchGuestList(playdateId: string): Promise<string[]> {
+  return fetchGuestListWithClient(supabase, playdateId)
+}
+
 /** Input for createReport (a post report and/or a profile report). */
 export interface ReportInput {
   /** Set for a post report (the post's host is the reported profile). */

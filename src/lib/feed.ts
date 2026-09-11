@@ -8,6 +8,8 @@
  * the Supabase client as a parameter (mocked in feed.test.ts — the same
  * injected-client pattern as trust.togglePingWithClient) so the DB-level
  * filter chain is unit-testable.
+ *
+ * V3 slice 10 (ticket 05): the guest-list seams (resolveGuestListVisibility, formatGuestLine).
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { DuplicatePrefill } from './types'
@@ -666,4 +668,60 @@ export function dueToRefreshLastSeen(
 ): boolean {
   if (lastSeenIso === null) return true
   return Date.parse(nowIso) - Date.parse(lastSeenIso) >= windowMs
+}
+
+// ---------------------------------------------------------------------------
+// V3 slice 10 (ticket 05): the guest list — progressive disclosure on going
+// pings. The DB gate is the SECURITY DEFINER get_guest_list RPC (0025);
+// these seams decide the CLIENT-SIDE render (which viewers see the named
+// list vs the count-only line) and format the line copy. Pure + unit-tested.
+
+/**
+ * Whether the viewer sees the NAMED guest-list block (vs the count-only
+ * line, the V1 zero-pressure surface for strangers) — V3 slice 10, ticket
+ * 05 (founder-approved progressive disclosure, .scratch/guest-list/spec.md).
+ * The host sees who pinged their own event (they need it to welcome
+ * people); pingers see co-attendee names (they committed; no lurker
+ * exposure); everyone else sees counts only. The block is hidden when
+ * count = 0 (an empty named list is not a state).
+ */
+export function resolveGuestListVisibility(
+  viewerIsHost: boolean,
+  viewerHasPinged: boolean,
+  count: number,
+): boolean {
+  return (viewerIsHost || viewerHasPinged) && count > 0
+}
+
+/**
+ * The guest-list line copy (V3 slice 10, ticket 05). The host's view is
+ * "Going: Sarah, Mia + 2 families" (up to 3 names, then the "+ N more"
+ * overflow). A pinger's view is "You, Sarah, Mia + 2 families" — the
+ * pinger's own display_name (the caller's profile name) is dropped from
+ * the DB-returned names and stood in for by "You"; "You" takes one of the
+ * line's 3-name slots, so up to 2 others show before the "+ N more"
+ * overflow. A pinger who is the ONLY attendee renders just "You". The
+ * names arrive ordered by ping created_at (the 0025 RPC).
+ */
+export function formatGuestLine(
+  names: string[],
+  viewerDisplayName: string | null,
+  isHost: boolean,
+): string {
+  if (isHost) {
+    const shown = names.slice(0, 3)
+    const extra = names.length - shown.length
+    const base = extra > 0 ? `${shown.join(', ')} + ${extra} more` : shown.join(', ')
+    return base === '' ? '' : `Going: ${base}`
+  }
+  const others =
+    viewerDisplayName !== null
+      ? names.filter((n) => n !== viewerDisplayName)
+      : names
+  // "You" takes one of the line's 3-name slots (the JSDoc example: "You,
+  // Sarah, Mia + 2 families") — so up to 2 others show, then the overflow.
+  const shown = others.slice(0, 2)
+  const extra = others.length - shown.length
+  const base = extra > 0 ? `${shown.join(', ')} + ${extra} more` : shown.join(', ')
+  return base === '' ? 'You' : `You, ${base}`
 }
