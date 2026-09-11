@@ -53,7 +53,7 @@ import type {
  * db.ts client — db.ts itself gains no new surface (slice constraint).
  *
  * V2 slice 2 (ticket 02): the comfort layer on the owner side —
- * - avatar: a photo upload (client-resized to 256px, > 5 MB rejected
+ * - avatar: a photo upload (cropped by the user, resized to 512px, > 5 MB rejected
  *   before upload, stored at avatars/<uid>/avatar) with a live preview
  * - bio: a <= 500-char textarea (app cap + the 0011 DB backstop)
  * - kids: structured rows (first name + age ONLY — the privacy pin), max 5
@@ -90,7 +90,7 @@ export function ProfilePage() {
   // editor state. kidLikes seeds from the fresh rows (seedKidLikes — an
   // in-flight local value wins over a re-list, the seed-once discipline,
   // per kid); kidPhoto* is the row's own upload path (uploadKidPhoto —
-  // the 256px/≤5MB avatars-bucket round-trip), whose handleRefreshKids
+  // the crop step + 512px/≤5MB avatars-bucket round-trip), whose handleRefreshKids
   // re-list lands the new avatar_url on the rows' 40px circles.
   const [kidLikes, setKidLikes] = useState<Record<string, string>>({})
   const [kidLikesBusyId, setKidLikesBusyId] = useState<string | null>(null)
@@ -529,7 +529,7 @@ export function ProfilePage() {
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">Photo</h2>
         <p className="mt-1 text-sm text-slate-600">
-          Your photo shows on your posts and profile. Under 5 MB — it’s resized to a 256px
+          Your photo shows on your posts and profile. Under 5 MB — it’s resized to a 512px
           square for you.
         </p>
         <div className="mt-3 flex items-center gap-3">

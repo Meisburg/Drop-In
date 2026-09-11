@@ -62,12 +62,19 @@ export interface CropRect {
 /**
  * How to draw the whole image so that the crop region fills the window, for the
  * on-screen preview. `scale` is window pixels per source pixel; the image's
- * top-left corner lands at (offsetX, offsetY).
+ * top-left corner lands at (offsetX, offsetY), and `drawWidth`/`drawHeight` are
+ * its drawn size.
+ *
+ * The size is part of the transform rather than left for the caller to multiply
+ * out, so the preview cannot re-derive a slightly different rectangle from the one
+ * the encoder is told to keep.
  */
 export interface DrawTransform {
   scale: number
   offsetX: number
   offsetY: number
+  drawWidth: number
+  drawHeight: number
 }
 
 export const MIN_ZOOM = 1
@@ -175,13 +182,37 @@ export function drawTransformFor(
   windowSize: number,
 ): DrawTransform {
   const rect = cropRectFor(image, state)
-  if (rect.sw <= 0 || !(finite(windowSize, 0) > 0)) return { scale: 1, offsetX: 0, offsetY: 0 }
+  if (rect.sw <= 0 || !(finite(windowSize, 0) > 0)) {
+    return { scale: 1, offsetX: 0, offsetY: 0, drawWidth: 0, drawHeight: 0 }
+  }
   const scale = windowSize / rect.sw
   return {
     scale,
     offsetX: positiveZero(-rect.sx * scale),
     offsetY: positiveZero(-rect.sy * scale),
+    drawWidth: finite(image.width, 0) * scale,
+    drawHeight: finite(image.height, 0) * scale,
   }
+}
+
+/**
+ * Whether a rectangle is safe to hand a canvas. `prepareAvatarFile` draws whatever
+ * it is given, and a zero or non-finite source rect produces a blank image with no
+ * error at all — a silent failure in the one function whose output is what the user
+ * actually gets. Unreachable from the app today (only `cropRectFor` output reaches
+ * it, and the hook rejects zero-pixel bitmaps), which is exactly why it is cheap to
+ * assert here instead of relying on that staying true.
+ */
+export function isDrawableRect(rect: CropRect, image?: ImageSize): boolean {
+  const values = [rect.sx, rect.sy, rect.sw, rect.sh]
+  if (!values.every((value) => Number.isFinite(value))) return false
+  if (rect.sw <= 0 || rect.sh <= 0) return false
+  if (rect.sx < 0 || rect.sy < 0) return false
+  if (image === undefined) return true
+  return (
+    rect.sx + rect.sw <= finite(image.width, 0) + 1e-9 &&
+    rect.sy + rect.sh <= finite(image.height, 0) + 1e-9
+  )
 }
 
 /**

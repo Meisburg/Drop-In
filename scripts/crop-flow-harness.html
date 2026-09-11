@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Crop flow harness</title>
+  </head>
+  <body>
+    <!--
+      DEV-ONLY HARNESS (photo-crop ticket 03). Not an app route and not a build
+      entry — Vite builds only index.html — so this never ships.
+
+      It mounts the REAL `useCropStep` hook behind a file input, to prove the parts
+      the dialog harness cannot reach: that the ≤5MB / image-only gate runs BEFORE
+      the decode and BEFORE the dialog opens, and that a confirmed crop reaches the
+      caller with the source and the rect it chose.
+    -->
+    <div id="root"></div>
+    <script type="module">
+      import '../src/index.css'
+      import React from 'react'
+      import { createRoot } from 'react-dom/client'
+      import { useCropStep } from '../src/components/useCropStep.tsx'
+
+      /*
+       * INSTRUMENT createImageBitmap, and the reason matters.
+       *
+       * The crop step once called `createImageBitmap(file, { imageOrientation:
+       * 'from-image' })`. That member is a WebIDL ENUM, and WebIDL THROWS on an enum
+       * value the engine does not know — so on Chrome/Edge 111, Firefox <=110 and
+       * older Safari/iOS (chrome111 is INSIDE Vite 8's own build-target floor) the
+       * call threw, the hook turned it into "Could not read that image", and EVERY
+       * photo upload became impossible while the message blamed the user's file.
+       *
+       * The fix is to pass no options at all (`from-image` is the modern default
+       * anyway). This wrapper records the ARGUMENT COUNT of every call so the
+       * verification script can assert it is always 1 — a regression guard for a bug
+       * no CURRENT browser can reproduce, since they all accept the value. Patching
+       * at the API boundary stands in for the old engine, which is exactly where the
+       * throw happened.
+       */
+      const argumentCounts = []
+      window.__cropCalls = argumentCounts
+      const original = window.createImageBitmap.bind(window)
+      window.createImageBitmap = (...args) => {
+        argumentCounts.push(args.length)
+        return original(...args)
+      }
+
+      function Flow() {
+        const [message, setMessage] = React.useState('')
+        const [confirmed, setConfirmed] = React.useState('')
+        const crop = useCropStep(async (source, rect) => {
+          setConfirmed(
+            JSON.stringify({ source: [source.width, source.height], rect, busyWhileConfirming: true }),
+          )
+        })
+        return React.createElement(
+          'div',
+          { style: { padding: 16 } },
+          React.createElement('input', {
+            type: 'file',
+            accept: 'image/*',
+            'data-testid': 'picker',
+            onChange: async (event) => {
+              const file = event.target.files?.[0] ?? null
+              if (file === null) return
+              setMessage('')
+              setConfirmed('')
+              const error = await crop.beginCrop(file)
+              if (error !== null) setMessage(error)
+            },
+          }),
+          React.createElement('p', { 'data-testid': 'message' }, message),
+          React.createElement('p', { 'data-testid': 'confirmed' }, confirmed),
+          React.createElement('p', { 'data-testid': 'busy' }, crop.busy ? 'busy' : 'idle'),
+          crop.dialog,
+        )
+      }
+      createRoot(document.getElementById('root')).render(React.createElement(Flow))
+    </script>
+  </body>
+</html>

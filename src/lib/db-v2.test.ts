@@ -12,6 +12,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   AVATAR_MAX_BYTES,
+  AVATAR_SIZE_PX,
   BIO_MAX_LENGTH,
   MAX_KIDS_PER_PROFILE,
   missingProfileItems,
@@ -23,6 +24,23 @@ import {
 function makeFile(bytes: number, type = 'image/png'): File {
   return new File([new Uint8Array(bytes)], 'photo.png', { type })
 }
+
+describe('the avatar pipeline constants', () => {
+  // Pins the two decisions that the encoder depends on, so reverting either one
+  // fails a test instead of silently changing what every upload produces.
+  //
+  // AVATAR_SIZE_PX: 256 until photo-crop ticket 04. 256 was sized for the 24px feed
+  // circles, but V6's lightbox renders an avatar at essentially full screen, where a
+  // 256px square on a 390pt phone is a ~4.5x upscale. 512 is 2x what the circles need
+  // and encodes to under 6KB.
+  it('stores a 512px square', () => {
+    expect(AVATAR_SIZE_PX).toBe(512)
+  })
+
+  it('caps the input at 5MB', () => {
+    expect(AVATAR_MAX_BYTES).toBe(5 * 1024 * 1024)
+  })
+})
 
 describe('validateAvatarFile (V2 ticket 02)', () => {
   it('accepts a small image', () => {

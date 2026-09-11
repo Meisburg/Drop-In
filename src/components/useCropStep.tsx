@@ -42,6 +42,9 @@ export function useCropStep(
   useEffect(() => {
     pendingRef.current = pending
   }, [pending])
+  // Guards the decode race below: a bitmap that resolves after unmount has no
+  // consumer and must be closed by the code that created it.
+  const mountedRef = useRef(true)
 
   const beginCrop = useCallback(async (file: File): Promise<string | null> => {
     // The ≤5MB / image-only gate lives HERE, and deliberately not in the upload
@@ -51,13 +54,40 @@ export function useCropStep(
     const fileError = validateAvatarFile(file)
     if (fileError !== null) return fileError
     try {
-      // imageOrientation is stated rather than assumed: phone photos carry an EXIF
-      // tag, and if the preview and the encode disagreed about it the crop would be
-      // applied to a rotated image.
-      const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+      /*
+       * NO imageOrientation OPTION HERE, DELIBERATELY. This is a regression fix.
+       *
+       * The crop step originally passed `{ imageOrientation: 'from-image' }` to be
+       * explicit about EXIF. That member is a WebIDL ENUM, and WebIDL THROWS a
+       * TypeError when an enum member carries a value the engine does not know —
+       * unknown dictionary KEYS are ignored, unknown enum VALUES are not. The
+       * `from-image` value only exists in Chrome/Edge 112+, Firefox 111+ and
+       * Safari 16+, and Vite 8's own build-target floor is chrome111/edge111/
+       * firefox114/safari16.4 — i.e. Chrome and Edge 111 are INSIDE this project's
+       * declared support envelope. On those engines the call threw, the catch below
+       * turned it into "Could not read that image. Try a different photo.", and so
+       * every single photo upload became impossible, with a message that blamed the
+       * user's file for a bug in this line.
+       *
+       * It also bought nothing: `from-image` is the DEFAULT in every engine that has
+       * the value, so plain `createImageBitmap(file)` honours EXIF identically. On an
+       * engine old enough to lack the value, that engine's own default applies
+       * (historically "none", i.e. EXIF ignored) — a photo that may arrive rotated,
+       * which is strictly better than a photo that cannot be uploaded at all, and is
+       * exactly the behaviour this app shipped with before the crop step existed.
+       */
+      const bitmap = await createImageBitmap(file)
       if (bitmap.width === 0 || bitmap.height === 0) {
         bitmap.close()
         return 'That image has no readable pixels. Try a different photo.'
+      }
+      // Decoding takes 50-300ms for a phone photo, which is long enough to navigate
+      // away in. Nothing will ever consume this bitmap then, and the unmount cleanup
+      // has already run and found nothing — so release it here instead of leaking a
+      // ~48MB decode per abandoned pick.
+      if (!mountedRef.current) {
+        bitmap.close()
+        return null
       }
       // The superseded bitmap is closed OUTSIDE the state updater: an updater must
       // be pure (StrictMode invokes it twice on purpose), and releasing GPU-backed
@@ -96,12 +126,18 @@ export function useCropStep(
   )
 
   // Closed on unmount too, or navigating away mid-crop leaks the decode.
-  useEffect(
-    () => () => {
+  //
+  // The flag is re-armed in the effect BODY rather than assumed true: StrictMode
+  // deliberately runs mount -> cleanup -> mount, so a flag that is only ever
+  // lowered would stay false for the rest of the session in dev and quietly reject
+  // every photo.
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
       pendingRef.current?.close()
-    },
-    [],
-  )
+    }
+  }, [])
 
   return {
     beginCrop,

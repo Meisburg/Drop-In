@@ -22,7 +22,7 @@ export interface Profile {
   banned_at?: string | null
   /**
    * The profile's avatar (V2 ticket 02, migration 0011): the public URL of
-   * the client-resized 256px image in the 'avatars' bucket
+   * the client-resized 512px image in the 'avatars' bucket
    * (avatars/<uid>/avatar). Optional: absent until the live project is
    * past 0011.
    */
@@ -150,7 +150,7 @@ export interface Kid {
   age: number
   /**
    * The kid's photo (V3 slice 6, ticket 09, migration 0022): the public
-   * URL of the client-resized 256px image in the 'avatars' bucket at
+   * URL of the client-resized 512px image in the 'avatars' bucket at
    * <uid>/kids/<kidId> (the 0011 owner-scoped write policy's documented
    * coverage — the 0022 header). Shown ONLY in the profile kids list
    * (the /u/:handle 40px render) — never on cards or event lines (the

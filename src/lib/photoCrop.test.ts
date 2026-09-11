@@ -8,6 +8,7 @@ import {
   cropRectFor,
   drawTransformFor,
   initialCropState,
+  isDrawableRect,
   visibleSideFor,
   zoomToPoint,
   type CropRect,
@@ -179,11 +180,16 @@ describe('drawTransformFor — the preview cannot disagree with the encoder', ()
         // ...and its side spans the window exactly...
         expect(t.scale * rect.sw).toBeCloseTo(windowSize, 6)
         expect(t.scale * rect.sh).toBeCloseTo(windowSize, 6)
+        // ...the drawn SIZE travels in the transform rather than being re-derived by
+        // the caller (the preview must not recompute the rectangle the encoder was
+        // given)...
+        expect(t.drawWidth).toBeCloseTo(image.width * t.scale, 6)
+        expect(t.drawHeight).toBeCloseTo(image.height * t.scale, 6)
         // ...which means the whole image still covers the window (no gaps).
         expect(t.offsetX).toBeLessThanOrEqual(0)
         expect(t.offsetY).toBeLessThanOrEqual(0)
-        expect(t.offsetX + image.width * t.scale).toBeGreaterThanOrEqual(windowSize - 1e-6)
-        expect(t.offsetY + image.height * t.scale).toBeGreaterThanOrEqual(windowSize - 1e-6)
+        expect(t.offsetX + t.drawWidth).toBeGreaterThanOrEqual(windowSize - 1e-6)
+        expect(t.offsetY + t.drawHeight).toBeGreaterThanOrEqual(windowSize - 1e-6)
       }
     })
   }
@@ -274,6 +280,47 @@ describe('zoomToPoint', () => {
     expect(zoomed.zoom).toBe(2)
     expect(zoomed.centerX).toBe(200)
     expect(zoomed.centerY).toBe(400)
+  })
+})
+
+describe('isDrawableRect — the encoder refuses a frame it cannot draw', () => {
+  // `prepareAvatarFile` draws whatever rect it is handed, and a zero or non-finite
+  // source rect makes drawImage produce a blank square with NO error — a silently
+  // grey avatar. Unreachable from the app today, which is exactly why it is pinned
+  // here rather than left to the assumption that it stays unreachable.
+  it('accepts a rect produced by cropRectFor', () => {
+    for (const image of [PORTRAIT, LANDSCAPE, SQUARE]) {
+      const rect = cropRectFor(image, { zoom: 2, centerX: image.width / 2, centerY: image.height / 2 })
+      expect(isDrawableRect(rect, image)).toBe(true)
+    }
+  })
+
+  it('rejects a zero-area rect', () => {
+    expect(isDrawableRect({ sx: 0, sy: 0, sw: 0, sh: 0 })).toBe(false)
+    expect(isDrawableRect({ sx: 0, sy: 0, sw: 100, sh: 0 })).toBe(false)
+    expect(isDrawableRect({ sx: 0, sy: 0, sw: -5, sh: 100 })).toBe(false)
+  })
+
+  it('rejects non-finite values', () => {
+    expect(isDrawableRect({ sx: Number.NaN, sy: 0, sw: 100, sh: 100 })).toBe(false)
+    expect(isDrawableRect({ sx: 0, sy: 0, sw: Number.POSITIVE_INFINITY, sh: 100 })).toBe(false)
+  })
+
+  it('rejects a negative origin', () => {
+    expect(isDrawableRect({ sx: -1, sy: 0, sw: 100, sh: 100 })).toBe(false)
+  })
+
+  it('rejects a rect that reaches outside the image, when given one', () => {
+    const image: ImageSize = { width: 300, height: 400 }
+    expect(isDrawableRect({ sx: 0, sy: 0, sw: 300, sh: 300 }, image)).toBe(true)
+    expect(isDrawableRect({ sx: 50, sy: 150, sw: 300, sh: 300 }, image)).toBe(false)
+    expect(isDrawableRect({ sx: 50, sy: 0, sw: 300, sh: 300 }, image)).toBe(false)
+  })
+
+  it('cannot catch an out-of-bounds rect when denied the image size', () => {
+    // Documenting the limit rather than pretending: without the source size there is
+    // nothing to compare against, so only finiteness and sign are checked.
+    expect(isDrawableRect({ sx: 5000, sy: 0, sw: 100, sh: 100 })).toBe(true)
   })
 })
 

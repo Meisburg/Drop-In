@@ -1,16 +1,20 @@
 /**
  * Spec (V2 ticket 02; the crop step added by photo-crop ticket 03): the avatar.
- * The marker picks a photo on /profile, frames it in the crop dialog, and the
- * encoder produces a square JPEG stored at avatars/<uid>/avatar under the
- * owner-scoped write policy; it then posts a drop-in, and the 40px round avatar
- * renders on the feed card and on /u/<handle>.
+ * The marker picks a photo on /profile, confirms the crop dialog, and the encoder
+ * produces a square JPEG stored at avatars/<uid>/avatar under the owner-scoped write
+ * policy; it then posts a drop-in, and the 40px round avatar renders on the feed
+ * card and on /u/<handle>.
  *
- * The test image is a dependency-free solid-color PNG generated in-process
- * (node:zlib — no fixtures on disk), deliberately wider than tall. Before ticket
- * 03 that exercised the automatic center-crop; now it exercises the crop step's
- * DEFAULT frame, which is deliberately the same largest-centred-square the old
- * code produced — so accepting without touching anything must still yield a
- * square upload.
+ * WHAT THIS SPEC PROVES, precisely: the round trip — pick -> crop -> encode ->
+ * upload -> render — and that the stored object is SQUARE at the expected size,
+ * read back off the CDN. It does NOT prove the FRAMING: the fixture is one solid
+ * colour (a dependency-free PNG generated in-process, node:zlib, no files on disk),
+ * so a correct crop and a stretched or offset one are indistinguishable to it. The
+ * framing claim — that the rectangle the dialog shows is the rectangle the encoder
+ * keeps — is proven by `src/lib/photoCrop.test.ts` and by the dev harnesses under
+ * `scripts/` (`crop-harness.html`, `crop-encode-harness.html`,
+ * `crop-flow-harness.html`), which is where an earlier version of this comment
+ * wrongly pointed.
  *
  * Cleanup (best-effort per ticket, e2e-<epoch> marker prefix): delete the
  * storage object, null profiles.avatar_url, and delete the marker's
@@ -86,11 +90,9 @@ test('marker uploads an avatar, sees the 40px round avatar on the feed card + /u
   await page.goto('/profile')
   await settleOnRoute(page, '/profile')
 
-  // Upload (the /profile photo card). The ≤5MB gate and the decode run inside
-  // the crop step (this file is far under 5 MB), then the crop dialog opens on
-  // the decoded image. Accepting its default frame is one tap — and that frame is
-  // deliberately the same largest-centred square the pre-ticket-03 code did
-  // silently, so this assertion still proves the upload pipeline end to end.
+  // Upload (the /profile photo card). The ≤5MB gate and the decode run inside the
+  // crop step (this file is far under 5 MB), then the crop dialog opens on the
+  // decoded image. Accepting its default frame is one tap.
   await page.locator('input[type="file"]').setInputFiles({
     name: 'avatar.png',
     mimeType: 'image/png',
@@ -98,6 +100,24 @@ test('marker uploads an avatar, sees the 40px round avatar on the feed card + /u
   })
   await page.getByRole('button', { name: 'Use this photo' }).click()
   await expect(page.getByText('Photo updated.')).toBeVisible()
+
+  // READ THE STORED OBJECT BACK. Without this the spec asserted only that *some*
+  // upload happened — "Photo updated." appears and an <img> exists whether the
+  // result is a square, a stretched rectangle or a blank JPEG — so it could not
+  // tell ticket 03's acceptance criterion from a regression. Measured in the
+  // browser, which needs no new dependency to decode a JPEG.
+  const stored = await page.getByAltText('Your avatar').evaluate(async (img) => {
+    const element = img as HTMLImageElement
+    const response = await fetch(element.src, { cache: 'no-store' })
+    const bitmap = await createImageBitmap(await response.blob())
+    const measured = { width: bitmap.width, height: bitmap.height }
+    bitmap.close()
+    return measured
+  })
+  expect(stored.width).toBe(stored.height)
+  // The constant is pinned by a unit test (db-v2.test.ts); this asserts the stored
+  // object is at least as large as the size the circles and the lightbox need.
+  expect(stored.width).toBeGreaterThanOrEqual(512)
 
   // Post a drop-in (the V2 slice-1 UI, same pattern as the golden path) so
   // the feed card can render the host avatar.

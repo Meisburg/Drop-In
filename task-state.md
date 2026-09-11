@@ -121,6 +121,46 @@ reported every candidate as a perfect match.
 04 cannot be closed from here — whether 512px is *visibly* sharp in the lightbox on
 a real phone is perceptual and needs a human holding a phone.
 
+### Review round — one high-severity defect found and fixed
+
+An independent fresh-context reviewer (no prior exposure to this work) returned
+**NEEDS_CHANGES**. Full findings and resolutions: `.scratch/photo-crop/review-response.md`.
+
+**The one that mattered:** `useCropStep` passed `{ imageOrientation: 'from-image' }`
+to `createImageBitmap`. That member is a **WebIDL enum**, and WebIDL THROWS on an
+enum value an engine does not know (unknown KEYS are ignored; unknown VALUES are
+not). The value needs Chrome/Edge 112+, Firefox 111+ or Safari 16+, while Vite 8's
+own build floor is **chrome111** — inside this project's declared support envelope.
+There the call threw, the catch blamed the user's file, and **no photo could be
+uploaded at all**. It also bought nothing: `from-image` is the modern default. The
+option is gone, and a regression guard in `scripts/crop-flow-harness.html` now
+asserts `createImageBitmap` is never called with options — checked for vacuity in
+the same run by patching an engine that throws on them.
+
+Ten further real findings were fixed (bitmap leak on unmount-during-decode; a
+gesture layer that could wedge permanently and a stale 3→2 pinch base; wheel zoom
+dropping deltas; Escape not gated on `busy`; an e2e comment claiming more than its
+assertions proved — it now reads the stored object back and asserts it is square;
+stale "256px" user-facing copy; no guard on the encoder's rect and no test for
+`AVATAR_SIZE_PX`; the verification harnesses being gitignored, so the central claim
+was unreproducible — they now live in `scripts/` and are tracked). One nit is
+accepted with a written reason.
+
+The reviewer's own independent work corroborated the core: a **270,000-case fuzz of
+the real `photoCrop.ts`** found no non-square, non-finite, out-of-bounds,
+divide-by-zero or gap-producing state, and confirmed `clampCropState` is sufficient
+(so the origin clamp is defence, not a patch over a hole).
+
+Re-verified after the fixes: build clean · **340/340** unit · lint 0 errors · mobile
+audit green at all 12 combinations · all four harness verifications re-run (pan
+direction, zoom reframing, rect-honoured encode, the >5MB gate, cancel, and the new
+`createImageBitmap` argument-count guard).
+
+**Still unverified, stated rather than implied:** any real WebKit/Safari engine; EXIF
+orientation on a real camera file (preview and encode share one bitmap, so they cannot
+disagree *with each other* — whether it is upright is untested); the e2e suite (a live
+Supabase mutation, so it was listed but never run); and the perceptual 512px sharpness.
+
 ### PWA / mobile-app readiness (verified round 2)
 
 The "feels like a phone app" half of V4 is now backed by repeatable checks

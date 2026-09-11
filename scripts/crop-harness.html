@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Crop dialog harness</title>
+  </head>
+  <body>
+    <!--
+      DEV-ONLY HARNESS (photo-crop ticket 02/03 verification). Not an app route and
+      not a build entry — Vite builds only index.html — so this never ships. It
+      exists because the crop dialog can only be reached behind an authenticated
+      session on /profile or /onboarding, and driving the REAL component against a
+      REAL image is the only way to verify that the preview draws the region the
+      encoder will keep, that a drag moves the window the way a finger expects, and
+      that the zoom actually reframes.
+
+      The test image is a 300x400 portrait with NINE horizontal bands of distinct
+      colours. Nine (an odd count) on purpose: the default frame is centred on
+      y=200, and with an even band count that lands exactly on a band BOUNDARY, so
+      the sampled pixel is a legitimate antialiased blend and cannot identify a
+      band. With 44.44px bands every frame this file checks lands mid-band.
+
+        window centred (the default)      -> band 4  (green)  #2f9e44
+        dragged to the top clamp at 1x    -> band 3  (lime)   #94d82d
+        dragged 400px at 3x               -> band 1  (orange) #f76707
+
+      The last pair is the point: at 1x a 400px drag clamps against the top edge of
+      the travel (a 300px window over a 400px image has only 100px of it), while at
+      3x the same drag reaches much further in. One pixel therefore proves the pan
+      DIRECTION and that the zoom really reframes.
+    -->
+    <div id="root"></div>
+    <script type="module">
+      import '../src/index.css'
+      import React from 'react'
+      import { createRoot } from 'react-dom/client'
+      import { CropPhotoDialog } from '../src/components/CropPhotoDialog.tsx'
+
+      const WIDTH = 300
+      const HEIGHT = 400
+      const source = document.createElement('canvas')
+      source.width = WIDTH
+      source.height = HEIGHT
+      const ctx = source.getContext('2d')
+      const BANDS = [
+        '#e03131',
+        '#f76707',
+        '#f59f00',
+        '#94d82d',
+        '#2f9e44',
+        '#1971c2',
+        '#7048e8',
+        '#d6336c',
+        '#495057',
+      ]
+      const band = HEIGHT / BANDS.length
+      BANDS.forEach((colour, index) => {
+        ctx.fillStyle = colour
+        ctx.fillRect(0, Math.round(index * band), WIDTH, Math.ceil(band))
+      })
+      const bitmap = await createImageBitmap(source)
+
+      window.__crop = { result: null, cancelled: false, width: WIDTH, height: HEIGHT, bands: BANDS }
+      createRoot(document.getElementById('root')).render(
+        React.createElement(CropPhotoDialog, {
+          image: bitmap,
+          onCancel: () => {
+            window.__crop.cancelled = true
+          },
+          onConfirm: (rect) => {
+            window.__crop.result = rect
+          },
+        }),
+      )
+    </script>
+  </body>
+</html>

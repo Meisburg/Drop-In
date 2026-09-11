@@ -16,8 +16,9 @@ import type {
   Report,
 } from './types'
 // The crop step's source of truth (photo-crop ticket 03): the encoder takes the
-// frame the user chose rather than computing one of its own.
-import type { CropRect } from './photoCrop'
+// frame the user chose rather than computing one of its own, and refuses a frame
+// that could not be drawn.
+import { isDrawableRect, type CropRect } from './photoCrop'
 import {
   filterFeed,
   hostDistanceMiles,
@@ -1510,8 +1511,16 @@ export const INTERESTS_MAX_LENGTH = 200
  * Pure photo input validation (the avatar + kid-photo machinery, V2
  * ticket 02; the kid photo reuses it in V3 slice 6, ticket 09): an error
  * message, or null when valid. Rejects non-images and files over
- * AVATAR_MAX_BYTES — the rejection happens before any upload (ticket AC:
- * "> 5 MB rejected before upload").
+ * AVATAR_MAX_BYTES.
+ *
+ * WHERE THE GATE LIVES, since photo-crop ticket 03 moved it: it is called from
+ * `useCropStep.beginCrop`, NOT from `uploadAvatar`/`uploadKidPhoto`. Those take an
+ * already-decoded source, so there is no File left to measure by the time they run.
+ * The ticket AC ("> 5 MB rejected before upload") therefore holds by CONVENTION —
+ * the upload functions are reachable only from the crop dialog's confirm, and the
+ * dialog only exists once this returned null — rather than by construction inside
+ * the upload path. Moving it back would cost a second ~48MB decode of every photo;
+ * the trade is recorded here so the invariant is not mistaken for enforcement.
  */
 export function validateAvatarFile(file: File): string | null {
   if (!file.type.startsWith('image/')) {
@@ -1590,6 +1599,20 @@ export function missingProfileItems(
 }
 
 /**
+ * The pixel size of a canvas source, whatever kind it is. `CanvasImageSource` is a
+ * union (ImageBitmap, HTMLImageElement, HTMLCanvasElement, ImageData, VideoFrame…)
+ * and they do not agree on where the size lives, so the guard in
+ * `prepareAvatarFile` needs one place that knows.
+ */
+function sourceSize(source: CanvasImageSource): { width: number; height: number } {
+  if (source instanceof HTMLImageElement) {
+    return { width: source.naturalWidth, height: source.naturalHeight }
+  }
+  const sized = source as { width?: number; height?: number }
+  return { width: sized.width ?? 0, height: sized.height ?? 0 }
+}
+
+/**
  * Client-side encode of the user's CHOSEN crop as a square JPEG (V2 ticket 02;
  * reframed by photo-crop ticket 03).
  *
@@ -1618,6 +1641,14 @@ export async function prepareAvatarFile(
   canvas.height = size
   const ctx = canvas.getContext('2d')
   if (ctx === null) throw new Error('Could not resize the photo (canvas unavailable).')
+  // Refuse an undrawable frame LOUDLY. A zero or non-finite source rect makes
+  // drawImage produce a blank square with no error at all, so the failure would
+  // arrive as a successfully-uploaded grey avatar. Unreachable from the app (only
+  // cropRectFor output reaches here) — which is the point: this is the one line
+  // whose output is what the user actually ends up looking at.
+  if (!isDrawableRect(rect, sourceSize(source))) {
+    throw new Error('Could not crop the photo (the chosen area is outside the image).')
+  }
   ctx.imageSmoothingQuality = 'high'
   // The 9-argument form: take `rect` from the source, draw it across the whole
   // output square. One scale, no second crop decision.

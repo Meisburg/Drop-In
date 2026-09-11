@@ -83,11 +83,14 @@ export function CropPhotoDialog({
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onCancel()
+      // Gated on `busy` exactly like the backdrop click below. Without the gate,
+      // Escape during an upload hid the dialog while the upload carried on, which
+      // reads to the user as "cancelled" when nothing was cancelled.
+      if (event.key === 'Escape' && !busy) onCancel()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onCancel])
+  }, [busy, onCancel])
 
   // The geometry is expressed in window pixels, so the window is MEASURED rather
   // than assumed — which is also what makes the state survive a rotation.
@@ -114,12 +117,15 @@ export function CropPhotoDialog({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, windowSize, windowSize)
     ctx.imageSmoothingQuality = 'high'
+    // `transform.drawWidth/drawHeight`, not `image.width * transform.scale` computed
+    // locally: the point of one transform object is that the preview consumes the
+    // same numbers the encoder's rectangle came from, with nothing re-derived here.
     ctx.drawImage(
       image,
       transform.offsetX,
       transform.offsetY,
-      image.width * transform.scale,
-      image.height * transform.scale,
+      transform.drawWidth,
+      transform.drawHeight,
     )
   }, [image, imageSize, state, windowSize])
 
@@ -132,12 +138,14 @@ export function CropPhotoDialog({
     function onWheel(event: WheelEvent) {
       event.preventDefault()
       const rect = canvas!.getBoundingClientRect()
-      const next = stateRef.current.zoom * Math.exp(-event.deltaY * 0.0015)
       setState((current) =>
         zoomToPoint(
           imageSize,
           current,
-          next,
+          // Derived INSIDE the updater from `current`, never from stateRef: wheel
+          // events arrive faster than React commits, so a base read from a ref that
+          // lags by one event drops whole deltas and the zoom feels sticky.
+          current.zoom * Math.exp(-event.deltaY * 0.0015),
           event.clientX - rect.left,
           event.clientY - rect.top,
           windowSize,
@@ -148,16 +156,30 @@ export function CropPhotoDialog({
     return () => canvas.removeEventListener('wheel', onWheel)
   }, [imageSize, windowSize])
 
+  /**
+   * Re-derive the pinch base from whatever pointers are down RIGHT NOW.
+   *
+   * Called on every add/remove rather than set once when the second finger lands.
+   * A base captured for one pair and then measured against a DIFFERENT pair is a
+   * zoom jump — that is exactly what a third finger lifting used to cause, because
+   * `size < 2` stayed false and the stale base survived. Doing it on every change
+   * makes the base always describe the pair actually being measured.
+   */
+  function syncPointers() {
+    const points = [...pointersRef.current.values()]
+    pinchRef.current =
+      points.length === 2
+        ? {
+            distance: Math.max(1, Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y)),
+            zoom: stateRef.current.zoom,
+          }
+        : null
+  }
+
   function handlePointerDown(event: ReactPointerEvent<HTMLCanvasElement>) {
     event.currentTarget.setPointerCapture(event.pointerId)
     pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
-    if (pointersRef.current.size === 2) {
-      const [a, b] = [...pointersRef.current.values()]
-      pinchRef.current = {
-        distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
-        zoom: stateRef.current.zoom,
-      }
-    }
+    syncPointers()
   }
 
   function handlePointerMove(event: ReactPointerEvent<HTMLCanvasElement>) {
@@ -184,9 +206,16 @@ export function CropPhotoDialog({
       return
     }
 
-    const pinch = pinchRef.current
     const canvas = canvasRef.current
-    if (pointersRef.current.size === 2 && pinch !== null && canvas !== null) {
+    if (pointersRef.current.size >= 2 && canvas !== null) {
+      // SELF-HEAL. If a pointerup was ever missed (the browser can take a pointer
+      // away without a cancel reaching us) the map keeps a dead entry, and a null
+      // base here used to mean the gesture layer silently did nothing for the rest
+      // of the dialog's life. Re-deriving a base instead means the worst case is a
+      // pinch measured from the current finger pair.
+      if (pinchRef.current === null) syncPointers()
+      const pinch = pinchRef.current
+      if (pinch === null) return
       const [a, b] = [...pointersRef.current.values()]
       const distance = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y))
       const rect = canvas.getBoundingClientRect()
@@ -205,7 +234,7 @@ export function CropPhotoDialog({
 
   function handlePointerUp(event: ReactPointerEvent<HTMLCanvasElement>) {
     pointersRef.current.delete(event.pointerId)
-    if (pointersRef.current.size < 2) pinchRef.current = null
+    syncPointers()
   }
 
   return createPortal(
@@ -247,6 +276,10 @@ export function CropPhotoDialog({
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
+            // Capture can be lost without a pointerup (the browser takes the pointer
+            // away, a system gesture, a second window). Treating that as a release is
+            // what stops a dead entry from wedging the gesture layer.
+            onLostPointerCapture={handlePointerUp}
           />
           <div className="pointer-events-none absolute inset-0">
             <div

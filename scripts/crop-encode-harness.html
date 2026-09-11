@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Avatar encode harness</title>
+  </head>
+  <body>
+    <!--
+      DEV-ONLY HARNESS (photo-crop tickets 03 + 04 verification). Not an app route
+      and not a build entry — Vite builds only index.html — so this never ships.
+
+      It exists to settle the claim the whole feature rests on, against the REAL
+      encoder rather than a replica of it: that `prepareAvatarFile` keeps the
+      rectangle the crop dialog handed it, at the size the constant says. It
+      encodes two DIFFERENT rects of the same banded test image and reports each
+      result's dimensions, byte size and centre colour — if the rect were ignored
+      (the old center-crop behaviour), both results would look identical.
+    -->
+    <div id="root"></div>
+    <script type="module">
+      import { AVATAR_SIZE_PX, prepareAvatarFile } from '../src/lib/db.ts'
+
+      const WIDTH = 300
+      const HEIGHT = 400
+      const BANDS = [
+        '#e03131',
+        '#f76707',
+        '#f59f00',
+        '#94d82d',
+        '#2f9e44',
+        '#1971c2',
+        '#7048e8',
+        '#d6336c',
+        '#495057',
+      ]
+      const source = document.createElement('canvas')
+      source.width = WIDTH
+      source.height = HEIGHT
+      const ctx = source.getContext('2d')
+      const band = HEIGHT / BANDS.length
+      BANDS.forEach((colour, index) => {
+        ctx.fillStyle = colour
+        ctx.fillRect(0, Math.round(index * band), WIDTH, Math.ceil(band))
+      })
+      const bitmap = await createImageBitmap(source)
+
+      async function encode(rect) {
+        const blob = await prepareAvatarFile(bitmap, rect)
+        const decoded = await createImageBitmap(blob)
+        // Centre pixel of the ENCODED result: which band did the encoder keep?
+        const probe = document.createElement('canvas')
+        probe.width = decoded.width
+        probe.height = decoded.height
+        const pctx = probe.getContext('2d')
+        pctx.drawImage(decoded, 0, 0)
+        const d = pctx.getImageData(
+          Math.floor(decoded.width / 2),
+          Math.floor(decoded.height / 2),
+          1,
+          1,
+        ).data
+        return {
+          bytes: blob.size,
+          type: blob.type,
+          width: decoded.width,
+          height: decoded.height,
+          centre: '#' + [d[0], d[1], d[2]].map((v) => v.toString(16).padStart(2, '0')).join(''),
+        }
+      }
+
+      window.__encode = async () => ({
+        sizeConstant: AVATAR_SIZE_PX,
+        bands: BANDS,
+        // y 0..100 -> centre sits in band 1 (top of the photo)
+        top: await encode({ sx: 0, sy: 0, sw: 100, sh: 100 }),
+        // y 200..300 -> centre sits in band 5 (lower middle)
+        lower: await encode({ sx: 100, sy: 200, sw: 100, sh: 100 }),
+        // the default frame the crop dialog produces: the largest centred square
+        defaultFrame: await encode({ sx: 0, sy: 50, sw: 300, sh: 300 }),
+      })
+    </script>
+  </body>
+</html>
