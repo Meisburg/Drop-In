@@ -1,12 +1,16 @@
 /**
- * Spec (V2 ticket 02): the avatar. The marker picks a photo on /profile
- * (client-resized to a 256px square, stored at avatars/<uid>/avatar under
- * the owner-scoped write policy), posts a drop-in, and the 40px round
- * avatar renders on the feed card and on /u/<handle>.
+ * Spec (V2 ticket 02; the crop step added by photo-crop ticket 03): the avatar.
+ * The marker picks a photo on /profile, frames it in the crop dialog, and the
+ * encoder produces a square JPEG stored at avatars/<uid>/avatar under the
+ * owner-scoped write policy; it then posts a drop-in, and the 40px round avatar
+ * renders on the feed card and on /u/<handle>.
  *
  * The test image is a dependency-free solid-color PNG generated in-process
- * (node:zlib — no fixtures on disk), deliberately wider than tall to
- * exercise the center-crop square resize.
+ * (node:zlib — no fixtures on disk), deliberately wider than tall. Before ticket
+ * 03 that exercised the automatic center-crop; now it exercises the crop step's
+ * DEFAULT frame, which is deliberately the same largest-centred-square the old
+ * code produced — so accepting without touching anything must still yield a
+ * square upload.
  *
  * Cleanup (best-effort per ticket, e2e-<epoch> marker prefix): delete the
  * storage object, null profiles.avatar_url, and delete the marker's
@@ -82,13 +86,17 @@ test('marker uploads an avatar, sees the 40px round avatar on the feed card + /u
   await page.goto('/profile')
   await settleOnRoute(page, '/profile')
 
-  // Upload (the /profile photo card). The pure validateAvatarFile runs
-  // first (this file is far under 5 MB), then the 256px client resize.
+  // Upload (the /profile photo card). The ≤5MB gate and the decode run inside
+  // the crop step (this file is far under 5 MB), then the crop dialog opens on
+  // the decoded image. Accepting its default frame is one tap — and that frame is
+  // deliberately the same largest-centred square the pre-ticket-03 code did
+  // silently, so this assertion still proves the upload pipeline end to end.
   await page.locator('input[type="file"]').setInputFiles({
     name: 'avatar.png',
     mimeType: 'image/png',
     buffer: png,
   })
+  await page.getByRole('button', { name: 'Use this photo' }).click()
   await expect(page.getByText('Photo updated.')).toBeVisible()
 
   // Post a drop-in (the V2 slice-1 UI, same pattern as the golden path) so

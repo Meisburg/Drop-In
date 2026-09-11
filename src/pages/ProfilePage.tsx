@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 import { useSessionContext } from '../components/SessionProvider'
+import { useCropStep } from '../components/useCropStep'
 import {
   addKid,
   BIO_MAX_LENGTH,
@@ -97,6 +98,76 @@ export function ProfilePage() {
   const [kidPhotoBusyId, setKidPhotoBusyId] = useState<string | null>(null)
   const [kidPhotoSavedId, setKidPhotoSavedId] = useState<string | null>(null)
   const [kidPhotoError, setKidPhotoError] = useState<string | null>(null)
+  // Which kid row the crop step is currently framing a photo for. The kid-photo
+  // crop's confirm handler reads it, so the same hook serves every row.
+  const [kidPhotoFor, setKidPhotoFor] = useState<string | null>(null)
+
+  /**
+   * V3 slice 6 (ticket 09): re-list the kids after a kid photo upload
+   * (the fresh rows carry the new avatar_url — the rows' 40px circles
+   * update). A failed re-list surfaces the page's kids error line (the
+   * designed state); the row's own "Photo updated." confirmation already
+   * landed.
+   *
+   * Declared HERE, above the crop step that calls it, rather than down with the
+   * other kid handlers: a function declaration is hoisted so it would still run
+   * from below, but referencing it before its declaration reads as accessing a
+   * value mid-initialization (which React Compiler flags, correctly).
+   */
+  async function handleRefreshKids() {
+    if (userId === null) return
+    try {
+      const rows = await listKids(userId)
+      setKids(rows)
+      setKidLikes((prev) => seedKidLikes(rows, prev))
+    } catch (err) {
+      setKidsError(err instanceof Error ? err.message : 'Could not load your kids.')
+    }
+  }
+
+  /**
+   * THE TWO CROP STEPS (photo-crop ticket 03) — the parent's own avatar, and a
+   * kid's photo. Two instances rather than one, because their confirm handlers do
+   * different things (the avatar refreshes the session so the header and the nudge
+   * banner update; a kid photo re-lists the rows); only one dialog can be open at
+   * a time anyway.
+   *
+   * Declared with the other hooks and above every early return — the V6 regression
+   * that blanked the detail page was exactly this mistake.
+   */
+  const avatarCrop = useCropStep(async (source, rect) => {
+    if (userId === null) return
+    setPhotoBusy(true)
+    setPhotoError(null)
+    setPhotoSaved(false)
+    try {
+      await uploadAvatar(userId, source, rect)
+      await refresh()
+      setPhotoSaved(true)
+    } catch (err) {
+      setPhotoError(err instanceof Error ? err.message : 'Could not upload your photo. Try again.')
+    } finally {
+      setPhotoBusy(false)
+    }
+  })
+
+  const kidPhotoCrop = useCropStep(async (source, rect) => {
+    if (userId === null || kidPhotoFor === null) return
+    setKidPhotoBusyId(kidPhotoFor)
+    setKidPhotoError(null)
+    setKidPhotoSavedId(null)
+    try {
+      await uploadKidPhoto(userId, kidPhotoFor, source, rect)
+      setKidPhotoSavedId(kidPhotoFor)
+      await handleRefreshKids()
+    } catch (err) {
+      setKidPhotoError(
+        err instanceof Error ? err.message : 'Could not upload that photo. Try again.',
+      )
+    } finally {
+      setKidPhotoBusyId(null)
+    }
+  })
 
   // V3 slice 6 (ticket 09): the profile interests field (<= INTERESTS_MAX_LENGTH,
   // trim; the db layer validates too — the updateBio defense-in-depth
@@ -249,26 +320,18 @@ export function ProfilePage() {
     }
   }
 
-  // V2 ticket 02: the avatar upload — the pure validateAvatarFile (run
-  // inside uploadAvatar) rejects a > 5 MB file BEFORE any upload; the
-  // client-side 256px resize happens in the browser, then the session
-  // state refreshes so the header + the nudge banner see the new URL.
+  // V2 ticket 02: the avatar upload — the ≤5MB gate and the decode run inside the
+  // crop step (photo-crop ticket 03), the user frames the photo, and the encoder
+  // produces the square; then the session state refreshes so the header + the nudge
+  // banner see the new URL.
   async function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null
     e.target.value = '' // allow re-picking the same file
     if (userId === null || file === null || photoBusy) return
-    setPhotoBusy(true)
     setPhotoError(null)
     setPhotoSaved(false)
-    try {
-      await uploadAvatar(userId, file)
-      await refresh()
-      setPhotoSaved(true)
-    } catch (err) {
-      setPhotoError(err instanceof Error ? err.message : 'Could not upload your photo. Try again.')
-    } finally {
-      setPhotoBusy(false)
-    }
+    const error = await avatarCrop.beginCrop(file)
+    if (error !== null) setPhotoError(error)
   }
 
   async function handleSaveBio(e: FormEvent) {
@@ -313,24 +376,6 @@ export function ProfilePage() {
       setInterestsError(err instanceof Error ? err.message : 'Could not save your interests.')
     } finally {
       setSavingInterests(false)
-    }
-  }
-
-  /**
-   * V3 slice 6 (ticket 09): re-list the kids after a kid photo upload
-   * (the fresh rows carry the new avatar_url — the rows' 40px circles
-   * update). A failed re-list surfaces the page's kids error line (the
-   * designed state); the row's own "Photo updated." confirmation already
-   * landed.
-   */
-  async function handleRefreshKids() {
-    if (userId === null) return
-    try {
-      const rows = await listKids(userId)
-      setKids(rows)
-      setKidLikes((prev) => seedKidLikes(rows, prev))
-    } catch (err) {
-      setKidsError(err instanceof Error ? err.message : 'Could not load your kids.')
     }
   }
 
@@ -407,32 +452,26 @@ export function ProfilePage() {
   }
 
   /**
-   * V3 slice 6 (ticket 09, migration 0022): the row's kid photo upload —
-   * the avatar machinery (validateAvatarFile's 256px/≤5MB check runs
-   * inside uploadKidPhoto, the client-side 256px resize in the browser),
-   * stored in the 'avatars' bucket at <uid>/kids/<kidId>, then
-   * kids.avatar_url points at the public URL. The handleRefreshKids
-   * re-list lands the fresh avatar_url (the row's 40px circle updates);
-   * the row's own "Photo updated." confirmation already landed. A failed
-   * upload (the bucket write policy, a rejected file) surfaces the page's
-   * kids photo error line; nothing is saved.
+   * V3 slice 6 (ticket 09, migration 0022): the row's kid photo upload — the
+   * ≤5MB gate and the decode run inside the crop step (photo-crop ticket 03), the
+   * user frames the photo, and the encoder produces the square; stored in the
+   * 'avatars' bucket at <uid>/kids/<kidId>, then kids.avatar_url points at the
+   * public URL. The handleRefreshKids re-list lands the fresh avatar_url (the
+   * row's 40px circle updates); the row's own "Photo updated." confirmation
+   * already landed. A failed upload (the bucket write policy, a rejected file)
+   * surfaces the page's kids photo error line; nothing is saved.
    */
   async function handleKidPhotoChange(kidId: string, e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null
     e.target.value = '' // allow re-picking the same file
     if (userId === null || file === null || kidPhotoBusyId !== null) return
-    setKidPhotoBusyId(kidId)
     setKidPhotoError(null)
     setKidPhotoSavedId(null)
-    try {
-      await uploadKidPhoto(userId, kidId, file)
-      setKidPhotoSavedId(kidId)
-      await handleRefreshKids()
-    } catch (err) {
-      setKidPhotoError(err instanceof Error ? err.message : 'Could not upload that photo. Try again.')
-    } finally {
-      setKidPhotoBusyId(null)
-    }
+    // Which row this crop is for, BEFORE the dialog opens — the confirm handler
+    // reads it back.
+    setKidPhotoFor(kidId)
+    const error = await kidPhotoCrop.beginCrop(file)
+    if (error !== null) setKidPhotoError(error)
   }
 
   /**
@@ -521,6 +560,7 @@ export function ProfilePage() {
         </div>
         {photoError !== null ? <p className="mt-3 text-sm text-red-600">{photoError}</p> : null}
         {photoSaved ? <p className="mt-3 text-sm text-emerald-700">Photo updated.</p> : null}
+        {avatarCrop.dialog}
       </div>
 
       <form
@@ -887,6 +927,7 @@ export function ProfilePage() {
           <p className="mt-2 text-sm text-red-600">{kidPhotoError}</p>
         ) : null}
         {kidsError !== null ? <p className="mt-2 text-sm text-red-600">{kidsError}</p> : null}
+        {kidPhotoCrop.dialog}
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">

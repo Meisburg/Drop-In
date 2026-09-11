@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router'
 import { useSessionContext } from '../components/SessionProvider'
+import { useCropStep } from '../components/useCropStep'
 import {
   addKid,
   BIO_MAX_LENGTH,
@@ -12,7 +13,6 @@ import {
   updateBio,
   updateHomeZipRadius,
   uploadAvatar,
-  validateAvatarFile,
   validateKid,
 } from '../lib/db'
 import { DEFAULT_RADIUS_MILES, RADIUS_MILES_OPTIONS, validateHomeZip } from '../lib/feed'
@@ -62,13 +62,41 @@ export function OnboardingPage() {
   const [error, setError] = useState<string | null>(null)
 
   // The optional completion items (V2 ticket 02).
-  const [photoFile, setPhotoFile] = useState<File | null>(null)
+  //
+  // photoAdded is a boolean, not the File: since the crop step (photo-crop ticket
+  // 03) the File is decoded on pick and never needed again — the bitmap is what
+  // both the preview and the encoder use — so keeping a reference to it would
+  // only be a way to hold a 12MP original in memory for no reason.
+  const [photoAdded, setPhotoAdded] = useState(false)
   const [photoUploading, setPhotoUploading] = useState(false)
   const [photoError, setPhotoError] = useState<string | null>(null)
   const [bio, setBio] = useState('')
   const [bioError, setBioError] = useState<string | null>(null)
   const [kidRows, setKidRows] = useState<Array<{ name: string; age: string }>>([])
   const [kidsError, setKidsError] = useState<string | null>(null)
+
+  /**
+   * The crop step (photo-crop ticket 03). Declared HERE, with the other hooks and
+   * above every early return — the V6 regression that blanked the detail page was
+   * exactly this: hooks landing below a conditional return, which React reports as
+   * "rendered more hooks than during the previous render".
+   */
+  const photoCrop = useCropStep(async (source, rect) => {
+    if (session === null) return
+    setPhotoUploading(true)
+    setPhotoError(null)
+    try {
+      await uploadAvatar(session.user.id, source, rect)
+      setPhotoAdded(true)
+    } catch (err) {
+      setPhotoAdded(false)
+      setPhotoError(
+        err instanceof Error ? err.message : 'Could not upload the photo. You can add it later.',
+      )
+    } finally {
+      setPhotoUploading(false)
+    }
+  })
 
   // The seeded gazetteer (zip_codes, migration 0012): the zip input is
   // validated against it — an unknown zip shows an inline error instead of
@@ -103,32 +131,22 @@ export function OnboardingPage() {
   const redirect = resolveOnboardingRedirect(session !== null, homeZipSet)
   if (redirect !== null) return <Navigate to={redirect} replace />
 
-  // The avatar upload (V2 ticket 02): validated + resized client-side,
-  // stored at avatars/<uid>/avatar. A failed upload (0011 not applied yet)
-  // surfaces the error but never traps onboarding — the items are
+  // The avatar upload (V2 ticket 02; the crop step added by photo-crop ticket 03):
+  // validated and decoded inside the crop step, framed by the user, then encoded
+  // client-side and stored at avatars/<uid>/avatar. A failed upload (0011 not
+  // applied yet) surfaces the error but never traps onboarding — the items are
   // optional, and the /profile nudge banner keeps the prompt alive.
   async function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null
     e.target.value = '' // allow re-picking the same file
     if (file === null || session === null) return
-    const fileError = validateAvatarFile(file)
-    if (fileError !== null) {
-      setPhotoFile(null)
-      setPhotoError(fileError)
-      return
-    }
-    setPhotoFile(file)
     setPhotoError(null)
-    setPhotoUploading(true)
-    try {
-      await uploadAvatar(session.user.id, file)
-    } catch (err) {
-      setPhotoFile(null)
-      setPhotoError(
-        err instanceof Error ? err.message : 'Could not upload the photo. You can add it later.',
-      )
-    } finally {
-      setPhotoUploading(false)
+    // The ≤5MB / image-only gate runs inside beginCrop, before the decode and
+    // before the dialog — a rejected file costs nothing.
+    const error = await photoCrop.beginCrop(file)
+    if (error !== null) {
+      setPhotoAdded(false)
+      setPhotoError(error)
     }
   }
 
@@ -375,7 +393,7 @@ export function OnboardingPage() {
           <div className="flex flex-col gap-1 text-sm">
             <span className="text-slate-700">Photo</span>
             <label className="cursor-pointer self-start rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700">
-              {photoUploading ? 'Uploading…' : photoFile !== null ? 'Photo added' : 'Add a photo'}
+              {photoUploading ? 'Uploading…' : photoAdded ? 'Photo added' : 'Add a photo'}
               <input
                 type="file"
                 accept="image/*"
@@ -385,6 +403,7 @@ export function OnboardingPage() {
               />
             </label>
             {photoError !== null ? <p className="text-sm text-red-600">{photoError}</p> : null}
+            {photoCrop.dialog}
           </div>
 
           <label className="flex flex-col gap-1 text-sm">

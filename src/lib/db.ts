@@ -15,6 +15,9 @@ import type {
   PublicPlaydateDetail,
   Report,
 } from './types'
+// The crop step's source of truth (photo-crop ticket 03): the encoder takes the
+// frame the user chose rather than computing one of its own.
+import type { CropRect } from './photoCrop'
 import {
   filterFeed,
   hostDistanceMiles,
@@ -1468,8 +1471,20 @@ export async function banProfile(profileId: string): Promise<void> {
 /** Avatar input cap (V2 ticket 02): files > 5 MB are rejected BEFORE upload. */
 export const AVATAR_MAX_BYTES = 5 * 1024 * 1024
 
-/** The avatar's stored size: client-resized to a 256px square before upload. */
-export const AVATAR_SIZE_PX = 256
+/**
+ * The avatar's stored size: encoded to a 512px square before upload.
+ *
+ * Was 256 until photo-crop ticket 04. 256 was sized for the circles (24px in the
+ * feed needs 72px at 3x, so it was ample), but V6 added "photos should enlarge":
+ * tapping an avatar opens `ImageLightbox` at essentially full screen, where a
+ * 256px square on a 390pt phone is a ~4.5x upscale — mush, in the one place a
+ * parent goes specifically to look closely.
+ *
+ * 512 is 2x what the circles need and sharp at phone size, while still encoding to
+ * tens of KB. Deliberately NOT the original resolution: the privacy property of
+ * this pipeline is that the original never leaves the device.
+ */
+export const AVATAR_SIZE_PX = 512
 
 /** Bio cap (plan-v2 Interfaces: <= 500 chars; the 0011 CHECK is the backstop). */
 export const BIO_MAX_LENGTH = 500
@@ -1575,24 +1590,38 @@ export function missingProfileItems(
 }
 
 /**
- * Client-side resize of an avatar to a 256px square (V2 ticket 02):
- * center-crop to square, scale, encode as JPEG. Runs in the browser (canvas)
- * — the network only sees the small result, never the original.
+ * Client-side encode of the user's CHOSEN crop as a square JPEG (V2 ticket 02;
+ * reframed by photo-crop ticket 03).
+ *
+ * It NO LONGER DECIDES THE CROP. This function used to scale the photo to cover a
+ * square and keep the middle of it, which is why a portrait photo of a kid
+ * arrived as a circle of shoulder (see `.scratch/photo-crop/spec.md`). The frame
+ * now comes from the user as a `CropRect` from `src/lib/photoCrop.ts` — the same
+ * rectangle the crop dialog previewed, so what was framed is what is kept.
+ *
+ * Size and format are still decided HERE, and that is the division of labour:
+ * framing belongs to the crop step, "how big and in what format" belongs to the
+ * encoder, and there is exactly one of each. Runs in the browser (canvas), so the
+ * network only ever sees the small result and never the original.
+ *
+ * The source is NOT closed here — the caller owns it, because the same decoded
+ * bitmap is what the crop dialog drew (`useCropStep` closes it when the flow
+ * ends). Closing it here would blank the preview.
  */
-export async function prepareAvatarFile(file: File): Promise<Blob> {
-  const bitmap = await createImageBitmap(file)
-  const size = AVATAR_SIZE_PX
+export async function prepareAvatarFile(
+  source: CanvasImageSource,
+  rect: CropRect,
+  size: number = AVATAR_SIZE_PX,
+): Promise<Blob> {
   const canvas = document.createElement('canvas')
   canvas.width = size
   canvas.height = size
   const ctx = canvas.getContext('2d')
   if (ctx === null) throw new Error('Could not resize the photo (canvas unavailable).')
-  // Cover-crop: scale the photo to fill the square, center-crop the overflow.
-  const scale = Math.max(size / bitmap.width, size / bitmap.height)
-  const drawWidth = bitmap.width * scale
-  const drawHeight = bitmap.height * scale
-  ctx.drawImage(bitmap, (size - drawWidth) / 2, (size - drawHeight) / 2, drawWidth, drawHeight)
-  bitmap.close()
+  ctx.imageSmoothingQuality = 'high'
+  // The 9-argument form: take `rect` from the source, draw it across the whole
+  // output square. One scale, no second crop decision.
+  ctx.drawImage(source, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, size, size)
   return await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
       (blob) => {
@@ -1606,44 +1635,66 @@ export async function prepareAvatarFile(file: File): Promise<Blob> {
 }
 
 /**
- * The shared avatars-bucket upload core (V2 ticket 02; V3 slice 6,
- * ticket 09 generalizes it for kid photos): client-resize the file to a
- * 256px square (prepareAvatarFile — the network only ever sees the small
- * result), upload to the 'avatars' bucket at `objectPath`, and return the
- * public URL. The 0011 owner-scoped write policies (avatars_owner_insert
- * / _update / _delete) key on (storage.foldername(name))[1] =
- * auth.uid()::text — the path's FIRST folder must be the caller's own
- * uid — so they cover EVERY path below `<uid>/`: the parent's own
- * avatar (<uid>/avatar) AND the kid photo (<uid>/kids/<kidId>, the
- * 0022 cover decision — the 0022 header is the audit record; no new
- * storage policy). A cross-user write is rejected by the same
- * first-folder check.
+ * The shared avatars-bucket upload core (V2 ticket 02; V3 slice 6, ticket 09
+ * generalized it for kid photos; photo-crop ticket 03 reframed it): encode the
+ * CHOSEN crop of an already-decoded source as a square JPEG (prepareAvatarFile —
+ * the network only ever sees the small result), upload to the 'avatars' bucket at
+ * `objectPath`, and return the public URL.
+ *
+ * The ≤5MB / image-only gate does NOT live here any more. It cannot: by this point
+ * the caller has already decoded the file, so there is no File left to measure.
+ * It lives in `useCropStep.beginCrop` instead — one place, running before the
+ * decode and before the crop dialog opens, so a rejected file never gets either.
+ *
+ * The 0011 owner-scoped write policies (avatars_owner_insert / _update / _delete)
+ * key on (storage.foldername(name))[1] = auth.uid()::text — the path's FIRST
+ * folder must be the caller's own uid — so they cover EVERY path below `<uid>/`:
+ * the parent's own avatar (<uid>/avatar) AND the kid photo (<uid>/kids/<kidId>,
+ * the 0022 cover decision — the 0022 header is the audit record; no new storage
+ * policy). A cross-user write is rejected by the same first-folder check.
  */
 async function uploadAvatarObject(
   client: SupabaseClient,
   objectPath: string,
-  file: File,
+  source: CanvasImageSource,
+  rect: CropRect,
 ): Promise<string> {
-  const blob = await prepareAvatarFile(file)
+  const blob = await prepareAvatarFile(source, rect)
   const { error } = await client.storage
     .from('avatars')
     .upload(objectPath, blob, { contentType: 'image/jpeg', upsert: true })
   if (error) throw error
   const { data } = client.storage.from('avatars').getPublicUrl(objectPath)
-  return data.publicUrl
+  // CACHE-BUST. The object path is FIXED per user (<uid>/avatar,
+  // <uid>/kids/<kidId>) and upsert REPLACES the object in place, but the public URL
+  // does not change — so the CDN and the browser keep serving the PREVIOUS photo for
+  // the object's cache lifetime (Supabase's default is an hour). That was always
+  // true, but the crop step makes it visible and confusing: a parent re-crops to fix
+  // a photo, sees the old one, and reasonably concludes the crop did not work.
+  //
+  // A changing query is safe here because nothing parses avatar_url — every reader
+  // passes it straight to an <img src> (checked: no split/match/parse of it in src/).
+  // Versioned by the write time rather than a random value, so it is stable for a
+  // given upload rather than different on every render.
+  return `${data.publicUrl}?v=${Date.now()}`
 }
 
 /**
- * Upload the signed-in user's avatar (V2 ticket 02): validate first (a
- * > 5 MB file is rejected before any upload), client-resize to 256px,
- * upload to the 'avatars' bucket at <uid>/avatar (the owner-scoped write
- * policy from 0011 — no cross-user writes), then point
- * profiles.avatar_url at the public URL. Returns the public URL.
+ * Upload the signed-in user's avatar (V2 ticket 02; photo-crop ticket 03): encode
+ * the chosen crop of the decoded `source`, upload to the 'avatars' bucket at
+ * <uid>/avatar (the owner-scoped write policy from 0011 — no cross-user writes),
+ * then point profiles.avatar_url at the public URL. Returns the public URL.
+ *
+ * `source` + `rect` rather than a File: the file was already validated and decoded
+ * by the crop step, and re-decoding here would cost a second ~48MB decode of the
+ * same 12MP photo to produce the identical bitmap.
  */
-export async function uploadAvatar(profileId: string, file: File): Promise<string> {
-  const fileError = validateAvatarFile(file)
-  if (fileError !== null) throw new Error(fileError)
-  const publicUrl = await uploadAvatarObject(supabase, `${profileId}/avatar`, file)
+export async function uploadAvatar(
+  profileId: string,
+  source: CanvasImageSource,
+  rect: CropRect,
+): Promise<string> {
+  const publicUrl = await uploadAvatarObject(supabase, `${profileId}/avatar`, source, rect)
   const { error: profileError } = await supabase
     .from('profiles')
     .update({ avatar_url: publicUrl })
@@ -1653,22 +1704,28 @@ export async function uploadAvatar(profileId: string, file: File): Promise<strin
 }
 
 /**
- * Upload one of the owner's kid photos (V3 slice 6, ticket 09, migration
- * 0022): the avatar machinery (validateAvatarFile + the 256px/≤5MB
- * client-resize), stored in the 'avatars' bucket at <uid>/kids/<kidId>
- * (the 0011 owner-scoped write policy's documented coverage — the 0022
- * header), then point kids.avatar_url at the public URL. Returns the
- * public URL. The kid-photo pin: this URL renders ONLY in the profile
- * kids list (the 40px circle) — never on cards or event lines.
+ * Upload one of the owner's kid photos (V3 slice 6, ticket 09, migration 0022;
+ * photo-crop ticket 03): encode the chosen crop of the decoded `source`, stored in
+ * the 'avatars' bucket at <uid>/kids/<kidId> (the 0011 owner-scoped write
+ * policy's documented coverage — the 0022 header), then point kids.avatar_url at
+ * the public URL. Returns the public URL. The kid-photo pin: this URL renders ONLY
+ * in the profile kids list (the 40px circle) — never on cards or event lines.
+ *
+ * The ≤5MB / image-only gate moved to `useCropStep.beginCrop`, which runs before
+ * the decode — see the note on uploadAvatarObject.
  */
 export async function uploadKidPhoto(
   profileId: string,
   kidId: string,
-  file: File,
+  source: CanvasImageSource,
+  rect: CropRect,
 ): Promise<string> {
-  const fileError = validateAvatarFile(file)
-  if (fileError !== null) throw new Error(fileError)
-  const publicUrl = await uploadAvatarObject(supabase, `${profileId}/kids/${kidId}`, file)
+  const publicUrl = await uploadAvatarObject(
+    supabase,
+    `${profileId}/kids/${kidId}`,
+    source,
+    rect,
+  )
   const { error: kidError } = await supabase
     .from('kids')
     .update({ avatar_url: publicUrl })

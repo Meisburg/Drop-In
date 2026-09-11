@@ -52,3 +52,11 @@ playwright-report/
 public/logo-mockup.html
 public/color-compare.html
 logo-mockup.png
+
+# Dev-only verification harnesses (photo-crop tickets 02-04). Root-level HTML so
+# `vite dev` transforms and serves them as entries; NOT build inputs, and not
+# product code. They mount the real components against a synthetic banded image
+# because the crop dialog is otherwise only reachable behind a session.
+crop-harness.html
+crop-encode-harness.html
+crop-flow-harness.html

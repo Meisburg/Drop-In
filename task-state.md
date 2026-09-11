@@ -78,6 +78,49 @@ rather than merely accepted.
 comparison pages, plus `.scratch/*.cjs` verification scripts. They live under
 `public/` so committing them would have published them.
 
+## V7.1 — photo crop / zoom on upload (2026-09-11, human report → done)
+
+Source: *"when a user uploads a photo they need an opportunity to zoom/crop the
+photo because my kids pictures are not displaying properly in the circle."*
+Plan of record: `.scratch/photo-crop/spec.md` + tickets `01`–`04`.
+
+**Root cause, exact:** `prepareAvatarFile` (`src/lib/db.ts`) center-cropped every
+upload with `(size - drawWidth) / 2` — the crop window pinned to the dead centre
+of the source, with no pan, no zoom and no preview — and the square was then drawn
+into a circle (`rounded-full object-cover`), which removes the corners too. One
+function, three entry points, including **onboarding** (the first photo a new
+parent ever uploads).
+
+| Item | State | Evidence |
+|---|---|---|
+| 01 crop-geometry seam | complete | `src/lib/photoCrop.ts` + 30 unit tests (325 total pass). State is the window CENTRE in source pixels + a zoom, so the same state means the same thing at any window size, and zoom 1 is EXACTLY the old center-crop — which is what lets the step default to "touch nothing, get what you used to get" |
+| 02 crop dialog | complete | `src/components/CropPhotoDialog.tsx` + the flow hook in `useCropStep.tsx`. Canvas preview painted with the encoder's OWN transform, circular mask, drag + pinch + wheel + slider, 3x zoom ceiling |
+| 03 wire the 3 paths + EXIF | complete | `prepareAvatarFile(source, rect)` no longer decides framing; the ≤5MB gate moved into `useCropStep.beginCrop` (one place, before the decode AND the dialog); `createImageBitmap` given an explicit `imageOrientation: 'from-image'`; `e2e/avatar.e2e.ts` clicks through the dialog |
+| 04 avatar resolution | complete | `AVATAR_SIZE_PX` 256 → 512. Measured through the real encoder: 512x512 JPEG at 3.3–5.7KB |
+| Verification | measured, not asserted | The dialog is only reachable behind a session, so it was driven via `crop-harness.html` / `crop-encode-harness.html` — dev-only root HTML that Vite serves in dev and never builds, mounting the REAL components with the REAL CSS |
+| Lint / build / tests | PASS | build clean · 325/325 unit · oxlint **0 errors**, and precisely **0 warnings on any line this work changed** (all 29 are pre-existing or from uncommitted scratch scripts — checked by intersecting warning lines against diff hunks) |
+| Mobile audit | PASS | all 12 viewport/route combinations |
+
+**The claim this feature rests on, and how it was settled:** that the frame the
+user sees and the pixels that get saved cannot disagree. Both come from
+`cropRectFor` — the preview is painted with `drawTransformFor`, which is DERIVED
+from it — and the encoder was then fed three different rectangles of one 9-band
+test image and returned three different images (bands 1 / 5 / 4). If the rect were
+being ignored, all three would have been identical. Two independent checks of the
+gesture layer came out right as well: dragging the photo DOWN moves the window UP
+(the "photo fights my finger" bug is absent), and the same drag reaches band 1 at
+3x where 1x could only reach band 3.
+
+**Two bugs my own measurements caught and fixed:** the generated iOS splash images
+had no CSS reset, so the wordmark sat 32px lower than the web splash (the app's
+Tailwind preflight zeroes margins; a bare `<p>` does not); and the first version of
+the font check compared an invalid font string, which canvas silently ignores, so it
+reported every candidate as a perfect match.
+
+**Still open, deliberately:** the tagline. And one acceptance criterion for ticket
+04 cannot be closed from here — whether 512px is *visibly* sharp in the lightbox on
+a real phone is perceptual and needs a human holding a phone.
+
 ### PWA / mobile-app readiness (verified round 2)
 
 The "feels like a phone app" half of V4 is now backed by repeatable checks
