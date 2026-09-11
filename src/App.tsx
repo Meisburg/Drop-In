@@ -20,6 +20,7 @@ import { NewPlaydatePage } from './pages/NewPlaydatePage'
 import { OnboardingPage } from './pages/OnboardingPage'
 import { PlaydateDetailPage } from './pages/PlaydateDetailPage'
 import { ProfilePage } from './pages/ProfilePage'
+import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { UserPage } from './pages/UserPage'
 import { PLAYDATE_RETURN_KEY, isPlaydateReturnTarget } from './lib/trust'
 import type { DuplicatePrefill } from './lib/types'
@@ -248,6 +249,10 @@ export default function App() {
         <SplashScreen />
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          {/* Password reset (V5): outside the shell like /login — the recovery
+              token lands in the URL fragment and supabase-js needs a moment to
+              turn it into a session; the shell's gate would bounce that window. */}
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route element={<ProtectedShell />}>
             <Route path="/" element={<FeedPage />} />
             <Route path="/browse" element={<BrowsePage />} />

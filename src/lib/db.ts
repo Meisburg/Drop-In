@@ -37,6 +37,7 @@ import {
 } from './trust'
 import { issueModeratorUpdate, isProfileBanned } from './moderation'
 import { oauthRedirectTo, probeOAuthProvider, type OAuthProvider } from './oauth'
+import { resetRedirectTo } from './passwordReset'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -854,6 +855,27 @@ export function normalizePublicPlaydate(
  */
 export function getShareUrl(playdateId: string): string {
   return buildShareUrl(playdateId, import.meta.env.VITE_PUBLIC_BASE_URL ?? '', window.location.origin)
+}
+
+/**
+ * Email a password-reset link (V5 beta readiness). Supabase answers the same
+ * way whether or not the address has an account, so the caller shows the
+ * neutral RESET_REQUEST_NOTICE rather than confirming existence.
+ *
+ * The link lands on /reset-password with a recovery token that supabase-js
+ * turns into a session; setNewPassword finishes the job from there.
+ */
+export async function sendPasswordReset(email: string): Promise<void> {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: resetRedirectTo(window.location.origin),
+  })
+  if (error) throw error
+}
+
+/** Set a new password for the session the recovery link established. */
+export async function setNewPassword(password: string): Promise<void> {
+  const { error } = await supabase.auth.updateUser({ password })
+  if (error) throw error
 }
 
 /**

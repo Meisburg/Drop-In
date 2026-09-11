@@ -7,10 +7,15 @@ import { LOGIN_PATH, resolveAuthRedirect } from '../lib/auth'
 import {
   createProfile,
   HandleTakenError,
+  sendPasswordReset,
   signInWithOAuthProvider,
   signOutUser,
   supabase,
 } from '../lib/db'
+import {
+  RESET_REQUEST_NOTICE,
+  resetRequestErrorMessage,
+} from '../lib/passwordReset'
 import { oauthErrorMessage, resolveOAuthProviders, type OAuthProvider } from '../lib/oauth'
 
 /** Which social buttons this deployment shows (VITE_OAUTH_PROVIDERS; Google by default). */
@@ -27,7 +32,7 @@ export function LoginPage() {
   const { session, loading, refresh } = useSessionContext()
   const navigate = useNavigate()
 
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
+  const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -55,6 +60,22 @@ export function LoginPage() {
     setNotice(null)
     setDisplayNameError(null)
     try {
+      // V5: request a reset link. The notice is deliberately neutral — the
+      // endpoint answers the same way whether or not the address exists.
+      if (mode === 'reset') {
+        try {
+          await sendPasswordReset(email)
+        } catch (err) {
+          throw new Error(
+            resetRequestErrorMessage(
+              err instanceof Error ? err.message : 'Could not send the link.',
+            ),
+          )
+        }
+        setNotice(RESET_REQUEST_NOTICE)
+        return
+      }
+
       if (mode === 'login') {
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
@@ -157,38 +178,52 @@ export function LoginPage() {
       </div>
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h1 className="text-xl font-semibold text-slate-900">
-          {mode === 'login' ? 'Sign in' : 'Create your account'}
+          {mode === 'login'
+            ? 'Sign in'
+            : mode === 'signup'
+              ? 'Create your account'
+              : 'Reset your password'}
         </h1>
         <p className="mt-1 text-sm text-slate-500">
           {mode === 'login'
             ? 'Welcome back. Sign in to see drop-ins near you.'
-            : 'Pick a display name — it’s your persistent public handle.'}
+            : mode === 'signup'
+              ? 'Pick a display name — it’s your persistent public handle.'
+              : 'Enter your email and we’ll send a link to set a new password.'}
         </p>
 
         {/* V4 slice 4: social sign-in first — it is one tap, and it is what a
             parent arriving from a shared link will reach for. The email form
-            stays below as the fallback that always works. */}
-        <div className="mt-4 flex flex-col gap-2">
-          {OAUTH_PROVIDERS.map((provider) => (
-            <button
-              key={provider.id}
-              type="button"
-              disabled={busy}
-              onClick={() => void handleOAuth(provider.id)}
-              className="flex min-h-11 w-full items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 disabled:opacity-50"
-            >
-              {provider.label}
-            </button>
-          ))}
-        </div>
+            stays below as the fallback that always works. Both are hidden in
+            reset mode: the whole point there is one email field. */}
+        {mode !== 'reset' ? (
+          <>
+            <div className="mt-4 flex flex-col gap-2">
+              {OAUTH_PROVIDERS.map((provider) => (
+                <button
+                  key={provider.id}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleOAuth(provider.id)}
+                  className="flex min-h-11 w-full items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 disabled:opacity-50"
+                >
+                  {provider.label}
+                </button>
+              ))}
+            </div>
 
-        <div className="my-4 flex items-center gap-3 text-xs text-slate-400">
-          <span className="h-px flex-1 bg-slate-200" />
-          or
-          <span className="h-px flex-1 bg-slate-200" />
-        </div>
+            <div className="my-4 flex items-center gap-3 text-xs text-slate-400">
+              <span className="h-px flex-1 bg-slate-200" />
+              or
+              <span className="h-px flex-1 bg-slate-200" />
+            </div>
+          </>
+        ) : null}
 
-        <form className="flex flex-col gap-3" onSubmit={(e) => void handleSubmit(e)}>
+        <form
+          className={`flex flex-col gap-3 ${mode === 'reset' ? 'mt-4' : ''}`}
+          onSubmit={(e) => void handleSubmit(e)}
+        >
           {mode === 'signup' ? (
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-slate-700">Display name</span>
@@ -231,19 +266,21 @@ export function LoginPage() {
             />
           </label>
 
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-slate-700">Password</span>
-            <input
-              className={inputClasses}
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 6 characters"
-              required
-              minLength={6}
-              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-            />
-          </label>
+          {mode !== 'reset' ? (
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-slate-700">Password</span>
+              <input
+                className={inputClasses}
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="At least 6 characters"
+                required
+                minLength={6}
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+              />
+            </label>
+          ) : null}
 
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           {notice ? <p className="text-sm text-emerald-700">{notice}</p> : null}
@@ -257,8 +294,28 @@ export function LoginPage() {
               ? 'Please wait…'
               : mode === 'login'
                 ? 'Sign in'
-                : 'Create account'}
+                : mode === 'signup'
+                  ? 'Create account'
+                  : 'Send reset link'}
           </button>
+
+          {/* V5: the conventional place for it — next to the field it rescues. */}
+          {mode === 'login' ? (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                className="flex min-h-11 items-center text-sm text-slate-500"
+                onClick={() => {
+                  setMode('reset')
+                  setError(null)
+                  setNotice(null)
+                  setDisplayNameError(null)
+                }}
+              >
+                Forgot password?
+              </button>
+            </div>
+          ) : null}
         </form>
       </div>
 
@@ -267,13 +324,17 @@ export function LoginPage() {
           type="button"
           className="py-3 text-indigo-600"
           onClick={() => {
-            setMode(mode === 'login' ? 'signup' : 'login')
+            setMode(mode === 'signup' ? 'login' : 'signup')
             setError(null)
             setNotice(null)
             setDisplayNameError(null)
           }}
         >
-          {mode === 'login' ? 'New here? Create an account' : 'Already have an account? Sign in'}
+          {mode === 'login'
+            ? 'New here? Create an account'
+            : mode === 'signup'
+              ? 'Already have an account? Sign in'
+              : 'Back to sign in'}
         </button>
         {/* Signed-out visitors land here — a "Sign out" control would be
             nonsense on the sign-in screen (it was rendered unconditionally). */}

@@ -20,6 +20,20 @@
 | **The first-timer branch** (the one every NEW parent hits, which the human's test could not reach) | Reproduced the exact state — real signup through the UI, then dropped only the profiles row via SQL — and drove the app again: **"Pick your display name" appeared** (`handleStepShown: true`), prefilled from the account's email local part, and submitting **advanced to "Set your location"** (`locationStepAfterSubmit: true`). Marker swept afterwards |
 | Live DB after all checks | 2 auth users, 2 profiles, 2 playdates, 0 `e2e-` rows, founder moderator flag intact |
 
+## V5 — beta readiness (opened 2026-09-11, human request)
+
+| Item | State | Evidence |
+|---|---|---|
+| Password reset | complete | `/reset-password` (outside the shell, like /login — the recovery token lands in the URL fragment and the shell's gate would bounce that window) + "Forgot password?" on /login. `src/lib/passwordReset.ts` pure seams (redirect, `validateNewPassword`, neutral notice, rate-limit wording) + 12 tests; `sendPasswordReset`/`setNewPassword` in db.ts. Live-verified on the built app: reset mode hides the OAuth buttons and password field, the request shows the neutral notice (no error), and a token-less `/reset-password` load renders "This link didn't work". 290/290 unit |
+| GitHub backup | in progress | repo has never had a remote |
+| Vercel deploy | pending (human connects the repo) | `vercel.json` SPA rewrite added — without it a shared `/playdate/<id>` link 404s on a static host |
+
+**BLOCKER for inviting outside testers (measured from the live auth config, 2026-09-11):**
+`smtp_host` is **null** (built-in test sender) and `rate_limit_email_sent` is **2 per
+hour for the whole project** — so password reset is code-complete but cannot
+carry a real beta yet. Also `site_url` is `http://localhost:3000`, which nothing
+serves. Both are dashboard settings; `docs/beta-checklist.md` has the steps.
+
 ### PWA / mobile-app readiness (verified round 2)
 
 The "feels like a phone app" half of V4 is now backed by repeatable checks
