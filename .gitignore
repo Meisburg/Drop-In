@@ -23,6 +23,9 @@ e2e/.auth/
 test-results/
 playwright-report/
 
+# opencode runtime state (session continuation files — not source)
+.omo/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

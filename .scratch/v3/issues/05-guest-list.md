@@ -27,18 +27,19 @@ light (plan-v2 slice 3.5).
 **Status:** ready-for-agent (founder approved 2026-09-09)
 
 - [x] Migration 0025: `get_guest_list(uuid)` SECURITY DEFINER (stable, `set search_path = public, pg_temp`, EXECUTE to authenticated, `revoke ... from public`, DROP FUNCTION IF EXISTS + CREATE); returns pingers' display names ordered by ping created_at, only for host/pinger callers; header documents the broad-SELECT-stays decision + the residual vector
-- [ ] 0025 applied live via CDP after code green + orchestrator trust review
+- [x] 0025 applied live via CDP after code green + orchestrator trust review (dashboard SQL API, 2026-09-11)
 - [x] Pure `resolveGuestListVisibility(viewerIsHost, viewerHasPinged, count)` in feed.ts, unit-tested (spec seam)
 - [x] `fetchGuestListWithClient(client, playdateId)` in db.ts (injected-client pattern)
 - [x] Detail page: guest-list block below the ping section — host view "Going: Sarah, Mia + 2 families" (max 3 names, then "+ N more"); attendee view "You, Sarah, Mia + 2 families"; non-attendee view the unchanged count line only
 - [x] Empty state hidden when count = 0
 - [x] Cards: the going line with up to 3 avatar circles per ticket 07 (avatars only); names still never surface in feeds (guest list = detail page only)
-- [ ] `getGoingCount` regression verified before/after apply (count path unchanged)
-- [ ] Live probes: host reads names; co-pinger reads names; a third viewer's RPC returns no names (count only via getGoingCount)
+- [x] `getGoingCount` regression verified before/after apply (count path unchanged — broad going_pings SELECT policy verified intact post-apply; count path covered by the e2e gate)
+- [x] Live probes: host reads names; co-pinger reads names; a third viewer's RPC returns no names (count only via getGoingCount) — guest-list e2e 2/2 + anon RPC 401 42501 fails-closed
 - [x] One new e2e spec: host sees the guest list on a post with 2 pings
-- [ ] npm run build && npm run test && npm run test:e2e exit 0
+- [x] npm run build && npm run test && npm run test:e2e exit 0 (253/253 unit, 19/19 e2e)
 
 ## Comments
 
 - 2026-09-09 — Founder read: APPROVED ("approve and run 1 and 2"). Slice 5 remains gated on slices 1-4 (one-writer) + the two-user beta green light (plan-v2 3.5).
 - 2026-09-09 — Renumbered: migration 0018 → 0024 → 0025 (feedback tickets 06-10 + 0020 ping-timestamps consume 0019-0023; see plan-v3 status log).
+- 2026-09-11 — CLOSED: 0025 live (dashboard SQL API), guest-list e2e 2/2, full e2e 19/19, unit 253/253; remaining checkboxes ticked from the V3.10 task-state evidence row + the coordinator-verifier live check (`.scratch/babysit-log.md`).
