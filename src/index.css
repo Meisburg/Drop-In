@@ -16,12 +16,16 @@
 
 /*
  * iOS Safari zooms the whole viewport when a focused text control renders
- * below 16px (our controls are text-sm = 14px). Deliberately UNLAYERED:
- * unlayered declarations outrank everything Tailwind emits inside @layer, so
- * this beats .text-sm without !important and without touching 15 call sites.
- * Checkboxes/radios are excluded — no text, nothing to zoom for.
+ * below 16px (our controls are text-sm = 14px). Keyed on the INPUT DEVICE, not
+ * the viewport width: a phone in landscape is 844px wide and would slip
+ * through a max-width rule — the mobile audit caught exactly that. The
+ * max-width clause stays for narrow non-touch windows.
+ *
+ * Deliberately UNLAYERED: unlayered declarations outrank everything Tailwind
+ * emits inside @layer, so this beats .text-sm without !important and without
+ * touching 15 call sites. Checkboxes/radios are excluded — no text to zoom for.
  */
-@media (max-width: 640px) {
+@media (pointer: coarse), (max-width: 640px) {
   input:not([type='checkbox']):not([type='radio']),
   textarea,
   select {

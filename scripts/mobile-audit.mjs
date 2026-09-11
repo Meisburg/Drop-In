@@ -11,15 +11,24 @@
 import { chromium } from '@playwright/test'
 
 const BASE = process.argv[2] ?? 'http://localhost:4173'
-const WIDTHS = [320, 375, 390, 430]
+// Portrait phones plus landscape (V4 slice 1 AC5: dvh + rotation must not
+// clip the layout or hide a control).
+const VIEWPORTS = [
+  [320, 812],
+  [375, 812],
+  [390, 844],
+  [430, 932],
+  [844, 390],
+  [667, 375],
+]
 const ROUTES = ['/login', '/playdate/00000000-0000-0000-0000-000000000000']
 
 const browser = await chromium.launch()
 let failures = 0
 
-for (const width of WIDTHS) {
+for (const [width, height] of VIEWPORTS) {
   const context = await browser.newContext({
-    viewport: { width, height: 812 },
+    viewport: { width, height },
     deviceScaleFactor: 3,
     isMobile: true,
     hasTouch: true,
@@ -62,7 +71,7 @@ for (const width of WIDTHS) {
 
     if (problems.length) failures++
     console.log(
-      `${String(width).padStart(4)}px ${route.padEnd(52)} ${problems.length ? 'FAIL  ' + problems.join(' | ') : 'ok'}`,
+      `${`${width}x${height}`.padStart(9)} ${route.padEnd(52)} ${problems.length ? 'FAIL  ' + problems.join(' | ') : 'ok'}`,
     )
   }
   await context.close()
