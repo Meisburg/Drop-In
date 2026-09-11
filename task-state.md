@@ -25,8 +25,12 @@
 | Item | State | Evidence |
 |---|---|---|
 | Password reset | complete | `/reset-password` (outside the shell, like /login — the recovery token lands in the URL fragment and the shell's gate would bounce that window) + "Forgot password?" on /login. `src/lib/passwordReset.ts` pure seams (redirect, `validateNewPassword`, neutral notice, rate-limit wording) + 12 tests; `sendPasswordReset`/`setNewPassword` in db.ts. Live-verified on the built app: reset mode hides the OAuth buttons and password field, the request shows the neutral notice (no error), and a token-less `/reset-password` load renders "This link didn't work". 290/290 unit |
-| GitHub backup | in progress | repo has never had a remote |
-| Vercel deploy | pending (human connects the repo) | `vercel.json` SPA rewrite added — without it a shared `/playdate/<id>` link 404s on a static host |
+| GitHub backup | complete | **https://github.com/jonmeisburg/drop-in** (private); `master` tracks `origin/master`; verified pre-push that no secret is tracked (`.env`, `e2e/.auth/`, marker session state all ignored) |
+| Vercel deploy | complete | **https://drop-in-mu.vercel.app** — verified against the live URL: a signed-out load of `/playdate/5142f51d-…` renders the drop-in (title, place, host, Share, "Sign up to join in") rather than not-found or a host 404 (the SPA rewrite), service worker controls the page over HTTPS, manifest `Drop In`/standalone with all 3 icons 200 + 8 iOS startup images, Google handoff lands on `accounts.google.com` carrying `redirect_to=https://drop-in-mu.vercel.app/`, and a cold offline load still paints the shell. Mobile audit green at all 12 viewport/route combinations **on the deployed site** |
+
+**Human URL-Configuration step: DONE** — `site_url` is now
+`https://drop-in-mu.vercel.app` and `uri_allow_list` includes
+`https://drop-in-mu.vercel.app/**` (read back from the live auth config).
 
 **BLOCKER for inviting outside testers (measured from the live auth config, 2026-09-11):**
 `smtp_host` is **null** (built-in test sender) and `rate_limit_email_sent` is **2 per

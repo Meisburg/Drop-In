@@ -6,7 +6,9 @@
  *   2. text controls below 16px (iOS zooms the viewport on focus),
  *   3. tap targets below 44px.
  *
- * Usage: node scripts/mobile-audit.mjs [baseURL]   (default :4173 preview)
+ * Usage: node scripts/mobile-audit.mjs [baseURL] [playdateId]
+ *   (default :4173 preview; the deployed site works too —
+ *    node scripts/mobile-audit.mjs https://drop-in-mu.vercel.app <id>)
  */
 import { chromium } from '@playwright/test'
 
@@ -21,7 +23,10 @@ const VIEWPORTS = [
   [844, 390],
   [667, 375],
 ]
-const ROUTES = ['/login', '/playdate/00000000-0000-0000-0000-000000000000']
+// Pass a real drop-in id as the second argument to audit a content-bearing
+// detail page; the default exercises the not-found state (also a real screen).
+const DETAIL_ID = process.argv[3] ?? '00000000-0000-0000-0000-000000000000'
+const ROUTES = ['/login', `/playdate/${DETAIL_ID}`]
 
 const browser = await chromium.launch()
 let failures = 0
