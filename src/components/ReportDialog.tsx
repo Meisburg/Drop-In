@@ -91,7 +91,7 @@ export function ReportDialog({
 
         {done ? (
           <div className="mt-3 flex flex-col gap-3">
-            <p className="text-sm text-slate-500">Thanks — a moderator will look at it.</p>
+            <p className="text-sm text-slate-600">Thanks — a moderator will look at it.</p>
             <button
               type="button"
               onClick={onClose}
@@ -104,7 +104,7 @@ export function ReportDialog({
           <form className="mt-3 flex flex-col gap-3" onSubmit={handleSubmit} noValidate>
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-slate-700">
-                What happened? <span className="text-slate-400">(required)</span>
+                What happened? <span className="text-slate-500">(required)</span>
               </span>
               <textarea
                 ref={textareaRef}

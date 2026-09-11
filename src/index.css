@@ -12,12 +12,16 @@
  * Rather than edit 250 call sites (and risk drifting out of sync), the scale
  * itself moves up one notch here. Read it as:
  *
- *   text-xs  meta / labels / chips      13px   (was 12)
- *   text-sm  BODY — the default voice   16px   (was 14)  <-- the fix
- *   text-base                           17px
- *   text-lg  card + section titles      20px   (was 18)
- *   text-xl  page headings              24px   (was 20)
- *   text-2xl 30px
+ *   text-xs  meta / labels / chips      14px   (was 12)
+ *   text-sm  BODY — the default voice   17px   (was 14, via a 16px first pass)
+ *   text-base                           18px
+ *   text-lg  card + section titles      21px   (was 18)
+ *   text-xl  page headings              26px   (was 20)
+ *   text-2xl 32px
+ *
+ * It went up in TWO steps on purpose: 16px was tried first and still read small
+ * on a real phone, so the floor is now 17px — iOS's own body size — and the
+ * audit below fails anything under 14px.
  *
  * So in this codebase "sm" means body copy, not "small". Small is text-xs, and
  * nothing renders below 13px — scripts/mobile-audit.mjs fails the build if it
@@ -27,18 +31,18 @@
  * without its leading is what makes bumped type look cramped.
  */
 @theme {
-  --text-xs: 0.8125rem;
-  --text-xs--line-height: 1.125rem;
-  --text-sm: 1rem;
-  --text-sm--line-height: 1.5rem;
-  --text-base: 1.0625rem;
-  --text-base--line-height: 1.625rem;
-  --text-lg: 1.25rem;
+  --text-xs: 0.875rem;
+  --text-xs--line-height: 1.25rem;
+  --text-sm: 1.0625rem;
+  --text-sm--line-height: 1.625rem;
+  --text-base: 1.125rem;
+  --text-base--line-height: 1.75rem;
+  --text-lg: 1.3125rem;
   --text-lg--line-height: 1.75rem;
-  --text-xl: 1.5rem;
+  --text-xl: 1.625rem;
   --text-xl--line-height: 2rem;
-  --text-2xl: 1.875rem;
-  --text-2xl--line-height: 2.25rem;
+  --text-2xl: 2rem;
+  --text-2xl--line-height: 2.5rem;
 }
 
 /*

@@ -671,7 +671,7 @@ export function PlaydateDetailPage() {
     (session === null && state.status === 'ready')
   ) {
     return (
-      <div className="flex min-h-64 items-center justify-center text-sm text-slate-500">
+      <div className="flex min-h-64 items-center justify-center text-sm text-slate-600">
         Loading…
       </div>
     )
@@ -685,7 +685,7 @@ export function PlaydateDetailPage() {
     return (
       <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
         <p className="text-sm text-red-600">{state.message}</p>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-500">
           If you just signed up, the server setup may not be complete yet.
         </p>
         <Link to="/" className="flex min-h-11 items-center text-sm text-indigo-600">
@@ -699,7 +699,7 @@ export function PlaydateDetailPage() {
     return (
       <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
         <h1 className="text-xl font-semibold text-slate-900">We couldn’t find this drop-in</h1>
-        <p className="text-sm text-slate-500">It may have been removed, or the link is a typo.</p>
+        <p className="text-sm text-slate-600">It may have been removed, or the link is a typo.</p>
         <Link to="/" className="flex min-h-11 items-center text-sm text-indigo-600">
           Back to today
         </Link>
@@ -711,7 +711,7 @@ export function PlaydateDetailPage() {
     return (
       <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
         <h1 className="text-xl font-semibold text-slate-900">This drop-in has been removed</h1>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-slate-600">
           A moderator hid this post — it no longer shows up in feeds.
         </p>
         <Link to="/" className="flex min-h-11 items-center text-sm text-indigo-600">
@@ -725,7 +725,7 @@ export function PlaydateDetailPage() {
     return (
       <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
         <h1 className="text-xl font-semibold text-slate-900">Hidden</h1>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-slate-600">
           You blocked @{state.handle} — their drop-ins are hidden from you.
         </p>
         <Link
@@ -744,7 +744,7 @@ export function PlaydateDetailPage() {
   // load): an explicit guard so TS narrows session to non-null below.
   if (session === null) {
     return (
-      <div className="flex min-h-64 items-center justify-center text-sm text-slate-500">
+      <div className="flex min-h-64 items-center justify-center text-sm text-slate-600">
         Loading…
       </div>
     )
@@ -837,7 +837,7 @@ export function PlaydateDetailPage() {
       <div className="flex flex-col gap-4">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">{d.title}</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-600">
             {publicMapsHref !== null ? (
               <a
                 href={publicMapsHref}
@@ -859,7 +859,7 @@ export function PlaydateDetailPage() {
             {formatDay(d.starts_at)} · {formatTime(d.starts_at)}–{formatTime(d.ends_at)}
           </p>
           {d.age_hint !== null ? (
-            <p className="mt-1 text-sm text-slate-500">Best for {d.age_hint}</p>
+            <p className="mt-1 text-sm text-slate-600">Best for {d.age_hint}</p>
           ) : null}
           {d.details !== null ? (
             <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{d.details}</p>
@@ -913,7 +913,7 @@ export function PlaydateDetailPage() {
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="text-base font-semibold text-slate-900">Comments</h2>
-          <p className="mt-2 text-sm text-slate-500">
+          <p className="mt-2 text-sm text-slate-600">
             Comments are for signed-in parents.{' '}
             <Link to={LOGIN_PATH} className="font-medium text-indigo-600">
               Sign up to join in
@@ -959,17 +959,17 @@ export function PlaydateDetailPage() {
               @{comment.author.display_name}
             </Link>
             {isHidden ? (
-              <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+              <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
                 Hidden by moderator
               </span>
             ) : (
-              <span className="ml-2 text-xs text-slate-400">
+              <span className="ml-2 text-xs text-slate-500">
                 {formatTime(comment.created_at)}
               </span>
             )}
           </p>
           <p
-            className={`mt-0.5 whitespace-pre-line text-sm ${isHidden ? 'text-slate-400' : 'text-slate-700'}`}
+            className={`mt-0.5 whitespace-pre-line text-sm ${isHidden ? 'text-slate-500' : 'text-slate-700'}`}
           >
             {comment.body}
           </p>
@@ -980,7 +980,7 @@ export function PlaydateDetailPage() {
                   type="button"
                   disabled={commentBusy}
                   onClick={() => void handleDeleteComment(comment.id)}
-                  className="text-xs text-slate-400 transition-colors hover:text-red-600"
+                  className="text-xs text-slate-500 transition-colors hover:text-red-600"
                 >
                   Delete
                 </button>
@@ -990,7 +990,7 @@ export function PlaydateDetailPage() {
                   type="button"
                   disabled={commentBusy}
                   onClick={() => void handleHideComment(comment.id)}
-                  className="text-xs text-slate-400 transition-colors hover:text-red-600"
+                  className="text-xs text-slate-500 transition-colors hover:text-red-600"
                 >
                   Hide
                 </button>
@@ -1000,7 +1000,7 @@ export function PlaydateDetailPage() {
                   type="button"
                   disabled={commentBusy}
                   onClick={() => handleReplyTo(comment.id)}
-                  className="text-xs text-slate-400 transition-colors hover:text-indigo-600"
+                  className="text-xs text-slate-500 transition-colors hover:text-indigo-600"
                 >
                   Reply
                 </button>
@@ -1022,12 +1022,12 @@ export function PlaydateDetailPage() {
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold text-slate-900">{detail.title}</h1>
           {statusChip !== null ? (
-            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
               {statusChip}
             </span>
           ) : null}
         </div>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-600">
           {placeMapsHref !== null ? (
             <a
               href={placeMapsHref}
@@ -1098,7 +1098,7 @@ export function PlaydateDetailPage() {
             <button
               type="button"
               onClick={() => setReporting(true)}
-              className="text-sm text-slate-400 transition-colors hover:text-slate-600"
+              className="text-sm text-slate-500 transition-colors hover:text-slate-600"
             >
               Report
             </button>
@@ -1183,7 +1183,7 @@ export function PlaydateDetailPage() {
                   : 'Attend'}
           </button>
           {count !== null ? (
-            <p className="mt-2 text-sm text-slate-500">{goingCountLine(count)}</p>
+            <p className="mt-2 text-sm text-slate-600">{goingCountLine(count)}</p>
           ) : null}
           {pingError !== null ? <p className="mt-2 text-sm text-red-600">{pingError}</p> : null}
         </div>
@@ -1237,7 +1237,7 @@ export function PlaydateDetailPage() {
             Comments{state.comments.length > 0 ? ` (${state.comments.length})` : ''}
           </h2>
           {state.comments.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-500">No comments yet — ask a question below.</p>
+            <p className="mt-2 text-sm text-slate-600">No comments yet — ask a question below.</p>
           ) : (
             // V3 slice 7 (ticket 10): the thread groups — the pure
             // groupCommentsForRender (trust.ts) threads the flat row set:
@@ -1282,7 +1282,7 @@ export function PlaydateDetailPage() {
               // Cancel clears the mode only (the draft stays, as a plain
               // "Add a comment" below).
               <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-slate-500">
+                <p className="text-xs font-medium text-slate-600">
                   Replying to{' '}
                   <span className="font-semibold text-indigo-600">
                     @{replyToAuthor.author.display_name}
@@ -1291,13 +1291,13 @@ export function PlaydateDetailPage() {
                 <button
                   type="button"
                   onClick={() => setReplyToId(null)}
-                  className="text-xs text-slate-400 transition-colors hover:text-slate-600"
+                  className="text-xs text-slate-500 transition-colors hover:text-slate-600"
                 >
                   Cancel
                 </button>
               </div>
             ) : (
-              <label htmlFor="comment-composer" className="text-xs font-medium text-slate-500">
+              <label htmlFor="comment-composer" className="text-xs font-medium text-slate-600">
                 Add a comment
               </label>
             )}
@@ -1311,7 +1311,7 @@ export function PlaydateDetailPage() {
               className="mt-1 w-full resize-none rounded-lg border border-slate-200 p-2 text-sm text-slate-700 focus:border-indigo-300 focus:outline-none"
             />
             <div className="mt-2 flex items-center justify-between gap-2">
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-slate-500">
                 {commentDraft.length}/{COMMENT_MAX_LENGTH}
               </span>
               <button

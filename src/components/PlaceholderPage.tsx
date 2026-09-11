@@ -16,7 +16,7 @@ export function PlaceholderPage({
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
-      {note ? <p className="text-sm text-slate-500">{note}</p> : null}
+      {note ? <p className="text-sm text-slate-600">{note}</p> : null}
       {children}
     </div>
   )

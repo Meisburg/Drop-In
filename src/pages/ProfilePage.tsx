@@ -214,7 +214,7 @@ export function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-64 items-center justify-center text-sm text-slate-500">
+      <div className="flex min-h-64 items-center justify-center text-sm text-slate-600">
         Loading…
       </div>
     )
@@ -471,7 +471,7 @@ export function ProfilePage() {
     <div className="flex flex-col gap-4">
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Your family</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-600">
           Your display name is your persistent public handle — it shows on everything you
           post.
         </p>
@@ -489,7 +489,7 @@ export function ProfilePage() {
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">Photo</h2>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-600">
           Your photo shows on your posts and profile. Under 5 MB — it’s resized to a 256px
           square for you.
         </p>
@@ -566,7 +566,7 @@ export function ProfilePage() {
         onSubmit={handleSaveLocation}
       >
         <h2 className="text-base font-semibold text-slate-900">Location</h2>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-slate-600">
           You see drop-ins within this radius of your home zip.
         </p>
         <label className="flex flex-col gap-1 text-sm">
@@ -642,7 +642,7 @@ export function ProfilePage() {
           />
         </label>
         <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-slate-400">{(bio ?? '').length}/{BIO_MAX_LENGTH}</span>
+          <span className="text-xs text-slate-500">{(bio ?? '').length}/{BIO_MAX_LENGTH}</span>
           <button
             type="submit"
             disabled={savingBio}
@@ -672,7 +672,7 @@ export function ProfilePage() {
             <span
               className={
                 'text-xs ' +
-                (validateInterests(interests ?? '') !== null ? 'text-red-600' : 'text-slate-400')
+                (validateInterests(interests ?? '') !== null ? 'text-red-600' : 'text-slate-500')
               }
             >
               {(interests ?? '').length}/{INTERESTS_MAX_LENGTH}
@@ -697,7 +697,7 @@ export function ProfilePage() {
           />
         </label>
         <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-slate-500">
             Shown under your bio on your profile.
           </span>
           <button
@@ -721,14 +721,14 @@ export function ProfilePage() {
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">Kids</h2>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-600">
           First name, age, an optional photo, and a “likes” line (up to {MAX_KIDS_PER_PROFILE}).
         </p>
 
         {kids === null ? (
-          <p className="mt-3 text-sm text-slate-500">Loading…</p>
+          <p className="mt-3 text-sm text-slate-600">Loading…</p>
         ) : kids.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-500">No kids yet — add one below.</p>
+          <p className="mt-3 text-sm text-slate-600">No kids yet — add one below.</p>
         ) : (
           <ul className="mt-3 flex flex-col gap-2">
             {kids.map((kid) => {
@@ -802,7 +802,7 @@ export function ProfilePage() {
                       <span
                         className={
                           'shrink-0 text-xs ' +
-                          (likesCapError !== null ? 'text-red-600' : 'text-slate-400')
+                          (likesCapError !== null ? 'text-red-600' : 'text-slate-500')
                         }
                       >
                         {likesValue.length}/{LIKES_MAX_LENGTH}
@@ -891,16 +891,16 @@ export function ProfilePage() {
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">Neighborhoods</h2>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-600">
           Display only — discovery is by your home zip + radius (V2 slice 3).
         </p>
 
         {loadError !== null ? (
           <p className="mt-3 text-sm text-red-600">{loadError}</p>
         ) : memberships === null ? (
-          <p className="mt-3 text-sm text-slate-500">Loading…</p>
+          <p className="mt-3 text-sm text-slate-600">Loading…</p>
         ) : memberNames.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-500">No neighborhoods yet.</p>
+          <p className="mt-3 text-sm text-slate-600">No neighborhoods yet.</p>
         ) : (
           <div className="mt-3 flex flex-wrap gap-2">
             {memberNames.map((name) => (
@@ -917,16 +917,16 @@ export function ProfilePage() {
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">Your posts</h2>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-600">
           Duplicate one to re-post it — you always pick a new date and time.
         </p>
 
         {postsError !== null ? (
           <p className="mt-3 text-sm text-red-600">{postsError}</p>
         ) : myPosts === null ? (
-          <p className="mt-3 text-sm text-slate-500">Loading…</p>
+          <p className="mt-3 text-sm text-slate-600">Loading…</p>
         ) : myPosts.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-500">No posts yet.</p>
+          <p className="mt-3 text-sm text-slate-600">No posts yet.</p>
         ) : (
           <ul className="mt-3 flex flex-col gap-1">
             {myPosts.map((post) => (
@@ -936,7 +936,7 @@ export function ProfilePage() {
               >
                 <div className="min-w-0">
                   <p className="truncate text-sm text-slate-800">{post.title}</p>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-500">
                     {formatPostWhen(post.starts_at)} · {post.place}
                   </p>
                 </div>

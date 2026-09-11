@@ -90,7 +90,7 @@ function ProtectedShell() {
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-slate-50 px-6 text-center">
         <h1 className="text-xl font-semibold text-slate-900">Suspended</h1>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-slate-600">
           Your account was suspended by a moderator.
         </p>
         <Link to="/login" className="flex min-h-11 items-center text-sm text-indigo-600">
@@ -105,7 +105,7 @@ function ProtectedShell() {
   // redirect mid-load.
   if (gate === 'loading') {
     return (
-      <div className="flex min-h-dvh items-center justify-center text-sm text-slate-500">
+      <div className="flex min-h-dvh items-center justify-center text-sm text-slate-600">
         Loading…
       </div>
     )
@@ -165,7 +165,7 @@ function ProtectedShell() {
             {session !== null ? (
               <button
                 type="button"
-                className="flex min-h-11 items-center text-sm text-slate-500"
+                className="flex min-h-11 items-center text-sm text-slate-600"
                 onClick={() => void signOutUser()}
               >
                 Sign out
@@ -257,7 +257,7 @@ function NavTab({
       end={to === '/'}
       className={({ isActive }) =>
         `flex min-h-14 flex-1 flex-col items-center justify-center gap-1 py-2 text-xs font-medium transition-colors ${
-          isActive ? 'text-indigo-600' : 'text-slate-500'
+          isActive ? 'text-indigo-600' : 'text-slate-600'
         }`
       }
     >

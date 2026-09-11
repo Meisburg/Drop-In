@@ -92,7 +92,7 @@ export function OnboardingPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-64 items-center justify-center text-sm text-slate-500">
+      <div className="flex min-h-64 items-center justify-center text-sm text-slate-600">
         Loading…
       </div>
     )
@@ -259,7 +259,7 @@ export function OnboardingPage() {
       <div className="flex flex-col gap-4">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Pick your display name</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-600">
             This is your handle — how other parents see you. It isn’t your email, and you can
             change it later in your profile.
           </p>
@@ -315,14 +315,14 @@ export function OnboardingPage() {
     <div className="flex flex-col gap-4">
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Set your location</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-600">
           You’ll see drop-ins near your home zip, within your radius. You can change both
           anytime in your profile.
         </p>
       </div>
 
       {knownZips === null ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500 shadow-sm">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm">
           Loading the zip list…
         </div>
       ) : (
@@ -368,7 +368,7 @@ export function OnboardingPage() {
           /profile nudge banner keeps prompting until all three are there. */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">
-          Tell parents about your family <span className="font-normal text-slate-400">(optional)</span>
+          Tell parents about your family <span className="font-normal text-slate-500">(optional)</span>
         </h2>
 
         <div className="mt-3 flex flex-col gap-3">

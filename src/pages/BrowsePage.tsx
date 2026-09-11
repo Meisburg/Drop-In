@@ -52,7 +52,7 @@ export function BrowsePage() {
 
   if (loading || profile === null) {
     return (
-      <div className="flex min-h-64 items-center justify-center text-sm text-slate-500">
+      <div className="flex min-h-64 items-center justify-center text-sm text-slate-600">
         Loading…
       </div>
     )
@@ -63,7 +63,7 @@ export function BrowsePage() {
       <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
         <h1 className="text-xl font-semibold text-slate-900">Browse</h1>
         <p className="text-sm text-red-600">{loadError}</p>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-500">
           If you just signed up, the drop-in feed may not be set up on the server yet.
         </p>
       </div>
@@ -77,18 +77,18 @@ export function BrowsePage() {
     <div className="flex flex-col gap-4">
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Browse</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-600">
           Upcoming drop-ins within your radius — change it in your profile.
         </p>
       </div>
 
       {posts === null ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500 shadow-sm">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm">
           Loading…
         </div>
       ) : posts.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-slate-600">
             Nothing upcoming within your radius — post the first one.
           </p>
           <Link
@@ -102,7 +102,7 @@ export function BrowsePage() {
         <div className="flex flex-col gap-4">
           {dayGroups.map((group) => (
             <section key={group.key} className="flex flex-col gap-2">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
                 {group.label}
               </h2>
               <div className="flex flex-col gap-3">

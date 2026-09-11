@@ -136,11 +136,11 @@ export function DropInCard({
               the badges or the content at 375px). */}
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
             {statusChip !== null ? (
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                 {statusChip}
               </span>
             ) : ended ? (
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                 Ended
               </span>
             ) : live ? (
@@ -177,7 +177,7 @@ export function DropInCard({
                 className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border transition-colors disabled:opacity-60 ${
                   pingToggle.active
                     ? 'border-green-600 bg-green-600 text-white'
-                    : 'border-slate-300 bg-white text-slate-400'
+                    : 'border-slate-300 bg-white text-slate-500'
                 }`}
               >
                 <svg
@@ -195,13 +195,13 @@ export function DropInCard({
           </div>
         </div>
         <p className="text-sm text-slate-700">{playdate.place}</p>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-slate-600">
           {playdate.neighborhood.name} · {formatTimeWindow(playdate.starts_at, playdate.ends_at)}
           {distanceLabel !== null ? ` · ${distanceLabel}` : ''}
         </p>
         <div className="flex items-center gap-2">
           <HostAvatar host={playdate.host} />
-          <p className="text-sm text-slate-400">@{playdate.host.display_name}</p>
+          <p className="text-sm text-slate-500">@{playdate.host.display_name}</p>
         </div>
         {goingLine !== null ? (
           // V3 slice 4 (ticket 07): the going line replaces the old
@@ -212,7 +212,7 @@ export function DropInCard({
           // the display-name initial on a slate-200 circle (names never
           // surface on cards).
           <div className="flex items-center gap-1.5">
-            <span className="text-xs text-slate-500">{goingLine.label}</span>
+            <span className="text-xs text-slate-600">{goingLine.label}</span>
             <div className="flex items-center">
               {goingLine.circles.map((circle, index) =>
                 circle.avatarUrl !== null && circle.avatarUrl !== '' ? (
@@ -226,7 +226,7 @@ export function DropInCard({
                   <span
                     key={index}
                     aria-hidden="true"
-                    className={`flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-xs font-semibold text-slate-500${index > 0 ? ' -ml-2' : ''}`}
+                    className={`flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-xs font-semibold text-slate-600${index > 0 ? ' -ml-2' : ''}`}
                   >
                     {circle.initial}
                   </span>
@@ -234,7 +234,7 @@ export function DropInCard({
               )}
             </div>
             {goingLine.overflow > 0 ? (
-              <span className="text-xs font-medium text-slate-400">+{goingLine.overflow}</span>
+              <span className="text-xs font-medium text-slate-500">+{goingLine.overflow}</span>
             ) : null}
           </div>
         ) : null}

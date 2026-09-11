@@ -84,7 +84,7 @@ export function ModPage() {
   // render a designed state, never a crash.
   if (loading || profile === null) {
     return (
-      <div className="flex min-h-64 items-center justify-center text-sm text-slate-500">
+      <div className="flex min-h-64 items-center justify-center text-sm text-slate-600">
         Loading…
       </div>
     )
@@ -94,7 +94,7 @@ export function ModPage() {
     return (
       <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
         <h1 className="text-xl font-semibold text-slate-900">Moderator tools</h1>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-slate-600">
           Moderator tools are only available to moderator-flagged accounts.
         </p>
         <Link to="/" className="flex min-h-11 items-center text-sm text-indigo-600">
@@ -108,7 +108,7 @@ export function ModPage() {
     <div className="flex flex-col gap-4">
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Moderator tools</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-600">
           Reports, newest first. Hiding a post and banning a profile are
           final in V1 — there is no unhide or unban yet.
         </p>
@@ -117,19 +117,19 @@ export function ModPage() {
       {reportsError !== null ? (
         <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
           <p className="text-sm text-red-600">{reportsError}</p>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-500">
             If you just set up the server, the moderation tables may not be applied yet.
           </p>
         </div>
       ) : reports === null ? (
-        <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
+        <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-600" />
           Loading reports…
         </div>
       ) : reports.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-          <p className="text-sm text-slate-500">No reports — clean town.</p>
-          <p className="text-xs text-slate-400">New reports from the app will show up here.</p>
+          <p className="text-sm text-slate-600">No reports — clean town.</p>
+          <p className="text-xs text-slate-500">New reports from the app will show up here.</p>
         </div>
       ) : (
         <div className="flex flex-col gap-3">
@@ -198,7 +198,7 @@ function ReportCard({
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <p className="text-sm text-slate-700">“{report.reason}”</p>
-      <p className="text-sm text-slate-500">
+      <p className="text-sm text-slate-600">
         {item.reporter !== null ? `@${item.reporter}` : 'Unknown reporter'} reported{' '}
         {reportedHandle}
       </p>
@@ -210,7 +210,7 @@ function ReportCard({
           Post: “{item.postTitle}”
         </Link>
       ) : null}
-      <p className="text-xs text-slate-400">
+      <p className="text-xs text-slate-500">
         {new Date(report.created_at).toLocaleString(undefined, {
           month: 'short',
           day: 'numeric',
@@ -240,7 +240,7 @@ function ReportCard({
             <span className="text-sm font-medium text-emerald-700">Banned ✓</span>
           ) : confirmingBan ? (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-slate-600">
                 Ban {reportedHandle}? Final — no unban in V1.
               </span>
               <button

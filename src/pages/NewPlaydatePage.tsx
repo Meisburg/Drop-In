@@ -195,7 +195,7 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
 
   if (loading) {
     return (
-      <div className="flex min-h-64 items-center justify-center text-sm text-slate-500">
+      <div className="flex min-h-64 items-center justify-center text-sm text-slate-600">
         Loading…
       </div>
     )
@@ -233,7 +233,7 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
       {loadError !== null ? (
         <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
           <p className="text-sm text-red-600">{loadError}</p>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-500">
             If you just signed up, the server setup may not be complete yet.
           </p>
         </div>
@@ -248,7 +248,7 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
               Title
               <span
                 className={
-                  'text-xs ' + (titleLength > TITLE_MAX_LENGTH ? 'text-red-600' : 'text-slate-400')
+                  'text-xs ' + (titleLength > TITLE_MAX_LENGTH ? 'text-red-600' : 'text-slate-500')
                 }
               >
                 {titleLength}/{TITLE_MAX_LENGTH}
@@ -288,7 +288,7 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
               public views). */}
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-slate-700">
-              Address <span className="text-slate-400">(optional)</span>
+              Address <span className="text-slate-500">(optional)</span>
             </span>
             <input
               className={
@@ -378,7 +378,7 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
               <p className="text-sm text-red-600">{errors.durationMinutes}</p>
             ) : null}
             {values.durationMinutes > 0 ? (
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-slate-600">
                 Ends {formatTimeLabel(endTotal)}
                 {endTotal >= DAY_MINUTES ? ' (next day)' : ''}
               </p>
@@ -394,12 +394,12 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
     /profile link (the kids are edited on the profile, V2 ticket 02). */}
           <div className="flex flex-col gap-1 text-sm">
             <span className="text-slate-700">
-              Kids you're bringing <span className="text-slate-400">(optional)</span>
+              Kids you're bringing <span className="text-slate-500">(optional)</span>
             </span>
             {kids === null ? (
-              <p className="text-sm text-slate-400">Loading your kids…</p>
+              <p className="text-sm text-slate-500">Loading your kids…</p>
             ) : kids.length === 0 ? (
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-slate-600">
                 Add your kids on your profile, then pick the ones coming along.{' '}
                 <Link to="/profile" className="text-indigo-600">
                   Add kids
@@ -432,7 +432,7 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
 
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-slate-700">
-              Details <span className="text-slate-400">(optional)</span>
+              Details <span className="text-slate-500">(optional)</span>
             </span>
             <textarea
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
@@ -476,7 +476,7 @@ function TimeStepper({
         type="button"
         aria-label="Earlier start time"
         onClick={() => onStep(-TIME_STEP_MINUTES)}
-        className="h-11 w-11 rounded-md text-lg text-slate-500 transition-colors hover:bg-slate-100"
+        className="h-11 w-11 rounded-md text-lg text-slate-600 transition-colors hover:bg-slate-100"
       >
         −
       </button>
@@ -487,7 +487,7 @@ function TimeStepper({
         type="button"
         aria-label="Later start time"
         onClick={() => onStep(TIME_STEP_MINUTES)}
-        className="h-11 w-11 rounded-md text-lg text-slate-500 transition-colors hover:bg-slate-100"
+        className="h-11 w-11 rounded-md text-lg text-slate-600 transition-colors hover:bg-slate-100"
       >
         +
       </button>

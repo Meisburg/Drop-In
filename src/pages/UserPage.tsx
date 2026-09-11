@@ -124,7 +124,7 @@ export function UserPage() {
 
   if (state.status === 'loading') {
     return (
-      <div className="flex min-h-64 items-center justify-center text-sm text-slate-500">
+      <div className="flex min-h-64 items-center justify-center text-sm text-slate-600">
         Loading…
       </div>
     )
@@ -147,7 +147,7 @@ export function UserPage() {
         <h1 className="text-xl font-semibold text-slate-900">
           We couldn’t find @{handle ?? '…'}
         </h1>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-slate-600">
           The handle may be a typo, or this family may not be on Drop In yet.
         </p>
         <Link to="/" className="flex min-h-11 items-center text-sm text-indigo-600">
@@ -170,13 +170,13 @@ export function UserPage() {
           <HostAvatar host={profile} />
           <div className="min-w-0">
             <h1 className="text-xl font-semibold text-slate-900">@{profile.display_name}</h1>
-            <p className="mt-1 text-sm text-slate-500">Here since {joined}.</p>
+            <p className="mt-1 text-sm text-slate-600">Here since {joined}.</p>
             {/* V3 slice 9 (ticket 04): the "Hosted N drop-ins" line — the
                 shared header render (self view AND /u/:handle). Hidden
                 when 0 or unsettled; singular "Hosted 1 drop-in" when
                 N = 1 (the e2e AC pin). */}
             {hostedCount !== null && hostedCount > 0 ? (
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-slate-600">
                 Hosted {hostedCount} {hostedCount === 1 ? 'drop-in' : 'drop-ins'}
               </p>
             ) : null}
@@ -190,7 +190,7 @@ export function UserPage() {
             empty/absent; pre-0022-apply the column is undefined, the
             null-safe render, the pre-0016 discipline). */}
         {profile.interests != null && profile.interests.trim() !== '' ? (
-          <p className="mt-2 text-sm text-slate-500">
+          <p className="mt-2 text-sm text-slate-600">
             Interests: {profile.interests}
           </p>
         ) : null}
@@ -208,7 +208,7 @@ export function UserPage() {
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">Kids</h2>
         {profile.kids.length === 0 ? (
-          <p className="mt-1 text-sm text-slate-500">No kids listed.</p>
+          <p className="mt-1 text-sm text-slate-600">No kids listed.</p>
         ) : (
           <ul className="mt-2 flex flex-col gap-2">
             {profile.kids.map((kid) => {
@@ -234,7 +234,7 @@ export function UserPage() {
                       {kid.first_name} · {kid.age}
                     </p>
                     {likes !== '' ? (
-                      <p className="mt-0.5 text-xs text-slate-500">likes {likes}</p>
+                      <p className="mt-0.5 text-xs text-slate-600">likes {likes}</p>
                     ) : null}
                   </div>
                 </li>
@@ -270,14 +270,14 @@ export function UserPage() {
             <button
               type="button"
               onClick={() => setReporting(true)}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-500"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600"
             >
               Report
             </button>
           </div>
           {blockError !== null ? <p className="text-sm text-red-600">{blockError}</p> : null}
           {blocked ? (
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-500">
               Their drop-ins are hidden from your feed and detail pages.
             </p>
           ) : null}
@@ -287,7 +287,7 @@ export function UserPage() {
       <div>
         <h2 className="text-base font-semibold text-slate-900">Posts</h2>
         <div className="mt-2 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-          <p className="text-sm text-slate-500">No posts yet.</p>
+          <p className="text-sm text-slate-600">No posts yet.</p>
         </div>
       </div>
 

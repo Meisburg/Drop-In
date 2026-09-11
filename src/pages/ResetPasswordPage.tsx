@@ -63,11 +63,11 @@ export function ResetPasswordPage() {
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         {loading ? (
-          <p className="text-sm text-slate-500">Checking your link…</p>
+          <p className="text-sm text-slate-600">Checking your link…</p>
         ) : session === null ? (
           <>
             <h1 className="text-xl font-semibold text-slate-900">This link didn’t work</h1>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-slate-600">
               Reset links are good for one use and expire after an hour. Request a fresh one and
               open it on this device.
             </p>
@@ -81,7 +81,7 @@ export function ResetPasswordPage() {
         ) : (
           <>
             <h1 className="text-xl font-semibold text-slate-900">Choose a new password</h1>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-slate-600">
               You’re signed in from the email link — set a password and you’re done.
             </p>
 

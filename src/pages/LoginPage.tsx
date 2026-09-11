@@ -172,7 +172,7 @@ export function LoginPage() {
       <div className="flex flex-col items-center gap-2 pb-2">
         <DropInMark className="h-14 w-14 text-indigo-600" />
         <p className="text-2xl font-bold text-indigo-600">Drop In</p>
-        <p className="text-center text-sm text-slate-500">
+        <p className="text-center text-sm text-slate-600">
           Drop-in playdates for Seattle families.
         </p>
       </div>
@@ -184,7 +184,7 @@ export function LoginPage() {
               ? 'Create your account'
               : 'Reset your password'}
         </h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-600">
           {mode === 'login'
             ? 'Welcome back. Sign in to see drop-ins near you.'
             : mode === 'signup'
@@ -212,7 +212,7 @@ export function LoginPage() {
               ))}
             </div>
 
-            <div className="my-4 flex items-center gap-3 text-xs text-slate-400">
+            <div className="my-4 flex items-center gap-3 text-xs text-slate-500">
               <span className="h-px flex-1 bg-slate-200" />
               or
               <span className="h-px flex-1 bg-slate-200" />
@@ -248,7 +248,7 @@ export function LoginPage() {
           ) : null}
 
           {mode === 'signup' && session !== null ? (
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-slate-600">
               Your account is created — pick a different display name and continue.
             </p>
           ) : null}
@@ -304,7 +304,7 @@ export function LoginPage() {
             <div className="flex justify-end">
               <button
                 type="button"
-                className="flex min-h-11 items-center text-sm text-slate-500"
+                className="flex min-h-11 items-center text-sm text-slate-600"
                 onClick={() => {
                   setMode('reset')
                   setError(null)
@@ -341,7 +341,7 @@ export function LoginPage() {
         {session !== null ? (
           <button
             type="button"
-            className="py-3 text-slate-500"
+            className="py-3 text-slate-600"
             onClick={() => void signOutUser()}
           >
             Sign out
