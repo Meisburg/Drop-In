@@ -29,6 +29,9 @@ playwright-report/
 # Visual-check screenshots (regenerate with .scratch/v4/shot.mjs)
 .scratch/**/*.png
 
+# Verification artifacts that can carry a live session token — never commit
+.scratch/**/marker-state.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -6,8 +6,19 @@
 ## Current position
 
 - **Phase:** V3 PLAN COMPLETE — all 10 slices + tickets 01-10 closed; 0025 (guest list) applied live 2026-09-11 and verified (coordinator-verifier finish after the headless run died at its .env read). REMAINING HUMAN ITEMS CLOSED 2026-09-11 by Hermes coordinator: (1) marker sweep — 173 e2e users + opsmoke.test deleted via dashboard SQL API (safety gate: founder profiles verified outside the set; child rows scoped to markers; FINAL live DB: 2 auth users [jonmeisburg, nicolemeisburg], 2 profiles, 2 playdates [Greenlake, both Jon's]; remaining ping/comment/memberships belong to Jon+Nicole — kept); (2) founder-flag SQL — already applied (profiles.moderators=true on 'Jon Meisburg' verified pre-sweep, no action needed). V3 FULLY CLOSED.
-- **Active slice:** none — V4 slices 1–4 are code-complete and committed. Slice 4's LIVE verification is blocked on human-owned OAuth credentials (`docs/social-login-setup.md`). Re-probed live 2026-09-11 (round 2): both providers still answer `400` on `/auth/v1/authorize` — **not enabled yet**.
-- **Next action:** the human runs the four setup steps in `docs/social-login-setup.md` (≈10 min for Google alone), then the OAuth round-trip gets its live check. Still open: D1 (share URL rename), D2 (Capacitor vs PWA), D3 (keep Facebook?). Also outstanding: the e2e marker sweep (`e2e-1789148xxx` family).
+- **Phase: V4 COMPLETE (2026-09-11).** Human enabled Google in the Supabase project; the blocker is cleared and the round-trip is verified — see the closure evidence below.
+- **Active slice:** none. **Next action:** the deploy (the last thing between this and a two-family beta) — nothing is pending in the code.
+- **Remaining human items:** none. D1/D2/D3 all decided (below). The e2e marker sweep ran clean twice; live DB = 2 founders only.
+
+### V4 closure evidence (2026-09-11, after the human's Google setup)
+
+| Claim | How it was checked |
+|---|---|
+| Google is actually enabled | `GET /auth/v1/authorize?provider=google` now answers **302** to `accounts.google.com` with a real `client_id` (it answered 400 "provider is not enabled" for three rounds before). Facebook still 400 — correct per D3 |
+| The round-trip really completed | Read `auth.identities` in the live DB: a **`google` identity for jonmeisburg@gmail.com created 2026-09-11 18:12:29 UTC**, `last_sign_in_at` matching. Supabase LINKED it to the existing email account (same address), which is why no new `auth.users` row appeared — and why the first-timer branch was still untested |
+| The app hands off correctly | Live click on the built app: only "Continue with Google" renders, lands on `accounts.google.com` with `client_id=1039310980043-…`, `redirect_uri=<project>/auth/v1/callback`, `scope=email profile`, and `redirect_to=http://127.0.0.1:4173/` (the app's own origin). No JSON error page |
+| **The first-timer branch** (the one every NEW parent hits, which the human's test could not reach) | Reproduced the exact state — real signup through the UI, then dropped only the profiles row via SQL — and drove the app again: **"Pick your display name" appeared** (`handleStepShown: true`), prefilled from the account's email local part, and submitting **advanced to "Set your location"** (`locationStepAfterSubmit: true`). Marker swept afterwards |
+| Live DB after all checks | 2 auth users, 2 profiles, 2 playdates, 0 `e2e-` rows, founder moderator flag intact |
 
 ### PWA / mobile-app readiness (verified round 2)
 
