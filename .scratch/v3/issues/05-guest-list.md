@@ -26,15 +26,16 @@ light (plan-v2 slice 3.5).
 
 **Status:** ready-for-agent (founder approved 2026-09-09)
 
-- [ ] Migration 0025: `get_guest_list(uuid)` SECURITY DEFINER (stable, `set search_path = public, pg_temp`, EXECUTE to authenticated, `revoke ... from public`, DROP FUNCTION IF EXISTS + CREATE); returns pingers' display names ordered by ping created_at, only for host/pinger callers; header documents the broad-SELECT-stays decision + the residual vector; applied live via CDP after code green + orchestrator trust review
+- [x] Migration 0025: `get_guest_list(uuid)` SECURITY DEFINER (stable, `set search_path = public, pg_temp`, EXECUTE to authenticated, `revoke ... from public`, DROP FUNCTION IF EXISTS + CREATE); returns pingers' display names ordered by ping created_at, only for host/pinger callers; header documents the broad-SELECT-stays decision + the residual vector
+- [ ] 0025 applied live via CDP after code green + orchestrator trust review
 - [x] Pure `resolveGuestListVisibility(viewerIsHost, viewerHasPinged, count)` in feed.ts, unit-tested (spec seam)
 - [x] `fetchGuestListWithClient(client, playdateId)` in db.ts (injected-client pattern)
-- [ ] Detail page: guest-list block below the ping section — host view "Going: Sarah, Mia + 2 families" (max 3 names, then "+ N more"); attendee view "You, Sarah, Mia + 2 families"; non-attendee view the unchanged count line only
-- [ ] Empty state hidden when count = 0
-- [ ] Cards: the going line with up to 3 avatar circles per ticket 07 (avatars only); names still never surface in feeds (guest list = detail page only)
+- [x] Detail page: guest-list block below the ping section — host view "Going: Sarah, Mia + 2 families" (max 3 names, then "+ N more"); attendee view "You, Sarah, Mia + 2 families"; non-attendee view the unchanged count line only
+- [x] Empty state hidden when count = 0
+- [x] Cards: the going line with up to 3 avatar circles per ticket 07 (avatars only); names still never surface in feeds (guest list = detail page only)
 - [ ] `getGoingCount` regression verified before/after apply (count path unchanged)
 - [ ] Live probes: host reads names; co-pinger reads names; a third viewer's RPC returns no names (count only via getGoingCount)
-- [ ] One new e2e spec: host sees the guest list on a post with 2 pings
+- [x] One new e2e spec: host sees the guest list on a post with 2 pings
 - [ ] npm run build && npm run test && npm run test:e2e exit 0
 
 ## Comments

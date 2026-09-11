@@ -7,6 +7,7 @@ import { LOGIN_PATH } from '../lib/auth'
 import {
   addComment,
   deleteComment,
+  fetchGuestList,
   fetchRainProbabilityForZip,
   getBlockState,
   getGoingCount,
@@ -21,10 +22,12 @@ import {
   togglePing,
 } from '../lib/db'
 import {
+  formatGuestLine,
   isHiddenPost,
   kidsComingLine,
   mapsHref,
   rainBadgeLabel,
+  resolveGuestListVisibility,
   toDuplicatePrefill,
 } from '../lib/feed'
 import { buildIcs } from '../lib/ics'
@@ -67,8 +70,17 @@ type DetailState =
        * load below) or the read failed: the line is hidden, never the
        * post (the DB-not-applied discipline, same as the ping section).
        */
-      kids: PlaydateKid[] | null
-    }
+kids: PlaydateKid[] | null
+       /**
+        * V3 slice 10 (ticket 05): the guest-list names (the 0025
+        * get_guest_list RPC — the pingers' display_names, created_at
+        * order). null = not loaded — 0025 not applied (the 404 is
+        * caught in the load below) or the read failed: the block is
+        * hidden, never the post (the DB-not-applied discipline, same
+        * as the ping / kids sections).
+        */
+       guestNames: string[] | null
+     }
   /**
    * V2 slice 5: the signed-out public surface (the get_public_playdate RPC
    * payload — nothing beyond the pinned public fields). Rendered when the
@@ -197,6 +209,21 @@ type DetailState =
  * the button renders in the signed-in AND the signed-out (public)
  * views (read-only, no new data exposure), and the row's flex-wrap
  * keeps it fitting at 375px with no horizontal scroll.
+ *
+ * V3 slice 10 (ticket 05, migration 0025): the guest-list block below
+ * the ping section (the "Kids coming" block) — progressive disclosure
+ * (the founder-approved spec, .scratch/guest-list/spec.md): the host
+ * sees "Going: <names>" (the pingers' display names, up to 3 + the
+ * "+ N more" overflow), a pinger sees "You, <others>" (their own
+ * display name stands in as "You" — dropped from the RPC list, up to
+ * 2 others), a stranger sees NOTHING here (their count line above
+ * stays unchanged — the zero-pressure surface). Hidden when the count
+ * is 0/null; the 0025 get_guest_list RPC (SECDEF, EXECUTE
+ * authenticated-only) 404s pre-apply and the load's catch keeps
+ * guestNames null — the block stays hidden, never the post (the
+ * DB-not-applied discipline, same as the ping / kids sections); the
+ * signed-out public view never renders it (the RPC is
+ * EXECUTE-to-authenticated-only — the signed-in surface).
  */
 export function PlaydateDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -286,7 +313,7 @@ export function PlaydateDetailPage() {
           // The ping + comments + playdate_kids tables may not be applied
           // yet (0007 / 0013 / 0022): a failed load just hides that
           // section, never the post itself.
-          const [count, going, comments, kids] = await Promise.all([
+          const [count, going, comments, kids, guestNames] = await Promise.all([
             getGoingCount(id).catch(() => null),
             hasPinged(id).catch(() => false),
             listComments(id).catch(() => null),
@@ -297,9 +324,18 @@ export function PlaydateDetailPage() {
             // apply the 42P01 is caught: the line stays hidden, the post
             // never crashes (the DB-not-applied discipline).
             listPlaydateKidNames(id).catch(() => null),
+            // V3 slice 10 (ticket 05): the guest-list names (the 0025
+            // get_guest_list RPC — the host/pinger gate lives in the
+            // function; the count path getGoingCount above is
+            // unchanged). Authenticated view only — the signed-out
+            // public surface carries no names (the RPC is
+            // EXECUTE-to-authenticated-only). Pre-0025-apply the 404
+            // is caught: the block stays hidden, the post never
+            // crashes (the DB-not-applied discipline).
+            fetchGuestList(id).catch(() => null),
           ])
           if (cancelled) return
-          setState({ status: 'ready', detail, count, going, comments, kids })
+          setState({ status: 'ready', detail, count, going, comments, kids, guestNames })
         } catch (err) {
           if (cancelled) return
           setState({
@@ -369,14 +405,21 @@ export function PlaydateDetailPage() {
     try {
       const going = await togglePing(detail.id)
       const count = await getGoingCount(detail.id)
-      // Functional merge: touch ONLY count/going (the thread settled in the
-      // meantime survives), and only for the post this toggle was issued
-      // against — a ping op in flight during a comment op must never
-      // clobber the post-op comments array (or a post we navigated away
-      // from).
+      // V3 slice 10 (ticket 05): the toggle changed the caller's
+      // pinger status — refetch the guest list so the block appears
+      // ("You, ...") when a viewer pings and disappears (back to the
+      // count-only line) when they unping. The RPC 404s pre-0025-
+      // apply: null keeps the block hidden (the DB-not-applied
+      // discipline).
+      const guestNames = await fetchGuestList(detail.id).catch(() => null)
+      // Functional merge: touch ONLY count/going/guestNames (the thread
+      // settled in the meantime survives), and only for the post this
+      // toggle was issued against — a ping op in flight during a
+      // comment op must never clobber the post-op comments array (or a
+      // post we navigated away from).
       setState((prev) =>
         prev.status === 'ready' && prev.detail.id === detail.id
-          ? { ...prev, count, going }
+          ? { ...prev, count, going, guestNames }
           : prev,
       )
     } catch (err) {
@@ -695,7 +738,7 @@ export function PlaydateDetailPage() {
     )
   }
 
-  const { detail, count, going, kids } = state
+  const { detail, count, going, kids, guestNames } = state
   // Unreachable (the loading gate above renders Loading for a null session
   // with a 'ready' state — 'ready' only ever settles from a signed-in
   // load): an explicit guard so TS narrows session to non-null below.
@@ -739,6 +782,22 @@ export function PlaydateDetailPage() {
   // "Kids coming:" with nothing after is not a state, like a 0 going
   // line). Names + ages only — NO photos (the kid-photo pin).
   const kidsLine = kids !== null ? kidsComingLine(kids) : null
+  // V3 slice 10 (ticket 05): the guest-list line — the pure feed
+  // seams (resolveGuestListVisibility: the host/pinger gate +
+  // count > 0; formatGuestLine: "Going: ..." for the host, "You,
+  // ..." for a pinger — their own display_name dropped from the RPC
+  // list, up to 2 others + "+ N more"). null = hidden: the RPC did
+  // not land (guestNames null — pre-0025-apply 404 caught), the
+  // count is null/0, or the viewer is a stranger (the count-only
+  // surface stays exactly as shipped). The empty-string fallback
+  // (the host view with an empty list) also hides — "Going:" with
+  // nothing after is not a state.
+  const guestLine =
+    guestNames !== null &&
+    count !== null &&
+    resolveGuestListVisibility(isHost, going, count)
+      ? formatGuestLine(guestNames, profile?.display_name ?? null, isHost) || null
+      : null
   // V2 slice 4 (ticket 04) + V3 slice 7 (ticket 10): the per-row comment
   // action plan's context (the signed-in viewer, the event's host, the
   // moderator flag) — shared by the top-level rows and their one-level
@@ -1140,6 +1199,22 @@ export function PlaydateDetailPage() {
       {kidsLine !== null ? (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-sm text-slate-700">Kids coming: {kidsLine}</p>
+        </div>
+      ) : null}
+
+      {/* V3 slice 10 (ticket 05): the guest-list block — the named
+          list of who pinged (progressive disclosure, the
+          founder-approved spec): the host sees "Going: Sarah, Mia +
+          2 families", a pinger sees "You, Sarah, Mia + 2 families",
+          a stranger sees NOTHING here (their count line above is
+          unchanged — the zero-pressure surface). Hidden when the
+          count is 0/null or the 0025 RPC has not landed (pre-apply
+          the 404 is caught — the block stays hidden, never a crash).
+          Signed-out (public) view: never rendered — the RPC is
+          EXECUTE-to-authenticated-only (the signed-in surface). */}
+      {guestLine !== null ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-sm text-slate-700">{guestLine}</p>
         </div>
       ) : null}
 
