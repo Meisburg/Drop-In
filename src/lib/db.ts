@@ -879,6 +879,92 @@ export async function setNewPassword(password: string): Promise<void> {
 }
 
 /**
+ * Which of MY kids are coming to a drop-in (V6, migration 0026).
+ *
+ * The ping itself records only the parent — this is the second half, and it is
+ * deliberately a REPLACE: the caller hands the complete selection and we
+ * delete-then-insert. A diff would need the current rows, and the row set is
+ * tiny (at most a handful of kids), so replace is both simpler and idempotent.
+ *
+ * RLS is the wall on both statements (insert/delete: profile_id = auth.uid()),
+ * and the FK to going_pings means a selection cannot exist without the ping.
+ */
+export async function setPingKids(playdateId: string, kidIds: string[]): Promise<void> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (!user) throw new Error('No authenticated user — cannot save who is coming.')
+
+  const { error: deleteError } = await supabase
+    .from('ping_kids')
+    .delete()
+    .eq('playdate_id', playdateId)
+    .eq('profile_id', user.id)
+  if (deleteError) throw deleteError
+
+  if (kidIds.length === 0) return
+  const { error: insertError } = await supabase.from('ping_kids').insert(
+    kidIds.map((kidId) => ({ playdate_id: playdateId, profile_id: user.id, kid_id: kidId })),
+  )
+  if (insertError) throw insertError
+}
+
+/**
+ * The names + ages of the kids coming to a drop-in (V6). The RPC's own gate
+ * (0026, mirroring get_guest_list) decides: the host, a caller who has pinged,
+ * or a moderator get rows; everyone else gets an empty set. Empty is therefore
+ * "none I may see", not "none coming" — the card's count is the public number.
+ */
+export async function listKidsGoing(
+  playdateId: string,
+): Promise<Array<{ id: string; firstName: string; age: number | null }>> {
+  const { data, error } = await supabase.rpc('get_kids_going', { p_id: playdateId })
+  if (error) throw error
+  const rows = (data ?? []) as Array<{ kid_id: string; first_name: string; age: number | null }>
+  return rows.map((row) => ({
+    id: row.kid_id,
+    firstName: row.first_name,
+    age: row.age,
+  }))
+}
+
+/** This user's selections on one post (RLS: own rows), for the picker. */
+export async function listMyPingKids(playdateId: string): Promise<string[]> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return []
+  const { data, error } = await supabase
+    .from('ping_kids')
+    .select('kid_id')
+    .eq('playdate_id', playdateId)
+    .eq('profile_id', user.id)
+  if (error) throw error
+  return ((data ?? []) as Array<{ kid_id: string }>).map((row) => row.kid_id)
+}
+
+/**
+ * The batched kids count for a feed (V6, migration 0027): one call for every
+ * card on screen, not one per card. Posts with nobody bringing kids are absent
+ * from the response, so the caller defaults them to 0.
+ *
+ * The count is public to signed-in viewers; the IDENTITIES are not (they come
+ * from get_kids_going, gated). That split is the whole point of the pair.
+ */
+export async function countKidsGoingForPosts(postIds: string[]): Promise<Record<string, number>> {
+  if (postIds.length === 0) return {}
+  const { data, error } = await supabase.rpc('count_kids_going_for', { p_ids: postIds })
+  if (error) throw error
+  const counts: Record<string, number> = {}
+  for (const row of (data ?? []) as Array<{ playdate_id: string; kids_count: number }>) {
+    counts[row.playdate_id] = row.kids_count
+  }
+  return counts
+}
+
+/**
  * Toggle the current user's "we're going" ping on a drop-in. Client guard:
  * the host of a post cannot ping their own post (the call is a no-op and
  * returns false). Returns the new state (true = going). The Supabase

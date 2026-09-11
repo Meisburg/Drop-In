@@ -75,6 +75,7 @@ export function DropInCard({
   rainLabel = null,
   pingToggle,
   goingPings = [],
+  kidsGoingCount = 0,
 }: {
   playdate: PlaydateWithNeighborhood
   nowIso: string
@@ -96,6 +97,12 @@ export function DropInCard({
    * = no line.
    */
   goingPings?: ReadonlyArray<GoingPinger>
+  /**
+   * V6 (migration 0027): how many kids are coming, for the card's line. A bare
+   * COUNT — decision #2 keeps names and ages off the card entirely (they reach
+   * only the host and the people going, through the 0026 gated RPC).
+   */
+  kidsGoingCount?: number
 }) {
   const live = isHappeningNow(playdate, nowIso)
   const ended = isEnded(playdate, nowIso)
@@ -116,7 +123,12 @@ export function DropInCard({
   // V3 slice 4 (ticket 07): the card's going line (null = hidden — no
   // pings yet). The page owns the data (the listPingsForPosts group); the
   // card applies the pure buildGoingLine with the 3-circle cap.
-  const goingLine = buildGoingLine(goingPings.length, goingPings, GOING_CIRCLE_LIMIT)
+  const goingLine = buildGoingLine(
+    goingPings.length,
+    goingPings,
+    GOING_CIRCLE_LIMIT,
+    kidsGoingCount,
+  )
   const cardClasses = [
     'block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-indigo-300',
     muted ? 'opacity-60' : '',

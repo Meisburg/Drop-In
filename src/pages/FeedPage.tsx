@@ -6,6 +6,7 @@ import {
   countPingsOnMyPosts,
   fetchRainProbabilityForZip,
   listMyPingPostIds,
+  countKidsGoingForPosts,
   listPingsForPosts,
   listRadiusFeed,
   restampLastSeen,
@@ -119,6 +120,8 @@ export function FeedPage() {
   // column) degrades to empty groups — no going lines, never a crash
   // (the zero-pressure soul).
   const [pingsByPostId, setPingsByPostId] = useState<Record<string, PingForPost[]> | null>(null)
+  // V6: post id -> how many kids are coming (the 0027 batch RPC).
+  const [kidsByPostId, setKidsByPostId] = useState<Record<string, number> | null>(null)
   // V3 slice 9 (ticket 04): the host retention banner's count — pings on
   // the host's OWN posts created after the retention cursor (0024's
   // profiles.last_seen_at; the 0020 created_at is the key). null =
@@ -187,6 +190,16 @@ export function FeedPage() {
     let cancelled = false
     setPingsByPostId(null)
     const postIds = posts.map((post) => post.id)
+    // V6 (migration 0027): the kids count per post — ONE batched call for the
+    // whole feed, not one per card. Signed-out or pre-0027-apply this fails
+    // quietly and every card just omits the kids half of its line.
+    countKidsGoingForPosts(postIds)
+      .then((counts) => {
+        if (!cancelled) setKidsByPostId(counts)
+      })
+      .catch(() => {
+        if (!cancelled) setKidsByPostId({})
+      })
     listPingsForPosts(postIds)
       .then((rows) => {
         if (cancelled) return
@@ -388,6 +401,11 @@ export function FeedPage() {
     return pingsByPostId?.[post.id] ?? []
   }
 
+  /** V6: how many kids are coming to this post, 0 when nobody's said. */
+  function buildCardKidsCount(post: PlaydateWithNeighborhood) {
+    return kidsByPostId?.[post.id] ?? 0
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold text-slate-900">Near you</h1>
@@ -449,6 +467,7 @@ export function FeedPage() {
                       rainLabel={isToday ? (rainLabels[post.id] ?? null) : undefined}
                       pingToggle={buildCardPingToggle(post)}
                       goingPings={buildCardGoingPings(post)}
+                      kidsGoingCount={buildCardKidsCount(post)}
                     />
                   ))}
                   {ended.map((post) => (
@@ -459,6 +478,7 @@ export function FeedPage() {
                       rainLabel={isToday ? (rainLabels[post.id] ?? null) : undefined}
                       pingToggle={buildCardPingToggle(post)}
                       goingPings={buildCardGoingPings(post)}
+                      kidsGoingCount={buildCardKidsCount(post)}
                     />
                   ))}
                 </div>

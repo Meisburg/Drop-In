@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { HostAvatar } from '../components/DropInCard'
 import { PhotoButton } from '../components/ImageLightbox'
+import { KidsComingPicker } from '../components/KidsComingPicker'
 import { ReportDialog } from '../components/ReportDialog'
 import { useSessionContext } from '../components/SessionProvider'
 import { LOGIN_PATH } from '../lib/auth'
@@ -18,6 +19,9 @@ import {
   hasPinged,
   hideComment,
   listComments,
+  listKids,
+  listKidsGoing,
+  listMyPingKids,
   listPlaydateKidNames,
   setPlaydateStatus,
   togglePing,
@@ -45,6 +49,7 @@ import {
 } from '../lib/trust'
 import type {
   CommentWithAuthor,
+  Kid,
   PlaydateKid,
   PlaydateStatus,
   PlaydateWithNeighborhood,
@@ -254,6 +259,64 @@ export function PlaydateDetailPage() {
   // flag) — the ping button highlights as "Tap to confirm you're coming";
   // the ping itself is always an explicit tap, never a silent auto-ping.
   const [pingIntent, setPingIntent] = useState(false)
+  // V6: who is bringing kids (migration 0026). These hooks MUST live up here
+  // with the others: the component returns early for its loading/error states,
+  // and a hook called after a conditional return makes React throw "rendered
+  // more hooks than during the previous render" — which is exactly how this
+  // first landed (a blank detail page, caught by the end-to-end check).
+  // The load is a progressive enhancement: pre-0026 the RPCs 404 and every
+  // piece below simply stays empty, so it can never knock the post itself into
+  // an error state.
+  const [kidsGoing, setKidsGoing] = useState<
+    Array<{ id: string; firstName: string; age: number | null }>
+  >([])
+  const [myKids, setMyKids] = useState<Kid[]>([])
+  const [myPingKids, setMyPingKids] = useState<string[]>([])
+  // `going` is derived from the state machine far below (the early returns sit
+  // in between), so read it here in its always-safe form for the effect deps.
+  const goingNow = state.status === 'ready' ? state.going : false
+  // Bumped after the picker writes, so the names line below re-reads — without
+  // it the page kept showing the list it loaded BEFORE the selection (caught by
+  // the end-to-end check: the card counted the kid while the detail page still
+  // said nothing).
+  const [kidsReloadToken, setKidsReloadToken] = useState(0)
+
+  useEffect(() => {
+    if (session === null || id === undefined) return
+    const postId = id
+    let cancelled = false
+    void (async () => {
+      const [goingKids, mine] = await Promise.all([
+        listKidsGoing(postId).catch(() => []),
+        listKids(session.user.id).catch(() => []),
+      ])
+      if (cancelled) return
+      setKidsGoing(goingKids)
+      setMyKids(mine)
+      const selected = goingNow ? await listMyPingKids(postId).catch(() => []) : []
+      if (cancelled) return
+      setMyPingKids(selected)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [id, goingNow, session])
+
+  // The picker's own write is the only thing that changes the names line, and
+  // it re-reads ONLY that — re-running the whole load above would clobber the
+  // picker's optimistic selection with a read that can beat the write.
+  useEffect(() => {
+    if (id === undefined || kidsReloadToken === 0) return
+    const postId = id
+    let cancelled = false
+    void (async () => {
+      const rows = await listKidsGoing(postId).catch(() => [])
+      if (!cancelled) setKidsGoing(rows)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [id, kidsReloadToken])
   // V3 slice 2 (ticket 02): the host's status control — its busy flag + a
   // designed error line (a failed write never hides the event; zero
   // pressure), and the best-effort rain probability (the "Rain likely"
@@ -1194,6 +1257,17 @@ export function PlaydateDetailPage() {
             <p className="mt-2 text-sm text-slate-600">{goingCountLine(count)}</p>
           ) : null}
           {pingError !== null ? <p className="mt-2 text-sm text-red-600">{pingError}</p> : null}
+          {/* V6: only once you're actually going, and only if you have kids to
+              bring — otherwise there is nothing to ask. */}
+          {going && myKids.length > 0 && id !== undefined ? (
+            <KidsComingPicker
+              playdateId={id}
+              kids={myKids}
+              selected={myPingKids}
+              onChange={setMyPingKids}
+              onSaved={() => setKidsReloadToken((token) => token + 1)}
+            />
+          ) : null}
         </div>
       )}
 
@@ -1204,9 +1278,24 @@ export function PlaydateDetailPage() {
           event line). Hidden when the load is null (0022 not applied —
           the 42P01 is caught, the DB-not-applied discipline) or the
           selection is empty (the 0-count "line" is not a state). */}
-      {kidsLine !== null ? (
+      {kidsLine !== null || kidsGoing.length > 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-slate-700">Kids coming: {kidsLine}</p>
+          {kidsLine !== null ? (
+            <p className="text-sm text-slate-700">Kids coming: {kidsLine}</p>
+          ) : null}
+          {/* V6 (migration 0026): the kids the OTHER families are bringing.
+              The RPC returns rows only to the host, to people who are going,
+              and to moderators — a stranger sees neither this line nor any
+              error, because the function simply returns nothing. Names + ages
+              only, the same pin the host's own line has kept since ticket 09. */}
+          {kidsGoing.length > 0 ? (
+            <p className="mt-1 text-sm text-slate-700">
+              Other kids coming:{' '}
+              {kidsGoing
+                .map((kid) => (kid.age !== null ? `${kid.firstName} · ${kid.age}` : kid.firstName))
+                .join(', ')}
+            </p>
+          ) : null}
         </div>
       ) : null}
 

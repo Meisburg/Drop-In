@@ -575,9 +575,11 @@ export interface GoingLine {
 export const GOING_CIRCLE_LIMIT = 3
 
 /**
- * The card's going line (V3 slice 4, ticket 07): "N going" + up to
- * `limit` pinger circles (avatar, or the display-name initial on a
- * slate-200 circle when there is no avatar) + a "+N" overflow chip.
+ * The card's going line (V3 slice 4, ticket 07; V6 adds the kids count):
+ * "N going · M kids" + up to `limit` pinger circles (avatar, or the
+ * display-name initial on a slate-200 circle when there is no avatar) + a "+N"
+ * overflow chip. The kids count is a bare number by design (decision #2,
+ * 2026-09-11) — names and ages only reach the host and the people going.
  *
  * Pure + unit-tested: the caller (the feed page) groups the pings by post
  * and hands each card its group; this builds the renderable line.
@@ -590,6 +592,7 @@ export function buildGoingLine(
   count: number,
   pingers: ReadonlyArray<GoingPinger>,
   limit: number,
+  kidsCount = 0,
 ): GoingLine | null {
   if (count <= 0) return null
   const circles = pingers.slice(0, limit).map((pinger) => ({
@@ -598,10 +601,27 @@ export function buildGoingLine(
   }))
   const overflow = Math.max(0, count - circles.length)
   return {
-    label: `${count} going`,
+    label: goingCountsLabel(count, kidsCount),
     circles,
     overflow,
   }
+}
+
+/**
+ * "N going" / "N going · M kids" (V6).
+ *
+ * First phone feedback: "it only says like one going as in like the parent, but
+ * it doesn't show the kids that are going... you're trying to set this up for
+ * kids to have a play date with other kids." Parents are how the app is used;
+ * kids are why it exists, so both numbers belong on the card.
+ *
+ * "1 kid" is singular; a post with nobody going shows nothing at all (the
+ * caller hides the line — "0 going" is not a state, the V3 pin).
+ */
+export function goingCountsLabel(pingCount: number, kidsCount: number): string {
+  const going = `${pingCount} going`
+  if (kidsCount <= 0) return going
+  return `${going} · ${kidsCount} ${kidsCount === 1 ? 'kid' : 'kids'}`
 }
 
 // ---------------------------------------------------------------------------

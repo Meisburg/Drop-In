@@ -38,6 +38,21 @@ hour for the whole project** — so password reset is code-complete but cannot
 carry a real beta yet. Also `site_url` is `http://localhost:3000`, which nothing
 serves. Both are dashboard settings; `docs/beta-checklist.md` has the steps.
 
+## V6 — first phone feedback (opened 2026-09-11, testing on the deployed URL)
+
+Source: the human testing https://drop-in-mu.vercel.app on a real phone.
+
+| Item | State | Evidence |
+|---|---|---|
+| Text too small | complete | Measured: text-sm used 249×, text-base 12× → body was 14px. Two passes: 16px, then **17px** (iOS body size) with headings 26px and a 14px floor enforced by `scripts/mobile-audit.mjs` |
+| Low contrast (found alongside) | complete | text-slate-400 (≈2.9:1, under WCAG AA) used 32×; both gray tiers shifted up one, hierarchy preserved, no failing-contrast grays left |
+| Bottom nav | complete | Icons above the labels + a REAL active state — the old code used Tailwind's `active:` variant (the CSS :active pressed pseudo-class), so the current tab was never marked |
+| Going toggle read as a badge | complete | ""it's not clear that's indicating that you're going"" — bare circle → labelled pill ("I'm going" / "Going"), 44px, in the card's action row, plus a "More info" chevron |
+| Photos should enlarge | complete | `ImageLightbox` via context; tap to open, tap/Escape to close. Decision #3 applied: the detail avatar enlarges while the NAME goes to the profile (they used to be one link) |
+| Kids going (decisions #1 + #2) | complete | **0026** + **0027** applied live and verified. `ping_kids` (cascade from the ping), `count_kids_going` / `count_kids_going_for` (count for every signed-in viewer), `get_kids_going` (names+ages to host/pingers/mods only). UI: the detail page asks "Who's coming with you?" once you're going; the card reads "2 going · 1 kid". Verified end to end on a seeded marker: un-ping clears, the picker appears, the chip selects, "Other kids coming: Bernie · 6" renders, the card counts it. 295/295 unit |
+
+**Regression caught by that verification (worth remembering):** the new hooks first landed BELOW the detail page's early returns, so React threw "rendered more hooks than during the previous render" and the whole detail page rendered blank — build and unit tests were both green. Screenshotting the real page is what caught it. A second race surfaced too: re-reading the selection before the write landed flipped the chip back off, fixed with an `onSaved` callback that fires only after the insert.
+
 ### PWA / mobile-app readiness (verified round 2)
 
 The "feels like a phone app" half of V4 is now backed by repeatable checks

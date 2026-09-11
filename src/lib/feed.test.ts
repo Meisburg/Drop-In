@@ -782,6 +782,33 @@ describe('buildGoingLine (the card\'s going line, V3 ticket 07)', () => {
     expect(buildGoingLine(0, [], GOING_CIRCLE_LIMIT)).toBeNull()
   })
 
+  // V6: the kids half of the line (migration 0027's batched count feeds it).
+  describe('the kids count', () => {
+    it('is omitted entirely when nobody has said they are bringing kids', () => {
+      expect(buildGoingLine(2, pingers(2), GOING_CIRCLE_LIMIT, 0)!.label).toBe('2 going')
+      expect(buildGoingLine(2, pingers(2), GOING_CIRCLE_LIMIT)!.label).toBe('2 going')
+    })
+
+    it('reads "N going · M kids" when kids are coming', () => {
+      expect(buildGoingLine(2, pingers(2), GOING_CIRCLE_LIMIT, 3)!.label).toBe('2 going · 3 kids')
+    })
+
+    it('says "1 kid", not "1 kids"', () => {
+      expect(buildGoingLine(1, pingers(1), GOING_CIRCLE_LIMIT, 1)!.label).toBe('1 going · 1 kid')
+    })
+
+    it('ignores a nonsense negative count rather than printing it', () => {
+      expect(buildGoingLine(1, pingers(1), GOING_CIRCLE_LIMIT, -2)!.label).toBe('1 going')
+    })
+
+    it('leaves the circles and overflow to the parents alone', () => {
+      const line = buildGoingLine(5, pingers(5), GOING_CIRCLE_LIMIT, 4)!
+      expect(line.circles).toHaveLength(3)
+      expect(line.overflow).toBe(2)
+      expect(line.label).toBe('5 going · 4 kids')
+    })
+  })
+
   it('labels exactly 3 pingers with no overflow', () => {
     const line = buildGoingLine(3, pingers(3), GOING_CIRCLE_LIMIT)
     expect(line).not.toBeNull()
