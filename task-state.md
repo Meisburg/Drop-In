@@ -7,7 +7,7 @@
 
 - **Phase:** V3 PLAN COMPLETE — all 10 slices + tickets 01-10 closed; 0025 (guest list) applied live 2026-09-11 and verified (coordinator-verifier finish after the headless run died at its .env read). REMAINING HUMAN ITEMS CLOSED 2026-09-11 by Hermes coordinator: (1) marker sweep — 173 e2e users + opsmoke.test deleted via dashboard SQL API (safety gate: founder profiles verified outside the set; child rows scoped to markers; FINAL live DB: 2 auth users [jonmeisburg, nicolemeisburg], 2 profiles, 2 playdates [Greenlake, both Jon's]; remaining ping/comment/memberships belong to Jon+Nicole — kept); (2) founder-flag SQL — already applied (profiles.moderators=true on 'Jon Meisburg' verified pre-sweep, no action needed). V3 FULLY CLOSED.
 - **Phase: V4 COMPLETE (2026-09-11).** Human enabled Google in the Supabase project; the blocker is cleared and the round-trip is verified — see the closure evidence below.
-- **Active slice:** none. **Next action:** the deploy (the last thing between this and a two-family beta) — nothing is pending in the code.
+- **Active slice:** none. **V7 (brand palette) is deployed and verified — see below.** **Next action:** the beta itself; the code has nothing pending. Two open *decisions*, not defects: (1) the **logo mark** (the droplet is still shipped, recoloured — V7 only settled colour), and (2) the beta's SMTP dashboard setting.
 - **Remaining human items:** none. D1/D2/D3 all decided (below). The e2e marker sweep ran clean twice; live DB = 2 founders only.
 
 ### V4 closure evidence (2026-09-11, after the human's Google setup)
@@ -53,6 +53,31 @@ Source: the human testing https://drop-in-mu.vercel.app on a real phone.
 
 **Regression caught by that verification (worth remembering):** the new hooks first landed BELOW the detail page's early returns, so React threw "rendered more hooks than during the previous render" and the whole detail page rendered blank — build and unit tests were both green. Screenshotting the real page is what caught it. A second race surfaced too: re-reading the selection before the write landed flipped the chip back off, fixed with an `onSaved` callback that fires only after the insert.
 
+## V7 — brand palette (2026-09-11, human request → DEPLOYED)
+
+Source: the human re-examining the brand ("the logo looks like a water drop",
+then "which would moms like most?", then a Peanut palette reference). Indigo was
+the brand; `scripts/design-detect.mjs` had it listed as an ACCEPTED finding whose
+reason was literally "changing it is a brand change, not a CSS edit — tracked as
+a product decision". The human made that decision, so the finding is now RESOLVED
+rather than merely accepted.
+
+| Item | State | Evidence |
+|---|---|---|
+| Name | **Drop In, kept** (decided) | Checked the space: "PlayDate" is taken *in this exact category* (playdate.today = "effortless playdate scheduling for busy parents"; also playdate.events + Panic's console owning the word in tech), while Drop In's collisions are drop-in *childcare* — adjacent, not competing |
+| Palette | **Shipped** — commit `430a4bc`, live on `drop-in-mu.vercel.app` | Terracotta on a warm off-white base. Direction: "Peanut's structure, our own hues" — adopt their warm base + one committed accent, NOT their coral-red (that hue is the "app for moms" signal; this app is for both parents). Applied as Tailwind `@theme` overrides on the stock scales, so one file recoloured ~450 call sites and the authored lightness ramps survived |
+| AA contrast | PASS, measured on the rendered app (local AND production) | headings `#2f4858` 9.59:1 · body `#5a676e` 5.83:1 · wordmark 4.66:1 · buttons (white on `#c8411c`) 4.97:1. Two terracotta tones on purpose: `#e8552f` is the brand hue (artwork), `#c8411c` is the action/text tone — `#e8552f` at 17px/under white text is only ~4.2:1 and fails AA |
+| Gates | PASS | build clean · 295/295 unit · lint 0 errors · `mobile-audit.mjs` all 12 viewport/route combos **green against production** · `verify-pwa.mjs` green (SW controls the page, 3 icons 200, 8 startup images, **cold offline load still paints**) |
+| Icons / splash / manifest | Regenerated + verified live | Apple-touch, 192, 512, maskable 512 and all 8 iOS splash PNGs re-rendered off indigo at the exact byte sizes the local build produced; manifest `theme_color` + `background_color` = `#e8552f`; compiled CSS carries **zero** legacy indigo hexes |
+| Defect found by verifying the fix | Fixed in the same commit | `SplashScreen` was `bg-indigo-600`, so a cold start painted the deep action orange for one frame then jumped to the brighter boot-splash hue. Now `bg-indigo-500` — one colour across first paint, React splash, icon, manifest |
+| **Logo MARK** | **STILL OPEN — not decided** | The droplet shape is unchanged (only recoloured). The slide+tree mark and the group-of-kids direction were both only *stand-ins* for comparing palettes. Next brand decision |
+| Tagline | Proposed, not adopted | "The kids play. You make friends." — it is the promise the human's reference illustration actually depicts (grown-ups chatting in front, kids playing behind) |
+
+**Local-only exploration artifacts (deliberately gitignored, never shipped):**
+`public/logo-mockup.html`, `public/color-compare.html` — the palette and mark
+comparison pages, plus `.scratch/*.cjs` verification scripts. They live under
+`public/` so committing them would have published them.
+
 ### PWA / mobile-app readiness (verified round 2)
 
 The "feels like a phone app" half of V4 is now backed by repeatable checks
@@ -61,7 +86,7 @@ The "feels like a phone app" half of V4 is now backed by repeatable checks
 | Check | Result |
 |---|---|
 | Service worker takes control of the page | PASS |
-| Manifest installable | `Drop In` / `standalone` / `start_url: /` / `background_color #4f46e5` (matched to the splash) |
+| Manifest installable | `Drop In` / `standalone` / `start_url: /` / `background_color #e8552f` (matched to the splash; was indigo before V7) |
 | Every advertised icon resolves | PASS — 192, 512, maskable 512 (all HTTP 200, correct sizes) |
 | iOS standalone metadata | `apple-mobile-web-app-capable: yes`, `apple-mobile-web-app-title: Drop In`, 8 `apple-touch-startup-image` sizes |
 | **Cold offline load** | PASS — the precache serves the shell (login screen paints, no browser error page) |
