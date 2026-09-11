@@ -64,16 +64,34 @@
     <div id="root">
       <!-- Static boot splash: the FIRST painted frame, before the JS bundle has
            parsed — so a cold start is brand, never a white flash. SplashScreen
-           removes it on mount and continues from this exact frame. Keep the
-           colour in sync with the brand hue (indigo-500 in index.css, #e8552f). -->
+           removes it on mount and continues from this exact frame: same mark,
+           same wordmark, same sizes, same 16px gap (see SplashScreen.tsx — the
+           mark is 112px, the wordmark 32px/40px, the field is the brand hue
+           indigo-500 in index.css, #e8552f). The face falls back to the system
+           stack for the few frames before the self-hosted woff2 lands. -->
       <div
         id="boot-splash"
-        style="position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #e8552f"
+        style="position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: #e8552f"
       >
         <svg viewBox="0 0 64 64" width="112" height="112" aria-hidden="true">
-          <path d="M32 6 C32 6 19 25 19 34 a13 13 0 0 0 26 0 C45 25 32 6 32 6 Z" fill="#ffffff" />
-          <path d="M12 52 Q32 62 52 52" fill="none" stroke="#fbd9cc" stroke-width="5" stroke-linecap="round" />
+          <g fill="#ffffff">
+            <circle cx="15" cy="21" r="10" />
+            <circle cx="23" cy="26" r="6.5" fill-opacity=".75" />
+            <rect x="12.5" y="28" width="5" height="18" rx="2.5" />
+            <rect x="28" y="12" width="14" height="9" rx="4.5" />
+          </g>
+          <g stroke="#ffffff" stroke-linecap="round" fill="none">
+            <path d="M38 19 L51 41" stroke-width="8.5" />
+            <path d="M31.5 22 L31.5 45 M37.5 22 L37.5 45" stroke-width="3.6" />
+            <path d="M31.5 30 L37.5 30 M31.5 37.5 L37.5 37.5" stroke-width="3" />
+          </g>
+          <rect x="7" y="48" width="50" height="6.5" rx="3.25" fill="#ffffff" fill-opacity=".45" />
         </svg>
+        <p
+          style="margin: 0; font-family: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif; font-weight: 700; font-size: 32px; line-height: 40px; color: #ffffff"
+        >
+          Drop In
+        </p>
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>

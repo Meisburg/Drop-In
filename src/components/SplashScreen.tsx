@@ -67,11 +67,16 @@ export function SplashScreen() {
     <div
       aria-hidden="true"
       data-testid="splash"
-      className={`fixed inset-0 z-50 flex items-center justify-center bg-indigo-500 transition-opacity duration-300 motion-reduce:transition-none ${
+      className={`fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-indigo-500 text-white transition-opacity duration-300 motion-reduce:transition-none ${
         fading ? 'pointer-events-none opacity-0' : 'opacity-100'
       }`}
     >
-      <DropInMark className="h-28 w-28 text-white" />
+      <DropInMark className="h-28 w-28" variant="mono" />
+      {/* The wordmark under the mark. Same face and weight as the header's, so
+          the splash and the app read as one thing across the handoff rather
+          than as two different logos. `mono` because this is a field of brand
+          colour: a green tree on it would read as Christmas. */}
+      <p className="font-display text-2xl font-bold">Drop In</p>
     </div>
   )
 }

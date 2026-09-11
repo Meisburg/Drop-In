@@ -1,11 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Drop In">
   <!-- Source of truth for the raster app icons. Regenerate with:
-       scripts/build-icons.sh -->
+       scripts/build-icons.sh
+
+       V7: the playground mark (a slide under a tree, on the ground line) in the
+       mono/knockout variant — everything white, depth from opacity — because an
+       app icon is read against a wallpaper at 60px, where a green tree on the
+       terracotta field would just muddy. The geometry must stay identical to
+       src/components/DropInMark.tsx, public/favicon.svg, the boot splash in
+       index.html and scripts/build-splash.mjs. -->
   <rect width="512" height="512" rx="112" fill="#e8552f"/>
-  <g transform="translate(70.4 64.6) scale(5.8)">
-  <!-- droplet -->
-  <path d="M32 6 C32 6 19 25 19 34 a13 13 0 0 0 26 0 C45 25 32 6 32 6 Z" fill="#ffffff"/>
-  <!-- the landing ripple: the drop has arrived -->
-  <path d="M12 52 Q32 62 52 52" fill="none" stroke="#fbd9cc" stroke-width="5" stroke-linecap="round"/>
+  <g transform="translate(66.9 56.2) scale(6.1)">
+    <g fill="#ffffff">
+      <circle cx="15" cy="21" r="10"/>
+      <circle cx="23" cy="26" r="6.5" fill-opacity=".75"/>
+      <rect x="12.5" y="28" width="5" height="18" rx="2.5"/>
+      <rect x="28" y="12" width="14" height="9" rx="4.5"/>
+    </g>
+    <g stroke="#ffffff" stroke-linecap="round" fill="none">
+      <path d="M38 19 L51 41" stroke-width="8.5"/>
+      <path d="M31.5 22 L31.5 45 M37.5 22 L37.5 45" stroke-width="3.6"/>
+      <path d="M31.5 30 L37.5 30 M31.5 37.5 L37.5 37.5" stroke-width="3"/>
+    </g>
+    <rect x="7" y="48" width="50" height="6.5" rx="3.25" fill="#ffffff" fill-opacity=".45"/>
   </g>
 </svg>
