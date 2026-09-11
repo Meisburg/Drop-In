@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router'
 import { DropInMark } from './components/DropInMark'
+import { LightboxProvider } from './components/ImageLightbox'
 import { SessionProvider, useSessionContext } from './components/SessionProvider'
 import { SplashScreen } from './components/SplashScreen'
 import { signOutUser } from './lib/db'
@@ -295,6 +296,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <SessionProvider>
+        {/* V6: any photo in the app can open full-screen — the provider owns
+            the single overlay instance (see components/ImageLightbox.tsx). */}
+        <LightboxProvider>
         {/* V4 slice 3: the cold-start splash sits ABOVE the routes so it covers
             both the signed-out (login) and signed-in first paint. */}
         <SplashScreen />
@@ -316,6 +320,7 @@ export default function App() {
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </LightboxProvider>
       </SessionProvider>
     </BrowserRouter>
   )

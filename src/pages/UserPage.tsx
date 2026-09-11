@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { HostAvatar } from '../components/DropInCard'
+import { PhotoButton } from '../components/ImageLightbox'
 import { ReportDialog } from '../components/ReportDialog'
 import { useSessionContext } from '../components/SessionProvider'
 import { countPostsByHost, getBlockState, getProfileByHandle, toggleBlock } from '../lib/db'
@@ -167,7 +168,7 @@ export function UserPage() {
     <div className="flex flex-col gap-4">
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-center gap-3">
-          <HostAvatar host={profile} />
+          <HostAvatar host={profile} expandable />
           <div className="min-w-0">
             <h1 className="text-xl font-semibold text-slate-900">@{profile.display_name}</h1>
             <p className="mt-1 text-sm text-slate-600">Here since {joined}.</p>
@@ -216,11 +217,16 @@ export function UserPage() {
               return (
                 <li key={kid.id} className="flex flex-wrap items-center gap-2">
                   {kid.avatar_url ? (
-                    <img
-                      src={kid.avatar_url}
-                      alt={`${kid.first_name}'s photo`}
-                      className="h-10 w-10 shrink-0 rounded-full object-cover"
-                    />
+                    // V6: the kid photo opens full-screen too — 'so I can see
+                    // what the parents and the kids look like', which is how
+                    // a parent decides whether to show up.
+                    <PhotoButton src={kid.avatar_url} alt={`${kid.first_name}’s photo`}>
+                      <img
+                        src={kid.avatar_url}
+                        alt=""
+                        className="h-10 w-10 shrink-0 rounded-full object-cover"
+                      />
+                    </PhotoButton>
                   ) : (
                     <span
                       aria-hidden

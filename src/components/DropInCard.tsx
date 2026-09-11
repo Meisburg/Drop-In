@@ -1,4 +1,5 @@
 import { Link } from 'react-router'
+import { PhotoButton } from './ImageLightbox'
 import {
   buildGoingLine,
   formatDistanceLabel,
@@ -157,41 +158,7 @@ export function DropInCard({
                 ☔ {rainLabel}
               </span>
             ) : null}
-            {pingToggle?.enabled ? (
-              <button
-                type="button"
-                aria-pressed={pingToggle.active}
-                aria-label={
-                  pingToggle.active ? 'Going — tap to remove' : 'Mark us as going'
-                }
-                disabled={pingToggle.busy}
-                onClick={(event) => {
-                  // The card is a <Link>: the toggle must NOT navigate —
-                  // prevent the default (the href) and stop the click from
-                  // reaching the card (the link still navigates when the
-                  // card itself is tapped).
-                  event.preventDefault()
-                  event.stopPropagation()
-                  if (!pingToggle.busy) pingToggle.onToggle()
-                }}
-                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border transition-colors disabled:opacity-60 ${
-                  pingToggle.active
-                    ? 'border-green-600 bg-green-600 text-white'
-                    : 'border-slate-300 bg-white text-slate-500'
-                }`}
-              >
-                <svg
-                  viewBox="0 0 16 16"
-                  className="h-5 w-5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  aria-hidden="true"
-                >
-                  <path d="M3.5 8.5 6.5 11.5 12.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-            ) : null}
+
           </div>
         </div>
         <p className="text-sm text-slate-700">{playdate.place}</p>
@@ -203,41 +170,93 @@ export function DropInCard({
           <HostAvatar host={playdate.host} />
           <p className="text-sm text-slate-500">@{playdate.host.display_name}</p>
         </div>
-        {goingLine !== null ? (
-          // V3 slice 4 (ticket 07): the going line replaces the old
-          // age-hint line — "N going" + up to 3 pinger circles (24px,
-          // -8px overlap) + the "+N" overflow chip. One row, no wrap at
-          // 375px (the badge slot above carries the wrap risk, not this
-          // line). The circles are the pingers' avatars; the fallback is
-          // the display-name initial on a slate-200 circle (names never
-          // surface on cards).
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-slate-600">{goingLine.label}</span>
-            <div className="flex items-center">
-              {goingLine.circles.map((circle, index) =>
-                circle.avatarUrl !== null && circle.avatarUrl !== '' ? (
-                  <img
-                    key={index}
-                    src={circle.avatarUrl}
-                    alt=""
-                    className={`h-6 w-6 rounded-full border-2 border-white object-cover${index > 0 ? ' -ml-2' : ''}`}
-                  />
-                ) : (
-                  <span
-                    key={index}
-                    aria-hidden="true"
-                    className={`flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-xs font-semibold text-slate-600${index > 0 ? ' -ml-2' : ''}`}
-                  >
-                    {circle.initial}
-                  </span>
-                ),
-              )}
-            </div>
-            {goingLine.overflow > 0 ? (
-              <span className="text-xs font-medium text-slate-500">+{goingLine.overflow}</span>
-            ) : null}
+        {/* V6 (first phone feedback): the going toggle used to be a bare
+            circle in the badge cluster, and it read as a status badge rather
+            than a button — 'it's not clear that's indicating that you're
+            going'. It is now a LABELLED pill in the card's action row, so it
+            says what it does; and the same row carries a 'More info' chevron
+            so the card's tappability is advertised instead of assumed. */}
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-slate-100 pt-2">
+          <div className="flex min-w-0 items-center gap-1.5">
+            {goingLine !== null ? (
+              <>
+                <span className="text-xs text-slate-600">{goingLine.label}</span>
+                <div className="flex items-center">
+                  {goingLine.circles.map((circle, index) =>
+                    circle.avatarUrl !== null && circle.avatarUrl !== '' ? (
+                      <img
+                        key={index}
+                        src={circle.avatarUrl}
+                        alt=""
+                        className={`h-6 w-6 rounded-full border-2 border-white object-cover${index > 0 ? ' -ml-2' : ''}`}
+                      />
+                    ) : (
+                      <span
+                        key={index}
+                        aria-hidden="true"
+                        className={`flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-xs font-semibold text-slate-600${index > 0 ? ' -ml-2' : ''}`}
+                      >
+                        {circle.initial}
+                      </span>
+                    ),
+                  )}
+                </div>
+                {goingLine.overflow > 0 ? (
+                  <span className="text-xs font-medium text-slate-600">+{goingLine.overflow}</span>
+                ) : null}
+              </>
+            ) : (
+              <span className="text-xs text-slate-600">
+                {pingToggle?.enabled ? 'No one’s said they’re going yet' : 'No one’s going yet'}
+              </span>
+            )}
           </div>
-        ) : null}
+          {pingToggle?.enabled ? (
+            <button
+              type="button"
+              aria-pressed={pingToggle.active}
+              aria-label={
+                pingToggle.active
+                  ? `Going — tap to take it back`
+                  : `Say we’re going to ${playdate.title}`
+              }
+              disabled={pingToggle.busy}
+              onClick={(event) => {
+                // The card is a <Link>: the toggle must NOT navigate —
+                // prevent the default (the href) and stop the click from
+                // reaching the card (the link still navigates when the card
+                // itself is tapped).
+                event.preventDefault()
+                event.stopPropagation()
+                if (!pingToggle.busy) pingToggle.onToggle()
+              }}
+              className={`flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors disabled:opacity-60 ${
+                pingToggle.active
+                  ? 'border-green-600 bg-green-600 text-white'
+                  : 'border-slate-300 bg-white text-slate-700'
+              }`}
+            >
+              <svg
+                viewBox="0 0 16 16"
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden="true"
+              >
+                <path d="M3.5 8.5 6.5 11.5 12.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              {pingToggle.active ? 'Going' : 'I’m going'}
+            </button>
+          ) : null}
+        </div>
+        {/* The card is a link, so this is a label, not a nested control
+            (an <a> inside an <a> is invalid HTML) — it advertises where a tap
+            already goes. */}
+        <div className="flex items-center justify-end gap-1 text-sm font-medium text-indigo-600">
+          More info
+          <span aria-hidden="true">›</span>
+        </div>
       </div>
     </Link>
   )
@@ -273,19 +292,35 @@ export interface DropInCardPingToggle {
 export function HostAvatar({
   host,
   size = 'md',
+  expandable = false,
 }: {
   host: PlaydateHost
   size?: 'md' | 'sm'
+  /**
+   * V6: when the avatar has a photo, tapping it opens the full-screen
+   * viewer instead of doing nothing. Deliberately opt-in — on the feed card
+   * the whole surface is a link to the drop-in, and intercepting the avatar
+   * there would break the card's one obvious gesture. An initial-fallback
+   * circle has nothing to enlarge, so it stays inert.
+   */
+  expandable?: boolean
 }) {
   const box = size === 'sm' ? 'h-6 w-6' : 'h-10 w-10'
   const initialClass = size === 'sm' ? 'text-xs' : 'text-sm'
-  return host.avatar_url !== undefined && host.avatar_url !== null && host.avatar_url !== '' ? (
-    <img
-      src={host.avatar_url}
-      alt=""
-      className={`${box} shrink-0 rounded-full object-cover`}
-    />
-  ) : (
+  const photoUrl = host.avatar_url ?? ''
+  if (photoUrl !== '') {
+    const photo = (
+      <img src={photoUrl} alt="" className={`${box} shrink-0 rounded-full object-cover`} />
+    )
+    return expandable ? (
+      <PhotoButton src={photoUrl} alt={`${host.display_name}’s photo`}>
+        {photo}
+      </PhotoButton>
+    ) : (
+      photo
+    )
+  }
+  return (
     <span
       aria-hidden
       className={`flex ${box} shrink-0 items-center justify-center rounded-full bg-indigo-100 ${initialClass} font-semibold text-indigo-500`}

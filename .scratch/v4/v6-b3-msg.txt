@@ -1,0 +1,24 @@
+V6 batch 3: the going toggle says what it does, and photos open full screen
+
+Two more items from the first phone test.
+
+1. The going toggle was a bare circle in the card's badge cluster, and it read
+   as a status badge: "it's not clear that that's indicating that you're
+   going". It is now a labelled pill in the card's action row — "I'm going"
+   unfilled, "Going" filled green — 44px, sitting beside the going line. The
+   card also grew a "More info" chevron so its tappability is advertised
+   rather than assumed (it is a label, not a nested control: an <a> inside an
+   <a> is invalid HTML).
+
+2. Photos open full screen (components/ImageLightbox.tsx, provided through
+   context because photos live in five different components). Tap to open,
+   tap anywhere or press Escape to close, body scroll locked, 44px close.
+   Decision #3 applied: on the detail page the avatar and the name now do
+   different things — tapping the PHOTO enlarges it, the NAME goes to the
+   profile. They used to be one link, which is exactly why the tap did the
+   unexpected thing. Kid photos on a profile expand too.
+
+Verified on a seeded signed-in marker: the pill reads "I'm going" then
+"Going", is 44px tall, More info renders, the detail host photo opens the
+dialog and a tap closes it, and "Hosted by" still resolves to the profile.
+290/290 unit; build exit 0.

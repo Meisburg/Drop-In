@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { HostAvatar } from '../components/DropInCard'
+import { PhotoButton } from '../components/ImageLightbox'
 import { ReportDialog } from '../components/ReportDialog'
 import { useSessionContext } from '../components/SessionProvider'
 import { LOGIN_PATH } from '../lib/auth'
@@ -949,7 +950,7 @@ export function PlaydateDetailPage() {
     const showReply = plan.canReply && !isHidden
     return (
       <div className={`flex gap-3${isHidden ? ' opacity-60' : ''}`}>
-        <HostAvatar host={comment.author} size={isReply ? 'sm' : 'md'} />
+        <HostAvatar host={comment.author} size={isReply ? 'sm' : 'md'} expandable />
         <div className="min-w-0 flex-1">
           <p className="text-sm">
             <Link
@@ -1068,13 +1069,20 @@ export function PlaydateDetailPage() {
           <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{detail.details}</p>
         ) : null}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
-          <Link
-            to={`/u/${encodeURIComponent(detail.host.display_name)}`}
-            className="flex items-center gap-2 text-sm font-medium text-indigo-600"
-          >
-            <HostAvatar host={detail.host} />
-            <span>Hosted by @{detail.host.display_name}</span>
-          </Link>
+          {/* V6 (decision #3): the avatar and the name do different things.
+              Tapping the PHOTO enlarges it — 'the first thing I'd do is
+              tap their profile picture to see a bigger picture' — and the
+              name is what goes to the profile. They used to be one link,
+              which is why the tap did the thing nobody expected. */}
+          <div className="flex items-center gap-2">
+            <HostAvatar host={detail.host} expandable />
+            <Link
+              to={`/u/${encodeURIComponent(detail.host.display_name)}`}
+              className="text-sm font-medium text-indigo-600"
+            >
+              Hosted by @{detail.host.display_name}
+            </Link>
+          </div>
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
@@ -1391,11 +1399,11 @@ function hostGoingCountLine(count: number): string {
  */
 function PublicHostAvatar({ name, avatarUrl }: { name: string | null; avatarUrl: string | null }) {
   return avatarUrl !== null && avatarUrl !== '' ? (
-    <img
-      src={avatarUrl}
-      alt=""
-      className="h-10 w-10 shrink-0 rounded-full object-cover"
-    />
+    // V6: expandable here too — a signed-out visitor decides whether to
+    // come partly on who is hosting, and this is the only photo they get.
+    <PhotoButton src={avatarUrl} alt={`${name ?? 'the host'}’s photo`}>
+      <img src={avatarUrl} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
+    </PhotoButton>
   ) : (
     <span
       aria-hidden
