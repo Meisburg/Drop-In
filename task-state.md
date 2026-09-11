@@ -6,8 +6,23 @@
 ## Current position
 
 - **Phase:** V3 PLAN COMPLETE — all 10 slices + tickets 01-10 closed; 0025 (guest list) applied live 2026-09-11 and verified (coordinator-verifier finish after the headless run died at its .env read). REMAINING HUMAN ITEMS CLOSED 2026-09-11 by Hermes coordinator: (1) marker sweep — 173 e2e users + opsmoke.test deleted via dashboard SQL API (safety gate: founder profiles verified outside the set; child rows scoped to markers; FINAL live DB: 2 auth users [jonmeisburg, nicolemeisburg], 2 profiles, 2 playdates [Greenlake, both Jon's]; remaining ping/comment/memberships belong to Jon+Nicole — kept); (2) founder-flag SQL — already applied (profiles.moderators=true on 'Jon Meisburg' verified pre-sweep, no action needed). V3 FULLY CLOSED.
-- **Active slice:** none — V4 slices 1–4 are code-complete and committed. Slice 4's LIVE verification is blocked on human-owned OAuth credentials (`docs/social-login-setup.md`).
-- **Next action:** the human runs the four setup steps in `docs/social-login-setup.md` (≈15 min for Google alone), then the OAuth round-trip gets its live check. Still open: D1 (share URL rename), D2 (Capacitor vs PWA), D3 (keep Facebook?).
+- **Active slice:** none — V4 slices 1–4 are code-complete and committed. Slice 4's LIVE verification is blocked on human-owned OAuth credentials (`docs/social-login-setup.md`). Re-probed live 2026-09-11 (round 2): both providers still answer `400` on `/auth/v1/authorize` — **not enabled yet**.
+- **Next action:** the human runs the four setup steps in `docs/social-login-setup.md` (≈10 min for Google alone), then the OAuth round-trip gets its live check. Still open: D1 (share URL rename), D2 (Capacitor vs PWA), D3 (keep Facebook?). Also outstanding: the e2e marker sweep (`e2e-1789148xxx` family).
+
+### PWA / mobile-app readiness (verified round 2)
+
+The "feels like a phone app" half of V4 is now backed by repeatable checks
+(`scripts/`, documented in the README) rather than a one-off look:
+
+| Check | Result |
+|---|---|
+| Service worker takes control of the page | PASS |
+| Manifest installable | `Drop In` / `standalone` / `start_url: /` / `background_color #4f46e5` (matched to the splash) |
+| Every advertised icon resolves | PASS — 192, 512, maskable 512 (all HTTP 200, correct sizes) |
+| iOS standalone metadata | `apple-mobile-web-app-capable: yes`, `apple-mobile-web-app-title: Drop In`, 8 `apple-touch-startup-image` sizes |
+| **Cold offline load** | PASS — the precache serves the shell (login screen paints, no browser error page) |
+| Splash lifecycle | boot splash in HTML → overlay at 61ms → gone at 1474ms (inside the 2s cap) → not replayed on navigation |
+| Mobile audit | 12 viewport/route combinations green (320–430px portrait + 844x390 / 667x375 landscape) |
 
 ## V4 — "Drop In" mobile conversion (opened 2026-09-11)
 
