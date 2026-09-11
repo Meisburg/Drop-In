@@ -30,6 +30,26 @@ Required env vars (in `.env`, never committed):
 - `npm run test` — vitest (unit tests, `src/**/*.test.ts`)
 - `npm run lint` — oxlint
 - `npm run preview` — preview the production build
+- `npm run test:e2e` — Playwright against the live Supabase project (needs
+  `npm run build` first; creates an `e2e-<epoch>` marker account)
+
+## Mobile / PWA checks (V4)
+
+These drive the **built** app (`npm run build` then `npm run preview`, or any
+base URL as the first argument). They exist because the phone-level defects they
+catch are invisible in a desktop browser and in the unit tests.
+
+- `node scripts/mobile-audit.mjs [url]` — phone-width sweep (portrait +
+  landscape): horizontal overflow, text controls under 16px (iOS zooms the page
+  on focus), tap targets under 44px.
+- `node scripts/verify-splash.mjs [url]` — the boot splash is in the HTML, the
+  React overlay takes over, leaves inside its cap, and never replays on
+  in-app navigation.
+- `node scripts/verify-pwa.mjs [url]` — service worker takes control, the
+  manifest is installable, every advertised icon resolves, the iOS standalone
+  metadata is present, and a cold **offline** load still paints the app shell.
+- `bash scripts/build-icons.sh` / `node scripts/build-splash.mjs` —
+  regenerate the app icons and the iOS startup images from their SVG sources.
 
 ## Layout
 

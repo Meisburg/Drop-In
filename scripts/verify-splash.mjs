@@ -1,3 +1,10 @@
+/**
+ * Splash lifecycle check (V4 slice 3): the boot splash is in the HTML, the
+ * React overlay takes over, leaves inside its cap, and is never replayed on
+ * in-app navigation.
+ *
+ * Usage: node scripts/verify-splash.mjs [baseURL]   (default :4173 preview)
+ */
 import { chromium } from '@playwright/test'
 
 const BASE = process.argv[2] ?? 'http://127.0.0.1:4173'
