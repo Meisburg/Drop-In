@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router'
+import { DropInMark } from './components/DropInMark'
 import { SessionProvider, useSessionContext } from './components/SessionProvider'
 import { signOutUser } from './lib/db'
 import { canModerate } from './lib/moderation'
@@ -142,14 +143,18 @@ function ProtectedShell() {
     <div className="min-h-dvh bg-slate-50 text-slate-900">
       <header className="pt-safe sticky top-0 z-10 border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-md items-center justify-between px-4 py-1">
-          <Link to="/" className="flex min-h-11 items-center text-lg font-bold text-indigo-600">
-            Playdate
+          <Link
+            to="/"
+            className="flex min-h-11 items-center gap-2 text-lg font-bold text-indigo-600"
+          >
+            <DropInMark className="h-7 w-7" />
+            Drop In
           </Link>
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             {profile ? (
               <Link
                 to={`/u/${encodeURIComponent(profile.display_name)}`}
-                className="flex min-h-11 max-w-32 items-center truncate text-sm font-medium text-slate-700"
+                className="flex min-h-11 min-w-0 max-w-32 items-center truncate text-sm font-medium text-slate-700"
               >
                 @{profile.display_name}
               </Link>

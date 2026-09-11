@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Drop In">
+  <!-- Source of truth for the raster app icons. Regenerate with:
+       scripts/build-icons.sh -->
+  <rect width="512" height="512" rx="112" fill="#4f46e5"/>
+  <g transform="translate(70.4 64.6) scale(5.8)">
+  <!-- droplet -->
+  <path d="M32 6 C32 6 19 25 19 34 a13 13 0 0 0 26 0 C45 25 32 6 32 6 Z" fill="#ffffff"/>
+  <!-- the landing ripple: the drop has arrived -->
+  <path d="M12 52 Q32 62 52 52" fill="none" stroke="#c7d2fe" stroke-width="5" stroke-linecap="round"/>
+  </g>
+</svg>

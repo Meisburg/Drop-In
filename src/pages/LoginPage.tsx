@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router'
+import { DropInMark } from '../components/DropInMark'
 import { useSessionContext } from '../components/SessionProvider'
 import { LOGIN_PATH, resolveAuthRedirect } from '../lib/auth'
 import { createProfile, HandleTakenError, signOutUser, supabase } from '../lib/db'
@@ -105,7 +106,16 @@ export function LoginPage() {
     'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200'
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="pt-safe pb-safe mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-4 bg-slate-50 px-4">
+      {/* Brand moment: /login sits outside the app shell (no header), so the
+          mark lives here — and it is the first thing a new parent sees. */}
+      <div className="flex flex-col items-center gap-2 pb-2">
+        <DropInMark className="h-14 w-14 text-indigo-600" />
+        <p className="text-2xl font-bold text-indigo-600">Drop In</p>
+        <p className="text-center text-sm text-slate-500">
+          Drop-in playdates for Seattle families.
+        </p>
+      </div>
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h1 className="text-xl font-semibold text-slate-900">
           {mode === 'login' ? 'Sign in' : 'Create your account'}
@@ -203,13 +213,17 @@ export function LoginPage() {
         >
           {mode === 'login' ? 'New here? Create an account' : 'Already have an account? Sign in'}
         </button>
-        <button
-          type="button"
-          className="py-3 text-slate-500"
-          onClick={() => void signOutUser()}
-        >
-          Sign out
-        </button>
+        {/* Signed-out visitors land here — a "Sign out" control would be
+            nonsense on the sign-in screen (it was rendered unconditionally). */}
+        {session !== null ? (
+          <button
+            type="button"
+            className="py-3 text-slate-500"
+            onClick={() => void signOutUser()}
+          >
+            Sign out
+          </button>
+        ) : null}
       </div>
     </div>
   )

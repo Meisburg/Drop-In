@@ -14,8 +14,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Playdate',
-        short_name: 'Playdate',
+        name: 'Drop In',
+        short_name: 'Drop In',
         description:
           'Drop-in playdates for Seattle families — post a time and place, come by if you like.',
         theme_color: '#4f46e5',
@@ -25,6 +25,14 @@ export default defineConfig({
         icons: [
           { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
           { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+          // Maskable: Android crops to its own shape — the mark sits inside
+          // the safe zone so nothing important is clipped.
+          {
+            src: 'pwa-maskable-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
         ],
       },
     }),

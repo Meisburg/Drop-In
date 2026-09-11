@@ -26,6 +26,9 @@ playwright-report/
 # opencode runtime state (session continuation files — not source)
 .omo/
 
+# Visual-check screenshots (regenerate with .scratch/v4/shot.mjs)
+.scratch/**/*.png
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

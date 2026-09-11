@@ -1,4 +1,4 @@
-# Playdate
+# Drop In
 
 A mobile-first PWA where Seattle parents post drop-in playdates ("at this
 playground, 3–5, come by if you like") and browse what's happening nearby

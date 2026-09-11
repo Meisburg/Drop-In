@@ -148,7 +148,7 @@ export function UserPage() {
           We couldn’t find @{handle ?? '…'}
         </h1>
         <p className="text-sm text-slate-500">
-          The handle may be a typo, or this family may not be on Playdate yet.
+          The handle may be a typo, or this family may not be on Drop In yet.
         </p>
         <Link to="/" className="text-sm text-indigo-600">
           Back to today
