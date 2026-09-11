@@ -1,0 +1,29 @@
+V6 batch 4: migration 0026 — ping_kids (the schema half of the kids count)
+
+Applied live and verified. The gap was structural, not a rendering oversight:
+a going_ping records the PARENT only, and there is no kid data on the viewer
+side anywhere in the schema (playdate_kids links a POST to the HOST's kids —
+a different question). So no query could answer "how many kids are coming";
+the tap has to start collecting it.
+
+  ping_kids(playdate_id, profile_id, kid_id)
+    FK -> going_pings(playdate_id, profile_id) ON DELETE CASCADE: a kid
+        selection cannot outlive the ping that justifies it, so un-pinging
+        is a cascade rather than a delete the app must remember to issue.
+    FK -> kids(id) ON DELETE CASCADE: a removed kid takes its rows along.
+    PK (playdate_id, profile_id, kid_id): re-POSTing a selection is idempotent.
+
+  RLS is the WRITE gate (select: own/host/moderator; insert + delete: own).
+  The two reads are SECURITY DEFINER functions, per decision #2:
+    count_kids_going(p_id) -> integer, for every authenticated viewer (the
+      card's count; identities never cross — the 0015 count/name split)
+    get_kids_going(p_id)  -> first name + age, ONLY to the host, a caller who
+      has pinged, or a moderator — the 0025 guest-list gate, applied to kids
+
+Verified against the live database: columns, RLS on, all three policies scoped
+to authenticated, both cascade FKs, both functions secdef + stable with EXECUTE
+to authenticated only (PUBLIC and anon revoked), table empty, the 2 existing
+pings untouched. Additive only — no existing behaviour changes.
+
+Client wiring (the ping asking which kids, the counts on cards, the names and
+ages on the detail page) is the next pass.
