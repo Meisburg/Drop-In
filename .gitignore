@@ -32,6 +32,9 @@ playwright-report/
 # Verification artifacts that can carry a live session token — never commit
 .scratch/**/marker-state.json
 
+# Throwaway commit-message files written by the agent loop
+.scratch/**/*.txt
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
