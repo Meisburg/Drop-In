@@ -21,7 +21,7 @@ const SIZES = [
 
 const MARK = `
       <path d="M32 6 C32 6 19 25 19 34 a13 13 0 0 0 26 0 C45 25 32 6 32 6 Z" fill="#ffffff"/>
-      <path d="M12 52 Q32 62 52 52" fill="none" stroke="#c7d2fe" stroke-width="5" stroke-linecap="round"/>`
+      <path d="M12 52 Q32 62 52 52" fill="none" stroke="#fbd9cc" stroke-width="5" stroke-linecap="round"/>`
 
 mkdirSync('public/splash', { recursive: true })
 
@@ -31,7 +31,7 @@ for (const [w, h, dpr] of SIZES) {
   const mark = Math.round(Math.min(px, py) * 0.22)
   const scale = mark / 64
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${px} ${py}" width="${px}" height="${py}">
-  <rect width="${px}" height="${py}" fill="#4f46e5"/>
+  <rect width="${px}" height="${py}" fill="#e8552f"/>
   <g transform="translate(${(px - mark) / 2} ${(py - mark) / 2}) scale(${scale})">${MARK}
   </g>
 </svg>

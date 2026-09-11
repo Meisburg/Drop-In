@@ -28,10 +28,10 @@ export default defineConfig({
         short_name: 'Drop In',
         description:
           'Drop-in playdates for Seattle families — post a time and place, come by if you like.',
-        theme_color: '#4f46e5',
+        theme_color: '#e8552f',
         // Matches the splash (index.html boot splash + SplashScreen) so
         // Android's generated launch screen is the same brand frame.
-        background_color: '#4f46e5',
+        background_color: '#e8552f',
         display: 'standalone',
         start_url: '/',
         icons: [

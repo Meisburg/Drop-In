@@ -31,7 +31,7 @@ const ACCEPTED = [
   {
     rule: 'ai-color-palette',
     reason:
-      'Indigo is this app\'s brand: it is in the app icon, the splash, the manifest theme colour and the wordmark. The detector is right that purple/indigo is the most common AI tell, and the design jury independently ruled to keep it (teal would collide with the green "going" status). Changing it is a brand change, not a CSS edit — tracked as a product decision, not a code defect.',
+      'RESOLVED 2026-09-11 — the human made the brand change this entry was waiting on. Indigo is gone: the palette is now terracotta (#e8552f brand hue / #c8411c for AA-safe text and actions) on a warm off-white base, with park green, gold and sky as the status tints (V7, see the colour block in src/index.css). The old reason read "changing it is a brand change, not a CSS edit — tracked as a product decision", which is exactly how it was resolved. The entry stays because the rule fires on the SHAPE of a palette — one committed saturated accent — and committing to an accent is deliberate here: a timid, evenly-spread palette is the thing that made this app read as SaaS-utility rather than as a family app. If the detector now flags the terracotta, that is the accepted trade, not a defect.',
   },
 ]
 

@@ -96,6 +96,83 @@ h3 {
   --text-xl--line-height: 2rem;
   --text-2xl: 2rem;
   --text-2xl--line-height: 2.5rem;
+
+  /*
+   * V7 — COLOUR. The brand palette (human decision, 2026-09-11).
+   *
+   * This replaces indigo. design-detect.mjs had indigo as an ACCEPTED finding
+   * with the reason "changing it is a brand change, not a CSS edit — tracked as
+   * a product decision", and the human has now made that decision: the app was
+   * reading as SaaS-utility rather than as a family app, and indigo/purple is
+   * the single most common AI-generated-UI tell the detector knows about.
+   *
+   * The direction is "Peanut's structure, our own hues". Peanut's warmth comes
+   * from two structural things, both adopted here:
+   *   1. a WARM off-white page background instead of a cool gray, and
+   *   2. ONE committed saturated accent, rather than a timid tint.
+   * What is deliberately NOT adopted is Peanut's coral-RED itself: that hue is
+   * the market's "app for moms" signal, and Drop In is for both parents. So the
+   * accent is terracotta (a color-wheel neighbour — same temperature, park
+   * instead of blush).
+   *
+   * Implemented by OVERRIDING the stock Tailwind scales rather than editing
+   * ~450 call sites. The app's authored hierarchy (slate-50 → slate-900 for
+   * neutrals, indigo-500/600 for brand) is a lightness ramp already, so
+   * re-pointing the scale keeps every contrast relationship the components were
+   * designed around — and keeps this change reviewable in one file. `red-*` is
+   * deliberately untouched: it is semantic (errors), not brand.
+   *
+   * All text-bearing values below are checked against the page background
+   * (#fbf7f4) and against their own tinted backgrounds for WCAG AA (4.5:1
+   * normal, 3:1 large) — mobile-audit.mjs measures the rendered pixels and fails
+   * the run below those floors.
+   */
+  --color-slate-50: #fbf7f4; /* page background — warm off-white (Peanut's move) */
+  --color-slate-100: #f4ece6; /* inert chips/fills, e.g. "Ended" */
+  --color-slate-200: #eee3dc; /* the default border; avatar placeholder fill */
+  --color-slate-300: #ddcec5; /* stronger border (inputs, secondary buttons) */
+  --color-slate-400: #94867e; /* lowest-emphasis text/icon — NOT for body copy */
+  --color-slate-500: #66737a; /* meta text — 4.59:1 on the page background */
+  --color-slate-600: #5a676e; /* the most-used text tone — 5.44:1 */
+  --color-slate-700: #4a575e; /* body copy — 7.0:1 */
+  --color-slate-800: #3b4a52;
+  --color-slate-900: #2f4858; /* headings + dark surfaces — 9.0:1 */
+
+  /*
+   * Terracotta. Two tones on purpose:
+   *  - 500 is the BRAND HUE (logo, icon, splash, large fills);
+   *  - 600 is the ACTION/TEXT tone. It is a hair deeper than the brand hue
+   *    because #e8552f as 17px text or as a button fill with white text only
+   *    reaches ~4.2:1 and would FAIL AA; #c8411c reaches 4.66:1 on the page
+   *    background and 4.97:1 reversed, so it is the one that ships on buttons
+   *    and links.
+   */
+  --color-indigo-50: #fdf1ec;
+  --color-indigo-100: #fbe2d7;
+  --color-indigo-200: #f7c9b4; /* focus rings */
+  --color-indigo-300: #f0a686;
+  --color-indigo-400: #ec8259;
+  --color-indigo-500: #e8552f; /* brand hue */
+  --color-indigo-600: #c8411c; /* actions + links (AA) */
+  --color-indigo-700: #a63615;
+  --color-indigo-800: #8a2c11;
+  --color-indigo-900: #7a2710;
+
+  /* Park green — "Happening now" and the host status chip */
+  --color-emerald-100: #e2f0d6;
+  --color-emerald-700: #3f6b28; /* 5.27:1 on its own tint */
+  --color-green-700: #47802e; /* the "I'm going"/"Going" pill (white on green) */
+
+  /* Gold — "Starts soon" */
+  --color-amber-50: #fef8e8;
+  --color-amber-100: #fdf0cf;
+  --color-amber-200: #f7dfa2;
+  --color-amber-700: #8a6410; /* 4.75:1 on its own tint */
+  --color-amber-800: #6f5009;
+
+  /* Sky — the "Rain likely" forecast badge */
+  --color-sky-100: #e2eef7;
+  --color-sky-700: #1d5b7a; /* 6.0:1 on its own tint */
 }
 
 /*

@@ -5,11 +5,17 @@ import { useSessionContext } from './SessionProvider'
 /**
  * The cold-start splash (V4 slice 3) — two layers, deliberately:
  *
- *  1. `index.html` paints a static indigo splash inside #root, so the very
+ *  1. `index.html` paints a static brand splash inside #root, so the very
  *     first frame (before the JS bundle has parsed) is already the brand
  *     rather than a white flash. React clears that markup on mount.
  *  2. This overlay continues from that exact frame — same colour, same mark,
  *     same position — and decides when to get out of the way.
+ *
+ * V7: the surface is `bg-indigo-500` (the brand hue), NOT `bg-indigo-600`.
+ * 600 is the AA-safe tone used for buttons and links, where white text has to
+ * clear 4.5:1; this is decorative artwork, and it must match the static boot
+ * splash in index.html (#e8552f), the app icon and the manifest theme colour
+ * exactly — otherwise a cold start shows two different oranges in a row.
  *
  * Dismissal is "settled AND a floor, or a hard cap":
  *  - the floor stops a fast session load from flashing the logo for 3 frames,
@@ -61,7 +67,7 @@ export function SplashScreen() {
     <div
       aria-hidden="true"
       data-testid="splash"
-      className={`fixed inset-0 z-50 flex items-center justify-center bg-indigo-600 transition-opacity duration-300 motion-reduce:transition-none ${
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-indigo-500 transition-opacity duration-300 motion-reduce:transition-none ${
         fading ? 'pointer-events-none opacity-0' : 'opacity-100'
       }`}
     >

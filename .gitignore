@@ -45,3 +45,10 @@ playwright-report/
 *.njsproj
 *.sln
 *.sw?
+
+# V7 design exploration — local-only mockups used to pick the palette and the
+# mark. They live under public/, so committing them would SHIP them to the
+# deployed site. Scratch, not product.
+public/logo-mockup.html
+public/color-compare.html
+logo-mockup.png

@@ -17,8 +17,8 @@ import { fileURLToPath } from 'node:url'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const publicDir = join(root, 'public')
 
-// Brand color: indigo-600
-const BRAND = [0x4f, 0x46, 0xe5]
+// Brand hue (indigo-500 in index.css — terracotta, V7)
+const BRAND = [0xe8, 0x55, 0x2f]
 
 // 5x7 bitmap of the letter P
 const GLYPH = [
