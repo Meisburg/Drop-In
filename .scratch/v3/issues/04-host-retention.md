@@ -19,13 +19,13 @@ is behavioral, not declared.
 **Status:** ready-for-agent
 
 - [x] Migration 0024: `profiles.last_seen_at` timestamptz nullable; DO-block idempotency; header documents that moderators can write it (0009 any-column UPDATE policy) — harmless cursor, no tightening in V3
-- [ ] applied live via CDP after code green
+- [x] applied live via CDP after code green
 - [x] db.ts (injected-client pattern): `countPingsOnMyPostsWithClient(client, profileId, sinceIso)`, `countPostsByHostWithClient(client, profileId)`, `touchLastSeen(client, profileId)`
 - [x] FeedPage: banner (amber `rounded-xl border` pattern, ProfilePage :333) when count > 0: "N new families pinged your drop-ins"; tap -> /profile + restamp; hidden when count = 0
 - [x] Pure `dueToRefreshLastSeen(lastSeenIso, nowIso, windowMs)` in feed.ts, unit-tested (the >= 1h throttle)
 - [x] UserPage: "Hosted N drop-ins" line near "Here since" for self and others' pages; renders only when N > 0 (the hardcoded "No posts yet." posts block stays for N = 0)
 - [x] One new e2e spec: marker A posts, marker B pings, /u/:handleA shows "Hosted 1 drop-in"
-- [ ] npm run build && npm run test && npm run test:e2e exit 0
+- [x] npm run build && npm run test && npm run test:e2e exit 0
 
 ## Comments
 
