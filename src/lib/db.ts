@@ -795,7 +795,22 @@ export async function getPlaydateDetail(id: string): Promise<PlaydateWithNeighbo
 export async function getPublicPlaydateDetail(id: string): Promise<PublicPlaydateDetail | null> {
   const { data, error } = await supabase.rpc('get_public_playdate', { p_id: id })
   if (error) throw error
-  return (data as unknown as PublicPlaydateDetail | null) ?? null
+  return normalizePublicPlaydate(data as unknown as PublicPlaydateDetail | null)
+}
+
+/**
+ * PostgREST serializes a composite-returning function's NULL as a row whose
+ * EVERY field is null — verified live 2026-09-11: a bogus id returns HTTP 200
+ * with `{id: null, title: null, ...}`, not a JSON null. A bare `?? null`
+ * therefore let that row through, and a stale or mistyped /playdate/<id> link
+ * rendered a phantom drop-in (epoch date, "null families going") instead of
+ * the not-found state. The id IS the row's identity: no id, no post.
+ */
+export function normalizePublicPlaydate(
+  data: PublicPlaydateDetail | null | undefined,
+): PublicPlaydateDetail | null {
+  if (data === null || data === undefined) return null
+  return typeof data.id === 'string' && data.id.length > 0 ? data : null
 }
 
 /**
