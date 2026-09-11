@@ -1,8 +1,12 @@
 {
-  "name": "playdate-app",
+  "name": "drop-in",
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "//": "Vite 8 needs Node ^20.19 || >=22.12 — pinned so the host cannot pick an older runtime and fail the build.",
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
