@@ -11,6 +11,20 @@ feed, which needs none of this.
 
 Project ref: `ayzvjwxbxyrcgyoeaxuk` (from `.env` → `VITE_SUPABASE_URL`).
 
+## Where it stands (2026-09-13)
+
+| # | Step | State |
+|---|---|---|
+| 0 | Apply migrations **0031** + **0032** | **DONE** — applied live, and 0032 re-applied after its amendment; all probes pass |
+| 1 | Generate the VAPID keypair | **DONE** — `.env.push.local` (gitignored, 0600) holds both halves. The private key has never been printed, pasted, or committed |
+| 2 | Public key in `.env` | **DONE LOCALLY** — `VITE_VAPID_PUBLIC_KEY` is set, the bundle is rebuilt, and the key is verified INLINED in `dist/assets/*.js` (and the private half verified ABSENT). It ships when `master` is pushed |
+| 3 | Deploy `send-push` + secrets | **YOURS, ONE COMMAND** — `npx supabase login` (once; the CLI is not installed here, `npx` fetches 2.117.0), then `bash scripts/push-deploy.sh`. That script reads the keypair from `.env.push.local` and hands it to the CLI, so the private key is never typed into a terminal or a chat |
+| 4 | Schedule every 5 minutes | **YOURS** — dashboard → Edge Functions → `send-push` → *Schedules* → `*/5 * * * *` (the dashboard sends the service-role key for you) |
+| 5 | Verify | **YOURS** — the two curls, then the on-device test (below) |
+
+The rest of this file is the original step-by-step version of the same thing,
+kept because the reasoning in it is what makes the order matter.
+
 | # | Step | Who | Blocks |
 |---|---|---|---|
 | 0 | Apply migrations **0031** + **0032** | coordinator (CDP SQL API) | every push row |
