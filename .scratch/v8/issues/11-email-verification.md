@@ -1,5 +1,16 @@
 # 11: Email verification — the trust gate (migration 0034 + a human-owned toggle)
 
+**Status:** `blocked-on-human` — **the schema half is DONE**: migration 0034
+(`profiles.email_confirmed_at` + the mirror trigger + the backfill) is applied
+and verified live (column + 2 triggers + 2 SECDEF functions present; the mirror
+matches `auth.users` 155 = 155). The remaining work is deliberately NOT shipped
+yet, and the reason is worth the read: with "Confirm email" OFF, Supabase
+auto-confirms every signup, so a "Verified email" chip today would mark EVERY
+account verified — a trust claim the app cannot make, on a live deployment.
+The chip, the "Check your inbox" screen and the e2e harness change land
+together, the moment the human flips the toggle; the exact slice list and the
+human steps are written out in `docs/email-verification-setup.md`.
+
 **What to build:** Email confirmation is **intentionally OFF** (decision log,
 2026-09-04: "no email infrastructure until V2"). For an app whose entire point
 is meeting strangers at a park with your kids, unverified accounts are the trust
@@ -12,9 +23,7 @@ confirmed the Supabase toggle is wanted** — enabling it changes sign-up for
 every user and breaks the current e2e signup path (see the migration check
 block; the spec harness change is part of this ticket, not a follow-up).
 
-**Status:** ready-for-human — the Supabase toggle is the first step; the code
-slice inside this ticket flips to `ready-for-agent` once the human reports the
-toggle is enabled.
+**Status:** superseded by the header block above (`blocked-on-human`).
 
 - [ ] **Human-owned first step:** Supabase Dashboard → Authentication → Email → enable **Confirm email**; confirm the sender (the built-in SMTP is heavily rate-limited — a custom SMTP provider is strongly recommended before any real recruiting push). Report back, then the code slice starts
 - [ ] **Migration 0034** — `profiles.email_confirmed_at timestamptz null` + a trigger on `auth.users` (AFTER INSERT OR UPDATE OF `email_confirmed_at`) mirroring the value onto the matching `profiles` row, plus a one-time backfill from `auth.users`. DO-block idempotent; the trigger **passes through when `auth.uid() is null`** (the 0011 lesson — a JWT-less server role must never be blocked by an app guard)
