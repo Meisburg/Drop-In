@@ -12,9 +12,18 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      // The iOS startup images are per-device and never fetched by the app
-      // itself — precaching all 96KB of them would only slow the install.
-      workbox: {
+      // V8 ticket 08: injectManifest + a real src/sw.ts, because web push is
+      // delivered to the SERVICE WORKER and generateSW has nowhere to put a
+      // `push`/`notificationclick` handler. The generated worker's four
+      // shell-serving lines (skipWaiting, clientsClaim, precacheAndRoute,
+      // NavigationRoute→index.html) are reproduced by hand in src/sw.ts — the
+      // `scripts/verify-pwa.mjs` cold-OFFLINE reload is what proves it.
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
+      injectManifest: {
+        // The iOS startup images are per-device and never fetched by the app
+        // itself — precaching all 96KB of them would only slow the install.
         globIgnores: ['splash/**'],
         // The default glob is js/css/html/ico/png/svg — without naming woff2 the
         // display font would be missing from the precache and a cold OFFLINE

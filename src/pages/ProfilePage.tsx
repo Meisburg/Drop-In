@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { useNavigate } from 'react-router'
+import { NotificationsSection } from '../components/NotificationsSection'
 import { useSessionContext } from '../components/SessionProvider'
 import { useCropStep } from '../components/useCropStep'
 import {
@@ -974,6 +975,13 @@ export function ProfilePage() {
         {kidsError !== null ? <p className="mt-2 text-sm text-red-600">{kidsError}</p> : null}
         {kidPhotoCrop.dialog}
       </div>
+
+      {/* V8 ticket 08: the notification surface — opt-in/off, per-kind mutes,
+          the install affordance and the recent-alerts fallback. It loads its
+          own data and CONTAINS its own failures (pre-apply it renders one
+          sentence about the missing tables), so nothing above it changes when
+          the push migrations are not installed yet. */}
+      <NotificationsSection />
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">Neighborhoods</h2>

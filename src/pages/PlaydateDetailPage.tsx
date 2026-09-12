@@ -46,6 +46,9 @@ import { canModerate } from '../lib/moderation'
 // (the 13th public field is a bare id; the place page reads the directory
 // itself).
 import { placePath } from '../lib/places'
+// V8 ticket 08: recording the meaningful action (a saved ping) that may be
+// followed by the notification opt-in; the shell's PushOptInPrompt decides.
+import { armPushPromptForAction } from '../lib/pushClient'
 import { seriesLineLabel, weeklyMetaSuffix } from '../lib/series'
 import {
   COMMENT_MAX_LENGTH,
@@ -602,6 +605,12 @@ export function PlaydateDetailPage() {
     setPingError(null)
     try {
       const going = await togglePing(detail.id)
+      // V8 ticket 08: a ping was just saved — the second of the two MEANINGFUL
+      // actions that may be followed by the notification opt-in. This records
+      // the action only (the write publishes to subscribePushArmed, which the
+      // shell's PushOptInPrompt listens to); it owns the decision, not this
+      // page. Only on the way IN: taking a ping back is not "we're going".
+      if (going) armPushPromptForAction('ping_saved')
       // V8 ticket 02: the count read is BEST-EFFORT here, deliberately. The
       // ping WRITE already landed — if only the follow-up read fails, this
       // used to throw and report "Could not update your ping" over a ping that

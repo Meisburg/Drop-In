@@ -25,6 +25,9 @@ import {
 } from '../lib/feed'
 import type { PlaydateFormErrors, PlaydateFormValues, RecentPlace } from '../lib/feed'
 import { matchPlaces, PLACE_SUGGESTION_LIMIT, resolvePlaceByName } from '../lib/places'
+// V8 ticket 08: recording the meaningful action that may precede the
+// notification opt-in (this page arms it; the shell's PushOptInPrompt decides).
+import { armPushPromptForAction } from '../lib/pushClient'
 import {
   deviceTimeZone,
   everyWeekdayLabel,
@@ -522,6 +525,11 @@ export function NewPlaydatePage({
       if (selectedKidIds.length > 0) {
         await linkKidsToPlaydate(createdPlaydate.id, selectedKidIds)
       }
+      // V8 ticket 08: a post was just created — one of the two MEANINGFUL
+      // actions that may be followed by the notification opt-in (the other is
+      // a saved ping). This only records the action; whether a prompt is
+      // allowed is the pure decidePermissionPrompt seam's decision.
+      armPushPromptForAction('post_created')
       // The feed re-fetches on mount, so the new post appears immediately.
       navigate('/', { replace: true })
     } catch (err) {

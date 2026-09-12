@@ -53,6 +53,11 @@ import {
 } from './trust'
 import { issueModeratorUpdate, isProfileBanned } from './moderation'
 import { oauthRedirectTo, probeOAuthProvider, type OAuthProvider } from './oauth'
+// V8 ticket 08: the notification kind guard + the fallback list's page size.
+// The push RULES themselves (payload copy, dedupe key, iOS detection, the
+// permission memory) live in ./push and are not duplicated here — db.ts only
+// moves rows.
+import { RECENT_NOTIFICATIONS_LIMIT, isNotificationKind, type NotificationKind } from './push'
 import { resetRedirectTo } from './passwordReset'
 // V8 ticket 06: the weekly series' pure payload seams (the series row and the
 // playdates `series_id` key — omitted entirely for a standalone post, so
@@ -2798,4 +2803,255 @@ export async function setSeriesActiveWithClient(
 /** The default-client wrapper (the host panel's Stop repeating). */
 export async function setSeriesActive(seriesId: string, active: boolean): Promise<void> {
   return setSeriesActiveWithClient(supabase, seriesId, active)
+}
+
+// ---------------------------------------------------------------------------
+// V8 ticket 08: web push — the subscription rows (0031) and the log (0032).
+//
+// NO new SQL surface beyond those two tables: the producers are the SECURITY
+// DEFINER triggers in 0032 and the sender is the `send-push` Edge Function, so
+// everything here is a plain RLS-scoped read/write. In particular there is
+// deliberately NO insert-into-notification_log helper — 0032 has no
+// authenticated INSERT policy, and adding one "so the client can log" would
+// hand every signed-in parent the ability to push arbitrary copy to another
+// parent's phone under our name.
+//
+// MISSING-TABLE BEHAVIOUR (the fail-safe, not the current state — 0031/0032
+// were applied live on 2026-09-12): if a table is absent, every call below
+// throws a PostgREST `PGRST205` / 404. The ONLY consumer is the /profile
+// Notifications section, which catches that and renders a sentence — the rest
+// of /profile keeps working, which is why nothing here is called from a shared
+// load path.
+// ---------------------------------------------------------------------------
+
+/** One device that has opted in (never the keys — see 0031's capability pin). */
+export interface PushSubscriptionSummary {
+  id: string
+  endpoint: string
+  createdAt: string
+  lastSeenAt: string
+}
+
+export interface NewPushSubscription {
+  profileId: string
+  endpoint: string
+  p256dh: string | null
+  auth: string | null
+  userAgent: string | null
+}
+
+/** One row of the visible fallback list (the "we told you about this" trail). */
+export interface NotificationLogItem {
+  id: string
+  /** The row's owner — always the reader (the SELECT policy is owner-only).
+   *  Carried so the list can be run through the SAME dedupe-key derivation as
+   *  the producers and the sender. */
+  profileId: string
+  kind: NotificationKind
+  playdateId: string | null
+  title: string
+  body: string
+  url: string
+  createdAt: string
+  sentAt: string | null
+  error: string | null
+}
+
+/**
+ * Register (or re-register) this device's push subscription, against an
+ * injected client.
+ *
+ * An UPSERT keyed on `endpoint` (0031's global unique constraint), because the
+ * push service hands the same endpoint back for the same browser profile
+ * forever and this runs on every opt-in AND on every app open
+ * (`startPushSubscriptionRepair`) — so it must bump `last_seen_at` rather than
+ * pile up dead rows.
+ *
+ * THE COLLISION, HONESTLY (fix-round finding D; the earlier comment here
+ * claimed PostgREST raises 42501 for a non-owner, and that is WRONG): when the
+ * endpoint already belongs to another profile, Postgres takes the ON CONFLICT
+ * UPDATE path, applies `push_subscriptions_update_owner`'s USING clause to it,
+ * updates ZERO rows, and still answers success. There is no exception to catch,
+ * so `error` is null and the caller would cheerfully report "Notifications are
+ * on for this device." while the next read shows nothing — reachable on a
+ * shared family tablet where another account already opted in.
+ *
+ * So this is the ONE WRITE IN THIS FILE THAT USES RETURNING, and the empty
+ * representation is the detector: `ON CONFLICT DO UPDATE` that matched no
+ * updatable row returns no rows, so `data` is `[]` exactly when the write did
+ * not land as this caller. A real insert/update returns the row it wrote.
+ *
+ * AND IT MUST BE RETURNING RATHER THAN A FOLLOW-UP `select()`: measured on this
+ * project, an immediate read-after-`POST` can MISS the row it just wrote and see
+ * it a few hundred milliseconds later (the app's own verification re-read did
+ * exactly that during the fix round, in one run seeing the row and in the next
+ * missing it). A separate GET would therefore be flaky in both directions —
+ * false "already registered to another account" errors for a correct write.
+ * RETURNING is produced by the same statement, so there is no read-after-write
+ * gap at all.
+ */
+export async function savePushSubscriptionWithClient(
+  client: SupabaseClient,
+  input: NewPushSubscription,
+): Promise<void> {
+  const { data, error } = await client
+    .from('push_subscriptions')
+    .upsert(
+      {
+        profile_id: input.profileId,
+        endpoint: input.endpoint,
+        p256dh: input.p256dh,
+        auth: input.auth,
+        user_agent: input.userAgent,
+        last_seen_at: new Date().toISOString(),
+      },
+      { onConflict: 'endpoint' },
+    )
+    .select('profile_id')
+  if (error) throw error
+
+  const rows = (data ?? []) as Array<{ profile_id?: string }>
+  if (rows.length !== 1 || rows[0]?.profile_id !== input.profileId) {
+    throw new Error(
+      'This browser is already registered for notifications under a different Drop In ' +
+        'account on this device. Turn notifications off in that account, then try again here.',
+    )
+  }
+}
+
+/** The default-client wrapper (the opt-in path). */
+export async function savePushSubscription(input: Omit<NewPushSubscription, 'profileId'>): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) throw new Error('Not signed in')
+  return savePushSubscriptionWithClient(supabase, { ...input, profileId: user.id })
+}
+
+/**
+ * "Turn off notifications": delete EVERY subscription row this profile owns,
+ * against an injected client.
+ *
+ * Profile-scoped rather than endpoint-scoped on purpose. The endpoint the
+ * browser reports today is not necessarily the endpoint in the table (the
+ * browser rotates subscriptions behind our back — the very case
+ * `pushsubscriptionchange` exists for), so an endpoint-scoped delete can
+ * silently remove nothing while the UI claims notifications are off — a parent
+ * who is still being buzzed after tapping "turn off" is the worst version of
+ * this feature. Scoping to the profile makes "off" true. The cost is honest
+ * and stated in the UI copy: it is off on every device they turned it on from,
+ * and this app has no per-device list to be more surgical with.
+ */
+export async function deletePushSubscriptionsForProfileWithClient(
+  client: SupabaseClient,
+  profileId: string,
+): Promise<void> {
+  const { error } = await client.from('push_subscriptions').delete().eq('profile_id', profileId)
+  if (error) throw error
+}
+
+/** The default-client wrapper ("Turn off notifications"). */
+export async function deletePushSubscriptionsForProfile(): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) return
+  return deletePushSubscriptionsForProfileWithClient(supabase, user.id)
+}
+
+/** This profile's registered devices (the RLS SELECT policy is the wall). */
+export async function listPushSubscriptionsWithClient(
+  client: SupabaseClient,
+  profileId: string,
+): Promise<PushSubscriptionSummary[]> {
+  const { data, error } = await client
+    .from('push_subscriptions')
+    .select('id, endpoint, created_at, last_seen_at')
+    .eq('profile_id', profileId)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return ((data ?? []) as Array<{
+    id: string
+    endpoint: string | null
+    created_at: string
+    last_seen_at: string | null
+  }>).map((row) => ({
+    id: row.id,
+    endpoint: row.endpoint ?? '',
+    createdAt: row.created_at,
+    lastSeenAt: row.last_seen_at ?? row.created_at,
+  }))
+}
+
+/** The default-client wrapper (the /profile Notifications section). */
+export async function listPushSubscriptions(): Promise<PushSubscriptionSummary[]> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) return []
+  return listPushSubscriptionsWithClient(supabase, user.id)
+}
+
+/**
+ * The last few things we told this parent (the ticket's visible fallback for
+ * anyone who denied the browser permission). Owner-only SELECT is the wall —
+ * there is no cross-profile read anywhere, moderator included.
+ *
+ * `kind` is narrowed through `isNotificationKind` rather than trusted: a row
+ * whose kind is not one of the four (a hand-edited table, a pre-CHECK row)
+ * must not break the list, so unknown kinds are dropped.
+ */
+export async function listRecentNotificationsWithClient(
+  client: SupabaseClient,
+  profileId: string,
+  limit: number = RECENT_NOTIFICATIONS_LIMIT,
+): Promise<NotificationLogItem[]> {
+  const { data, error } = await client
+    .from('notification_log')
+    .select('id, profile_id, kind, playdate_id, title, body, url, created_at, sent_at, error')
+    .eq('profile_id', profileId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (error) throw error
+  const rows = (data ?? []) as Array<{
+    id: string
+    profile_id: string
+    kind: string
+    playdate_id: string | null
+    title: string
+    body: string
+    url: string
+    created_at: string
+    sent_at: string | null
+    error: string | null
+  }>
+  return rows.flatMap((row) =>
+    isNotificationKind(row.kind)
+      ? [
+          {
+            id: row.id,
+            profileId: row.profile_id,
+            kind: row.kind,
+            playdateId: row.playdate_id,
+            title: row.title,
+            body: row.body,
+            url: row.url,
+            createdAt: row.created_at,
+            sentAt: row.sent_at,
+            error: row.error,
+          },
+        ]
+      : [],
+  )
+}
+
+/** The default-client wrapper (the /profile Notifications section). */
+export async function listRecentNotifications(
+  limit: number = RECENT_NOTIFICATIONS_LIMIT,
+): Promise<NotificationLogItem[]> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) return []
+  return listRecentNotificationsWithClient(supabase, user.id, limit)
 }

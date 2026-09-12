@@ -4,6 +4,9 @@ import { DropInCard } from '../components/DropInCard'
 import { RadiusEmptyState } from '../components/RadiusEmptyState'
 import { useSessionContext } from '../components/SessionProvider'
 import { WhileAwayCard } from '../components/WhileAwayCard'
+// V8 ticket 08: recording the meaningful action (a saved ping from a card) that
+// may be followed by the notification opt-in.
+import { armPushPromptForAction } from '../lib/pushClient'
 import {
   countKidsGoingForPosts,
   fetchRainProbabilityForZip,
@@ -430,6 +433,11 @@ export function FeedPage() {
       setPingBusyPostId(null)
       return
     }
+    // V8 ticket 08: a ping was just saved from a card — the same meaningful
+    // action the detail page records, so the opt-in may follow it here too
+    // (the write publishes to subscribePushArmed; the shell's prompt listens).
+    // Only on the way IN: taking a ping back is not "we're going".
+    if (going) armPushPromptForAction('ping_saved')
     // Reconcile with the write path's authoritative result (a
     // concurrent toggle elsewhere shows as-is, not the optimistic guess).
     setMyPingPostIds((prev) => (prev === null ? prev : withPingId(prev, postId, going)))

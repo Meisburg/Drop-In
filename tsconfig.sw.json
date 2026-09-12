@@ -1,11 +1,13 @@
 {
   "compilerOptions": {
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.sw.tsbuildinfo",
     "target": "es2023",
-    "lib": ["ES2023", "DOM"],
+    /* The service worker's own lib: WebWorker, NOT DOM. src/sw.ts is excluded
+       from tsconfig.app.json precisely so `self` is a ServiceWorkerGlobalScope
+       here and a Window there — one file cannot be both. */
+    "lib": ["ES2023", "WebWorker"],
     "module": "esnext",
     "types": ["vite/client"],
-    "allowArbitraryExtensions": true,
     "skipLibCheck": true,
 
     /* Bundler mode */
@@ -14,7 +16,6 @@
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
     "noEmit": true,
-    "jsx": "react-jsx",
 
     /* Linting */
     "noUnusedLocals": true,
@@ -22,9 +23,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"],
-  /* The service worker is an app-shell artifact that needs the WebWorker lib
-     (its own `self`), and Vite builds it as a separate injectManifest
-     entrypoint — tsconfig.sw.json owns it. */
-  "exclude": ["src/sw.ts"]
+  "include": ["src/sw.ts"]
 }

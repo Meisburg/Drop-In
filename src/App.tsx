@@ -3,10 +3,12 @@ import type { ReactNode } from 'react'
 import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router'
 import { DropInMark } from './components/DropInMark'
 import { LightboxProvider } from './components/ImageLightbox'
+import { PushOptInPrompt } from './components/PushOptInPrompt'
 import { SessionProvider, useSessionContext } from './components/SessionProvider'
 import { SplashScreen } from './components/SplashScreen'
 import { signOutUser } from './lib/db'
 import { canModerate } from './lib/moderation'
+import { setInstallCaptureEnabled, startPushSubscriptionRepair } from './lib/pushClient'
 import {
   HOME_PATH,
   ONBOARDING_PATH,
@@ -90,6 +92,27 @@ function ProtectedShell() {
       window.sessionStorage.removeItem(PLAYDATE_RETURN_KEY)
     }
   }, [pathname])
+
+  // V8 ticket 08 (fix round): the two things a signed-in session must do for
+  // the push repair to be real rather than merely described.
+  //   1. `startPushSubscriptionRepair()` — listen for the service worker's
+  //      `push-subscription-changed` message AND re-register this device once on
+  //      app open. Without it a subscription the browser rotated was never
+  //      re-persisted: the sender kept posting to the dead endpoint, the push
+  //      service answered 410, and the sender pruned the row — an opted-in
+  //      parent silently stopped receiving pushes, with nothing in the app able
+  //      to notice. (The old comments claimed this healed "on the next app
+  //      open"; nothing except /profile ever ran it.)
+  //   2. `setInstallCaptureEnabled(true)` — the ONLY install button lives behind
+  //      auth, so only an authed session may suppress the browser's own
+  //      `beforeinstallprompt` banner. A signed-out visitor on a public share
+  //      link keeps the browser's affordance (see src/lib/pushClient.ts).
+  useEffect(() => {
+    const authed = session !== null
+    setInstallCaptureEnabled(authed)
+    if (!authed) return
+    return startPushSubscriptionRepair()
+  }, [session])
 
   // The banned-session gate (slice 5): useSession already signed the user
   // out. Render the suspended screen instead of any route — including the
@@ -208,6 +231,12 @@ function ProtectedShell() {
             : 'pb-[calc(2rem+env(safe-area-inset-bottom))]'
         }`}
       >
+        {/* V8 ticket 08: the notification opt-in, mounted once for the whole
+            authed shell. It renders nothing unless a meaningful action was
+            just recorded in this tab (a post created, or a ping saved) — see
+            src/components/PushOptInPrompt.tsx. Signed-out visitors never see
+            it, and /profile owns its own copy of the control. */}
+        {session !== null ? <PushOptInPrompt /> : null}
         <Outlet />
       </main>
 
