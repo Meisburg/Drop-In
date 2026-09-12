@@ -102,6 +102,25 @@ import { HostAvatar } from '../components/DropInCard'
  * read path is unchanged (queryMyPlaydatesWithClient): this is the owner's own
  * page, so the split is a render decision and nothing else.
  *
+ * V9 ticket 04 (the archive rules, pinned by that ticket's AC): /profile's Past
+ * list IS the archive the feed links to ("See past drop-ins"), so a past row
+ * had to stop being a dead end. Two gaps were real, both fixed HERE and nowhere
+ * else:
+ * - A row was not a LINK at all — the title was plain text, so a host could not
+ *   open their own past drop-in from /profile, which is the only route to V8/09's
+ *   "Same time next week" affordance (it lives on /playdate/:id). The title is
+ *   now the row's link (both sections; an upcoming own post was equally
+ *   un-openable).
+ * - Nobody was MUTED: Past and Upcoming rows looked identical, so the archive
+ *   read as "more upcoming". Past rows now carry the same mute the archive cards
+ *   do (DropInCard's `opacity-60` — one signal, one meaning), applied to the
+ *   row's TEXT and not to the Duplicate button: that button is a live action
+ *   (V8/04 pins it on every row), and dimming a working control to the level of
+ *   dead content is the "disabled-looking button" smell this codebase avoids.
+ * There is no "I'm going" toggle on these rows and never was — it is the feed
+ * card's control (UserPage passes none to its archive cards either), and the
+ * AC pins its ABSENCE.
+ *
  * V2 slice 2 (ticket 02): the comfort layer on the owner side —
  * - avatar: a photo upload (cropped by the user, resized to 512px, > 5 MB rejected
  *   before upload, stored at avatars/<uid>/avatar) with a live preview
@@ -440,16 +459,27 @@ export function ProfilePage() {
 
   /**
    * One "Your posts" row (V8 ticket 04 — it renders in BOTH sections, so it is
-   * built once here): title, when + place, and the Duplicate action, which
-   * stays on every row, past posts included.
+   * built once here): the title (V9 ticket 04: a LINK to the drop-in, the way
+   * the archive reaches V8/09's "Same time next week"), when + place, and the
+   * Duplicate action, which stays on every row, past posts included.
+   *
+   * `muted` is the archive's own signal (the DropInCard `opacity-60`): a Past
+   * row is history, an Upcoming row is a plan, and before this ticket the two
+   * were indistinguishable. It mutes the row's TEXT only — Duplicate stays at
+   * full strength because it works (see the page header's V9 note).
    */
-  const renderPostRow = (post: Playdate) => (
+  const renderPostRow = (post: Playdate, muted: boolean) => (
     <li
       key={post.id}
       className="flex items-center justify-between gap-2 rounded-xl px-2 py-1.5"
     >
-      <div className="min-w-0">
-        <p className="truncate text-sm text-slate-800">{post.title}</p>
+      <div className={'min-w-0' + (muted ? ' opacity-60' : '')}>
+        <Link
+          to={`/playdate/${post.id}`}
+          className="block truncate text-sm text-slate-800 underline-offset-2 hover:underline"
+        >
+          {post.title}
+        </Link>
         <p className="text-xs text-slate-500">
           {formatPostWhen(post.starts_at)} · {post.place}
         </p>
@@ -1311,13 +1341,19 @@ export function ProfilePage() {
             ) : (
               <section className="flex flex-col gap-1">
                 <h3 className="text-sm font-semibold text-slate-700">Upcoming</h3>
-                <ul className="flex flex-col gap-1">{upcomingPosts.map(renderPostRow)}</ul>
+                <ul className="flex flex-col gap-1">
+                  {upcomingPosts.map((post) => renderPostRow(post, false))}
+                </ul>
               </section>
             )}
             {pastPosts.length > 0 ? (
               <section className="flex flex-col gap-1">
+                {/* V9 ticket 04: the archive — muted rows (renderPostRow's
+                    `muted`), the same signal the archive cards carry. */}
                 <h3 className="text-sm font-semibold text-slate-700">Past</h3>
-                <ul className="flex flex-col gap-1">{pastPosts.map(renderPostRow)}</ul>
+                <ul className="flex flex-col gap-1">
+                  {pastPosts.map((post) => renderPostRow(post, true))}
+                </ul>
               </section>
             ) : null}
           </div>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { DropInCard } from '../components/DropInCard'
 import { RadiusEmptyState } from '../components/RadiusEmptyState'
 import { useSessionContext } from '../components/SessionProvider'
@@ -28,12 +28,14 @@ import {
 import { followTargetsFrom, metBeforeLine } from '../lib/follows'
 import {
   buildWhileAwayItems,
+  daySectionIso,
   DEFAULT_RADIUS_MILES,
   dueToRefreshLastSeen,
   groupByDay,
-  isEnded,
   isStartingSoon,
   localDayKey,
+  PAST_DROP_INS_HREF,
+  PAST_DROP_INS_LABEL,
   rainBadgeLabel,
   shouldRefreshFeed,
   WHILE_AWAY_ITEM_LIMIT,
@@ -64,20 +66,39 @@ const FEED_REFRESH_WINDOW_MS = 60_000
 /**
  * / — drop-ins within the signed-in user's home zip + radius (V2 slice 3:
  * discovery is distance-based; neighborhoods are display labels only). The
- * feed query (db.listRadiusFeed) fetches upcoming posts with the host's
- * home zip pinned in the embed (PGRST201), applies the pure haversine
- * radius filter (feed.filterFeed — unit-tested), and tags each survivor
- * with its "N mi" distance for the card label.
+ * feed query (db.listRadiusFeed) fetches the posts that have NOT ENDED
+ * (`ends_at > now`, V9 ticket 04) with the host's home zip pinned in the
+ * embed (PGRST201), applies the pure haversine radius filter
+ * (feed.filterFeed — unit-tested), and tags each survivor with its "N mi"
+ * distance for the card label.
  *
- * V3 slice 1 (ticket 01): the flat list is rendered in day sections
- * (feed.groupByDay, ascending start-of-day order) with section headers from
- * feed.formatDayLabel ("Today" / "Tomorrow" / "Sat, Sep 12"). Within the
- * Today section, upcoming events (non-ended, starts_at ascending) come
- * first and ended events are demoted behind them, grayed on the card; the
- * single soonest upcoming event gets a "Starts soon" badge when it starts
- * within 60 min (feed.isStartingSoon). The section headers are styled
- * paragraphs, NOT heading elements: the page title stays the single
- * heading the e2e specs pin on.
+ * V3 slice 1 (ticket 01), as V9 ticket 04 leaves it: the flat list is rendered
+ * in day sections (feed.groupByDay, ascending start-of-day order) with section
+ * headers from feed.formatDayLabel ("Today" / "Tomorrow" / "Sat, Sep 12"), and
+ * the single soonest event of the Today section gets a "Starts soon" badge when
+ * it starts within 60 min (feed.isStartingSoon). The section headers are styled
+ * paragraphs, NOT heading elements: the page title stays the single heading the
+ * e2e specs pin on.
+ *
+ * TWO PARTS OF V3/01 CHANGED HERE, IN ONE RULE, because a section header and the
+ * list it heads must not disagree:
+ * - The ended/upcoming DEMOTION is gone, not hidden. `listRadiusFeed` no longer
+ *   returns an ended post at all (`ends_at <= now` is filtered in the query AND
+ *   in feed.filterFeed), so the split, the second `ended.map` block and the
+ *   greyed card at the bottom of Today were unreachable code describing a rule
+ *   the product no longer has. An ended drop-in now lives in exactly one place:
+ *   the archive (V8/04's Past list on /profile), which the feed links to — a
+ *   "See past drop-ins" line under the day sections, and inside the empty state
+ *   when nothing is ahead. DropInCard KEEPS its `ended`/muted/"Ended" chip
+ *   styling: the archive cards on /profile and /u/:handle are exactly what those
+ *   branches render.
+ * - The day a row is grouped under follows the cutoff (feed.daySectionIso): a
+ *   post's START, clamped up to now once it has started. Without it, a
+ *   still-running overnight drop-in (23:30 + 3h — a window /new really produces)
+ *   would be the FIRST section on the screen under a past-dated header such as
+ *   "Fri, Sep 11" while its own card said "Happening now". Such a row is only
+ *   reachable at all because the cutoff is time-based now, which is why V3/01's
+ *   grouping tests never saw it.
  *
  * V3 slice 3 (ticket 06): the page h1 is "Near you" (feedback #3 — the
  * old "Today" title was redundant with the first section header; the
@@ -544,17 +565,26 @@ export function FeedPage() {
   // no home zip (or a zip outside the 0012 gazetteer) gets no label —
   // never an invented coordinate. Labels merge into the map by post id
   // (a stale id from a previous load is harmless — it renders no card).
+  //
+  // V9 ticket 04: "today" and "the event date" are the SECTION's rule
+  // (feed.daySectionIso), not the raw start day — the same seam the section
+  // headers use. For every post that starts today (or later) that is the post's
+  // own start, so nothing changes; for a still-running overnight drop-in it is
+  // NOW, which is the honest date for a forecast about a drop-in happening right
+  // now (and it keeps the badge from vanishing on a card the section calls
+  // today's).
   useEffect(() => {
     if (posts === null) return
     let cancelled = false
-    const todayKey = localDayKey(new Date().toISOString())
-    const todays = posts.filter((post) => localDayKey(post.starts_at) === todayKey)
+    const nowIso = new Date().toISOString()
+    const todayKey = localDayKey(nowIso)
+    const todays = posts.filter((post) => localDayKey(daySectionIso(post, nowIso)) === todayKey)
     if (todays.length === 0) return
     void Promise.all(
       todays.map(async (post) => {
         const zip = post.host?.home_zip
         if (typeof zip !== 'string' || zip === '') return [post.id, null] as const
-        const probability = await fetchRainProbabilityForZip(zip, post.starts_at)
+        const probability = await fetchRainProbabilityForZip(zip, daySectionIso(post, nowIso))
         return [post.id, rainBadgeLabel(probability)] as const
       }),
     ).then((entries) => {
@@ -592,12 +622,12 @@ export function FeedPage() {
 
   const nowIso = new Date().toISOString()
   // V3 slice 1: day sections (feed.groupByDay, ascending start-of-day
-  // order). Only the Today section splits its posts: upcoming (non-ended,
-  // still starts_at-ascending) first, then ended demoted behind them (the
-  // card carries the grayed styling). The "Starts soon" badge goes on the
-  // single soonest upcoming event of the Today section — and only when it
-  // has not started yet and starts within 60 min (an already-started
-  // soonest gets the card's "Happening now" badge instead).
+  // order). Every post the query returned has NOT ended (V9 ticket 04 moved
+  // the cutoff from start-of-today to now on BOTH layers), so a section renders
+  // its posts in starts_at order — there is no ended/upcoming split left to
+  // make. The "Starts soon" badge goes on the single soonest event of the Today
+  // section — and only when it has not started yet and starts within 60 min (an
+  // already-started soonest gets the card's "Happening now" badge instead).
   const dayGroups = posts === null ? [] : groupByDay(posts, nowIso)
   const todayKey = localDayKey(nowIso)
   // V3 slice 3 (ticket 06): the viewer id (the signed-in surface — cards
@@ -697,18 +727,22 @@ export function FeedPage() {
       ) : posts.length === 0 ? (
         /* V8 ticket 02: the honest empty-radius state — the shared
            RadiusEmptyState (Browse renders the same component): the viewer's
-           ACTUAL radius in the copy (never "today" — the list is
-           today-and-later) plus the way out of an empty radius. The radius N
-           is the same value the filter above just used (profile.radius_miles
-           with the DEFAULT_RADIUS_MILES fallback). */
-        <RadiusEmptyState radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES} />
+           ACTUAL radius in the copy (never "today") plus the way out of an
+           empty radius. The radius N is the same value the filter above just
+           used (profile.radius_miles with the DEFAULT_RADIUS_MILES fallback).
+           V9 ticket 04: the FEED passes seePastHref, so the archive is
+           reachable from the one state that most looks like a dead end —
+           "nothing ahead" is not "nothing ever" (Browse, the places
+           directory, deliberately passes nothing). */
+        <RadiusEmptyState
+          radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES}
+          seePastHref={PAST_DROP_INS_HREF}
+        />
       ) : (
         <div className="flex flex-col gap-4">
           {dayGroups.map((group) => {
             const isToday = group.key === todayKey
-            const upcoming = isToday ? group.posts.filter((p) => !isEnded(p, nowIso)) : group.posts
-            const ended = isToday ? group.posts.filter((p) => isEnded(p, nowIso)) : []
-            const soonest = upcoming[0]
+            const soonest = group.posts[0]
             const startsSoonId =
               isToday && soonest !== undefined && isStartingSoon(soonest, nowIso)
                 ? soonest.id
@@ -719,7 +753,7 @@ export function FeedPage() {
                   {group.label}
                 </p>
                 <div className="flex flex-col gap-3">
-                  {upcoming.map((post) => (
+                  {group.posts.map((post) => (
                     <DropInCard
                       key={post.id}
                       playdate={post}
@@ -732,22 +766,25 @@ export function FeedPage() {
                       metBeforeLabel={buildCardMetBeforeLabel(post)}
                     />
                   ))}
-                  {ended.map((post) => (
-                    <DropInCard
-                      key={post.id}
-                      playdate={post}
-                      nowIso={nowIso}
-                      rainLabel={isToday ? (rainLabels[post.id] ?? null) : undefined}
-                      pingToggle={buildCardPingToggle(post)}
-                      goingPings={buildCardGoingPings(post)}
-                      kidsGoingCount={buildCardKidsCount(post)}
-                      metBeforeLabel={buildCardMetBeforeLabel(post)}
-                    />
-                  ))}
                 </div>
               </section>
             )
           })}
+
+          {/* V9 ticket 04: the archive's one door on the feed. It sits UNDER
+              the day sections (the ticket's placement) as a quiet line, not a
+              card and not a button: it is navigation to the viewer's own
+              history, never a claim that the history is interesting. The label
+              is a shared constant so this line and the empty state's cannot
+              drift. */}
+          <p className="text-center text-sm">
+            <Link
+              to={PAST_DROP_INS_HREF}
+              className="font-medium text-indigo-600 underline-offset-2 hover:underline"
+            >
+              {PAST_DROP_INS_LABEL}
+            </Link>
+          </p>
         </div>
       )}
     </div>

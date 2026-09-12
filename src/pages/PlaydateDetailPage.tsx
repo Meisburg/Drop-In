@@ -226,8 +226,12 @@ type DetailState =
  * surface, so the control is invisible to non-hosts (the RLS
  * playdates_update_host is the wall; a non-host API write is a silent
  * 0-row 2xx, the 0014 lesson). A cancelled post renders the
- * muted states (the chip near the title + the grayed info card — the
- * event STAYS in the feed; the host can revert, no auto-expiry). A
+ * muted states (the chip near the title + the grayed info card). V9 ticket 04
+ * superseded V3/02's "the event STAYS in the feed" for one case, recorded in
+ * that ticket's Comments: it holds while the window is ahead (the host can
+ * revert, no auto-expiry), but a cancelled post whose window has ENDED leaves
+ * the FEED — this detail page and the archive still carry it, which is exactly
+ * why the control lives here rather than on a card. A
  * best-effort "Rain likely" badge (the pure rainBadgeLabel threshold on
  * the Open-Meteo daily probability for the host's home_zip — silently
  * absent on error, no error state) sits beside the time row. The
@@ -1407,9 +1411,11 @@ export function PlaydateDetailPage() {
   // V3 slice 2 (ticket 02): the post's status — pre-0016-apply the row
   // lacks the column (undefined → treated as 'on'). A non-'on' status
   // renders the muted states: the chip near the title + the grayed info
-  // card (the event STAYS in the feed — the host can revert, no
-  // auto-expiry). The rain badge is the pure rainBadgeLabel threshold on
-  // the best-effort probability (null = silently absent).
+  // card. (V9 ticket 04: "the event STAYS in the feed" is V3/02's pin and it
+  // still holds while the window is ahead; once the window has ENDED the post
+  // leaves the FEED regardless of status — this page and the archive keep it.
+  // See the ticket's Comments.) The rain badge is the pure rainBadgeLabel
+  // threshold on the best-effort probability (null = silently absent).
   const postStatus: PlaydateStatus = detail.status ?? 'on'
   // V3 slice 3 (ticket 06, migration 0019): the muted chip renders for
   // "Cancelled" only — the third status option (redundant with Cancelled,
@@ -1719,7 +1725,10 @@ export function PlaydateDetailPage() {
         {/* V3 slice 2 (ticket 02; V3 slice 3 trimmed it to "Cancelled"
             only — migration 0019, ticket 06): the muted-state chip —
             rendered for every viewer; the host's explicit state is
-            information, not a removal (the event stays in the feed). */}
+            information, not a removal. (V9 ticket 04: on the FEED that
+            "not a removal" now holds only while the window is ahead — an
+            ended cancelled post leaves `/` like any ended one, and this page
+            is where it stays reachable. See the ticket's Comments.) */}
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold text-slate-900">{detail.title}</h1>
           {statusChip !== null ? (

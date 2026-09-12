@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { updateHomeZipRadius } from '../lib/db'
-import { emptyRadiusCopy, radiusEscapes } from '../lib/feed'
+import { emptyRadiusCopy, PAST_DROP_INS_LABEL, radiusEscapes } from '../lib/feed'
 import { useSessionContext } from './SessionProvider'
 
 /**
@@ -10,10 +10,12 @@ import { useSessionContext } from './SessionProvider'
  * both used to dead-end on the same lie.
  *
  * What was wrong with the old block:
- * - "Nothing happening near you today — post the first one." The query is
- *   today-AND-LATER (`filterFeed` only drops PAST posts; the day sections
- *   render Tomorrow and beyond), so "today" was simply false — and the empty
- *   state was the one place a brand-new parent could not check it.
+ * - "Nothing happening near you today — post the first one." The list is not
+ *   "today": it is whatever has NOT ENDED yet (V9 ticket 04 moved the feed's
+ *   cutoff from start-of-today to now, and it was never midnight-based on the
+ *   far end either — the day sections render Tomorrow and beyond), so "today"
+ *   was simply false — and the empty state was the one place a brand-new
+ *   parent could not check it.
  * - It offered one action, a post. On the 5-mile default (`feed.ts`) that is
  *   the ceiling on everything else: with no posts inside 5 miles there is no
  *   way to discover that 35 is possible, so the first visit ends.
@@ -32,8 +34,28 @@ import { useSessionContext } from './SessionProvider'
  * 2–35 bounds before writing, then `refresh()` lands the new radius in the
  * shared session state — which is what re-runs the page's feed query, since
  * both pages key their load effect on `profile`.
+ *
+ * V9 ticket 04 — `seePastHref`, and why it is a PROP rather than something this
+ * component decides: "nothing ahead" is not "nothing ever", and the feed is
+ * the screen where a parent would stop visiting because of that impression, so
+ * the FEED offers the archive (V8/04's Past list on /profile) from here too.
+ * Browse renders this same component for the PLACES directory, which has no
+ * personal archive behind it — a "See past drop-ins" link there would promise
+ * the viewer their own history from a screen about parks. So the caller that
+ * HAS an archive passes the route, and the ones that do not pass nothing
+ * (the link is not merely hidden; it does not exist).
  */
-export function RadiusEmptyState({ radiusMiles }: { radiusMiles: number }) {
+export function RadiusEmptyState({
+  radiusMiles,
+  seePastHref,
+}: {
+  radiusMiles: number
+  /**
+   * V9 ticket 04: the viewer's own archive (e.g. feed.PAST_DROP_INS_HREF —
+   * /profile's Past list). Omitted = no archive line (Browse).
+   */
+  seePastHref?: string
+}) {
   const { session, profile, refresh } = useSessionContext()
   const [busyRadius, setBusyRadius] = useState<number | null>(null)
   const [widenError, setWidenError] = useState<string | null>(null)
@@ -87,6 +109,19 @@ export function RadiusEmptyState({ radiusMiles }: { radiusMiles: number }) {
         </div>
       ) : null}
       {widenError !== null ? <p className="text-sm text-red-600">{widenError}</p> : null}
+      {/* V9 ticket 04: the archive line — after the escapes and above the post
+          CTA (which stays the last and strongest element; "nothing ahead" is
+          usually a supply problem, and posting is the answer to that). It says
+          only WHERE the past ones are, never how many — see
+          feed.PAST_DROP_INS_LABEL for why it carries no count. */}
+      {seePastHref !== undefined ? (
+        <Link
+          to={seePastHref}
+          className="text-sm font-medium text-indigo-600 underline-offset-2 hover:underline"
+        >
+          {PAST_DROP_INS_LABEL}
+        </Link>
+      ) : null}
       <Link
         to="/new"
         className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white"

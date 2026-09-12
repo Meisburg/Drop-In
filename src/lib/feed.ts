@@ -17,9 +17,17 @@ import type { DuplicatePrefill } from './types'
 /**
  * Client-local midnight of today as an ISO string.
  *
- * V1 "today" boundary: the device's local timezone is the whole story —
- * there is no GPS or per-user timezone setting, so the feed's day starts at
- * local 00:00 on the viewer's clock. (Pinned integration decision, slice 3.)
+ * The device's local timezone is the whole story — there is no GPS or
+ * per-user timezone setting — so a day-scoped read starts at local 00:00 on the
+ * viewer's clock. (Pinned integration decision, slice 3.)
+ *
+ * V9 ticket 04: this is NO LONGER the feed's cutoff. The radius feed cuts on the
+ * post's own end against the clock (`ends_at > now`, isStillAhead /
+ * queryUpcomingFeedWithClient), so nothing on `/` calls this any more — the two
+ * remaining callers are OUTSIDE this ticket and still day-scoped on purpose:
+ * db.listPlaceFeed (the /place/:id page's own list) and
+ * db.upcomingCountsByPlace (Browse's "N upcoming" chips). Moving those is a
+ * recorded follow-up, not a silent side effect of the feed's change.
  */
 export function startOfTodayIso(now: Date = new Date()): string {
   const local = new Date(now)
@@ -211,12 +219,45 @@ export function formatStartDayLabel(startDate: string): string {
 }
 
 /**
- * A post is ended when ends_at <= nowIso (V3 ticket 01: the feed's Today
- * section demotes ended events behind the upcoming ones and the card grays
- * them).
+ * A post is ended when ends_at <= nowIso — the ONE boundary of the app's
+ * time-based rules.
+ *
+ * V3 ticket 01 introduced it as the feed's Today-section demotion rule (ended
+ * events were pushed behind the upcoming ones and greyed on the card). V9
+ * ticket 04 REMOVED that demotion: the feed no longer returns an ended post at
+ * all (the cutoff IS this predicate, negated — isStillAhead), so what this seam
+ * still drives is (a) the card's muted "Ended" styling, (b) the profile
+ * Upcoming/Past split (partitionPostsByTime) on /profile and /u/:handle, and
+ * (c) V8/09's "ended within 7 days" window (follows.endedWithinDays). Same
+ * boundary in all of them: exactly at `ends_at` the post is ended.
  */
 export function isEnded(post: { ends_at: string }, nowIso: string): boolean {
   return Date.parse(post.ends_at) <= Date.parse(nowIso)
+}
+
+/**
+ * A post is still ahead when it has NOT ended (V9 ticket 04) — i.e. the feed's
+ * whole inclusion rule is `ends_at > nowIso`: "still ahead or happening now".
+ *
+ * WHY NOT `starts_at >= nowIso` (the trap this seam exists to close): the feed
+ * used to keep every post that STARTED today and demote the ended ones to the
+ * bottom of the Today section, greyed. Ticket 04 removes ended drop-ins from
+ * Nearby entirely, and the tempting way to say "only what is ahead" —
+ * `starts_at >= now` — would delete the drop-in that is HAPPENING RIGHT NOW,
+ * which is exactly the post the AC pins as STAY ("those are the ones a parent
+ * can still walk to"; DropInCard badges it "Happening now"). `ends_at > nowIso`
+ * subsumes the future post (an end is always after its own start) and keeps the
+ * live one, so it is the honest expression of "still ahead or happening now".
+ *
+ * A COMPLEMENT, NOT A SECOND COMPARISON: this is `!isEnded` by construction —
+ * the very boundary `partitionPostsByTime` (the profile Upcoming/Past split,
+ * V8 ticket 04) and DropInCard's muted "Ended" styling already use. One
+ * definition of ended (`ends_at <= nowIso`, so a post ending exactly AT now is
+ * ended, and therefore not ahead), unit-tested at that boundary, so the feed,
+ * the profile lists and the card cannot drift apart.
+ */
+export function isStillAhead(post: { ends_at: string }, nowIso: string): boolean {
+  return !isEnded(post, nowIso)
 }
 
 /**
@@ -239,12 +280,53 @@ export interface DayGroup<T> {
 }
 
 /**
+ * The instant a feed row's DAY SECTION is decided by (V9 ticket 04).
+ *
+ * The post's own start — CLAMPED UP to `nowIso` once that start is in the past.
+ * So a row belongs to the day the parent is looking at, never to the calendar
+ * day it began on, and the day-section rule is the same rule the feed's
+ * inclusion cutoff uses (`ends_at > now`, isStillAhead).
+ *
+ * WHY THIS EXISTS (a defect this ticket would otherwise have introduced, found
+ * by the review): `filterFeed` admits every post that has not ENDED, which
+ * includes a drop-in whose window CROSSED MIDNIGHT — 11:30 PM + 3h = 2:30 AM is
+ * an ordinary thing a parent can post (`computeEndIso` pins that roll-over, the
+ * stepper wraps modulo 24h, and the chips go to 3h). Grouping such a row by its
+ * RAW start day made the feed's FIRST section a past-dated header — a section
+ * headed "Fri, Sep 11" holding one card badged "Happening now" — because rows
+ * arrive starts_at-ascending, so the oldest start sorts first. That combination
+ * was UNREACHABLE before this ticket (the old start-of-today cutoff dropped the
+ * row entirely), which is exactly why no test covered it.
+ *
+ * ONE RULE, NOT THREE: with this seam the section key, its label
+ * (formatDayLabel), and the V3/02 rain badge's "is this today" filter all ask
+ * the same question of the same instant. A post starting exactly at `nowIso` is
+ * NOT clamped (it is already in the current day); an unparseable `nowIso` or
+ * `starts_at` falls back to the raw start (garbage in, unchanged behaviour —
+ * never a second invented rule).
+ */
+export function daySectionIso(post: { starts_at: string }, nowIso: string): string {
+  const start = Date.parse(post.starts_at)
+  const now = Date.parse(nowIso)
+  if (Number.isNaN(start) || Number.isNaN(now) || start >= now) return post.starts_at
+  return nowIso
+}
+
+/**
  * Group posts by local calendar day (V3 ticket 01 — promoted from
  * BrowsePage's page-local groupByDay; this is the single implementation).
  * Days appear in the order their FIRST post appears, so the canonical
  * starts_at-ascending feed input yields ascending start-of-day groups.
  * Labels come from formatDayLabel; the nowIso seam is the same as
  * filterFeed's. Within a group, posts keep their input order.
+ *
+ * V9 ticket 04: the day a post belongs to is `daySectionIso(post, nowIso)` —
+ * its start, clamped up to now when it has already started — NOT its raw
+ * `starts_at`. That is what keeps a still-running overnight drop-in in TODAY's
+ * section (badged "Happening now") instead of in a past-dated section at the top
+ * of the feed. Everything else about this seam is unchanged: same order, same
+ * keys, same labels, and a post that starts at or after `nowIso` groups exactly
+ * where it always did.
  */
 export function groupByDay<T extends { starts_at: string }>(
   posts: T[],
@@ -252,10 +334,11 @@ export function groupByDay<T extends { starts_at: string }>(
 ): DayGroup<T>[] {
   const groups = new Map<string, DayGroup<T>>()
   for (const post of posts) {
-    const key = localDayKey(post.starts_at)
+    const sectionIso = daySectionIso(post, nowIso)
+    const key = localDayKey(sectionIso)
     const group = groups.get(key)
     if (group === undefined) {
-      groups.set(key, { key, label: formatDayLabel(post.starts_at, nowIso), posts: [post] })
+      groups.set(key, { key, label: formatDayLabel(sectionIso, nowIso), posts: [post] })
     } else {
       group.posts.push(post)
     }
@@ -351,6 +434,13 @@ export function postDistanceMiles(
 export interface FeedPost {
   host_profile_id: string
   starts_at: string
+  /**
+   * The post's end (V9 ticket 04): the feed's cutoff column. Required — the
+   * filter's inclusion rule IS `ends_at > nowIso` (isStillAhead), so a shape
+   * without it could not be filtered honestly. Every real row carries it
+   * (0005: `ends_at timestamptz not null`).
+   */
+  ends_at: string
   /** Set when a moderator has hidden the post (slice 5, migration 0009). */
   hidden_at?: string | null
   /** The host's location fields (V2 slice 3 — present on the joined host). */
@@ -378,10 +468,11 @@ export function isHiddenPost(post: { hidden_at?: string | null }): boolean {
 }
 
 /**
- * Filter posts down to the viewer's radius feed (V2 slice 3): starting
- * today or later (client-local midnight), not hosted by a blocked profile,
- * not hidden by a moderator (hidden_at set), AND locatable within the
- * viewer's radius — ordered by starts_at ascending.
+ * Filter posts down to the viewer's radius feed (V2 slice 3): NOT ENDED
+ * (`ends_at > nowIso` — isStillAhead, so a drop-in that is happening right now
+ * stays), not hosted by a blocked profile, not hidden by a moderator
+ * (hidden_at set), AND locatable within the viewer's radius — ordered by
+ * starts_at ascending.
  *
  * V8 ticket 07 (the distance-model fix): "locatable" is now
  * postDistanceMiles, which prefers the POST'S PLACE coordinates and falls
@@ -394,25 +485,34 @@ export function isHiddenPost(post: { hidden_at?: string | null }): boolean {
  * NOTHING — no place, no host home zip, or a zip missing from the gazetteer
  * — is EXCLUDED (the pinned rule — coordinates are never invented).
  *
+ * V9 ticket 04 — THE CUTOFF MOVED FROM START-OF-TODAY TO NOW. The old rule was
+ * `Date.parse(post.starts_at) >= startOfTodayIso`, which kept an ended drop-in
+ * on the feed all day (greyed and demoted at the bottom of the Today section —
+ * the demotion the ticket removes) and dropped a post that had merely crossed
+ * local midnight. The rule is now the post's own END against the clock the page
+ * already reads, and it is the SAME comparison the DB query applies
+ * (queryUpcomingFeedWithClient: `.gt('ends_at', cutoffIso)`), so the two layers
+ * cannot disagree about which posts the feed has. This is a `nowIso` seam, not
+ * a midnight one: `startOfTodayIso` is no longer used here at all (it is still
+ * the cutoff of the place page's own list and Browse's upcoming counts — see
+ * db.listPlaceFeed / db.upcomingCountsByPlace, both OUTSIDE this ticket).
+ *
  * The DB query (queryUpcomingFeedWithClient) applies the time + hidden +
  * block filters; this pure re-filter is the unit-testable guarantee that a
- * blocked host's post, a hidden post, a past post, and a beyond-radius
- * post can never reach the feed, plus the canonical ordering.
+ * blocked host's post, a hidden post, an ENDED post, and a beyond-radius post
+ * can never reach the feed, plus the canonical ordering.
  *
- * `nowIso` is part of the pinned signature (it drives the "happening now"
- * badge in the UI); the filter itself only needs the start-of-today cutoff,
- * so it is intentionally unused here.
+ * `nowIso` is the single time input (it is also what drives the "happening
+ * now" / "starts soon" badges in the UI), so the badge a card shows and the
+ * decision to include it come from one instant.
  */
 export function filterFeed<T extends FeedPost>(
   posts: T[],
   viewer: RadiusViewer,
   zipCoords: ReadonlyMap<string, ZipCoords>,
   blockedHostIds: ReadonlySet<string>,
-  startOfTodayIso: string,
   nowIso: string,
 ): T[] {
-  void nowIso
-  const todayStart = Date.parse(startOfTodayIso)
   return posts
     .filter((post) => {
       const distance = postDistanceMiles(post, viewer, zipCoords)
@@ -421,7 +521,7 @@ export function filterFeed<T extends FeedPost>(
         withinRadius(distance, viewer.radiusMiles) &&
         !blockedHostIds.has(post.host_profile_id) &&
         !isHiddenPost(post) &&
-        Date.parse(post.starts_at) >= todayStart
+        isStillAhead(post, nowIso)
       )
     })
     .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at))
@@ -430,13 +530,39 @@ export function filterFeed<T extends FeedPost>(
 /**
  * The raw DB feed query, against an injected Supabase client (mockable —
  * the same pattern as trust.togglePingWithClient / auth.hasActiveSession).
- * Upcoming playdates (starts_at >= cutoff, ordered by starts_at) with the
- * DB-level filters applied:
+ * The viewer's feed rows — posts that have NOT ENDED (`.gt('ends_at',
+ * cutoffIso)`; `cutoffIso` is the caller's NOW, not a midnight), ordered by
+ * starts_at — with the DB-level filters applied:
  * - .is('hidden_at', null) — hidden posts vanish from the feed for
  *   everyone (slice 5; the pure filterFeed re-filter is the defense in
  *   depth, unit-tested)
  * - .not() on blocked hosts — only when the viewer actually has blocks (an
  *   empty .in() would match nothing; slice 3)
+ *
+ * V9 ticket 04: THE CUTOFF COLUMN IS `ends_at`, NOT `starts_at`. `.gte(
+ * 'starts_at', cutoffIso)` was the old rule (start-of-today): it handed the
+ * client posts that had already finished — the fetched-then-hidden shape the
+ * ticket removes (the read returns fewer rows now). Moving the filter to
+ * `starts_at >= now` would instead have deleted every drop-in already under way
+ * (the AC's "a drop-in that has STARTED but not ended STAYS"). `ends_at >
+ * nowIso` is the same predicate the pure filter uses (isStillAhead = !isEnded,
+ * `ends_at <= now`), so the two layers agree by construction — including at the
+ * boundary, where `ends_at === now` is ENDED on both.
+ *
+ * TWO HONEST CAVEATS, neither of them this ticket's to fix:
+ * (1) CORRECTNESS, and it is a wrong LABEL, not a performance note: two reads
+ *     outside the feed still cut at start-of-today — db.listPlaceFeed (the
+ *     /place/:id list) and db.upcomingCountsByPlace (Browse's "N upcoming"
+ *     chip). So /browse can print "1 upcoming" for a place whose only drop-in
+ *     has already ENDED, which the feed now contradicts, and /place/:id can
+ *     still list that drop-in. Both are day-scoped reads with their own ACs and
+ *     tests; fixing them needs no migration. Recorded in the ticket's Comments
+ *     (V9 ticket 04) as an explicit follow-up.
+ * (2) PERFORMANCE, and it is minor: the only index on `playdates` is
+ *     (neighborhood_id, starts_at) (0005), so an `ends_at` range predicate is
+ *     itself an unindexed scan. Free at this table's size; an `(ends_at)` index
+ *     would be DDL, i.e. the migration this read-path-only ticket explicitly
+ *     does not carry.
  *
  * V2 slice 3: the neighborhood filter is GONE (distance-based discovery) —
  * the query fetches all upcoming posts and the pure radius filter decides.
@@ -471,7 +597,7 @@ export async function queryUpcomingFeedWithClient(
       // above) — an inner join would drop every post that has no neighbourhood.
       '*, neighborhood:neighborhoods ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip, radius_miles )',
     )
-    .gte('starts_at', cutoffIso)
+    .gt('ends_at', cutoffIso)
     .order('starts_at', { ascending: true })
     .is('hidden_at', null)
   if (blockedHostIds.length > 0) {
@@ -1277,11 +1403,12 @@ export async function queryRecentOwnPlacesWithClient(
  * Browse so the two screens can never drift apart.
  *
  * Two lies were in the old string ("Nothing happening near you today — post
- * the first one."): the query is today-AND-LATER (`filterFeed` drops only
- * PAST posts, and the day sections prove it), and it named no radius — so a
- * parent on the 5-mile default had no idea that 35 was even possible. N is
- * the VIEWER's actual radius: the number the filter just used, which is the
- * only honest one to quote.
+ * the first one."): the list is not "today" (it is whatever has not ended
+ * yet — V9 ticket 04 moved the feed's cutoff from start-of-today to now, and
+ * `filterFeed` drops only ENDED posts either way), and it named no radius —
+ * so a parent on the 5-mile default had no idea that 35 was even possible. N
+ * is the VIEWER's actual radius: the number the filter just used, which is
+ * the only honest one to quote.
  *
  * Always plural by construction (radius options are 2/5/10/20/35, and the DB
  * CHECK is 2–35), so there is no "1 miles" case to guard.
@@ -1289,6 +1416,25 @@ export async function queryRecentOwnPlacesWithClient(
 export function emptyRadiusCopy(radiusMiles: number): string {
   return `Nothing within ${radiusMiles} miles yet.`
 }
+
+/**
+ * The archive link's one label (V9 ticket 04): "See past drop-ins".
+ *
+ * ONE constant behind both places the feed offers the archive (the line under
+ * the day sections in FeedPage and the empty state's RadiusEmptyState), so the
+ * two can never drift apart — and the e2e spec asserts the link against the
+ * SAME string the app renders rather than a copy of it (the
+ * `emptyRadiusCopy` / `formatTimeWindow` discipline).
+ *
+ * WHAT IT IS ALLOWED TO IMPLY (the ticket's honesty pin): the link says where
+ * the past ones ARE, never that there are any. It is deliberately not "See
+ * your past drop-ins (3)" — the feed does not read the viewer's history, and
+ * the empty state must not imply the archive is empty OR full.
+ */
+export const PAST_DROP_INS_LABEL = 'See past drop-ins'
+
+/** Where the archive link goes (V8 ticket 04's Past list lives on /profile). */
+export const PAST_DROP_INS_HREF = '/profile'
 
 /** The "widen" escape's radius (V8 ticket 02 pin: 20 miles). */
 export const WIDEN_RADIUS_MILES = 20

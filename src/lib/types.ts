@@ -70,13 +70,17 @@ export interface Profile {
 /**
  * The host's status for a drop-in (V3 slice 2, ticket 02, migration 0016;
  * trimmed by V3 slice 3, ticket 06, migration 0019): 'on' is the default;
- * 'cancelled' mutes the card + detail (the event STAYS in the feed — the
- * host can revert; no auto-expiry). The third status option (redundant
- * with Cancelled) was removed per origin-user feedback 2026-09-09
- * (feedback/v3.md #5); the Open-Meteo "Rain likely" badge is an
- * independent forecast, not a status state. Authenticated-only surface:
- * 0015's get_public_playdate (the signed-out public view) does NOT
- * return it.
+ * 'cancelled' mutes the card + detail. V3/02's pin was "the event STAYS in
+ * the feed — the host can revert; no auto-expiry"; V9 ticket 04 SUPERSEDED
+ * half of it (recorded in that ticket's Comments): a cancellation with a
+ * FUTURE end still stays, but a cancelled post whose window has ENDED leaves
+ * `/` with every other ended drop-in — the feed's cutoff is time-based and
+ * does not ask why a row is over. The status VALUE and its muted states are
+ * unchanged. The third status option (redundant with Cancelled) was removed per
+ * origin-user feedback 2026-09-09 (feedback/v3.md #5); the Open-Meteo "Rain
+ * likely" badge is an independent forecast, not a status state.
+ * Authenticated-only surface: 0015's get_public_playdate (the signed-out public
+ * view) does NOT return it.
  */
 export type PlaydateStatus = 'on' | 'cancelled'
 

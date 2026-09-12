@@ -55,3 +55,52 @@ ends in the past (or edit one to have already ended via ticket 05's edit form),
 confirm it leaves `/` and shows in Past.
 
 ## Comments
+
+### Builder report (cycle 1) — what shipped, and three records the review asked for
+
+Shipped on the read path only (no migration, `supabase/migrations` untouched):
+the cutoff is now `ends_at > now` on BOTH layers (pure `feed.isStillAhead` =
+`!isEnded`; query `.gt('ends_at', cutoffIso)`, one clock read shared with the
+filter), the Today-section ended-demotion is deleted, the feed links to the
+archive ("See past drop-ins" under the day sections and inside the empty state),
+and `/profile`'s Past rows became a real archive (muted, and their title links to
+the drop-in). Spec: `e2e/feed-ended-out.e2e.ts` (2 tests, pivot + control stated
+in the file). Gate: build 0 · 712/712 unit · 61/61 e2e · lint 0 errors.
+
+**1. FOLLOW-UP (recorded, deliberately NOT fixed here) — two reads still cut at
+start-of-today, and one of them prints a wrong label.** `db.listPlaceFeed`
+(`src/lib/db.ts:688`) and `db.upcomingCountsByPlace` (`src/lib/db.ts:711`) still
+use `.gte('starts_at', startOfTodayIso())`. Consequence, at ANY table size:
+Browse renders `placeUpcomingLabel` → **"1 upcoming"** for a place whose only
+drop-in has already ENDED (`places.ts` `placeUpcomingLabel`, `BrowsePage.tsx`
+chip), which the feed now contradicts; and `/place/:id` can still list that ended
+drop-in. The fix is the feed's own predicate (`.gt('ends_at', now)`) and needs
+NO migration — it is out of scope only because this ticket is feed-scoped and
+those surfaces have their own ACs and specs (V8/07). Both call sites carry a
+V9/04 note pointing here.
+
+**2. LIMITATION (recorded) — the archive is per HOST, not per attendance.** The
+AC places the archive at `/profile`'s Past list, which is
+`.eq('host_profile_id', …)` — so the link's likeliest tapper, a brand-new parent
+whose feed is empty (the very state V8/02 targets), lands on "No posts yet.";
+and a parent who PINGED someone else's ended drop-in has no listing surface at
+all (they can reach the drop-in by its detail URL, where V8/09's affordance
+gates them out as a stranger). `e2e/feed-ended-out.e2e.ts` assertion (10) pins
+that behaviour with a fresh `e2e-v-*` viewer so a future change to the surface is
+deliberate. An attended-events surface (or a pinger-scoped history) is a NEW
+product surface, explicitly out of scope for a read-path ticket.
+
+**3. SUPERSESSION (recorded) — V3/02's "the event STAYS in the feed".** That pin
+was about a CANCELLED post: "the host can revert; no auto-expiry"
+(`DropInCard.tsx`, V3 slice 2). With the cutoff now time-based, a cancelled post
+whose window has ENDED leaves `/` like any other ended drop-in — the cutoff does
+not ask why a row is over, and nothing in this ticket changed that on purpose.
+So the host can no longer flip a cancellation back on from the feed once the
+window is past; the detail page and the archive still offer it, and V8/09's
+"Same time next week" is explicitly kept for a cancelled post
+(`PlaydateDetailPage`'s own pin: "the rule here is time-based"). **No spec covers
+the cancelled-and-ended case** — `e2e/host-status.e2e.ts` posts for TOMORROW and
+pins "the event stays in the feed" for a post that is still ahead. `DropInCard`'s
+header records the supersession; a spec for the ended-and-cancelled pair belongs
+to a follow-up (it needs its own row plus a status write).
+

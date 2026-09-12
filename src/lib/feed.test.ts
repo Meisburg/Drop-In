@@ -5,6 +5,7 @@ import {
   buildWhileAwayItems,
   computeEndIso,
   computeStartIso,
+  daySectionIso,
   defaultStartDateIso,
   durationChipForUntilNextHour,
   durationLabel,
@@ -26,6 +27,7 @@ import {
   isHiddenPost,
   isStartingSoon,
   isSteppedTime,
+  isStillAhead,
   kidsComingLine,
   localDayKey,
   mapsHref,
@@ -34,6 +36,8 @@ import {
   neighborhoodIdField,
   nextSlotMinutes,
   partitionPostsByTime,
+  PAST_DROP_INS_HREF,
+  PAST_DROP_INS_LABEL,
   PLAYDATE_DURATIONS_MINUTES,
   playdateEditFieldsChanged,
   playdateEditKidIdsChanged,
@@ -117,15 +121,27 @@ const VIEWER: RadiusViewer = { homeZip: '98107', radiusMiles: 20 }
 const NARROW_VIEWER: RadiusViewer = { homeZip: '98107', radiusMiles: 5 }
 const BLOCKED_HOSTS = new Set(['host-blocked'])
 
-/** A radius-feed post: the host's home zip (null = the host never set one). */
+/**
+ * A radius-feed post: the host's home zip (null = the host never set one) and
+ * its window. `minutesAfterMidnight` is the START (the `at()` grid); the post
+ * ends `durationMinutes` later (default 60 — the /new "1h" chip).
+ *
+ * V9 ticket 04: the feed's cutoff is the post's own END against NOW (the fixed
+ * noon, at(720)), so the end is part of every fixture now. That is also why the
+ * "kept" fixtures below sit AFTER noon: a post whose window closed before noon
+ * is, correctly, dropped — asserting the radius/block/hide rules against rows
+ * the filter legitimately excludes would prove nothing about those rules.
+ */
 function postAt(
   hostZip: string | null,
   hostProfileId: string,
   minutesAfterMidnight: number,
+  durationMinutes: number = 60,
 ): FeedPost {
   return {
     host_profile_id: hostProfileId,
     starts_at: at(minutesAfterMidnight),
+    ends_at: at(minutesAfterMidnight + durationMinutes),
     host: hostZip === null ? { home_zip: null } : { home_zip: hostZip },
   }
 }
@@ -249,6 +265,57 @@ describe('isEnded (ends_at <= nowIso)', () => {
   })
 })
 
+describe('isStillAhead (V9 ticket 04: the feed\'s inclusion rule — NOT ended)', () => {
+  // The same window the isEnded suite uses: 1:00 PM - 3:00 PM on the fixed day,
+  // with NOW_ISO at local noon.
+  const window = { starts_at: at(780), ends_at: at(900) }
+
+  it('is true for a post that has not started yet', () => {
+    expect(isStillAhead(window, at(0))).toBe(true) // midnight
+    expect(isStillAhead(window, at(779))).toBe(true) // one minute before the start
+  })
+
+  it('is true for a drop-in that is HAPPENING NOW (started, not ended)', () => {
+    // The AC's whole point (the trap in the ticket): "a drop-in that has
+    // STARTED but not ended STAYS — those are the ones a parent can still walk
+    // to". A `starts_at >= now` cutoff would delete exactly this post.
+    expect(isStillAhead(window, at(780))).toBe(true) // at the start
+    expect(isStillAhead(window, at(840))).toBe(true) // mid-window
+  })
+
+  it('is false at the end boundary (ends_at === nowIso is ENDED)', () => {
+    // ONE definition of the boundary, pinned: `ends_at <= nowIso` is ended
+    // (isEnded), so exactly at the end the post is NOT ahead — the same
+    // boundary partitionPostsByTime (the profile Past list) and the card's
+    // "Ended" chip use.
+    expect(isStillAhead(window, at(900))).toBe(false)
+    expect(isEnded(window, at(900))).toBe(true)
+  })
+
+  it('is false after the end', () => {
+    expect(isStillAhead(window, at(901))).toBe(false)
+  })
+
+  it('is the exact complement of isEnded (never a second, drifting comparison)', () => {
+    const other = { starts_at: at(-600), ends_at: at(1000) } // an all-night window
+    for (const minute of [-1, 0, 720, 900, 1000, 1001, 1440]) {
+      const now = at(minute)
+      expect(isStillAhead(window, now)).toBe(!isEnded(window, now))
+      expect(isStillAhead(other, now)).toBe(!isEnded(other, now))
+    }
+  })
+
+  it('reads the SAME column as isEnded: the start time is irrelevant to the cutoff', () => {
+    // Two posts that share an end are both ahead/ended together, whatever their
+    // starts say — the property the DB query's `.gt('ends_at', cutoff)` and the
+    // pure filter must share.
+    const earlyStart = { starts_at: at(-2000), ends_at: at(900) }
+    const lateStart = { starts_at: at(890), ends_at: at(900) }
+    expect(isStillAhead(earlyStart, at(899))).toBe(isStillAhead(lateStart, at(899)))
+    expect(isStillAhead(earlyStart, at(900))).toBe(isStillAhead(lateStart, at(900)))
+  })
+})
+
 describe('isStartingSoon (nowIso < starts_at <= nowIso + 60 min)', () => {
   // NOW_ISO is local 12:00 PM (minute 720); the window is 12:01 PM - 1:00 PM.
   it('is true just inside the 60-minute window', () => {
@@ -273,6 +340,30 @@ describe('isStartingSoon (nowIso < starts_at <= nowIso + 60 min)', () => {
   })
 })
 
+describe('daySectionIso (V9 ticket 04: the day a feed row belongs to)', () => {
+  it('is the post’s own start while it is still in the future', () => {
+    expect(daySectionIso({ starts_at: at(780) }, NOW_ISO)).toBe(at(780))
+    expect(daySectionIso({ starts_at: at(1440) }, NOW_ISO)).toBe(at(1440))
+  })
+
+  it('is clamped to now once the post has started', () => {
+    // Already started (earlier today, or a day earlier): the row belongs to the
+    // day the parent is looking at.
+    expect(daySectionIso({ starts_at: at(700) }, NOW_ISO)).toBe(NOW_ISO)
+    expect(daySectionIso({ starts_at: at(-30) }, NOW_ISO)).toBe(NOW_ISO) // 11:30 PM yesterday
+    expect(daySectionIso({ starts_at: at(-1440) }, NOW_ISO)).toBe(NOW_ISO)
+  })
+
+  it('does not clamp a post starting exactly at nowIso (it is already today)', () => {
+    expect(daySectionIso({ starts_at: NOW_ISO }, NOW_ISO)).toBe(NOW_ISO)
+  })
+
+  it('falls back to the raw start on an unparseable clock (never a second rule)', () => {
+    expect(daySectionIso({ starts_at: at(780) }, 'nope')).toBe(at(780))
+    expect(daySectionIso({ starts_at: 'nope' }, NOW_ISO)).toBe('nope')
+  })
+})
+
 describe('groupByDay (the promoted day-section grouping, nowIso seam)', () => {
   type DayPost = { id: string; starts_at: string }
 
@@ -290,6 +381,40 @@ describe('groupByDay (the promoted day-section grouping, nowIso seam)', () => {
     expect(groups[0].posts.map((p) => p.id)).toEqual(['a', 'b'])
     expect(groups[1].posts.map((p) => p.id)).toEqual(['c', 'd'])
     expect(groups[2].posts.map((p) => p.id)).toEqual(['e'])
+  })
+
+  it('V9 ticket 04: a still-running post that STARTED YESTERDAY groups under Today, not under a past-dated header', () => {
+    // The review's case, exactly: 11:30 PM + 3h = 2:30 AM is a window /new can
+    // produce (computeEndIso pins the roll-over), the feed's cutoff admits it
+    // (it has not ended), and rows arrive starts_at-ascending — so without the
+    // clamp this group is the FIRST thing on the feed, headed "Fri, Sep 11",
+    // holding one card badged "Happening now". It was unreachable before this
+    // ticket (the old start-of-today cutoff dropped the row).
+    const overnight: DayPost = { id: 'overnight', starts_at: at(-30) } // yesterday 11:30 PM
+    const today: DayPost = { id: 'today', starts_at: at(780) }
+    const groups = groupByDay([overnight, today], NOW_ISO)
+    expect(groups.map((g) => g.key)).toEqual(['2026-09-04'])
+    expect(groups[0].label).toBe('Today')
+    // Input order is kept inside the group: the overnight row is still first (it
+    // started first), which is the ordering the feed's own query produced.
+    expect(groups[0].posts.map((p) => p.id)).toEqual(['overnight', 'today'])
+    // …and no group carries a past-dated key: the only key is today's.
+    expect(groups.map((g) => g.key)).not.toContain('2026-09-03')
+  })
+
+  it('V9 ticket 04: an overnight post does NOT merge the day it started into a section of its own', () => {
+    // Two overnight rows (both still running) plus a tomorrow row: today's
+    // section holds both clamped rows, and tomorrow's is untouched.
+    const groups = groupByDay(
+      [
+        { id: 'o1', starts_at: at(-60) },
+        { id: 'o2', starts_at: at(-20) },
+        { id: 't', starts_at: at(1500) },
+      ],
+      NOW_ISO,
+    )
+    expect(groups.map((g) => g.key)).toEqual(['2026-09-04', '2026-09-05'])
+    expect(groups[0].posts.map((p) => p.id)).toEqual(['o1', 'o2'])
   })
 
   it('labels far days with the fixed English "Www, Mmm D" form', () => {
@@ -333,75 +458,116 @@ describe('groupByDay (the promoted day-section grouping, nowIso seam)', () => {
 describe('filterFeed (the radius-feed invariants, V2 slice 3)', () => {
   it('keeps only posts whose host sits within the viewer\'s radius', () => {
     // 98007 is ~11.5 mi from 98107: inside the 20-mi radius, outside 5.
-    const posts: FeedPost[] = [postAt('98007', 'h-far', 600), postAt('98107', 'h-near', 300)]
-    const wide = filterFeed(posts, VIEWER, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
+    const posts: FeedPost[] = [postAt('98007', 'h-far', 900), postAt('98107', 'h-near', 780)]
+    const wide = filterFeed(posts, VIEWER, ZIP_COORDS, new Set(), NOW_ISO)
     expect(wide.map((p) => p.host_profile_id)).toEqual(['h-near', 'h-far']) // starts_at order
-    const narrow = filterFeed(posts, NARROW_VIEWER, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
+    const narrow = filterFeed(posts, NARROW_VIEWER, ZIP_COORDS, new Set(), NOW_ISO)
     expect(narrow.map((p) => p.host_profile_id)).toEqual(['h-near'])
   })
 
   it('excludes a host that has no home zip (coordinates are never invented)', () => {
     const posts: FeedPost[] = [
-      postAt(null, 'h-nozip', 300),
-      postAt('98107', 'h-ok', 400),
+      postAt(null, 'h-nozip', 780),
+      postAt('98107', 'h-ok', 840),
     ]
-    const result = filterFeed(posts, VIEWER, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
+    const result = filterFeed(posts, VIEWER, ZIP_COORDS, new Set(), NOW_ISO)
     expect(result.map((p) => p.host_profile_id)).toEqual(['h-ok'])
   })
 
   it('excludes a host whose zip is missing from the gazetteer', () => {
     const posts: FeedPost[] = [
-      postAt('12345', 'h-unknown', 300),
-      postAt('98107', 'h-ok', 400),
+      postAt('12345', 'h-unknown', 780),
+      postAt('98107', 'h-ok', 840),
     ]
-    const result = filterFeed(posts, VIEWER, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
+    const result = filterFeed(posts, VIEWER, ZIP_COORDS, new Set(), NOW_ISO)
     expect(result.map((p) => p.host_profile_id)).toEqual(['h-ok'])
   })
 
   it('never returns posts hosted by a blocked profile', () => {
     const posts: FeedPost[] = [
-      postAt('98107', 'host-blocked', 600),
-      postAt('98107', 'h1', 300),
+      postAt('98107', 'host-blocked', 900),
+      postAt('98107', 'h1', 780),
     ]
-    const result = filterFeed(posts, VIEWER, ZIP_COORDS, BLOCKED_HOSTS, TODAY_ISO, NOW_ISO)
+    const result = filterFeed(posts, VIEWER, ZIP_COORDS, BLOCKED_HOSTS, NOW_ISO)
     expect(result.map((p) => p.host_profile_id)).toEqual(['h1'])
   })
 
-  it('drops posts that start before local midnight of today', () => {
+  it('drops a post that has ENDED and keeps the ones that are live or ahead (V9 ticket 04)', () => {
+    // The ticket's cutoff, on the filter: 10:00-11:00 is over at noon and
+    // leaves the feed ENTIRELY (no greyed card, no demotion); 11:40-12:40 has
+    // started and is happening now, so it stays (the AC's pin); 15:00-16:00 is
+    // still ahead.
     const posts: FeedPost[] = [
-      postAt('98107', 'h1', -1), // yesterday
-      postAt('98107', 'h2', 0), // midnight exactly
-      postAt('98107', 'h3', 90),
+      postAt('98107', 'h-ended', 600), // 10:00 – 11:00
+      postAt('98107', 'h-live', 700), // 11:40 – 12:40 (now is 12:00)
+      postAt('98107', 'h-ahead', 900), // 15:00 – 16:00
     ]
-    const result = filterFeed(posts, VIEWER, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
-    expect(result.map((p) => p.host_profile_id)).toEqual(['h2', 'h3'])
+    const result = filterFeed(posts, VIEWER, ZIP_COORDS, new Set(), NOW_ISO)
+    expect(result.map((p) => p.host_profile_id)).toEqual(['h-live', 'h-ahead'])
+  })
+
+  it('the boundary: a post ending exactly AT now is ended, so it is out', () => {
+    // `ends_at === nowIso` is ENDED by isEnded's `<=` — the one boundary the
+    // filter, the profile Past split and the card's "Ended" chip share. One
+    // second later is still ahead, so this is a real edge and not a tolerance.
+    const posts: FeedPost[] = [
+      postAt('98107', 'h-ends-at-now', 660, 60), // 11:00 + 60 min = 12:00 = now
+      postAt('98107', 'h-ends-a-minute-later', 660, 61), // 12:01
+    ]
+    const result = filterFeed(posts, VIEWER, ZIP_COORDS, new Set(), NOW_ISO)
+    expect(result.map((p) => p.host_profile_id)).toEqual(['h-ends-a-minute-later'])
+  })
+
+  it('drops YESTERDAY\'s post (ended is ended, whatever the calendar day)', () => {
+    // The old rule dropped a post by START day, so an ended post from earlier
+    // TODAY survived it. The new rule cannot be gamed by the calendar: both of
+    // these are out, and they are out for the same reason.
+    const posts: FeedPost[] = [
+      postAt('98107', 'h-yesterday', -600), // yesterday 02:00 – 03:00
+      postAt('98107', 'h-this-morning', 60), // today 01:00 – 02:00
+    ]
+    expect(filterFeed(posts, VIEWER, ZIP_COORDS, new Set(), NOW_ISO)).toEqual([])
+  })
+
+  it('keeps a drop-in that STARTED yesterday and has not ended (the old midnight cutoff dropped it)', () => {
+    // The flip side of the same change, and the reason `starts_at` cannot be
+    // the cutoff: an all-night drop-in is still walkable at noon.
+    const allNight: FeedPost = {
+      host_profile_id: 'h-allnight',
+      starts_at: at(-600), // yesterday 02:00
+      ends_at: at(1000), // today 16:40
+      host: { home_zip: '98107' },
+    }
+    expect(filterFeed([allNight], VIEWER, ZIP_COORDS, new Set(), NOW_ISO).map((p) => p.host_profile_id)).toEqual([
+      'h-allnight',
+    ])
   })
 
   it('orders by starts_at ascending', () => {
     const posts: FeedPost[] = [
-      postAt('98107', 'a', 180),
-      postAt('98107', 'b', 60),
-      postAt('98007', 'c', 120),
+      postAt('98107', 'a', 900),
+      postAt('98107', 'b', 780),
+      postAt('98007', 'c', 840),
     ]
-    const result = filterFeed(posts, VIEWER, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
+    const result = filterFeed(posts, VIEWER, ZIP_COORDS, new Set(), NOW_ISO)
     expect(result.map((p) => p.host_profile_id)).toEqual(['b', 'c', 'a'])
   })
 
   it('applies all rules together and returns [] when nothing qualifies', () => {
     const posts: FeedPost[] = [postAt('12345', 'host-blocked', -10)]
-    expect(filterFeed(posts, VIEWER, ZIP_COORDS, BLOCKED_HOSTS, TODAY_ISO, NOW_ISO)).toEqual([])
+    expect(filterFeed(posts, VIEWER, ZIP_COORDS, BLOCKED_HOSTS, NOW_ISO)).toEqual([])
   })
 
   it('never returns posts hidden by a moderator (hidden_at set)', () => {
     const posts: FeedPost[] = [
-      postAt('98107', 'h1', 600),
-      postAt('98107', 'h2', 300),
-      postAt('98107', 'h3', 400),
+      postAt('98107', 'h1', 900),
+      postAt('98107', 'h2', 780),
+      postAt('98107', 'h3', 840),
     ]
     posts[0].hidden_at = 'x'
     posts[1].hidden_at = null
     // posts[2]: column absent (pre-0009)
-    const result = filterFeed(posts, VIEWER, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
+    const result = filterFeed(posts, VIEWER, ZIP_COORDS, new Set(), NOW_ISO)
     expect(result.map((p) => p.host_profile_id)).toEqual(['h2', 'h3'])
   })
 })
@@ -547,6 +713,10 @@ function makeFeedMockClient(rows: unknown[] = []): {
       filters.push(`gte(${col}, ${value})`)
       return builder
     },
+    gt: (col: string, value: string) => {
+      filters.push(`gt(${col}, ${value})`)
+      return builder
+    },
     order: (col: string, opts: { ascending: boolean }) => {
       filters.push(`order(${col}, ${opts.ascending})`)
       return builder
@@ -598,6 +768,24 @@ describe('queryUpcomingFeedWithClient (mocked supabase client, V2 slice 3: dista
     const { client, filters } = makeFeedMockClient()
     await queryUpcomingFeedWithClient(client, CUTOFF, [])
     expect(filters.some((f) => f.startsWith('in('))).toBe(false)
+  })
+
+  it('cuts on ends_at > cutoff (V9 ticket 04), never on starts_at', async () => {
+    // The DB half of the ticket's AC: the read must stop FETCHING ended
+    // drop-ins rather than fetch-and-hide them. Asserted on the filter CHAIN,
+    // which is what the client actually sends — and it is the half the feed's
+    // own spec cannot see (it asserts the titles that are absent).
+    const { client, filters } = makeFeedMockClient()
+    await queryUpcomingFeedWithClient(client, CUTOFF, [])
+    expect(filters).toContain(`gt(ends_at, ${CUTOFF})`)
+    // The old cutoff is GONE, in both directions: `starts_at >= today` kept an
+    // ended post all day, and `starts_at >= now` would delete a live one. (The
+    // ORDER still comes from starts_at — asserted on the next line — so this is
+    // "no starts_at FILTER", not "starts_at never appears".)
+    expect(filters.some((f) => /^(gte|gt|lt|lte|eq)\(starts_at/.test(f))).toBe(false)
+    // …and the ordering still comes from starts_at (the day sections depend on
+    // it).
+    expect(filters).toContain('order(starts_at, true)')
   })
 
   it('LEFT-joins the neighborhood embed (V9 ticket 01: no `!inner`, or a post with none vanishes)', async () => {
@@ -1374,10 +1562,31 @@ describe('emptyRadiusCopy (V8 ticket 02: the honest empty state)', () => {
     expect(emptyRadiusCopy(35)).toBe('Nothing within 35 miles yet.')
   })
 
-  it('never claims "today" (the list is today AND LATER — the old copy\'s lie)', () => {
+  it('never claims "today" (the list is not-ended-yet — the old copy\'s lie)', () => {
     for (const radius of RADIUS_MILES_OPTIONS) {
       expect(emptyRadiusCopy(radius).toLowerCase()).not.toContain('today')
     }
+  })
+})
+
+describe('the archive link (V9 ticket 04: the feed\'s door to the Past list)', () => {
+  /**
+   * The LITERAL is pinned here on purpose. The e2e spec asserts the link with
+   * this same constant (the `emptyRadiusCopy` discipline: a spec asserts the
+   * app's own rule, never a copy of it), which means a rename to "History" would
+   * keep every e2e assertion green while changing the product's words. This is
+   * the one place that says what the words ARE.
+   */
+  it('carries the one label both doors render, and no count in it', () => {
+    expect(PAST_DROP_INS_LABEL).toBe('See past drop-ins')
+    // Never "See your 3 past drop-ins": the feed does not read the viewer's
+    // history, so a number here would be a claim it cannot make — and the empty
+    // state must not imply the archive is empty (or full).
+    expect(PAST_DROP_INS_LABEL).not.toMatch(/\d/)
+  })
+
+  it('points at V8 ticket 04\'s Past list on /profile', () => {
+    expect(PAST_DROP_INS_HREF).toBe('/profile')
   })
 })
 
@@ -2383,12 +2592,20 @@ describe('filterFeed with places (V8 ticket 07: the MIXED feed)', () => {
    * place-hosted post whose HOST is far but whose PLACE is near (must be kept —
    * it used to be dropped), a legacy free-text post (host zip only, unchanged),
    * a place post whose place row never joined, and a post with nothing at all.
+   *
+   * V9 ticket 04: every fixture's END is after the fixed noon (at(720)), so the
+   * only reason a row is dropped below is the rule the test is about. The
+   * starts_at times are the ticket-07 ones (the expectations and their comments
+   * are unchanged); the `legacy-free-text` row keeps its 11:00 start with a
+   * 15:00 end because an ENDED row would be dropped before the distance model
+   * ever saw it — which is the point of the other suite, not this one.
    */
   const mixed: Array<FeedPost & { id: string }> = [
     {
       id: 'place-host-near-place-far',
       host_profile_id: 'h1',
       starts_at: at(600),
+      ends_at: at(900),
       host: { home_zip: '98007' },
       place_id: 'p-far',
       place_coords: FAR_PLACE,
@@ -2397,6 +2614,7 @@ describe('filterFeed with places (V8 ticket 07: the MIXED feed)', () => {
       id: 'place-host-far-place-near',
       host_profile_id: 'h2',
       starts_at: at(720),
+      ends_at: at(780),
       host: { home_zip: '98007' },
       place_id: 'p-near',
       place_coords: NEAR_PLACE,
@@ -2405,6 +2623,7 @@ describe('filterFeed with places (V8 ticket 07: the MIXED feed)', () => {
       id: 'legacy-free-text',
       host_profile_id: 'h3',
       starts_at: at(660),
+      ends_at: at(900),
       host: { home_zip: '98007' },
       place_id: null,
     },
@@ -2412,15 +2631,22 @@ describe('filterFeed with places (V8 ticket 07: the MIXED feed)', () => {
       id: 'place-not-joined',
       host_profile_id: 'h4',
       starts_at: at(780),
+      ends_at: at(840),
       host: { home_zip: '98007' },
       place_id: 'p-unreadable',
       place_coords: null,
     },
-    { id: 'nothing-at-all', host_profile_id: 'h5', starts_at: at(840), host: { home_zip: null } },
+    {
+      id: 'nothing-at-all',
+      host_profile_id: 'h5',
+      starts_at: at(840),
+      ends_at: at(900),
+      host: { home_zip: null },
+    },
   ]
 
   it('keeps exactly the posts a radius feed can locate, ordered by starts_at', () => {
-    const kept = filterFeed(mixed, VIEWER, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
+    const kept = filterFeed(mixed, VIEWER, ZIP_COORDS, new Set(), NOW_ISO)
     // starts_at order: 660 (free text) < 720 (place, host far) < 780 (place, not joined).
     expect(kept.map((post) => post.id)).toEqual([
       'legacy-free-text',
@@ -2430,13 +2656,13 @@ describe('filterFeed with places (V8 ticket 07: the MIXED feed)', () => {
   })
 
   it('drops a place-hosted post whose PLACE is out of radius even though its host is in it', () => {
-    const kept = filterFeed(mixed, VIEWER, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
+    const kept = filterFeed(mixed, VIEWER, ZIP_COORDS, new Set(), NOW_ISO)
     expect(kept.some((post) => post.id === 'place-host-near-place-far')).toBe(false)
   })
 
   it('keeps a place-hosted post whose PLACE is in radius even though its host zip is not', () => {
     const tight: RadiusViewer = { homeZip: '98107', radiusMiles: 5 }
-    const kept = filterFeed(mixed, tight, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
+    const kept = filterFeed(mixed, tight, ZIP_COORDS, new Set(), NOW_ISO)
     // At 5 miles the 98007 host (11.5 mi) is out for the host-zip posts…
     expect(kept.map((post) => post.id)).toEqual(['place-host-far-place-near'])
     // …and the place-hosted post that IS 2.5 mi away survives — the fix.
@@ -2445,21 +2671,61 @@ describe('filterFeed with places (V8 ticket 07: the MIXED feed)', () => {
 
   it('leaves the legacy free-text feed untouched (no place_id anywhere = yesterdays behaviour)', () => {
     const legacy: Array<FeedPost & { id: string }> = [
-      { id: 'a', host_profile_id: 'h1', starts_at: at(600), host: { home_zip: '98007' } },
-      { id: 'b', host_profile_id: 'h2', starts_at: at(660), host: { home_zip: '00000' } },
+      {
+        id: 'a',
+        host_profile_id: 'h1',
+        starts_at: at(780),
+        ends_at: at(840),
+        host: { home_zip: '98007' },
+      },
+      {
+        id: 'b',
+        host_profile_id: 'h2',
+        starts_at: at(840),
+        ends_at: at(900),
+        host: { home_zip: '00000' },
+      },
     ]
-    const kept = filterFeed(legacy, VIEWER, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
+    const kept = filterFeed(legacy, VIEWER, ZIP_COORDS, new Set(), NOW_ISO)
     expect(kept.map((post) => post.id)).toEqual(['a'])
   })
 
-  it('still applies the block, hide, and past filters to place-hosted posts', () => {
+  it('still applies the block, hide, and ended filters to place-hosted posts', () => {
+    // V9 ticket 04: the three dropped fixtures all sit AFTER the fixed noon, so
+    // each is dropped by the rule it is here for — a row that is dropped for
+    // being ended could hide a broken block or hide filter completely.
     const posts: Array<FeedPost & { id: string }> = [
-      { id: 'blocked', host_profile_id: 'h1', starts_at: at(600), place_coords: NEAR_PLACE },
-      { id: 'hidden', host_profile_id: 'h2', starts_at: at(660), place_coords: NEAR_PLACE, hidden_at: 'x' },
-      { id: 'past', host_profile_id: 'h3', starts_at: at(-60), place_coords: NEAR_PLACE },
-      { id: 'ok', host_profile_id: 'h4', starts_at: at(720), place_coords: NEAR_PLACE },
+      {
+        id: 'blocked',
+        host_profile_id: 'h1',
+        starts_at: at(780),
+        ends_at: at(840),
+        place_coords: NEAR_PLACE,
+      },
+      {
+        id: 'hidden',
+        host_profile_id: 'h2',
+        starts_at: at(840),
+        ends_at: at(900),
+        place_coords: NEAR_PLACE,
+        hidden_at: 'x',
+      },
+      {
+        id: 'ended',
+        host_profile_id: 'h3',
+        starts_at: at(600),
+        ends_at: at(660),
+        place_coords: NEAR_PLACE,
+      },
+      {
+        id: 'ok',
+        host_profile_id: 'h4',
+        starts_at: at(900),
+        ends_at: at(960),
+        place_coords: NEAR_PLACE,
+      },
     ]
-    expect(filterFeed(posts, VIEWER, ZIP_COORDS, new Set(['h1']), TODAY_ISO, NOW_ISO).map((p) => p.id)).toEqual(['ok'])
+    expect(filterFeed(posts, VIEWER, ZIP_COORDS, new Set(['h1']), NOW_ISO).map((p) => p.id)).toEqual(['ok'])
   })
 })
 

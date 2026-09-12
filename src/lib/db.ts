@@ -481,12 +481,13 @@ export async function listBlockedHostIds(profileId: string): Promise<string[]> {
 }
 
 /**
- * Raw upcoming-playdate query (V2 slice 3): all posts starting at or after
- * the cutoff, ordered by starts_at (the neighborhood filter is gone —
- * discovery is radius-based). The DB-level filters (the .not() block
- * filter — only when the viewer actually has blocks, and the
- * .is('hidden_at', null) hidden filter — slice 5) live in the injected-
- * client query (feed.queryUpcomingFeedWithClient, unit-tested with a mock).
+ * Raw feed query (V2 slice 3): all posts that have NOT ENDED at the cutoff
+ * (`ends_at > cutoffIso` — V9 ticket 04; the cutoff is the caller's NOW, not a
+ * midnight), ordered by starts_at (the neighborhood filter is gone — discovery
+ * is radius-based). The DB-level filters (the .not() block filter — only when
+ * the viewer actually has blocks, and the .is('hidden_at', null) hidden filter
+ * — slice 5) live in the injected-client query (feed.queryUpcomingFeedWithClient,
+ * unit-tested with a mock).
  */
 async function queryUpcomingPlaydates(
   cutoffIso: string,
@@ -500,11 +501,21 @@ async function queryUpcomingPlaydates(
 
 /**
  * The viewer's radius feed (V2 slice 3): posts LOCATED within the viewer's
- * haversine radius (via the seeded zip map), starting today or later
- * (client-local midnight), excluding posts by blocked hosts and hidden posts,
- * ordered by starts_at — each survivor tagged with its `distanceMiles` for the
- * card's "N mi" label. Used by the `/` feed (and no longer by /browse, which
- * V8 ticket 07 turned into the places directory).
+ * haversine radius (via the seeded zip map), NOT YET ENDED (V9 ticket 04:
+ * `ends_at > now`, read once and handed to BOTH layers), excluding posts by
+ * blocked hosts and hidden posts, ordered by starts_at — each survivor tagged
+ * with its `distanceMiles` for the card's "N mi" label. Used by the `/` feed
+ * (and no longer by /browse, which V8 ticket 07 turned into the places
+ * directory).
+ *
+ * V9 ticket 04 (the cutoff): this function used to cut at `startOfTodayIso()`
+ * and hand the filter a SECOND, later clock (`new Date().toISOString()`), so
+ * the DB could return a post the filter then dropped — and an ended drop-in
+ * stayed on the feed all day, greyed and demoted. Now there is ONE `nowIso`,
+ * read once, used for the query's `ends_at` cutoff AND the pure re-filter, so
+ * the two layers cannot disagree even mid-request (the house
+ * defense-in-depth pattern: the DB does less work, the filter is the
+ * unit-tested guarantee).
  *
  * V8 ticket 07 (the distance-model fix): "located" now means the POST'S PLACE
  * when it names one, and the host's home zip only as the fallback — see
@@ -539,20 +550,16 @@ export async function listRadiusFeed(
     // loadPlacesOrEmpty).
     loadPlacesOrEmpty(),
   ])
-  const cutoffIso = startOfTodayIso()
-  const rows = await queryUpcomingPlaydates(cutoffIso, blockedIds)
+  // V9 ticket 04: ONE instant for both layers — the query's `ends_at` cutoff
+  // and filterFeed's nowIso are the same clock read, so a post can never be
+  // fetched and then dropped for being a millisecond older than a second read.
+  const nowIso = new Date().toISOString()
+  const rows = await queryUpcomingPlaydates(nowIso, blockedIds)
   // Stitch each post's place coordinates in (place_id -> {lat,lng}), so the
   // pure distance model sees them. A post with no place_id, or one whose place
   // is missing from the map, gets null and falls back to the host's home zip.
   const posts = rows.map((post) => ({ ...post, place_coords: placeCoordsFor(post.place_id, places) }))
-  const filtered = filterFeed(
-    posts,
-    viewer,
-    zipCoords,
-    new Set(blockedIds),
-    cutoffIso,
-    new Date().toISOString(),
-  )
+  const filtered = filterFeed(posts, viewer, zipCoords, new Set(blockedIds), nowIso)
   return filtered.map((post) => ({
     ...post,
     // Survivors always have a distance (filterFeed excludes nulls); the
@@ -664,6 +671,12 @@ export async function getPlaceById(placeId: string): Promise<Place | null> {
  * V9 ticket 01: the neighborhood embed lost its `!inner` hint (see feed.ts's
  * note) — a place page's list must show a drop-in whose host never answered a
  * neighbourhood question, and an INNER JOIN would silently drop it.
+ *
+ * V9 ticket 04 (a KNOWN inconsistency, recorded, deliberately not fixed here):
+ * "upcoming" is this read's `.gte('starts_at', startOfTodayIso())` — the
+ * start-of-today rule the FEED stopped using, so this list can still show a
+ * drop-in that ended earlier today. Same follow-up as
+ * db.upcomingCountsByPlace above (see the V9 ticket 04 Comments).
  */
 export async function listPlaceFeed(
   placeId: string,
@@ -696,6 +709,16 @@ export async function listPlaceFeed(
  * Returns null when the read FAILS (pre-0030-apply: no place_id column), which
  * the caller renders as NO count at all — never as "0 upcoming", which would
  * be a claim we cannot make.
+ *
+ * V9 ticket 04 (a KNOWN inconsistency, recorded, deliberately not fixed here):
+ * "upcoming" is this read's `.gte('starts_at', startOfTodayIso())` — the
+ * start-of-today rule the FEED stopped using. So Browse can print "1 upcoming"
+ * for a place whose only drop-in has already ENDED, which the feed (and the
+ * place page's own list, same cutoff) now contradicts. It is a wrong LABEL, at
+ * any table size, fixable with no migration (`.gt('ends_at', now)`, exactly the
+ * feed's predicate) — but this ticket is scoped to the feed's read path and
+ * these chips have their own ACs and specs (V8/07), so the change belongs to a
+ * follow-up: see the V9 ticket 04 Comments.
  */
 export async function upcomingCountsByPlace(): Promise<Map<string, number> | null> {
   const { data, error } = await supabase

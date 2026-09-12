@@ -31,10 +31,15 @@ import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
  * the post came through the radius feed (distanceMiles set).
  *
  * V3 slice 1 (ticket 01): an ended post (feed.isEnded, ends_at <= now)
- * renders grayed with an "Ended" badge — the feed's Today section demotes
- * these behind the upcoming ones. A "Starts soon" badge (amber) renders in
- * the same badge slot as "Happening now" when the page passes startsSoon
- * (the single soonest upcoming event of the Today section that starts
+ * renders grayed with an "Ended" badge. V9 ticket 04 REMOVED the half of that
+ * rule that lived on the FEED: the Today section used to demote ended events
+ * behind the upcoming ones, and the feed now does not return an ended post at
+ * all (its cutoff IS `ends_at > now` — feed.isStillAhead). The styling below
+ * stays, because the archive lists (V8/04's Past sections on /profile and
+ * /u/:handle, and the archive rows /profile renders) are exactly what those
+ * branches serve, and this is what makes them read as history. A "Starts soon"
+ * badge (amber) renders in the same badge slot as "Happening now" when the page
+ * passes startsSoon (the single soonest event of the Today section that starts
  * within 60 min — the page decides who gets it, the card only renders it).
  * Cards never carry a per-card day label — the day section headers do.
  *
@@ -42,13 +47,26 @@ import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
  * 'cancelled' — 0016, trimmed to 'on' | 'cancelled' by 0019) renders
  * muted like an ended post: the status chip takes the badge slot (the
  * host's explicit state wins over the time-based badges) + the
- * grayed-out card (the event STAYS in the feed — the host can revert;
- * no auto-expiry). Pre-0016-apply the row lacks the column (undefined →
- * the normal styling). The optional "Rain likely" badge (the rainLabel
- * prop, from the page's best-effort Open-Meteo fetch) renders in the
- * same slot, independent of the status (a forecast, not a state) — only
- * Today-section cards get it (the page decides; BrowsePage passes
- * nothing new).
+ * grayed-out card. Pre-0016-apply the row lacks the column (undefined →
+ * the normal styling).
+ *
+ * V9 ticket 04 SUPERSEDES half of that V3/02 pin — recorded here, not assumed:
+ * a cancelled post with a FUTURE end still stays in the feed ("the host can
+ * revert; no auto-expiry" holds), but one whose window has ENDED now leaves `/`
+ * exactly like any other ended drop-in: the cutoff is time-based and does not
+ * ask WHY a row is over. So the reassurance that sentence carried (the host
+ * flipping a cancellation back on from the feed) is no longer available there
+ * for a cancelled post past its end — the detail page and the archive still
+ * carry it, and V8/09's "Same time next week" is explicitly kept for a
+ * cancelled post (PlaydateDetailPage's own pin: "the rule here is time-based").
+ * NO SPEC COVERS the cancelled-and-ended case: e2e/host-status.e2e.ts posts for
+ * TOMORROW and pins "the event stays in the feed" for a post that is still
+ * ahead. See the V9 ticket 04 Comments.
+ *
+ * The optional "Rain likely" badge (the rainLabel prop, from the page's
+ * best-effort Open-Meteo fetch) renders in the same slot, independent of the
+ * status (a forecast, not a state) — only Today-section cards get it (the page
+ * decides; BrowsePage passes nothing new).
  *
  * V3 slice 3 (ticket 06, the quick feedback batch): a 32px circular
  * "going" check toggle in the card's top-right (the badge cluster's last
