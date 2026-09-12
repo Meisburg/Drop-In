@@ -8,6 +8,7 @@ import {
   durationChipForUntilNextHour,
   durationLabel,
   dueToRefreshLastSeen,
+  emptyRadiusCopy,
   filterFeed,
   formatDayLabel,
   formatDistanceLabel,
@@ -32,11 +33,15 @@ import {
   queryRecentOwnPlacesWithClient,
   queryUpcomingFeedWithClient,
   rainBadgeLabel,
+  RADIUS_MAX_MILES,
   RADIUS_MILES_OPTIONS,
+  radiusEscapes,
   recentPlacesFrom,
   RECENT_PLACES_SCANNED,
   RECENT_PLACES_SHOWN,
   resolveGuestListVisibility,
+  SEE_ALL_RADIUS_MILES,
+  shouldRefreshFeed,
   startOfTodayIso,
   stepTimeMinutes,
   suggestedDurationMinutes,
@@ -45,6 +50,7 @@ import {
   validateHomeZip,
   validatePlaydateForm,
   validateRadiusMiles,
+  WIDEN_RADIUS_MILES,
   withinRadius,
   type FeedPost,
   type GoingPinger,
@@ -1333,5 +1339,91 @@ describe('queryRecentOwnPlacesWithClient (V8 ticket 01, mocked supabase client)'
   it('returns [] when the host has never posted', async () => {
     const { client } = makeFeedMockClient([])
     expect(await queryRecentOwnPlacesWithClient(client, 'me')).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// V8 ticket 02: the empty-radius copy + escapes, and the refresh gate.
+
+describe('emptyRadiusCopy (V8 ticket 02: the honest empty state)', () => {
+  it('names the viewer\'s own radius', () => {
+    expect(emptyRadiusCopy(2)).toBe('Nothing within 2 miles yet.')
+    expect(emptyRadiusCopy(5)).toBe('Nothing within 5 miles yet.')
+    expect(emptyRadiusCopy(35)).toBe('Nothing within 35 miles yet.')
+  })
+
+  it('never claims "today" (the list is today AND LATER — the old copy\'s lie)', () => {
+    for (const radius of RADIUS_MILES_OPTIONS) {
+      expect(emptyRadiusCopy(radius).toLowerCase()).not.toContain('today')
+    }
+  })
+})
+
+describe('radiusEscapes (V8 ticket 02: the way out of an empty radius)', () => {
+  it('offers both escapes at the 5-mile default', () => {
+    expect(radiusEscapes(5)).toEqual([
+      { radiusMiles: 20, label: 'Widen to 20 miles' },
+      { radiusMiles: 35, label: 'See everything in Seattle' },
+    ])
+  })
+
+  it('pins the radii to the ticket (20 = widen, 35 = the max, the DB ceiling)', () => {
+    expect(WIDEN_RADIUS_MILES).toBe(20)
+    expect(SEE_ALL_RADIUS_MILES).toBe(35)
+    expect(SEE_ALL_RADIUS_MILES).toBe(RADIUS_MAX_MILES)
+    expect(RADIUS_MILES_OPTIONS).toContain(WIDEN_RADIUS_MILES)
+    expect(RADIUS_MILES_OPTIONS).toContain(SEE_ALL_RADIUS_MILES)
+  })
+
+  it('drops an escape that would not widen anything (20 → the 20-mi button is gone)', () => {
+    expect(radiusEscapes(20)).toEqual([{ radiusMiles: 35, label: 'See everything in Seattle' }])
+  })
+
+  it('is empty at the 35-mile max (nothing wider exists — the ceiling is honest)', () => {
+    expect(radiusEscapes(35)).toEqual([])
+  })
+
+  it('always widens: every escape is strictly wider than the current radius', () => {
+    for (const radius of RADIUS_MILES_OPTIONS) {
+      for (const escape of radiusEscapes(radius)) {
+        expect(escape.radiusMiles).toBeGreaterThan(radius)
+        expect(escape.radiusMiles).toBeLessThanOrEqual(RADIUS_MAX_MILES)
+      }
+    }
+  })
+
+  it('keeps the escapes present for a 2-mile radius (the far-zip e2e case)', () => {
+    expect(radiusEscapes(2).map((e) => e.radiusMiles)).toEqual([20, 35])
+  })
+})
+
+describe('shouldRefreshFeed (V8 ticket 02: the visibility-refresh gate)', () => {
+  const NOW = '2026-09-12T12:00:00.000Z'
+  const WINDOW_MS = 60_000 // the 60s pin, owned by FeedPage
+  const secondsAgo = (seconds: number) =>
+    new Date(Date.parse(NOW) - seconds * 1000).toISOString()
+
+  it('is due when nothing has loaded yet (null — the first load sets the clock)', () => {
+    expect(shouldRefreshFeed(null, NOW, WINDOW_MS)).toBe(true)
+  })
+
+  it('is NOT due on a quick app switch (a load 5s old)', () => {
+    expect(shouldRefreshFeed(secondsAgo(5), NOW, WINDOW_MS)).toBe(false)
+  })
+
+  it('is not due one millisecond inside the window', () => {
+    expect(shouldRefreshFeed(secondsAgo(59.999), NOW, WINDOW_MS)).toBe(false)
+  })
+
+  it('is due exactly at the window (>=, not > — the dueToRefreshLastSeen rule)', () => {
+    expect(shouldRefreshFeed(secondsAgo(60), NOW, WINDOW_MS)).toBe(true)
+  })
+
+  it('is due when the tab has been away for minutes', () => {
+    expect(shouldRefreshFeed(secondsAgo(600), NOW, WINDOW_MS)).toBe(true)
+  })
+
+  it('honours the window the caller owns (a 0ms window is always due)', () => {
+    expect(shouldRefreshFeed(secondsAgo(0), NOW, 0)).toBe(true)
   })
 })

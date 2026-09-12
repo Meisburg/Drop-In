@@ -875,3 +875,88 @@ export async function queryRecentOwnPlacesWithClient(
   if (error) throw error
   return (data ?? []) as unknown[]
 }
+
+// ---------------------------------------------------------------------------
+// V8 ticket 02: the first visit that is not a dead end — the empty-radius
+// copy + escape hatches, and the visibility-refresh gate.
+
+/**
+ * The empty-radius copy (V8 ticket 02), shared by the feed ("Near you") and
+ * Browse so the two screens can never drift apart.
+ *
+ * Two lies were in the old string ("Nothing happening near you today — post
+ * the first one."): the query is today-AND-LATER (`filterFeed` drops only
+ * PAST posts, and the day sections prove it), and it named no radius — so a
+ * parent on the 5-mile default had no idea that 35 was even possible. N is
+ * the VIEWER's actual radius: the number the filter just used, which is the
+ * only honest one to quote.
+ *
+ * Always plural by construction (radius options are 2/5/10/20/35, and the DB
+ * CHECK is 2–35), so there is no "1 miles" case to guard.
+ */
+export function emptyRadiusCopy(radiusMiles: number): string {
+  return `Nothing within ${radiusMiles} miles yet.`
+}
+
+/** The "widen" escape's radius (V8 ticket 02 pin: 20 miles). */
+export const WIDEN_RADIUS_MILES = 20
+
+/**
+ * The "see everything" escape's radius (V8 ticket 02 pin: 35 — the max, the
+ * same value as RADIUS_MAX_MILES and the DB CHECK's ceiling; the assertion
+ * below keeps the two from drifting).
+ */
+export const SEE_ALL_RADIUS_MILES = RADIUS_MAX_MILES
+
+/** One escape out of an empty radius: the radius it writes + its button copy. */
+export interface RadiusEscape {
+  radiusMiles: number
+  label: string
+}
+
+/**
+ * The escape hatches an empty-radius state offers (V8 ticket 02, pure +
+ * unit-tested): "Widen to 20 miles" and "See everything in Seattle" (35 mi,
+ * the max).
+ *
+ * Both call the EXISTING `updateHomeZipRadius` write path — this seam only
+ * decides which controls render, so the page stays a thin call site.
+ *
+ * An escape whose radius is not actually WIDER than the viewer's current one
+ * is dropped: at 20 miles, "Widen to 20 miles" would be a no-op button, which
+ * is just a second dead end wearing a control's clothes. At the 35-mile max
+ * the list is empty and the empty state is honestly terminal (the radius
+ * ceiling is the whole discovery surface) — the "Post a drop-in" CTA remains
+ * either way.
+ */
+export function radiusEscapes(radiusMiles: number): RadiusEscape[] {
+  const escapes: RadiusEscape[] = []
+  if (WIDEN_RADIUS_MILES > radiusMiles) {
+    escapes.push({ radiusMiles: WIDEN_RADIUS_MILES, label: `Widen to ${WIDEN_RADIUS_MILES} miles` })
+  }
+  if (SEE_ALL_RADIUS_MILES > radiusMiles) {
+    escapes.push({ radiusMiles: SEE_ALL_RADIUS_MILES, label: 'See everything in Seattle' })
+  }
+  return escapes
+}
+
+/**
+ * Whether the feed is due for a visibility-triggered refetch (V8 ticket 02):
+ * no load yet (null — the first load establishes the clock) or the last load
+ * is at least `windowMs` old. `windowMs` is owned by the call site
+ * (FeedPage's FEED_REFRESH_WINDOW_MS), the same split as
+ * dueToRefreshLastSeen / LAST_SEEN_WINDOW_MS.
+ *
+ * The gate exists so returning to the tab does not become a refetch storm:
+ * a quick app switch (background, back) leaves the last load well inside the
+ * window and starts nothing. Pure + unit-tested; the listener wiring and the
+ * actual refetch are the page's.
+ */
+export function shouldRefreshFeed(
+  lastLoadedIso: string | null,
+  nowIso: string,
+  windowMs: number,
+): boolean {
+  if (lastLoadedIso === null) return true
+  return Date.parse(nowIso) - Date.parse(lastLoadedIso) >= windowMs
+}

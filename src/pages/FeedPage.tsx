@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router'
 import { DropInCard } from '../components/DropInCard'
+import { RadiusEmptyState } from '../components/RadiusEmptyState'
 import { useSessionContext } from '../components/SessionProvider'
 import {
   countPingsOnMyPosts,
@@ -21,6 +22,7 @@ import {
   isStartingSoon,
   localDayKey,
   rainBadgeLabel,
+  shouldRefreshFeed,
 } from '../lib/feed'
 import type { PlaydateWithNeighborhood } from '../lib/types'
 
@@ -31,6 +33,18 @@ import type { PlaydateWithNeighborhood } from '../lib/types'
  * behavior).
  */
 const LAST_SEEN_WINDOW_MS = 60 * 60_000
+
+/**
+ * The visibility-refresh window (V8 ticket 02): the feed re-issues its query
+ * when the tab becomes visible again, but ONLY when the last load is at least
+ * this old. The window is owned here, exactly like LAST_SEEN_WINDOW_MS above —
+ * the pure shouldRefreshFeed takes it as a parameter.
+ *
+ * 60 s is the pin: long enough that a quick app switch (check a text, come
+ * back) starts nothing — no polling loop, no refetch storm — and short enough
+ * that a parent who has actually been away sees current pings.
+ */
+const FEED_REFRESH_WINDOW_MS = 60_000
 
 /**
  * / — drop-ins within the signed-in user's home zip + radius (V2 slice 3:
@@ -94,6 +108,15 @@ const LAST_SEEN_WINDOW_MS = 60 * 60_000
  * The zip_codes + location columns live in migration 0012 (the live
  * project may not have them yet) — a failed load renders a designed error
  * state, never a crash (same discipline as the onboarding load-error).
+ *
+ * V8 ticket 02 (the first visit that isn't a dead end): the empty-radius
+ * state is the shared RadiusEmptyState component (honest "Nothing within N
+ * miles yet." + the widen/see-everything escapes + the post CTA — see that
+ * file for why the old copy was wrong twice); the feed re-issues its query
+ * when the tab becomes visible again, gated to a >60 s stale load by the pure
+ * shouldRefreshFeed (no polling, no refetch storm); and a card's "going"
+ * toggle re-reads that post's pings, so pingsByPostId no longer goes stale
+ * until the next full load (the parked ticket-07 observation).
  */
 export function FeedPage() {
   const { session, loading, profile, refresh } = useSessionContext()
@@ -128,6 +151,19 @@ export function FeedPage() {
   // unsettled (no banner render); a failed load degrades to 0 (the
   // banner stays hidden — zero-pressure soul, no error state).
   const [newPingCount, setNewPingCount] = useState<number | null>(null)
+  /**
+   * V8 ticket 02: bumped by the visibility/focus listener when the last load
+   * is older than FEED_REFRESH_WINDOW_MS — the feed effect below re-runs and
+   * re-issues the query. It is a token rather than a direct call so the ONE
+   * load path stays the effect (no second fetch implementation).
+   */
+  const [feedReloadToken, setFeedReloadToken] = useState(0)
+  /**
+   * When the feed query was last ISSUED (the visibility gate's clock; the
+   * pure shouldRefreshFeed compares against it). A ref, not state: reading it
+   * must never re-render, and stamping it must never fight the load effect.
+   */
+  const lastFeedLoadedAtRef = useRef<string | null>(null)
 
   // The viewer side of the radius filter: the profile's home zip + radius.
   // The shell's onboarding gate keys on home_zip, so a settled signed-in
@@ -138,6 +174,10 @@ export function FeedPage() {
     let cancelled = false
     setPosts(null)
     setLoadError(null)
+    // The visibility gate's clock (V8 ticket 02) — stamped when the query is
+    // issued, so a focus/visibility event during a slow load cannot stack a
+    // second one behind it.
+    lastFeedLoadedAtRef.current = new Date().toISOString()
     const viewer = {
       homeZip: profile.home_zip ?? null,
       radiusMiles: profile.radius_miles ?? DEFAULT_RADIUS_MILES,
@@ -154,7 +194,37 @@ export function FeedPage() {
     return () => {
       cancelled = true
     }
-  }, [loading, session, profile])
+  }, [loading, session, profile, feedReloadToken])
+
+  /**
+   * V8 ticket 02: the focus/visibility refresh. Coming back to the tab
+   * re-issues the feed query — but only when the last load is at least
+   * FEED_REFRESH_WINDOW_MS old (the pure shouldRefreshFeed gate, unit-tested
+   * with the 60 s pin). A hidden document is never refreshed (a background tab
+   * firing 'focus' would be a refetch nobody asked for), and the listener set
+   * is registered once: no polling loop, no interval.
+   */
+  useEffect(() => {
+    function maybeRefreshFeed() {
+      if (document.visibilityState !== 'visible') return
+      if (
+        !shouldRefreshFeed(
+          lastFeedLoadedAtRef.current,
+          new Date().toISOString(),
+          FEED_REFRESH_WINDOW_MS,
+        )
+      ) {
+        return
+      }
+      setFeedReloadToken((token) => token + 1)
+    }
+    document.addEventListener('visibilitychange', maybeRefreshFeed)
+    window.addEventListener('focus', maybeRefreshFeed)
+    return () => {
+      document.removeEventListener('visibilitychange', maybeRefreshFeed)
+      window.removeEventListener('focus', maybeRefreshFeed)
+    }
+  }, [])
 
   // V3 slice 3 (ticket 06): the viewer's own "going" pings (one query —
   // every card's toggle state). Fetched once when the session settles; a
@@ -272,6 +342,15 @@ export function FeedPage() {
    * detail page's behavior: an optimistic flip that reverts on error
    * (the card shows no error line — zero pressure; the detail page
    * keeps its own error surface). One in-flight toggle per feed.
+   *
+   * V8 ticket 02: the toggle also re-reads THAT post's pings (closing the
+   * parked ticket-07 observation: pingsByPostId used to stay stale until the
+   * next full feed load, so a card could say "1 going" while the count it was
+   * drawn from had already moved). Only this post's group is replaced — a
+   * full re-read of every visible post would be a write path triggering N
+   * reads for one tap. Best-effort like every other card decoration: a failed
+   * re-read leaves the previous group (silent — no card error UI, the
+   * zero-pressure pin).
    */
   async function handleCardPingToggle(postId: string) {
     const base = myPingPostIds
@@ -279,15 +358,30 @@ export function FeedPage() {
     const willBeActive = !base.has(postId)
     setPingBusyPostId(postId)
     setMyPingPostIds(withPingId(base, postId, willBeActive))
+    let going: boolean
     try {
-      const going = await togglePing(postId)
-      // Reconcile with the write path's authoritative result (a
-      // concurrent toggle elsewhere shows as-is, not the optimistic guess).
-      setMyPingPostIds((prev) => (prev === null ? prev : withPingId(prev, postId, going)))
+      going = await togglePing(postId)
     } catch {
       setMyPingPostIds((prev) => (prev === null ? prev : withPingId(prev, postId, !willBeActive)))
-    } finally {
       setPingBusyPostId(null)
+      return
+    }
+    // Reconcile with the write path's authoritative result (a
+    // concurrent toggle elsewhere shows as-is, not the optimistic guess).
+    setMyPingPostIds((prev) => (prev === null ? prev : withPingId(prev, postId, going)))
+    setPingBusyPostId(null)
+    // The write LANDED — the re-read below is a separate, best-effort step:
+    // a failed read leaves the previous group standing (silent) rather than
+    // reverting a ping that is already in the database.
+    try {
+      const rows = await listPingsForPosts([postId])
+      setPingsByPostId((prev) =>
+        prev === null
+          ? prev
+          : { ...prev, [postId]: rows.filter((row) => row.playdateId === postId) },
+      )
+    } catch {
+      /* Swallowed: the cards never show error UI (the zero-pressure pin). */
     }
   }
 
@@ -430,17 +524,13 @@ export function FeedPage() {
           Loading…
         </div>
       ) : posts.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-          <p className="text-sm text-slate-600">
-            Nothing happening near you today — post the first one.
-          </p>
-          <Link
-            to="/new"
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white"
-          >
-            Post a drop-in
-          </Link>
-        </div>
+        /* V8 ticket 02: the honest empty-radius state — the shared
+           RadiusEmptyState (Browse renders the same component): the viewer's
+           ACTUAL radius in the copy (never "today" — the list is
+           today-and-later) plus the way out of an empty radius. The radius N
+           is the same value the filter above just used (profile.radius_miles
+           with the DEFAULT_RADIUS_MILES fallback). */
+        <RadiusEmptyState radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES} />
       ) : (
         <div className="flex flex-col gap-4">
           {dayGroups.map((group) => {

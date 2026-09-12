@@ -70,6 +70,16 @@ type DetailState =
       /** The comment thread (null = not loaded — 0013 not applied, section hidden). */
       comments: CommentWithAuthor[] | null
       /**
+       * V8 ticket 02: the comment thread's load FAILED (as opposed to
+       * "there are none"). The two are different facts and the page used to
+       * render them identically — an absent section, which reads as "no
+       * comments yet" and quietly tells a parent the post has no replies.
+       * With this flag the failed read renders its own honest state
+       * ("Couldn't load comments." + Retry). Always false when `comments` is
+       * non-null.
+       */
+      commentsFailed: boolean
+      /**
        * V3 slice 6 (ticket 09): the "Kids coming" rows (the 0022
        * playdate_kids selection, name-ordered — db.listPlaydateKidNames).
        * null = not loaded — 0022 not applied (the 42P01 is caught in the
@@ -239,6 +249,12 @@ export function PlaydateDetailPage() {
   const [reporting, setReporting] = useState(false)
   const [pingBusy, setPingBusy] = useState(false)
   const [pingError, setPingError] = useState<string | null>(null)
+  // V8 ticket 02: the two degraded states' retry buttons (a failed going-count
+  // read, a failed comment-thread read). Both live up here with every other
+  // hook — the component returns early for its loading/error states, and a
+  // hook after a conditional return makes React throw (the V6 lesson below).
+  const [countRetryBusy, setCountRetryBusy] = useState(false)
+  const [commentsRetryBusy, setCommentsRetryBusy] = useState(false)
   // V2 slice 4: the comment composer (empty rejected client-side; the
   // pure validateCommentBody is the second check in handleAddComment).
   const [commentDraft, setCommentDraft] = useState('')
@@ -375,12 +391,24 @@ export function PlaydateDetailPage() {
             return
           }
           // The ping + comments + playdate_kids tables may not be applied
-          // yet (0007 / 0013 / 0022): a failed load just hides that
-          // section, never the post itself.
-          const [count, going, comments, kids, guestNames] = await Promise.all([
+          // yet (0007 / 0013 / 0022): a failed load never costs the post
+          // itself. V8 ticket 02: the going count's and the thread's failures
+          // are no longer SILENT — a null count gets the retry line under the
+          // ping button, and a failed thread gets "Couldn't load comments." +
+          // Retry (commentsFailed) instead of an absent section that reads as
+          // "no comments yet". The kids block still degrades silently (the
+          // ticket pin: no error UI on best-effort decorations).
+          const [count, going, commentsResult, kids, guestNames] = await Promise.all([
             getGoingCount(id).catch(() => null),
             hasPinged(id).catch(() => false),
-            listComments(id).catch(() => null),
+            // V8 ticket 02: the thread's failure is caught as its OWN fact
+            // (commentsFailed) instead of collapsing into null — a failed read
+            // must never be rendered as "no comments yet" (nor as an absent
+            // section, which reads the same way). The catch still keeps the
+            // post itself alive: a broken thread never costs the drop-in.
+            listComments(id)
+              .then((rows) => ({ rows, failed: false }))
+              .catch(() => ({ rows: null, failed: true })),
             // V3 slice 6 (ticket 09): the "Kids coming" rows (the 0022
             // playdate_kids table). Authenticated view only — the
             // signed-out public surface (the get_public_playdate 12-field
@@ -399,7 +427,16 @@ export function PlaydateDetailPage() {
             fetchGuestList(id).catch(() => null),
           ])
           if (cancelled) return
-          setState({ status: 'ready', detail, count, going, comments, kids, guestNames })
+          setState({
+            status: 'ready',
+            detail,
+            count,
+            going,
+            comments: commentsResult.rows,
+            commentsFailed: commentsResult.failed,
+            kids,
+            guestNames,
+          })
         } catch (err) {
           if (cancelled) return
           setState({
@@ -468,7 +505,13 @@ export function PlaydateDetailPage() {
     setPingError(null)
     try {
       const going = await togglePing(detail.id)
-      const count = await getGoingCount(detail.id)
+      // V8 ticket 02: the count read is BEST-EFFORT here, deliberately. The
+      // ping WRITE already landed — if only the follow-up read fails, this
+      // used to throw and report "Could not update your ping" over a ping that
+      // is in the database. Instead `count` stays at its last known value
+      // (never clobbered to null) and the retry line below owns the unknown
+      // state; the button itself is never disabled by a failed read.
+      const count = await getGoingCount(detail.id).catch(() => null)
       // V3 slice 10 (ticket 05): the toggle changed the caller's
       // pinger status — refetch the guest list so the block appears
       // ("You, ...") when a viewer pings and disappears (back to the
@@ -483,13 +526,64 @@ export function PlaydateDetailPage() {
       // post we navigated away from).
       setState((prev) =>
         prev.status === 'ready' && prev.detail.id === detail.id
-          ? { ...prev, count, going, guestNames }
+          ? { ...prev, going, guestNames, ...(count !== null ? { count } : {}) }
           : prev,
       )
     } catch (err) {
       setPingError(err instanceof Error ? err.message : 'Could not update your ping. Try again.')
     } finally {
       setPingBusy(false)
+    }
+  }
+
+  /**
+   * V8 ticket 02: retry the going-count read (the retry line under a ping
+   * button whose count came back null). The button itself was never disabled
+   * by that failure — this only removes the "we don't know" line once the read
+   * lands. A failing retry changes nothing: the line stays, and there is
+   * nothing new to say about a read that was already reported as failed.
+   */
+  async function handleRetryGoingCount() {
+    if (state.status !== 'ready' || countRetryBusy) return
+    const postId = state.detail.id
+    setCountRetryBusy(true)
+    try {
+      const count = await getGoingCount(postId)
+      setState((prev) =>
+        prev.status === 'ready' && prev.detail.id === postId ? { ...prev, count } : prev,
+      )
+    } catch {
+      /* Swallowed: the retry line already says the read failed. */
+    } finally {
+      setCountRetryBusy(false)
+    }
+  }
+
+  /**
+   * V8 ticket 02: retry the comment-thread read (the "Couldn't load comments."
+   * state). On success the thread replaces the error block — the same section
+   * a successful first load renders, composer and all. On failure the state
+   * stays exactly where it was (still failed, still offering Retry).
+   */
+  async function handleRetryComments() {
+    if (state.status !== 'ready' || commentsRetryBusy) return
+    const postId = state.detail.id
+    setCommentsRetryBusy(true)
+    try {
+      const comments = await listComments(postId)
+      setState((prev) =>
+        prev.status === 'ready' && prev.detail.id === postId
+          ? { ...prev, comments, commentsFailed: false }
+          : prev,
+      )
+    } catch {
+      setState((prev) =>
+        prev.status === 'ready' && prev.detail.id === postId
+          ? { ...prev, comments: null, commentsFailed: true }
+          : prev,
+      )
+    } finally {
+      setCommentsRetryBusy(false)
     }
   }
 
@@ -1237,7 +1331,15 @@ export function PlaydateDetailPage() {
           <button
             type="button"
             aria-pressed={going}
-            disabled={pingBusy || count === null}
+            /* V8 ticket 02: a FAILED count read no longer disables this
+               button. `count === null` meant "the going count did not load",
+               and the button then sat there dead with no explanation — the one
+               control the page exists for, disabled by an unrelated read, with
+               "I'm going" as the only thing a visitor came to do. The write
+               path never needed the count (togglePing upserts/deletes on its
+               own), so the button stays enabled and the unknown count is
+               reported honestly BELOW it, with a Retry. */
+            disabled={pingBusy}
             onClick={() => void handlePingToggle()}
             autoFocus={confirmPing}
             /* V6 (design jury item 5): the primary action leads by FILL and
@@ -1261,7 +1363,25 @@ export function PlaydateDetailPage() {
           </button>
           {count !== null ? (
             <p className="mt-2 text-sm text-slate-600">{goingCountLine(count)}</p>
-          ) : null}
+          ) : (
+            /* V8 ticket 02: the honest line where the count would be — the
+               read failed, so the page says so instead of showing nothing (the
+               old silence next to a dead button was the whole complaint). */
+            <div
+              data-testid="going-count-unavailable"
+              className="mt-2 flex flex-wrap items-center gap-2"
+            >
+              <p className="text-sm text-slate-600">Couldn’t load how many families are going.</p>
+              <button
+                type="button"
+                disabled={countRetryBusy}
+                onClick={() => void handleRetryGoingCount()}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+              >
+                {countRetryBusy ? 'Retrying…' : 'Retry'}
+              </button>
+            </div>
+          )}
           {pingError !== null ? <p className="mt-2 text-sm text-red-600">{pingError}</p> : null}
           {/* V6: only once you're actually going, and only if you have kids to
               bring — otherwise there is nothing to ask. */}
@@ -1323,9 +1443,13 @@ export function PlaydateDetailPage() {
 
       {/* V2 slice 4 (ticket 04): the comment thread — author avatar
         (the HostAvatar shape) + handle linking to /u/:handle. The
-        per-row buttons come from the pure planCommentAction; the
-        section is absent (null) until 0013 is applied — the page
-        never crashes on a missing table.
+        per-row buttons come from the pure planCommentAction.
+        V8 ticket 02: a FAILED thread read is its own honest state
+        ("Couldn't load comments." + Retry) — it used to render as an
+        absent section, which is indistinguishable from "no comments",
+        so a parent asking a question about a post with replies could
+        conclude nobody was talking. The post itself is never affected:
+        a broken thread costs a section, never the drop-in.
         V3 slice 7 (ticket 10): the thread groups — the pure
         groupCommentsForRender (trust.ts) renders each top-level
         comment with its one-level replies indented (ml-8, 24px
@@ -1430,6 +1554,25 @@ export function PlaydateDetailPage() {
               <p className="mt-2 text-sm text-red-600">{commentError}</p>
             ) : null}
           </div>
+        </div>
+      ) : state.commentsFailed ? (
+        /* V8 ticket 02: the failed thread read — its own state, never an
+           absent section (which reads as "no comments"). Retry re-reads; a
+           failing retry keeps this block exactly as it is. */
+        <div
+          data-testid="comments-load-error"
+          className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+        >
+          <h2 className="text-base font-semibold text-slate-900">Comments</h2>
+          <p className="mt-2 text-sm text-slate-600">Couldn’t load comments.</p>
+          <button
+            type="button"
+            disabled={commentsRetryBusy}
+            onClick={() => void handleRetryComments()}
+            className="mt-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+          >
+            {commentsRetryBusy ? 'Retrying…' : 'Retry'}
+          </button>
         </div>
       ) : null}
 

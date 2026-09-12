@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router'
 import { DropInCard } from '../components/DropInCard'
+import { RadiusEmptyState } from '../components/RadiusEmptyState'
 import { useSessionContext } from '../components/SessionProvider'
 import { listRadiusFeed } from '../lib/db'
 import { DEFAULT_RADIUS_MILES, groupByDay } from '../lib/feed'
@@ -16,6 +16,13 @@ import type { PlaydateWithNeighborhood } from '../lib/types'
  * page so the feed and browse share the single implementation). Each card
  * carries its "N mi" distance (the pure haversine predicate, unit-tested
  * in feed.ts).
+ *
+ * V8 ticket 02: the empty state is the SAME RadiusEmptyState the feed
+ * renders — the honest "Nothing within N miles yet." (N = the viewer's own
+ * radius) plus the widen/see-everything escapes, because browse dead-ended
+ * on an empty radius exactly like the feed did ("Nothing upcoming within
+ * your radius — post the first one." named no radius and offered only the
+ * post). Same write path, same component, no second implementation.
  *
  * A failed query renders a designed error state, never a crash (the
  * zip_codes table + location columns land in migration 0012).
@@ -87,17 +94,11 @@ export function BrowsePage() {
           Loading…
         </div>
       ) : posts.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-          <p className="text-sm text-slate-600">
-            Nothing upcoming within your radius — post the first one.
-          </p>
-          <Link
-            to="/new"
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white"
-          >
-            Post a drop-in
-          </Link>
-        </div>
+        // V8 ticket 02: the shared empty-radius state (the feed's own
+        // component) — the viewer's ACTUAL radius + the escapes. The write
+        // path (updateHomeZipRadius) + refresh live in the component; the
+        // fresh profile re-runs this page's load effect above.
+        <RadiusEmptyState radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES} />
       ) : (
         <div className="flex flex-col gap-4">
           {dayGroups.map((group) => (
