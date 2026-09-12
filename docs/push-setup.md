@@ -155,9 +155,13 @@ could POST their own (valid) user JWT and trigger a drain on demand.
 
 Two ways; pick one.
 
-**(a) The dashboard's scheduled function (easiest).** Dashboard → Edge
+**(a) The dashboard's scheduled function (easiest — plan-gated).** Dashboard → Edge
 Functions → `send-push` → *Schedules* → add a schedule at `*/5 * * * *`. The
-dashboard sends the service-role key for you.
+dashboard sends the service-role key for you. **NOT AVAILABLE on the PlayDate
+project (checked 2026-09-12 in the live dashboard DOM: the function page has no
+Schedules tab, and enabling `pg_cron`/`pg_net` does not make it appear; the
+`vault` extension is also not offered on this plan).** If your plan has it, use
+it.
 
 **(b) pg_cron.** In the SQL editor (or via the same API path the coordinator
 uses for migrations):
@@ -181,6 +185,20 @@ select cron.schedule(
   $$
 );
 ```
+
+**Done this way on PlayDate (2026-09-12).** Findings from the live project:
+this pg_net build only offers the 3-arg `http_post(url, headers, body)` — no
+`timeout_ms` parameter — so the response fetch is capped at 5s. With a 5-minute
+cadence the function usually cold-starts in ~4.9s, so `net._http_response`
+shows `timed_out: true` on most ticks. That is cosmetic: the POST itself
+completes server-side (confirmed via the function's own boot log), and the
+sender is idempotent — an untimed-out tick simply drains what the previous one
+left. The key lives in the `cron.job` row, readable only by DB-admin-level
+roles (the same trust circle that reaches the service role). Reversible with
+`select cron.unschedule('send-push-every-5-minutes')`. The key was injected via
+`.scratch/cron-schedule-send-push.mjs` (reads the key from a 0600 temp file,
+POSTs through the CDP dashboard SQL API — the key never touched a terminal,
+argv, or chat).
 
 Check it landed and is actually firing:
 
