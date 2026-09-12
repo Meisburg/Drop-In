@@ -22,6 +22,7 @@ import type {
 // that could not be drawn.
 import { isDrawableRect, type CropRect } from './photoCrop'
 import {
+  ageRangeFields,
   filterFeed,
   localDayKey,
   neighborhoodIdField,
@@ -825,6 +826,16 @@ export interface NewPlaydateInput {
    */
   seriesId?: string
   /**
+   * V9 ticket 05 (migration 0037): the age range the host STATED with the
+   * "Ages (optional)" chips on /new. UNDEFINED when no chip was picked — the
+   * age_min / age_max keys are then ABSENT from the insert payload rather than
+   * null (the neighborhoodIdField / seriesIdField / placeIdField pattern via
+   * feed.ageRangeFields), so a chipless post posts exactly as it did before
+   * 0037 and pre-apply nothing 42703s on that path.
+   */
+  ageMin?: number
+  ageMax?: number
+  /**
    * V8 ticket 07 (migration 0030): the place the parent PICKED from the
    * directory. UNDEFINED for "Somewhere else" (the free text stays in `place`)
    * — the `place_id` key is then ABSENT rather than null, so pre-0030-apply
@@ -865,7 +876,11 @@ export async function createPlaydate(input: NewPlaydateInput): Promise<Playdate>
       ends_at: input.endsAt,
       // V3 slice 6 (ticket 09): the age hint is no longer written from /new
       // (the kids picker replaces the field; the DB column stays — the
-      // duplicate prefill carries it dormant, pinned V2).
+      // duplicate prefill carries it dormant, pinned V2). V9 ticket 05 leaves
+      // `age_hint` alone entirely (the ticket pins that the new chips do NOT
+      // repurpose it) and writes the STRUCTURED pair instead — only when the
+      // host actually picked a chip (ageRangeFields; 0037's columns).
+      ...ageRangeFields(input.ageMin, input.ageMax),
       details: input.details ?? null,
       // V3 slice 5 (ticket 08): the optional address — undefined when empty,
       // so the key is OMITTED from the insert payload (pre-0021-apply a
@@ -1318,10 +1333,18 @@ export async function listKidsGoing(
 ): Promise<Array<{ id: string; firstName: string; age: number | null }>> {
   const { data, error } = await supabase.rpc('get_kids_going', { p_id: playdateId })
   if (error) throw error
-  const rows = (data ?? []) as Array<{ kid_id: string; first_name: string; age: number | null }>
+  const rows = (data ?? []) as Array<{
+    kid_id: string
+    first_name: string | null
+    age: number | null
+  }>
   return rows.map((row) => ({
     id: row.kid_id,
-    firstName: row.first_name,
+    // V9 ticket 05: the name is optional, so the wire can carry NULL here
+    // (0026's `first_name text` output column, off a now-nullable kids column).
+    // Normalised to '' so a `string` never holds a null — the caller renders
+    // with feed.kidLabel, which reads a blank name as "age only".
+    firstName: row.first_name ?? '',
     age: row.age,
   }))
 }
@@ -1358,6 +1381,68 @@ export async function countKidsGoingForPosts(postIds: string[]): Promise<Record<
     counts[row.playdate_id] = row.kids_count
   }
   return counts
+}
+
+/**
+ * The HOST's announced kids' AGES for a batch of posts (V9 ticket 05) — ONE
+ * read for every card on screen, the same "one call per feed, never one per
+ * card" shape countKidsGoingForPosts (0027) established, and the reason the
+ * card component itself owns no fetching.
+ *
+ * WHAT CROSSES, exactly (the T1 privacy line): `playdate_id` and `kids.age`.
+ * NOT a name, NOT a kid id, NOT the playdate_kids row id — the embed projects
+ * one column of the kid (`kid:kids!... ( age )`), so a nameless kid is exactly
+ * as anonymous here as a named one.
+ *
+ * WHICH QUESTION: `playdate_kids` is the HOST's own selection ("who I'm
+ * bringing" — the /new picker's table, live since 0022). The 0026/0027 pair
+ * asks the OTHER question (the PINGERS' kids, through the gated
+ * get_kids_going) and is deliberately untouched: this read neither widens that
+ * gate nor reuses its counter. One function (well — one read), one question.
+ *
+ * WHY NOT A NEW SECURITY-DEFINER RPC (deviation from the brief's T1, reported
+ * with evidence): a function would have to be created by 0037, which is not
+ * applied until after this ticket reports — and the ticket pins the opposite
+ * order: the DERIVED half must be GREEN before 0037 and only the chips half may
+ * be red. Since 0022's own policy (`playdate_kids_select_authenticated`, USING
+ * (true)) already lets any authenticated user read these rows — kid ids
+ * included — this projection is strictly NARROWER than the standing posture
+ * rather than a widening of it, and `anon` still gets zero rows (RLS is
+ * `to authenticated`; e2e/feed-ages proves it live).
+ *
+ * Best-effort by contract, like every other card decoration: pre-0022 (42P01
+ * / PGRST205) or a failed read throws and the caller settles to {} — every card
+ * simply omits its ages line, never an error state, never a crash.
+ */
+export async function kidAgesByPostForPostsWithClient(
+  client: SupabaseClient,
+  postIds: string[],
+): Promise<Record<string, number[]>> {
+  if (postIds.length === 0) return {}
+  const { data, error } = await client
+    .from('playdate_kids')
+    .select('playdate_id, kid:kids!playdate_kids_kid_id_fkey ( age )')
+    .in('playdate_id', postIds)
+  if (error) throw error
+  const agesByPostId: Record<string, number[]> = {}
+  for (const row of (data ?? []) as unknown as Array<{
+    playdate_id: string
+    kid: { age: number | null } | null
+  }>) {
+    if (row.kid === null) continue
+    if (typeof row.kid.age !== 'number') continue
+    const ages = agesByPostId[row.playdate_id]
+    if (ages === undefined) agesByPostId[row.playdate_id] = [row.kid.age]
+    else ages.push(row.kid.age)
+  }
+  return agesByPostId
+}
+
+/** The default-client wrapper (the feed's one batched ages read). */
+export async function kidAgesByPostForPosts(
+  postIds: string[],
+): Promise<Record<string, number[]>> {
+  return kidAgesByPostForPostsWithClient(supabase, postIds)
 }
 
 /**
@@ -2182,11 +2267,19 @@ export function validateInterests(interests: string): string | null {
  * writes the name on its OWN, so the name rule is its own pure unit; the
  * combined validateKid composes this and the age rule — same messages, one
  * source for the /profile inline error and the db-layer defense in depth).
+ *
+ * V9 ticket 05: THE NAME IS OPTIONAL, so this rule no longer rejects a blank
+ * one — "names are optional and when people start to put names like some
+ * people get weird about that". It is kept (rather than deleted with its
+ * message) because it is the seam every caller already goes through and the
+ * place a future cap would live; a blank name is now simply valid, and the
+ * write path stores NULL for it (addKid / updateKidWithClient below), which is
+ * why 0037 also drops the 0011 `first_name not null`.
  */
 export function validateKidName(firstName: string): string | null {
-  if (firstName.trim().length === 0) {
-    return 'Give your kid a first name.'
-  }
+  // No rule fires on a blank name any more. The parameter stays in the
+  // signature: the call sites are unchanged, and the rule's home is here.
+  void firstName
   return null
 }
 
@@ -2454,6 +2547,12 @@ export async function listKids(profileId: string): Promise<Kid[]> {
  * Interfaces — not a DB constraint): the current count is read first, and
  * a full profile's add throws before any insert. The owner-only INSERT
  * policy (0011) is the DB wall for non-owners.
+ *
+ * V9 ticket 05: a blank first name is written as NULL, not as '' — "no name"
+ * is the absence of a name, and it is what the 0037 `drop not null` exists
+ * for. (Pre-0037-apply the NOT NULL column refuses the NULL with 23502: the
+ * page's designed error line, and the documented consequence of the relaxed
+ * rule until the migration lands.)
  */
 export async function addKid(profileId: string, firstName: string, age: number): Promise<Kid> {
   const existing = await listKids(profileId)
@@ -2462,9 +2561,10 @@ export async function addKid(profileId: string, firstName: string, age: number):
   }
   const kidError = validateKid(firstName, age)
   if (kidError !== null) throw new Error(kidError)
+  const trimmedName = firstName.trim()
   const { data, error } = await supabase
     .from('kids')
-    .insert({ profile_id: profileId, first_name: firstName.trim(), age })
+    .insert({ profile_id: profileId, first_name: trimmedName === '' ? null : trimmedName, age })
     .select()
     .single()
   if (error) throw error
@@ -2502,7 +2602,11 @@ export async function removeKid(profileId: string, kidId: string): Promise<void>
 export interface KidPatch {
   avatar_url?: string | null
   likes?: string | null
-  /** The kid's first name (the privacy pin: first name ONLY). Validated by validateKidName. */
+  /**
+   * The kid's first name (the privacy pin: first name ONLY) — OPTIONAL as of
+   * V9 ticket 05 (validateKidName no longer rejects a blank one), in which case
+   * the write stores NULL rather than ''.
+   */
   first_name?: string
   /** The kid's age (0–17 whole number). Validated by validateKidAge. */
   age?: number
@@ -2536,11 +2640,14 @@ export async function updateKidWithClient(
   }
   // V8 ticket 10: the in-place row edit (name + age). Each field validates on
   // its own — the row editor can change one or both — and the trimmed name
-  // lands on the wire (the addKid discipline; validateKidName is the same rule).
+  // lands on the wire (the addKid discipline; validateKidName is the same
+  // rule). V9 ticket 05: a blank name is written as NULL rather than '' (the
+  // addKid pin) — clearing a name is a real edit, and it must clear the column.
   if (patch.first_name !== undefined) {
     const nameError = validateKidName(patch.first_name)
     if (nameError !== null) throw new Error(nameError)
-    payload.first_name = patch.first_name.trim()
+    const trimmedName = patch.first_name.trim()
+    payload.first_name = trimmedName === '' ? null : trimmedName
   }
   if (patch.age !== undefined) {
     const ageError = validateKidAge(patch.age)
@@ -2593,17 +2700,28 @@ export async function listPlaydateKidNamesWithClient(
   if (error) throw error
   const rows = (data ?? []) as unknown as Array<{
     id: string
-    kid: { first_name: string; age: number | null } | null
+    kid: { first_name: string | null; age: number | null } | null
   }>
   return rows
-    .filter((row): row is { id: string; kid: { first_name: string; age: number | null } } =>
-      row.kid !== null,
+    .filter(
+      (row): row is { id: string; kid: { first_name: string | null; age: number | null } } =>
+        row.kid !== null,
     )
     .map((row) => ({
       id: row.id,
-      name: row.kid.first_name,
+      // V9 ticket 05 (T3): the name is OPTIONAL now, so the wire carries NULL
+      // for a nameless kid. It is normalised to '' here — a null leaking into
+      // this `string` is how " · 4" and `null` reach the render — and
+      // feed.kidsComingLine renders such a kid through the AGE range instead
+      // of dropping them (the old filter made them invisible).
+      name: row.kid.first_name ?? '',
       age: row.kid.age,
     }))
+    // Name order (the line's order). A nameless kid sorts first — the
+    // database's own `order by ... first_name asc` puts NULLs LAST, so this
+    // client-side sort is the one place the two disagree; it is also the
+    // order the line wants (ages first, then the names, which never include a
+    // blank). Kept as-is so the existing specs' expectation is unchanged.
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 

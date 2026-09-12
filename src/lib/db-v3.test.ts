@@ -214,12 +214,16 @@ describe('updateKidWithClient (mocked supabase client, V8 ticket 10)', () => {
     expect(calls).toEqual([{ table: 'kids', id: 'kid-1', patch: { age: 8 } }])
   })
 
-  it('rejects an empty name before any write', async () => {
+  it('writes NULL for a blank name — the name is optional (V9 ticket 05)', async () => {
+    // THE RULE CHANGE: this test used to be "rejects an empty name before any
+    // write" (`rejects.toThrow('first name')`, with `calls` empty). The ticket's
+    // AC is the opposite — "the field is not required to save a kid" — so a
+    // blank name is a legal edit that CLEARS the column (NULL, not '': a fake
+    // name every reader would have to special-case). 0037 drops the 0011
+    // `not null` that would otherwise refuse exactly this write with 23502.
     const { client, calls } = makeKidPatchMockClient()
-    await expect(
-      updateKidWithClient(client, 'kid-1', { first_name: '   ' }),
-    ).rejects.toThrow('first name')
-    expect(calls).toEqual([])
+    await updateKidWithClient(client, 'kid-1', { first_name: '   ' })
+    expect(calls).toEqual([{ table: 'kids', id: 'kid-1', patch: { first_name: null } }])
   })
 
   it('rejects an out-of-range age before any write (NaN included — the blank field)', async () => {

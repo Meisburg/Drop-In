@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { setPingKids } from '../lib/db'
+import { kidLabel } from '../lib/feed'
 import type { Kid } from '../lib/types'
 
 /**
@@ -135,8 +136,10 @@ export function KidsComingPicker({
               }`}
             >
               <span aria-hidden="true">{active ? '✓' : '+'}</span>
-              {kid.first_name}
-              {kid.age !== null && kid.age !== undefined ? ` · ${kid.age}` : ''}
+              {/* V9 ticket 05: a kid's first name is optional, so this reads
+                  "Age 6" for a nameless kid (feed.kidLabel) rather than just a
+                  check mark next to nothing. A named kid's chip is unchanged. */}
+              {kidLabel(kid.first_name, kid.age)}
             </button>
           )
         })}

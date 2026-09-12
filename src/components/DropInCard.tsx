@@ -117,6 +117,7 @@ export function DropInCard({
   goingPings = [],
   kidsGoingCount = 0,
   metBeforeLabel = null,
+  ageRangeLabel = null,
 }: {
   playdate: PlaydateWithNeighborhood
   nowIso: string
@@ -152,6 +153,27 @@ export function DropInCard({
    * state). Rendered as TEXT under the going line, never as a badge.
    */
   metBeforeLabel?: string | null
+  /**
+   * V9 ticket 05: the drop-in's AGE RANGE, as the FIRST line of the card's
+   * meta — `ages 3–6`, `age 4`, `all ages`, or null (nothing to say, and then
+   * no line and no stray separator at all).
+   *
+   * The PAGE computes it (feed.cardAgeRangeLabel — the precedence seam over the
+   * row's own stated columns and the batched derived ages; the card owns NO
+   * fetching, the same rule the going line and the met-before line follow) and
+   * hands over one string.
+   *
+   * WIRED BY every surface that renders this card — FeedPage, PlacePage and
+   * UserPage each run ONE batched ages read for their own posts (review cycle 1,
+   * F5: the AC's sentence is about the card, not only the feed). An omitted prop
+   * still means "no line", which is the signed-out / failed-read state.
+   *
+   * It is the headline signal on purpose: "the age of the kid should be the
+   * most important cuz the kids people want to know what age they're playing
+   * with". It sits ABOVE the place line, which is where the meta block starts.
+   * Names are never part of it — the whole string is a range.
+   */
+  ageRangeLabel?: string | null
 }) {
   const live = isHappeningNow(playdate, nowIso)
   const ended = isEnded(playdate, nowIso)
@@ -226,6 +248,18 @@ export function DropInCard({
 
           </div>
         </div>
+        {/* V9 ticket 05: the AGE RANGE — the card's meta starts here. It is
+            the question another parent asks first ("is this the right age
+            crowd?"), so it leads the block, above the place. Absent (null)
+            means there is nothing to say — no kids picked and nothing stated —
+            and then NOTHING renders: no empty line, no stray separator.
+            `data-testid` is the stable handle the e2e reads (and asserts the
+            ABSENCE of, which is the other half of the rule). */}
+        {ageRangeLabel !== null && ageRangeLabel !== '' ? (
+          <p data-testid="card-age-range" className="text-sm font-medium text-slate-700">
+            {ageRangeLabel}
+          </p>
+        ) : null}
         <p className="text-sm text-slate-700">{playdate.place}</p>
         {/* V9 ticket 01: the neighbourhood label renders ONLY when the post
             carries one. The line above is already the place, so the meta line

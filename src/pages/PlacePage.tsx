@@ -6,11 +6,12 @@ import {
   countPlaceFollowers,
   getPlaceById,
   getPlaceFollowState,
+  kidAgesByPostForPosts,
   listPlaceFeed,
   loadZipCodes,
   toggleFollowPlace,
 } from '../lib/db'
-import { formatDistanceLabel, mapsHref } from '../lib/feed'
+import { cardAgeRangeLabel, formatDistanceLabel, mapsHref } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
 import { placeFollowerLine } from '../lib/follows'
 import {
@@ -73,6 +74,14 @@ export function PlacePage() {
   // null = still loading; [] = signed-out (no read) or nothing upcoming.
   const [posts, setPosts] = useState<PlaydateWithNeighborhood[] | null>(null)
   const [postsError, setPostsError] = useState<string | null>(null)
+  /**
+   * V9 ticket 05: post id -> the ages of the kids that post's host is bringing
+   * (the 0022 playdate_kids selection, projected to `kids.age` ONLY). ONE
+   * batched read for the whole list, never one per card. {} (the initial value)
+   * = nothing read yet; a failure lands {} too and every card omits its ages line
+   * (silently — a card decoration is never worth an error state).
+   */
+  const [kidAgesByPostId, setKidAgesByPostId] = useState<Record<string, number[]>>({})
   const [zipCoords, setZipCoords] = useState<ReadonlyMap<string, ZipCoords> | null>(null)
   /**
    * V8 ticket 09 (migration 0033): the place-follow state + the follower
@@ -150,6 +159,30 @@ export function PlacePage() {
       cancelled = true
     }
   }, [loading, session, id])
+
+  /**
+   * V9 ticket 05: the card's age range is the first line of the card's meta on
+   * every surface that renders a DropInCard (the AC is about the card, not only
+   * the feed), so this page runs the same one label rule over ONE batched read
+   * of its own posts.
+   */
+  useEffect(() => {
+    if (posts === null) return
+    let cancelled = false
+    // No synchronous reset (see UserPage): the map is keyed by post id, so a
+    // stale key renders nothing, and the empty object is already the honest
+    // "nothing read yet" default — identical to what a failed read lands.
+    kidAgesByPostForPosts(posts.map((post) => post.id))
+      .then((ages) => {
+        if (!cancelled) setKidAgesByPostId(ages)
+      })
+      .catch(() => {
+        if (!cancelled) setKidAgesByPostId({})
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [posts])
 
   /**
    * V8 ticket 09: the Follow control's state and the follower count, read once
@@ -422,7 +455,12 @@ export function PlacePage() {
         ) : (
           <div className="flex flex-col gap-3">
             {posts.map((post) => (
-              <DropInCard key={post.id} playdate={post} nowIso={new Date().toISOString()} />
+              <DropInCard
+                key={post.id}
+                playdate={post}
+                nowIso={new Date().toISOString()}
+                ageRangeLabel={cardAgeRangeLabel(post, kidAgesByPostId[post.id] ?? [])}
+              />
             ))}
           </div>
         )}

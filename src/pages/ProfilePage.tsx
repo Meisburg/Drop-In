@@ -739,6 +739,22 @@ export function ProfilePage() {
   }
   const kidsAtCap = kids !== null && kids.length >= MAX_KIDS_PER_PROFILE
   const removingKid = (kids ?? []).find((kid) => kid.id === removingKidId) ?? null
+  /**
+   * V9 ticket 05 (review cycle 1, F1): the Remove dialog NAMES the kid, and a
+   * first name is optional now — so it must never interpolate a raw
+   * `kid.first_name`. Both failure spellings are reachable: `null` (post-0037,
+   * the row the Add button just wrote) renders "Remove null?" / "null comes off
+   * your family profile…", and a cleared in-page draft (`''`) renders
+   * "Remove ?".
+   *
+   * The TYPE change (`Kid.first_name: string | null`) cannot find this on its
+   * own: a template literal accepts `string | null` and compiles clean, so the
+   * compiler walked the method calls and assignments, not the interpolations.
+   * A grep over `src/` found this one and the two photo alts (fixed above); the
+   * migration header's note is corrected to say exactly that.
+   */
+  const removingKidName = (removingKid?.first_name ?? '').trim()
+  const removingKidSubject = removingKidName === '' ? 'This kid' : removingKidName
   const nameBlocked =
     savePlan?.blockedSections.find((item) => item.section === 'name')?.error ?? null
   const liveNameError = writeErrors.name ?? nameBlocked
@@ -952,6 +968,29 @@ export function ProfilePage() {
             First name, age, an optional photo, and a “likes” line (up to {MAX_KIDS_PER_PROFILE}).
             Edit a row and save the whole profile — nothing here saves on its own.
           </p>
+          {/* V9 ticket 05: the privacy promise, in the UI — "the kids editor
+              makes clear that first names are optional ... and the copy says
+              the name is only shown to families who are going".
+              WHAT THIS COPY ACTUALLY PROMISES, and why it is worded this way
+              (a deviation from the ticket's exact sentence, reported with
+              evidence): names are NOT currently limited to families who are
+              going. Two standing policies make them visible to any signed-in
+              parent — 0011's `kids_select_authenticated` (USING (true): the
+              /u/:handle kid list) and 0022's `playdate_kids_select_authenticated`
+              (USING (true): the detail page's "Kids coming" line, which is what
+              renders those names). The 0026 gate limits only the OTHER
+              families' kids (`get_kids_going`). So the honest sentence is the
+              one below: no name ever reaches a nearby CARD (that part is
+              absolute — the card carries a range), and on the surfaces that do
+              show it, it is signed-in families only. Promising "only families
+              who are going" would be a false promise the schema contradicts;
+              tightening the gate to make that sentence true is its own ticket,
+              not this one (this ticket explicitly changes no gate). */}
+          <p className="mt-1 text-sm text-slate-600">
+            A first name is optional — skip it and your kid still shows up by age
+            (the cards say “ages 3–6”, never a name). A name appears only on your
+            profile and on a drop-in’s page, and only to signed-in families.
+          </p>
 
           {kids === null ? (
             <p className="mt-3 text-sm text-slate-600">Loading…</p>
@@ -973,6 +1012,11 @@ export function ProfilePage() {
                 // below owns the 'First name' / 'Age' placeholders and two
                 // elements answering to the same placeholder is how a spec (and
                 // a screen reader) starts guessing.
+                // V9 ticket 05: a first name is optional, so `kid.first_name`
+                // can be NULL. One local, normalised name feeds the photo alt,
+                // the initial circle and the aria labels below — never a
+                // `null.charAt` crash, never "'s photo" and never "null".
+                const kidName = (kid.first_name ?? '').trim()
                 const rowValues = toKidRowValues(kid)
                 const values = kidDrafts[kid.id] ?? {
                   firstName: rowValues.firstName,
@@ -993,7 +1037,7 @@ export function ProfilePage() {
                     {kid.avatar_url ? (
                       <img
                         src={kid.avatar_url}
-                        alt={`${kid.first_name}'s photo`}
+                        alt={kidName === '' ? 'Your kid’s photo' : `${kidName}’s photo`}
                         className="h-10 w-10 shrink-0 rounded-full object-cover"
                       />
                     ) : (
@@ -1001,7 +1045,7 @@ export function ProfilePage() {
                         aria-hidden
                         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-500"
                       >
-                        {(kid.first_name.charAt(0) || '?').toUpperCase()}
+                        {(kidName.charAt(0) || '?').toUpperCase()}
                       </span>
                     )}
                     <input
@@ -1362,12 +1406,16 @@ export function ProfilePage() {
 
       {/* V8 ticket 10: the Remove confirmation — it names the kid and what the
           delete costs (their "kids coming" rows on every drop-in cascade away
-          with them: 0022 + 0026 are ON DELETE CASCADE). */}
+          with them: 0022 + 0026 are ON DELETE CASCADE).
+          V9 ticket 05: the subject falls back to the noun "This kid" when there
+          is no name to use — a nameless kid's dialog says "Remove this kid?" and
+          "This kid comes off your family profile…", never "null" and never a
+          dangling "Remove ?". */}
       {removingKid !== null ? (
         <ConfirmDialog
           testId="remove-kid-dialog"
-          title={`Remove ${removingKid.first_name}?`}
-          body={`${removingKid.first_name} comes off your family profile, and off every drop-in you listed them as coming to. This can’t be undone.`}
+          title={removingKidName === '' ? 'Remove this kid?' : `Remove ${removingKidName}?`}
+          body={`${removingKidSubject} comes off your family profile, and off every drop-in you listed them as coming to. This can’t be undone.`}
           confirmLabel="Remove kid"
           busyLabel="Removing…"
           busy={kidsBusyId !== null}

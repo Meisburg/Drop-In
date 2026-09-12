@@ -1149,30 +1149,282 @@ export function mapsHref(place: string, address: string | null | undefined): str
 }
 
 // ---------------------------------------------------------------------------
+// V9 ticket 05: a drop-in's AGE RANGE — the headline signal on a card.
+//
+// Her words (the ticket): "I think age of the kid should be the most important
+// cuz the kids people want to know what age they're playing with … names are
+// optional and when people start to put names like some people get weird about
+// that. But ages, if you just say kid age, I feel like that's not weird."
+//
+// The range has TWO sources, and they are NOT equal:
+//   * DERIVED — the ages of the kids the HOST said they are bringing
+//     (playdate_kids → kids.age, live since 0022). The host does nothing new:
+//     pick your kids and the crowd's age is stated. No kids picked → nothing
+//     is shown, and nothing is invented.
+//   * STATED — the "Ages (optional)" chip row on /new, stored in
+//     playdates.age_min / age_max (0037). A host with no kids listed can still
+//     say it out loud.
+// The STATED pair WINS whenever both exist ("the parent said so out loud").
+// That precedence lives HERE, in a pure seam, never inline in a component
+// (ticket pin T5), and every consumer — the feed card, the detail line — runs
+// the same one rule.
+//
+// NAMES NEVER CROSS. Only ages reach these seams: the card carries the RANGE
+// as a string, and the batched read behind the derived half projects
+// `kids.age` only (db.kidAgesByPostForPosts) — never a name, never a kid id.
+// ---------------------------------------------------------------------------
+
+/** The kid age domain (0011/0022: kids.age is 0–17 — validateKidAge's range). */
+export const KID_AGE_MIN = 0
+export const KID_AGE_MAX = 17
+
+/**
+ * A range this WIDE (max − min) stops reading as a range at all, so the line
+ * stops pretending and says `all ages` — the same two words the "All ages"
+ * chip uses, so no new vocabulary is invented for the same fact.
+ *
+ * 12 is the pin, and it is chosen against the chip set above it: the widest
+ * band the chips offer is 8–12 (width 4), and the ticket's own example of a
+ * *wide* spread is 2–9 (width 7, which must still READ as `ages 2–9`), so the
+ * cap has to sit above 7. 12 also has to cover the whole domain, because the
+ * "All ages" chip stores exactly that: KID_AGE_MAX − KID_AGE_MIN = 17 ≥ 12, so
+ * one rule covers both the stored chip and a derived newborn-to-teen spread.
+ */
+export const AGE_RANGE_ALL_AGES_WIDTH = 12
+
+/** A closed age interval (both ends inclusive, both real ages). */
+export interface AgeBounds {
+  min: number
+  max: number
+}
+
+/**
+ * The min/max of a set of kid ages, ignoring unknown ages (null/undefined —
+ * the render-time defensive gap the DB's NOT NULL cannot produce). Nothing to
+ * say (no ages at all) → null, never a guess.
+ */
+export function ageBounds(
+  ages: ReadonlyArray<number | null | undefined>,
+): AgeBounds | null {
+  const known = ages.filter((age): age is number => typeof age === 'number' && Number.isFinite(age))
+  if (known.length === 0) return null
+  return { min: Math.min(...known), max: Math.max(...known) }
+}
+
+/**
+ * The bounds as the line a parent reads: one age → `age 4`; a spread →
+ * `ages 3–6` (EN DASH, the ticket's spelling); a spread at or past
+ * AGE_RANGE_ALL_AGES_WIDTH → `all ages`. null bounds → null (no line).
+ *
+ * Lower-case on purpose: this string is the CARD's first meta line, mid-flow
+ * under a title, and the ticket spells it `ages 3–6`. The detail page's line
+ * capitalises it (kidsComingLine) because there it heads a sentence.
+ */
+export function ageBoundsLine(bounds: AgeBounds | null): string | null {
+  if (bounds === null) return null
+  if (bounds.max - bounds.min >= AGE_RANGE_ALL_AGES_WIDTH) return 'all ages'
+  if (bounds.min === bounds.max) return `age ${bounds.min}`
+  return `ages ${bounds.min}–${bounds.max}`
+}
+
+/**
+ * The DERIVED line (the ticket's `ageRangeLine(ages)`): the ages of the kids
+ * the host is bringing → `ages 3–6`. The batched read hands over ages, this
+ * seam decides the words. Empty (no kids picked, or none with an age) → null:
+ * the card shows nothing rather than guessing.
+ */
+export function ageRangeLine(
+  ages: ReadonlyArray<number | null | undefined>,
+): string | null {
+  return ageBoundsLine(ageBounds(ages))
+}
+
+/**
+ * The STATED line: a row's own `age_min` / `age_max` pair — the /new "Ages
+ * (optional)" chips on a playdate (`playdates.age_min` / `age_max`, 0037), and
+ * the same shape on a place (`places.age_min` / `age_max`). Both null (nothing
+ * stated, or the columns are absent pre-0037 — `undefined` at runtime) → null.
+ *
+ * A ONE-SIDED pair is a real state (0037 legalizes it on purpose: the CHECK
+ * fires only when both ends are present), and it reads the way the app's other
+ * one-sided age copy already reads — `ages 5 and up` / `ages 3 and under`.
+ * THAT AGREEMENT IS STRUCTURAL: `places.placeAgeFitLabel` (the place page's
+ * "Best for ages …" line, over this exact shape) is `'Best for ' + this seam`,
+ * so the two spellings of one row's band cannot drift apart. (places.ts imports
+ * this module and this module imports nothing from places.ts — no cycle.)
+ */
+export function statedAgeRangeLine(
+  ageMin: number | null | undefined,
+  ageMax: number | null | undefined,
+): string | null {
+  const min = typeof ageMin === 'number' && Number.isFinite(ageMin) ? ageMin : null
+  const max = typeof ageMax === 'number' && Number.isFinite(ageMax) ? ageMax : null
+  if (min === null && max === null) return null
+  if (min === null) return `ages ${max} and under`
+  if (max === null) return `ages ${min} and up`
+  return ageBoundsLine({ min, max })
+}
+
+/**
+ * THE PRECEDENCE (ticket pin T5): what a drop-in's age line says, given both
+ * sources. The host's explicit statement wins over the derived range — "the
+ * parent said so out loud" — and the derived range answers only when nothing
+ * was stated. Neither → null (the card renders no line at all, never an empty
+ * one and never a stray separator).
+ *
+ * One seam, both surfaces: the feed card and the detail page's "Kids coming"
+ * line call this (the latter through kidsComingLine, which takes its range).
+ */
+export function playdateAgeRangeLine(input: {
+  /** playdates.age_min — absent pre-0037 (the `*` select carries it after). */
+  ageMin?: number | null
+  /** playdates.age_max — absent pre-0037. */
+  ageMax?: number | null
+  /** The host's picked kids' ages (db.kidAgesByPostForPosts). */
+  kidAges?: ReadonlyArray<number | null | undefined>
+}): string | null {
+  const stated = statedAgeRangeLine(input.ageMin, input.ageMax)
+  if (stated !== null) return stated
+  return ageRangeLine(input.kidAges ?? [])
+}
+
+/**
+ * THE CARD'S LABEL for one row, given that row's batched kid ages: the
+ * precedence seam above, applied to a row's own age_min / age_max columns.
+ *
+ * It exists so every surface that renders a DropInCard runs ONE rule rather
+ * than three copies of one: the feed (`FeedPage`), a place's list
+ * (`PlacePage`) and a family's lists (`UserPage`) all call this with their own
+ * batched read's slice. The stated pair rides the row's own `*` select (free);
+ * the derived ages come from ONE batched read per surface — never one query per
+ * card.
+ */
+export function cardAgeRangeLabel(
+  post: { age_min?: number | null; age_max?: number | null },
+  kidAges: ReadonlyArray<number | null | undefined>,
+): string | null {
+  return playdateAgeRangeLine({
+    ageMin: post.age_min,
+    ageMax: post.age_max,
+    kidAges,
+  })
+}
+
+/**
+ * The "Ages (optional)" chips of /new (V9 ticket 05) — ONE list, so the row,
+ * the stored pair and the unit tests cannot disagree. `All ages` is stored as
+ * the full kid domain rather than as "no answer": a chip the parent pressed is
+ * an answer, and it must still be an answer after a reload (null/null is
+ * exactly what "nothing stated" is, and the derived range would then win).
+ */
+export const AGE_RANGE_CHIPS = [
+  { label: '0–2', min: 0, max: 2 },
+  { label: '2–5', min: 2, max: 5 },
+  { label: '5–8', min: 5, max: 8 },
+  { label: '8–12', min: 8, max: 12 },
+  { label: 'All ages', min: KID_AGE_MIN, max: KID_AGE_MAX },
+] as const
+
+/**
+ * The age_min / age_max INSERT keys — present ONLY when the host actually
+ * picked a chip (the neighborhoodIdField / seriesIdField / placeIdField
+ * pattern), and both or neither (a half-pair would store a range with one end
+ * missing).
+ *
+ * This is what keeps an ORDINARY post's payload untouched by 0037: a post
+ * whose host picked no chip never names either column, so it posts exactly as
+ * it did before the migration — which is why the DERIVED half of
+ * e2e/feed-ages is green before 0037 is applied, while the chips half fails
+ * at the documented point (42703 on the missing column) and only there.
+ */
+export function ageRangeFields(
+  ageMin?: number | null,
+  ageMax?: number | null,
+): { age_min?: number; age_max?: number } {
+  if (ageMin === null || ageMin === undefined) return {}
+  if (ageMax === null || ageMax === undefined) return {}
+  return { age_min: ageMin, age_max: ageMax }
+}
+
+/**
+ * One kid's own label, where the NAME MAY BE ABSENT (V9 ticket 05: a first
+ * name is optional — "names are optional and when people start to put names
+ * like some people get weird about that"). "Bernie · 6" when both are known,
+ * "Bernie" for a name with no age, "Age 6" for an age with no name — never
+ * " · 6" (the dangling separator that reads as a rendering bug) and never the
+ * word "null". Nothing at all → '' (the caller decides what, if anything, to
+ * render).
+ */
+export function kidLabel(
+  name: string | null | undefined,
+  age: number | null | undefined,
+): string {
+  const trimmed = (name ?? '').trim()
+  const hasAge = typeof age === 'number' && Number.isFinite(age)
+  if (trimmed !== '' && hasAge) return `${trimmed} · ${age}`
+  if (trimmed !== '') return trimmed
+  if (hasAge) return `Age ${age}`
+  return ''
+}
+
+/** Upper-case the first character (the detail line heads its own sentence). */
+function capitalizeFirst(line: string): string {
+  return line.charAt(0).toUpperCase() + line.slice(1)
+}
+
+// ---------------------------------------------------------------------------
 // V3 slice 6 (ticket 09): the detail page's "Kids coming" line.
 
 /**
  * The detail page's "Kids coming" line (V3 slice 6, ticket 09, migration
- * 0022): "Bernie · 6, Lily · 4" — each kid is its first name + " · " +
- * age (a null age renders the name only, never " · null"), kids joined
- * with ", " in INPUT ORDER (the caller orders by name — db.
- * listPlaydateKidNamesWithClient returns the rows name-ordered and the
- * detail page hands them over as-is; this seam never re-sorts). 0 kids →
- * null (the line is hidden — "Kids coming:" with nothing after is not a
- * state, like a 0 going line). Empty-name kids are skipped (defensive
- * guard — the 0011 first_name is NOT NULL, so a blank here is a data
- * gap, not a render); if every kid is skipped, null. Names + ages ONLY —
- * no photos (the kid-photo pin: photos render only in the profile kids
- * list, never on the event line). Pure + unit-tested.
+ * 0022), AGES-FIRST as of V9 ticket 05: "Ages 3–6 · Bernie, Lily" — the range
+ * the parent actually needs, then the names, and "names last" is the whole
+ * point of the ticket.
+ *
+ * What changed from the names-first line it replaced ("Bernie · 6, Lily · 4")
+ * and why, in one place:
+ *   * the ages are ONE RANGE over every kid (ageRangeLine), not an age glued
+ *     to each name. The per-kid pair was the only place a host's kids' ages
+ *     appeared at all, and it buried the decision the parent is making ("is
+ *     this the right age crowd?") behind a list of names.
+ *   * `rangeLine` — the caller may hand the AUTHORITATIVE range in (the
+ *     precedence seam's output, so a host who stated "ages 2–5" out loud reads
+ *     that here too; the feed card and this line then cannot disagree).
+ *     Omitted, the range is derived from these kids' own ages.
+ *   * a kid with NO NAME still renders, as the range (T3): the old filter
+ *     (`kid.name.trim() !== ''`) dropped a nameless kid entirely, so an
+ *     age-only kid would have been invisible on the one line that names them.
+ *   * no kids and no range → null (the line is hidden — "Kids coming:" with
+ *     nothing after is not a state, like a 0 going line). No kids WITH a
+ *     stated range → "Ages 2–5": the host said what crowd is coming even
+ *     though they listed no kid, and that is exactly the no-kids case the
+ *     chips exist for.
+ *
+ * Kids are joined with ", " in INPUT ORDER (the caller orders by name — db.
+ * listPlaydateKidNamesWithClient sorts the rows and the detail page hands them
+ * over as-is; this seam never re-sorts). Names + ranges ONLY — no photos (the
+ * kid-photo pin: photos render only in the profile kids list, never on the
+ * event line). Pure + unit-tested.
  */
 export function kidsComingLine(
   kids: ReadonlyArray<{ name: string; age: number | null }>,
+  rangeLine: string | null = null,
 ): string | null {
-  const lines = kids
-    .filter((kid) => kid.name.trim() !== '')
-    .map((kid) => (kid.age !== null ? `${kid.name} · ${kid.age}` : kid.name))
-  if (lines.length === 0) return null
-  return lines.join(', ')
+  // An EMPTY range string is "nothing to say", not a part: `''` would otherwise
+  // join as a leading separator (" · Bernie" — the dangling-separator class this
+  // ticket is about; unreachable from the app today, since every producer
+  // returns null or a real range, and guarded here so it stays that way).
+  const range = rangeLine !== null && rangeLine.trim() !== '' ? rangeLine : null
+  const ages = range ?? ageRangeLine(kids.map((kid) => kid.age))
+  const names = kids
+    .map((kid) => kid.name.trim())
+    .filter((name) => name !== '')
+    .join(', ')
+  const parts: string[] = []
+  if (ages !== null) parts.push(capitalizeFirst(ages))
+  if (names !== '') parts.push(names)
+  if (parts.length === 0) return null
+  return parts.join(' · ')
 }
 
 // ---------------------------------------------------------------------------

@@ -9,11 +9,12 @@ import {
   getBlockState,
   getFollowState,
   getProfileByHandle,
+  kidAgesByPostForPosts,
   listPostsByHost,
   toggleBlock,
   toggleFollowProfile,
 } from '../lib/db'
-import { partitionPostsByTime } from '../lib/feed'
+import { cardAgeRangeLabel, kidLabel, partitionPostsByTime } from '../lib/feed'
 import type { PlaydateWithNeighborhood, ProfileWithKids } from '../lib/types'
 
 type UserPageState =
@@ -88,6 +89,15 @@ export function UserPage() {
   // truncated past rows behind the cap ("+N older"). A failed load surfaces
   // the designed error line, never a crash.
   const [posts, setPosts] = useState<PlaydateWithNeighborhood[] | null>(null)
+  /**
+   * V9 ticket 05: post id -> the ages of the kids that post's host is bringing
+   * (the 0022 playdate_kids selection, projected to `kids.age` ONLY). ONE
+   * batched read for both lists on this page (Upcoming + Past), never one per
+   * card. {} (the initial value) = nothing read yet; a failure or the pre-0022
+   * state lands {} too, and every card simply omits its ages line — a decoration
+   * is never worth an error state (the zero-pressure soul).
+   */
+  const [kidAgesByPostId, setKidAgesByPostId] = useState<Record<string, number[]>>({})
   const [olderCount, setOlderCount] = useState(0)
   const [postsError, setPostsError] = useState<string | null>(null)
 
@@ -201,6 +211,37 @@ export function UserPage() {
       cancelled = true
     }
   }, [profileId])
+
+  /**
+   * V9 ticket 05: the card's age range is the first line of the card's meta —
+   * on EVERY surface that renders a DropInCard, not only the feed (the AC's
+   * sentence is about the card), so this page runs the same one label rule over
+   * ONE batched read of its own posts. Best-effort: a failed read leaves every
+   * card without an ages line, silently.
+   */
+  useEffect(() => {
+    if (posts === null) return
+    let cancelled = false
+    // No synchronous reset on purpose (it buys nothing: the map is keyed by post
+    // id and a stale key for a post that is no longer listed renders nothing, and
+    // a React "setState in an effect" warning is a real cost). The empty object is
+    // the honest "nothing read yet" default — the same value a failed read lands.
+    kidAgesByPostForPosts(posts.map((post) => post.id))
+      .then((ages) => {
+        if (!cancelled) setKidAgesByPostId(ages)
+      })
+      .catch(() => {
+        if (!cancelled) setKidAgesByPostId({})
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [posts])
+
+  /** One card's ages label (the shared precedence seam over this row's columns). */
+  function buildCardAgeRangeLabel(post: PlaydateWithNeighborhood) {
+    return cardAgeRangeLabel(post, kidAgesByPostId[post.id] ?? [])
+  }
 
   async function handleToggleBlock() {
     if (profileId === null || blockingBusy) return
@@ -332,13 +373,20 @@ export function UserPage() {
           <ul className="mt-2 flex flex-col gap-2">
             {profile.kids.map((kid) => {
               const likes = kid.likes?.trim() ?? ''
+              // V9 ticket 05: a first name is optional, so this can be NULL —
+              // normalised once, for the photo alt, the initial circle and the
+              // label below (never a `null.charAt` crash, never "null").
+              const kidName = (kid.first_name ?? '').trim()
               return (
                 <li key={kid.id} className="flex flex-wrap items-center gap-2">
                   {kid.avatar_url ? (
                     // V6: the kid photo opens full-screen too — 'so I can see
                     // what the parents and the kids look like', which is how
                     // a parent decides whether to show up.
-                    <PhotoButton src={kid.avatar_url} alt={`${kid.first_name}’s photo`}>
+                    <PhotoButton
+                      src={kid.avatar_url}
+                      alt={kidName === '' ? 'A kid’s photo' : `${kidName}’s photo`}
+                    >
                       <img
                         src={kid.avatar_url}
                         alt=""
@@ -350,12 +398,14 @@ export function UserPage() {
                       aria-hidden
                       className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-500"
                     >
-                      {(kid.first_name.charAt(0) || '?').toUpperCase()}
+                      {(kidName.charAt(0) || '?').toUpperCase()}
                     </span>
                   )}
                   <div className="min-w-0 flex-1">
                     <p className="text-sm text-slate-800">
-                      {kid.first_name} · {kid.age}
+                      {/* V9 ticket 05: an age-only kid reads "Age 6", never
+                          " · 6" (feed.kidLabel is the one kid-label seam). */}
+                      {kidLabel(kid.first_name, kid.age)}
                     </p>
                     {likes !== '' ? (
                       <p className="mt-0.5 text-xs text-slate-600">likes {likes}</p>
@@ -468,7 +518,12 @@ export function UserPage() {
                 <h3 className="text-sm font-semibold text-slate-700">Upcoming</h3>
                 <div className="flex flex-col gap-3">
                   {upcoming.map((post) => (
-                    <DropInCard key={post.id} playdate={post} nowIso={nowIso} />
+                    <DropInCard
+                      key={post.id}
+                      playdate={post}
+                      nowIso={nowIso}
+                      ageRangeLabel={buildCardAgeRangeLabel(post)}
+                    />
                   ))}
                 </div>
               </section>
@@ -478,7 +533,12 @@ export function UserPage() {
                 <h3 className="text-sm font-semibold text-slate-700">Past</h3>
                 <div className="flex flex-col gap-3">
                   {past.map((post) => (
-                    <DropInCard key={post.id} playdate={post} nowIso={nowIso} />
+                    <DropInCard
+                      key={post.id}
+                      playdate={post}
+                      nowIso={nowIso}
+                      ageRangeLabel={buildCardAgeRangeLabel(post)}
+                    />
                   ))}
                 </div>
                 {/* The cap's honest tail (never pagination at this volume):

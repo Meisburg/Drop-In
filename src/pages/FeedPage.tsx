@@ -10,6 +10,7 @@ import { armPushPromptForAction } from '../lib/pushClient'
 import {
   countKidsGoingForPosts,
   fetchRainProbabilityForZip,
+  kidAgesByPostForPosts,
   listCommentsOnPosts,
   listMyFollows,
   listMyPingedPosts,
@@ -28,6 +29,7 @@ import {
 import { followTargetsFrom, metBeforeLine } from '../lib/follows'
 import {
   buildWhileAwayItems,
+  cardAgeRangeLabel,
   daySectionIso,
   DEFAULT_RADIUS_MILES,
   dueToRefreshLastSeen,
@@ -204,6 +206,19 @@ export function FeedPage() {
   // V6: post id -> how many kids are coming (the 0027 batch RPC).
   const [kidsByPostId, setKidsByPostId] = useState<Record<string, number> | null>(null)
   /**
+   * V9 ticket 05: post id -> the AGES of the kids the post's HOST said they
+   * are bringing (the 0022 playdate_kids selection, projected to `kids.age`
+   * ONLY — no name, no kid id crosses). ONE batched read for the whole feed
+   * (db.kidAgesByPostForPosts), the same "one call per feed, never one per
+   * card" shape the kids count above uses, so a card never issues its own
+   * query.
+   *
+   * null = unsettled; a failed read — or the pre-0022 state — degrades to {}
+   * and every card simply omits its ages line. A card decoration is never
+   * worth an error state (the zero-pressure soul).
+   */
+  const [kidAgesByPostId, setKidAgesByPostId] = useState<Record<string, number[]> | null>(null)
+  /**
    * V8 ticket 09 (migration 0033): the viewer's OWN followed families (the
    * `follows` rows, owner-only RLS) — the left half of the card's met-before
    * line. An EMPTY set is the honest default and the pre-apply state (the
@@ -378,6 +393,19 @@ export function FeedPage() {
       })
       .catch(() => {
         if (!cancelled) setKidsByPostId({})
+      })
+    // V9 ticket 05: the derived AGE RANGE's input — the host's picked kids'
+    // ages, in ONE more batched read (never one per card). Best-effort like
+    // every card decoration: a failure settles to {} and every card omits its
+    // ages line rather than costing the feed an error state. The STATED half
+    // needs no read at all: age_min / age_max ride the feed row's own `*`
+    // select once 0037 is applied, and are simply absent before it.
+    kidAgesByPostForPosts(postIds)
+      .then((ages) => {
+        if (!cancelled) setKidAgesByPostId(ages)
+      })
+      .catch(() => {
+        if (!cancelled) setKidAgesByPostId({})
       })
     listPingsForPosts(postIds)
       .then((rows) => {
@@ -693,6 +721,26 @@ export function FeedPage() {
   }
 
   /**
+   * V9 ticket 05: one card's age-range label — the card's FIRST meta line.
+   *
+   * The precedence is the pure seam's (feed.playdateAgeRangeLine): the range
+   * the HOST STATED with the /new chips wins over the one DERIVED from the kids
+   * they picked, because the explicit statement is the parent saying it out
+   * loud; with nothing stated, the derived range answers; with neither, the
+   * label is null and the card renders no line at all (never a guess).
+   *
+   * Both inputs are already on hand and neither is a per-card query: the stated
+   * pair rides the feed row (age_min / age_max, undefined pre-0037), and the
+   * derived ages come from the ONE batched read above.
+   */
+  function buildCardAgeRangeLabel(post: PlaydateWithNeighborhood) {
+    // feed.cardAgeRangeLabel is the ONE composition of that precedence over a
+    // row's own columns — the same call PlacePage and UserPage make, so the
+    // card's first line cannot be spelled differently per surface.
+    return cardAgeRangeLabel(post, kidAgesByPostId?.[post.id] ?? [])
+  }
+
+  /**
    * V8 ticket 09: one card's met-before line — "N families you've met before
    * are going" (the pure follows.metBeforeLine over this post's going
    * families ∩ the viewer's own follows). null (the line is hidden) when the
@@ -764,6 +812,7 @@ export function FeedPage() {
                       goingPings={buildCardGoingPings(post)}
                       kidsGoingCount={buildCardKidsCount(post)}
                       metBeforeLabel={buildCardMetBeforeLabel(post)}
+                      ageRangeLabel={buildCardAgeRangeLabel(post)}
                     />
                   ))}
                 </div>

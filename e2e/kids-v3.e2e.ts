@@ -15,9 +15,11 @@
  * the chips + posting lands the selection in the 0022 playdate_kids
  * table (replace-on-duplicate, right after the post create — db.
  * linkKidsToPlaydate) and shows on the detail page as the "Kids coming"
- * line below the ping section: "Bernie · 6, Lily · 4" (names + ages
- * ONLY, NAME-ordered — db.listPlaydateKidNames sorts, the pure
- * feed.kidsComingLine joins in input order — and NO image element on
+ * line below the ping section, AGES-FIRST since V9 ticket 05:
+ * "Ages 4–6 · Bernie, Lily" — the range over the kids' ages first (the
+ * fact a parent is deciding on), then the names, NAME-ordered
+ * (db.listPlaydateKidNames sorts, the pure feed.kidsComingLine joins in
+ * input order) — and NO image element on
  * that line: the kid-photo pin, a kid photo renders only in the profile
  * kids list, never on the event line). The line is a SIGNED-IN surface
  * only (the ticket pin): the signed-out public view stays the 12-field
@@ -212,13 +214,30 @@ test('the /new kids picker lands a selection that shows as the "Kids coming" lin
   const detailPath = await postMarkerDropInWithKids(page, title, kids)
 
   // The detail page (the marker's signed-in view): the "Kids coming"
-  // line below the ping section — names + ages only, NAME-ordered
-  // (db.listPlaydateKidNames sorts; the pure feed.kidsComingLine joins
-  // in input order): "Bernie · 6, Lily · 4" over the full pair.
+  // line below the ping section — AGES first, then the names, NAME-ordered
+  // (db.listPlaydateKidNames sorts; the pure feed.kidsComingLine joins in
+  // input order).
+  //
+  // THE ONE EXISTING ASSERTION V9 TICKET 05 CHANGES, quoted before and after.
+  // It used to be (e2e/kids-v3.e2e.ts, V3 ticket 09):
+  //
+  //   const expectedLine = kids.map((kid) => `${kid.first_name} · ${kid.age}`).join(', ')
+  //   const line = page.locator('p').filter({ hasText: 'Kids coming:' })
+  //   await expect(line).toHaveText(`Kids coming: ${expectedLine}`)
+  //
+  // i.e. "Kids coming: Bernie · 6, Lily · 4" — the per-kid name·age pairs. The
+  // ticket re-pins the line itself: "the detail page's 'Kids coming' line is
+  // demoted from names-first to AGES-first ('Ages 3–6 · Bernie, Lily' — names
+  // last)". So the expectation BELOW is the new rule over the same kids (4 and
+  // 6 → "Ages 4–6"), and nothing else about this assertion moved: the locator,
+  // the label and the kids that must appear are unchanged.
   await page.goto(detailPath)
   await page.getByRole('heading', { name: title, exact: true }).waitFor()
 
-  const expectedLine = kids.map((kid) => `${kid.first_name} · ${kid.age}`).join(', ')
+  const ages = kids.map((kid) => kid.age)
+  const expectedLine =
+    `Ages ${Math.min(...ages)}–${Math.max(...ages)} · ` +
+    kids.map((kid) => kid.first_name).join(', ')
   const line = page.locator('p').filter({ hasText: 'Kids coming:' })
   await expect(line).toHaveText(`Kids coming: ${expectedLine}`)
 

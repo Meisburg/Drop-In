@@ -9,7 +9,7 @@
  * thing they share is the distance math (feed.haversineMiles), which is
  * imported rather than reimplemented.
  */
-import { placeDistanceMiles } from './feed'
+import { placeDistanceMiles, statedAgeRangeLine } from './feed'
 import type { ZipCoords } from './feed'
 import type { Place, PlaceKind } from './types'
 
@@ -341,17 +341,20 @@ export function placeFitsKidAges(
  * "Best for ages 3 and under", or null when the data says nothing (the render
  * omits the line — an empty "Best for ages" is not a state).
  *
- * The en dash is used for a range, matching the app's other range copy.
+ * V9 ticket 05: this is now `'Best for ' + feed.statedAgeRangeLine` — the SAME
+ * seam a drop-in's own `age_min` / `age_max` pair goes through (the /new "Ages
+ * (optional)" chips). The two rows carry the identical shape, so they must
+ * carry the identical words: before this, a one-sided band read "5 and up" here
+ * and "age 5" on a card, i.e. two spellings of one fact. The output is
+ * unchanged, byte for byte (its unit tests below were not touched), and the
+ * place page's copy keeps its own "Best for " prefix.
  */
 export function placeAgeFitLabel(place: {
   age_min: number | null
   age_max: number | null
 }): string | null {
-  const { age_min: min, age_max: max } = place
-  if (min === null && max === null) return null
-  if (min !== null && max !== null) return `Best for ages ${min}–${max}`
-  if (min !== null) return `Best for ages ${min} and up`
-  return `Best for ages ${max} and under`
+  const range = statedAgeRangeLine(place.age_min, place.age_max)
+  return range === null ? null : `Best for ${range}`
 }
 
 /**

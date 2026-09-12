@@ -100,8 +100,31 @@ export interface Playdate {
   neighborhood_id: string | null
   starts_at: string
   ends_at: string
-  /** Advisory only, e.g. "best for 2-5". Nullable. */
+  /**
+   * Advisory only, e.g. "best for 2-5". Nullable.
+   *
+   * V9 ticket 05: DORMANT, and deliberately left that way — the "Ages
+   * (optional)" chip row does NOT reuse this free-text column (0037 neither
+   * writes, reads nor drops it; the ticket pins that). The structured pair
+   * below is the new answer; the old hint survives on legacy rows and in the
+   * duplicate prefill's dormant value.
+   */
   age_hint: string | null
+  /**
+   * V9 ticket 05 (migration 0037): the age range the HOST STATED with the
+   * "Ages (optional)" chips on /new (`0–2` / `2–5` / `5–8` / `8–12` /
+   * `All ages`). smallint + nullable, with a CHECK that `age_min <= age_max`
+   * whenever both are present.
+   *
+   * OPTIONAL and absent pre-0037: the feed's and the detail page's `*` selects
+   * carry these columns for free once the migration is applied, and a row read
+   * before it simply has no such keys (`undefined` — the pre-0016 `status`
+   * discipline). Null/null is NOT "all ages": it is "nothing stated", which is
+   * exactly when the DERIVED range (the host's picked kids' ages) answers
+   * instead (feed.playdateAgeRangeLine owns that precedence).
+   */
+  age_min?: number | null
+  age_max?: number | null
   details: string | null
   /**
    * The host's status (V3 slice 2, ticket 02, migration 0016; trimmed to
@@ -279,7 +302,19 @@ export interface MembershipWithNeighborhood extends Membership {
 export interface Kid {
   id: string
   profile_id: string
-  first_name: string
+  /**
+   * The kid's first name (0011 `first_name`), or NULL.
+   *
+   * V9 ticket 05 makes a first name OPTIONAL — "names are optional and when
+   * people start to put names like some people get weird about that" — so the
+   * 0011 `not null` is dropped by 0037 and the app writes NULL for a kid whose
+   * name the parent left blank. The type is therefore `string | null`, ON
+   * PURPOSE: it makes the compiler walk every consumer of a kid's name instead
+   * of leaving a `null` to leak into a `string` at runtime (the T3 trap —
+   * `.charAt(0)` on null is a crash, `" · 4"` and `"'s photo"` are the quieter
+   * versions). Renders normalise with feed.kidLabel / `?? ''`.
+   */
+  first_name: string | null
   age: number
   /**
    * The kid's photo (V3 slice 6, ticket 09, migration 0022): the public
@@ -314,7 +349,14 @@ export interface ProfileWithKids extends Profile {
 export interface PlaydateKid {
   /** The playdate_kids row's id (the embed's join key). */
   id: string
-  /** The kid's first name (the 0011 first_name column). */
+  /**
+   * The kid's first name (the 0011 first_name column), or '' — V9 ticket 05: a
+   * first name is optional, so the column arrives NULL for a nameless kid and
+   * db.listPlaydateKidNamesWithClient normalises it to '' HERE rather than
+   * letting a null into this `string`. An age-only kid still renders: the
+   * "Kids coming" line carries them through the AGE RANGE
+   * (feed.kidsComingLine), never as a dangling " · 4".
+   */
   name: string
   /** The kid's age (the 0011 age column; null = render the name only). */
   age: number | null

@@ -37,7 +37,10 @@ const validators = {
   interests: (value: string) =>
     value.trim().length > 120 ? 'Keep interests to 120 characters.' : null,
   kid: (kid: { firstName: string; age: number; likes: string }) => {
-    if (kid.firstName.trim() === '') return 'Give your kid a first name.'
+    // V9 ticket 05 (review cycle 1, F11): this mock used to begin
+    // `if (kid.firstName.trim() === '') return 'Give your kid a first name.'` —
+    // the rule db.validateKidName no longer has. The stand-in now mirrors the
+    // real validator: a blank name is valid (it is written as NULL).
     if (!Number.isInteger(kid.age) || kid.age < 0 || kid.age > 17) {
       return 'Age must be a whole number from 0 to 17.'
     }

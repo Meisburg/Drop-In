@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   deletePlaydateWithClient,
+  kidAgesByPostForPostsWithClient,
   listPlaydateKidIdsWithClient,
   updatePlaydateWithClient,
 } from './db'
@@ -48,6 +49,10 @@ function makeWriteMockClient(
     },
     eq: (col: string, value: unknown) => {
       calls.push(`eq(${col}, ${String(value)})`)
+      return builder
+    },
+    in: (col: string, values: unknown[]) => {
+      calls.push(`in(${col}, ${values.map(String).join('|')})`)
       return builder
     },
     then: (onfulfilled?: (value: { data: unknown; error: unknown }) => unknown) =>
@@ -172,6 +177,60 @@ describe('listPlaydateKidIdsWithClient (V8 ticket 05, the edit form’s kids pre
       error: { code: '42P01', message: 'relation "playdate_kids" does not exist' },
     })
     await expect(listPlaydateKidIdsWithClient(client, 'pd-1')).rejects.toThrow(
+      'relation "playdate_kids" does not exist',
+    )
+  })
+})
+
+describe('kidAgesByPostForPostsWithClient (V9 ticket 05, the feed\'s batched ages read)', () => {
+  it('is ONE read for every post, and projects the AGE only — never a name, never a kid id', async () => {
+    // The T1 privacy line, asserted where it can actually be enforced: the
+    // SELECT string itself. If a future edit adds `first_name` or `kid_id` to
+    // this projection — the two things that must never cross to a card — this
+    // test fails with the reason attached, rather than a live spec quietly
+    // carrying names onto the feed.
+    const { client, calls } = makeWriteMockClient({
+      data: [
+        { playdate_id: 'pd-1', kid: { age: 3 } },
+        { playdate_id: 'pd-1', kid: { age: 6 } },
+        { playdate_id: 'pd-2', kid: { age: 4 } },
+      ],
+    })
+    const ages = await kidAgesByPostForPostsWithClient(client, ['pd-1', 'pd-2'])
+    expect(ages).toEqual({ 'pd-1': [3, 6], 'pd-2': [4] })
+    expect(calls).toEqual([
+      'from(playdate_kids)',
+      'select(playdate_id, kid:kids!playdate_kids_kid_id_fkey ( age ))',
+      'in(playdate_id, pd-1|pd-2)',
+    ])
+    expect(calls[1]).not.toContain('first_name')
+    expect(calls[1]).not.toContain('select(id')
+  })
+
+  it('is a no-op for an empty feed (no query at all)', async () => {
+    const { client, calls } = makeWriteMockClient()
+    await expect(kidAgesByPostForPostsWithClient(client, [])).resolves.toEqual({})
+    expect(calls).toEqual([])
+  })
+
+  it('skips a row whose kid is gone, and one with no age (never a NaN in the range)', async () => {
+    const { client } = makeWriteMockClient({
+      data: [
+        { playdate_id: 'pd-1', kid: null },
+        { playdate_id: 'pd-1', kid: { age: null } },
+        { playdate_id: 'pd-1', kid: { age: 5 } },
+      ],
+    })
+    await expect(kidAgesByPostForPostsWithClient(client, ['pd-1'])).resolves.toEqual({
+      'pd-1': [5],
+    })
+  })
+
+  it('throws pre-0022-apply (the caller settles to {} — cards without an ages line, no crash)', async () => {
+    const { client } = makeWriteMockClient({
+      error: { code: '42P01', message: 'relation "playdate_kids" does not exist' },
+    })
+    await expect(kidAgesByPostForPostsWithClient(client, ['pd-1'])).rejects.toThrow(
       'relation "playdate_kids" does not exist',
     )
   })

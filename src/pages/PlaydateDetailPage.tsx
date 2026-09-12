@@ -47,7 +47,9 @@ import {
   formatGuestLine,
   isHiddenPost,
   kidsComingLine,
+  kidLabel,
   mapsHref,
+  statedAgeRangeLine,
   rainBadgeLabel,
   resolveGuestListVisibility,
   toDuplicatePrefill,
@@ -1435,10 +1437,20 @@ export function PlaydateDetailPage() {
   const confirmPing = pingIntent && !going
   // V3 slice 6 (ticket 09): the "Kids coming" line — the pure
   // feed.kidsComingLine over the name-ordered rows (null = hidden: the
-  // load is null (0022 not applied / failed) or the selection is empty —
+  // load is null (0022 not applied / failed) or there is nothing to say —
   // "Kids coming:" with nothing after is not a state, like a 0 going
   // line). Names + ages only — NO photos (the kid-photo pin).
-  const kidsLine = kids !== null ? kidsComingLine(kids) : null
+  //
+  // V9 ticket 05 makes it AGES-FIRST ("Ages 3–6 · Bernie, Lily" — the range
+  // the parent is actually deciding on, then the names) and feeds it the
+  // AUTHORITATIVE range: the host's own statement (the /new chips, age_min /
+  // age_max — absent pre-0037, which is simply "nothing stated") wins over the
+  // range derived from these same kids' ages, exactly as it does on the feed
+  // card (feed.playdateAgeRangeLine is the one precedence rule). No chips
+  // stated → the derived range answers; no kids EITHER → the line is
+  // "Ages 2–5" alone, which is the no-kids case the chips exist for.
+  const statedAgeRangeLabel = statedAgeRangeLine(detail.age_min, detail.age_max)
+  const kidsLine = kids !== null ? kidsComingLine(kids, statedAgeRangeLabel) : null
   // V3 slice 10 (ticket 05): the guest-list line — the pure feed
   // seams (resolveGuestListVisibility: the host/pinger gate +
   // count > 0; formatGuestLine: "Going: ..." for the host, "You,
@@ -2185,8 +2197,12 @@ export function PlaydateDetailPage() {
           ping section. Names + ages ONLY — no photos (the kid-photo pin:
           a kid photo renders only in the profile kids list, never on the
           event line). Hidden when the load is null (0022 not applied —
-          the 42P01 is caught, the DB-not-applied discipline) or the
-          selection is empty (the 0-count "line" is not a state). */}
+          the 42P01 is caught, the DB-not-applied discipline) or there is
+          nothing to say (the 0-count "line" is not a state).
+          V9 ticket 05: the line is AGES-FIRST, and it is also how a host who
+          listed NO kids but stated a range is read back ("Kids coming: Ages
+          2–5" — the range is the whole line then, which is why this block's
+          own condition did not need a third branch). */}
       {kidsLine !== null || kidsGoing.length > 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           {kidsLine !== null ? (
@@ -2196,12 +2212,17 @@ export function PlaydateDetailPage() {
               The RPC returns rows only to the host, to people who are going,
               and to moderators — a stranger sees neither this line nor any
               error, because the function simply returns nothing. Names + ages
-              only, the same pin the host's own line has kept since ticket 09. */}
+              only, the same pin the host's own line has kept since ticket 09.
+              V9 ticket 05: a kid whose own parent left the name blank reads
+              "Age 6" here (feed.kidLabel) instead of an empty string. The GATE
+              is untouched — "names last, and only for the host and people who
+              pinged, as today" — and nothing about it was widened. */}
           {kidsGoing.length > 0 ? (
             <p className="mt-1 text-sm text-slate-700">
               Other kids coming:{' '}
               {kidsGoing
-                .map((kid) => (kid.age !== null ? `${kid.firstName} · ${kid.age}` : kid.firstName))
+                .map((kid) => kidLabel(kid.firstName, kid.age))
+                .filter((label) => label !== '')
                 .join(', ')}
             </p>
           ) : null}

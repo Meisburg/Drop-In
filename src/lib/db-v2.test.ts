@@ -84,8 +84,15 @@ describe('validateKid (V2 ticket 02 — first name + age only, the privacy pin)'
     expect(validateKid('Max', 17)).toBeNull()
   })
 
-  it('rejects an empty first name', () => {
-    expect(validateKid('   ', 7)).toMatch(/first name/)
+  it('accepts a blank first name (V9 ticket 05 makes the name OPTIONAL)', () => {
+    // THE RULE CHANGE, quoted: the ticket's AC — "the field is not required to
+    // save a kid". This assertion used to be
+    // `expect(validateKid('   ', 7)).toMatch(/first name/)`, i.e. the opposite
+    // rule; the AC it enforced ("Give your kid a first name.") is exactly what
+    // this ticket removes, so the old expectation had to go. The age rule below
+    // is UNCHANGED and still guards the write.
+    expect(validateKid('   ', 7)).toBeNull()
+    expect(validateKid('', 4)).toBeNull()
   })
 
   it('rejects out-of-range ages (these are kids, 0–17)', () => {

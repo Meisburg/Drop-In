@@ -408,7 +408,11 @@ test('a cold /new is posted in four taps or fewer, typing exactly one place', as
   const card = page.locator('a').filter({ hasText: title }).first()
   await expect(card).toBeVisible()
   // The card's first <p> is the place (DropInCard), and it is exactly the place
-  // the summary read back — not a reshaped version of it.
+  // the summary read back — not a reshaped version of it. (V9 ticket 05 puts an
+  // AGE RANGE above the place when a card has one to show; this post has none —
+  // no kids picked and no "Ages (optional)" chip pressed — so the place is
+  // still the card's first line, and the same assertion holds. e2e/feed-ages is
+  // where the ages line's position above the place is pinned.)
   await expect(card.locator('p').first()).toHaveText(PLACE_NAME)
 
   const row = await readMarkerPost(title)

@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router'
-import { ADDRESS_MAX_LENGTH, PlaydateFormFields } from '../components/PlaydateFormFields'
+import {
+  ADDRESS_MAX_LENGTH,
+  AgeRangeChips,
+  PlaydateFormFields,
+} from '../components/PlaydateFormFields'
 import { useSessionContext } from '../components/SessionProvider'
 import {
   createPlaydate,
@@ -23,7 +27,12 @@ import {
   suggestedDurationMinutes,
   validatePlaydateForm,
 } from '../lib/feed'
-import type { PlaydateFormErrors, PlaydateFormValues, RecentPlace } from '../lib/feed'
+import type {
+  AgeBounds,
+  PlaydateFormErrors,
+  PlaydateFormValues,
+  RecentPlace,
+} from '../lib/feed'
 import { addressAfterPlaceTextEdit, generatedTitle, postSummaryLines } from '../lib/postSummary'
 import {
   PLACE_BROWSE_LIMIT,
@@ -315,6 +324,20 @@ export function NewPlaydatePage({
    * cannot see (feed.moreOptionsHoldsError is that rule, unit-tested).
    */
   const [moreOptionsOpen, setMoreOptionsOpen] = useState(false)
+  /**
+   * V9 ticket 05: the "Ages (optional)" chip the parent pressed, or null
+   * ("nothing stated"). It is NOT in PlaydateFormValues — the /edit form shares
+   * that shape and the ticket scopes these chips to /new — so it rides its own
+   * page state and its own slot, exactly like `repeatWeekly` and the quick-fill
+   * preset.
+   *
+   * What it does on Post: feed.ageRangeFields turns it into the age_min /
+   * age_max insert keys, and no chip means NO keys (so a post that states
+   * nothing is byte-identical to a pre-0037 post). What it does to the card:
+   * the stated range WINS over the derived one
+   * (feed.playdateAgeRangeLine — the precedence seam, unit-tested).
+   */
+  const [ageRange, setAgeRange] = useState<AgeBounds | null>(null)
   /**
    * V9 ticket 03 (review cycle 1, F2): is the summary's title line being
    * EDITED? Off, the line reads the title back as text and a tap opens the
@@ -728,6 +751,13 @@ export function NewPlaydatePage({
         // V8 ticket 07: the picked place. undefined for free text, so the
         // insert payload carries no place_id key at all.
         placeId: placeId ?? undefined,
+        // V9 ticket 05: the stated age range — undefined when no chip was
+        // pressed, so the age_min / age_max keys are absent and this insert is
+        // unchanged for every post that states nothing (the placeId/seriesId
+        // discipline; the reason the derived half of the new e2e is green
+        // before 0037 is applied).
+        ageMin: ageRange?.min,
+        ageMax: ageRange?.max,
       })
       // V8 ticket 06: the occurrences the parent is not looking at. The post
       // just created IS this series' first occurrence and the generator
@@ -932,6 +962,14 @@ export function NewPlaydatePage({
               )}
             </div>
           }
+        /* V9 ticket 05: the "Ages (optional)" chips — inside the same "More
+           options" disclosure, under the kids picker (PlaydateFormFields
+           renders this slot there). Tapping the pressed chip again clears it,
+           so the answer is never a trap. The stated range wins over the
+           derived one on the card; with no chip pressed, nothing is written at
+           all (db.createPlaydate's ageRangeFields — the keys are absent, not
+           null, so a chipless post is byte-identical to a pre-0037 post). */
+        agesSlot={<AgeRangeChips selected={ageRange} onSelect={setAgeRange} minTouchTargets />}
         submitLabel="Post drop-in"
         submittingLabel="Posting…"
         submitBusy={submitting}

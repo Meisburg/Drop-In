@@ -286,16 +286,23 @@ export function seedKidDrafts(
   return next
 }
 
-/** The row values the save baseline compares against, off the loaded kid rows. */
+/**
+ * The row values the save baseline compares against, off the loaded kid rows.
+ *
+ * V9 ticket 05: a kid's first name is OPTIONAL, so the column arrives NULL for
+ * a nameless kid and is normalised to '' here — the form's own "blank" state,
+ * which is what makes `kidRowChanged`'s trimmed comparison work instead of
+ * calling `.trim()` on a null.
+ */
 export function toKidRowValues(row: {
   id: string
-  first_name: string
+  first_name: string | null
   age: number
   likes?: string | null
 }): KidRowValues {
   return {
     id: row.id,
-    firstName: row.first_name,
+    firstName: row.first_name ?? '',
     age: row.age,
     likes: row.likes ?? '',
   }

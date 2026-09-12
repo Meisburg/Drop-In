@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
+// The cross-seam agreement pin (review cycle 1, F6): the place page's age line
+// and a drop-in's stated range must spell one band the same way.
+import { placeAgeFitLabel } from './places'
 import {
+  AGE_RANGE_ALL_AGES_WIDTH,
+  AGE_RANGE_CHIPS,
+  ageBounds,
+  ageBoundsLine,
+  ageRangeFields,
+  ageRangeLine,
+  cardAgeRangeLabel,
   buildGoingLine,
   buildWhileAwayItems,
   computeEndIso,
@@ -28,7 +38,10 @@ import {
   isStartingSoon,
   isSteppedTime,
   isStillAhead,
+  kidLabel,
   kidsComingLine,
+  KID_AGE_MAX,
+  KID_AGE_MIN,
   localDayKey,
   mapsHref,
   MORE_OPTIONS_FIELDS,
@@ -39,6 +52,7 @@ import {
   PAST_DROP_INS_HREF,
   PAST_DROP_INS_LABEL,
   PLAYDATE_DURATIONS_MINUTES,
+  playdateAgeRangeLine,
   playdateEditFieldsChanged,
   playdateEditKidIdsChanged,
   playdateFormValuesFromPost,
@@ -59,6 +73,7 @@ import {
   SEE_ALL_RADIUS_MILES,
   shouldRefreshFeed,
   startOfTodayIso,
+  statedAgeRangeLine,
   stepTimeMinutes,
   suggestedDurationMinutes,
   TIME_STEP_MINUTES,
@@ -1132,36 +1147,275 @@ describe('mapsHref (V3 slice 5, ticket 08: the detail page\'s tappable Maps link
   })
 })
 
-describe('kidsComingLine (V3 slice 6, ticket 09: the detail page\'s "Kids coming" line)', () => {
-  it('returns null for 0 kids (the line is hidden)', () => {
+describe('kidsComingLine (V3 slice 6, ticket 09; AGES-FIRST per V9 ticket 05)', () => {
+  it('returns null for nothing to say (0 kids and no stated range)', () => {
     expect(kidsComingLine([])).toBeNull()
   })
 
-  it('renders one kid as "Name · Age"', () => {
-    expect(kidsComingLine([{ name: 'Bernie', age: 6 }])).toBe('Bernie · 6')
-  })
-
-  it('joins kids with ", " in input order ("Bernie · 6, Lily · 4")', () => {
+  it('is AGES-FIRST: the range, then the names ("Ages 4–6 · Bernie, Lily")', () => {
+    // THE RULE CHANGE (V9 ticket 05, quoted from the ticket: the line "is
+    // demoted from names-first to ages-first ('Ages 3–6 · Bernie, Lily' —
+    // names last)"). The old expectation here was "Bernie · 6, Lily · 4":
+    // per-kid ages glued to each name, which buried the crowd's age — the one
+    // fact the parent is deciding on — behind a list of names.
     expect(
       kidsComingLine([
         { name: 'Bernie', age: 6 },
         { name: 'Lily', age: 4 },
       ]),
-    ).toBe('Bernie · 6, Lily · 4')
+    ).toBe('Ages 4–6 · Bernie, Lily')
   })
 
-  it('omits the age for a null age (never " · null")', () => {
+  it('renders one kid as "Age 6 · Bernie" (ages first, one age → "Age N")', () => {
+    expect(kidsComingLine([{ name: 'Bernie', age: 6 }])).toBe('Age 6 · Bernie')
+  })
+
+  it('T3: an AGE-ONLY kid still renders, through the range (no name to show)', () => {
+    // The trap this pins: the line used to filter `kid.name.trim() !== ''`, so
+    // once a first name became optional a nameless kid was INVISIBLE on the one
+    // line that lists them. Now the age carries them.
+    expect(kidsComingLine([{ name: '', age: 6 }])).toBe('Age 6')
+    expect(
+      kidsComingLine([
+        { name: 'Bernie', age: 6 },
+        { name: '   ', age: 4 },
+      ]),
+    ).toBe('Ages 4–6 · Bernie')
+  })
+
+  it('takes the AUTHORITATIVE range when the caller has one (stated wins over derived)', () => {
+    // The detail page hands in the precedence seam's output, so a host who
+    // stated "ages 2–5" out loud reads that here instead of the derived 4–6 —
+    // and this line can never disagree with the feed card, which runs the same
+    // rule.
+    expect(
+      kidsComingLine(
+        [
+          { name: 'Bernie', age: 6 },
+          { name: 'Lily', age: 4 },
+        ],
+        'ages 2–5',
+      ),
+    ).toBe('Ages 2–5 · Bernie, Lily')
+  })
+
+  it('renders the stated range ALONE when the host listed no kids (the chips case)', () => {
+    expect(kidsComingLine([], 'ages 2–5')).toBe('Ages 2–5')
+  })
+
+  it('treats an EMPTY range string as nothing to say (no leading " · ")', () => {
+    // Review cycle 1, F7: `?? ` let an empty string through, so these two
+    // returned '' and ' · Bernie' — the dangling-separator class this whole
+    // ticket is about. Unreachable from the app today (every producer returns
+    // null or a real range); guarded so it stays unreachable.
+    expect(kidsComingLine([], '')).toBeNull()
+    expect(kidsComingLine([], '   ')).toBeNull()
+    expect(kidsComingLine([{ name: 'Bernie', age: null }], '')).toBe('Bernie')
+    expect(kidsComingLine([{ name: '', age: 4 }], '')).toBe('Age 4')
+  })
+
+  it('omits a null age from the range (never "null" in the line)', () => {
     expect(
       kidsComingLine([
         { name: 'Bernie', age: null },
         { name: 'Lily', age: 4 },
       ]),
-    ).toBe('Bernie, Lily · 4')
+    ).toBe('Age 4 · Bernie, Lily')
+    // No age anywhere and names present → the names alone, no dangling range.
+    expect(kidsComingLine([{ name: 'Bernie', age: null }])).toBe('Bernie')
+  })
+})
+
+describe('the age-range seams (V9 ticket 05: ages first on a card)', () => {
+  describe('ageBounds', () => {
+    it('is null when there are no ages at all (never a guess)', () => {
+      expect(ageBounds([])).toBeNull()
+      expect(ageBounds([null, undefined])).toBeNull()
+    })
+
+    it('takes the min and max, ignoring unknown ages', () => {
+      expect(ageBounds([6, null, 3, undefined, 4])).toEqual({ min: 3, max: 6 })
+    })
   })
 
-  it('skips empty-name kids (and returns null when nothing remains)', () => {
-    expect(kidsComingLine([{ name: '   ', age: 6 }, { name: 'Lily', age: 4 }])).toBe('Lily · 4')
-    expect(kidsComingLine([{ name: '', age: 6 }])).toBeNull()
+  describe('ageRangeLine', () => {
+    it('empty → null (the card shows nothing)', () => {
+      expect(ageRangeLine([])).toBeNull()
+      expect(ageRangeLine([null])).toBeNull()
+    })
+
+    it('one kid → "age 4"', () => {
+      expect(ageRangeLine([4])).toBe('age 4')
+      // Two kids the same age are that one age, not a range.
+      expect(ageRangeLine([4, 4])).toBe('age 4')
+    })
+
+    it('a spread → "ages 2–9" (EN DASH, the ticket\'s spelling)', () => {
+      expect(ageRangeLine([2, 9])).toBe('ages 2–9')
+      expect(ageRangeLine([6, 3, 4])).toBe('ages 3–6')
+    })
+
+    it('the wide-spread cap → "all ages" (the ticket names a cap; this pins where it starts)', () => {
+      // The ticket names this case without giving it a number, so the number
+      // lives in AGE_RANGE_ALL_AGES_WIDTH and the boundary is pinned here on
+      // BOTH sides: one year under is still a range, at the cap it is not.
+      expect(ageRangeLine([KID_AGE_MIN, KID_AGE_MIN + AGE_RANGE_ALL_AGES_WIDTH - 1])).toBe(
+        `ages ${KID_AGE_MIN}–${KID_AGE_MIN + AGE_RANGE_ALL_AGES_WIDTH - 1}`,
+      )
+      expect(ageRangeLine([KID_AGE_MIN, KID_AGE_MIN + AGE_RANGE_ALL_AGES_WIDTH])).toBe('all ages')
+      expect(ageRangeLine([KID_AGE_MIN, KID_AGE_MAX])).toBe('all ages')
+    })
+
+    it('the ticket\'s own examples hold: 2 and 9 is a RANGE, not "all ages"', () => {
+      expect(ageRangeLine([2, 9])).toBe('ages 2–9')
+      expect(ageBoundsLine({ min: 2, max: 9 })).toBe('ages 2–9')
+    })
+  })
+
+  describe('statedAgeRangeLine (the /new chips, playdates.age_min / age_max)', () => {
+    it('nothing stated → null (and pre-0037 the columns are absent, not null)', () => {
+      expect(statedAgeRangeLine(null, null)).toBeNull()
+      expect(statedAgeRangeLine(undefined, undefined)).toBeNull()
+    })
+
+    it('a chip pair reads exactly like a derived range', () => {
+      expect(statedAgeRangeLine(2, 5)).toBe('ages 2–5')
+      expect(statedAgeRangeLine(0, 2)).toBe('ages 0–2')
+      expect(statedAgeRangeLine(8, 12)).toBe('ages 8–12')
+    })
+
+    it('reads a ONE-SIDED pair the way the app\'s other one-sided age copy does', () => {
+      // REVIEW CYCLE 1, F6 — THE RULE CHANGE, quoted: this assertion used to be
+      // `expect(statedAgeRangeLine(5, null)).toBe('age 5')` (and `(null, 5)`),
+      // i.e. a one-sided pair collapsed into a single age. 0037 legalizes
+      // one-sided pairs on purpose, and `places.placeAgeFitLabel` already read
+      // the identical `{age_min, age_max}` shape as "5 and up" / "3 and under",
+      // so one row's band had two spellings in one app. They now agree.
+      expect(statedAgeRangeLine(5, null)).toBe('ages 5 and up')
+      expect(statedAgeRangeLine(null, 5)).toBe('ages 5 and under')
+      expect(statedAgeRangeLine(null, 3)).toBe('ages 3 and under')
+    })
+
+    it('agrees with the place page\'s line over the same shape (one rule, two prefixes)', () => {
+      // The structural pin: placeAgeFitLabel IS `'Best for ' + this seam`, so
+      // the two surfaces cannot drift into different words for one band.
+      for (const band of [
+        { age_min: 2, age_max: 5 },
+        { age_min: 5, age_max: null },
+        { age_min: null, age_max: 3 },
+        { age_min: null, age_max: null },
+      ]) {
+        const range = statedAgeRangeLine(band.age_min, band.age_max)
+        expect(placeAgeFitLabel(band)).toBe(range === null ? null : `Best for ${range}`)
+      }
+    })
+
+    it('a same-age pair is "age N"', () => {
+      expect(statedAgeRangeLine(4, 4)).toBe('age 4')
+    })
+  })
+
+  describe('playdateAgeRangeLine — THE PRECEDENCE (the ticket\'s T5 pin)', () => {
+    it('the EXPLICIT chips win over the derived range when both exist', () => {
+      // "the explicit chips win (the parent said so out loud)".
+      expect(
+        playdateAgeRangeLine({ ageMin: 2, ageMax: 5, kidAges: [3, 6] }),
+      ).toBe('ages 2–5')
+    })
+
+    it('the derived range answers when nothing was stated', () => {
+      expect(playdateAgeRangeLine({ ageMin: null, ageMax: null, kidAges: [3, 6] })).toBe('ages 3–6')
+      // Pre-0037 the columns are simply absent from the row.
+      expect(playdateAgeRangeLine({ kidAges: [3, 6] })).toBe('ages 3–6')
+      expect(playdateAgeRangeLine({ kidAges: [4] })).toBe('age 4')
+    })
+
+    it('nothing at all → null (no line, and therefore no empty line)', () => {
+      expect(playdateAgeRangeLine({})).toBeNull()
+      expect(playdateAgeRangeLine({ ageMin: null, ageMax: null, kidAges: [] })).toBeNull()
+      expect(playdateAgeRangeLine({ kidAges: [null, undefined] })).toBeNull()
+    })
+
+    it('cardAgeRangeLabel applies the SAME rule to a feed row\'s own columns', () => {
+      // The one composition every card surface uses (FeedPage, PlacePage,
+      // UserPage), so a row plus its batched ages always yields one label.
+      expect(cardAgeRangeLabel({ age_min: 2, age_max: 5 }, [3, 6])).toBe('ages 2–5')
+      expect(cardAgeRangeLabel({ age_min: null, age_max: null }, [3, 6])).toBe('ages 3–6')
+      // Pre-0037 the columns are ABSENT from the row, not null.
+      expect(cardAgeRangeLabel({}, [3, 6])).toBe('ages 3–6')
+      expect(cardAgeRangeLabel({}, [])).toBeNull()
+    })
+
+    it('the "All ages" chip (stored as the full kid domain) reads "all ages"', () => {
+      const allAges = AGE_RANGE_CHIPS[AGE_RANGE_CHIPS.length - 1]
+      expect(allAges.label).toBe('All ages')
+      expect(allAges.min).toBe(KID_AGE_MIN)
+      expect(allAges.max).toBe(KID_AGE_MAX)
+      expect(playdateAgeRangeLine({ ageMin: allAges.min, ageMax: allAges.max })).toBe('all ages')
+      // …and it still beats a derived range, like every other stated pair.
+      expect(
+        playdateAgeRangeLine({ ageMin: allAges.min, ageMax: allAges.max, kidAges: [6] }),
+      ).toBe('all ages')
+    })
+  })
+
+  describe('AGE_RANGE_CHIPS (the one list behind the row, the store and the tests)', () => {
+    it('is exactly the ticket\'s five chips', () => {
+      expect(AGE_RANGE_CHIPS.map((chip) => chip.label)).toEqual([
+        '0–2',
+        '2–5',
+        '5–8',
+        '8–12',
+        'All ages',
+      ])
+    })
+
+    it('every chip is a valid, forward range inside the kid domain', () => {
+      for (const chip of AGE_RANGE_CHIPS) {
+        expect(chip.min).toBeGreaterThanOrEqual(KID_AGE_MIN)
+        expect(chip.max).toBeLessThanOrEqual(KID_AGE_MAX)
+        expect(chip.min).toBeLessThanOrEqual(chip.max)
+      }
+    })
+  })
+
+  describe('ageRangeFields (the insert keys — present only when a chip was pressed)', () => {
+    it('no chip → {} (the payload never names the columns; a chipless post is unchanged)', () => {
+      expect(ageRangeFields(undefined, undefined)).toEqual({})
+      expect(ageRangeFields(null, null)).toEqual({})
+      // A half-pair is not a range: both or neither.
+      expect(ageRangeFields(2, undefined)).toEqual({})
+      expect(ageRangeFields(undefined, 5)).toEqual({})
+      expect(ageRangeFields(2, null)).toEqual({})
+    })
+
+    it('a chip → both columns', () => {
+      expect(ageRangeFields(2, 5)).toEqual({ age_min: 2, age_max: 5 })
+      expect(ageRangeFields(KID_AGE_MIN, KID_AGE_MAX)).toEqual({ age_min: 0, age_max: 17 })
+    })
+  })
+
+  describe('kidLabel (a kid whose name may be absent — V9 ticket 05)', () => {
+    it('reads "Name · Age" when both are known', () => {
+      expect(kidLabel('Bernie', 6)).toBe('Bernie · 6')
+    })
+
+    it('reads "Age 6" for a nameless kid — never " · 6", never "null"', () => {
+      expect(kidLabel('', 6)).toBe('Age 6')
+      expect(kidLabel('   ', 6)).toBe('Age 6')
+      expect(kidLabel(null, 6)).toBe('Age 6')
+      expect(kidLabel(undefined, 6)).toBe('Age 6')
+    })
+
+    it('reads the name alone when there is no age', () => {
+      expect(kidLabel('Bernie', null)).toBe('Bernie')
+      expect(kidLabel('Bernie', undefined)).toBe('Bernie')
+    })
+
+    it('is "" when there is nothing to say (the caller decides the fallback)', () => {
+      expect(kidLabel('', null)).toBe('')
+      expect(kidLabel(null, undefined)).toBe('')
+    })
   })
 })
 
