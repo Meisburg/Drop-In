@@ -289,7 +289,14 @@ begin
     neighborhood_id,
     starts_at,
     ends_at,
-    series_id
+    series_id,
+    -- AMENDED 2026-09-13 (ticket 07's review): without this the series'
+    -- later weeks carried a NULL place_id and fell back to the host's home
+    -- zip for distance, while the first occurrence was place-aware. One
+    -- column, re-applied in place (the 0023 -> 90a159f amendment pattern).
+    -- Requires 0030's `playdates.place_id`, so the apply order is 0029 ->
+    -- 0030 -> 0028.
+    place_id
   )
   select
     s.host_profile_id,
@@ -300,7 +307,8 @@ begin
     s.neighborhood_id,
     occ.starts_at,
     occ.starts_at + make_interval(mins => s.duration_minutes),
-    s.id
+    s.id,
+    s.place_id
   from (
     select
       -- PIN (b): the naive local wall clock, INTERPRETED in the series'

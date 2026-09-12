@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { hasActiveSession, isPublicDetailPath, LOGIN_PATH, resolveAuthRedirect } from './auth'
+import { hasActiveSession, isPublicDetailPath, isPublicPlacePath, LOGIN_PATH, resolveAuthRedirect } from './auth'
 
 /** Minimal supabase-client mock: only auth.getSession is exercised. */
 function mockSupabaseClient(withSession: boolean): SupabaseClient {
@@ -60,6 +60,28 @@ describe('isPublicDetailPath (the signed-out public route, V2 slice 5)', () => {
     expect(isPublicDetailPath('/playdate/a/b')).toBe(false)
     expect(isPublicDetailPath('/')).toBe(false)
     expect(isPublicDetailPath('/u/jamie')).toBe(false)
+  })
+})
+
+describe('isPublicPlacePath (the signed-out place page, V8 ticket 07)', () => {
+  it('matches exactly /place/<id>', () => {
+    expect(isPublicPlacePath('/place/abc-123')).toBe(true)
+    expect(isPublicPlacePath('/place/abc-123/')).toBe(true)
+  })
+
+  it('rejects non-place paths (the auth wall holds everywhere else)', () => {
+    expect(isPublicPlacePath('/place')).toBe(false)
+    expect(isPublicPlacePath('/place/')).toBe(false)
+    expect(isPublicPlacePath('/place/a/b')).toBe(false)
+    expect(isPublicPlacePath('/places')).toBe(false)
+    expect(isPublicPlacePath('/browse')).toBe(false)
+  })
+
+  it('lets a signed-out visitor open a place page (the anon places SELECT, 0029)', () => {
+    expect(resolveAuthRedirect('/place/abc-123', false)).toBeNull()
+    // …and the wall still holds on everything that is not a public page.
+    expect(resolveAuthRedirect('/place/a/b', false)).toBe(LOGIN_PATH)
+    expect(resolveAuthRedirect('/new', false)).toBe(LOGIN_PATH)
   })
 })
 

@@ -11,12 +11,25 @@ export const LOGIN_PATH = '/login'
 
 /**
  * A signed-out visitor may view ONE drop-in's public surface (V2 slice 5,
- * ticket 05): /playdate/:id is the only public app route (the post's
- * content, nothing more — the /u/:handle and comments routes stay
- * auth-walled, the profiles table has no anon policy).
+ * ticket 05): /playdate/:id is a public app route (the post's content, nothing
+ * more — the /u/:handle and comments routes stay auth-walled, the profiles
+ * table has no anon policy).
+ *
+ * A SIGNED-OUT visitor may ALSO view one PLACE (V8 ticket 07): the place page
+ * is public infrastructure — the post's public view links its place line to it
+ * — and `places` carries an anon SELECT policy for exactly this (0029). The
+ * page itself renders only the place's own public columns when signed out; a
+ * visitor still has to sign in to see drop-ins or post (profiles and
+ * neighborhoods have no anon policy, so an anon drop-in read would come back
+ * empty and the page would lie about it).
  */
 export function isPublicDetailPath(pathname: string): boolean {
   return /^\/playdate\/[^/]+\/?$/.test(pathname)
+}
+
+/** Whether the path is one place's public page (`/place/<id>`, ticket 07). */
+export function isPublicPlacePath(pathname: string): boolean {
+  return /^\/place\/[^/]+\/?$/.test(pathname)
 }
 
 /**
@@ -25,7 +38,8 @@ export function isPublicDetailPath(pathname: string): boolean {
  *
  * - signed in: allow everything, except bounce signed-in users off /login to /
  * - signed out: allow the public auth page + one drop-in's public surface
- *   (V2 slice 5), everything else → /login
+ *   (V2 slice 5) + one place's public page (V8 ticket 07), everything else
+ *   → /login
  */
 export function resolveAuthRedirect(pathname: string, signedIn: boolean): string | null {
   if (signedIn) {
@@ -33,6 +47,7 @@ export function resolveAuthRedirect(pathname: string, signedIn: boolean): string
   }
   if (pathname === LOGIN_PATH) return null
   if (isPublicDetailPath(pathname)) return null
+  if (isPublicPlacePath(pathname)) return null
   return LOGIN_PATH
 }
 

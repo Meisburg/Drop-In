@@ -21,12 +21,13 @@ import { LoginPage } from './pages/LoginPage'
 import { ModPage } from './pages/ModPage'
 import { NewPlaydatePage } from './pages/NewPlaydatePage'
 import { OnboardingPage } from './pages/OnboardingPage'
+import { PlacePage } from './pages/PlacePage'
 import { PlaydateDetailPage } from './pages/PlaydateDetailPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { UserPage } from './pages/UserPage'
 import { PLAYDATE_RETURN_KEY, isPlaydateReturnTarget, playdateDetailPathFromEditPath } from './lib/trust'
-import type { DuplicatePrefill } from './lib/types'
+import type { DuplicatePrefill, PlacePrefill } from './lib/types'
 
 /** The /mod route path (moderator tools, slice 5). */
 const MOD_PATH = '/mod'
@@ -216,7 +217,10 @@ function ProtectedShell() {
         <nav className="pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white">
           <div className="mx-auto flex max-w-md">
             <NavTab to="/" label="Nearby" icon={<NavIcon path={NAV_ICONS.nearby} />} />
-            <NavTab to="/browse" label="Browse" icon={<NavIcon path={NAV_ICONS.browse} />} />
+            {/* V8 ticket 07: /browse is the PLACES directory now (the tab label
+                follows the screen — a "Browse" tab over a places list would be
+                the same drift the ticket removed). */}
+            <NavTab to="/browse" label="Places" icon={<NavIcon path={NAV_ICONS.browse} />} />
             <NavTab to="/new" label="Post" icon={<NavIcon path={NAV_ICONS.post} />} />
             <NavTab to="/profile" label="Profile" icon={<NavIcon path={NAV_ICONS.profile} />} />
           </div>
@@ -240,11 +244,23 @@ function shellRedirect(
  * The /new route (V2 slice 1): surfaces the duplicate-prefill router state
  * (navigate('/new', { state: { duplicate } }) from a Duplicate action) as a
  * typed prop — the page itself stays router-state-agnostic.
+ *
+ * V8 ticket 07 adds a second, INDEPENDENT piece of router state: the place
+ * prefill, sent by a place page's "Start a drop-in here"
+ * (navigate('/new', { state: { place } })). Two keys rather than one merged
+ * object, because they come from different screens and mean different things:
+ * a duplicate says "the same plan again", a place prefill says "this place".
+ * The page resolves the precedence (the place wins).
  */
 function NewRoute() {
   const { state } = useLocation()
-  const duplicate = (state as { duplicate?: DuplicatePrefill } | null)?.duplicate ?? null
-  return <NewPlaydatePage duplicate={duplicate} />
+  const routerState = state as { duplicate?: DuplicatePrefill; place?: PlacePrefill } | null
+  return (
+    <NewPlaydatePage
+      duplicate={routerState?.duplicate ?? null}
+      placePrefill={routerState?.place ?? null}
+    />
+  )
 }
 
 /**
@@ -328,6 +344,13 @@ export default function App() {
           <Route element={<ProtectedShell />}>
             <Route path="/" element={<FeedPage />} />
             <Route path="/browse" element={<BrowsePage />} />
+            {/* V8 ticket 07: the place page. Inside the shell (so it keeps the
+                app chrome and the onboarding gate) — the SIGNED-OUT entry point
+                to it is the place line on /playdate/:id, which is the one public
+                route; a signed-out visitor tapping that link is sent to /login
+                like any other protected path, and the anon `places` SELECT is
+                what makes the place readable the moment they are in. */}
+            <Route path="/place/:id" element={<PlacePage />} />
             <Route path="/playdate/:id" element={<PlaydateDetailPage />} />
             {/* V8 ticket 05: the host-only edit route — the detail page's own
                 row, edited in place. Host-only at two levels: the shell guard

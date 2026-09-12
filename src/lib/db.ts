@@ -6,6 +6,7 @@ import type {
   Kid,
   MembershipWithNeighborhood,
   Neighborhood,
+  Place,
   Playdate,
   PlaydateKid,
   PlaydateSeries,
@@ -22,8 +23,8 @@ import type {
 import { isDrawableRect, type CropRect } from './photoCrop'
 import {
   filterFeed,
-  hostDistanceMiles,
   localDayKey,
+  postDistanceMiles,
   queryRecentOwnPlacesWithClient,
   queryUpcomingFeedWithClient,
   recentPlacesFrom,
@@ -38,6 +39,10 @@ import {
   type WhileAwayPingedPostRow,
   type ZipCoords,
 } from './feed'
+// V8 ticket 07: the places directory's pure payload seam (the playdates /
+// playdate_series `place_id` key — omitted entirely for a free-text place, so
+// pre-0030-apply every existing insert stays byte-identical).
+import { placeIdField, upcomingCountByPlace } from './places'
 import {
   buildShareUrl,
   issueReportInsert,
@@ -488,12 +493,18 @@ async function queryUpcomingPlaydates(
 }
 
 /**
- * The viewer's radius feed (V2 slice 3): posts whose HOST sits within the
- * viewer's haversine radius (via the seeded zip map), starting today or
- * later (client-local midnight), excluding posts by blocked hosts and
- * hidden posts, ordered by starts_at — each survivor tagged with its
- * `distanceMiles` for the card's "N mi" label. Used by both the / feed
- * and /browse (the latter groups the same rows by day).
+ * The viewer's radius feed (V2 slice 3): posts LOCATED within the viewer's
+ * haversine radius (via the seeded zip map), starting today or later
+ * (client-local midnight), excluding posts by blocked hosts and hidden posts,
+ * ordered by starts_at — each survivor tagged with its `distanceMiles` for the
+ * card's "N mi" label. Used by the `/` feed (and no longer by /browse, which
+ * V8 ticket 07 turned into the places directory).
+ *
+ * V8 ticket 07 (the distance-model fix): "located" now means the POST'S PLACE
+ * when it names one, and the host's home zip only as the fallback — see
+ * feed.postDistanceMiles. The place coordinates are stitched in from a
+ * separate read (loadPlacesOrEmpty), NOT an embed; see listRadiusFeed's own
+ * comment for why an embed would take the whole feed down pre-0029-apply.
  *
  * Execution point (pinned choice, ticket 03): the distance predicate runs
  * CLIENT-SIDE over a pinned-embed fetch (the host embed carries home_zip +
@@ -501,22 +512,33 @@ async function queryUpcomingPlaydates(
  * haversine math, no PostGIS. The pure predicate (feed.haversineMiles /
  * withinRadius / filterFeed) is the unit-tested guarantee.
  *
- * Pinned exclusion: a host with no home_zip, or with a zip missing from
- * the gazetteer, is EXCLUDED — coordinates are never invented. A viewer
- * with no home zip gets an empty feed (the onboarding gate keeps that
- * state out of the routes; this is the defensive fallback).
+ * Pinned exclusion: a post that resolves to NO location — no place, no host
+ * home_zip, or a zip missing from the gazetteer — is EXCLUDED; coordinates are
+ * never invented. A viewer with no home zip gets an empty feed (the onboarding
+ * gate keeps that state out of the routes; this is the defensive fallback).
  */
 export async function listRadiusFeed(
   viewer: RadiusViewer,
   profileId: string,
 ): Promise<PlaydateWithNeighborhood[]> {
   if (viewer.homeZip === null) return []
-  const [zipCoords, blockedIds] = await Promise.all([
+  const [zipCoords, blockedIds, places] = await Promise.all([
     loadZipCodes(),
     listBlockedHostIds(profileId),
+    // V8 ticket 07: the place coordinates are a SEPARATE read, never an embed
+    // on the feed query. An embed into a table that does not exist yet fails
+    // the WHOLE request (PGRST205): pre-0029-apply that would take the entire
+    // feed down, not just the places surface. A separate read that degrades to
+    // an empty map leaves the feed exactly as it was yesterday (see
+    // loadPlacesOrEmpty).
+    loadPlacesOrEmpty(),
   ])
   const cutoffIso = startOfTodayIso()
-  const posts = await queryUpcomingPlaydates(cutoffIso, blockedIds)
+  const rows = await queryUpcomingPlaydates(cutoffIso, blockedIds)
+  // Stitch each post's place coordinates in (place_id -> {lat,lng}), so the
+  // pure distance model sees them. A post with no place_id, or one whose place
+  // is missing from the map, gets null and falls back to the host's home zip.
+  const posts = rows.map((post) => ({ ...post, place_coords: placeCoordsFor(post.place_id, places) }))
   const filtered = filterFeed(
     posts,
     viewer,
@@ -528,9 +550,149 @@ export async function listRadiusFeed(
   return filtered.map((post) => ({
     ...post,
     // Survivors always have a distance (filterFeed excludes nulls); the
-    // fallback only covers a host embed missing the zip entirely.
-    distanceMiles: hostDistanceMiles(post.host?.home_zip, viewer, zipCoords) ?? undefined,
+    // fallback only covers a place/host embed missing its coordinates.
+    distanceMiles: postDistanceMiles(post, viewer, zipCoords) ?? undefined,
   }))
+}
+
+/**
+ * The place coordinates for a post, from the loaded places map (V8 ticket 07).
+ * Null when the post names no place, or when the place is not in the map (a
+ * failed/never-run places read) — the caller's distance model then takes its
+ * host-zip fallback leg.
+ */
+export function placeCoordsFor(
+  placeId: string | null | undefined,
+  places: ReadonlyMap<string, Place>,
+): { lat: number | null; lng: number | null } | null {
+  if (placeId === null || placeId === undefined || placeId === '') return null
+  const place = places.get(placeId)
+  if (place === undefined) return null
+  return { lat: place.lat, lng: place.lng }
+}
+
+/**
+ * The places directory, fetched once and cached for the SPA session (V8 ticket
+ * 07): the seed is a few hundred rows — trivially small, and every feed load
+ * and browse render needs it. Throws when the table is missing (0029 not
+ * applied yet); a rejected fetch does NOT stick in the cache, so the next call
+ * re-issues it (the loadZipCodes discipline, no page reload required).
+ */
+let placesCache: Promise<ReadonlyMap<string, Place>> | null = null
+export function loadPlaces(): Promise<ReadonlyMap<string, Place>> {
+  placesCache ??= (async () => {
+    try {
+      const { data, error } = await supabase.from('places').select('*')
+      if (error) throw error
+      const places = new Map<string, Place>()
+      for (const row of (data ?? []) as Place[]) {
+        places.set(row.id, row)
+      }
+      return places
+    } catch (err) {
+      placesCache = null
+      throw err
+    }
+  })()
+  return placesCache
+}
+
+/**
+ * loadPlaces, degraded to an EMPTY map on failure — the feed's and Browse's
+ * dependency on a table that may not exist yet.
+ *
+ * Deliberate: pre-0029-apply this makes the distance model fall back to the
+ * host's home zip (the pre-ticket behaviour, EXACTLY — every existing post has
+ * no place_id anyway) instead of failing the whole feed. The places SURFACES
+ * (the /browse directory, the place page) still report the failure honestly
+ * through their own designed error states, because those pages are ABOUT
+ * places and must not pretend the directory is empty.
+ */
+export async function loadPlacesOrEmpty(): Promise<ReadonlyMap<string, Place>> {
+  try {
+    return await loadPlaces()
+  } catch {
+    return new Map<string, Place>()
+  }
+}
+
+/**
+ * The whole directory, name-ordered (V8 ticket 07). The ORDER OF THE ROWS IS
+ * NOT THE ORDER OF THE SCREEN: Browse sorts by distance (pure browsePlaces).
+ * Throws when 0029 is not applied — the caller renders its designed state.
+ */
+export async function listPlaces(): Promise<Place[]> {
+  const { data, error } = await supabase
+    .from('places')
+    .select('*')
+    .order('name', { ascending: true })
+  if (error) throw error
+  return (data ?? []) as Place[]
+}
+
+/** One place by id (the /place/:id page). Null when it does not exist. */
+export async function getPlaceById(placeId: string): Promise<Place | null> {
+  const { data, error } = await supabase
+    .from('places')
+    .select('*')
+    .eq('id', placeId)
+    .maybeSingle()
+  if (error) throw error
+  return (data as Place | null) ?? null
+}
+
+/**
+ * The upcoming drop-ins AT one place (V8 ticket 07) — the place page's list.
+ *
+ * RADIUS-INDEPENDENT BY DESIGN: the parent asked about THIS place, so the
+ * viewer's radius must not filter its own page (a place 30 miles away that you
+ * deliberately opened has drop-ins; hiding them would make the page lie). The
+ * viewer's BLOCKS still apply — the one filter that is about people rather
+ * than distance — and hidden posts are excluded as everywhere else. Ordered by
+ * starts_at (soonest first).
+ *
+ * Pre-0030-apply `place_id` does not exist and this 42703s; the place page
+ * never gets that far pre-0029-apply anyway (its places read fails first), and
+ * either way the page renders a designed error state, never a crash.
+ */
+export async function listPlaceFeed(
+  placeId: string,
+  viewerProfileId: string,
+): Promise<PlaydateWithNeighborhood[]> {
+  const blockedIds = await listBlockedHostIds(viewerProfileId)
+  const { data, error } = await supabase
+    .from('playdates')
+    .select(
+      '*, neighborhood:neighborhoods!inner ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip, radius_miles )',
+    )
+    .eq('place_id', placeId)
+    .gte('starts_at', startOfTodayIso())
+    .is('hidden_at', null)
+    .order('starts_at', { ascending: true })
+  if (error) throw error
+  const rows = (data ?? []) as unknown as PlaydateWithNeighborhood[]
+  const blocked = new Set(blockedIds)
+  return rows.filter((post) => !blocked.has(post.host_profile_id))
+}
+
+/**
+ * Upcoming drop-in counts per place, for Browse's "N upcoming" chips (V8
+ * ticket 07). ONE read of the upcoming posts' (id, place_id) rather than a
+ * count per place — the directory is a few hundred rows and the upcoming set
+ * is small, so a request per place would be the expensive way to be wrong.
+ *
+ * Returns null when the read FAILS (pre-0030-apply: no place_id column), which
+ * the caller renders as NO count at all — never as "0 upcoming", which would
+ * be a claim we cannot make.
+ */
+export async function upcomingCountsByPlace(): Promise<Map<string, number> | null> {
+  const { data, error } = await supabase
+    .from('playdates')
+    .select('id, place_id')
+    .gte('starts_at', startOfTodayIso())
+    .is('hidden_at', null)
+  if (error) return null
+  return upcomingCountByPlace((data ?? []) as Array<{ place_id: string | null }>)
 }
 
 /**
@@ -620,6 +782,14 @@ export interface NewPlaydateInput {
    * existing post path is unchanged (the 0021 address lesson).
    */
   seriesId?: string
+  /**
+   * V8 ticket 07 (migration 0030): the place the parent PICKED from the
+   * directory. UNDEFINED for "Somewhere else" (the free text stays in `place`)
+   * — the `place_id` key is then ABSENT rather than null, so pre-0030-apply
+   * every existing post path is unchanged. This is also what makes the post's
+   * LOCATION the place's coordinates instead of the host's home zip.
+   */
+  placeId?: string
 }
 
 /**
@@ -657,6 +827,10 @@ export async function createPlaydate(input: NewPlaydateInput): Promise<Playdate>
       // ONLY for a series' first occurrence (seriesIdField returns {} for a
       // standalone post, so nothing about today's inserts changes).
       ...seriesIdField(input.seriesId),
+      // V8 ticket 07 (migration 0030): the picked place — same discipline: the
+      // key is present ONLY when a place was actually picked, so a free-text
+      // post's payload is unchanged and pre-0030-apply nothing 42703s.
+      ...placeIdField(input.placeId),
     })
     .select()
     .single()

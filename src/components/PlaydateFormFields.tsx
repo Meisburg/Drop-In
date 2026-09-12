@@ -8,7 +8,12 @@ import {
   TIME_STEP_MINUTES,
 } from '../lib/feed'
 import type { PlaydateFormErrors, PlaydateFormValues, RecentPlace } from '../lib/feed'
-import type { Kid, Neighborhood } from '../lib/types'
+import {
+  placeIndoorLabel,
+  placeKindLabel,
+  SOMEWHERE_ELSE_LABEL,
+} from '../lib/places'
+import type { Kid, Neighborhood, Place } from '../lib/types'
 
 /**
  * The drop-in form's FIELD SET (V8 ticket 05), extracted from /new so there
@@ -60,6 +65,20 @@ export interface PlaydateFormFieldsProps {
   recentPlaces?: RecentPlace[]
   /** /new only: one tap fills place + address + neighborhood. */
   onApplyRecentPlace?: (place: RecentPlace) => void
+  /**
+   * V8 ticket 07: the /new-only place AUTOCOMPLETE — the matches for what the
+   * parent has typed, rendered INLINE (in the form's flow, never as an overlay:
+   * an absolutely-positioned dropdown over a 375px form would cover the next
+   * control, and covering a control is how a tap lands on the wrong thing).
+   *
+   * All four props are omitted by the EDIT form, which renders exactly the V8
+   * ticket 05 markup — no suggestions, no dead controls.
+   */
+  placeSuggestionsOpen?: boolean
+  placeSuggestions?: Place[]
+  onPickPlace?: (place: Place) => void
+  /** "Somewhere else": keep the typed text, no place link. */
+  onSomewhereElse?: () => void
   /** /new only: the quick-fill preset card, rendered inside the form first. */
   preset?: ReactNode
   /**
@@ -92,6 +111,10 @@ export function PlaydateFormFields({
   onToggleKid,
   recentPlaces,
   onApplyRecentPlace,
+  placeSuggestionsOpen = false,
+  placeSuggestions,
+  onPickPlace,
+  onSomewhereElse,
   preset,
   repeatSlot,
   submitLabel,
@@ -158,6 +181,45 @@ export function PlaydateFormFields({
         />
       </label>
       {errors.place ? <p className="text-sm text-red-600">{errors.place}</p> : null}
+
+      {/* V8 ticket 07: the place AUTOCOMPLETE over the seeded directory, in
+          the form's flow (see the prop docs). "Somewhere else" is ALWAYS the
+          last row — the directory must never be a wall: a parent meeting at a
+          friend's building or a place we do not know keeps free text, and the
+          post simply carries no place_id. A failed places load passes an empty
+          list and the caller keeps this closed, so /new works with no
+          directory at all (the pre-0029-apply state). */}
+      {placeSuggestionsOpen && onPickPlace !== undefined && onSomewhereElse !== undefined ? (
+        <div
+          data-testid="place-suggestions"
+          className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+        >
+          {(placeSuggestions ?? []).map((place) => (
+            <button
+              key={place.id}
+              type="button"
+              onClick={() => onPickPlace(place)}
+              className="flex min-h-11 flex-col items-start gap-0.5 border-b border-slate-100 px-3 py-2 text-left text-sm transition-colors hover:bg-slate-50"
+            >
+              <span className="font-medium text-slate-900">{place.name}</span>
+              <span className="text-xs text-slate-500">
+                {place.address} · {placeKindLabel(place.kind)} · {placeIndoorLabel(place)}
+              </span>
+            </button>
+          ))}
+          <button
+            type="button"
+            data-testid="place-somewhere-else"
+            onClick={onSomewhereElse}
+            className="flex min-h-11 flex-col items-start gap-0.5 px-3 py-2 text-left text-sm transition-colors hover:bg-slate-50"
+          >
+            <span className="font-medium text-slate-900">{SOMEWHERE_ELSE_LABEL}</span>
+            <span className="text-xs text-slate-500">
+              Keep what you typed — it does not have to be in the list.
+            </span>
+          </button>
+        </div>
+      ) : null}
 
       {/* V8 ticket 01: the remembered places this parent posted to last —
           one tap fills place + address + neighborhood. Hidden entirely

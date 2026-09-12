@@ -42,6 +42,10 @@ import {
 } from '../lib/feed'
 import { buildIcs } from '../lib/ics'
 import { canModerate } from '../lib/moderation'
+// V8 ticket 07: the signed-in AND signed-out place lines link to /place/:id
+// (the 13th public field is a bare id; the place page reads the directory
+// itself).
+import { placePath } from '../lib/places'
 import { seriesLineLabel, weeklyMetaSuffix } from '../lib/series'
 import {
   COMMENT_MAX_LENGTH,
@@ -1147,12 +1151,25 @@ export function PlaydateDetailPage() {
     // post has no address (or pre-0021-apply, when the 11-field payload
     // omits it): the place line stays plain text.
     const publicMapsHref = mapsHref(d.place, d.address)
+    // V8 ticket 07: when the post names a DIRECTORY place, the place line links
+    // to that place's page instead (the 13th public field, a bare id — no place
+    // payload crosses to anon; the client reads the anon-readable `places` table
+    // itself). Same tap-to-go affordance as the Maps link, one hop to the place's
+    // address, notes, age line and — once signed in — the drop-ins there.
+    const publicPlaceHref = d.place_id != null ? placePath(d.place_id) : null
     return (
       <div className="flex flex-col gap-4">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">{d.title}</h1>
           <p className="mt-1 text-sm text-slate-600">
-            {publicMapsHref !== null ? (
+            {publicPlaceHref !== null ? (
+              <Link
+                to={publicPlaceHref}
+                className="font-medium text-indigo-600 hover:underline"
+              >
+                {d.place}
+              </Link>
+            ) : publicMapsHref !== null ? (
               <a
                 href={publicMapsHref}
                 target="_blank"
@@ -1341,7 +1358,17 @@ export function PlaydateDetailPage() {
           ) : null}
         </div>
         <p className="mt-1 text-sm text-slate-600">
-          {placeMapsHref !== null ? (
+          {/* V8 ticket 07: a directory place links to its own page; a free-text
+              place keeps the V3 slice 5 Maps link (the place page carries the
+              Maps link for the posts that have a place_id). */}
+          {detail.place_id != null ? (
+            <Link
+              to={placePath(detail.place_id)}
+              className="font-medium text-indigo-600 hover:underline"
+            >
+              {detail.place}
+            </Link>
+          ) : placeMapsHref !== null ? (
             <a
               href={placeMapsHref}
               target="_blank"

@@ -41,6 +41,9 @@ import {
   RADIUS_MAX_MILES,
   RADIUS_MILES_OPTIONS,
   radiusEscapes,
+  coordNumber,
+  placeDistanceMiles,
+  postDistanceMiles,
   recentPlacesFrom,
   RECENT_PLACES_SCANNED,
   RECENT_PLACES_SHOWN,
@@ -2182,5 +2185,183 @@ describe('playdateEditKidIdsChanged (V8 ticket 05)', () => {
     expect(playdateEditKidIdsChanged(['a', 'b'], ['a'])).toBe(true)
     expect(playdateEditKidIdsChanged(['a'], ['b'])).toBe(true)
     expect(playdateEditKidIdsChanged(['a'], [])).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// V8 ticket 07: the distance-model fix — a drop-in's location is the PLACE it
+// names, not the host's driveway (migration 0030). Added alongside the existing
+// filterFeed suite; nothing above it was changed.
+
+/** A place ~2.5 mi from the viewer's 98107 (the Green Lake area). */
+const NEAR_PLACE = { lat: 47.6805, lng: -122.3267 }
+/** A place ~53 mi from the viewer (way outside any pinned radius). */
+const FAR_PLACE = { lat: 46.9, lng: -122.0 }
+
+describe('postDistanceMiles (V8 ticket 07: place coordinates first, host zip as the fallback)', () => {
+  it('uses the PLACE coordinates when the post names a place', () => {
+    const viaPlace = postDistanceMiles({ host: { home_zip: '98007' }, place_coords: NEAR_PLACE }, VIEWER, ZIP_COORDS)
+    expect(viaPlace).not.toBeNull()
+    expect(viaPlace!).toBeCloseTo(haversineMiles(ZIP_COORDS.get('98107')!, NEAR_PLACE), 10)
+    // …and NOT the host-zip answer (~11.5 mi), which is what the old model used.
+    expect(viaPlace!).toBeLessThan(5)
+  })
+
+  it('ignores the host zip entirely once a place is present (the park across town)', () => {
+    const atPlace = postDistanceMiles({ host: { home_zip: '98107' }, place_coords: FAR_PLACE }, VIEWER, ZIP_COORDS)
+    expect(atPlace!).toBeGreaterThan(35)
+  })
+
+  it('falls back to the host home zip when the post names no place', () => {
+    const viaHost = postDistanceMiles({ host: { home_zip: '98007' } }, VIEWER, ZIP_COORDS)
+    expect(viaHost).not.toBeNull()
+    expect(viaHost!).toBeCloseTo(
+      haversineMiles(ZIP_COORDS.get('98107')!, ZIP_COORDS.get('98007')!),
+      10,
+    )
+  })
+
+  it('falls back to the host zip when the place row is unreadable or coordinate-less', () => {
+    const noCoords = postDistanceMiles(
+      { host: { home_zip: '98007' }, place_id: 'p1', place_coords: { lat: null, lng: null } },
+      VIEWER,
+      ZIP_COORDS,
+    )
+    expect(noCoords!).toBeCloseTo(haversineMiles(ZIP_COORDS.get('98107')!, ZIP_COORDS.get('98007')!), 10)
+    // place_id with NO joined place at all behaves identically (the join failed).
+    const noJoin = postDistanceMiles({ host: { home_zip: '98007' }, place_id: 'p1' }, VIEWER, ZIP_COORDS)
+    expect(noJoin!).toBeCloseTo(noCoords!, 10)
+  })
+
+  it('is null when neither leg resolves (no place, no host zip) — coordinates are never invented', () => {
+    expect(postDistanceMiles({ host: { home_zip: null } }, VIEWER, ZIP_COORDS)).toBeNull()
+    expect(postDistanceMiles({}, VIEWER, ZIP_COORDS)).toBeNull()
+    expect(postDistanceMiles({ host: { home_zip: '98107' } }, { homeZip: null, radiusMiles: 5 }, ZIP_COORDS)).toBeNull()
+    expect(postDistanceMiles({ host: { home_zip: '00000' } }, VIEWER, ZIP_COORDS)).toBeNull()
+    // A place_id whose place never joined, with no usable host zip either.
+    expect(postDistanceMiles({ place_id: 'p1' }, VIEWER, ZIP_COORDS)).toBeNull()
+    expect(
+      postDistanceMiles({ place_id: 'p1', place_coords: { lat: null, lng: null } }, VIEWER, ZIP_COORDS),
+    ).toBeNull()
+  })
+
+  it('coerces the numeric-as-string coordinates postgrest actually returns', () => {
+    const viaStrings = postDistanceMiles(
+      { place_coords: { lat: String(NEAR_PLACE.lat), lng: String(NEAR_PLACE.lng) } },
+      VIEWER,
+      ZIP_COORDS,
+    )
+    expect(viaStrings!).toBeCloseTo(haversineMiles(ZIP_COORDS.get('98107')!, NEAR_PLACE), 10)
+  })
+})
+
+describe('placeDistanceMiles / coordNumber (V8 ticket 07)', () => {
+  it('measures from the place to the viewer, null for anything unknown', () => {
+    expect(placeDistanceMiles(NEAR_PLACE, VIEWER, ZIP_COORDS)).toBeCloseTo(
+      haversineMiles(ZIP_COORDS.get('98107')!, NEAR_PLACE),
+      10,
+    )
+    expect(placeDistanceMiles(null, VIEWER, ZIP_COORDS)).toBeNull()
+    expect(placeDistanceMiles({ lat: null, lng: -122.3 }, VIEWER, ZIP_COORDS)).toBeNull()
+    expect(placeDistanceMiles(NEAR_PLACE, { homeZip: null }, ZIP_COORDS)).toBeNull()
+    expect(placeDistanceMiles(NEAR_PLACE, { homeZip: '00000' }, ZIP_COORDS)).toBeNull()
+  })
+
+  it('coordNumber accepts numbers and numeric strings, and rejects what is not a coordinate', () => {
+    expect(coordNumber(47.5)).toBe(47.5)
+    expect(coordNumber('47.5')).toBe(47.5)
+    expect(coordNumber(null)).toBeNull()
+    expect(coordNumber(undefined)).toBeNull()
+    expect(coordNumber('')).toBeNull()
+    expect(coordNumber('not-a-number')).toBeNull()
+    expect(coordNumber(Number.NaN)).toBeNull()
+    expect(coordNumber(Number.POSITIVE_INFINITY)).toBeNull()
+  })
+})
+
+describe('filterFeed with places (V8 ticket 07: the MIXED feed)', () => {
+  /**
+   * The whole point of the ticket in one array: a place-hosted post whose HOST
+   * is near but whose PLACE is far (must drop — it used to be kept), a
+   * place-hosted post whose HOST is far but whose PLACE is near (must be kept —
+   * it used to be dropped), a legacy free-text post (host zip only, unchanged),
+   * a place post whose place row never joined, and a post with nothing at all.
+   */
+  const mixed: Array<FeedPost & { id: string }> = [
+    {
+      id: 'place-host-near-place-far',
+      host_profile_id: 'h1',
+      starts_at: at(600),
+      host: { home_zip: '98007' },
+      place_id: 'p-far',
+      place_coords: FAR_PLACE,
+    },
+    {
+      id: 'place-host-far-place-near',
+      host_profile_id: 'h2',
+      starts_at: at(720),
+      host: { home_zip: '98007' },
+      place_id: 'p-near',
+      place_coords: NEAR_PLACE,
+    },
+    {
+      id: 'legacy-free-text',
+      host_profile_id: 'h3',
+      starts_at: at(660),
+      host: { home_zip: '98007' },
+      place_id: null,
+    },
+    {
+      id: 'place-not-joined',
+      host_profile_id: 'h4',
+      starts_at: at(780),
+      host: { home_zip: '98007' },
+      place_id: 'p-unreadable',
+      place_coords: null,
+    },
+    { id: 'nothing-at-all', host_profile_id: 'h5', starts_at: at(840), host: { home_zip: null } },
+  ]
+
+  it('keeps exactly the posts a radius feed can locate, ordered by starts_at', () => {
+    const kept = filterFeed(mixed, VIEWER, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
+    // starts_at order: 660 (free text) < 720 (place, host far) < 780 (place, not joined).
+    expect(kept.map((post) => post.id)).toEqual([
+      'legacy-free-text',
+      'place-host-far-place-near',
+      'place-not-joined',
+    ])
+  })
+
+  it('drops a place-hosted post whose PLACE is out of radius even though its host is in it', () => {
+    const kept = filterFeed(mixed, VIEWER, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
+    expect(kept.some((post) => post.id === 'place-host-near-place-far')).toBe(false)
+  })
+
+  it('keeps a place-hosted post whose PLACE is in radius even though its host zip is not', () => {
+    const tight: RadiusViewer = { homeZip: '98107', radiusMiles: 5 }
+    const kept = filterFeed(mixed, tight, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
+    // At 5 miles the 98007 host (11.5 mi) is out for the host-zip posts…
+    expect(kept.map((post) => post.id)).toEqual(['place-host-far-place-near'])
+    // …and the place-hosted post that IS 2.5 mi away survives — the fix.
+    expect(postDistanceMiles(kept[0], tight, ZIP_COORDS)!).toBeLessThan(5)
+  })
+
+  it('leaves the legacy free-text feed untouched (no place_id anywhere = yesterdays behaviour)', () => {
+    const legacy: Array<FeedPost & { id: string }> = [
+      { id: 'a', host_profile_id: 'h1', starts_at: at(600), host: { home_zip: '98007' } },
+      { id: 'b', host_profile_id: 'h2', starts_at: at(660), host: { home_zip: '00000' } },
+    ]
+    const kept = filterFeed(legacy, VIEWER, ZIP_COORDS, new Set(), TODAY_ISO, NOW_ISO)
+    expect(kept.map((post) => post.id)).toEqual(['a'])
+  })
+
+  it('still applies the block, hide, and past filters to place-hosted posts', () => {
+    const posts: Array<FeedPost & { id: string }> = [
+      { id: 'blocked', host_profile_id: 'h1', starts_at: at(600), place_coords: NEAR_PLACE },
+      { id: 'hidden', host_profile_id: 'h2', starts_at: at(660), place_coords: NEAR_PLACE, hidden_at: 'x' },
+      { id: 'past', host_profile_id: 'h3', starts_at: at(-60), place_coords: NEAR_PLACE },
+      { id: 'ok', host_profile_id: 'h4', starts_at: at(720), place_coords: NEAR_PLACE },
+    ]
+    expect(filterFeed(posts, VIEWER, ZIP_COORDS, new Set(['h1']), TODAY_ISO, NOW_ISO).map((p) => p.id)).toEqual(['ok'])
   })
 })

@@ -9,6 +9,7 @@ import {
   ensureSeriesOccurrences,
   listKids,
   listNeighborhoods,
+  listPlaces,
   listRecentOwnPlaces,
   linkKidsToPlaydate,
 } from '../lib/db'
@@ -23,13 +24,14 @@ import {
   validatePlaydateForm,
 } from '../lib/feed'
 import type { PlaydateFormErrors, PlaydateFormValues, RecentPlace } from '../lib/feed'
+import { matchPlaces, PLACE_SUGGESTION_LIMIT, resolvePlaceByName } from '../lib/places'
 import {
   deviceTimeZone,
   everyWeekdayLabel,
   seriesTimeLabel,
   weekdayFromDateIso,
 } from '../lib/series'
-import type { DuplicatePrefill, Kid, Neighborhood } from '../lib/types'
+import type { DuplicatePrefill, Kid, Neighborhood, Place, PlacePrefill } from '../lib/types'
 
 /**
  * The /new form's EMPTY base (V8 ticket 01 changed what the form OPENS
@@ -62,11 +64,29 @@ const emptyValues: PlaydateFormValues = {
  * time, or duration (pinned in V2: those are always re-entered), so the
  * fresh defaults apply there too.
  */
-function initialValues(duplicate: DuplicatePrefill | null, nowIso: string): PlaydateFormValues {
+function initialValues(
+  duplicate: DuplicatePrefill | null,
+  placePrefill: PlacePrefill | null,
+  nowIso: string,
+): PlaydateFormValues {
   const defaults: PlaydateFormValues = {
     ...emptyValues,
     startDate: defaultStartDateIso(nowIso),
     startMinutes: nextSlotMinutes(nowIso),
+  }
+  // V8 ticket 07: "Start a drop-in here" (the place page) wins over a duplicate
+  // prefill — the parent just tapped a place, so that place is what they mean.
+  // The title default the form already applies when a place is known and none
+  // has been typed (V8 ticket 01's rule) applies here too, so arriving from a
+  // place page opens on a complete, postable form rather than one with an empty
+  // required field.
+  if (placePrefill !== null) {
+    return withDefaultTitle({
+      ...defaults,
+      ...(duplicate === null ? {} : duplicate),
+      place: placePrefill.place,
+      neighborhoodId: placePrefill.neighborhoodId ?? '',
+    })
   }
   return duplicate === null ? defaults : { ...defaults, ...duplicate }
 }
@@ -139,7 +159,14 @@ function withDefaultTitle(values: PlaydateFormValues): PlaydateFormValues {
  * and the submit's designed error line says so — the documented red-by-design
  * point, never a crash (the DB-not-applied discipline).
  */
-export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | null }) {
+export function NewPlaydatePage({
+  duplicate,
+  placePrefill = null,
+}: {
+  duplicate: DuplicatePrefill | null
+  /** V8 ticket 07: the place page's "Start a drop-in here" (router state). */
+  placePrefill?: PlacePrefill | null
+}) {
   const navigate = useNavigate()
   const { loading, session } = useSessionContext()
   // V8 ticket 01: ONE mount-time `now` feeds both the form's default start
@@ -149,8 +176,19 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
   const [mountedNowIso] = useState(() => new Date().toISOString())
   const [neighborhoods, setNeighborhoods] = useState<Neighborhood[] | null>(null)
   const [values, setValues] = useState<PlaydateFormValues>(() =>
-    initialValues(duplicate, mountedNowIso),
+    initialValues(duplicate, placePrefill, mountedNowIso),
   )
+  // V8 ticket 07: the picked place's id — the whole distance-model fix in one
+  // piece of state. null = free text ("Somewhere else", or a place typed
+  // before the directory existed), and the post then sends no place_id at all.
+  const [placeId, setPlaceId] = useState<string | null>(placePrefill?.placeId ?? null)
+  // The directory, for the autocomplete. null = not loaded OR the load failed
+  // (the DB-not-applied discipline): both render NO suggestions, and free text
+  // still works — /new must never depend on the places table.
+  const [places, setPlaces] = useState<Place[] | null>(null)
+  // Whether the suggestion list is showing (opened by typing, closed by a pick,
+  // by "Somewhere else", or by clearing the field).
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false)
   const [errors, setErrors] = useState<PlaydateFormErrors>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -158,7 +196,8 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
   // V3 slice 5 (ticket 08): the optional address (kept out of
   // PlaydateFormValues — the /new form's pinned field set stays
   // untouched; the address is the page-local field below).
-  const [address, setAddress] = useState('')
+  // V8 ticket 07: "Start a drop-in here" prefills it from the place.
+  const [address, setAddress] = useState(placePrefill?.address ?? '')
   // V3 slice 6 (ticket 09): the kids picker — the host's own kids (the
   // 0011 kids table). null = still loading; [] = none yet OR the load
   // failed (pre-0011/0022-apply, the documented DB-not-applied
@@ -234,6 +273,39 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
     }
   }, [userId])
 
+  // V8 ticket 07: the places directory for the autocomplete, fetched once on
+  // mount. A failed load (0029 not applied yet) leaves `places` null and the
+  // form simply has NO suggestions — the place field stays the free-text field
+  // it has always been, so /new works with or without the directory. This is
+  // deliberately NOT the page's loadError state: a missing places table must
+  // not wall off posting a drop-in.
+  useEffect(() => {
+    let cancelled = false
+    listPlaces()
+      .then((rows) => {
+        if (!cancelled) setPlaces(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setPlaces(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // V8 ticket 07: a DUPLICATE prefill carries a place STRING but no place id
+  // (DuplicatePrefill is pinned, and this ticket does not change its shape), so
+  // resolve it against the directory by exact name once the directory arrives.
+  // A resolved name re-links the duplicated post to its place — and, with it,
+  // to the place's coordinates. A non-match changes nothing: place_id stays
+  // null and the text is never rewritten. The same one rule the recent-place
+  // chips use (places.resolvePlaceByName).
+  useEffect(() => {
+    if (places === null || duplicate === null) return
+    const resolved = resolvePlaceByName(duplicate.place, places)
+    if (resolved !== null) setPlaceId((prev) => prev ?? resolved.id)
+  }, [places, duplicate])
+
   // V3 slice 6 (ticket 09): toggle a kid chip (multi-select, no cap — the
   // host picks whichever of their own kids are coming).
   function toggleKid(kidId: string) {
@@ -250,6 +322,15 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
       // the quick-fill preset uses.
       return field === 'place' ? withDefaultTitle(next) : next
     })
+    // V8 ticket 07: EDITING the place text drops the place link. The post must
+    // never claim a directory place it no longer names — "Green Lake Park"
+    // typed over a picked "Ballard Playground" is free text again, and its
+    // distance goes back to the host-zip fallback rather than silently
+    // measuring to Ballard. Typing also opens the suggestions.
+    if (field === 'place') {
+      setPlaceId(null)
+      setSuggestionsOpen(String(value).trim() !== '')
+    }
     setErrors((prev) => ({ ...prev, [field]: undefined }))
     setSubmitError(null)
   }
@@ -259,14 +340,58 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
    * this parent already posted to (three fields they have told us once
    * already). The address is written even when it is '' — the remembered
    * post had none, and leaving a stale address behind would be worse.
+   *
+   * V8 ticket 07: it ALSO carries a place_id when the remembered text is
+   * exactly a directory name (places.resolvePlaceByName — no fuzzy matching,
+   * no rewriting of the remembered text), so re-posting to the same playground
+   * keeps the place's coordinates instead of falling back to the host zip. A
+   * remembered place the directory does not know stays free text, unchanged.
    */
   function applyRecentPlace(recent: RecentPlace) {
     setValues((prev) =>
       withDefaultTitle({ ...prev, place: recent.place, neighborhoodId: recent.neighborhoodId }),
     )
     setAddress(recent.address)
+    setPlaceId(resolvePlaceByName(recent.place, places ?? [])?.id ?? null)
+    setSuggestionsOpen(false)
     setErrors((prev) => ({ ...prev, place: undefined, neighborhoodId: undefined }))
     setSubmitError(null)
+  }
+
+  /**
+   * V8 ticket 07: picking a suggestion fills the same three fields a recent
+   * chip does — place, address, neighborhood — in ONE tap, plus the place_id
+   * that makes the post's location the place's coordinates.
+   *
+   * The neighborhood is a SUGGESTION, not a decision: it is written only when
+   * the place carries one (every seeded row is NULL today — 0029's header says
+   * why), and otherwise the parent's current selection is left alone rather
+   * than being cleared under them.
+   */
+  function pickPlace(place: Place) {
+    setValues((prev) =>
+      withDefaultTitle({
+        ...prev,
+        place: place.name,
+        neighborhoodId: place.neighborhood_id ?? prev.neighborhoodId,
+      }),
+    )
+    setAddress(place.address)
+    setPlaceId(place.id)
+    setSuggestionsOpen(false)
+    setErrors((prev) => ({ ...prev, place: undefined, neighborhoodId: undefined }))
+    setSubmitError(null)
+  }
+
+  /**
+   * V8 ticket 07: "Somewhere else" — the directory is never a wall. Closes the
+   * list and keeps exactly what the parent typed as free text (place_id null),
+   * so meeting at a friend's building or a brand-new park works the way it
+   * always has.
+   */
+  function chooseSomewhereElse() {
+    setPlaceId(null)
+    setSuggestionsOpen(false)
   }
 
   // The quick-fill preset's own values — both from the mount-time `now`, so
@@ -352,6 +477,9 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
           startMinutes: values.startMinutes,
           durationMinutes: values.durationMinutes,
           timezone: deviceTimeZone(),
+          // V8 ticket 07: the series carries the place too, when one was picked
+          // (the key is omitted entirely for free text — placeIdField).
+          placeId: placeId ?? undefined,
         })
         seriesId = series.id
       }
@@ -364,6 +492,9 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
         details: trimmedDetails,
         address: trimmedAddress.length > 0 ? trimmedAddress : undefined,
         seriesId,
+        // V8 ticket 07: the picked place. undefined for free text, so the
+        // insert payload carries no place_id key at all.
+        placeId: placeId ?? undefined,
       })
       // V8 ticket 06: the occurrences the parent is not looking at. The post
       // just created IS this series' first occurrence and the generator
@@ -447,6 +578,13 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
           onToggleKid={toggleKid}
           recentPlaces={recentPlaces}
           onApplyRecentPlace={applyRecentPlace}
+          /* V8 ticket 07: the place autocomplete. It stays CLOSED while the
+             directory is unavailable (null), so a pre-0029-apply /new renders
+             exactly the form it rendered yesterday. */
+          placeSuggestionsOpen={suggestionsOpen && places !== null && places.length > 0}
+          placeSuggestions={matchPlaces(values.place, places ?? [], PLACE_SUGGESTION_LIMIT)}
+          onPickPlace={pickPlace}
+          onSomewhereElse={chooseSomewhereElse}
           preset={
             /* V8 ticket 01: the spontaneous drop-in in one tap — start at the
                next 30-minute slot, run to the next hour. The label states the

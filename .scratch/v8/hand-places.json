@@ -1,0 +1,74 @@
+[
+  {
+    "name": "Seattle Children's Museum",
+    "kind": "museum",
+    "address": "305 Harrison Street, Seattle, WA 98109",
+    "lat": null,
+    "lng": null,
+    "notes": "Children's museum in the Armory on the Seattle Center campus."
+  },
+  {
+    "name": "PlayDate SEA",
+    "kind": "indoor_play",
+    "address": "1275 Mercer Street, Seattle, WA 98109",
+    "lat": null,
+    "lng": null,
+    "notes": "Indoor playground in South Lake Union — walk in, no appointment needed."
+  },
+  {
+    "name": "Wunderkind",
+    "kind": "indoor_play",
+    "address": "3318 NE 55th St, Seattle, WA 98105",
+    "lat": null,
+    "lng": null,
+    "notes": "LEGO play café in Northeast Seattle — currently mostly private parties and after-school programs."
+  },
+  {
+    "name": "Central Library, Seattle Public Library",
+    "kind": "library",
+    "address": "1000 Fourth Ave., Seattle, WA 98104",
+    "lat": 47.60648528143076,
+    "lng": -122.33296826887018,
+    "notes": "Children's Center on the main floor."
+  },
+  {
+    "name": "Ballard Branch, Seattle Public Library",
+    "kind": "library",
+    "address": "5614 22nd Ave. N.W., Seattle, WA 98107",
+    "lat": 47.66984320300146,
+    "lng": -122.38420380354263,
+    "notes": "Helen G. Rosen Children's Area."
+  },
+  {
+    "name": "Northeast Branch, Seattle Public Library",
+    "kind": "library",
+    "address": "6801 35th Ave. N.E., Seattle, WA 98115",
+    "lat": 47.67785368400226,
+    "lng": -122.29071128870292,
+    "notes": "Large children's area with family-friendly seating."
+  },
+  {
+    "name": "Columbia Branch, Seattle Public Library",
+    "kind": "library",
+    "address": "4721 Rainier Ave. S., Seattle, WA 98118",
+    "lat": 47.559947168735434,
+    "lng": -122.28687924479821,
+    "notes": "Children's area with park views."
+  },
+  {
+    "name": "Beacon Hill Branch, Seattle Public Library",
+    "kind": "library",
+    "address": "2821 Beacon Ave. S., Seattle, WA 98144",
+    "lat": 47.57804589906059,
+    "lng": -122.31140709096864,
+    "notes": "Dedicated children's area."
+  },
+  {
+    "name": "Southwest Branch, Seattle Public Library",
+    "kind": "library",
+    "address": "9010 35th Ave. S.W., Seattle, WA 98126",
+    "lat": 47.522441773077304,
+    "lng": -122.3761823990692,
+    "notes": "Janet Maurer Daggatt Children's Area."
+  }
+]

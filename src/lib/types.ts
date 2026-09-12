@@ -125,6 +125,15 @@ export interface Playdate {
    * is past 0028 (undefined at runtime — no `· weekly` marker renders).
    */
   series_id?: string | null
+  /**
+   * The place this post is at (V8 ticket 07, migration 0030): null/absent =
+   * a free-text place ("Somewhere else"), which stays fully supported. Set
+   * when the parent PICKED a place from the directory — and it is what moves
+   * the post's location onto the place's own coordinates (the distance-model
+   * fix; feed.postDistanceMiles). Optional: absent until the live project is
+   * past 0030 (undefined at runtime — the render shows no place link).
+   */
+  place_id?: string | null
 }
 
 /**
@@ -156,6 +165,71 @@ export interface PlaydateSeries {
   /** false = "Stop repeating": generation halts, existing occurrences stay. */
   active: boolean
   created_at: string
+  /**
+   * The place this series meets at (V8 ticket 07, migration 0030): stored so a
+   * standing meetup can carry its place, and set by /new when the parent picked
+   * one. KNOWN GAP, documented in 0030's header: the 0028 occurrence generator
+   * inserts an explicit column list that predates this column, so the weeks it
+   * generates carry place_id null while the first occurrence carries the value.
+   * Those later occurrences therefore use the host-zip fallback distance.
+   * Optional: absent until the live project is past 0030.
+   */
+  place_id?: string | null
+}
+
+/**
+ * The ten place kinds the schema allows (the 0029 CHECK constraint, verbatim).
+ * `other` is the honest catch-all — a community center is not a playground.
+ */
+export type PlaceKind =
+  | 'park'
+  | 'playground'
+  | 'indoor_play'
+  | 'museum'
+  | 'pool'
+  | 'splash_pad'
+  | 'library'
+  | 'beach'
+  | 'trail'
+  | 'other'
+
+/**
+ * A place in the directory (V8 ticket 07, migration 0029): the entity the
+ * product's premise assumes — "fun places around the city" — which until now
+ * did not exist (a post's `place` was free text, so nothing knew that Green
+ * Lake exists).
+ *
+ * Public infrastructure: `places` is anon-readable (the signed-out detail page
+ * links to a place page) and has NO write policy at all — the client never
+ * writes a place, the seed is the only writer (postgres/service_role).
+ *
+ * `lat` / `lng` are NULLABLE in the TYPE even though the 0029 columns are NOT
+ * NULL, because the app must tolerate a place whose coordinates it cannot
+ * parse (postgrest returns `numeric` as a string). Null means UNKNOWN — never
+ * invented, and never a reason to hide the place.
+ *
+ * `age_min` / `age_max` are null for every seeded row: no source states age
+ * ranges. NULL is UNKNOWN, and the "fits my kid's age" filter keeps unknown
+ * places (places.placeFitsKidAges).
+ */
+export interface Place {
+  id: string
+  name: string
+  kind: PlaceKind
+  address: string
+  lat: number | null
+  lng: number | null
+  indoor: boolean
+  age_min: number | null
+  age_max: number | null
+  notes: string | null
+  /** NULL for every seeded row: third-party photos are never scraped. */
+  photo_url: string | null
+  /** Null for every seeded row — no source field carries a neighborhood. */
+  neighborhood_id: string | null
+  /** 'seattle-parks' (the city's open data) or 'hand' (the curated indoor list). */
+  source: string
+  created_at?: string
 }
 
 /** A (seeded) Seattle neighborhood tag. */
@@ -254,11 +328,20 @@ export interface PlaydateWithNeighborhood extends Playdate {
   neighborhood: Neighborhood
   host: PlaydateHost
   /**
-   * The haversine distance, in miles, between the viewer's home zip and
-   * the host's home zip (V2 slice 3 — computed client-side by the pure
-   * feed.distanceMiles predicate; set on feed/browse results only).
+   * The haversine distance, in miles, from the viewer's home zip to the
+   * POST'S LOCATION (V2 slice 3; V8 ticket 07 moved the location onto the
+   * place's coordinates — see feed.postDistanceMiles). Computed client-side by
+   * the pure feed predicate; set on feed/place results only.
    */
   distanceMiles?: number
+  /**
+   * The named place's coordinates, stitched onto the row by listRadiusFeed
+   * (V8 ticket 07) — the distance model's first leg. Named `place_coords` and
+   * not `place` because Playdate.place is the free-text STRING the parent
+   * typed. Null/absent when the post names no place or the places read
+   * degraded — the host's home zip is then the fallback.
+   */
+  place_coords?: { lat: number | null; lng: number | null } | null
 }
 
 /**
@@ -337,6 +420,24 @@ export interface DuplicatePrefill {
 }
 
 /**
+ * The /new PLACE prefill (V8 ticket 07), carried as router state by
+ * "Start a drop-in here" on a place page — the DuplicatePrefill pattern: the
+ * place page owns the place, /new's route reads the state and hands the page a
+ * typed prop, and the page itself stays router-state-agnostic.
+ *
+ * It fills the same three fields a place pick fills on /new (place, address,
+ * neighborhood) plus the place_id that makes the post's location the place's
+ * coordinates. `neighborhoodId` is null when the place carries none (every
+ * seeded row today) — the parent then picks one, exactly as before.
+ */
+export interface PlacePrefill {
+  placeId: string
+  place: string
+  address: string
+  neighborhoodId: string | null
+}
+
+/**
  * The signed-out public surface for one drop-in (V2 slice 5, ticket 05,
  * migration 0015): EXACTLY what the get_public_playdate RPC returns — the
  * post's public fields + the neighborhood display label + the host's
@@ -356,6 +457,16 @@ export interface PublicPlaydateDetail {
    * (undefined at runtime — the render is null-safe: no link).
    */
   address?: string | null
+  /**
+   * The place this post is at (V8 ticket 07, migration 0030): the 13th public
+   * field (the 12 -> 13 pin change). It crosses to anon ONLY as an id — the
+   * place's NAME, address, coordinates and every other column stay behind the
+   * anon-readable `places` table, which the client reads itself. So the
+   * signed-out page can link its place line to /place/:id without a single
+   * new place column crossing the RPC. Pre-0030-apply the 12-field payload
+   * omits it (undefined at runtime — the place line just does not link).
+   */
+  place_id?: string | null
   starts_at: string
   ends_at: string
   age_hint: string | null

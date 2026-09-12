@@ -1,8 +1,10 @@
 /**
  * V8 ticket 06 — standing playdates (the weekly series): the PURE seams
- * (migration 0028). No imports, no I/O, no globals beyond `Intl` — the
+ * (migration 0028). No I/O and no globals beyond `Intl` — the
  * `/new` form, the card, the detail page and the e2e spec all evaluate the
  * SAME rules through this module, and `series.test.ts` is the guarantee.
+ * (Its one import, `placeIdField` from ./places, is itself pure — V8 ticket
+ * 07 reuses that seam rather than writing a second copy of the rule.)
  *
  * The pinned model (ticket 06, "occurrences are real playdates rows"):
  *
@@ -25,6 +27,7 @@
  *   (` · weekly`), NOT a new badge: the badge slot already carries
  *   status / ended / happening-now / starts-soon / rain.
  */
+import { placeIdField } from './places'
 
 /** The generator's horizon in days (pinned: 21 days ahead). */
 export const SERIES_HORIZON_DAYS = 21
@@ -72,6 +75,13 @@ export interface NewPlaydateSeriesInput {
   durationMinutes: number
   /** IANA zone name, captured in the browser (see deviceTimeZone). */
   timezone: string
+  /**
+   * V8 ticket 07 (migration 0030): the place this series meets at, when the
+   * parent picked one from the directory. undefined = a free-text place, and
+   * the insert key is then OMITTED (placeIdField) so pre-0030-apply every
+   * existing series insert stays byte-identical.
+   */
+  placeId?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -271,6 +281,10 @@ export function seriesIdField(seriesId?: string | null): { series_id?: string } 
 /**
  * The new series row (the pinned column set). `timezone` goes through
  * `resolveTimeZone` so a missing device zone stores 'UTC' rather than ''.
+ *
+ * V8 ticket 07: `place_id` rides `placeIdField` (the spread), so a series for a
+ * free-text place sends NO `place_id` key at all — pre-0030-apply that keeps
+ * every existing series insert working.
  */
 export function seriesInsertRow(
   hostProfileId: string,
@@ -287,6 +301,7 @@ export function seriesInsertRow(
     start_minutes: input.startMinutes,
     duration_minutes: input.durationMinutes,
     timezone: resolveTimeZone(input.timezone),
+    ...placeIdField(input.placeId),
   }
 }
 

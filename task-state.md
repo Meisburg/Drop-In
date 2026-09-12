@@ -211,8 +211,8 @@ text and the neighborhood is a display label.
 | 03 | "While you were away" inbox (pings on your posts, cancellations) | **complete** — `e016921`; no migration; 390/390 unit, e2e 25/25 (independently re-run). The old amber banner + `countPingsOnMyPosts` were DELETED (one implementation of "you have news"). Judgment call logged: cancellation items are not cursor-gated (playdates has no status-change timestamp) — gated on `starts_at > now` instead |
 | 04 | Real post lists on `/u/:handle` and `/profile` | **complete** — `fc85093`; no migration; 403/403 unit, e2e 26/26. Boundary pinned on `ends_at` (the `isEnded` complement): a drop-in happening right now is UPCOMING |
 | 05 | Post edit + delete | **complete** — `625d252`; no migration (0005's host-only UPDATE/DELETE policies were already there); 427/427 unit, e2e 31/31. `/new`'s form body extracted into `PlaydateFormFields` — string-identical, so the 12 specs that drive /new pass unmodified |
-| 06 | Standing playdates (weekly series) | in progress — **0028** reserved |
-| 07 | Places directory + place pages + Browse becomes places | open — **0029**, **0030** reserved |
+| 06 | Standing playdates (weekly series) | **complete** — `f54c066`; **0028 APPLIED LIVE** (dashboard SQL API, HTTP 201) with post-apply probes (objects, PostgREST 200 no PGRST205, anon fails closed 401/42501, generator created 3 then 0, zero residue); 454/454 unit, e2e 32/32. Ticket wording deviation, evidence-backed: the function ships VOLATILE because a STABLE function cannot write. New reusable `scripts/apply-migration.mjs` (the apply/probe path this repo had been doing by hand from `.scratch/v4`) |
+| 07 | Places directory + place pages + Browse becomes places | next — **0029**, **0030** reserved |
 | 08 | Web push + install affordance | open — **0031**, **0032** reserved; partly human-owned |
 | 09 | Loop-closing ("same time next week") + follow family/place | open — **0033** reserved |
 | 10 | Polish batch (saves, undo, degraded states) | open — no migration |

@@ -94,6 +94,9 @@ export function formatDistanceLabel(miles: number): string {
  * unresolvable (home zip unset, or the zip missing from the gazetteer) —
  * the pinned rule: such a post is EXCLUDED from the radius feed, never
  * given invented coordinates.
+ *
+ * V8 ticket 07: this is now the FALLBACK leg of the distance model — see
+ * postDistanceMiles, which filterFeed actually calls.
  */
 export function hostDistanceMiles(
   hostZip: string | null | undefined,
@@ -236,6 +239,88 @@ export function groupByDay<T extends { starts_at: string }>(
 }
 
 /**
+ * A numeric column's value as a real number, or null (V8 ticket 07).
+ *
+ * PostgREST returns `numeric` columns (places.lat / places.lng — the 0029
+ * schema) as JSON STRINGS, not numbers (the zip_codes lesson: loadZipCodes
+ * does `Number(row.lat)`). So a coordinate read off a row is `string | number`
+ * and must be coerced; anything unparseable (null, '', a malformed value) is
+ * null — a coordinate is NEVER invented from a bad value.
+ */
+export function coordNumber(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+/**
+ * The distance, in miles, from the viewer's home zip to a PLACE's OWN
+ * coordinates (V8 ticket 07, migration 0030).
+ *
+ * Null means UNKNOWN — no home zip, a zip missing from the gazetteer, or a
+ * place with no coordinates. The two callers treat that null differently, and
+ * deliberately:
+ * - filterFeed EXCLUDES the post (a radius feed cannot place it, and
+ *   coordinates are never invented — the pinned rule);
+ * - the places directory KEEPS the place (hiding a real park because we lack
+ *   its coordinates would hide the information we DO have — the same
+ *   discipline as the age filter's null = unknown = keep).
+ */
+export function placeDistanceMiles(
+  place: { lat?: number | string | null; lng?: number | string | null } | null | undefined,
+  viewer: { homeZip: string | null },
+  zipCoords: ReadonlyMap<string, ZipCoords>,
+): number | null {
+  if (place === null || place === undefined) return null
+  if (viewer.homeZip === null) return null
+  const viewerCoords = zipCoords.get(viewer.homeZip)
+  if (viewerCoords === undefined) return null
+  const lat = coordNumber(place.lat)
+  const lng = coordNumber(place.lng)
+  if (lat === null || lng === null) return null
+  return haversineMiles(viewerCoords, { lat, lng })
+}
+
+/**
+ * THE DISTANCE-MODEL FIX (V8 ticket 07): the distance, in miles, to a POST's
+ * location — the PLACE's coordinates when the post names a place, and the
+ * host's home zip ONLY when it does not.
+ *
+ * What was wrong: through V8 a drop-in's location WAS the host's home zip (the
+ * 2026-09-09 V2 decision), so a parent hosting at a park across town was
+ * filtered as if the meetup were in their driveway. Now the post's own place
+ * wins, and the host zip is the documented fallback for the posts that name no
+ * place (free text, `place_id` null) — which is the entire existing corpus, so
+ * nothing about today's feed changes until a parent picks a place.
+ *
+ * The fallback is also taken when `place_id` is set but its place row is
+ * unreadable or coordinate-less: the host zip is real data we hold, and the
+ * alternative is hiding a real meetup because a join failed.
+ *
+ * Null when NEITHER leg resolves — filterFeed treats that as EXCLUDED (the
+ * pinned rule: coordinates are never invented).
+ */
+export function postDistanceMiles(
+  post: {
+    host?: { home_zip?: string | null } | null
+    /**
+     * Accepted but never read: the decision is made on `place_coords` ALONE, and
+     * a place_id with no readable coordinates must take the host-zip fallback
+     * exactly like a post with no place at all. It is in the signature so a real
+     * Playdate row can be passed without narrowing it first.
+     */
+    place_id?: string | null
+    place_coords?: { lat?: number | string | null; lng?: number | string | null } | null
+  },
+  viewer: RadiusViewer,
+  zipCoords: ReadonlyMap<string, ZipCoords>,
+): number | null {
+  const viaPlace = placeDistanceMiles(post.place_coords, viewer, zipCoords)
+  if (viaPlace !== null) return viaPlace
+  return hostDistanceMiles(post.host?.home_zip, viewer, zipCoords)
+}
+
+/**
  * The shape filterFeed needs (Playdate and its joined variants qualify).
  */
 export interface FeedPost {
@@ -245,6 +330,21 @@ export interface FeedPost {
   hidden_at?: string | null
   /** The host's location fields (V2 slice 3 — present on the joined host). */
   host?: { home_zip?: string | null }
+  /**
+   * The place this drop-in is at (V8 ticket 07, migration 0030): its id, and
+   * its coordinates when the caller could join them in.
+   *
+   * `place_coords` is deliberately NOT called `place`: a playdate already has
+   * a `place` and it is a STRING (the free-text name the parent typed, which
+   * the directory does not always know). Overloading it with an object would
+   * make the two meanings indistinguishable at every call site.
+   *
+   * `place_coords` is the distance model's FIRST leg; a post with a `place_id`
+   * but no readable coordinates falls back to the host zip exactly like a post
+   * with no place at all.
+   */
+  place_id?: string | null
+  place_coords?: { lat?: number | string | null; lng?: number | string | null } | null
 }
 
 /** A post is hidden when a moderator has set hidden_at (slice 5). */
@@ -255,14 +355,19 @@ export function isHiddenPost(post: { hidden_at?: string | null }): boolean {
 /**
  * Filter posts down to the viewer's radius feed (V2 slice 3): starting
  * today or later (client-local midnight), not hosted by a blocked profile,
- * not hidden by a moderator (hidden_at set), AND hosted by a family within
- * the viewer's radius (haversine via the seeded zip map) — ordered by
- * starts_at ascending.
+ * not hidden by a moderator (hidden_at set), AND locatable within the
+ * viewer's radius — ordered by starts_at ascending.
+ *
+ * V8 ticket 07 (the distance-model fix): "locatable" is now
+ * postDistanceMiles, which prefers the POST'S PLACE coordinates and falls
+ * back to the host's home zip only for a post that names no place. Before
+ * this, a meetup at a park across town was filtered as if it were in the
+ * host's driveway.
  *
  * Neighborhoods left the filter path in slice 3 (they are display labels
- * only); discovery is distance-based. A post whose host has no home zip, or
- * whose zip is missing from the gazetteer, is EXCLUDED (the pinned rule —
- * coordinates are never invented).
+ * only); discovery is distance-based. A post whose location resolves to
+ * NOTHING — no place, no host home zip, or a zip missing from the gazetteer
+ * — is EXCLUDED (the pinned rule — coordinates are never invented).
  *
  * The DB query (queryUpcomingFeedWithClient) applies the time + hidden +
  * block filters; this pure re-filter is the unit-testable guarantee that a
@@ -285,7 +390,7 @@ export function filterFeed<T extends FeedPost>(
   const todayStart = Date.parse(startOfTodayIso)
   return posts
     .filter((post) => {
-      const distance = hostDistanceMiles(post.host?.home_zip, viewer, zipCoords)
+      const distance = postDistanceMiles(post, viewer, zipCoords)
       return (
         distance !== null &&
         withinRadius(distance, viewer.radiusMiles) &&
