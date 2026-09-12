@@ -19,17 +19,40 @@ Project ref: `ayzvjwxbxyrcgyoeaxuk` (from `.env` → `VITE_SUPABASE_URL`).
 | 1 | Generate the VAPID keypair | **DONE** — `.env.push.local` (gitignored, 0600) holds both halves. The private key has never been printed, pasted, or committed |
 | 2 | Public key in the build | **DONE AND DEPLOYED** — `VITE_VAPID_PUBLIC_KEY` is set (locally in `.env`, and in Vercel's env for the deployed build); the live bundle is verified to CONTAIN the public key and to contain no private half. So subscriptions made by the deployed app are **bound** |
 | 3 | Deploy `send-push` + secrets | **DONE** — verified through the Management API, not assumed: the function is `ACTIVE`, `verify_jwt: true`, and the three secrets `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` all exist. The wall is proven live: an **anon** bearer gets `401 {"error":"send-push is service-role only"}` (a 404 would have meant "not deployed") |
-| 4 | Schedule every 5 minutes | **NOT DONE — this is the one open step.** Verified empirically: `pg_cron`/`pg_net` are not even installed, and a real ping left `notification_log` rows with `sent_at` NULL for 6 minutes of polling, so nothing invokes the function. Do it from the dashboard (`Integrations → Cron`, or the function's *Schedules*), which enables the extensions and sends the service-role key itself — deliberately not from SQL, where that key would have to sit in a statement |
+| 4 | Schedule every 5 minutes | **DONE (2026-09-12)** — cron job `send-push-every-5-minutes`, `*/5 * * * *`, active; `cron.job_run_details.status: succeeded` on the first tick, and the two canary rows drained in the same run (evidence below). It was provably missing before that: `pg_cron`/`pg_net` were not installed and six minutes of polling showed no drain. Created from the dashboard, which enables the extensions and supplies the service-role key itself — deliberately not from a SQL snippet, where that key would sit in a statement |
 | 5 | Verify | partly done (see below); the on-device half needs step 4 plus an opt-in from the phone |
 
 **Live evidence already collected** (the DB half of the pipeline works): a real
 ping from a second account wrote `notification_log` row `ping_received` ("… is
 going"), and deleting the post wrote a `cancelled` row via the BEFORE DELETE
-trigger. Both are the two rows now waiting at the queue head with
-`sent_at: NULL` — **left in place on purpose as a canary**: after step 4 they
-must drain, and their recipients have NO subscription, which is exactly the
-"does a no-subscription row starve the queue?" case worth watching (the sender
-runs oldest-first with no retry).
+trigger. Both rows were left at the queue head as a canary — and on 2026-09-12
+at 05:30 they **drained**, exactly as predicted:
+
+```
+cron.job_run_details → status: succeeded   (the schedule fired)
+notification_log     → 2 rows, sent_at set, error: 'no subscription'
+```
+
+So the whole chain is proven live: **schedule → function → auth → drain →
+dedupe/stamp**. A recipient with no subscription is stamped and skipped rather
+than retried forever (`index.ts:259-264`), which is also the answer to the
+"does one bad row starve the oldest-first queue?" worry: it does not.
+
+**One wrinkle worth knowing:** `net._http_response` records a **5-second
+timeout** for that dispatch (`timed_out: true`, `status_code: null`). The
+function still finishes its work — the drain above is the proof — but pg_net
+gives up waiting (a cold invocation takes longer than 5 s) so the response body
+is never captured. Consequences: monitor delivery through `notification_log`
+(`sent_at` + `error`), not through `net._http_response`; and if a very large
+backlog ever makes a run long, bound the sender's batch per invocation so it
+finishes inside the timeout (small follow-up, not needed at today's volume).
+
+**And a product subtlety the dedupe key creates:** rows are unique per
+`(profile_id, kind, playdate_id)`. So an alert that was *skipped* because the
+parent had no subscription yet is **not** re-delivered by a later ping of the
+same post — "one notification per family, per kind, per drop-in" is the rule.
+Opting in later is not retroactive; the feed's "While you were away" card is
+what covers that gap.
 
 The rest of this file is the original step-by-step version of the same thing,
 kept because the reasoning in it is what makes the order matter.
