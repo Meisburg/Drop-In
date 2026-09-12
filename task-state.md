@@ -9,6 +9,7 @@
 - **Phase: V4 COMPLETE (2026-09-11).** Human enabled Google in the Supabase project; the blocker is cleared and the round-trip is verified — see the closure evidence below.
 - **Active slice:** none — **V8 IS COMPLETE TO ITS HUMAN BOUNDARY (2026-09-13).** Tickets 01–10 are shipped and verified (`dd0642e` … `135c401`), 11's schema half is live with its UI deliberately held, and 12's instrument is delivered. Migrations **0028–0034 are ALL APPLIED LIVE** and probed. Final gate on the committed tree: build exit 0 · **655/655 unit (20 files)** · **e2e 48/48** · lint 0 errors · both PWA verifier scripts green · live DB swept back to 2 founders. **Next action (human):** (a) **push — mostly done (2026-09-12)**: keypair → `supabase secrets set` → `send-push` deployed → wall verified (service-role 200, anon 401) → `VITE_VAPID_PUBLIC_KEY` added to Vercel (Config/public, it's a public key) → `a97892e` pushed, live bundle `index-COPgHOaF.js` verified to carry the key (1 occurrence). **Remaining:** the Android phone test (`docs/push-setup.md`). **Schedule DONE (2026-09-12):** no dashboard Schedules tab on this plan (DOM-checked) and no `vault` → pg_cron+pg_net enabled, job `send-push-every-5-minutes` live (jobid 3); key injected via `.scratch/cron-schedule-send-push.mjs` (0600 temp file → CDP SQL API, never in a terminal/chat); 12:45 tick fired (job "succeeded", function booted at 05:45:00 in fn logs) and the drain correctly stamped the 2 pre-existing rows "no subscription" (`push_subscriptions` = 0 until the phone opts in). pg_net's fixed 5s response timeout means `_http_response` shows `timed_out` on cold-start ticks — cosmetic, delivery completes server-side; (b) **email verification**: flip Supabase's "Confirm email" and I land the chip + "Check your inbox" screen + the e2e harness change (`docs/email-verification-setup.md`); (c) **density**: run the first cohort (`.scratch/v8/density-log.md`). **V8 IS NOW ON Vercel (2026-09-12)** — `42dfb2a..a97892e` pushed; the live site serves `index-COPgHOaF.js` with the VAPID public key inlined, so new opt-ins subscribe with the bound key. Open *decisions*, not defects: the **logo mark** (V7 settled colour only) and the beta's SMTP setting.
 - **Remaining human items:** the three in the Next action above. The e2e marker sweep ran clean again (168 markers, 0 founder overlap); live DB = 2 founders only.
+- **V9 — the wife's feedback batch: IN PROGRESS (opened 2026-09-13).** Spec + 9 tickets in `.scratch/v9/`. **Ticket 01 is COMPLETE** (commit `e493e08`) — `/new` leads with the place picker, the neighbourhood is no longer a question, and **migration 0035 is APPLIED LIVE and probed**. Tickets 03 → 04 → 05 are the rest of the authorized batch (one writer, in queue order). Two decisions already taken this session: **02 is deferred** (the human chose to build 03 against the EXISTING time control rather than ship 02's unconfirmed badge-suppression judgment call), and 06/08 still want a one-line confirmation while **09 needs an explicit yes** before dispatch. Details, evidence and the full ticket table are in the **V9** section below.
 
 **Push pipeline — coordinator verification (2026-09-13, after the human's step-3 run).** Independently confirmed through the Management API and live probes: `send-push` is **ACTIVE** with `verify_jwt: true`; the three VAPID secrets exist; the **anon** bearer gets `401 {"error":"send-push is service-role only"}` (a 404 would have meant "not deployed"); the LIVE bundle carries the VAPID public key and no private half, so deployed opt-ins are **bound**. The DB half is live too: a real ping wrote a `ping_received` row and deleting the post wrote a `cancelled` row via the BEFORE DELETE trigger. **Step 4 is provably NOT done:** `pg_cron`/`pg_net` are not installed, and those two queued rows kept `sent_at` NULL across six minutes of polling — nothing invokes the function. The human's earlier service-role check returned 200 but **predates** those rows (12:16 UTC), so the sender has still never processed a queued row. Read from the code, that case is safe: a row whose recipient has no subscription is stamped `sent_at` with `error: 'no subscription'` and counted as skipped (`index.ts:259-264`) — no oldest-first starvation risk. Both rows are left in place as the canary for the moment the schedule exists.
 
@@ -295,6 +296,114 @@ slice), and the density cohort.
    `e2e-1789187031`, `e2e-1789187043` (+ viewers `e2e-v-1789187060-1`/`-2`) and
    `e2e-1789187175` — the usual post-run sweep (`node scripts/sweep-e2e-markers.mjs`
    with the CDP Chrome up) has not been run yet.
+
+## V9 — the wife's feedback batch (opened 2026-09-13)
+
+Source: the human relaying his wife's feedback on the live app, filed as
+`.scratch/v9/spec.md` + `.scratch/v9/issues/01`–`09` at the end of the V8
+session, plus `.scratch/v9/HANDOFF.md` (the index a fresh session starts from).
+This session (the DSH coordinator) took the HANDOFF's recommended first move:
+build **01, 03, 04, 05** in queue order, with builder → independent gate re-run
+by the coordinator → fresh-context reviewer for any large diff → one commit per
+ticket → this file updated at each close-out. Dispatch briefs (with the traps
+the coordinator verified before briefing) live in `.scratch/v9/briefs/`.
+
+**Baseline at open (re-verified by the coordinator, not taken on trust):** build
+exit 0 · **655/655 unit (20 files)** · e2e 48/48 per the HANDOFF · migrations
+0028–0034 applied · live DB 2 founders / 5 posts / 0 e2e markers.
+
+| # | Ticket | State |
+|---|---|---|
+| 01 | Post: location first — pick a place, drop the neighbourhood | **complete — `e493e08`**; **0035 APPLIED LIVE + probed**; 673/673 unit, e2e 54/54, lint 0 errors |
+| 02 | Post: a time WINDOW, not an hour | **DEFERRED BY THE HUMAN (2026-09-13)** — see the decision below. Ticket stays `ready-for-agent` pending the badge-suppression confirmation; 0036 stays reserved |
+| 03 | Post: the twenty-second post (3 decisions, rest behind "more") | in the queue, dispatched after 01 |
+| 04 | Nearby: ended drop-ins leave the feed, into the archive | queued (brief written) |
+| 05 | Nearby: ages first, names optional | queued (brief written); needs **0037** |
+| 06 | Nearby: map-first with a list toggle | `ready-for-human` — needs the map-provider one-liner (Leaflet + OSM recommended) |
+| 07 | Nearby: search + filters | not in this session's batch |
+| 08 | Profile: no kid photos; a family photo + about-us | `ready-for-human` — needs the one-line confirmation of the privacy reversal |
+| 09 | Messages: parent-to-parent on a shared drop-in | `ready-for-human` — **do NOT dispatch without an explicit yes** |
+
+**Migration ledger:** 0035–0039 were RESERVATIONS in queue order. **0035 is now
+APPLIED LIVE.** 0036 stays reserved for the deferred ticket 02; 0037 is held for
+ticket 05 (the ticket pins that number, and keeping it avoids a renumber when 02
+lands). Whatever is applied is what this file records.
+
+### V9 decision taken this session — ticket 02 vs ticket 03 (2026-09-13)
+
+Ticket 03's first AC is pinned to "pick a place, tap a **window chip**, tap
+Post", but the window chip is ticket 02 — which 03 itself declares itself
+blocked by, and which carries a human judgment call (an approximate start time
+cannot honestly power "Happening now / Starts soon", so the recommended default
+suppresses those badges for approximate posts). The HANDOFF listed 03 as needing
+no decision and 02 as needing a one-line confirmation, so the two contradicted
+each other. **The human's call: build 03 on the EXISTING time control and leave
+02 for later.** So in ticket 03 "window chip" ⇒ the existing duration chips, and
+"the exact-time controls from ticket 02" ⇒ the existing date input + 30-minute
+stepper. Ticket 02 is NOT built, NOT applied, and its judgment call is NOT
+pre-empted.
+
+### V9 ticket 01 — evidence (complete, `e493e08`)
+
+| Claim | How it was checked |
+|---|---|
+| `/new` leads with the place picker and never asks for a neighbourhood | `e2e/post-location.e2e.ts` reads the form's own field order and asserts the place input is FIRST; asserts the label, the Browse button and its `aria-expanded` round-trip; asserts `select` count 0 and the words "Neighborhood" / "Pick a neighborhood…" absent |
+| A post with a place and NOTHING else is postable | the spec's first test is the raw PostgREST insert with no `neighborhood_id` (the payload the form sends) and reads the column back as NULL. **Red by design pre-0035**, quoted verbatim: `HTTP 400 — {"code":"23502",…"null value in column \"neighborhood_id\" of relation \"playdates\" violates not-null constraint"}` |
+| The signed-out view tolerates a NULL label | a session-less browser context loads a neighbourhood-less post, asserts the title and the place link render and that "We couldn't find this drop-in" does NOT — **with an in-band sensitivity proof** (the same context loads a bogus id and that heading DOES appear), so the negative assertion cannot be vacuous |
+| Migration 0035 + probes | `information_schema`: `playdates.neighborhood_id` and `playdate_series.neighborhood_id` both `is_nullable = YES`; both FKs still `confdeltype = 'r'` (ON DELETE RESTRICT); `pg_get_functiondef` shows exactly ONE neighbourhood join and it is the LEFT join; the anon RPC returns **HTTP 200 with the full 13-field payload and `neighborhood_name: null`** for a NULL-neighbourhood post (pre-0035 that same call returned NULL = a signed-out "not found"), and **`"Green Lake"`** for an existing post; the probe row was deleted (residue check: 0 probe rows, 5 posts, 0 with a null neighbourhood) |
+| **Gate (coordinator, independent)** | build exit 0 · **673/673 unit (20 files)** · **e2e 54/54, exit 0** · lint **0 errors** (39 warnings = the pre-existing baseline) |
+| Marker sweep | after the suite: 81 marker accounts, **0 founder overlap**, 0 child rows left by the specs → deleted; verified back to **2 profiles / 5 posts / 0 e2e left / moderator flag intact** |
+
+**Deviations and findings from ticket 01 (all deliberate, logged here):**
+
+1. **Two traps the ticket's "no other column changes" line did not anticipate,
+   both verified live BEFORE the migration was written, and both folded into
+   0035** (the ticket file itself carries an AMENDED note):
+   (a) `get_public_playdate` joined the neighbourhood with an **INNER** join, so a
+   NULL neighbourhood made the whole function return NULL — every logged-out
+   visitor would have got "not found" for a post that exists, with no error
+   anywhere. Re-created with a LEFT join (the composite type needed no swap:
+   `neighborhood_name` was already nullable text).
+   (b) `playdate_series.neighborhood_id` was NOT NULL and 0028's generator copies
+   it into every occurrence, so **"Repeat weekly" would have died on its own
+   23502 before the post landed** (`/new` awaits `createPlaydateSeries` before
+   `createPlaydate`). That column drops NOT NULL in the same migration.
+2. **Four `neighborhoods!inner` embeds became plain (LEFT JOIN) embeds** — the
+   ticket named the feed and the profile; an INNER JOIN would have silently
+   dropped every neighbourhood-less post from **the feed, the profile lists AND
+   the place page**. The memberships embed (`db.ts:392`) correctly keeps
+   `!inner` (that FK is NOT NULL).
+3. **The empty string would have failed BEFORE and AFTER 0035.** The ticket
+   predicts the pre-apply failure is 23502, but the form held `''` and the old
+   write sent it as a uuid → `22P02`. Fixed with the house `…IdField` pattern:
+   the insert OMITS the key, the update writes NULL. This is *why* the
+   documented red is a clean 23502.
+4. **21 existing specs filled the removed select**, so each lost that step and
+   every one is marked in place. **Three assertions changed** and are quoted
+   in-file: `quick-post`'s `toHaveValue(/.+/)` on the gone select →
+   `toHaveCount(0)`; `post-edit-delete`'s `/edit` prefill assertion →
+   `toHaveCount(1)` + `toHaveValue('')`; `feed.test.ts`'s embed and validator
+   tests. No test was weakened.
+5. **Fresh-context review returned NEEDS_CHANGES with 3 findings; all fixed**
+   (review cycle 1 of a permitted 2). The reviewer found a **real defect** the
+   builder and the coordinator had both missed: a "Recent places" chip writes the
+   remembered post's REAL neighbourhood id into a form that renders no
+   neighbourhood field, and a later place pick inherited it — so place and
+   neighbourhood could contradict each other on the card. Fixed *structurally*
+   (`placePickPatch(place)` takes only the place, so "fall back to the invisible
+   previous value" is no longer expressible) and pinned by a unit test plus an
+   e2e that reproduces the exact sequence. The other two: the only assertion
+   covering `/edit`'s stored-neighbourhood prefill had been deleted with nothing
+   replacing it (restored, plus the clear-to-NULL half), and two assertions in
+   the new spec **could not fail** (both replaced with exact-text assertions;
+   the card's meta line is now compared against `feed.formatTimeWindow` — the
+   function the card itself renders — with whitespace collapsed because Node and
+   Chromium ship different ICU builds).
+6. **`/edit` untouched by design.** `PlaydateFormFields` is shared, so the new
+   layout rides props (`locationFirst`, `showNeighborhood`, `onBrowsePlaces`)
+   whose defaults reproduce V8 ticket 05's markup byte-for-byte; `e2e/fixtures.ts`
+   is byte-identical (`stepStartTimeOnce` needed no change — that is ticket 03's
+   problem, not this ticket's).
 
 ## V4 — "Drop In" mobile conversion (opened 2026-09-11)
 
