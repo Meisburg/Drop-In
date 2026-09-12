@@ -62,6 +62,15 @@ export interface PlaydateFormFieldsProps {
   onApplyRecentPlace?: (place: RecentPlace) => void
   /** /new only: the quick-fill preset card, rendered inside the form first. */
   preset?: ReactNode
+  /**
+   * V8 ticket 06: the /new-only "Repeat weekly" control (the series toggle +
+   * the weekday it derives from the chosen start date), rendered under the
+   * duration chips — next to the time it repeats. Passed in as a slot for the
+   * same reason as `preset`: this component owns no state and no submit
+   * logic, and the EDIT form must never show it (changing one occurrence of a
+   * series is not how a series is edited).
+   */
+  repeatSlot?: ReactNode
   submitLabel: string
   submittingLabel: string
   submitBusy: boolean
@@ -84,6 +93,7 @@ export function PlaydateFormFields({
   recentPlaces,
   onApplyRecentPlace,
   preset,
+  repeatSlot,
   submitLabel,
   submittingLabel,
   submitBusy,
@@ -272,6 +282,10 @@ export function PlaydateFormFields({
         ) : null}
       </div>
 
+      {/* V8 ticket 06: the /new-only "Repeat weekly" control sits with the
+          start/duration it repeats (the /edit form passes no slot). */}
+      {repeatSlot}
+
       {/* V3 slice 6 (ticket 09): the "Best for ages" section is REPLACED by the
     "Kids you're bringing" picker — a multi-select of the host's own kids
     (chips: name + age, 0011 kids table; the 375px layout wraps the chips
@@ -338,7 +352,15 @@ export function PlaydateFormFields({
         >
           {submitBusy ? submittingLabel : submitLabel}
         </button>
-        {submitError ? <p className="text-sm text-red-600">{submitError}</p> : null}
+        {/* V8 ticket 06: a stable handle for the submit's error line — the
+            weekly-series e2e reads it to report the documented pre-0028-apply
+            failure (PGRST205 on the missing table) instead of racing the
+            error text. */}
+        {submitError ? (
+          <p data-testid="submit-error" className="text-sm text-red-600">
+            {submitError}
+          </p>
+        ) : null}
       </div>
     </form>
   )

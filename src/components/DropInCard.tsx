@@ -8,6 +8,7 @@ import {
   isHappeningNow,
   type GoingPinger,
 } from '../lib/feed'
+import { weeklyMetaSuffix } from '../lib/series'
 import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
 
 /**
@@ -67,6 +68,13 @@ import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
  * ticket 05). count 0 → the line is hidden. The host's own posts keep
  * the line (the host sees who's coming — unlike the ping toggle, which
  * is hidden there).
+ *
+ * V8 ticket 06 (migration 0028): an occurrence of a weekly series carries
+ * ` · weekly` as TEXT on this same meta line — deliberately NOT a new badge.
+ * The badge slot is full (status / ended / happening-now / starts-soon /
+ * rain), and "this repeats" is a property of the post, not a state it is in.
+ * A one-off post renders exactly as it always did (`series_id` absent
+ * pre-0028-apply → no marker).
  */
 export function DropInCard({
   playdate,
@@ -176,6 +184,11 @@ export function DropInCard({
         <p className="text-sm text-slate-700">{playdate.place}</p>
         <p className="text-sm text-slate-600">
           {playdate.neighborhood.name} · {formatTimeWindow(playdate.starts_at, playdate.ends_at)}
+          {/* V8 ticket 06: ` · weekly` (text, right after the time window) when
+              this post is an occurrence of a weekly series — the pure
+              weeklyMetaSuffix seam returns '' for a one-off, so nothing
+              changes for a normal post. */}
+          {weeklyMetaSuffix(playdate.series_id)}
           {distanceLabel !== null ? ` · ${distanceLabel}` : ''}
         </p>
         <div className="flex items-center gap-2">

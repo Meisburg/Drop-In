@@ -8,6 +8,7 @@ import type {
   Neighborhood,
   Playdate,
   PlaydateKid,
+  PlaydateSeries,
   PlaydateStatus,
   PlaydateWithNeighborhood,
   Profile,
@@ -48,6 +49,14 @@ import {
 import { issueModeratorUpdate, isProfileBanned } from './moderation'
 import { oauthRedirectTo, probeOAuthProvider, type OAuthProvider } from './oauth'
 import { resetRedirectTo } from './passwordReset'
+// V8 ticket 06: the weekly series' pure payload seams (the series row and the
+// playdates `series_id` key — omitted entirely for a standalone post, so
+// pre-0028-apply every existing post path stays byte-identical).
+import {
+  seriesIdField,
+  seriesInsertRow,
+  type NewPlaydateSeriesInput,
+} from './series'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -604,6 +613,13 @@ export interface NewPlaydateInput {
    * missing column; a post WITH one 42703s — the e2e's documented RED).
    */
   address?: string
+  /**
+   * V8 ticket 06 (migration 0028): the weekly series this post is the first
+   * occurrence of. UNDEFINED for a one-off — the `series_id` key is then
+   * ABSENT from the insert payload rather than null, so pre-0028-apply every
+   * existing post path is unchanged (the 0021 address lesson).
+   */
+  seriesId?: string
 }
 
 /**
@@ -637,6 +653,10 @@ export async function createPlaydate(input: NewPlaydateInput): Promise<Playdate>
       // post without an address is unaffected; one with an address 42703s
       // — the e2e's documented RED-by-design pre-apply failure).
       address: input.address,
+      // V8 ticket 06 (migration 0028): the weekly link — the key is present
+      // ONLY for a series' first occurrence (seriesIdField returns {} for a
+      // standalone post, so nothing about today's inserts changes).
+      ...seriesIdField(input.seriesId),
     })
     .select()
     .single()
@@ -2485,4 +2505,123 @@ export async function hideComment(commentId: string): Promise<void> {
     .update({ hidden_at: new Date().toISOString() })
     .eq('id', commentId)
   if (error) throw error
+}
+
+// ---------------------------------------------------------------------------
+// V8 ticket 06 (migration 0028): standing playdates — the weekly series.
+//
+// A series is the RULE ("Green Lake, Saturdays 10am"); its occurrences are
+// REAL playdates rows carrying `series_id`, so every read path, RLS policy,
+// RPC and e2e spec in the app keeps working untouched (the ticket's central
+// pin). These are the only three Supabase-facing calls the feature needs:
+// create the series, top up its occurrences, stop it.
+//
+// DB-not-applied discipline (the house rule): pre-0028-apply the
+// `playdate_series` table and the RPC do not exist, so `createPlaydateSeries`
+// throws (PGRST205 / 404 — the /new submit's designed error line, the
+// documented e2e red point) and `ensureSeriesOccurrences` / `getPlaydateSeries`
+// fail for their callers to swallow. The detail page and /new both degrade to
+// today's behavior rather than crashing.
+//
+// Generation is triggered from the CLIENT at exactly two moments (the pinned
+// strategy): series creation, and the HOST opening their own detail page.
+// Never on a viewer's read — a viewer's page load must not write.
+// ---------------------------------------------------------------------------
+
+/**
+ * The series insert, against an injected client (the setSeriesActive /
+ * setPlaydateStatus pattern — mockable, so the payload's wall-clock shape is
+ * unit-tested without a DB).
+ *
+ * The insert carries the host's own id (the RLS `playdate_series_insert_host`
+ * policy is the wall) and the wall-clock rule + IANA zone, never a UTC
+ * instant. `.select().single()` is safe here: the SELECT policy is open to
+ * authenticated, so the RETURNING read-back cannot 403 (the 0014/42501
+ * lesson only bites when the actor is excluded from the row).
+ */
+export async function createPlaydateSeriesWithClient(
+  client: SupabaseClient,
+  hostProfileId: string,
+  input: NewPlaydateSeriesInput,
+): Promise<PlaydateSeries> {
+  const { data, error } = await client
+    .from('playdate_series')
+    .insert(seriesInsertRow(hostProfileId, input))
+    .select()
+    .single()
+  if (error) throw error
+  return data as PlaydateSeries
+}
+
+/**
+ * Create a weekly series (the /new "Repeat weekly" path). Returns the created
+ * row: the caller links the post it is about to create to `id`, then tops up
+ * the occurrences.
+ */
+export async function createPlaydateSeries(
+  input: NewPlaydateSeriesInput,
+): Promise<PlaydateSeries> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (!user) throw new Error('No authenticated user — cannot start a weekly series.')
+  return createPlaydateSeriesWithClient(supabase, user.id, input)
+}
+
+/**
+ * Top the series' occurrences up to the horizon (migration 0028's
+ * `ensure_series_occurrences`: SECDEF, search_path pinned, EXECUTE to
+ * authenticated only). Returns the number of rows CREATED by this call — 0 on
+ * a re-run, on a stopped series (`active = false`) and for a series that no
+ * longer exists, which is exactly the idempotency signal the ticket asks for.
+ *
+ * Callers: /new right after a series is created, and the host's own detail
+ * page. Both treat a failure as non-fatal (the (a)+(b) fallback heals it).
+ */
+export async function ensureSeriesOccurrences(
+  seriesId: string,
+  horizonDays?: number,
+): Promise<number> {
+  const args: Record<string, unknown> = { p_series_id: seriesId }
+  if (horizonDays !== undefined) args.p_horizon_days = horizonDays
+  const { data, error } = await supabase.rpc('ensure_series_occurrences', args)
+  if (error) throw error
+  // The function returns an integer; a composite/null answer would be a
+  // contract break, so report "nothing created" rather than NaN.
+  return typeof data === 'number' ? data : 0
+}
+
+/** Read one series row (the detail page's host panel line + its active flag). */
+export async function getPlaydateSeries(seriesId: string): Promise<PlaydateSeries | null> {
+  const { data, error } = await supabase
+    .from('playdate_series')
+    .select('*')
+    .eq('id', seriesId)
+    .maybeSingle()
+  if (error) throw error
+  return (data as PlaydateSeries | null) ?? null
+}
+
+/**
+ * "Stop repeating": flip `active` (against an injected client — mockable).
+ * A plain update with NO `.select()`/RETURNING (the house write shape), and
+ * NO delete: the occurrences already generated are other families' plans —
+ * they stay as ordinary posts (the pinned "never silently delete" rule).
+ * Host-only: `playdate_series_update_host` is the wall, so a non-host call is
+ * a silent 0-row 2xx (the 0014 lesson) and the control lives in the host panel.
+ */
+export async function setSeriesActiveWithClient(
+  client: SupabaseClient,
+  seriesId: string,
+  active: boolean,
+): Promise<void> {
+  const { error } = await client.from('playdate_series').update({ active }).eq('id', seriesId)
+  if (error) throw error
+}
+
+/** The default-client wrapper (the host panel's Stop repeating). */
+export async function setSeriesActive(seriesId: string, active: boolean): Promise<void> {
+  return setSeriesActiveWithClient(supabase, seriesId, active)
 }

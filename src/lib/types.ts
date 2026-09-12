@@ -116,6 +116,46 @@ export interface Playdate {
    * missing as no address, the pre-0016 status discipline).
    */
   address?: string | null
+  /**
+   * The series this post is one occurrence of (V8 ticket 06, migration
+   * 0028): null/absent = a one-off post. Set on every occurrence — including
+   * the first, which the host creates through /new — and NEVER nulled by
+   * "Stop repeating" (that flips playdate_series.active; the weeks already
+   * posted stay as ordinary posts). Optional: absent until the live project
+   * is past 0028 (undefined at runtime — no `· weekly` marker renders).
+   */
+  series_id?: string | null
+}
+
+/**
+ * A standing weekly playdate (V8 ticket 06, migration 0028): the RULE
+ * ("every Saturday, 10:00, in this zone"), not an event. Its occurrences are
+ * ordinary `playdates` rows carrying its id, which is why the whole rest of
+ * the app (feed, pings, guest list, kids, comments, ICS, share, public view)
+ * needs no knowledge of this table at all.
+ *
+ * The time is WALL CLOCK in `timezone` — never a stored UTC instant: a
+ * 10:00 AM series stays 10:00 AM across both DST transitions (the pinned
+ * correctness rule; src/lib/series.ts is the pure seam).
+ */
+export interface PlaydateSeries {
+  id: string
+  host_profile_id: string
+  title: string
+  place: string
+  address: string | null
+  details: string | null
+  neighborhood_id: string
+  /** 0 = Sunday … 6 = Saturday (the client derives it from the chosen date). */
+  weekday: number
+  /** Minutes past LOCAL midnight (the app keeps it on a 30-minute grid). */
+  start_minutes: number
+  duration_minutes: number
+  /** IANA zone name captured in the browser ('UTC' when the device had none). */
+  timezone: string
+  /** false = "Stop repeating": generation halts, existing occurrences stay. */
+  active: boolean
+  created_at: string
 }
 
 /** A (seeded) Seattle neighborhood tag. */

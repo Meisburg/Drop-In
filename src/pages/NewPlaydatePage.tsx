@@ -5,6 +5,8 @@ import { ADDRESS_MAX_LENGTH, PlaydateFormFields } from '../components/PlaydateFo
 import { useSessionContext } from '../components/SessionProvider'
 import {
   createPlaydate,
+  createPlaydateSeries,
+  ensureSeriesOccurrences,
   listKids,
   listNeighborhoods,
   listRecentOwnPlaces,
@@ -21,6 +23,12 @@ import {
   validatePlaydateForm,
 } from '../lib/feed'
 import type { PlaydateFormErrors, PlaydateFormValues, RecentPlace } from '../lib/feed'
+import {
+  deviceTimeZone,
+  everyWeekdayLabel,
+  seriesTimeLabel,
+  weekdayFromDateIso,
+} from '../lib/series'
 import type { DuplicatePrefill, Kid, Neighborhood } from '../lib/types'
 
 /**
@@ -115,6 +123,21 @@ function withDefaultTitle(values: PlaydateFormValues): PlaydateFormValues {
  * it over as the `duplicate` prop). Everything except the date/time is
  * prefilled — the start date, start time, and duration are always
  * re-entered.
+ *
+ * V8 ticket 06 (migration 0028): "Repeat weekly" — OFF by default, so the
+ * form a parent already knows is unchanged unless they ask for it. When it is
+ * on, the weekday is derived from the chosen start date (never typed) and said
+ * back in words ("every Saturday"), and the submit does three things in order:
+ * create the SERIES (weekday + wall-clock start_minutes + the browser's IANA
+ * zone — never a UTC instant, so 10 AM stays 10 AM across DST), create the
+ * post the parent is looking at with `series_id` set, then top the series'
+ * occurrences up to the 21-day horizon. From then on the post is an ordinary
+ * drop-in that happens to say ` · weekly`, so pings, the guest list, kids,
+ * comments, ICS, share and the signed-out view all work with no changes at all.
+ *
+ * Pre-0028-apply the series create fails (PGRST205: the table does not exist)
+ * and the submit's designed error line says so — the documented red-by-design
+ * point, never a crash (the DB-not-applied discipline).
  */
 export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | null }) {
   const navigate = useNavigate()
@@ -149,6 +172,9 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
   // whether that is because they have never posted or because the load
   // failed: the zero-pressure discipline (no error state on /new).
   const [recentPlaces, setRecentPlaces] = useState<RecentPlace[]>([])
+  // V8 ticket 06: "Repeat weekly" — OFF by default (a one-off drop-in is the
+  // common case, and the form a parent knows must not change under them).
+  const [repeatWeekly, setRepeatWeekly] = useState(false)
   // The session's user id (the kids table's profile_id — the same key
   // ProfilePage's kids load uses).
   const userId = session?.user?.id ?? null
@@ -248,6 +274,10 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
   const quickStartMinutes = nextSlotMinutes(mountedNowIso)
   const quickDurationMinutes = suggestedDurationMinutes(mountedNowIso)
   const quickEndLabel = formatTimeLabel(quickStartMinutes + quickDurationMinutes)
+  // V8 ticket 06: the weekday the "Repeat weekly" control is about, derived
+  // from the chosen start date ('' until a date is chosen — the pure seam
+  // says nothing rather than guessing).
+  const repeatWeeklyLabel = everyWeekdayLabel(weekdayFromDateIso(values.startDate))
 
   /**
    * V8 ticket 01: "we're here until <the next hour>" — the spontaneous
@@ -295,15 +325,61 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
       // UTC ISO before the timestamptz insert (the stored instant must be
       // the moment the parent meant, whatever their timezone). The end is
       // always computed (start + duration) — never typed.
+      const trimmedDetails = values.details.trim() || undefined
+      // V8 ticket 06: "Repeat weekly" — derive the weekday from the chosen
+      // start date (the pure seam: a date with no parts yields null, and
+      // validation has already required a date) and create the series FIRST,
+      // so the post below can carry its id. The series stores the WALL CLOCK
+      // rule + the browser's IANA zone; the instant is never stored (10 AM
+      // stays 10 AM across the March and November transitions).
+      //
+      // This order is also the documented red-by-design point pre-0028-apply:
+      // the missing table fails the submit here, before anything is written.
+      // A failed POST create AFTER a successful series create would leave an
+      // unreferenced series row (no occurrences, invisible in the UI — the
+      // series line only renders for a post that points at one); that is
+      // preferable to a post that fails for a reason the parent cannot act on.
+      const seriesWeekday = weekdayFromDateIso(values.startDate)
+      let seriesId: string | undefined
+      if (repeatWeekly && seriesWeekday !== null) {
+        const series = await createPlaydateSeries({
+          title: values.title.trim(),
+          place: values.place.trim(),
+          address: trimmedAddress.length > 0 ? trimmedAddress : undefined,
+          details: trimmedDetails,
+          neighborhoodId: values.neighborhoodId,
+          weekday: seriesWeekday,
+          startMinutes: values.startMinutes,
+          durationMinutes: values.durationMinutes,
+          timezone: deviceTimeZone(),
+        })
+        seriesId = series.id
+      }
       const createdPlaydate = await createPlaydate({
         title: values.title.trim(),
         place: values.place.trim(),
         neighborhoodId: values.neighborhoodId,
         startsAt: computeStartIso(values.startDate, values.startMinutes),
         endsAt: computeEndIso(values.startDate, values.startMinutes, values.durationMinutes),
-        details: values.details.trim() || undefined,
+        details: trimmedDetails,
         address: trimmedAddress.length > 0 ? trimmedAddress : undefined,
+        seriesId,
       })
+      // V8 ticket 06: the occurrences the parent is not looking at. The post
+      // just created IS this series' first occurrence and the generator
+      // skips it (the unique (series_id, starts_at) index + on conflict do
+      // nothing), so this only fills in the weeks ahead.
+      //
+      // Swallowed on purpose: the series and the post are already real, and
+      // the host opening this post later re-runs the same generator (the
+      // pinned (a)+(b) strategy), so a failed top-up here is transient, not
+      // a reason to fail a post that exists. Nothing is silently lost: the
+      // weeks simply arrive on the next open.
+      if (seriesId !== undefined) {
+        await ensureSeriesOccurrences(seriesId).catch(() => {
+          /* Swallowed — the host's next open of this post regenerates. */
+        })
+      }
       // V3 slice 6 (ticket 09): land the picker's selection in playdate_kids
       // right after the create succeeds (replace-on-duplicate — the post is
       // fresh, so this is effectively the insert). An empty selection
@@ -389,6 +465,46 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
                 Fills the start time ({formatTimeLabel(quickStartMinutes)}) and how long (
                 {durationLabel(quickDurationMinutes)}) — then just say where you’ll be.
               </p>
+            </div>
+          }
+          /* V8 ticket 06: the "Repeat weekly" control — off by default. The
+             weekday is DERIVED from the chosen start date and said back in
+             words, so a parent sees the rule they are about to create ("every
+             Saturday") rather than having to work it out from the date field.
+             Nothing is submitted here; it only arms the series on Post. */
+          repeatSlot={
+            <div className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <button
+                type="button"
+                aria-pressed={repeatWeekly}
+                data-testid="repeat-weekly"
+                onClick={() => setRepeatWeekly((prev) => !prev)}
+                className={
+                  'min-h-11 w-full rounded-xl border px-4 py-2 text-sm font-medium transition-colors ' +
+                  (repeatWeekly
+                    ? 'border-indigo-600 bg-indigo-600 text-white'
+                    : 'border-slate-300 bg-white text-slate-700')
+                }
+              >
+                Repeat weekly
+              </button>
+              {repeatWeekly ? (
+                repeatWeeklyLabel !== '' ? (
+                  <p data-testid="repeat-weekly-label" className="text-xs text-slate-600">
+                    Repeats{' '}
+                    <span className="font-medium text-indigo-700">{repeatWeeklyLabel}</span> at{' '}
+                    {seriesTimeLabel(values.startMinutes)} — the weeks ahead post themselves.
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-600">
+                    Pick a start date and this becomes a standing weekly meetup.
+                  </p>
+                )
+              ) : (
+                <p className="text-xs text-slate-500">
+                  Off — this is a one-off. Turn it on for a standing meetup.
+                </p>
+              )}
             </div>
           }
           submitLabel="Post drop-in"

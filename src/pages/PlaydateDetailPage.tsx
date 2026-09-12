@@ -11,11 +11,13 @@ import {
   addComment,
   deleteComment,
   deletePlaydate,
+  ensureSeriesOccurrences,
   fetchGuestList,
   fetchRainProbabilityForZip,
   getBlockState,
   getGoingCount,
   getPlaydateDetail,
+  getPlaydateSeries,
   getPublicPlaydateDetail,
   getShareUrl,
   hasPinged,
@@ -26,6 +28,7 @@ import {
   listMyPingKids,
   listPlaydateKidNames,
   setPlaydateStatus,
+  setSeriesActive,
   togglePing,
 } from '../lib/db'
 import {
@@ -39,6 +42,7 @@ import {
 } from '../lib/feed'
 import { buildIcs } from '../lib/ics'
 import { canModerate } from '../lib/moderation'
+import { seriesLineLabel, weeklyMetaSuffix } from '../lib/series'
 import {
   COMMENT_MAX_LENGTH,
   PLAYDATE_PING_INTENT_KEY,
@@ -53,6 +57,7 @@ import type {
   CommentWithAuthor,
   Kid,
   PlaydateKid,
+  PlaydateSeries,
   PlaydateStatus,
   PlaydateWithNeighborhood,
   PublicPlaydateDetail,
@@ -252,6 +257,24 @@ type DetailState =
  * DB-not-applied discipline, same as the ping / kids sections); the
  * signed-out public view never renders it (the RPC is
  * EXECUTE-to-authenticated-only — the signed-in surface).
+ *
+ * V8 ticket 06 (migration 0028): an occurrence of a weekly series says so on
+ * the time line — ` · weekly` as TEXT after the window (never a new badge: the
+ * badge slot carries status / ended / happening-now / starts-soon / rain, and
+ * the rain badge keeps its place). The post is otherwise an ordinary drop-in —
+ * pings, the guest list, kids, comments, ICS, share and the public view all
+ * behave exactly as they do for a one-off, which is the point of the whole
+ * design.
+ *
+ * The host's panel gains the rule behind the post ("Weekly · every Saturday
+ * 10 AM") and "Stop repeating", which sets `active = false` on the series and
+ * deletes NOTHING: the weeks already generated are other families' plans and
+ * stay as ordinary posts. Two disciplines ride along:
+ *   - the HOST opening this page is generation trigger (b) (the pinned
+ *     (a)+(b) strategy — no cron job, never a write on a viewer's read);
+ *   - pre-0028-apply the row has no series_id and the RPC/table do not exist,
+ *     so nothing is fetched, nothing renders and nothing is swallowed into a
+ *     crash (the DB-not-applied discipline).
  */
 export function PlaydateDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -359,6 +382,57 @@ export function PlaydateDetailPage() {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  // V8 ticket 06: the weekly series behind this post, as the HOST sees it
+  // (the "Weekly · every Saturday 10 AM" line + Stop repeating). The row is
+  // stored WITH the series id it was read for, so navigating from one
+  // occurrence to another can never render the previous post's rule while the
+  // new read is in flight. These hooks live up here with the others (the V6
+  // lesson: the component returns early below, and a hook after a conditional
+  // return makes React throw).
+  const [seriesState, setSeriesState] = useState<{
+    seriesId: string
+    row: PlaydateSeries | null
+  } | null>(null)
+  const [seriesBusy, setSeriesBusy] = useState(false)
+  const [seriesError, setSeriesError] = useState<string | null>(null)
+  // Read off the settled state so the effect below has stable deps regardless
+  // of where the early returns sit. null (the post is a one-off, the viewer is
+  // not the host, or pre-0028-apply — the column is absent from the row) means
+  // no series panel at all.
+  const seriesIdOnPost = state.status === 'ready' ? (state.detail.series_id ?? null) : null
+  const viewerIsHost =
+    state.status === 'ready' && session !== null && state.detail.host_profile_id === session.user.id
+  // The loaded row for THIS post only (a stale one is ignored, not cleared —
+  // no setState in an effect, and no flash of the wrong series).
+  const series =
+    seriesState !== null && seriesState.seriesId === seriesIdOnPost ? seriesState.row : null
+
+  // V8 ticket 06: the HOST's own open of an occurrence is generation trigger
+  // (b) — the second half of the pinned strategy (the first is series
+  // creation in /new), and the reason the feature stays correct with no cron
+  // job. It runs ONLY for the host: a viewer's page load must never write
+  // (and the RPC is EXECUTE-to-authenticated anyway, so a viewer's call would
+  // be a pointless round-trip). Fire-and-forget: pre-0028-apply the RPC does
+  // not exist, and a failed top-up must never cost the post a section.
+  useEffect(() => {
+    if (seriesIdOnPost === null || !viewerIsHost) return
+    const seriesId = seriesIdOnPost
+    let cancelled = false
+    void ensureSeriesOccurrences(seriesId).catch(() => {
+      /* Swallowed: pre-0028-apply the RPC 404s; a transient failure retries
+         on the next open (the (a)+(b) fallback is the whole strategy). */
+    })
+    getPlaydateSeries(seriesId)
+      .then((row) => {
+        if (!cancelled) setSeriesState({ seriesId, row })
+      })
+      .catch(() => {
+        if (!cancelled) setSeriesState({ seriesId, row: null })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [seriesIdOnPost, viewerIsHost])
 
   useEffect(() => {
     if (id === undefined || id === '') return
@@ -634,6 +708,37 @@ export function PlaydateDetailPage() {
       setStatusError(err instanceof Error ? err.message : 'Could not update the status. Try again.')
     } finally {
       setStatusBusy(false)
+    }
+  }
+
+  /**
+   * V8 ticket 06: "Stop repeating" — the host turns the SERIES off
+   * (`active = false`; the RLS `playdate_series_update_host` policy is the
+   * wall, and this button lives in the host-only panel).
+   *
+   * Deliberately NOT a delete, and it deletes nothing: every occurrence
+   * already generated is another family's plan, so the weeks already posted
+   * stay exactly as they are — the generator simply stops adding more. A
+   * failed write surfaces the designed error line and changes no state.
+   */
+  async function handleStopRepeating() {
+    if (series === null || seriesBusy) return
+    const seriesId = series.id
+    setSeriesBusy(true)
+    setSeriesError(null)
+    try {
+      await setSeriesActive(seriesId, false)
+      setSeriesState((prev) =>
+        prev === null || prev.seriesId !== seriesId
+          ? prev
+          : { seriesId, row: prev.row === null ? null : { ...prev.row, active: false } },
+      )
+    } catch (err) {
+      setSeriesError(
+        err instanceof Error ? err.message : 'Could not stop the weekly repeat. Try again.',
+      )
+    } finally {
+      setSeriesBusy(false)
     }
   }
 
@@ -1259,6 +1364,12 @@ export function PlaydateDetailPage() {
       >
         <p className="text-sm text-slate-700">
           {formatDay(detail.starts_at)} · {formatTime(detail.starts_at)}–{formatTime(detail.ends_at)}
+          {/* V8 ticket 06: ` · weekly` as TEXT after the time window when this
+              post is an occurrence of a series (the pure weeklyMetaSuffix seam
+              returns '' for a one-off). Not a badge — the badge slot is full,
+              and the rain badge below keeps its place. Rendered for every
+              viewer: it is a property of the post, not of the host panel. */}
+          {weeklyMetaSuffix(detail.series_id)}
           {/* V3 slice 2 (ticket 02): the best-effort "Rain likely" badge
               (Open-Meteo, host's home zip, >= 50%) — silently absent when
               the fetch fails or the probability is below the threshold. */}
@@ -1426,6 +1537,47 @@ export function PlaydateDetailPage() {
               <p className="mt-2 text-sm text-red-600">{statusError}</p>
             ) : null}
           </div>
+
+          {/* V8 ticket 06: the series line + "Stop repeating" — inside the
+              host-only panel, so only the host sees (or can touch) the rule
+              behind this post. Rendered for an occurrence only: a one-off has
+              no series_id, and pre-0028-apply the column is absent from the
+              row entirely (no line, no query, no crash). The line reads the
+              rule back in words + the wall clock ("Weekly · every Saturday
+              10 AM"); Stop repeating flips active and DELETES NOTHING — the
+              weeks already posted stay as ordinary posts, because other
+              families have said they are going to them. */}
+          {seriesIdOnPost !== null ? (
+            <div className="mt-3 border-t border-indigo-100 pt-3" data-testid="series-panel">
+              {series !== null ? (
+                <>
+                  <p className="text-sm font-medium text-indigo-900" data-testid="series-line">
+                    {seriesLineLabel(series.weekday, series.start_minutes)}
+                  </p>
+                  {series.active ? (
+                    <button
+                      type="button"
+                      data-testid="stop-repeating"
+                      disabled={seriesBusy}
+                      onClick={() => void handleStopRepeating()}
+                      className="mt-2 rounded-xl border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 disabled:opacity-50"
+                    >
+                      Stop repeating
+                    </button>
+                  ) : (
+                    <p className="mt-1 text-sm text-indigo-700" data-testid="series-stopped">
+                      Repeating stopped — the weeks already posted stay up.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-indigo-700">Couldn’t load the weekly details.</p>
+              )}
+              {seriesError !== null ? (
+                <p className="mt-2 text-sm text-red-600">{seriesError}</p>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
