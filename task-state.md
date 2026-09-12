@@ -9,7 +9,7 @@
 - **Phase: V4 COMPLETE (2026-09-11).** Human enabled Google in the Supabase project; the blocker is cleared and the round-trip is verified — see the closure evidence below.
 - **Active slice:** none — **V8 IS COMPLETE TO ITS HUMAN BOUNDARY (2026-09-13).** Tickets 01–10 are shipped and verified (`dd0642e` … `135c401`), 11's schema half is live with its UI deliberately held, and 12's instrument is delivered. Migrations **0028–0034 are ALL APPLIED LIVE** and probed. Final gate on the committed tree: build exit 0 · **655/655 unit (20 files)** · **e2e 48/48** · lint 0 errors · both PWA verifier scripts green · live DB swept back to 2 founders. **Next action (human):** (a) **push — mostly done (2026-09-12)**: keypair → `supabase secrets set` → `send-push` deployed → wall verified (service-role 200, anon 401) → `VITE_VAPID_PUBLIC_KEY` added to Vercel (Config/public, it's a public key) → `a97892e` pushed, live bundle `index-COPgHOaF.js` verified to carry the key (1 occurrence). **Remaining:** the Android phone test (`docs/push-setup.md`). **Schedule DONE (2026-09-12):** no dashboard Schedules tab on this plan (DOM-checked) and no `vault` → pg_cron+pg_net enabled, job `send-push-every-5-minutes` live (jobid 3); key injected via `.scratch/cron-schedule-send-push.mjs` (0600 temp file → CDP SQL API, never in a terminal/chat); 12:45 tick fired (job "succeeded", function booted at 05:45:00 in fn logs) and the drain correctly stamped the 2 pre-existing rows "no subscription" (`push_subscriptions` = 0 until the phone opts in). pg_net's fixed 5s response timeout means `_http_response` shows `timed_out` on cold-start ticks — cosmetic, delivery completes server-side; (b) **email verification**: flip Supabase's "Confirm email" and I land the chip + "Check your inbox" screen + the e2e harness change (`docs/email-verification-setup.md`); (c) **density**: run the first cohort (`.scratch/v8/density-log.md`). **V8 IS NOW ON Vercel (2026-09-12)** — `42dfb2a..a97892e` pushed; the live site serves `index-COPgHOaF.js` with the VAPID public key inlined, so new opt-ins subscribe with the bound key. Open *decisions*, not defects: the **logo mark** (V7 settled colour only) and the beta's SMTP setting.
 - **Remaining human items:** the three in the Next action above. The e2e marker sweep ran clean again (168 markers, 0 founder overlap); live DB = 2 founders only.
-- **V9 — the wife's feedback batch: IN PROGRESS (opened 2026-09-13).** Spec + 9 tickets in `.scratch/v9/`. **Ticket 01 is COMPLETE** (commit `e493e08`) — `/new` leads with the place picker, the neighbourhood is no longer a question, and **migration 0035 is APPLIED LIVE and probed**. Tickets 03 → 04 → 05 are the rest of the authorized batch (one writer, in queue order). Two decisions already taken this session: **02 is deferred** (the human chose to build 03 against the EXISTING time control rather than ship 02's unconfirmed badge-suppression judgment call), and 06/08 still want a one-line confirmation while **09 needs an explicit yes** before dispatch. Details, evidence and the full ticket table are in the **V9** section below.
+- **V9 — the wife's feedback batch: IN PROGRESS (opened 2026-09-13).** Spec + 9 tickets in `.scratch/v9/`. **Tickets 01 and 03 are COMPLETE** (commits `e493e08`, `96bb96e`) — `/new` leads with the place picker, the neighbourhood is no longer a question, and the post page is now three decisions with everything else behind one "More options" disclosure. **Migration 0035 is APPLIED LIVE and probed.** Tickets 04 → 05 are the rest of the authorized batch (one writer, in queue order); 04 is `ready-for-agent` with its brief written. Two decisions already taken this session: **02 is deferred** (the human chose to build 03 against the EXISTING time control rather than ship 02's unconfirmed badge-suppression judgment call), and 06/08 still want a one-line confirmation while **09 needs an explicit yes** before dispatch. Details, evidence and the full ticket table are in the **V9** section below.
 
 **Push pipeline — coordinator verification (2026-09-13, after the human's step-3 run).** Independently confirmed through the Management API and live probes: `send-push` is **ACTIVE** with `verify_jwt: true`; the three VAPID secrets exist; the **anon** bearer gets `401 {"error":"send-push is service-role only"}` (a 404 would have meant "not deployed"); the LIVE bundle carries the VAPID public key and no private half, so deployed opt-ins are **bound**. The DB half is live too: a real ping wrote a `ping_received` row and deleting the post wrote a `cancelled` row via the BEFORE DELETE trigger. **Step 4 is provably NOT done:** `pg_cron`/`pg_net` are not installed, and those two queued rows kept `sent_at` NULL across six minutes of polling — nothing invokes the function. The human's earlier service-role check returned 200 but **predates** those rows (12:16 UTC), so the sender has still never processed a queued row. Read from the code, that case is safe: a row whose recipient has no subscription is stamped `sent_at` with `error: 'no subscription'` and counted as skipped (`index.ts:259-264`) — no oldest-first starvation risk. Both rows are left in place as the canary for the moment the schedule exists.
 
@@ -316,7 +316,7 @@ exit 0 · **655/655 unit (20 files)** · e2e 48/48 per the HANDOFF · migrations
 |---|---|---|
 | 01 | Post: location first — pick a place, drop the neighbourhood | **complete — `e493e08`**; **0035 APPLIED LIVE + probed**; 673/673 unit, e2e 54/54, lint 0 errors |
 | 02 | Post: a time WINDOW, not an hour | **DEFERRED BY THE HUMAN (2026-09-13)** — see the decision below. Ticket stays `ready-for-agent` pending the badge-suppression confirmation; 0036 stays reserved |
-| 03 | Post: the twenty-second post (3 decisions, rest behind "more") | in the queue, dispatched after 01 |
+| 03 | Post: the twenty-second post (3 decisions, rest behind "more") | **complete — `96bb96e`**; no migration (`supabase/` verified untouched); 702/702 unit, e2e 59/59, lint 0 errors |
 | 04 | Nearby: ended drop-ins leave the feed, into the archive | queued (brief written) |
 | 05 | Nearby: ages first, names optional | queued (brief written); needs **0037** |
 | 06 | Nearby: map-first with a list toggle | `ready-for-human` — needs the map-provider one-liner (Leaflet + OSM recommended) |
@@ -404,6 +404,63 @@ pre-empted.
    whose defaults reproduce V8 ticket 05's markup byte-for-byte; `e2e/fixtures.ts`
    is byte-identical (`stepStartTimeOnce` needed no change — that is ticket 03's
    problem, not this ticket's).
+
+### V9 ticket 03 — evidence (complete, `96bb96e`)
+
+| Claim | How it was checked |
+|---|---|
+| A post is THREE decisions; everything else is behind one disclosure | the summary renders the read-back with the place picker, the duration chips and Post; the spec asserts each moved field is **absent from the DOM** collapsed (`toHaveCount(0)`, i.e. the disclosure unmounts rather than hides) and present expanded |
+| "≤4 taps + 1 typed place" (measured, not described) | a capture-phase listener records clicks across the SPA navigation; the spec asserts the click count **and the touched-CONTROL SET** — exactly four: the place field, the picked row, one duration chip, Post. A fifth control fails the spec whatever its event type, so "nothing else may be required" cannot silently stop being true |
+| The summary reads back exactly what will be posted | `postSummaryLines` is pure and pinned line-by-line; the e2e compares the rendered lines against the seam (bracket-mount race-proof), then cross-checks the card and the **DB row's** `starts_at`/`ends_at` and address |
+| `mobile-audit` stays green | 12/12 on the signed-out routes — **and the honest limit is recorded**: the script cannot walk `/new` (V9/01 finding #5), so the `/new` half is asserted in the e2e at **320/375/390/430 + landscape**, collapsed and expanded: no horizontal overflow, every visible control ≥44px |
+| **Gate (coordinator, independent)** | build exit 0 · **702/702 unit (21 files)** · **e2e 59/59, exit 0** · lint **0 errors** (39 warnings = baseline) · `git status --short supabase/migrations` empty |
+
+**Deviations and findings from ticket 03:**
+
+1. **The ticket-02 substitution** (the human's call — see the decision section
+   above): "tap a window chip" ⇒ the duration chips; "the exact-time controls
+   from ticket 02" ⇒ the existing date input + stepper. Both now sit behind the
+   disclosure and are read back in the summary. `e2e/post-time-window.e2e.ts`
+   (named in the ticket's Verify line) does not exist — it is ticket 02's spec.
+2. **A real defect the fresh-context reviewer found inside this ticket's own
+   AC** ("no field is hidden that changes what the parent is agreeing to"): the
+   **address was a hidden default**. A pick writes the place's published street;
+   typing over the place text dropped the `place_id` but KEPT that street, so the
+   collapsed summary could read "Ballard Playground" while the row carried
+   **Green Lake's** address — the very value the detail page renders as the
+   Google Maps link. Fixed both halves: the address is read back on the place
+   line, and a PICK-written address is dropped when the place text changes while
+   a parent-TYPED address survives (`addressAfterPlaceTextEdit`).
+3. **A cross-ticket AC inversion, resolved by satisfying BOTH ACs** (review
+   cycle 1, F2): the summary's title input had become `/new`'s first field and
+   first tab stop, contradicting ticket 01's AC 1 — whose whole point is that the
+   place picker must be *discoverable*, because it used to read as plain text
+   nobody found. Rather than re-pin either AC, the title is now a **tap-to-edit
+   read-back**, so the place picker is still the first field *and* first tab stop;
+   `expect(fieldOrder[0]).toBe(PLACE_PLACEHOLDER)` is **restored verbatim** (plus
+   the stricter `toEqual([PLACE_PLACEHOLDER])`), and **both ticket files carry
+   AMENDED notes** — the record is in the files, not only in an e2e comment.
+4. **Three more real findings**: the summary's repeat line promised a series the
+   submit would not create (now gated on the submit's own guard — no date, no
+   line); the "1 typed place" half of the interaction budget was unmeasured (the
+   touched-set assertion now pins it); a cleared title was unrecoverable and
+   blocked Post (an emptied title counts as un-touched again).
+5. **`/edit` untouched by construction**: every new behaviour rides props
+   (`summaryLines`, `moreOptionsOpen`/`onToggleMoreOptions`, `minTouchTargets`
+   default **false**) whose omission reproduces V8 ticket 05's markup
+   node-for-node, so `post-edit-delete.e2e.ts` drives it unchanged.
+6. **23 specs needed one `openMoreOptions`/`editTitle` call each.** The
+   removed-line audit over the whole e2e diff found **exactly one** executable
+   assertion ever affected — the `post-location` order pin, now restored. Every
+   other change is an addition; no assertion was loosened, deleted or skipped.
+7. **A regression the build caught and reported rather than buried**: the new
+   `editTitle` helper used a non-retrying `count()`, which failed
+   `loop-closing` once when the SPA had not painted; fixed by waiting on the
+   retrying locator and re-verified in isolation.
+8. **Still open, human-owned**: the ticket's own last Verify item — a real phone
+   pass, timed from the installed icon to posted. This session can measure the
+   in-browser interaction count (3 taps + 1 typed place) but not an installed-PWA
+   pass.
 
 ## V4 — "Drop In" mobile conversion (opened 2026-09-11)
 
