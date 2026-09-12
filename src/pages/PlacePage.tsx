@@ -2,9 +2,17 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { DropInCard } from '../components/DropInCard'
 import { useSessionContext } from '../components/SessionProvider'
-import { getPlaceById, listPlaceFeed, loadZipCodes } from '../lib/db'
+import {
+  countPlaceFollowers,
+  getPlaceById,
+  getPlaceFollowState,
+  listPlaceFeed,
+  loadZipCodes,
+  toggleFollowPlace,
+} from '../lib/db'
 import { formatDistanceLabel, mapsHref } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
+import { placeFollowerLine } from '../lib/follows'
 import {
   placeAgeFitLabel,
   placeDistanceMiles,
@@ -42,6 +50,18 @@ import type { Place, PlacePrefill, PlaydateWithNeighborhood } from '../lib/types
  * permanent (that id is not in the directory), while a failure is the
  * documented DB-not-applied state (0029 not applied yet is exactly PGRST205
  * here) and says so.
+ *
+ * V8 ticket 09 (migration 0033): the page grows ONE more block — "N families
+ * follow this place" (the SECDEF `count_place_followers`, the only sanctioned
+ * way a count crosses to another viewer) with the Follow / Unfollow control
+ * for the place. A SIGNED-OUT visitor sees NEITHER: the block renders the same
+ * sign-in prompt its "Upcoming drop-ins here" section already shows, because
+ * the count function is EXECUTE-to-authenticated-only by design (0033's header
+ * documents the three reasons — one posture for both counts, a count next to a
+ * control a visitor cannot press is decoration, and failing closed keeps the
+ * whole directory's follow numbers out of an unauthenticated crawler's reach).
+ * The count is an aggregate over a PARK, never per-person data, and no
+ * follower LIST exists anywhere for anyone.
  */
 export function PlacePage() {
   const { id } = useParams<{ id: string }>()
@@ -54,6 +74,19 @@ export function PlacePage() {
   const [posts, setPosts] = useState<PlaydateWithNeighborhood[] | null>(null)
   const [postsError, setPostsError] = useState<string | null>(null)
   const [zipCoords, setZipCoords] = useState<ReadonlyMap<string, ZipCoords> | null>(null)
+  /**
+   * V8 ticket 09 (migration 0033): the place-follow state + the follower
+   * COUNT. The count comes from the SECDEF `count_place_followers` RPC
+   * (authenticated only) — never a broad read of the follows table, which is
+   * owner-only by policy. `null` = not applicable or not loadable: signed out
+   * (no count is shown at all — see the section render) or the read failed
+   * (pre-0033-apply PGRST205), in which case the line is simply absent and
+   * the control reports the truth when pressed.
+   */
+  const [following, setFollowing] = useState(false)
+  const [followerCount, setFollowerCount] = useState<number | null>(null)
+  const [followBusy, setFollowBusy] = useState(false)
+  const [followError, setFollowError] = useState<string | null>(null)
 
   useEffect(() => {
     if (id === undefined) return
@@ -117,6 +150,64 @@ export function PlacePage() {
       cancelled = true
     }
   }, [loading, session, id])
+
+  /**
+   * V8 ticket 09: the Follow control's state and the follower count, read once
+   * per settled place (signed-in only — see the render: a signed-out visitor
+   * gets the sign-in prompt, never a count, because the SECDEF count is
+   * EXECUTE-to-authenticated-only by design). Both reads are independent and
+   * BOTH are best-effort: a failure (pre-0033-apply: PGRST205 on every follows
+   * read) leaves the control unpressed and the count line absent, and the page
+   * itself is untouched — the place's own data is what this page is for.
+   */
+  useEffect(() => {
+    if (loading || session === null || id === undefined) return
+    let cancelled = false
+    setFollowError(null)
+    getPlaceFollowState(id)
+      .then((isFollowing) => {
+        if (!cancelled) setFollowing(isFollowing)
+      })
+      .catch(() => {
+        // no-op: the control simply starts unpressed
+      })
+    countPlaceFollowers(id)
+      .then((count) => {
+        if (!cancelled) setFollowerCount(count)
+      })
+      .catch(() => {
+        if (!cancelled) setFollowerCount(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [loading, session, id])
+
+  /**
+   * Follow / unfollow THIS place (the owner-only 0033 row). The count is
+   * re-read after a successful write so "N families follow this place" moves
+   * with the button that changed it; a failed count re-read leaves the
+   * previous number rather than blanking a fact we already had (the ticket-02
+   * count discipline). A failed WRITE reports the designed error line.
+   */
+  async function handleToggleFollowPlace() {
+    if (id === undefined || followBusy) return
+    const placeId = id
+    setFollowBusy(true)
+    setFollowError(null)
+    try {
+      const nowFollowing = await toggleFollowPlace(placeId)
+      setFollowing(nowFollowing)
+      const count = await countPlaceFollowers(placeId).catch(() => null)
+      if (count !== null) setFollowerCount(count)
+    } catch (err) {
+      setFollowError(
+        err instanceof Error ? err.message : 'Could not update the follow. Try again.',
+      )
+    } finally {
+      setFollowBusy(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -236,6 +327,56 @@ export function PlacePage() {
         )}
         {place.notes !== null ? (
           <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{place.notes}</p>
+        ) : null}
+      </div>
+
+      {/* V8 ticket 09 (migration 0033): the place's followers — the COUNT (via
+          the SECDEF RPC, never a broad read of the owner-only follows table)
+          and the Follow / Unfollow control. Signed out: the same sign-in
+          prompt the drop-ins section uses, and NO count (see the page doc for
+          why the public route shows none). */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        {session === null ? (
+          <>
+            <p className="text-sm text-slate-600">Following a place is for signed-in parents.</p>
+            <Link
+              to="/login"
+              className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-indigo-600"
+            >
+              Sign in to follow it
+            </Link>
+          </>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-slate-700" data-testid="place-followers">
+              {followerCount === null ? 'Follow this place' : placeFollowerLine(followerCount)}
+            </p>
+            <button
+              type="button"
+              data-testid="follow-place"
+              aria-pressed={following}
+              disabled={followBusy}
+              onClick={() => void handleToggleFollowPlace()}
+              className={
+                'rounded-xl border px-3 py-2 text-sm font-medium disabled:opacity-50 ' +
+                (following
+                  ? 'border-indigo-600 bg-indigo-600 text-white'
+                  : 'border-indigo-300 bg-white text-indigo-700')
+              }
+            >
+              {followBusy ? 'Updating…' : following ? 'Unfollow this place' : 'Follow this place'}
+            </button>
+          </div>
+        )}
+        {followError !== null ? (
+          <p data-testid="place-follow-error" className="mt-2 text-sm text-red-600">
+            {followError}
+          </p>
+        ) : null}
+        {session !== null && followerCount === null && followError === null ? (
+          <p className="mt-2 text-xs text-slate-500">
+            Follow a place to keep it on your /profile Following list.
+          </p>
         ) : null}
       </div>
 

@@ -72,7 +72,15 @@ const COUNTS = `
     (select count(*) from kids where profile_id in ${VICTIMS}) as e2e_kids,
     (select count(*) from memberships where profile_id in ${VICTIMS}) as e2e_memberships,
     (select count(*) from blocks where blocker_profile_id in ${VICTIMS} or blocked_profile_id in ${VICTIMS}) as e2e_blocks,
-    (select count(*) from reports where reporter_profile_id in ${VICTIMS}) as e2e_reports`
+    (select count(*) from reports where reporter_profile_id in ${VICTIMS}) as e2e_reports,
+    -- V8 ticket 09: without this line a marker's follows rows are deleted (they
+    -- cascade with the profile) but never REPORTED, so the gate silently proves
+    -- less than it looks like it does.
+    (select count(*) from follows where follower_profile_id in ${VICTIMS} or followee_profile_id in ${VICTIMS}) as e2e_follows,
+    -- V8 ticket 08: same reasoning for push subscriptions.
+    (select count(*) from push_subscriptions where profile_id in ${VICTIMS}) as e2e_push_subscriptions,
+    -- V8 ticket 06: a marker's series rows (occurrences cascade via playdates).
+    (select count(*) from playdate_series where host_profile_id in ${VICTIMS}) as e2e_series`
 
 if (mode === 'select') {
   console.log(JSON.stringify(await sql(COUNTS), null, 1))

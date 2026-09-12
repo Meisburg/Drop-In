@@ -27,6 +27,7 @@ import {
   listKidsGoing,
   listMyPingKids,
   listPlaydateKidNames,
+  listSeriesOccurrences,
   setPlaydateStatus,
   setSeriesActive,
   togglePing,
@@ -46,6 +47,13 @@ import { canModerate } from '../lib/moderation'
 // (the 13th public field is a bare id; the place page reads the directory
 // itself).
 import { placePath } from '../lib/places'
+// V8 ticket 09 (migration 0033): "Same time next week" — the pure
+// ended-window gate, the next-occurrence chooser and its copy builder.
+import {
+  endedWithinDays,
+  nextOccurrencePlan,
+  occurrenceWhenLabel,
+} from '../lib/follows'
 // V8 ticket 08: recording the meaningful action (a saved ping) that may be
 // followed by the notification opt-in; the shell's PushOptInPrompt decides.
 import { armPushPromptForAction } from '../lib/pushClient'
@@ -69,6 +77,35 @@ import type {
   PlaydateWithNeighborhood,
   PublicPlaydateDetail,
 } from '../lib/types'
+
+/**
+ * V8 ticket 09 (migration 0033): the "Same time next week" plan for ONE post,
+ * resolved by the effect below and rendered by the block near the end of the
+ * page. The post id is part of EVERY variant: a plan is only ever rendered for
+ * the post it was read for (the seriesState discipline), so navigating between
+ * posts cannot show one post's next occurrence on another's page.
+ *
+ * - 'one-off'      → the post does not repeat: the action prefills /new with
+ *                    the existing duplicate router state (same place, same
+ *                    titles — the time is always re-entered).
+ * - 'occurrence'   → the post belongs to a 0028 series and the NEXT occurrence
+ *                    is known: one tap pings it (`alreadyGoing` = the viewer
+ *                    is on that roster already, so the page confirms instead
+ *                    of offering a control that would UN-ping it).
+ * - 'none'         → there is no next occurrence, and the page says WHY
+ *                    ('stopped' = the host stopped repeating; 'no-more' = the
+ *                    horizon has no week posted ahead). Never a dead control.
+ */
+type SameTimeNextWeek =
+  | { postId: string; kind: 'one-off' }
+  | {
+      postId: string
+      kind: 'occurrence'
+      id: string
+      startsAt: string
+      alreadyGoing: boolean
+    }
+  | { postId: string; kind: 'none'; reason: 'stopped' | 'no-more' }
 
 type DetailState =
   | { status: 'loading' }
@@ -402,6 +439,19 @@ export function PlaydateDetailPage() {
   } | null>(null)
   const [seriesBusy, setSeriesBusy] = useState(false)
   const [seriesError, setSeriesError] = useState<string | null>(null)
+  // V8 ticket 09 (migration 0033): "Same time next week" — the action a post
+  // that ENDED in the last 7 days offers its host and the families who pinged
+  // it. The state is stored WITH the post id it was read for (the seriesState
+  // discipline), so navigating from one post to another can never render the
+  // previous post's next occurrence. null = no affordance (not eligible, the
+  // reads have not settled, or a read failed — see the effect below: a series
+  // whose rule cannot be read offers NOTHING rather than a dead control).
+  // These hooks live up here with the others (the V6 lesson: the component
+  // returns early below, and a hook after a conditional return makes React
+  // throw).
+  const [sameNextWeek, setSameNextWeek] = useState<SameTimeNextWeek | null>(null)
+  const [nextWeekBusy, setNextWeekBusy] = useState(false)
+  const [nextWeekError, setNextWeekError] = useState<string | null>(null)
   // Read off the settled state so the effect below has stable deps regardless
   // of where the early returns sit. null (the post is a one-off, the viewer is
   // not the host, or pre-0028-apply — the column is absent from the row) means
@@ -440,6 +490,109 @@ export function PlaydateDetailPage() {
       cancelled = true
     }
   }, [seriesIdOnPost, viewerIsHost])
+
+  /**
+   * V8 ticket 09: the "Same time next week" plan, read once per settled post.
+   *
+   * THE GATE (the pinned three): the post ENDED within the last 7 days, the
+   * viewer is its HOST or has PINGED it, and the load settled. Nothing else
+   * gets this affordance — a stranger sees exactly the page that shipped
+   * before this ticket, and the signed-out public view never renders it at
+   * all (there is no session, so there is no host/pinger relationship to
+   * check).
+   *
+   * WHAT IT READS: only the post itself, plus — for an occurrence — the
+   * series row and its sibling occurrences (both plain reads; a viewer's page
+   * load NEVER generates, the 0028 pin (h)), and whether the viewer is
+   * already going to the next one. Pre-0028/0033-apply any of those can fail,
+   * and a failed read settles to NO affordance (never a guessed date).
+   *
+   * A one-off post needs no read at all: its plan is the /new duplicate
+   * prefill, decided at render.
+   */
+  // Read off the settled state so the effect below has PRIMITIVE deps (the
+  // seriesIdOnPost discipline): a comment or a ping landing must not re-run
+  // the planning reads, and the plan can never belong to a previous post.
+  const nextWeekPostId = state.status === 'ready' ? state.detail.id : null
+  const nextWeekEndsAt = state.status === 'ready' ? state.detail.ends_at : null
+  const nextWeekGoing = state.status === 'ready' ? state.going : false
+  const sameNextWeekEligible =
+    nextWeekPostId !== null &&
+    nextWeekEndsAt !== null &&
+    (viewerIsHost || nextWeekGoing) &&
+    endedWithinDays({ ends_at: nextWeekEndsAt }, new Date().toISOString())
+  useEffect(() => {
+    const postId = nextWeekPostId
+    if (postId === null || !sameNextWeekEligible) {
+      setSameNextWeek(null)
+      setNextWeekError(null)
+      return
+    }
+    const seriesId = seriesIdOnPost
+    let cancelled = false
+    setNextWeekError(null)
+    if (seriesId === null) {
+      // A one-off: no read, no query — the plan is the existing duplicate
+      // prefill (the ticket's "same place and titles" path).
+      setSameNextWeek({ postId, kind: 'one-off' })
+      return
+    }
+    void (async () => {
+      try {
+        // The HOST's page is generation trigger (b) (0028, the effect above) —
+        // and that top-up is FIRE-AND-FORGET there. Here the host's plan is
+        // read AFTER awaiting the SAME idempotent generator, so a horizon that
+        // had run out cannot make this block claim "no more weeks are posted
+        // yet" one beat before the new week lands. The call is a no-op when the
+        // horizon is already full (it returns rows created = 0), and a VIEWER
+        // never calls it at all (pin (h): a viewer's page load must not write).
+        if (viewerIsHost) {
+          await ensureSeriesOccurrences(seriesId).catch(() => 0)
+        }
+        const [seriesRow, occurrences] = await Promise.all([
+          getPlaydateSeries(seriesId),
+          listSeriesOccurrences(seriesId),
+        ])
+        if (cancelled) return
+        if (seriesRow === null) {
+          // The rule behind this post cannot be read (a failed read, or the
+          // row is gone): no affordance at all — we cannot name a next week,
+          // so we do not offer one.
+          setSameNextWeek(null)
+          return
+        }
+        const plan = nextOccurrencePlan(
+          { active: seriesRow.active },
+          occurrences,
+          new Date().toISOString(),
+        )
+        if (plan.kind === 'none') {
+          setSameNextWeek({ postId, kind: 'none', reason: plan.reason })
+          return
+        }
+        // Already going to the next one? Then there is nothing to ping — the
+        // page says so instead of showing a button whose tap would UN-ping it
+        // (the toggle's own semantics). One cheap read on an eligible page.
+        // Skipped for the HOST: they cannot ping their own post (the client
+        // guard in db.togglePing + the 0010 DB trigger), so the host never
+        // gets the ping control at all — see the render.
+        const alreadyGoing = viewerIsHost ? false : await hasPinged(plan.id).catch(() => false)
+        if (cancelled) return
+        setSameNextWeek({
+          postId,
+          kind: 'occurrence',
+          id: plan.id,
+          startsAt: plan.startsAt,
+          alreadyGoing,
+        })
+      } catch {
+        if (!cancelled) setSameNextWeek(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [nextWeekPostId, sameNextWeekEligible, seriesIdOnPost, viewerIsHost])
 
   useEffect(() => {
     if (id === undefined || id === '') return
@@ -690,6 +843,61 @@ export function PlaydateDetailPage() {
       )
     } finally {
       setCommentsRetryBusy(false)
+    }
+  }
+
+  /**
+   * V8 ticket 09 (migration 0033): "Same time next week".
+   *
+   * A one-off post: navigate to /new with the existing duplicate prefill —
+   * the same router-state pattern the host panel's Duplicate button uses, so
+   * /new needs no new key and the parent still picks the new date and time
+   * (the pinned duplicate rule: the date/time is always re-entered).
+   *
+   * A series post: ONE TAP pings the next occurrence through the EXISTING
+   * optimistic write path (db.togglePing — the same call the detail page's
+   * going button and the feed cards make, arming the ticket-08 push prompt on
+   * the way in), and the block then shows the confirmation line naming the
+   * date it landed on, with a link to that post. The one guard is
+   * `hasPinged` FIRST: togglePing is a toggle, so pinging blind could UN-ping
+   * a meetup the parent already said yes to (raced from another tab).
+   */
+  async function handleSameTimeNextWeek() {
+    if (state.status !== 'ready' || sameNextWeek === null || nextWeekBusy) return
+    const detail = state.detail
+    if (sameNextWeek.postId !== detail.id) return
+    if (sameNextWeek.kind === 'one-off') {
+      navigate('/new', { state: { duplicate: toDuplicatePrefill(detail) } })
+      return
+    }
+    if (sameNextWeek.kind !== 'occurrence' || sameNextWeek.alreadyGoing) return
+    // The host of this post is the host of the next occurrence too (an
+    // occurrence inherits its series' host), and the app never lets a parent
+    // ping their own post (db.togglePing's client guard + the 0010 trigger).
+    // The host's branch renders a LINK to next week instead of this control,
+    // so this is a belt-and-braces guard against a false "you're going".
+    if (viewerIsHost) return
+    const nextId = sameNextWeek.id
+    setNextWeekBusy(true)
+    setNextWeekError(null)
+    try {
+      const alreadyGoing = await hasPinged(nextId)
+      const going = alreadyGoing ? true : await togglePing(nextId)
+      // V8 ticket 08: the same meaningful action a card and the detail page's
+      // ping record — the opt-in may follow a saved ping, never a taken-back
+      // one.
+      if (!alreadyGoing && going) armPushPromptForAction('ping_saved')
+      setSameNextWeek((prev) =>
+        prev !== null && prev.kind === 'occurrence' && prev.id === nextId
+          ? { ...prev, alreadyGoing: true }
+          : prev,
+      )
+    } catch (err) {
+      setNextWeekError(
+        err instanceof Error ? err.message : 'Could not add you to next week. Try again.',
+      )
+    } finally {
+      setNextWeekBusy(false)
     }
   }
 
@@ -1066,6 +1274,10 @@ export function PlaydateDetailPage() {
   }
 
   const { detail, count, going, kids, guestNames } = state
+  // V8 ticket 09: ONE "now" for this render — the "Same time next week"
+  // block's day/time label reads the same clock it was offered under, so the
+  // block can never be labelled with a day it is not actually offering.
+  const nowIso = new Date().toISOString()
   // Unreachable (the loading gate above renders Loading for a null session
   // with a 'ready' state — 'ready' only ever settles from a signed-in
   // load): an explicit guard so TS narrows session to non-null below.
@@ -1685,6 +1897,118 @@ export function PlaydateDetailPage() {
           ) : null}
         </div>
       )}
+
+      {/* V8 ticket 09 (migration 0033): "Same time next week" — the loop
+          closer. Rendered ONLY on a post that ENDED within the last 7 days,
+          and ONLY for its host and for the families who pinged it (the
+          eligibility gate lives in the effect above; a stranger's page is
+          unchanged). The block is deliberately BELOW the ping/host panel: the
+          past meetup's own controls stay where they were, and this is the
+          NEXT step, not a replacement. A cancelled post keeps the affordance
+          — the rule here is time-based (the plan ended; here is the next one)
+          and repeating the plan is a legitimate action either way; that is a
+          decision, not an oversight. */}
+      {state.status === 'ready' &&
+      sameNextWeek !== null &&
+      sameNextWeek.postId === state.detail.id ? (
+        <div
+          data-testid="same-time-next-week"
+          className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm"
+        >
+          {sameNextWeek.kind === 'occurrence' ? (
+            viewerIsHost ? (
+              /* The HOST's own series post: next week is a post THEY host, so
+                 there is nothing to ping (and claiming "you're going" would be
+                 a lie). The honest, useful thing is the link. */
+              <>
+                <p
+                  data-testid="same-time-next-week-next"
+                  className="text-sm font-semibold text-emerald-900"
+                >
+                  Next week is already posted — {occurrenceWhenLabel(sameNextWeek.startsAt, nowIso)}.
+                </p>
+                <Link
+                  to={`/playdate/${sameNextWeek.id}`}
+                  className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-emerald-800"
+                >
+                  View next week’s drop-in ›
+                </Link>
+              </>
+            ) : sameNextWeek.alreadyGoing ? (
+              <>
+                <p
+                  data-testid="same-time-next-week-confirm"
+                  className="text-sm font-semibold text-emerald-900"
+                >
+                  You’re going to {occurrenceWhenLabel(sameNextWeek.startsAt, nowIso)}.
+                </p>
+                <Link
+                  to={`/playdate/${sameNextWeek.id}`}
+                  className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-emerald-800"
+                >
+                  View next week’s drop-in ›
+                </Link>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-semibold text-emerald-900">Same time next week?</p>
+                <p className="mt-1 text-sm text-emerald-800">
+                  This one repeats — {occurrenceWhenLabel(sameNextWeek.startsAt, nowIso)} is already
+                  posted.
+                </p>
+                <button
+                  type="button"
+                  data-testid="same-time-next-week-action"
+                  disabled={nextWeekBusy}
+                  onClick={() => void handleSameTimeNextWeek()}
+                  className="mt-2 rounded-xl bg-green-700 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  {nextWeekBusy ? 'Adding you…' : 'Same time next week'}
+                </button>
+              </>
+            )
+          ) : sameNextWeek.kind === 'one-off' ? (
+            <>
+              <p className="text-sm font-semibold text-emerald-900">Same time next week?</p>
+              <p className="mt-1 text-sm text-emerald-800">
+                Post it again — the place and the details come with you, and you pick the new time.
+              </p>
+              <button
+                type="button"
+                data-testid="same-time-next-week-action"
+                onClick={() => void handleSameTimeNextWeek()}
+                className="mt-2 rounded-xl bg-green-700 px-4 py-3 text-sm font-semibold text-white"
+              >
+                Same time next week
+              </button>
+            </>
+          ) : (
+            <>
+              {/* No next occurrence — say so honestly, and offer the one
+                  action that does work (post it again), never a dead control. */}
+              <p
+                data-testid="same-time-next-week-none"
+                className="text-sm font-semibold text-emerald-900"
+              >
+                {sameNextWeek.reason === 'stopped'
+                  ? 'Repeating has stopped — the weeks already posted stay up.'
+                  : 'No more weeks are posted yet.'}
+              </p>
+              <button
+                type="button"
+                data-testid="same-time-next-week-action"
+                onClick={() => void handleSameTimeNextWeek()}
+                className="mt-2 rounded-xl border border-emerald-300 bg-white px-4 py-3 text-sm font-medium text-emerald-800"
+              >
+                Post it again
+              </button>
+            </>
+          )}
+          {nextWeekError !== null ? (
+            <p className="mt-2 text-sm text-red-600">{nextWeekError}</p>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* V3 slice 6 (ticket 09): the "Kids coming" line — the post's
           host-picked kids (the 0022 playdate_kids selection), below the

@@ -11,15 +11,21 @@ import {
   countKidsGoingForPosts,
   fetchRainProbabilityForZip,
   listCommentsOnPosts,
+  listMyFollows,
   listMyPingedPosts,
   listMyPingPostIds,
   listMyPostRefs,
+  listPingProfileIdsForPosts,
   listPingsForPosts,
   listRadiusFeed,
   restampLastSeen,
   togglePing,
   type PingForPost,
+  type PingProfileRow,
 } from '../lib/db'
+// V8 ticket 09: the met-before line's pure seam (the viewer's follows ∩ this
+// post's going families) — the card renders the string, the page owns the data.
+import { followTargetsFrom, metBeforeLine } from '../lib/follows'
 import {
   buildWhileAwayItems,
   DEFAULT_RADIUS_MILES,
@@ -102,6 +108,18 @@ const FEED_REFRESH_WINDOW_MS = 60_000
  * count-only there). A failed pings load (pre-0020-apply: the created_at
  * column is missing → 42703) degrades to no going lines, never a crash.
  *
+ * V8 ticket 09 (migration 0033): each card's going-line area can also carry
+ * the "met before" line — "2 families you've met before are going" (the pure
+ * follows.metBeforeLine over that post's going FAMILIES ∩ the viewer's own
+ * followed families). Two reads feed it: the viewer's own follows rows
+ * (db.listMyFollows — owner-only RLS, one read per session; a failure or the
+ * pre-apply PGRST205 settles to the empty set) and one more going_pings read
+ * carrying just the (post, family) pairs (db.listPingProfileIdsForPosts —
+ * deliberately separate from the circles' read, whose pinned shape the
+ * existing unit tests assert). Both are best-effort: the line is a
+ * decoration, so a failed read hides it rather than costing the feed an
+ * error state.
+ *
  * V3 slice 9 (ticket 04): the host retention cursor — the feed mounts
  * restamp profiles.last_seen_at (migration 0024) when it is null or >= 1h
  * stale (the pure dueToRefreshLastSeen throttle + db.restampLastSeen,
@@ -164,6 +182,27 @@ export function FeedPage() {
   const [pingsByPostId, setPingsByPostId] = useState<Record<string, PingForPost[]> | null>(null)
   // V6: post id -> how many kids are coming (the 0027 batch RPC).
   const [kidsByPostId, setKidsByPostId] = useState<Record<string, number> | null>(null)
+  /**
+   * V8 ticket 09 (migration 0033): the viewer's OWN followed families (the
+   * `follows` rows, owner-only RLS) — the left half of the card's met-before
+   * line. An EMPTY set is the honest default and the pre-apply state (the
+   * 0033 read answers PGRST205 until the coordinator applies it): the line is
+   * hidden for every card, which is exactly what a viewer who follows nobody
+   * sees. Never an error state — a card decoration is not worth one
+   * (the zero-pressure soul).
+   */
+  const [followeeIds, setFolloweeIds] = useState<ReadonlySet<string>>(() => new Set<string>())
+  /**
+   * V8 ticket 09: post id -> (post, family) pairs for that post's going pings
+   * — the right half of the met-before line. A SEPARATE read from
+   * `pingsByPostId` (which carries the avatars the circles need): this one
+   * needs only the family ids, and adding a field to the pinned ping shape
+   * would churn its unit tests for nothing. null = unsettled; a failed read
+   * degrades to no line.
+   */
+  const [pingFamiliesByPostId, setPingFamiliesByPostId] = useState<
+    Record<string, PingProfileRow[]> | null
+  >(null)
   // V8 ticket 03: the "While you were away" inbox — the feed-top card's
   // items (the pure buildWhileAwayItems output: capped items + the "+N more"
   // count). null = unsettled (no card); a failed read settles to an EMPTY
@@ -333,10 +372,51 @@ export function FeedPage() {
       .catch(() => {
         if (!cancelled) setPingsByPostId({})
       })
+    // V8 ticket 09: the met-before line's input — the (post, family) pairs of
+    // the same posts, in ONE more query. Pre-0033-apply this read is on the
+    // EXISTING going_pings table (green); the 0033 read below is the follows
+    // set. Best-effort like every card decoration.
+    listPingProfileIdsForPosts(postIds)
+      .then((rows) => {
+        if (cancelled) return
+        const grouped: Record<string, PingProfileRow[]> = {}
+        for (const row of rows) {
+          const group = grouped[row.playdateId]
+          if (group === undefined) grouped[row.playdateId] = [row]
+          else group.push(row)
+        }
+        setPingFamiliesByPostId(grouped)
+      })
+      .catch(() => {
+        if (!cancelled) setPingFamiliesByPostId({})
+      })
     return () => {
       cancelled = true
     }
   }, [posts])
+
+  /**
+   * V8 ticket 09 (migration 0033): the viewer's own follows — ONE read when
+   * the session settles, grouped into the two id sets the UI needs (only
+   * `followeeIds` is used here; /profile and /place/:id read the rows
+   * themselves). A failed or not-yet-applied read (PGRST205 pre-apply)
+   * settles to the EMPTY set, so every card renders exactly as it does for a
+   * viewer who follows nobody — no card error UI, no feed cost.
+   */
+  useEffect(() => {
+    if (loading || session === null) return
+    let cancelled = false
+    listMyFollows()
+      .then((rows) => {
+        if (!cancelled) setFolloweeIds(followTargetsFrom(rows).followeeIds)
+      })
+      .catch(() => {
+        if (!cancelled) setFolloweeIds(new Set<string>())
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [loading, session])
 
   // V8 ticket 03: the inbox's four reads, one shot when the session +
   // profile settle (re-fetches on a fresh profile load — the cursor is the
@@ -582,6 +662,17 @@ export function FeedPage() {
     return kidsByPostId?.[post.id] ?? 0
   }
 
+  /**
+   * V8 ticket 09: one card's met-before line — "N families you've met before
+   * are going" (the pure follows.metBeforeLine over this post's going
+   * families ∩ the viewer's own follows). null (the line is hidden) when the
+   * count is 0, when the viewer follows nobody, and while either read is
+   * unsettled/failed — so the ordinary card is unchanged.
+   */
+  function buildCardMetBeforeLabel(post: PlaydateWithNeighborhood) {
+    return metBeforeLine(pingFamiliesByPostId?.[post.id] ?? [], followeeIds)
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold text-slate-900">Near you</h1>
@@ -638,6 +729,7 @@ export function FeedPage() {
                       pingToggle={buildCardPingToggle(post)}
                       goingPings={buildCardGoingPings(post)}
                       kidsGoingCount={buildCardKidsCount(post)}
+                      metBeforeLabel={buildCardMetBeforeLabel(post)}
                     />
                   ))}
                   {ended.map((post) => (
@@ -649,6 +741,7 @@ export function FeedPage() {
                       pingToggle={buildCardPingToggle(post)}
                       goingPings={buildCardGoingPings(post)}
                       kidsGoingCount={buildCardKidsCount(post)}
+                      metBeforeLabel={buildCardMetBeforeLabel(post)}
                     />
                   ))}
                 </div>

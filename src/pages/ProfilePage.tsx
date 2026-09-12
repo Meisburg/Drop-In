@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { NotificationsSection } from '../components/NotificationsSection'
 import { useSessionContext } from '../components/SessionProvider'
 import { useCropStep } from '../components/useCropStep'
@@ -12,10 +12,12 @@ import {
   LIKES_MAX_LENGTH,
   listKids,
   listMemberships,
+  listMyFollowing,
   MAX_KIDS_PER_PROFILE,
   missingProfileItems,
   removeKid,
   supabase,
+  unfollowById,
   updateBio,
   updateDisplayName,
   updateHomeZipRadius,
@@ -26,6 +28,7 @@ import {
   validateKid,
   validateKidLikes,
   validateInterests,
+  type MyFollowing,
 } from '../lib/db'
 import {
   DEFAULT_RADIUS_MILES,
@@ -39,6 +42,9 @@ import type {
   MembershipWithNeighborhood,
   Playdate,
 } from '../lib/types'
+// V8 ticket 09: the Following list's family rows reuse the card's 40px avatar
+// (the HostAvatar shape) rather than growing a second one.
+import { HostAvatar } from '../components/DropInCard'
 
 /**
  * /profile — the signed-in family's own page (slice 2): edit the
@@ -71,6 +77,16 @@ import type {
  *   app-enforced
  * - a persistent nudge banner until photo + bio + kids are all present
  *   (the missing-items decision is the pure missingProfileItems)
+ *
+ * V8 ticket 09 (migration 0033): /profile gains the **Following** section —
+ * the families and places this parent has bookmarked, with an Unfollow button
+ * on every row. The rows come from db.listMyFollowing (the caller's OWN
+ * follows: the 0033 SELECT policy is owner-only, so this is the only place a
+ * follow graph is ever read in full, and it is read by its owner) plus one
+ * batched profiles read and one batched places read for the handles/names.
+ * There is deliberately NO follower count here (of you or of anyone) and no
+ * list of WHO follows whom — counts only, and even those for places, never for
+ * a person (a follow is a bookmark, not a score).
  */
 export function ProfilePage() {
   const navigate = useNavigate()
@@ -205,6 +221,14 @@ export function ProfilePage() {
   const [myPosts, setMyPosts] = useState<Playdate[] | null>(null)
   const [postsError, setPostsError] = useState<string | null>(null)
 
+  // V8 ticket 09 (migration 0033): the Following list — the families and
+  // places this parent bookmarked (null = still loading). A failed read
+  // (pre-0033-apply: PGRST205) renders its own sentence and nothing else the
+  // page does changes. `unfollowBusyId` is one row's in-flight unfollow.
+  const [following, setFollowing] = useState<MyFollowing | null>(null)
+  const [followingError, setFollowingError] = useState<string | null>(null)
+  const [unfollowBusyId, setUnfollowBusyId] = useState<string | null>(null)
+
   // Seed the handle + bio + location fields once the profile loads; user
   // typing wins after.
   useEffect(() => {
@@ -270,6 +294,58 @@ export function ProfilePage() {
       cancelled = true
     }
   }, [userId])
+
+  // V8 ticket 09: the Following list (the caller's OWN follows — owner-only
+  // RLS — named through one batched profiles read and one batched places
+  // read). A failed load renders its own sentence in the section below;
+  // nothing else on the page depends on it.
+  useEffect(() => {
+    if (userId === null) return
+    let cancelled = false
+    setFollowing(null)
+    setFollowingError(null)
+    listMyFollowing()
+      .then((rows) => {
+        if (!cancelled) setFollowing(rows)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setFollowingError(
+          err instanceof Error ? err.message : 'Could not load your following list.',
+        )
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
+  /**
+   * V8 ticket 09: unfollow one row (the DELETE scoped to the caller's own
+   * row). On success the row is removed from LOCAL state — the list is the
+   * caller's own data, already in hand, so a full re-read would be a second
+   * round trip for a fact we just changed. A failure reports in the section
+   * and leaves the row standing (never a lie about the state).
+   */
+  async function handleUnfollow(followId: string) {
+    if (unfollowBusyId !== null) return
+    setUnfollowBusyId(followId)
+    setFollowingError(null)
+    try {
+      await unfollowById(followId)
+      setFollowing((prev) =>
+        prev === null
+          ? prev
+          : {
+              families: prev.families.filter((row) => row.followId !== followId),
+              places: prev.places.filter((row) => row.followId !== followId),
+            },
+      )
+    } catch (err) {
+      setFollowingError(err instanceof Error ? err.message : 'Could not unfollow. Try again.')
+    } finally {
+      setUnfollowBusyId(null)
+    }
+  }
 
   // The "Your posts" list (V2 slice 1): the viewer's own drop-ins, newest
   // first. A failed load (e.g. the playdates table not applied yet) renders
@@ -982,6 +1058,101 @@ export function ProfilePage() {
           sentence about the missing tables), so nothing above it changes when
           the push migrations are not installed yet. */}
       <NotificationsSection />
+
+      {/* V8 ticket 09 (migration 0033): the Following list — the families and
+          places this parent bookmarked. Counts only (there is no follower list
+          anywhere); the rows are the caller's OWN follows, which is the only
+          way the owner-only 0033 policy ever returns rows. A failed read
+          (pre-apply: PGRST205) is its own sentence — the rest of the page is
+          untouched. */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-base font-semibold text-slate-900">Following</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Families and places you’ve bookmarked — you’ll see when they’re going to something.
+        </p>
+
+        {followingError !== null ? (
+          <p data-testid="following-error" className="mt-3 text-sm text-slate-600">
+            Couldn’t load your following list ({followingError}).
+          </p>
+        ) : following === null ? (
+          <p className="mt-3 text-sm text-slate-600">Loading…</p>
+        ) : following.families.length === 0 && following.places.length === 0 ? (
+          <p data-testid="following-empty" className="mt-3 text-sm text-slate-600">
+            No families or places yet. Follow a family on their profile, or a place on its page.
+          </p>
+        ) : (
+          <div className="mt-3 flex flex-col gap-3">
+            {following.families.length > 0 ? (
+              <section className="flex flex-col gap-2">
+                <h3 className="text-sm font-semibold text-slate-700">Families</h3>
+                <ul className="flex flex-col gap-2">
+                  {following.families.map((row) => (
+                    <li key={row.followId} className="flex flex-wrap items-center gap-2">
+                      <HostAvatar
+                        host={{
+                          id: row.profileId,
+                          display_name: row.handle ?? '?',
+                          avatar_url: row.avatarUrl,
+                        }}
+                      />
+                      {row.handle !== null ? (
+                        <Link
+                          to={`/u/${encodeURIComponent(row.handle)}`}
+                          className="text-sm font-medium text-indigo-600"
+                        >
+                          @{row.handle}
+                        </Link>
+                      ) : (
+                        <span className="text-sm text-slate-600">A family who left Drop In</span>
+                      )}
+                      <button
+                        type="button"
+                        data-testid="unfollow-family"
+                        disabled={unfollowBusyId === row.followId}
+                        onClick={() => void handleUnfollow(row.followId)}
+                        className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 disabled:opacity-50"
+                      >
+                        {unfollowBusyId === row.followId ? 'Updating…' : 'Unfollow'}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+            {following.places.length > 0 ? (
+              <section className="flex flex-col gap-2">
+                <h3 className="text-sm font-semibold text-slate-700">Places</h3>
+                <ul className="flex flex-col gap-2">
+                  {following.places.map((row) => (
+                    <li key={row.followId} className="flex flex-wrap items-center gap-2">
+                      {row.name !== null ? (
+                        <Link
+                          to={`/place/${encodeURIComponent(row.placeId)}`}
+                          className="text-sm font-medium text-indigo-600"
+                        >
+                          {row.name}
+                        </Link>
+                      ) : (
+                        <span className="text-sm text-slate-600">A place that left the directory</span>
+                      )}
+                      <button
+                        type="button"
+                        data-testid="unfollow-place"
+                        disabled={unfollowBusyId === row.followId}
+                        onClick={() => void handleUnfollow(row.followId)}
+                        className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 disabled:opacity-50"
+                      >
+                        {unfollowBusyId === row.followId ? 'Updating…' : 'Unfollow'}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+          </div>
+        )}
+      </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">Neighborhoods</h2>

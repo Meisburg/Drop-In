@@ -3055,3 +3055,420 @@ export async function listRecentNotifications(
   if (user === null) return []
   return listRecentNotificationsWithClient(supabase, user.id, limit)
 }
+
+// ---------------------------------------------------------------------------
+// V8 ticket 09 (migration 0033): FOLLOWS — the loop-closing bookmark.
+//
+// A follow targets EITHER another family OR a place, and there is exactly one
+// row per (follower, target) — the DB's `follows_one_target_check` and the two
+// PARTIAL unique indexes are the walls, and the pure
+// `validateFollowTarget` (follows.ts) is the client's copy of the same rule so
+// a malformed target never reaches the wire. The RLS posture is OWNER-ONLY on
+// all four verbs: these reads and writes only ever touch the caller's own rows.
+//
+// MISSING-TABLE BEHAVIOUR (the documented pre-apply state, the 0031/0032
+// discipline): until the coordinator applies 0033, every call below answers
+// PostgREST `PGRST205` ("Could not find the table 'public.follows' in the
+// schema cache"). Each CALLER catches it and degrades — the card's met-before
+// line stays hidden, the Follow control reports the designed error line, and
+// the /profile Following list renders one sentence. Nothing here is on a
+// shared load path that could cost a post or a feed.
+// ---------------------------------------------------------------------------
+
+/**
+ * One `follows` row (the columns the client reads). The exactly-one rule means
+ * exactly one of `followee_profile_id` / `place_id` is non-null — see
+ * follows.followTargetOf for the read-side resolution.
+ */
+export interface FollowRow {
+  id: string
+  followee_profile_id: string | null
+  place_id: string | null
+  created_at: string
+}
+
+/**
+ * The caller's own follow rows (owner-only SELECT policy — a read of somebody
+ * else's rows returns ZERO rows, 2xx, never an error). Injected client: the
+ * `*WithClient` pattern every other read here uses, so the round-trip is
+ * mockable.
+ */
+export async function listMyFollowsWithClient(
+  client: SupabaseClient,
+  profileId: string,
+): Promise<FollowRow[]> {
+  const { data, error } = await client
+    .from('follows')
+    .select('id, followee_profile_id, place_id, created_at')
+    .eq('follower_profile_id', profileId)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return (data ?? []) as FollowRow[]
+}
+
+/** The default-client wrapper (the feed's met-before line, /profile). */
+export async function listMyFollows(): Promise<FollowRow[]> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) return []
+  return listMyFollowsWithClient(supabase, user.id)
+}
+
+/** A followed FAMILY as /profile renders it (handle + avatar for the row). */
+export interface FollowingFamily {
+  /** The follow row's id (the unfollow target). */
+  followId: string
+  profileId: string
+  /** The family's public handle (profiles.display_name) — null if the row is gone. */
+  handle: string | null
+  avatarUrl: string | null
+}
+
+/** A followed PLACE as /profile renders it (name + link to /place/:id). */
+export interface FollowingPlace {
+  followId: string
+  placeId: string
+  /** The place's name — null if the directory row is gone (FK cascade should prevent it). */
+  name: string | null
+}
+
+/** The caller's Following list, split by target kind (the /profile section). */
+export interface MyFollowing {
+  families: FollowingFamily[]
+  places: FollowingPlace[]
+}
+
+/**
+ * The caller's Following list, NAMED: the follow rows, then one batched
+ * profiles read (id, display_name, avatar_url — the 0001 authenticated read)
+ * and one batched places read (the 0029 public read) for the handles and
+ * names. Never a per-row query — the list is short and the batches are two.
+ *
+ * A follow whose target row vanished (it should not: all three FKs cascade)
+ * keeps its row with a null handle/name rather than disappearing: silently
+ * dropping it would hide the unfollow control for a row that still exists.
+ */
+export async function listMyFollowingWithClient(
+  client: SupabaseClient,
+  profileId: string,
+): Promise<MyFollowing> {
+  const rows = await listMyFollowsWithClient(client, profileId)
+  const familyFollows = rows.filter((row) => row.followee_profile_id !== null)
+  const placeFollows = rows.filter((row) => row.place_id !== null)
+
+  const handleById = new Map<string, { handle: string | null; avatarUrl: string | null }>()
+  const profileIds = [...new Set(familyFollows.map((row) => row.followee_profile_id as string))]
+  if (profileIds.length > 0) {
+    const { data, error } = await client
+      .from('profiles')
+      .select('id, display_name, avatar_url')
+      .in('id', profileIds)
+    if (error) throw error
+    for (const row of (data ?? []) as unknown as Array<{
+      id: string
+      display_name: string
+      avatar_url: string | null
+    }>) {
+      handleById.set(row.id, { handle: row.display_name, avatarUrl: row.avatar_url ?? null })
+    }
+  }
+
+  const nameById = new Map<string, string | null>()
+  const placeIds = [...new Set(placeFollows.map((row) => row.place_id as string))]
+  if (placeIds.length > 0) {
+    const { data, error } = await client.from('places').select('id, name').in('id', placeIds)
+    if (error) throw error
+    for (const row of (data ?? []) as unknown as Array<{ id: string; name: string }>) {
+      nameById.set(row.id, row.name)
+    }
+  }
+
+  return {
+    families: familyFollows.map((row) => {
+      const profileIdOfRow = row.followee_profile_id as string
+      const named = handleById.get(profileIdOfRow)
+      return {
+        followId: row.id,
+        profileId: profileIdOfRow,
+        handle: named?.handle ?? null,
+        avatarUrl: named?.avatarUrl ?? null,
+      }
+    }),
+    places: placeFollows.map((row) => ({
+      followId: row.id,
+      placeId: row.place_id as string,
+      name: nameById.get(row.place_id as string) ?? null,
+    })),
+  }
+}
+
+/** The default-client wrapper (/profile's Following section). */
+export async function listMyFollowing(): Promise<MyFollowing> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) return { families: [], places: [] }
+  return listMyFollowingWithClient(supabase, user.id)
+}
+
+/**
+ * The caller's own follow row for ONE target, or null — the single read the
+ * state getters and both toggles share. The target kind decides which column
+ * is filtered, so a family id is never looked up against `place_id`.
+ */
+async function findFollowRow(
+  client: SupabaseClient,
+  followerId: string,
+  target: { followeeProfileId?: string; placeId?: string },
+): Promise<{ id: string } | null> {
+  const scoped = client.from('follows').select('id').eq('follower_profile_id', followerId)
+  const filtered =
+    target.followeeProfileId !== undefined
+      ? scoped.eq('followee_profile_id', target.followeeProfileId)
+      : scoped.eq('place_id', target.placeId as string)
+  const { data, error } = await filtered.maybeSingle()
+  if (error) throw error
+  return (data as { id: string } | null) ?? null
+}
+
+/**
+ * Whether the caller follows this family (the Follow control's initial state,
+ * the getBlockState shape). Owner-only SELECT, one row or none.
+ */
+export async function getFollowStateWithClient(
+  client: SupabaseClient,
+  followerId: string,
+  profileId: string,
+): Promise<boolean> {
+  return (await findFollowRow(client, followerId, { followeeProfileId: profileId })) !== null
+}
+
+/** The default-client wrapper (/u/:handle's Follow control). */
+export async function getFollowState(profileId: string): Promise<boolean> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) return false
+  return getFollowStateWithClient(supabase, user.id, profileId)
+}
+
+/** Whether the caller follows this place (the /place/:id control's state). */
+export async function getPlaceFollowStateWithClient(
+  client: SupabaseClient,
+  followerId: string,
+  placeId: string,
+): Promise<boolean> {
+  return (await findFollowRow(client, followerId, { placeId })) !== null
+}
+
+/** The default-client wrapper (/place/:id's Follow control). */
+export async function getPlaceFollowState(placeId: string): Promise<boolean> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) return false
+  return getPlaceFollowStateWithClient(supabase, user.id, placeId)
+}
+
+/**
+ * Delete one of the caller's own follow rows (the Unfollow path, and the
+ * unfollow half of both toggles). The DELETE policy scopes it to the caller:
+ * a row that is not theirs matches nothing — a silent 0-row 2xx, never an
+ * error (the 0014 lesson).
+ */
+async function deleteFollowRow(
+  client: SupabaseClient,
+  followerId: string,
+  followId: string,
+): Promise<void> {
+  const { error } = await client
+    .from('follows')
+    .delete()
+    .eq('id', followId)
+    .eq('follower_profile_id', followerId)
+  if (error) throw error
+}
+
+/**
+ * Insert one of the caller's own follow rows, treating the uniqueness wall as
+ * SUCCESS: a concurrent follow of the same target answers 23505 (the partial
+ * unique index), which means the row the caller asked for already exists —
+ * never a duplicate, never an error the user has to see (the toggleBlock
+ * discipline, which the exactly-one-row rule depends on).
+ */
+async function insertFollowRow(
+  client: SupabaseClient,
+  row: { follower_profile_id: string; followee_profile_id?: string; place_id?: string },
+): Promise<void> {
+  const { error } = await client.from('follows').insert(row)
+  if (error && error.code !== '23505') throw error
+}
+
+/**
+ * Toggle the caller's follow of a family. Returns the new state (true = now
+ * following). A second follow of the same family can never create a second
+ * row: the read-then-write below is backed by the partial unique index.
+ */
+export async function toggleFollowProfile(profileId: string): Promise<boolean> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (!user) throw new Error('No authenticated user — cannot follow a family.')
+
+  const existing = await findFollowRow(supabase, user.id, { followeeProfileId: profileId })
+  if (existing !== null) {
+    await deleteFollowRow(supabase, user.id, existing.id)
+    return false
+  }
+  await insertFollowRow(supabase, {
+    follower_profile_id: user.id,
+    followee_profile_id: profileId,
+  })
+  return true
+}
+
+/** Toggle the caller's follow of a place (the same shape, place_id target). */
+export async function toggleFollowPlace(placeId: string): Promise<boolean> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (!user) throw new Error('No authenticated user — cannot follow a place.')
+
+  const existing = await findFollowRow(supabase, user.id, { placeId })
+  if (existing !== null) {
+    await deleteFollowRow(supabase, user.id, existing.id)
+    return false
+  }
+  await insertFollowRow(supabase, { follower_profile_id: user.id, place_id: placeId })
+  return true
+}
+
+/** Unfollow one of the caller's own rows by its follow id (the /profile list). */
+export async function unfollowById(followId: string): Promise<void> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (!user) throw new Error('No authenticated user — cannot unfollow.')
+  await deleteFollowRow(supabase, user.id, followId)
+}
+
+/**
+ * How many families follow this profile — the 0033 SECURITY DEFINER count
+ * (`count_followers`), the ONLY sanctioned way a count crosses to another
+ * viewer: the follows table has no cross-viewer SELECT policy at all.
+ *
+ * DELIBERATELY UNUSED BY THE UI: a visible "N families follow @someone" line
+ * is a popularity score on a parent, and the settled no-reviews/no-vouching
+ * verdict forbids exactly that (a follow is a bookmark, not a score). The
+ * function is wrapped here so the sanctioned surface exists and is callable,
+ * and so no future screen is tempted to widen a policy instead.
+ */
+export async function countFollowers(profileId: string): Promise<number> {
+  const { data, error } = await supabase.rpc('count_followers', { p_profile_id: profileId })
+  if (error) throw error
+  return typeof data === 'number' ? data : 0
+}
+
+/**
+ * How many families follow this place — the 0033 SECDEF count
+ * (`count_place_followers`), rendered on /place/:id. A count, never a list:
+ * the RLS policies are owner-only, so WHO follows a place is not readable by
+ * anyone, including this caller. EXECUTE is granted to `authenticated` only,
+ * so a signed-out visitor's page never issues this call (the signed-out
+ * /place/:id shows the sign-in prompt instead — the documented decision).
+ */
+export async function countPlaceFollowers(placeId: string): Promise<number> {
+  const { data, error } = await supabase.rpc('count_place_followers', { p_place_id: placeId })
+  if (error) throw error
+  return typeof data === 'number' ? data : 0
+}
+
+/**
+ * One going ping reduced to what the met-before line needs: which family
+ * pinged which post. Deliberately a SEPARATE read from
+ * `listPingsForPosts` (which carries the avatars/names the card's circles
+ * need): the card's data shape is pinned by its own unit tests, and this is
+ * the only consumer of the ping's `profile_id`.
+ */
+export interface PingProfileRow {
+  playdateId: string
+  profileId: string
+}
+
+/**
+ * The (post, family) pairs for a set of posts — the feed card's met-before
+ * line input. One query over the EXISTING broad `going_pings` SELECT
+ * (0007, unchanged: a count/aggregate read, never a name), and only the two
+ * ids. Empty postIds → [] with no query.
+ *
+ * A failed read is the caller's to swallow (the feed's card decorations are
+ * all best-effort): no met-before line is a decoration missing, not a feed
+ * broken.
+ */
+export async function listPingProfileIdsForPostsWithClient(
+  client: SupabaseClient,
+  postIds: string[],
+): Promise<PingProfileRow[]> {
+  if (postIds.length === 0) return []
+  const { data, error } = await client
+    .from('going_pings')
+    .select('playdate_id, profile_id')
+    .in('playdate_id', postIds)
+  if (error) throw error
+  const rows = (data ?? []) as unknown as Array<{
+    playdate_id: string | null
+    profile_id: string | null
+  }>
+  return rows.flatMap((row) =>
+    row.playdate_id === null || row.profile_id === null
+      ? []
+      : [{ playdateId: row.playdate_id, profileId: row.profile_id }],
+  )
+}
+
+/** The default-client wrapper (the feed's met-before lines). */
+export async function listPingProfileIdsForPosts(postIds: string[]): Promise<PingProfileRow[]> {
+  return listPingProfileIdsForPostsWithClient(supabase, postIds)
+}
+
+/** One occurrence row of a series, as the next-occurrence chooser needs it. */
+export interface SeriesOccurrenceRow {
+  id: string
+  starts_at: string
+  ends_at: string | null
+}
+
+/**
+ * The sibling occurrences of a series post (the REAL `playdates` rows the
+ * 0028 generator materializes, filtered by `series_id`) — the input of the
+ * pure `nextOccurrencePlan` chooser.
+ *
+ * This is a plain read on the EXISTING `playdates` SELECT policy (any signed-in
+ * parent may read a post), NOT a generator call: a viewer's page load must
+ * never write to the database (the 0028 pin (h)). Only the HOST's own detail
+ * page tops the horizon up, through the existing `ensureSeriesOccurrences`.
+ *
+ * Pre-0028-apply the `series_id` column does not exist (42703) and the caller
+ * catches it: no "same time next week" affordance, never a crash.
+ */
+export async function listSeriesOccurrences(seriesId: string): Promise<SeriesOccurrenceRow[]> {
+  const { data, error } = await supabase
+    .from('playdates')
+    .select('id, starts_at, ends_at')
+    .eq('series_id', seriesId)
+    .order('starts_at', { ascending: true })
+  if (error) throw error
+  const rows = (data ?? []) as unknown as Array<{
+    id: string
+    starts_at: string
+    ends_at: string | null
+  }>
+  return rows.map((row) => ({ id: row.id, starts_at: row.starts_at, ends_at: row.ends_at ?? null }))
+}

@@ -7,9 +7,11 @@ import { useSessionContext } from '../components/SessionProvider'
 import {
   countPostsByHost,
   getBlockState,
+  getFollowState,
   getProfileByHandle,
   listPostsByHost,
   toggleBlock,
+  toggleFollowProfile,
 } from '../lib/db'
 import { partitionPostsByTime } from '../lib/feed'
 import type { PlaydateWithNeighborhood, ProfileWithKids } from '../lib/types'
@@ -47,6 +49,19 @@ type UserPageState =
  * goingPings are deliberately NOT passed: there is no optimistic write path
  * outside the feed, and no per-page ping query belongs on this page.
  * The "Hosted N drop-ins" line above is untouched by that change.
+ *
+ * V8 ticket 09 (migration 0033): the trust-controls row gains **Follow /
+ * Unfollow**, beside Block and with the same row discipline (it wraps, it is
+ * hidden on your own profile, and it is never a nav — the profile IS this
+ * page). A follow is a BOOKMARK, not a friend request and not a score: it
+ * puts the family in your Following list and makes them eligible for the
+ * feed card's "you've met before" line. The write is the owner-only
+ * `follows` row (db.toggleFollowProfile, one row per target — the partial
+ * unique index is the wall); pre-0033-apply the read and the write answer
+ * PGRST205 and the button reports the designed error line instead of
+ * pretending. Deliberately NOT rendered: a follower COUNT for this family —
+ * a public popularity number on a parent is the grading the settled
+ * no-reviews/no-vouching verdict forbids.
  */
 export function UserPage() {
   const { handle } = useParams<{ handle: string }>()
@@ -55,6 +70,13 @@ export function UserPage() {
   const [blocked, setBlocked] = useState(false)
   const [blockingBusy, setBlockingBusy] = useState(false)
   const [blockError, setBlockError] = useState<string | null>(null)
+  // V8 ticket 09: Follow / Unfollow (the 0033 `follows` row). `following`
+  // starts false and is corrected by the read below; a failed read (pre-apply)
+  // leaves it unpressed, and a failed WRITE reports the designed error line
+  // (never a silent lie about the state).
+  const [following, setFollowing] = useState(false)
+  const [followBusy, setFollowBusy] = useState(false)
+  const [followError, setFollowError] = useState<string | null>(null)
   const [reporting, setReporting] = useState(false)
   // V3 slice 9 (ticket 04): the "Hosted N drop-ins" line's count — the
   // all-time hosted count (db.countPostsByHost, NO status/end filters —
@@ -108,6 +130,25 @@ export function UserPage() {
       })
       .catch(() => {
         // no-op: the toggle simply starts unpressed
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [profileId, isOwnProfile])
+
+  // V8 ticket 09: the Follow control's initial state. Same discipline as the
+  // block read above — and the same pre-apply story: with 0033 unapplied this
+  // answers PGRST205, the catch leaves the control unpressed, and the page is
+  // otherwise untouched (the button reports the truth when it is pressed).
+  useEffect(() => {
+    if (profileId === null || isOwnProfile) return
+    let cancelled = false
+    getFollowState(profileId)
+      .then((isFollowing) => {
+        if (!cancelled) setFollowing(isFollowing)
+      })
+      .catch(() => {
+        // no-op: the control simply starts unpressed
       })
     return () => {
       cancelled = true
@@ -171,6 +212,27 @@ export function UserPage() {
       setBlockError(err instanceof Error ? err.message : 'Could not update the block. Try again.')
     } finally {
       setBlockingBusy(false)
+    }
+  }
+
+  /**
+   * V8 ticket 09: follow / unfollow this family (the owner-only `follows`
+   * row). The state comes back from the write (db.toggleFollowProfile
+   * returns the new state), and a failure is reported in place — the button
+   * never claims a state the database does not have. A second follow of the
+   * same family is a no-op by construction (partial unique index + the
+   * toggle's own read), so a double tap cannot create two rows.
+   */
+  async function handleToggleFollow() {
+    if (profileId === null || followBusy) return
+    setFollowBusy(true)
+    setFollowError(null)
+    try {
+      setFollowing(await toggleFollowProfile(profileId))
+    } catch (err) {
+      setFollowError(err instanceof Error ? err.message : 'Could not update the follow. Try again.')
+    } finally {
+      setFollowBusy(false)
     }
   }
 
@@ -311,6 +373,29 @@ export function UserPage() {
           {/* 375px pass (slice 5, parked slice-4 finding): the row wraps
               instead of forcing horizontal scroll with long handles. */}
           <div className="flex flex-wrap items-center gap-2">
+            {/* V8 ticket 09: Follow / Unfollow — FIRST in the row (it is the
+                action a parent who just met this family wants; Block stays
+                where it was, second, and Report third — the same wrap
+                discipline so 375px still needs no horizontal scroll). */}
+            <button
+              type="button"
+              data-testid="follow-profile"
+              aria-pressed={following}
+              disabled={followBusy}
+              onClick={() => void handleToggleFollow()}
+              className={
+                'rounded-xl border px-3 py-2 text-sm font-medium disabled:opacity-50 ' +
+                (following
+                  ? 'border-indigo-600 bg-indigo-600 text-white'
+                  : 'border-indigo-300 bg-white text-indigo-700')
+              }
+            >
+              {followBusy
+                ? 'Updating…'
+                : following
+                  ? `Unfollow @${profile.display_name}`
+                  : `Follow @${profile.display_name}`}
+            </button>
             <button
               type="button"
               aria-pressed={blocked}
@@ -337,6 +422,16 @@ export function UserPage() {
               Report
             </button>
           </div>
+          {followError !== null ? (
+            <p data-testid="follow-error" className="text-sm text-red-600">
+              {followError}
+            </p>
+          ) : null}
+          {following ? (
+            <p className="text-xs text-slate-500">
+              On your Following list (/profile) — you’ll see when they’re going to something.
+            </p>
+          ) : null}
           {blockError !== null ? <p className="text-sm text-red-600">{blockError}</p> : null}
           {blocked ? (
             <p className="text-xs text-slate-500">

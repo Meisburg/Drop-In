@@ -75,6 +75,16 @@ import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
  * rain), and "this repeats" is a property of the post, not a state it is in.
  * A one-off post renders exactly as it always did (`series_id` absent
  * pre-0028-apply → no marker).
+ *
+ * V8 ticket 09 (migration 0033): the card's going-line area gains ONE more
+ * text line — `metBeforeLabel`, e.g. "2 families you've met before are
+ * going" (the pure `follows.metBeforeLine`, computed by the page from the
+ * viewer's own follows ∩ this post's pingers). It sits UNDER the going line
+ * in the same bordered action row, it is TEXT (never a badge — the badge
+ * slot stays full), and it is absent (`null`) whenever the count is 0, which
+ * is every card for a viewer who follows nobody: the card is then
+ * byte-identical to the one that shipped before this ticket. The page owns
+ * the data; this component only renders the string it is handed.
  */
 export function DropInCard({
   playdate,
@@ -84,6 +94,7 @@ export function DropInCard({
   pingToggle,
   goingPings = [],
   kidsGoingCount = 0,
+  metBeforeLabel = null,
 }: {
   playdate: PlaydateWithNeighborhood
   nowIso: string
@@ -111,6 +122,14 @@ export function DropInCard({
    * only the host and the people going, through the 0026 gated RPC).
    */
   kidsGoingCount?: number
+  /**
+   * V8 ticket 09 (migration 0033): the met-before line — "2 families you've
+   * met before are going" (the pure follows.metBeforeLine, computed by the
+   * page). null/'' = the line is hidden (the count is 0, or the viewer
+   * follows nobody, or the follows read has not landed — the pre-0033-apply
+   * state). Rendered as TEXT under the going line, never as a badge.
+   */
+  metBeforeLabel?: string | null
 }) {
   const live = isHappeningNow(playdate, nowIso)
   const ended = isEnded(playdate, nowIso)
@@ -202,39 +221,52 @@ export function DropInCard({
             says what it does; and the same row carries a 'More info' chevron
             so the card's tappability is advertised instead of assumed. */}
         <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-slate-100 pt-2">
-          <div className="flex min-w-0 items-center gap-1.5">
-            {goingLine !== null ? (
-              <>
-                <span className="text-xs text-slate-600">{goingLine.label}</span>
-                <div className="flex items-center">
-                  {goingLine.circles.map((circle, index) =>
-                    circle.avatarUrl !== null && circle.avatarUrl !== '' ? (
-                      <img
-                        key={index}
-                        src={circle.avatarUrl}
-                        alt=""
-                        className={`h-6 w-6 rounded-full border-2 border-white object-cover${index > 0 ? ' -ml-2' : ''}`}
-                      />
-                    ) : (
-                      <span
-                        key={index}
-                        aria-hidden="true"
-                        className={`flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-xs font-semibold text-slate-600${index > 0 ? ' -ml-2' : ''}`}
-                      >
-                        {circle.initial}
-                      </span>
-                    ),
-                  )}
-                </div>
-                {goingLine.overflow > 0 ? (
-                  <span className="text-xs font-medium text-slate-600">+{goingLine.overflow}</span>
-                ) : null}
-              </>
-            ) : (
-              <span className="text-xs text-slate-600">
-                {pingToggle?.enabled ? 'No one’s said they’re going yet' : 'No one’s going yet'}
-              </span>
-            )}
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex items-center gap-1.5">
+              {goingLine !== null ? (
+                <>
+                  <span className="text-xs text-slate-600">{goingLine.label}</span>
+                  <div className="flex items-center">
+                    {goingLine.circles.map((circle, index) =>
+                      circle.avatarUrl !== null && circle.avatarUrl !== '' ? (
+                        <img
+                          key={index}
+                          src={circle.avatarUrl}
+                          alt=""
+                          className={`h-6 w-6 rounded-full border-2 border-white object-cover${index > 0 ? ' -ml-2' : ''}`}
+                        />
+                      ) : (
+                        <span
+                          key={index}
+                          aria-hidden="true"
+                          className={`flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-xs font-semibold text-slate-600${index > 0 ? ' -ml-2' : ''}`}
+                        >
+                          {circle.initial}
+                        </span>
+                      ),
+                    )}
+                  </div>
+                  {goingLine.overflow > 0 ? (
+                    <span className="text-xs font-medium text-slate-600">+{goingLine.overflow}</span>
+                  ) : null}
+                </>
+              ) : (
+                <span className="text-xs text-slate-600">
+                  {pingToggle?.enabled ? 'No one’s said they’re going yet' : 'No one’s going yet'}
+                </span>
+              )}
+            </div>
+            {/* V8 ticket 09: the met-before line — one more TEXT line in this
+                same going-line area (no new badge). Hidden at 0, and hidden
+                for a viewer who follows nobody. */}
+            {metBeforeLabel !== null && metBeforeLabel !== '' ? (
+              <p
+                data-testid="met-before-line"
+                className="text-xs font-medium text-indigo-700"
+              >
+                {metBeforeLabel}
+              </p>
+            ) : null}
           </div>
           {pingToggle?.enabled ? (
             <button
