@@ -7,7 +7,7 @@
 
 - **Phase:** V3 PLAN COMPLETE — all 10 slices + tickets 01-10 closed; 0025 (guest list) applied live 2026-09-11 and verified (coordinator-verifier finish after the headless run died at its .env read). REMAINING HUMAN ITEMS CLOSED 2026-09-11 by Hermes coordinator: (1) marker sweep — 173 e2e users + opsmoke.test deleted via dashboard SQL API (safety gate: founder profiles verified outside the set; child rows scoped to markers; FINAL live DB: 2 auth users [jonmeisburg, nicolemeisburg], 2 profiles, 2 playdates [Greenlake, both Jon's]; remaining ping/comment/memberships belong to Jon+Nicole — kept); (2) founder-flag SQL — already applied (profiles.moderators=true on 'Jon Meisburg' verified pre-sweep, no action needed). V3 FULLY CLOSED.
 - **Phase: V4 COMPLETE (2026-09-11).** Human enabled Google in the Supabase project; the blocker is cleared and the round-trip is verified — see the closure evidence below.
-- **Active slice:** none. **V7 (brand palette) is deployed and verified — see below.** **Next action:** the beta itself; the code has nothing pending. Two open *decisions*, not defects: (1) the **logo mark** (the droplet is still shipped, recoloured — V7 only settled colour), and (2) the beta's SMTP dashboard setting.
+- **Active slice:** none — **V8 ticket 01 (quick post) is complete** (`dd0642e`; build exit 0, 360/360 unit, e2e 21/21, no migration). **Next action:** V8 ticket 02 — *first visit that isn't a dead end + honest, fresh states* (`.scratch/v8/issues/02-first-visit-and-honest-states.md`); the queue and the 0028–0034 migration ledger are in `.scratch/v8/spec.md`. **V7 (brand palette) is deployed and verified — see below.** Open *decisions*, not defects: (1) the **logo mark** (the droplet is still shipped, recoloured — V7 only settled colour), (2) the beta's SMTP dashboard setting, and (3) V8's human-owned steps — ticket 11's email-confirmation toggle and ticket 08's VAPID/pg_cron setup.
 - **Remaining human items:** none. D1/D2/D3 all decided (below). The e2e marker sweep ran clean twice; live DB = 2 founders only.
 
 ### V4 closure evidence (2026-09-11, after the human's Google setup)
@@ -175,6 +175,99 @@ The "feels like a phone app" half of V4 is now backed by repeatable checks
 | **Cold offline load** | PASS — the precache serves the shell (login screen paints, no browser error page) |
 | Splash lifecycle | boot splash in HTML → overlay at 61ms → gone at 1474ms (inside the 2s cap) → not replayed on navigation |
 | Mobile audit | 12 viewport/route combinations green (320–430px portrait + 844x390 / 667x375 landscape) |
+
+## V8 — retention queue (opened 2026-09-12, human-approved evaluation)
+
+Source: the human asked for a product evaluation — *what is missing, and what
+exists that we would improve, to make parents want to use this and keep using it
+to meet other parents at fun places around the city* — then approved all of it and
+asked for tickets. This session (the DSH coordinator) wrote the evaluation, the
+spec and the tickets, and — by direct human instruction ("why not just do it
+here") — built ticket 01 itself instead of handing it to the dev pane. One writer
+in the repo was preserved throughout.
+
+Artifacts: `.scratch/product-review/evaluation.md` (the read-only review; every
+claim carries a file:line or a grep result) · `.scratch/v8/spec.md` (the queue, the
+migration ledger 0028–0034, the shared migration-check procedure, the baseline
+gate) · `.scratch/v8/issues/01`–`12` (one file per ticket, AC checkboxes + an
+explicit migration check each) · `.scratch/v8/briefs/01-quick-post.txt` (the
+dispatch brief, unused — the human redirected the work here).
+
+**Diagnosis (measured, not vibes).** The app is a careful one-shot directory with
+no reason to come back: **zero notification infrastructure** (no push, no email, no
+in-app inbox; `dist/sw.js` precaches the shell only), **zero repetition**
+(`playdates` carries one `starts_at`/`ends_at`; no recur/weekly/series concept in
+any migration), **no memory of people** (the only user-to-user tables are `blocks`
+and `going_pings`), and a supply side that fails cold (5-mile default radius, no
+seeded or city-wide fallback → a new parent's first screen is *"Nothing happening
+near you today — post the first one"*, `FeedPage.tsx:433-443`). The stated goal —
+different fun places around the city — has no data model behind it: `place` is free
+text and the neighborhood is a display label.
+
+| # | Ticket | State |
+|---|---|---|
+| 01 | Quick post: today-default, recent places, one-tap preset | **complete** — `dd0642e`; no migration |
+| 02 | First visit that isn't a dead end + honest/fresh states | open (queue 02) — no migration |
+| 03 | "While you were away" inbox (pings on your posts, cancellations) | open — no migration |
+| 04 | Real post lists on `/u/:handle` and `/profile` | open — no migration |
+| 05 | Post edit + delete | open — no migration |
+| 06 | Standing playdates (weekly series) | open — **0028** reserved |
+| 07 | Places directory + place pages + Browse becomes places | open — **0029**, **0030** reserved |
+| 08 | Web push + install affordance | open — **0031**, **0032** reserved; partly human-owned |
+| 09 | Loop-closing ("same time next week") + follow family/place | open — **0033** reserved |
+| 10 | Polish batch (saves, undo, degraded states) | open — no migration |
+| 11 | Email verification (trust gate) | `ready-for-human` — **0034** reserved + a dashboard toggle |
+| 12 | Density: the first-cohort playbook | `ready-for-human` — ops, no code |
+
+**Migration ledger:** 0028–0034 are RESERVATIONS in queue order (next free number
+wins if the queue reorders; whatever is applied is what this file records). Nothing
+in V8 has been applied — ticket 01 needed no migration, and no file under
+`supabase/` changed.
+
+### V8 ticket 01 — evidence (complete, `dd0642e`)
+
+| Claim | How it was checked |
+|---|---|
+| `/new` opens on today + the next 30-minute slot | pure seams (`nextSlotMinutes`, `defaultStartDateIso`, `durationChipForUntilNextHour`/`suggestedDurationMinutes`) + 20 new unit tests, incl. the 23:45 wrap (date advances so the form never opens on a start that already passed) and the "always a legal stepper value / always a real chip" sweeps |
+| A recent place fills three fields in one tap | `recentPlacesFrom` (newest wins, case/whitespace-insensitive dedupe, 3-chip cap, rows with no place dropped) + `queryRecentOwnPlacesWithClient` (host-scoped, created_at DESC, bounded scan) against a mocked client; live in the new e2e |
+| The preset cannot promise one time and write another | ONE mount-time `now` feeds both the label and the values; the e2e reads the button's own label and asserts the rendered "Ends …" line matches it |
+| Posting still needs no date/time work, and lands on the feed | `e2e/quick-post.e2e.ts` (2 tests, phone-width): the default is asserted race-proof (the mount falls between two evaluations of the same pure seam), a post is created touching only title/place/neighborhood/duration, and a phone-width `/new` has no sideways overflow |
+| **Gate** | build exit 0 · **360/360 unit** (was 340) · **e2e 21/21** (was 19; the full suite re-run, not just the new spec) · `scripts/mobile-audit.mjs` 12/12 viewport/route combos green |
+
+**Deviations / findings from ticket 01 (all deliberate, logged here):**
+
+1. **Twelve specs were pinning the OLD DEFAULT.** `comments`, `share-public`,
+   `zip-radius`, `host-status`, `address-maps`, `kids-v3`, `comment-replies`,
+   `card-circles`, `guest-list`, `host-retention`, `avatar` and `golden-path` all
+   hardcoded "10:30 AM" after one `+` press (and "Ends 11:30 AM"). That asserted the
+   10:00 AM default, not the contract, so the ticket's default change broke all of
+   them by design. New `stepStartTimeOnce` (e2e/fixtures.ts) reads the label the form
+   actually rendered, presses `+` once, and hands the spec the parsed start — the
+   specs now assert the **30-minute grid** and `start + duration`, immune to both the
+   default and the wall clock. No assertion was weakened: the end-time assertion is
+   now derived rather than hardcoded.
+2. **The preset's label is dynamic** ("We're here until 3:30 PM") where the ticket
+   pinned the literal `"We're here until 5"`. A fixed "5" would have been a lie for
+   most of the day: the suggested duration is "to the next whole hour", which on the
+   30-minute grid is always 1h. The affordance and its semantics are unchanged.
+3. **The title default fires on a place arriving, not only via the preset.** The
+   ticket pinned "prefills the title as `Playdate at <place>` … only when the title
+   is empty, and only once place is set". That rule is implemented in one place
+   (`withDefaultTitle`) and applied both by the preset AND when a place arrives
+   (chip tap or typing), because the common flow is chip → Post, which the preset-only
+   reading would have left untitled.
+4. **No `db-v8.test.ts`.** The new db.ts round-trip (`listRecentOwnPlaces`) is
+   covered by the mocked query test in `feed.test.ts`, where the recording mock
+   builder already lives (the ticket's AC pointed at a `db-*.test.ts` file); the
+   live round-trip is proved by `quick-post.e2e.ts`.
+5. **`scripts/mobile-audit.mjs` cannot cover `/new`** — it walks only the signed-out
+   routes (`/login`, the public detail page), so the ticket's 375px AC is asserted
+   inside `quick-post.e2e.ts` at a 375×812 viewport instead (no horizontal overflow,
+   with the preset card and both chip rows rendered).
+6. **Marker sweep due.** This session left 4 marker accounts in the live project:
+   `e2e-1789187031`, `e2e-1789187043` (+ viewers `e2e-v-1789187060-1`/`-2`) and
+   `e2e-1789187175` — the usual post-run sweep (`node scripts/sweep-e2e-markers.mjs`
+   with the CDP Chrome up) has not been run yet.
 
 ## V4 — "Drop In" mobile conversion (opened 2026-09-11)
 
