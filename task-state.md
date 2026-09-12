@@ -219,10 +219,31 @@ text and the neighborhood is a display label.
 | 11 | Email verification (trust gate) | **schema DONE, UI BLOCKED ON HUMAN** — **0034 APPLIED LIVE** (column + 2 mirror triggers + 2 SECDEF functions; backfill matches `auth.users` 155 = 155). The "Verified email" chip is deliberately NOT shipped: with "Confirm email" OFF Supabase auto-confirms every signup, so the chip would mark EVERY account verified — a trust claim the app cannot make. Chip + "Check your inbox" screen + the e2e harness change land together when the human flips the toggle: `docs/email-verification-setup.md` |
 | 12 | Density: the first-cohort playbook | `ready-for-human` — ops, no code. The instrument is delivered: `.scratch/v8/density-log.md` (the weekly ritual, the target — ≥3 series with ≥1 ping for three consecutive weeks — the stop rule, and the exact SQL for each number). Depends on 06 (series) and 07 (places), both shipped |
 
-**Migration ledger:** 0028–0034 are RESERVATIONS in queue order (next free number
-wins if the queue reorders; whatever is applied is what this file records). Nothing
-in V8 has been applied — ticket 01 needed no migration, and no file under
-`supabase/` changed.
+**Migration ledger:** 0028–0034 were RESERVATIONS in queue order (next free number
+wins if the queue reorders; whatever is applied is what this file records).
+**ALL SEVEN ARE NOW APPLIED LIVE and probed** — 0028 (re-applied after the in-place
+amendment that propagates `place_id`), 0029 + 0030, 0031 + 0032 (re-applied after
+the `starting_soon` copy amendment), 0033, 0034.
+
+### V8 deployed to production (2026-09-13, human-authorized: "push it")
+
+`git push origin master` → `ea40ef7..f6957e1` (15 commits, 116 files) → Vercel
+auto-deploy. Pre-push safety check: nothing sensitive is tracked (`.env`,
+`e2e/.auth/`, marker state all ignored; no VAPID keys exist), largest new blob
+180 KB.
+
+| Claim | How it was checked against the LIVE url |
+|---|---|
+| The new build is actually serving | the live `/sw.js` gained `pushsubscriptionchange` + `notificationclick` ~30 s after the push — handlers only the V8 `injectManifest` worker has (the old generated worker had none) |
+| The PWA still holds up | `node scripts/verify-pwa.mjs https://drop-in-mu.vercel.app` green: SW controls the page, manifest/icons/head correct, and a **cold offline load still paints the shell** |
+| The splash still holds up | `node scripts/verify-splash.mjs` green: overlay at 173 ms, gone at 1507 ms, inside the cap, not replayed on nav. (`bootSplashInHtml: false` there is a race in the verifier itself — the static markup IS in the served HTML, confirmed by curl: `id="boot-splash"`) |
+| Phone widths | `node scripts/mobile-audit.mjs https://drop-in-mu.vercel.app` — all 12 viewport/route combinations green |
+| The new public route resolves | `/place/7b6ada36-…` (Green Lake Park East) → HTTP 200 SPA shell; `/playdate/65d0c351-…` → 200 |
+| The DB the deploy talks to | all 0028–0034 probes above; the live DB is swept to 2 founders |
+
+**Still human-owned after the deploy:** the push send path (VAPID + `send-push`
+deploy + schedule), the email-confirmation toggle (with its follow-up chip
+slice), and the density cohort.
 
 ### V8 ticket 01 — evidence (complete, `dd0642e`)
 
