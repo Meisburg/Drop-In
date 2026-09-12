@@ -4,6 +4,8 @@ import {
   buildGoingLine,
   computeEndIso,
   computeStartIso,
+  defaultStartDateIso,
+  durationChipForUntilNextHour,
   durationLabel,
   dueToRefreshLastSeen,
   filterFeed,
@@ -24,14 +26,20 @@ import {
   kidsComingLine,
   localDayKey,
   mapsHref,
+  nextSlotMinutes,
   PLAYDATE_DURATIONS_MINUTES,
   queryMyPlaydatesWithClient,
+  queryRecentOwnPlacesWithClient,
   queryUpcomingFeedWithClient,
   rainBadgeLabel,
   RADIUS_MILES_OPTIONS,
+  recentPlacesFrom,
+  RECENT_PLACES_SCANNED,
+  RECENT_PLACES_SHOWN,
   resolveGuestListVisibility,
   startOfTodayIso,
   stepTimeMinutes,
+  suggestedDurationMinutes,
   TIME_STEP_MINUTES,
   toDuplicatePrefill,
   validateHomeZip,
@@ -512,6 +520,10 @@ function makeFeedMockClient(rows: unknown[] = []): {
     },
     order: (col: string, opts: { ascending: boolean }) => {
       filters.push(`order(${col}, ${opts.ascending})`)
+      return builder
+    },
+    limit: (n: number) => {
+      filters.push(`limit(${n})`)
       return builder
     },
     is: (col: string, value: unknown) => {
@@ -1178,5 +1190,148 @@ describe('fetchGuestListWithClient (V3 slice 10, ticket 05)', () => {
   it('propagates the rpc error (pre-0025-apply 404)', async () => {
     const { client } = makeRpcMockClient({ error: new Error('404: function does not exist') })
     await expect(fetchGuestListWithClient(client, 'p1')).rejects.toThrow()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// V8 ticket 01: quick post — the /new mount-once defaults + remembered places.
+
+/** Local 2026-09-12 at h:m as an ISO instant (timezone-independent, like `at`). */
+function localIso(hour: number, minute: number, day = 12): string {
+  return new Date(2026, 8, day, hour, minute, 0, 0).toISOString()
+}
+
+describe('nextSlotMinutes (V8 ticket 01, the /new start-time default)', () => {
+  it('rounds an off-grid time UP to the next 30-minute slot', () => {
+    expect(nextSlotMinutes(localIso(14, 20))).toBe(14 * 60 + 30)
+    expect(nextSlotMinutes(localIso(14, 1))).toBe(14 * 60 + 30)
+    expect(nextSlotMinutes(localIso(14, 59))).toBe(15 * 60)
+  })
+
+  it('returns an on-grid time unchanged (2:30 PM stays 2:30 PM)', () => {
+    expect(nextSlotMinutes(localIso(14, 30))).toBe(14 * 60 + 30)
+    expect(nextSlotMinutes(localIso(14, 0))).toBe(14 * 60)
+  })
+
+  it('is always a value the stepper considers legal (the form opens on a valid time)', () => {
+    for (let hour = 0; hour < 24; hour++) {
+      for (const minute of [0, 1, 15, 29, 30, 31, 45, 59]) {
+        expect(isSteppedTime(nextSlotMinutes(localIso(hour, minute)))).toBe(true)
+      }
+    }
+  })
+
+  it('wraps past midnight to 0 (the date seam is what advances)', () => {
+    expect(nextSlotMinutes(localIso(23, 45))).toBe(0)
+    expect(nextSlotMinutes(localIso(23, 30))).toBe(23 * 60 + 30)
+  })
+})
+
+describe('defaultStartDateIso (V8 ticket 01, the /new date default)', () => {
+  it('is today, local, in the date input\u2019s own format', () => {
+    expect(defaultStartDateIso(localIso(9, 5))).toBe('2026-09-12')
+  })
+
+  it('agrees with localDayKey (the date input IS a local day key)', () => {
+    expect(defaultStartDateIso(localIso(9, 5))).toBe(localDayKey(localIso(9, 5)))
+  })
+
+  it('advances to tomorrow when the next slot wraps past midnight', () => {
+    expect(defaultStartDateIso(localIso(23, 45))).toBe('2026-09-13')
+  })
+
+  it('stays on today at exactly midnight (00:00 is its own slot)', () => {
+    expect(defaultStartDateIso(localIso(0, 0))).toBe('2026-09-12')
+  })
+})
+
+describe('durationChipForUntilNextHour / suggestedDurationMinutes (V8 ticket 01)', () => {
+  it('gives the smallest chip that reaches the next whole hour', () => {
+    expect(durationChipForUntilNextHour(14 * 60)).toBe(60)
+    expect(durationChipForUntilNextHour(14 * 60 + 30)).toBe(60)
+  })
+
+  it('is always one of the real chips (the preset can only write a legal duration)', () => {
+    for (let minutes = 0; minutes < 24 * 60; minutes += TIME_STEP_MINUTES) {
+      expect(isDuration(durationChipForUntilNextHour(minutes))).toBe(true)
+    }
+  })
+
+  it('the suggested duration for a now is a valid chip (1h on today\u2019s 30-minute grid)', () => {
+    expect(suggestedDurationMinutes(localIso(14, 20))).toBe(60)
+    expect(isDuration(suggestedDurationMinutes(localIso(14, 20)))).toBe(true)
+  })
+})
+
+describe('recentPlacesFrom (V8 ticket 01, the /new "Recent places" chips)', () => {
+  const rows = [
+    { place: 'Green Lake playground', address: '7200 4th Ave NE', neighborhood_id: 'n-green' },
+    { place: 'green lake playground  ', address: null, neighborhood_id: 'n-green' },
+    { place: 'Ballard Commons', address: '  5701 22nd Ave NW  ', neighborhood_id: 'n-ballard' },
+    { place: '   ', address: 'nope', neighborhood_id: 'n-x' },
+    { place: 'Discovery Park', address: null, neighborhood_id: 'n-disc' },
+    { place: 'Golden Gardens', address: null, neighborhood_id: 'n-gg' },
+  ]
+
+  it('keeps the NEWEST row of each place (the input is newest-first)', () => {
+    const out = recentPlacesFrom(rows)
+    expect(out[0]).toEqual({
+      place: 'Green Lake playground',
+      address: '7200 4th Ave NE',
+      neighborhoodId: 'n-green',
+    })
+  })
+
+  it('collapses duplicates on a case/whitespace-insensitive place key', () => {
+    const out = recentPlacesFrom(rows)
+    expect(out.filter((p) => p.place.toLowerCase().includes('green lake'))).toHaveLength(1)
+  })
+
+  it('drops rows with no place at all', () => {
+    expect(recentPlacesFrom(rows).some((p) => p.place === '')).toBe(false)
+  })
+
+  it('caps at RECENT_PLACES_SHOWN (the ticket-01 pin: 3) and honours an explicit limit', () => {
+    expect(RECENT_PLACES_SHOWN).toBe(3)
+    expect(recentPlacesFrom(rows)).toHaveLength(RECENT_PLACES_SHOWN)
+    expect(recentPlacesFrom(rows, 1)).toHaveLength(1)
+    expect(recentPlacesFrom(rows, 99)).toHaveLength(4)
+  })
+
+  it('normalizes a null address to "" and trims a real one', () => {
+    const out = recentPlacesFrom(rows)
+    expect(out[1]).toEqual({
+      place: 'Ballard Commons',
+      address: '5701 22nd Ave NW',
+      neighborhoodId: 'n-ballard',
+    })
+    expect(out[2].address).toBe('')
+  })
+
+  it('no rows → no chips', () => {
+    expect(recentPlacesFrom([])).toEqual([])
+  })
+})
+
+describe('queryRecentOwnPlacesWithClient (V8 ticket 01, mocked supabase client)', () => {
+  const rows = [{ place: 'Green Lake', address: null, neighborhood_id: 'n1' }]
+
+  it('scopes to the host, newest first, with a bounded scan', async () => {
+    const { client, filters } = makeFeedMockClient(rows)
+    expect(await queryRecentOwnPlacesWithClient(client, 'me')).toEqual(rows)
+    expect(filters).toContain('eq(host_profile_id, me)')
+    expect(filters).toContain('order(created_at, false)')
+    expect(filters).toContain(`limit(${RECENT_PLACES_SCANNED})`)
+  })
+
+  it('honours an explicit scan limit', async () => {
+    const { client, filters } = makeFeedMockClient(rows)
+    await queryRecentOwnPlacesWithClient(client, 'me', 2)
+    expect(filters).toContain('limit(2)')
+  })
+
+  it('returns [] when the host has never posted', async () => {
+    const { client } = makeFeedMockClient([])
+    expect(await queryRecentOwnPlacesWithClient(client, 'me')).toEqual([])
   })
 })

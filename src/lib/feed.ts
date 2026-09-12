@@ -745,3 +745,133 @@ export function formatGuestLine(
   const base = extra > 0 ? `${shown.join(', ')} + ${extra} more` : shown.join(', ')
   return base === '' ? 'You' : `You, ${base}`
 }
+
+// ---------------------------------------------------------------------------
+// V8 ticket 01: quick post — mount-once defaults + remembered places.
+//
+// The core spontaneous gesture ("we're at the park right now") used to cost
+// six decisions, with a start date of '' and a start time pinned to 10:00 AM.
+// These seams make the /new form's DEFAULT state already correct: today, the
+// next 30-minute slot, and the places this parent last posted to. Nothing
+// here bypasses validation — a parent can still schedule three days out by
+// changing the fields, exactly as before.
+
+/** How many recent places the /new chips show (ticket 01 pin). */
+export const RECENT_PLACES_SHOWN = 3
+
+/** How many of the caller's own recent posts the chips are derived from. */
+export const RECENT_PLACES_SCANNED = 10
+
+/**
+ * The next 30-minute slot at or after `nowIso`, as minutes since LOCAL
+ * midnight (the /new stepper's own unit — `isSteppedTime` accepts it).
+ *
+ * On-grid input returns itself (2:30 → 2:30: posting "we're here now" should
+ * not silently round a parent forward to 3:00). Past midnight it wraps to 0
+ * — `defaultStartDateIso` is the seam that advances the DATE in that case,
+ * so the pair is always consistent.
+ */
+export function nextSlotMinutes(nowIso: string): number {
+  const now = new Date(nowIso)
+  const minutes = now.getHours() * 60 + now.getMinutes()
+  const dayMinutes = 24 * 60
+  return (Math.ceil(minutes / TIME_STEP_MINUTES) * TIME_STEP_MINUTES) % dayMinutes
+}
+
+/**
+ * The /new start date the form opens with: today, local — tomorrow when the
+ * next slot has wrapped past midnight (23:45 → the 00:00 slot belongs to
+ * tomorrow; defaulting to today would open the form on a start time that
+ * already passed). Returns the `<input type="date">` value format, which is
+ * `localDayKey`'s (the two must agree — the date input IS a local day key).
+ */
+export function defaultStartDateIso(nowIso: string): string {
+  const now = new Date(nowIso)
+  const minutes = now.getHours() * 60 + now.getMinutes()
+  const wrapsToMidnight = minutes > 0 && nextSlotMinutes(nowIso) === 0
+  const day = new Date(now)
+  if (wrapsToMidnight) day.setDate(day.getDate() + 1)
+  return localDayKey(day.toISOString())
+}
+
+/**
+ * The duration chip that reaches the next whole hour from a start slot on
+ * the 30-minute grid, clamped to the chip set (60–180).
+ *
+ * Exported for the unit test: on today's grid a slot is always :00 or :30,
+ * so the answer is a constant 1h in the app — the seam stays general so a
+ * finer grid, or a different "until" rule, is a rule change and not a
+ * rewrite.
+ */
+export function durationChipForUntilNextHour(slotMinutes: number): number {
+  const minutesToNextHour = (60 - (slotMinutes % 60)) % 60 || 60
+  const chips = PLAYDATE_DURATIONS_MINUTES as readonly number[]
+  return chips.find((chip) => chip >= minutesToNextHour) ?? chips[chips.length - 1]
+}
+
+/** The suggested duration for the /new quick-fill preset (see above). */
+export function suggestedDurationMinutes(nowIso: string): number {
+  return durationChipForUntilNextHour(nextSlotMinutes(nowIso))
+}
+
+/**
+ * One remembered place, ready to fill three /new fields in a single tap
+ * (ticket 01): the place text, its address ('' when the post had none), and
+ * the neighborhood the post used.
+ */
+export interface RecentPlace {
+  place: string
+  address: string
+  neighborhoodId: string
+}
+
+/**
+ * The recent-place chips from the caller's own posts, newest first
+ * (`queryRecentOwnPlacesWithClient` order): rows with no place are dropped,
+ * duplicates collapse on a case/whitespace-insensitive place key (the NEWEST
+ * wins — the input order), and the result is capped at `limit`.
+ */
+export function recentPlacesFrom(
+  rows: ReadonlyArray<{ place: string; address: string | null; neighborhood_id: string }>,
+  limit: number = RECENT_PLACES_SHOWN,
+): RecentPlace[] {
+  const seen = new Set<string>()
+  const out: RecentPlace[] = []
+  for (const row of rows) {
+    const place = row.place.trim()
+    if (place === '') continue
+    const key = place.replace(/\s+/g, ' ').toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({
+      place,
+      address: (row.address ?? '').trim(),
+      neighborhoodId: row.neighborhood_id,
+    })
+    if (out.length >= limit) break
+  }
+  return out
+}
+
+/**
+ * The caller's own recent posts' places, newest first, against an injected
+ * client (the `queryMyPlaydatesWithClient` pattern — mocked in
+ * feed.test.ts). Ordered by created_at DESC because this is about what the
+ * parent ACTUALLY posted last, not what starts soonest. The playdates SELECT
+ * policy is open to any authenticated user, so the host's own rows come back
+ * directly.
+ */
+export async function queryRecentOwnPlacesWithClient(
+  client: SupabaseClient,
+  profileId: string,
+  scanLimit: number = RECENT_PLACES_SCANNED,
+): Promise<unknown[]> {
+  const { data, error } = await client
+    .from('playdates')
+    .select('place, address, neighborhood_id, created_at')
+    .eq('host_profile_id', profileId)
+    .order('created_at', { ascending: false })
+    .limit(scanLimit)
+  if (error) throw error
+  return (data ?? []) as unknown[]
+}

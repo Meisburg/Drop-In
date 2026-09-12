@@ -2,18 +2,27 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { useSessionContext } from '../components/SessionProvider'
-import { createPlaydate, listKids, listNeighborhoods, linkKidsToPlaydate } from '../lib/db'
+import {
+  createPlaydate,
+  listKids,
+  listNeighborhoods,
+  listRecentOwnPlaces,
+  linkKidsToPlaydate,
+} from '../lib/db'
 import {
   computeEndIso,
   computeStartIso,
+  defaultStartDateIso,
   durationLabel,
   formatTimeLabel,
+  nextSlotMinutes,
   PLAYDATE_DURATIONS_MINUTES,
   stepTimeMinutes,
+  suggestedDurationMinutes,
   TIME_STEP_MINUTES,
   validatePlaydateForm,
 } from '../lib/feed'
-import type { PlaydateFormErrors, PlaydateFormValues } from '../lib/feed'
+import type { PlaydateFormErrors, PlaydateFormValues, RecentPlace } from '../lib/feed'
 import type { DuplicatePrefill, Kid, Neighborhood } from '../lib/types'
 
 const TITLE_MAX_LENGTH = 80
@@ -21,15 +30,58 @@ const TITLE_MAX_LENGTH = 80
 const ADDRESS_MAX_LENGTH = 120
 const DAY_MINUTES = 24 * 60
 
+/**
+ * The /new form's EMPTY base (V8 ticket 01 changed what the form OPENS
+ * with, not this): `initialValues` fills the start date and time with today
+ * and the next 30-minute slot, so `startDate`/`startMinutes` here are inert
+ * placeholders that never render — every path goes through `initialValues`.
+ * `durationMinutes: 0` is the real "none picked yet" state (the chips choose
+ * a duration; the quick-fill preset can also set it).
+ */
 const emptyValues: PlaydateFormValues = {
   title: '',
   place: '',
   neighborhoodId: '',
   startDate: '',
-  startMinutes: 600, // 10:00 AM — the stepper keeps it on the 30-minute grid
-  durationMinutes: 0, // 0 = none picked yet; the chips choose a duration
+  startMinutes: 0,
+  durationMinutes: 0,
   ageHint: '',
   details: '',
+}
+
+/**
+ * The form's MOUNT-ONCE initial values (V8 ticket 01): today's date and the
+ * next 30-minute slot, so the spontaneous post ("we're at the park right
+ * now") needs no date or time work at all. Computed once from a single
+ * mount-time `now` — a per-render recompute would move the fields under the
+ * parent's finger.
+ *
+ * A duplicate prefill still wins on everything it carries (title, place,
+ * neighborhood, age hint, details); it deliberately does NOT carry date,
+ * time, or duration (pinned in V2: those are always re-entered), so the
+ * fresh defaults apply there too.
+ */
+function initialValues(duplicate: DuplicatePrefill | null, nowIso: string): PlaydateFormValues {
+  const defaults: PlaydateFormValues = {
+    ...emptyValues,
+    startDate: defaultStartDateIso(nowIso),
+    startMinutes: nextSlotMinutes(nowIso),
+  }
+  return duplicate === null ? defaults : { ...defaults, ...duplicate }
+}
+
+/**
+ * The one title default the /new form applies (V8 ticket 01): a drop-in is
+ * titled "Playdate at <place>" only when the parent has not typed a title
+ * AND a place is known. Never overwrites typed text, never fires with no
+ * place, and the live n/80 counter keeps working because this returns the
+ * same value shape the inputs write.
+ */
+function withDefaultTitle(values: PlaydateFormValues): PlaydateFormValues {
+  if (values.title.trim() !== '') return values
+  const place = values.place.trim()
+  if (place === '') return values
+  return { ...values, title: `Playdate at ${place}` }
 }
 
 /**
@@ -69,9 +121,14 @@ const emptyValues: PlaydateFormValues = {
 export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | null }) {
   const navigate = useNavigate()
   const { loading, session } = useSessionContext()
+  // V8 ticket 01: ONE mount-time `now` feeds both the form's default start
+  // (today + the next 30-minute slot) and the quick-fill preset (its label
+  // and the values it writes) — so the preset can never promise one time and
+  // write another, and the fields never shift mid-edit.
+  const [mountedNowIso] = useState(() => new Date().toISOString())
   const [neighborhoods, setNeighborhoods] = useState<Neighborhood[] | null>(null)
   const [values, setValues] = useState<PlaydateFormValues>(() =>
-    duplicate === null ? emptyValues : { ...emptyValues, ...duplicate },
+    initialValues(duplicate, mountedNowIso),
   )
   const [errors, setErrors] = useState<PlaydateFormErrors>({})
   const [submitting, setSubmitting] = useState(false)
@@ -89,6 +146,11 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
   // The picker's selection (page-local until submit — nothing is saved
   // until the post is created, then linkKidsToPlaydate lands it).
   const [selectedKidIds, setSelectedKidIds] = useState<string[]>([])
+  // V8 ticket 01: the "Recent places" chips — the places this parent posted
+  // to last (newest first, deduped, capped at 3). [] renders NO chips row,
+  // whether that is because they have never posted or because the load
+  // failed: the zero-pressure discipline (no error state on /new).
+  const [recentPlaces, setRecentPlaces] = useState<RecentPlace[]>([])
   // The session's user id (the kids table's profile_id — the same key
   // ProfilePage's kids load uses).
   const userId = session?.user?.id ?? null
@@ -128,6 +190,26 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
     }
   }, [userId])
 
+  // V8 ticket 01: the recent-places chips, fetched once the session settles
+  // (the ProfilePage kids-load pattern). A failed load stays [] — no chips
+  // row, never an error line (db.listRecentOwnPlaces returns [] with no
+  // session rather than throwing; the chips are a convenience, not a feature
+  // the form depends on).
+  useEffect(() => {
+    if (userId === null) return
+    let cancelled = false
+    listRecentOwnPlaces()
+      .then((rows) => {
+        if (!cancelled) setRecentPlaces(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setRecentPlaces([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
   // V3 slice 6 (ticket 09): toggle a kid chip (multi-select, no cap — the
   // host picks whichever of their own kids are coming).
   function toggleKid(kidId: string) {
@@ -137,8 +219,59 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
   }
 
   function update<K extends keyof PlaydateFormValues>(field: K, value: PlaydateFormValues[K]) {
-    setValues((prev) => ({ ...prev, [field]: value }))
+    setValues((prev) => {
+      const next = { ...prev, [field]: value }
+      // V8 ticket 01: a place arriving (typed, or via a recent-place chip)
+      // seeds the title when the parent has not written one — the same rule
+      // the quick-fill preset uses.
+      return field === 'place' ? withDefaultTitle(next) : next
+    })
     setErrors((prev) => ({ ...prev, [field]: undefined }))
+    setSubmitError(null)
+  }
+
+  /**
+   * V8 ticket 01: one tap fills place + address + neighborhood from a place
+   * this parent already posted to (three fields they have told us once
+   * already). The address is written even when it is '' — the remembered
+   * post had none, and leaving a stale address behind would be worse.
+   */
+  function applyRecentPlace(recent: RecentPlace) {
+    setValues((prev) =>
+      withDefaultTitle({ ...prev, place: recent.place, neighborhoodId: recent.neighborhoodId }),
+    )
+    setAddress(recent.address)
+    setErrors((prev) => ({ ...prev, place: undefined, neighborhoodId: undefined }))
+    setSubmitError(null)
+  }
+
+  // The quick-fill preset's own values — both from the mount-time `now`, so
+  // the label it renders is exactly what it writes (see `mountedNowIso`).
+  const quickStartMinutes = nextSlotMinutes(mountedNowIso)
+  const quickDurationMinutes = suggestedDurationMinutes(mountedNowIso)
+  const quickEndLabel = formatTimeLabel(quickStartMinutes + quickDurationMinutes)
+
+  /**
+   * V8 ticket 01: "we're here until <the next hour>" — the spontaneous
+   * drop-in in one tap. Sets the start (today, next slot) and the duration,
+   * and seeds the title once a place is known. Everything it writes stays
+   * editable, and nothing is submitted (the parent still confirms).
+   */
+  function applyQuickFill() {
+    setValues((prev) =>
+      withDefaultTitle({
+        ...prev,
+        startDate: defaultStartDateIso(mountedNowIso),
+        startMinutes: quickStartMinutes,
+        durationMinutes: quickDurationMinutes,
+      }),
+    )
+    setErrors((prev) => ({
+      ...prev,
+      startDate: undefined,
+      startMinutes: undefined,
+      durationMinutes: undefined,
+    }))
     setSubmitError(null)
   }
 
@@ -243,6 +376,25 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
           onSubmit={handleSubmit}
           noValidate
         >
+          {/* V8 ticket 01: the spontaneous drop-in in one tap — start at the
+              next 30-minute slot, run to the next hour. The label states the
+              end it will actually write, and both come from the same
+              mount-time `now`, so it cannot promise one time and set another.
+              Nothing is submitted: the parent still taps Post. */}
+          <div className="flex flex-col gap-1 rounded-xl border border-indigo-200 bg-indigo-50 p-3">
+            <button
+              type="button"
+              onClick={applyQuickFill}
+              className="min-h-11 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white"
+            >
+              We’re here until {quickEndLabel}
+            </button>
+            <p className="text-xs text-indigo-700">
+              Fills the start time ({formatTimeLabel(quickStartMinutes)}) and how long (
+              {durationLabel(quickDurationMinutes)}) — then just say where you’ll be.
+            </p>
+          </div>
+
           <label className="flex flex-col gap-1 text-sm">
             <span className="flex items-center justify-between text-slate-700">
               Title
@@ -281,6 +433,27 @@ export function NewPlaydatePage({ duplicate }: { duplicate: DuplicatePrefill | n
             />
           </label>
           {errors.place ? <p className="text-sm text-red-600">{errors.place}</p> : null}
+
+          {/* V8 ticket 01: the remembered places this parent posted to last —
+              one tap fills place + address + neighborhood. Hidden entirely
+              when there are none (a first-timer sees no empty chip row). */}
+          {recentPlaces.length > 0 ? (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-slate-500">Recent places</span>
+              <div className="flex flex-wrap gap-2">
+                {recentPlaces.map((recent) => (
+                  <button
+                    key={recent.place}
+                    type="button"
+                    onClick={() => applyRecentPlace(recent)}
+                    className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors"
+                  >
+                    {recent.place}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           {/* V3 slice 5 (ticket 08): the optional address (≤120, trim
               only) — under place. When present, the detail page's place
@@ -480,7 +653,7 @@ function TimeStepper({
       >
         −
       </button>
-      <span className="text-sm font-medium tabular-nums text-slate-900">
+      <span className="text-sm font-medium tabular-nums text-slate-900" data-testid="start-time-label">
         {formatTimeLabel(minutes)}
       </span>
       <button

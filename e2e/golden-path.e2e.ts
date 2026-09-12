@@ -12,7 +12,14 @@
  * orchestrator's sweep picks stragglers up either way.
  */
 import { expect, test } from '@playwright/test'
-import { localDatePlusDays, readMarkerMeta, readMarkerSession, readSupabaseEnv, settleOnRoute } from './fixtures'
+import {
+  localDatePlusDays,
+  readMarkerMeta,
+  readMarkerSession,
+  readSupabaseEnv,
+  settleOnRoute,
+  stepStartTimeOnce,
+} from './fixtures'
 
 test('post a drop-in via the V2 slice-1 UI, see it in the feed, clean it up', async ({ page }) => {
   const marker = readMarkerMeta()
@@ -34,16 +41,18 @@ test('post a drop-in via the V2 slice-1 UI, see it in the feed, clean it up', as
   await page.locator('select').selectOption({ label: marker.neighborhood })
 
   // Start: date picker + the 30-minute stepper (V2 slice-1 time entry —
-  // the time is stepped, never typed). The stepper starts at 10:00 AM;
-  // one + step lands on 10:30 AM, proving the 30-minute grid.
+  // the time is stepped, never typed). V8 ticket 01: the stepper's default
+  // is the NEXT 30-minute slot on this machine's clock, not a fixed
+  // 10:00 AM — stepStartTimeOnce reads the label the form rendered, presses
+  // + once, and hands back the start, so what is asserted here is the
+  // 30-minute GRID (one press == +30 minutes), not a default.
   await page.locator('input[type="date"]').fill(startDate)
-  await page.getByRole('button', { name: 'Later start time' }).click()
-  await expect(page.getByText('10:30 AM', { exact: true })).toBeVisible()
+  const start = await stepStartTimeOnce(page)
 
-  // Duration: pick the 1h chip — the end (11:30 AM) is computed, never
+  // Duration: pick the 1h chip — the end (start + 1h) is computed, never
   // typed (pinned contract).
   await page.getByRole('button', { name: '1h', exact: true }).click()
-  await expect(page.getByText('Ends 11:30 AM')).toBeVisible()
+  await expect(page.getByText(`Ends ${start.endLabel(60)}`)).toBeVisible()
 
   // Post → the page navigates to / and the feed re-fetches on mount, so
   // the marker's post appears in its own feed (the neighborhood is

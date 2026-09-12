@@ -13,7 +13,11 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
-import type { Page } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
+// The stepper's own pure math — imported so a spec's expectation is the same
+// rule the form applies, never a copy of it (feed.ts is pure: its only
+// imports are `import type`, erased at runtime).
+import { TIME_STEP_MINUTES, formatTimeLabel, stepTimeMinutes } from '../src/lib/feed'
 
 const CWD = process.cwd()
 
@@ -140,6 +144,47 @@ export function localDatePlusDays(days: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
     d.getDate(),
   ).padStart(2, '0')}`
+}
+
+/** "3:30 PM" → minutes since local midnight (the stepper's label form). */
+export function parseTimeLabel(label: string): number {
+  const match = /(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(label.trim())
+  if (match === null) throw new Error(`Not a stepper time label: "${label}"`)
+  const hour12 = Number(match[1]) % 12
+  const base = match[3].toUpperCase() === 'PM' ? hour12 + 12 : hour12
+  return base * 60 + Number(match[2])
+}
+
+/**
+ * The /new start-time stepper, made DEFAULT-AGNOSTIC (V8 ticket 01).
+ *
+ * Ticket 01 changed the stepper's mount-once default from a hardcoded
+ * 10:00 AM to the next 30-minute slot on the parent's clock, so every spec
+ * that pinned "10:30 AM" after one + press was pinning the OLD DEFAULT
+ * rather than the contract. This helper reads the label the form actually
+ * rendered, presses + once, and hands the spec the parsed start — so the
+ * spec asserts the RELATIONSHIP (one press is exactly +30 minutes, and the
+ * end is start + duration), which is the pinned contract and is immune to
+ * both the default and the wall clock.
+ *
+ * `endLabel(durationMinutes)` is the "Ends …" copy the form computes.
+ */
+export async function stepStartTimeOnce(page: Page): Promise<{
+  startMinutes: number
+  startLabel: string
+  endLabel: (durationMinutes: number) => string
+}> {
+  const label = page.getByTestId('start-time-label')
+  const before = parseTimeLabel(await label.innerText())
+  await page.getByRole('button', { name: 'Later start time' }).click()
+  const startMinutes = stepTimeMinutes(before, TIME_STEP_MINUTES)
+  const startLabel = formatTimeLabel(startMinutes)
+  await expect(label).toHaveText(startLabel)
+  return {
+    startMinutes,
+    startLabel,
+    endLabel: (durationMinutes: number) => formatTimeLabel(startMinutes + durationMinutes),
+  }
 }
 
 /**

@@ -23,12 +23,15 @@ import {
   filterFeed,
   hostDistanceMiles,
   localDayKey,
+  queryRecentOwnPlacesWithClient,
   queryUpcomingFeedWithClient,
+  recentPlacesFrom,
   startOfTodayIso,
   validateHomeZip,
   validateRadiusMiles,
   type GoingPinger,
   type RadiusViewer,
+  type RecentPlace,
   type ZipCoords,
 } from './feed'
 import {
@@ -636,6 +639,34 @@ export async function createPlaydate(input: NewPlaydateInput): Promise<Playdate>
     .single()
   if (error) throw error
   return data as Playdate
+}
+
+/**
+ * The /new "Recent places" chips (V8 ticket 01): the places this parent
+ * actually posted to last — newest first, deduped on the place text, capped
+ * at `limit` (the pure `recentPlacesFrom` is the seam; this is the fetch).
+ *
+ * Read-only over the caller's OWN playdates rows (the playdates SELECT
+ * policy is open to any authenticated user; the `.eq(host_profile_id)` is
+ * what scopes it). No session → [] rather than a throw: the chips are a
+ * convenience, and a form that cannot load them must still render.
+ *
+ * Failure discipline matches the rest of the app: the caller swallows a
+ * failed load into an empty chip row (no error state on /new — a parent who
+ * has never posted gets the same thing legitimately).
+ */
+export async function listRecentOwnPlaces(limit?: number): Promise<RecentPlace[]> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (!user) return []
+  const rows = await queryRecentOwnPlacesWithClient(supabase, user.id)
+  return recentPlacesFrom(
+    rows as Array<{ place: string; address: string | null; neighborhood_id: string }>,
+    limit,
+  )
 }
 
 // ---------------------------------------------------------------------------

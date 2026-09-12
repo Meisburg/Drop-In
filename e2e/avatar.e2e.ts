@@ -29,6 +29,7 @@ import {
   readMarkerSession,
   readSupabaseEnv,
   settleOnRoute,
+  stepStartTimeOnce,
 } from './fixtures'
 
 // --- The dependency-free PNG (solid RGB, 8-bit, non-interlaced). ---
@@ -128,10 +129,9 @@ test('marker uploads an avatar, sees the 40px round avatar on the feed card + /u
   await page.getByPlaceholder('e.g. Green Lake playground, near the boathouse').fill('E2E avatar lot')
   await page.locator('select').selectOption({ label: marker.neighborhood })
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
-  await page.getByRole('button', { name: 'Later start time' }).click()
-  await expect(page.getByText('10:30 AM', { exact: true })).toBeVisible()
+  const start = await stepStartTimeOnce(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()
-  await expect(page.getByText('Ends 11:30 AM')).toBeVisible()
+  await expect(page.getByText(`Ends ${start.endLabel(60)}`)).toBeVisible()
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
   await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible()

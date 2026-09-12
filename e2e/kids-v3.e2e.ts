@@ -58,6 +58,7 @@ import {
   readMarkerSession,
   readSupabaseEnv,
   settleOnRoute,
+  stepStartTimeOnce,
 } from './fixtures'
 
 const PLACE = 'E2E Kids lot'
@@ -157,10 +158,9 @@ async function postMarkerDropInWithKids(
     .fill(PLACE)
   await page.locator('select').selectOption({ label: marker.neighborhood })
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
-  await page.getByRole('button', { name: 'Later start time' }).click()
-  await expect(page.getByText('10:30 AM', { exact: true })).toBeVisible()
+  const start = await stepStartTimeOnce(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()
-  await expect(page.getByText('Ends 11:30 AM')).toBeVisible()
+  await expect(page.getByText(`Ends ${start.endLabel(60)}`)).toBeVisible()
 
   // The "Kids you're bringing (optional)" picker (the old "Best for ages"
   // section, REPLACED by ticket 09): the marker has kids (the REST

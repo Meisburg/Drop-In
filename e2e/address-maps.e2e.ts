@@ -34,6 +34,7 @@ import {
   readMarkerSession,
   readSupabaseEnv,
   settleOnRoute,
+  stepStartTimeOnce,
 } from './fixtures'
 
 const PLACE = 'E2E Maps lot'
@@ -70,10 +71,9 @@ async function postMarkerDropInWithAddress(page: Page, title: string): Promise<s
   await page.getByPlaceholder('e.g. 7200 4th Ave NE, near the boathouse').fill(ADDRESS)
   await page.locator('select').selectOption({ label: marker.neighborhood })
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
-  await page.getByRole('button', { name: 'Later start time' }).click()
-  await expect(page.getByText('10:30 AM', { exact: true })).toBeVisible()
+  const start = await stepStartTimeOnce(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()
-  await expect(page.getByText('Ends 11:30 AM')).toBeVisible()
+  await expect(page.getByText(`Ends ${start.endLabel(60)}`)).toBeVisible()
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   try {
     await page.waitForURL('/', { timeout: 30_000 })
