@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { DeletePlaydateDialog } from '../components/DeletePlaydateDialog'
 import { HostAvatar } from '../components/DropInCard'
 import { PhotoButton } from '../components/ImageLightbox'
@@ -7,6 +8,15 @@ import { KidsComingPicker } from '../components/KidsComingPicker'
 import { ReportDialog } from '../components/ReportDialog'
 import { useSessionContext } from '../components/SessionProvider'
 import { LOGIN_PATH } from '../lib/auth'
+import {
+  INITIAL_COMMENT_ACTION_STATE,
+  armCommentAction,
+  beginCommentAction,
+  cancelCommentAction,
+  commentActionDialogCopy,
+  endCommentAction,
+  isCommentActionBusy,
+} from '../lib/commentActions'
 import {
   addComment,
   deleteComment,
@@ -31,6 +41,7 @@ import {
   setPlaydateStatus,
   setSeriesActive,
   togglePing,
+  unhideComment,
 } from '../lib/db'
 import {
   formatGuestLine,
@@ -337,7 +348,12 @@ export function PlaydateDetailPage() {
   // V2 slice 4: the comment composer (empty rejected client-side; the
   // pure validateCommentBody is the second check in handleAddComment).
   const [commentDraft, setCommentDraft] = useState('')
-  const [commentBusy, setCommentBusy] = useState(false)
+  // V8 ticket 10: the comment-row action state machine (the pure
+  // lib/commentActions.ts — arm → confirm/cancel, one in-flight write for the
+  // whole thread). `busy` is the guard every comment write already shared, so
+  // the composer and the row actions still cannot overlap.
+  const [commentAction, setCommentAction] = useState(INITIAL_COMMENT_ACTION_STATE)
+  const commentBusy = isCommentActionBusy(commentAction)
   const [commentError, setCommentError] = useState<string | null>(null)
   // V3 slice 7 (ticket 10): the reply-to mode — the id of the top-level
   // comment the bottom composer is answering (null = plain "Add a
@@ -349,6 +365,11 @@ export function PlaydateDetailPage() {
   // copy-link fallback otherwise) + its "Copied" confirmation.
   const [shareBusy, setShareBusy] = useState(false)
   const [shareCopied, setShareCopied] = useState(false)
+  // V8 ticket 10: the share sheet went away AND the clipboard write failed —
+  // then the link is shown to select by hand. Silent failure was the bug: the
+  // "Copied" chip never appeared and nothing said why, so a parent who was
+  // trying to send the link had nothing to send and no idea.
+  const [shareError, setShareError] = useState(false)
   // V2 slice 5 (the zero-pressure soul): true when the visitor returned
   // from the /login hop intending to ping THIS post (the stored ping-intent
   // flag) — the ping button highlights as "Tap to confirm you're coming";
@@ -1016,6 +1037,12 @@ export function PlaydateDetailPage() {
    * copy-link fallback (clipboard API + textarea fallback) with the
    * "Copied" confirmation. The URL is the pure buildShareUrl (db.getShareUrl:
    * VITE_PUBLIC_BASE_URL, or the window origin before deployment).
+   *
+   * V8 ticket 10: a share that produced NOTHING is now visible. Dismissing the
+   * sheet falls through to the copy fallback, and if that copy fails too the
+   * page used to do exactly nothing — no chip, no message, no link. Now it
+   * says "Couldn’t copy the link" and renders the URL in a selectable field
+   * (the render below), so the parent can still send it.
    */
   async function handleShare() {
     if (state.status !== 'ready' && state.status !== 'public') return
@@ -1024,6 +1051,7 @@ export function PlaydateDetailPage() {
     const url = getShareUrl(detail.id)
     setShareBusy(true)
     setShareCopied(false)
+    setShareError(false)
     try {
       if (navigator.share !== undefined) {
         try {
@@ -1037,10 +1065,37 @@ export function PlaydateDetailPage() {
       if (await copyToClipboard(url)) {
         setShareCopied(true)
         window.setTimeout(() => setShareCopied(false), 2000)
+      } else {
+        setShareError(true)
       }
     } finally {
       setShareBusy(false)
     }
+  }
+
+  /**
+   * V8 ticket 10: the share fallback line — "Couldn’t copy the link" + the URL
+   * in a readonly field the parent can select (one tap selects the whole URL,
+   * so a failed automatic copy costs two taps, not a dead end). Rendered in
+   * BOTH views, right under the Share button that failed.
+   */
+  function renderShareFallback(url: string) {
+    if (!shareError) return null
+    return (
+      <div data-testid="share-copy-error" className="mt-2 w-full">
+        <p className="text-sm text-red-600">Couldn’t copy the link.</p>
+        <p className="mt-1 text-sm text-slate-600">Select it and copy it yourself:</p>
+        <input
+          readOnly
+          data-testid="share-url-fallback"
+          aria-label="Link to this drop-in"
+          value={url}
+          onFocus={(event) => event.currentTarget.select()}
+          onClick={(event) => event.currentTarget.select()}
+          className="mt-1 w-full select-all rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+        />
+      </div>
+    )
   }
 
   /**
@@ -1093,7 +1148,7 @@ export function PlaydateDetailPage() {
     // third arg — null becomes undefined so the key is OMITTED from the
     // payload for a plain comment, the pre-0023-apply discipline).
     const parentId = replyToId ?? undefined
-    setCommentBusy(true)
+    setCommentAction(beginCommentAction)
     setCommentError(null)
     try {
       await addComment(detail.id, commentDraft, parentId)
@@ -1112,7 +1167,7 @@ export function PlaydateDetailPage() {
     } catch (err) {
       setCommentError(err instanceof Error ? err.message : 'Could not post your comment. Try again.')
     } finally {
-      setCommentBusy(false)
+      setCommentAction(endCommentAction)
     }
   }
 
@@ -1129,11 +1184,28 @@ export function PlaydateDetailPage() {
     setReplyToId(commentId)
   }
 
-  /** Delete a comment (author or event host — the pure planCommentAction gates the button). */
+  /**
+   * V8 ticket 10: ARM the delete — the button opens the confirmation instead
+   * of deleting. The tap used to fire the hard DELETE immediately, with no
+   * question and no way back (and 0023 cascades every reply with the row).
+   * The arm carries what the dialog has to name: whose comment it is and how
+   * many replies go with it.
+   */
+  function handleDeleteCommentRequest(commentId: string, authorHandle: string, replyCount: number) {
+    if (state.status !== 'ready' || commentBusy) return
+    setCommentError(null)
+    setCommentAction((prev) =>
+      armCommentAction(prev, { kind: 'delete', commentId, authorHandle, replyCount }),
+    )
+  }
+
+  /** Delete a comment (author or event host — confirmed first, then the pure planCommentAction gates it). */
   async function handleDeleteComment(commentId: string) {
     if (state.status !== 'ready' || commentBusy) return
     const detail = state.detail
-    setCommentBusy(true)
+    // The arm is consumed by the confirm itself (the dialog closes with the
+    // tap) and the write takes the same shared in-flight guard.
+    setCommentAction(beginCommentAction)
     setCommentError(null)
     try {
       await deleteComment(commentId)
@@ -1153,7 +1225,7 @@ export function PlaydateDetailPage() {
     } catch (err) {
       setCommentError(err instanceof Error ? err.message : 'Could not delete that comment. Try again.')
     } finally {
-      setCommentBusy(false)
+      setCommentAction(endCommentAction)
     }
   }
 
@@ -1162,12 +1234,13 @@ export function PlaydateDetailPage() {
    * model). 0014: the widened SELECT policy (hidden_at is null OR
    * moderator) keeps hidden rows readable by moderators, so the row
    * stays in the thread in its muted hidden state (matching a re-fetch)
-   * instead of being dropped; non-moderators never see it (RLS).
+   * instead of being dropped; non-moderators never see it (RLS). One tap,
+   * no confirm: it is reversible by the Unhide button on the same row.
    */
   async function handleHideComment(commentId: string) {
     if (state.status !== 'ready' || commentBusy) return
     const detail = state.detail
-    setCommentBusy(true)
+    setCommentAction(beginCommentAction)
     setCommentError(null)
     try {
       await hideComment(commentId)
@@ -1193,7 +1266,46 @@ export function PlaydateDetailPage() {
     } catch (err) {
       setCommentError(err instanceof Error ? err.message : 'Could not hide that comment. Try again.')
     } finally {
-      setCommentBusy(false)
+      setCommentAction(endCommentAction)
+    }
+  }
+
+  /**
+   * Unhide a comment (V8 ticket 10) — the moderator's way back, and the one
+   * button V2 shipped without (Hide rendered only when `!isHidden`, so a
+   * mis-tapped hide was permanent from the UI).
+   *
+   * The write path is the SAME one Hide already used (moderation.
+   * issueModeratorUpdate — now reachable for `comments`; db.unhideComment
+   * passes hidden_at: null): the moderator UPDATE policy is any-column and
+   * row-independent, which was verified LIVE before this button was written
+   * (see moderation.ts's ModeratorTable note). No migration.
+   *
+   * The row is updated in place off the LATEST settled thread (the functional
+   * merge hide uses): unhiding a reply-to target does not need to touch the
+   * mode — the mode is already off — and the row simply becomes visible again.
+   */
+  async function handleUnhideComment(commentId: string) {
+    if (state.status !== 'ready' || commentBusy) return
+    const detail = state.detail
+    setCommentAction(beginCommentAction)
+    setCommentError(null)
+    try {
+      await unhideComment(commentId)
+      setState((prev) =>
+        prev.status === 'ready' && prev.detail.id === detail.id
+          ? {
+              ...prev,
+              comments: (prev.comments ?? []).map((c) =>
+                c.id === commentId ? { ...c, hidden_at: null } : c,
+              ),
+            }
+          : prev,
+      )
+    } catch (err) {
+      setCommentError(err instanceof Error ? err.message : 'Could not unhide that comment. Try again.')
+    } finally {
+      setCommentAction(endCommentAction)
     }
   }
 
@@ -1448,6 +1560,9 @@ export function PlaydateDetailPage() {
                 Add to calendar
               </button>
             </div>
+            {/* V8 ticket 10: a dismissed sheet + a failed copy is no longer
+                silent — the URL is right there to select. */}
+            {renderShareFallback(getShareUrl(d.id))}
           </div>
         </div>
 
@@ -1481,23 +1596,27 @@ export function PlaydateDetailPage() {
    * the reply with the 24px avatar (HostAvatar size="sm"). The per-row
    * action buttons come from the pure planCommentAction: Delete (the
    * row's author or the event host — per row, so a reply's delete is the
-   * REPLY's author or the host; the parent's author is out), Hide
-   * (moderators; never offered on an already-hidden row — no unhide in
-   * V2, the 0014 chip stays muted), and Reply — top-level rows only (the
-   * one-level pin, the plan's canReply) and never on a hidden row (a
-   * reply under a hidden parent is excluded from the thread — the 0023
-   * header (b) rule, the mod's hide covers the thread). 0014: hidden
-   * rows come back to moderators only (the SELECT policy's moderator
-   * branch) — rendered muted + chipped; non-moderators never receive
-   * them (RLS).
+   * REPLY's author or the host; the parent's author is out) — which now
+   * ASKS FIRST (V8 ticket 10, the pure commentActions machine; `replyCount`
+   * is what a top-level delete takes with it), Hide (moderators) and Unhide
+   * (moderators, on a hidden row — V8 ticket 10: the way back that V2 never
+   * shipped), and Reply — top-level rows only (the one-level pin, the plan's
+   * canReply) and never on a hidden row (a reply under a hidden parent is
+   * excluded from the thread — the 0023 header (b) rule, the mod's hide
+   * covers the thread). 0014: hidden rows come back to moderators only (the
+   * SELECT policy's moderator branch) — rendered muted + chipped;
+   * non-moderators never receive them (RLS).
    */
   function renderCommentRow(
     comment: CommentWithAuthor,
     plan: CommentActionPlan,
     isReply: boolean,
+    replyCount = 0,
   ) {
     const isHidden = !plan.canSee
     const showReply = plan.canReply && !isHidden
+    const showHide = plan.canHide && !isHidden
+    const showUnhide = plan.canHide && isHidden
     return (
       <div className={`flex gap-3${isHidden ? ' opacity-60' : ''}`}>
         <HostAvatar host={comment.author} size={isReply ? 'sm' : 'md'} expandable />
@@ -1524,19 +1643,25 @@ export function PlaydateDetailPage() {
           >
             {comment.body}
           </p>
-          {plan.canDelete || (plan.canHide && !isHidden) || showReply ? (
+          {plan.canDelete || showHide || showUnhide || showReply ? (
             <div className="mt-1 flex gap-3">
               {plan.canDelete ? (
                 <button
                   type="button"
                   disabled={commentBusy}
-                  onClick={() => void handleDeleteComment(comment.id)}
+                  onClick={() =>
+                    handleDeleteCommentRequest(
+                      comment.id,
+                      comment.author.display_name,
+                      replyCount,
+                    )
+                  }
                   className="text-xs text-slate-500 transition-colors hover:text-red-600"
                 >
                   Delete
                 </button>
               ) : null}
-              {plan.canHide && !isHidden ? (
+              {showHide ? (
                 <button
                   type="button"
                   disabled={commentBusy}
@@ -1544,6 +1669,17 @@ export function PlaydateDetailPage() {
                   className="text-xs text-slate-500 transition-colors hover:text-red-600"
                 >
                   Hide
+                </button>
+              ) : null}
+              {showUnhide ? (
+                <button
+                  type="button"
+                  data-testid="unhide-comment"
+                  disabled={commentBusy}
+                  onClick={() => void handleUnhideComment(comment.id)}
+                  className="text-xs text-slate-500 transition-colors hover:text-indigo-600"
+                >
+                  Unhide
                 </button>
               ) : null}
               {showReply ? (
@@ -1562,6 +1698,12 @@ export function PlaydateDetailPage() {
       </div>
     )
   }
+
+  // V8 ticket 10: the armed comment delete (the pure machine's pending state) —
+  // read once here so the dialog's copy and its target are the SAME value.
+  const pendingCommentAction = commentAction.pending
+  const pendingCommentCopy =
+    pendingCommentAction === null ? null : commentActionDialogCopy(pendingCommentAction)
 
   return (
     <div className="flex flex-col gap-4">
@@ -1677,6 +1819,10 @@ export function PlaydateDetailPage() {
               Report
             </button>
           </div>
+          {/* V8 ticket 10: the share fallback (same as the public view) — a
+              dismissed sheet plus a failed copy says so and hands over the
+              URL. */}
+          {renderShareFallback(getShareUrl(detail.id))}
         </div>
       </div>
 
@@ -2095,7 +2241,10 @@ export function PlaydateDetailPage() {
                 const parentPlan = planCommentAction(group.parent, commentActionCtx)
                 return (
                   <li key={group.parent.id}>
-                    {renderCommentRow(group.parent, parentPlan, false)}
+                    {/* V8 ticket 10: a top-level delete takes its one-level
+                        replies with it (0023's parent_id self-FK cascades), so
+                        the confirm names how many go. */}
+                    {renderCommentRow(group.parent, parentPlan, false, group.children.length)}
                     {group.children.length > 0 ? (
                       <ul className="ml-8 mt-2 flex flex-col gap-2">
                         {group.children.map((child) => (
@@ -2195,6 +2344,23 @@ export function PlaydateDetailPage() {
           playdateId={detail.id}
           profileId={detail.host.id}
           onClose={() => setReporting(false)}
+        />
+      ) : null}
+
+      {/* V8 ticket 10: the comment Delete confirmation (the pure
+          commentActions machine armed it) — the copy names whose comment it is
+          and how many replies go with it. One dialog for the whole thread: the
+          armed row is what it acts on. */}
+      {pendingCommentAction !== null && pendingCommentCopy !== null ? (
+        <ConfirmDialog
+          testId="comment-action-dialog"
+          title={pendingCommentCopy.title}
+          body={pendingCommentCopy.body}
+          confirmLabel={pendingCommentCopy.confirmLabel}
+          busyLabel="Deleting…"
+          busy={commentBusy}
+          onConfirm={() => void handleDeleteComment(pendingCommentAction.commentId)}
+          onCancel={() => setCommentAction(cancelCommentAction)}
         />
       ) : null}
 

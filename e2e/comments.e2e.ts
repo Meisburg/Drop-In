@@ -115,7 +115,15 @@ test('a comment is visible to a second viewer, then the author’s delete remove
   await expect(viewerPage.locator('li', { hasText: body }).first()).toBeVisible()
 
   // The host (the comment's author) deletes it — gone for the host...
+  // V8 ticket 10: the delete ASKS FIRST now (it used to fire on the tap). The
+  // confirmation names the comment's author; confirming is the tap that used
+  // to be the whole action. Every assertion below is unchanged — the delete is
+  // still a real, permanent delete, and it is still gone for the viewer.
   await page.locator('li', { hasText: body }).getByRole('button', { name: 'Delete' }).click()
+  const confirmDialog = page.getByTestId('comment-action-dialog')
+  await expect(confirmDialog).toBeVisible()
+  await expect(confirmDialog).toContainText('Delete this comment?')
+  await confirmDialog.getByTestId('confirm-dialog-confirm').click()
   await expect(page.locator('li', { hasText: body })).toHaveCount(0)
   await expect(page.getByText('No comments yet')).toBeVisible()
 

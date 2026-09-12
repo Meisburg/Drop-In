@@ -255,6 +255,13 @@ test('a comment → reply renders nested, with the one-level + delete-permission
   const v2bReplyRow = v2bParentGroup.locator('ul.ml-8 > li').filter({ hasText: replyBody })
   await expect(v2bReplyRow.getByRole('button', { name: 'Delete', exact: true })).toBeVisible()
   await v2bReplyRow.getByRole('button', { name: 'Delete', exact: true }).click()
+  // V8 ticket 10: the delete confirms first (it used to fire on the tap). The
+  // dialog names the reply's author; confirming is the tap that used to be the
+  // whole action. The assertions below are unchanged.
+  const replyConfirm = v2.getByTestId('comment-action-dialog')
+  await expect(replyConfirm).toBeVisible()
+  await expect(replyConfirm).toContainText('Delete this comment?')
+  await replyConfirm.getByTestId('confirm-dialog-confirm').click()
   await expect(v2bParentGroup.locator('ul.ml-8')).toHaveCount(0) // the nested row is gone
   await expect(v2bThread.getByRole('heading', { name: 'Comments (1)', exact: true })).toBeVisible()
   await expect(v2bThread.getByText(parentBody)).toBeVisible() // the parent stays

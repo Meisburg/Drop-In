@@ -12,6 +12,7 @@
  * so everything here resolves off process.cwd().
  */
 import { existsSync, readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { expect, type Page } from '@playwright/test'
 // The stepper's own pure math — imported so a spec's expectation is the same
@@ -225,5 +226,32 @@ export async function settleOnRoute(page: Page, routePath: string): Promise<void
   }
   if (!here()) {
     throw new Error(`Could not settle on ${routePath} (page is at ${page.url()})`)
+  }
+}
+
+/**
+ * Run ONE statement through the repo's documented live SQL path
+ * (scripts/apply-migration.mjs → the Supabase dashboard SQL API, the token
+ * read out of the CDP Chrome profile on :9222). Used by the one spec that
+ * cannot prove its point with a marker JWT (V8 ticket 10: a marker cannot
+ * make itself a moderator — 0011's self-elevation trigger blocks the JWT
+ * write, and the dashboard path runs with auth.uid() IS NULL, which the
+ * trigger passes through by design).
+ *
+ * `ok: false` means the PATH is unavailable (no CDP Chrome, a stale dashboard
+ * session) — not that the statement failed; the caller decides whether that is
+ * a skip or a failure, and the raw output travels with the result so the
+ * reason is never guessed. The script's own guard still applies: it refuses
+ * anything that looks destructive (drop/truncate/deleting users or profiles).
+ */
+export function runLiveSql(sql: string): { ok: boolean; output: string } {
+  const result = spawnSync('node', ['scripts/apply-migration.mjs', '--sql', sql], {
+    cwd: CWD,
+    encoding: 'utf8',
+    timeout: 120_000,
+  })
+  return {
+    ok: result.status === 0,
+    output: `${result.stdout ?? ''}${result.stderr ?? ''}`.trim(),
   }
 }

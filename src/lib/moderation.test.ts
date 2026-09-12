@@ -152,4 +152,30 @@ describe('issueModeratorUpdate (plain update, no RETURNING)', () => {
       issueModeratorUpdate(client, 'playdates', 'pd-1', { hidden_at: 'x' }),
     ).rejects.toMatchObject({ code: '42501' })
   })
+
+  /**
+   * V8 ticket 10: the comment UNHIDE rides this same helper. It is the same
+   * write as the hide with a different value (hidden_at: null), which is the
+   * whole reason no migration was needed: the live policy
+   * (comments_update_moderators — 0013's mirror of 0009's) has USING =
+   * WITH CHECK = "the actor is a moderator" and never looks at the row, so
+   * clearing the column is admitted exactly like setting it. Probed live with
+   * pg_policies before this code was written; the value this test pins is the
+   * half the probe cannot show — that the client sends a plain UPDATE with no
+   * RETURNING (the 42501 discipline) and puts null on the wire.
+   */
+  it('carries a comment unhide (hidden_at: null) through the same plain chain', async () => {
+    const { client, calls } = makeModUpdateMockClient(false)
+    await issueModeratorUpdate(client, 'comments', 'c-1', { hidden_at: null })
+    expect(calls.updates).toEqual([{ table: 'comments', id: 'c-1', patch: { hidden_at: null } }])
+    expect(calls.select).toBe(0)
+  })
+
+  it('a comment unhide survives the live-42501 model too (no .select() anywhere on the comments path)', async () => {
+    const { client, calls } = makeModUpdateMockClient(true)
+    await expect(
+      issueModeratorUpdate(client, 'comments', 'c-1', { hidden_at: null }),
+    ).resolves.toBeUndefined()
+    expect(calls.select).toBe(0)
+  })
 })

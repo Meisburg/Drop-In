@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { listMyPingPostIdsWithClient, listPingsForPostsWithClient } from './db'
+import { listMyPingPostIdsWithClient, listPingsForPostsWithClient, updateKidWithClient } from './db'
 
 /** A going_pings row as the (loose) select returns it (the profile embed). */
 interface PingRowFixture {
@@ -167,5 +167,71 @@ describe('listMyPingPostIdsWithClient (mocked supabase client, V3 ticket 06)', (
       message: 'column "profile_id" does not exist',
     })
     await expect(listMyPingPostIdsWithClient(client, 'u-1')).rejects.toThrow('does not exist')
+  })
+})
+
+/**
+ * V8 ticket 10: the in-place kid row edit (name + age) on the same injected-
+ * client writer the likes save already used. The mock records the payload, so
+ * the pins are: only the provided fields go on the wire, the name is trimmed,
+ * each field validates on its own (the row editor can change one or both), and
+ * an empty patch issues NO write at all.
+ */
+function makeKidPatchMockClient(): {
+  client: SupabaseClient
+  calls: Array<{ table: string; id: string; patch: Record<string, unknown> }>
+} {
+  const calls: Array<{ table: string; id: string; patch: Record<string, unknown> }> = []
+  const client = {
+    from: (table: string) => ({
+      update: (patch: Record<string, unknown>) => ({
+        eq: (_col: string, value: unknown) => {
+          calls.push({ table, id: String(value), patch })
+          return Promise.resolve({ data: null, error: null })
+        },
+      }),
+    }),
+  }
+  return { client: client as unknown as SupabaseClient, calls }
+}
+
+describe('updateKidWithClient (mocked supabase client, V8 ticket 10)', () => {
+  it('writes the in-place name + age edit, trimmed, in one update', async () => {
+    const { client, calls } = makeKidPatchMockClient()
+    await updateKidWithClient(client, 'kid-1', {
+      first_name: '  Bernadette  ',
+      age: 7,
+      likes: 'sharks',
+    })
+    expect(calls).toEqual([
+      { table: 'kids', id: 'kid-1', patch: { first_name: 'Bernadette', age: 7, likes: 'sharks' } },
+    ])
+  })
+
+  it('sends only the fields that were provided', async () => {
+    const { client, calls } = makeKidPatchMockClient()
+    await updateKidWithClient(client, 'kid-1', { age: 8 })
+    expect(calls).toEqual([{ table: 'kids', id: 'kid-1', patch: { age: 8 } }])
+  })
+
+  it('rejects an empty name before any write', async () => {
+    const { client, calls } = makeKidPatchMockClient()
+    await expect(
+      updateKidWithClient(client, 'kid-1', { first_name: '   ' }),
+    ).rejects.toThrow('first name')
+    expect(calls).toEqual([])
+  })
+
+  it('rejects an out-of-range age before any write (NaN included — the blank field)', async () => {
+    const { client, calls } = makeKidPatchMockClient()
+    await expect(updateKidWithClient(client, 'kid-1', { age: NaN })).rejects.toThrow('0 to 17')
+    await expect(updateKidWithClient(client, 'kid-1', { age: 18 })).rejects.toThrow('0 to 17')
+    expect(calls).toEqual([])
+  })
+
+  it('an empty patch issues no write at all (a no-op save costs no round trip)', async () => {
+    const { client, calls } = makeKidPatchMockClient()
+    await updateKidWithClient(client, 'kid-1', {})
+    expect(calls).toEqual([])
   })
 })

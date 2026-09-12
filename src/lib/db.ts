@@ -2111,17 +2111,32 @@ export function validateInterests(interests: string): string | null {
 }
 
 /**
- * Pure kid-row validation (first name + age only — the privacy pin). Age is
- * a whole number in 0–17: these are kids.
+ * Pure kid first-name validation (V8 ticket 10: the in-place kid row editor
+ * writes the name on its OWN, so the name rule is its own pure unit; the
+ * combined validateKid composes this and the age rule — same messages, one
+ * source for the /profile inline error and the db-layer defense in depth).
  */
-export function validateKid(firstName: string, age: number): string | null {
+export function validateKidName(firstName: string): string | null {
   if (firstName.trim().length === 0) {
     return 'Give your kid a first name.'
   }
+  return null
+}
+
+/** Pure kid age validation (V8 ticket 10): a whole number from 0 to 17. */
+export function validateKidAge(age: number): string | null {
   if (!Number.isInteger(age) || age < 0 || age > 17) {
     return 'Age must be a whole number from 0 to 17.'
   }
   return null
+}
+
+/**
+ * Pure kid-row validation (first name + age only — the privacy pin). Age is
+ * a whole number in 0–17: these are kids.
+ */
+export function validateKid(firstName: string, age: number): string | null {
+  return validateKidName(firstName) ?? validateKidAge(age)
 }
 
 /**
@@ -2410,10 +2425,20 @@ export async function removeKid(profileId: string, kidId: string): Promise<void>
  * uploadKidPhoto, which owns the storage round-trip) + the "likes"
  * conversation starter (<= LIKES_MAX_LENGTH after trim — the UI pin; no
  * DB CHECK, the 0021 address lesson).
+ *
+ * V8 ticket 10 adds the in-place row edit: first_name + age (the row used to
+ * be Remove + re-add to change a name, which threw away the photo, the likes
+ * and the row's identity in every "who's coming" selection). Same 0011
+ * owner-only UPDATE policy, same columns the INSERT always wrote — no schema
+ * change, no migration.
  */
 export interface KidPatch {
   avatar_url?: string | null
   likes?: string | null
+  /** The kid's first name (the privacy pin: first name ONLY). Validated by validateKidName. */
+  first_name?: string
+  /** The kid's age (0–17 whole number). Validated by validateKidAge. */
+  age?: number
 }
 
 /**
@@ -2433,7 +2458,7 @@ export async function updateKidWithClient(
   kidId: string,
   patch: KidPatch,
 ): Promise<void> {
-  const payload: Record<string, string | null> = {}
+  const payload: Record<string, string | number | null> = {}
   if (patch.avatar_url !== undefined) payload.avatar_url = patch.avatar_url
   if (patch.likes !== undefined) {
     if (patch.likes !== null) {
@@ -2442,12 +2467,25 @@ export async function updateKidWithClient(
     }
     payload.likes = patch.likes === null ? null : patch.likes.trim()
   }
+  // V8 ticket 10: the in-place row edit (name + age). Each field validates on
+  // its own — the row editor can change one or both — and the trimmed name
+  // lands on the wire (the addKid discipline; validateKidName is the same rule).
+  if (patch.first_name !== undefined) {
+    const nameError = validateKidName(patch.first_name)
+    if (nameError !== null) throw new Error(nameError)
+    payload.first_name = patch.first_name.trim()
+  }
+  if (patch.age !== undefined) {
+    const ageError = validateKidAge(patch.age)
+    if (ageError !== null) throw new Error(ageError)
+    payload.age = patch.age
+  }
   if (Object.keys(payload).length === 0) return
   const { error } = await client.from('kids').update(payload).eq('id', kidId)
   if (error) throw error
 }
 
-/** The default-client wrapper (the profile kid editor's likes save). */
+/** The default-client wrapper (the profile kid editor's row save). */
 export async function updateKid(kidId: string, patch: KidPatch): Promise<void> {
   return updateKidWithClient(supabase, kidId, patch)
 }
@@ -2672,18 +2710,39 @@ export async function deleteComment(commentId: string): Promise<void> {
 
 /**
  * Hide a comment (moderator op, ticket 04): set comments.hidden_at — the
- * soft-hide (the /mod model; hidden comments are invisible to everyone via
- * the SELECT policy). No unhide in V2 (mirrored from hidePlaydate's
- * V1-minimum). Plain update, no .select() — the 42501 discipline: pre-0014
- * the RETURNING read-back of the new row 403'd under the SELECT policy;
- * the plain chain stays the simple path.
+ * soft-hide (the /mod model; hidden comments are invisible to everyone but
+ * moderators via the SELECT policy). Plain update, no .select() — the 42501
+ * discipline: pre-0014 the RETURNING read-back of the new row 403'd under the
+ * SELECT policy; the plain chain stays the simple path.
+ *
+ * V8 ticket 10: hide + UNHIDE are now one function (setCommentHidden) riding
+ * moderation.issueModeratorUpdate — the path the /mod tools already use —
+ * because the moderator UPDATE policy is column-agnostic (verified live; see
+ * moderation.ts's ModeratorTable note), so clearing hidden_at is the same
+ * write as setting it. No migration.
  */
 export async function hideComment(commentId: string): Promise<void> {
-  const { error } = await supabase
-    .from('comments')
-    .update({ hidden_at: new Date().toISOString() })
-    .eq('id', commentId)
-  if (error) throw error
+  return setCommentHidden(commentId, true)
+}
+
+/**
+ * Unhide a comment (V8 ticket 10) — the moderator's way back: hidden_at back
+ * to NULL, so the row is visible to every signed-in parent again (0014's
+ * widened SELECT policy keeps it readable to the moderator either way, which
+ * is how the hidden row is on screen to be unhidden at all).
+ *
+ * Same write path as hideComment (issueModeratorUpdate), same reason: the
+ * policy is any-column, and a plain UPDATE avoids the RETURNING read-back.
+ */
+export async function unhideComment(commentId: string): Promise<void> {
+  return setCommentHidden(commentId, false)
+}
+
+/** The one moderator comment-visibility write: hidden_at = now, or NULL. */
+async function setCommentHidden(commentId: string, hidden: boolean): Promise<void> {
+  await issueModeratorUpdate(supabase, 'comments', commentId, {
+    hidden_at: hidden ? new Date().toISOString() : null,
+  })
 }
 
 // ---------------------------------------------------------------------------

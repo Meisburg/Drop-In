@@ -26,16 +26,27 @@ test('marker saves a bio + kid row, sees them on /u/<handle>, nudge stays for th
   await settleOnRoute(page, '/profile')
 
   // Bio: the /profile editor (app-capped at 500 chars, the 0011 CHECK is
-  // the DB backstop).
+  // the DB backstop). V8 ticket 10: the six per-section Save buttons became
+  // ONE "Save profile" submit for the whole form (writing only the sections
+  // that changed), so this spec's copy assertion follows the button that
+  // really exists now. The behaviour asserted is identical: the bio is saved
+  // and the page says so.
   await page.getByPlaceholder('A few words about your family (optional)').fill(bio)
-  await page.getByRole('button', { name: 'Save bio', exact: true }).click()
-  await expect(page.getByText('Bio saved.')).toBeVisible()
+  await page.getByRole('button', { name: 'Save profile', exact: true }).click()
+  await expect(page.getByText('Profile saved.')).toBeVisible()
 
   // Kid row: first name + age ONLY (no full names, no gender — privacy pin).
   await page.getByPlaceholder('First name').fill(kidName)
   await page.getByPlaceholder('Age').fill(String(KID_AGE))
   await page.getByRole('button', { name: 'Add kid', exact: true }).click()
-  await expect(page.getByText(`${kidName} · ${KID_AGE}`, { exact: true })).toBeVisible()
+  // V8 ticket 10: the row is editable IN PLACE, so the kid's values live in
+  // the row's own fields rather than in a "{name} · {age}" text line. The
+  // assertion is the same fact — the kid stands on /profile with that name and
+  // that age — read off those fields. The /u/<handle> render below is still
+  // the static text line.
+  const kidRow = page.getByTestId('kid-row').first()
+  await expect(kidRow.getByTestId('kid-name')).toHaveValue(kidName)
+  await expect(kidRow.getByTestId('kid-age')).toHaveValue(String(KID_AGE))
 
   // The nudge banner persists while the photo is still missing (it is —
   // this spec never uploads one).

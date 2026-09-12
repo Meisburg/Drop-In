@@ -40,8 +40,23 @@ export function isProfileBanned(profile: BannableProfile | null): boolean {
   return profile !== null && profile.banned_at != null
 }
 
-/** The tables the mod tools update (hide = playdates, ban = profiles). */
-export type ModeratorTable = 'playdates' | 'profiles'
+/**
+ * The tables the mod tools update: hide = playdates, ban = profiles, and
+ * (V8 ticket 10) the comment soft-hide/UNHIDE = comments.
+ *
+ * The `comments` entry rides the SAME any-column moderator UPDATE policy
+ * shape 0009 established for playdates/profiles — for comments the concrete
+ * policy is 0013's mirror of it (`comments_update_moderators`), and it was
+ * probed LIVE before the unhide button was written (V8 ticket 10: "verify it
+ * live, no migration"): both USING and WITH CHECK are the actor-is-a-
+ * moderator subquery and reference NOTHING about the row, so an UPDATE that
+ * sets hidden_at to NULL is admitted exactly like the one that sets it
+ * (pg_policies, 2026-09-12: qual = with_check = `EXISTS (select 1 from
+ * profiles p where p.id = auth.uid() and p.moderators)`). No migration
+ * needed, and the plain chain below keeps the 42501 lesson's promise: no
+ * .select(), so no RETURNING read-back under the SELECT policy.
+ */
+export type ModeratorTable = 'playdates' | 'profiles' | 'comments'
 
 /**
  * Issue a moderator update on a plain chain (no .select()).

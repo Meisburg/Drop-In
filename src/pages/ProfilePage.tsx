@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { NotificationsSection } from '../components/NotificationsSection'
 import { useSessionContext } from '../components/SessionProvider'
 import { useCropStep } from '../components/useCropStep'
+import { useUnsavedChangesGuard } from '../components/useUnsavedChangesGuard'
 import {
   addKid,
   BIO_MAX_LENGTH,
@@ -25,6 +27,7 @@ import {
   updateKid,
   uploadAvatar,
   uploadKidPhoto,
+  validateBio,
   validateKid,
   validateKidLikes,
   validateInterests,
@@ -37,21 +40,51 @@ import {
   queryMyPlaydatesWithClient,
   toDuplicatePrefill,
 } from '../lib/feed'
-import type {
-  Kid,
-  MembershipWithNeighborhood,
-  Playdate,
-} from '../lib/types'
+import {
+  planProfileSave,
+  seedKidDrafts,
+  seedProfileFormValues,
+  toKidFormValues,
+  toKidRowValues,
+  type KidFormValues,
+  type ProfileFormValues,
+  type ProfileSection,
+} from '../lib/profileSave'
+import type { Kid, MembershipWithNeighborhood, Playdate } from '../lib/types'
 // V8 ticket 09: the Following list's family rows reuse the card's 40px avatar
 // (the HostAvatar shape) rather than growing a second one.
 import { HostAvatar } from '../components/DropInCard'
 
 /**
- * /profile — the signed-in family's own page (slice 2): edit the
- * display_name handle (inline "handle taken" error on a unique violation)
- * and manage neighborhood memberships (all neighborhoods listed, current
- * ones marked, add/remove). Saves refresh the shared session state so the
- * app-shell header picks up the changes.
+ * /profile — the signed-in family's own page.
+ *
+ * V8 ticket 10: **one "Save profile" submit** for the whole form (display
+ * name, location, bio, interests, and every kid row) instead of the six Save
+ * buttons that used to live here. The submit is the pure planProfileSave
+ * (lib/profileSave.ts, unit-tested): it writes ONLY the sections that actually
+ * changed, a no-op save issues no write at all, and each section is written
+ * independently — so a failed bio write never discards the name a parent also
+ * fixed, and the section that failed keeps its pending text on screen.
+ *
+ * The per-section inline errors are unchanged in spirit (the same validators,
+ * the same messages); each one is now reported by the section that owns it.
+ *
+ * UNSAVED TYPING IS GUARDED (the seed-once discipline used to drop it in
+ * silence): while anything is dirty, an in-app link asks before leaving
+ * (useUnsavedChangesGuard) and a refresh/tab close gets the browser's own
+ * prompt.
+ *
+ * The display_name handle is the persistent public handle (inline "handle
+ * taken" error on a unique violation — 0004's constraint, surfaced as
+ * HandleTakenError). Saves refresh the shared session state so the app-shell
+ * header picks up the changes.
+ *
+ * NEIGHBORHOODS ARE DISPLAY-ONLY (the doc fix, V8 ticket 10). This comment
+ * used to claim the card supports add/remove; it never did after V2 slice 3.
+ * The card lists the memberships the profile already has as labels and nothing
+ * else — memberships stopped filtering anything when discovery moved to home
+ * zip + radius (the render says so in its own sentence). There is no
+ * membership write path on this page and no add/remove control to find.
  *
  * V2 slice 1: the "Your posts" list — the viewer's own drop-ins, newest
  * first — each with a Duplicate action. Duplicate navigates to /new with
@@ -65,7 +98,7 @@ import { HostAvatar } from '../components/DropInCard'
  * most recent first), so a host can see their own history instead of only the
  * newest-first pile. The Duplicate action stays on EVERY row, past posts
  * included — re-posting last week's meetup as next week's is exactly what that
- * button is for (and where ticket 09's "Same time next week" will live). The
+ * button is for (and where ticket 09's "Same time next week" lives). The
  * read path is unchanged (queryMyPlaydatesWithClient): this is the owner's own
  * page, so the split is a render decision and nothing else.
  *
@@ -74,7 +107,12 @@ import { HostAvatar } from '../components/DropInCard'
  *   before upload, stored at avatars/<uid>/avatar) with a live preview
  * - bio: a <= 500-char textarea (app cap + the 0011 DB backstop)
  * - kids: structured rows (first name + age ONLY — the privacy pin), max 5
- *   app-enforced
+ *   app-enforced, and (V8 ticket 10) editable IN PLACE — the name, the age and
+ *   the "likes" line are fields on the row itself, saved by the same submit,
+ *   instead of Remove + re-add (which threw away the row's photo, its likes
+ *   and its identity in every "who's coming" selection). Remove asks first and
+ *   names what it costs. The 5-kid cap says so on screen instead of silently
+ *   disabling the inputs.
  * - a persistent nudge banner until photo + bio + kids are all present
  *   (the missing-items decision is the pure missingProfileItems)
  *
@@ -93,41 +131,63 @@ export function ProfilePage() {
   const { session, loading, profile, refresh } = useSessionContext()
   const userId = session?.user?.id ?? null
 
-  const [name, setName] = useState<string | null>(null)
-  const [nameError, setNameError] = useState<string | null>(null)
-  const [nameSaved, setNameSaved] = useState(false)
-  const [savingName, setSavingName] = useState(false)
+  // V8 ticket 10: the whole form's values (one object, so "is anything dirty?"
+  // is one comparison) + the last-saved baseline they are compared against.
+  // The baseline advances per SECTION, only when that section's write landed.
+  const [draft, setDraft] = useState<ProfileFormValues | null>(null)
+  const [baseline, setBaseline] = useState<ProfileFormValues | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saveNote, setSaveNote] = useState<{ ok: boolean; message: string } | null>(null)
+  const [writeErrors, setWriteErrors] = useState<Partial<Record<ProfileSection, string>>>({})
 
   const [photoBusy, setPhotoBusy] = useState(false)
   const [photoError, setPhotoError] = useState<string | null>(null)
   const [photoSaved, setPhotoSaved] = useState(false)
-
-  const [bio, setBio] = useState<string | null>(null)
-  const [bioError, setBioError] = useState<string | null>(null)
-  const [bioSaved, setBioSaved] = useState(false)
-  const [savingBio, setSavingBio] = useState(false)
 
   const [kids, setKids] = useState<Kid[] | null>(null)
   const [kidsError, setKidsError] = useState<string | null>(null)
   const [kidsBusyId, setKidsBusyId] = useState<string | null>(null)
   const [newKidName, setNewKidName] = useState('')
   const [newKidAge, setNewKidAge] = useState('')
+  /** The kid row a Remove is armed against (the confirm dialog names it). */
+  const [removingKidId, setRemovingKidId] = useState<string | null>(null)
 
-  // V3 slice 6 (ticket 09, migration 0022): the per-kid photo + "likes"
-  // editor state. kidLikes seeds from the fresh rows (seedKidLikes — an
-  // in-flight local value wins over a re-list, the seed-once discipline,
-  // per kid); kidPhoto* is the row's own upload path (uploadKidPhoto —
-  // the crop step + 512px/≤5MB avatars-bucket round-trip), whose handleRefreshKids
-  // re-list lands the new avatar_url on the rows' 40px circles.
-  const [kidLikes, setKidLikes] = useState<Record<string, string>>({})
-  const [kidLikesBusyId, setKidLikesBusyId] = useState<string | null>(null)
-  const [kidLikesSavedId, setKidLikesSavedId] = useState<string | null>(null)
+  // V3 slice 6 (ticket 09, migration 0022): the per-kid "likes" editor, now
+  // part of the one submit (V8 ticket 10) together with the row's name + age.
+  // kidDrafts seeds from the fresh rows (seedKidDrafts — an in-flight local
+  // value wins over a re-list, the seed-once discipline, per kid); kidPhoto* is
+  // the row's own upload path (uploadKidPhoto — the crop step + 512px/≤5MB
+  // avatars-bucket round-trip), whose handleRefreshKids re-list lands the new
+  // avatar_url on the rows' 40px circles.
+  const [kidDrafts, setKidDrafts] = useState<Record<string, KidFormValues>>({})
+  const [kidWriteErrors, setKidWriteErrors] = useState<Record<string, string>>({})
+  const [kidSavedId, setKidSavedId] = useState<string | null>(null)
   const [kidPhotoBusyId, setKidPhotoBusyId] = useState<string | null>(null)
   const [kidPhotoSavedId, setKidPhotoSavedId] = useState<string | null>(null)
   const [kidPhotoError, setKidPhotoError] = useState<string | null>(null)
   // Which kid row the crop step is currently framing a photo for. The kid-photo
   // crop's confirm handler reads it, so the same hook serves every row.
   const [kidPhotoFor, setKidPhotoFor] = useState<string | null>(null)
+
+  // V3 slice 6 (ticket 09): the profile interests field (<= INTERESTS_MAX_LENGTH,
+  // trim; the db layer validates too — the updateBio defense-in-depth
+  // pattern). Seeded from the profile once it loads; user typing wins
+  // after. Pre-0022-apply the field is absent from the row (undefined →
+  // '') and the save 42703s (the designed error line, the DB-not-applied
+  // discipline).
+  const [memberships, setMemberships] = useState<MembershipWithNeighborhood[] | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  const [myPosts, setMyPosts] = useState<Playdate[] | null>(null)
+  const [postsError, setPostsError] = useState<string | null>(null)
+
+  // V8 ticket 09 (migration 0033): the Following list — the families and
+  // places this parent bookmarked (null = still loading). A failed read
+  // (pre-0033-apply: PGRST205) renders its own sentence and nothing else the
+  // page does changes. `unfollowBusyId` is one row's in-flight unfollow.
+  const [following, setFollowing] = useState<MyFollowing | null>(null)
+  const [followingError, setFollowingError] = useState<string | null>(null)
+  const [unfollowBusyId, setUnfollowBusyId] = useState<string | null>(null)
 
   /**
    * V3 slice 6 (ticket 09): re-list the kids after a kid photo upload
@@ -140,13 +200,17 @@ export function ProfilePage() {
    * other kid handlers: a function declaration is hoisted so it would still run
    * from below, but referencing it before its declaration reads as accessing a
    * value mid-initialization (which React Compiler flags, correctly).
+   *
+   * V8 ticket 10: the re-list seeds the ROW values and keeps every in-flight
+   * draft (seedKidDrafts), so a photo upload can no longer drop a half-typed
+   * name in the row beside it.
    */
   async function handleRefreshKids() {
     if (userId === null) return
     try {
       const rows = await listKids(userId)
       setKids(rows)
-      setKidLikes((prev) => seedKidLikes(rows, prev))
+      setKidDrafts((prev) => seedKidDrafts(rows.map(toKidRowValues), prev))
     } catch (err) {
       setKidsError(err instanceof Error ? err.message : 'Could not load your kids.')
     }
@@ -196,67 +260,23 @@ export function ProfilePage() {
     }
   })
 
-  // V3 slice 6 (ticket 09): the profile interests field (<= INTERESTS_MAX_LENGTH,
-  // trim; the db layer validates too — the updateBio defense-in-depth
-  // pattern). Seeded from the profile once it loads; user typing wins
-  // after. Pre-0022-apply the field is absent from the row (undefined →
-  // '') and the save 42703s (the designed error line, the DB-not-applied
-  // discipline).
-  const [interests, setInterests] = useState<string | null>(null)
-  const [interestsError, setInterestsError] = useState<string | null>(null)
-  const [interestsSaved, setInterestsSaved] = useState(false)
-  const [savingInterests, setSavingInterests] = useState(false)
-
-  const [memberships, setMemberships] = useState<MembershipWithNeighborhood[] | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
-
-  // V2 slice 3: the location card (home zip + radius — the discovery
-  // center). Seeded from the profile once it loads; user typing wins after.
-  const [homeZip, setHomeZip] = useState<string | null>(null)
-  const [radiusMiles, setRadiusMiles] = useState<number | null>(null)
-  const [locationError, setLocationError] = useState<string | null>(null)
-  const [locationSaved, setLocationSaved] = useState(false)
-  const [savingLocation, setSavingLocation] = useState(false)
-
-  const [myPosts, setMyPosts] = useState<Playdate[] | null>(null)
-  const [postsError, setPostsError] = useState<string | null>(null)
-
-  // V8 ticket 09 (migration 0033): the Following list — the families and
-  // places this parent bookmarked (null = still loading). A failed read
-  // (pre-0033-apply: PGRST205) renders its own sentence and nothing else the
-  // page does changes. `unfollowBusyId` is one row's in-flight unfollow.
-  const [following, setFollowing] = useState<MyFollowing | null>(null)
-  const [followingError, setFollowingError] = useState<string | null>(null)
-  const [unfollowBusyId, setUnfollowBusyId] = useState<string | null>(null)
-
-  // Seed the handle + bio + location fields once the profile loads; user
-  // typing wins after.
+  // Seed the whole form ONCE the profile loads; user typing wins after (the
+  // seed-once guard is what keeps a refresh() from erasing an edit — and the
+  // guard above is what keeps a navigation from erasing it silently).
   useEffect(() => {
-    if (name === null && profile !== null) setName(profile.display_name)
-  }, [name, profile])
-  useEffect(() => {
-    if (bio === null && profile !== null) setBio(profile.bio ?? '')
-  }, [bio, profile])
-  // V3 slice 6 (ticket 09): seed the interests field (pre-0022-apply the
-  // row lacks the column — undefined seeds '').
-  useEffect(() => {
-    if (interests === null && profile !== null) setInterests(profile.interests ?? '')
-  }, [interests, profile])
-  useEffect(() => {
-    if (homeZip === null && profile !== null) setHomeZip(profile.home_zip ?? '')
-  }, [homeZip, profile])
-  useEffect(() => {
-    if (radiusMiles === null && profile !== null) {
-      setRadiusMiles(profile.radius_miles ?? DEFAULT_RADIUS_MILES)
-    }
-  }, [radiusMiles, profile])
+    if (draft !== null || profile === null) return
+    const seeded = seedProfileFormValues(profile, DEFAULT_RADIUS_MILES)
+    setDraft(seeded)
+    setBaseline(seeded)
+  }, [draft, profile])
 
   useEffect(() => {
     if (userId === null) return
     let cancelled = false
     setLoadError(null)
     // V2 slice 3: memberships are display labels only (they left the
-    // filter path) — the card renders what the user already follows.
+    // filter path) — the card renders what the user already follows. Nothing
+    // on this page changes them (see the module's doc fix).
     listMemberships(userId)
       .then((userMemberships) => {
         if (cancelled) return
@@ -281,10 +301,9 @@ export function ProfilePage() {
     setKidsError(null)
     listKids(userId)
       .then((rows) => {
-        if (!cancelled) {
-          setKids(rows)
-          setKidLikes(seedKidLikes(rows))
-        }
+        if (cancelled) return
+        setKids(rows)
+        setKidDrafts((prev) => seedKidDrafts(rows.map(toKidRowValues), prev))
       })
       .catch((err: unknown) => {
         if (cancelled) return
@@ -370,6 +389,36 @@ export function ProfilePage() {
     }
   }, [userId])
 
+  const kidRows = (kids ?? []).map(toKidRowValues)
+
+  /**
+   * THE SUBMIT'S DECISION, computed at render (the pure planProfileSave — the
+   * same plan drives the disabled state, the "unsaved changes" line and the
+   * dirty guard, so the button can never disagree with what the guard warns
+   * about).
+   *
+   * The validators are db.ts's own, so the inline message and the reason the
+   * write is skipped are one string, not two copies.
+   */
+  const savePlan =
+    draft === null || baseline === null
+      ? null
+      : planProfileSave({
+          baseline,
+          draft,
+          kidRows,
+          kidDrafts,
+          validators: {
+            name: (value) => (value.trim() === '' ? 'Your display name can’t be empty.' : null),
+            bio: validateBio,
+            interests: validateInterests,
+            kid: (kid) => validateKid(kid.firstName, kid.age) ?? validateKidLikes(kid.likes),
+          },
+        })
+
+  const dirty = savePlan !== null && !savePlan.empty
+  const unsavedGuard = useUnsavedChangesGuard(dirty)
+
   if (loading) {
     return (
       <div className="flex min-h-64 items-center justify-center text-sm text-slate-600">
@@ -420,85 +469,150 @@ export function ProfilePage() {
   // is null while the kids load is in flight / failed — best-effort).
   const missing = missingProfileItems(profile, kids === null ? null : kids.length)
 
-  async function handleSaveName(e: FormEvent) {
-    e.preventDefault()
-    const trimmed = (name ?? '').trim()
-    if (userId === null || trimmed === '' || savingName) return
-    setSavingName(true)
-    setNameError(null)
-    setNameSaved(false)
-    try {
-      await updateDisplayName(userId, trimmed)
-      await refresh()
-      setNameSaved(true)
-    } catch (err) {
-      if (err instanceof HandleTakenError) {
-        setNameError(`“${trimmed}” is already taken — pick a different display name.`)
-      } else {
-        setNameError(err instanceof Error ? err.message : 'Could not save your display name.')
-      }
-    } finally {
-      setSavingName(false)
+  /** One text section's edit: the draft changes and its write error clears. */
+  function editDraft(patch: Partial<ProfileFormValues>, section?: ProfileSection) {
+    setDraft((prev) => (prev === null ? prev : { ...prev, ...patch }))
+    setSaveNote(null)
+    if (section !== undefined) {
+      setWriteErrors((prev) => (prev[section] === undefined ? prev : { ...prev, [section]: undefined }))
     }
   }
 
-  // V2 ticket 02: the avatar upload — the ≤5MB gate and the decode run inside the
-  // crop step (photo-crop ticket 03), the user frames the photo, and the encoder
-  // produces the square; then the session state refreshes so the header + the nudge
-  // banner see the new URL.
-  async function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0] ?? null
-    e.target.value = '' // allow re-picking the same file
-    if (userId === null || file === null || photoBusy) return
-    setPhotoError(null)
-    setPhotoSaved(false)
-    const error = await avatarCrop.beginCrop(file)
-    if (error !== null) setPhotoError(error)
-  }
-
-  async function handleSaveBio(e: FormEvent) {
-    e.preventDefault()
-    if (userId === null || savingBio) return
-    setSavingBio(true)
-    setBioError(null)
-    setBioSaved(false)
-    try {
-      await updateBio(userId, bio ?? '')
-      await refresh()
-      setBioSaved(true)
-    } catch (err) {
-      setBioError(err instanceof Error ? err.message : 'Could not save your bio.')
-    } finally {
-      setSavingBio(false)
-    }
+  /** One kid row's edit: the draft changes and that row's write error clears. */
+  function editKidDraft(kidId: string, patch: Partial<KidFormValues>) {
+    setKidDrafts((prev) => {
+      // The draft seeds on load; a row whose seed has not landed yet falls
+      // back to the ROW, never to blanks (blanks would wipe the field on the
+      // first keystroke).
+      const row = (kids ?? []).find((kid) => kid.id === kidId)
+      const current = prev[kidId] ?? (row === undefined ? null : toKidFormValues(toKidRowValues(row)))
+      if (current === null) return prev
+      return { ...prev, [kidId]: { ...current, ...patch } }
+    })
+    setKidSavedId(null)
+    setKidsError(null)
+    setKidWriteErrors((prev) => {
+      if (prev[kidId] === undefined) return prev
+      const next = { ...prev }
+      delete next[kidId]
+      return next
+    })
   }
 
   /**
-   * V3 slice 6 (ticket 09): save the interests field — <= INTERESTS_MAX_LENGTH
-   * after trim (the pure validator runs at render for the inline error and
-   * again inside updateInterests — defense in depth). A failed write
-   * (pre-0022-apply the column 42703s; a transient error) surfaces the
-   * designed error line; nothing is saved.
+   * THE ONE SUBMIT (V8 ticket 10).
+   *
+   * The plan decides what may be written: every changed + valid section and
+   * kid row. Each write is awaited on its OWN, so
+   *  - a failure is reported by the section that failed (its inline error
+   *    line, its own message) and
+   *  - a failure never costs the other sections their edits: the baseline
+   *    advances only for the sections whose write landed, so everything that
+   *    did not save is still on screen, still dirty, and still guarded.
+   *
+   * The blocked (invalid) sections are simply not attempted — their inline
+   * error is already visible (see savePlan above).
    */
-  async function handleSaveInterests(e: FormEvent) {
+  async function handleSaveProfile(e: FormEvent) {
     e.preventDefault()
-    if (userId === null || savingInterests) return
-    if (validateInterests(interests ?? '') !== null) {
-      // The inline cap error is already visible; nothing is saved.
-      return
+    if (userId === null || draft === null || baseline === null || savePlan === null) return
+    if (saving) return
+    if (savePlan.empty) return // a no-op save issues no write at all
+    setSaving(true)
+    setSaveNote(null)
+    setWriteErrors({})
+    setKidWriteErrors({})
+    setKidSavedId(null)
+
+    const writers: Record<ProfileSection, () => Promise<void>> = {
+      name: () => updateDisplayName(userId, draft.name.trim()),
+      location: () => updateHomeZipRadius(userId, draft.homeZip.trim(), draft.radiusMiles),
+      bio: () => updateBio(userId, draft.bio),
+      interests: () => updateInterests(userId, draft.interests),
     }
-    setSavingInterests(true)
-    setInterestsError(null)
-    setInterestsSaved(false)
-    try {
-      await updateInterests(userId, interests ?? '')
-      await refresh()
-      setInterestsSaved(true)
-    } catch (err) {
-      setInterestsError(err instanceof Error ? err.message : 'Could not save your interests.')
-    } finally {
-      setSavingInterests(false)
+    const savedValues: Partial<ProfileFormValues> = {}
+    let failures = 0
+
+    for (const section of savePlan.sections) {
+      try {
+        await writers[section]()
+        // The write landed: advance THIS section's baseline only. The writers
+        // trim, so the baseline is the trimmed value (the draft keeps showing
+        // what was typed — the comparison is trimmed, so it is not dirty).
+        if (section === 'location') {
+          savedValues.homeZip = draft.homeZip.trim()
+          savedValues.radiusMiles = draft.radiusMiles
+        } else if (section === 'name') {
+          savedValues.name = draft.name.trim()
+        } else if (section === 'bio') {
+          savedValues.bio = draft.bio.trim()
+        } else {
+          savedValues.interests = draft.interests.trim()
+        }
+      } catch (err) {
+        failures += 1
+        const message =
+          err instanceof HandleTakenError
+            ? `“${err.handle}” is already taken — pick a different display name.`
+            : err instanceof Error
+              ? err.message
+              : 'Could not save that section.'
+        setWriteErrors((prev) => ({ ...prev, [section]: message }))
+      }
     }
+
+    for (const kid of savePlan.kids) {
+      try {
+        await updateKid(kid.id, {
+          first_name: kid.firstName,
+          age: kid.age,
+          likes: kid.likes,
+        })
+        // The row's own baseline advances in place: the saved (trimmed) values
+        // become both the new row truth and the new draft, so nothing is left
+        // looking dirty after it actually saved.
+        setKids((prev) =>
+          prev === null
+            ? prev
+            : prev.map((row) =>
+                row.id === kid.id
+                  ? { ...row, first_name: kid.firstName, age: kid.age, likes: kid.likes }
+                  : row,
+              ),
+        )
+        setKidDrafts((prev) => ({
+          ...prev,
+          [kid.id]: {
+            firstName: kid.firstName,
+            age: String(kid.age),
+            likes: kid.likes,
+          },
+        }))
+        setKidSavedId(kid.id)
+      } catch (err) {
+        failures += 1
+        const message =
+          err instanceof Error ? err.message : 'Could not save that kid. Try again.'
+        setKidWriteErrors((prev) => ({ ...prev, [kid.id]: message }))
+      }
+    }
+
+    // Advance the baseline only where a write landed (a failed section keeps
+    // its pending text, and stays dirty, on purpose).
+    if (Object.keys(savedValues).length > 0) {
+      setBaseline((prev) => (prev === null ? prev : { ...prev, ...savedValues }))
+      // The shared session state (the header, the onboarding gate, the feed)
+      // picks up a changed display name / location.
+      await refresh().catch(() => undefined)
+    }
+    setSaveNote({
+      ok: failures === 0,
+      message:
+        failures === 0
+          ? 'Profile saved.'
+          : 'Some changes couldn’t be saved. Your edits are still here — see the message on the section that failed.',
+    })
+    setSaving(false)
   }
 
   async function handleAddKid() {
@@ -517,7 +631,7 @@ export function ProfilePage() {
       await addKid(userId, newKidName, age)
       const rows = await listKids(userId)
       setKids(rows)
-      setKidLikes((prev) => seedKidLikes(rows, prev))
+      setKidDrafts((prev) => seedKidDrafts(rows.map(toKidRowValues), prev))
       setNewKidName('')
       setNewKidAge('')
     } catch (err) {
@@ -527,49 +641,27 @@ export function ProfilePage() {
     }
   }
 
+  /**
+   * Remove one kid row — after the confirmation (V8 ticket 10): the dialog
+   * names the kid and what the delete actually costs (both cascade: the 0022
+   * playdate_kids and the 0026 ping_kids FKs are ON DELETE CASCADE, so the kid
+   * also drops off every drop-in they were listed as coming to). The photo
+   * OBJECT stays in the bucket, so the copy does not claim it is deleted.
+   */
   async function handleRemoveKid(kidId: string) {
     if (userId === null || kidsBusyId !== null) return
+    setRemovingKidId(null)
     setKidsBusyId(kidId)
     setKidsError(null)
     try {
       await removeKid(userId, kidId)
       const rows = await listKids(userId)
       setKids(rows)
-      setKidLikes((prev) => seedKidLikes(rows, prev))
+      setKidDrafts((prev) => seedKidDrafts(rows.map(toKidRowValues), prev))
     } catch (err) {
       setKidsError(err instanceof Error ? err.message : 'Could not remove that kid. Try again.')
     } finally {
       setKidsBusyId(null)
-    }
-  }
-
-  /**
-   * V3 slice 6 (ticket 09, migration 0022): save one kid's "likes"
-   * (conversation starter, <= LIKES_MAX_LENGTH after trim). The pure
-   * validator runs at render for the inline cap error and again inside
-   * updateKid (the updateBio defense-in-depth pattern); the trimmed value
-   * lands in the local state so the input shows the saved form. A failed
-   * write (pre-0022-apply the column 42703s — the designed error line,
-   * the DB-not-applied discipline) surfaces the page's kids error line;
-   * nothing is saved.
-   */
-  async function handleSaveKidLikes(kidId: string) {
-    const likes = (kidLikes[kidId] ?? '').trim()
-    if (userId === null || kidLikesBusyId !== null) return
-    if (validateKidLikes(likes) !== null) {
-      // The inline cap error is already visible; nothing is saved.
-      return
-    }
-    setKidLikesBusyId(kidId)
-    setKidLikesSavedId(null)
-    try {
-      await updateKid(kidId, { likes })
-      setKidLikes((prev) => ({ ...prev, [kidId]: likes }))
-      setKidLikesSavedId(kidId)
-    } catch (err) {
-      setKidsError(err instanceof Error ? err.message : "Could not save that kid's likes. Try again.")
-    } finally {
-      setKidLikesBusyId(null)
     }
   }
 
@@ -596,29 +688,18 @@ export function ProfilePage() {
     if (error !== null) setKidPhotoError(error)
   }
 
-  /**
-   * V2 slice 3: save the location (home zip + radius). The pure validators
-   * (zip in the gazetteer, radius 2–35) run inside updateHomeZipRadius
-   * before any write; a failure surfaces inline. The session refresh lets
-   * the onboarding gate + feed see the new location.
-   */
-  async function handleSaveLocation(e: FormEvent) {
-    e.preventDefault()
-    const zip = (homeZip ?? '').trim()
-    const radius = radiusMiles ?? DEFAULT_RADIUS_MILES
-    if (userId === null || zip === '' || savingLocation) return
-    setSavingLocation(true)
-    setLocationError(null)
-    setLocationSaved(false)
-    try {
-      await updateHomeZipRadius(userId, zip, radius)
-      await refresh()
-      setLocationSaved(true)
-    } catch (err) {
-      setLocationError(err instanceof Error ? err.message : 'Could not save your location.')
-    } finally {
-      setSavingLocation(false)
-    }
+  // V2 ticket 02: the avatar upload — the ≤5MB gate and the decode run inside the
+  // crop step (photo-crop ticket 03), the user frames the photo, and the encoder
+  // produces the square; then the session state refreshes so the header + the nudge
+  // banner see the new URL.
+  async function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null
+    e.target.value = '' // allow re-picking the same file
+    if (userId === null || file === null || photoBusy) return
+    setPhotoError(null)
+    setPhotoSaved(false)
+    const error = await avatarCrop.beginCrop(file)
+    if (error !== null) setPhotoError(error)
   }
 
   const missingLabels: Record<'photo' | 'bio' | 'kids', string> = {
@@ -627,6 +708,12 @@ export function ProfilePage() {
     kids: 'your kids',
   }
   const kidsAtCap = kids !== null && kids.length >= MAX_KIDS_PER_PROFILE
+  const removingKid = (kids ?? []).find((kid) => kid.id === removingKidId) ?? null
+  const nameBlocked =
+    savePlan?.blockedSections.find((item) => item.section === 'name')?.error ?? null
+  const liveNameError = writeErrors.name ?? nameBlocked
+  const liveBioError = validateBio(draft?.bio ?? '')
+  const liveInterestsError = validateInterests(draft?.interests ?? '')
 
   return (
     <div className="flex flex-col gap-4">
@@ -666,7 +753,7 @@ export function ProfilePage() {
               aria-hidden
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-500"
             >
-              {((name ?? profile?.display_name ?? '?').charAt(0) || '?').toUpperCase()}
+              {((draft?.name ?? profile?.display_name ?? '?').charAt(0) || '?').toUpperCase()}
             </span>
           )}
           <label className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700">
@@ -685,372 +772,392 @@ export function ProfilePage() {
         {avatarCrop.dialog}
       </div>
 
-      <form
-        className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-        onSubmit={handleSaveName}
-      >
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-slate-700">Display name</span>
-          <input
-            className={
-              'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-              (nameError !== null ? 'border-red-400' : 'border-slate-300')
-            }
-            value={name ?? ''}
-            onChange={(e) => {
-              setName(e.target.value)
-              setNameError(null)
-              setNameSaved(false)
-            }}
-            placeholder="e.g. Sam at Green Lake"
-            maxLength={40}
-            autoComplete="nickname"
-            disabled={savingName}
-          />
-        </label>
-        {nameError ? <p className="text-sm text-red-600">{nameError}</p> : null}
-        {nameSaved ? <p className="text-sm text-emerald-700">Saved.</p> : null}
-        <button
-          type="submit"
-          disabled={savingName || (name ?? '').trim() === ''}
-          className="self-start rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-        >
-          {savingName ? 'Saving…' : 'Save'}
-        </button>
-      </form>
-
-      {/* V2 slice 3: the location card — the discovery center (home zip +
-          radius). The zip must be in the seeded gazetteer (the pure
-          validator runs inside updateHomeZipRadius); the radius is one of
-          the pinned options (2/5/10/20/35). */}
-      <form
-        className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-        onSubmit={handleSaveLocation}
-      >
-        <h2 className="text-base font-semibold text-slate-900">Location</h2>
-        <p className="text-sm text-slate-600">
-          You see drop-ins within this radius of your home zip.
-        </p>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-slate-700">Home zip</span>
-          <input
-            className={
-              'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-              (locationError !== null ? 'border-red-400' : 'border-slate-300')
-            }
-            value={homeZip ?? ''}
-            onChange={(e) => {
-              setHomeZip(e.target.value)
-              setLocationError(null)
-              setLocationSaved(false)
-            }}
-            placeholder="e.g. 98107"
-            inputMode="numeric"
-            maxLength={5}
-            disabled={savingLocation}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-slate-700">Radius</span>
-          <select
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-            value={radiusMiles ?? DEFAULT_RADIUS_MILES}
-            onChange={(e) => {
-              setRadiusMiles(Number(e.target.value))
-              setLocationError(null)
-              setLocationSaved(false)
-            }}
-            disabled={savingLocation}
-          >
-            {RADIUS_MILES_OPTIONS.map((miles) => (
-              <option key={miles} value={miles}>
-                {miles} miles
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          type="submit"
-          disabled={savingLocation || (homeZip ?? '').trim() === ''}
-          className="self-start rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-        >
-          {savingLocation ? 'Saving…' : 'Save location'}
-        </button>
-        {locationError ? <p className="text-sm text-red-600">{locationError}</p> : null}
-        {locationSaved ? <p className="text-sm text-emerald-700">Location saved.</p> : null}
-      </form>
-
-      <form
-        className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-        onSubmit={handleSaveBio}
-      >
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-slate-700">About</span>
-          <textarea
-            className={
-              'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-              (bioError !== null ? 'border-red-400' : 'border-slate-300')
-            }
-            value={bio ?? ''}
-            onChange={(e) => {
-              setBio(e.target.value)
-              setBioError(null)
-              setBioSaved(false)
-            }}
-            placeholder="A few words about your family (optional)"
-            maxLength={BIO_MAX_LENGTH}
-            rows={3}
-            disabled={savingBio}
-          />
-        </label>
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-slate-500">{(bio ?? '').length}/{BIO_MAX_LENGTH}</span>
-          <button
-            type="submit"
-            disabled={savingBio}
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {savingBio ? 'Saving…' : 'Save bio'}
-          </button>
-        </div>
-        {bioError ? <p className="text-sm text-red-600">{bioError}</p> : null}
-        {bioSaved ? <p className="text-sm text-emerald-700">Bio saved.</p> : null}
-      </form>
-
-      {/* V3 slice 6 (ticket 09): the interests field (the conversation
-          starter — the /u/:handle line under the bio). <= INTERESTS_MAX_LENGTH
-          after trim; the inline error when over (the /new address
-          pattern — the pure validator is the single source of the
-          message) + the db layer's validator (defense in depth).
-          Pre-0022-apply the save 42703s (the column is missing live) —
-          the designed error line, the DB-not-applied discipline. */}
-      <form
-        className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-        onSubmit={handleSaveInterests}
-      >
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="flex items-center justify-between text-slate-700">
-            <span>Interests</span>
-            <span
+      {/* V8 ticket 10: ONE form, ONE save. Everything a parent edits — the
+          handle, the location, the bio, the interests and every kid row —
+          lives inside it, and the single "Save profile" button at the end
+          writes exactly the parts that changed. */}
+      <form className="flex flex-col gap-4" onSubmit={handleSaveProfile}>
+        <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-slate-700">Display name</span>
+            <input
               className={
-                'text-xs ' +
-                (validateInterests(interests ?? '') !== null ? 'text-red-600' : 'text-slate-500')
+                'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                (liveNameError !== null ? 'border-red-400' : 'border-slate-300')
               }
+              value={draft?.name ?? ''}
+              onChange={(e) => editDraft({ name: e.target.value }, 'name')}
+              placeholder="e.g. Sam at Green Lake"
+              maxLength={40}
+              autoComplete="nickname"
+              disabled={saving || draft === null}
+            />
+          </label>
+          {liveNameError !== null ? (
+            <p className="text-sm text-red-600">{liveNameError}</p>
+          ) : null}
+        </div>
+
+        {/* V2 slice 3: the location card — the discovery center (home zip +
+            radius). The zip must be in the seeded gazetteer (the pure
+            validator runs inside updateHomeZipRadius); the radius is one of
+            the pinned options (2/5/10/20/35). */}
+        <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="text-base font-semibold text-slate-900">Location</h2>
+          <p className="text-sm text-slate-600">
+            You see drop-ins within this radius of your home zip.
+          </p>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-slate-700">Home zip</span>
+            <input
+              className={
+                'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                (writeErrors.location !== undefined ? 'border-red-400' : 'border-slate-300')
+              }
+              value={draft?.homeZip ?? ''}
+              onChange={(e) => editDraft({ homeZip: e.target.value }, 'location')}
+              placeholder="e.g. 98107"
+              inputMode="numeric"
+              maxLength={5}
+              disabled={saving || draft === null}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-slate-700">Radius</span>
+            <select
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              value={draft?.radiusMiles ?? DEFAULT_RADIUS_MILES}
+              onChange={(e) => editDraft({ radiusMiles: Number(e.target.value) }, 'location')}
+              disabled={saving || draft === null}
             >
-              {(interests ?? '').length}/{INTERESTS_MAX_LENGTH}
-            </span>
+              {RADIUS_MILES_OPTIONS.map((miles) => (
+                <option key={miles} value={miles}>
+                  {miles} miles
+                </option>
+              ))}
+            </select>
+          </label>
+          {writeErrors.location !== undefined ? (
+            <p className="text-sm text-red-600">{writeErrors.location}</p>
+          ) : null}
+        </div>
+
+        <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-slate-700">About</span>
+            <textarea
+              className={
+                'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                (liveBioError !== null || writeErrors.bio !== undefined
+                  ? 'border-red-400'
+                  : 'border-slate-300')
+              }
+              value={draft?.bio ?? ''}
+              onChange={(e) => editDraft({ bio: e.target.value }, 'bio')}
+              placeholder="A few words about your family (optional)"
+              maxLength={BIO_MAX_LENGTH}
+              rows={3}
+              disabled={saving || draft === null}
+            />
+          </label>
+          <span className="text-xs text-slate-500">
+            {(draft?.bio ?? '').length}/{BIO_MAX_LENGTH}
           </span>
-          <textarea
-            className={
-              'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-              (validateInterests(interests ?? '') !== null || interestsError !== null
-                ? 'border-red-400'
-                : 'border-slate-300')
-            }
-            value={interests ?? ''}
-            onChange={(e) => {
-              setInterests(e.target.value)
-              setInterestsError(null)
-              setInterestsSaved(false)
-            }}
-            placeholder="What your family is into (optional)"
-            rows={2}
-            disabled={savingInterests}
-          />
-        </label>
-        <div className="flex items-center justify-between gap-2">
+          {liveBioError !== null ? (
+            <p className="text-sm text-red-600">{liveBioError}</p>
+          ) : null}
+          {writeErrors.bio !== undefined ? (
+            <p className="text-sm text-red-600">{writeErrors.bio}</p>
+          ) : null}
+        </div>
+
+        {/* V3 slice 6 (ticket 09): the interests field (the conversation
+            starter — the /u/:handle line under the bio). <= INTERESTS_MAX_LENGTH
+            after trim; the inline error when over (the /new address
+            pattern — the pure validator is the single source of the
+            message) + the db layer's validator (defense in depth).
+            Pre-0022-apply the save 42703s (the column is missing live) —
+            the designed error line, the DB-not-applied discipline. */}
+        <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="flex items-center justify-between text-slate-700">
+              <span>Interests</span>
+              <span
+                className={
+                  'text-xs ' +
+                  (liveInterestsError !== null ? 'text-red-600' : 'text-slate-500')
+                }
+              >
+                {(draft?.interests ?? '').length}/{INTERESTS_MAX_LENGTH}
+              </span>
+            </span>
+            <textarea
+              className={
+                'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                (liveInterestsError !== null || writeErrors.interests !== undefined
+                  ? 'border-red-400'
+                  : 'border-slate-300')
+              }
+              value={draft?.interests ?? ''}
+              onChange={(e) => editDraft({ interests: e.target.value }, 'interests')}
+              placeholder="What your family is into (optional)"
+              rows={2}
+              disabled={saving || draft === null}
+            />
+          </label>
           <span className="text-xs text-slate-500">
             Shown under your bio on your profile.
           </span>
-          <button
-            type="submit"
-            disabled={savingInterests || validateInterests(interests ?? '') !== null}
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {savingInterests ? 'Saving…' : 'Save interests'}
-          </button>
+          {liveInterestsError !== null ? (
+            <p className="text-sm text-red-600">{liveInterestsError}</p>
+          ) : null}
+          {writeErrors.interests !== undefined ? (
+            <p className="text-sm text-red-600">{writeErrors.interests}</p>
+          ) : null}
         </div>
-        {validateInterests(interests ?? '') !== null ? (
-          <p className="text-sm text-red-600">{validateInterests(interests ?? '')}</p>
-        ) : null}
-        {interestsError !== null ? (
-          <p className="text-sm text-red-600">{interestsError}</p>
-        ) : null}
-        {interestsSaved ? (
-          <p className="text-sm text-emerald-700">Interests saved.</p>
-        ) : null}
-      </form>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900">Kids</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          First name, age, an optional photo, and a “likes” line (up to {MAX_KIDS_PER_PROFILE}).
-        </p>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="text-base font-semibold text-slate-900">Kids</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            First name, age, an optional photo, and a “likes” line (up to {MAX_KIDS_PER_PROFILE}).
+            Edit a row and save the whole profile — nothing here saves on its own.
+          </p>
 
-        {kids === null ? (
-          <p className="mt-3 text-sm text-slate-600">Loading…</p>
-        ) : kids.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-600">No kids yet — add one below.</p>
-        ) : (
-          <ul className="mt-3 flex flex-col gap-2">
-            {kids.map((kid) => {
-              // V3 slice 6 (ticket 09, migration 0022): the row's 40px kid
-              // photo (the kid's avatar_url — the uploadKidPhoto public
-              // URL — or the initial-fallback circle, the profile
-              // avatar's pattern). The kid-photo pin: it renders ONLY in
-              // this kids list — never on cards or event lines. The row
-              // wraps like the /new duration chips (the likes cluster
-              // takes the spare row at 375px); the "likes" input is
-              // <= LIKES_MAX_LENGTH (the pure validator's inline cap
-              // error, trim on save — the interests field's pattern).
-              const likesValue = kidLikes[kid.id] ?? ''
-              const likesCapError = validateKidLikes(likesValue)
-              return (
-                <li
-                  key={kid.id}
-                  className="flex flex-wrap items-center gap-2 rounded-xl px-2 py-1.5"
-                >
-                  {kid.avatar_url ? (
-                    <img
-                      src={kid.avatar_url}
-                      alt={`${kid.first_name}'s photo`}
-                      className="h-10 w-10 shrink-0 rounded-full object-cover"
-                    />
-                  ) : (
-                    <span
-                      aria-hidden
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-500"
-                    >
-                      {(kid.first_name.charAt(0) || '?').toUpperCase()}
-                    </span>
-                  )}
-                  <span className="shrink-0 text-sm text-slate-800">
-                    {kid.first_name} · {kid.age}
-                  </span>
-                  <label
-                    className={
-                      'shrink-0 cursor-pointer rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 ' +
-                      (kidPhotoBusyId === kid.id ? 'opacity-50' : '')
-                    }
+          {kids === null ? (
+            <p className="mt-3 text-sm text-slate-600">Loading…</p>
+          ) : kids.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-600">No kids yet — add one below.</p>
+          ) : (
+            <ul className="mt-3 flex flex-col gap-2">
+              {kids.map((kid) => {
+                // V3 slice 6 (ticket 09, migration 0022): the row's 40px kid
+                // photo (the kid's avatar_url — the uploadKidPhoto public
+                // URL — or the initial-fallback circle, the profile
+                // avatar's pattern). The kid-photo pin: it renders ONLY in
+                // this kids list — never on cards or event lines.
+                //
+                // V8 ticket 10: the row is EDITABLE IN PLACE — first name, age
+                // and "likes" are fields on the row, saved by the one submit
+                // (savePlan.kids). The name + age inputs carry aria-labels and
+                // testids rather than placeholders, because the "Add kid" form
+                // below owns the 'First name' / 'Age' placeholders and two
+                // elements answering to the same placeholder is how a spec (and
+                // a screen reader) starts guessing.
+                const rowValues = toKidRowValues(kid)
+                const values = kidDrafts[kid.id] ?? {
+                  firstName: rowValues.firstName,
+                  age: String(rowValues.age),
+                  likes: rowValues.likes,
+                }
+                const rowAge = values.age.trim() === '' ? NaN : Number(values.age)
+                const rowError =
+                  kidWriteErrors[kid.id] ??
+                  validateKid(values.firstName, rowAge) ??
+                  validateKidLikes(values.likes)
+                return (
+                  <li
+                    key={kid.id}
+                    data-testid="kid-row"
+                    className="flex flex-wrap items-center gap-2 rounded-xl px-2 py-1.5"
                   >
-                    {kidPhotoBusyId === kid.id
-                      ? 'Uploading…'
-                      : kid.avatar_url
-                        ? 'Change photo'
-                        : 'Add photo'}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="sr-only"
-                      disabled={kidPhotoBusyId !== null}
-                      onChange={(e) => void handleKidPhotoChange(kid.id, e)}
-                    />
-                  </label>
-                  <div className="flex min-w-0 flex-1 basis-40 items-center gap-1.5">
-                    <input
-                      className={
-                        'min-w-0 flex-1 rounded-xl border px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-                        (likesCapError !== null ? 'border-red-400' : 'border-slate-300')
-                      }
-                      value={likesValue}
-                      onChange={(e) => {
-                        setKidLikes((prev) => ({ ...prev, [kid.id]: e.target.value }))
-                        setKidLikesSavedId(null)
-                      }}
-                      placeholder="Likes… (optional)"
-                      disabled={kidLikesBusyId === kid.id}
-                    />
-                    {likesValue !== '' ? (
+                    {kid.avatar_url ? (
+                      <img
+                        src={kid.avatar_url}
+                        alt={`${kid.first_name}'s photo`}
+                        className="h-10 w-10 shrink-0 rounded-full object-cover"
+                      />
+                    ) : (
                       <span
-                        className={
-                          'shrink-0 text-xs ' +
-                          (likesCapError !== null ? 'text-red-600' : 'text-slate-500')
-                        }
+                        aria-hidden
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-500"
                       >
-                        {likesValue.length}/{LIKES_MAX_LENGTH}
+                        {(kid.first_name.charAt(0) || '?').toUpperCase()}
                       </span>
-                    ) : null}
+                    )}
+                    <input
+                      data-testid="kid-name"
+                      aria-label="Kid first name"
+                      className={
+                        'w-28 min-w-0 shrink-0 rounded-xl border px-2 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                        (rowError !== null ? 'border-red-400' : 'border-slate-300')
+                      }
+                      value={values.firstName}
+                      onChange={(e) => editKidDraft(kid.id, { firstName: e.target.value })}
+                      maxLength={30}
+                      disabled={saving || kidsBusyId !== null}
+                    />
+                    <input
+                      data-testid="kid-age"
+                      aria-label="Kid age"
+                      type="number"
+                      min={0}
+                      max={17}
+                      className={
+                        'w-16 shrink-0 rounded-xl border px-2 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                        (rowError !== null ? 'border-red-400' : 'border-slate-300')
+                      }
+                      value={values.age}
+                      onChange={(e) => editKidDraft(kid.id, { age: e.target.value })}
+                      disabled={saving || kidsBusyId !== null}
+                    />
+                    <div className="flex min-w-0 flex-1 basis-40 items-center gap-1.5">
+                      <input
+                        data-testid="kid-likes"
+                        aria-label="Kid likes"
+                        className={
+                          'min-w-0 flex-1 rounded-xl border px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                          (rowError !== null ? 'border-red-400' : 'border-slate-300')
+                        }
+                        value={values.likes}
+                        onChange={(e) => editKidDraft(kid.id, { likes: e.target.value })}
+                        placeholder="Likes… (optional)"
+                        disabled={saving || kidsBusyId !== null}
+                      />
+                      {values.likes !== '' ? (
+                        <span
+                          className={
+                            'shrink-0 text-xs ' +
+                            (validateKidLikes(values.likes) !== null
+                              ? 'text-red-600'
+                              : 'text-slate-500')
+                          }
+                        >
+                          {values.likes.length}/{LIKES_MAX_LENGTH}
+                        </span>
+                      ) : null}
+                    </div>
+                    <label
+                      className={
+                        'shrink-0 cursor-pointer rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 ' +
+                        (kidPhotoBusyId === kid.id ? 'opacity-50' : '')
+                      }
+                    >
+                      {kidPhotoBusyId === kid.id
+                        ? 'Uploading…'
+                        : kid.avatar_url
+                          ? 'Change photo'
+                          : 'Add photo'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="sr-only"
+                        disabled={kidPhotoBusyId !== null}
+                        onChange={(e) => void handleKidPhotoChange(kid.id, e)}
+                      />
+                    </label>
                     <button
                       type="button"
-                      onClick={() => void handleSaveKidLikes(kid.id)}
-                      disabled={kidLikesBusyId !== null || likesCapError !== null}
-                      className="shrink-0 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                      data-testid="kid-remove"
+                      onClick={() => setRemovingKidId(kid.id)}
+                      disabled={kidsBusyId !== null || saving}
+                      className={
+                        'shrink-0 rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200 ' +
+                        (kidsBusyId === kid.id ? 'opacity-50' : '')
+                      }
                     >
-                      {kidLikesBusyId === kid.id ? 'Saving…' : 'Save'}
+                      {kidsBusyId === kid.id ? 'Removing…' : 'Remove'}
                     </button>
-                    {kidLikesSavedId === kid.id ? (
-                      <span className="shrink-0 text-xs text-emerald-700">Saved.</span>
+                    {kidSavedId === kid.id ? (
+                      <span className="text-xs text-emerald-700">Saved.</span>
                     ) : null}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void handleRemoveKid(kid.id)}
-                    disabled={kidsBusyId !== null}
-                    className={
-                      'shrink-0 rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200 ' +
-                      (kidsBusyId === kid.id ? 'opacity-50' : '')
-                    }
-                  >
-                    {kidsBusyId === kid.id ? 'Removing…' : 'Remove'}
-                  </button>
-                  {kidPhotoSavedId === kid.id ? (
-                    <p className="w-full text-xs text-emerald-700">Photo updated.</p>
-                  ) : null}
-                  {likesCapError !== null ? (
-                    <p className="w-full text-sm text-red-600">{likesCapError}</p>
-                  ) : null}
-                </li>
-              )
-            })}
-          </ul>
-        )}
+                    {kidPhotoSavedId === kid.id ? (
+                      <p className="w-full text-xs text-emerald-700">Photo updated.</p>
+                    ) : null}
+                    {rowError !== null ? (
+                      <p className="w-full text-sm text-red-600">{rowError}</p>
+                    ) : null}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
 
-        <div className="mt-3 flex items-center gap-2">
-          <input
-            className={
-              'min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-              (kidsError !== null ? 'border-red-400' : 'border-slate-300')
-            }
-            value={newKidName}
-            onChange={(e) => {
-              setNewKidName(e.target.value)
-              setKidsError(null)
-            }}
-            placeholder="First name"
-            maxLength={30}
-            disabled={kidsAtCap || kidsBusyId !== null}
-          />
-          <input
-            type="number"
-            min={0}
-            max={17}
-            className={
-              'w-20 shrink-0 rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-              (kidsError !== null ? 'border-red-400' : 'border-slate-300')
-            }
-            value={newKidAge}
-            onChange={(e) => {
-              setNewKidAge(e.target.value)
-              setKidsError(null)
-            }}
-            placeholder="Age"
-            disabled={kidsAtCap || kidsBusyId !== null}
-          />
-          <button
-            type="button"
-            onClick={() => void handleAddKid()}
-            disabled={kidsAtCap || kidsBusyId !== null}
-            className="shrink-0 rounded-md bg-indigo-600 px-3 py-2 text-xs font-medium text-white disabled:opacity-50"
-          >
-            {kidsBusyId === 'add' ? 'Adding…' : 'Add kid'}
-          </button>
+          <div className="mt-3 flex items-center gap-2">
+            <input
+              className={
+                'min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                (kidsError !== null ? 'border-red-400' : 'border-slate-300')
+              }
+              value={newKidName}
+              onChange={(e) => {
+                setNewKidName(e.target.value)
+                setKidsError(null)
+              }}
+              placeholder="First name"
+              maxLength={30}
+              disabled={kidsAtCap || kidsBusyId !== null || saving}
+            />
+            <input
+              type="number"
+              min={0}
+              max={17}
+              className={
+                'w-20 shrink-0 rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                (kidsError !== null ? 'border-red-400' : 'border-slate-300')
+              }
+              value={newKidAge}
+              onChange={(e) => {
+                setNewKidAge(e.target.value)
+                setKidsError(null)
+              }}
+              placeholder="Age"
+              disabled={kidsAtCap || kidsBusyId !== null || saving}
+            />
+            <button
+              type="button"
+              onClick={() => void handleAddKid()}
+              disabled={kidsAtCap || kidsBusyId !== null || saving}
+              className="shrink-0 rounded-md bg-indigo-600 px-3 py-2 text-xs font-medium text-white disabled:opacity-50"
+            >
+              {kidsBusyId === 'add' ? 'Adding…' : 'Add kid'}
+            </button>
+          </div>
+          {/* V8 ticket 10: the cap says so. The inputs used to just go dead at
+              five kids with no word about why — a disabled field with no
+              explanation reads as a broken app, not as a limit. */}
+          {kidsAtCap ? (
+            <p data-testid="kids-cap" className="mt-2 text-sm text-slate-600">
+              That’s {MAX_KIDS_PER_PROFILE} kids — the most a profile can list. Remove one to
+              add another.
+            </p>
+          ) : null}
+          {kidPhotoError !== null ? (
+            <p className="mt-2 text-sm text-red-600">{kidPhotoError}</p>
+          ) : null}
+          {kidsError !== null ? <p className="mt-2 text-sm text-red-600">{kidsError}</p> : null}
+          {kidPhotoCrop.dialog}
         </div>
-        {kidPhotoError !== null ? (
-          <p className="mt-2 text-sm text-red-600">{kidPhotoError}</p>
-        ) : null}
-        {kidsError !== null ? <p className="mt-2 text-sm text-red-600">{kidsError}</p> : null}
-        {kidPhotoCrop.dialog}
-      </div>
+
+        {/* THE ONE SUBMIT (V8 ticket 10). Disabled while nothing has changed —
+            a save button that would issue no write should say so instead of
+            flashing "Profile saved." over an unchanged form. */}
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <button
+            type="submit"
+            disabled={saving || savePlan === null || savePlan.empty}
+            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : 'Save profile'}
+          </button>
+          {dirty ? (
+            <span className="text-sm text-slate-600">
+              You have unsaved changes — this saves every section above at once.
+            </span>
+          ) : (
+            <span className="text-sm text-slate-500">
+              Nothing to save yet — change something above.
+            </span>
+          )}
+          {saveNote !== null ? (
+            <p
+              data-testid="profile-save-note"
+              className={'w-full text-sm ' + (saveNote.ok ? 'text-emerald-700' : 'text-red-600')}
+            >
+              {saveNote.message}
+            </p>
+          ) : null}
+        </div>
+      </form>
 
       {/* V8 ticket 08: the notification surface — opt-in/off, per-kind mutes,
           the install affordance and the recent-alerts fallback. It loads its
@@ -1216,6 +1323,26 @@ export function ProfilePage() {
           </div>
         )}
       </div>
+
+      {/* V8 ticket 10: the Remove confirmation — it names the kid and what the
+          delete costs (their "kids coming" rows on every drop-in cascade away
+          with them: 0022 + 0026 are ON DELETE CASCADE). */}
+      {removingKid !== null ? (
+        <ConfirmDialog
+          testId="remove-kid-dialog"
+          title={`Remove ${removingKid.first_name}?`}
+          body={`${removingKid.first_name} comes off your family profile, and off every drop-in you listed them as coming to. This can’t be undone.`}
+          confirmLabel="Remove kid"
+          busyLabel="Removing…"
+          busy={kidsBusyId !== null}
+          onConfirm={() => void handleRemoveKid(removingKid.id)}
+          onCancel={() => setRemovingKidId(null)}
+        />
+      ) : null}
+
+      {/* V8 ticket 10: the unsaved-changes guard (an in-app link while anything
+          above is dirty). */}
+      {unsavedGuard.dialog}
     </div>
   )
 }
@@ -1224,23 +1351,4 @@ export function ProfilePage() {
 function formatPostWhen(iso: string): string {
   const d = new Date(iso)
   return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${d.toLocaleTimeString(undefined, { hour: 'numeric' })}`
-}
-
-/**
- * Seed the per-kid "likes" inputs from the fresh rows (V3 slice 6, ticket
- * 09, migration 0022): an in-flight local value (existing) wins over the
- * row's saved likes (a re-list must not clobber unsaved typing, the
- * seed-once discipline, per kid); an absent value (pre-0022-apply the
- * column is undefined, or a cleared field) seeds '' (the null-safe
- * render, the pre-0016 discipline).
- */
-function seedKidLikes(
-  rows: Kid[],
-  existing?: Record<string, string>,
-): Record<string, string> {
-  const next: Record<string, string> = {}
-  for (const row of rows) {
-    next[row.id] = existing?.[row.id] ?? row.likes ?? ''
-  }
-  return next
 }
