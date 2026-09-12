@@ -14,6 +14,7 @@ import {
   formatDayLabel,
   formatDistanceLabel,
   formatGuestLine,
+  formatStartDayLabel,
   formatTimeLabel,
   groupByDay,
   GOING_CIRCLE_LIMIT,
@@ -28,6 +29,8 @@ import {
   kidsComingLine,
   localDayKey,
   mapsHref,
+  MORE_OPTIONS_FIELDS,
+  moreOptionsHoldsError,
   neighborhoodIdField,
   nextSlotMinutes,
   partitionPostsByTime,
@@ -2457,5 +2460,48 @@ describe('filterFeed with places (V8 ticket 07: the MIXED feed)', () => {
       { id: 'ok', host_profile_id: 'h4', starts_at: at(720), place_coords: NEAR_PLACE },
     ]
     expect(filterFeed(posts, VIEWER, ZIP_COORDS, new Set(['h1']), TODAY_ISO, NOW_ISO).map((p) => p.id)).toEqual(['ok'])
+  })
+})
+
+describe('formatStartDayLabel (V9 ticket 03: the /new summary day line)', () => {
+  it('names the day from the form’s date value, locale-independently', () => {
+    expect(formatStartDayLabel('2026-08-29')).toBe('Sat, Aug 29')
+    expect(formatStartDayLabel('2026-08-31')).toBe('Mon, Aug 31')
+    expect(formatStartDayLabel('2026-01-01')).toBe('Thu, Jan 1')
+  })
+
+  it('trims, and says NOTHING rather than inventing a day', () => {
+    expect(formatStartDayLabel('  2026-08-29  ')).toBe('Sat, Aug 29')
+    // The summary turns '' into "no day picked"; a wrong day would be worse.
+    expect(formatStartDayLabel('')).toBe('')
+    expect(formatStartDayLabel('not-a-date')).toBe('')
+  })
+
+  it('agrees with formatDayLabel once the day is neither today nor tomorrow', () => {
+    // One table, one parse, one set of words — the summary and the feed's own
+    // day header cannot drift apart for a future day.
+    expect(formatStartDayLabel('2026-08-29')).toBe(
+      formatDayLabel('2026-08-29T15:30:00', '2026-07-04T12:00:00'),
+    )
+  })
+})
+
+describe('moreOptionsHoldsError (V9 ticket 03: no error hidden behind the disclosure)', () => {
+  it('is true exactly when a DISCLOSURE field failed', () => {
+    expect(moreOptionsHoldsError({ startDate: 'Pick a start date.' })).toBe(true)
+    expect(moreOptionsHoldsError({ startMinutes: 'Pick a start time.' })).toBe(true)
+    // The visible answers do not need the disclosure opened to be seen.
+    expect(moreOptionsHoldsError({ place: 'Add a place (park, lot, field).' })).toBe(false)
+    expect(moreOptionsHoldsError({ durationMinutes: 'Pick a duration.' })).toBe(false)
+    expect(moreOptionsHoldsError({})).toBe(false)
+  })
+
+  it('names the fields the disclosure actually renders', () => {
+    // The list is the contract: the start date + the 30-minute stepper are the
+    // only REQUIRED answers behind "More options" (the kids picker, the address,
+    // the details and the repeat toggle are optional, so no rule of theirs can
+    // fire). A required field added to the disclosure without being added here
+    // would hide its own error — which is why this list is pinned.
+    expect([...MORE_OPTIONS_FIELDS]).toEqual(['startDate', 'startMinutes'])
   })
 })

@@ -157,6 +157,65 @@ export function parseTimeLabel(label: string): number {
 }
 
 /**
+ * Open /new's summary TITLE line for editing (V9 ticket 03, review cycle 1 F2).
+ *
+ * On /new the title is a READ-BACK: the generated title is shown as text in the
+ * summary, and a tap turns that line into the ordinary title input, in place.
+ * The reason it is not an always-open input is ticket 01's AC — "/new's FIRST
+ * field is the place picker" — which an input at the top of the form would
+ * invert (it would be the form's first input AND its first tab stop).
+ *
+ * This is the one step specs that fill or read the title need, in one place. It
+ * is IDEMPOTENT: once the line is tapped the read-back button is gone and the
+ * input is there, so a second call does nothing. On /edit there is no read-back
+ * line at all (the input is always rendered), so the call is a no-op there too —
+ * which is why a shared helper can carry it.
+ */
+export async function editTitle(page: Page): Promise<void> {
+  const line = page.getByTestId('title-line')
+  const input = page.getByPlaceholder('e.g. Playground time at Green Lake')
+  // Wait for whichever state the page is in BEFORE deciding: on a cold /new the
+  // form may not have painted yet, and `count()` does not retry — reading it
+  // first would skip the tap and then wait 15s for an input that only appears
+  // once the line is tapped.
+  await expect(line.or(input).first()).toBeVisible()
+  if ((await line.count()) > 0) {
+    await line.click()
+  }
+  await expect(input).toBeVisible()
+}
+
+/**
+ * Open /new's "More options" disclosure if it is collapsed (V9 ticket 03).
+ *
+ * Ticket 03 keeps three decisions visible on /new (the place picker, the
+ * duration chips, Post) and puts everything else — the address's manual entry,
+ * the start date + the 30-minute stepper, "Kids you're bringing", Details and
+ * "Repeat weekly" — behind ONE collapsed disclosure. A field behind a collapsed
+ * disclosure is not in the DOM at all (it unmounts), so a spec that drives one
+ * opens the door first.
+ *
+ * This is that one step, in one place: the 20-odd specs that drive /new call
+ * it instead of each growing their own click, and `stepStartTimeOnce` calls it
+ * for them (the stepper is inside it). It is IDEMPOTENT — the aria-expanded
+ * state is read first, so a spec that already opened it (or that runs after
+ * another helper opened it) is a no-op, not a toggle-closed.
+ *
+ * `data-testid="more-options"` is the disclosure's own button; `aria-expanded`
+ * is its state, which is why the helper can wait for it rather than guess.
+ */
+export async function openMoreOptions(page: Page): Promise<void> {
+  const toggle = page.getByTestId('more-options')
+  // Retrying first: settleOnRoute guarantees the ROUTE, not that the form has
+  // painted (the V9 ticket 01 review-cycle lesson in e2e/post-location).
+  await expect(toggle).toBeVisible()
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
+    await toggle.click()
+  }
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+}
+
+/**
  * The /new start-time stepper, made DEFAULT-AGNOSTIC (V8 ticket 01).
  *
  * Ticket 01 changed the stepper's mount-once default from a hardcoded
@@ -168,6 +227,9 @@ export function parseTimeLabel(label: string): number {
  * end is start + duration), which is the pinned contract and is immune to
  * both the default and the wall clock.
  *
+ * V9 ticket 03: the stepper now lives inside the "More options" disclosure, so
+ * this helper opens it first (the specs that call it do not have to know).
+ *
  * `endLabel(durationMinutes)` is the "Ends …" copy the form computes.
  */
 export async function stepStartTimeOnce(page: Page): Promise<{
@@ -175,6 +237,7 @@ export async function stepStartTimeOnce(page: Page): Promise<{
   startLabel: string
   endLabel: (durationMinutes: number) => string
 }> {
+  await openMoreOptions(page)
   const label = page.getByTestId('start-time-label')
   const before = parseTimeLabel(await label.innerText())
   await page.getByRole('button', { name: 'Later start time' }).click()

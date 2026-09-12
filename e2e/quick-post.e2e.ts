@@ -30,6 +30,8 @@
 import { expect, test } from '@playwright/test'
 import { defaultStartDateIso, nextSlotMinutes } from '../src/lib/feed'
 import {
+  editTitle,
+  openMoreOptions,
   parseTimeLabel,
   readMarkerMeta,
   readMarkerSession,
@@ -55,6 +57,11 @@ test('opens on today and the next slot, and posts without date/time work', async
 
   // The date: today (tomorrow only in the 23:45+ wrap case) — never blank,
   // which is what the form used to open on.
+  //
+  // V9 ticket 03: the date input now lives behind "More options" (the summary
+  // reads the day back as text), so the door is opened before the default is
+  // read. The ASSERTION is unchanged: it is still the control's own value.
+  await openMoreOptions(page)
   const dateValue = await page.locator('input[type="date"]').inputValue()
   expect(dateValue).not.toBe('')
   expect([defaultStartDateIso(beforeMount), defaultStartDateIso(afterRead)]).toContain(dateValue)
@@ -67,6 +74,9 @@ test('opens on today and the next slot, and posts without date/time work', async
   // V9 ticket 01: and NO NEIGHBOURHOOD — /new stopped asking (the select is
   // gone from that page), which is what makes this post a plain
   // "place and nothing else" post.
+  // V9 ticket 03 (review cycle 1, F2): the summary's title is a read-back —
+  // tap it to edit (the input is what the specs drive).
+  await editTitle(page)
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(place)
   await page.getByRole('button', { name: '1h', exact: true }).click()
@@ -97,8 +107,14 @@ test('a recent-place chip fills place + address, and the preset fills the time i
   // Seed ONE post through the UI — this is the place the form should remember.
   await page.goto('/new')
   await settleOnRoute(page, '/new')
+  // V9 ticket 03 (review cycle 1, F2): the summary's title is a read-back —
+  // tap it to edit (the input is what the specs drive).
+  await editTitle(page)
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(seedTitle)
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(place)
+  // V9 ticket 03: the address is behind "More options" now — the pick fills it,
+  // and typing one is the adjustment.
+  await openMoreOptions(page)
   await page.getByPlaceholder(ADDRESS_PLACEHOLDER).fill(address)
   // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
   await page.getByRole('button', { name: '1h', exact: true }).click()
@@ -111,7 +127,13 @@ test('a recent-place chip fills place + address, and the preset fills the time i
   await settleOnRoute(page, '/new')
   const placeInput = page.getByPlaceholder(PLACE_PLACEHOLDER)
   const addressInput = page.getByPlaceholder(ADDRESS_PLACEHOLDER)
+  // V9 ticket 03 (review cycle 1, F2): the summary's title is a read-back —
+  // tap it to edit (the input is what the specs drive).
+  await editTitle(page)
   const titleInput = page.getByPlaceholder(TITLE_PLACEHOLDER)
+  // V9 ticket 03: the address lives behind "More options", so it is read there
+  // (a collapsed disclosure's contents are not in the DOM at all).
+  await openMoreOptions(page)
   // The form does not guess a place — that is the one thing only the parent
   // knows (the chips are an offer, not a prefill).
   await expect(placeInput).toHaveValue('')

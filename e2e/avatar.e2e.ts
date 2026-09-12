@@ -24,7 +24,9 @@
 import { expect, test } from '@playwright/test'
 import { deflateSync } from 'node:zlib'
 import {
+  editTitle,
   localDatePlusDays,
+  openMoreOptions,
   readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
@@ -125,9 +127,14 @@ test('marker uploads an avatar, sees the 40px round avatar on the feed card + /u
   const title = `e2e ${marker.displayName} avatar lot`
   await page.goto('/new')
   await settleOnRoute(page, '/new')
+  // V9 ticket 03 (review cycle 1, F2): the summary's title is a read-back —
+  // tap it to edit (the input is what the specs drive).
+  await editTitle(page)
   await page.getByPlaceholder('e.g. Playground time at Green Lake').fill(title)
   await page.getByPlaceholder('e.g. Green Lake playground, near the boathouse').fill('E2E avatar lot')
   // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
+  // V9 ticket 03: the date + the 30-minute stepper live behind "More options".
+  await openMoreOptions(page)
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   const start = await stepStartTimeOnce(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()

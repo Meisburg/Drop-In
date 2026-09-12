@@ -42,7 +42,9 @@
  */
 import { expect, test, type Page } from '@playwright/test'
 import {
+  editTitle,
   localDatePlusDays,
+  openMoreOptions,
   readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
@@ -69,11 +71,16 @@ async function postDropIn(page: Page, title: string, startDate: string): Promise
   // A cold load can lose the route to the onboarding-gate race — settle on
   // /new via the app's own navigation once the SPA state is warm.
   await settleOnRoute(page, '/new')
+  // V9 ticket 03 (review cycle 1, F2): the summary's title is a read-back —
+  // tap it to edit (the input is what the specs drive).
+  await editTitle(page)
   await page.getByPlaceholder('e.g. Playground time at Green Lake').fill(title)
   await page
     .getByPlaceholder('e.g. Green Lake playground, near the boathouse')
     .fill('E2E profile-posts lot')
   // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
+  // V9 ticket 03: the date + the 30-minute stepper live behind "More options".
+  await openMoreOptions(page)
   await page.locator('input[type="date"]').fill(startDate)
   await stepStartTimeOnce(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()

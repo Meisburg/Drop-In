@@ -13,7 +13,9 @@
  */
 import { expect, test } from '@playwright/test'
 import {
+  editTitle,
   localDatePlusDays,
+  openMoreOptions,
   readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
@@ -35,6 +37,9 @@ test('post a drop-in via the V2 slice-1 UI, see it in the feed, clean it up', as
   await settleOnRoute(page, '/new')
 
   // Title + place (the form's required text fields).
+  // V9 ticket 03 (review cycle 1, F2): the summary's title is a read-back —
+  // tap it to edit (the input is what the specs drive).
+  await editTitle(page)
   await page.getByPlaceholder('e.g. Playground time at Green Lake').fill(title)
   await page.getByPlaceholder('e.g. Green Lake playground, near the boathouse').fill(place)
   // V9 ticket 01: /new no longer asks for a neighbourhood — the marker's post
@@ -47,6 +52,8 @@ test('post a drop-in via the V2 slice-1 UI, see it in the feed, clean it up', as
   // 10:00 AM — stepStartTimeOnce reads the label the form rendered, presses
   // + once, and hands back the start, so what is asserted here is the
   // 30-minute GRID (one press == +30 minutes), not a default.
+  // V9 ticket 03: the date + the 30-minute stepper live behind "More options".
+  await openMoreOptions(page)
   await page.locator('input[type="date"]').fill(startDate)
   const start = await stepStartTimeOnce(page)
 

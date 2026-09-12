@@ -49,7 +49,9 @@ import {
   TIME_STEP_MINUTES,
 } from '../src/lib/feed'
 import {
+  editTitle,
   localDatePlusDays,
+  openMoreOptions,
   readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
@@ -75,9 +77,14 @@ async function postMarkerDropIn(
 ): Promise<{ startLabel: string; startMinutes: number }> {
   await page.goto('/new')
   await settleOnRoute(page, '/new')
+  // V9 ticket 03 (review cycle 1, F2): the summary's title is a read-back —
+  // tap it to edit (the input is what the specs drive).
+  await editTitle(page)
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(PLACE)
   // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
+  // V9 ticket 03: the date + the 30-minute stepper live behind "More options".
+  await openMoreOptions(page)
   await page.locator('input[type="date"]').fill(startDate)
   const start = await stepStartTimeOnce(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()

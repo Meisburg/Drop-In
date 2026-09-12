@@ -186,6 +186,31 @@ export function formatDayLabel(startIso: string, nowIso: string): string {
 }
 
 /**
+ * The DAY the parent is agreeing to, said back in the /new summary (V9 ticket
+ * 03): "Sat, Aug 30" — always the date itself, never "Today".
+ *
+ * WHY no "Today"/"Tomorrow" (the labels `formatDayLabel` gives the feed's day
+ * sections): the summary is a read-back of what WILL BE POSTED, and it is a
+ * pure function of the form's values — `postSummaryLines(values)` is not given
+ * a `now`, on purpose. A "Today" in a read-back would be a second clock
+ * (recomputed per render, moving under the parent's finger — the V8 ticket 01
+ * mount-once pin), and it would silently mean a different calendar day on a
+ * form left open across midnight. The date cannot be misread; "Sat" can.
+ *
+ * The tables and the parse are `formatDayLabel`'s (the feed's own day words):
+ * locale-independent, and the same strings the feed's own headers show for a
+ * day that is neither today nor tomorrow. An empty or unparseable date yields
+ * '' — the caller says "no day picked" rather than inventing a day.
+ */
+export function formatStartDayLabel(startDate: string): string {
+  const trimmed = startDate.trim()
+  if (trimmed === '') return ''
+  const date = new Date(`${trimmed}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return ''
+  return `${WEEKDAYS_SHORT[date.getDay()]}, ${MONTHS_SHORT[date.getMonth()]} ${date.getDate()}`
+}
+
+/**
  * A post is ended when ends_at <= nowIso (V3 ticket 01: the feed's Today
  * section demotes ended events behind the upcoming ones and the card grays
  * them).
@@ -497,6 +522,17 @@ export interface PlaydateFormValues {
 /** Per-field errors for the /new form (a field key absent = valid). */
 export type PlaydateFormErrors = Partial<Record<keyof PlaydateFormValues, string>>
 
+/**
+ * The title's character cap — ONE number behind three uses: the validator's
+ * rule, the live `n/80` counter the form renders, and the cap the GENERATED
+ * title is truncated at (postSummary.generatedTitle, V9 ticket 03). The
+ * counter used to own a copy of this in PlaydateFormFields.tsx; a generated
+ * title that the validator then refused (81 characters) would be a form that
+ * asks the parent to fix a value it wrote itself, so the three now agree by
+ * construction.
+ */
+export const TITLE_MAX_LENGTH = 80
+
 /** The duration chips (minutes): 1h / 1.5h / 2h / 3h (pinned, V2 slice 1). */
 export const PLAYDATE_DURATIONS_MINUTES = [60, 90, 120, 180] as const
 
@@ -523,7 +559,7 @@ export function validatePlaydateForm(values: PlaydateFormValues): PlaydateFormEr
   const title = values.title.trim()
   if (title.length === 0) {
     errors.title = 'Give your drop-in a short title.'
-  } else if (title.length > 80) {
+  } else if (title.length > TITLE_MAX_LENGTH) {
     errors.title = 'Keep the title to 80 characters.'
   }
   if (values.place.trim().length === 0) {
@@ -541,6 +577,34 @@ export function validatePlaydateForm(values: PlaydateFormValues): PlaydateFormEr
     errors.durationMinutes = 'Pick a duration.'
   }
   return errors
+}
+
+/**
+ * The /new fields that render INSIDE the "More options" disclosure (V9 ticket
+ * 03) — the collapsed half of the form. The other three answers (place,
+ * duration, title) are always visible, so they are deliberately NOT here.
+ *
+ * This list exists for ONE reason: a validation error must never be hidden.
+ * The page opens the disclosure when a submit fails on one of these fields
+ * (`moreOptionsHoldsError`), so "start date is required" is never a message
+ * rendered inside something the parent has collapsed.
+ *
+ * WHO CHECKS WHAT, stated exactly (review cycle 1, F7): the LIST is pinned by
+ * the unit tests below it in feed.test.ts, the RULE is applied by
+ * NewPlaydatePage's handleSubmit, and e2e/post-fast.e2e.ts asserts the
+ * reachable case end to end — a submit whose only failure is the start date
+ * opens the disclosure and shows the message inside it — plus that both members
+ * of this list are really rendered in the disclosure body. What is NOT
+ * automated: a REQUIRED field added to the disclosure without being added here
+ * would not fail a test — its error would simply be invisible. (The
+ * disclosure's other contents — the address, the kids picker, the details and
+ * the repeat toggle — are all optional, so no rule of theirs can fire.)
+ */
+export const MORE_OPTIONS_FIELDS = ['startDate', 'startMinutes'] as const
+
+/** Does a failed submit need the disclosure opened to be seen? */
+export function moreOptionsHoldsError(errors: PlaydateFormErrors): boolean {
+  return MORE_OPTIONS_FIELDS.some((field) => errors[field] !== undefined)
 }
 
 /**

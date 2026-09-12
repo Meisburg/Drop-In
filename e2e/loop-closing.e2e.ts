@@ -57,7 +57,9 @@ import { expect, test } from '@playwright/test'
 import type { Browser, BrowserContext, Page } from '@playwright/test'
 import { nextOccurrencePlan, placeFollowerLine } from '../src/lib/follows'
 import {
+  editTitle,
   localDatePlusDays,
+  openMoreOptions,
   readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
@@ -226,9 +228,14 @@ async function postDropIn(
   const { userId } = readMarkerSession()
   await page.goto('/new')
   await settleOnRoute(page, '/new')
+  // V9 ticket 03 (review cycle 1, F2): the summary's title is a read-back —
+  // tap it to edit (the input is what the specs drive).
+  await editTitle(page)
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(options.title)
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(PLACE)
   // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
+  // V9 ticket 03: the date + the 30-minute stepper live behind "More options".
+  await openMoreOptions(page)
   await page.locator('input[type="date"]').fill(options.startDate)
   await page.getByRole('button', { name: options.durationLabel ?? '1h', exact: true }).click()
   if (options.weekly === true) {
@@ -521,6 +528,9 @@ test('a follow is a bookmark: the card says who you met, and an ended post offer
   await a.page.goto(`/playdate/${ended.id}`)
   await a.page.getByTestId('same-time-next-week-action').click()
   await a.page.waitForURL(/\/new$/)
+  // V9 ticket 03 (review cycle 1, F2): the summary's title is a read-back —
+  // tap it to edit (the input is what the specs drive).
+  await editTitle(a.page)
   await expect(a.page.getByPlaceholder(TITLE_PLACEHOLDER)).toHaveValue(titleEnded)
   await expect(a.page.getByPlaceholder(PLACE_PLACEHOLDER)).toHaveValue(PLACE)
 

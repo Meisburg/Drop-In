@@ -59,7 +59,9 @@ import {
   PLACE_PICKER_LABEL,
 } from '../src/lib/places'
 import {
+  editTitle,
   localDatePlusDays,
+  openMoreOptions,
   readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
@@ -203,22 +205,42 @@ test('/new leads with the place picker and never asks for a neighbourhood', asyn
   await page.goto('/new')
   await settleOnRoute(page, '/new')
 
-  // (1) The place picker is the FIRST field: the form's first input is the
-  //     place field. (The quick-fill preset is a button, not a field.)
+  // (1) The place picker is the form's FIRST field — V9 ticket 01's AC, kept
+  //     literally (review cycle 1, F2, see the note below).
   //
   // The retrying assertion comes FIRST (review cycle 1, F6): `settleOnRoute`
   // guarantees the ROUTE, not that the form has painted, and a bare
   // non-retrying `expect(fieldOrder[0])` would fail on a slow first paint for a
   // reason that has nothing to do with this ticket.
   await expect(page.getByPlaceholder(PLACE_PLACEHOLDER)).toBeVisible()
-  const fieldOrder = await page.evaluate(() =>
-    Array.from(document.querySelectorAll('form input, form textarea, form select')).map(
-      (el) => (el as HTMLInputElement).placeholder ?? el.getAttribute('type') ?? '',
-    ),
-  )
+  const formFieldOrder = (): Promise<string[]> =>
+    page.evaluate(() =>
+      Array.from(document.querySelectorAll('form input, form textarea, form select')).map(
+        (el) => (el as HTMLInputElement).placeholder ?? el.getAttribute('type') ?? '',
+      ),
+    )
+  const fieldOrder = await formFieldOrder()
+  // The place picker is the first input — and, collapsed, the ONLY one: the
+  // title on the summary is a READ-BACK (a <p> and a button), it becomes the
+  // input only when tapped, and the address, the date and the stepper are behind
+  // the disclosure. This is ticket 01's "the affordance is unmistakable" AC, and
+  // it is exactly what an always-open title input at the top of the form would
+  // have inverted (it would also have been the form's first tab stop).
   expect(fieldOrder[0]).toBe(PLACE_PLACEHOLDER)
-  // The title, the one field that used to lead, is not first any more.
-  expect(fieldOrder).toContain(TITLE_PLACEHOLDER)
+  expect(fieldOrder).toEqual([PLACE_PLACEHOLDER])
+
+  // …and the title is STILL a form field, one tap away in the summary — the line
+  // the parent taps to change it (V9 ticket 03's AC). The old assertion here
+  // (`expect(fieldOrder).toContain(TITLE_PLACEHOLDER)`) is kept, one step later:
+  // it is the same claim about the same field, read in the state where that
+  // field exists at all.
+  await editTitle(page)
+  const fieldOrderEditing = await formFieldOrder()
+  expect(fieldOrderEditing).toContain(TITLE_PLACEHOLDER)
+  // Editing the title puts its input at the top of the summary — i.e. first in
+  // DOM order — which is exactly why ticket 01's AC is pinned on the COLLAPSED
+  // page above: that is the page /new OPENS as, and the page the parent meets.
+  expect(fieldOrderEditing).toEqual([TITLE_PLACEHOLDER, PLACE_PLACEHOLDER])
 
   // (2) Labelled so the affordance is unmistakable, with the visible Browse
   //     places button beside it.
@@ -277,15 +299,25 @@ test('typing @ opens the picker, and picking a place fills place + address in on
 
   // ONE tap: the place AND its published address. The neighbourhood question is
   // not asked, and there is no field to answer it in.
+  //
+  // V9 ticket 03: the address is the MANUAL entry behind "More options" now (the
+  // pick is what fills it), so the door is opened to read the value the pick
+  // wrote. The assertion is unchanged.
+  await openMoreOptions(page)
   await expect(placeInput).toHaveValue(PLACE_NAME)
   await expect(addressInput).toHaveValue(PLACE_ADDRESS)
   await expect(page.getByTestId('place-suggestions')).toHaveCount(0)
   await expect(page.locator('select')).toHaveCount(0)
 
-  // A title is seeded from the place (V8 ticket 01's rule) — so the post is
-  // postable without touching anything else.
+  // A title is seeded from the place (V8 ticket 01's rule, now the DEFAULT —
+  // V9 ticket 03) — so the post is postable without touching anything else.
+  // V9 ticket 03 (review cycle 1, F2): the summary's title is a read-back —
+  // tap it to edit (the input is what the specs drive).
+  await editTitle(page)
   await expect(page.getByPlaceholder(TITLE_PLACEHOLDER)).toHaveValue(`Playdate at ${PLACE_NAME}`)
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
+  // V9 ticket 03: the start date lives behind "More options".
+  await openMoreOptions(page)
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   await page.getByRole('button', { name: '1h', exact: true }).click()
 
@@ -347,9 +379,14 @@ test('typing @ opens the picker, and picking a place fills place + address in on
   const chip = page.getByRole('button', { name: PLACE_NAME, exact: true })
   await expect(chip).toBeVisible()
   await chip.click()
+  // V9 ticket 03: the address the chip fills is readable behind "More options".
+  await openMoreOptions(page)
   await expect(page.getByPlaceholder(PLACE_PLACEHOLDER)).toHaveValue(PLACE_NAME)
   await expect(page.getByPlaceholder(ADDRESS_PLACEHOLDER)).toHaveValue(PLACE_ADDRESS)
   await expect(page.getByTestId('place-suggestions')).toHaveCount(0)
+  // V9 ticket 03 (review cycle 1, F2): the summary's title is a read-back —
+  // tap it to edit (the input is what the specs drive).
+  await editTitle(page)
   await expect(page.getByPlaceholder(TITLE_PLACEHOLDER)).toHaveValue(`Playdate at ${PLACE_NAME}`)
 
   // THE SIGNED-OUT VIEW (T4 of the ticket, migration 0035's second half). The
@@ -409,7 +446,13 @@ test('"Somewhere else" still posts free text — and its address is still the Ma
 
   // The typed text survives the escape hatch, untouched.
   await expect(page.getByPlaceholder(PLACE_PLACEHOLDER)).toHaveValue(place)
+  // V9 ticket 03 (review cycle 1, F2): the summary's title is a read-back —
+  // tap it to edit (the input is what the specs drive).
+  await editTitle(page)
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
+  // V9 ticket 03: the address's manual entry and the start date are both behind
+  // "More options" (this post's whole point is a typed address, so it opens it).
+  await openMoreOptions(page)
   await page.getByPlaceholder(ADDRESS_PLACEHOLDER).fill(address)
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   await page.getByRole('button', { name: '1h', exact: true }).click()
@@ -526,7 +569,12 @@ test('a remembered neighbourhood cannot survive a place pick (review cycle 1, F1
   await suggestion.click()
   await expect(placeInput).toHaveValue(PLACE_NAME)
 
+  // V9 ticket 03 (review cycle 1, F2): the summary's title is a read-back —
+  // tap it to edit (the input is what the specs drive).
+  await editTitle(page)
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
+  // V9 ticket 03: the start date lives behind "More options".
+  await openMoreOptions(page)
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   await page.getByRole('button', { name: '1h', exact: true }).click()
   await submitAndLandOnFeed(page)

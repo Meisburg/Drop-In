@@ -18,11 +18,13 @@ import {
   defaultStartDateIso,
   durationLabel,
   formatTimeLabel,
+  moreOptionsHoldsError,
   nextSlotMinutes,
   suggestedDurationMinutes,
   validatePlaydateForm,
 } from '../lib/feed'
 import type { PlaydateFormErrors, PlaydateFormValues, RecentPlace } from '../lib/feed'
+import { addressAfterPlaceTextEdit, generatedTitle, postSummaryLines } from '../lib/postSummary'
 import {
   PLACE_BROWSE_LIMIT,
   PLACE_SUGGESTION_LIMIT,
@@ -86,58 +88,91 @@ function initialValues(
   }
   // V8 ticket 07: "Start a drop-in here" (the place page) wins over a duplicate
   // prefill — the parent just tapped a place, so that place is what they mean.
-  // The title default the form already applies when a place is known and none
-  // has been typed (V8 ticket 01's rule) applies here too, so arriving from a
+  // The generated title (V9 ticket 03) applies here too, so arriving from a
   // place page opens on a complete, postable form rather than one with an empty
   // required field.
   if (placePrefill !== null) {
-    return withDefaultTitle({
+    return withGeneratedTitle({
       ...defaults,
       ...(duplicate === null ? {} : duplicate),
       place: placePrefill.place,
       neighborhoodId: placePrefill.neighborhoodId ?? '',
     })
   }
-  return duplicate === null ? defaults : { ...defaults, ...duplicate }
+  return withGeneratedTitle(duplicate === null ? defaults : { ...defaults, ...duplicate })
 }
 
 /**
- * The one title default the /new form applies (V8 ticket 01): a drop-in is
- * titled "Playdate at <place>" only when the parent has not typed a title
- * AND a place is known. Never overwrites typed text, never fires with no
- * place, and the live n/80 counter keeps working because this returns the
- * same value shape the inputs write.
+ * V9 ticket 03: the title is no longer a question with its own step. It is
+ * GENERATED from the place (postSummary.generatedTitle — "Playdate at Green
+ * Lake Park", trimmed, capped at 80, never empty) and the summary shows it as
+ * an editable line. V8 ticket 01 already auto-filled a title when a place
+ * arrived; this ticket makes that the DEFAULT rather than a convenience, so a
+ * parent never has to answer it to post — while still being able to change it.
  *
- * V9 ticket 01: the seed reads the place with its `@` ALIAS stripped
- * (places.stripPlaceAlias) — the alias is a gesture, not text. Without that,
- * the alias's most natural use (type `@`, pick from the list) seeded
- * "Playdate at @" and, because a seed never overwrites, posted it: found by
- * e2e/post-location, which is why this rule lives in the same seam the picker
- * matches with. A bare `@` yields no place and therefore no seed.
+ * This is the MOUNT-time half of the rule (a duplicate prefill's own title
+ * wins: it is the parent's text, and `withGeneratedTitle` never overwrites a
+ * non-empty one). The live half is `titleAfterPlaceChange` below.
  */
-function withDefaultTitle(values: PlaydateFormValues): PlaydateFormValues {
+function withGeneratedTitle(values: PlaydateFormValues): PlaydateFormValues {
   if (values.title.trim() !== '') return values
-  const place = stripPlaceAlias(values.place)
-  if (place === '') return values
-  return { ...values, title: `Playdate at ${place}` }
+  return { ...values, title: generatedTitle(values.place) }
+}
+
+/**
+ * V9 ticket 03: what the title becomes when the PLACE changes.
+ *
+ * The generated title FOLLOWS the place until the parent types one of their own
+ * — and then never moves again. Both halves matter:
+ *
+ * - Following it is what makes the summary honest. The title is part of what
+ *   gets posted, so "Playdate at Green Lake Park" on a post that has moved to
+ *   Ballard Playground would be a hidden default changing what the parent is
+ *   agreeing to (and the title line is right there on the summary, reading it
+ *   back).
+ * - `touched` is the whole "editable" contract: once the parent has written
+ *   their own title, the form never rewrites it — typing a place afterwards
+ *   leaves their words alone (V8 ticket 01's pin, kept).
+ *
+ * Review cycle 1, F6: `touched` is `false` for an EMPTY title — the same rule
+ * `withGeneratedTitle` applies at mount. Clearing the title is not "writing
+ * one"; without this, a parent who wiped the generated title and then picked a
+ * different place was left with an empty line and the validator's "Give your
+ * drop-in a short title." on a field the page never asks them to fill.
+ *
+ * The `@` alias is stripped INSIDE generatedTitle (places.stripPlaceAlias), so
+ * the alias's most natural use cannot seed "Playdate at @" — the V9 ticket 01
+ * finding, e2e/post-location.
+ */
+function titleAfterPlaceChange(title: string, place: string, touched: boolean): string {
+  return touched && title.trim() !== '' ? title : generatedTitle(place)
 }
 
 /**
  * /new — post a drop-in (slice 3; time entry reworked in V2 slice 1).
  *
- * V9 ticket 01 (this page's current shape): the FIRST field is the PLACE
- * PICKER, labelled "Where? — pick a place", with a visible "Browse places"
- * button beside it; typing filters the 239 seeded places, and a leading `@` is
- * an alias that opens the same picker. The NEIGHBOURHOOD SELECT IS GONE —
+ * V9 ticket 03 (this page's current shape): the page opens on a SUMMARY — the
+ * day, the window, the place (with its address) and the title read back as text,
+ * with the TITLE editable in place (review cycle 1, F2: the line is a read-back
+ * that becomes the input when tapped, so the form's first field stays the place
+ * picker) — and the whole form is THREE DECISIONS: the place picker (ticket
+ * 01's), the duration chips, and Post. Everything else (the address's manual
+ * entry, the start date + the 30-minute stepper, "Kids you're bringing",
+ * Details and "Repeat weekly") sits behind ONE collapsed "More options"
+ * disclosure. The title is no longer a question: it is GENERATED from the place
+ * (postSummary.generatedTitle) and follows the place until the parent types
+ * their own. Validation is unchanged and unweakened — the title keeps its
+ * required + ≤80 rule, which simply never fires because the summary seeds it.
+ *
+ * V9 ticket 01 (kept): the FIRST field is the PLACE PICKER, labelled
+ * "Where? — pick a place", with a visible "Browse places" button beside it;
+ * typing filters the 239 seeded places, and a leading `@` is an alias that
+ * opens the same picker. The NEIGHBOURHOOD SELECT IS GONE —
  * "maybe you just put in the address and not a neighborhood because people
  * aren't going to know that" — so a post is postable with a place (picked or
  * typed) and nothing else, and the page no longer fetches the neighbourhoods
  * table at all (that fetch was gating the submit button: a hidden dependency
- * on a question this ticket deletes). The rest of the form is unchanged:
- * Title (≤ 80 chars, live counter), an address that now arrives WITH a picked
- * place, the start (a date picker + a 30-minute-stepper time + duration
- * chips — the end is computed, never typed), kids, details, and "Repeat
- * weekly".
+ * on a question this ticket deletes).
  *
  * V8 ticket 05: the field set itself (every field, chip and error) is the
  * SHARED PlaydateFormFields component — this page owns only the state, the
@@ -258,7 +293,47 @@ export function NewPlaydatePage({
   const [recentPlaces, setRecentPlaces] = useState<RecentPlace[]>([])
   // V8 ticket 06: "Repeat weekly" — OFF by default (a one-off drop-in is the
   // common case, and the form a parent knows must not change under them).
+  // V9 ticket 03: the control lives behind "More options" now, and the SUMMARY
+  // reads the series back as a fourth line while it is on — one drop-in or a
+  // standing weekly meetup is the one hidden answer that changes what is
+  // posted, so it is never hidden.
   const [repeatWeekly, setRepeatWeekly] = useState(false)
+  /**
+   * V9 ticket 03: has the parent written their OWN title? The generated title
+   * follows the place until they do, and never after (see
+   * `titleAfterPlaceChange`). A duplicate prefill carries the parent's own
+   * title, so it starts out owned.
+   */
+  const [titleTouched, setTitleTouched] = useState(
+    () => duplicate !== null && duplicate.title.trim() !== '',
+  )
+  /**
+   * V9 ticket 03: the ONE disclosure ("More options"), collapsed by default.
+   * The page owns this state rather than the form component (which owns no
+   * state) so that a FAILED SUBMIT can open it: the start date lives in there,
+   * and a validation error inside a collapsed box is an error the parent
+   * cannot see (feed.moreOptionsHoldsError is that rule, unit-tested).
+   */
+  const [moreOptionsOpen, setMoreOptionsOpen] = useState(false)
+  /**
+   * V9 ticket 03 (review cycle 1, F2): is the summary's title line being
+   * EDITED? Off, the line reads the title back as text and a tap opens the
+   * input (PlaydateFormFields owns both renderings; this owns which one).
+   */
+  const [titleEditing, setTitleEditing] = useState(false)
+  /**
+   * V9 ticket 03 (review cycle 1, F1): has the parent TYPED (or corrected) the
+   * address themselves?
+   *
+   * The address is invisible behind the disclosure, and it is part of what is
+   * posted — the detail page's Maps link is built from (place, address). So an
+   * address the app WROTE (a pick, a recent-place chip, the place page's "Start
+   * a drop-in here") must be dropped the moment the place TEXT stops naming that
+   * place (see `update`), while an address the parent typed is theirs and
+   * survives any place edit. `postSummary.addressAfterPlaceTextEdit` is that
+   * rule, pure and unit-tested; this flag is its input.
+   */
+  const [addressTouched, setAddressTouched] = useState(false)
   // The session's user id (the kids table's profile_id — the same key
   // ProfilePage's kids load uses).
   const userId = session?.user?.id ?? null
@@ -344,12 +419,23 @@ export function NewPlaydatePage({
   }
 
   function update<K extends keyof PlaydateFormValues>(field: K, value: PlaydateFormValues[K]) {
+    // V9 ticket 03: typing in the title line — ON the summary — is what makes
+    // the title the parent's own. From here the generated title stops following
+    // the place (and nothing else ever rewrites their words).
+    // Review cycle 1, F6: an EMPTY title is not "their own" — clearing the line
+    // puts the generated default back in charge (the same rule
+    // `withGeneratedTitle` applies at mount).
+    if (field === 'title') setTitleTouched(String(value).trim() !== '')
     setValues((prev) => {
       const next = { ...prev, [field]: value }
-      // V8 ticket 01: a place arriving (typed, or via a recent-place chip)
-      // seeds the title when the parent has not written one — the same rule
-      // the quick-fill preset uses.
-      return field === 'place' ? withDefaultTitle(next) : next
+      // V9 ticket 03: the title follows the place until the parent writes their
+      // own (see `titleAfterPlaceChange`) — the same rule every other path into
+      // the place field uses, so the title line on the summary can never name a
+      // place the post is not at.
+      if (field === 'place') {
+        return { ...next, title: titleAfterPlaceChange(prev.title, String(value), titleTouched) }
+      }
+      return next
     })
     // V8 ticket 07: EDITING the place text drops the place link. The post must
     // never claim a directory place it no longer names — "Green Lake Park"
@@ -370,14 +456,34 @@ export function NewPlaydatePage({
     // `@` is no place at all, which validation refuses). Everything the parent
     // does NOT type — the place, the address, the seeded title — comes from the
     // same stripped rule.
+    //
+    // V9 ticket 03 (review cycle 1, F1): the same rule, applied to the ADDRESS.
+    // The address is invisible behind the disclosure but it is part of what is
+    // posted (the detail page's Maps link is built from place + address), so
+    // when the place text changes, the address the app wrote goes with it —
+    // `addressAfterPlaceTextEdit` (pure, unit-tested) keeps it only when the
+    // parent typed it themselves. This is the "never claim a place it no longer
+    // names" rule from the paragraph above, extended to the other value a pick
+    // writes.
     if (field === 'place') {
       setPlaceId(null)
+      setAddress((prev) => addressAfterPlaceTextEdit(prev, addressTouched))
       const text = String(value)
       if (usesPlaceAlias(text)) setPicker('browse')
       else setPicker(text.trim() !== '' ? 'typing' : 'closed')
     }
     setErrors((prev) => ({ ...prev, [field]: undefined }))
     setSubmitError(null)
+  }
+
+  /**
+   * V9 ticket 03 (review cycle 1, F1): the address's ONE writer. Typing it (or
+   * correcting a picked one) is what makes it the parent's own — from then on a
+   * place-text edit never clears it.
+   */
+  function changeAddress(value: string) {
+    setAddressTouched(true)
+    setAddress(value)
   }
 
   /**
@@ -391,12 +497,20 @@ export function NewPlaydatePage({
    * no rewriting of the remembered text), so re-posting to the same playground
    * keeps the place's coordinates instead of falling back to the host zip. A
    * remembered place the directory does not know stays free text, unchanged.
+   *
+   * V9 ticket 03 (review cycle 1, F1): the chip writes the address, so the chip
+   * owns it — `addressTouched` goes back to false and a later place-text edit
+   * clears it, exactly as a pick's address is cleared.
    */
   function applyRecentPlace(recent: RecentPlace) {
-    setValues((prev) =>
-      withDefaultTitle({ ...prev, place: recent.place, neighborhoodId: recent.neighborhoodId }),
-    )
+    setValues((prev) => ({
+      ...prev,
+      place: recent.place,
+      neighborhoodId: recent.neighborhoodId,
+      title: titleAfterPlaceChange(prev.title, recent.place, titleTouched),
+    }))
     setAddress(recent.address)
+    setAddressTouched(false)
     setPlaceId(resolvePlaceByName(recent.place, places ?? [])?.id ?? null)
     setPicker('closed')
     setErrors((prev) => ({ ...prev, place: undefined, neighborhoodId: undefined }))
@@ -430,15 +544,19 @@ export function NewPlaydatePage({
     // writes into the form", unit-tested), so this page decides only the STATE
     // changes around it: link the place id, close the list, clear the errors.
     const patch = placePickPatch(place)
-    setValues((prev) =>
-      withDefaultTitle({
-        ...prev,
-        place: patch.place,
-        // '' when the place carries none — see the doc above. Never `prev`.
-        neighborhoodId: patch.neighborhoodId,
-      }),
-    )
+    setValues((prev) => ({
+      ...prev,
+      place: patch.place,
+      // '' when the place carries none — see the doc above. Never `prev`.
+      neighborhoodId: patch.neighborhoodId,
+      // V9 ticket 03: the generated title follows the picked place (one tap
+      // fills place + address + title).
+      title: titleAfterPlaceChange(prev.title, patch.place, titleTouched),
+    }))
     setAddress(patch.address)
+    // V9 ticket 03 (review cycle 1, F1): the pick wrote this address, so it is
+    // the APP's value, not the parent's — a later place-text edit drops it.
+    setAddressTouched(false)
     setPlaceId(place.id)
     setPicker('closed')
     setErrors((prev) => ({ ...prev, place: undefined, neighborhoodId: undefined }))
@@ -451,6 +569,14 @@ export function NewPlaydatePage({
    * so meeting at a friend's building or a brand-new park works the way it
    * always has. V9 ticket 01: that post now carries NO neighbourhood, which is
    * a legal post (the neighbourhood stopped being a question).
+   *
+   * V9 ticket 03 (review cycle 1, F1): the ADDRESS is deliberately left alone
+   * here. This is not a place-text edit — it is the same text, minus the
+   * directory link — so the address still describes the place the parent typed,
+   * and clearing it would be the destructive version of the F1 fix. The address
+   * that a PICK wrote is already gone by the time this can be reached that way:
+   * reaching the list at all means the parent either typed (which cleared it) or
+   * opened the directory, and only the typed path can carry a stale address.
    */
   function chooseSomewhereElse() {
     setPlaceId(null)
@@ -480,19 +606,21 @@ export function NewPlaydatePage({
 
   /**
    * V8 ticket 01: "we're here until <the next hour>" — the spontaneous
-   * drop-in in one tap. Sets the start (today, next slot) and the duration,
-   * and seeds the title once a place is known. Everything it writes stays
-   * editable, and nothing is submitted (the parent still confirms).
+   * drop-in in one tap. Sets the start (today, next slot) and the duration.
+   * Everything it writes stays editable, and nothing is submitted (the parent
+   * still confirms).
+   *
+   * V9 ticket 03: it deliberately does NOT touch the title any more — the
+   * generated title belongs to the place, and the summary reads the times it
+   * writes back on the next render (one source: the same `values`).
    */
   function applyQuickFill() {
-    setValues((prev) =>
-      withDefaultTitle({
-        ...prev,
-        startDate: defaultStartDateIso(mountedNowIso),
-        startMinutes: quickStartMinutes,
-        durationMinutes: quickDurationMinutes,
-      }),
-    )
+    setValues((prev) => ({
+      ...prev,
+      startDate: defaultStartDateIso(mountedNowIso),
+      startMinutes: quickStartMinutes,
+      durationMinutes: quickDurationMinutes,
+    }))
     setErrors((prev) => ({
       ...prev,
       startDate: undefined,
@@ -511,9 +639,30 @@ export function NewPlaydatePage({
     // accept the bare character, and neither the post nor the series may carry
     // it. The field itself is never rewritten while they type.
     const placeText = stripPlaceAlias(values.place)
-    const fieldErrors = validatePlaydateForm({ ...values, place: placeText })
+    // V9 ticket 03 (review cycle 1, F6): the title is GENERATED, so this page
+    // never asks the parent for one — an EMPTIED title falls back to the
+    // generated default here rather than blocking the post on a field the page
+    // does not present as a question. The state is updated too, so the line on
+    // the summary still reads back exactly what will be posted (T4).
+    //
+    // The RULE is untouched (required + ≤80, validatePlaydateForm on the next
+    // line): it is shared with /edit, where it is very much alive. On /new it
+    // simply cannot fire, which is what the ticket pins ("the title keeps its
+    // required + ≤80 rule — it simply never fires, because the summary seeds it
+    // from the place").
+    const title = values.title.trim() === '' ? generatedTitle(placeText) : values.title
+    if (title !== values.title) {
+      setTitleTouched(false)
+      setValues((prev) => ({ ...prev, title }))
+    }
+    const fieldErrors = validatePlaydateForm({ ...values, place: placeText, title })
     if (Object.keys(fieldErrors).length > 0) {
       setErrors(fieldErrors)
+      // V9 ticket 03: an error the parent cannot SEE is not an error. The start
+      // date lives inside "More options", so a failed submit on it opens the
+      // disclosure (feed.moreOptionsHoldsError — the rule is pure and unit-
+      // tested; this is the one line that applies it).
+      if (moreOptionsHoldsError(fieldErrors)) setMoreOptionsOpen(true)
       return
     }
     // V3 slice 5 (ticket 08): the optional address — trimmed, capped at
@@ -521,7 +670,10 @@ export function NewPlaydatePage({
     // omitted from the insert (the address stays null).
     const trimmedAddress = address.trim()
     if (trimmedAddress.length > ADDRESS_MAX_LENGTH) {
-      // The inline field error is already visible; nothing is saved.
+      // The inline field error is already visible — in the disclosure the
+      // parent typed the address into, which they may have collapsed since.
+      // Open it, then return: nothing is saved either way.
+      setMoreOptionsOpen(true)
       return
     }
     setSubmitting(true)
@@ -549,7 +701,7 @@ export function NewPlaydatePage({
       let seriesId: string | undefined
       if (repeatWeekly && seriesWeekday !== null) {
         const series = await createPlaydateSeries({
-          title: values.title.trim(),
+          title: title.trim(),
           place: placeText,
           address: trimmedAddress.length > 0 ? trimmedAddress : undefined,
           details: trimmedDetails,
@@ -565,7 +717,7 @@ export function NewPlaydatePage({
         seriesId = series.id
       }
       const createdPlaydate = await createPlaydate({
-        title: values.title.trim(),
+        title: title.trim(),
         place: placeText,
         neighborhoodId: values.neighborhoodId,
         startsAt: computeStartIso(values.startDate, values.startMinutes),
@@ -657,12 +809,41 @@ export function NewPlaydatePage({
         errors={errors}
         onFieldChange={update}
         address={address}
-        onAddressChange={setAddress}
+        onAddressChange={changeAddress}
+        /* V9 ticket 03: THE SUMMARY — the read-back the page opens on, one
+           string per line, from the pure seam (postSummary.postSummaryLines):
+           the day + how long, the exact window, the place with its ADDRESS, and
+           the weekly repeat — but only while the submit would really create that
+           series (review cycle 1, F3). It is computed from the SAME `values` the
+           submit writes (T4: one source, never a recomputation) plus the two
+           things that are not form values: the address and the repeat toggle.
+           Review cycle 1, F1: the address is read back because the detail page's
+           Maps link is built from (place, address) — it is part of what is
+           posted, not a detail of the form. */
+        summaryLines={postSummaryLines(values, {
+          repeatsWeekly: repeatWeekly,
+          address,
+        })}
+        /* V9 ticket 03 (review cycle 1, F2): the title line is a READ-BACK the
+           parent taps; only then is it the input, so the place picker stays the
+           form's first field (ticket 01's AC) and its first tab stop. */
+        titleEditing={titleEditing}
+        onEditTitle={() => setTitleEditing(true)}
+        /* V9 ticket 03: the one disclosure, collapsed by default and owned
+           here, so a failed submit can open what it needs the parent to see. */
+        moreOptionsOpen={moreOptionsOpen}
+        onToggleMoreOptions={() => setMoreOptionsOpen((prev) => !prev)}
+        /* V9 ticket 03: /new's controls meet the 44px phone tap-target floor
+           (scripts/mobile-audit.mjs cannot walk this route — it is behind the
+           session — so e2e/post-fast.e2e.ts measures it at 320/375/390/430). */
+        minTouchTargets
         /* V9 ticket 01: /new does not render the neighbourhood select at all.
            The prop's default is "shown" so the EDIT form keeps its exact V8
            ticket 05 markup; this page opts out. */
         showNeighborhood={false}
-        /* V9 ticket 01: WHERE first, labelled, with the picker's affordances. */
+        /* V9 ticket 01: WHERE first, labelled, with the picker's affordances.
+           V9 ticket 03 keeps that order inside the summary layout: the
+           read-back opens the page, then the place picker is the first FIELD. */
         locationFirst
         kids={kids}
         selectedKidIds={selectedKidIds}

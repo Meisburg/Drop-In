@@ -6,6 +6,7 @@ import {
   PLAYDATE_DURATIONS_MINUTES,
   stepTimeMinutes,
   TIME_STEP_MINUTES,
+  TITLE_MAX_LENGTH,
 } from '../lib/feed'
 import type { PlaydateFormErrors, PlaydateFormValues, RecentPlace } from '../lib/feed'
 import {
@@ -45,11 +46,39 @@ import type { Kid, Neighborhood, Place } from '../lib/types'
  * prop, so it renders exactly the V8 ticket 05 markup — the e2e/post-edit-delete
  * spec keeps driving the same controls, and a post that DOES carry a
  * neighbourhood can still be seen and fixed there.
+ *
+ * V9 ticket 03 (SUMMARY mode): /new also passes `summaryLines` — the answers
+ * read back as text, at the top of the form — and with it the form splits into
+ * "the three decisions" (the place picker, the duration chips and the editable
+ * title line, all visible) and ONE "More options" disclosure holding the rest
+ * (the address, the start date + the 30-minute stepper, "Kids you're bringing",
+ * Details, and "Repeat weekly"). The disclosure is collapsed by default and is
+ * CONTROLLED from the page (`moreOptionsOpen` / `onToggleMoreOptions`) so the
+ * page can open it when a submit fails on a field inside it — this component
+ * still owns no state.
+ *
+ * The TITLE on the summary is a READ-BACK that becomes the input only while it
+ * is being edited (`titleEditing` / `onEditTitle`, also page-owned): review
+ * cycle 1, F2, because an always-open input would make the title the form's
+ * first input and its first tab stop, inverting V9 ticket 01's "the place
+ * picker is /new's FIRST field" AC. This way both tickets hold at once.
  */
-export const TITLE_MAX_LENGTH = 80
 /** V3 slice 5 (ticket 08): the optional address field's cap (trim only, no DB CHECK). */
 export const ADDRESS_MAX_LENGTH = 120
 const DAY_MINUTES = 24 * 60
+
+/**
+ * V9 ticket 03: the ONE disclosure's copy. "More options" is deliberately
+ * plain — it is a door, not a feature name — and the hint says what is behind
+ * it, so a parent can tell whether they need to open it without opening it.
+ */
+export const MORE_OPTIONS_LABEL = 'More options'
+export const MORE_OPTIONS_HINT = 'A date, an address, kids, details, or a weekly repeat.'
+
+/** The summary's title read-back: a stable handle for the affordance's e2e. */
+export const TITLE_LINE_TESTID = 'title-line'
+/** What tells the parent that the read-back line is editable. */
+export const TITLE_LINE_HINT = 'Tap the title to change it.'
 
 export interface PlaydateFormFieldsProps {
   values: PlaydateFormValues
@@ -101,6 +130,46 @@ export interface PlaydateFormFieldsProps {
   onBrowsePlaces?: () => void
   /** Whether that browse list is currently open (the button's aria-expanded). */
   browsePlacesOpen?: boolean
+  /**
+   * V9 ticket 03: the SUMMARY read-back — `postSummaryLines(values)` — rendered
+   * as the form's FIRST block, one line each, with the editable title line
+   * under it. Passing it also switches the form to the "three decisions"
+   * layout: the three answers the parent actively gives (place, how long, the
+   * title) stay visible, and everything else moves behind the one "More
+   * options" disclosure.
+   *
+   * OMITTED (the default, and every /edit render) means neither: the form
+   * renders exactly the V8 ticket 05 markup, with no summary, no disclosure
+   * and every field in its own place.
+   */
+  summaryLines?: string[]
+  /**
+   * V9 ticket 03: is the summary's title line being EDITED? Off (the default),
+   * it renders as the read-back text the parent can tap; on, it is the ordinary
+   * title input, in place. Page-owned for two reasons: this component owns no
+   * state, and the page is what knows the title is a generated default the
+   * parent may want to change.
+   */
+  titleEditing?: boolean
+  onEditTitle?: () => void
+  /**
+   * V9 ticket 03: is the "More options" disclosure open? Owned by the PAGE
+   * (this component owns no state) for one reason: a failed submit must be
+   * able to open it — an error for the start date lives in there, and a
+   * message rendered inside something the parent collapsed is not a message.
+   */
+  moreOptionsOpen?: boolean
+  onToggleMoreOptions?: () => void
+  /**
+   * V9 ticket 03: grow every control this form renders to a 44px minimum
+   * height (the phone tap-target rule scripts/mobile-audit.mjs enforces on the
+   * signed-out routes, which cannot walk /new — it is behind the session).
+   *
+   * Default FALSE on purpose: /edit keeps rendering the markup V8 ticket 05
+   * shipped, byte for byte, so e2e/post-edit-delete keeps driving the controls
+   * it knows. Only /new asks for the roomier targets.
+   */
+  minTouchTargets?: boolean
   /** null = still loading; [] = none yet OR the load failed (same empty state). */
   kids: Kid[] | null
   selectedKidIds: string[]
@@ -154,6 +223,12 @@ export function PlaydateFormFields({
   locationFirst = false,
   onBrowsePlaces,
   browsePlacesOpen = false,
+  summaryLines,
+  titleEditing = false,
+  onEditTitle,
+  moreOptionsOpen = false,
+  onToggleMoreOptions,
+  minTouchTargets = false,
   kids,
   selectedKidIds,
   onToggleKid,
@@ -172,7 +247,6 @@ export function PlaydateFormFields({
   submitError,
   onSubmit,
 }: PlaydateFormFieldsProps) {
-  const titleLength = values.title.length
   const endTotal = values.startMinutes + values.durationMinutes
   // V3 slice 5 (ticket 08): the address's inline error (≤120 after trim;
   // computed at render, like the title's live counter — no separate
@@ -182,37 +256,24 @@ export function PlaydateFormFields({
       ? `Keep the address to ${ADDRESS_MAX_LENGTH} characters.`
       : null
   const chips = recentPlaces ?? []
+  // V9 ticket 03: the 44px phone tap-target rule, applied to the controls this
+  // form renders only when the page asks for it (`minTouchTargets`, /new).
+  // Appending a class keeps every other class byte-identical — /edit's markup
+  // is untouched, which is the T2 pin.
+  const touch = (classes: string): string => (minTouchTargets ? `${classes} min-h-11` : classes)
 
-  // V9 ticket 01: the three blocks /new reorders. They are plain values, not
-  // extracted components: the /edit render must stay byte-identical to V8
-  // ticket 05's markup, and a fragment renders exactly the nodes the inline JSX
-  // did (no wrapper element, no extra DOM).
+  // V9 ticket 01 extracted these blocks as plain values, not components: the
+  // /edit render must stay byte-identical to V8 ticket 05's markup, and a
+  // fragment renders exactly the nodes the inline JSX did (no wrapper element,
+  // no extra DOM). V9 ticket 03 keeps that discipline and adds the blocks the
+  // summary layout reorders.
   const titleBlock = (
-    <>
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="flex items-center justify-between text-slate-700">
-          Title
-          <span
-            className={
-              'text-xs ' + (titleLength > TITLE_MAX_LENGTH ? 'text-red-600' : 'text-slate-500')
-            }
-          >
-            {titleLength}/{TITLE_MAX_LENGTH}
-          </span>
-        </span>
-        <input
-          className={
-            'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-            (errors.title ? 'border-red-400' : 'border-slate-300')
-          }
-          value={values.title}
-          onChange={(e) => onFieldChange('title', e.target.value)}
-          placeholder="e.g. Playground time at Green Lake"
-          autoComplete="off"
-        />
-      </label>
-      {errors.title ? <p className="text-sm text-red-600">{errors.title}</p> : null}
-    </>
+    <PlaydateTitleField
+      value={values.title}
+      error={errors.title}
+      onChange={(value) => onFieldChange('title', value)}
+      minTouchTargets={minTouchTargets}
+    />
   )
 
   // The place LABEL + input, byte-identical to the V8 ticket 05 markup when the
@@ -234,10 +295,10 @@ export function PlaydateFormFields({
           /edit keeps the plain "Place" it has always had. */}
       <span className="text-slate-700">{locationFirst ? PLACE_PICKER_LABEL : 'Place'}</span>
       <input
-        className={
+        className={touch(
           'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-          (errors.place ? 'border-red-400' : 'border-slate-300')
-        }
+            (errors.place ? 'border-red-400' : 'border-slate-300'),
+        )}
         value={values.place}
         onChange={(e) => onFieldChange('place', e.target.value)}
         placeholder="e.g. Green Lake playground, near the boathouse"
@@ -333,7 +394,9 @@ export function PlaydateFormFields({
               key={recent.place}
               type="button"
               onClick={() => onApplyRecentPlace(recent)}
-              className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors"
+              className={touch(
+                'rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors',
+              )}
             >
               {recent.place}
             </button>
@@ -342,40 +405,23 @@ export function PlaydateFormFields({
       </div>
     ) : null
 
-  return (
-    <form
-      className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-      onSubmit={onSubmit}
-      noValidate
-    >
-      {/* V9 ticket 01: /new leads with WHERE. The place picker is the first
-          thing on the page, the chips that fill it sit directly under it, and
-          the quick-fill preset (a time shortcut, not a location) follows —
-          a page whose first control was a time button was answering a question
-          nobody had yet. /edit renders the V8 ticket 05 order, unchanged. */}
-      {locationFirst ? (
-        <>
-          {placeBlock}
-          {recentChipsBlock}
-          {preset}
-          {titleBlock}
-        </>
-      ) : (
-        <>
-          {preset}
-          {titleBlock}
-          {placeBlock}
-          {recentChipsBlock}
-        </>
-      )}
+  // -------------------------------------------------------------------------
+  // V9 ticket 03: the fields, as named blocks, so the three layouts below can
+  // compose them without a second copy of any markup. /edit's render order and
+  // markup are unchanged (the same nodes, in the same order); /new's summary
+  // layout keeps the three DECISIONS visible and puts the rest in the one
+  // disclosure.
 
-      {/* V3 slice 5 (ticket 08): the optional address (≤120, trim
-          only) — under place. When present, the detail page's place
-          line becomes a tappable Google Maps link (host + signed-out
-          public views). V9 ticket 01: with a place picked it is no longer an
-          optional extra but the NORMAL case — the pick fills it — so /new
-          drops the "(optional)" marker and says where it came from. The Maps
-          link itself is unchanged (V3 ticket 08's seam, untouched). */}
+  /* V3 slice 5 (ticket 08): the optional address (≤120, trim only) — under
+     place. When present, the detail page's place line becomes a tappable Google
+     Maps link (host + signed-out public views). V9 ticket 01: with a place
+     picked it is no longer an optional extra but the NORMAL case — the pick
+     fills it — so /new drops the "(optional)" marker and says where it came
+     from. The Maps link itself is unchanged (V3 ticket 08's seam, untouched).
+     V9 ticket 03: on /new this is the MANUAL entry — the normal path fills it
+     from the picked place — so it lives behind More options. */
+  const addressBlock = (
+    <>
       <label className="flex flex-col gap-1 text-sm">
         <span className="text-slate-700">
           {locationFirst ? (
@@ -387,10 +433,10 @@ export function PlaydateFormFields({
           )}
         </span>
         <input
-          className={
+          className={touch(
             'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-            (addressError !== null ? 'border-red-400' : 'border-slate-300')
-          }
+              (addressError !== null ? 'border-red-400' : 'border-slate-300'),
+          )}
           value={address}
           onChange={(e) => onAddressChange(e.target.value)}
           placeholder="e.g. 7200 4th Ave NE, near the boathouse"
@@ -403,161 +449,320 @@ export function PlaydateFormFields({
           Comes with the place you pick — type one instead if it is not quite right.
         </p>
       ) : null}
+    </>
+  )
 
-      {/* V9 ticket 01: the neighbourhood SELECT is /edit's alone now. It is
-          gated (default: shown) rather than deleted, so the edit form keeps
-          rendering — and writing — the neighbourhood a post already has. */}
-      {showNeighborhood ? (
-        <>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-slate-700">Neighborhood</span>
-            <select
-              className={
-                'w-full rounded-xl border bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-                (errors.neighborhoodId ? 'border-red-400' : 'border-slate-300')
-              }
-              value={values.neighborhoodId}
-              onChange={(e) => onFieldChange('neighborhoodId', e.target.value)}
-              disabled={neighborhoods === null}
-            >
-              <option value="">Pick a neighborhood…</option>
-              {(neighborhoods ?? []).map((n) => (
-                <option key={n.id} value={n.id}>
-                  {n.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {errors.neighborhoodId ? (
-            <p className="text-sm text-red-600">{errors.neighborhoodId}</p>
-          ) : null}
-        </>
-      ) : null}
-
-      <div className="flex flex-col gap-1 text-sm">
-        <span className="text-slate-700">Start</span>
-        <input
-          type="date"
+  /* V9 ticket 01: the neighbourhood SELECT is /edit's alone now. It is gated
+     (default: shown) rather than deleted, so the edit form keeps rendering —
+     and writing — the neighbourhood a post already has. (On /new the prop is
+     false, so this block is null and never reaches the disclosure.) */
+  const neighborhoodBlock = showNeighborhood ? (
+    <>
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="text-slate-700">Neighborhood</span>
+        <select
           className={
-            'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-            (errors.startDate ? 'border-red-400' : 'border-slate-300')
+            'w-full rounded-xl border bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+            (errors.neighborhoodId ? 'border-red-400' : 'border-slate-300')
           }
-          value={values.startDate}
-          onChange={(e) => onFieldChange('startDate', e.target.value)}
-        />
-        {errors.startDate ? <p className="text-sm text-red-600">{errors.startDate}</p> : null}
-        <TimeStepper
-          minutes={values.startMinutes}
-          onStep={(delta) =>
-            onFieldChange('startMinutes', stepTimeMinutes(values.startMinutes, delta))
-          }
-        />
-        {errors.startMinutes ? (
-          <p className="text-sm text-red-600">{errors.startMinutes}</p>
-        ) : null}
-      </div>
+          value={values.neighborhoodId}
+          onChange={(e) => onFieldChange('neighborhoodId', e.target.value)}
+          disabled={neighborhoods === null}
+        >
+          <option value="">Pick a neighborhood…</option>
+          {(neighborhoods ?? []).map((n) => (
+            <option key={n.id} value={n.id}>
+              {n.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {errors.neighborhoodId ? (
+        <p className="text-sm text-red-600">{errors.neighborhoodId}</p>
+      ) : null}
+    </>
+  ) : null
 
-      <div className="flex flex-col gap-1 text-sm">
-        <span className="text-slate-700">How long</span>
-        <div className="flex flex-wrap gap-2">
-          {PLAYDATE_DURATIONS_MINUTES.map((minutes) => {
-            const selected = values.durationMinutes === minutes
-            return (
-              <button
-                key={minutes}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => onFieldChange('durationMinutes', minutes)}
-                className={
-                  'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ' +
+  /* The start: a date picker + the 30-minute stepper (V2 slice 1 — the time is
+     stepped, never typed). V9 ticket 03: on /new the form opens on today and the
+     next slot, so this is the ADJUSTMENT, not the answer — it lives behind More
+     options, and the summary reads the day and the window back as text. */
+  const startBlock = (
+    <div className="flex flex-col gap-1 text-sm">
+      <span className="text-slate-700">Start</span>
+      <input
+        type="date"
+        className={touch(
+          'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+            (errors.startDate ? 'border-red-400' : 'border-slate-300'),
+        )}
+        value={values.startDate}
+        onChange={(e) => onFieldChange('startDate', e.target.value)}
+      />
+      {errors.startDate ? <p className="text-sm text-red-600">{errors.startDate}</p> : null}
+      <TimeStepper
+        minutes={values.startMinutes}
+        onStep={(delta) =>
+          onFieldChange('startMinutes', stepTimeMinutes(values.startMinutes, delta))
+        }
+      />
+      {errors.startMinutes ? (
+        <p className="text-sm text-red-600">{errors.startMinutes}</p>
+      ) : null}
+    </div>
+  )
+
+  /* V9 ticket 03 (T5): the duration chips stay VISIBLE — the duration is one of
+     the three decisions, it is required, and its "Ends …" read-back is the
+     line the specs and the parent both read. Only the date/stepper move. */
+  const durationBlock = (
+    <div className="flex flex-col gap-1 text-sm">
+      <span className="text-slate-700">How long</span>
+      <div className="flex flex-wrap gap-2">
+        {PLAYDATE_DURATIONS_MINUTES.map((minutes) => {
+          const selected = values.durationMinutes === minutes
+          return (
+            <button
+              key={minutes}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => onFieldChange('durationMinutes', minutes)}
+              className={touch(
+                'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ' +
                   (selected
                     ? 'border-indigo-600 bg-indigo-600 text-white'
-                    : 'border-slate-300 bg-white text-slate-700')
-                }
+                    : 'border-slate-300 bg-white text-slate-700'),
+              )}
+            >
+              {durationLabel(minutes)}
+            </button>
+          )
+        })}
+      </div>
+      {errors.durationMinutes ? (
+        <p className="text-sm text-red-600">{errors.durationMinutes}</p>
+      ) : null}
+      {values.durationMinutes > 0 ? (
+        <p className="text-sm text-slate-600">
+          Ends {formatTimeLabel(endTotal)}
+          {endTotal >= DAY_MINUTES ? ' (next day)' : ''}
+        </p>
+      ) : null}
+    </div>
+  )
+
+  /* V3 slice 6 (ticket 09): the "Best for ages" section is REPLACED by the
+     "Kids you're bringing" picker — a multi-select of the host's own kids
+     (chips: name + age, 0011 kids table; the 375px layout wraps the chips like
+     the duration chips). The selection lands in playdate_kids on submit
+     (replace-on-duplicate) and shows on the detail page as the "Kids coming"
+     line. No kids yet → the designed empty state + the /profile link (the kids
+     are edited on the profile, V2 ticket 02). V9 ticket 03: a nice-to-have, not
+     a gate — behind More options on /new. */
+  const kidsBlock = (
+    <div className="flex flex-col gap-1 text-sm">
+      <span className="text-slate-700">
+        Kids you're bringing <span className="text-slate-500">(optional)</span>
+      </span>
+      {kids === null ? (
+        <p className="text-sm text-slate-500">Loading your kids…</p>
+      ) : kids.length === 0 ? (
+        <p className="text-sm text-slate-600">
+          Add your kids on your profile, then pick the ones coming along.{' '}
+          <Link to="/profile" className="text-indigo-600">
+            Add kids
+          </Link>
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {kids.map((kid) => {
+            const selected = selectedKidIds.includes(kid.id)
+            return (
+              <button
+                key={kid.id}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => onToggleKid(kid.id)}
+                className={touch(
+                  'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ' +
+                    (selected
+                      ? 'border-indigo-600 bg-indigo-600 text-white'
+                      : 'border-slate-300 bg-white text-slate-700'),
+                )}
               >
-                {durationLabel(minutes)}
+                {kid.first_name} · {kid.age}
               </button>
             )
           })}
         </div>
-        {errors.durationMinutes ? (
-          <p className="text-sm text-red-600">{errors.durationMinutes}</p>
-        ) : null}
-        {values.durationMinutes > 0 ? (
-          <p className="text-sm text-slate-600">
-            Ends {formatTimeLabel(endTotal)}
-            {endTotal >= DAY_MINUTES ? ' (next day)' : ''}
+      )}
+    </div>
+  )
+
+  const detailsBlock = (
+    <label className="flex flex-col gap-1 text-sm">
+      <span className="text-slate-700">
+        Details <span className="text-slate-500">(optional)</span>
+      </span>
+      <textarea
+        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+        rows={3}
+        value={values.details}
+        onChange={(e) => onFieldChange('details', e.target.value)}
+        placeholder="Anything parents should know — what to bring, parking, weather plan…"
+      />
+    </label>
+  )
+
+  // V9 ticket 03: the /new-only SUMMARY — the read-back, one line each, with
+  // the title under it. It is rendered INSIDE the form (the title is a form
+  // field) and it is the form's FIRST block, so the page opens on the read-back.
+  //
+  // Review cycle 1, F2: the summary's lines are <p> and the title renders as a
+  // READ-BACK BUTTON until it is tapped, so the form's first input — and its
+  // first tab stop — is still the PLACE PICKER (V9 ticket 01's AC), while the
+  // title stays editable in place on the summary (V9 ticket 03's AC).
+  const summaryBlock =
+    summaryLines === undefined ? null : (
+      <div
+        data-testid="post-summary"
+        className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50 p-3"
+      >
+        {summaryLines.map((line, index) => (
+          <p
+            key={index}
+            data-testid="post-summary-line"
+            className="text-sm font-medium text-slate-700"
+          >
+            {line}
           </p>
-        ) : null}
+        ))}
+        <div className="mt-1 flex flex-col gap-1">
+          {titleEditing ? (
+            titleBlock
+          ) : (
+            <>
+              <button
+                type="button"
+                data-testid={TITLE_LINE_TESTID}
+                onClick={onEditTitle}
+                className={touch(
+                  'w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-sm font-medium text-slate-900 transition-colors',
+                )}
+              >
+                {values.title}
+              </button>
+              <p className="text-xs text-slate-500">{TITLE_LINE_HINT}</p>
+            </>
+          )}
+        </div>
       </div>
+    )
 
-      {/* V8 ticket 06: the /new-only "Repeat weekly" control sits with the
-          start/duration it repeats (the /edit form passes no slot). */}
-      {repeatSlot}
-
-      {/* V3 slice 6 (ticket 09): the "Best for ages" section is REPLACED by the
-    "Kids you're bringing" picker — a multi-select of the host's own kids
-    (chips: name + age, 0011 kids table; the 375px layout wraps the chips
-    like the duration chips). The selection lands in playdate_kids on
-    submit (replace-on-duplicate) and shows on the detail page as the
-    "Kids coming" line. No kids yet → the designed empty state + the
-    /profile link (the kids are edited on the profile, V2 ticket 02). */}
-      <div className="flex flex-col gap-1 text-sm">
-        <span className="text-slate-700">
-          Kids you're bringing <span className="text-slate-500">(optional)</span>
-        </span>
-        {kids === null ? (
-          <p className="text-sm text-slate-500">Loading your kids…</p>
-        ) : kids.length === 0 ? (
-          <p className="text-sm text-slate-600">
-            Add your kids on your profile, then pick the ones coming along.{' '}
-            <Link to="/profile" className="text-indigo-600">
-              Add kids
-            </Link>
-          </p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {kids.map((kid) => {
-              const selected = selectedKidIds.includes(kid.id)
-              return (
-                <button
-                  key={kid.id}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => onToggleKid(kid.id)}
-                  className={
-                    'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ' +
-                    (selected
-                      ? 'border-indigo-600 bg-indigo-600 text-white'
-                      : 'border-slate-300 bg-white text-slate-700')
-                  }
-                >
-                  {kid.first_name} · {kid.age}
-                </button>
-              )
-            })}
+  // V9 ticket 03: the ONE disclosure. It is a plain button (not <details>) so
+  // its state is `aria-expanded`, its contents UNMOUNT when it closes (a field
+  // behind a collapsed box is not in the form's flow at all), and the PAGE can
+  // open it — a failed submit on the start date must not leave its error inside
+  // something the parent collapsed.
+  const moreOptionsBlock =
+    summaryLines === undefined ? null : (
+      <>
+        <div className="flex flex-col gap-1">
+          <button
+            type="button"
+            data-testid="more-options"
+            aria-expanded={moreOptionsOpen}
+            /* Review cycle 1, F7: only while the body EXISTS. A collapsed
+               disclosure unmounts it, and an aria-controls pointing at an id
+               that is not in the document is a broken relationship, not a
+               helpful hint. */
+            aria-controls={moreOptionsOpen ? 'more-options-body' : undefined}
+            onClick={onToggleMoreOptions}
+            className={touch(
+              'w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-left text-sm font-medium text-slate-700 transition-colors',
+            )}
+          >
+            {MORE_OPTIONS_LABEL}
+          </button>
+          <p className="text-xs text-slate-500">{MORE_OPTIONS_HINT}</p>
+        </div>
+        {moreOptionsOpen ? (
+          <div
+            id="more-options-body"
+            data-testid="more-options-body"
+            className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-slate-50 p-3"
+          >
+            {addressBlock}
+            {neighborhoodBlock}
+            {startBlock}
+            {repeatSlot}
+            {kidsBlock}
+            {detailsBlock}
           </div>
-        )}
-      </div>
+        ) : null}
+      </>
+    )
 
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-slate-700">
-          Details <span className="text-slate-500">(optional)</span>
-        </span>
-        <textarea
-          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-          rows={3}
-          value={values.details}
-          onChange={(e) => onFieldChange('details', e.target.value)}
-          placeholder="Anything parents should know — what to bring, parking, weather plan…"
-        />
-      </label>
+  return (
+    <form
+      className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+      onSubmit={onSubmit}
+      noValidate
+    >
+      {/* V9 ticket 03: /new opens on the SUMMARY — the day, the window and the
+          place read back as text, with the editable title line under it — then
+          the three decisions (place, how long, Post), then everything else
+          behind the one disclosure. V9 ticket 01's order is kept inside that:
+          WHERE first, the chips that fill it under it, the quick-fill preset
+          (a time shortcut, not a location) after them.
+          /edit passes no summaryLines, so it renders the V8 ticket 05 markup
+          with no summary and no disclosure. */}
+      {summaryLines !== undefined ? (
+        <>
+          {summaryBlock}
+          {placeBlock}
+          {recentChipsBlock}
+          {preset}
+          {durationBlock}
+          {moreOptionsBlock}
+        </>
+      ) : locationFirst ? (
+        <>
+          {placeBlock}
+          {recentChipsBlock}
+          {preset}
+          {titleBlock}
+          {addressBlock}
+          {neighborhoodBlock}
+          {startBlock}
+          {durationBlock}
+          {repeatSlot}
+          {kidsBlock}
+          {detailsBlock}
+        </>
+      ) : (
+        <>
+          {preset}
+          {titleBlock}
+          {placeBlock}
+          {recentChipsBlock}
+          {addressBlock}
+          {neighborhoodBlock}
+          {startBlock}
+          {durationBlock}
+          {repeatSlot}
+          {kidsBlock}
+          {detailsBlock}
+        </>
+      )}
 
       <div className="flex flex-col gap-2">
         <button
           type="submit"
           disabled={submitBusy || submitDisabled}
-          className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className={touch(
+            'rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50',
+          )}
         >
           {submitBusy ? submittingLabel : submitLabel}
         </button>
@@ -572,6 +777,65 @@ export function PlaydateFormFields({
         ) : null}
       </div>
     </form>
+  )
+}
+
+/**
+ * The ONE title field (V9 ticket 03).
+ *
+ * Extracted from the inline `titleBlock` so the /new summary's title (the
+ * editable line inside the summary, once it is tapped) and /edit's Title field
+ * are the SAME implementation — the V8 ticket 05 rule that there is exactly one
+ * implementation of every field, chip and error. On /new the line the parent
+ * edits IS this input, seeded by postSummary.generatedTitle from the place they
+ * picked; on /edit it is the prefilled Title field, always visible, unchanged.
+ *
+ * The markup is V8 ticket 05's, node for node: the same <label>, the same live
+ * `n/80` counter, the same placeholder (the specs fill by it) and the same red
+ * error line. The ONE addition is `minTouchTargets`, which /new passes and
+ * /edit does not — so /edit's rendered markup stays byte-identical.
+ */
+export function PlaydateTitleField({
+  value,
+  error,
+  onChange,
+  minTouchTargets = false,
+}: {
+  value: string
+  /** The validator's message for this field, when it has one. */
+  error?: string
+  onChange: (value: string) => void
+  /** V9 ticket 03: /new grows the input to the 44px phone tap-target floor. */
+  minTouchTargets?: boolean
+}) {
+  const titleLength = value.length
+  return (
+    <>
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="flex items-center justify-between text-slate-700">
+          Title
+          <span
+            className={
+              'text-xs ' + (titleLength > TITLE_MAX_LENGTH ? 'text-red-600' : 'text-slate-500')
+            }
+          >
+            {titleLength}/{TITLE_MAX_LENGTH}
+          </span>
+        </span>
+        <input
+          className={
+            'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+            (error ? 'border-red-400' : 'border-slate-300') +
+            (minTouchTargets ? ' min-h-11' : '')
+          }
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="e.g. Playground time at Green Lake"
+          autoComplete="off"
+        />
+      </label>
+      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+    </>
   )
 }
 

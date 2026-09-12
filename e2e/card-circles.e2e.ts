@@ -38,7 +38,9 @@
  */
 import { expect, test } from '@playwright/test'
 import {
+  editTitle,
   localDatePlusDays,
+  openMoreOptions,
   readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
@@ -60,11 +62,16 @@ test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no 
   // --- The host (the marker's signed-in context) posts a drop-in. ---
   await page.goto('/new')
   await settleOnRoute(page, '/new')
+  // V9 ticket 03 (review cycle 1, F2): the summary's title is a read-back —
+  // tap it to edit (the input is what the specs drive).
+  await editTitle(page)
   await page.getByPlaceholder('e.g. Playground time at Green Lake').fill(title)
   await page
     .getByPlaceholder('e.g. Green Lake playground, near the boathouse')
     .fill('E2E going lot')
   // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
+  // V9 ticket 03: the date + the 30-minute stepper live behind "More options".
+  await openMoreOptions(page)
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   const start = await stepStartTimeOnce(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()
