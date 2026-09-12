@@ -3,11 +3,14 @@ import { useNavigate } from 'react-router'
 import { DropInCard } from '../components/DropInCard'
 import { RadiusEmptyState } from '../components/RadiusEmptyState'
 import { useSessionContext } from '../components/SessionProvider'
+import { WhileAwayCard } from '../components/WhileAwayCard'
 import {
-  countPingsOnMyPosts,
-  fetchRainProbabilityForZip,
-  listMyPingPostIds,
   countKidsGoingForPosts,
+  fetchRainProbabilityForZip,
+  listCommentsOnPosts,
+  listMyPingedPosts,
+  listMyPingPostIds,
+  listMyPostRefs,
   listPingsForPosts,
   listRadiusFeed,
   restampLastSeen,
@@ -15,6 +18,7 @@ import {
   type PingForPost,
 } from '../lib/db'
 import {
+  buildWhileAwayItems,
   DEFAULT_RADIUS_MILES,
   dueToRefreshLastSeen,
   groupByDay,
@@ -23,6 +27,8 @@ import {
   localDayKey,
   rainBadgeLabel,
   shouldRefreshFeed,
+  WHILE_AWAY_ITEM_LIMIT,
+  type WhileAwayInbox,
 } from '../lib/feed'
 import type { PlaydateWithNeighborhood } from '../lib/types'
 
@@ -93,17 +99,27 @@ const FEED_REFRESH_WINDOW_MS = 60_000
  * count-only there). A failed pings load (pre-0020-apply: the created_at
  * column is missing → 42703) degrades to no going lines, never a crash.
  *
- * V3 slice 9 (ticket 04): the host retention banner — "N new families
- * pinged your drop-ins" below the "Near you" h1 (db.countPingsOnMyPosts:
- * pings on the host's OWN posts created after the retention cursor,
- * profiles.last_seen_at, migration 0024; the 0020 created_at is the
- * key). The cursor is restamped on mount when null or >= 1h stale (the
- * pure dueToRefreshLastSeen throttle + db.restampLastSeen
- * fire-and-forget — pre-0024-apply the restamp 42703s and is
- * swallowed: the cursor never lands, the banner stays hidden, never a
- * crash). Banner tap: restamp + session refresh + navigate to /profile
- * (the fresh cursor lands in the shared session state, so the SPA back
- * navigation sees it).
+ * V3 slice 9 (ticket 04): the host retention cursor — the feed mounts
+ * restamp profiles.last_seen_at (migration 0024) when it is null or >= 1h
+ * stale (the pure dueToRefreshLastSeen throttle + db.restampLastSeen,
+ * fire-and-forget — pre-0024-apply the restamp 42703s and is swallowed:
+ * the cursor never lands, the inbox stays hidden, never a crash).
+ *
+ * V8 ticket 03 (the inbox that replaced the dead-end banner): the amber
+ * banner "N new families pinged your drop-ins" is GONE — it rendered only
+ * while the host was already in the app and tapping it landed on /profile,
+ * which names nobody. In its place, at the top of the feed, the
+ * WhileAwayCard renders up to WHILE_AWAY_ITEM_LIMIT items saying who did
+ * what: a cancelled drop-in the viewer said they'd go to, the families who
+ * pinged the viewer's OWN posts since the cursor, and new comments on
+ * those posts (the pure buildWhileAwayItems decides all of it —
+ * ordering, grouping, dedupe, cap). The cursor is the SAME
+ * profiles.last_seen_at (no new "read" flag): an item tap restamps it
+ * (awaited) and opens /playdate/:id; the "+N more" line and the card's
+ * padding restamp it and stay. Every read failure is silent — the card
+ * simply does not render (the zero-pressure soul). There is exactly ONE
+ * "you have news" surface: the old count query is deleted with its
+ * banner.
  *
  * The zip_codes + location columns live in migration 0012 (the live
  * project may not have them yet) — a failed load renders a designed error
@@ -145,12 +161,12 @@ export function FeedPage() {
   const [pingsByPostId, setPingsByPostId] = useState<Record<string, PingForPost[]> | null>(null)
   // V6: post id -> how many kids are coming (the 0027 batch RPC).
   const [kidsByPostId, setKidsByPostId] = useState<Record<string, number> | null>(null)
-  // V3 slice 9 (ticket 04): the host retention banner's count — pings on
-  // the host's OWN posts created after the retention cursor (0024's
-  // profiles.last_seen_at; the 0020 created_at is the key). null =
-  // unsettled (no banner render); a failed load degrades to 0 (the
-  // banner stays hidden — zero-pressure soul, no error state).
-  const [newPingCount, setNewPingCount] = useState<number | null>(null)
+  // V8 ticket 03: the "While you were away" inbox — the feed-top card's
+  // items (the pure buildWhileAwayItems output: capped items + the "+N more"
+  // count). null = unsettled (no card); a failed read settles to an EMPTY
+  // inbox (the card renders nothing — zero-pressure soul, never an error
+  // state).
+  const [whileAway, setWhileAway] = useState<WhileAwayInbox | null>(null)
   /**
    * V8 ticket 02: bumped by the visibility/focus listener when the last load
    * is older than FEED_REFRESH_WINDOW_MS — the feed effect below re-runs and
@@ -289,25 +305,43 @@ export function FeedPage() {
     }
   }, [posts])
 
-  // V3 slice 9 (ticket 04): the retention banner's count — pings on the
-  // host's OWN posts created after the retention cursor (0024's
-  // profiles.last_seen_at; the 0020 created_at is the key). Fetched when
-  // the session + profile settle (re-fetches on a fresh profile load —
-  // the banner's baseline is the shared session state's cursor). The
-  // null-cursor pin: a null/absent cursor (pre-0024-apply) settles to 0
-  // (no query — the first visit establishes the baseline via the restamp
-  // below). A failed load degrades to 0 (hidden — zero-pressure soul, no
-  // error state).
+  // V8 ticket 03: the inbox's four reads, one shot when the session +
+  // profile settle (re-fetches on a fresh profile load — the cursor is the
+  // shared session state's). The pinger rows come from the EXISTING gated
+  // read (listPingsForPosts: the going_pings → profiles embed); the other
+  // three are the viewer's own rows. The cursor decision (and the whole
+  // ordering/grouping/cap) is the pure buildWhileAwayItems — the cursor is
+  // never re-derived here. A null cursor (pre-0024-apply, or a first visit)
+  // is no news: the pure seam returns nothing for the pings/comments kinds,
+  // so this still issues the reads (a cancellation is not cursor-gated — it
+  // must surface on the first visit too). ANY failure settles to an empty
+  // inbox: the card does not render, and there is no error state anywhere
+  // (the zero-pressure pin).
   useEffect(() => {
     if (loading || session === null || profile === null) return
     let cancelled = false
-    setNewPingCount(null)
-    countPingsOnMyPosts(session.user.id, profile.last_seen_at ?? null)
-      .then((count) => {
-        if (!cancelled) setNewPingCount(count)
+    setWhileAway(null)
+    const inputs = {
+      sinceIso: profile.last_seen_at ?? null,
+      nowIso: new Date().toISOString(),
+    }
+    Promise.all([listMyPostRefs(), listMyPingedPosts()])
+      .then(async ([myPosts, pingedPosts]) => {
+        const postIds = myPosts.map((post) => post.id)
+        const [pingsOnMyPosts, commentsOnMyPosts] = await Promise.all([
+          listPingsForPosts(postIds),
+          listCommentsOnPosts(postIds),
+        ])
+        if (cancelled) return
+        setWhileAway(
+          buildWhileAwayItems(
+            { ...inputs, myPosts, pingedPosts, pingsOnMyPosts, commentsOnMyPosts },
+            WHILE_AWAY_ITEM_LIMIT,
+          ),
+        )
       })
       .catch(() => {
-        if (!cancelled) setNewPingCount(0)
+        if (!cancelled) setWhileAway({ items: [], moreCount: 0 })
       })
     return () => {
       cancelled = true
@@ -454,18 +488,28 @@ export function FeedPage() {
   const viewerId = session === null ? null : session.user.id
 
   /**
-   * V3 slice 9 (ticket 04): the retention banner tap — restamp the
-   * cursor (AWAITED, so the count window's baseline moves to now and
-   * the banner is gone on the next feed visit), land the fresh cursor
-   * in the shared session state (refresh — so the SPA back navigation
-   * sees it), then go to /profile (Your posts). Pre-apply the restamp
-   * 42703s → caught → the navigation still happens.
+   * V8 ticket 03: opening the inbox IS the dismissal — the EXISTING cursor
+   * path, no new flag: restamp profiles.last_seen_at (AWAITED) and land the
+   * fresh cursor in the shared session state (refresh), so the inbox's own
+   * load effect re-runs against the new cursor and the card clears. Both
+   * failures are swallowed (pre-0024-apply the restamp 42703s — the pinned
+   * fire-and-forget contract: never a crash, the card simply stays).
    */
-  async function handleRetentionBannerTap() {
+  async function dismissWhileAway() {
     if (session === null) return
     await restampLastSeen(session.user.id).catch(() => {})
     await refresh().catch(() => {})
-    navigate('/profile')
+  }
+
+  /**
+   * V8 ticket 03: an ITEM tap — dismiss (the awaited restamp + refresh)
+   * THEN open that post's detail page. The tap always lands on
+   * /playdate/:id: the inbox names who did what, and the detail page is
+   * where the guest list / thread actually live.
+   */
+  async function handleWhileAwayItemTap(playdateId: string) {
+    await dismissWhileAway()
+    navigate(`/playdate/${playdateId}`)
   }
 
   /**
@@ -504,20 +548,18 @@ export function FeedPage() {
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold text-slate-900">Near you</h1>
 
-      {/* V3 slice 9 (ticket 04): the host retention banner — the amber
-          nudge-banner pattern (ProfilePage's "Finish your profile"),
-          full-width + left-aligned. The copy is pinned VERBATIM (no
-          singular/plural variant). Hidden when the count is 0 or
-          unsettled. */}
-      {newPingCount !== null && newPingCount > 0 ? (
-        <button
-          type="button"
-          onClick={() => void handleRetentionBannerTap()}
-          className="w-full rounded-xl border border-amber-200 bg-amber-50 p-4 text-left text-sm text-amber-800"
-        >
-          {newPingCount} new families pinged your drop-ins
-        </button>
-      ) : null}
+      {/* V8 ticket 03: the "While you were away" inbox — the retention
+          banner's replacement and the ONLY "you have news" surface (the
+          amber nudge-banner pattern). Renders nothing while the inbox is
+          unsettled or empty (a failed read settles empty); an item opens
+          its post, "+N more" / the card's padding just dismiss. */}
+      {whileAway === null ? null : (
+        <WhileAwayCard
+          inbox={whileAway}
+          onOpenItem={(playdateId) => void handleWhileAwayItemTap(playdateId)}
+          onDismiss={() => void dismissWhileAway()}
+        />
+      )}
 
       {posts === null ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm">

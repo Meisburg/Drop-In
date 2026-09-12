@@ -32,6 +32,9 @@ import {
   type GoingPinger,
   type RadiusViewer,
   type RecentPlace,
+  type WhileAwayCommentRow,
+  type WhileAwayMyPost,
+  type WhileAwayPingedPostRow,
   type ZipCoords,
 } from './feed'
 import {
@@ -1150,51 +1153,9 @@ export async function listPingsForPosts(postIds: string[]): Promise<PingForPost[
 // restampLastSeen then 42703s on the missing column, and the caller
 // (FeedPage's fire-and-forget restamp) catches + swallows it (the pinned
 // contract: never a crash — the e2e's documented red point, same
-// discipline as slices 2–7). The counts below ride on existing tables
-// (playdates, going_pings), so they are green pre-apply; it is the
-// cursor that gates the banner.
-
-/**
- * The banner's N (V3 slice 9, ticket 04): the going_pings on the
- * profile's OWN posts created after the cursor (`sinceIso`, the 0024
- * last_seen_at; the 0020 created_at is the key), against an injected
- * client (the trust.togglePingWithClient pattern — mockable in unit
- * tests).
- *
- * Null-cursor pin: no baseline yet (the cursor is null/absent pre-apply)
- * → 0 with NO query (the first visit establishes the baseline via the
- * restamp, not a backfill). A host with 0 posts → 0, no going_pings
- * query (an empty .in() would match nothing).
- */
-export async function countPingsOnMyPostsWithClient(
-  client: SupabaseClient,
-  profileId: string,
-  sinceIso: string | null,
-): Promise<number> {
-  // Null-cursor pin: no baseline yet -> 0, no query (the first visit establishes it).
-  if (sinceIso === null) return 0
-  const { data, error } = await client
-    .from('playdates')
-    .select('id')
-    .eq('host_profile_id', profileId)
-  if (error) throw error
-  const postIds = ((data ?? []) as Array<{ id: string | null }>)
-    .map((row) => row.id)
-    .filter((id): id is string => id !== null && id !== undefined)
-  if (postIds.length === 0) return 0
-  const { count, error: countError } = await client
-    .from('going_pings')
-    .select('profile_id', { count: 'exact', head: true })
-    .in('playdate_id', postIds)
-    .gte('created_at', sinceIso)
-  if (countError) throw countError
-  return count ?? 0
-}
-
-/** The default-client wrapper (the feed's retention banner). */
-export async function countPingsOnMyPosts(profileId: string, sinceIso: string | null): Promise<number> {
-  return countPingsOnMyPostsWithClient(supabase, profileId, sinceIso)
-}
+// discipline as slices 2–7). The cursor's READERS (V8 ticket 03's inbox)
+// ride on existing tables (playdates, going_pings, comments), so they are
+// green pre-apply; it is the cursor that gates them.
 
 /**
  * The all-time hosted count (V3 slice 9, ticket 04): UserPage's "Hosted
@@ -1241,6 +1202,138 @@ export async function touchLastSeen(client: SupabaseClient, profileId: string): 
 /** The default-client wrapper (the feed page's mount restamp, fire-and-forget). */
 export async function restampLastSeen(profileId: string): Promise<void> {
   return touchLastSeen(supabase, profileId)
+}
+
+// ---------------------------------------------------------------------------
+// V8 ticket 03: "While you were away" — the feed-top inbox's three reads.
+//
+// NO new SQL surface for NAMES: the pinger rows come from the EXISTING gated
+// read (listPingsForPostsWithClient, the going_pings → profiles embed pinned to
+// the 0007 FK constraint) and the rest are the viewer's own rows or counts, so
+// no broad profiles SELECT is added and no SECDEF helper is needed (the
+// ticket's migration check: NONE). Every reader is cursor-free by design — the
+// cursor decision is the pure buildWhileAwayItems (feed.ts), which is why the
+// pings read can stay exactly the gated read the cards already use.
+
+/**
+ * The viewer's OWN posts (V8 ticket 03) — the title source for the ping and
+ * comment items, against an injected client (the *WithClient pattern).
+ * The playdates SELECT policy is open to any authenticated user (0005), so the
+ * host's own rows come back directly; the status/end filters are deliberately
+ * absent (a comment on a post that already happened is still news).
+ */
+export async function listMyPostRefsWithClient(
+  client: SupabaseClient,
+  profileId: string,
+): Promise<WhileAwayMyPost[]> {
+  const { data, error } = await client
+    .from('playdates')
+    .select('id, title')
+    .eq('host_profile_id', profileId)
+  if (error) throw error
+  const rows = (data ?? []) as Array<{ id: string | null; title: string | null }>
+  return rows.flatMap((row) =>
+    row.id === null || row.id === undefined ? [] : [{ id: row.id, title: row.title ?? null }],
+  )
+}
+
+/** The default-client wrapper (the feed's while-away inbox). */
+export async function listMyPostRefs(): Promise<WhileAwayMyPost[]> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) return []
+  return listMyPostRefsWithClient(supabase, user.id)
+}
+
+/**
+ * The visible comments on a set of posts (V8 ticket 03) — the "N new comments
+ * on <title>" item's rows, against an injected client. The 0013/0014 SELECT
+ * policy already hides hidden comments from non-moderators; the hidden_at
+ * filter here is the same rule for the MODERATOR view (a comment the mod just
+ * hid must not read as news and then not render on the detail page) — defense
+ * in depth, never a second policy.
+ *
+ * Empty postIds → [] with NO query (an empty .in() would match nothing — the
+ * listPingsForPostsWithClient rule). NO author embed: the item's copy is a
+ * count, so no name is read here (names come only through the gated ping read).
+ */
+export async function listCommentsOnPostsWithClient(
+  client: SupabaseClient,
+  postIds: string[],
+): Promise<WhileAwayCommentRow[]> {
+  if (postIds.length === 0) return []
+  const { data, error } = await client
+    .from('comments')
+    .select('playdate_id, created_at, hidden_at')
+    .in('playdate_id', postIds)
+  if (error) throw error
+  const rows = (data ?? []) as Array<{
+    playdate_id: string | null
+    created_at: string
+    hidden_at: string | null
+  }>
+  return rows.flatMap((row) =>
+    row.playdate_id === null || row.hidden_at !== null
+      ? []
+      : [{ playdateId: row.playdate_id, createdAt: row.created_at }],
+  )
+}
+
+/** The default-client wrapper (the feed's while-away inbox). */
+export async function listCommentsOnPosts(postIds: string[]): Promise<WhileAwayCommentRow[]> {
+  return listCommentsOnPostsWithClient(supabase, postIds)
+}
+
+/**
+ * One post the viewer pinged, with its post row when it is readable (V8
+ * ticket 03): the cancellation kind's rows, against an injected client. The
+ * playdates embed is pinned to the 0007 FK constraint name
+ * (`going_pings_playdate_id_fkey` — the PGRST201 house rule); the going_pings
+ * SELECT policy is the broad authenticated one (0007), so this reads the
+ * VIEWER's own pings only (`.eq('profile_id', profileId)` — no one else's).
+ *
+ * A row whose post is unreadable (deleted, or not handed back) yields nulls
+ * for every post field — the join tolerates a missing row (the 0008
+ * nullable-ref discipline) and the pure seam renders the fallback copy instead
+ * of crashing on a null title. The status/upcoming decision is the pure seam's
+ * (feed.buildWhileAwayItems), not this reader's.
+ */
+export async function listMyPingedPostsWithClient(
+  client: SupabaseClient,
+  profileId: string,
+): Promise<WhileAwayPingedPostRow[]> {
+  const { data, error } = await client
+    .from('going_pings')
+    .select(
+      'playdate_id, playdate:playdates!going_pings_playdate_id_fkey ( id, title, status, starts_at )',
+    )
+    .eq('profile_id', profileId)
+  if (error) throw error
+  const rows = (data ?? []) as unknown as Array<{
+    playdate_id: string | null
+    playdate: { id: string; title: string | null; status: string | null; starts_at: string | null } | null
+  }>
+  return rows.flatMap((row) => {
+    if (row.playdate_id === null || row.playdate_id === undefined) return []
+    return [
+      {
+        playdateId: row.playdate_id,
+        title: row.playdate?.title ?? null,
+        status: row.playdate?.status ?? null,
+        startsAt: row.playdate?.starts_at ?? null,
+      },
+    ]
+  })
+}
+
+/** The default-client wrapper (the feed's while-away inbox). */
+export async function listMyPingedPosts(): Promise<WhileAwayPingedPostRow[]> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) return []
+  return listMyPingedPostsWithClient(supabase, user.id)
 }
 
 // ---------------------------------------------------------------------------

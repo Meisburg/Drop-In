@@ -960,3 +960,313 @@ export function shouldRefreshFeed(
   if (lastLoadedIso === null) return true
   return Date.parse(nowIso) - Date.parse(lastLoadedIso) >= windowMs
 }
+
+// ---------------------------------------------------------------------------
+// V8 ticket 03: "While you were away" — the feed-top inbox.
+//
+// Lives here (not in trust.ts) for the same reason groupByDay / buildGoingLine
+// do: this is FEED render-grouping — a pure order/group/cap decision over row
+// sets the feed has already read. trust.ts owns permissions and validation
+// (planPing, planCommentAction, validateCommentBody), which is a different
+// question.
+//
+// The cursor is the EXISTING one (profiles.last_seen_at, 0024) — no new
+// "read" flag, no new cursor: opening the inbox restamps it (FeedPage's
+// awaited restampLastSeen + refresh, the V3 slice 9 path).
+
+/** The inbox's item cap (V8 ticket 03 pin: up to 3 items + a "+N more" line). */
+export const WHILE_AWAY_ITEM_LIMIT = 3
+
+/** The three kinds of news, in the order they render (V8 ticket 03 pin). */
+export type WhileAwayItemKind = 'cancelled' | 'pings' | 'comments'
+
+/** One of the viewer's own posts (the pings/comments kinds' title source). */
+export interface WhileAwayMyPost {
+  id: string
+  title: string | null
+}
+
+/**
+ * One ping on one of the viewer's own posts — structurally the same row
+ * db.listPingsForPostsWithClient returns (the 0020 created_at + the pinger's
+ * display_name/avatar_url through the existing gated embed), flattened so the
+ * page can pass the rows straight through.
+ */
+export interface WhileAwayPingRow extends GoingPinger {
+  playdateId: string
+  createdAt: string
+}
+
+/** One visible comment on one of the viewer's own posts. */
+export interface WhileAwayCommentRow {
+  playdateId: string
+  createdAt: string
+}
+
+/**
+ * One post the VIEWER pinged, with its post row when it is readable. Every
+ * field except `playdateId` is null when the row is NOT readable (the post was
+ * deleted, or RLS does not hand it back) — the join tolerates a missing row
+ * (the 0008 nullable-ref discipline) and the item still renders.
+ */
+export interface WhileAwayPingedPostRow {
+  playdateId: string
+  title: string | null
+  /** `null` = the post row is unreadable (gone) — the item still renders. */
+  status: string | null
+  startsAt: string | null
+}
+
+/** Everything the inbox is built from (all four reads, one call site). */
+export interface WhileAwayInputs {
+  /** The retention cursor (profiles.last_seen_at). null = no baseline yet. */
+  sinceIso: string | null
+  /** Now — the "is this drop-in still ahead of me" gate for cancellations. */
+  nowIso: string
+  /** The viewer's own posts (id + title), the pings/comments title source. */
+  myPosts: ReadonlyArray<WhileAwayMyPost>
+  /** ALL pings on the viewer's own posts — this seam applies the cursor. */
+  pingsOnMyPosts: ReadonlyArray<WhileAwayPingRow>
+  /** Visible comments on the viewer's own posts — the cursor applies here too. */
+  commentsOnMyPosts: ReadonlyArray<WhileAwayCommentRow>
+  /** The posts the viewer pinged (status/upcoming decide the cancellation kind). */
+  pingedPosts: ReadonlyArray<WhileAwayPingedPostRow>
+}
+
+/** One renderable line of the inbox. */
+export interface WhileAwayItem {
+  kind: WhileAwayItemKind
+  /** The post the item taps through to (/playdate/:id) — also the dedupe key. */
+  playdateId: string
+  /** The post's title when the row was readable; null = the fallback copy. */
+  title: string | null
+  /** The kind's count (pings / comments; 1 for a cancellation). */
+  count: number
+  /** The pings kind's faces (newest first, at most GOING_CIRCLE_LIMIT). */
+  faces: GoingPinger[]
+  /** The one-line copy (verbatim template — the caller renders it as-is). */
+  label: string
+}
+
+/** The card's whole render input: the capped items + the "+N more" count. */
+export interface WhileAwayInbox {
+  items: WhileAwayItem[]
+  /** Distinct items beyond the cap ("+N more"); 0 = no line. */
+  moreCount: number
+}
+
+/** `"<title>"` when the post row was readable, else null (the fallback copy). */
+function quotedTitle(title: string | null): string | null {
+  const trimmed = (title ?? '').trim()
+  return trimmed === '' ? null : `"${trimmed}"`
+}
+
+/**
+ * `N families are going to "<title>"` — and, at exactly 1, the singular the
+ * ticket pins ("1 family is going to…": the plural template would read
+ * "1 families"). A post whose title is unreadable falls back to "your drop-in"
+ * rather than rendering `"null"` or an empty pair of quotes.
+ */
+function whileAwayPingsLabel(count: number, quoted: string | null): string {
+  const subject = quoted ?? 'your drop-in'
+  return count === 1
+    ? `1 family is going to ${subject}`
+    : `${count} families are going to ${subject}`
+}
+
+/**
+ * `N new comments on "<title>"` — with the same singular treatment as the
+ * families line ("1 new comments on…" is the same broken English the ticket
+ * called out for the family case, so the 1 case reads "1 new comment on").
+ */
+function whileAwayCommentsLabel(count: number, quoted: string | null): string {
+  const subject = quoted ?? 'your drop-in'
+  return count === 1 ? `1 new comment on ${subject}` : `${count} new comments on ${subject}`
+}
+
+/**
+ * `"<title>" was cancelled — you said you'd go`, and the generic subject used
+ * when the post row is gone (a deleted post has no title to quote — the item
+ * must still render, never crash).
+ */
+function whileAwayCancelledLabel(title: string | null): string {
+  const quoted = quotedTitle(title)
+  if (quoted === null) return "A drop-in you pinged was cancelled — you said you'd go"
+  return `${quoted} was cancelled — you said you'd go`
+}
+
+/** The item's sort key (larger = later). A malformed/absent time sorts last. */
+function timeOrInfinity(iso: string | null): number {
+  if (iso === null) return Number.POSITIVE_INFINITY
+  const ms = Date.parse(iso)
+  return Number.isNaN(ms) ? Number.POSITIVE_INFINITY : ms
+}
+
+/** One candidate + its sort key (internal to buildWhileAwayItems). */
+interface WhileAwayCandidate {
+  at: number
+  item: WhileAwayItem
+}
+
+/**
+ * Ascending by `at`, ties broken by post id — a STABLE order, so two items
+ * with the same timestamp can never swap places between renders (the query
+ * order is not part of the contract).
+ */
+function byAtAscending(a: WhileAwayCandidate, b: WhileAwayCandidate): number {
+  if (a.at !== b.at) return a.at - b.at
+  return a.item.playdateId < b.item.playdateId
+    ? -1
+    : a.item.playdateId > b.item.playdateId
+      ? 1
+      : 0
+}
+
+/** Descending by `at`, the same id tie-break. */
+function byAtDescending(a: WhileAwayCandidate, b: WhileAwayCandidate): number {
+  return byAtAscending(b, a)
+}
+
+/**
+ * The "While you were away" inbox (V8 ticket 03) — the feed-top card's whole
+ * decision, pure + unit-tested: which news is NEW, how it groups, what it says,
+ * how it orders, and where it is capped.
+ *
+ * - NEW = strictly after the cursor (`sinceIso`, the 0024 profiles.last_seen_at).
+ *   A row exactly AT the cursor was already seen; a null cursor (no baseline
+ *   yet — the first visit establishes it via the restamp) is no news at all.
+ * - KINDS, in render order: a cancellation first (the one thing that must not
+ *   be missed), then new pings on the viewer's own posts (newest post first),
+ *   then new comments on the viewer's own posts (newest post first). Pings and
+ *   comments group PER POST — one item per post, with its count ("2 families…")
+ *   and, for pings, the newest pingers' faces.
+ * - DEDUPE: one item per post, so a post that is both pinged and commented
+ *   appears ONCE, keeping the highest-priority kind (cancelled > pings >
+ *   comments). The detail page carries the rest.
+ * - CAP: at most `limit` items; everything beyond collapses into `moreCount`
+ *   (the "+N more" line).
+ *
+ * CANCELLATIONS ARE NOT CURSOR-GATED — they are gated on the drop-in still
+ * being AHEAD (`startsAt` in the future): the schema records no cancellation
+ * timestamp (playdates has created_at only — 0005/0016 add no status set_at),
+ * so "since the cursor" is not answerable for them without a migration, which
+ * this ticket forbids. The gate used instead is the one the message is FOR:
+ * "don't drive to an empty park" stops mattering once the drop-in's start time
+ * has passed, and that is exactly when the item clears itself. A row whose post
+ * is unreadable (deleted / not handed back by RLS) can't be dated at all — it
+ * is reported as cancelled and never crashes (the ticket's null-title AC).
+ */
+export function buildWhileAwayItems(
+  inputs: WhileAwayInputs,
+  limit: number = WHILE_AWAY_ITEM_LIMIT,
+): WhileAwayInbox {
+  const sinceMs = inputs.sinceIso === null ? null : Date.parse(inputs.sinceIso)
+  const nowMs = Date.parse(inputs.nowIso)
+  /** Strictly after the cursor (the "already seen" boundary is inclusive). */
+  const isNew = (iso: string): boolean => {
+    if (sinceMs === null || Number.isNaN(sinceMs)) return false
+    const ms = Date.parse(iso)
+    return !Number.isNaN(ms) && ms > sinceMs
+  }
+
+  const titleById = new Map<string, string | null>()
+  for (const post of inputs.myPosts) titleById.set(post.id, post.title)
+
+  const candidates: WhileAwayCandidate[] = []
+  /** The dedupe key set — first (highest-priority) kind wins. */
+  const claimed = new Set<string>()
+
+  // 1. Cancellations: a drop-in the viewer said they'd go to that is now
+  // cancelled — soonest start first (the most urgent "don't drive there").
+  for (const row of inputs.pingedPosts) {
+    const unreadable = row.status === null
+    if (!unreadable && row.status !== 'cancelled') continue
+    // Still ahead of the viewer (a readable row only; a gone row can't be dated).
+    if (!unreadable && row.startsAt !== null && !Number.isNaN(nowMs)) {
+      const startsMs = Date.parse(row.startsAt)
+      if (!Number.isNaN(startsMs) && startsMs <= nowMs) continue
+    }
+    if (claimed.has(row.playdateId)) continue
+    claimed.add(row.playdateId)
+    candidates.push({
+      at: timeOrInfinity(row.startsAt),
+      item: {
+        kind: 'cancelled',
+        playdateId: row.playdateId,
+        title: row.title,
+        count: 1,
+        faces: [],
+        label: whileAwayCancelledLabel(row.title),
+      },
+    })
+  }
+  candidates.sort(byAtAscending)
+
+  // 2. New pings on the viewer's own posts, grouped per post, newest first.
+  const pushGrouped = (
+    kind: 'pings' | 'comments',
+    groupByPost: Map<string, string[]>,
+    label: (count: number, quoted: string | null) => string,
+    facesByPost: Map<string, GoingPinger[]>,
+  ): void => {
+    const groups = [...groupByPost.entries()].map(([playdateId, ats]) => {
+      const newestFirst = ats.slice().sort((a, b) => Date.parse(b) - Date.parse(a))
+      const title = titleById.get(playdateId) ?? null
+      const count = newestFirst.length
+      return {
+        at: Date.parse(newestFirst[0]),
+        item: {
+          kind,
+          playdateId,
+          title,
+          count,
+          faces: facesByPost.get(playdateId) ?? [],
+          label: label(count, quotedTitle(title)),
+        } satisfies WhileAwayItem,
+      }
+    })
+    groups.sort(byAtDescending)
+    for (const group of groups) {
+      if (claimed.has(group.item.playdateId)) continue
+      claimed.add(group.item.playdateId)
+      candidates.push(group)
+    }
+  }
+
+  const pingRowsByPost = new Map<string, WhileAwayPingRow[]>()
+  for (const row of inputs.pingsOnMyPosts) {
+    if (!isNew(row.createdAt)) continue
+    const rows = pingRowsByPost.get(row.playdateId)
+    if (rows === undefined) pingRowsByPost.set(row.playdateId, [row])
+    else rows.push(row)
+  }
+  const pingTimesByPost = new Map<string, string[]>()
+  const facesByPost = new Map<string, GoingPinger[]>()
+  for (const [playdateId, rows] of pingRowsByPost) {
+    // Newest ping first — the faces are the most recent families to say yes.
+    const newestFirst = rows
+      .slice()
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    pingTimesByPost.set(playdateId, newestFirst.map((row) => row.createdAt))
+    facesByPost.set(
+      playdateId,
+      newestFirst
+        .slice(0, GOING_CIRCLE_LIMIT)
+        .map((row) => ({ avatarUrl: row.avatarUrl, displayName: row.displayName })),
+    )
+  }
+  pushGrouped('pings', pingTimesByPost, whileAwayPingsLabel, facesByPost)
+
+  const commentTimesByPost = new Map<string, string[]>()
+  for (const row of inputs.commentsOnMyPosts) {
+    if (!isNew(row.createdAt)) continue
+    const times = commentTimesByPost.get(row.playdateId)
+    if (times === undefined) commentTimesByPost.set(row.playdateId, [row.createdAt])
+    else times.push(row.createdAt)
+  }
+  pushGrouped('comments', commentTimesByPost, whileAwayCommentsLabel, new Map())
+
+  const cap = Math.max(0, Math.floor(limit))
+  const items = candidates.slice(0, cap).map((candidate) => candidate.item)
+  return { items, moreCount: candidates.length - items.length }
+}

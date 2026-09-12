@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   buildGoingLine,
+  buildWhileAwayItems,
   computeEndIso,
   computeStartIso,
   defaultStartDateIso,
@@ -50,6 +51,7 @@ import {
   validateHomeZip,
   validatePlaydateForm,
   validateRadiusMiles,
+  WHILE_AWAY_ITEM_LIMIT,
   WIDEN_RADIUS_MILES,
   withinRadius,
   type FeedPost,
@@ -63,9 +65,11 @@ import {
 // creation (VITE_* env from the repo .env via Vite's env loading; the
 // db-v3.test.ts note — the suite already imports db.ts elsewhere).
 import {
-  countPingsOnMyPostsWithClient,
   countPostsByHostWithClient,
   fetchGuestListWithClient,
+  listCommentsOnPostsWithClient,
+  listMyPingedPostsWithClient,
+  listMyPostRefsWithClient,
   touchLastSeen,
 } from './db'
 
@@ -956,21 +960,20 @@ describe('dueToRefreshLastSeen (the >= 1h cursor throttle, V3 slice 9, ticket 04
 
 /**
  * Minimal recording mock of the client surface the V3 slice 9 (ticket
- * 04) retention queries use (countPingsOnMyPostsWithClient,
- * countPostsByHostWithClient, touchLastSeen — the makeFeedMockClient /
- * db-v3.test.ts style): each from(table) returns a thenable builder
- * recording every call (.select, .eq, .in, .gte, .update) in order, so
- * tests can assert the query SHAPE — the playdates→going_pings
- * sequence, countPostsByHost's no-filter count chain, and
- * touchLastSeen's plain update. Results are table-keyed config (the
- * counts ride on the select's count option).
+ * 04) retention queries use (countPostsByHostWithClient, touchLastSeen —
+ * the makeFeedMockClient / db-v3.test.ts style): each from(table) returns
+ * a thenable builder recording every call (.select, .eq, .in, .gte,
+ * .update) in order, so tests can assert the query SHAPE —
+ * countPostsByHost's no-filter count chain and touchLastSeen's plain
+ * update. Results are table-keyed config (the counts ride on the select's
+ * count option).
  */
 interface RetentionMockConfig {
   /** The playdates select's exact count (countPostsByHost's N). */
   playdatesCount?: number | null
   /** Rows the playdates select returns (the post-id list). */
   playdatesRows?: unknown[]
-  /** The going_pings select's exact count (the banner's N). */
+  /** The going_pings select's exact count (unused by the surviving tests). */
   goingPingsCount?: number | null
   /** Models a failing playdates/going_pings query (pre-apply 42703). */
   queryError?: { code: string; message: string }
@@ -1048,46 +1051,6 @@ function makeRetentionMockClient(
   }
   return { client: client as unknown as SupabaseClient, calls }
 }
-
-describe('countPingsOnMyPostsWithClient (the banner\'s N, V3 slice 9, ticket 04)', () => {
-  const SINCE = '2026-09-10T11:00:00.000Z'
-
-  it('returns 0 for a null cursor WITHOUT issuing any query', async () => {
-    const { client, calls } = makeRetentionMockClient({ playdatesRows: [{ id: 'pd-1' }] })
-    expect(await countPingsOnMyPostsWithClient(client, 'me', null)).toBe(0)
-    expect(calls).toEqual([])
-  })
-
-  it('returns 0 for a host with no posts (no going_pings query)', async () => {
-    const { client, calls } = makeRetentionMockClient({ playdatesRows: [] })
-    expect(await countPingsOnMyPostsWithClient(client, 'me', SINCE)).toBe(0)
-    expect(calls).toEqual(['playdates.select(id)', 'playdates.eq(host_profile_id, me)'])
-  })
-
-  it('counts the pings on the host\'s posts created after the cursor (the recorded chain)', async () => {
-    const { client, calls } = makeRetentionMockClient({
-      playdatesRows: [{ id: 'pd-1' }, { id: 'pd-2' }],
-      goingPingsCount: 3,
-    })
-    expect(await countPingsOnMyPostsWithClient(client, 'me', SINCE)).toBe(3)
-    expect(calls).toEqual([
-      'playdates.select(id)',
-      'playdates.eq(host_profile_id, me)',
-      'going_pings.select(profile_id, count:exact)',
-      'going_pings.in(playdate_id, pd-1,pd-2)',
-      'going_pings.gte(created_at, 2026-09-10T11:00:00.000Z)',
-    ])
-  })
-
-  it('rejects on a query error (the caller catches — the banner degrades to hidden)', async () => {
-    const { client } = makeRetentionMockClient({
-      queryError: { code: '42703', message: 'column "created_at" does not exist' },
-    })
-    await expect(countPingsOnMyPostsWithClient(client, 'me', SINCE)).rejects.toThrow(
-      'column "created_at" does not exist',
-    )
-  })
-})
 
 describe('countPostsByHostWithClient (the all-time hosted count, V3 slice 9, ticket 04)', () => {
   it('returns the exact count; the recorded chain is select+eq ONLY (no status/end filter)', async () => {
@@ -1425,5 +1388,399 @@ describe('shouldRefreshFeed (V8 ticket 02: the visibility-refresh gate)', () => 
 
   it('honours the window the caller owns (a 0ms window is always due)', () => {
     expect(shouldRefreshFeed(secondsAgo(0), NOW, 0)).toBe(true)
+  })
+})
+
+describe('buildWhileAwayItems (V8 ticket 03: the while-away inbox)', () => {
+  const CURSOR = '2026-09-12T10:00:00.000Z'
+  const NOW = '2026-09-12T12:00:00.000Z'
+  /** An ISO string N hours AFTER the cursor (news). */
+  const after = (hours: number) => new Date(Date.parse(CURSOR) + hours * 3_600_000).toISOString()
+  /** An ISO string N hours BEFORE the cursor (already seen). */
+  const seen = (hours: number) => new Date(Date.parse(CURSOR) - hours * 3_600_000).toISOString()
+  /** An ISO string N hours after NOW (a drop-in still ahead of the viewer). */
+  const ahead = (hours: number) => new Date(Date.parse(NOW) + hours * 3_600_000).toISOString()
+
+  const MY_POSTS = [
+    { id: 'mine-1', title: 'Park morning' },
+    { id: 'mine-2', title: 'Library run' },
+  ]
+
+  const ping = (playdateId: string, createdAt: string, displayName: string) => ({
+    playdateId,
+    createdAt,
+    avatarUrl: null,
+    displayName,
+  })
+  const comment = (playdateId: string, createdAt: string) => ({ playdateId, createdAt })
+  const pinged = (playdateId: string, title: string | null, status: string | null, startsAt: string | null) => ({
+    playdateId,
+    title,
+    status,
+    startsAt,
+  })
+
+  /** The empty inputs (only the cursor + now), spread into each case. */
+  const base = {
+    sinceIso: CURSOR,
+    nowIso: NOW,
+    myPosts: MY_POSTS,
+    pingsOnMyPosts: [] as ReturnType<typeof ping>[],
+    commentsOnMyPosts: [] as ReturnType<typeof comment>[],
+    pingedPosts: [] as ReturnType<typeof pinged>[],
+  }
+
+  it('orders: cancellation first, then pings newest-first, then comments (newest-first)', () => {
+    const inbox = buildWhileAwayItems(
+      {
+        ...base,
+        myPosts: [
+          { id: 'mine-1', title: 'One' },
+          { id: 'mine-2', title: 'Two' },
+          { id: 'mine-3', title: 'Three' },
+          { id: 'mine-4', title: 'Four' },
+        ],
+        pingedPosts: [pinged('pd-cancel', 'Green Lake', 'cancelled', ahead(20))],
+        pingsOnMyPosts: [ping('mine-2', after(1), 'Ada'), ping('mine-1', after(3), 'Bea')],
+        commentsOnMyPosts: [
+          // The NEWEST timestamps of all — and still last: kind order wins.
+          comment('mine-4', after(2)),
+          comment('mine-3', after(4)),
+        ],
+      },
+      10,
+    )
+    expect(inbox.items.map((item) => item.kind)).toEqual([
+      'cancelled',
+      'pings',
+      'pings',
+      'comments',
+      'comments',
+    ])
+    // Pings: the newest ping's post first (mine-1 is 3h, mine-2 is 1h).
+    expect(inbox.items[1].playdateId).toBe('mine-1')
+    expect(inbox.items[2].playdateId).toBe('mine-2')
+    // Comments: newest first too (mine-3 is 4h, mine-4 is 2h).
+    expect(inbox.items[3].playdateId).toBe('mine-3')
+    expect(inbox.items[4].playdateId).toBe('mine-4')
+    expect(inbox.moreCount).toBe(0)
+  })
+
+  it('caps at the limit and reports the rest as the "+N more" count', () => {
+    const inbox = buildWhileAwayItems({
+      ...base,
+      myPosts: [
+        { id: 'mine-1', title: 'One' },
+        { id: 'mine-2', title: 'Two' },
+        { id: 'mine-3', title: 'Three' },
+        { id: 'mine-4', title: 'Four' },
+      ],
+      pingsOnMyPosts: [
+        ping('mine-1', after(1), 'Ada'),
+        ping('mine-2', after(2), 'Bea'),
+        ping('mine-3', after(3), 'Cara'),
+        ping('mine-4', after(4), 'Dana'),
+      ],
+    })
+    expect(inbox.items).toHaveLength(WHILE_AWAY_ITEM_LIMIT)
+    expect(inbox.items).toHaveLength(3)
+    // Newest first: mine-4, mine-3, mine-2 — mine-1 fell off.
+    expect(inbox.items.map((item) => item.playdateId)).toEqual(['mine-4', 'mine-3', 'mine-2'])
+    expect(inbox.moreCount).toBe(1)
+  })
+
+  it('honours a caller-owned limit (the page passes WHILE_AWAY_ITEM_LIMIT)', () => {
+    const inbox = buildWhileAwayItems(
+      {
+        ...base,
+        pingsOnMyPosts: [ping('mine-1', after(1), 'Ada'), ping('mine-2', after(2), 'Bea')],
+      },
+      1,
+    )
+    expect(inbox.items).toHaveLength(1)
+    expect(inbox.moreCount).toBe(1)
+  })
+
+  it('dedupes a post that is BOTH pinged and commented (pings win, one item)', () => {
+    const inbox = buildWhileAwayItems({
+      ...base,
+      pingsOnMyPosts: [ping('mine-1', after(1), 'Ada')],
+      commentsOnMyPosts: [comment('mine-1', after(2)), comment('mine-2', after(3))],
+    })
+    expect(inbox.items.map((item) => item.playdateId)).toEqual(['mine-1', 'mine-2'])
+    expect(inbox.items[0].kind).toBe('pings')
+    expect(inbox.items[0].label).toBe('1 family is going to "Park morning"')
+    // The comment on mine-1 is the loser of the dedupe; mine-2's survives.
+    expect(inbox.items[1].kind).toBe('comments')
+    expect(inbox.items[1].label).toBe('1 new comment on "Library run"')
+  })
+
+  it('returns an empty inbox when everything is at or before the cursor', () => {
+    const inbox = buildWhileAwayItems({
+      ...base,
+      // A ping exactly AT the cursor was already seen (strictly-after, not >=).
+      pingsOnMyPosts: [ping('mine-1', CURSOR, 'Ada'), ping('mine-2', seen(3), 'Bea')],
+      commentsOnMyPosts: [comment('mine-1', CURSOR), comment('mine-2', seen(1))],
+      // A cancellation of a drop-in that already started is not news either.
+      pingedPosts: [pinged('pd-past', 'Old lot', 'cancelled', seen(30))],
+    })
+    expect(inbox).toEqual({ items: [], moreCount: 0 })
+  })
+
+  it('reads correctly at 1: the singular "1 family is going to" (and the plural beyond)', () => {
+    const one = buildWhileAwayItems({
+      ...base,
+      pingsOnMyPosts: [ping('mine-1', after(1), 'Ada')],
+    })
+    expect(one.items[0].label).toBe('1 family is going to "Park morning"')
+    expect(one.items[0].count).toBe(1)
+
+    const three = buildWhileAwayItems({
+      ...base,
+      pingsOnMyPosts: [
+        ping('mine-1', after(1), 'Ada'),
+        ping('mine-1', after(2), 'Bea'),
+        ping('mine-1', after(3), 'Cara'),
+      ],
+    })
+    expect(three.items).toHaveLength(1)
+    expect(three.items[0].label).toBe('3 families are going to "Park morning"')
+    expect(three.items[0].count).toBe(3)
+
+    const oneComment = buildWhileAwayItems({
+      ...base,
+      commentsOnMyPosts: [comment('mine-1', after(1))],
+    })
+    expect(oneComment.items[0].label).toBe('1 new comment on "Park morning"')
+    expect(
+      buildWhileAwayItems({
+        ...base,
+        commentsOnMyPosts: [comment('mine-1', after(1)), comment('mine-1', after(2))],
+      }).items[0].label,
+    ).toBe('2 new comments on "Park morning"')
+  })
+
+  it('surfaces the newest pingers as faces, capped at the circle limit', () => {
+    const inbox = buildWhileAwayItems({
+      ...base,
+      pingsOnMyPosts: [
+        ping('mine-1', after(1), 'Ada'),
+        ping('mine-1', after(4), 'Dana'),
+        ping('mine-1', after(2), 'Bea'),
+        ping('mine-1', after(3), 'Cara'),
+      ],
+    })
+    expect(inbox.items[0].faces.map((face) => face.displayName)).toEqual(['Dana', 'Cara', 'Bea'])
+  })
+
+  it('renders a cancellation for a post whose row is GONE (null title — never a crash)', () => {
+    const inbox = buildWhileAwayItems({
+      ...base,
+      pingedPosts: [pinged('pd-gone', null, null, null)],
+    })
+    expect(inbox.items).toHaveLength(1)
+    expect(inbox.items[0].kind).toBe('cancelled')
+    expect(inbox.items[0].title).toBeNull()
+    expect(inbox.items[0].label).toBe("A drop-in you pinged was cancelled — you said you'd go")
+    expect(inbox.items[0].playdateId).toBe('pd-gone')
+  })
+
+  it('keeps an upcoming cancellation and drops a started one (the "empty park" window)', () => {
+    const inbox = buildWhileAwayItems({
+      ...base,
+      pingedPosts: [
+        pinged('pd-soon', 'Tomorrow', 'cancelled', ahead(5)),
+        pinged('pd-over', 'Yesterday', 'cancelled', seen(30)),
+      ],
+    })
+    expect(inbox.items.map((item) => item.playdateId)).toEqual(['pd-soon'])
+    expect(inbox.items[0].label).toBe('"Tomorrow" was cancelled — you said you\'d go')
+  })
+
+  it('orders two cancellations soonest-start first', () => {
+    const inbox = buildWhileAwayItems({
+      ...base,
+      pingedPosts: [
+        pinged('pd-later', 'Later', 'cancelled', ahead(30)),
+        pinged('pd-gone', null, null, null),
+        pinged('pd-sooner', 'Sooner', 'cancelled', ahead(2)),
+      ],
+    })
+    // Soonest first; the undatable (gone) row sorts last.
+    expect(inbox.items.map((item) => item.playdateId)).toEqual(['pd-sooner', 'pd-later', 'pd-gone'])
+  })
+
+  it('ignores posts that are not cancelled (a plain ping is not a cancellation)', () => {
+    const inbox = buildWhileAwayItems({
+      ...base,
+      pingedPosts: [pinged('pd-on', 'Still on', 'on', ahead(3))],
+    })
+    expect(inbox).toEqual({ items: [], moreCount: 0 })
+  })
+
+  it('a null cursor means no ping/comment news (the first visit establishes the baseline)', () => {
+    const inbox = buildWhileAwayItems({
+      ...base,
+      sinceIso: null,
+      pingsOnMyPosts: [ping('mine-1', after(1), 'Ada')],
+      commentsOnMyPosts: [comment('mine-1', after(1))],
+      // ...but a cancellation is NOT cursor-gated (the schema records no
+      // cancellation time), so it still surfaces on the very first visit.
+      pingedPosts: [pinged('pd-cancel', 'Green Lake', 'cancelled', ahead(20))],
+    })
+    expect(inbox.items.map((item) => item.kind)).toEqual(['cancelled'])
+  })
+
+  it('groups per post and uses the post title from myPosts', () => {
+    const inbox = buildWhileAwayItems({
+      ...base,
+      pingsOnMyPosts: [ping('mine-2', after(1), 'Ada'), ping('mine-2', after(2), 'Bea')],
+    })
+    expect(inbox.items).toHaveLength(1)
+    expect(inbox.items[0].label).toBe('2 families are going to "Library run"')
+  })
+})
+
+/**
+ * Minimal recording mock of the client surface the V8 ticket 03 inbox reads
+ * use (listMyPostRefsWithClient / listCommentsOnPostsWithClient /
+ * listMyPingedPostsWithClient — the makeRetentionMockClient style): each
+ * from(table) returns a thenable builder recording every call in order (the
+ * chain SHAPE is the assertion), with per-table canned rows + one shared
+ * error (the pre-apply / RLS failure the callers swallow).
+ */
+interface InboxMockConfig {
+  playdatesRows?: unknown[]
+  commentsRows?: unknown[]
+  goingPingsRows?: unknown[]
+  error?: { code: string; message: string }
+}
+
+function makeInboxMockClient(config: InboxMockConfig = {}): {
+  client: SupabaseClient
+  calls: string[]
+} {
+  const calls: string[] = []
+  const error =
+    config.error === undefined
+      ? null
+      : Object.assign(new Error(config.error.message), { code: config.error.code })
+  const makeBuilder = (table: 'playdates' | 'comments' | 'going_pings') => {
+    const builder = {
+      select: (cols: string) => {
+        calls.push(`${table}.select(${cols})`)
+        return builder
+      },
+      eq: (col: string, value: unknown) => {
+        calls.push(`${table}.eq(${col}, ${String(value)})`)
+        return builder
+      },
+      in: (col: string, values: string[]) => {
+        calls.push(`${table}.in(${col}, ${values.join(',')})`)
+        return builder
+      },
+      then: (onfulfilled?: (value: { data: unknown; error: unknown }) => unknown) => {
+        const rows =
+          table === 'playdates'
+            ? (config.playdatesRows ?? [])
+            : table === 'comments'
+              ? (config.commentsRows ?? [])
+              : (config.goingPingsRows ?? [])
+        return Promise.resolve({ data: rows, error }).then(onfulfilled)
+      },
+    }
+    return builder
+  }
+  const client = {
+    from: (table: string) => {
+      if (table !== 'playdates' && table !== 'comments' && table !== 'going_pings') {
+        throw new Error(`unexpected table: ${table}`)
+      }
+      return makeBuilder(table as 'playdates' | 'comments' | 'going_pings')
+    },
+  }
+  return { client: client as unknown as SupabaseClient, calls }
+}
+
+describe('the while-away inbox reads (V8 ticket 03)', () => {
+  it('listMyPostRefsWithClient reads the host\'s own posts (id + title, no status/end filter)', async () => {
+    const { client, calls } = makeInboxMockClient({
+      playdatesRows: [{ id: 'pd-1', title: 'Park' }, { id: null, title: 'orphan' }],
+    })
+    expect(await listMyPostRefsWithClient(client, 'me')).toEqual([{ id: 'pd-1', title: 'Park' }])
+    expect(calls).toEqual(['playdates.select(id, title)', 'playdates.eq(host_profile_id, me)'])
+  })
+
+  it('listMyPostRefsWithClient rejects on a query error (the caller shows no card)', async () => {
+    const { client } = makeInboxMockClient({
+      error: { code: '42703', message: 'column "title" does not exist' },
+    })
+    await expect(listMyPostRefsWithClient(client, 'me')).rejects.toThrow(
+      'column "title" does not exist',
+    )
+  })
+
+  it('listCommentsOnPostsWithClient reads visible comments for the post set', async () => {
+    const { client, calls } = makeInboxMockClient({
+      commentsRows: [
+        { playdate_id: 'pd-1', created_at: '2026-09-12T11:00:00.000Z', hidden_at: null },
+        { playdate_id: 'pd-2', created_at: '2026-09-12T11:30:00.000Z', hidden_at: null },
+      ],
+    })
+    expect(await listCommentsOnPostsWithClient(client, ['pd-1', 'pd-2'])).toEqual([
+      { playdateId: 'pd-1', createdAt: '2026-09-12T11:00:00.000Z' },
+      { playdateId: 'pd-2', createdAt: '2026-09-12T11:30:00.000Z' },
+    ])
+    expect(calls).toEqual([
+      'comments.select(playdate_id, created_at, hidden_at)',
+      'comments.in(playdate_id, pd-1,pd-2)',
+    ])
+  })
+
+  it('listCommentsOnPostsWithClient skips a hidden comment (the mod view — no phantom news)', async () => {
+    const { client } = makeInboxMockClient({
+      commentsRows: [
+        { playdate_id: 'pd-1', created_at: '2026-09-12T11:00:00.000Z', hidden_at: '2026-09-12T11:05:00.000Z' },
+      ],
+    })
+    expect(await listCommentsOnPostsWithClient(client, ['pd-1'])).toEqual([])
+  })
+
+  it('listCommentsOnPostsWithClient issues NO query for an empty post set', async () => {
+    const { client, calls } = makeInboxMockClient()
+    expect(await listCommentsOnPostsWithClient(client, [])).toEqual([])
+    expect(calls).toEqual([])
+  })
+
+  it('listMyPingedPostsWithClient reads the viewer\'s own pings + the pinned playdates embed', async () => {
+    const { client, calls } = makeInboxMockClient({
+      goingPingsRows: [
+        {
+          playdate_id: 'pd-1',
+          playdate: { id: 'pd-1', title: 'Park', status: 'cancelled', starts_at: '2026-09-13T17:00:00.000Z' },
+        },
+      ],
+    })
+    expect(await listMyPingedPostsWithClient(client, 'me')).toEqual([
+      {
+        playdateId: 'pd-1',
+        title: 'Park',
+        status: 'cancelled',
+        startsAt: '2026-09-13T17:00:00.000Z',
+      },
+    ])
+    expect(calls).toEqual([
+      'going_pings.select(playdate_id, playdate:playdates!going_pings_playdate_id_fkey ( id, title, status, starts_at ))',
+      'going_pings.eq(profile_id, me)',
+    ])
+  })
+
+  it('listMyPingedPostsWithClient tolerates a missing post row (nulls, never a crash)', async () => {
+    const { client } = makeInboxMockClient({
+      goingPingsRows: [{ playdate_id: 'pd-gone', playdate: null }],
+    })
+    expect(await listMyPingedPostsWithClient(client, 'me')).toEqual([
+      { playdateId: 'pd-gone', title: null, status: null, startsAt: null },
+    ])
   })
 })

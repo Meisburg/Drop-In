@@ -1,5 +1,6 @@
 /**
- * Spec (V3 slice 9, ticket 04): the host retention loop.
+ * Spec (V3 slice 9, ticket 04; assertions MOVED to the new card by V8
+ * ticket 03): the host retention loop.
  *
  * The host marker posts a drop-in (the feed mount after posting runs
  * the fire-and-forget cursor restamp — it lands post-0024-apply;
@@ -10,22 +11,29 @@
  * card-circles expect.poll gate) until the ping row lands. Then:
  * (a) /u/:handle shows "Hosted 1 drop-in" (SINGULAR — the AC pin; the
  * line depends only on the playdates table, so it is green pre- AND
- * post-apply, and it runs BEFORE the banner assert so the pre-apply
- * failure lands on the banner, never earlier); (b) the host's feed
- * shows the retention banner "1 new families pinged your drop-ins"
- * (count = the pings on the host's OWN posts created after
- * profiles.last_seen_at, the 0024 cursor). Tapping the banner
- * restamps + navigates to /profile (Your posts), and the next feed
- * visit shows no banner (the tap's restamp moved the cursor past the
- * ping).
+ * post-apply, and it runs BEFORE the news assert so the pre-apply
+ * failure lands there, never earlier); (b) the host's feed shows the
+ * "While you were away" card naming the ping —
+ * `1 family is going to "<title>"` (the SINGULAR count at 1; the count
+ * is the pings on the host's OWN posts created after
+ * profiles.last_seen_at, the 0024 cursor).
+ *
+ * V8 ticket 03 replaced the old amber banner ("N new families pinged
+ * your drop-ins", whose tap went to /profile — a dead end that named
+ * nobody) with the feed-top card. The banner's copy + tap behavior are
+ * the ONLY assertions this file changed for that reason (the ticket
+ * authorizes exactly this move: one banner, not two); the ping-COUNT
+ * part is NOT weakened — it is the same count, now asserted in the
+ * card's copy at 1. The card's item tap restamps the cursor and opens
+ * /playdate/:id, and the next feed visit shows no news (the tap's
+ * restamp moved the cursor past the ping).
  *
  * Pre-0024-apply this spec is RED by design (the 0021/0022/0023
  * pattern): the cursor never lands (the restamp 42703s and is
- * swallowed — never a crash), so the banner's count stays 0 and the
- * banner is hidden; the failure lands EXACTLY at the step-5 banner
- * assertion, and the spec completes. It goes green once the
- * orchestrator applies 0024 live (the ticket's CDP step — left
- * unchecked in the ticket until then).
+ * swallowed — never a crash), so the ping item is never built; the
+ * failure lands EXACTLY at the step-5 card assertion, and the spec
+ * completes. It goes green once the orchestrator applies 0024 live (the
+ * ticket's CDP step — left unchecked in the ticket until then).
  *
  * Cleanup (best-effort per house): the host marker's playdate rows are
  * deleted via REST with the marker's own JWT (host-only DELETE policy);
@@ -152,29 +160,27 @@ test('the host retention loop: banner + "Hosted 1 drop-in" line (red by design p
   await expect(page.getByText('Hosted 1 drop-in', { exact: true })).toBeVisible()
 
   // --- (b) THE RED POINT PRE-APPLY: a fresh feed load shows the
-  // retention banner. Post-apply the count window's baseline is the
-  // restamped cursor (set by the step-1 feed mount, before the viewer's
-  // ping), so exactly the viewer's ping counts. Pre-0024-apply the
-  // cursor never lands (the restamp 42703s, swallowed) -> count 0 ->
-  // the banner is hidden; the failure lands EXACTLY here, never a
-  // crash. ---
+  // while-away card's ping item. Post-apply the count window's baseline
+  // is the restamped cursor (set by the step-1 feed mount, before the
+  // viewer's ping), so exactly the viewer's ping counts — and it reads
+  // in the SINGULAR at 1 (the ticket's pinned copy). Pre-0024-apply the
+  // cursor never lands (the restamp 42703s, swallowed) -> no ping news
+  // -> no card; the failure lands EXACTLY here, never a crash. ---
+  const pingItem = page.getByText(`1 family is going to "${title}"`, { exact: true })
+  await page.goto('/')
+  await expect(pingItem).toBeVisible()
+
+  // --- Tap the item: the restamp (awaited) moves the cursor past the
+  // ping + the navigation lands on that post's detail page (the V8
+  // ticket 03 tap target — the old banner went to /profile). ---
+  await pingItem.click()
+  await page.waitForURL(/\/playdate\//)
+
+  // --- The tap's restamp moved the cursor past the ping: no ping news
+  // on the next feed visit (the card is gone). ---
   await page.goto('/')
   await expect(
-    page.getByText('1 new families pinged your drop-ins', { exact: true }),
-  ).toBeVisible()
-
-  // --- Tap the banner: the restamp (awaited) moves the cursor past the
-  // ping + the navigation lands on /profile (Your posts). ---
-  await page
-    .getByText('1 new families pinged your drop-ins', { exact: true })
-    .click()
-  await page.waitForURL('/profile')
-
-  // --- The tap's restamp moved the cursor past the ping: the banner is
-  // gone on the next feed visit. ---
-  await page.goto('/')
-  await expect(
-    page.getByText('1 new families pinged your drop-ins', { exact: true }),
+    page.getByText(`1 family is going to "${title}"`, { exact: true }),
   ).toHaveCount(0)
 
   await viewerContext.close()
