@@ -37,8 +37,9 @@ test('post a drop-in via the V2 slice-1 UI, see it in the feed, clean it up', as
   // Title + place (the form's required text fields).
   await page.getByPlaceholder('e.g. Playground time at Green Lake').fill(title)
   await page.getByPlaceholder('e.g. Green Lake playground, near the boathouse').fill(place)
-  // Neighborhood — one the marker follows (the setup spec's pick).
-  await page.locator('select').selectOption({ label: marker.neighborhood })
+  // V9 ticket 01: /new no longer asks for a neighbourhood — the marker's post
+  // carries none (the place picker fills it only when the place has one, and
+  // every seeded place has a NULL neighbourhood).
 
   // Start: date picker + the 30-minute stepper (V2 slice-1 time entry —
   // the time is stepped, never typed). V8 ticket 01: the stepper's default
@@ -55,8 +56,10 @@ test('post a drop-in via the V2 slice-1 UI, see it in the feed, clean it up', as
   await expect(page.getByText(`Ends ${start.endLabel(60)}`)).toBeVisible()
 
   // Post → the page navigates to / and the feed re-fetches on mount, so
-  // the marker's post appears in its own feed (the neighborhood is
-  // followed).
+  // the marker's post appears in its own feed. Since V9 ticket 01 the post
+  // carries NO neighbourhood (the form stopped asking), and it appears anyway
+  // because discovery is radius-based: the post's location falls back to the
+  // host's own home zip, which is 0 miles from the viewer.
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
   await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible()

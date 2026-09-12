@@ -46,7 +46,6 @@ import {
   readSupabaseEnv,
   settleOnRoute,
   stepStartTimeOnce,
-  type MarkerMeta,
 } from './fixtures'
 
 /**
@@ -54,17 +53,12 @@ import {
  * host-status pattern: steppers + chips, the end time computed) and land back
  * on the feed.
  */
-async function postDropIn(
-  page: Page,
-  marker: MarkerMeta,
-  title: string,
-  place: string,
-): Promise<void> {
+async function postDropIn(page: Page, title: string, place: string): Promise<void> {
   await page.goto('/new')
   await settleOnRoute(page, '/new')
   await page.getByPlaceholder('e.g. Playground time at Green Lake').fill(title)
   await page.getByPlaceholder('e.g. Green Lake playground, near the boathouse').fill(place)
-  await page.locator('select').selectOption({ label: marker.neighborhood })
+  // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   const start = await stepStartTimeOnce(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()
@@ -93,8 +87,8 @@ test('the while-away inbox names who did what, opens the post, and clears', asyn
   // --- 1. The host posts two drop-ins: one the viewer will ping, one the
   // viewer will comment on (both AFTER the cursor gets established — the feed
   // mount of the first post does that). ---
-  await postDropIn(page, marker, title, 'E2E while-away lot')
-  await postDropIn(page, marker, commentedTitle, 'E2E while-away comment lot')
+  await postDropIn(page, title, 'E2E while-away lot')
+  await postDropIn(page, commentedTitle, 'E2E while-away comment lot')
 
   // --- 2. The viewer: a fresh signed-out context (the default context
   // carries the host marker's session). Same home zip + radius as the host

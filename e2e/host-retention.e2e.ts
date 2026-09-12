@@ -70,7 +70,7 @@ test('the host retention loop: banner + "Hosted 1 drop-in" line (red by design p
   await page
     .getByPlaceholder('e.g. Green Lake playground, near the boathouse')
     .fill('E2E retention lot')
-  await page.locator('select').selectOption({ label: marker.neighborhood })
+  // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   const start = await stepStartTimeOnce(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()

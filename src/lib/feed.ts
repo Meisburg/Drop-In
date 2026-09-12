@@ -421,6 +421,16 @@ export function filterFeed<T extends FeedPost>(
  * The zip coordinates themselves are a separate tiny fetch (zip_codes, the
  * seeded gazetteer) because home_zip is a plain text column, not an FK.
  *
+ * V9 ticket 01 (migration 0035): the neighborhood embed is a PLAIN embed —
+ * PostgREST's default LEFT JOIN — because `neighborhood_id` is now nullable
+ * and a NULL-neighbourhood post must still be IN the feed. `!inner` is an
+ * INNER JOIN: with it, the row would not come back at all, so a post created
+ * from a picked place (every seeded place has a NULL neighbourhood — 0029's
+ * header) would vanish from the feed AND from the profile lists entirely.
+ * The embed name stays `neighborhood:`, so the row shape is unchanged for
+ * posts that DO carry one: object when present, `null` when not (the render
+ * sites — DropInCard, PlaydateDetailPage — handle the null, never a label).
+ *
  * The result rows keep their loose (untyped) shape; db.ts casts them to
  * PlaydateWithNeighborhood (same pattern as listMemberships).
  */
@@ -432,7 +442,9 @@ export async function queryUpcomingFeedWithClient(
   let query = client
     .from('playdates')
     .select(
-      '*, neighborhood:neighborhoods!inner ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip, radius_miles )',
+      // V9 ticket 01: NO `!inner` on the neighborhood embed (see the note
+      // above) — an inner join would drop every post that has no neighbourhood.
+      '*, neighborhood:neighborhoods ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip, radius_miles )',
     )
     .gte('starts_at', cutoffIso)
     .order('starts_at', { ascending: true })
@@ -454,6 +466,18 @@ export async function queryUpcomingFeedWithClient(
 export interface PlaydateFormValues {
   title: string
   place: string
+  /**
+   * The chosen neighbourhood id, or '' for "none".
+   *
+   * V9 ticket 01: /new no longer ASKS this question (the neighbourhood select
+   * is gone from that form — the place pick fills it only when the place
+   * carries one, and every seeded place today carries none), but the KEY stays
+   * in this shape: `PlaydateFormErrors` is `keyof PlaydateFormValues`, and
+   * /edit still renders and writes the field (its post may have one). So a
+   * '' here means "no neighbourhood", which is a legal post as of 0035 — and
+   * the write path omits the column rather than sending an empty string
+   * (feed.neighborhoodIdField: '' is not a uuid, and PostgREST would 22P02).
+   */
   neighborhoodId: string
   /** <input type="date"> value, e.g. "2026-09-04" (the device's local date). */
   startDate: string
@@ -481,11 +505,18 @@ export const TIME_STEP_MINUTES = 30
 
 /**
  * Validate the /new drop-in form (pinned rules: title required + ≤ 80
- * characters after trim; place required; neighborhood required; start date
- * required; the start time sits on the 30-minute grid; the duration is one
- * of the chips; age_hint / details optional). The end time never needs a
- * check — it is computed (start + duration > start always, since every chip
- * duration is positive).
+ * characters after trim; place required; start date required; the start time
+ * sits on the 30-minute grid; the duration is one of the chips; age_hint /
+ * details optional). The end time never needs a check — it is computed
+ * (start + duration > start always, since every chip duration is positive).
+ *
+ * V9 ticket 01: the NEIGHBOURHOOD rule is DELETED (pinned in the ticket), not
+ * made optional — "maybe you just put in the address and not a neighborhood
+ * because people aren't going to know that". `neighborhoodId` stays in the
+ * values shape (see the field's doc) but an empty one is not an error: a post
+ * with a place and nothing else must be postable, which is the whole point of
+ * the ticket. /edit shares this validator, so an edit that leaves the field at
+ * "none" is legal too — and writes NULL rather than an empty string.
  */
 export function validatePlaydateForm(values: PlaydateFormValues): PlaydateFormErrors {
   const errors: PlaydateFormErrors = {}
@@ -497,9 +528,6 @@ export function validatePlaydateForm(values: PlaydateFormValues): PlaydateFormEr
   }
   if (values.place.trim().length === 0) {
     errors.place = 'Add a place (park, lot, field).'
-  }
-  if (values.neighborhoodId.length === 0) {
-    errors.neighborhoodId = 'Pick a neighborhood.'
   }
   if (values.startDate.length === 0) {
     errors.startDate = 'Pick a start date.'
@@ -513,6 +541,32 @@ export function validatePlaydateForm(values: PlaydateFormValues): PlaydateFormEr
     errors.durationMinutes = 'Pick a duration.'
   }
   return errors
+}
+
+/**
+ * The `neighborhood_id` insert key — present ONLY when a neighbourhood was
+ * actually chosen (the `seriesIdField` (V8 ticket 06) / `placeIdField` (V8
+ * ticket 07) pattern, and the 0021 address lesson before them).
+ *
+ * WHY the spread and not `neighborhood_id: input.neighborhoodId ?? null`:
+ *
+ * 1. An EMPTY STRING must never reach PostgREST. Since V9 ticket 01 removed
+ *    the select from /new, the form's value is '' for a normal post — and
+ *    `''` is not a uuid, so sending it would fail with 22P02 ("invalid input
+ *    syntax for type uuid") BOTH before and AFTER 0035 drops the NOT NULL.
+ *    Omitting the key is the only spelling that means "no neighbourhood".
+ * 2. Pre-0035-apply, an omitted key on a NOT NULL column is a 23502
+ *    ("null value in column \"neighborhood_id\" ... violates not-null
+ *    constraint") — the documented red-by-design point of e2e/post-location,
+ *    and exactly the failure the ticket predicts for a post with no
+ *    neighbourhood. After 0035 it is simply NULL.
+ */
+export function neighborhoodIdField(
+  neighborhoodId?: string | null,
+): { neighborhood_id?: string } {
+  const id = (neighborhoodId ?? '').trim()
+  if (id === '') return {}
+  return { neighborhood_id: id }
 }
 
 /** True when `minutes` is a valid start time: on the 30-minute grid, one day. */
@@ -555,6 +609,31 @@ export function formatTimeLabel(minutes: number): string {
 /** The chip label for a duration in minutes (60 → "1h", 90 → "1.5h"). */
 export function durationLabel(minutes: number): string {
   return `${minutes / 60}h`
+}
+
+/**
+ * The card's meta-line time window, locale-formatted: "3 PM–5 PM" (the minutes
+ * drop at :00, so an on-the-hour window stays short).
+ *
+ * Moved here from DropInCard (V9 ticket 01, review cycle 1, F3): it is a pure
+ * formatting rule with no React in it, and the e2e that pins the card's meta
+ * line needs THE RULE rather than a second copy of it (`formatTimeWindow` is
+ * what the card renders, so the spec now asserts against the same function —
+ * the house lesson about importing a seam instead of restating it).
+ *
+ * Locale-sensitive by design (`toLocaleTimeString` with the device's locale):
+ * the spec compares with whitespace collapsed, because some ICU builds put a
+ * NARROW NO-BREAK SPACE before AM/PM and others a plain one.
+ */
+export function formatTimeWindow(startIso: string, endIso: string): string {
+  const format = (iso: string): string => {
+    const d = new Date(iso)
+    return d.toLocaleTimeString(undefined, {
+      hour: 'numeric',
+      minute: d.getMinutes() === 0 ? undefined : '2-digit',
+    })
+  }
+  return `${format(startIso)}–${format(endIso)}`
 }
 
 /**
@@ -615,7 +694,8 @@ export function computeEndIso(
 export function playdateFormValuesFromPost(post: {
   title: string
   place: string
-  neighborhood_id: string
+  /** V9 ticket 01: NULL once 0035 lands (a post may carry no neighbourhood). */
+  neighborhood_id: string | null
   starts_at: string
   ends_at: string
   details: string | null
@@ -627,7 +707,9 @@ export function playdateFormValuesFromPost(post: {
   return {
     title: post.title,
     place: post.place,
-    neighborhoodId: post.neighborhood_id,
+    // NULL → '' : a select's value is a string, and '' is this shape's "none"
+    // (the empty option the /edit form already renders).
+    neighborhoodId: post.neighborhood_id ?? '',
     startDate: localDayKey(start.toISOString()),
     startMinutes: start.getHours() * 60 + start.getMinutes(),
     durationMinutes: isDuration(durationMinutes) ? durationMinutes : 0,
@@ -645,7 +727,8 @@ export interface PlaydateEditOriginal {
   place: string
   /** Null when the post has no address (or pre-0021-apply). */
   address: string | null
-  neighborhood_id: string
+  /** V9 ticket 01: null when the post carries no neighbourhood (post-0035). */
+  neighborhood_id: string | null
   starts_at: string
   ends_at: string
   /** Null when the post has no details. */
@@ -662,6 +745,12 @@ export interface PlaydateEditOriginal {
  *
  * Timestamps compare by instant (Date.parse), so the ISO spelling Postgres
  * returns (e.g. "+00:00" vs "Z") is never mistaken for a change.
+ *
+ * V9 ticket 01: the neighbourhood compares `''`-to-NULL as UNCHANGED. The
+ * stored value may now be NULL and the form's is always a string ('' is its
+ * "none"), so comparing them raw would report a change on every open of a
+ * neighbourhood-less post and make the edit form write on a save that changed
+ * nothing.
  */
 export function playdateEditFieldsChanged(
   original: PlaydateEditOriginal,
@@ -673,7 +762,7 @@ export function playdateEditFieldsChanged(
     values.title.trim() !== original.title ||
     values.place.trim() !== original.place ||
     addressNext !== (original.address ?? '') ||
-    values.neighborhoodId !== original.neighborhood_id ||
+    values.neighborhoodId !== (original.neighborhood_id ?? '') ||
     Date.parse(computeStartIso(values.startDate, values.startMinutes)) !==
       Date.parse(original.starts_at) ||
     Date.parse(
@@ -732,14 +821,15 @@ export async function queryMyPlaydatesWithClient(
 export function toDuplicatePrefill(post: {
   title: string
   place: string
-  neighborhood_id: string
+  /** V9 ticket 01: NULL once 0035 lands — '' ("none") in the prefill. */
+  neighborhood_id: string | null
   age_hint: string | null
   details: string | null
 }): DuplicatePrefill {
   return {
     title: post.title,
     place: post.place,
-    neighborhoodId: post.neighborhood_id,
+    neighborhoodId: post.neighborhood_id ?? '',
     ageHint: post.age_hint ?? '',
     details: post.details ?? '',
   }
@@ -1043,7 +1133,11 @@ export function suggestedDurationMinutes(nowIso: string): number {
 /**
  * One remembered place, ready to fill three /new fields in a single tap
  * (ticket 01): the place text, its address ('' when the post had none), and
- * the neighborhood the post used.
+ * the neighborhood the post used — '' when it had none, which since V9
+ * ticket 01 is the ordinary case (every seeded place has a NULL
+ * neighbourhood, and /new no longer asks). The chip's REAL payload is the
+ * place + its address; the neighbourhood rides along unchanged for the paths
+ * that still carry one.
  */
 export interface RecentPlace {
   place: string
@@ -1056,9 +1150,17 @@ export interface RecentPlace {
  * (`queryRecentOwnPlacesWithClient` order): rows with no place are dropped,
  * duplicates collapse on a case/whitespace-insensitive place key (the NEWEST
  * wins — the input order), and the result is capped at `limit`.
+ *
+ * V9 ticket 01: the row's `neighborhood_id` is nullable and maps to '' — the
+ * chip still works on BOTH paths (a remembered free-text place, and a
+ * remembered picked place, whose neighbourhood was NULL all along).
  */
 export function recentPlacesFrom(
-  rows: ReadonlyArray<{ place: string; address: string | null; neighborhood_id: string }>,
+  rows: ReadonlyArray<{
+    place: string
+    address: string | null
+    neighborhood_id: string | null
+  }>,
   limit: number = RECENT_PLACES_SHOWN,
 ): RecentPlace[] {
   const seen = new Set<string>()
@@ -1072,7 +1174,7 @@ export function recentPlacesFrom(
     out.push({
       place,
       address: (row.address ?? '').trim(),
-      neighborhoodId: row.neighborhood_id,
+      neighborhoodId: row.neighborhood_id ?? '',
     })
     if (out.length >= limit) break
   }

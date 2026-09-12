@@ -282,4 +282,23 @@ describe('the display + payload seams', () => {
       timezone: 'America/Los_Angeles',
     })
   })
+
+  it('omits neighborhood_id when no neighbourhood was chosen (V9 ticket 01: "Repeat weekly" without one)', () => {
+    // The series row is built from the same /new values as the post, so it
+    // inherits the same "no question asked" state. An omitted key is what
+    // makes the pre-0035 failure an honest 23502 rather than a 22P02 on an
+    // empty string — and it is why 0035 also drops NOT NULL on
+    // playdate_series.neighborhood_id (the same question one table over).
+    const row = seriesInsertRow('user-1', {
+      title: 'Green Lake, Saturdays',
+      place: 'Green Lake playground',
+      neighborhoodId: '',
+      weekday: 6,
+      startMinutes: 600,
+      durationMinutes: 120,
+      timezone: 'America/Los_Angeles',
+    })
+    expect('neighborhood_id' in row).toBe(false)
+    expect(row).not.toMatchObject({ neighborhood_id: '' })
+  })
 })

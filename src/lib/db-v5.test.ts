@@ -113,6 +113,19 @@ describe('updatePlaydateWithClient (V8 ticket 05)', () => {
     expect(payloads[0]).toMatchObject({ details: null, address: null })
   })
 
+  it('writes NULL — never an empty string — when the neighbourhood is cleared (V9 ticket 01)', async () => {
+    // The select's empty option used to be un-submittable: the validator
+    // required a neighbourhood. It is a legal answer now (a post may carry
+    // none), and '' is not a uuid — PostgREST would 22P02 before AND after
+    // 0035 drops the NOT NULL.
+    const { client, payloads } = makeWriteMockClient()
+    await updatePlaydateWithClient(client, 'pd-1', { ...INPUT, neighborhoodId: '' })
+    expect(payloads[0]).toMatchObject({ neighborhood_id: null })
+    const again = makeWriteMockClient()
+    await updatePlaydateWithClient(again.client, 'pd-1', { ...INPUT, neighborhoodId: '  ' })
+    expect(again.payloads[0]).toMatchObject({ neighborhood_id: null })
+  })
+
   it('throws on a write error (the page renders its designed error line)', async () => {
     const { client } = makeWriteMockClient({
       error: { code: '42501', message: 'new row violates row-level security policy' },

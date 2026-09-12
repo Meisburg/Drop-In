@@ -1,8 +1,12 @@
 import { Link } from 'react-router'
 import { PhotoButton } from './ImageLightbox'
+// V9 ticket 01 (review cycle 1, F3): `formatTimeWindow` used to live at the
+// bottom of this file. It moved to feed.ts so e2e/post-location can assert the
+// meta line against the SAME rule the card renders, instead of a copy of it.
 import {
   buildGoingLine,
   formatDistanceLabel,
+  formatTimeWindow,
   GOING_CIRCLE_LIMIT,
   isEnded,
   isHappeningNow,
@@ -162,6 +166,10 @@ export function DropInCard({
   ]
     .filter((c) => c !== '')
     .join(' ')
+  // V9 ticket 01: the post's neighbourhood label, or null when it has none
+  // (the ordinary case now — every seeded place carries none, and /new stopped
+  // asking). One derived value, so the meta line has exactly one rule.
+  const neighborhoodLabel = playdate.neighborhood?.name ?? null
   return (
     <Link to={`/playdate/${playdate.id}`} className={cardClasses}>
       <div className="flex flex-col gap-1">
@@ -201,8 +209,15 @@ export function DropInCard({
           </div>
         </div>
         <p className="text-sm text-slate-700">{playdate.place}</p>
+        {/* V9 ticket 01: the neighbourhood label renders ONLY when the post
+            carries one. The line above is already the place, so the meta line
+            is `neighborhood · window` — and with no neighbourhood it is the
+            WINDOW alone. Never `{null} · …` (React would print nothing and
+            leave a dangling separator) and never the word "null": the post is
+            normal, the parent just was not asked. */}
         <p className="text-sm text-slate-600">
-          {playdate.neighborhood.name} · {formatTimeWindow(playdate.starts_at, playdate.ends_at)}
+          {neighborhoodLabel !== null ? `${neighborhoodLabel} · ` : ''}
+          {formatTimeWindow(playdate.starts_at, playdate.ends_at)}
           {/* V8 ticket 06: ` · weekly` (text, right after the time window) when
               this post is an occurrence of a weekly series — the pure
               weeklyMetaSuffix seam returns '' for a one-off, so nothing
@@ -385,16 +400,4 @@ export function HostAvatar({
       {(host.display_name.charAt(0) || '?').toUpperCase()}
     </span>
   )
-}
-
-/** Locale-formatted time window, e.g. "3 PM–5 PM" (minutes drop at :00). */
-function formatTimeWindow(startIso: string, endIso: string): string {
-  const format = (iso: string): string => {
-    const d = new Date(iso)
-    return d.toLocaleTimeString(undefined, {
-      hour: 'numeric',
-      minute: d.getMinutes() === 0 ? undefined : '2-digit',
-    })
-  }
-  return `${format(startIso)}–${format(endIso)}`
 }

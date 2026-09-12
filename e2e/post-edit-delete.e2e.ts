@@ -41,7 +41,13 @@ import type { Page } from '@playwright/test'
 // The app's own label + stepper math (feed.ts is pure — its imports are all
 // `import type`), so a spec expectation is the rule the form applies, never
 // a copy of it (the quick-post.e2e.ts note).
-import { formatTimeLabel, stepTimeMinutes, TIME_STEP_MINUTES } from '../src/lib/feed'
+import {
+  computeEndIso,
+  computeStartIso,
+  formatTimeLabel,
+  stepTimeMinutes,
+  TIME_STEP_MINUTES,
+} from '../src/lib/feed'
 import {
   localDatePlusDays,
   readMarkerMeta,
@@ -67,12 +73,11 @@ async function postMarkerDropIn(
   title: string,
   startDate: string,
 ): Promise<{ startLabel: string; startMinutes: number }> {
-  const marker = readMarkerMeta()
   await page.goto('/new')
   await settleOnRoute(page, '/new')
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(PLACE)
-  await page.locator('select').selectOption({ label: marker.neighborhood })
+  // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
   await page.locator('input[type="date"]').fill(startDate)
   const start = await stepStartTimeOnce(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()
@@ -136,7 +141,8 @@ test('the host fixes the start time — the card and the detail show the new win
   await expect(page.getByRole('heading', { name: 'Edit your drop-in' })).toBeVisible()
 
   // (c) PREFILLED with the post as stored — title, place, date, the exact
-  // start time, the duration chip, the neighborhood.
+  // start time, the duration chip, and the neighbourhood field showing what
+  // the post actually stores.
   await expect(page.getByPlaceholder(TITLE_PLACEHOLDER)).toHaveValue(title)
   await expect(page.getByPlaceholder(PLACE_PLACEHOLDER)).toHaveValue(PLACE)
   await expect(page.locator('input[type="date"]')).toHaveValue(startDate)
@@ -145,7 +151,17 @@ test('the host fixes the start time — the card and the detail show the new win
     'aria-pressed',
     'true',
   )
-  await expect(page.locator('select')).toHaveValue(/.+/)
+  // V9 ticket 01 CHANGED THIS ASSERTION, deliberately. It used to be
+  // `await expect(page.locator('select')).toHaveValue(/.+/)` — pinning that a
+  // post created through /new arrives on /edit WITH a neighbourhood, because
+  // /new forced the parent to pick one. That is exactly the requirement the
+  // ticket deletes: /new no longer asks, so this post (made by the helper
+  // above) stores NULL and the select's empty option is the honest prefill.
+  // What stays pinned is the part that must not regress: the CONTROL is still
+  // there (it is /edit's field now — a post that HAS a neighbourhood must
+  // still be visible and fixable), and it shows the stored state.
+  await expect(page.locator('select')).toHaveCount(1)
+  await expect(page.locator('select')).toHaveValue('')
   await expect(page.getByText(`Ends ${oldEndLabel}`)).toBeVisible()
 
   // (d) The edit: a typo'd time moved an hour later, and the plan now runs 2h.
@@ -317,6 +333,94 @@ test('a signed-out visitor never reaches the edit form', async ({ page, browser 
   } finally {
     await anonContext.close()
   }
+})
+
+test('the neighbourhood field: a stored one is prefilled, and clearing it writes NULL', async ({
+  page,
+}) => {
+  // Review cycle 1, F2. The assertion this ticket replaced — /edit's
+  // `select` showing a stored neighbourhood — was the ONLY coverage anywhere
+  // that /edit PREFILLS the field (no other spec opens /edit at all), so the
+  // property had to come back somewhere, and it now covers the other half too:
+  // the field's empty option is a legal answer since 0035, and an empty answer
+  // must clear the COLUMN (write NULL), not be skipped or written as ''.
+  //
+  // The fixture is seeded over REST WITH a real neighbourhood id (the
+  // polish.e2e.ts pattern), because /new can no longer produce such a post —
+  // which is exactly why this half of the behaviour needed re-homing here.
+  const marker = readMarkerMeta()
+  const title = `e2e ${marker.displayName} neighbourhood edit`
+  const { url, anonKey } = readSupabaseEnv()
+  const { accessToken, userId } = readMarkerSession()
+  const headers: Record<string, string> = {
+    apikey: anonKey,
+    Authorization: `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+  }
+  const hoodRes = await fetch(`${url}/rest/v1/neighborhoods?select=id,name&limit=1`, { headers })
+  const hoods = (await hoodRes.json()) as Array<{ id: string; name: string }>
+  const neighborhood = hoods[0]
+  expect(
+    neighborhood?.id,
+    `the neighborhoods seed must be readable (HTTP ${hoodRes.status})`,
+  ).toBeTruthy()
+  // The instants go through the app's own pure seams AND land on the pinned
+  // 30-minute grid. A seed at "now + 3 days" keeps the CURRENT minute, and /edit
+  // prefills the start EXACTLY as stored (playdateFormValuesFromPost never
+  // snaps), so the shared validator then refuses the save with "Pick a start
+  // time." — the first draft of this test failed exactly there, with the save
+  // blocked and the row untouched. 10:00 AM is a grid slot by construction.
+  const startDate = localDatePlusDays(3)
+  const startMinutes = 10 * 60
+  const created = await fetch(`${url}/rest/v1/playdates`, {
+    method: 'POST',
+    headers: { ...headers, Prefer: 'return=representation' },
+    body: JSON.stringify({
+      host_profile_id: userId,
+      // THE POINT: a real uuid, not null.
+      neighborhood_id: neighborhood.id,
+      title,
+      place: 'E2E neighbourhood lot',
+      starts_at: computeStartIso(startDate, startMinutes),
+      ends_at: computeEndIso(startDate, startMinutes, 60),
+    }),
+  })
+  const rows = (await created.json()) as Array<{ id: string }>
+  expect(rows[0]?.id, `the seeded post must insert (HTTP ${created.status})`).toBeTruthy()
+  const detailPath = `/playdate/${rows[0].id}`
+
+  await page.goto(`${detailPath}/edit`)
+  await expect(page.getByRole('heading', { name: 'Edit your drop-in' })).toBeVisible()
+
+  // (i) The select shows the STORED neighbourhood — the prefill the deleted
+  //     assertion covered (now checked against the id, not against any value).
+  const select = page.locator('select')
+  await expect(select).toHaveCount(1)
+  await expect(select).toHaveValue(neighborhood.id)
+  await expect(select.locator('option:checked')).toHaveText(neighborhood.name)
+
+  // (ii) Clearing it is now legal (the validator's rule is gone — V9 ticket 01)
+  //      and must write NULL. The empty option is the form's "none".
+  await select.selectOption('')
+  await expect(select).toHaveValue('')
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect(page).toHaveURL(new RegExp(`${detailPath}$`))
+
+  // The row in the database: the column is NULL, not '' and not the old id.
+  const readBack = await fetch(
+    `${url}/rest/v1/playdates?id=eq.${rows[0].id}&select=neighborhood_id`,
+    { headers },
+  )
+  const stored = (await readBack.json()) as Array<{ neighborhood_id: string | null }>
+  expect(stored[0]?.neighborhood_id ?? null).toBeNull()
+
+  // …and the detail page renders with no neighbourhood label at all: the place
+  // line is exactly the place (the same exact-text guard post-location uses;
+  // this place has no address and no place_id, so the line is plain text).
+  await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
+  const placeLine = page.locator('p').filter({ hasText: 'E2E neighbourhood lot' })
+  await expect(placeLine).toHaveCount(1)
+  await expect(placeLine).toHaveText('E2E neighbourhood lot')
 })
 
 test.afterEach(async () => {

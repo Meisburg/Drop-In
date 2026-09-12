@@ -218,7 +218,6 @@ async function postDropIn(
   page: Page,
   options: {
     title: string
-    neighborhood: string
     startDate: string
     weekly?: boolean
     durationLabel?: string
@@ -229,7 +228,7 @@ async function postDropIn(
   await settleOnRoute(page, '/new')
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(options.title)
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(PLACE)
-  await page.locator('select').selectOption({ label: options.neighborhood })
+  // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
   await page.locator('input[type="date"]').fill(options.startDate)
   await page.getByRole('button', { name: options.durationLabel ?? '1h', exact: true }).click()
   if (options.weekly === true) {
@@ -281,18 +280,15 @@ test('a follow is a bookmark: the card says who you met, and an ended post offer
   //     plus today's upcoming post — the card the met-before line appears on.
   const ended = await postDropIn(page, {
     title: titleEnded,
-    neighborhood: marker.neighborhood,
     startDate: localDatePlusDays(-1),
   })
   const endedWeekly = await postDropIn(page, {
     title: titleEndedWeekly,
-    neighborhood: marker.neighborhood,
     startDate: localDatePlusDays(-1),
     weekly: true,
   })
   const next = await postDropIn(page, {
     title: titleNext,
-    neighborhood: marker.neighborhood,
     startDate: localDatePlusDays(0),
   })
   const nowIso = new Date().toISOString()

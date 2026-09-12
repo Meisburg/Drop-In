@@ -25,7 +25,6 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import {
   localDatePlusDays,
-  readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
   settleOnRoute,
@@ -37,14 +36,13 @@ const VIEWER_ZIP = '98107'
 
 /** The marker host posts a drop-in through the /new UI (the golden-path pattern). */
 async function postMarkerDropIn(page: Page, title: string): Promise<void> {
-  const marker = readMarkerMeta()
   await page.goto('/new')
   await settleOnRoute(page, '/new')
   await page.getByPlaceholder('e.g. Playground time at Green Lake').fill(title)
   await page
     .getByPlaceholder('e.g. Green Lake playground, near the boathouse')
     .fill('E2E comments lot')
-  await page.locator('select').selectOption({ label: marker.neighborhood })
+  // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   const start = await stepStartTimeOnce(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()

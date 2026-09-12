@@ -73,7 +73,7 @@ async function postDropIn(page: Page, title: string, startDate: string): Promise
   await page
     .getByPlaceholder('e.g. Green Lake playground, near the boathouse')
     .fill('E2E profile-posts lot')
-  await page.locator('select').selectOption({ label: readMarkerMeta().neighborhood })
+  // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
   await page.locator('input[type="date"]').fill(startDate)
   await stepStartTimeOnce(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()

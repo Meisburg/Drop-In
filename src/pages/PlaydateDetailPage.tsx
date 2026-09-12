@@ -1513,8 +1513,16 @@ export function PlaydateDetailPage() {
               </a>
             ) : (
               d.place
-            )}{' '}
-            · {d.neighborhood_name}
+            )}
+            {/* V9 ticket 01: `· <neighbourhood>` renders ONLY when the RPC
+                returned one. 0035's LEFT JOIN means neighborhood_name is null
+                for a post with no neighbourhood, and the signed-out view must
+                tolerate it as a MISSING LABEL rather than an error: a dangling
+                " · " (or the string "null") would be a visible bug on a post
+                that is perfectly fine. The window is the line below. */}
+            {d.neighborhood_name !== null && d.neighborhood_name !== ''
+              ? ` · ${d.neighborhood_name}`
+              : ''}
           </p>
         </div>
 
@@ -1742,8 +1750,15 @@ export function PlaydateDetailPage() {
             </a>
           ) : (
             detail.place
-          )}{' '}
-          · {detail.neighborhood.name}
+          )}
+          {/* V9 ticket 01: the neighbourhood label only when the post HAS one
+              (the LEFT JOIN embed yields null, and every post created from this
+              version on has none — the parent was never asked). `place · window`
+              is the shape: the place on this line, the window in the card
+              below, and no dangling separator in between. */}
+          {detail.neighborhood !== null && detail.neighborhood !== undefined
+            ? ` · ${detail.neighborhood.name}`
+            : ''}
         </p>
       </div>
 

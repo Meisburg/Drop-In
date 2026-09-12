@@ -147,7 +147,6 @@ async function postMarkerDropInWithKids(
   title: string,
   kids: MarkerKid[],
 ): Promise<string> {
-  const marker = readMarkerMeta()
   await page.goto('/new')
   // A cold load can lose the route to the onboarding-gate race — settle
   // on /new via the app's own navigation once the SPA state is warm.
@@ -156,7 +155,7 @@ async function postMarkerDropInWithKids(
   await page
     .getByPlaceholder('e.g. Green Lake playground, near the boathouse')
     .fill(PLACE)
-  await page.locator('select').selectOption({ label: marker.neighborhood })
+  // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   const start = await stepStartTimeOnce(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()

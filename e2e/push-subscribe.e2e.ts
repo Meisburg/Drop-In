@@ -57,7 +57,6 @@ import {
   readSupabaseEnv,
   settleOnRoute,
   stepStartTimeOnce,
-  type MarkerMeta,
 } from './fixtures'
 
 const TITLE_PLACEHOLDER = 'e.g. Playground time at Green Lake'
@@ -323,12 +322,12 @@ async function registeredEndpoints(
  * Post one drop-in through the /new UI as the marker (the while-away spec's
  * helper) so a SECOND account has something to ping.
  */
-async function postDropIn(page: Page, marker: MarkerMeta, title: string, place: string): Promise<void> {
+async function postDropIn(page: Page, title: string, place: string): Promise<void> {
   await page.goto('/new')
   await settleOnRoute(page, '/new')
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(place)
-  await page.locator('select').selectOption({ label: marker.neighborhood })
+  // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   const start = await stepStartTimeOnce(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()
@@ -467,7 +466,7 @@ test('the prompt follows a real action, and "Not now" is answered with the inbox
   await expect(page.getByTestId('push-optin-prompt')).toHaveCount(0)
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(place)
-  await page.locator('select').selectOption({ label: marker.neighborhood })
+  // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
   await page.getByRole('button', { name: '1h', exact: true }).click()
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
@@ -509,7 +508,7 @@ test('a saved ping arms the prompt, and denying it surfaces the inbox note', asy
   const endpoint = `https://push.example.test/e2e-ping-${Date.now()}`
 
   // --- 1. The marker HOSTS a drop-in (nobody can ping their own post). ---
-  await postDropIn(page, marker, title, 'E2E push ping lot')
+  await postDropIn(page, title, 'E2E push ping lot')
 
   // --- 2. A SECOND account, signed in with the push stub installed, is the one
   // whose ping must arm the prompt: the arm sites are on the pinger's device. ---

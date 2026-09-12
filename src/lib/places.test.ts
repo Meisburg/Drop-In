@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   browsePlaces,
+  browsePlaceList,
   coordNumber,
   matchPlaces,
   placeAgeFitLabel,
@@ -10,13 +11,19 @@ import {
   placeIndoorLabel,
   placeKindLabel,
   placePath,
+  placePickerMatches,
+  placePickPatch,
   placeUpcomingLabel,
+  PLACE_BROWSE_LIMIT,
   PLACE_SUGGESTION_LIMIT,
   resolvePlaceByName,
   SOMEWHERE_ELSE_LABEL,
   sortPlaceUpcoming,
+  stripPlaceAlias,
   upcomingCountByPlace,
+  usesPlaceAlias,
 } from './places'
+import { neighborhoodIdField } from './feed'
 import type { Place } from './types'
 import type { ZipCoords } from './feed'
 
@@ -367,6 +374,142 @@ describe('placeIdField (the insert key, present only for a picked place)', () =>
 
   it('carries the id when a place was actually picked', () => {
     expect(placeIdField('place-1')).toEqual({ place_id: 'place-1' })
+  })
+})
+
+describe('the /new place PICKER (V9 ticket 01)', () => {
+  const DIRECTORY = [
+    place({ name: 'Ballard Commons', address: '5701 22nd Ave NW' }),
+    place({ name: 'Green Lake Park', address: '7201 East Green Lake Dr N' }),
+    place({ name: 'Discovery Park', address: '3801 Discovery Park Blvd' }),
+    place({ name: 'Carkeek Park', address: '950 NW Carkeek Park Rd' }),
+  ]
+
+  it('strips ONE leading @ (the alias) and nothing else', () => {
+    expect(stripPlaceAlias('@green')).toBe('green')
+    expect(stripPlaceAlias('  @green lake  ')).toBe('green lake')
+    expect(stripPlaceAlias('green')).toBe('green')
+    // Only the FIRST character is an alias: an @ inside a name is text.
+    expect(stripPlaceAlias('park @ 5th')).toBe('park @ 5th')
+    expect(stripPlaceAlias('@@green')).toBe('@green')
+    // A bare alias is NO place at all — which is what makes the validator ask
+    // for one instead of posting the character.
+    expect(stripPlaceAlias('@')).toBe('')
+    expect(stripPlaceAlias('   ')).toBe('')
+  })
+
+  it('reports whether the alias was used', () => {
+    expect(usesPlaceAlias('@')).toBe(true)
+    expect(usesPlaceAlias('@green')).toBe(true)
+    expect(usesPlaceAlias('  @green')).toBe(true)
+    expect(usesPlaceAlias('green @')).toBe(false)
+    expect(usesPlaceAlias('')).toBe(false)
+  })
+
+  it('browses the directory A→Z, deterministically, capped', () => {
+    // The browse cap is deliberately larger than the typed-suggestion cap: the
+    // button says "show me the directory", the field says "find this one".
+    expect(PLACE_BROWSE_LIMIT).toBeGreaterThan(PLACE_SUGGESTION_LIMIT)
+    const listed = browsePlaceList(DIRECTORY, 3)
+    expect(listed.map((p) => p.name)).toEqual([
+      'Ballard Commons',
+      'Carkeek Park',
+      'Discovery Park',
+    ])
+    expect(browsePlaceList(DIRECTORY, 99)).toHaveLength(4)
+    expect(browsePlaceList(DIRECTORY, 0)).toEqual([])
+  })
+
+  it('a bare @ shows the directory (an alias for the picker, not for an empty list)', () => {
+    // This is the whole reason the picker has three states: with a query-only
+    // rule, typing `@` would open a list containing nothing but "Somewhere
+    // else", which is not an alias for anything a parent can see.
+    expect(placePickerMatches('@', DIRECTORY, 6, true).map((p) => p.name)).toEqual([
+      'Ballard Commons',
+      'Carkeek Park',
+      'Discovery Park',
+      'Green Lake Park',
+    ])
+  })
+
+  it('typing (not browsing) matches the ranked query, and shows NOTHING when empty', () => {
+    expect(placePickerMatches('green', DIRECTORY, 6, false).map((p) => p.name)).toEqual([
+      'Green Lake Park',
+    ])
+    expect(placePickerMatches('', DIRECTORY, 6, false)).toEqual([])
+  })
+
+  it('the @ alias matches the same places the plain query does', () => {
+    expect(placePickerMatches('@green', DIRECTORY, 6, false)).toEqual(
+      placePickerMatches('green', DIRECTORY, 6, false),
+    )
+  })
+
+  it('narrowing a browse list keeps the query rule (address matches still count)', () => {
+    expect(placePickerMatches('carkeek', DIRECTORY, 6, true).map((p) => p.name)).toEqual([
+      'Carkeek Park',
+    ])
+    // Rank 3: the query appears only in the ADDRESS.
+    expect(placePickerMatches('3801', DIRECTORY, 6, true).map((p) => p.name)).toEqual([
+      'Discovery Park',
+    ])
+  })
+})
+
+describe('placePickPatch (V9 ticket 01: what one tap on a suggestion writes into the form)', () => {
+  it('fills place + address together, and the form value is "" when the place has no neighbourhood', () => {
+    // The seeded case (every one of 0029's rows): no neighbourhood at all. The
+    // form value is the shape's own "none" (''), not null — the field is a
+    // string and the write seam (feed.neighborhoodIdField) omits the key for ''.
+    expect(
+      placePickPatch(
+        place({
+          name: 'Green Lake Park',
+          address: '7201 East Green Lake Dr N',
+          neighborhood_id: null,
+        }),
+      ),
+    ).toEqual({
+      place: 'Green Lake Park',
+      address: '7201 East Green Lake Dr N',
+      neighborhoodId: '',
+    })
+    // A place that DOES carry one hands it to the post — a suggestion, never a
+    // decision, and never a guess when the directory is silent.
+    expect(
+      placePickPatch(
+        place({ name: 'Ballard Commons', address: '5701 22nd Ave NW', neighborhood_id: 'n-bal' }),
+      ),
+    ).toEqual({
+      place: 'Ballard Commons',
+      address: '5701 22nd Ave NW',
+      neighborhoodId: 'n-bal',
+    })
+  })
+
+  it('the pick REPLACES the neighbourhood, including with none (review cycle 1, F1)', () => {
+    // THE BUG THIS PINS. On /new the neighbourhood field is not rendered
+    // (showNeighborhood={false}), but a "Recent places" chip still writes the
+    // remembered post's REAL id into the form (applyRecentPlace). Picking a
+    // directory place after that must NOT keep that invisible id: the post would
+    // carry the old place's neighbourhood next to the new place. The seam takes
+    // only the place, so "fall back to what the form held" is not expressible —
+    // and this asserts the outcome for the chip-then-pick sequence explicitly.
+    const chipRemembered = 'hood-from-an-older-post'
+    const patch = placePickPatch(place({ name: 'Green Lake Park', neighborhood_id: null }))
+    // What the page writes: patch.neighborhoodId, never a merge with the chip's.
+    const formValueAfterPick = patch.neighborhoodId
+    expect(formValueAfterPick).toBe('')
+    expect(formValueAfterPick).not.toBe(chipRemembered)
+    // …and the write seam then omits the column entirely, so the post stores
+    // NULL rather than the stale id.
+    expect(neighborhoodIdField(formValueAfterPick)).toEqual({})
+  })
+
+  it('fills the directory row\'s address verbatim (the seed guarantees one — 0029:128)', () => {
+    expect(placePickPatch(place({ name: 'Carkeek Park', address: '950 NW Carkeek Park Rd' })).address).toBe(
+      '950 NW Carkeek Park Rd',
+    )
   })
 })
 

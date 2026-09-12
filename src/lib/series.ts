@@ -3,8 +3,9 @@
  * (migration 0028). No I/O and no globals beyond `Intl` — the
  * `/new` form, the card, the detail page and the e2e spec all evaluate the
  * SAME rules through this module, and `series.test.ts` is the guarantee.
- * (Its one import, `placeIdField` from ./places, is itself pure — V8 ticket
- * 07 reuses that seam rather than writing a second copy of the rule.)
+ * (Its imports, `placeIdField` from ./places and `neighborhoodIdField` from
+ * ./feed, are themselves pure — V8 ticket 07 and V9 ticket 01 reuse those
+ * seams rather than writing a second copy of the rule.)
  *
  * The pinned model (ticket 06, "occurrences are real playdates rows"):
  *
@@ -27,6 +28,7 @@
  *   (` · weekly`), NOT a new badge: the badge slot already carries
  *   status / ended / happening-now / starts-soon / rain.
  */
+import { neighborhoodIdField } from './feed'
 import { placeIdField } from './places'
 
 /** The generator's horizon in days (pinned: 21 days ahead). */
@@ -67,6 +69,14 @@ export interface NewPlaydateSeriesInput {
   /** <=120 chars, trimmed by the form; undefined = none. */
   address?: string
   details?: string
+  /**
+   * The chosen neighbourhood, or '' / null for NONE (V9 ticket 01: /new no
+   * longer asks). The key is OMITTED from the row when it is empty
+   * (neighborhoodIdField) — never sent as '' (not a uuid) — so this is the
+   * SECOND column 0035 must make nullable: the series row would otherwise fail
+   * its own insert (23502) before a single occurrence exists, which is the
+   * "same question one table over" the migration header documents.
+   */
   neighborhoodId: string
   /** 0 = Sunday … 6 = Saturday (derived from the chosen start date). */
   weekday: number
@@ -296,7 +306,9 @@ export function seriesInsertRow(
     place: input.place,
     address: input.address ?? null,
     details: input.details ?? null,
-    neighborhood_id: input.neighborhoodId,
+    // V9 ticket 01: omitted entirely when no neighbourhood was chosen (see the
+    // field's doc — 0035 drops the NOT NULL on this table too).
+    ...neighborhoodIdField(input.neighborhoodId),
     weekday: input.weekday,
     start_minutes: input.startMinutes,
     duration_minutes: input.durationMinutes,

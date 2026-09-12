@@ -9,6 +9,8 @@ import {
 } from '../lib/feed'
 import type { PlaydateFormErrors, PlaydateFormValues, RecentPlace } from '../lib/feed'
 import {
+  BROWSE_PLACES_LABEL,
+  PLACE_PICKER_LABEL,
   placeIndoorLabel,
   placeKindLabel,
   SOMEWHERE_ELSE_LABEL,
@@ -36,6 +38,13 @@ import type { Kid, Neighborhood, Place } from '../lib/types'
  * /new through the placeholders, the stepper buttons, `start-time-label`,
  * the duration chips and the submit label, so this extraction must be
  * invisible to it.
+ *
+ * V9 ticket 01 (the one thing that is NOT symmetric between the two pages):
+ * the place picker leads /new (`locationFirst`) and the neighbourhood select
+ * is gone from it (`showNeighborhood={false}`). The edit form passes neither
+ * prop, so it renders exactly the V8 ticket 05 markup — the e2e/post-edit-delete
+ * spec keeps driving the same controls, and a post that DOES carry a
+ * neighbourhood can still be seen and fixed there.
  */
 export const TITLE_MAX_LENGTH = 80
 /** V3 slice 5 (ticket 08): the optional address field's cap (trim only, no DB CHECK). */
@@ -55,8 +64,43 @@ export interface PlaydateFormFieldsProps {
    */
   address: string
   onAddressChange: (value: string) => void
-  /** null = still loading (the select renders disabled). */
-  neighborhoods: Neighborhood[] | null
+  /**
+   * The neighbourhoods for the select. Optional with a `null` default: V9
+   * ticket 01 takes the field off /new entirely (`showNeighborhood={false}`),
+   * so that page has nothing to pass — /edit still passes its loaded list.
+   * null = still loading (the select renders disabled).
+   */
+  neighborhoods?: Neighborhood[] | null
+  /**
+   * V9 ticket 01: render the neighbourhood SELECT? Default TRUE — /edit keeps
+   * its exact current markup, placeholders and control names (V8 ticket 05,
+   * driven by e2e/post-edit-delete), and only /new turns it off. The
+   * neighbourhood stopped being a question there because it is the one thing
+   * parents cannot answer; the /edit form still has to be able to show and fix
+   * a post that carries one.
+   */
+  showNeighborhood?: boolean
+  /**
+   * V9 ticket 01: the LOCATION-FIRST presentation, used by /new alone.
+   *
+   * ON, the place block becomes the page's FIRST field and says what it is
+   * ("Where? — pick a place"), the address reads as the normal case rather than
+   * an optional extra (it arrives with the picked place), and the /new-only
+   * "Recent places" chips sit directly under it. OFF (the default, and every
+   * /edit render) nothing moves: the title comes first, then place, exactly as
+   * V8 ticket 05 left it.
+   */
+  locationFirst?: boolean
+  /**
+   * V9 ticket 01: opens the picker's inline list in BROWSE mode (the directory,
+   * A→Z) instead of the typed matches. Rendered as the visible "Browse places"
+   * button BESIDE the field — omitted (as /edit omits it) means no button at
+   * all, which is also how the page degrades when the directory could not be
+   * read (a button that cannot browse is worse than no button).
+   */
+  onBrowsePlaces?: () => void
+  /** Whether that browse list is currently open (the button's aria-expanded). */
+  browsePlacesOpen?: boolean
   /** null = still loading; [] = none yet OR the load failed (same empty state). */
   kids: Kid[] | null
   selectedKidIds: string[]
@@ -105,7 +149,11 @@ export function PlaydateFormFields({
   onFieldChange,
   address,
   onAddressChange,
-  neighborhoods,
+  neighborhoods = null,
+  showNeighborhood = true,
+  locationFirst = false,
+  onBrowsePlaces,
+  browsePlacesOpen = false,
   kids,
   selectedKidIds,
   onToggleKid,
@@ -135,14 +183,12 @@ export function PlaydateFormFields({
       : null
   const chips = recentPlaces ?? []
 
-  return (
-    <form
-      className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-      onSubmit={onSubmit}
-      noValidate
-    >
-      {preset}
-
+  // V9 ticket 01: the three blocks /new reorders. They are plain values, not
+  // extracted components: the /edit render must stay byte-identical to V8
+  // ticket 05's markup, and a fragment renders exactly the nodes the inline JSX
+  // did (no wrapper element, no extra DOM).
+  const titleBlock = (
+    <>
       <label className="flex flex-col gap-1 text-sm">
         <span className="flex items-center justify-between text-slate-700">
           Title
@@ -166,21 +212,71 @@ export function PlaydateFormFields({
         />
       </label>
       {errors.title ? <p className="text-sm text-red-600">{errors.title}</p> : null}
+    </>
+  )
 
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-slate-700">Place</span>
-        <input
-          className={
-            'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-            (errors.place ? 'border-red-400' : 'border-slate-300')
-          }
-          value={values.place}
-          onChange={(e) => onFieldChange('place', e.target.value)}
-          placeholder="e.g. Green Lake playground, near the boathouse"
-          autoComplete="off"
-        />
-      </label>
+  // The place LABEL + input, byte-identical to the V8 ticket 05 markup when the
+  // Browse affordance is absent (which is every /edit render, and also a /new
+  // whose directory failed to load): the label element is the field's whole
+  // wrapper, with no extra row div and no extra classes.
+  const placeLabel = (
+    <label
+      className={
+        'flex flex-col gap-1 text-sm' +
+        // Only inside the browse row does the label need to shrink instead of
+        // taking the whole width (flex-1) — a min-w-0 so a long place name
+        // cannot push the button off a 375px screen.
+        (onBrowsePlaces !== undefined ? ' min-w-0 flex-1' : '')
+      }
+    >
+      {/* V9 ticket 01: /new asks "Where? — pick a place" because the field
+          used to read as plain text and nobody discovered the autocomplete.
+          /edit keeps the plain "Place" it has always had. */}
+      <span className="text-slate-700">{locationFirst ? PLACE_PICKER_LABEL : 'Place'}</span>
+      <input
+        className={
+          'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+          (errors.place ? 'border-red-400' : 'border-slate-300')
+        }
+        value={values.place}
+        onChange={(e) => onFieldChange('place', e.target.value)}
+        placeholder="e.g. Green Lake playground, near the boathouse"
+        autoComplete="off"
+      />
+    </label>
+  )
+
+  const placeBlock = (
+    <>
+      {onBrowsePlaces !== undefined ? (
+        <div className="flex items-end gap-2">
+          {placeLabel}
+          {/* V9 ticket 01: the visible BROWSE PLACES affordance. It sits beside
+              the field (never as an overlay) and opens the same inline list the
+              typing path uses, in browse mode — the directory A→Z.
+              `aria-expanded` so the control's state is not colour-only. */}
+          <button
+            type="button"
+            data-testid="browse-places"
+            aria-expanded={browsePlacesOpen}
+            onClick={onBrowsePlaces}
+            className="min-h-11 shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors"
+          >
+            {BROWSE_PLACES_LABEL}
+          </button>
+        </div>
+      ) : (
+        placeLabel
+      )}
       {errors.place ? <p className="text-sm text-red-600">{errors.place}</p> : null}
+      {/* V9 ticket 01: the one-line instruction the old field never gave —
+          only on /new (the picker's page). */}
+      {locationFirst && onPickPlace !== undefined ? (
+        <p className="text-xs text-slate-500">
+          Start typing to find one, tap {BROWSE_PLACES_LABEL} to see them all, or type @ — picking
+          one fills the address for you.
+        </p>
+      ) : null}
 
       {/* V8 ticket 07: the place AUTOCOMPLETE over the seeded directory, in
           the form's flow (see the prop docs). "Somewhere else" is ALWAYS the
@@ -220,36 +316,75 @@ export function PlaydateFormFields({
           </button>
         </div>
       ) : null}
+    </>
+  )
 
-      {/* V8 ticket 01: the remembered places this parent posted to last —
-          one tap fills place + address + neighborhood. Hidden entirely
-          when there are none (a first-timer sees no empty chip row), and
-          never rendered on the edit form (which passes no chips). */}
-      {chips.length > 0 && onApplyRecentPlace !== undefined ? (
-        <div className="flex flex-col gap-1">
-          <span className="text-xs text-slate-500">Recent places</span>
-          <div className="flex flex-wrap gap-2">
-            {chips.map((recent) => (
-              <button
-                key={recent.place}
-                type="button"
-                onClick={() => onApplyRecentPlace(recent)}
-                className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors"
-              >
-                {recent.place}
-              </button>
-            ))}
-          </div>
+  // V8 ticket 01: the remembered places this parent posted to last —
+  // one tap fills place + address + neighborhood. Hidden entirely
+  // when there are none (a first-timer sees no empty chip row), and
+  // never rendered on the edit form (which passes no chips).
+  const recentChipsBlock =
+    chips.length > 0 && onApplyRecentPlace !== undefined ? (
+      <div className="flex flex-col gap-1">
+        <span className="text-xs text-slate-500">Recent places</span>
+        <div className="flex flex-wrap gap-2">
+          {chips.map((recent) => (
+            <button
+              key={recent.place}
+              type="button"
+              onClick={() => onApplyRecentPlace(recent)}
+              className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors"
+            >
+              {recent.place}
+            </button>
+          ))}
         </div>
-      ) : null}
+      </div>
+    ) : null
+
+  return (
+    <form
+      className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+      onSubmit={onSubmit}
+      noValidate
+    >
+      {/* V9 ticket 01: /new leads with WHERE. The place picker is the first
+          thing on the page, the chips that fill it sit directly under it, and
+          the quick-fill preset (a time shortcut, not a location) follows —
+          a page whose first control was a time button was answering a question
+          nobody had yet. /edit renders the V8 ticket 05 order, unchanged. */}
+      {locationFirst ? (
+        <>
+          {placeBlock}
+          {recentChipsBlock}
+          {preset}
+          {titleBlock}
+        </>
+      ) : (
+        <>
+          {preset}
+          {titleBlock}
+          {placeBlock}
+          {recentChipsBlock}
+        </>
+      )}
 
       {/* V3 slice 5 (ticket 08): the optional address (≤120, trim
           only) — under place. When present, the detail page's place
           line becomes a tappable Google Maps link (host + signed-out
-          public views). */}
+          public views). V9 ticket 01: with a place picked it is no longer an
+          optional extra but the NORMAL case — the pick fills it — so /new
+          drops the "(optional)" marker and says where it came from. The Maps
+          link itself is unchanged (V3 ticket 08's seam, untouched). */}
       <label className="flex flex-col gap-1 text-sm">
         <span className="text-slate-700">
-          Address <span className="text-slate-500">(optional)</span>
+          {locationFirst ? (
+            'Address'
+          ) : (
+            <>
+              Address <span className="text-slate-500">(optional)</span>
+            </>
+          )}
         </span>
         <input
           className={
@@ -263,28 +398,40 @@ export function PlaydateFormFields({
         />
       </label>
       {addressError !== null ? <p className="text-sm text-red-600">{addressError}</p> : null}
+      {locationFirst ? (
+        <p className="-mt-3 text-xs text-slate-500">
+          Comes with the place you pick — type one instead if it is not quite right.
+        </p>
+      ) : null}
 
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-slate-700">Neighborhood</span>
-        <select
-          className={
-            'w-full rounded-xl border bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-            (errors.neighborhoodId ? 'border-red-400' : 'border-slate-300')
-          }
-          value={values.neighborhoodId}
-          onChange={(e) => onFieldChange('neighborhoodId', e.target.value)}
-          disabled={neighborhoods === null}
-        >
-          <option value="">Pick a neighborhood…</option>
-          {(neighborhoods ?? []).map((n) => (
-            <option key={n.id} value={n.id}>
-              {n.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      {errors.neighborhoodId ? (
-        <p className="text-sm text-red-600">{errors.neighborhoodId}</p>
+      {/* V9 ticket 01: the neighbourhood SELECT is /edit's alone now. It is
+          gated (default: shown) rather than deleted, so the edit form keeps
+          rendering — and writing — the neighbourhood a post already has. */}
+      {showNeighborhood ? (
+        <>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-slate-700">Neighborhood</span>
+            <select
+              className={
+                'w-full rounded-xl border bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                (errors.neighborhoodId ? 'border-red-400' : 'border-slate-300')
+              }
+              value={values.neighborhoodId}
+              onChange={(e) => onFieldChange('neighborhoodId', e.target.value)}
+              disabled={neighborhoods === null}
+            >
+              <option value="">Pick a neighborhood…</option>
+              {(neighborhoods ?? []).map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {errors.neighborhoodId ? (
+            <p className="text-sm text-red-600">{errors.neighborhoodId}</p>
+          ) : null}
+        </>
       ) : null}
 
       <div className="flex flex-col gap-1 text-sm">

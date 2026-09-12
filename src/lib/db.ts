@@ -24,6 +24,7 @@ import { isDrawableRect, type CropRect } from './photoCrop'
 import {
   filterFeed,
   localDayKey,
+  neighborhoodIdField,
   postDistanceMiles,
   queryRecentOwnPlacesWithClient,
   queryUpcomingFeedWithClient,
@@ -659,6 +660,10 @@ export async function getPlaceById(placeId: string): Promise<Place | null> {
  * Pre-0030-apply `place_id` does not exist and this 42703s; the place page
  * never gets that far pre-0029-apply anyway (its places read fails first), and
  * either way the page renders a designed error state, never a crash.
+ *
+ * V9 ticket 01: the neighborhood embed lost its `!inner` hint (see feed.ts's
+ * note) — a place page's list must show a drop-in whose host never answered a
+ * neighbourhood question, and an INNER JOIN would silently drop it.
  */
 export async function listPlaceFeed(
   placeId: string,
@@ -668,7 +673,9 @@ export async function listPlaceFeed(
   const { data, error } = await supabase
     .from('playdates')
     .select(
-      '*, neighborhood:neighborhoods!inner ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip, radius_miles )',
+      // V9 ticket 01: NO `!inner` — a NULL neighbourhood must not remove the
+      // post from its own place page.
+      '*, neighborhood:neighborhoods ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip, radius_miles )',
     )
     .eq('place_id', placeId)
     .gte('starts_at', startOfTodayIso())
@@ -767,6 +774,13 @@ export async function updateHomeZipRadius(
 export interface NewPlaydateInput {
   title: string
   place: string
+  /**
+   * The chosen neighbourhood, or '' / null for NONE (V9 ticket 01: /new no
+   * longer asks, and every seeded place carries none). An empty value is
+   * OMITTED from the payload by feed.neighborhoodIdField — never sent as ''
+   * (22P02: an empty string is not a uuid) — so pre-0035-apply the insert
+   * fails honestly on the NOT NULL column (23502) and post-0035 it stores NULL.
+   */
   neighborhoodId: string
   /** ISO 8601 (UTC) timestamps — the form's datetime-local values converted. */
   startsAt: string
@@ -816,7 +830,14 @@ export async function createPlaydate(input: NewPlaydateInput): Promise<Playdate>
       host_profile_id: user.id,
       title: input.title,
       place: input.place,
-      neighborhood_id: input.neighborhoodId,
+      // V9 ticket 01 (migration 0035): the neighbourhood is no longer a
+      // question on /new, so this key is now ABSENT for the ordinary post
+      // (neighborhoodIdField, the seriesIdField/placeIdField pattern). An
+      // empty string is never sent: '' is not a uuid, so it would 22P02 both
+      // before and after 0035. Pre-0035-apply the omitted key is the
+      // documented 23502 red-by-design for e2e/post-location; post-0035 it is
+      // simply a NULL neighbourhood, which the LEFT JOIN embeds render.
+      ...neighborhoodIdField(input.neighborhoodId),
       starts_at: input.startsAt,
       ends_at: input.endsAt,
       // V3 slice 6 (ticket 09): the age hint is no longer written from /new
@@ -866,7 +887,11 @@ export async function listRecentOwnPlaces(limit?: number): Promise<RecentPlace[]
   if (!user) return []
   const rows = await queryRecentOwnPlacesWithClient(supabase, user.id)
   return recentPlacesFrom(
-    rows as Array<{ place: string; address: string | null; neighborhood_id: string }>,
+    // V9 ticket 01 (migration 0035): `neighborhood_id` is nullable now — the
+    // cast must say so (review cycle 1, F5), or the next reader would be told
+    // every remembered post has a neighbourhood. recentPlacesFrom maps a NULL
+    // to '' (the chip's "none"), which is what the chip path writes.
+    rows as Array<{ place: string; address: string | null; neighborhood_id: string | null }>,
     limit,
   )
 }
@@ -900,6 +925,12 @@ export async function listRecentOwnPlaces(limit?: number): Promise<RecentPlace[]
 export interface UpdatePlaydateInput {
   title: string
   place: string
+  /**
+   * The chosen neighbourhood, or '' for NONE — which the payload writes as
+   * NULL, not as '' (V9 ticket 01: the /edit select's empty option is now a
+   * legal answer, since a post may carry no neighbourhood at all, and '' is
+   * not a uuid: PostgREST would 22P02 before AND after 0035).
+   */
   neighborhoodId: string
   /** ISO 8601 (UTC) — the form's local date/minutes converted. */
   startsAt: string
@@ -931,7 +962,11 @@ export async function updatePlaydateWithClient(
     .update({
       title: input.title,
       place: input.place,
-      neighborhood_id: input.neighborhoodId,
+      // V9 ticket 01 (migration 0035): '' → NULL. The update always carries the
+      // key (unlike the insert, which omits it): an edit is the one place a
+      // parent can CLEAR a neighbourhood, and "leave it alone" is what the
+      // change detector above already skips.
+      neighborhood_id: input.neighborhoodId.trim() === '' ? null : input.neighborhoodId,
       starts_at: input.startsAt,
       ends_at: input.endsAt,
       details: input.details,
@@ -1136,7 +1171,11 @@ export async function getPlaydateDetail(id: string): Promise<PlaydateWithNeighbo
       // V3 slice 2 (ticket 02): the host embed also carries home_zip —
       // the weather lookup's key (the post's location = the host's home
       // zip, the V2 pin; the Open-Meteo fetch in the detail page).
-      '*, neighborhood:neighborhoods!inner ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip )',
+      // V9 ticket 01: NO `!inner` on the neighborhood embed — an INNER JOIN
+      // makes a NULL-neighbourhood post return NO ROW, which this function
+      // reports as "not found": the detail page of a post that plainly exists
+      // (its own host's, right after posting) would 404.
+      '*, neighborhood:neighborhoods ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip )',
     )
     .eq('id', id)
     .maybeSingle()
@@ -1656,15 +1695,20 @@ export const HOST_POSTS_LIMIT = 50
 /**
  * The card-shaped SELECT for a host's posts (V8 ticket 04): the same shape the
  * feed's query uses (feed.queryUpcomingFeedWithClient), including BOTH FK hints
- * — `neighborhoods!inner` for the card's neighborhood label and
- * `profiles!playdates_host_profile_id_fkey` for the host embed (the PGRST201
- * lesson: two playdates→profiles embed paths exist, so an unpinned embed is an
- * error, not an ambiguity to resolve). Duplicated as a literal rather than
- * shared, because the feed query is not this ticket's to edit — the two strings
- * must stay identical.
+ * — the (now plain, V9 ticket 01: no `!inner`) neighborhoods embed for the
+ * card's neighborhood label and `profiles!playdates_host_profile_id_fkey` for
+ * the host embed (the PGRST201 lesson: two playdates→profiles embed paths
+ * exist, so an unpinned embed is an error, not an ambiguity to resolve).
+ * Duplicated as a literal rather than shared, because the feed query is not
+ * this ticket's to edit — the two strings must stay identical.
+ *
+ * V9 ticket 01: the profile's Upcoming/Past sections are exactly where an
+ * INNER JOIN would have been invisible-as-a-bug — the host's newer posts
+ * (no neighbourhood) would simply be missing from their own profile, with no
+ * error anywhere.
  */
 const HOST_POSTS_SELECT =
-  '*, neighborhood:neighborhoods!inner ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip, radius_miles )'
+  '*, neighborhood:neighborhoods ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip, radius_miles )'
 
 /** One host's posts, ready for the profile pages (V8 ticket 04). */
 export interface HostPosts {

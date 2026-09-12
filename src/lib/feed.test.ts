@@ -28,6 +28,7 @@ import {
   kidsComingLine,
   localDayKey,
   mapsHref,
+  neighborhoodIdField,
   nextSlotMinutes,
   partitionPostsByTime,
   PLAYDATE_DURATIONS_MINUTES,
@@ -524,7 +525,13 @@ function makeFeedMockClient(rows: unknown[] = []): {
 } {
   const filters: string[] = []
   const builder = {
-    select: (_cols: string) => builder,
+    // Recorded (V9 ticket 01): the embed string is part of the contract now —
+    // a `!inner` on the neighborhood embed silently deletes posts, so the
+    // select is asserted rather than assumed.
+    select: (cols: string) => {
+      filters.push(`select(${cols})`)
+      return builder
+    },
     in: (col: string, values: string[]) => {
       filters.push(`in(${col}, ${values.join(',')})`)
       return builder
@@ -590,6 +597,18 @@ describe('queryUpcomingFeedWithClient (mocked supabase client, V2 slice 3: dista
     expect(filters.some((f) => f.startsWith('in('))).toBe(false)
   })
 
+  it('LEFT-joins the neighborhood embed (V9 ticket 01: no `!inner`, or a post with none vanishes)', async () => {
+    // The inner join was the invisible bug this ticket removes: a post whose
+    // host was never asked for a neighbourhood would not come back AT ALL.
+    // Pinned here because the failure mode is silence — an empty feed, not an
+    // error.
+    const { client, filters } = makeFeedMockClient()
+    await queryUpcomingFeedWithClient(client, CUTOFF, [])
+    const select = filters.find((f) => f.startsWith('select(')) ?? ''
+    expect(select).toContain('neighborhood:neighborhoods ( id, name )')
+    expect(select).not.toContain('!inner')
+  })
+
   it('returns the raw rows from the (mocked) query', async () => {
     const rows = [{ id: 'pd-1' }, { id: 'pd-2' }]
     const { client } = makeFeedMockClient(rows)
@@ -629,8 +648,19 @@ describe('validatePlaydateForm (the /new form rules, V2 slice 1: date + stepper 
     expect(validatePlaydateForm({ ...valid, place: '  ' }).place).toBeDefined()
   })
 
-  it('requires a neighborhood', () => {
-    expect(validatePlaydateForm({ ...valid, neighborhoodId: '' }).neighborhoodId).toBeDefined()
+  it('does NOT require a neighborhood (V9 ticket 01: a place is enough to post)', () => {
+    // The rule this replaces asserted `neighborhoodId: ''` was an ERROR. It is
+    // now the ordinary state of the form: /new does not ask the question (the
+    // select is gone from that page), so a missing neighbourhood must not stop
+    // a parent from posting. `neighborhoodId` stays in the values shape and in
+    // the errors map (the edit form still renders the field).
+    const errors = validatePlaydateForm({ ...valid, neighborhoodId: '' })
+    expect(errors.neighborhoodId).toBeUndefined()
+    // …and with a place and nothing else, the whole form is valid: this is the
+    // ticket's "a post is postable with a place and nothing else".
+    expect(errors).toEqual({})
+    // A neighbourhood that IS chosen is equally fine (no rule either way).
+    expect(validatePlaydateForm(valid).neighborhoodId).toBeUndefined()
   })
 
   it('requires a start date (and rejects an unparseable one)', () => {
@@ -1288,6 +1318,23 @@ describe('recentPlacesFrom (V8 ticket 01, the /new "Recent places" chips)', () =
 
   it('no rows → no chips', () => {
     expect(recentPlacesFrom([])).toEqual([])
+  })
+
+  it('maps a NULL neighborhood_id to "" — the chips work on BOTH paths (V9 ticket 01)', () => {
+    // T9 of the ticket: the picked-place path and the free-text path must both
+    // keep their chips. Every seeded place carries a NULL neighbourhood (0029),
+    // so the PICKED path is the NULL path in practice — a chip must still fill
+    // the place and its address, with no neighbourhood to carry.
+    const out = recentPlacesFrom([
+      { place: 'Green Lake Park', address: '7201 East Green Lake Dr N', neighborhood_id: null },
+    ])
+    expect(out).toEqual([
+      {
+        place: 'Green Lake Park',
+        address: '7201 East Green Lake Dr N',
+        neighborhoodId: '',
+      },
+    ])
   })
 })
 
@@ -1954,7 +2001,12 @@ describe('listPostsByHostWithClient (V8 ticket 04: one host’s posts)', () => {
     const selects = calls.filter((call) => call.startsWith('playdates.select('))
     expect(selects).toHaveLength(2)
     for (const select of selects) {
-      expect(select).toContain('neighborhood:neighborhoods!inner ( id, name )')
+      // V9 ticket 01: the neighborhood embed is a PLAIN (LEFT) join. The old
+      // pin here was `neighborhoods!inner ( id, name )`; with a nullable
+      // neighbourhood that hint would drop every post the profile is supposed
+      // to list — silently, on the host's own Upcoming/Past sections.
+      expect(select).toContain('neighborhood:neighborhoods ( id, name )')
+      expect(select).not.toContain('!inner')
       expect(select).toContain(
         'host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip, radius_miles )',
       )
@@ -2080,6 +2132,15 @@ describe('playdateFormValuesFromPost (V8 ticket 05)', () => {
     expect(values.details).toBe('')
   })
 
+  it('a stored NULL neighbourhood prefills the select as "none" (V9 ticket 01)', () => {
+    // The /edit form's select value must be a string; '' is the empty option
+    // the form already renders, and it is what a post with no neighbourhood
+    // has to show. React would warn on a null select value, and the update
+    // payload would try to write ''. 
+    const values = playdateFormValuesFromPost(storedPost({ neighborhood_id: null }))
+    expect(values.neighborhoodId).toBe('')
+  })
+
   it('keeps an off-grid stored start EXACTLY (never silently snapped to the 30-minute grid)', () => {
     const values = playdateFormValuesFromPost(
       storedPost({
@@ -2168,6 +2229,39 @@ describe('playdateEditFieldsChanged (V8 ticket 05)', () => {
 
   it('does not consider the age hint (the edit form neither renders nor writes it)', () => {
     expect(playdateEditFieldsChanged(original, { ...values, ageHint: 'best for 2-5' }, original.address)).toBe(false)
+  })
+
+  it('treats a stored NULL neighbourhood and an untouched empty field as UNCHANGED (V9 ticket 01)', () => {
+    // A post created after this ticket carries no neighbourhood, and the form's
+    // value for "none" is ''. Comparing them raw would report an edit on every
+    // open and make the form write on a save that changed nothing.
+    const bare = { ...original, neighborhood_id: null }
+    expect(playdateEditFieldsChanged(bare, playdateFormValuesFromPost(bare), original.address)).toBe(false)
+    // Setting one where there was none IS a change, and so is clearing one.
+    expect(
+      playdateEditFieldsChanged(bare, { ...values, neighborhoodId: 'hood-1' }, original.address),
+    ).toBe(true)
+    expect(
+      playdateEditFieldsChanged(original, { ...values, neighborhoodId: '' }, original.address),
+    ).toBe(true)
+  })
+})
+
+describe('neighborhoodIdField (V9 ticket 01: the /new insert with no neighbourhood)', () => {
+  it('omits the key entirely when no neighbourhood was chosen', () => {
+    // '' is the form's "none" — and an empty string is NOT a uuid: sending it
+    // would 22P02 both before and after 0035. The key is absent instead, which
+    // pre-0035 is the documented 23502 red and post-0035 is simply NULL.
+    expect(neighborhoodIdField('')).toEqual({})
+    expect(neighborhoodIdField(null)).toEqual({})
+    expect(neighborhoodIdField(undefined)).toEqual({})
+    expect(neighborhoodIdField('   ')).toEqual({})
+    expect('neighborhood_id' in neighborhoodIdField('')).toBe(false)
+  })
+
+  it('carries a real id (and trims it)', () => {
+    expect(neighborhoodIdField('hood-1')).toEqual({ neighborhood_id: 'hood-1' })
+    expect(neighborhoodIdField(' hood-1 ')).toEqual({ neighborhood_id: 'hood-1' })
   })
 })
 

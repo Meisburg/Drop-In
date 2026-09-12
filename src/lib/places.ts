@@ -168,6 +168,139 @@ export function matchPlaces(query: string, places: readonly Place[], limit: numb
 export const PLACE_SUGGESTION_LIMIT = 6
 
 /**
+ * How many rows the picker's BROWSE list shows (V9 ticket 01). Deliberately
+ * larger than PLACE_SUGGESTION_LIMIT: browsing is "show me the directory",
+ * typing is "find this one", and 239 rows rendered inline on a phone would
+ * bury the rest of the form. The full directory with its filters is /browse
+ * (V8 ticket 07) — this list is the shortcut beside the field.
+ */
+export const PLACE_BROWSE_LIMIT = 8
+
+/**
+ * The /new place picker's label (V9 ticket 01). The ticket's words, verbatim:
+ * the field used to read as a plain text box, so nobody discovered that one
+ * tap fills place + address. It is now the first field AND it says what it is.
+ */
+export const PLACE_PICKER_LABEL = 'Where? — pick a place'
+
+/** The visible affordance beside the field that opens the directory list. */
+export const BROWSE_PLACES_LABEL = 'Browse places'
+
+/**
+ * The picker's text with its ALIAS removed: a single leading `@` is a gesture
+ * ("open the picker"), never part of a place name, so it is stripped here and
+ * trimmed. This is the ONE rule, used in three places that must agree:
+ *
+ *  1. MATCHING — what the typed text means for the directory, and what a bare
+ *     `@` means (the empty query → the browse list).
+ *  2. THE TITLE SEED — /new's "Playdate at <place>" default (V8 ticket 01).
+ *     Without this, the most natural use of the alias (type `@`, pick from the
+ *     list) seeded the title "Playdate at @" and — because the seed never
+ *     overwrites — POSTED it. Found by e2e/post-location, fixed here: the
+ *     alias is not text, so it cannot reach a title.
+ *  3. THE SUBMITTED PLACE — a parent who types `@` and picks nothing has
+ *     typed no place at all, so the validator asks for one instead of
+ *     accepting the bare character.
+ *
+ * What is NOT rewritten: the FIELD's text while the parent types (the
+ * resolvePlaceByName pin — the app never moves text under a finger). The
+ * alias only disappears from the values the app derives from it.
+ */
+export function stripPlaceAlias(raw: string): string {
+  const trimmed = raw.trim()
+  const withoutAlias = trimmed.startsWith('@') ? trimmed.slice(1) : trimmed
+  return withoutAlias.trim()
+}
+
+/** True when the field's text starts with the `@` picker alias. */
+export function usesPlaceAlias(raw: string): boolean {
+  return raw.trim().startsWith('@')
+}
+
+/**
+ * What PICKING a place writes into the /new form — the ticket-01 one-tap rule,
+ * as a pure seam so a unit test holds it rather than a React page's handler:
+ * the place's name, its address, and the neighbourhood FORM VALUE.
+ *
+ * THE FORM VALUE, not the database's answer: the form's "no neighbourhood" is
+ * `''` (the shape's own rule — see feed.PlaydateFormValues), so a place with
+ * none yields `''`, not null.
+ *
+ * THE PRECEDENCE IS IN THE SIGNATURE, deliberately: this takes ONLY the place.
+ * A picked place REPLACES the form's neighbourhood — including replacing it
+ * with nothing — so there is no "previous value" it could fall back to.
+ *
+ * That is a fix, not a style choice (review cycle 1, F1): an earlier version
+ * took the place's neighbourhood `?? prev.neighborhoodId`, and on /new that
+ * previous value can be a REAL id the parent cannot see. A "Recent places" chip
+ * (V8 ticket 01) writes the remembered post's neighbourhood into the form
+ * (`applyRecentPlace`), and /new renders NO neighbourhood field (showNeighborhood
+ * = false), so tapping a chip for an older post and then picking a directory
+ * place — whose neighbourhood is NULL for every one of the 239 seeded rows —
+ * kept the chip's id and wrote it. The post then carried the OLD place's
+ * neighbourhood next to the NEW place: invisible to the parent, and wrong in the
+ * data. With the previous value unreachable, that state cannot be expressed.
+ *
+ * What this does NOT do: invent a fallback (no "nearest neighbourhood", no
+ * host-zip guess). The directory is the only authority on which neighbourhood a
+ * place is in, and where it says nothing the honest answer is nothing.
+ */
+export function placePickPatch(place: Place): {
+  place: string
+  address: string
+  neighborhoodId: string
+} {
+  return {
+    place: place.name,
+    // The directory's address is NOT NULL (0029:128 — the seed drops any row
+    // without one), so this is the row's street verbatim: no '' fallback is
+    // needed and none is invented.
+    address: place.address,
+    neighborhoodId: place.neighborhood_id ?? '',
+  }
+}
+
+/**
+ * The directory, A→Z, capped — the BROWSE list. Deterministic (name, then id,
+ * the matchPlaces tiebreak) so the same directory never reshuffles between
+ * renders, and NOT a ranking: browsing shows the alphabet, not a guess at
+ * relevance. A non-positive limit returns [] (matchPlaces' contract).
+ */
+export function browsePlaceList(places: readonly Place[], limit: number): Place[] {
+  if (limit <= 0) return []
+  return [...places]
+    .sort((a, b) => {
+      const byName = a.name.localeCompare(b.name)
+      if (byName !== 0) return byName
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+    })
+    .slice(0, limit)
+}
+
+/**
+ * What the picker's inline list SHOWS (V9 ticket 01) — the one decision both
+ * the typed path and the "Browse places" button funnel through.
+ *
+ * - a query (after the `@` alias is stripped) → matchPlaces' ranked matches,
+ *   exactly as before this ticket.
+ * - no query + `browsing` (the Browse button, or a bare `@`) → the directory
+ *   itself, A→Z, capped. Without this a bare `@` would render an empty list,
+ *   which is not an alias for anything.
+ * - no query + not browsing → [] : "nothing typed, nothing matched" stays the
+ *   caller's decision to render (and the list stays closed).
+ */
+export function placePickerMatches(
+  raw: string,
+  places: readonly Place[],
+  limit: number,
+  browsing: boolean,
+): Place[] {
+  const query = stripPlaceAlias(raw)
+  if (query !== '') return matchPlaces(query, places, limit)
+  return browsing ? browsePlaceList(places, limit) : []
+}
+
+/**
  * The "Somewhere else" row's identity in the /new suggestion list: picking it
  * means FREE TEXT — the typed place stays as-is and place_id stays null (the
  * pinned escape hatch; the app must never lock a parent out of meeting at a

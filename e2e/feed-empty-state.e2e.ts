@@ -248,7 +248,7 @@ test('the detail page\'s failed reads are honest states, and Retry recovers', as
   await page
     .getByPlaceholder('e.g. Green Lake playground, near the boathouse')
     .fill('E2E honest states lot')
-  await page.locator('select').selectOption({ label: marker.neighborhood })
+  // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   await page.getByRole('button', { name: '1h', exact: true }).click()
   await page.getByRole('button', { name: 'Post drop-in' }).click()

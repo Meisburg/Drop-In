@@ -4,8 +4,13 @@
  * The ticket's claims, end to end against the live project:
  *  1. /new opens on today's date and the next 30-minute slot (the mount-once
  *     defaults), so the spontaneous post needs no date or time work at all.
- *  2. A "Recent places" chip fills place + address + neighborhood in one tap
- *     from a place this parent already posted to.
+ *  2. A "Recent places" chip fills place + address in one tap from a place this
+ *     parent already posted to. V9 ticket 01: the neighbourhood is no longer a
+ *     field on /new, so the chip carries the two fields a parent can see. The
+ *     two PATHS are covered by different specs, named so neither claim is
+ *     vague: the FREE-TEXT path here (a typed place the directory does not
+ *     know, below), and the SEEDED/picked path in e2e/post-location.e2e.ts
+ *     (a chip for a post made from a directory place).
  *  3. The quick-fill preset states the end it will write, writes it, and
  *     seeds a title only because the title was empty.
  *  4. A post created without touching the date or time controls lands in the
@@ -59,9 +64,11 @@ test('opens on today and the next slot, and posts without date/time work', async
   expect([nextSlotMinutes(beforeMount), nextSlotMinutes(afterRead)]).toContain(slot)
 
   // Only the fields a parent alone knows get touched — no date, no time.
+  // V9 ticket 01: and NO NEIGHBOURHOOD — /new stopped asking (the select is
+  // gone from that page), which is what makes this post a plain
+  // "place and nothing else" post.
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(place)
-  await page.locator('select').selectOption({ label: marker.neighborhood })
   await page.getByRole('button', { name: '1h', exact: true }).click()
 
   await page.getByRole('button', { name: 'Post drop-in' }).click()
@@ -69,7 +76,12 @@ test('opens on today and the next slot, and posts without date/time work', async
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
 })
 
-test('a recent-place chip fills three fields, and the preset fills the time it promises', async ({
+// The FREE-TEXT half of the "Recent places" memory (V9 ticket 01, review cycle
+// 1, F4): this spec seeds a typed place, so what it pins is the chip on a place
+// the directory does not know. The SEEDED/picked half lives in
+// e2e/post-location.e2e.ts (a chip for a post created from a directory place,
+// whose text resolves back to the directory row).
+test('a recent-place chip fills place + address, and the preset fills the time it promises', async ({
   page,
 }) => {
   const marker = readMarkerMeta()
@@ -88,7 +100,7 @@ test('a recent-place chip fills three fields, and the preset fills the time it p
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(seedTitle)
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(place)
   await page.getByPlaceholder(ADDRESS_PLACEHOLDER).fill(address)
-  await page.locator('select').selectOption({ label: marker.neighborhood })
+  // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
   await page.getByRole('button', { name: '1h', exact: true }).click()
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
@@ -117,10 +129,18 @@ test('a recent-place chip fills three fields, and the preset fills the time it p
   }))
   expect(width.scrollWidth).toBeLessThanOrEqual(width.innerWidth)
 
-  // One tap, three fields — place, address, and the neighborhood that post used.
+  // One tap, TWO fields — place and address (V9 ticket 01, review cycle 1, F4:
+  // this line used to say "three fields", the third being the neighbourhood,
+  // which is no longer a question on this page).
   await expect(placeInput).toHaveValue(place)
   await expect(addressInput).toHaveValue(address)
-  await expect(page.locator('select')).toHaveValue(/.+/)
+  // V9 ticket 01 replaced the `toHaveValue(/.+/)` assertion that used to be
+  // here — it pinned the neighbourhood SELECT's value, and both the field and
+  // that assertion are gone from /new. This is a DIFFERENT assertion about the
+  // new contract (the page has no select at all), not a stronger version of the
+  // old one: what the chip fills is checked by the two lines above, and what the
+  // post carries by the card assertion below.
+  await expect(page.locator('select')).toHaveCount(0)
   // …and the title was seeded from the place, only because it was EMPTY.
   await expect(titleInput).toHaveValue(`Playdate at ${place}`)
 

@@ -86,7 +86,14 @@ export interface Playdate {
   host_profile_id: string
   title: string
   place: string
-  neighborhood_id: string
+  /**
+   * The parent's neighbourhood, when we know it. V9 ticket 01 (migration
+   * 0035) makes it NULLABLE: /new stopped asking (the place pick fills it only
+   * for a place that carries one, and every seeded place carries none), so a
+   * new post normally has none. The FK stays `on delete restrict`, no RLS
+   * policy changed, and every existing row keeps its value.
+   */
+  neighborhood_id: string | null
   starts_at: string
   ends_at: string
   /** Advisory only, e.g. "best for 2-5". Nullable. */
@@ -154,7 +161,15 @@ export interface PlaydateSeries {
   place: string
   address: string | null
   details: string | null
-  neighborhood_id: string
+  /**
+   * V9 ticket 01 (migration 0035) made this NULLABLE — the same column, and the
+   * same decision, as `Playdate.neighborhood_id`: /new stopped asking, and the
+   * series row is built from that form, so "Repeat weekly" now creates series
+   * with no neighbourhood. The type said `string` until review cycle 1 (F5);
+   * it had no runtime effect (the client never dereferences it), which is
+   * exactly why it was worth fixing before the next reader trusted it.
+   */
+  neighborhood_id: string | null
   /** 0 = Sunday … 6 = Saturday (the client derives it from the chosen date). */
   weekday: number
   /** Minutes past LOCAL midnight (the app keeps it on a 30-minute grid). */
@@ -323,9 +338,19 @@ export interface PlaydateHost {
   radius_miles?: number
 }
 
-/** A playdate with its neighborhood + host joined in (feed/browse results). */
+/**
+ * A playdate with its neighborhood + host joined in (feed/browse results).
+ *
+ * V9 ticket 01 (migration 0035): `neighborhood` is NULLABLE. The parent's
+ * neighbourhood stopped being a question on /new, and every seeded place
+ * carries a NULL neighbourhood (0029's header), so a post created from this
+ * version on has none — the embed is a LEFT JOIN (PostgREST's default, once
+ * the `!inner` hint is gone) and yields `null`. Every render site must omit
+ * the label rather than print an empty one: `place · window`, never
+ * "place · " and never the string "null".
+ */
 export interface PlaydateWithNeighborhood extends Playdate {
-  neighborhood: Neighborhood
+  neighborhood: Neighborhood | null
   host: PlaydateHost
   /**
    * The haversine distance, in miles, from the viewer's home zip to the
@@ -471,7 +496,14 @@ export interface PublicPlaydateDetail {
   ends_at: string
   age_hint: string | null
   details: string | null
-  neighborhood_name: string
+  /**
+   * V9 ticket 01 (migration 0035): NULL is a legal answer, not an error. The
+   * re-created function LEFT JOINs the neighbourhood, so a post with no
+   * neighbourhood still returns its 13 fields with this one null instead of
+   * the whole RPC returning NULL (which the signed-out view would render as
+   * "not found" for a post that plainly exists).
+   */
+  neighborhood_name: string | null
   host_display_name: string | null
   host_avatar_url: string | null
   going_count: number

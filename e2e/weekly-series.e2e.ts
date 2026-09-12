@@ -177,7 +177,7 @@ test('a weekly series posts its weeks, and each week’s roster is its own', asy
   await settleOnRoute(page, '/new')
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(PLACE)
-  await page.locator('select').selectOption({ label: marker.neighborhood })
+  // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
   await page.locator('input[type="date"]').fill(startDate)
   // The start time is whatever the form opened with (V8 ticket 01's next
   // 30-minute slot) — read, never assumed; the series stores THIS wall clock.
