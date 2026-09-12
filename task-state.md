@@ -9,7 +9,7 @@
 - **Phase: V4 COMPLETE (2026-09-11).** Human enabled Google in the Supabase project; the blocker is cleared and the round-trip is verified — see the closure evidence below.
 - **Active slice:** none — **V8 IS COMPLETE TO ITS HUMAN BOUNDARY (2026-09-13).** Tickets 01–10 are shipped and verified (`dd0642e` … `135c401`), 11's schema half is live with its UI deliberately held, and 12's instrument is delivered. Migrations **0028–0034 are ALL APPLIED LIVE** and probed. Final gate on the committed tree: build exit 0 · **655/655 unit (20 files)** · **e2e 48/48** · lint 0 errors · both PWA verifier scripts green · live DB swept back to 2 founders. **Next action (human):** (a) **push — mostly done (2026-09-12)**: keypair → `supabase secrets set` → `send-push` deployed → wall verified (service-role 200, anon 401) → `VITE_VAPID_PUBLIC_KEY` added to Vercel (Config/public, it's a public key) → `a97892e` pushed, live bundle `index-COPgHOaF.js` verified to carry the key (1 occurrence). **Remaining:** the Android phone test (`docs/push-setup.md`). **Schedule DONE (2026-09-12):** no dashboard Schedules tab on this plan (DOM-checked) and no `vault` → pg_cron+pg_net enabled, job `send-push-every-5-minutes` live (jobid 3); key injected via `.scratch/cron-schedule-send-push.mjs` (0600 temp file → CDP SQL API, never in a terminal/chat); 12:45 tick fired (job "succeeded", function booted at 05:45:00 in fn logs) and the drain correctly stamped the 2 pre-existing rows "no subscription" (`push_subscriptions` = 0 until the phone opts in). pg_net's fixed 5s response timeout means `_http_response` shows `timed_out` on cold-start ticks — cosmetic, delivery completes server-side; (b) **email verification**: flip Supabase's "Confirm email" and I land the chip + "Check your inbox" screen + the e2e harness change (`docs/email-verification-setup.md`); (c) **density**: run the first cohort (`.scratch/v8/density-log.md`). **V8 IS NOW ON Vercel (2026-09-12)** — `42dfb2a..a97892e` pushed; the live site serves `index-COPgHOaF.js` with the VAPID public key inlined, so new opt-ins subscribe with the bound key. Open *decisions*, not defects: the **logo mark** (V7 settled colour only) and the beta's SMTP setting.
 - **Remaining human items:** the three in the Next action above. The e2e marker sweep ran clean again (168 markers, 0 founder overlap); live DB = 2 founders only.
-- **V9 — the wife's feedback batch: IN PROGRESS (opened 2026-09-13).** Spec + 9 tickets in `.scratch/v9/`. **Tickets 01 and 03 are COMPLETE** (commits `e493e08`, `96bb96e`) — `/new` leads with the place picker, the neighbourhood is no longer a question, and the post page is now three decisions with everything else behind one "More options" disclosure. **Migration 0035 is APPLIED LIVE and probed.** Tickets 04 → 05 are the rest of the authorized batch (one writer, in queue order); 04 is `ready-for-agent` with its brief written. Two decisions already taken this session: **02 is deferred** (the human chose to build 03 against the EXISTING time control rather than ship 02's unconfirmed badge-suppression judgment call), and 06/08 still want a one-line confirmation while **09 needs an explicit yes** before dispatch. Details, evidence and the full ticket table are in the **V9** section below.
+- **V9 — the wife's feedback batch: IN PROGRESS (opened 2026-09-13).** Spec + 9 tickets in `.scratch/v9/`. **Tickets 01, 03 and 04 are COMPLETE** (commits `e493e08`, `96bb96e`, `73c2f5e`) — the feed now holds nothing that has ended, with the archive linked from the feed — `/new` leads with the place picker, the neighbourhood is no longer a question, and the post page is now three decisions with everything else behind one "More options" disclosure. **Migration 0035 is APPLIED LIVE and probed.** Ticket 05 is the last of the authorized batch (one writer, in queue order); its brief is written and it needs migration 0037. Two decisions already taken this session: **02 is deferred** (the human chose to build 03 against the EXISTING time control rather than ship 02's unconfirmed badge-suppression judgment call), and 06/08 still want a one-line confirmation while **09 needs an explicit yes** before dispatch. Details, evidence and the full ticket table are in the **V9** section below.
 
 **Push pipeline — coordinator verification (2026-09-13, after the human's step-3 run).** Independently confirmed through the Management API and live probes: `send-push` is **ACTIVE** with `verify_jwt: true`; the three VAPID secrets exist; the **anon** bearer gets `401 {"error":"send-push is service-role only"}` (a 404 would have meant "not deployed"); the LIVE bundle carries the VAPID public key and no private half, so deployed opt-ins are **bound**. The DB half is live too: a real ping wrote a `ping_received` row and deleting the post wrote a `cancelled` row via the BEFORE DELETE trigger. **Step 4 is provably NOT done:** `pg_cron`/`pg_net` are not installed, and those two queued rows kept `sent_at` NULL across six minutes of polling — nothing invokes the function. The human's earlier service-role check returned 200 but **predates** those rows (12:16 UTC), so the sender has still never processed a queued row. Read from the code, that case is safe: a row whose recipient has no subscription is stamped `sent_at` with `error: 'no subscription'` and counted as skipped (`index.ts:259-264`) — no oldest-first starvation risk. Both rows are left in place as the canary for the moment the schedule exists.
 
@@ -317,7 +317,7 @@ exit 0 · **655/655 unit (20 files)** · e2e 48/48 per the HANDOFF · migrations
 | 01 | Post: location first — pick a place, drop the neighbourhood | **complete — `e493e08`**; **0035 APPLIED LIVE + probed**; 673/673 unit, e2e 54/54, lint 0 errors |
 | 02 | Post: a time WINDOW, not an hour | **DEFERRED BY THE HUMAN (2026-09-13)** — see the decision below. Ticket stays `ready-for-agent` pending the badge-suppression confirmation; 0036 stays reserved |
 | 03 | Post: the twenty-second post (3 decisions, rest behind "more") | **complete — `96bb96e`**; no migration (`supabase/` verified untouched); 702/702 unit, e2e 59/59, lint 0 errors |
-| 04 | Nearby: ended drop-ins leave the feed, into the archive | queued (brief written) |
+| 04 | Nearby: ended drop-ins leave the feed, into the archive | **complete — `73c2f5e`**; no migration (read-path only, `supabase/` verified untouched); 720/720 unit, e2e 61/61, lint 0 errors |
 | 05 | Nearby: ages first, names optional | queued (brief written); needs **0037** |
 | 06 | Nearby: map-first with a list toggle | `ready-for-human` — needs the map-provider one-liner (Leaflet + OSM recommended) |
 | 07 | Nearby: search + filters | not in this session's batch |
@@ -461,6 +461,67 @@ pre-empted.
    pass, timed from the installed icon to posted. This session can measure the
    in-browser interaction count (3 taps + 1 typed place) but not an installed-PWA
    pass.
+
+### V9 ticket 04 — evidence (complete, `73c2f5e`)
+
+| Claim | How it was checked |
+|---|---|
+| Nearby keeps only what is ahead or happening now; a started-but-not-ended drop-in STAYS with its badge | the cutoff moved to the post's own END on both layers — the DB query sends `.gt('ends_at', cutoffIso)` and the pure filter uses `isStillAhead` (= `!isEnded` by construction). The spec asserts the happening-now card is visible with its badge while the ended one has `toHaveCount(0)`, and pins the issued URLs on the wire (some read carries `ends_at=gt.`, **none** carries `starts_at=gte`) |
+| The DB does less work and the client cannot disagree | `filterFeed`'s dead `startOfTodayIso` parameter was REMOVED rather than left beside `nowIso` — one time input, one cutoff. `listRadiusFeed` now reads ONE clock for both layers (it previously read `startOfTodayIso()` for the query and a fresh `new Date()` for the filter). The tempting `starts_at >= now` was never written: it would delete the drop-in happening right now |
+| The archive is reachable and honest | "See past drop-ins" under the day sections AND inside the shared empty state (`RadiusEmptyState` takes an optional `seePastHref`; **Browse deliberately gets none**, and the spec asserts both callers against each other). The shipped empty-state copy was kept (it is V8/02's pinned literal — the ticket's "Nothing coming up within N miles." is a paraphrase), and the archive link's own literal is now pinned in `feed.test.ts` so a rename cannot keep the specs green |
+| Archive rules (muted, no "I'm going", V8/09's "Same time next week") | `/profile`'s Past rows did NOT meet them: they were not links (the host could not reach the next-week affordance from the archive the feed links to) and were not muted. Both fixed; `/u/:handle`'s Past card asserted muted with zero buttons; the mute is text-only (the Duplicate button stays full strength) |
+| **Gate (coordinator, independent)** | build exit 0 · **720/720 unit (21 files)** · **e2e 61/61, exit 0** · lint **0 errors** (39 warnings = baseline) · `git status --short supabase/migrations` empty |
+
+**Deviations and findings from ticket 04:**
+
+1. **The pivot was proven, not asserted:** with the pre-ticket cutoff temporarily
+   restored in place, the new spec failed at exactly the documented assertion
+   (`getByText(endedTitle, {exact:true})` → Expected 0, Received 1) **while both
+   control assertions passed**, then the files were restored byte-identically
+   (`grep TEMPORARY REVERT` → no hits) and the gate re-run. The ended window is
+   built INSIDE today on purpose — a yesterday window would have been dropped by
+   the old rule too, and would have proved nothing.
+2. **A HIGH defect this change introduced, found by the fresh-context reviewer
+   and fixed in review cycle 1:** moving the inclusion rule to `ends_at` left the
+   **day grouping keyed on `starts_at`**, so a still-running post that started
+   yesterday rendered under a past-dated header ("Fri, Sep 11") while its card
+   said "Happening now" — as the FIRST section on the feed. Unreachable before
+   this ticket, which is why no test covered it. Fixed with the pure seam
+   `daySectionIso` (a started post clamps up to today), used for the section key,
+   the label **and the rain badge's third definition of "today"**, with a
+   red-then-green proof.
+3. **The spec's own red-before accounting was wrong by three assertions** (the
+   feed's archive link, the Past row's title link and the mute were claimed
+   "green before and after"; all three are added by this ticket). Now listed as
+   this ticket's own pivots — the AC specifically required the spec to say which
+   assertion is the pivot.
+4. **The archive door is HOST-SCOPED, and that is recorded rather than papered
+   over:** `/profile` lists only the viewer's own hosted posts, so a parent who
+   *attended* someone else's ended drop-in has no listing surface, and the
+   likeliest tapper (a brand-new parent, since the link also sits in the empty
+   state) lands on "No posts yet.". Recorded in the ticket's `## Comments` and
+   pinned by a non-host assertion. Building an attended-events surface is a
+   separate ticket, not a read-path change.
+5. **`listPlaceFeed` (`db.ts:688`) and `upcomingCountsByPlace` (`db.ts:711`)
+   still cut at start-of-today**, so Browse can say "1 upcoming" for a place
+   whose only drop-in has ENDED — a wrong LABEL today, not the performance
+   footnote the doc first claimed (framing corrected, numbered follow-up recorded
+   in the ticket). `countPostsByHost` has no time filter at all, so the brief's
+   premise about it was wrong.
+6. **A V3/02 pin is silently superseded:** `DropInCard`'s "the event STAYS in
+   the feed — no auto-expiry" is no longer true for a CANCELLED post past its
+   end. Reconciled at that site and **four more copies** of the same sentence
+   (`types.ts:73`, `PlaydateDetailPage.tsx:230/1410/1722`); `grep "STAYS in the
+   feed"` is now the complete list, and the supersession is recorded in the
+   ticket.
+7. **Left alone deliberately and reported instead of smuggled in:** the clamped
+   row now sorts first in Today's section, so V3/01's single "Starts soon" badge
+   can go unawarded in one more rare situation — identical to what an
+   already-live same-day post does today. Changing V3/01's badge target is a
+   deliberate decision, not a bug fix.
+8. **`ends_at` is UNINDEXED** (the only playdates index is
+   `(neighborhood_id, starts_at)`, 0005), so the new predicate is a scan. Free
+   at 5 rows; an index is DDL this read-path-only ticket forbids. Documented.
 
 ## V4 — "Drop In" mobile conversion (opened 2026-09-11)
 
