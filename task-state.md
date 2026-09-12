@@ -9,7 +9,7 @@
 - **Phase: V4 COMPLETE (2026-09-11).** Human enabled Google in the Supabase project; the blocker is cleared and the round-trip is verified — see the closure evidence below.
 - **Active slice:** none — **V8 IS COMPLETE TO ITS HUMAN BOUNDARY (2026-09-13).** Tickets 01–10 are shipped and verified (`dd0642e` … `135c401`), 11's schema half is live with its UI deliberately held, and 12's instrument is delivered. Migrations **0028–0034 are ALL APPLIED LIVE** and probed. Final gate on the committed tree: build exit 0 · **655/655 unit (20 files)** · **e2e 48/48** · lint 0 errors · both PWA verifier scripts green · live DB swept back to 2 founders. **Next action (human):** (a) **push — mostly done (2026-09-12)**: keypair → `supabase secrets set` → `send-push` deployed → wall verified (service-role 200, anon 401) → `VITE_VAPID_PUBLIC_KEY` added to Vercel (Config/public, it's a public key) → `a97892e` pushed, live bundle `index-COPgHOaF.js` verified to carry the key (1 occurrence). **Remaining:** the Android phone test (`docs/push-setup.md`). **Schedule DONE (2026-09-12):** no dashboard Schedules tab on this plan (DOM-checked) and no `vault` → pg_cron+pg_net enabled, job `send-push-every-5-minutes` live (jobid 3); key injected via `.scratch/cron-schedule-send-push.mjs` (0600 temp file → CDP SQL API, never in a terminal/chat); 12:45 tick fired (job "succeeded", function booted at 05:45:00 in fn logs) and the drain correctly stamped the 2 pre-existing rows "no subscription" (`push_subscriptions` = 0 until the phone opts in). pg_net's fixed 5s response timeout means `_http_response` shows `timed_out` on cold-start ticks — cosmetic, delivery completes server-side; (b) **email verification**: flip Supabase's "Confirm email" and I land the chip + "Check your inbox" screen + the e2e harness change (`docs/email-verification-setup.md`); (c) **density**: run the first cohort (`.scratch/v8/density-log.md`). **V8 IS NOW ON Vercel (2026-09-12)** — `42dfb2a..a97892e` pushed; the live site serves `index-COPgHOaF.js` with the VAPID public key inlined, so new opt-ins subscribe with the bound key. Open *decisions*, not defects: the **logo mark** (V7 settled colour only) and the beta's SMTP setting.
 - **Remaining human items:** the three in the Next action above. The e2e marker sweep ran clean again (168 markers, 0 founder overlap); live DB = 2 founders only.
-- **V9 — the wife's feedback batch: IN PROGRESS (opened 2026-09-13).** Spec + 9 tickets in `.scratch/v9/`. **Tickets 01, 03 and 04 are COMPLETE** (commits `e493e08`, `96bb96e`, `73c2f5e`) — the feed now holds nothing that has ended, with the archive linked from the feed — `/new` leads with the place picker, the neighbourhood is no longer a question, and the post page is now three decisions with everything else behind one "More options" disclosure. **Migration 0035 is APPLIED LIVE and probed.** Ticket 05 is the last of the authorized batch (one writer, in queue order); its brief is written and it needs migration 0037. Two decisions already taken this session: **02 is deferred** (the human chose to build 03 against the EXISTING time control rather than ship 02's unconfirmed badge-suppression judgment call), and 06/08 still want a one-line confirmation while **09 needs an explicit yes** before dispatch. Details, evidence and the full ticket table are in the **V9** section below.
+- **V9 — the wife's feedback batch: THE AUTHORIZED BATCH IS COMPLETE (opened 2026-09-13).** Spec + 9 tickets in `.scratch/v9/`. **Tickets 01, 03, 04 and 05 are COMPLETE** (commits `e493e08`, `96bb96e`, `73c2f5e`, `c9b4836`) — `/new` leads with the place picker and the neighbourhood is no longer a question (01), the post page is three decisions with everything else behind one "More options" (03), the feed holds nothing that has ended and links to the archive (04), and a card now leads with the kids' ages while names are optional (05). **Migrations 0035 and 0037 are APPLIED LIVE and probed.** Final gate on the committed tree: build exit 0 · **752/752 unit (21 files)** · **e2e 65/65** · lint 0 errors · live DB swept back to 2 founders. **Two items now need the human:** (a) a **privacy finding** — the kid-name gate is weaker than ticket 05's AC believed (`kids`/`playdate_kids` are readable by ANY signed-in parent), so a follow-up ticket to tighten it is recommended; (b) the remaining queue: **02 is deferred** (the human chose to build 03 against the EXISTING time control rather than ship 02's unconfirmed badge-suppression judgment call), 06/08 want a one-line confirmation, and **09 needs an explicit yes** before dispatch. Details, evidence and the full ticket table are in the **V9** section below.
 
 **Push pipeline — coordinator verification (2026-09-13, after the human's step-3 run).** Independently confirmed through the Management API and live probes: `send-push` is **ACTIVE** with `verify_jwt: true`; the three VAPID secrets exist; the **anon** bearer gets `401 {"error":"send-push is service-role only"}` (a 404 would have meant "not deployed"); the LIVE bundle carries the VAPID public key and no private half, so deployed opt-ins are **bound**. The DB half is live too: a real ping wrote a `ping_received` row and deleting the post wrote a `cancelled` row via the BEFORE DELETE trigger. **Step 4 is provably NOT done:** `pg_cron`/`pg_net` are not installed, and those two queued rows kept `sent_at` NULL across six minutes of polling — nothing invokes the function. The human's earlier service-role check returned 200 but **predates** those rows (12:16 UTC), so the sender has still never processed a queued row. Read from the code, that case is safe: a row whose recipient has no subscription is stamped `sent_at` with `error: 'no subscription'` and counted as skipped (`index.ts:259-264`) — no oldest-first starvation risk. Both rows are left in place as the canary for the moment the schedule exists.
 
@@ -318,16 +318,16 @@ exit 0 · **655/655 unit (20 files)** · e2e 48/48 per the HANDOFF · migrations
 | 02 | Post: a time WINDOW, not an hour | **DEFERRED BY THE HUMAN (2026-09-13)** — see the decision below. Ticket stays `ready-for-agent` pending the badge-suppression confirmation; 0036 stays reserved |
 | 03 | Post: the twenty-second post (3 decisions, rest behind "more") | **complete — `96bb96e`**; no migration (`supabase/` verified untouched); 702/702 unit, e2e 59/59, lint 0 errors |
 | 04 | Nearby: ended drop-ins leave the feed, into the archive | **complete — `73c2f5e`**; no migration (read-path only, `supabase/` verified untouched); 720/720 unit, e2e 61/61, lint 0 errors |
-| 05 | Nearby: ages first, names optional | queued (brief written); needs **0037** |
+| 05 | Nearby: ages first, names optional | **complete — `c9b4836`**; **0037 APPLIED LIVE + probed**; 752/752 unit, e2e 65/65, lint 0 errors |
 | 06 | Nearby: map-first with a list toggle | `ready-for-human` — needs the map-provider one-liner (Leaflet + OSM recommended) |
 | 07 | Nearby: search + filters | not in this session's batch |
 | 08 | Profile: no kid photos; a family photo + about-us | `ready-for-human` — needs the one-line confirmation of the privacy reversal |
 | 09 | Messages: parent-to-parent on a shared drop-in | `ready-for-human` — **do NOT dispatch without an explicit yes** |
 
-**Migration ledger:** 0035–0039 were RESERVATIONS in queue order. **0035 is now
-APPLIED LIVE.** 0036 stays reserved for the deferred ticket 02; 0037 is held for
-ticket 05 (the ticket pins that number, and keeping it avoids a renumber when 02
-lands). Whatever is applied is what this file records.
+**Migration ledger:** 0035–0039 were RESERVATIONS in queue order. **0035 and
+0037 are now APPLIED LIVE** (both probed). 0036 stays reserved for the deferred
+ticket 02; 0038/0039 remain reserved for tickets 08/09. Whatever is applied is
+what this file records.
 
 ### V9 decision taken this session — ticket 02 vs ticket 03 (2026-09-13)
 
@@ -522,6 +522,75 @@ pre-empted.
 8. **`ends_at` is UNINDEXED** (the only playdates index is
    `(neighborhood_id, starts_at)`, 0005), so the new predicate is a scan. Free
    at 5 rows; an index is DDL this read-path-only ticket forbids. Documented.
+
+### V9 ticket 05 — evidence (complete, `c9b4836`)
+
+| Claim | How it was checked |
+|---|---|
+| A card leads with the ages of the kids the host is bringing, never a name | the spec asserts the age line's rendered text is EXACTLY `ages 3–6`, is the meta's FIRST line, and that **every kid name is absent** from the card — an absence assertion made non-vacuous by proving the same locator first carries the ages line |
+| One kid → `age 4`; a wide spread → capped; no kids and no chips → NOTHING (never a guess) | pure seams `ageRangeLine` / `playdateAgeRangeLine` / `statedAgeRangeLine`, unit-pinned including the cap boundary (`AGE_RANGE_ALL_AGES_WIDTH = 12`) on BOTH sides and the no-source case; the spec asserts `card-age-range` count 0 for a kid-less, chip-less post |
+| The explicit chips WIN, and they live behind ticket 03's disclosure | precedence is a pure seam with unit tests; the spec asserts the chips row is **not in the DOM** while collapsed, then stores the pair and the card reads the STATED range (with a control that the derived one is gone) |
+| One batched read per surface, never one per card | a unit test pins the SELECT string and asserts it projects **only** `kid.age` — no `first_name`, no kid id; the pages call the batched read once, outside the per-card map, and degrade to `{}` silently |
+| A kid's first name is optional, end to end | a live spec walks: `/profile` Add with NO name → the column really holds **NULL** (read back with the marker's own JWT, so NULL-vs-`''` is proven) → reload → the row renders sensibly → the Remove dialog says "this kid" → a drop-in posted with that nameless kid reads `age 4` on the card and `Kids coming: Age 4` on the detail page |
+| **Gate (coordinator, independent, 0037 applied)** | build exit 0 · **752/752 unit (21 files)** · feed-ages spec **5/5** · **e2e 65/65, exit 0** · lint **0 errors** (39 warnings = baseline) |
+| Migration 0037 + probes | both columns nullable `smallint` and `playdates_age_range_chk` present; an inverted range fails closed (`23514`) **and writes nothing** (0 probe residue, 5 posts, 0 with ages); `count_kids_going_for` / `get_kids_going` shapes unregressed; `kids.first_name` nullable. Re-runnable: two `add column if not exists`, a `pg_constraint`-guarded CHECK, and a `drop not null` no-op — no index, policy, grant or function |
+
+**THE PRIVACY FINDING — the ticket's AC is false, and the copy was NOT shipped as
+written (this one needs a human decision, see below).** The AC says kid names are
+shown "only for the host and people who pinged, as today". **Verified false
+against the live project:** `kids_select_authenticated` and
+`playdate_kids_select_authenticated` are both `using (true)` for
+`authenticated`, and the detail page loads `listPlaydateKidNames`
+**unconditionally** for any signed-in viewer — only 0026's `get_kids_going`
+gates the *pingers'* kids. So any signed-in parent can read the host's kids'
+names; the builder wrote truthful copy ("only on your profile and on a drop-in's
+page, and only to signed-in families") and recorded the amendment. **Tightening
+that gate is a follow-up ticket that is deliberately NOT opened here** (it is a
+privacy change with its own ACs/migration/review, and this ticket's migration
+check pins "no policy changed"). **Recommended next step for the human:** open
+it — and note the coupling recorded in the ticket file: the ages derivation reads
+`playdate_kids` under that very RLS, so the follow-up would **silently blank
+every card's ages line** unless it gives the derivation its own gate.
+
+**Deviations and findings from ticket 05:**
+
+1. **The pre-0037 red was captured first-hand by the coordinator**, and it is a
+   `PGRST204`, not the `42703` the ticket predicted: `HTTP 400
+   {"code":"PGRST204",…"Could not find the 'age_max' column of 'playdates' in
+   the schema cache"}` — PostgREST intercepts the insert payload before
+   Postgres. The derived half was green in that same run, exactly as the ticket
+   pins; after the apply the spec is 5/5.
+2. **No SECURITY DEFINER batched RPC was added**, though the brief asked for one:
+   a function can only exist after 0037, which would make the derived half red
+   pre-apply and contradict the ticket's own pivot. The reviewer's refinement is
+   recorded in the ticket: the pins were **jointly satisfiable** (function +
+   pre-apply fallback, or the function in its own migration first), so this was a
+   **decision, not an impossibility**. Two accepted costs are named in the
+   record: the read is now bulk and automatic on every signed-in surface load,
+   and the ages line is hard-coupled to `playdate_kids`' RLS (see the privacy
+   finding).
+3. **`kid.first_name` made nullable** — a deliberate extension of the ticket's
+   "two columns + a CHECK" line, without which the AC cannot hold (blank name
+   writes NULL by design). Review cycle 1 then found a **reachable** consequence
+   the compiler provably cannot catch: the `/profile` Remove dialog interpolated
+   the name, so a nameless kid read **"Remove null?" / "null comes off your
+   family profile…"**. Fixed with a noun fallback and pinned by an assertion.
+   **Correction recorded:** `--strict` accepts `` `${x}` `` for a
+   `string | null`, so the type change enumerates method calls and assignments,
+   not template literals — the migration header's original claim was wrong.
+4. **The stated range is WRITE-ONCE and outranks the derived one** (recorded as a
+   known limitation): the chips exist only on `/new`; `/edit` neither shows nor
+   writes them while it *does* own an in-place kids editor, so a wrong chip is
+   permanently wrong and beats the correct derived value, fixable only by
+   delete-and-re-post.
+5. **Two judgment calls the builder flagged, both reversible in one commit:**
+   it wired `PlacePage`/`UserPage` through the same shared composition seam
+   rather than only documenting the scope (the AC's card sentence is not
+   feed-scoped; cost is one extra request per surface load, never per card), and
+   it made `places.placeAgeFitLabel` literally `'Best for ' + statedAgeRangeLine`
+   so the two age-band seams cannot drift.
+6. **Still open, human-owned (unchanged by this session):** the ticket's phone
+   pass, and the follow-up privacy ticket above.
 
 ## V4 — "Drop In" mobile conversion (opened 2026-09-11)
 
