@@ -39,6 +39,14 @@ export function RadiusEmptyState({ radiusMiles }: { radiusMiles: number }) {
   const [widenError, setWidenError] = useState<string | null>(null)
   const homeZip = profile?.home_zip ?? ''
   const escapes = radiusEscapes(radiusMiles)
+  /**
+   * V8 ticket 02 REVIEW ROUND: an escape with nothing to widen FROM (no
+   * session, no home zip) must not render as a live control — a button that
+   * swallows its own tap is the "second dead end wearing a control's clothes"
+   * this component exists to remove. The shell's onboarding gate keeps that
+   * state off these pages, so this is a belt-and-braces guard, not a flow.
+   */
+  const escapesDisabled = busyRadius !== null || session === null || homeZip === ''
 
   async function handleEscape(target: number) {
     // One write at a time. An empty home zip cannot be widened FROM (the
@@ -69,7 +77,7 @@ export function RadiusEmptyState({ radiusMiles }: { radiusMiles: number }) {
             <button
               key={escape.radiusMiles}
               type="button"
-              disabled={busyRadius !== null}
+              disabled={escapesDisabled}
               onClick={() => void handleEscape(escape.radiusMiles)}
               className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
             >

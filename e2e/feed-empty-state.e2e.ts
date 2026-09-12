@@ -278,6 +278,8 @@ test('the detail page\'s failed reads are honest states, and Retry recovers', as
   await viewerPage.getByRole('heading', { name: 'Near you' }).waitFor()
 
   // --- Force both reads to fail, then open the post. ---
+  // Every going_pings request this viewer issues is aborted — read and write
+  // alike — which is what forces both honest states below.
   await viewerPage.route(/\/rest\/v1\/going_pings/, (route) => route.abort('failed'))
   await viewerPage.route(/\/rest\/v1\/comments/, (route) => route.abort('failed'))
   await viewerPage.goto(`/playdate/${postId}`)
@@ -294,6 +296,14 @@ test('the detail page\'s failed reads are honest states, and Retry recovers', as
   await expect(commentsError).toBeVisible()
   await expect(commentsError).toContainText('Couldn’t load comments.')
 
+  // The write path is genuinely WIRED, not merely undimmed: the tap runs the
+  // ping handler and surfaces the handler's own failure — an enabled-but-no-op
+  // button would say nothing at all. (The handler's first step is a
+  // going_pings read, which this spec has aborted; the failure it reports here
+  // IS the proof it ran.)
+  await viewerPage.getByRole('button', { name: 'I’m going' }).click()
+  await expect(viewerPage.getByText('Could not update your ping. Try again.')).toBeVisible()
+
   // --- Recovery: lift the failures, tap both Retries. ---
   await viewerPage.unroute(/\/rest\/v1\/going_pings/)
   await viewerPage.unroute(/\/rest\/v1\/comments/)
@@ -303,6 +313,24 @@ test('the detail page\'s failed reads are honest states, and Retry recovers', as
   await commentsError.getByRole('button', { name: 'Retry' }).click()
   await expect(commentsError).toHaveCount(0)
   await expect(viewerPage.getByRole('heading', { name: 'Comments', exact: true })).toBeVisible()
+
+  // --- REVIEW-ROUND fix, asserted here too: the HOST's line told the same
+  // lie ("No pings yet") when the count read failed — a fact the page did not
+  // have, on the host's only retention signal. ---
+  await page.route(/\/rest\/v1\/going_pings/, (route) => route.abort('failed'))
+  await page.goto(`/playdate/${postId}`)
+  const hostCountUnknown = page.getByTestId('host-going-count-unavailable')
+  await expect(hostCountUnknown).toBeVisible()
+  // The lie it replaced — the host's zero-count copy — must NOT be on screen
+  // while the count is unknown (this is the assertion that fails on the old
+  // code, where a failed read rendered exactly this line).
+  await expect(page.getByText('No one has pinged yet')).toHaveCount(0)
+  await page.unroute(/\/rest\/v1\/going_pings/)
+  await hostCountUnknown.getByRole('button', { name: 'Retry' }).click()
+  await expect(hostCountUnknown).toHaveCount(0)
+  // A REAL count line is back — the exact number depends on whether the
+  // viewer's aborted ping landed, which is not this spec's subject.
+  await expect(page.getByText(/^(No one has pinged yet|\d+ famil(y|ies) going)$/)).toBeVisible()
 
   await viewerContext.close()
   console.log(

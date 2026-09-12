@@ -1288,9 +1288,29 @@ export function PlaydateDetailPage() {
               Duplicate
             </button>
           </div>
-          <p className="mt-1 text-sm text-indigo-700">
-            {count !== null ? hostGoingCountLine(count) : 'No pings yet'}
-          </p>
+          {/* V8 ticket 02 REVIEW ROUND: the host's line carried the same lie
+              the non-host branch was fixed for. A failed count read rendered
+              the flat claim "No pings yet" — a FACT the page did not have, on
+              the host's only retention signal, with no way to re-ask. It now
+              says so, and the same retry re-reads it. */}
+          {count !== null ? (
+            <p className="mt-1 text-sm text-indigo-700">{hostGoingCountLine(count)}</p>
+          ) : (
+            <div
+              data-testid="host-going-count-unavailable"
+              className="mt-1 flex flex-wrap items-center gap-2"
+            >
+              <p className="text-sm text-indigo-700">Couldn’t load who’s going.</p>
+              <button
+                type="button"
+                disabled={countRetryBusy}
+                onClick={() => void handleRetryGoingCount()}
+                className="flex min-h-11 items-center rounded-xl border border-indigo-300 bg-white px-3 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 disabled:opacity-50"
+              >
+                {countRetryBusy ? 'Retrying…' : 'Retry'}
+              </button>
+            </div>
+          )}
           {/* V3 slice 2 (ticket 02; V3 slice 3, ticket 06 + migration
                0019 trimmed the options to On / Cancelled — the third
                option, redundant with Cancelled, was removed): the host's

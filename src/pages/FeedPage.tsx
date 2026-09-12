@@ -180,6 +180,12 @@ export function FeedPage() {
    * must never re-render, and stamping it must never fight the load effect.
    */
   const lastFeedLoadedAtRef = useRef<string | null>(null)
+  /**
+   * The context the last COMPLETED load belonged to (user + zip + radius).
+   * A re-run for the same context is a refresh, not a context change — see
+   * the load effect's isRefresh (V8 ticket 02 review round).
+   */
+  const loadedContextRef = useRef<string | null>(null)
 
   // The viewer side of the radius filter: the profile's home zip + radius.
   // The shell's onboarding gate keys on home_zip, so a settled signed-in
@@ -188,8 +194,28 @@ export function FeedPage() {
   useEffect(() => {
     if (loading || session === null || profile === null) return
     let cancelled = false
-    setPosts(null)
-    setLoadError(null)
+    /**
+     * V8 ticket 02 REVIEW ROUND (found by the fresh-context reviewer, and a
+     * real regression on the product's primary screen): a token-driven re-run
+     * is a REFRESH, and a refresh must not blank the list. `posts = null` is
+     * right when the CONTEXT changed — a different user, zip or radius means
+     * the list on screen is wrong and "Loading…" is honest — but it is wrong
+     * for an automatic freshness refetch, which used to replace the day
+     * sections with "Loading…" on every tab return and let a single transient
+     * failure swap a perfectly good list for the error screen.
+     *
+     * So: clear for a new context, keep the last good list for a refresh, and
+     * let only a NEW context own the error state (a failed refresh leaves the
+     * stale-but-correct list alone; the next refresh retries).
+     */
+    const contextKey = `${session.user.id}|${profile.home_zip ?? ''}|${
+      profile.radius_miles ?? DEFAULT_RADIUS_MILES
+    }`
+    const isRefresh = loadedContextRef.current === contextKey
+    if (!isRefresh) {
+      setPosts(null)
+      setLoadError(null)
+    }
     // The visibility gate's clock (V8 ticket 02) — stamped when the query is
     // issued, so a focus/visibility event during a slow load cannot stack a
     // second one behind it.
@@ -200,10 +226,14 @@ export function FeedPage() {
     }
     listRadiusFeed(viewer, session.user.id)
       .then((rows) => {
-        if (!cancelled) setPosts(rows)
+        loadedContextRef.current = contextKey
+        if (!cancelled) {
+          setLoadError(null)
+          setPosts(rows)
+        }
       })
       .catch((err: unknown) => {
-        if (!cancelled) {
+        if (!cancelled && !isRefresh) {
           setLoadError(err instanceof Error ? err.message : 'Could not load drop-ins near you.')
         }
       })
