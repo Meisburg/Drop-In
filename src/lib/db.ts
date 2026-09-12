@@ -1337,6 +1337,133 @@ export async function listMyPingedPosts(): Promise<WhileAwayPingedPostRow[]> {
 }
 
 // ---------------------------------------------------------------------------
+// V8 ticket 04: one host's posts (/u/:handle's Upcoming/Past lists).
+//
+// Read-only over the EXISTING tables — no migration, no new policy: the
+// playdates SELECT posture (0005, any authenticated user) already serves these
+// rows, `hidden_at` exclusion is 0009's read rule, and `blocks` (0006) is reused
+// through the existing listBlockedHostIds helper. The one thing this section
+// adds is the query itself, in the two shapes the ticket pins: the card-shaped
+// embed (so /u/:handle can render the existing DropInCard) and the cap.
+
+/**
+ * How many rows each of the host-post queries reads (V8 ticket 04 pin).
+ *
+ * Per SECTION, not per request: the two sections carry different orders, so they
+ * are two queries — and an old host's history is the pile that grows, which is
+ * why the past section's overflow is reported as a plain count
+ * (HostPosts.olderCount → "+N older") instead of paginating. 50 is far past any
+ * real host's data volume; the point is that the fetch is never unbounded.
+ */
+export const HOST_POSTS_LIMIT = 50
+
+/**
+ * The card-shaped SELECT for a host's posts (V8 ticket 04): the same shape the
+ * feed's query uses (feed.queryUpcomingFeedWithClient), including BOTH FK hints
+ * — `neighborhoods!inner` for the card's neighborhood label and
+ * `profiles!playdates_host_profile_id_fkey` for the host embed (the PGRST201
+ * lesson: two playdates→profiles embed paths exist, so an unpinned embed is an
+ * error, not an ambiguity to resolve). Duplicated as a literal rather than
+ * shared, because the feed query is not this ticket's to edit — the two strings
+ * must stay identical.
+ */
+const HOST_POSTS_SELECT =
+  '*, neighborhood:neighborhoods!inner ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip, radius_miles )'
+
+/** One host's posts, ready for the profile pages (V8 ticket 04). */
+export interface HostPosts {
+  /** Upcoming (starts_at ascending) then past (starts_at descending). */
+  posts: PlaydateWithNeighborhood[]
+  /**
+   * Past rows beyond HOST_POSTS_LIMIT — the plain "+N older" count the page
+   * renders. 0 = nothing was truncated.
+   */
+  olderCount: number
+}
+
+/**
+ * One host's visible posts, against an injected client (the *WithClient
+ * pattern — mocked in feed.test.ts), for /u/:handle's Upcoming/Past lists.
+ *
+ * - NON-HIDDEN only: `.is('hidden_at', null)`, the same DB-level rule the feed
+ *   applies (0009's read rule for everyone, moderator-hidden posts included).
+ * - The viewer's own BLOCKS still filter the result. Every row this query can
+ *   return is by `profileId`, so the rule collapses to exactly one case — the
+ *   viewer blocked this host — and that case is answered WITHOUT a query: a
+ *   blocked host's page must not leak posts through this new path (the ticket
+ *   AC). The caller resolves the ids with the existing listBlockedHostIds.
+ * - TWO queries, because the sections' orders differ and the cap is per section:
+ *   upcoming ordered `starts_at` ascending, past ordered descending, each
+ *   `limit(HOST_POSTS_LIMIT)` with an exact COUNT so the truncated past rows can
+ *   be reported as a plain number (never a second unbounded fetch).
+ * - The bucket split is `ends_at > nowIso` / `ends_at <= nowIso` — the same
+ *   boundary the pure feed.partitionPostsByTime re-partitions these rows with, so
+ *   the query's buckets and the render can never disagree. A drop-in happening
+ *   RIGHT NOW (started, not ended) therefore lands in Upcoming, where a visitor
+ *   can still join it, and the card badges it "Happening now".
+ *
+ * The result rows keep their loose (untyped) shape; the cast to
+ * PlaydateWithNeighborhood happens here (the listMemberships pattern).
+ */
+export async function listPostsByHostWithClient(
+  client: SupabaseClient,
+  profileId: string,
+  blockedHostIds: string[],
+  nowIso: string,
+): Promise<HostPosts> {
+  if (blockedHostIds.includes(profileId)) return { posts: [], olderCount: 0 }
+  const base = () =>
+    client
+      .from('playdates')
+      .select(HOST_POSTS_SELECT, { count: 'exact' })
+      .eq('host_profile_id', profileId)
+      .is('hidden_at', null)
+  const upcoming = await base()
+    .gt('ends_at', nowIso)
+    .order('starts_at', { ascending: true })
+    .limit(HOST_POSTS_LIMIT)
+  if (upcoming.error) throw upcoming.error
+  const past = await base()
+    .lte('ends_at', nowIso)
+    .order('starts_at', { ascending: false })
+    .limit(HOST_POSTS_LIMIT)
+  if (past.error) throw past.error
+  const pastRows = (past.data ?? []) as unknown as PlaydateWithNeighborhood[]
+  const pastTotal = past.count ?? pastRows.length
+  return {
+    posts: [
+      ...((upcoming.data ?? []) as unknown as PlaydateWithNeighborhood[]),
+      ...pastRows,
+    ],
+    olderCount: Math.max(0, pastTotal - pastRows.length),
+  }
+}
+
+/**
+ * One host's visible posts (V8 ticket 04) — /u/:handle's Upcoming/Past lists —
+ * against the shared client. The viewer's blocks come from the EXISTING helper
+ * (listBlockedHostIds; the blocks RLS hands back the caller's own rows), so a
+ * host the viewer has blocked renders no posts here either. With no signed-in
+ * viewer (/u/:handle is auth-walled, so this is only a defensive branch) no
+ * block filter is applied — nothing is claimed about a viewer that isn't there.
+ *
+ * A failed load throws: the page renders its designed error line (the
+ * countPostsByHost / listRadiusFeed discipline — never a crash).
+ */
+export async function listPostsByHost(profileId: string): Promise<HostPosts> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  const blockedHostIds = user === null ? [] : await listBlockedHostIds(user.id)
+  return listPostsByHostWithClient(
+    supabase,
+    profileId,
+    blockedHostIds,
+    new Date().toISOString(),
+  )
+}
+
+// ---------------------------------------------------------------------------
 // V3 slice 10 (ticket 05): the guest list — the get_guest_list RPC.
 //
 // The SECURITY DEFINER function (migration 0025) may not be applied to the

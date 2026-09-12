@@ -1,11 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { HostAvatar } from '../components/DropInCard'
+import { DropInCard, HostAvatar } from '../components/DropInCard'
 import { PhotoButton } from '../components/ImageLightbox'
 import { ReportDialog } from '../components/ReportDialog'
 import { useSessionContext } from '../components/SessionProvider'
-import { countPostsByHost, getBlockState, getProfileByHandle, toggleBlock } from '../lib/db'
-import type { ProfileWithKids } from '../lib/types'
+import {
+  countPostsByHost,
+  getBlockState,
+  getProfileByHandle,
+  listPostsByHost,
+  toggleBlock,
+} from '../lib/db'
+import { partitionPostsByTime } from '../lib/feed'
+import type { PlaydateWithNeighborhood, ProfileWithKids } from '../lib/types'
 
 type UserPageState =
   | { status: 'loading' }
@@ -25,9 +32,21 @@ type UserPageState =
  * behavioral history per the 2026-09-09 design verdict: NO two-sided
  * reviews, NO vouching). The shared header render (the self view AND
  * /u/:handle); hidden when N = 0 or unsettled (a failed load degrades to
- * hidden — zero-pressure soul, never a crash). The hardcoded "No posts
- * yet." posts block is a SEPARATE block (the N = 0 posts state) —
- * untouched.
+ * hidden — zero-pressure soul, never a crash).
+ *
+ * V8 ticket 04: the Posts block is REAL. The hardcoded "No posts yet." (a
+ * lie on every profile that ever hosted something — the worst first
+ * impression on the one surface a parent visits to decide whether to show
+ * up) is gone. The host's own posts render as two sections — Upcoming
+ * (starts_at ascending) and Past (descending) — through the same DropInCard
+ * the feed uses, so past cards come out muted via the existing isEnded
+ * styling. The split + both orders are the pure
+ * feed.partitionPostsByTime; the rows come from db.listPostsByHost (hidden
+ * posts excluded, the viewer's blocks honored, each section capped at
+ * HOST_POSTS_LIMIT with a plain "+N older" count). pingToggle and
+ * goingPings are deliberately NOT passed: there is no optimistic write path
+ * outside the feed, and no per-page ping query belongs on this page.
+ * The "Hosted N drop-ins" line above is untouched by that change.
  */
 export function UserPage() {
   const { handle } = useParams<{ handle: string }>()
@@ -43,6 +62,12 @@ export function UserPage() {
   // unsettled (the line is hidden); a failed load degrades to hidden
   // (zero-pressure soul, never a crash).
   const [hostedCount, setHostedCount] = useState<number | null>(null)
+  // V8 ticket 04: the host's real posts (null = still loading) + the
+  // truncated past rows behind the cap ("+N older"). A failed load surfaces
+  // the designed error line, never a crash.
+  const [posts, setPosts] = useState<PlaydateWithNeighborhood[] | null>(null)
+  const [olderCount, setOlderCount] = useState(0)
+  const [postsError, setPostsError] = useState<string | null>(null)
 
   useEffect(() => {
     if (handle === undefined || handle === '') {
@@ -110,6 +135,32 @@ export function UserPage() {
     }
   }, [profileId])
 
+  // V8 ticket 04: the host's own posts, once per settled profile id — the two
+  // lists below (Upcoming/Past). The split/order is the pure
+  // partitionPostsByTime at render; this effect only fetches. A failed load
+  // renders the designed error line in the Posts block (never a crash — the
+  // house DB-not-applied discipline).
+  useEffect(() => {
+    if (profileId === null) return
+    let cancelled = false
+    setPosts(null)
+    setOlderCount(0)
+    setPostsError(null)
+    listPostsByHost(profileId)
+      .then((result) => {
+        if (cancelled) return
+        setPosts(result.posts)
+        setOlderCount(result.olderCount)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setPostsError(err instanceof Error ? err.message : 'Could not load posts.')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [profileId])
+
   async function handleToggleBlock() {
     if (profileId === null || blockingBusy) return
     setBlockingBusy(true)
@@ -163,6 +214,11 @@ export function UserPage() {
     month: 'long',
     year: 'numeric',
   })
+  // V8 ticket 04: nowIso is read ONCE per render (the BrowsePage pattern) and
+  // drives BOTH the Upcoming/Past split and each card's ended/muted styling,
+  // so a card can never sit in a section its own styling contradicts.
+  const nowIso = new Date().toISOString()
+  const { upcoming, past } = partitionPostsByTime(posts ?? [], nowIso)
 
   return (
     <div className="flex flex-col gap-4">
@@ -290,11 +346,55 @@ export function UserPage() {
         </div>
       )}
 
-      <div>
+      {/* V8 ticket 04: the host's REAL posts. Upcoming first (what a visitor
+          can still join), then Past (the social proof that this family
+          actually shows up — muted cards, via the existing isEnded styling).
+          The two empty states are deliberately distinguishable and true:
+          nothing at all → "No posts yet."; history but nothing ahead →
+          "Nothing coming up — past drop-ins below." (true by construction:
+          upcoming is the complement of isEnded, so nothing-upcoming means every
+          post has ended). */}
+      <div className="flex flex-col gap-2">
         <h2 className="text-base font-semibold text-slate-900">Posts</h2>
-        <div className="mt-2 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-          <p className="text-sm text-slate-600">No posts yet.</p>
-        </div>
+        {postsError !== null ? (
+          <p className="text-sm text-red-600">{postsError}</p>
+        ) : posts === null ? (
+          <p className="text-sm text-slate-600">Loading…</p>
+        ) : posts.length === 0 ? (
+          <div className="rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+            <p className="text-sm text-slate-600">No posts yet.</p>
+          </div>
+        ) : (
+          <>
+            {upcoming.length === 0 ? (
+              <p className="text-sm text-slate-600">Nothing coming up — past drop-ins below.</p>
+            ) : (
+              <section className="flex flex-col gap-2">
+                <h3 className="text-sm font-semibold text-slate-700">Upcoming</h3>
+                <div className="flex flex-col gap-3">
+                  {upcoming.map((post) => (
+                    <DropInCard key={post.id} playdate={post} nowIso={nowIso} />
+                  ))}
+                </div>
+              </section>
+            )}
+            {past.length > 0 ? (
+              <section className="flex flex-col gap-2">
+                <h3 className="text-sm font-semibold text-slate-700">Past</h3>
+                <div className="flex flex-col gap-3">
+                  {past.map((post) => (
+                    <DropInCard key={post.id} playdate={post} nowIso={nowIso} />
+                  ))}
+                </div>
+                {/* The cap's honest tail (never pagination at this volume):
+                    a plain count of the past rows the 50-row fetch left out. */}
+                {olderCount > 0 ? (
+                  <p className="text-xs text-slate-500">+{olderCount} older</p>
+                ) : null}
+              </section>
+            ) : null}
+          </>
+        )}
       </div>
 
       {reporting && !isOwnProfile ? (

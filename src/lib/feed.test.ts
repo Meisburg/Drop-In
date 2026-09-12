@@ -29,6 +29,7 @@ import {
   localDayKey,
   mapsHref,
   nextSlotMinutes,
+  partitionPostsByTime,
   PLAYDATE_DURATIONS_MINUTES,
   queryMyPlaydatesWithClient,
   queryRecentOwnPlacesWithClient,
@@ -67,9 +68,11 @@ import {
 import {
   countPostsByHostWithClient,
   fetchGuestListWithClient,
+  HOST_POSTS_LIMIT,
   listCommentsOnPostsWithClient,
   listMyPingedPostsWithClient,
   listMyPostRefsWithClient,
+  listPostsByHostWithClient,
   touchLastSeen,
 } from './db'
 
@@ -1782,5 +1785,242 @@ describe('the while-away inbox reads (V8 ticket 03)', () => {
     expect(await listMyPingedPostsWithClient(client, 'me')).toEqual([
       { playdateId: 'pd-gone', title: null, status: null, startsAt: null },
     ])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// V8 ticket 04: the profile post lists (/u/:handle and /profile).
+
+describe('partitionPostsByTime (V8 ticket 04: the Upcoming / Past split)', () => {
+  /** A post by id, from `startMinutes` to `endMinutes` after local midnight. */
+  const slot = (id: string, startMinutes: number, endMinutes: number) => ({
+    id,
+    starts_at: at(startMinutes),
+    ends_at: at(endMinutes),
+  })
+
+  it('a post starting exactly at nowIso is UPCOMING (the pinned boundary)', () => {
+    const nowIso = at(600)
+    const { upcoming, past } = partitionPostsByTime([slot('now', 600, 660)], nowIso)
+    expect(upcoming.map((post) => post.id)).toEqual(['now'])
+    expect(past).toEqual([])
+  })
+
+  it('an ended post is PAST — the boundary is ends_at <= now (isEnded, the card’s mute rule)', () => {
+    const nowIso = at(600)
+    const { upcoming, past } = partitionPostsByTime([slot('over', 540, 600)], nowIso)
+    expect(past.map((post) => post.id)).toEqual(['over'])
+    expect(upcoming).toEqual([])
+  })
+
+  it('a drop-in that is happening right now is UPCOMING (still joinable, and the card badges it live)', () => {
+    const nowIso = at(600)
+    const { upcoming, past } = partitionPostsByTime([slot('live', 570, 630)], nowIso)
+    expect(upcoming.map((post) => post.id)).toEqual(['live'])
+    expect(past).toEqual([])
+  })
+
+  it('orders upcoming ascending by starts_at and past descending', () => {
+    const nowIso = at(600)
+    const posts = [
+      slot('past-oldest', 300, 360),
+      slot('later-today', 900, 960),
+      slot('past-newest', 480, 540),
+      slot('soonest', 630, 690),
+      slot('past-middle', 420, 480),
+    ]
+    const { upcoming, past } = partitionPostsByTime(posts, nowIso)
+    expect(upcoming.map((post) => post.id)).toEqual(['soonest', 'later-today'])
+    expect(past.map((post) => post.id)).toEqual(['past-newest', 'past-middle', 'past-oldest'])
+  })
+
+  it('is empty/empty for no posts, and never mutates the caller’s array', () => {
+    expect(partitionPostsByTime([], NOW_ISO)).toEqual({ upcoming: [], past: [] })
+    const posts = [slot('a', 900, 960), slot('b', 300, 360)]
+    const before = posts.map((post) => post.id)
+    const { upcoming, past } = partitionPostsByTime(posts, at(600))
+    expect(posts.map((post) => post.id)).toEqual(before) // input order untouched
+    expect(upcoming.map((post) => post.id)).toEqual(['a'])
+    expect(past.map((post) => post.id)).toEqual(['b'])
+  })
+})
+
+/**
+ * Minimal recording mock of the client surface
+ * listPostsByHostWithClient uses (V8 ticket 04). Each from('playdates')
+ * STARTS A NEW QUERY — index 0 is the upcoming one, index 1 the past one
+ * (the order the function issues them) — and every call is recorded in
+ * sequence (the retention-mock pattern), so tests can pin the query SHAPE
+ * and the per-section rows/counts. An unexpected table throws, and a blocked
+ * host resolving with `calls: []` is the assertion that NO query is issued.
+ */
+interface HostPostsMockConfig {
+  /** The upcoming section's rows. */
+  upcomingRows?: unknown[]
+  /** The upcoming query's exact count (nothing renders it — the past tail is the "+N older"). */
+  upcomingCount?: number | null
+  /** The past section's rows. */
+  pastRows?: unknown[]
+  /** The past query's exact count — the "+N older" source. */
+  pastCount?: number | null
+  /** Models a failing playdates query (the designed error line). */
+  queryError?: { code: string; message: string }
+}
+
+function makeHostPostsMockClient(config: HostPostsMockConfig = {}): {
+  client: SupabaseClient
+  calls: string[]
+} {
+  const calls: string[] = []
+  let queryIndex = -1
+  const asError = (err: { code: string; message: string } | undefined): Error | null =>
+    err === undefined ? null : Object.assign(new Error(err.message), { code: err.code })
+  const makeBuilder = () => {
+    const index = queryIndex
+    const builder = {
+      select: (cols: string, opts?: { count?: string }) => {
+        calls.push(`playdates.select(${cols}, count:${opts?.count})`)
+        return builder
+      },
+      eq: (col: string, value: unknown) => {
+        calls.push(`playdates.eq(${col}, ${String(value)})`)
+        return builder
+      },
+      is: (col: string, value: unknown) => {
+        calls.push(`playdates.is(${col}, ${String(value)})`)
+        return builder
+      },
+      gt: (col: string, value: string) => {
+        calls.push(`playdates.gt(${col}, ${value})`)
+        return builder
+      },
+      lte: (col: string, value: string) => {
+        calls.push(`playdates.lte(${col}, ${value})`)
+        return builder
+      },
+      order: (col: string, opts: { ascending: boolean }) => {
+        calls.push(`playdates.order(${col}, ${opts.ascending})`)
+        return builder
+      },
+      limit: (n: number) => {
+        calls.push(`playdates.limit(${n})`)
+        return builder
+      },
+      then: (
+        onfulfilled?: (value: {
+          data: unknown[]
+          error: unknown
+          count: number | null
+        }) => unknown,
+      ) =>
+        Promise.resolve(
+          index === 0
+            ? {
+                data: config.upcomingRows ?? [],
+                error: asError(config.queryError),
+                count: config.upcomingCount ?? null,
+              }
+            : {
+                data: config.pastRows ?? [],
+                error: asError(config.queryError),
+                count: config.pastCount ?? null,
+              },
+        ).then(onfulfilled),
+    }
+    return builder
+  }
+  const client = {
+    from: (table: string) => {
+      if (table !== 'playdates') throw new Error(`unexpected table: ${table}`)
+      queryIndex += 1
+      return makeBuilder()
+    },
+  }
+  return { client: client as unknown as SupabaseClient, calls }
+}
+
+describe('listPostsByHostWithClient (V8 ticket 04: one host’s posts)', () => {
+  const HOST = 'host-1'
+
+  it('selects the card shape with BOTH FK hints, on both queries (the PGRST201 lesson)', async () => {
+    const { client, calls } = makeHostPostsMockClient()
+    await listPostsByHostWithClient(client, HOST, [], NOW_ISO)
+    const selects = calls.filter((call) => call.startsWith('playdates.select('))
+    expect(selects).toHaveLength(2)
+    for (const select of selects) {
+      expect(select).toContain('neighborhood:neighborhoods!inner ( id, name )')
+      expect(select).toContain(
+        'host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip, radius_miles )',
+      )
+      expect(select).toContain('count:exact')
+    }
+  })
+
+  it('excludes hidden posts and scopes to the host, then splits by ends_at with per-section order + the 50 cap', async () => {
+    const { client, calls } = makeHostPostsMockClient()
+    await listPostsByHostWithClient(client, HOST, [], NOW_ISO)
+    expect(calls.filter((call) => !call.startsWith('playdates.select('))).toEqual([
+      `playdates.eq(host_profile_id, ${HOST})`,
+      'playdates.is(hidden_at, null)',
+      `playdates.gt(ends_at, ${NOW_ISO})`,
+      'playdates.order(starts_at, true)',
+      `playdates.limit(${HOST_POSTS_LIMIT})`,
+      `playdates.eq(host_profile_id, ${HOST})`,
+      'playdates.is(hidden_at, null)',
+      `playdates.lte(ends_at, ${NOW_ISO})`,
+      'playdates.order(starts_at, false)',
+      `playdates.limit(${HOST_POSTS_LIMIT})`,
+    ])
+  })
+
+  it('returns the upcoming rows then the past rows, with no truncation when nothing overflows', async () => {
+    const { client } = makeHostPostsMockClient({
+      upcomingRows: [{ id: 'u1' }, { id: 'u2' }],
+      upcomingCount: 2,
+      pastRows: [{ id: 'p1' }],
+      pastCount: 1,
+    })
+    const result = await listPostsByHostWithClient(client, HOST, [], NOW_ISO)
+    expect(result.posts).toEqual([{ id: 'u1' }, { id: 'u2' }, { id: 'p1' }])
+    expect(result.olderCount).toBe(0)
+  })
+
+  it('reports the past rows beyond the cap as a plain count ("+N older")', async () => {
+    const pastRows = Array.from({ length: HOST_POSTS_LIMIT }, (_, i) => ({ id: `p${i}` }))
+    const { client } = makeHostPostsMockClient({
+      pastRows,
+      pastCount: HOST_POSTS_LIMIT + 3,
+    })
+    const result = await listPostsByHostWithClient(client, HOST, [], NOW_ISO)
+    expect(result.posts).toHaveLength(HOST_POSTS_LIMIT)
+    expect(result.olderCount).toBe(3)
+  })
+
+  it('is 0 older when the count is unavailable (never an invented number)', async () => {
+    const { client } = makeHostPostsMockClient({ pastRows: [{ id: 'p1' }], pastCount: null })
+    expect((await listPostsByHostWithClient(client, HOST, [], NOW_ISO)).olderCount).toBe(0)
+  })
+
+  it('a blocked host yields no posts and issues NO query (a blocked host’s page must not leak posts)', async () => {
+    const { client, calls } = makeHostPostsMockClient({ pastRows: [{ id: 'p1' }] })
+    const result = await listPostsByHostWithClient(client, HOST, [HOST, 'someone-else'], NOW_ISO)
+    expect(result).toEqual({ posts: [], olderCount: 0 })
+    expect(calls).toEqual([])
+  })
+
+  it('still reads the host’s posts when the viewer’s blocks name someone else', async () => {
+    const { client } = makeHostPostsMockClient({ upcomingRows: [{ id: 'u1' }] })
+    expect(
+      (await listPostsByHostWithClient(client, HOST, ['someone-else'], NOW_ISO)).posts,
+    ).toEqual([{ id: 'u1' }])
+  })
+
+  it('rejects on a query error (the page renders its designed error line)', async () => {
+    const { client } = makeHostPostsMockClient({
+      queryError: { code: '42P01', message: 'relation "playdates" does not exist' },
+    })
+    await expect(listPostsByHostWithClient(client, HOST, [], NOW_ISO)).rejects.toThrow(
+      'relation "playdates" does not exist',
+    )
   })
 })

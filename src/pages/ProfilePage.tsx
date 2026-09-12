@@ -28,6 +28,7 @@ import {
 } from '../lib/db'
 import {
   DEFAULT_RADIUS_MILES,
+  partitionPostsByTime,
   RADIUS_MILES_OPTIONS,
   queryMyPlaydatesWithClient,
   toDuplicatePrefill,
@@ -51,6 +52,15 @@ import type {
  * re-entered). The own-posts query is the injected-client
  * queryMyPlaydatesWithClient (feed.ts, unit-tested) run against the shared
  * db.ts client — db.ts itself gains no new surface (slice constraint).
+ *
+ * V8 ticket 04: that list gains the same Upcoming/Past split /u/:handle got
+ * (the pure feed.partitionPostsByTime — upcoming, the soonest first; past, the
+ * most recent first), so a host can see their own history instead of only the
+ * newest-first pile. The Duplicate action stays on EVERY row, past posts
+ * included — re-posting last week's meetup as next week's is exactly what that
+ * button is for (and where ticket 09's "Same time next week" will live). The
+ * read path is unchanged (queryMyPlaydatesWithClient): this is the owner's own
+ * page, so the split is a render decision and nothing else.
  *
  * V2 slice 2 (ticket 02): the comfort layer on the owner side —
  * - avatar: a photo upload (cropped by the user, resized to 512px, > 5 MB rejected
@@ -292,6 +302,41 @@ export function ProfilePage() {
   }
 
   const memberNames = (memberships ?? []).map((m) => m.neighborhood.name)
+
+  // V8 ticket 04: the "Your posts" split — the same pure seam /u/:handle uses
+  // (upcoming ascending, past descending; upcoming is the complement of
+  // isEnded). nowIso is read once per render (the BrowsePage pattern).
+  const nowIso = new Date().toISOString()
+  const { upcoming: upcomingPosts, past: pastPosts } = partitionPostsByTime(
+    myPosts ?? [],
+    nowIso,
+  )
+
+  /**
+   * One "Your posts" row (V8 ticket 04 — it renders in BOTH sections, so it is
+   * built once here): title, when + place, and the Duplicate action, which
+   * stays on every row, past posts included.
+   */
+  const renderPostRow = (post: Playdate) => (
+    <li
+      key={post.id}
+      className="flex items-center justify-between gap-2 rounded-xl px-2 py-1.5"
+    >
+      <div className="min-w-0">
+        <p className="truncate text-sm text-slate-800">{post.title}</p>
+        <p className="text-xs text-slate-500">
+          {formatPostWhen(post.starts_at)} · {post.place}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={() => navigate('/new', { state: { duplicate: toDuplicatePrefill(post) } })}
+        className="shrink-0 rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200"
+      >
+        Duplicate
+      </button>
+    </li>
+  )
 
   // The nudge banner (V2 ticket 02): persistent until photo + bio + kids
   // are all present (the pure missingProfileItems decides; the kids count
@@ -969,30 +1014,27 @@ export function ProfilePage() {
         ) : myPosts.length === 0 ? (
           <p className="mt-3 text-sm text-slate-600">No posts yet.</p>
         ) : (
-          <ul className="mt-3 flex flex-col gap-1">
-            {myPosts.map((post) => (
-              <li
-                key={post.id}
-                className="flex items-center justify-between gap-2 rounded-xl px-2 py-1.5"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-slate-800">{post.title}</p>
-                  <p className="text-xs text-slate-500">
-                    {formatPostWhen(post.starts_at)} · {post.place}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    navigate('/new', { state: { duplicate: toDuplicatePrefill(post) } })
-                  }
-                  className="shrink-0 rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200"
-                >
-                  Duplicate
-                </button>
-              </li>
-            ))}
-          </ul>
+          <div className="mt-3 flex flex-col gap-3">
+            {/* V8 ticket 04: the same split (and the same empty-state copy) as
+                /u/:handle — nothing ahead of you but history below reads
+                honestly, and every past row keeps its Duplicate. */}
+            {upcomingPosts.length === 0 ? (
+              <p className="text-sm text-slate-600">
+                Nothing coming up — past drop-ins below.
+              </p>
+            ) : (
+              <section className="flex flex-col gap-1">
+                <h3 className="text-sm font-semibold text-slate-700">Upcoming</h3>
+                <ul className="flex flex-col gap-1">{upcomingPosts.map(renderPostRow)}</ul>
+              </section>
+            )}
+            {pastPosts.length > 0 ? (
+              <section className="flex flex-col gap-1">
+                <h3 className="text-sm font-semibold text-slate-700">Past</h3>
+                <ul className="flex flex-col gap-1">{pastPosts.map(renderPostRow)}</ul>
+              </section>
+            ) : null}
+          </div>
         )}
       </div>
     </div>

@@ -1270,3 +1270,68 @@ export function buildWhileAwayItems(
   const items = candidates.slice(0, cap).map((candidate) => candidate.item)
   return { items, moreCount: candidates.length - items.length }
 }
+
+// ---------------------------------------------------------------------------
+// V8 ticket 04: real post lists on /u/:handle and /profile.
+//
+// A profile's posts render as two lists — what is still ahead of the visitor
+// ("Upcoming") and what already happened ("Past"). Both pages read rows that
+// arrive already ordered (the DB query orders each section for its cap's sake;
+// /profile reads the caller's own rows newest-first) and both must agree on the
+// boundary AND the order, so the split is ONE pure seam here rather than a
+// per-page filter chain. It lives in feed.ts for the same reason groupByDay /
+// buildWhileAwayItems do: this is feed render-grouping — an order/split decision
+// over rows the page has already read.
+
+/** The two profile post lists (V8 ticket 04). */
+export interface PostPartition<T> {
+  /** Not ended yet, soonest first (the one to join). */
+  upcoming: T[]
+  /** Ended, most recent first (the social proof of history). */
+  past: T[]
+}
+
+/**
+ * Split a host's posts into the Upcoming / Past lists (V8 ticket 04), pure +
+ * unit-tested.
+ *
+ * UPCOMING = NOT ended (`ends_at > nowIso`) — exactly the complement of the
+ * existing `isEnded`. That is deliberate, and it is not the same as
+ * `starts_at >= nowIso`:
+ * - A drop-in that is HAPPENING RIGHT NOW (started, not ended) is something a
+ *   visitor can still walk to — "we're at the park right now" is the app's core
+ *   gesture, and DropInCard badges exactly that post "Happening now". Filing it
+ *   under "Past" would contradict the card the section renders.
+ * - The pinned empty state ("posts exist but none upcoming → 'Nothing coming up
+ *   — past drop-ins below.'") must be TRUE. Under a start-time boundary, a
+ *   profile whose only post is live right now would announce "nothing coming up"
+ *   directly above that live post.
+ * Both pinned boundary cases hold: a post starting exactly at `nowIso` is
+ * upcoming (its end is later — the end is always computed as start + a positive
+ * duration, and the /new validator only accepts those chips), and an ended post
+ * (`ends_at <= nowIso`, the `isEnded` boundary the card's muted styling uses) is
+ * past. So the split lines up with the card exactly: every Past card is muted
+ * (opacity-60 + the "Ended" chip) and no Upcoming card is.
+ *
+ * ORDER is applied HERE, from the rows the caller has: upcoming ascending by
+ * `starts_at` (soonest first), past descending (most recent first). The DB
+ * orders its two queries for the cap's sake; this seam is the contract the
+ * render depends on, so a differently-ordered input still renders correctly.
+ *
+ * The caller's array is never mutated (the lists are new arrays; only the
+ * shared row objects are re-ordered, inside those new arrays).
+ */
+export function partitionPostsByTime<T extends { starts_at: string; ends_at: string }>(
+  posts: readonly T[],
+  nowIso: string,
+): PostPartition<T> {
+  const upcoming: T[] = []
+  const past: T[] = []
+  for (const post of posts) {
+    if (isEnded(post, nowIso)) past.push(post)
+    else upcoming.push(post)
+  }
+  upcoming.sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at))
+  past.sort((a, b) => Date.parse(b.starts_at) - Date.parse(a.starts_at))
+  return { upcoming, past }
+}
