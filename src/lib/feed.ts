@@ -477,6 +477,127 @@ export function computeEndIso(
   ).toISOString()
 }
 
+// ---------------------------------------------------------------------------
+// V8 ticket 05 (post edit): the pure seams the /playdate/:id/edit form runs
+// on — the INVERSE of computeStartIso / computeEndIso (a stored row → the
+// shared form's values) and the "did this save change anything" comparison
+// (the no-op pin: a save that changes nothing issues no write). Both are
+// pure so the edit form's whole prefill/change story is unit-tested without
+// React or a database.
+
+/**
+ * A stored post → the shared form's values (the edit form's prefill).
+ *
+ * `startDate` + `startMinutes` are the DEVICE's local date and minutes since
+ * local midnight — exactly the inverse of computeStartIso, so a post that
+ * was never touched in the form round-trips to the same instant.
+ *
+ * Two deliberate non-rounding rules (V8 ticket 05: "no new rule invented"):
+ * - the start time is prefilled EXACTLY as stored, never snapped to the
+ *   30-minute grid. Every post created since V2 slice 1 is already on the
+ *   grid (the stepper is the only time entry); a legacy off-grid row stays
+ *   off-grid in the field and the shared validator asks for a grid time
+ *   before it can be saved, rather than the form silently moving it.
+ * - the duration is the exact end − start when it is one of the pinned
+ *   chips (1h / 1.5h / 2h / 3h), and 0 ("none picked yet") otherwise: the
+ *   chip set is a pinned contract, so no fifth chip is invented to match a
+ *   stored duration, and the validator asks for a pick.
+ *
+ * `ageHint` is always '' — the edit form does not render or write the age
+ * hint (the /new field went away in V3 ticket 09), and the update payload
+ * omits the column, so the stored value survives untouched.
+ */
+export function playdateFormValuesFromPost(post: {
+  title: string
+  place: string
+  neighborhood_id: string
+  starts_at: string
+  ends_at: string
+  details: string | null
+}): PlaydateFormValues {
+  const start = new Date(post.starts_at)
+  const durationMinutes = Math.round(
+    (Date.parse(post.ends_at) - Date.parse(post.starts_at)) / 60_000,
+  )
+  return {
+    title: post.title,
+    place: post.place,
+    neighborhoodId: post.neighborhood_id,
+    startDate: localDayKey(start.toISOString()),
+    startMinutes: start.getHours() * 60 + start.getMinutes(),
+    durationMinutes: isDuration(durationMinutes) ? durationMinutes : 0,
+    ageHint: '',
+    details: post.details ?? '',
+  }
+}
+
+/**
+ * The stored shape the edit form's change comparison reads (the post + its
+ * current playdate_kids selection). Everything the form can write.
+ */
+export interface PlaydateEditOriginal {
+  title: string
+  place: string
+  /** Null when the post has no address (or pre-0021-apply). */
+  address: string | null
+  neighborhood_id: string
+  starts_at: string
+  ends_at: string
+  /** Null when the post has no details. */
+  details: string | null
+  /** The current playdate_kids kid ids (any order). */
+  kidIds: readonly string[]
+}
+
+/**
+ * Did the form's FIELD save change anything? Compares what the form would
+ * WRITE (the trimmed strings, the computed start/end instants, the address
+ * with its empty → null rule) against what is stored — never the raw field
+ * text, so trailing whitespace the form trims anyway is not a change.
+ *
+ * Timestamps compare by instant (Date.parse), so the ISO spelling Postgres
+ * returns (e.g. "+00:00" vs "Z") is never mistaken for a change.
+ */
+export function playdateEditFieldsChanged(
+  original: PlaydateEditOriginal,
+  values: PlaydateFormValues,
+  address: string,
+): boolean {
+  const addressNext = address.trim()
+  return (
+    values.title.trim() !== original.title ||
+    values.place.trim() !== original.place ||
+    addressNext !== (original.address ?? '') ||
+    values.neighborhoodId !== original.neighborhood_id ||
+    Date.parse(computeStartIso(values.startDate, values.startMinutes)) !==
+      Date.parse(original.starts_at) ||
+    Date.parse(
+      computeEndIso(values.startDate, values.startMinutes, values.durationMinutes),
+    ) !== Date.parse(original.ends_at) ||
+    values.details.trim() !== (original.details ?? '')
+  )
+}
+
+/**
+ * Did the "Kids you're bringing" selection change? Order-insensitive (the
+ * stored ids are read in whatever order the table returns; the picker keeps
+ * tap order) and safe against a failed / pre-0022-apply read, which hands in
+ * [] — see the edit page: an unchanged selection skips the replace-on-save
+ * write entirely, so a failed read can never empty a post's selection.
+ */
+export function playdateEditKidIdsChanged(
+  originalKidIds: readonly string[],
+  nextKidIds: readonly string[],
+): boolean {
+  const same = (a: readonly string[], b: readonly string[]): boolean => {
+    if (a.length !== b.length) return false
+    const left = [...a].sort()
+    const right = [...b].sort()
+    return left.every((id, index) => id === right[index])
+  }
+  return !same(originalKidIds, nextKidIds)
+}
+
 /**
  * The caller's own posts, newest first (the /profile duplicate entry, V2
  * slice 1), against an injected client (the same pattern as

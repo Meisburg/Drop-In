@@ -280,6 +280,20 @@ export function isPlaydateReturnTarget(stored: string | null): boolean {
   return stored.startsWith('/playdate/') && rest.length > 0 && !rest.includes('/')
 }
 
+/**
+ * V8 ticket 05 (post edit): the host-only edit path, `/playdate/:id/edit`.
+ *
+ * `playdateDetailPathFromEditPath` is the target a visitor who may NOT edit
+ * is sent to — the post's own detail path, the surface they are already
+ * allowed to see (the signed-out public view included). Exactly one
+ * non-empty id segment, the `isPublicDetailPath` shape, so a tampered path
+ * never resolves to anything but null.
+ */
+export function playdateDetailPathFromEditPath(pathname: string): string | null {
+  const match = /^\/playdate\/([^/]+)\/edit\/?$/.exec(pathname)
+  return match === null ? null : `/playdate/${match[1]}`
+}
+
 // ---------------------------------------------------------------------------
 // V3 slice 7 (ticket 10): one-level comment replies — the pure seam.
 //

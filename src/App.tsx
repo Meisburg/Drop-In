@@ -15,6 +15,7 @@ import {
   resolveProtectedRedirect,
 } from './lib/onboarding'
 import { BrowsePage } from './pages/BrowsePage'
+import { EditPlaydatePage } from './pages/EditPlaydatePage'
 import { FeedPage } from './pages/FeedPage'
 import { LoginPage } from './pages/LoginPage'
 import { ModPage } from './pages/ModPage'
@@ -24,7 +25,7 @@ import { PlaydateDetailPage } from './pages/PlaydateDetailPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { UserPage } from './pages/UserPage'
-import { PLAYDATE_RETURN_KEY, isPlaydateReturnTarget } from './lib/trust'
+import { PLAYDATE_RETURN_KEY, isPlaydateReturnTarget, playdateDetailPathFromEditPath } from './lib/trust'
 import type { DuplicatePrefill } from './lib/types'
 
 /** The /mod route path (moderator tools, slice 5). */
@@ -52,6 +53,11 @@ const MOD_PATH = '/mod'
  * rendered the suspended screen instead of any route (no app access), and
  * /mod only renders for moderator-flagged profiles (the pure canModerate
  * guard, unit-tested; the reports RLS is the second wall).
+ *
+ * V8 ticket 05 adds a third: /playdate/:id/edit is host-only, so a
+ * signed-out visitor on that path is sent to the post's detail page (the
+ * public surface) instead of /login, which the signed-out gate below would
+ * otherwise pick for a non-public path.
  */
 function ProtectedShell() {
   const { session, loading, profile, homeZipSet, suspended, profileLoading } =
@@ -118,6 +124,17 @@ function ProtectedShell() {
   if (session !== null && pathname === MOD_PATH && profile !== null && !canModerate(profile)) {
     return <Navigate to={HOME_PATH} replace />
   }
+
+  // V8 ticket 05: the post-edit route is host-only. A signed-out visitor
+  // never reaches the form — they are sent to the post's own detail page
+  // (the public surface they may already see), NOT to /login: the edit route
+  // is an ACTION on a public post, so the post is the honest landing spot.
+  // This sits with the /mod guard (before the shell's own redirect), so the
+  // signed-out gate below never intercepts the edit path first. The page
+  // itself carries the same guard for the non-host case (it needs the loaded
+  // row to know who the host is).
+  const editFallback = session === null ? playdateDetailPathFromEditPath(pathname) : null
+  if (editFallback !== null) return <Navigate to={editFallback} replace />
 
   // V2 slice 5: apply the signed-out "I'm coming" return target — ONLY
   // once the gate has SETTLED ('pass'), so a new signup's /onboarding
@@ -312,6 +329,10 @@ export default function App() {
             <Route path="/" element={<FeedPage />} />
             <Route path="/browse" element={<BrowsePage />} />
             <Route path="/playdate/:id" element={<PlaydateDetailPage />} />
+            {/* V8 ticket 05: the host-only edit route — the detail page's own
+                row, edited in place. Host-only at two levels: the shell guard
+                above (signed-out) and the page's own host check. */}
+            <Route path="/playdate/:id/edit" element={<EditPlaydatePage />} />
             <Route path="/new" element={<NewRoute />} />
             <Route path="/onboarding" element={<OnboardingPage />} />
             <Route path="/profile" element={<ProfilePage />} />

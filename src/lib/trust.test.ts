@@ -9,6 +9,7 @@ import {
   issueReportInsert,
   planCommentAction,
   planPing,
+  playdateDetailPathFromEditPath,
   togglePingWithClient,
   validateCommentBody,
   validateReportReason,
@@ -357,6 +358,23 @@ describe('isPlaydateReturnTarget (the stored "I\'m coming" return target)', () =
     expect(isPlaydateReturnTarget('/playdate/a/b')).toBe(false)
     expect(isPlaydateReturnTarget('/profile')).toBe(false)
     expect(isPlaydateReturnTarget('javascript:alert(1)')).toBe(false)
+  })
+})
+
+describe('playdateDetailPathFromEditPath (V8 ticket 05, the host-only edit route)', () => {
+  it('maps /playdate/<id>/edit to the post it edits', () => {
+    expect(playdateDetailPathFromEditPath('/playdate/pd-1/edit')).toBe('/playdate/pd-1')
+    expect(playdateDetailPathFromEditPath('/playdate/abc-123/edit/')).toBe('/playdate/abc-123')
+  })
+
+  it('resolves nothing for any other path (a tampered path is never navigated to)', () => {
+    expect(playdateDetailPathFromEditPath('/playdate/pd-1')).toBeNull()
+    expect(playdateDetailPathFromEditPath('/playdate//edit')).toBeNull()
+    expect(playdateDetailPathFromEditPath('/playdate/a/b/edit')).toBeNull()
+    expect(playdateDetailPathFromEditPath('/playdate/pd-1/edit/extra')).toBeNull()
+    expect(playdateDetailPathFromEditPath('/profile')).toBeNull()
+    expect(playdateDetailPathFromEditPath('/')).toBeNull()
+    expect(playdateDetailPathFromEditPath('')).toBeNull()
   })
 })
 

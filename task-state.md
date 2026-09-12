@@ -209,7 +209,7 @@ text and the neighborhood is a display label.
 | 01 | Quick post: today-default, recent places, one-tap preset | **complete** — `dd0642e`; no migration |
 | 02 | First visit that isn't a dead end + honest/fresh states | **complete** — `7173b0c` + review round `d574eec` (fresh-context reviewer found a HIGH regression: the visibility refresh blanked the feed; plus the host's "No one has pinged yet" lie, inert escape buttons, and a weak spec assertion — all fixed); no migration; 390/390 unit, e2e 25/25 |
 | 03 | "While you were away" inbox (pings on your posts, cancellations) | **complete** — `e016921`; no migration; 390/390 unit, e2e 25/25 (independently re-run). The old amber banner + `countPingsOnMyPosts` were DELETED (one implementation of "you have news"). Judgment call logged: cancellation items are not cursor-gated (playdates has no status-change timestamp) — gated on `starts_at > now` instead |
-| 04 | Real post lists on `/u/:handle` and `/profile` | open — no migration |
+| 04 | Real post lists on `/u/:handle` and `/profile` | **complete** — `fc85093`; no migration; 403/403 unit, e2e 26/26. Boundary pinned on `ends_at` (the `isEnded` complement): a drop-in happening right now is UPCOMING |
 | 05 | Post edit + delete | open — no migration |
 | 06 | Standing playdates (weekly series) | open — **0028** reserved |
 | 07 | Places directory + place pages + Browse becomes places | open — **0029**, **0030** reserved |

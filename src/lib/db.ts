@@ -673,6 +673,103 @@ export async function listRecentOwnPlaces(limit?: number): Promise<RecentPlace[]
 }
 
 // ---------------------------------------------------------------------------
+// V8 ticket 05: post edit + delete — the two writes behind the host's
+// Edit / Delete actions on the detail page.
+//
+// NO MIGRATION: `playdates` ships host-only UPDATE and DELETE policies from
+// 0005 (capability without UI), so both operations ride the existing
+// whole-row posture. Two pins from the house lessons:
+//   - no `.select()` / RETURNING on either write (the 42501 lesson: a write
+//     whose row the SELECT policy excludes 403s on the read-back). The
+//     callers re-read or navigate instead.
+//   - the DELETE leaves the children to the DATABASE. going_pings (0007),
+//     comments (0013), playdate_kids (0022) and ping_kids (0026) all carry
+//     ON DELETE CASCADE to playdates, so nothing is hand-deleted
+//     client-side (a partial client-side cascade is how a post loses its
+//     comments but keeps its "going" rows, or vice versa).
+//
+// A non-host call is a silent RLS no-op (0 rows, 2xx — the 0014 lesson);
+// the host-only controls on the detail page are the user-facing wall and
+// the RLS policies are the backstop.
+
+/**
+ * The editable fields of a post (V8 ticket 05, the edit form's payload).
+ * Everything else on the row is either not editable (host_profile_id,
+ * age_hint, status, hidden_at, created timestamps) or the end instant,
+ * which is always computed from start + duration.
+ */
+export interface UpdatePlaydateInput {
+  title: string
+  place: string
+  neighborhoodId: string
+  /** ISO 8601 (UTC) — the form's local date/minutes converted. */
+  startsAt: string
+  endsAt: string
+  /** Null clears the stored details (the form's empty → null rule). */
+  details: string | null
+  /** Null clears the stored address (the form's empty → null rule). */
+  address: string | null
+}
+
+/**
+ * Update a post's own fields (V8 ticket 05), against an injected client
+ * (the setPlaydateStatusWithClient pattern — mockable). A plain update with
+ * no RETURNING: the caller (the edit page) navigates to the detail page,
+ * which re-reads the row.
+ *
+ * `status` is deliberately NOT in the payload — an edit never resurrects a
+ * cancelled post or cancels an on one; that stays the status control's job.
+ * `age_hint` is deliberately absent too, so the stored value survives an
+ * edit even though the form no longer renders the field.
+ */
+export async function updatePlaydateWithClient(
+  client: SupabaseClient,
+  playdateId: string,
+  input: UpdatePlaydateInput,
+): Promise<void> {
+  const { error } = await client
+    .from('playdates')
+    .update({
+      title: input.title,
+      place: input.place,
+      neighborhood_id: input.neighborhoodId,
+      starts_at: input.startsAt,
+      ends_at: input.endsAt,
+      details: input.details,
+      address: input.address,
+    })
+    .eq('id', playdateId)
+  if (error) throw error
+}
+
+/** The default-client wrapper (the edit form's save). */
+export async function updatePlaydate(
+  playdateId: string,
+  input: UpdatePlaydateInput,
+): Promise<void> {
+  return updatePlaydateWithClient(supabase, playdateId, input)
+}
+
+/**
+ * Delete a post (V8 ticket 05), against an injected client: a plain delete
+ * with no RETURNING. The row's children go with it — the DATABASE's
+ * cascades (going_pings, comments, playdate_kids, ping_kids), never a
+ * client-side hand-delete. The caller navigates to / afterwards.
+ */
+export async function deletePlaydateWithClient(
+  client: SupabaseClient,
+  playdateId: string,
+): Promise<void> {
+  const { error } = await client.from('playdates').delete().eq('id', playdateId)
+  if (error) throw error
+}
+
+/** The default-client wrapper (the detail page's Delete confirmation). */
+export async function deletePlaydate(playdateId: string): Promise<void> {
+  return deletePlaydateWithClient(supabase, playdateId)
+}
+
+// ---------------------------------------------------------------------------
 // V3 slice 2 (ticket 02): host status + the Open-Meteo rain badge.
 //
 // The status column (migration 0016) may not be applied to the live
@@ -2209,6 +2306,36 @@ export async function listPlaydateKidNamesWithClient(
 /** The default-client wrapper (the detail page's "Kids coming" line). */
 export async function listPlaydateKidNames(playdateId: string): Promise<PlaydateKid[]> {
   return listPlaydateKidNamesWithClient(supabase, playdateId)
+}
+
+/**
+ * A post's current "kids you're bringing" KID ids (V8 ticket 05, the edit
+ * form's prefill), against an injected client. `listPlaydateKidNames` above
+ * returns the playdate_kids ROW ids (it feeds the display line); the edit
+ * form needs the kid ids, because that is what linkKidsToPlaydate writes and
+ * what the picker's selectedKidIds holds. Same SELECT posture (any
+ * authenticated user) and the same failure discipline: pre-0022-apply the
+ * 42P01 throws and the caller catches it into [] (the edit page's
+ * unchanged-selection rule then skips the kids write entirely, so a failed
+ * read can never empty a post's selection).
+ */
+export async function listPlaydateKidIdsWithClient(
+  client: SupabaseClient,
+  playdateId: string,
+): Promise<string[]> {
+  const { data, error } = await client
+    .from('playdate_kids')
+    .select('kid_id')
+    .eq('playdate_id', playdateId)
+  if (error) throw error
+  return ((data ?? []) as unknown as Array<{ kid_id: string | null }>)
+    .map((row) => row.kid_id)
+    .filter((kidId): kidId is string => typeof kidId === 'string' && kidId.length > 0)
+}
+
+/** The default-client wrapper (the edit form's kids prefill). */
+export async function listPlaydateKidIds(playdateId: string): Promise<string[]> {
+  return listPlaydateKidIdsWithClient(supabase, playdateId)
 }
 
 /**

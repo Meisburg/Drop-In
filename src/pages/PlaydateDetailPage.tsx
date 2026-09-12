@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
+import { DeletePlaydateDialog } from '../components/DeletePlaydateDialog'
 import { HostAvatar } from '../components/DropInCard'
 import { PhotoButton } from '../components/ImageLightbox'
 import { KidsComingPicker } from '../components/KidsComingPicker'
@@ -9,6 +10,7 @@ import { LOGIN_PATH } from '../lib/auth'
 import {
   addComment,
   deleteComment,
+  deletePlaydate,
   fetchGuestList,
   fetchRainProbabilityForZip,
   getBlockState,
@@ -117,6 +119,16 @@ type DetailState =
  * ping toggle + count (V3 slice 3, ticket 06: the labels are "Attend" /
  * "✓ Going" — same toggle semantics, the green-700 fill tracks the
  * going state).
+ *
+ * V8 ticket 05 (post edit + delete): that host panel gains Edit (a Link to
+ * /playdate/:id/edit — the shared field set, so a typo in the time is fixed
+ * in place instead of cancel + repost, which silently lost everyone who had
+ * said they were going) and Delete (behind the in-page
+ * DeletePlaydateDialog, whose copy names the consequence). Both are inside
+ * the host-only panel, so neither is rendered for a non-host or the
+ * signed-out view; the RLS playdates_update_host / _delete_host policies
+ * from 0005 are the DB wall behind them. Everything else on this page — the
+ * status control, Share, Add to calendar, Duplicate — is untouched.
  *
  * The detail fetch is a direct lookup — the feed query's DB-level block
  * filter (slice 3) cannot cover this path — so a blocked host's post is
@@ -340,6 +352,13 @@ export function PlaydateDetailPage() {
   const [statusBusy, setStatusBusy] = useState(false)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [rainProbability, setRainProbability] = useState<number | null>(null)
+  // V8 ticket 05: the host's Delete — the in-page confirmation (never
+  // window.confirm), its in-flight flag and its error line. All three live
+  // up here with the other hooks (the V6 lesson below): the component
+  // returns early for its loading/error states.
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   useEffect(() => {
     if (id === undefined || id === '') return
@@ -615,6 +634,38 @@ export function PlaydateDetailPage() {
       setStatusError(err instanceof Error ? err.message : 'Could not update the status. Try again.')
     } finally {
       setStatusBusy(false)
+    }
+  }
+
+  /**
+   * V8 ticket 05: the host's Delete, after the in-page confirmation.
+   *
+   * The cleanup is the DATABASE's job: going_pings (0007), comments (0013),
+   * playdate_kids (0022) and ping_kids (0026) all carry ON DELETE CASCADE
+   * to this row, so this is one plain delete and nothing else — a
+   * client-side hand-delete of the children would be a partial cascade the
+   * DB's own rule already covers (and would fail RLS wherever a child row is
+   * not the host's to remove).
+   *
+   * No RETURNING (the 42501 lesson): the write not erroring is the whole
+   * signal, then the page navigates to /. The feed re-fetches on mount, so
+   * the post is gone from it; the old detail URL re-reads, finds nothing,
+   * and renders the existing not-found state. A failed delete keeps the
+   * dialog open with an honest error line — the post is still there.
+   */
+  async function handleDeletePost() {
+    if (state.status !== 'ready' || deleteBusy) return
+    const postId = state.detail.id
+    setDeleteBusy(true)
+    setDeleteError(null)
+    try {
+      await deletePlaydate(postId)
+      navigate('/', { replace: true })
+    } catch (err) {
+      setDeleteError(
+        err instanceof Error ? err.message : 'Could not delete this drop-in. Try again.',
+      )
+      setDeleteBusy(false)
     }
   }
 
@@ -1278,15 +1329,45 @@ export function PlaydateDetailPage() {
         <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-semibold text-indigo-900">This is your post</p>
-            <button
-              type="button"
-              onClick={() =>
-                navigate('/new', { state: { duplicate: toDuplicatePrefill(detail) } })
-              }
-              className="rounded-xl border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
-            >
-              Duplicate
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* V8 ticket 05: Edit — the host's own post, fixed in place
+                  (the shared /new field set at /playdate/:id/edit) instead of
+                  cancel + repost, which used to lose everyone who had said
+                  they were going. A post that has ALREADY STARTED is still
+                  editable (late plans are the normal case): the form carries
+                  the stored time as-is and invents no new rule about it. */}
+              <Link
+                to={`/playdate/${detail.id}/edit`}
+                data-testid="edit-post"
+                className="rounded-xl border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
+              >
+                Edit
+              </Link>
+              {/* V8 ticket 05: Delete — behind an in-page confirmation that
+                  names the consequence (the going pings + the comments go
+                  with it). The button only OPENS the dialog; the write lives
+                  in handleDeletePost. */}
+              <button
+                type="button"
+                data-testid="delete-post"
+                onClick={() => {
+                  setDeleteError(null)
+                  setConfirmingDelete(true)
+                }}
+                className="rounded-xl border border-red-200 bg-white px-3 py-3 text-sm font-medium text-red-700 transition-colors hover:bg-red-50"
+              >
+                Delete
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  navigate('/new', { state: { duplicate: toDuplicatePrefill(detail) } })
+                }
+                className="rounded-xl border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
+              >
+                Duplicate
+              </button>
+            </div>
           </div>
           {/* V8 ticket 02 REVIEW ROUND: the host's line carried the same lie
               the non-host branch was fixed for. A failed count read rendered
@@ -1602,6 +1683,24 @@ export function PlaydateDetailPage() {
           playdateId={detail.id}
           profileId={detail.host.id}
           onClose={() => setReporting(false)}
+        />
+      ) : null}
+
+      {/* V8 ticket 05: the host's delete confirmation — the ReportDialog
+          pattern (portal + role="dialog"), so the one destructive action in
+          the app is deterministic for Playwright and can state the real
+          consequence before the tap. Host-only by construction: the button
+          that opens it lives in the host panel. */}
+      {confirmingDelete && isHost ? (
+        <DeletePlaydateDialog
+          title={detail.title}
+          busy={deleteBusy}
+          error={deleteError}
+          onConfirm={() => void handleDeletePost()}
+          onCancel={() => {
+            setConfirmingDelete(false)
+            setDeleteError(null)
+          }}
         />
       ) : null}
     </div>

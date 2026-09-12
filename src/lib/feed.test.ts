@@ -31,6 +31,9 @@ import {
   nextSlotMinutes,
   partitionPostsByTime,
   PLAYDATE_DURATIONS_MINUTES,
+  playdateEditFieldsChanged,
+  playdateEditKidIdsChanged,
+  playdateFormValuesFromPost,
   queryMyPlaydatesWithClient,
   queryRecentOwnPlacesWithClient,
   queryUpcomingFeedWithClient,
@@ -2022,5 +2025,162 @@ describe('listPostsByHostWithClient (V8 ticket 04: one host’s posts)', () => {
     await expect(listPostsByHostWithClient(client, HOST, [], NOW_ISO)).rejects.toThrow(
       'relation "playdates" does not exist',
     )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// V8 ticket 05 (post edit): the edit form's pure seams. The prefill is the
+// exact inverse of the create path (computeStartIso / computeEndIso), and
+// the change comparison is what makes "a save that changes nothing is a
+// no-op with no write" true at the seam level — the page only writes when
+// one of these says something changed.
+
+/** A stored post as getPlaydateDetail returns it (the fields the form reads). */
+function storedPost(overrides: Partial<Parameters<typeof playdateFormValuesFromPost>[0]> = {}) {
+  const startMinutes = 15 * 60 + 30
+  const startDate = '2026-09-12'
+  return {
+    title: 'Playground time',
+    place: 'Green Lake playground',
+    neighborhood_id: 'hood-1',
+    starts_at: computeStartIso(startDate, startMinutes),
+    ends_at: computeEndIso(startDate, startMinutes, 90),
+    details: 'Bring snacks',
+    ...overrides,
+  }
+}
+
+describe('playdateFormValuesFromPost (V8 ticket 05)', () => {
+  it('inverts the create path: the stored instant comes back as the form values that produced it', () => {
+    const values = playdateFormValuesFromPost(storedPost())
+    expect(values).toEqual({
+      title: 'Playground time',
+      place: 'Green Lake playground',
+      neighborhoodId: 'hood-1',
+      startDate: '2026-09-12',
+      startMinutes: 15 * 60 + 30,
+      durationMinutes: 90,
+      ageHint: '',
+      details: 'Bring snacks',
+    })
+    // The round trip is exact: saving these values unchanged recomputes the
+    // same instants, which is what lets the no-op check stay quiet.
+    const post = storedPost()
+    expect(computeStartIso(values.startDate, values.startMinutes)).toBe(post.starts_at)
+    expect(
+      computeEndIso(values.startDate, values.startMinutes, values.durationMinutes),
+    ).toBe(post.ends_at)
+  })
+
+  it('nulls become empty strings (no details / no address are not the string "null")', () => {
+    const values = playdateFormValuesFromPost(storedPost({ details: null }))
+    expect(values.details).toBe('')
+  })
+
+  it('keeps an off-grid stored start EXACTLY (never silently snapped to the 30-minute grid)', () => {
+    const values = playdateFormValuesFromPost(
+      storedPost({
+        starts_at: computeStartIso('2026-09-12', 15 * 60 + 17),
+        ends_at: computeEndIso('2026-09-12', 15 * 60 + 17, 60),
+      }),
+    )
+    expect(values.startMinutes).toBe(15 * 60 + 17)
+    expect(values.startDate).toBe('2026-09-12')
+  })
+
+  it('invents no fifth duration chip: a stored duration outside the pinned set prefills as "none picked"', () => {
+    const values = playdateFormValuesFromPost(
+      storedPost({ ends_at: computeEndIso('2026-09-12', 15 * 60 + 30, 45) }),
+    )
+    expect(values.durationMinutes).toBe(0)
+    expect(isDuration(values.durationMinutes)).toBe(false)
+  })
+})
+
+describe('playdateEditFieldsChanged (V8 ticket 05)', () => {
+  const original = {
+    title: 'Playground time',
+    place: 'Green Lake playground',
+    address: '7200 4th Ave NE',
+    neighborhood_id: 'hood-1',
+    starts_at: computeStartIso('2026-09-12', 15 * 60 + 30),
+    ends_at: computeEndIso('2026-09-12', 15 * 60 + 30, 90),
+    details: 'Bring snacks',
+    kidIds: ['kid-1'],
+  }
+  const values = playdateFormValuesFromPost(original)
+
+  it('is false for an untouched form (the no-op save writes nothing)', () => {
+    expect(playdateEditFieldsChanged(original, values, original.address)).toBe(false)
+  })
+
+  it('is false for whitespace the form would trim anyway', () => {
+    expect(
+      playdateEditFieldsChanged(
+        original,
+        { ...values, title: `  ${values.title}  `, details: `${values.details} ` },
+        ` ${original.address} `,
+      ),
+    ).toBe(false)
+  })
+
+  it('is false when the stored timestamps are spelled differently but are the same instant', () => {
+    // Postgres answers in whatever offset it likes: "+00:00" and "Z" are the
+    // same moment and must never read as an edit.
+    expect(
+      playdateEditFieldsChanged(
+        {
+          ...original,
+          starts_at: original.starts_at.replace('Z', '+00:00'),
+          ends_at: original.ends_at.replace('Z', '+00:00'),
+        },
+        values,
+        original.address,
+      ),
+    ).toBe(false)
+  })
+
+  it('is false when both sides have no details/address (null vs empty string)', () => {
+    const bare = { ...original, address: null, details: null }
+    expect(playdateEditFieldsChanged(bare, playdateFormValuesFromPost(bare), '')).toBe(false)
+  })
+
+  it('is true for each editable field', () => {
+    expect(playdateEditFieldsChanged(original, { ...values, title: 'New title' }, original.address)).toBe(true)
+    expect(playdateEditFieldsChanged(original, { ...values, place: 'New place' }, original.address)).toBe(true)
+    expect(playdateEditFieldsChanged(original, values, '9 Elsewhere St')).toBe(true)
+    expect(playdateEditFieldsChanged(original, { ...values, neighborhoodId: 'hood-2' }, original.address)).toBe(true)
+    expect(playdateEditFieldsChanged(original, { ...values, details: 'Changed' }, original.address)).toBe(true)
+    expect(playdateEditFieldsChanged(original, { ...values, details: '' }, original.address)).toBe(true)
+    expect(playdateEditFieldsChanged(original, { ...values, startDate: '2026-09-13' }, original.address)).toBe(true)
+    expect(
+      playdateEditFieldsChanged(
+        original,
+        { ...values, startMinutes: values.startMinutes + TIME_STEP_MINUTES },
+        original.address,
+      ),
+    ).toBe(true)
+    expect(playdateEditFieldsChanged(original, { ...values, durationMinutes: 180 }, original.address)).toBe(true)
+  })
+
+  it('does not consider the age hint (the edit form neither renders nor writes it)', () => {
+    expect(playdateEditFieldsChanged(original, { ...values, ageHint: 'best for 2-5' }, original.address)).toBe(false)
+  })
+})
+
+describe('playdateEditKidIdsChanged (V8 ticket 05)', () => {
+  it('is order-insensitive (the read is name-ordered, the picker is tap-ordered)', () => {
+    expect(playdateEditKidIdsChanged(['a', 'b'], ['b', 'a'])).toBe(false)
+  })
+
+  it('is false for two empty selections (the failed-read case: no write, no clobbering)', () => {
+    expect(playdateEditKidIdsChanged([], [])).toBe(false)
+  })
+
+  it('is true for an added, removed, or replaced kid', () => {
+    expect(playdateEditKidIdsChanged(['a'], ['a', 'b'])).toBe(true)
+    expect(playdateEditKidIdsChanged(['a', 'b'], ['a'])).toBe(true)
+    expect(playdateEditKidIdsChanged(['a'], ['b'])).toBe(true)
+    expect(playdateEditKidIdsChanged(['a'], [])).toBe(true)
   })
 })
