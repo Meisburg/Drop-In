@@ -9,9 +9,9 @@ reversal and its family-photo feature both run through the same storage path and
 the same bucket decision, so they ship together here. Ticket 08's own file
 carries a FOLDED note; its `0038` reservation carries over to this ticket.
 
-**Status:** `ready-for-human` — ONE decision remains (what happens to the
-already-uploaded files, below). Everything else is specified, so one line of
-confirmation makes this `ready-for-agent`.
+**Status:** `ready-for-agent` — the DECISION was CONFIRMED by the human on
+2026-09-13 (option A: private bucket + signed URLs, files migrated, old public
+URLs die, parent avatars separated). Recorded below.
 
 ## The exposure, verified live (not inferred)
 
@@ -45,11 +45,16 @@ knowledge of any URL.** Kid photos are stored in the `avatars` bucket, which is
 remains publicly listable and fetchable, which is why ticket 10's copy was
 corrected to stop claiming photos were gated, and why this ticket exists.
 
-## THE DECISION (recommended default, one line to confirm)
+## THE DECISION — CONFIRMED 2026-09-13
 
-**Recommended: move kid photos to a PRIVATE bucket and hand them out only as
-short-lived signed URLs to the family. Keep the files — but accept that the old
-public URLs die.**
+**The human chose option A, verbatim: "yes, private bucket."** So: kid photos
+move to a PRIVATE bucket served by signed URLs; the already-uploaded files are
+**migrated so they survive** and their **old public URLs die**; parent avatars
+are **separated** from kid photos and keep their public posture.
+
+**One consequence the human accepted with it:** "the files survive" is true of
+the *images*, not of the *old URLs* — the whole point of the move is that a
+previously anonymous URL stops resolving.
 
 The reason this is a decision and not a detail: **the `avatars` bucket is shared
 with PARENT avatars** (`<uid>/avatar`, written by `uploadAvatarObject`, rendered
@@ -73,7 +78,7 @@ URLs* are gone by design — that is the closure.
 
 ## Acceptance criteria
 
-- [ ] The DECISION above is confirmed (or amended) and recorded here
+- [x] The DECISION is CONFIRMED (2026-09-13, the human: "yes, private bucket") and recorded above
 - [ ] **The exposure is closed and PROVEN closed:** an anonymous request can no
   longer list or fetch any kid photo — the exact probe that found it
   (`POST /storage/v1/object/list/avatars` with `{"prefix":"<uid>/kids"}` using
