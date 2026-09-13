@@ -8,9 +8,8 @@ This ticket is the follow-up both recorded as required, and it is deliberately
 **not** part of ticket 05 (that ticket's migration check pins "no policy
 changed").
 
-**Status:** `ready-for-human` — the SCOPE decision below is the human's.
-Everything else is specified, so one line of confirmation makes this
-`ready-for-agent`.
+**Status:** `ready-for-agent` — the SCOPE was CONFIRMED by the human on
+2026-09-13 (recorded below, with the accepted cost). Nothing else blocks it.
 
 ## The finding, with evidence (all verified against the live project)
 
@@ -46,23 +45,26 @@ So this ticket is not fixing an accidental leak in one component; it is deciding
 what the app promises about children's names, and making the code and the copy
 agree.
 
-## THE SCOPE DECISION (recommended default, one line to confirm)
+## THE SCOPE — CONFIRMED 2026-09-13
 
-**Recommended v1:** a kid's first name is visible to
-(a) the kid's own family, (b) the HOST of a drop-in that kid is attached to, and
-(c) a family who pinged that drop-in (i.e. exactly 0026's existing gate) — plus
-moderators. Ages stay broadly visible (that is V9 ticket 05's whole point, and
-ages are the signal parents actually want).
+**The human confirmed the recommended default, verbatim: "yes".** So a kid's
+first name is visible to **(a)** the kid's own family, **(b)** the HOST of a
+drop-in that kid is attached to, **(c)** a family who PINGED that drop-in (i.e.
+exactly 0026's existing gate) — **plus moderators**. Ages stay broadly visible
+(that is V9 ticket 05's whole point, and ages are the signal parents actually
+want). The `/u/:handle` cost below was put to the human explicitly and is
+**accepted**: kid names come off that profile section for signed-in strangers.
 
-**What that costs, stated honestly:** it removes kid names from `/u/:handle`'s
-profile section for signed-in strangers and from the detail page's "Kids coming"
-line for non-participants, so the name disappears from surfaces V2 shipped
-deliberately. If the human prefers to keep `/u/:handle` as-is, say so — then the
-surface list narrows to the detail page and the raw table reads.
+**The accepted cost, restated so it is not discovered as a surprise:** kid names
+disappear from `/u/:handle`'s kid section for signed-in strangers and from the
+detail page's "Kids coming" line for non-participants — surfaces V2 shipped
+deliberately. Where a name can no longer be shown, the honest replacement is the
+AGES signal that already exists (a range, never a guess) — do not invent a
+partial-name, initial, or count-only substitute.
 
 ## Acceptance criteria
 
-- [ ] The SCOPE above is confirmed (or amended) and the ticket records the answer
+- [x] The SCOPE is CONFIRMED (2026-09-13, the human: "yes") and recorded above, including the accepted `/u/:handle` cost
 - [ ] **The detail page's "Kids coming" line stops crossing to strangers.** Its
       names + ages come from a **SECURITY DEFINER** function with 0026's gate
       (host / going / moderator), not from a table read — the 0026 pattern, so
