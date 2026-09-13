@@ -12,10 +12,17 @@ it is the one asking. Do the reversal without destroying anything: stop renderin
 kid photos and remove the control, keep the stored files, and give the parent a
 family photo and a family description instead — both optional.
 
-**Blocked by:** Ticket 07 (one-writer).
+**Status: FOLDED INTO TICKET 11 (2026-09-13)** — *do not build this ticket on its
+own.* V9 ticket 10's review cycle verified live that kid photos sit in a PUBLIC
+storage bucket and are anonymously listable and fetchable, which changes what
+this ticket's "keep the stored files" means and puts its kid-photo half in the
+same work item as the storage fix. Everything below (the reversal, the family
+photo, "About our family", the `0038` reservation) is carried by
+`.scratch/v9/issues/11-kid-photo-storage.md`, which also carries the exposure
+evidence, the one remaining human decision, and the extra ACs the exposure
+implies. Build 11 instead; this file is the record of the original ask.
 
-**Status:** ready-for-agent — **pending one human confirmation** (this reverses a
-logged decision; see the judgment call)
+**Blocked by:** Ticket 07 (one-writer) — superseded by the fold above.
 
 - [ ] The kid editor on `/profile` **loses its photo control entirely**: a kid row
   is first name (optional), age, likes. No upload, no preview, no camera

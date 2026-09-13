@@ -42,9 +42,24 @@ Her words, grouped as she gave them:
 | 05 | Nearby: ages first, names optional | ~1.5 days | **0037** | Nearby #2 |
 | 06 | Nearby: map-first with a list toggle | ~3 days | none | Nearby #3 |
 | 07 | Nearby: search + filters (day, age, neighbourhood, text) | ~1.5 days | none | Nearby #4 |
-| 08 | Profile: no kid photos; an optional family photo + about-us | ~1.5 days | **0038** | Profile |
+| 08 | Profile: no kid photos; an optional family photo + about-us | ~1.5 days | **0038** | Profile — **FOLDED INTO 11** |
 | 09 | Messages: parent-to-parent, tied to a shared drop-in | ~4 days | **0039** | General |
 | 10 | Privacy: kid names are readable by every signed-in parent | ~1 day | **0040** | Found by ticket 05's review |
+| 11 | Kid photos: the public storage exposure; family photo instead | ~2 days | **0038** | Found by ticket 10's review; **folds in ticket 08** |
+
+**Ticket 11 was NOT in the original batch** and **ticket 08 is folded into it**
+(human's instruction, 2026-09-13). Filed out of ticket 10's review cycle 1: a
+fresh-context reviewer verified — with only the anon key that ships in the client
+bundle — that kid photos in the `avatars` bucket are **anonymously listable and
+fetchable** (`avatars` is `public = true`, `avatars_public_read` is granted to
+role `public`, kid photos live at `<uid>/kids/<kidId>`, and the stored URLs are
+permanent). Ticket 10 gated the *column*; this closes the *file*. It carries
+ticket 08's reversal AND its family-photo feature, because both run through the
+same bucket — and the `avatars` bucket is shared with **parent** avatars, so a
+private bucket means separating the two paths rather than flipping a flag. One
+human decision remains inside it: what happens to the already-uploaded files
+(recommended: move them to a private bucket and serve signed URLs — the images
+survive, their old public URLs die by design).
 
 **Ticket 10 was NOT in the original batch.** It was filed 2026-09-13 by the
 coordinator on the human's instruction, out of ticket 05's review cycle: ticket
