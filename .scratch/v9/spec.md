@@ -44,6 +44,19 @@ Her words, grouped as she gave them:
 | 07 | Nearby: search + filters (day, age, neighbourhood, text) | ~1.5 days | none | Nearby #4 |
 | 08 | Profile: no kid photos; an optional family photo + about-us | ~1.5 days | **0038** | Profile |
 | 09 | Messages: parent-to-parent, tied to a shared drop-in | ~4 days | **0039** | General |
+| 10 | Privacy: kid names are readable by every signed-in parent | ~1 day | **0040** | Found by ticket 05's review |
+
+**Ticket 10 was NOT in the original batch.** It was filed 2026-09-13 by the
+coordinator on the human's instruction, out of ticket 05's review cycle: ticket
+05's AC asserted kid names are visible "only for the host and people who
+pinged", the builder proved that false against the live project (both `kids` and
+`playdate_kids` grant `using (true)` to `authenticated`), shipped truthful copy
+instead of the false promise, and both the builder and the reviewer recorded
+that tightening the gate needs its own ticket because ticket 05's migration
+check pins "no policy changed". It carries one human decision (the scope), and
+it must give the feed's ages derivation its own SECURITY DEFINER function — that
+derivation reads `playdate_kids` under the very policy the ticket narrows, so
+without it every card's ages line would blank **silently**.
 
 Migration numbers are RESERVATIONS in queue order (next free wins if the queue
 reorders; whatever is applied is what `task-state.md` records). Every migration
