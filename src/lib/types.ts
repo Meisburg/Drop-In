@@ -333,21 +333,35 @@ export interface Kid {
   likes?: string | null
 }
 
-/** A profile with its kids joined in (getProfileByHandle result, V2 ticket 02). */
+/**
+ * A profile with its kids joined in (getProfileByHandle result, V2 ticket 02).
+ *
+ * V9 ticket 10 (migration 0040): this embed is RLS-FILTERED per kid — the
+ * caller receives only the kids they may see (their own family's, the ones
+ * attached to a drop-in they host or pinged, any of them if they moderate).
+ * For a signed-in stranger it is an EMPTY ARRAY, and `UserPage` accordingly
+ * renders the kids section in the self view alone (the confirmed, accepted
+ * cost). There is no error to handle and no flag to set: an empty list IS the
+ * database's answer.
+ */
 export interface ProfileWithKids extends Profile {
   kids: Kid[]
 }
 
 /**
  * One row of the detail page's "Kids coming" line (V3 slice 6, ticket 09,
- * migration 0022): the host's picked kid, mapped to name + age ONLY (the
- * privacy pin; the kid's avatar_url is deliberately NOT selected — the
- * kid-photo pin: photos render only in the profile kids list, never on
- * the event line). `age` null = a defensive gap (the DB column is NOT
+ * migration 0022; gated by V9 ticket 10, migration 0040): the host's picked
+ * kid, mapped to name + age ONLY (the privacy pin; no avatar_url is read at
+ * all — the kid-photo pin: photos render only in the profile kids list, never
+ * on the event line). `age` null = a defensive gap (the DB column is NOT
  * NULL); the render shows the name only.
  */
 export interface PlaydateKid {
-  /** The playdate_kids row's id (the embed's join key). */
+  /**
+   * The KID's id (V9 ticket 10: get_playdate_kids returns `kid_id`; before
+   * 0040 this read was the playdate_kids embed and carried that row's id).
+   * Nothing renders it — it is the stable per-row key.
+   */
   id: string
   /**
    * The kid's first name (the 0011 first_name column), or '' — V9 ticket 05: a

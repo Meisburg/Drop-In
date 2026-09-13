@@ -158,3 +158,73 @@ Two things this ticket must not lose, both from ticket 05's record:
 **2026-09-13 — the finding was surfaced, not buried.** The human was told the
 same day in the session report and asked to decide; this ticket is the record of
 that decision point, and the scope line above is the only thing blocking it.
+
+**2026-09-13 — review cycle 1 (0040 applied, probed by the coordinator; two HIGH
+findings), and the record of the gate's DEPTH.** The gate itself was verified
+live: a signed-in stranger with no relationship to any family read `[]` from
+both tables post-0040 (7 kid rows, two of them with photo URLs, pre-0040), anon
+`[]`, the owner's `INSERT … RETURNING` still returns its row, `kid_ages_for`
+returns `{age_min, age_max}` for a two-kid post, and all four functions are
+SECDEF + STABLE with `search_path` pinned. Two things then had to be fixed, and
+one of them is now part of the record of what this gate does NOT cover.
+
+1. **THE GATE WAS BYPASSABLE BY FORGING A JOIN ROW (F2).** The gate reads the
+   two attachment tables as its INPUT, and neither INSERT policy asked whose kid
+   was being attached — `playdate_kids_insert_host` (0022:95-104) checked only
+   that the caller hosts the post, `ping_kids_insert_own` (0026:90-93) only that
+   the row is the caller's own. Reproduced live, executing the exploit against
+   this ticket's own e2e data (a pinger's kid, and the marker's kid): attaching
+   that child to a post the caller hosts returned **HTTP 201**, after which the
+   forging host read the child's whole row (`first_name`, `age`, `avatar_url`,
+   `likes`) through the very policy 0040 adds; attaching the host's child to the
+   caller's own ping returned **HTTP 201**, after which `get_kids_going` — 0026's
+   SECDEF function, which never consults any policy — returned that child's name
+   and age to the pinger (and would have to that post's host and every pinger).
+   0040 was **amended in place** (the 0028/0032 precedent, and the coordinator
+   re-applies it): both INSERT policies now additionally require
+   `public.kid_owned_by_caller(kid_id)`. Enumerating a kid uuid was never the
+   hard part — pre-0040 any signed-in account read every kid row in the project
+   in one request. **Residual, recorded in 0040's header: the fix closes the
+   forge going forward, not retroactively** — a forged attachment row created
+   before the amendment is still a valid input to the gate, so the coordinator
+   probes for pre-existing forged rows and decides what to do with them; the
+   migration does not delete anybody's rows.
+2. **KID PHOTOS WERE NEVER COVERED BY THIS TICKET, AND MUST NOT BE PROMISED
+   (F1).** An earlier draft of the `/profile` copy this ticket shipped said "A
+   name **and a kid photo** are visible only to …". That was false and was
+   removed; the copy now claims the NAME gate and nothing else. The truth it
+   stopped short of: the `avatars` bucket is `public = true` with
+   `avatars_public_read` for `{public}` (0011), kid photos live in it at
+   `<uid>/kids/<kidId>`, and `kids.avatar_url` stores the public URL
+   permanently — deleting the kid row does not delete the object, so every URL
+   ever handed out (including every one handed out pre-0040) stays fetchable
+   signed out. The reviewer enumerated and fetched those objects live with the
+   anon key that ships in the client bundle. Fixing it is a real design change
+   (a private bucket + signed URLs, and note the SAME bucket holds parent
+   avatars at `<uid>/avatar`, which are public by design — so a bucket-level fix
+   has to separate the two paths), and it is exactly the ground V9 ticket 08
+   ("no kid photos") stands on. **Escalated to the human; deliberately NOT
+   promised in the UI copy and NOT attempted here.**
+
+**The gate's DEPTH, stated plainly so nobody over-reads it** (all three are
+properties of the confirmed scope, not defects):
+
+- "the families who said they're going" is **one self-service tap deep**: the
+  `going_pings` INSERT is `profile_id = auth.uid()`, so any signed-in parent can
+  make themselves a "going" family on any public drop-in and then read the names
+  of the kids attached to it. That is 0026's own pinned gate ("names and ages
+  only for the host and people going"), inherited deliberately — but it is a
+  lower wall than "the families I have met".
+- "your family" is **one profile**, not one household: a second parent with
+  their own account in the same home sees the kids only if they host or ping —
+  there is no household/membership model in the schema to key on.
+- the RLS policy is the **boundary**; `/u/:handle`'s self-view-only kids
+  section is UX. A host/pinger viewer still RECEIVES the rows they may see in
+  `getProfileByHandle`'s embed and they sit unrendered in React state (recorded
+  in `UserPage.tsx`, review cycle 1 F5). What the client gate buys is that a
+  PARTIAL list is never shown as if it were the whole family.
+- `playdate_kid_row_visible(pid, kid)` is a membership oracle for anyone
+  holding a kid uuid, and `kid_ages_for` is an unchecked-by-id reader (ages are
+  broadly visible by design). Both accepted and documented in 0040's header
+  (F6).
+

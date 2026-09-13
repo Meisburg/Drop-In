@@ -2,6 +2,22 @@
 -- per-kid photos, and conversation starters (kids.likes,
 -- profiles.interests).
 --
+-- ===========================================================================
+-- SUPERSEDED IN PART BY 0040 — DO NOT RE-PASTE THE POLICY SECTION OF THIS
+-- FILE (V9 ticket 10, review cycle 1, F4). This file's DO blocks recreate
+-- `playdate_kids_select_authenticated` (`using (true)` for authenticated) and
+-- `playdate_kids_insert_host` (host-only, no ownership check on kid_id) from
+-- NAME-BASED existence guards. 0040 replaces both with the kid-name gate
+-- (`playdate_kids_select_host_pinger_mod`) and with an INSERT that also
+-- requires the kid to be the caller's own. Re-pasting this file after 0040
+-- therefore finds neither old policy present, recreates BOTH, and — because
+-- policies of the same command are ORed — SILENTLY RE-OPENS the table, with no
+-- error and no warning. The schema changes this file owns (the table, the
+-- index, and the kids.avatar_url / kids.likes / profiles.interests columns)
+-- are `if not exists` and safe to re-run; the two policies are not. 0040 is
+-- the file that owns them now.
+-- ===========================================================================
+--
 -- Pinned decisions (plan-v3.md slice 6, ticket 09):
 -- (a) playdate_kids: the host's per-post selection of their own kids
 --     (id, playdate_id FK ON DELETE CASCADE, kid_id FK ON DELETE
@@ -73,6 +89,17 @@ $$;
 --   host_profile_id = auth.uid()). A non-host write is a silent RLS
 --   no-op (0 rows, 2xx — the 0014 lesson); the UI offers the picker to
 --   the host only, the RLS is the wall.
+--
+-- SUPERSEDED BY 0040 (V9 ticket 10) — NEITHER of the two policies below
+-- describes the live posture any more, and re-creating them would OR them back
+-- on with no warning:
+--   * SELECT is 0040's playdate_kids_select_host_pinger_mod (host / pinger /
+--     own kid / moderator), not `using (true)`;
+--   * INSERT is 0040's re-created playdate_kids_insert_host, which additionally
+--     requires the attached kid to be the CALLER'S OWN (kid_owned_by_caller) —
+--     without that clause a host could attach someone else's child to their own
+--     post and read that child's whole row, which is exactly the bypass review
+--     cycle 1 found (F2).
 do $$
 begin
   if not exists (

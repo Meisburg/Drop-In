@@ -1,6 +1,21 @@
 -- V2 slice 2 (ticket 02): rich profiles — avatars, bio, kids, the
 -- 'avatars' storage bucket, and the self-elevation guard trigger.
 --
+-- ===========================================================================
+-- SUPERSEDED IN PART BY 0040 — DO NOT RE-PASTE THE KIDS POLICY SECTION OF
+-- THIS FILE (V9 ticket 10, review cycle 1, F4). The DO block below recreates
+-- `kids_select_authenticated` (`using (true)` for authenticated) from a
+-- NAME-BASED existence guard. 0040 replaces it with
+-- `kids_select_own_host_pinger_mod` (own family / host of a drop-in the kid is
+-- attached to / a family who pinged it / moderators). Re-pasting this file
+-- after 0040 finds the old policy absent, recreates it, and — because policies
+-- of the same command are ORed — SILENTLY RE-OPENS every family's kids rows,
+-- with no error and no warning. The other statements in this file (the kids
+-- table, the profiles columns, the bucket, the storage policies) are
+-- `if not exists` and remain safe to re-run; the four kids policies are not.
+-- 0040 owns `kids_select_own_host_pinger_mod` now.
+-- ===========================================================================
+--
 -- Pinned contracts (plan-v2.md Interfaces):
 -- - profiles: + avatar_url (text, nullable), + bio (text, nullable, <= 500)
 -- - kids: id, profile_id, first_name, age (int) — first name + age ONLY
@@ -75,6 +90,12 @@ $$;
 -- Kids ride the public profile surface (/u/:handle, the detail host —
 -- first name + age only): any authenticated user can read them. Writes are
 -- owner-only (a family manages its own kids; RLS is the wall).
+--
+-- SUPERSEDED BY 0040 (V9 ticket 10) — this wide SELECT policy no longer
+-- describes the live posture and must NOT be re-created: 0040 replaced it with
+-- kids_select_own_host_pinger_mod (own family / host / pinger / moderator).
+-- Re-running this DO block would OR the wide policy back on and quietly
+-- re-open every family's kid rows.
 do $$
 begin
   if not exists (

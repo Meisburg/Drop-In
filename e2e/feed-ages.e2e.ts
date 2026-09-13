@@ -327,15 +327,22 @@ test('the card leads with the ages of the kids the host is bringing — and neve
 
   // …and the same rule over the READ the card's ages line is built from. The
   // real assertion that the app's projection carries no name and no kid id is
-  // the unit test on the emitted SELECT string
-  // (src/lib/db-v5.test.ts → kidAgesByPostForPostsWithClient). THIS block is
-  // the live complement, and it proves a slightly different thing, stated
-  // exactly: a query of that shape, issued against the real project with the
-  // marker's JWT, answers with rows whose only keys are playdate_id and kid.age
-  // and whose raw body contains neither this kid's name nor their id — i.e. the
-  // data the app needs is reachable in exactly that shape and nothing more comes
-  // back with it. (It re-issues the query by hand; it does NOT observe the app's
-  // own request. Review cycle 1, F9.)
+  // the unit test on the emitted call
+  // (src/lib/db-v5.test.ts → kidAgesByPostForPostsWithClient, which V9 ticket 10
+  // moved from the batched table read to the ages-only SECURITY DEFINER
+  // `kid_ages_for` — the read's own payload is now asserted in
+  // e2e/kid-names-privacy.e2e.ts). THIS block is the live complement, and it
+  // proves a slightly different thing, stated exactly: a query of that shape,
+  // issued against the real project with the marker's JWT, answers with rows
+  // whose only keys are playdate_id and kid.age and whose raw body contains
+  // neither this kid's name nor their id — i.e. the data the app needs is
+  // reachable in exactly that shape and nothing more comes back with it. (It
+  // re-issues the query by hand; it does NOT observe the app's own request.
+  // Review cycle 1, F9.) After 0040 this hand-issued read still answers for the
+  // MARKER because the marker both HOSTS this post and OWNS these kids — the
+  // two clauses the narrowed `playdate_kids` / `kids` SELECT policies keep; a
+  // stranger's copy of this same query is asserted to be EMPTY in
+  // e2e/kid-names-privacy.e2e.ts.
   const href = (await card.getAttribute('href')) ?? ''
   if (!href.startsWith('/playdate/')) {
     throw new Error(`the card for "${withKidsTitle}" has no detail href (got "${href}")`)

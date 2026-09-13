@@ -364,59 +364,93 @@ export function UserPage() {
           first name standing in for the display name) + the "likes" line
           (hidden when empty/absent; pre-0022-apply the columns are
           undefined, the null-safe render). The kid-photo pin: it renders
-          ONLY in this profile kids list — never on cards or event lines. */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900">Kids</h2>
-        {profile.kids.length === 0 ? (
-          <p className="mt-1 text-sm text-slate-600">No kids listed.</p>
-        ) : (
-          <ul className="mt-2 flex flex-col gap-2">
-            {profile.kids.map((kid) => {
-              const likes = kid.likes?.trim() ?? ''
-              // V9 ticket 05: a first name is optional, so this can be NULL —
-              // normalised once, for the photo alt, the initial circle and the
-              // label below (never a `null.charAt` crash, never "null").
-              const kidName = (kid.first_name ?? '').trim()
-              return (
-                <li key={kid.id} className="flex flex-wrap items-center gap-2">
-                  {kid.avatar_url ? (
-                    // V6: the kid photo opens full-screen too — 'so I can see
-                    // what the parents and the kids look like', which is how
-                    // a parent decides whether to show up.
-                    <PhotoButton
-                      src={kid.avatar_url}
-                      alt={kidName === '' ? 'A kid’s photo' : `${kidName}’s photo`}
-                    >
-                      <img
+          ONLY in this profile kids list — never on cards or event lines.
+
+          V9 ticket 10 (the accepted cost, CONFIRMED by the human 2026-09-13
+          and recorded in .scratch/v9/issues/10-kid-names-privacy-gate.md):
+          this section renders ONLY in the self view. V2 shipped it to every
+          signed-in visitor deliberately ("the public-profile-surface class"
+          0022's own header names), and migration 0040 ends that: a kid's first
+          name and photo are visible to the kid's own family, the host of a
+          drop-in the kid is attached to, a family who pinged that drop-in, and
+          moderators — nobody else. RLS already returns no kid rows to anyone
+          else (the embed is filtered row by row), so the honest render for
+          those viewers is NO section at all: "No kids listed." would be a
+          false statement about the family, and an initials circle, a count or
+          a blur would be a partial substitute the ticket explicitly rejects.
+          The AGES signal that DOES remain on this page is the one ticket 05
+          put on its post cards ("ages 3–6" — never a name), which is the same
+          honest replacement the detail page's line uses.
+
+          Why the gate is `isOwnProfile` and not `profile.kids.length > 0`: the
+          policy is per KID, so a viewer who pinged ONE of this family's
+          drop-ins (or hosted one) would receive a PARTIAL list — the kids
+          attached to that drop-in only. A partial list of children is worse
+          than no list: it reads as the whole family.
+
+          AND THIS IS UX, NOT THE CONTROL (review cycle 1, F5 — do not read a
+          guarantee into it): the RLS policy is the boundary. A host/pinger
+          viewer still RECEIVES the rows they may see — the embed is filtered
+          row by row by the database, and whatever survives that filter sits in
+          `profile.kids` in React state whether or not this JSX renders it. What
+          the client gate buys is that a partial list is never SHOWN as if it
+          were the whole family, and that "No kids listed." is never rendered
+          over a family that has kids. Nothing here is a privacy control; the
+          database is. */}
+      {isOwnProfile ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="text-base font-semibold text-slate-900">Kids</h2>
+          {profile.kids.length === 0 ? (
+            <p className="mt-1 text-sm text-slate-600">No kids listed.</p>
+          ) : (
+            <ul className="mt-2 flex flex-col gap-2">
+              {profile.kids.map((kid) => {
+                const likes = kid.likes?.trim() ?? ''
+                // V9 ticket 05: a first name is optional, so this can be NULL —
+                // normalised once, for the photo alt, the initial circle and the
+                // label below (never a `null.charAt` crash, never "null").
+                const kidName = (kid.first_name ?? '').trim()
+                return (
+                  <li key={kid.id} className="flex flex-wrap items-center gap-2">
+                    {kid.avatar_url ? (
+                      // V6: the kid photo opens full-screen too — 'so I can see
+                      // what the parents and the kids look like', which is how
+                      // a parent decides whether to show up.
+                      <PhotoButton
                         src={kid.avatar_url}
-                        alt=""
-                        className="h-10 w-10 shrink-0 rounded-full object-cover"
-                      />
-                    </PhotoButton>
-                  ) : (
-                    <span
-                      aria-hidden
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-500"
-                    >
-                      {(kidName.charAt(0) || '?').toUpperCase()}
-                    </span>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm text-slate-800">
-                      {/* V9 ticket 05: an age-only kid reads "Age 6", never
-                          " · 6" (feed.kidLabel is the one kid-label seam). */}
-                      {kidLabel(kid.first_name, kid.age)}
-                    </p>
-                    {likes !== '' ? (
-                      <p className="mt-0.5 text-xs text-slate-600">likes {likes}</p>
-                    ) : null}
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </div>
+                        alt={kidName === '' ? 'A kid’s photo' : `${kidName}’s photo`}
+                      >
+                        <img
+                          src={kid.avatar_url}
+                          alt=""
+                          className="h-10 w-10 shrink-0 rounded-full object-cover"
+                        />
+                      </PhotoButton>
+                    ) : (
+                      <span
+                        aria-hidden
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-500"
+                      >
+                        {(kidName.charAt(0) || '?').toUpperCase()}
+                      </span>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-slate-800">
+                        {/* V9 ticket 05: an age-only kid reads "Age 6", never
+                            " · 6" (feed.kidLabel is the one kid-label seam). */}
+                        {kidLabel(kid.first_name, kid.age)}
+                      </p>
+                      {likes !== '' ? (
+                        <p className="mt-0.5 text-xs text-slate-600">likes {likes}</p>
+                      ) : null}
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+      ) : null}
 
       {isOwnProfile ? null : (
         <div className="flex flex-col gap-2">

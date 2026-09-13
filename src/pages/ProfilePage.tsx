@@ -968,28 +968,43 @@ export function ProfilePage() {
             First name, age, an optional photo, and a “likes” line (up to {MAX_KIDS_PER_PROFILE}).
             Edit a row and save the whole profile — nothing here saves on its own.
           </p>
-          {/* V9 ticket 05: the privacy promise, in the UI — "the kids editor
-              makes clear that first names are optional ... and the copy says
-              the name is only shown to families who are going".
-              WHAT THIS COPY ACTUALLY PROMISES, and why it is worded this way
-              (a deviation from the ticket's exact sentence, reported with
-              evidence): names are NOT currently limited to families who are
-              going. Two standing policies make them visible to any signed-in
-              parent — 0011's `kids_select_authenticated` (USING (true): the
-              /u/:handle kid list) and 0022's `playdate_kids_select_authenticated`
-              (USING (true): the detail page's "Kids coming" line, which is what
-              renders those names). The 0026 gate limits only the OTHER
-              families' kids (`get_kids_going`). So the honest sentence is the
-              one below: no name ever reaches a nearby CARD (that part is
-              absolute — the card carries a range), and on the surfaces that do
-              show it, it is signed-in families only. Promising "only families
-              who are going" would be a false promise the schema contradicts;
-              tightening the gate to make that sentence true is its own ticket,
-              not this one (this ticket explicitly changes no gate). */}
+          {/* V9 ticket 05 shipped the privacy promise in the UI; V9 ticket 10
+              (migration 0040) makes it TRUE, so the sentence is re-pinned to
+              the stronger reality instead of the weaker one.
+              WHAT THIS COPY PROMISES NOW, and why it is worded this way: the
+              gate lives in the database — `kids_select_own_host_pinger_mod` —
+              and it is exactly four viewers: this family, the host of a
+              drop-in the kid is listed as coming to, the families who said
+              they're going to that drop-in (0026's gate), and moderators.
+              Nothing else: not a signed-in stranger (that was TRUE before
+              ticket 10 and is FALSE now — a stranger could read every
+              family's kids rows over REST), not a signed-out visitor, not
+              this family's public profile page (which shows the kids section
+              to its owner alone), and not a card (the cards carry the age
+              range, never a name — ticket 05's absolute rule, unchanged).
+              The sentence names the moderators because their access is real
+              and omitting it would over-promise; it says nothing about
+              initials or counts because no such substitute exists anywhere.
+              IT CLAIMS NOTHING ABOUT THE PHOTO — DELIBERATELY (review cycle 1,
+              F1). An earlier draft of this sentence said "A name and a kid
+              photo are visible only to …", and that was FALSE: kid photos live
+              in the `avatars` bucket, which is a PUBLIC bucket (0011 sets
+              `storage.buckets.public = true` and adds `avatars_public_read` for
+              `{public}`), the object path is `<uid>/kids/<kidId>`, and
+              `kids.avatar_url` stores the resulting public URL permanently —
+              deleting the kid row does not delete the object, so every URL ever
+              handed out stays fetchable signed out. Narrowing `kids` (this
+              ticket's gate) does not touch any of that. Fixing it is a real
+              design change — a private bucket with signed URLs, or ticket 08's
+              removal of the kid-photo upload — and it is ESCALATED, not
+              silently promised here. So this sentence states the NAME gate,
+              exactly, and stops. (The photo still never renders on a card or an
+              event line: the kid-photo pin, untouched.) */}
           <p className="mt-1 text-sm text-slate-600">
             A first name is optional — skip it and your kid still shows up by age
-            (the cards say “ages 3–6”, never a name). A name appears only on your
-            profile and on a drop-in’s page, and only to signed-in families.
+            (the cards say “ages 3–6”, never a name). A name is visible only to
+            your family, the host of a drop-in where you listed them, the
+            families who said they’re going, and our moderators.
           </p>
 
           {kids === null ? (

@@ -32,6 +32,7 @@ import {
   getShareUrl,
   hasPinged,
   hideComment,
+  kidAgesForPlaydate,
   listComments,
   listKids,
   listKidsGoing,
@@ -44,6 +45,7 @@ import {
   unhideComment,
 } from '../lib/db'
 import {
+  ageRangeLine,
   formatGuestLine,
   isHiddenPost,
   kidsComingLine,
@@ -151,6 +153,14 @@ type DetailState =
        * post (the DB-not-applied discipline, same as the ping section).
        */
       kids: PlaydateKid[] | null
+      /**
+       * V9 ticket 10: the post's derived kid AGES (db.kidAgesForPlaydate — the
+       * ages-only SECURITY DEFINER read, migration 0040). They are what keeps
+       * the ages line alive for a viewer the names are gated from: a stranger
+       * reads "Ages 3–6" alone. null = the read failed or has not settled:
+       * the line falls back to deriving from `kids`, exactly as before.
+       */
+      kidAges: number[] | null
       /**
        * V3 slice 10 (ticket 05): the guest-list names (the 0025
        * get_guest_list RPC — the pingers' display_names, created_at
@@ -678,7 +688,7 @@ export function PlaydateDetailPage() {
           // Retry (commentsFailed) instead of an absent section that reads as
           // "no comments yet". The kids block still degrades silently (the
           // ticket pin: no error UI on best-effort decorations).
-          const [count, going, commentsResult, kids, guestNames] = await Promise.all([
+          const [count, going, commentsResult, kids, kidAges, guestNames] = await Promise.all([
             getGoingCount(id).catch(() => null),
             hasPinged(id).catch(() => false),
             // V8 ticket 02: the thread's failure is caught as its OWN fact
@@ -689,13 +699,23 @@ export function PlaydateDetailPage() {
             listComments(id)
               .then((rows) => ({ rows, failed: false }))
               .catch(() => ({ rows: null, failed: true })),
-            // V3 slice 6 (ticket 09): the "Kids coming" rows (the 0022
-            // playdate_kids table). Authenticated view only — the
-            // signed-out public surface (the get_public_playdate 12-field
-            // payload) carries no kids data (the ticket pin). Pre-0022-
-            // apply the 42P01 is caught: the line stays hidden, the post
-            // never crashes (the DB-not-applied discipline).
+            // V3 slice 6 (ticket 09) + V9 ticket 10 (0040): the "Kids coming"
+            // rows, now through the GATED SECURITY DEFINER get_playdate_kids
+            // (host / going / moderator). A stranger gets an empty array, not
+            // an error — the names simply never arrive on their page.
+            // Authenticated view only — the signed-out public surface (the
+            // get_public_playdate 12-field payload) carries no kids data (the
+            // ticket pin). Pre-0022-apply the 42P01 is caught: the line stays
+            // hidden, the post never crashes (the DB-not-applied discipline).
             listPlaydateKidNames(id).catch(() => null),
+            // V9 ticket 10: the DERIVED range's own read (the ages-only
+            // SECDEF function — the T1 coupling). It is what lets a viewer who
+            // may not see the names still read "Ages 3–6": without it the
+            // tightening of `playdate_kids` would have left every non-host
+            // with no ages line at all — the silent blanking ticket 05 warned
+            // about. Best-effort, like every other decoration: a failure
+            // leaves the line to derive from `kids` (or to stay hidden).
+            kidAgesForPlaydate(id).catch(() => null),
             // V3 slice 10 (ticket 05): the guest-list names (the 0025
             // get_guest_list RPC — the host/pinger gate lives in the
             // function; the count path getGoingCount above is
@@ -715,6 +735,7 @@ export function PlaydateDetailPage() {
             comments: commentsResult.rows,
             commentsFailed: commentsResult.failed,
             kids,
+            kidAges,
             guestNames,
           })
         } catch (err) {
@@ -1391,7 +1412,7 @@ export function PlaydateDetailPage() {
     )
   }
 
-  const { detail, count, going, kids, guestNames } = state
+  const { detail, count, going, kids, kidAges, guestNames } = state
   // V8 ticket 09: ONE "now" for this render — the "Same time next week"
   // block's day/time label reads the same clock it was offered under, so the
   // block can never be labelled with a day it is not actually offering.
@@ -1449,8 +1470,19 @@ export function PlaydateDetailPage() {
   // card (feed.playdateAgeRangeLine is the one precedence rule). No chips
   // stated → the derived range answers; no kids EITHER → the line is
   // "Ages 2–5" alone, which is the no-kids case the chips exist for.
+  //
+  // V9 ticket 10 (migration 0040): the derived range now comes from its OWN
+  // read — db.kidAgesForPlaydate, the ages-only SECURITY DEFINER function —
+  // because the names no longer cross to everyone. For the host and a pinger
+  // nothing changes (same kids, same range); for a signed-in stranger `kids`
+  // is now EMPTY (the gated RPC returns no rows), and this line is what they
+  // get: the ages, and no name. That is the confirmed scope's accepted shape:
+  // "where a name can no longer be shown, the honest replacement is the AGES
+  // signal that already exists".
   const statedAgeRangeLabel = statedAgeRangeLine(detail.age_min, detail.age_max)
-  const kidsLine = kids !== null ? kidsComingLine(kids, statedAgeRangeLabel) : null
+  const derivedAgeRangeLabel = kidAges !== null ? ageRangeLine(kidAges) : null
+  const kidsRangeLabel = statedAgeRangeLabel ?? derivedAgeRangeLabel
+  const kidsLine = kids !== null ? kidsComingLine(kids, kidsRangeLabel) : null
   // V3 slice 10 (ticket 05): the guest-list line — the pure feed
   // seams (resolveGuestListVisibility: the host/pinger gate +
   // count > 0; formatGuestLine: "Going: ..." for the host, "You,
@@ -2202,7 +2234,13 @@ export function PlaydateDetailPage() {
           V9 ticket 05: the line is AGES-FIRST, and it is also how a host who
           listed NO kids but stated a range is read back ("Kids coming: Ages
           2–5" — the range is the whole line then, which is why this block's
-          own condition did not need a third branch). */}
+          own condition did not need a third branch).
+          V9 ticket 10 (migration 0040): the NAMES are now gated by the
+          database (get_playdate_kids — host / going / moderator), so a
+          signed-in stranger's `kids` array is empty and their line is the
+          derived AGES alone ("Kids coming: Ages 3–6") — the honest replacement
+          the confirmed scope pins, never an initial, a count of kids or a
+          blank. The block itself is unchanged: the ages line keeps it. */}
       {kidsLine !== null || kidsGoing.length > 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           {kidsLine !== null ? (

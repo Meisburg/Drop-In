@@ -35,9 +35,24 @@
 -- (SECURITY DEFINER bypasses RLS by design and projects exactly what is
 -- allowed — the 0015/0023/0025 pattern).
 --
+-- SUPERSEDED IN PART BY 0040 — DO NOT RE-PASTE `ping_kids_insert_own`
+-- (V9 ticket 10, review cycle 1, F4 — recorded here because this file's own
+-- DO block recreates the weak version from a NAME-BASED existence guard).
+-- 0040 re-creates that policy with ONE added clause: the attached kid must be
+-- the CALLER'S OWN (`kid_owned_by_caller`). The reason is that 0040's kid-name
+-- gate reads these attachment rows as its input, so without the clause a pinger
+-- who knew one kid uuid could attach that child to their own ping, read the
+-- child's row through the new gate, AND expose the child's first name + age to
+-- that post's host and to every pinger through get_kids_going below. Re-pasting
+-- this file would find the policy absent, recreate the WEAK version, and —
+-- policies of the same command being ORed — silently re-open the bypass with no
+-- error and no warning. Everything else here (the table, the index, the two
+-- SECDEF functions) is `if not exists` / DROP+CREATE and stays safe to re-run.
+--
 -- Idempotent + re-paste-safe (the 2026-09-04 house lesson): CREATE TABLE IF
 -- NOT EXISTS, policies inside DO-block existence guards (Postgres has no
 -- CREATE POLICY IF NOT EXISTS), functions DROP + CREATE.
+-- (The insert policy is the ONE exception since 0040 — see the note above.)
 
 create table if not exists public.ping_kids (
   playdate_id uuid not null,
@@ -80,6 +95,11 @@ end $$;
 
 -- INSERT: only your own rows. The FK to going_pings is the second wall — you
 -- cannot attach kids to a post you have not pinged.
+--
+-- SUPERSEDED BY 0040 (V9 ticket 10, review cycle 1): the live policy additionally
+-- requires `public.kid_owned_by_caller(kid_id)` — a pinger may only attach a kid
+-- they own. Re-creating the version below would OR the weak policy back on and
+-- re-open the forged-attach bypass (see the header note).
 do $$
 begin
   if not exists (

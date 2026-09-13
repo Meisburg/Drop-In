@@ -1384,56 +1384,87 @@ export async function countKidsGoingForPosts(postIds: string[]): Promise<Record<
 }
 
 /**
- * The HOST's announced kids' AGES for a batch of posts (V9 ticket 05) — ONE
- * read for every card on screen, the same "one call per feed, never one per
- * card" shape countKidsGoingForPosts (0027) established, and the reason the
- * card component itself owns no fetching.
+ * The HOST's announced kids' AGES for a batch of posts — ONE read for every
+ * card on screen, the same "one call per feed, never one per card" shape
+ * countKidsGoingForPosts (0027) established, and the reason the card component
+ * itself owns no fetching.
  *
- * WHAT CROSSES, exactly (the T1 privacy line): `playdate_id` and `kids.age`.
- * NOT a name, NOT a kid id, NOT the playdate_kids row id — the embed projects
- * one column of the kid (`kid:kids!... ( age )`), so a nameless kid is exactly
- * as anonymous here as a named one.
+ * WHAT CROSSES, exactly (the T1 privacy line, now enforced in the DATABASE and
+ * not only in this projection): `playdate_id`, `age_min`, `age_max`. NOT a
+ * name, NOT a kid id, NOT an avatar_url, NOT the playdate_kids row id, and not
+ * even a count. `kid_ages_for` (migration 0040) projects two integers and
+ * nothing else, so a nameless kid and a named one are indistinguishable here —
+ * which is the whole point of the range.
  *
  * WHICH QUESTION: `playdate_kids` is the HOST's own selection ("who I'm
  * bringing" — the /new picker's table, live since 0022). The 0026/0027 pair
  * asks the OTHER question (the PINGERS' kids, through the gated
  * get_kids_going) and is deliberately untouched: this read neither widens that
- * gate nor reuses its counter. One function (well — one read), one question.
+ * gate nor reuses its counter. One function, one question.
  *
- * WHY NOT A NEW SECURITY-DEFINER RPC (deviation from the brief's T1, reported
- * with evidence): a function would have to be created by 0037, which is not
- * applied until after this ticket reports — and the ticket pins the opposite
- * order: the DERIVED half must be GREEN before 0037 and only the chips half may
- * be red. Since 0022's own policy (`playdate_kids_select_authenticated`, USING
- * (true)) already lets any authenticated user read these rows — kid ids
- * included — this projection is strictly NARROWER than the standing posture
- * rather than a widening of it, and `anon` still gets zero rows (RLS is
- * `to authenticated`; e2e/feed-ages proves it live).
+ * WHY IT IS A SECURITY DEFINER RPC AS OF V9 TICKET 10 (and not the batched
+ * table read ticket 05 shipped): ticket 05 could derive the range from
+ * `playdate_kids ⋈ kids.age` because the policy was `using (true)` for
+ * authenticated. Ticket 10 narrows that policy, and this read is
+ * BEST-EFFORT BY CONTRACT (the caller settles to `{}` on failure), so the same
+ * read after the narrowing would have returned nothing for a stranger with no
+ * error at all — every card's ages line silently missing. The derivation is
+ * therefore its own SECDEF function, ages-only: the ROWS stay closed while the
+ * RANGE stays broadly visible (the confirmed scope).
  *
- * Best-effort by contract, like every other card decoration: pre-0022 (42P01
- * / PGRST205) or a failed read throws and the caller settles to {} — every card
- * simply omits its ages line, never an error state, never a crash.
+ * Best-effort by contract, like every other card decoration: the RPC throws on
+ * any failure (an absent function included — see the note below) and the caller
+ * settles to {} — every card simply omits its ages line, never an error state,
+ * never a crash.
+ *
+ * THE NOT-YET-APPLIED PATH IS GONE ON PURPOSE (review cycle 1, F3): this
+ * function used to fall back to the legacy batched table read whenever the RPC
+ * answered PGRST202. That fallback was deleted once 0040 was applied, for the
+ * same reason every other read path in this file THROWS instead of guessing:
+ * 0040 is now the live schema, and a PGRST202 here would mean the function was
+ * dropped, renamed or never created — exactly the condition under which a
+ * silent second source of truth is most dangerous, because the fallback read
+ * ran under the narrowed policy and would have returned a stranger nothing
+ * (a blank ages line) while telling no one. If the RPC is missing now, the
+ * decoration goes missing too, and the failure is loud in the spec that asserts
+ * the function is present.
  */
 export async function kidAgesByPostForPostsWithClient(
   client: SupabaseClient,
   postIds: string[],
 ): Promise<Record<string, number[]>> {
   if (postIds.length === 0) return {}
-  const { data, error } = await client
-    .from('playdate_kids')
-    .select('playdate_id, kid:kids!playdate_kids_kid_id_fkey ( age )')
-    .in('playdate_id', postIds)
+  // V9 ticket 10 (T1, THE COUPLING): the derivation crosses through the
+  // ages-only SECURITY DEFINER function `kid_ages_for` (migration 0040) — ONE
+  // call for the whole batch, exactly the 0027 shape. It has to: the read it
+  // replaced (`playdate_kids ⋈ kids.age`) runs under the very SELECT policy 0040
+  // narrows, and this read is BEST-EFFORT BY CONTRACT (every caller settles to
+  // `{}` on failure), so narrowing the policy without moving the derivation
+  // would have blanked every card's ages line in silence — no error, no
+  // warning, just no line.
+  //
+  // WHAT COMES BACK, exactly: one row per post that has kids —
+  // `(playdate_id, age_min, age_max)`. No name, no kid id, no avatar_url, no
+  // count. The array this function hands the pure seam carries the BOUNDS,
+  // because `feed.ageBounds` — the only consumer — reads nothing but min and
+  // max; `ages 3–6` is therefore byte-identical to what the row-by-row read
+  // produced, while nothing but a range ever crosses the wire.
+  //
+  // The null-bound guard below is the surviving half of the old read's
+  // skip-a-row-if-the-age-is-unknown rule (its `kid === null` half cannot occur
+  // here: the function INNER JOINs `kids`, so a vanished kid produces no row at
+  // all). It is unit-tested.
+  const { data, error } = await client.rpc('kid_ages_for', { p_ids: postIds })
   if (error) throw error
   const agesByPostId: Record<string, number[]> = {}
   for (const row of (data ?? []) as unknown as Array<{
     playdate_id: string
-    kid: { age: number | null } | null
+    age_min: number | null
+    age_max: number | null
   }>) {
-    if (row.kid === null) continue
-    if (typeof row.kid.age !== 'number') continue
-    const ages = agesByPostId[row.playdate_id]
-    if (ages === undefined) agesByPostId[row.playdate_id] = [row.kid.age]
-    else ages.push(row.kid.age)
+    if (typeof row.age_min !== 'number' || typeof row.age_max !== 'number') continue
+    agesByPostId[row.playdate_id] =
+      row.age_min === row.age_max ? [row.age_min] : [row.age_min, row.age_max]
   }
   return agesByPostId
 }
@@ -1443,6 +1474,20 @@ export async function kidAgesByPostForPosts(
   postIds: string[],
 ): Promise<Record<string, number[]>> {
   return kidAgesByPostForPostsWithClient(supabase, postIds)
+}
+
+/**
+ * ONE post's derived kid ages (V9 ticket 10): the detail page's ages line has
+ * to stay intact for a viewer who may NOT see the names (a stranger reads
+ * "Ages 3–6" alone), so the range comes from the ages-only RPC through the same
+ * batched seam with a single id — never from a second, name-shaped read.
+ * Empty array = "nothing to say" (no kids picked, or the read failed): the
+ * caller renders no derived range rather than guessing, exactly as the card
+ * does.
+ */
+export async function kidAgesForPlaydate(playdateId: string): Promise<number[]> {
+  const byPostId = await kidAgesByPostForPosts([playdateId])
+  return byPostId[playdateId] ?? []
 }
 
 /**
@@ -2670,58 +2715,67 @@ export async function updateKid(kidId: string, patch: KidPatch): Promise<void> {
 // page's "Kids coming" line read.
 
 /**
- * A post's "Kids coming" rows (V3 slice 6, ticket 09, migration 0022),
- * against an injected client (the trust.togglePingWithClient pattern —
- * mockable in unit tests): the host's picked kids from playdate_kids,
- * each mapped to name + age ONLY (the PlaydateKid privacy pin; the kid's
- * avatar_url is deliberately NOT selected — the kid-photo pin: photos
- * render only in the profile kids list, never on the event line). The
- * kids embed joins on kid_id (the 0022 playdate_kids→kids FK); the rows
- * come back ordered by name (the line's order — listPlaydateKidNames's
- * callers pass the result straight to the pure feed.kidsComingLine,
- * which keeps input order). A row with a vanished kid (the 0022 kid_id
- * FK cascade normally prevents it) is skipped, defensively.
+ * A post's "Kids coming" rows (V3 slice 6, ticket 09, migration 0022;
+ * GATED BY V9 ticket 10 / migration 0040), against an injected client (the
+ * trust.togglePingWithClient pattern — mockable in unit tests): the host's
+ * picked kids, each mapped to name + age ONLY (the PlaydateKid privacy pin;
+ * the kid's avatar_url is deliberately NOT read at all — the kid-photo pin:
+ * photos render only in the profile kids list, never on the event line).
  *
- * The playdate_kids SELECT policy is open to any authenticated user
- * (the 0022 playdate_kids_select_authenticated): the detail page is a
- * signed-in surface; signed-out the query returns no rows (RLS) and the
- * line simply stays hidden. Pre-0022-apply the missing-table 42P01
- * throws; the caller (the detail page) catches and hides the line (the
- * DB-not-applied discipline, same as the ping section).
+ * WHO SEES IT, as of 0040: the RPC's own gate — the post's host, a family who
+ * pinged it, or a moderator (0026's get_kids_going gate, the same rule). A
+ * signed-in stranger gets an empty array, which is why the detail page renders
+ * their ages line without names; signed out there is no session to call with.
+ * The result is name-ordered (the line's order — its caller passes the rows
+ * straight to the pure feed.kidsComingLine, which keeps input order).
+ *
+ * THE NOT-YET-APPLIED PATH IS GONE ON PURPOSE (review cycle 1, F3): pre-0040
+ * this fell back to the legacy table select whenever the RPC answered
+ * PGRST202. That fallback was deleted once 0040 was applied — for the same
+ * reason every other read path in this file throws instead of guessing, and
+ * because its trigger was CODE-INDEPENDENT (any error whose message mentioned
+ * a missing function took the open path). A missing RPC today throws, the
+ * detail page catches it (its designed DB-not-applied discipline) and the line
+ * stays hidden: fail-closed, and loudly visible in the spec that asserts the
+ * function is present.
  */
 export async function listPlaydateKidNamesWithClient(
   client: SupabaseClient,
   playdateId: string,
 ): Promise<PlaydateKid[]> {
-  const { data, error } = await client
-    .from('playdate_kids')
-    .select('id, kid:kids!playdate_kids_kid_id_fkey ( first_name, age )')
-    .eq('playdate_id', playdateId)
+  // V9 ticket 10 (migration 0040): THE ONE GATED READ of the host's announced
+  // kids. The gate lives in the database — `get_playdate_kids` is SECURITY
+  // DEFINER with 0026's gate (host / going / moderator) — because a table read
+  // here cannot express it: `playdate_kids` and `kids` are both narrowed by
+  // 0040, so the gate must be the same rule in one place (the AC's own
+  // wording), and a signed-in stranger must receive ZERO ROWS from this call
+  // rather than a client-side decision. Names + ages only: no avatar_url
+  // crosses (the kid-photo pin), and the caller's own membership is never
+  // inferred from what comes back.
+  const { data, error } = await client.rpc('get_playdate_kids', { p_id: playdateId })
   if (error) throw error
-  const rows = (data ?? []) as unknown as Array<{
-    id: string
-    kid: { first_name: string | null; age: number | null } | null
-  }>
-  return rows
-    .filter(
-      (row): row is { id: string; kid: { first_name: string | null; age: number | null } } =>
-        row.kid !== null,
-    )
+  return ((data ?? []) as unknown as Array<{
+    kid_id: string | null
+    first_name: string | null
+    age: number | null
+  }>)
+    .filter((row) => typeof row.kid_id === 'string' && row.kid_id !== '')
     .map((row) => ({
-      id: row.id,
-      // V9 ticket 05 (T3): the name is OPTIONAL now, so the wire carries NULL
-      // for a nameless kid. It is normalised to '' here — a null leaking into
-      // this `string` is how " · 4" and `null` reach the render — and
-      // feed.kidsComingLine renders such a kid through the AGE range instead
-      // of dropping them (the old filter made them invisible).
-      name: row.kid.first_name ?? '',
-      age: row.kid.age,
+      id: row.kid_id as string,
+      // V9 ticket 05 (T3): a first name is OPTIONAL, so the wire carries NULL
+      // for a nameless kid. Normalised to '' here — a null leaking into this
+      // `string` is how " · 4" and `null` reach the render — and
+      // feed.kidsComingLine renders such a kid through the AGE RANGE instead
+      // of dropping them.
+      name: row.first_name ?? '',
+      age: row.age,
     }))
     // Name order (the line's order). A nameless kid sorts first — the
-    // database's own `order by ... first_name asc` puts NULLs LAST, so this
-    // client-side sort is the one place the two disagree; it is also the
-    // order the line wants (ages first, then the names, which never include a
-    // blank). Kept as-is so the existing specs' expectation is unchanged.
+    // database's own `order by ... first_name asc nulls last` puts NULLs LAST,
+    // so this client-side sort is the one place the two disagree; it is also
+    // the order the line wants (ages first, then the names, which never
+    // include a blank). Kept as-is so the existing specs' expectation is
+    // unchanged.
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
@@ -2733,13 +2787,15 @@ export async function listPlaydateKidNames(playdateId: string): Promise<Playdate
 /**
  * A post's current "kids you're bringing" KID ids (V8 ticket 05, the edit
  * form's prefill), against an injected client. `listPlaydateKidNames` above
- * returns the playdate_kids ROW ids (it feeds the display line); the edit
- * form needs the kid ids, because that is what linkKidsToPlaydate writes and
- * what the picker's selectedKidIds holds. Same SELECT posture (any
- * authenticated user) and the same failure discipline: pre-0022-apply the
- * 42P01 throws and the caller catches it into [] (the edit page's
- * unchanged-selection rule then skips the kids write entirely, so a failed
- * read can never empty a post's selection).
+ * returns the KID ids (it feeds the display line); the edit form needs the
+ * same ids, because that is what linkKidsToPlaydate writes and what the
+ * picker's selectedKidIds holds — so this is the raw `playdate_kids` read the
+ * host's prefill needs (the SELECT policy's host clause is what makes it
+ * answer), while the DISPLAY read goes through the gated RPC.
+ *
+ * Same failure discipline as always: a failed read THROWS and the caller
+ * catches it into [] (the edit page's unchanged-selection rule then skips the
+ * kids write entirely, so a failed read can never empty a post's selection).
  */
 export async function listPlaydateKidIdsWithClient(
   client: SupabaseClient,
@@ -2769,11 +2825,15 @@ export async function listPlaydateKidIds(playdateId: string): Promise<string[]> 
  * i.e. the host picked no kids). 0022's RLS host-guards both writes:
  * INSERT and DELETE pass only for the post's host (the
  * playdate_kids_insert_host / _delete_host policies, the 0005
- * host-scoped pattern on playdates.host_profile_id = auth.uid()); a
- * non-host write is a silent RLS no-op (the 0014 lesson) — the /new
- * picker is offered to the host only, the RLS is the wall. Plain
- * delete/insert chains, no .select() (the 42501 discipline): the caller
- * (the /new submit) only needs success/failure.
+ * host-scoped pattern on playdates.host_profile_id = auth.uid()) — and, as of
+ * 0040's amendment, the INSERT additionally requires that the kid being
+ * attached is the caller's OWN (`kid_owned_by_caller`): the attachment row is
+ * the input the kid-name gate reads, so a row naming someone else's child
+ * would BE the bypass. Every picker offers only the caller's own kids, so the
+ * clause costs a legitimate write nothing. A non-host write is a silent RLS
+ * no-op (the 0014 lesson) — the /new picker is offered to the host only, the
+ * RLS is the wall. Plain delete/insert chains, no .select() (the 42501
+ * discipline): the caller (the /new submit) only needs success/failure.
  */
 export async function linkKidsToPlaydateWithClient(
   client: SupabaseClient,
