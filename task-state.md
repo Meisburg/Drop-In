@@ -9,7 +9,7 @@
 - **Phase: V4 COMPLETE (2026-09-11).** Human enabled Google in the Supabase project; the blocker is cleared and the round-trip is verified — see the closure evidence below.
 - **Active slice:** none — **V8 IS COMPLETE TO ITS HUMAN BOUNDARY (2026-09-13).** Tickets 01–10 are shipped and verified (`dd0642e` … `135c401`), 11's schema half is live with its UI deliberately held, and 12's instrument is delivered. Migrations **0028–0034 are ALL APPLIED LIVE** and probed. Final gate on the committed tree: build exit 0 · **655/655 unit (20 files)** · **e2e 48/48** · lint 0 errors · both PWA verifier scripts green · live DB swept back to 2 founders. **Next action (human):** (a) **push — mostly done (2026-09-12)**: keypair → `supabase secrets set` → `send-push` deployed → wall verified (service-role 200, anon 401) → `VITE_VAPID_PUBLIC_KEY` added to Vercel (Config/public, it's a public key) → `a97892e` pushed, live bundle `index-COPgHOaF.js` verified to carry the key (1 occurrence). **Remaining:** the Android phone test (`docs/push-setup.md`). **Schedule DONE (2026-09-12):** no dashboard Schedules tab on this plan (DOM-checked) and no `vault` → pg_cron+pg_net enabled, job `send-push-every-5-minutes` live (jobid 3); key injected via `.scratch/cron-schedule-send-push.mjs` (0600 temp file → CDP SQL API, never in a terminal/chat); 12:45 tick fired (job "succeeded", function booted at 05:45:00 in fn logs) and the drain correctly stamped the 2 pre-existing rows "no subscription" (`push_subscriptions` = 0 until the phone opts in). pg_net's fixed 5s response timeout means `_http_response` shows `timed_out` on cold-start ticks — cosmetic, delivery completes server-side; (b) **email verification**: flip Supabase's "Confirm email" and I land the chip + "Check your inbox" screen + the e2e harness change (`docs/email-verification-setup.md`); (c) **density**: run the first cohort (`.scratch/v8/density-log.md`). **V8 IS NOW ON Vercel (2026-09-12)** — `42dfb2a..a97892e` pushed; the live site serves `index-COPgHOaF.js` with the VAPID public key inlined, so new opt-ins subscribe with the bound key. Open *decisions*, not defects: the **logo mark** (V7 settled colour only) and the beta's SMTP setting.
 - **Remaining human items:** the three in the Next action above. The e2e marker sweep ran clean again (168 markers, 0 founder overlap); live DB = 2 founders only.
-- **V9 — the wife's feedback batch: THE AUTHORIZED BATCH IS COMPLETE (opened 2026-09-13).** Spec + 9 tickets in `.scratch/v9/`. **Tickets 01, 03, 04 and 05 are COMPLETE** (commits `e493e08`, `96bb96e`, `73c2f5e`, `c9b4836`) — `/new` leads with the place picker and the neighbourhood is no longer a question (01), the post page is three decisions with everything else behind one "More options" (03), the feed holds nothing that has ended and links to the archive (04), and a card now leads with the kids' ages while names are optional (05). **Migrations 0035 and 0037 are APPLIED LIVE and probed.** Final gate on the committed tree: build exit 0 · **752/752 unit (21 files)** · **e2e 65/65** · lint 0 errors · live DB swept back to 2 founders. **Two items now need the human:** (a) **ticket 10 is FILED and waiting on one scope decision** — the kid-name gate is weaker than ticket 05's AC believed (`kids`/`playdate_kids` are readable by ANY signed-in parent), so `.scratch/v9/issues/10-kid-names-privacy-gate.md` is `ready-for-human` with a recommended default; (b) the remaining queue: **02 is deferred** (the human chose to build 03 against the EXISTING time control rather than ship 02's unconfirmed badge-suppression judgment call), 06/08 want a one-line confirmation, and **09 needs an explicit yes** before dispatch. Details, evidence and the full ticket table are in the **V9** section below.
+- **V9 — the wife's feedback batch: the authorized batch PLUS two review-found tickets (opened 2026-09-13).** Spec + tickets in `.scratch/v9/`. **Tickets 01, 03, 04, 05 and 10 are COMPLETE** (commits `e493e08`, `96bb96e`, `73c2f5e`, `c9b4836`, `6ae3f2b`) — `/new` leads with the place picker and the neighbourhood is no longer a question (01), the post page is three decisions behind one "More options" (03), the feed holds nothing that has ended and links to the archive (04), a card leads with the kids' ages while names are optional (05), and **a child's name now has a real gate** (10). **Migrations 0035, 0037 and 0040 are APPLIED LIVE and probed.** Final gate on the committed tree: build exit 0 · **757/757 unit (21 files)** · **e2e 66/66** · lint 0 errors · live DB swept back to 2 founders. **Two items now need the human:** (a) **ticket 11** (kid photos sit in a PUBLIC storage bucket — anonymously listable and fetchable; ticket 08 is folded into it) is `ready-for-human` on one decision about the already-uploaded files — this is the highest-priority open item; (b) the remaining queue: **02 is deferred** (the human chose to build 03 against the EXISTING time control rather than ship 02's unconfirmed badge-suppression judgment call), 06 wants a one-line confirmation, and **09 needs an explicit yes** before dispatch. Details, evidence and the full ticket table are in the **V9** section below.
 
 **Push pipeline — coordinator verification (2026-09-13, after the human's step-3 run).** Independently confirmed through the Management API and live probes: `send-push` is **ACTIVE** with `verify_jwt: true`; the three VAPID secrets exist; the **anon** bearer gets `401 {"error":"send-push is service-role only"}` (a 404 would have meant "not deployed"); the LIVE bundle carries the VAPID public key and no private half, so deployed opt-ins are **bound**. The DB half is live too: a real ping wrote a `ping_received` row and deleting the post wrote a `cancelled` row via the BEFORE DELETE trigger. **Step 4 is provably NOT done:** `pg_cron`/`pg_net` are not installed, and those two queued rows kept `sent_at` NULL across six minutes of polling — nothing invokes the function. The human's earlier service-role check returned 200 but **predates** those rows (12:16 UTC), so the sender has still never processed a queued row. Read from the code, that case is safe: a row whose recipient has no subscription is stamped `sent_at` with `error: 'no subscription'` and counted as skipped (`index.ts:259-264`) — no oldest-first starvation risk. Both rows are left in place as the canary for the moment the schedule exists.
 
@@ -321,14 +321,16 @@ exit 0 · **655/655 unit (20 files)** · e2e 48/48 per the HANDOFF · migrations
 | 05 | Nearby: ages first, names optional | **complete — `c9b4836`**; **0037 APPLIED LIVE + probed**; 752/752 unit, e2e 65/65, lint 0 errors |
 | 06 | Nearby: map-first with a list toggle | `ready-for-human` — needs the map-provider one-liner (Leaflet + OSM recommended) |
 | 07 | Nearby: search + filters | not in this session's batch |
-| 08 | Profile: no kid photos; a family photo + about-us | `ready-for-human` — needs the one-line confirmation of the privacy reversal |
+| 08 | Profile: no kid photos; a family photo + about-us | **FOLDED INTO 11 (2026-09-13)** — its kid-photo reversal and its family-photo feature both run through the same storage bucket, and ticket 10's review proved that bucket is publicly readable, so the two cannot ship apart. `0038` carried over to 11 |
 | 09 | Messages: parent-to-parent on a shared drop-in | `ready-for-human` — **do NOT dispatch without an explicit yes** |
-| 10 | Privacy: kid names are readable by every signed-in parent | **FILED 2026-09-13** (out of ticket 05's review, on the human's instruction) — `ready-for-human`: one scope decision blocks it. Recorded in `.scratch/v9/spec.md`; needs **0040** |
+| 10 | Privacy: kid names are readable by every signed-in parent | **complete — `6ae3f2b`**; **0040 APPLIED LIVE + probed** (amended in place and re-applied in review cycle 1); 757/757 unit, e2e 66/66, lint 0 errors |
+| 11 | Kid photos: the public storage exposure; family photo instead | **FILED 2026-09-13** (out of ticket 10's review, on the human's instruction; **folds in ticket 08**) — `ready-for-human`: one decision on the already-uploaded files. Needs **0038** |
 
-**Migration ledger:** 0035–0039 were RESERVATIONS in queue order. **0035 and
-0037 are now APPLIED LIVE** (both probed). 0036 stays reserved for the deferred
-ticket 02; 0038/0039 remain reserved for tickets 08/09. Whatever is applied is
-what this file records.
+**Migration ledger:** 0035–0039 were RESERVATIONS in queue order. **0035, 0037 and
+0040 are now APPLIED LIVE** (all probed; 0040 was amended in place and re-applied
+in review cycle 1). 0036 stays reserved for the deferred ticket 02; **0038 moved
+from ticket 08 to ticket 11** when 08 folded into it; 0039 remains reserved for
+ticket 09. Whatever is applied is what this file records.
 
 ### V9 decision taken this session — ticket 02 vs ticket 03 (2026-09-13)
 
@@ -594,6 +596,82 @@ would **silently blank every card's ages line**.
    so the two age-band seams cannot drift.
 6. **Still open, human-owned (unchanged by this session):** the ticket's phone
    pass, and the follow-up privacy ticket above.
+
+### V9 ticket 10 — evidence (complete, `6ae3f2b`)
+
+**THE FINDING, measured before anything was written.** Kids' first names were
+readable by ANY signed-in parent: `kids_select_authenticated`
+(`0011:86-89`) and `playdate_kids_select_authenticated` (`0022:84-87`) were both
+`using (true)` for `authenticated`, and `PlaydateDetailPage`'s mount load called
+`listPlaydateKidNames` with **no host/pinger gate at all**. My own probe with a
+real stranger JWT: **6 kid rows across families, including 3 kid-photo
+`avatar_url`s**, plus 9 `playdate_kids` rows. Only `ping_kids` was ever gated —
+0026 covers the **pingers'** kids, never the host's.
+
+| Claim | How it was checked |
+|---|---|
+| The two wide policies are gone; one gate each | live `pg_policies`: exactly `kids_select_own_host_pinger_mod` (`profile_id = auth.uid() OR moderator OR kid_visible_to_viewer(id)`) and `playdate_kids_select_host_pinger_mod` (`playdate_kid_row_visible(playdate_id, kid_id)`); no `using (true)` SELECT policy left on either table |
+| A stranger can no longer read a child | same stranger JWT, same query: `[]` on `kids` **and** `playdate_kids` (was 6 rows / 9 rows); anon `[]` |
+| No write path broke (the 0014/42501 interaction) | the owner clause is **inline** in the kids policy because `addKid` writes with `.select()`; probed live — owner `INSERT … RETURNING` → 201 with its row, owner's own read → 200, NULL name round-trips |
+| The ages line did not blank (the coupling) | `kid_ages_for` is SECDEF, ages-only; probed `{age_min: 4, age_max: 9}` for a two-kid post; the live suite's card still reads `ages 3–6` |
+| All four new functions fail closed | SECDEF + STABLE, `search_path = public, pg_temp`, EXECUTE to `authenticated` only (anon revoked); `get_playdate_kids` returns 0 rows with no JWT |
+| **Gate (coordinator, independent)** | build exit 0 · **757/757 unit (21 files)** · kid-names-privacy spec **2/2** · **e2e 66/66, exit 0** · lint **0 errors** (39 warnings = baseline) |
+| Pre-apply red, captured first-hand | a stranger's page read `Kids coming: Ages 3–6 · Anna …, Zed …` (the names leaked); the host/pinger halves and the ages line were green in the same run |
+
+**Review cycle 1 found two HIGH issues, both fixed with executed receipts:**
+
+1. **The gate was BYPASSABLE by forging a join row.** Neither join table's
+   INSERT check constrained *whose kid* was attached, so an authenticated parent
+   knowing one kid uuid could attach it to their own post or ping and then read
+   that child's row through the new policy (including the `avatar_url`/`likes`
+   the detail RPC withholds), or read name+age through 0026's SECDEF
+   `get_kids_going`, which never consults the policy at all. **Reproduced live:
+   both forges returned HTTP 201 and the victim's row came back.** Fixed by
+   amending 0040 **in place** (the 0028/0032 precedent) with a third SECDEF helper
+   `kid_owned_by_caller` and a **replaced** `with check` on both INSERT policies
+   (same names — same-command policies OR together). Re-applied and re-probed:
+   **both retro-queries for pre-existing forged rows return 0**, the forges fail
+   closed, and a legitimate own-kid attach still lands.
+2. **The diff had added a FALSE claim about children's PHOTOS.** The copy said
+   "a name **and a kid photo** are visible only to …" — and the `avatars` bucket
+   is `public = true` with a public-read policy, so kid photos at
+   `<uid>/kids/<kidId>` are anonymously listable and fetchable with only the anon
+   key that ships in the client bundle. Ticket 10 gated the **column**; it cannot
+   gate the **file**. The photo clause was **removed** (not weakened) and the
+   finding was escalated → **ticket 11**, on the human's instruction, with
+   **ticket 08 folded into it**.
+
+**Also fixed in this ticket:** the pre-apply legacy fallback reads are DELETED
+(`isMissingRpc` fired on a code-independent message match, and PGRST202 is
+reachable on an applied project — the reads now fail closed like every other read
+in `db.ts`), and the spec's 404-skip is gone so the RPC's presence is a **hard**
+assertion rather than a silently-green fallback. `/u/:handle`'s kids card is
+self-view only — the policy is per-KID, so a pinger would otherwise get a
+**partial** list of a family's children, worse than none — with a comment saying
+plainly that this is UX and the RLS is the boundary. Supersession notices were
+added to `0011`/`0022`/`0026`: re-pasting any of them recreates a `using (true)`
+policy from a name-based guard and would **silently re-open the table**
+(verified comment-only, 0 non-comment lines). The helpers are a membership oracle
+for anyone holding a kid uuid — accepted and documented (enumeration is
+infeasible; the grants must stay because a policy runs as the caller).
+
+**The gate's depth, recorded so nobody over-trusts it:** "the families who said
+they're going" is **one self-service tap deep** (`going_pings` INSERT is
+`profile_id = auth.uid()`, 0026's own inherited gate); "your family" means one
+profile, not one household (no household model exists); and the RLS is the
+boundary while the `/u/:handle` gate is UX.
+
+### V9 ticket 11 — FILED (kid photos; the public storage exposure)
+
+Filed on the human's instruction out of ticket 10's review cycle, **folding in
+ticket 08** (which the human chose over leaving the photo work split in two
+files). The live-verified finding, the recommendation for the already-uploaded
+files (private bucket + signed URLs: the images survive, their old public URLs
+die by design), the shared-bucket constraint that makes a private `avatars`
+bucket impossible (parent avatars live there and must stay public), and the full
+AC set are in `.scratch/v9/issues/11-kid-photo-storage.md`. **One decision
+remains** — what happens to the already-uploaded files — and it is recorded there
+with the options table. `0038` moved to this ticket.
 
 ## V4 — "Drop In" mobile conversion (opened 2026-09-11)
 
