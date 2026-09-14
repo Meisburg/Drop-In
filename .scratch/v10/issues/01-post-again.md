@@ -13,7 +13,7 @@ tapping — recent *places* are remembered (V8 t01) but not the whole post.
 Playdates are habitual (same park, same kids); the clone makes the second
 post ~2 taps.
 
-**Status:** ready-for-agent
+**Status:** COMPLETE (2026-09-14, commit `ae69cdd`)
 
 ## Mechanics (pinned — do not re-decide)
 
@@ -63,3 +63,19 @@ post ~2 taps.
 **Migration check:** NONE. `supabase/` untouched.
 
 **Depends on:** nothing.
+
+## Completion evidence (2026-09-14, commit ae69cdd)
+
+- Unit: 804/804 across 23 files — the 17 new pin clonedStart's boundaries
+  (same-slot-today / tomorrow / grid snap / midnight wrap / now's-day rule),
+  cloneLastPost's whole-plan carry, the validatePlaydateForm gate, the
+  generatedTitle agreement, and the mock-client query shape.
+- E2E: 72/72 full suite (post-again.e2e.ts: 3 — chip clones + posts, absent
+  for a no-post parent, marker cleanup). Neighbors quick-post / post-fast /
+  post-location / post-time-window / golden-path / kids-v3 all pass unedited.
+- Lint: 0 errors (the two NewPlaydatePage/ProfilePage warnings pre-existed).
+- Build: exit 0.
+- AC checklist: chip renders only with a last post ✓ (absent on load error,
+  never a crash — the recent-places discipline) · one tap → summary +
+  postable clone ✓ · time rule unit-pinned ✓ · editing after clone free ✓ ·
+  post-again.e2e ✓ · existing e2e untouched ✓.
