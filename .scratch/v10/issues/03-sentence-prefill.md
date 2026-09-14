@@ -13,10 +13,26 @@ never converses.
 beats six taps for a distracted parent. Full research:
 `.scratch/agent-post-page/research.md` (recommendation d).
 
-**Status:** ready-for-agent — HUMAN DECISION before deploy: LLM provider
-(zero-retention API terms required). Code can be built against
-`LLM_API_KEY` + `LLM_BASE_URL` + `LLM_MODEL` secrets without naming the
-provider.
+**Status:** CODE COMPLETE (2026-09-14, commit `ebb6bca`) — DEPLOY PENDING the human's provider choice (LLM_API_KEY / LLM_BASE_URL / LLM_MODEL secrets + `supabase functions deploy` + the live probes; coordinator-owned per the send-push precedent).
+
+## Completion evidence (code; deploy is the remaining step)
+
+- Unit 824/824 across 24 files — the 20 new prefill tests pin the guard
+  (whitelist + drop, grid snap, date reality check, ageHint not carried),
+  the merge (never touches neighbourhoodId — the crafted-input test), the
+  privacy pin's own body snapshot, and the validator gate.
+- E2E 76/76 full suite — 3 new in `prefill.e2e.ts` (mocked function route:
+  success → review → post; quiet failure; the request body asserted at the
+  network boundary). No e2e touches a real LLM.
+- Lint 0 errors; build exit 0; tsc clean (app + node).
+- Privacy pins verified in review: function has ZERO console calls; error
+  responses never echo input; request body is the three keys (asserted at
+  both ends).
+- AC checklist: mergePrefill clamps ✓ · unknown keys dropped ✓ · invalid
+  date dropped ✓ · neighbourhood/kids/ageHint never change ✓ · oversize
+  text → 400 (guard) ✓ · bad JWT → 401 ✓ · rate limit → 429 ✓ · e2e mock ✓
+  · body snapshot ✓ · no-text-in-logs ✓. REMAINING: the deploy probe (200
+  with a real JWT, 401 anon, fn logs clean) after the provider decision.
 
 **Status note:** dispatch AFTER tickets 01+02 land (same page, one writer).
 

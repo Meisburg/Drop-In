@@ -12,7 +12,20 @@ most likely to want on a post, and today that is +2 taps (open disclosure,
 scroll). Surfacing for the parents who HAVE kids costs nothing for the
 parents who don't (the disclosure hint text updates accordingly).
 
-**Status:** ready-for-agent
+**Status:** COMPLETE (2026-09-14, commit `f688ab0`)
+
+## Completion evidence
+
+- Unit 804/804 (no seam changes needed — the picker's data path was untouched;
+  the hint constant lives beside MORE_OPTIONS_HINT as MORE_OPTIONS_HINT_WITHOUT_KIDS).
+- E2E 74/74 full suite — 3 new in `kids-surface.e2e.ts` (surfaced section with
+  DOM order + hint swap + one-picker guarantee + selection lands on the detail
+  line; no-kids form byte-identical). kids-v3, kid-names-privacy, golden-path,
+  post-fast, post-edit-delete, feed-ages, post-again all pass unedited.
+- Lint 0 errors; build exit 0; tsc clean (app + node).
+- AC checklist: surfaced above the disclosure for ≥1 kid ✓ · absent (not
+  disabled) for 0 kids / loading, /edit unchanged ✓ · submit path untouched ✓
+  · 44px targets ✓.
 
 ## Mechanics (pinned)
 
