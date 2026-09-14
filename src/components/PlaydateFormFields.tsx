@@ -76,6 +76,15 @@ const DAY_MINUTES = 24 * 60
  */
 export const MORE_OPTIONS_LABEL = 'More options'
 export const MORE_OPTIONS_HINT = 'A date, an address, kids, details, or a weekly repeat.'
+/**
+ * V10 ticket 02: the hint the disclosure shows when the kids picker is
+ * SURFACED above it (the parent has kids) — the hint must say what is
+ * actually behind the door (the V9 ticket 03 contract), and "kids" behind a
+ * door that no longer holds the kids picker would be a lie. The no-kids /
+ * loading form keeps the original hint (byte-identical render).
+ */
+export const MORE_OPTIONS_HINT_WITHOUT_KIDS =
+  'A date, an address, details, or a weekly repeat.'
 
 /** The summary's title read-back: a stable handle for the affordance's e2e. */
 export const TITLE_LINE_TESTID = 'title-line'
@@ -222,6 +231,15 @@ export interface PlaydateFormFieldsProps {
    * no dead control appears there.
    */
   agesSlot?: ReactNode
+  /**
+   * V10 ticket 02: the /new-only SURFACED kids section, rendered ABOVE the
+   * "More options" disclosure. The PAGE passes it only when the parent HAS
+   * kids (the loaded list is non-empty) — a no-kids parent (or a still-loading
+   * list) keeps today's exact form with the picker inside the disclosure. A
+   * slot, not props, for the exact reason `preset` is one: this component
+   * owns no state, and /edit passes nothing, so no dead control appears there.
+   */
+  kidsSectionSlot?: ReactNode
   submitLabel: string
   submittingLabel: string
   submitBusy: boolean
@@ -259,6 +277,7 @@ export function PlaydateFormFields({
   onSomewhereElse,
   preset,
   postAgainSlot,
+  kidsSectionSlot,
   repeatSlot,
   agesSlot,
   submitLabel,
@@ -579,7 +598,12 @@ export function PlaydateFormFields({
      (replace-on-duplicate) and shows on the detail page as the "Kids coming"
      line. No kids yet → the designed empty state + the /profile link (the kids
      are edited on the profile, V2 ticket 02). V9 ticket 03: a nice-to-have, not
-     a gate — behind More options on /new. */
+     a gate — behind More options on /new.
+     V10 ticket 02: WHEN THE PARENT HAS KIDS, /new SURFACES this block ABOVE
+     the disclosure (kidsSectionSlot — the page's own section, passed in) and
+     the disclosure holds the rest. The picker itself is byte-identical: the
+     section wrapper differs only in the heading's context (see the slot), so
+     the kids-v3 specs' accessible names ("Bernie · 6") keep landing. */
   const kidsBlock = (
     <div className="flex flex-col gap-1 text-sm">
       <span className="text-slate-700">
@@ -690,6 +714,15 @@ export function PlaydateFormFields({
   // behind a collapsed box is not in the form's flow at all), and the PAGE can
   // open it — a failed submit on the start date must not leave its error inside
   // something the parent collapsed.
+  //
+  // V10 ticket 02: when the page passes `kidsSectionSlot` (the parent HAS
+  // kids), the kids picker renders ABOVE this block as its own section and is
+  // OMITTED from the body — a field in two places is two tab stops for one
+  // answer. The hint swaps to WITHOUT_KIDS for the same "the door says what is
+  // behind it" contract. The AGES chips stay in the body either way: they are
+  // the same SUBJECT as kids but a separate optional answer, and /new's body
+  // order (address, start, repeat, ages, details) is what V9 ticket 03's
+  // specs already drive.
   const moreOptionsBlock =
     summaryLines === undefined ? null : (
       <>
@@ -710,7 +743,9 @@ export function PlaydateFormFields({
           >
             {MORE_OPTIONS_LABEL}
           </button>
-          <p className="text-xs text-slate-500">{MORE_OPTIONS_HINT}</p>
+          <p className="text-xs text-slate-500">
+            {kidsSectionSlot !== undefined ? MORE_OPTIONS_HINT_WITHOUT_KIDS : MORE_OPTIONS_HINT}
+          </p>
         </div>
         {moreOptionsOpen ? (
           <div
@@ -722,7 +757,7 @@ export function PlaydateFormFields({
             {neighborhoodBlock}
             {startBlock}
             {repeatSlot}
-            {kidsBlock}
+            {kidsSectionSlot === undefined ? kidsBlock : null}
             {/* V9 ticket 05: the "Ages (optional)" chips, right under the kids
                 picker — the derived range and the stated one are the same fact
                 (what age crowd this is), so they read as one pair. /edit passes
@@ -755,6 +790,10 @@ export function PlaydateFormFields({
           {postAgainSlot}
           {recentChipsBlock}
           {preset}
+          {/* V10 ticket 02: the SURFACED kids section — ABOVE the disclosure,
+              only when the page passes it (the parent has kids). The
+              disclosure stays where it is, holding the rest. */}
+          {kidsSectionSlot}
           {durationBlock}
           {moreOptionsBlock}
         </>

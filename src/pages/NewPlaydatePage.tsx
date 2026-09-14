@@ -25,6 +25,7 @@ import {
   durationLabel,
   formatStartDayLabel,
   formatTimeLabel,
+  kidLabel,
   moreOptionsHoldsError,
   nextSlotMinutes,
   suggestedDurationMinutes,
@@ -714,6 +715,48 @@ export function NewPlaydatePage({
   // from the chosen start date ('' until a date is chosen — the pure seam
   // says nothing rather than guessing).
   const repeatWeeklyLabel = everyWeekdayLabel(weekdayFromDateIso(values.startDate))
+  /**
+   * V10 ticket 02: the SURFACED kids section — the picker as its own block
+   * ABOVE "More options", passed ONLY when the loaded list is non-empty. The
+   * slot markup is a wrapper around the same picker the disclosure body used
+   * to render: the heading moves into the slot (the picker's own label is the
+   * section's label), the chips are the identical controls (accessible names
+   * "Bernie · 6" land the same), and the empty state stays in the disclosure
+   * path for a no-kids parent (where the /profile link reads better than a
+   * floating section).
+   */
+  const kidsSectionSlot =
+    kids !== null && kids.length > 0 ? (
+      <div
+        data-testid="kids-section"
+        className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50 p-3"
+      >
+        <span className="text-sm font-medium text-slate-700">
+          Kids you're bringing <span className="text-slate-500">(optional)</span>
+        </span>
+        <div className="flex flex-wrap gap-2">
+          {kids.map((kid) => {
+            const selected = selectedKidIds.includes(kid.id)
+            return (
+              <button
+                key={kid.id}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => toggleKid(kid.id)}
+                className={
+                  'min-h-11 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ' +
+                  (selected
+                    ? 'border-indigo-600 bg-indigo-600 text-white'
+                    : 'border-slate-300 bg-white text-slate-700')
+                }
+              >
+                {kidLabel(kid.first_name, kid.age)}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    ) : null
 
   /**
    * V8 ticket 01: "we're here until <the next hour>" — the spontaneous
@@ -966,6 +1009,10 @@ export function NewPlaydatePage({
         kids={kids}
         selectedKidIds={selectedKidIds}
         onToggleKid={toggleKid}
+        /* V10 ticket 02: the kids picker SURFACES above the disclosure when
+           this parent has kids (the slot renders the section); null/loading
+           keeps the picker inside the disclosure — today's exact form. */
+        kidsSectionSlot={kidsSectionSlot ?? undefined}
         recentPlaces={recentPlaces}
         onApplyRecentPlace={applyRecentPlace}
         /* V8 ticket 07: the place autocomplete. It stays CLOSED while the
