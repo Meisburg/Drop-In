@@ -26,6 +26,7 @@ import {
   formatStartDayLabel,
   formatTimeLabel,
   kidLabel,
+  localDayKey,
   moreOptionsHoldsError,
   nextSlotMinutes,
   suggestedDurationMinutes,
@@ -39,6 +40,7 @@ import type {
   RecentPlace,
 } from '../lib/feed'
 import { addressAfterPlaceTextEdit, generatedTitle, postSummaryLines } from '../lib/postSummary'
+import { mergePrefill, prefillFetch } from '../lib/prefill'
 import {
   PLACE_BROWSE_LIMIT,
   PLACE_SUGGESTION_LIMIT,
@@ -355,6 +357,17 @@ export function NewPlaydatePage({
    */
   const [titleEditing, setTitleEditing] = useState(false)
   /**
+   * V10 ticket 03: the "Describe it instead" affordance's state — collapsed
+   * by default (the summary-first form is the primary path; this is the
+   * fallback for a NEW place or a non-today day), open while in use. The
+   * busy/error pair is its own: a failed prefill is a quiet inline line, not
+   * a blocked Post and not a crash.
+   */
+  const [describeOpen, setDescribeOpen] = useState(false)
+  const [describeText, setDescribeText] = useState('')
+  const [prefillBusy, setPrefillBusy] = useState(false)
+  const [prefillError, setPrefillError] = useState<string | null>(null)
+  /**
    * V9 ticket 03 (review cycle 1, F1): has the parent TYPED (or corrected) the
    * address themselves?
    *
@@ -608,6 +621,51 @@ export function NewPlaydatePage({
       title: undefined,
     }))
     setSubmitError(null)
+  }
+
+  /**
+   * V10 ticket 03: the "Fill the form" press — one round-trip to the
+   * prefill-playdate edge function with ONLY the sentence + the two clock
+   * facts (the privacy pin; prefillFetch's own test snapshots the body), then
+   * ONE merge (prefill.mergePrefill — clamped to the form's own rules).
+   *
+   * AFTER the merge, the place is free text unless it exactly matches a
+   * directory name (resolvePlaceByName — the applyRecentPlace rule: the post
+   * never claims coordinates the LLM didn't earn). The merge never touches
+   * the neighbourhood or the kids. The parent's own edits after this always
+   * win (this runs once, on the press).
+   *
+   * Degradation: a failure is a QUIET inline line (never a crash, never a
+   * blocked Post) — the form is untouched when the call fails.
+   */
+  async function applyPrefill() {
+    const text = describeText.trim()
+    if (text === '' || prefillBusy) return
+    setPrefillBusy(true)
+    setPrefillError(null)
+    try {
+      const fields = await prefillFetch(text, localDayKey(mountedNowIso), deviceTimeZone(), fetch)
+      const merged = mergePrefill(values, fields)
+      setValues(merged.values)
+      setPlaceId(resolvePlaceByName(merged.values.place, places ?? [])?.id ?? null)
+      setPicker('closed')
+      setErrors((prev) => ({
+        ...prev,
+        place: undefined,
+        startDate: undefined,
+        startMinutes: undefined,
+        durationMinutes: undefined,
+        title: undefined,
+      }))
+      // The merged title is generated-or-LLM text, not the parent's typed
+      // words — the generated-title follow rule stays armed until they edit.
+      setTitleTouched(false)
+      setPrefillError(null)
+    } catch {
+      setPrefillError('Couldn\u2019t fill the form from that — try again or fill it in below.')
+    } finally {
+      setPrefillBusy(false)
+    }
   }
 
   /**
@@ -1077,6 +1135,64 @@ export function NewPlaydatePage({
               </p>
             </div>
           }
+        /* V10 ticket 03: the "Describe it instead" affordance — one sentence
+           in, the form filled for review. Collapsed by default; a failed
+           prefill is a quiet inline line, never a blocked Post. */
+        describeSlot={
+          <div className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            {describeOpen ? (
+              <>
+                <label className="flex flex-col gap-1 text-sm" htmlFor="describe-input">
+                  <span className="text-slate-700">Describe it instead</span>
+                  <textarea
+                    id="describe-input"
+                    data-testid="describe-input"
+                    rows={2}
+                    maxLength={300}
+                    value={describeText}
+                    onChange={(e) => setDescribeText(e.target.value)}
+                    placeholder="e.g. Green Lake tomorrow 10 to noon, best for 2-5"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                  />
+                </label>
+                <button
+                  type="button"
+                  data-testid="describe-fill"
+                  onClick={applyPrefill}
+                  disabled={prefillBusy || describeText.trim() === ''}
+                  className="min-h-11 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  {prefillBusy ? 'Filling…' : 'Fill the form'}
+                </button>
+                {prefillError !== null ? (
+                  <p data-testid="describe-error" className="text-sm text-red-600">
+                    {prefillError}
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-500">
+                    Fills the form below — review it, then Post. Nothing posts itself.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setDescribeOpen(false)}
+                  className="min-h-11 text-left text-xs font-medium text-slate-500"
+                >
+                  Hide
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                data-testid="describe-toggle"
+                onClick={() => setDescribeOpen(true)}
+                className="min-h-11 text-left text-sm font-medium text-indigo-600"
+              >
+                Describe it instead
+              </button>
+            )}
+          </div>
+        }
           /* V8 ticket 06: the "Repeat weekly" control — off by default. The
              weekday is DERIVED from the chosen start date and said back in
              words, so a parent sees the rule they are about to create ("every

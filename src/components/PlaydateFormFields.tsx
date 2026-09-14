@@ -240,6 +240,13 @@ export interface PlaydateFormFieldsProps {
    * owns no state, and /edit passes nothing, so no dead control appears there.
    */
   kidsSectionSlot?: ReactNode
+  /**
+   * V10 ticket 03: the /new-only "Describe it instead" affordance (the LLM
+   * prefill), rendered under the quick-fill preset — the LAST shortcut row,
+   * because it is the broadest but least certain path (the form-first
+   * shortcuts lead). Another stateless slot.
+   */
+  describeSlot?: ReactNode
   submitLabel: string
   submittingLabel: string
   submitBusy: boolean
@@ -278,6 +285,7 @@ export function PlaydateFormFields({
   preset,
   postAgainSlot,
   kidsSectionSlot,
+  describeSlot,
   repeatSlot,
   agesSlot,
   submitLabel,
@@ -790,6 +798,10 @@ export function PlaydateFormFields({
           {postAgainSlot}
           {recentChipsBlock}
           {preset}
+          {/* V10 ticket 03: the "Describe it instead" affordance — under the
+              preset (the last shortcut row), above the surfaced kids section.
+              /edit passes nothing. */}
+          {describeSlot}
           {/* V10 ticket 02: the SURFACED kids section — ABOVE the disclosure,
               only when the page passes it (the parent has kids). The
               disclosure stays where it is, holding the rest. */}
