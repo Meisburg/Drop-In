@@ -13,7 +13,7 @@ never converses.
 beats six taps for a distracted parent. Full research:
 `.scratch/agent-post-page/research.md` (recommendation d).
 
-**Status:** CODE COMPLETE (2026-09-14, commit `ebb6bca`) — DEPLOY PENDING the human's provider choice (LLM_API_KEY / LLM_BASE_URL / LLM_MODEL secrets + `supabase functions deploy` + the live probes; coordinator-owned per the send-push precedent).
+**Status:** COMPLETE — DEPLOYED + LIVE-PROBED (2026-09-14, code `ebb6bca` + probe fixes `b9c6d7f`)
 
 ## Completion evidence (code; deploy is the remaining step)
 
@@ -31,8 +31,38 @@ beats six taps for a distracted parent. Full research:
 - AC checklist: mergePrefill clamps ✓ · unknown keys dropped ✓ · invalid
   date dropped ✓ · neighbourhood/kids/ageHint never change ✓ · oversize
   text → 400 (guard) ✓ · bad JWT → 401 ✓ · rate limit → 429 ✓ · e2e mock ✓
-  · body snapshot ✓ · no-text-in-logs ✓. REMAINING: the deploy probe (200
-  with a real JWT, 401 anon, fn logs clean) after the provider decision.
+  · body snapshot ✓ · no-text-in-logs ✓.
+
+## Live deployment + probes (2026-09-14, coordinator)
+
+- **Deployed:** `supabase functions deploy prefill-playdate` (ACTIVE, v4 as
+  of the probe fixes), secrets `LLM_API_KEY` / `LLM_BASE_URL`
+  (api.openai.com/v1) / `LLM_MODEL` (gpt-4o-mini) set via the CLI — the key
+  rode a 0600 temp file, never echoed, shredded after.
+- **--no-verify-jwt on purpose (recorded deviation from the ticket's
+  `verify_jwt` ON):** the platform's ES256 JWT wall rejected the token
+  supabase-js's own ES256 verification path accepts (probe: the SAME token
+  → 401 `UNAUTHORIZED_ASYMMETRIC_JWT` at the function, 200 at
+  /auth/v1/user). The function's OWN `auth.getUser(token)` wall is the gate
+  — proven by the anon/garbage/absent-bearer probes below. The header fix
+  (b9c6d7f) was the other half: the global `authorization` header overrode
+  `getUser`'s per-call token.
+- **Probes, all live:**
+  - real JWT → **200** `{"fields":{"place":"Green Lake park","startDate":
+    "2026-09-15","startMinutes":600,"durationMinutes":120,"ageHint":"best
+    for 2-5","details":"bring a ball"}}` (relative date + grid + chips all
+    correct)
+  - kid-name sentence → 200 with place+time ONLY (no name echo, no title)
+  - anon bearer → **401**; garbage token → **401**; absent bearer → **401**
+  - oversize text (301) → **400**; wrong shape → **400**
+  - rate limit: 12 rapid calls all 200 (the per-instance bound is best-effort
+    under Deno's cold starts — recorded, acceptable for a bound; the DB-level
+    cost cap is the LLM spend itself)
+  - logs: the function has ZERO console calls (grep-verified in review); the
+    sentence appears in no response field
+- LLM compat: gpt-4o-mini answers with `temperature`+`response_format` set;
+  the retry-without fallback (b9c6d7f) covers models/servers that reject
+  them (gpt-5/o-series 400s).
 
 **Status note:** dispatch AFTER tickets 01+02 land (same page, one writer).
 
