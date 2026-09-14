@@ -209,22 +209,43 @@ function llmConfig(): LlmConfig | null {
  * change, not a code change). Returns the first choice's message content.
  */
 async function callLlm(config: LlmConfig, request: PrefillRequest): Promise<unknown> {
-  const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+  // The OpenAI-compat surface is not uniform: `response_format` is rejected
+  // 400 by some servers (gpt-5 family included), and `temperature` sampling
+  // controls are rejected by reasoning models (o-series, gpt-5). Both are
+  // OPTIMIZATIONS, not requirements — the prompt already demands JSON-only
+  // and the guard drops anything unparsable — so the call retries once
+  // without the offending fields before giving up. The probe evidence
+  // (2026-09-14) pinned this: gpt-4o-mini answered with both set, but the
+  // 502 path must not depend on that.
+  const base = {
+    model: config.model,
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: userPrompt(request) },
+    ],
+  }
+  let response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${config.apiKey}`,
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: config.model,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt(request) },
-      ],
+      ...base,
       temperature: 0,
       response_format: { type: 'json_object' },
     }),
   })
+  if (!response.ok && (response.status === 400 || response.status === 422)) {
+    response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${config.apiKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(base),
+    })
+  }
   if (!response.ok) {
     // The provider's error TEXT may echo the request — never surface it.
     throw new Error(`llm http ${response.status}`)
@@ -292,7 +313,6 @@ Deno.serve(async (request: Request): Promise<Response> => {
     const { createClient } = await import('npm:@supabase/supabase-js@2')
     const client = createClient(supabaseUrl, anonKey, {
       auth: { persistSession: false, autoRefreshToken: false },
-      global: { headers: { authorization: `Bearer ${token}` } },
     })
     const { data, error } = await client.auth.getUser(token)
     if (error !== null || data.user === null) {
