@@ -197,6 +197,14 @@ export interface PlaydateFormFieldsProps {
   /** /new only: the quick-fill preset card, rendered inside the form first. */
   preset?: ReactNode
   /**
+   * V10 ticket 01: the /new-only "Post again" chip (the whole last post in one
+   * tap), rendered ABOVE the recent-place chips — it is the BIGGER shortcut
+   * (everything, not just the place), so it leads. Another slot rather than
+   * props for the exact reason `preset` is one: this component owns no state,
+   * and the EDIT form passes nothing, so no dead control appears there.
+   */
+  postAgainSlot?: ReactNode
+  /**
    * V8 ticket 06: the /new-only "Repeat weekly" control (the series toggle +
    * the weekday it derives from the chosen start date), rendered under the
    * duration chips — next to the time it repeats. Passed in as a slot for the
@@ -250,6 +258,7 @@ export function PlaydateFormFields({
   onPickPlace,
   onSomewhereElse,
   preset,
+  postAgainSlot,
   repeatSlot,
   agesSlot,
   submitLabel,
@@ -743,6 +752,7 @@ export function PlaydateFormFields({
         <>
           {summaryBlock}
           {placeBlock}
+          {postAgainSlot}
           {recentChipsBlock}
           {preset}
           {durationBlock}

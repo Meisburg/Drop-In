@@ -12,15 +12,18 @@ import {
   createPlaydateSeries,
   ensureSeriesOccurrences,
   listKids,
+  listLastOwnPlaydate,
   listPlaces,
   listRecentOwnPlaces,
   linkKidsToPlaydate,
 } from '../lib/db'
 import {
+  cloneLastPost,
   computeEndIso,
   computeStartIso,
   defaultStartDateIso,
   durationLabel,
+  formatStartDayLabel,
   formatTimeLabel,
   moreOptionsHoldsError,
   nextSlotMinutes,
@@ -29,6 +32,7 @@ import {
 } from '../lib/feed'
 import type {
   AgeBounds,
+  LastOwnPlaydate,
   PlaydateFormErrors,
   PlaydateFormValues,
   RecentPlace,
@@ -300,6 +304,11 @@ export function NewPlaydatePage({
   // whether that is because they have never posted or because the load
   // failed: the zero-pressure discipline (no error state on /new).
   const [recentPlaces, setRecentPlaces] = useState<RecentPlace[]>([])
+  // V10 ticket 01: the ONE row the "Post again" chip clones from — the parent's
+  // most recent post, kids included. null = no chip (never posted, load
+  // failed, or the row did not map): the same convenience discipline as
+  // recentPlaces above — no error state, never a crash.
+  const [lastPost, setLastPost] = useState<LastOwnPlaydate | null>(null)
   // V8 ticket 06: "Repeat weekly" — OFF by default (a one-off drop-in is the
   // common case, and the form a parent knows must not change under them).
   // V9 ticket 03: the control lives behind "More options" now, and the SUMMARY
@@ -394,6 +403,24 @@ export function NewPlaydatePage({
       })
       .catch(() => {
         if (!cancelled) setRecentPlaces([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
+  // V10 ticket 01: the "Post again" source row, fetched alongside the recent
+  // places (the same load pattern — a failed load stays null = no chip, never
+  // an error line; the chip is an offer, not a feature the form depends on).
+  useEffect(() => {
+    if (userId === null) return
+    let cancelled = false
+    listLastOwnPlaydate()
+      .then((row) => {
+        if (!cancelled) setLastPost(row)
+      })
+      .catch(() => {
+        if (!cancelled) setLastPost(null)
       })
     return () => {
       cancelled = true
@@ -541,6 +568,48 @@ export function NewPlaydatePage({
   }
 
   /**
+   * V10 ticket 01: "Post again" — the whole last post in one tap. The clone is
+   * the PURE seam (feed.cloneLastPost, unit-tested): place, address,
+   * neighbourhood, duration, details, title (kept when it fits the cap,
+   * regenerated when it does not) and kids, with the start moved by the
+   * clonedStart rule (the same slot again when it is still ahead today,
+   * otherwise tomorrow at that time — snapped to the 30-minute grid).
+   *
+   * The SAME invariants as applyRecentPlace, deliberately: the chip wrote the
+   * address, so addressTouched goes back to false and a later place-text edit
+   * clears it; the place resolves against the directory by exact name (a
+   * match keeps the place's coordinates); the picker closes; the errors clear.
+   *
+   * KIDS: prefill ONLY ids that still exist in the mounted list — a kid
+   * deleted since the post must not resurrect as a ghost chip (and an
+   * unselected id would fail the 0040-owned INSERT anyway). The title is
+   * treated as the parent's own words (titleTouched stays as-is: the clone
+   * carries a real title, and the generated-title follow-the-place rule is
+   * for typed places — here the title NAMES the place the clone is going to).
+   * Nothing submits itself: the parent still taps Post.
+   */
+  function applyLastPost() {
+    if (lastPost === null) return
+    const clone = cloneLastPost(lastPost, mountedNowIso)
+    setValues((prev) => ({ ...prev, ...clone.values }))
+    setAddress(clone.address)
+    setAddressTouched(false)
+    setPlaceId(resolvePlaceByName(clone.values.place, places ?? [])?.id ?? null)
+    setSelectedKidIds(clone.kidIds.filter((kidId) => (kids ?? []).some((kid) => kid.id === kidId)))
+    setPicker('closed')
+    setErrors((prev) => ({
+      ...prev,
+      place: undefined,
+      neighborhoodId: undefined,
+      startDate: undefined,
+      startMinutes: undefined,
+      durationMinutes: undefined,
+      title: undefined,
+    }))
+    setSubmitError(null)
+  }
+
+  /**
    * V8 ticket 07: picking a suggestion fills the place, the address and the
    * neighborhood in ONE tap, plus the place_id that makes the post's location
    * the place's coordinates.
@@ -622,6 +691,25 @@ export function NewPlaydatePage({
   const quickStartMinutes = nextSlotMinutes(mountedNowIso)
   const quickDurationMinutes = suggestedDurationMinutes(mountedNowIso)
   const quickEndLabel = formatTimeLabel(quickStartMinutes + quickDurationMinutes)
+  // V10 ticket 01: the "Post again" chip's label — the plan it will write, so
+  // the offer is not a mystery tap: the title (the parent's own words, or the
+  // place it names) + the day the clone will land on. Computed from the SAME
+  // seam the tap applies (cloneLastPost), so the label cannot promise
+  // something else — the quick-fill preset's rule (the label states what it
+  // writes, both from one mount-time `now`).
+  const lastPostClone =
+    lastPost === null
+      ? null
+      : cloneLastPost(lastPost, mountedNowIso)
+  const lastPostLabel =
+    lastPostClone === null
+      ? null
+      : `${lastPostClone.values.title} · ${formatStartDayLabel(lastPostClone.values.startDate)}`
+  // The chip's classes: the recent-place chip's pill, at the form's 44px floor
+  // (minTouchTargets is on for this page — the class is spelled out because a
+  // slot carries its own markup; the form's `touch()` helper is not in scope).
+  const lastPostClassName =
+    'min-h-11 w-fit max-w-full rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-left text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100'
   // V8 ticket 06: the weekday the "Repeat weekly" control is about, derived
   // from the chosen start date ('' until a date is chosen — the pure seam
   // says nothing rather than guessing).
@@ -902,6 +990,26 @@ export function NewPlaydatePage({
            stay usable with no places table at all. */
         onBrowsePlaces={places !== null && places.length > 0 ? toggleBrowsePlaces : undefined}
         browsePlacesOpen={picker === 'browse'}
+        /* V10 ticket 01: the "Post again" chip — the whole last post (place,
+           address, neighbourhood, time, details, kids) in one tap, rendered as
+           a slot so the form component stays stateless (the preset pattern).
+           Passed ONLY when a last post actually loaded: a first-timer sees no
+           chip at all, not a disabled one (the recentChipsBlock rule). */
+        postAgainSlot={
+          lastPost !== null && lastPostLabel !== null ? (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-slate-500">Post again</span>
+              <button
+                type="button"
+                data-testid="post-again"
+                onClick={applyLastPost}
+                className={lastPostClassName}
+              >
+                {lastPostLabel}
+              </button>
+            </div>
+          ) : null
+        }
           preset={
             /* V8 ticket 01: the spontaneous drop-in in one tap — start at the
                next 30-minute slot, run to the next hour. The label states the

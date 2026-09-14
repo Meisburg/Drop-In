@@ -13,6 +13,8 @@ import {
   cardAgeRangeLabel,
   buildGoingLine,
   buildWhileAwayItems,
+  cloneLastPost,
+  clonedStart,
   computeEndIso,
   computeStartIso,
   daySectionIso,
@@ -42,6 +44,7 @@ import {
   kidsComingLine,
   KID_AGE_MAX,
   KID_AGE_MIN,
+  lastOwnPlaydateFrom,
   localDayKey,
   mapsHref,
   MORE_OPTIONS_FIELDS,
@@ -56,6 +59,7 @@ import {
   playdateEditFieldsChanged,
   playdateEditKidIdsChanged,
   playdateFormValuesFromPost,
+  queryLastOwnPlaydateWithClient,
   queryMyPlaydatesWithClient,
   queryRecentOwnPlacesWithClient,
   queryUpcomingFeedWithClient,
@@ -77,6 +81,7 @@ import {
   stepTimeMinutes,
   suggestedDurationMinutes,
   TIME_STEP_MINUTES,
+  TITLE_MAX_LENGTH,
   toDuplicatePrefill,
   validateHomeZip,
   validatePlaydateForm,
@@ -86,6 +91,7 @@ import {
   withinRadius,
   type FeedPost,
   type GoingPinger,
+  type LastOwnPlaydate,
   type PlaydateFormValues,
   type RadiusViewer,
   type ZipCoords,
@@ -104,6 +110,9 @@ import {
   listPostsByHostWithClient,
   touchLastSeen,
 } from './db'
+// V10 ticket 01: the REAL generated-title seam, to pin the clone's
+// cycle-avoiding restatement against (they must not drift).
+import { generatedTitle as realGeneratedTitle } from './postSummary'
 
 /**
  * Feed-logic tests (slice 3). All time-based cases are built relative to a
@@ -3023,5 +3032,225 @@ describe('moreOptionsHoldsError (V9 ticket 03: no error hidden behind the disclo
     // fire). A required field added to the disclosure without being added here
     // would hide its own error — which is why this list is pinned.
     expect([...MORE_OPTIONS_FIELDS]).toEqual(['startDate', 'startMinutes'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// V10 ticket 01: "Post again" — the whole last post, one tap.
+
+describe('clonedStart (V10 ticket 01: the time rule the Post-again clone moves by)', () => {
+  // The row the chip clones: last Saturday-style post at 15:00 local.
+  const LAST_START = localIso(15, 0)
+
+  it('the same slot again when it is still ahead today', () => {
+    expect(clonedStart(LAST_START, localIso(14, 10))).toEqual({
+      startDate: localDayKey(LAST_START),
+      startMinutes: 15 * 60,
+    })
+  })
+
+  it('the same slot, on the exact boundary (now == slot is still ahead — "now" has not passed it)', () => {
+    // 15:00 now vs a 15:00 last post, BOTH on the fixed clock's day (Sep 12
+    // local — day 12): the slot is not YET past, so today's 15:00 is offered
+    // (a parent opening the form at the very minute the group usually meets
+    // still gets "same time today").
+    const lastToday = localIso(15, 0, 12)
+    expect(clonedStart(lastToday, localIso(15, 0, 12))).toEqual({
+      startDate: localDayKey(lastToday),
+      startMinutes: 15 * 60,
+    })
+  })
+
+  it('tomorrow at the same time once today\u2019s slot has passed', () => {
+    const out = clonedStart(LAST_START, localIso(16, 10))
+    expect(out.startMinutes).toBe(15 * 60)
+    expect(out.startDate).toBe(localDayKey(localIso(0, 0, 13)))
+  })
+
+  it('snaps a legacy OFF-GRID stored start to the 30-minute grid', () => {
+    // Legacy rows exist (playdateFormValuesFromPost deliberately never snaps);
+    // a CLONE is a new post through the form, so it must be postable.
+    expect(clonedStart(localIso(15, 10), localIso(14, 0)).startMinutes).toBe(15 * 60)
+    expect(clonedStart(localIso(15, 40), localIso(14, 0)).startMinutes).toBe(15 * 60 + 30)
+  })
+
+  it('the DAY is now\u2019s day, not the stored row\u2019s (a days-old post still clones to today/tomorrow)', () => {
+    // The last post was Sep 3; NOW is Sep 12 14:10 — the 15:00 slot is still
+    // ahead today, so the clone lands TODAY (Sep 12), not on the old date.
+    const oldPost = localIso(15, 0, 3)
+    const out = clonedStart(oldPost, localIso(14, 10, 12))
+    expect(out.startDate).toBe(localDayKey(localIso(0, 0, 12)))
+    expect(out.startMinutes).toBe(15 * 60)
+  })
+
+  it('keeps the slot across a midnight wrap (a 00:30 last post → tomorrow 00:30 when now is 23:45)', () => {
+    const lateNow = localIso(23, 45)
+    const out = clonedStart(localIso(0, 30), lateNow)
+    expect(out.startMinutes).toBe(30)
+    expect(out.startDate).toBe(localDayKey(localIso(0, 0, 13)))
+  })
+
+  it('an on-grid slot is never shifted by the snap', () => {
+    expect(clonedStart(localIso(15, 30), localIso(14, 0)).startMinutes).toBe(15 * 60 + 30)
+  })
+})
+
+describe('cloneLastPost (V10 ticket 01: the Post-again values, pure)', () => {
+  // A post from "yesterday-ish" relative to the fixed clock, with everything
+  // a clone should carry. Starts 2026-09-03 15:00, ends 17:00 (2h), has an
+  // address, details and two kids.
+  const LAST: LastOwnPlaydate = {
+    id: 'pd-1',
+    title: 'Playdate at Green Lake Park',
+    place: 'Green Lake Park',
+    neighborhood_id: 'n-green',
+    starts_at: new Date(2026, 8, 3, 15, 0, 0, 0).toISOString(),
+    ends_at: new Date(2026, 8, 3, 17, 0, 0, 0).toISOString(),
+    details: '  Bring snacks.  ',
+    address: ' 7201 East Green Lake Dr N ',
+    kid_ids: ['kid-a', 'kid-b'],
+  }
+
+  it('carries the whole plan: place, address, neighbourhood, duration, details, kids', () => {
+    const out = cloneLastPost(LAST, NOW_ISO)
+    expect(out.values.place).toBe('Green Lake Park')
+    expect(out.values.neighborhoodId).toBe('n-green')
+    expect(out.values.durationMinutes).toBe(120)
+    expect(out.values.details).toBe('Bring snacks.')
+    expect(out.address).toBe('7201 East Green Lake Dr N')
+    expect(out.kidIds).toEqual(['kid-a', 'kid-b'])
+  })
+
+  it('moves the start by the clonedStart rule (the same slot, today here)', () => {
+    const out = cloneLastPost(LAST, NOW_ISO)
+    // The last post was Sep 3 15:00 local; NOW is Sep 4 12:00, so the 15:00
+    // slot is still ahead TODAY (Sep 4) — the same slot again.
+    expect(out.values.startDate).toBe(localDayKey(localIso(0, 0, 4)))
+    expect(out.values.startMinutes).toBe(15 * 60)
+  })
+
+  it('keeps the parent\u2019s own title when it fits the cap', () => {
+    expect(cloneLastPost(LAST, NOW_ISO).values.title).toBe('Playdate at Green Lake Park')
+  })
+
+  it('REGENERATES the title when the stored one would be refused (over the cap)', () => {
+    const longTitle = 'x'.repeat(81)
+    const out = cloneLastPost({ ...LAST, title: longTitle }, NOW_ISO)
+    expect(out.values.title).toBe('Playdate at Green Lake Park')
+    expect(out.values.title.length).toBeLessThanOrEqual(TITLE_MAX_LENGTH)
+  })
+
+  it('regenerates from the place when the stored title is empty', () => {
+    const out = cloneLastPost({ ...LAST, title: '' }, NOW_ISO)
+    expect(out.values.title).toBe('Playdate at Green Lake Park')
+  })
+
+  it('a title that names a DIFFERENT place is still kept (the parent\u2019s words win)', () => {
+    const out = cloneLastPost({ ...LAST, title: 'Saturday soccer crew' }, NOW_ISO)
+    expect(out.values.title).toBe('Saturday soccer crew')
+  })
+
+  it('an off-chip stored duration becomes 0 ("none picked yet") — never a fifth chip', () => {
+    // The end is computed from start + a legal chip today, but legacy/manual
+    // rows could carry e.g. 45 minutes; the form's chip set is a pinned
+    // contract (playdateFormValuesFromPost's same rule).
+    const out = cloneLastPost(
+      {
+        ...LAST,
+        starts_at: new Date(2026, 8, 3, 15, 0, 0, 0).toISOString(),
+        ends_at: new Date(2026, 8, 3, 15, 45, 0, 0).toISOString(),
+      },
+      NOW_ISO,
+    )
+    expect(out.values.durationMinutes).toBe(0)
+  })
+
+  it('maps a NULL neighbourhood to "" and trims nullable text (the 0035 shapes)', () => {
+    const out = cloneLastPost({ ...LAST, neighborhood_id: null, details: null, address: null }, NOW_ISO)
+    expect(out.values.neighborhoodId).toBe('')
+    expect(out.values.details).toBe('')
+    expect(out.address).toBe('')
+  })
+
+  it('the clone\u2019s values pass validatePlaydateForm (a chip that writes an unpostable form is broken)', () => {
+    const out = cloneLastPost(LAST, NOW_ISO)
+    // The clone fills everything EXCEPT what the parent must still confirm is
+    // fine — but nothing the clone writes may be invalid: place, date, grid
+    // time, duration all have rules.
+    expect(validatePlaydateForm({ ...out.values, ageHint: '' })).toEqual({})
+  })
+
+  it('agrees with the real generatedTitle seam on a regenerated title', () => {
+    // generatedTitleFromParts is the cycle-avoiding restatement of
+    // postSummary.generatedTitle; the test pins the two together so they
+    // cannot drift. The seam itself is imported from postSummary (where it
+    // lives — feed.ts cannot import it without closing the places cycle).
+    const out = cloneLastPost({ ...LAST, title: '' }, NOW_ISO)
+    expect(out.values.title).toBe(realGeneratedTitle('Green Lake Park'))
+    expect(realGeneratedTitle('')).toBe('Playdate')
+  })
+})
+
+describe('queryLastOwnPlaydateWithClient (V10 ticket 01, mocked supabase client)', () => {
+  const row = {
+    id: 'pd-9',
+    title: 'Playdate at Green Lake Park',
+    place: 'Green Lake Park',
+    neighborhood_id: null,
+    starts_at: '2026-09-03T22:00:00.000Z',
+    ends_at: '2026-09-04T00:00:00.000Z',
+    details: null,
+    address: '7201 East Green Lake Dr N',
+    playdate_kids: [{ kid_id: 'kid-a' }],
+  }
+
+  it('scopes to the host, newest by START (not created_at), one row', async () => {
+    const { client, filters } = makeFeedMockClient([row])
+    expect(await queryLastOwnPlaydateWithClient(client, 'me')).toEqual(row)
+    expect(filters).toContain('eq(host_profile_id, me)')
+    expect(filters).toContain('order(starts_at, false)')
+    expect(filters).toContain('order(id, false)')
+    expect(filters).toContain('limit(1)')
+  })
+
+  it('returns null when the parent has never posted', async () => {
+    const { client } = makeFeedMockClient([])
+    expect(await queryLastOwnPlaydateWithClient(client, 'me')).toBeNull()
+  })
+})
+
+describe('lastOwnPlaydateFrom (V10 ticket 01: the embed row → the typed payload)', () => {
+  it('maps the happy row, keeping only real kid ids', () => {
+    const out = lastOwnPlaydateFrom({
+      id: 'pd-1',
+      title: 'T',
+      place: 'P',
+      neighborhood_id: null,
+      starts_at: '2026-09-03T22:00:00.000Z',
+      ends_at: '2026-09-04T00:00:00.000Z',
+      details: null,
+      address: null,
+      playdate_kids: [{ kid_id: 'kid-a' }, { kid_id: null }, {}],
+    })
+    expect(out).not.toBeNull()
+    expect(out?.kid_ids).toEqual(['kid-a'])
+    expect(out?.neighborhood_id).toBeNull()
+  })
+
+  it('an empty/null embed is "no kids"', () => {
+    const base = {
+      id: 'pd-1',
+      title: 'T',
+      place: 'P',
+      starts_at: '2026-09-03T22:00:00.000Z',
+      ends_at: '2026-09-04T00:00:00.000Z',
+    }
+    expect(lastOwnPlaydateFrom({ ...base, playdate_kids: [] })?.kid_ids).toEqual([])
+    expect(lastOwnPlaydateFrom({ ...base, playdate_kids: null })?.kid_ids).toEqual([])
+  })
+
+  it('a row missing a required field maps to null (the chip degrades to absent)', () => {
+    expect(lastOwnPlaydateFrom({ title: 'T', place: 'P', starts_at: 'x', ends_at: 'y' })).toBeNull()
+    expect(lastOwnPlaydateFrom(null)).toBeNull()
   })
 })

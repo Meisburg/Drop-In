@@ -33,9 +33,11 @@ import {
 import {
   ageRangeFields,
   filterFeed,
+  lastOwnPlaydateFrom,
   localDayKey,
   neighborhoodIdField,
   postDistanceMiles,
+  queryLastOwnPlaydateWithClient,
   queryRecentOwnPlacesWithClient,
   queryUpcomingFeedWithClient,
   recentPlacesFrom,
@@ -43,6 +45,7 @@ import {
   validateHomeZip,
   validateRadiusMiles,
   type GoingPinger,
+  type LastOwnPlaydate,
   type RadiusViewer,
   type RecentPlace,
   type WhileAwayCommentRow,
@@ -941,6 +944,28 @@ export async function listRecentOwnPlaces(limit?: number): Promise<RecentPlace[]
     rows as Array<{ place: string; address: string | null; neighborhood_id: string | null }>,
     limit,
   )
+}
+
+/**
+ * The ONE row the "Post again" chip clones from (V10 ticket 01) — the
+ * caller's most recent post with the kids it announced, newest by START (the
+ * plan the parent most recently put on the calendar — see
+ * queryLastOwnPlaydateWithClient for why that is not created_at).
+ *
+ * No session → null, and a failed read THROWS: the caller (the /new page)
+ * swallows both into "no chip" (the recent-places convenience discipline —
+ * a form that cannot load the clone must still render). The pure mapper
+ * (feed.lastOwnPlaydateFrom) is the seam the unit tests pin.
+ */
+export async function listLastOwnPlaydate(): Promise<LastOwnPlaydate | null> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (!user) return null
+  const row = await queryLastOwnPlaydateWithClient(supabase, user.id)
+  return lastOwnPlaydateFrom(row)
 }
 
 // ---------------------------------------------------------------------------

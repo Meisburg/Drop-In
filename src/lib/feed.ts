@@ -1646,6 +1646,46 @@ export async function queryRecentOwnPlacesWithClient(
   return (data ?? []) as unknown[]
 }
 
+/**
+ * The ONE row the "Post again" chip clones from (V10 ticket 01), against an
+ * injected client (the queryRecentOwnPlacesWithClient pattern — mocked in
+ * feed.test.ts).
+ *
+ * NEWEST BY START, not by created_at: "post again" means the plan the parent
+ * most recently PUT ON THE CALENDAR — a series occurrence created ahead of
+ * time, or a duplicate posted out of order, would make created_at lie about
+ * "the last thing I did". The id is the tiebreak for two posts starting at
+ * the same instant (the order clause needs a total order to be deterministic).
+ *
+ * `status` is deliberately NOT filtered: a cancelled post is still the last
+ * plan the parent made, and a clone the parent then edits or re-cancels is
+ * harmless — the chip is an offer, the parent taps Post themselves. The
+ * playdates SELECT policy is open to any authenticated user; the
+ * .eq(host_profile_id) is the scoping.
+ *
+ * The kid ids ride along as ONE embed (the 0022 attachment table; the
+ * `playdate_kids(kid_id)` embed is a plain LEFT join — a post with no kids
+ * comes back with an empty array, which is exactly the chip's "no kids" case;
+ * the PGRST201 lesson does not apply, playdate_kids has one FK to playdates).
+ */
+export async function queryLastOwnPlaydateWithClient(
+  client: SupabaseClient,
+  profileId: string,
+): Promise<unknown | null> {
+  const { data, error } = await client
+    .from('playdates')
+    .select(
+      'id, title, place, neighborhood_id, starts_at, ends_at, details, address, playdate_kids(kid_id)',
+    )
+    .eq('host_profile_id', profileId)
+    .order('starts_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(1)
+  if (error) throw error
+  const rows = (data ?? []) as unknown[]
+  return rows.length > 0 ? rows[0] : null
+}
+
 // ---------------------------------------------------------------------------
 // V8 ticket 02: the first visit that is not a dead end — the empty-radius
 // copy + escape hatches, and the visibility-refresh gate.
@@ -2124,4 +2164,185 @@ export function partitionPostsByTime<T extends { starts_at: string; ends_at: str
   upcoming.sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at))
   past.sort((a, b) => Date.parse(b.starts_at) - Date.parse(a.starts_at))
   return { upcoming, past }
+}
+
+// ---------------------------------------------------------------------------
+// V10 ticket 01: "Post again" — the whole last post, one tap. The pure half
+// lives here so the clone's values are unit-tested without React or a
+// database; db.listLastOwnPlaydate is the fetch.
+
+/**
+ * The one row the "Post again" chip clones from — the caller's most recent
+ * post (by start, then id — see queryLastOwnPlaydateWithClient), with the
+ * kids it announced. `kidIds` are the playdate_kids rows' kid ids; filtering
+ * them against the mounted kids list is the PAGE's job (a deleted kid must
+ * not resurrect as a ghost chip).
+ */
+export interface LastOwnPlaydate {
+  id: string
+  title: string
+  place: string
+  /** V9 ticket 01: NULL once 0035 lands — '' ("none") in the clone. */
+  neighborhood_id: string | null
+  starts_at: string
+  ends_at: string
+  details: string | null
+  address: string | null
+  kid_ids: string[]
+}
+
+/**
+ * The raw embed row → the chip's typed payload. Defensive on every nullable
+ * (the wire can carry nulls the schema does not promise) and on the embed
+ * shape (a post with no kids embeds `playdate_kids: []`; a null embed means
+ * the join itself returned nothing, which for a LEFT join is also "no kids").
+ */
+export function lastOwnPlaydateFrom(row: unknown): LastOwnPlaydate | null {
+  if (row === null || typeof row !== 'object') return null
+  const r = row as {
+    id?: unknown
+    title?: unknown
+    place?: unknown
+    neighborhood_id?: unknown
+    starts_at?: unknown
+    ends_at?: unknown
+    details?: unknown
+    address?: unknown
+    playdate_kids?: unknown
+  }
+  if (
+    typeof r.id !== 'string' ||
+    r.id === '' ||
+    typeof r.title !== 'string' ||
+    typeof r.place !== 'string' ||
+    typeof r.starts_at !== 'string' ||
+    typeof r.ends_at !== 'string'
+  ) {
+    return null
+  }
+  const kids = Array.isArray(r.playdate_kids) ? r.playdate_kids : []
+  const kidIds = kids
+    .map((k) => (k as { kid_id?: unknown } | null)?.kid_id)
+    .filter((kidId): kidId is string => typeof kidId === 'string' && kidId.length > 0)
+  return {
+    id: r.id,
+    title: r.title,
+    place: r.place,
+    neighborhood_id: typeof r.neighborhood_id === 'string' ? r.neighborhood_id : null,
+    starts_at: r.starts_at,
+    ends_at: r.ends_at,
+    details: typeof r.details === 'string' ? r.details : null,
+    address: typeof r.address === 'string' ? r.address : null,
+    kid_ids: kidIds,
+  }
+}
+
+/**
+ * The clone's VALUES + page-local writes, ready for the page's existing
+ * setters (the same invariants as `applyRecentPlace` — the address the chip
+ * wrote is the chip's, so a later place-text edit clears it).
+ */
+export interface CloneLastPostResult {
+  values: Pick<
+    PlaydateFormValues,
+    'title' | 'place' | 'neighborhoodId' | 'startDate' | 'startMinutes' | 'durationMinutes' | 'details'
+  >
+  /** '' when the post had none — a stale address is worse than none. */
+  address: string
+  /** Kid ids the clone carries; the page intersects them with its mounted kids. */
+  kidIds: string[]
+}
+
+/**
+ * The TIME rule, as its own seam so the ticket's pinned boundaries are
+ * testable without a whole clone:
+ *
+ * - last post started 15:00, now 14:10 → TODAY 15:00 (the same slot is still
+ *   ahead — "post again" means the same time again, not "right now").
+ * - last post started 15:00, now 16:10 → TOMORROW 15:00 (today's slot is
+ *   gone; tomorrow at the same time is the habitual thing).
+ *
+ * The DAY is NOW's day (never the stored row's — that post may be days old;
+ * "today if still ahead" means today on the parent's clock), and the
+ * boundary is inclusive: opening the form at the very minute the group
+ * usually meets still offers "same time today".
+ *
+ * The slot-time-of-day survives even when the stored row is off the grid
+ * (legacy rows exist: playdateFormValuesFromPost deliberately never snaps),
+ * but a CLONE is a new post through the same form, so the result is snapped
+ * to the 30-minute grid — a value the form's own validator would refuse is
+ * not something this affordance may write. The day is local (the form's
+ * `<input type="date">` shape), DST-agnostic like the rest of the form's
+ * clock math.
+ */
+export function clonedStart(
+  lastStartIso: string,
+  nowIso: string,
+): { startDate: string; startMinutes: number } {
+  const last = new Date(lastStartIso)
+  const slotMinutes = Math.round((last.getHours() * 60 + last.getMinutes()) / TIME_STEP_MINUTES) *
+    TIME_STEP_MINUTES
+  const dayMinutes = 24 * 60
+  const now = new Date(nowIso)
+  const nowMinutes = now.getHours() * 60 + now.getMinutes()
+  if (slotMinutes >= nowMinutes) {
+    return { startDate: localDayKey(nowIso), startMinutes: slotMinutes % dayMinutes }
+  }
+  const tomorrow = new Date(now)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  return { startDate: localDayKey(tomorrow.toISOString()), startMinutes: slotMinutes % dayMinutes }
+}
+
+/**
+ * The "Post again" clone (V10 ticket 01): the last post's WHOLE plan — place,
+ * address, neighbourhood, duration, details, title, kids — with the start
+ * moved by `clonedStart` (the same slot again when it is still ahead today,
+ * otherwise tomorrow at that time).
+ *
+ * The title rule is the generated-title contract: the stored title is kept
+ * when it fits the form's own cap (the parent's words survive a clone), and
+ * REGENERATED from the place when it does not — a title the validator would
+ * refuse must never be cloned into the form. Everything else passes the same
+ * trim rules the fields themselves apply.
+ *
+ * Pure: no fetch, no React, no clock — `nowIso` is injected (the
+ * fixed-clock test pattern).
+ */
+export function cloneLastPost(last: LastOwnPlaydate, nowIso: string): CloneLastPostResult {
+  const { startDate, startMinutes } = clonedStart(last.starts_at, nowIso)
+  const durationRaw = Math.round((Date.parse(last.ends_at) - Date.parse(last.starts_at)) / 60_000)
+  const durationMinutes = isDuration(durationRaw) ? durationRaw : 0
+  const title = last.title.trim()
+  return {
+    values: {
+      // The generated-title rule: keep the parent's words when they fit the
+      // cap, regenerate when they do not (a clone must be POSTABLE — and the
+      // form's validator, which the clone's output feeds, refuses >80).
+      title: title.length > 0 && title.length <= TITLE_MAX_LENGTH
+        ? title
+        : generatedTitleFromParts(last.place),
+      place: last.place,
+      neighborhoodId: last.neighborhood_id ?? '',
+      startDate,
+      startMinutes,
+      durationMinutes,
+      details: (last.details ?? '').trim(),
+    },
+    address: (last.address ?? '').trim(),
+    kidIds: last.kid_ids,
+  }
+}
+
+/**
+ * The clone's title fallback. The real `generatedTitle` seam lives in
+ * postSummary.ts, which imports places.ts — and places.ts imports feed.ts,
+ * so importing it here would close feed → postSummary → places → feed
+ * (the exact cycle the module split exists to avoid). This restates the rule
+ * for the ONE input the clone has: prefix + trimmed place, capped, never
+ * empty, with the same fallback word. The unit tests pin the two together.
+ */
+function generatedTitleFromParts(place: string): string {
+  const name = place.trim()
+  if (name === '') return 'Playdate'
+  return `Playdate at ${name}`.slice(0, TITLE_MAX_LENGTH)
 }
