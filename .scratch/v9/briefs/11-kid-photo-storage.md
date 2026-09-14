@@ -1,8 +1,7 @@
 # Builder brief — V9 ticket 11 (kid photos: close the public storage exposure; family photo instead)
 
 Repo: `/home/jmeisburg/Projects/playdate-app` ("Drop In" — Vite + React + TS +
-Tailwind PWA on live Supabase, project ref `ayzvjwxyrcgyoeaxuk` — note the brief
-in an earlier ticket had this transposed).
+Tailwind PWA on live Supabase, project ref `ayzvjwxbxyrcgyoeaxuk`).
 You are the ONLY writer: never run a git command that writes. **You write the
 migration and the migration SCRIPT; the coordinator applies 0038 and RUNS the
 script.** Do not apply anything, do not run the script, do not touch storage.

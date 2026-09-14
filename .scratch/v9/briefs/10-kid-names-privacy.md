@@ -1,7 +1,7 @@
 # Builder brief — V9 ticket 10 (privacy: kid names are readable by every signed-in parent)
 
 Repo: `/home/jmeisburg/Projects/playdate-app` ("Drop In" — Vite + React + TS +
-Tailwind PWA on live Supabase, project ref `ayzvjwxyrcgyoeaxuk`).
+Tailwind PWA on live Supabase, project ref `ayzvjwxbxyrcgyoeaxuk`).
 You are the ONLY writer: never run a git command that writes. **Write
 `supabase/migrations/0040_kid_names_gate.sql`; do NOT apply it** — the
 coordinator applies and probes it after you report, exactly as with 0035/0037.

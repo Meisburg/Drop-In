@@ -21,6 +21,15 @@ import type {
 // frame the user chose rather than computing one of its own, and refuses a frame
 // that could not be drawn.
 import { isDrawableRect, type CropRect } from './photoCrop'
+// V9 ticket 11: where a family's images live and who may fetch each kind. The
+// paths are the pure seams (photoStorage.ts) so this file never spells one out.
+import {
+  FAMILY_PHOTO_URL_TTL_SECONDS,
+  PHOTO_BUCKET,
+  familyPhotoMintPaths,
+  familyPhotoObjectPath,
+  familyPhotoPath,
+} from './photoStorage'
 import {
   ageRangeFields,
   filterFeed,
@@ -2252,13 +2261,14 @@ export const LIKES_MAX_LENGTH = 100
 export const INTERESTS_MAX_LENGTH = 200
 
 /**
- * Pure photo input validation (the avatar + kid-photo machinery, V2
- * ticket 02; the kid photo reuses it in V3 slice 6, ticket 09): an error
+ * Pure photo input validation (the avatar machinery, V2 ticket 02; the kid
+ * photo reused it in V3 slice 6, ticket 09 until V9 ticket 11 ended that path;
+ * the FAMILY photo reuses it through `validateFamilyPhotoFile`): an error
  * message, or null when valid. Rejects non-images and files over
  * AVATAR_MAX_BYTES.
  *
  * WHERE THE GATE LIVES, since photo-crop ticket 03 moved it: it is called from
- * `useCropStep.beginCrop`, NOT from `uploadAvatar`/`uploadKidPhoto`. Those take an
+ * `useCropStep.beginCrop`, NOT from `uploadAvatar`/`uploadFamilyPhoto`. Those take an
  * already-decoded source, so there is no File left to measure by the time they run.
  * The ticket AC ("> 5 MB rejected before upload") therefore holds by CONVENTION —
  * the upload functions are reachable only from the crop dialog's confirm, and the
@@ -2274,6 +2284,26 @@ export function validateAvatarFile(file: File): string | null {
     return 'Keep the photo under 5 MB.'
   }
   return null
+}
+
+/**
+ * Pure family-photo input validation (V9 ticket 11): the AVATAR rules, verbatim
+ * — an error message, or null when valid.
+ *
+ * It is a one-line delegation ON PURPOSE rather than a second copy of the two
+ * checks: ticket 08's AC is "the existing avatar pipeline's rules: square crop,
+ * ≤5MB, the crop step", so the family photo must be validated by the SAME gate,
+ * and two copies of a 5MB constant is how they drift. The unit test asserts the
+ * delegation directly (same message for the same file, including the boundary
+ * case at exactly AVATAR_MAX_BYTES).
+ *
+ * WHERE THE GATE LIVES IS UNCHANGED: `useCropStep.beginCrop` calls this — not
+ * the upload function — for exactly the reason documented on `validateAvatarFile`
+ * (by the time an upload runs, the File has been decoded and there is nothing
+ * left to measure).
+ */
+export function validateFamilyPhotoFile(file: File): string | null {
+  return validateAvatarFile(file)
 }
 
 /** Pure bio validation (<= BIO_MAX_LENGTH characters after trim). */
@@ -2434,10 +2464,20 @@ export async function prepareAvatarFile(
 
 /**
  * The shared avatars-bucket upload core (V2 ticket 02; V3 slice 6, ticket 09
- * generalized it for kid photos; photo-crop ticket 03 reframed it): encode the
- * CHOSEN crop of an already-decoded source as a square JPEG (prepareAvatarFile —
- * the network only ever sees the small result), upload to the 'avatars' bucket at
- * `objectPath`, and return the public URL.
+ * generalized it for kid photos — WITHDRAWN by V9 ticket 11; photo-crop ticket
+ * 03 reframed it): encode the CHOSEN crop of an already-decoded source as a
+ * square JPEG (prepareAvatarFile — the network only ever sees the small
+ * result), upload to the PUBLIC 'avatars' bucket at `objectPath`, and return the
+ * public URL.
+ *
+ * IT SERVES PARENT AVATARS ONLY NOW. V9 ticket 11 ends kid photos (`<uid>/kids/
+ * <kidId>`, the class that made this bucket's public read an exposure) and adds
+ * `uploadPrivatePhotoObject` for the private bucket; the family photo goes
+ * through THAT one, not this one, and `uploadKidPhoto` no longer exists. What
+ * stays here is the public posture the ticket deliberately preserved (T5): every
+ * card, the detail page and both profile pages render an avatar straight from
+ * this URL, and putting those behind signed URLs was the option the human did
+ * NOT choose.
  *
  * The ≤5MB / image-only gate does NOT live here any more. It cannot: by this point
  * the caller has already decoded the file, so there is no File left to measure.
@@ -2447,9 +2487,8 @@ export async function prepareAvatarFile(
  * The 0011 owner-scoped write policies (avatars_owner_insert / _update / _delete)
  * key on (storage.foldername(name))[1] = auth.uid()::text — the path's FIRST
  * folder must be the caller's own uid — so they cover EVERY path below `<uid>/`:
- * the parent's own avatar (<uid>/avatar) AND the kid photo (<uid>/kids/<kidId>,
- * the 0022 cover decision — the 0022 header is the audit record; no new storage
- * policy). A cross-user write is rejected by the same first-folder check.
+ * today that is the parent's own avatar (<uid>/avatar) alone. A cross-user write
+ * is rejected by the same first-folder check.
  */
 async function uploadAvatarObject(
   client: SupabaseClient,
@@ -2502,35 +2541,127 @@ export async function uploadAvatar(
 }
 
 /**
- * Upload one of the owner's kid photos (V3 slice 6, ticket 09, migration 0022;
- * photo-crop ticket 03): encode the chosen crop of the decoded `source`, stored in
- * the 'avatars' bucket at <uid>/kids/<kidId> (the 0011 owner-scoped write
- * policy's documented coverage — the 0022 header), then point kids.avatar_url at
- * the public URL. Returns the public URL. The kid-photo pin: this URL renders ONLY
- * in the profile kids list (the 40px circle) — never on cards or event lines.
+ * The PRIVATE-bucket upload core (V9 ticket 11): encode the chosen crop of the
+ * decoded `source` as a square JPEG (the same encoder the avatar uses — one
+ * pipeline, ticket 08's AC) and upload it to `PHOTO_BUCKET` at `objectPath`.
+ * Returns the OBJECT PATH, never a URL.
  *
- * The ≤5MB / image-only gate moved to `useCropStep.beginCrop`, which runs before
- * the decode — see the note on uploadAvatarObject.
+ * It is a sibling of `uploadAvatarObject` rather than a generalisation of it,
+ * and the difference is the whole point of the ticket:
+ *   - different bucket (`kid-photos`, `public = false` — 0038) with
+ *     owner-scoped, path-scoped policies of its own;
+ *   - no `getPublicUrl` (a private object has none) and therefore no
+ *     `?v=` cache-buster. That is not an omission: the buster exists because an
+ *     avatar's PUBLIC url does not change when the object is replaced, while a
+ *     signed URL is minted fresh on every render with its own token and
+ *     expiry, so a re-upload can never be shadowed by a cached URL.
+ *
+ * The write policy is the wall (0011's pattern, re-stated for this bucket in
+ * 0038): the path's FIRST folder must be the caller's own uid, so this function
+ * cannot write into another family's folder even if it were handed one.
  */
-export async function uploadKidPhoto(
-  profileId: string,
-  kidId: string,
+async function uploadPrivatePhotoObject(
+  client: SupabaseClient,
+  objectPath: string,
   source: CanvasImageSource,
   rect: CropRect,
 ): Promise<string> {
-  const publicUrl = await uploadAvatarObject(
-    supabase,
-    `${profileId}/kids/${kidId}`,
-    source,
-    rect,
-  )
-  const { error: kidError } = await supabase
-    .from('kids')
-    .update({ avatar_url: publicUrl })
-    .eq('id', kidId)
-    .eq('profile_id', profileId)
-  if (kidError) throw kidError
-  return publicUrl
+  const blob = await prepareAvatarFile(source, rect)
+  const { error } = await client.storage
+    .from(PHOTO_BUCKET)
+    .upload(objectPath, blob, { contentType: 'image/jpeg', upsert: true })
+  if (error) throw error
+  return objectPath
+}
+
+/**
+ * Upload the signed-in user's family photo (V9 ticket 11, folded ticket 08):
+ * encode the chosen crop of the decoded `source`, upload to `PHOTO_BUCKET` at
+ * `<uid>/family/photo.jpg` (the pure `familyPhotoPath`), then point
+ * `profiles.family_photo_url` at the OBJECT PATH. Returns that path.
+ *
+ * A PATH, not a URL — deliberately, and it is the one place a reader might
+ * expect otherwise given the column's name: a signed URL expires, so persisting
+ * one would hand the parent a broken image on a timer (T6). The render sites
+ * mint from the path (`signedFamilyPhotoUrls`) and never write back.
+ *
+ * `source` + `rect` rather than a File: the file was already validated and
+ * decoded by the crop step (`validateFamilyPhotoFile` runs there) and
+ * re-decoding here would cost a second ~48MB decode of the same 12MP photo.
+ *
+ * Pre-0038-apply this 42703s on the missing `profiles.family_photo_url` column
+ * (and the bucket would 404) — the caller surfaces a designed error line, never
+ * a crash (the DB-not-applied discipline).
+ */
+export async function uploadFamilyPhoto(
+  profileId: string,
+  source: CanvasImageSource,
+  rect: CropRect,
+): Promise<string> {
+  const objectPath = familyPhotoPath(profileId, 'jpg')
+  const storedPath = await uploadPrivatePhotoObject(supabase, objectPath, source, rect)
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .update({ family_photo_url: storedPath })
+    .eq('id', profileId)
+  if (profileError) throw profileError
+  return storedPath
+}
+
+/**
+ * Mint family-photo signed URLs for a page, ONE batched call for every image it
+ * renders (T6), against an injected client (the house *WithClient pattern).
+ *
+ * BEST-EFFORT BY CONTRACT: it never throws. A signed-URL failure — the bucket
+ * not applied yet, a storage outage, a policy refusal, an expired session —
+ * means "no image", and the caller renders the page without one. A decoration
+ * is never worth an error state (the zero-pressure soul); a parent cannot fix a
+ * storage error, so showing them one would only imply the profile is broken.
+ *
+ * Keyed by the STORED VALUE the caller holds (`profiles.family_photo_url`), so
+ * a render site maps its own data straight through without re-deriving paths.
+ * Values that cannot be minted (empty, URL-shaped, a non-family path — see
+ * `familyPhotoObjectPath`) are skipped silently rather than attempted.
+ *
+ * NEVER PERSISTED: the result is render-time state only. A signed URL in the
+ * database is a URL that stops working at an unannounced moment.
+ */
+export async function signedFamilyPhotoUrlsWithClient(
+  client: SupabaseClient,
+  storedValues: Array<string | null | undefined>,
+): Promise<Record<string, string>> {
+  const paths = familyPhotoMintPaths(storedValues)
+  if (paths.length === 0) return {}
+  const minted: Record<string, string> = {}
+  try {
+    const { data, error } = await client.storage
+      .from(PHOTO_BUCKET)
+      .createSignedUrls(paths, FAMILY_PHOTO_URL_TTL_SECONDS)
+    if (error) return {}
+    const urlByPath = new Map<string, string>()
+    for (const row of data ?? []) {
+      if (typeof row.path === 'string' && typeof row.signedUrl === 'string' && row.signedUrl !== '') {
+        urlByPath.set(row.path, row.signedUrl)
+      }
+    }
+    for (const value of storedValues) {
+      if (value === null || value === undefined || minted[value] !== undefined) continue
+      const path = familyPhotoObjectPath(value)
+      if (path === null) continue
+      const url = urlByPath.get(path)
+      if (url !== undefined) minted[value] = url
+    }
+  } catch {
+    return {}
+  }
+  return minted
+}
+
+/** The default-client wrapper (both render sites: /profile and /u/:handle). */
+export async function signedFamilyPhotoUrls(
+  storedValues: Array<string | null | undefined>,
+): Promise<Record<string, string>> {
+  return signedFamilyPhotoUrlsWithClient(supabase, storedValues)
 }
 
 /** Update the caller's bio (V2 ticket 02): <= 500 chars, validated pure. */
@@ -2573,9 +2704,15 @@ export async function updateInterests(userId: string, interests: string): Promis
  * applied (undefined at runtime before then — the renders are null-safe,
  * the pre-0016 status-column discipline; an explicit new-column list would
  * 42703 the load pre-apply and break the /new picker's designed empty
- * state). The kids SELECT policy is open to any authenticated user (the
- * public profile surface); a read failure (0011 not applied yet) throws,
- * and the caller renders a designed state.
+ * state).
+ *
+ * V9 ticket 11: `avatar_url` still arrives on these rows and NOTHING RENDERS
+ * IT — no kid photo appears anywhere in the app any more, so a caller that
+ * starts reading it for display is re-opening a closed decision (and, after
+ * migration 0038, the value is a private-bucket object PATH, not a URL, so an
+ * `<img src>` fed from it would simply break). The kids SELECT policy is gate
+ * 0040's (`kids_select_own_host_pinger_mod`); a read failure throws, and the
+ * caller renders a designed state.
  */
 export async function listKids(profileId: string): Promise<Kid[]> {
   const { data, error } = await supabase
@@ -2633,10 +2770,17 @@ export async function removeKid(profileId: string, kidId: string): Promise<void>
 
 /**
  * The patch shape for updateKidWithClient (V3 slice 6, ticket 09,
- * migration 0022): the kid's optional photo URL (normally written by
- * uploadKidPhoto, which owns the storage round-trip) + the "likes"
- * conversation starter (<= LIKES_MAX_LENGTH after trim — the UI pin; no
- * DB CHECK, the 0021 address lesson).
+ * migration 0022): the kid's optional photo URL + the "likes" conversation
+ * starter (<= LIKES_MAX_LENGTH after trim — the UI pin; no DB CHECK, the 0021
+ * address lesson).
+ *
+ * `avatar_url` IS KEPT BUT HAS NO CALLER (V9 ticket 11). The kid-photo upload
+ * that used to write it is gone and nothing renders it, so no app path sets it;
+ * it stays a writable field because the column stays (the human's
+ * "delete nothing" intent) and because the reversal this decision allows needs
+ * a place to write — the column is documented on `photoStorage.kidPhotoStoredRef`
+ * (after migration 0038 the value is an OBJECT PATH like
+ * `kid-photos/<uid>/kids/<kidId>`, never a URL).
  *
  * V8 ticket 10 adds the in-place row edit: first_name + age (the row used to
  * be Remove + re-add to change a name, which threw away the photo, the likes
@@ -2660,8 +2804,8 @@ export interface KidPatch {
 /**
  * Update one kid row (V3 slice 6, ticket 09, migration 0022), against an
  * injected client (the house *WithClient pattern — mockable): the owner's
- * kid editor's likes save (avatar_url is written directly by
- * uploadKidPhoto). The 0011 kids_update_own policy (owner-only) is the DB
+ * kid editor's row save (name, age, likes — `avatar_url` has no caller any
+ * more, see KidPatch). The 0011 kids_update_own policy (owner-only) is the DB
  * wall — a non-owner write is a silent RLS no-op (the 0014 lesson); the
  * owner is the only caller. The likes value is validated pure first (the
  * updateBio defense-in-depth pattern); an empty/null likes is a clear (the

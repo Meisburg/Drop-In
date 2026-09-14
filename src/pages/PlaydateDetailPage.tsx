@@ -2226,9 +2226,9 @@ export function PlaydateDetailPage() {
 
       {/* V3 slice 6 (ticket 09): the "Kids coming" line — the post's
           host-picked kids (the 0022 playdate_kids selection), below the
-          ping section. Names + ages ONLY — no photos (the kid-photo pin:
-          a kid photo renders only in the profile kids list, never on the
-          event line). Hidden when the load is null (0022 not applied —
+          ping section. Names + ages ONLY — no photos (the kid-photo pin,
+          V9 ticket 11: a kid photo renders NOWHERE any more, and never did on
+          this line). Hidden when the load is null (0022 not applied —
           the 42P01 is caught, the DB-not-applied discipline) or there is
           nothing to say (the 0-count "line" is not a state).
           V9 ticket 05: the line is AGES-FIRST, and it is also how a host who

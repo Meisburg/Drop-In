@@ -5,6 +5,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog'
 import { NotificationsSection } from '../components/NotificationsSection'
 import { useSessionContext } from '../components/SessionProvider'
 import { useCropStep } from '../components/useCropStep'
+import { useFamilyPhotoUrl } from '../components/useFamilyPhotoUrl'
 import { useUnsavedChangesGuard } from '../components/useUnsavedChangesGuard'
 import {
   addKid,
@@ -26,13 +27,15 @@ import {
   updateInterests,
   updateKid,
   uploadAvatar,
-  uploadKidPhoto,
+  uploadFamilyPhoto,
   validateBio,
+  validateFamilyPhotoFile,
   validateKid,
   validateKidLikes,
   validateInterests,
   type MyFollowing,
 } from '../lib/db'
+import { profileBlurbOrder } from '../lib/photoStorage'
 import {
   DEFAULT_RADIUS_MILES,
   partitionPostsByTime,
@@ -124,7 +127,9 @@ import { HostAvatar } from '../components/DropInCard'
  * V2 slice 2 (ticket 02): the comfort layer on the owner side —
  * - avatar: a photo upload (cropped by the user, resized to 512px, > 5 MB rejected
  *   before upload, stored at avatars/<uid>/avatar) with a live preview
- * - bio: a <= 500-char textarea (app cap + the 0011 DB backstop)
+ * - bio: a <= 500-char textarea (app cap + the 0011 DB backstop), RELABELLED
+ *   "About our family" by V9 ticket 11 (label + placeholder only — the same
+ *   column, the same cap, the same paragraph on /u/:handle)
  * - kids: structured rows (first name + age ONLY — the privacy pin), max 5
  *   app-enforced, and (V8 ticket 10) editable IN PLACE — the name, the age and
  *   the "likes" line are fields on the row itself, saved by the same submit,
@@ -134,6 +139,19 @@ import { HostAvatar } from '../components/DropInCard'
  *   disabling the inputs.
  * - a persistent nudge banner until photo + bio + kids are all present
  *   (the missing-items decision is the pure missingProfileItems)
+ *
+ * V9 ticket 11 (kid photos; folds ticket 08) changes two things here:
+ *  1. A KID ROW HAS NO PHOTO CONTROL ANY MORE (no upload, no preview, no
+ *     camera) and no kid photo renders on this page. Where the control was, a
+ *     sentence says so — removing it in silence is how a parent who uploaded
+ *     one concludes they broke something (T11).
+ *  2. "A photo of your family" arrives, directly under the avatar's card: one
+ *     optional image through the SAME crop/validate/encode pipeline, stored at
+ *     `profiles.family_photo_url` in the PRIVATE `kid-photos` bucket, read back
+ *     through a batched, best-effort signed URL that is never persisted. With
+ *     it, the page's optional blocks read family photo → "About our family" →
+ *     the kids list (the pure `profileBlurbOrder`; all three optional, and the
+ *     page must look finished with none of them).
  *
  * V8 ticket 09 (migration 0033): /profile gains the **Following** section —
  * the families and places this parent has bookmarked, with an Unfollow button
@@ -163,6 +181,14 @@ export function ProfilePage() {
   const [photoError, setPhotoError] = useState<string | null>(null)
   const [photoSaved, setPhotoSaved] = useState(false)
 
+  // V9 ticket 11 (folded ticket 08): the family photo — the OPTIONAL photo the
+  // parent adds instead of photos of each kid. Its own busy/error/saved triple,
+  // exactly like the avatar's above, because it is a second independent upload
+  // on the same page and one's failure must not read as the other's.
+  const [familyPhotoBusy, setFamilyPhotoBusy] = useState(false)
+  const [familyPhotoError, setFamilyPhotoError] = useState<string | null>(null)
+  const [familyPhotoSaved, setFamilyPhotoSaved] = useState(false)
+
   const [kids, setKids] = useState<Kid[] | null>(null)
   const [kidsError, setKidsError] = useState<string | null>(null)
   const [kidsBusyId, setKidsBusyId] = useState<string | null>(null)
@@ -174,19 +200,15 @@ export function ProfilePage() {
   // V3 slice 6 (ticket 09, migration 0022): the per-kid "likes" editor, now
   // part of the one submit (V8 ticket 10) together with the row's name + age.
   // kidDrafts seeds from the fresh rows (seedKidDrafts — an in-flight local
-  // value wins over a re-list, the seed-once discipline, per kid); kidPhoto* is
-  // the row's own upload path (uploadKidPhoto — the crop step + 512px/≤5MB
-  // avatars-bucket round-trip), whose handleRefreshKids re-list lands the new
-  // avatar_url on the rows' 40px circles.
+  // value wins over a re-list, the seed-once discipline, per kid).
+  //
+  // V9 ticket 11 removed the per-row kidPhoto* state that used to live here
+  // (busy/saved/error + the row the crop dialog was framing for): the row's
+  // photo control is gone, so there is no per-row upload to track and no
+  // re-list to run after one. The rows arrive once per load and once per add.
   const [kidDrafts, setKidDrafts] = useState<Record<string, KidFormValues>>({})
   const [kidWriteErrors, setKidWriteErrors] = useState<Record<string, string>>({})
   const [kidSavedId, setKidSavedId] = useState<string | null>(null)
-  const [kidPhotoBusyId, setKidPhotoBusyId] = useState<string | null>(null)
-  const [kidPhotoSavedId, setKidPhotoSavedId] = useState<string | null>(null)
-  const [kidPhotoError, setKidPhotoError] = useState<string | null>(null)
-  // Which kid row the crop step is currently framing a photo for. The kid-photo
-  // crop's confirm handler reads it, so the same hook serves every row.
-  const [kidPhotoFor, setKidPhotoFor] = useState<string | null>(null)
 
   // V3 slice 6 (ticket 09): the profile interests field (<= INTERESTS_MAX_LENGTH,
   // trim; the db layer validates too — the updateBio defense-in-depth
@@ -209,38 +231,16 @@ export function ProfilePage() {
   const [unfollowBusyId, setUnfollowBusyId] = useState<string | null>(null)
 
   /**
-   * V3 slice 6 (ticket 09): re-list the kids after a kid photo upload
-   * (the fresh rows carry the new avatar_url — the rows' 40px circles
-   * update). A failed re-list surfaces the page's kids error line (the
-   * designed state); the row's own "Photo updated." confirmation already
-   * landed.
+   * THE TWO CROP STEPS (photo-crop ticket 03) — the parent's own avatar, and
+   * (V9 ticket 11) the family photo. Two instances rather than one, because
+   * their confirm handlers do different things (the avatar refreshes the session
+   * so the header and the nudge banner update; the family photo refreshes it so
+   * the card's minted signed URL follows the new path); only one dialog can be
+   * open at a time anyway.
    *
-   * Declared HERE, above the crop step that calls it, rather than down with the
-   * other kid handlers: a function declaration is hoisted so it would still run
-   * from below, but referencing it before its declaration reads as accessing a
-   * value mid-initialization (which React Compiler flags, correctly).
-   *
-   * V8 ticket 10: the re-list seeds the ROW values and keeps every in-flight
-   * draft (seedKidDrafts), so a photo upload can no longer drop a half-typed
-   * name in the row beside it.
-   */
-  async function handleRefreshKids() {
-    if (userId === null) return
-    try {
-      const rows = await listKids(userId)
-      setKids(rows)
-      setKidDrafts((prev) => seedKidDrafts(rows.map(toKidRowValues), prev))
-    } catch (err) {
-      setKidsError(err instanceof Error ? err.message : 'Could not load your kids.')
-    }
-  }
-
-  /**
-   * THE TWO CROP STEPS (photo-crop ticket 03) — the parent's own avatar, and a
-   * kid's photo. Two instances rather than one, because their confirm handlers do
-   * different things (the avatar refreshes the session so the header and the nudge
-   * banner update; a kid photo re-lists the rows); only one dialog can be open at
-   * a time anyway.
+   * Between tickets 09 and 11 there was a THIRD step here, for a kid's row
+   * photo. It is gone with the control it served: no kid photo is uploaded,
+   * stored or rendered by the app any more.
    *
    * Declared with the other hooks and above every early return — the V6 regression
    * that blanked the detail page was exactly this mistake.
@@ -261,23 +261,26 @@ export function ProfilePage() {
     }
   })
 
-  const kidPhotoCrop = useCropStep(async (source, rect) => {
-    if (userId === null || kidPhotoFor === null) return
-    setKidPhotoBusyId(kidPhotoFor)
-    setKidPhotoError(null)
-    setKidPhotoSavedId(null)
+  const familyPhotoCrop = useCropStep(async (source, rect) => {
+    if (userId === null) return
+    setFamilyPhotoBusy(true)
+    setFamilyPhotoError(null)
+    setFamilyPhotoSaved(false)
     try {
-      await uploadKidPhoto(userId, kidPhotoFor, source, rect)
-      setKidPhotoSavedId(kidPhotoFor)
-      await handleRefreshKids()
+      await uploadFamilyPhoto(userId, source, rect)
+      // refresh() re-reads the profile row, so the card's stored path (and the
+      // signed URL minted from it) follows the upload. No re-list of anything
+      // else: this photo belongs to no kid row.
+      await refresh()
+      setFamilyPhotoSaved(true)
     } catch (err) {
-      setKidPhotoError(
-        err instanceof Error ? err.message : 'Could not upload that photo. Try again.',
+      setFamilyPhotoError(
+        err instanceof Error ? err.message : 'Could not upload your family photo. Try again.',
       )
     } finally {
-      setKidPhotoBusyId(null)
+      setFamilyPhotoBusy(false)
     }
-  })
+  }, validateFamilyPhotoFile)
 
   // Seed the whole form ONCE the profile loads; user typing wins after (the
   // seed-once guard is what keeps a refresh() from erasing an edit — and the
@@ -437,6 +440,25 @@ export function ProfilePage() {
 
   const dirty = savePlan !== null && !savePlan.empty
   const unsavedGuard = useUnsavedChangesGuard(dirty)
+
+  /**
+   * V9 ticket 11: the family photo's READ path and the optional-block decision.
+   *
+   * Both are called HERE, above the `loading` early return, for the reason the
+   * crop steps' own comment records: a hook after an early return is the V6
+   * regression that blanked the detail page.
+   *
+   * `blurb` is the pure decision for which optional profile blocks exist; the
+   * card below uses its `familyPhoto` member to know whether to offer "Add a
+   * photo" or "Change photo", and `/u/:handle` uses the same seam for the same
+   * three blocks. The signed URL itself comes from the hook (batched,
+   * best-effort, never persisted) and is null while it is in flight, when there
+   * is no photo, or when the mint failed — in all three cases the card shows no
+   * image and no error.
+   */
+  const blurb = profileBlurbOrder(profile, kids !== null && kids.length > 0)
+  const familyPhotoUrl = useFamilyPhotoUrl(profile?.family_photo_url)
+  const hasFamilyPhoto = blurb.includes('familyPhoto')
 
   if (loading) {
     return (
@@ -695,29 +717,6 @@ export function ProfilePage() {
     }
   }
 
-  /**
-   * V3 slice 6 (ticket 09, migration 0022): the row's kid photo upload — the
-   * ≤5MB gate and the decode run inside the crop step (photo-crop ticket 03), the
-   * user frames the photo, and the encoder produces the square; stored in the
-   * 'avatars' bucket at <uid>/kids/<kidId>, then kids.avatar_url points at the
-   * public URL. The handleRefreshKids re-list lands the fresh avatar_url (the
-   * row's 40px circle updates); the row's own "Photo updated." confirmation
-   * already landed. A failed upload (the bucket write policy, a rejected file)
-   * surfaces the page's kids photo error line; nothing is saved.
-   */
-  async function handleKidPhotoChange(kidId: string, e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0] ?? null
-    e.target.value = '' // allow re-picking the same file
-    if (userId === null || file === null || kidPhotoBusyId !== null) return
-    setKidPhotoError(null)
-    setKidPhotoSavedId(null)
-    // Which row this crop is for, BEFORE the dialog opens — the confirm handler
-    // reads it back.
-    setKidPhotoFor(kidId)
-    const error = await kidPhotoCrop.beginCrop(file)
-    if (error !== null) setKidPhotoError(error)
-  }
-
   // V2 ticket 02: the avatar upload — the ≤5MB gate and the decode run inside the
   // crop step (photo-crop ticket 03), the user frames the photo, and the encoder
   // produces the square; then the session state refreshes so the header + the nudge
@@ -732,9 +731,31 @@ export function ProfilePage() {
     if (error !== null) setPhotoError(error)
   }
 
+  /**
+   * V9 ticket 11 (folded ticket 08): the family photo upload — the SAME crop
+   * step the avatar uses, with the gate passed explicitly
+   * (`validateFamilyPhotoFile`, which delegates to the avatar rules), so a
+   * non-image or a file over 5 MB is refused before the decode and before the
+   * dialog opens. The parent frames it; the encoder produces the 512px square;
+   * the object lands at `<uid>/family/photo.jpg` in the PRIVATE bucket and
+   * `profiles.family_photo_url` stores the PATH (never a URL — T6).
+   *
+   * A failure reports in this card's own line, never as a crash and never mixed
+   * into the avatar's messages beside it.
+   */
+  async function handleFamilyPhotoChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null
+    e.target.value = '' // allow re-picking the same file
+    if (userId === null || file === null || familyPhotoBusy) return
+    setFamilyPhotoError(null)
+    setFamilyPhotoSaved(false)
+    const error = await familyPhotoCrop.beginCrop(file)
+    if (error !== null) setFamilyPhotoError(error)
+  }
+
   const missingLabels: Record<'photo' | 'bio' | 'kids', string> = {
     photo: 'a photo',
-    bio: 'a bio',
+    bio: 'a bit about your family',
     kids: 'your kids',
   }
   const kidsAtCap = kids !== null && kids.length >= MAX_KIDS_PER_PROFILE
@@ -776,7 +797,7 @@ export function ProfilePage() {
           <p className="font-semibold">Finish your profile</p>
           <p className="mt-1">
             Still to add: {missing.map((item) => missingLabels[item]).join(', ')}. Parents
-            trust families with a photo, a bio, and their kids listed.
+            like knowing who they’re meeting.
           </p>
         </div>
       ) : null}
@@ -804,7 +825,11 @@ export function ProfilePage() {
           )}
           <label className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700">
             {photoBusy ? 'Uploading…' : profile?.avatar_url ? 'Change photo' : 'Add a photo'}
+            {/* data-testid (V9 ticket 11): this page now has TWO file inputs (this
+                one and the family photo's below), so `input[type="file"]` no longer
+                identifies a control here. Specs target the testid. */}
             <input
+              data-testid="avatar-photo-input"
               type="file"
               accept="image/*"
               className="sr-only"
@@ -816,6 +841,64 @@ export function ProfilePage() {
         {photoError !== null ? <p className="mt-3 text-sm text-red-600">{photoError}</p> : null}
         {photoSaved ? <p className="mt-3 text-sm text-emerald-700">Photo updated.</p> : null}
         {avatarCrop.dialog}
+      </div>
+
+      {/* V9 ticket 11 (folded ticket 08): "A photo of your family" — the
+          optional family photo that REPLACES the kid-photo control ticket 08
+          reversed. It sits directly under the avatar's card because they are the
+          same kind of thing (one picture, cropped by the parent, ≤5MB) and
+          because the ticket pins the profile's block order: family photo →
+          "About our family" → the kids list, all three optional.
+
+          WHAT IS DELIBERATELY NOT HERE: a placeholder box, a "no photo yet"
+          sentence, or a disabled control. Every one of the three blocks is
+          optional and the page must look finished with none of them, so an
+          unset family photo is simply a heading, a sentence and the button.
+
+          The image renders only when a signed URL was minted (the hook above);
+          when the stored path exists but the mint failed, the button says
+          "Change photo" and no image appears — no error state, because a parent
+          can do nothing about a storage failure and nothing is actually broken
+          about their profile. */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-base font-semibold text-slate-900">A photo of your family</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Optional. One photo of your family — you, and whoever else you bring. It shows on
+          your profile, to signed-in families. Under 5 MB — it’s resized to a 512px square
+          for you.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          {familyPhotoUrl !== null ? (
+            <img
+              data-testid="family-photo"
+              src={familyPhotoUrl}
+              alt="Your family photo"
+              className="h-20 w-20 shrink-0 rounded-xl object-cover"
+            />
+          ) : null}
+          <label className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700">
+            {familyPhotoBusy
+              ? 'Uploading…'
+              : hasFamilyPhoto
+                ? 'Change photo'
+                : 'Add a family photo'}
+            <input
+              data-testid="family-photo-input"
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              disabled={familyPhotoBusy}
+              onChange={(e) => void handleFamilyPhotoChange(e)}
+            />
+          </label>
+        </div>
+        {familyPhotoError !== null ? (
+          <p className="mt-3 text-sm text-red-600">{familyPhotoError}</p>
+        ) : null}
+        {familyPhotoSaved ? (
+          <p className="mt-3 text-sm text-emerald-700">Family photo updated.</p>
+        ) : null}
+        {familyPhotoCrop.dialog}
       </div>
 
       {/* V8 ticket 10: ONE form, ONE save. Everything a parent edits — the
@@ -889,8 +972,15 @@ export function ProfilePage() {
         </div>
 
         <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          {/* V9 ticket 11 (folded ticket 08): the bio field is REFRAMED as
+              "About our family" — label and placeholder only. No new column, no
+              schema change: `profiles.bio` (0011, ≤500 chars, the DB CHECK as
+              the backstop) is the same field the /u/:handle paragraph reads.
+              The label is a real sentence a parent can answer ("who are you
+              people?") instead of the one-word "About", which is what the human
+              asked for: a little place to describe your family, optional. */}
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-slate-700">About</span>
+            <span className="text-slate-700">About our family</span>
             <textarea
               className={
                 'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
@@ -900,7 +990,7 @@ export function ProfilePage() {
               }
               value={draft?.bio ?? ''}
               onChange={(e) => editDraft({ bio: e.target.value }, 'bio')}
-              placeholder="A few words about your family (optional)"
+              placeholder="Who’s in your family, and what are you into? (optional)"
               maxLength={BIO_MAX_LENGTH}
               rows={3}
               disabled={saving || draft === null}
@@ -952,7 +1042,7 @@ export function ProfilePage() {
             />
           </label>
           <span className="text-xs text-slate-500">
-            Shown under your bio on your profile.
+            Shown with “About our family” on your profile.
           </span>
           {liveInterestsError !== null ? (
             <p className="text-sm text-red-600">{liveInterestsError}</p>
@@ -965,7 +1055,7 @@ export function ProfilePage() {
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="text-base font-semibold text-slate-900">Kids</h2>
           <p className="mt-1 text-sm text-slate-600">
-            First name, age, an optional photo, and a “likes” line (up to {MAX_KIDS_PER_PROFILE}).
+            First name, age, and a “likes” line (up to {MAX_KIDS_PER_PROFILE}).
             Edit a row and save the whole profile — nothing here saves on its own.
           </p>
           {/* V9 ticket 05 shipped the privacy promise in the UI; V9 ticket 10
@@ -993,18 +1083,57 @@ export function ProfilePage() {
               `{public}`), the object path is `<uid>/kids/<kidId>`, and
               `kids.avatar_url` stores the resulting public URL permanently —
               deleting the kid row does not delete the object, so every URL ever
-              handed out stays fetchable signed out. Narrowing `kids` (this
-              ticket's gate) does not touch any of that. Fixing it is a real
-              design change — a private bucket with signed URLs, or ticket 08's
-              removal of the kid-photo upload — and it is ESCALATED, not
-              silently promised here. So this sentence states the NAME gate,
-              exactly, and stops. (The photo still never renders on a card or an
-              event line: the kid-photo pin, untouched.) */}
+              handed out stays fetchable signed out. Narrowing `kids` (ticket
+              10's gate) does not touch any of that.
+              THE STORAGE HALF IS FIXED NOW, AND THIS SENTENCE STILL DOES NOT
+              MENTION IT (V9 ticket 11, which closed that exposure: the photos
+              moved to the private `kid-photos` bucket, owner-only, and 0038 +
+              scripts/migrate-kid-photos.mjs are what did it). The sentence stays
+              a statement about the NAME gate, for two reasons: it is the promise
+              this field's own policy can be held to, and photo claims on a
+              surface whose data comes from `kids` would make copy depend on a
+              storage state the client cannot read. The photo's fate is stated
+              once, in its own sentence below, in words that are true whether or
+              not the migration has been applied. (A kid photo still never renders
+              on a card or an event line, and now it renders nowhere at all: the
+              kid-photo pin, and then some.) */}
           <p className="mt-1 text-sm text-slate-600">
             A first name is optional — skip it and your kid still shows up by age
             (the cards say “ages 3–6”, never a name). A name is visible only to
             your family, the host of a drop-in where you listed them, the
             families who said they’re going, and our moderators.
+          </p>
+          {/* V9 ticket 11's ONE THING THE PARENT MUST BE TOLD (T11): the kid
+              photo control that used to sit on every row is GONE, and removing
+              it in silence would leave a parent who uploaded one unable to tell
+              whether they had broken something. So the row-level control's
+              absence is explained where the control used to be.
+
+              WHY THE SENTENCE STOPS WHERE IT DOES. It claims only what the APP
+              does — it collects no kid photo, and it displays none — which is
+              true before AND after migration 0038 and needs no migration to have
+              been applied. It deliberately does NOT say "the photo is private
+              now" or "nobody can see the old one": the storage closure is 0038's
+              job plus the coordinator's move of the existing objects, and copy
+              that promised privacy the storage layer might not yet deliver is
+              exactly the mistake ticket 10's review caught.
+
+              "NOTHING WAS DELETED" WAS REMOVED (review cycle 1, F9) and it was
+              the one word here that could become false: the IMAGES are kept —
+              the human's "keep the files" intent — but the PUBLIC OBJECT holding
+              each one IS deleted once its private copy verifies, so an absolute
+              "nothing was deleted" would be a lie in exactly the state the
+              coordinator is about to create. The replacement says what a parent
+              can act on and stays true in both states: the picture is kept, and
+              the public copy is on its way out. 0038's own phrasing — "the FILES
+              survive but their old public URLs cannot" — is the same fact in the
+              migration's words. */}
+          <p data-testid="kids-photo-notice" className="mt-2 text-sm text-slate-600">
+            A kid’s row is a first name (optional), an age and a likes line — there’s no
+            photo on a kid any more, and no kid photo is shown anywhere on Drop In. If you
+            added one before, it isn’t shown either: the public copy is being taken down, and
+            the picture itself is kept with your family. For a photo on your profile, add
+            “A photo of your family” above.
           </p>
 
           {kids === null ? (
@@ -1014,11 +1143,15 @@ export function ProfilePage() {
           ) : (
             <ul className="mt-3 flex flex-col gap-2">
               {kids.map((kid) => {
-                // V3 slice 6 (ticket 09, migration 0022): the row's 40px kid
-                // photo (the kid's avatar_url — the uploadKidPhoto public
-                // URL — or the initial-fallback circle, the profile
-                // avatar's pattern). The kid-photo pin: it renders ONLY in
-                // this kids list — never on cards or event lines.
+                // V3 slice 6 (ticket 09, migration 0022) put a 40px photo on this
+                // row — the kid's `avatar_url` or an initial-fallback circle.
+                // V9 TICKET 11 REMOVED IT, and the initial circle went with the
+                // photo: the row is first name + age + likes, exactly (the
+                // ticket's AC), and an initial standing in for a photo would be
+                // the "partial substitute" V9 ticket 10's own record rejects.
+                // NOTHING HERE MAY READ `kid.avatar_url` — no code path reaches a
+                // kid's avatar_url for display, and after migration 0038 the
+                // stored value is a private-bucket object PATH, not a URL.
                 //
                 // V8 ticket 10: the row is EDITABLE IN PLACE — first name, age
                 // and "likes" are fields on the row, saved by the one submit
@@ -1027,11 +1160,6 @@ export function ProfilePage() {
                 // below owns the 'First name' / 'Age' placeholders and two
                 // elements answering to the same placeholder is how a spec (and
                 // a screen reader) starts guessing.
-                // V9 ticket 05: a first name is optional, so `kid.first_name`
-                // can be NULL. One local, normalised name feeds the photo alt,
-                // the initial circle and the aria labels below — never a
-                // `null.charAt` crash, never "'s photo" and never "null".
-                const kidName = (kid.first_name ?? '').trim()
                 const rowValues = toKidRowValues(kid)
                 const values = kidDrafts[kid.id] ?? {
                   firstName: rowValues.firstName,
@@ -1049,20 +1177,6 @@ export function ProfilePage() {
                     data-testid="kid-row"
                     className="flex flex-wrap items-center gap-2 rounded-xl px-2 py-1.5"
                   >
-                    {kid.avatar_url ? (
-                      <img
-                        src={kid.avatar_url}
-                        alt={kidName === '' ? 'Your kid’s photo' : `${kidName}’s photo`}
-                        className="h-10 w-10 shrink-0 rounded-full object-cover"
-                      />
-                    ) : (
-                      <span
-                        aria-hidden
-                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-500"
-                      >
-                        {(kidName.charAt(0) || '?').toUpperCase()}
-                      </span>
-                    )}
                     <input
                       data-testid="kid-name"
                       aria-label="Kid first name"
@@ -1115,25 +1229,6 @@ export function ProfilePage() {
                         </span>
                       ) : null}
                     </div>
-                    <label
-                      className={
-                        'shrink-0 cursor-pointer rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 ' +
-                        (kidPhotoBusyId === kid.id ? 'opacity-50' : '')
-                      }
-                    >
-                      {kidPhotoBusyId === kid.id
-                        ? 'Uploading…'
-                        : kid.avatar_url
-                          ? 'Change photo'
-                          : 'Add photo'}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="sr-only"
-                        disabled={kidPhotoBusyId !== null}
-                        onChange={(e) => void handleKidPhotoChange(kid.id, e)}
-                      />
-                    </label>
                     <button
                       type="button"
                       data-testid="kid-remove"
@@ -1148,9 +1243,6 @@ export function ProfilePage() {
                     </button>
                     {kidSavedId === kid.id ? (
                       <span className="text-xs text-emerald-700">Saved.</span>
-                    ) : null}
-                    {kidPhotoSavedId === kid.id ? (
-                      <p className="w-full text-xs text-emerald-700">Photo updated.</p>
                     ) : null}
                     {rowError !== null ? (
                       <p className="w-full text-sm text-red-600">{rowError}</p>
@@ -1210,11 +1302,7 @@ export function ProfilePage() {
               add another.
             </p>
           ) : null}
-          {kidPhotoError !== null ? (
-            <p className="mt-2 text-sm text-red-600">{kidPhotoError}</p>
-          ) : null}
           {kidsError !== null ? <p className="mt-2 text-sm text-red-600">{kidsError}</p> : null}
-          {kidPhotoCrop.dialog}
         </div>
 
         {/* THE ONE SUBMIT (V8 ticket 10). Disabled while nothing has changed —

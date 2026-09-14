@@ -31,7 +31,18 @@ test('marker saves a bio + kid row, sees them on /u/<handle>, nudge stays for th
   // that changed), so this spec's copy assertion follows the button that
   // really exists now. The behaviour asserted is identical: the bio is saved
   // and the page says so.
-  await page.getByPlaceholder('A few words about your family (optional)').fill(bio)
+  //
+  // V9 ticket 11 (folded ticket 08) RELABELLED the field: it is "About our
+  // family" now, and the placeholder follows it: the field reads "Who's in your
+  // family, and what are you into? (optional)" (it used to be "A few words about
+  // your family (optional)"). The locator below is the ONLY change in this file —
+  // same field, same column, same ≤500-char cap, same save, same render on
+  // /u/<handle>. The field is located by its placeholder (the house pattern for a
+  // textarea with no testid) and the new placeholder is the string the /profile
+  // page renders.
+  await page
+    .getByPlaceholder('Who’s in your family, and what are you into? (optional)')
+    .fill(bio)
   await page.getByRole('button', { name: 'Save profile', exact: true }).click()
   await expect(page.getByText('Profile saved.')).toBeVisible()
 

@@ -56,6 +56,25 @@ export interface Profile {
    */
   interests?: string | null
   /**
+   * The family photo (V9 ticket 11, folded ticket 08, migration 0038):
+   * `profiles.family_photo_url`, the owner's own optional photo of their
+   * family, uploaded through the avatar pipeline (square crop, 512px, ≤5MB).
+   *
+   * IT HOLDS AN OBJECT PATH, NOT A URL, despite the column's name — e.g.
+   * `kid-photos/<uid>/family/photo.jpg`. The image lives in the PRIVATE
+   * `kid-photos` bucket (signed-in families may read it; nobody anonymous
+   * can), and a signed URL expires, so a persisted URL would break on a timer.
+   * The render sites mint one from this path via `signedFamilyPhotoUrls`
+   * (batched, best-effort, never written back). `photoStorage.ts` owns the
+   * rules; `familyPhotoObjectPath` refuses anything that is not a family path,
+   * so this value can never be used to mint a kid photo.
+   *
+   * Optional: absent until the live project is past 0038 (undefined at
+   * runtime — the renders are null-safe, the pre-0016 status-column
+   * discipline), and null/absent on any family that has not added one.
+   */
+  family_photo_url?: string | null
+  /**
    * The retention cursor (V3 slice 9, ticket 04, migration 0024): the
    * feed retention banner counts going_pings created after this
    * instant on the profile's OWN posts. Restamped by the app (FeedPage
@@ -298,6 +317,14 @@ export interface MembershipWithNeighborhood extends Membership {
  * both are optional fields: absent until the live project is past 0022
  * (undefined at runtime — the renders are null-safe, the pre-0016
  * status discipline).
+ *
+ * V9 ticket 11 (kid photos): `avatar_url` remains on the row and is NO LONGER
+ * RENDERED ANYWHERE. The upload control is gone, no kid photo appears on any
+ * surface, and after migration 0038 the stored value is a private-bucket
+ * OBJECT PATH (`kid-photos/<uid>/kids/<kidId>` — photoStorage.kidPhotoStoredRef)
+ * rather than a public URL, kept so the images the human asked to keep are
+ * still reachable if the decision is ever reversed. An `<img src={kid.avatar_url}>`
+ * is therefore both a re-opened privacy decision and a broken image.
  */
 export interface Kid {
   id: string
@@ -317,12 +344,15 @@ export interface Kid {
   first_name: string | null
   age: number
   /**
-   * The kid's photo (V3 slice 6, ticket 09, migration 0022): the public
-   * URL of the client-resized 512px image in the 'avatars' bucket at
-   * <uid>/kids/<kidId> (the 0011 owner-scoped write policy's documented
-   * coverage — the 0022 header). Shown ONLY in the profile kids list
-   * (the /u/:handle 40px render) — never on cards or event lines (the
-   * kid-photo pin, human-approved 2026-09-09).
+   * The kid's photo: the object path of the client-resized 512px image.
+   *
+   * V3 slice 6 (ticket 09, migration 0022) put it in the PUBLIC 'avatars'
+   * bucket at `<uid>/kids/<kidId>` as a public URL — which V9 ticket 10's
+   * review proved was anonymously listable and fetchable, the exposure V9
+   * ticket 11 closes. The class now lives in the private `kid-photos` bucket
+   * (owner-only read) and this value is the object path written by
+   * `scripts/migrate-kid-photos.mjs`; READ IT FOR NOTHING (the AC: no code path
+   * reaches a kid's `avatar_url` for display).
    */
   avatar_url?: string | null
   /**

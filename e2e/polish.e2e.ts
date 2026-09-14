@@ -179,8 +179,11 @@ test('(a) a kid row edited in place (name + age) saves with the one submit and s
   await page.getByRole('button', { name: 'Save profile', exact: true }).click()
   await expect(page.getByTestId('profile-save-note')).toHaveText('Profile saved.')
 
-  // The write landed on the SAME row (the in-place pin: no delete + insert,
-  // so the kid's photo and its "who's coming" rows survive the edit).
+  // The write landed on the SAME row (the in-place pin: no delete + insert, so
+  // the row's identity and its "who's coming" rows survive the edit). This used
+  // to say "the kid's photo ... survive[s] the edit" too; V9 ticket 11 removed
+  // kid photos entirely, so the row-identity pin is what remains — and it is
+  // what this assertion always actually proved.
   const stored = await readKid(kidId)
   expect(stored).toEqual({ id: kidId, first_name: after, age: KID_AGE_AFTER })
 
@@ -282,7 +285,10 @@ test('(c) typing on /profile and following an app link asks before dropping it',
   await page.goto('/profile')
   await settleOnRoute(page, '/profile')
 
-  const bio = page.getByPlaceholder('A few words about your family (optional)')
+  // V9 ticket 11: the bio field is relabelled "About our family" and its
+  // placeholder follows — the ONLY change in this test, and it is a locator:
+  // the same field, the same column, the same guard behaviour asserted below.
+  const bio = page.getByPlaceholder('Who’s in your family, and what are you into? (optional)')
   const typed = `e2e unsaved ${Math.floor(Date.now() / 1000)}`
   const original = await bio.inputValue()
   await bio.fill(typed)
@@ -310,9 +316,9 @@ test('(c) typing on /profile and following an app link asks before dropping it',
   // was before (a re-open of /profile proves it: the typed text is gone).
   await page.goto('/profile')
   await settleOnRoute(page, '/profile')
-  await expect(page.getByPlaceholder('A few words about your family (optional)')).toHaveValue(
-    original,
-  )
+  await expect(
+    page.getByPlaceholder('Who’s in your family, and what are you into? (optional)'),
+  ).toHaveValue(original)
 })
 
 test('(d) a dismissed share sheet plus a failed copy says so, with the URL to select', async ({

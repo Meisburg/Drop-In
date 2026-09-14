@@ -8,9 +8,10 @@ import type { CropRect } from '../lib/photoCrop'
  * THE REUSABLE CROP STEP (photo-crop ticket 03).
  *
  * Decoding, the dialog, the bitmap's lifetime and the busy flag are identical at
- * all three upload sites (`uploadAvatar` from onboarding and from the profile,
- * and `uploadKidPhoto`), so they live here and those sites supply only what to do
- * with the result.
+ * all of the upload sites (`uploadAvatar` from onboarding and from the profile,
+ * and — V9 ticket 11 — `uploadFamilyPhoto`; between tickets 09 and 11 there was
+ * a fourth, `uploadKidPhoto`, which that ticket removed), so they live here and
+ * those sites supply only what to do with the result.
  *
  * ONE DECODE, TWO CONSUMERS: the dialog previews the bitmap and the encoder crops
  * the same bitmap, so a 12MP phone photo is decoded once rather than once per
@@ -24,6 +25,17 @@ import type { CropRect } from '../lib/photoCrop'
  */
 export function useCropStep(
   onConfirm: (source: ImageBitmap, rect: CropRect) => Promise<void> | void,
+  /**
+   * The pre-decode file gate. Defaults to the avatar rules, which is what every
+   * site used before V9 ticket 11 needed to NAME the gate it was relying on:
+   * the family photo passes `validateFamilyPhotoFile` (the same function, one
+   * delegation deep) so the requirement "the family photo reuses the avatar
+   * rules" is visible at the call site rather than implied by this default.
+   *
+   * It must be a STABLE reference (a module-level function, not an inline
+   * arrow): it is a dependency of `beginCrop`.
+   */
+  validateFile: (file: File) => string | null = validateAvatarFile,
 ): {
   /** Decode and open the crop step. Returns a message to show, or null. */
   beginCrop: (file: File) => Promise<string | null>
@@ -51,7 +63,11 @@ export function useCropStep(
     // functions any more: by the time those run the file has been decoded, so
     // there is no File left to measure. One gate, in one place, running BEFORE the
     // decode and before the dialog — so a rejected file never costs either.
-    const fileError = validateAvatarFile(file)
+    //
+    // V9 ticket 11: the gate is INJECTED (defaulting to the avatar rules) so the
+    // family photo's call site can name the rule it relies on; see the parameter's
+    // own note above.
+    const fileError = validateFile(file)
     if (fileError !== null) return fileError
     try {
       /*
@@ -99,7 +115,7 @@ export function useCropStep(
     } catch {
       return 'Could not read that image. Try a different photo.'
     }
-  }, [])
+  }, [validateFile])
 
   const cancel = useCallback(() => {
     const abandoned = pendingRef.current

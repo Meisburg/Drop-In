@@ -96,7 +96,16 @@ test('marker uploads an avatar, sees the 40px round avatar on the feed card + /u
   // Upload (the /profile photo card). The ≤5MB gate and the decode run inside the
   // crop step (this file is far under 5 MB), then the crop dialog opens on the
   // decoded image. Accepting its default frame is one tap.
-  await page.locator('input[type="file"]').setInputFiles({
+  //
+  // V9 ticket 11 CHANGED THE SELECTOR, and this is the only assertion change in
+  // this file. It used to be the bare `page.locator('input[type="file"]')`, which
+  // worked because /profile had exactly ONE file input (the kid-photo controls
+  // lived on kid rows, and this spec runs with none). Ticket 11 removes the kid
+  // controls and ADDS a family-photo input, so a bare file-input locator now
+  // matches two elements and Playwright's strict mode fails the upload. The
+  // testid names the same control this spec always drove; nothing about what it
+  // asserts changed.
+  await page.getByTestId('avatar-photo-input').setInputFiles({
     name: 'avatar.png',
     mimeType: 'image/png',
     buffer: png,

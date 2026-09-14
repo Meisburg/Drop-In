@@ -165,3 +165,48 @@ kid photo has been told (V9 ticket 05's copy) that a name is gated, and ticket
 10's corrected copy says nothing about photos. Once this ticket lands, the kid
 photo is gone from the app; the honest thing is to say so where the control used
 to be, rather than removing it in silence.
+
+**2026-09-13 — BUILT (builder report, review cycle 1 fixes applied; NOT applied to
+the live project — the coordinator applies 0038 and runs the move).** Status of
+each half, and the deviations a reviewer or a future reader needs:
+
+- **The client half is shipped and green**: no kid photo is uploaded or rendered
+  anywhere, the family photo + "About our family" are in, and the parent is told
+  where the control went. The storage half is written and gated but **not
+  applied**: `supabase/migrations/0038_kid_photo_storage.sql` and
+  `scripts/migrate-kid-photos.mjs` (coordinator-run, `--yes`-gated, idempotent,
+  verify-then-delete).
+- **DEVIATION FROM TICKET 08 (recorded because 08 asked for it explicitly): the
+  family photo does NOT live under 0011's `avatars_owner_*` policies, and 0011
+  does NOT cover a `family/` folder in the sense 08 meant.** Those policies are
+  scoped `bucket_id = 'avatars'`, so a `<uid>/family/…` object in THAT bucket
+  would have been covered by the same first-folder check — but ticket 11's
+  confirmed decision puts the family photo in the private `kid-photos` bucket
+  instead, where 0038 gives it its own five policies (owner-scoped writes,
+  `authenticated` read for the `family` class, owner-only read for the `kids`
+  class). Putting it in the public bucket was the one option that would have
+  re-created the exposure under a new name.
+- **THE FAMILY PHOTO IS NOT PUBLIC — and that is a decision, not an oversight.**
+  Ticket 08's text offered "it is the parent's own image and may be public like
+  an avatar — say which, and why". It is **private + readable by any signed-in
+  family** (`familyPhotoVisibility`): a "photo of your family" will usually DEPICT
+  THE CHILDREN, `/u/:handle` is a signed-in surface anyway, and a public object
+  would be anonymous-fetchable exactly like the kid photos this ticket moved. The
+  user copy says "It shows on your profile, to signed-in families."
+- **RESIDUAL, accepted and recorded (not fixed here):** `kid_photos_read_family`
+  is `to authenticated` with no owner check, and `profiles_select_authenticated`
+  is `using (true)` — so **any account that can sign up can read every family's
+  family photo**. That is ticket 11's accepted class (the photo is shown on a
+  profile page whose whole audience is signed-in families), and the copy is honest
+  about it ("to signed-in families"); but signup is the only barrier, and a
+  stricter rule (shared drop-in / follow / host relationship) is a future ticket,
+  not this one.
+- **Second residual, stated so nobody over-reads the closure:** the `avatars`
+  objects are stored with `cache-control: max-age=3600`, so after the move the CDN
+  may keep serving a deleted public URL for up to an hour. The closure is complete
+  at the origin immediately and at every edge within the hour; the script attempts
+  a purge and reports refusals. Probes must cache-bust (`?cb=…`) — 0038's P7 note
+  has the exact commands.
+- **`kids.avatar_url` (T7) is REWRITTEN, not cleared**, to the bucket-qualified
+  object path `kid-photos/<uid>/kids/<kidId>`; rows whose private copy the script
+  could not verify are left alone and reported as a count.
