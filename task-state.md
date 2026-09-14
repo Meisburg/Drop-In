@@ -9,7 +9,7 @@
 - **Phase: V4 COMPLETE (2026-09-11).** Human enabled Google in the Supabase project; the blocker is cleared and the round-trip is verified — see the closure evidence below.
 - **Active slice:** none — **V8 IS COMPLETE TO ITS HUMAN BOUNDARY (2026-09-13).** Tickets 01–10 are shipped and verified (`dd0642e` … `135c401`), 11's schema half is live with its UI deliberately held, and 12's instrument is delivered. Migrations **0028–0034 are ALL APPLIED LIVE** and probed. Final gate on the committed tree: build exit 0 · **655/655 unit (20 files)** · **e2e 48/48** · lint 0 errors · both PWA verifier scripts green · live DB swept back to 2 founders. **Next action (human):** (a) **push — mostly done (2026-09-12)**: keypair → `supabase secrets set` → `send-push` deployed → wall verified (service-role 200, anon 401) → `VITE_VAPID_PUBLIC_KEY` added to Vercel (Config/public, it's a public key) → `a97892e` pushed, live bundle `index-COPgHOaF.js` verified to carry the key (1 occurrence). **Remaining:** the Android phone test (`docs/push-setup.md`). **Schedule DONE (2026-09-12):** no dashboard Schedules tab on this plan (DOM-checked) and no `vault` → pg_cron+pg_net enabled, job `send-push-every-5-minutes` live (jobid 3); key injected via `.scratch/cron-schedule-send-push.mjs` (0600 temp file → CDP SQL API, never in a terminal/chat); 12:45 tick fired (job "succeeded", function booted at 05:45:00 in fn logs) and the drain correctly stamped the 2 pre-existing rows "no subscription" (`push_subscriptions` = 0 until the phone opts in). pg_net's fixed 5s response timeout means `_http_response` shows `timed_out` on cold-start ticks — cosmetic, delivery completes server-side; (b) **email verification**: flip Supabase's "Confirm email" and I land the chip + "Check your inbox" screen + the e2e harness change (`docs/email-verification-setup.md`); (c) **density**: run the first cohort (`.scratch/v8/density-log.md`). **V8 IS NOW ON Vercel (2026-09-12)** — `42dfb2a..a97892e` pushed; the live site serves `index-COPgHOaF.js` with the VAPID public key inlined, so new opt-ins subscribe with the bound key. Open *decisions*, not defects: the **logo mark** (V7 settled colour only) and the beta's SMTP setting.
 - **Remaining human items:** the three in the Next action above. The e2e marker sweep ran clean again (168 markers, 0 founder overlap); live DB = 2 founders only.
-- **V9 — the wife's feedback batch: the authorized batch PLUS two review-found tickets (opened 2026-09-13).** Spec + tickets in `.scratch/v9/`. **Tickets 01, 03, 04, 05 and 10 are COMPLETE** (commits `e493e08`, `96bb96e`, `73c2f5e`, `c9b4836`, `6ae3f2b`) — `/new` leads with the place picker and the neighbourhood is no longer a question (01), the post page is three decisions behind one "More options" (03), the feed holds nothing that has ended and links to the archive (04), a card leads with the kids' ages while names are optional (05), and **a child's name now has a real gate** (10). **Migrations 0035, 0037 and 0040 are APPLIED LIVE and probed.** Final gate on the committed tree: build exit 0 · **757/757 unit (21 files)** · **e2e 66/66** · lint 0 errors · live DB swept back to 2 founders. **Two items now need the human:** (a) **ticket 11** (kid photos sit in a PUBLIC storage bucket — anonymously listable and fetchable; ticket 08 is folded into it) is `ready-for-human` on one decision about the already-uploaded files — this is the highest-priority open item; (b) the remaining queue: **02 is deferred** (the human chose to build 03 against the EXISTING time control rather than ship 02's unconfirmed badge-suppression judgment call), 06 wants a one-line confirmation, and **09 needs an explicit yes** before dispatch. Details, evidence and the full ticket table are in the **V9** section below.
+- **V9 — the wife's feedback batch: the authorized batch PLUS two review-found tickets (opened 2026-09-13).** Spec + tickets in `.scratch/v9/`. **Tickets 01, 03, 04, 05, 10 and 11 are COMPLETE** (commits `e493e08`, `96bb96e`, `73c2f5e`, `c9b4836`, `6ae3f2b`, `cbabc6e`) — `/new` leads with the place picker and the neighbourhood is no longer a question (01), the post page is three decisions behind one "More options" (03), the feed holds nothing that has ended and links to the archive (04), a card leads with the kids' ages while names are optional (05), **a child's name has a real gate** (10), and **children's photos have left the public storage bucket — the files survive privately, the old public URLs are dead, and a private family photo replaces them** (11, which also folds in ticket 08). **Migrations 0035, 0037, 0038 and 0040 are APPLIED LIVE and probed.** Final gate on the committed tree: build exit 0 · **782/782 unit (23 files)** · **e2e 71/71** · lint 0 errors · live DB swept back to 2 founders. **What remains is the human's queue, not the batch:** **02 is deferred** (the human chose to build 03 against the EXISTING time control rather than ship 02's unconfirmed badge-suppression judgment call), 06 wants a one-line confirmation, and **09 needs an explicit yes** before dispatch. Two residuals are recorded, not hidden: the storage closure has a ≤1h CDN edge tail, and any account that signs up can read every *family* photo (signup is the only barrier). Details in the **V9** section below.
 
 **Push pipeline — coordinator verification (2026-09-13, after the human's step-3 run).** Independently confirmed through the Management API and live probes: `send-push` is **ACTIVE** with `verify_jwt: true`; the three VAPID secrets exist; the **anon** bearer gets `401 {"error":"send-push is service-role only"}` (a 404 would have meant "not deployed"); the LIVE bundle carries the VAPID public key and no private half, so deployed opt-ins are **bound**. The DB half is live too: a real ping wrote a `ping_received` row and deleting the post wrote a `cancelled` row via the BEFORE DELETE trigger. **Step 4 is provably NOT done:** `pg_cron`/`pg_net` are not installed, and those two queued rows kept `sent_at` NULL across six minutes of polling — nothing invokes the function. The human's earlier service-role check returned 200 but **predates** those rows (12:16 UTC), so the sender has still never processed a queued row. Read from the code, that case is safe: a row whose recipient has no subscription is stamped `sent_at` with `error: 'no subscription'` and counted as skipped (`index.ts:259-264`) — no oldest-first starvation risk. Both rows are left in place as the canary for the moment the schedule exists.
 
@@ -324,13 +324,13 @@ exit 0 · **655/655 unit (20 files)** · e2e 48/48 per the HANDOFF · migrations
 | 08 | Profile: no kid photos; a family photo + about-us | **FOLDED INTO 11 (2026-09-13)** — its kid-photo reversal and its family-photo feature both run through the same storage bucket, and ticket 10's review proved that bucket is publicly readable, so the two cannot ship apart. `0038` carried over to 11 |
 | 09 | Messages: parent-to-parent on a shared drop-in | `ready-for-human` — **do NOT dispatch without an explicit yes** |
 | 10 | Privacy: kid names are readable by every signed-in parent | **complete — `6ae3f2b`**; **0040 APPLIED LIVE + probed** (amended in place and re-applied in review cycle 1); 757/757 unit, e2e 66/66, lint 0 errors |
-| 11 | Kid photos: the public storage exposure; family photo instead | **FILED 2026-09-13** (out of ticket 10's review, on the human's instruction; **folds in ticket 08**) — `ready-for-human`: one decision on the already-uploaded files. Needs **0038** |
+| 11 | Kid photos: the public storage exposure; family photo instead | **complete — `cbabc6e`**; **0038 APPLIED LIVE + probed**, objects migrated; 782/782 unit, e2e 71/71, lint 0 errors |
 
-**Migration ledger:** 0035–0039 were RESERVATIONS in queue order. **0035, 0037 and
-0040 are now APPLIED LIVE** (all probed; 0040 was amended in place and re-applied
-in review cycle 1). 0036 stays reserved for the deferred ticket 02; **0038 moved
-from ticket 08 to ticket 11** when 08 folded into it; 0039 remains reserved for
-ticket 09. Whatever is applied is what this file records.
+**Migration ledger:** 0035–0039 were RESERVATIONS in queue order. **0035, 0037, 0038
+and 0040 are now APPLIED LIVE** (all probed; 0040 was amended in place and
+re-applied in review cycle 1). 0036 stays reserved for the deferred ticket 02;
+0039 remains reserved for ticket 09. Whatever is applied is what this file
+records.
 
 ### V9 decision taken this session — ticket 02 vs ticket 03 (2026-09-13)
 
@@ -661,7 +661,63 @@ they're going" is **one self-service tap deep** (`going_pings` INSERT is
 profile, not one household (no household model exists); and the RLS is the
 boundary while the `/u/:handle` gate is UX.
 
-### V9 ticket 11 — FILED (kid photos; the public storage exposure)
+### V9 ticket 11 — evidence (complete, `cbabc6e`) — kid photos left the public bucket
+
+**THE EXPOSURE, measured before and after (my own probes, not the builder's
+claims).** Kid photos sat in `avatars` (`public = true`, public-read policy) at
+`<uid>/kids/<kidId>`. With only the anon key from the client bundle: the bucket
+listed families, one `<uid>/kids` prefix returned **3 kid-photo objects**, and a
+real legacy URL answered **HTTP 200 with 46,998 bytes** — no account, no URL
+knowledge, and the stored paths are permanent. Ticket 10 gated the **column**
+(a stranger's `kids` read 6 rows → `[]`); it could not gate the **file**.
+
+| Claim | How it was checked |
+|---|---|
+| The bucket is private and the decision is enforced | 0038 applied live (HTTP 201): `kid-photos` exists with `public = false`, **5** path-scoped policies, `profiles.family_photo_url` present; `avatars` still `public = true` and untouched; **0040's kid-name gate policies verified intact** (the `kid_owns`/`own_host_pinger_mod` policies still exactly as ticket 10 left them) |
+| The files moved, and were NOT lost | the script: read → upload → **SHA-256 + length read-back** → only then delete the public original. `copied=3 failed=0`; END STATE **`public_kid_objects: 0, private_kid_objects: 3, legacy_urls: 0, private_refs: 3`**, bucket private. Parent avatars: 2 objects, still in `avatars`, still public |
+| The exposure is CLOSED (the same probe that found it) | the legacy URL now answers **HTTP 400** (was 200/46,998 bytes), and the anonymous listing returns **0** kid-photo objects (was 3) |
+| No kid photo is uploaded or rendered any more | `kidPhotoPath`/`kidPhotoStoredRef` have **no runtime caller** outside the seam + its test (my own grep); the kid editor has no photo control; `/u/:handle` rows are name · age · likes; a kid row renders no `<img>` **even with `avatar_url` set** (spec, green) |
+| `kids.avatar_url` was kept, not destroyed | rewritten to the bucket-qualified **object path** `kid-photos/<uid>/kids/<kidId>` — never a URL (the old one is dead by design, a signed one expires); `legacy_urls: 0`, `private_refs: 3`; `comment on column` records the decision on the live schema |
+| The family photo cannot recreate the exposure | it is **NOT public** (signed-in families only, signed URL minted per render in ONE batched, best-effort call, never persisted — the column holds a path), and the renderer **refuses kid-class values** (unit-tested). The reason: a family photo usually depicts the children |
+| **Gate (coordinator, independent)** | build exit 0 · **782/782 unit (23 files)** · kid-photo-exposure spec **6/6** · **e2e 71/71, exit 0** · lint **0 errors** (39 warnings = baseline) |
+| Pre-apply pivots, captured first-hand | `Still listable: 3 object(s)` (the anon walk), `Bucket not found` (the private-bucket write), and the family-photo round trip failing on the missing bucket/column — 3 red, and the non-pivot tests green in the same run |
+
+**Review, in the order the human asked for it — the review ran BEFORE the live
+apply.** The reviewer was asked to rule on whether the script should be executed
+at all, and returned **"SAFE TO RUN as written"** with the blast radius
+live-proven to be exactly the 3 kid-class objects (no `<uid>/avatar`, no other
+bucket), verify-before-delete clean with no bad interleaving, idempotency and the
+post-crash repair path clean, and the service-role-key handling clean on every
+output path (argv, env, file, log, error, stack). Its **10 findings were fixed
+before the apply**, and two of them were defects in the very properties that make
+the move safe: `uploadObject` never sent `x-upsert` (the documented repair path
+could only 409 and leave an object **publicly readable forever**), and the script
+never checked `kid-photos.public === false` (the property the whole closure rests
+on — now a refuse-before-any-write guard plus a post-move anonymous probe of a key
+that really exists). Also fixed: the `avatar_url` rewrite is gated on
+*verification* rather than mere existence, the source's own byte length is
+asserted against `storage.objects.metadata`, the report counts **rows** not
+statements, the spec's vacuous "old URL must fail" assertion is labelled
+shape-only with the real proof moved to a coordinator probe against a real key,
+the stranger's list check asserts **both** branches, and five stale in-file
+records were corrected.
+
+**Residuals, recorded rather than papered over:**
+
+1. **The CDN tail.** Supabase exposes no documented purge endpoint, so the closure
+   is complete at the **origin** immediately and at every **edge** within the
+   objects' `max-age=3600` hour. The script attempts the purge, counts the
+   refusals, and both headers say so instead of claiming a purge. My own probe
+   still got a 400 immediately (no cache hit), so the tail did not bite here.
+2. **The family-photo read class.** `kid_photos_read_family` is `to authenticated`
+   with no owner check, and `profiles_select_authenticated` is `using (true)` — so
+   **any account that signs up can read every family photo**, and a family photo
+   usually depicts children. The copy the parent reads ("shows on your profile, to
+   signed-in families") is honest and promises nothing more, but **signup is the
+   only barrier**; a stricter rule is a future ticket. This is the residual the
+   human accepted with the confirmed decision.
+
+### V9 ticket 11 — provenance note (the ticket is now built; this is the file record)
 
 Filed on the human's instruction out of ticket 10's review cycle, **folding in
 ticket 08** (which the human chose over leaving the photo work split in two
