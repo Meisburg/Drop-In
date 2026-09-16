@@ -5,6 +5,7 @@
 
 ## Current position
 
+- **V11 — the founder's V11 feedback batch (opened 2026-09-16, on the live V10 app).** Spec + 6 tickets in `.scratch/v11/` (order 01→02→03→04→05→06; 06 depends on 04). **NO migrations in the batch.** Per-ticket gate: `npm run build && npm run test`. Dev-agent pane was lost to a herdr server restart and was REBUILT 2026-09-16 (tab `w4:tN`, pane `w4:p11`, agent `v11dev` — see the V11 section). **Ticket 01 is COMPLETE (`aa7e991`); ticket 02 is next.**
 - **V10 — "Post again" and friends (opened 2026-09-14, the founder's fast-recall batch).** Spec + tickets in `.scratch/v10/`, origin: the /post audit (the V9-t03 form is already near-minimal; the remaining cost is RECALL — nothing remembers the whole last post, kids sit behind the disclosure, "tomorrow at 10" is a fiddly date field). **ALL THREE TICKETS COMPLETE — DEPLOYED AND LIVE-PROBED (2026-09-14):** **01 Post-again clone (commit `ae69cdd`)**, **02 kids surfaced above the disclosure (commit `f688ab0`)**, **03 sentence prefill (code `ebb6bca` + live-probe fixes `b9c6d7f`)**. Final gate on the committed tree: build exit 0 · **824/824 unit (24 files)** · **e2e 76/76** · lint 0 errors. **NO migrations in the batch.** **Ticket 03 IS LIVE:** `prefill-playdate` ACTIVE (v4), secrets set (OpenAI `gpt-4o-mini`, key rode a 0600 temp file, shredded), probes all green — real JWT → 200 with correct extraction (relative date, 30-min grid, chips, ageHint), kid-name sentence → place+time only (no echo), anon/garbage/absent → 401, oversize/bad-shape → 400. **Two recorded deviations, both probe-evidenced:** (1) deployed `--no-verify-jwt` because the platform's ES256 wall rejected the very token supabase-js accepts (the function's own `auth.getUser` wall is the gate — all four unauthorized probes 401); (2) the per-instance rate limit is best-effort under cold starts (12 rapid probes all 200) — acceptable for a bound, the real cost cap is the LLM spend. The batch design (prefill, not chat) was chosen over CopilotKit deliberately; research at `.scratch/agent-post-page/research.md`.
 - **Phase:** V3 PLAN COMPLETE — all 10 slices + tickets 01-10 closed; 0025 (guest list) applied live 2026-09-11 and verified (coordinator-verifier finish after the headless run died at its .env read). REMAINING HUMAN ITEMS CLOSED 2026-09-11 by Hermes coordinator: (1) marker sweep — 173 e2e users + opsmoke.test deleted via dashboard SQL API (safety gate: founder profiles verified outside the set; child rows scoped to markers; FINAL live DB: 2 auth users [jonmeisburg, nicolemeisburg], 2 profiles, 2 playdates [Greenlake, both Jon's]; remaining ping/comment/memberships belong to Jon+Nicole — kept); (2) founder-flag SQL — already applied (profiles.moderators=true on 'Jon Meisburg' verified pre-sweep, no action needed). V3 FULLY CLOSED.
 - **Phase: V4 COMPLETE (2026-09-11).** Human enabled Google in the Supabase project; the blocker is cleared and the round-trip is verified — see the closure evidence below.
@@ -729,6 +730,35 @@ bucket impossible (parent avatars live there and must stay public), and the full
 AC set are in `.scratch/v9/issues/11-kid-photo-storage.md`. **One decision
 remains** — what happens to the already-uploaded files — and it is recorded there
 with the options table. `0038` moved to this ticket.
+
+## V11 — the founder's V11 feedback batch (opened 2026-09-16)
+
+Source: the founder's V11 feedback on the live V10 app — three directives
+(Nearby: a "back to 5 miles" escape; Places: drop the "Fits my kid's age"
+filter; Places: drop "Ages not listed yet.") plus three confirmed judgment
+calls (hero images → restrained section headers, post flow → WHERE-then-WHEN
+reorder with no wizard, settings → header gear → `/settings` with `/profile`
+becoming read-only). Filed as `.scratch/v11/spec.md` +
+`.scratch/v11/issues/01`–`06`. **Batch order 01→02→03→04→05→06 (06 depends on
+04). NO migrations in the batch** (UI/copy/form/reorg only). Per-ticket gate:
+`npm run build && npm run test`. Each ticket carries its pinned mechanics +
+acceptance criteria; the spec carries the out-of-scope list.
+
+**Coordinator infra (2026-09-16):** the dev-agent Herdr pane was gone (server
+restart; the only repo-cwd pane, `w4:pP`, proved to be this coordinator's own
+pane — its visible screen mirrors this session's own commands). Rebuilt: tab
+`w4:tN` ("dropin: v11 dev agent"), pane `w4:p11`, cwd = repo root, opencode
+agent **`v11dev`** started via `herdr agent start`. The coordinator loop
+(route → wait → read → re-verify → next ticket) runs on `w4:p11`.
+
+| # | Ticket | State |
+|---|---|---|
+| 01 | Radius — "Back to 5 miles" escape | **complete — `aa7e991`** (2026-09-16); no migration (`supabase/` verified untouched); 825/825 unit, e2e 76 passed / 1 skipped (pre-existing conditional), lint 0 errors. Deviation recorded: two-sided gate (5 < r < 35) — the AC pins `radiusEscapes(35)→[]`, which a one-sided `r>5` gate would break |
+| 02 | Places — remove the "Fits my kid's age" filter | `ready-for-agent` |
+| 03 | Place detail — drop the "Ages not listed yet." nag | `ready-for-agent` |
+| 04 | Restrained section headers (not hero images) | `ready-for-agent` |
+| 05 | Post form — WHERE, then WHEN (no wizard) | `ready-for-agent` |
+| 06 | Settings reorg — header gear → /settings, /profile read-only | `ready-for-agent` — **depends on 04** |
 
 ## V4 — "Drop In" mobile conversion (opened 2026-09-11)
 
