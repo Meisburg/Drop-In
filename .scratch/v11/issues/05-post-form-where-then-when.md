@@ -16,7 +16,7 @@ the REAL delta this ticket ships is pulling WHEN out of "More options" into
 the visible flow (a parent setting a time today has to open the disclosure
 first; after this ticket they don't).
 
-**Status:** TODO
+**Status:** DONE (2026-09-16; gate 818/818 unit + 76 passed e2e (1 pre-existing conditional skip, polish.e2e.ts) + lint exit 0 + 0 of the two old hint strings hit in `e2e/`; commit hash recorded in the coordinator's task-state V11 update)
 
 ## Mechanics (pinned)
 

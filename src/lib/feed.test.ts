@@ -3035,23 +3035,28 @@ describe('formatStartDayLabel (V9 ticket 03: the /new summary day line)', () => 
   })
 })
 
-describe('moreOptionsHoldsError (V9 ticket 03: no error hidden behind the disclosure)', () => {
-  it('is true exactly when a DISCLOSURE field failed', () => {
-    expect(moreOptionsHoldsError({ startDate: 'Pick a start date.' })).toBe(true)
-    expect(moreOptionsHoldsError({ startMinutes: 'Pick a start time.' })).toBe(true)
+describe('moreOptionsHoldsError (V9 ticket 03: no error hidden behind the disclosure; V11 t05: the list is empty)', () => {
+  it('is false for every field, because no required answer lives behind the disclosure', () => {
+    // V11 ticket 05: the start moved into the visible "When" section, so NOTHING
+    // required renders behind the disclosure anymore. The rule is the drift
+    // hook — it only ever returns true once a required field is added to
+    // MORE_OPTIONS_FIELDS (which the next test pins to empty).
+    expect(moreOptionsHoldsError({ startDate: 'Pick a start date.' })).toBe(false)
+    expect(moreOptionsHoldsError({ startMinutes: 'Pick a start time.' })).toBe(false)
     // The visible answers do not need the disclosure opened to be seen.
     expect(moreOptionsHoldsError({ place: 'Add a place (park, lot, field).' })).toBe(false)
     expect(moreOptionsHoldsError({ durationMinutes: 'Pick a duration.' })).toBe(false)
     expect(moreOptionsHoldsError({})).toBe(false)
   })
 
-  it('names the fields the disclosure actually renders', () => {
-    // The list is the contract: the start date + the 30-minute stepper are the
-    // only REQUIRED answers behind "More options" (the kids picker, the address,
-    // the details and the repeat toggle are optional, so no rule of theirs can
-    // fire). A required field added to the disclosure without being added here
-    // would hide its own error — which is why this list is pinned.
-    expect([...MORE_OPTIONS_FIELDS]).toEqual(['startDate', 'startMinutes'])
+  it('pins the list to EMPTY (the drift hook: a required field behind the door must be added here)', () => {
+    // V11 ticket 05: the start (date + the 30-minute stepper) is in the visible
+    // "When" section, so the disclosure holds only OPTIONAL answers (the kids
+    // picker, the address, the details and the repeat toggle). An empty list
+    // means a failed start-date submit leaves the disclosure closed — which
+    // e2e/post-fast.e2e.ts pins end to end. The moment a required field is
+    // added behind the door, it must be added here too or its error is invisible.
+    expect([...MORE_OPTIONS_FIELDS]).toEqual([])
   })
 })
 

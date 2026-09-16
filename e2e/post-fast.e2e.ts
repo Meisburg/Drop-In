@@ -23,15 +23,20 @@
  *     the input in place (review cycle 1, F2 — so the place picker stays /new's
  *     FIRST field, ticket 01's AC), follows the place until the parent writes
  *     their own, comes back from empty, and never comes back blank.
- *  4. THE DISCLOSURE. One "More options", collapsed by default, holding the
- *     address's manual entry, the start date + the 30-minute stepper, "Kids
- *     you're bringing", Details and "Repeat weekly" — and NOTHING that changes
- *     what will be posted is hidden: the address is read back on the place line
- *     and the weekly repeat is read back only while the submit would really
- *     create that series.
- *  5. NO ERROR IS HIDDEN. A submit that fails on the start date (which lives in
- *     the disclosure) OPENS the disclosure, so the message is never rendered
- *     inside something the parent collapsed.
+*  4. THE DISCLOSURE. One "More options", collapsed by default, holding the
+  *     address's manual entry, "Kids you're bringing", Details and "Repeat
+  *     weekly" — and NOTHING that changes what will be posted is hidden: the
+  *     address is read back on the place line and the weekly repeat is read back
+  *     only while the submit would really create that series. (V11 ticket 05
+  *     moved the start date + the 30-minute stepper out of the disclosure into
+  *     the visible "When" section, so the disclosure now holds no REQUIRED
+  *     answer.)
+  *  5. NO REQUIRED ANSWER LIVES BEHIND THE DOOR. V11 ticket 05: the start date
+  *     (the only required answer that once sat behind "More options") moved into
+  *     the visible "When" section, so MORE_OPTIONS_FIELDS is empty — a submit
+  *     that fails on the start date shows its error in the visible When section
+  *     and LEAVES the disclosure collapsed (the open-on-hidden-error rule is
+  *     kept as the drift hook but no longer fires).
  *  6. NOTHING STALE HIDES BEHIND THE DOOR. Picking a place writes its published
  *     street into the address; typing over the place text drops that street with
  *     it (review cycle 1, F1) — while an address the parent TYPED survives.
@@ -375,8 +380,10 @@ test('a cold /new is posted in four taps or fewer, typing exactly one place', as
   expect(lines[0].endsWith(' · 1h')).toBe(true)
   expect(lines[2]).toBe(`${PLACE_NAME} · ${pickedAddress}`)
 
-  // (e) Post — the third decision. Nothing else was touched: no date, no time,
-  //     no address, no kids, no details, no title.
+  // (e) Post — the third decision. Nothing else was touched: no date, no time
+  //     (both sit in the visible "When" section now — V11 ticket 05 — but the
+  //     cold path leaves them at their defaults, so the ledger's set and the
+  //     budget are unchanged), no address, no kids, no details, no title.
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
   const taps = await readTapCount(page)
@@ -494,7 +501,7 @@ test('typing over a picked place drops the address it came with — and a typed 
   expect((await summaryLines(page))[2]).toBe(`${FREETEXT_PLACE} · ${TYPED_ADDRESS}`)
 })
 
-test('the title is generated, read back, editable in place — and the rest is behind "More options"', async ({
+test('the title is generated, read back, editable in place — the extras are behind "More options" (V11 t05: the start is the visible "When" section)', async ({
   page,
 }) => {
   await page.goto('/new')
@@ -553,15 +560,15 @@ test('the title is generated, read back, editable in place — and the rest is b
   await expect(titleInput).toHaveValue(generatedTitle(PLACE_NAME))
   await placeInput.fill(FREETEXT_PLACE)
 
-  // (6) The disclosure: collapsed by default, holding the OPTIONAL answers and
-  //     the date/time adjustment — nothing that changes what will be posted.
+  // (6) The disclosure: collapsed by default, holding the OPTIONAL answers —
+  //     nothing that changes what will be posted. V11 ticket 05: the start date
+  //     + the 30-minute stepper LEFT the disclosure for the visible "When"
+  //     section, so with the door CLOSED they are visible (the ticket's point),
+  //     and the door itself holds only the optional extras.
   const toggle = page.getByTestId('more-options')
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   for (const absent of [
     page.getByPlaceholder(ADDRESS_PLACEHOLDER),
-    page.locator('input[type="date"]'),
-    page.getByTestId('start-time-label'),
-    page.getByRole('button', { name: 'Later start time' }),
     page.getByText("Kids you're bringing"),
     page.getByPlaceholder(DETAILS_PLACEHOLDER),
     page.getByTestId('repeat-weekly'),
@@ -569,23 +576,27 @@ test('the title is generated, read back, editable in place — and the rest is b
   ]) {
     await expect(absent).toHaveCount(0)
   }
+  // The "When" section is in the VISIBLE flow — no door to open.
+  await expect(page.getByText('When', { exact: true })).toBeVisible()
+  await expect(page.locator('input[type="date"]')).toBeVisible()
+  await expect(page.getByTestId('start-time-label')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Later start time' })).toBeVisible()
 
   await openMoreOptions(page)
   await expect(toggle).toHaveAttribute('aria-expanded', 'true')
   const body = page.getByTestId('more-options-body')
   await expect(body).toBeVisible()
   await expect(page.getByPlaceholder(ADDRESS_PLACEHOLDER)).toBeVisible()
-  await expect(page.locator('input[type="date"]')).toBeVisible()
-  await expect(page.getByTestId('start-time-label')).toBeVisible()
   await expect(page.getByPlaceholder(DETAILS_PLACEHOLDER)).toBeVisible()
   await expect(page.getByTestId('repeat-weekly')).toBeVisible()
 
-  // The disclosure really renders a control for every field the page will open
-  // it for (feed.MORE_OPTIONS_FIELDS) — so that list and this markup cannot drift
-  // apart silently (review cycle 1, F7).
-  expect([...MORE_OPTIONS_FIELDS]).toEqual(['startDate', 'startMinutes'])
-  await expect(body.locator('input[type="date"]')).toBeVisible() // startDate
-  await expect(body.getByTestId('start-time-label')).toBeVisible() // startMinutes
+  // V11 ticket 05: the disclosure holds no REQUIRED answer anymore (the start
+  // moved into the visible "When" section), so feed.MORE_OPTIONS_FIELDS is
+  // EMPTY — pinned here so a required field added behind the door is forced
+  // into the list (the drift hook; the rule itself is unit-tested in
+  // feed.test.ts, and the failed start-date submit in the next spec shows its
+  // error in the When section with the door still closed).
+  expect([...MORE_OPTIONS_FIELDS]).toEqual([])
 
   // (7) "Repeat weekly" is behind the door — and the summary states the series
   //     ONLY while the submit would really create one (review cycle 1, F3).
@@ -636,32 +647,31 @@ test('the title is generated, read back, editable in place — and the rest is b
   expect(row?.title).toBe(posted)
 })
 
-test('a submit that fails on a hidden field opens the disclosure instead of hiding the error', async ({
+test('a submit that fails on the start date shows its error in the visible "When" section, door still closed', async ({
   page,
 }) => {
   await page.goto('/new')
   await settleOnRoute(page, '/new')
 
-  // Answer the two VISIBLE required decisions, so the only failure left is the
-  // start date — the field that lives inside "More options".
+  // Answer the two VISIBLE required decisions (the place + the duration), so
+  // the only failure left is the start date. V11 ticket 05: it lives in the
+  // visible "When" section now (V9 t03's disclosure era is over), so clearing
+  // it needs no disclosure at all.
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(FREETEXT_PLACE)
   await page.getByRole('button', { name: '1h', exact: true }).click()
 
-  await openMoreOptions(page)
   const dateInput = page.locator('input[type="date"]')
+  await expect(dateInput).toBeVisible() // the When section, in the visible flow
   await dateInput.fill('')
-  // Collapse it again: the parent has put the door back.
-  await page.getByTestId('more-options').click()
-  await expect(page.getByTestId('more-options')).toHaveAttribute('aria-expanded', 'false')
 
   await page.getByRole('button', { name: 'Post drop-in' }).click()
 
-  // The form OPENS what it needs the parent to see, and says what is wrong —
-  // inside the disclosure it just opened, never behind a collapsed box.
-  const toggle = page.getByTestId('more-options')
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
-  await expect(page.getByTestId('more-options-body')).toBeVisible()
+  // The error renders WHERE the field is — the visible "When" section — and the
+  // disclosure STAYS COLLAPSED: MORE_OPTIONS_FIELDS is empty (V11 t05), so the
+  // open-on-hidden-error rule (feed.moreOptionsHoldsError) has nothing to open.
   await expect(page.getByText('Pick a start date.')).toBeVisible()
+  await expect(page.getByTestId('more-options')).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByTestId('more-options-body')).toHaveCount(0)
   // Nothing was posted: the designed submit error is NOT rendered (that line is
   // for a failed create, not for a validation stop), and the route is still /new.
   await expect(page.getByTestId('submit-error')).toHaveCount(0)

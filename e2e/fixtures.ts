@@ -188,18 +188,19 @@ export async function editTitle(page: Page): Promise<void> {
 /**
  * Open /new's "More options" disclosure if it is collapsed (V9 ticket 03).
  *
- * Ticket 03 keeps three decisions visible on /new (the place picker, the
- * duration chips, Post) and puts everything else — the address's manual entry,
- * the start date + the 30-minute stepper, "Kids you're bringing", Details and
- * "Repeat weekly" — behind ONE collapsed disclosure. A field behind a collapsed
- * disclosure is not in the DOM at all (it unmounts), so a spec that drives one
- * opens the door first.
+ * Ticket 03 kept three decisions visible on /new (the place picker, the
+ * duration chips, Post) and put everything else — the address's manual entry,
+ * "Kids you're bringing", Details and "Repeat weekly" — behind ONE collapsed
+ * disclosure. (V11 ticket 05 moved the start date + the 30-minute stepper out
+ * of the disclosure into the visible "When" section, so they no longer need
+ * opening the door.) A field behind a collapsed disclosure is not in the DOM
+ * at all (it unmounts), so a spec that drives one opens the door first.
  *
  * This is that one step, in one place: the 20-odd specs that drive /new call
  * it instead of each growing their own click, and `stepStartTimeOnce` calls it
- * for them (the stepper is inside it). It is IDEMPOTENT — the aria-expanded
- * state is read first, so a spec that already opened it (or that runs after
- * another helper opened it) is a no-op, not a toggle-closed.
+ * for them. It is IDEMPOTENT — the aria-expanded state is read first, so a spec
+ * that already opened it (or that runs after another helper opened it) is a
+ * no-op, not a toggle-closed.
  *
  * `data-testid="more-options"` is the disclosure's own button; `aria-expanded`
  * is its state, which is why the helper can wait for it rather than guess.
@@ -227,8 +228,12 @@ export async function openMoreOptions(page: Page): Promise<void> {
  * end is start + duration), which is the pinned contract and is immune to
  * both the default and the wall clock.
  *
- * V9 ticket 03: the stepper now lives inside the "More options" disclosure, so
- * this helper opens it first (the specs that call it do not have to know).
+ * V9 ticket 03: the stepper lived inside the "More options" disclosure, so this
+ * helper opened it first (the specs that call it do not have to know).
+ * V11 ticket 05: the stepper moved into the visible "When" section, so opening
+ * the door is no longer needed for it — the open call stays (idempotent, a
+ * no-op when the door is already open) because the disclosure still holds the
+ * fields some specs drive AFTER stepping the time.
  *
  * `endLabel(durationMinutes)` is the "Ends …" copy the form computes.
  */

@@ -220,14 +220,19 @@ test('/new leads with the place picker and never asks for a neighbourhood', asyn
       ),
     )
   const fieldOrder = await formFieldOrder()
-  // The place picker is the first input — and, collapsed, the ONLY one: the
-  // title on the summary is a READ-BACK (a <p> and a button), it becomes the
-  // input only when tapped, and the address, the date and the stepper are behind
-  // the disclosure. This is ticket 01's "the affordance is unmistakable" AC, and
-  // it is exactly what an always-open title input at the top of the form would
-  // have inverted (it would also have been the form's first tab stop).
+  // The place picker is the FIRST input. V11 ticket 05: the start date now sits
+  // in the visible "When" section (no longer behind the disclosure), so the
+  // collapsed form has exactly two inputs — the place picker, then the start
+  // date. The title on the summary is still a READ-BACK (a <p> and a button), it
+  // becomes the input only when tapped, and the address, the stepper and the
+  // repeat toggle are behind the disclosure. ("''" is the date input: a date
+  // input carries no placeholder, so the helper's `placeholder ?? type` read
+  // yields the empty string.) This is ticket 01's "the affordance is
+  // unmistakable" AC, and it is exactly what an always-open title input at the
+  // top of the form would have inverted (it would also have been the form's
+  // first tab stop).
   expect(fieldOrder[0]).toBe(PLACE_PLACEHOLDER)
-  expect(fieldOrder).toEqual([PLACE_PLACEHOLDER])
+  expect(fieldOrder).toEqual([PLACE_PLACEHOLDER, ''])
 
   // …and the title is STILL a form field, one tap away in the summary — the line
   // the parent taps to change it (V9 ticket 03's AC). The old assertion here
@@ -240,7 +245,9 @@ test('/new leads with the place picker and never asks for a neighbourhood', asyn
   // Editing the title puts its input at the top of the summary — i.e. first in
   // DOM order — which is exactly why ticket 01's AC is pinned on the COLLAPSED
   // page above: that is the page /new OPENS as, and the page the parent meets.
-  expect(fieldOrderEditing).toEqual([TITLE_PLACEHOLDER, PLACE_PLACEHOLDER])
+  // V11 ticket 05: the start date is in the visible "When" section (after place,
+  // before the duration chips), so the editing state reads title → place → date.
+  expect(fieldOrderEditing).toEqual([TITLE_PLACEHOLDER, PLACE_PLACEHOLDER, ''])
 
   // (2) Labelled so the affordance is unmistakable, with the visible Browse
   //     places button beside it.

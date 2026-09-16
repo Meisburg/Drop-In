@@ -706,29 +706,27 @@ export function validatePlaydateForm(values: PlaydateFormValues): PlaydateFormEr
 }
 
 /**
- * The /new fields that render INSIDE the "More options" disclosure (V9 ticket
- * 03) — the collapsed half of the form. The other three answers (place,
- * duration, title) are always visible, so they are deliberately NOT here.
+ * The /new fields that render INSIDE the "More options" disclosure — EMPTY as
+ * of V11 ticket 05. V9 ticket 03 kept the start (date + the 30-minute stepper)
+ * behind the disclosure, so it listed `startDate`/`startMinutes`; the rule
+ * below opened the door whenever a submit failed on one of them, so a required
+ * field's error was never rendered inside something the parent had collapsed.
  *
- * This list exists for ONE reason: a validation error must never be hidden.
- * The page opens the disclosure when a submit fails on one of these fields
- * (`moreOptionsHoldsError`), so "start date is required" is never a message
- * rendered inside something the parent has collapsed.
- *
- * WHO CHECKS WHAT, stated exactly (review cycle 1, F7): the LIST is pinned by
- * the unit tests below it in feed.test.ts, the RULE is applied by
- * NewPlaydatePage's handleSubmit, and e2e/post-fast.e2e.ts asserts the
- * reachable case end to end — a submit whose only failure is the start date
- * opens the disclosure and shows the message inside it — plus that both members
- * of this list are really rendered in the disclosure body. What is NOT
- * automated: a REQUIRED field added to the disclosure without being added here
- * would not fail a test — its error would simply be invisible. (The
- * disclosure's other contents — the address, the kids picker, the details and
- * the repeat toggle — are all optional, so no rule of theirs can fire.)
+ * V11 ticket 05 moved the start into the visible "When" section, so NOTHING
+ * required renders behind the disclosure anymore (the address, the kids picker,
+ * the details and the repeat toggle are all optional). The list is therefore
+ * empty and `moreOptionsHoldsError` never returns true — but BOTH are kept, not
+ * deleted: they are the drift hook. The moment a REQUIRED field is added behind
+ * the door it must be added here too, or its error is invisible. The unit tests
+ * in feed.test.ts pin the empty list; e2e/post-fast.e2e.ts pins the rule's
+ * reachability (an empty list means the disclosure stays closed on a failed
+ * start-date submit).
  */
-export const MORE_OPTIONS_FIELDS = ['startDate', 'startMinutes'] as const
+export const MORE_OPTIONS_FIELDS = [] as readonly (keyof PlaydateFormErrors)[]
 
-/** Does a failed submit need the disclosure opened to be seen? */
+/** Does a failed submit need the disclosure opened to be seen? V11 ticket 05:
+    the list is empty, so no — nothing required lives behind the disclosure.
+    Kept (not deleted) as the drift hook above. */
 export function moreOptionsHoldsError(errors: PlaydateFormErrors): boolean {
   return MORE_OPTIONS_FIELDS.some((field) => errors[field] !== undefined)
 }

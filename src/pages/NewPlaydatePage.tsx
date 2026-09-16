@@ -333,9 +333,15 @@ export function NewPlaydatePage({
   /**
    * V9 ticket 03: the ONE disclosure ("More options"), collapsed by default.
    * The page owns this state rather than the form component (which owns no
-   * state) so that a FAILED SUBMIT can open it: the start date lives in there,
-   * and a validation error inside a collapsed box is an error the parent
-   * cannot see (feed.moreOptionsHoldsError is that rule, unit-tested).
+   * state) so that a FAILED SUBMIT can open it.
+   *
+   * V11 ticket 05: the start (date + stepper) moved out of the disclosure into
+   * the visible "When" section, so `MORE_OPTIONS_FIELDS` is now EMPTY and the
+   * "open on a hidden error" rule (feed.moreOptionsHoldsError) never fires — a
+   * failed submit no longer opens the door. The state is kept (not deleted) as
+   * the drift hook: the address-overflow handler below still opens it to show a
+   * too-long address, and a required field added behind the door later re-arms
+   * the rule via MORE_OPTIONS_FIELDS.
    */
   const [moreOptionsOpen, setMoreOptionsOpen] = useState(false)
   /**
@@ -872,10 +878,12 @@ export function NewPlaydatePage({
     const fieldErrors = validatePlaydateForm({ ...values, place: placeText, title })
     if (Object.keys(fieldErrors).length > 0) {
       setErrors(fieldErrors)
-      // V9 ticket 03: an error the parent cannot SEE is not an error. The start
-      // date lives inside "More options", so a failed submit on it opens the
-      // disclosure (feed.moreOptionsHoldsError — the rule is pure and unit-
-      // tested; this is the one line that applies it).
+      // V9 ticket 03: an error the parent cannot SEE is not an error. V11 ticket 05:
+      // the start moved into the visible "When" section, so MORE_OPTIONS_FIELDS
+      // is empty and this rule (feed.moreOptionsHoldsError) never fires today —
+      // the line is kept as the drift hook: a required field added behind the
+      // disclosure re-arms it (the address-overflow handler below still opens
+      // the door on its own).
       if (moreOptionsHoldsError(fieldErrors)) setMoreOptionsOpen(true)
       return
     }

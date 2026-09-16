@@ -13,10 +13,10 @@
      longer claims "kids" live behind the door (MORE_OPTIONS_HINT_WITHOUT_KIDS);
      the picker is NOT in the body (a field in two places is two tab stops for
      one answer).
- *  3. THE NO-KIDS FORM IS TODAY'S FORM. With NO kid rows (the marker's kids
-     deleted), /new renders NO kids-section, the picker + the "Add kids" empty
-     state stay inside the disclosure, and the hint keeps the original copy —
-     asserted by this spec's second test, no helper weakened.
+ *  3. THE NO-KIDS FORM. With NO kid rows (the marker's kids deleted), /new
+     renders NO kids-section, the picker + the "Add kids" empty state stay
+     inside the disclosure, and the hint is the no-kids copy (V11 t05 dropped
+     "A date," from both hints) — asserted by this spec's second test.
  *  4. THE SUBMIT PATH IS UNCHANGED. Picking a surfaced chip + posting lands
      the playdate_kids rows (the "Kids coming" line on the detail page) — the
      same contract kids-v3 pins through the disclosure.
@@ -116,8 +116,9 @@ test('with kids, the picker surfaces above the disclosure, the hint swaps, and a
   })
   expect(domOrder).toBe('section-first')
 
-  // 2. The hint tells the truth: no "kids" behind this door now.
-  await expect(page.getByText('A date, an address, details, or a weekly repeat.')).toBeVisible()
+  // 2. The hint tells the truth: no "kids" behind this door now, and no date
+  //    (V11 t05 moved the start into the visible "When" section).
+  await expect(page.getByText('An address, details, or a weekly repeat.')).toBeVisible()
   await openMoreOptions(page)
   const body = page.getByTestId('more-options-body')
   await expect(body).toBeVisible()
@@ -160,7 +161,7 @@ test('with kids, the picker surfaces above the disclosure, the hint swaps, and a
   )
 })
 
-test('with no kids, /new renders exactly today\u2019s form (picker inside the disclosure, original hint)', async ({
+test('with no kids, /new renders today\u2019s form (picker inside the disclosure, no-kids hint)', async ({
   page,
 }) => {
   // No kid rows for this context: the marker's kids were deleted by the
@@ -171,9 +172,10 @@ test('with no kids, /new renders exactly today\u2019s form (picker inside the di
   await settleOnRoute(page, '/new')
 
   // The surfaced section is ABSENT; the disclosure holds the picker + the
-  // empty state + the ORIGINAL hint (byte-identical to V9 t03's form).
+  // empty state + the no-kids hint (V11 t05: "A date," dropped from both hints,
+  // so this is the no-kids copy, not V9 t03's original).
   await expect(page.getByTestId('kids-section')).toHaveCount(0)
-  await expect(page.getByText('A date, an address, kids, details, or a weekly repeat.')).toBeVisible()
+  await expect(page.getByText('An address, kids, details, or a weekly repeat.')).toBeVisible()
   await expect(page.getByText("Kids you're bringing")).toHaveCount(0)
   await openMoreOptions(page)
   await expect(page.getByText("Kids you're bringing")).toBeVisible()

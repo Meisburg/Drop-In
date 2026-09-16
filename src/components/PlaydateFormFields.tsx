@@ -75,16 +75,26 @@ const DAY_MINUTES = 24 * 60
  * it, so a parent can tell whether they need to open it without opening it.
  */
 export const MORE_OPTIONS_LABEL = 'More options'
-export const MORE_OPTIONS_HINT = 'A date, an address, kids, details, or a weekly repeat.'
+/**
+ * V11 ticket 05: WHEN (the start date + the 30-minute stepper) moved out of
+ * this disclosure into the visible "When" section, so the hint no longer names
+ * a date. The base hint is the one the NO-KIDS form shows — the kids picker
+ * (and its empty state) still lives behind this door, so "kids" stays in it.
+ * (The ticket's name↔string mapping was swapped vs the render below: this is
+ * the no-kids / kids-behind-door string, `MORE_OPTIONS_HINT_WITHOUT_KIDS` the
+ * with-kids / kids-surfaced one.)
+ */
+export const MORE_OPTIONS_HINT = 'An address, kids, details, or a weekly repeat.'
 /**
  * V10 ticket 02: the hint the disclosure shows when the kids picker is
  * SURFACED above it (the parent has kids) — the hint must say what is
  * actually behind the door (the V9 ticket 03 contract), and "kids" behind a
- * door that no longer holds the kids picker would be a lie. The no-kids /
- * loading form keeps the original hint (byte-identical render).
+ * door that no longer holds the kids picker would be a lie. V11 ticket 05
+ * drops the now-visible start date from it. The no-kids / loading form keeps
+ * `MORE_OPTIONS_HINT`.
  */
 export const MORE_OPTIONS_HINT_WITHOUT_KIDS =
-  'A date, an address, details, or a weekly repeat.'
+  'An address, details, or a weekly repeat.'
 
 /** The summary's title read-back: a stable handle for the affordance's e2e. */
 export const TITLE_LINE_TESTID = 'title-line'
@@ -533,8 +543,11 @@ export function PlaydateFormFields({
 
   /* The start: a date picker + the 30-minute stepper (V2 slice 1 — the time is
      stepped, never typed). V9 ticket 03: on /new the form opens on today and the
-     next slot, so this is the ADJUSTMENT, not the answer — it lives behind More
-     options, and the summary reads the day and the window back as text. */
+     next slot, so this is the ADJUSTMENT, not the answer. V11 ticket 05: on /new
+     it surfaces in the visible "When" section (whenBlock) instead of behind More
+     options — the summary still reads the day and the window back as text.
+     Branches 2/3 (the location-first page and /edit) keep startBlock in the flow
+     as-is, so /edit stays byte-identical. */
   const startBlock = (
     <div className="flex flex-col gap-1 text-sm">
       <span className="text-slate-700">Start</span>
@@ -557,6 +570,17 @@ export function PlaydateFormFields({
       {errors.startMinutes ? (
         <p className="text-sm text-red-600">{errors.startMinutes}</p>
       ) : null}
+    </div>
+  )
+
+  /* V11 ticket 05: the visible "When" section — the place block's section-label
+     style (the ticket pins `text-sm font-semibold text-slate-700`) with startBlock
+     under it. Rendered by /new (branch 1) only, in the visible flow; branches 2/3
+     keep startBlock in the flow directly, so /edit stays byte-identical. */
+  const whenBlock = (
+    <div className="flex flex-col gap-1">
+      <span className="text-sm font-semibold text-slate-700">When</span>
+      {startBlock}
     </div>
   )
 
@@ -728,9 +752,10 @@ export function PlaydateFormFields({
   // OMITTED from the body — a field in two places is two tab stops for one
   // answer. The hint swaps to WITHOUT_KIDS for the same "the door says what is
   // behind it" contract. The AGES chips stay in the body either way: they are
-  // the same SUBJECT as kids but a separate optional answer, and /new's body
-  // order (address, start, repeat, ages, details) is what V9 ticket 03's
-  // specs already drive.
+  // the same SUBJECT as kids but a separate optional answer. V11 ticket 05: the
+  // start (date + stepper) left the body for the visible "When" section, so the
+  // body order is now (address, repeat, ages, details) — the specs that drove
+  // the date behind the door now drive it in the When section instead.
   const moreOptionsBlock =
     summaryLines === undefined ? null : (
       <>
@@ -763,7 +788,6 @@ export function PlaydateFormFields({
           >
             {addressBlock}
             {neighborhoodBlock}
-            {startBlock}
             {repeatSlot}
             {kidsSectionSlot === undefined ? kidsBlock : null}
             {/* V9 ticket 05: the "Ages (optional)" chips, right under the kids
@@ -806,6 +830,10 @@ export function PlaydateFormFields({
               only when the page passes it (the parent has kids). The
               disclosure stays where it is, holding the rest. */}
           {kidsSectionSlot}
+          {/* V11 ticket 05: WHEN surfaces in the visible flow — the "When"
+              section (date + stepper) sits between the surfaced kids section and
+              the duration chips, so setting the time no longer needs the door. */}
+          {whenBlock}
           {durationBlock}
           {moreOptionsBlock}
         </>
