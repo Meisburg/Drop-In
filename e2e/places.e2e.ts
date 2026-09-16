@@ -7,9 +7,9 @@
  *     "N upcoming" line is the real count) and an ANON read of `places`
  *     succeeds — the 0029 SELECT policy's whole reason for existing;
  * (2) a row opens its place page, which renders the SEEDED data (name, kind,
- *     indoor/outdoor, the address as the existing tappable Maps link) and the
- *     honest age line ("Ages not listed yet." — the seed carries no age data,
- *     and "all ages" would be a claim nothing supports);
+ *     indoor/outdoor, the address as the existing tappable Maps link) and NO
+ *     age line (V11 t03 — the seed carries no age data, so the page stays
+ *     silent rather than claiming "all ages");
  * (3) picking a place from the /new autocomplete posts a drop-in whose detail
  *     page links its place line to that place page, which then lists the
  *     drop-in under "Upcoming drop-ins here";
@@ -149,8 +149,9 @@ test('a place page renders the seeded data with the existing Maps link', async (
   await expect(maps).toHaveAttribute('target', '_blank')
   await expect(maps).toHaveAttribute('rel', 'noopener')
 
-  // The age line tells the truth about the data: the seed carries no ages.
-  await expect(page.getByText('Ages not listed yet.')).toBeVisible()
+  // V11 t03: the age line is GONE — the seed carries no ages, so the page
+  // stays silent rather than claiming "all ages" (or "not listed").
+  await expect(page.getByText('Ages not listed yet.')).toHaveCount(0)
   await expect(page.getByTestId('start-here')).toBeVisible()
 })
 

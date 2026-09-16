@@ -10,7 +10,7 @@ Also remove the e2e assertion that pins the nag.
 owner never had to fill in — most places will never have ages. Silence is
 the honest state.
 
-**Status:** TODO
+**Status:** DONE (2026-09-16; gate 818/818 unit + 76 passed e2e (1 pre-existing conditional skip, polish.e2e.ts) + lint exit 0 + 0 "Ages not listed" hits in `src/`; commit hash recorded in the coordinator's task-state V11 update)
 
 ## Mechanics (pinned)
 

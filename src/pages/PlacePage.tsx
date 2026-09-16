@@ -27,8 +27,9 @@ import type { Place, PlacePrefill, PlaydateWithNeighborhood } from '../lib/types
  * /place/:id — one place in the directory (V8 ticket 07, migration 0029).
  *
  * What the page answers, in order: what is this place (name, kind, indoor or
- * outdoor), is it good for MY kid (the age line — and when the directory has no
- * age data, it says so rather than implying "all ages"), where is it (address +
+ * outdoor), is it good for MY kid (the age line — silent when the directory
+ * has no age data, rather than implying "all ages"; V11 t03), where is it
+ * (address +
  * the SAME tappable Google Maps link the detail page uses, the pure mapsHref
  * seam), what should I know (notes), and what is happening there. Then the one
  * action: "Start a drop-in here".
@@ -348,16 +349,12 @@ export function PlacePage() {
             place.address
           )}
         </p>
-        {/* The age line states the data we have and NOTHING more: the directory
-            carries no age range for any seeded row (0029's header), so the
-            honest line is that it is not listed — "all ages" would be a claim
-            the data does not support, on the one question this page exists to
-            answer. */}
+        {/* The age line states the data we have and NOTHING more: when the
+            directory carries no age range, the page stays silent rather than
+            implying "all ages" — a claim the data would not support (V11 t03). */}
         {ageFit !== null ? (
           <p className="mt-2 text-sm text-slate-600">{ageFit}</p>
-        ) : (
-          <p className="mt-2 text-sm text-slate-500">Ages not listed yet.</p>
-        )}
+        ) : null}
         {place.notes !== null ? (
           <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{place.notes}</p>
         ) : null}
