@@ -21,12 +21,12 @@ import { useSessionContext } from './SessionProvider'
  *   way to discover that 35 is possible, so the first visit ends.
  *
  * So: the honest count ("Nothing within N miles yet." — N is the radius the
- * filter just used) plus the escapes (`radiusEscapes`: widen to 20, or see
- * everything at 35) plus the post CTA, which stays.
+ * filter just used) plus the escapes (`radiusEscapes`: back to 5, widen to 20,
+ * or see everything at 35) plus the post CTA, which stays.
  *
  * The escapes are ALWAYS rendered when they would actually change anything:
- * visibility is not conditional on the widening finding content, so a wider
- * radius that is still empty never turns this into a second dead end. And a
+ * visibility is not conditional on the escape finding content, so an escape
+ * that is still empty never turns this into a second dead end. And a
  * failed write says so (a silent no-op button would be exactly that dead end).
  *
  * The write path is the EXISTING `updateHomeZipRadius` (no new write path):
@@ -58,7 +58,7 @@ export function RadiusEmptyState({
 }) {
   const { session, profile, refresh } = useSessionContext()
   const [busyRadius, setBusyRadius] = useState<number | null>(null)
-  const [widenError, setWidenError] = useState<string | null>(null)
+  const [escapeError, setEscapeError] = useState<string | null>(null)
   const homeZip = profile?.home_zip ?? ''
   const escapes = radiusEscapes(radiusMiles)
   /**
@@ -76,12 +76,12 @@ export function RadiusEmptyState({
     // these pages, and the button stays inert rather than inventing a zip.
     if (session === null || homeZip === '' || busyRadius !== null) return
     setBusyRadius(target)
-    setWidenError(null)
+    setEscapeError(null)
     try {
       await updateHomeZipRadius(session.user.id, homeZip, target)
       await refresh()
     } catch (err) {
-      setWidenError(err instanceof Error ? err.message : 'Could not widen your radius. Try again.')
+      setEscapeError(err instanceof Error ? err.message : 'Could not update your radius. Try again.')
     } finally {
       setBusyRadius(null)
     }
@@ -103,12 +103,12 @@ export function RadiusEmptyState({
               onClick={() => void handleEscape(escape.radiusMiles)}
               className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
             >
-              {busyRadius === escape.radiusMiles ? 'Widening…' : escape.label}
+              {busyRadius === escape.radiusMiles ? 'Updating…' : escape.label}
             </button>
           ))}
         </div>
       ) : null}
-      {widenError !== null ? <p className="text-sm text-red-600">{widenError}</p> : null}
+      {escapeError !== null ? <p className="text-sm text-red-600">{escapeError}</p> : null}
       {/* V9 ticket 04: the archive line — after the escapes and above the post
           CTA (which stays the last and strongest element; "nothing ahead" is
           usually a supply problem, and posting is the answer to that). It says

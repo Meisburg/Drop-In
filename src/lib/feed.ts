@@ -1746,21 +1746,29 @@ export interface RadiusEscape {
 
 /**
  * The escape hatches an empty-radius state offers (V8 ticket 02, pure +
- * unit-tested): "Widen to 20 miles" and "See everything in Seattle" (35 mi,
- * the max).
+ * unit-tested; V11 ticket 01 added the narrow escape): "Back to 5 miles"
+ * (only when the current radius is wider than the 5-mile default),
+ * "Widen to 20 miles", and "See everything in Seattle" (35 mi, the max).
  *
- * Both call the EXISTING `updateHomeZipRadius` write path — this seam only
- * decides which controls render, so the page stays a thin call site.
+ * All three call the EXISTING `updateHomeZipRadius` write path — this seam
+ * only decides which controls render, so the page stays a thin call site.
  *
- * An escape whose radius is not actually WIDER than the viewer's current one
- * is dropped: at 20 miles, "Widen to 20 miles" would be a no-op button, which
- * is just a second dead end wearing a control's clothes. At the 35-mile max
- * the list is empty and the empty state is honestly terminal (the radius
- * ceiling is the whole discovery surface) — the "Post a drop-in" CTA remains
- * either way.
+ * A candidate equal to the viewer's current radius is dropped: at 20 miles,
+ * "Widen to 20 miles" would be a no-op button, which is just a second dead
+ * end wearing a control's clothes. The narrow escape is its mirror: it is
+ * offered only strictly BETWEEN the default and the max (at 5 you are already
+ * there; at the 35-mile max the list is empty and the empty state is honestly
+ * terminal — the radius ceiling is the whole discovery surface, and
+ * narrowing can never surface what 35 already did not). The "Post a
+ * drop-in" CTA remains either way.
+ *
+ * The list returns ascending (5, 20, 35) so narrow-first reads naturally.
  */
 export function radiusEscapes(radiusMiles: number): RadiusEscape[] {
   const escapes: RadiusEscape[] = []
+  if (radiusMiles > DEFAULT_RADIUS_MILES && radiusMiles < SEE_ALL_RADIUS_MILES) {
+    escapes.push({ radiusMiles: DEFAULT_RADIUS_MILES, label: `Back to ${DEFAULT_RADIUS_MILES} miles` })
+  }
   if (WIDEN_RADIUS_MILES > radiusMiles) {
     escapes.push({ radiusMiles: WIDEN_RADIUS_MILES, label: `Widen to ${WIDEN_RADIUS_MILES} miles` })
   }

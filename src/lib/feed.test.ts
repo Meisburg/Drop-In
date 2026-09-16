@@ -18,6 +18,7 @@ import {
   computeEndIso,
   computeStartIso,
   daySectionIso,
+  DEFAULT_RADIUS_MILES,
   defaultStartDateIso,
   durationChipForUntilNextHour,
   durationLabel,
@@ -1853,36 +1854,55 @@ describe('the archive link (V9 ticket 04: the feed\'s door to the Past list)', (
   })
 })
 
-describe('radiusEscapes (V8 ticket 02: the way out of an empty radius)', () => {
-  it('offers both escapes at the 5-mile default', () => {
+describe('radiusEscapes (V8 ticket 02 + V11 ticket 01: the way out of an empty radius)', () => {
+  it('offers both widen escapes at the 5-mile default (no "Back to 5" — you are at 5)', () => {
     expect(radiusEscapes(5)).toEqual([
       { radiusMiles: 20, label: 'Widen to 20 miles' },
       { radiusMiles: 35, label: 'See everything in Seattle' },
     ])
   })
 
-  it('pins the radii to the ticket (20 = widen, 35 = the max, the DB ceiling)', () => {
+  it('pins the radii to the ticket (5 = default, 20 = widen, 35 = the max, the DB ceiling)', () => {
+    expect(DEFAULT_RADIUS_MILES).toBe(5)
     expect(WIDEN_RADIUS_MILES).toBe(20)
     expect(SEE_ALL_RADIUS_MILES).toBe(35)
     expect(SEE_ALL_RADIUS_MILES).toBe(RADIUS_MAX_MILES)
+    expect(RADIUS_MILES_OPTIONS).toContain(DEFAULT_RADIUS_MILES)
     expect(RADIUS_MILES_OPTIONS).toContain(WIDEN_RADIUS_MILES)
     expect(RADIUS_MILES_OPTIONS).toContain(SEE_ALL_RADIUS_MILES)
   })
 
-  it('drops an escape that would not widen anything (20 → the 20-mi button is gone)', () => {
-    expect(radiusEscapes(20)).toEqual([{ radiusMiles: 35, label: 'See everything in Seattle' }])
+  it('offers the narrow escape between the default and the max (10 → 5, 20, 35)', () => {
+    expect(radiusEscapes(10)).toEqual([
+      { radiusMiles: 5, label: 'Back to 5 miles' },
+      { radiusMiles: 20, label: 'Widen to 20 miles' },
+      { radiusMiles: 35, label: 'See everything in Seattle' },
+    ])
   })
 
-  it('is empty at the 35-mile max (nothing wider exists — the ceiling is honest)', () => {
+  it('drops candidates that would not change the radius (20 → back-to-5 + see-all only)', () => {
+    expect(radiusEscapes(20)).toEqual([
+      { radiusMiles: 5, label: 'Back to 5 miles' },
+      { radiusMiles: 35, label: 'See everything in Seattle' },
+    ])
+  })
+
+  it('is empty at the 35-mile max (nothing to escape to — the ceiling is honest)', () => {
     expect(radiusEscapes(35)).toEqual([])
   })
 
-  it('always widens: every escape is strictly wider than the current radius', () => {
+  it('returns the escapes ascending (narrow-first), and the narrow escape is offered only between the default and the max', () => {
     for (const radius of RADIUS_MILES_OPTIONS) {
-      for (const escape of radiusEscapes(radius)) {
-        expect(escape.radiusMiles).toBeGreaterThan(radius)
-        expect(escape.radiusMiles).toBeLessThanOrEqual(RADIUS_MAX_MILES)
+      const radii = radiusEscapes(radius).map((e) => e.radiusMiles)
+      expect(radii).toEqual([...radii].sort((a, b) => a - b))
+      for (const r of radii) {
+        expect(r).toBeLessThanOrEqual(RADIUS_MAX_MILES)
       }
+      // At 5 you are already at the default; at 35 the state is honestly
+      // terminal (narrowing can never surface what 35 did not).
+      expect(radii.includes(DEFAULT_RADIUS_MILES)).toBe(
+        radius > DEFAULT_RADIUS_MILES && radius < SEE_ALL_RADIUS_MILES,
+      )
     }
   })
 
