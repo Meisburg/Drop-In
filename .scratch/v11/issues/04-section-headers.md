@@ -10,7 +10,7 @@ this is a header, not a full-bleed hero. No images.
 as too loud for a utility app; "restrained" = soft gradient + icon + one
 line of copy that tells the parent what THIS screen is for.
 
-**Status:** TODO
+**Status:** DONE (2026-09-16; gate 818/818 unit + 76 passed e2e (1 pre-existing conditional skip, polish.e2e.ts) + lint exit 0 + 0 of the five taglines hit in `e2e/` before the component landed; commit hash recorded in the coordinator's task-state V11 update)
 
 ## Mechanics (pinned)
 

@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { ConfirmDialog } from '../components/ConfirmDialog'
+import { NAV_ICONS } from '../components/icons'
 import { NotificationsSection } from '../components/NotificationsSection'
+import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
 import { useCropStep } from '../components/useCropStep'
 import { useFamilyPhotoUrl } from '../components/useFamilyPhotoUrl'
@@ -785,7 +787,7 @@ export function ProfilePage() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Your family</h1>
+        <SectionHeader icon={NAV_ICONS.profile} title="Your family" tagline="Your profile, kids, and posts" />
         <p className="mt-1 text-sm text-slate-600">
           Your display name is your persistent public handle — it shows on everything you
           post.

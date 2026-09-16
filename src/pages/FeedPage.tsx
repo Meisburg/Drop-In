@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { DropInCard } from '../components/DropInCard'
+import { NAV_ICONS } from '../components/icons'
 import { RadiusEmptyState } from '../components/RadiusEmptyState'
+import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
 import { WhileAwayCard } from '../components/WhileAwayCard'
 // V8 ticket 08: recording the meaningful action (a saved ping from a card) that
@@ -638,12 +640,14 @@ export function FeedPage() {
 
   if (loadError !== null) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-        <h1 className="text-xl font-semibold text-slate-900">Near you</h1>
-        <p className="text-sm text-red-600">{loadError}</p>
-        <p className="text-xs text-slate-500">
-          If you just signed up, the drop-in feed may not be set up on the server yet.
-        </p>
+      <div className="flex flex-col gap-4">
+        <SectionHeader icon={NAV_ICONS.nearby} title="Near you" tagline="Drop-ins around your area" />
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+          <p className="text-sm text-red-600">{loadError}</p>
+          <p className="text-xs text-slate-500">
+            If you just signed up, the drop-in feed may not be set up on the server yet.
+          </p>
+        </div>
       </div>
     )
   }
@@ -753,7 +757,7 @@ export function FeedPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold text-slate-900">Near you</h1>
+      <SectionHeader icon={NAV_ICONS.nearby} title="Near you" tagline="Drop-ins around your area" />
 
       {/* V8 ticket 03: the "While you were away" inbox — the retention
           banner's replacement and the ONLY "you have news" surface (the

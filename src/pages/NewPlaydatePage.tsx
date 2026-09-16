@@ -6,6 +6,8 @@ import {
   AgeRangeChips,
   PlaydateFormFields,
 } from '../components/PlaydateFormFields'
+import { NAV_ICONS } from '../components/icons'
+import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
 import {
   createPlaydate,
@@ -1001,7 +1003,7 @@ export function NewPlaydatePage({
       {/* V3 slice 3 (ticket 06, feedback #8): the "We'll be at the park
           3–5, come by if you like." + "Open invitation, zero pressure."
           helper line is out (the ticket's quick-feedback batch). */}
-      <h1 className="text-xl font-semibold text-slate-900">Post a drop-in</h1>
+      <SectionHeader icon={NAV_ICONS.post} title="Post a drop-in" tagline="Where, when, and who’s coming" />
 
       {duplicate !== null ? (
         <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3">

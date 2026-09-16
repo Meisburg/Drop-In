@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
+import { NAV_ICONS } from '../components/icons'
 import { RadiusEmptyState } from '../components/RadiusEmptyState'
+import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
 import { listPlaces, loadZipCodes, upcomingCountsByPlace } from '../lib/db'
 import { DEFAULT_RADIUS_MILES, formatDistanceLabel, RADIUS_MILES_OPTIONS } from '../lib/feed'
@@ -164,7 +166,7 @@ export function BrowsePage() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Places</h1>
+        <SectionHeader icon={NAV_ICONS.browse} title="Places" tagline="Find a place to gather" />
         <p className="mt-1 text-sm text-slate-600">
           Playgrounds, pools, splash pads and indoor options around Seattle.
         </p>

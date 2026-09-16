@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router'
 import { ADDRESS_MAX_LENGTH, PlaydateFormFields } from '../components/PlaydateFormFields'
+import { NAV_ICONS } from '../components/icons'
+import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
 import {
   getPlaydateDetail,
@@ -308,7 +310,7 @@ export function EditPlaydatePage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold text-slate-900">Edit your drop-in</h1>
+      <SectionHeader icon={NAV_ICONS.post} title="Edit your drop-in" tagline="Update the plan" />
 
       {/* The neighborhoods list failed to load: the select stays disabled
           (the stored neighborhood is already in the field, so a save still

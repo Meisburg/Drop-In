@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router'
 import { DropInMark } from './components/DropInMark'
+import { NAV_ICONS } from './components/icons'
 import { LightboxProvider } from './components/ImageLightbox'
 import { PushOptInPrompt } from './components/PushOptInPrompt'
 import { SessionProvider, useSessionContext } from './components/SessionProvider'
@@ -346,13 +347,6 @@ function NavIcon({ path }: { path: string }) {
     </svg>
   )
 }
-
-const NAV_ICONS = {
-  nearby: 'M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11Z M12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z',
-  browse: 'M4 6h16 M4 12h16 M4 18h16',
-  post: 'M12 5v14 M5 12h14',
-  profile: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z M5 20a7 7 0 0 1 14 0',
-} as const
 
 export default function App() {
   return (
