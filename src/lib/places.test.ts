@@ -6,7 +6,6 @@ import {
   matchPlaces,
   placeAgeFitLabel,
   placeDistanceMiles,
-  placeFitsKidAges,
   placeIdField,
   placeIndoorLabel,
   placeKindLabel,
@@ -161,40 +160,6 @@ describe('resolvePlaceByName (exact match only — a fuzzy link would be an inve
   })
 })
 
-describe('placeFitsKidAges (NULL is UNKNOWN and an unknown never excludes)', () => {
-  it('keeps a place with no age data at all (every seeded row today)', () => {
-    expect(placeFitsKidAges({ age_min: null, age_max: null }, [4])).toBe(true)
-    expect(placeFitsKidAges({ age_min: null, age_max: null }, [])).toBe(true)
-  })
-
-  it('keeps everything when the viewer has no kid ages to compare ([] or none)', () => {
-    expect(placeFitsKidAges({ age_min: 8, age_max: 12 }, [])).toBe(true)
-  })
-
-  it('fits when AT LEAST ONE of the viewer\'s kids is in range', () => {
-    expect(placeFitsKidAges({ age_min: 2, age_max: 5 }, [3, 9])).toBe(true)
-    expect(placeFitsKidAges({ age_min: 2, age_max: 5 }, [9, 4])).toBe(true)
-  })
-
-  it('excludes only when the data positively says it does not fit', () => {
-    expect(placeFitsKidAges({ age_min: 2, age_max: 5 }, [9])).toBe(false)
-    expect(placeFitsKidAges({ age_min: 5, age_max: null }, [4])).toBe(false)
-    expect(placeFitsKidAges({ age_min: null, age_max: 3 }, [4])).toBe(false)
-  })
-
-  it('treats a one-sided bound as open on the other side', () => {
-    expect(placeFitsKidAges({ age_min: 5, age_max: null }, [5])).toBe(true)
-    expect(placeFitsKidAges({ age_min: 5, age_max: null }, [12])).toBe(true)
-    expect(placeFitsKidAges({ age_min: null, age_max: 3 }, [3])).toBe(true)
-    expect(placeFitsKidAges({ age_min: null, age_max: 3 }, [1])).toBe(true)
-  })
-
-  it('treats the bounds as inclusive', () => {
-    expect(placeFitsKidAges({ age_min: 2, age_max: 5 }, [2])).toBe(true)
-    expect(placeFitsKidAges({ age_min: 2, age_max: 5 }, [5])).toBe(true)
-  })
-})
-
 describe('placeAgeFitLabel (the place page\'s age line — or nothing)', () => {
   it('renders a range, an open top, and an open bottom', () => {
     expect(placeAgeFitLabel({ age_min: 2, age_max: 5 })).toBe('Best for ages 2–5')
@@ -240,7 +205,7 @@ describe('browsePlaces (the directory\'s filter + sort decision)', () => {
   const indoor = place({ name: 'Indoor Library', indoor: true, kind: 'library', lat: NEAR.lat, lng: NEAR.lng })
   const directory = [far, noCoords, indoor, near]
 
-  const NO_FILTERS = { query: '', indoor: null, kidAges: null, maxMiles: null }
+  const NO_FILTERS = { query: '', indoor: null, maxMiles: null }
 
   it('sorts nearest first, alphabetically on ties', () => {
     const rows = browsePlaces(directory, NO_FILTERS, VIEWER, ZIP_COORDS, null)
@@ -275,14 +240,6 @@ describe('browsePlaces (the directory\'s filter + sort decision)', () => {
     expect(indoors.map((row) => row.place.name)).toEqual(['Indoor Library'])
     const outdoors = browsePlaces(directory, { ...NO_FILTERS, indoor: false }, VIEWER, ZIP_COORDS, null)
     expect(outdoors.map((row) => row.place.name)).not.toContain('Indoor Library')
-  })
-
-  it('applies the age filter only when it is ON (null = off = keep everything)', () => {
-    const agey = place({ name: 'Big Kid Park', age_min: 8, age_max: 12 })
-    const rows = browsePlaces([agey, near], NO_FILTERS, VIEWER, ZIP_COORDS, null)
-    expect(rows).toHaveLength(2)
-    const filtered = browsePlaces([agey, near], { ...NO_FILTERS, kidAges: [4] }, VIEWER, ZIP_COORDS, null)
-    expect(filtered.map((row) => row.place.name)).toEqual(['Near Playground'])
   })
 
   it('searches LAST, so a filter can never be undone by the search box', () => {

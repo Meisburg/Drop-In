@@ -309,34 +309,6 @@ export function placePickerMatches(
 export const SOMEWHERE_ELSE_LABEL = 'Somewhere else'
 
 /**
- * Whether a place FITS the viewer's kids' ages — the "fits my kid's age"
- * filter (pinned rule: NULL is UNKNOWN and an unknown NEVER excludes).
- *
- * A place with no age_min and no age_max fits everyone (the seed's every row
- * today — no source states age ranges). With one bound, that bound is the only
- * constraint (age_min 5 = "5 and up"). A place fits when AT LEAST ONE of the
- * viewer's kids is in range — "fits my kid's age" is about the parents' kids,
- * and a family with a 3- and a 7-year-old should not lose the playground that
- * only suits the 3-year-old.
- *
- * No kid ages (the viewer added no kids, or the read failed) keeps EVERYTHING:
- * with nothing to compare against, the filter cannot positively say a place
- * does not fit, and the rule is that only positive data may exclude.
- */
-export function placeFitsKidAges(
-  place: { age_min: number | null; age_max: number | null },
-  kidAges: readonly number[],
-): boolean {
-  if (place.age_min === null && place.age_max === null) return true
-  if (kidAges.length === 0) return true
-  return kidAges.some((age) => {
-    const aboveMin = place.age_min === null || age >= place.age_min
-    const belowMax = place.age_max === null || age <= place.age_max
-    return aboveMin && belowMax
-  })
-}
-
-/**
  * The place page's age line: "Best for ages 2–5", "Best for ages 5 and up",
  * "Best for ages 3 and under", or null when the data says nothing (the render
  * omits the line — an empty "Best for ages" is not a state).
@@ -410,12 +382,6 @@ export interface PlaceFilters {
   /** null = both kinds; true = indoor only; false = outdoor only. */
   indoor: boolean | null
   /**
-   * The viewer's kids' ages for the "fits my kid's age" filter, or null when
-   * that filter is OFF. [] (no kids on the profile) keeps everything —
-   * placeFitsKidAges's rule.
-   */
-  kidAges: readonly number[] | null
-  /**
    * The distance filter's ceiling in miles, or null for "any distance".
    * Defaulted by the caller to the viewer's radius (the app's discovery
    * model); a place with UNKNOWN distance is kept — see browsePlaces.
@@ -431,11 +397,10 @@ export interface PlaceFilters {
  * Order of operations, each with its reason:
  * 1. DISTANCE (from the viewer's home zip to the PLACE's coordinates — the
  *    ticket's filter). A place with unknown distance is KEPT even when a
- *    ceiling is set: null is unknown, and an unknown never excludes (the same
- *    rule as the age filter). Only a measured, beyond-ceiling distance hides.
+ *    ceiling is set: null is unknown, and an unknown never excludes.
+ *    Only a measured, beyond-ceiling distance hides.
  * 2. INDOOR/OUTDOOR, when the parent picked one.
- * 3. AGE FIT (placeFitsKidAges).
- * 4. SEARCH last, over what survived: the result is what the parent is looking
+ * 3. SEARCH last, over what survived: the result is what the parent is looking
  *    at, so search must never resurrect a place a filter just excluded.
  *
  * SORT: nearest first, then by name. Unknown-distance places sort LAST (they
@@ -457,7 +422,6 @@ export function browsePlaces(
       continue
     }
     if (filters.indoor !== null && place.indoor !== filters.indoor) continue
-    if (filters.kidAges !== null && !placeFitsKidAges(place, filters.kidAges)) continue
     rows.push({
       place,
       distanceMiles,

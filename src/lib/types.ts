@@ -270,8 +270,8 @@ export type PlaceKind =
  * invented, and never a reason to hide the place.
  *
  * `age_min` / `age_max` are null for every seeded row: no source states age
- * ranges. NULL is UNKNOWN, and the "fits my kid's age" filter keeps unknown
- * places (places.placeFitsKidAges).
+ * ranges. NULL is UNKNOWN, so the place page's age line (placeAgeFitLabel) is
+ * omitted when there is nothing to say, never invented.
  */
 export interface Place {
   id: string

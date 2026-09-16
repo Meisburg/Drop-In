@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { RadiusEmptyState } from '../components/RadiusEmptyState'
 import { useSessionContext } from '../components/SessionProvider'
-import { listKids, listPlaces, loadZipCodes, upcomingCountsByPlace } from '../lib/db'
+import { listPlaces, loadZipCodes, upcomingCountsByPlace } from '../lib/db'
 import { DEFAULT_RADIUS_MILES, formatDistanceLabel, RADIUS_MILES_OPTIONS } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
 import {
@@ -30,11 +30,6 @@ import type { Place } from '../lib/types'
  *   filters — it must never resurrect a place a filter just excluded.
  * - INDOOR / OUTDOOR: the places.indoor column (real data: the city's
  *   Swimming Pools layer publishes INDOOR_OUT and 0029 uses it).
- * - FITS MY KID'S AGE: `placeFitsKidAges` — and, crucially, a place whose age
- *   range is UNKNOWN is KEPT. Every seeded row is unknown today (no source
- *   states age ranges), so this filter starts out excluding nothing at all:
- *   a filter may only exclude a place when the data positively says it does not
- *   fit, never for missing data.
  * - DISTANCE from the viewer's home zip to the PLACE's coordinates (the whole
  *   point of the ticket — not the host's zip). Its default follows the viewer's
  *   own radius, the app's existing discovery model, so the shared empty state
@@ -64,13 +59,9 @@ export function BrowsePage() {
   // null = the count read failed (pre-0030-apply: no place_id column) → no
   // count is rendered at all, because "0 upcoming" is a claim we cannot make.
   const [upcoming, setUpcoming] = useState<Map<string, number> | null>(null)
-  // The viewer's kids' ages, for the age filter. [] = no kids (or the read
-  // failed) — and an empty list keeps EVERY place (nothing to compare against).
-  const [kidAges, setKidAges] = useState<number[]>([])
 
   const [query, setQuery] = useState('')
   const [indoorFilter, setIndoorFilter] = useState<boolean | null>(null)
-  const [fitsAges, setFitsAges] = useState(false)
   // 'profile' = follow the viewer's own radius (the default, and what makes the
   // shared empty state's escapes work — they re-write that radius and the page
   // re-renders off the refreshed profile). 'any' = no ceiling. A number = the
@@ -132,22 +123,6 @@ export function BrowsePage() {
     }
   }, [loading, session])
 
-  // The viewer's kids' ages (the age filter's input). A failed read stays [].
-  useEffect(() => {
-    if (loading || session === null) return
-    let cancelled = false
-    listKids(session.user.id)
-      .then((kids) => {
-        if (!cancelled) setKidAges(kids.map((kid) => kid.age))
-      })
-      .catch(() => {
-        if (!cancelled) setKidAges([])
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [loading, session])
-
   if (loading || profile === null) {
     return (
       <div className="flex min-h-64 items-center justify-center text-sm text-slate-600">
@@ -167,7 +142,6 @@ export function BrowsePage() {
     {
       query,
       indoor: indoorFilter,
-      kidAges: fitsAges ? kidAges : null,
       maxMiles,
     },
     { homeZip: profile.home_zip ?? null },
@@ -181,11 +155,10 @@ export function BrowsePage() {
   const unplaced = rows.filter((row) => row.distanceMiles === null)
 
   // The shared radius empty state is the honest answer ONLY when the radius is
-  // actually the reason nothing is showing: no search text, no kind filter, no
-  // age filter. Otherwise the copy would blame the radius for a filter the
-  // parent set.
+  // actually the reason nothing is showing: no search text, no kind filter.
+  // Otherwise the copy would blame the radius for a filter the parent set.
   const radiusIsTheReason =
-    maxMiles !== null && placed.length === 0 && query.trim() === '' && indoorFilter === null && !fitsAges
+    maxMiles !== null && placed.length === 0 && query.trim() === '' && indoorFilter === null
   const nothingMatches = placed.length === 0 && unplaced.length === 0
 
   return (
@@ -246,25 +219,6 @@ export function BrowsePage() {
           >
             Outdoor
           </button>
-          {/* Only offered when there is something to compare: with no kids on
-              the profile the filter could not exclude anything, and a control
-              that cannot act is a dead control. */}
-          {kidAges.length > 0 ? (
-            <button
-              type="button"
-              data-testid="places-age-filter"
-              aria-pressed={fitsAges}
-              onClick={() => setFitsAges((prev) => !prev)}
-              className={
-                'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ' +
-                (fitsAges
-                  ? 'border-indigo-600 bg-indigo-600 text-white'
-                  : 'border-slate-300 bg-white text-slate-700')
-              }
-            >
-              Fits my kid’s age
-            </button>
-          ) : null}
         </div>
 
         <label className="flex flex-col gap-1 text-sm">

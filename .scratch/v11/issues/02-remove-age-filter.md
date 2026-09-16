@@ -10,7 +10,7 @@ only the filter goes away.
 no age data or a wide range is still a perfectly good gathering spot, and the
 toggle made the list feel empty. Discovery stays radius-based.
 
-**Status:** TODO
+**Status:** DONE (2026-09-16; gate 818/818 unit (825 − 7 age-filter tests) + 76 passed e2e; commit hash recorded in the coordinator's task-state V11 update)
 
 ## Mechanics (pinned)
 
