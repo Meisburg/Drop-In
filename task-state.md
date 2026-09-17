@@ -834,7 +834,7 @@ anywhere to look at them.
 |---|---|---|
 | 01 | Settings autosave — /settings saves as you go, no Save button, no unsaved guard | **complete — `f4da2b1` + `6a7ae10`** (2026-09-17, local, unpushed); evidence + review in the Completed slices entry below |
 | 02 | The new time model — /new picks the duration for you (fast path 4 taps → 3) | **complete — `6d7fc73`** (2026-09-17, local, unpushed); evidence + review in the Completed slices entry below |
-| 03 | End an event early — the `ended` status (honest history, option A) | not-started |
+| 03 | End an event early — the `ended` status (honest history, option A) | **code complete — `29c19a2` + migration `0041` written (2026-09-17, local, unpushed); LIVE APPLY PENDING — Phase B blocked on the expired dashboard session in the CDP profile (human re-auth needed); evidence in the Completed-slices entry below** |
 | 04 | Profile self-view + post-again — kids' photos re-surface (owner-only), the clone closes out | not-started |
 | 05 | A map — Leaflet + OpenStreetMap tiles on the place surfaces | not-started |
 
@@ -931,6 +931,57 @@ the dev-agent pane `w4:p12` stays idle (the V11 coordinator loop's pane).
   was DOWN, so the full e2e ran against the HOSTED project
   (`ayzvjwxb…supabase.co` via `.env`) — the same target prior gate runs
   used; t02 changed no schema, so no local-drift risk.
+- **t03 — End an event early (Phase A ACCEPTED, 2026-09-17).** A host can
+  end an event early: new `ended` status (option A — honest history, the
+  event stays in history labelled "ended"; it is not a cancellation).
+  Commit `29c19a2` (parent `f773999`), 13 files, +678/−36, local, unpushed.
+  Scope: `supabase/migrations/0041_end_event_early.sql` (NEW — 3-value
+  `playdates_status_chk`, 5-value `notification_log_kind_check`,
+  generalized `notify_playdate_cancelled` with `v_kind`, 5-arg payload,
+  header pins (a)–(f)) + app (`src/lib/types.ts` status union,
+  `src/lib/feed.ts` `isStillAhead` + `.neq('status','ended')` feed
+  exclusion + Past partition + my-playdates select,
+  `src/components/DropInCard.tsx` "Ended" chip,
+  `src/pages/PlaydateDetailPage.tsx` "End this post now" option + chip,
+  `src/pages/ProfilePage.tsx` "· Ended" suffix,
+  `supabase/functions/_shared/pushCopy.ts` + `src/lib/push.ts` 5th `ended`
+  kind, `src/lib/db.ts` comment-only four→five kinds) + tests/e2e
+  (`src/lib/feed.test.ts`, `src/lib/push.test.ts`,
+  `e2e/feed-ended-out.e2e.ts`, `e2e/host-status.e2e.ts`).
+  Gate (verifier-independent, re-run post-Phase-B-attempt 2026-09-17):
+  `npx tsc -b` exit 0; `npm run build` exit 0; `npm run test` 826/826 (25
+  files); `npm run lint` 0 errors; full e2e 76 pass / 2 fail / 1 skip — the
+  2 failures are EXACTLY the two new t03 specs at their REST probe: CHECK
+  violation 23514 `playdates_status_chk` ("new row for relation
+  \"playdates\" violates check constraint") = the designed PRE-APPLY RED;
+  the 1 skip = pre-existing `e2e/polish.e2e.ts:226`. Target = hosted
+  `ayzvjwxb…supabase.co` (local :54321 down).
+  Reviewer: PASS, no blocking. 3 non-blocking recorded: (a) 0041 missing
+  EOF newline (cosmetic); (b) ticket pin labels (a)/(b) vs migration header
+  (a)–(f) offset — content complete; (c) while-away inbox intentionally
+  does NOT surface `ended` items (only `cancelled`, `src/lib/feed.ts`
+  cancellation loop) — the ended channel is the push notification;
+  JUDGMENT CALL PARKED (ticket silent; founder can revisit).
+  Migration decision (in the 0041 header): `ended` = 5th notification kind
+  via generalized `notify_playdate_cancelled` (DELETE→'cancelled',
+  on→'ended' UPDATE; guard keeps catch-up no-ops safe); the
+  `playdates_update_host` probe (0005:78-82) = generic host-write RPC
+  admits 'ended', NO RLS change; send-push catch-up scan stays
+  `.eq('playdate.status','on')` so ended posts are never re-pushed.
+  PHASE B (coordinator apply) status: **BLOCKED 2026-09-17** — the
+  dashboard session token in the CDP profile copy is expired (last apply
+  2026-09-13, 1h TTL); CDP relaunch (stale + fresh re-copy) lands on
+  sign-in, `supabase.dashboard.auth.token` absent from Local Storage; the
+  documented SQL-API path (tooling note amendment #2) therefore
+  unrunnable. UNBLOCK = human signs in to supabase.com/dashboard once in
+  their normal Chrome (the tooling re-copies the profile storage on next
+  launch). Until 0041 is live: do NOT push t03 as "shipped"; the "End this
+  post now" UI write 23514s on the live DB by design.
+  Markers now due for sweep (approximate, to be enumerated via SQL API
+  post-apply): `e2e-1789595576, 1789596078, 1789596528, 1789596784,
+  1789597848, 1789600461, 1789605246, 1789606124, 1789663463, 1789682435,
+  1789683382 @gmail.com` + 0–2 residual `ended`-status playdate rows from
+  the RED specs (unverifiable pre-apply).
 
 ### Open risks / follow-ups
 
@@ -945,14 +996,19 @@ the dev-agent pane `w4:p12` stays idle (the V11 coordinator loop's pane).
 3. **t02 gate — CONFIRMED (2026-09-17):** the founder confirmed the
    auto-suggested-duration reading (vs an explicit end-time control); t02
    was dispatched on that reading and is complete (`6d7fc73`).
+4. **t03 PHASE B BLOCKED (2026-09-17):** `0041` unapplied; live DB still
+   has the 0019 2-value CHECK; unblock = human dashboard sign-in (under 2
+   min); then the coordinator re-runs the documented apply→probe→e2e-flip
+   sequence. Do not push t03 before 0041 is live.
 
-**Next: dispatch t03** (end-event-early — includes migration `0041`
-(reserved; widens the `0019` status CHECK to include `ended`) + a pre-apply
-red capture). After t03's code+gate is green, the COORDINATOR applies
-`0041` via browser-use/CDP and runs the live check (a coordinator step, not
-a builder step). Then t04 (profile self-view + post again), t05 (map
-Leaflet, no geolocation), then the batch gate (full e2e + lint 0 + 0041
-live probes after CDP apply + marker sweep).
+**Next:** Immediate (human, under 2 min): sign in to supabase.com/dashboard
+in your normal Chrome (same account as the 0040 apply). Then: coordinator
+applies 0041 via the documented CDP + SQL-API path (tooling note
+amendment #2), re-runs `e2e/feed-ended-out.e2e.ts` + `e2e/host-status.e2e.ts`
+(RED→GREEN) + the full gate (expect 78/0/1), records t03 complete, then
+dispatches t04 (profile self-view + post-again — no migration), t05 (map
+Leaflet, no geolocation), then the batch gate (full e2e + lint 0 + marker
+sweep incl. the ~11 e2e-* families + residual ended rows).
 
 ## V4 — "Drop In" mobile conversion (opened 2026-09-11)
 
