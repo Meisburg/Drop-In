@@ -5,7 +5,7 @@
 
 ## Current position
 
-- **V12 — the 2026-09-17 founder batch (opened 2026-09-17, the post-V11.5 feedback session).** Spec + 5 tickets in `.scratch/v12/` (queue order 01→05; 03 is the only migration — 0041 reserved, next free after 0040). Founder decisions (2026-09-17): **t05** = Leaflet + OpenStreetMap tiles, no browser geolocation; **t03** = the `ended` status (option A, honest history — an early-ended event stays in history as "ended", not "cancelled"); **t04** = kids' photos re-surface on the owner's /profile self-view ONLY (the private `kid-photos` bucket, 0038; every other surface stays photo-free — the V9 t11 invariant). **Ticket 06 dropped** — the V11 follow-up polish it covered already shipped as the V11.5 batch (`b092886` + `5d85caa`), pushed + live-verified; the V11 follow-ups list is recorded fully closed (V11.5 section). Per-ticket gate: `npm run build && npm run test`; batch gate = full suite + lint. Spine: orchestrator subagents (this session has no Herdr shell access — the dev pane `w4:p12` stays idle). **Filing ACCEPTED (2026-09-17):** the 3-commit set `{d5438ad, 108471e, 3c85818}` = exactly 7 files (spec + tickets 01–05 + task-state); content green after 2 review cycles — cycle 1 fixed the `02:27` section-order pin (→ `src/components/PlaydateFormFields.tsx:821-839`) and added the missing `03 **Why:**` line, cycle 2 confirmed both + no new defects; all 3 founder decisions consistent (t03=`ended`/0041, t04=owner-only kid-photos/0038, t05=Leaflet+OSM no-geo), the 1-migration (0041, next-free after 0040) plan correct, ticket 06 dropped (V11.5 closure). **Classification:** interleaved local commit `2c4b9cd` = separate V11.5 housekeeping (closes `.scratch/v11.5/01-copy-pointers.md` t01 — the previously-pending V11.5 bookkeeping item, now realized), NOT part of the V12 filing. **Next: t01** (settings autosave — the first V12 code slice — `.scratch/v12/issues/01-settings-autosave.md`). Details in the **V12** section below.
+- **V12 — the 2026-09-17 founder batch (opened 2026-09-17, the post-V11.5 feedback session).** Spec + 5 tickets in `.scratch/v12/` (queue order 01→05; 03 is the only migration — 0041 reserved, next free after 0040). Founder decisions (2026-09-17): **t05** = Leaflet + OpenStreetMap tiles, no browser geolocation; **t03** = the `ended` status (option A, honest history — an early-ended event stays in history as "ended", not "cancelled"); **t04** = kids' photos re-surface on the owner's /profile self-view ONLY (the private `kid-photos` bucket, 0038; every other surface stays photo-free — the V9 t11 invariant). **Ticket 06 dropped** — the V11 follow-up polish it covered already shipped as the V11.5 batch (`b092886` + `5d85caa`), pushed + live-verified; the V11 follow-ups list is recorded fully closed (V11.5 section). Per-ticket gate: `npm run build && npm run test`; batch gate = full suite + lint. Spine: orchestrator subagents (this session has no Herdr shell access — the dev pane `w4:p12` stays idle). **Filing ACCEPTED (2026-09-17):** the 3-commit set `{d5438ad, 108471e, 3c85818}` = exactly 7 files (spec + tickets 01–05 + task-state); content green after 2 review cycles — cycle 1 fixed the `02:27` section-order pin (→ `src/components/PlaydateFormFields.tsx:821-839`) and added the missing `03 **Why:**` line, cycle 2 confirmed both + no new defects; all 3 founder decisions consistent (t03=`ended`/0041, t04=owner-only kid-photos/0038, t05=Leaflet+OSM no-geo), the 1-migration (0041, next-free after 0040) plan correct, ticket 06 dropped (V11.5 closure). **Classification:** interleaved local commit `2c4b9cd` = separate V11.5 housekeeping (closes `.scratch/v11.5/01-copy-pointers.md` t01 — the previously-pending V11.5 bookkeeping item, now realized), NOT part of the V12 filing. **t01 ACCEPTED and green (2026-09-17):** `f4da2b1` (autosave conversion) + `6a7ae10` (fix: stuck "Saving…" indicator on coalesced no-op) — both local, unpushed; gate + review evidence in the V12 section. **Queue position:** t02 (new time model) is next, and it is PENDING a founder confirmation on its reading (auto-suggested duration vs explicit end-time) — that confirmation is the explicit gate before t02 dispatch. Details in the **V12** section below.
 - **V11 — the founder's V11 feedback batch (opened 2026-09-16, on the live V10 app).** Spec + 6 tickets in `.scratch/v11/` (order 01→02→03→04→05→06; 06 depends on 04). **NO migrations in the batch.** Per-ticket gate: `npm run build && npm run test`. Dev-agent pane REBUILT 2026-09-16 — the ACTIVE pane is tab `w4:tP` (label "5"), pane `w4:p12`, agent `v11dev2` (started via `herdr agent start`; the earlier `w4:tN`/`w4:p11`/`v11dev` pane is superseded — see the V11 section). **Tickets 01–06 are COMPLETE (code `aa7e991`, `61a9efa`, `b86a3bf`, `fc64dd6`, `456c7b9`, `e5d1462`) — the V11 batch is COMPLETE (tickets 01–06), final single-tenant gate GREEN on the final tree at HEAD `6f6e9e0` (coordinator verifier — raw gate results, reviewer verdicts, and open follow-ups in the V11 section below). SHIPPED to origin/master 2026-09-17 (local date) — push `d9239f4..a894a77` (16 commits: the 14 batch commits plus task-state bookkeeping `058d923` + `46aa848`, both task-state.md-only); `opencode.json` verified absent from the pushed range (grep count 0). Vercel production deploy **CONFIRMED LIVE 2026-09-17 (~09:00 PDT)** — `a894a77` is the current production deployment (deployment `3CB8rVrtcruYoMjbMSRBuR4dCd83`, auto-deployed by Vercel's git integration on the ship push; the ship record's "likely no auto-trigger" note predates the deploy landing just after the last probe window). Live proof: `https://drop-in-mu.vercel.app` serves the deployment's entry `/assets/index-o3zQGGgw.js` (sha256 `d3baa23d50ccaa60f3aec25da9c7dbfbc75b470ce2f6070213fdbeb7c4f803b5`) carrying both V11 t06 copy markers, and `/settings` answers 200 (full evidence in the V11 ship record below).**
 - **V10 — "Post again" and friends (opened 2026-09-14, the founder's fast-recall batch).** Spec + tickets in `.scratch/v10/`, origin: the /post audit (the V9-t03 form is already near-minimal; the remaining cost is RECALL — nothing remembers the whole last post, kids sit behind the disclosure, "tomorrow at 10" is a fiddly date field). **ALL THREE TICKETS COMPLETE — DEPLOYED AND LIVE-PROBED (2026-09-14):** **01 Post-again clone (commit `ae69cdd`)**, **02 kids surfaced above the disclosure (commit `f688ab0`)**, **03 sentence prefill (code `ebb6bca` + live-probe fixes `b9c6d7f`)**. Final gate on the committed tree: build exit 0 · **824/824 unit (24 files)** · **e2e 76/76** · lint 0 errors. **NO migrations in the batch.** **Ticket 03 IS LIVE:** `prefill-playdate` ACTIVE (v4), secrets set (OpenAI `gpt-4o-mini`, key rode a 0600 temp file, shredded), probes all green — real JWT → 200 with correct extraction (relative date, 30-min grid, chips, ageHint), kid-name sentence → place+time only (no echo), anon/garbage/absent → 401, oversize/bad-shape → 400. **Two recorded deviations, both probe-evidenced:** (1) deployed `--no-verify-jwt` because the platform's ES256 wall rejected the very token supabase-js accepts (the function's own `auth.getUser` wall is the gate — all four unauthorized probes 401); (2) the per-instance rate limit is best-effort under cold starts (12 rapid probes all 200) — acceptable for a bound, the real cost cap is the LLM spend. The batch design (prefill, not chat) was chosen over CopilotKit deliberately; research at `.scratch/agent-post-page/research.md`.
 - **Phase:** V3 PLAN COMPLETE — all 10 slices + tickets 01-10 closed; 0025 (guest list) applied live 2026-09-11 and verified (coordinator-verifier finish after the headless run died at its .env read). REMAINING HUMAN ITEMS CLOSED 2026-09-11 by Hermes coordinator: (1) marker sweep — 173 e2e users + opsmoke.test deleted via dashboard SQL API (safety gate: founder profiles verified outside the set; child rows scoped to markers; FINAL live DB: 2 auth users [jonmeisburg, nicolemeisburg], 2 profiles, 2 playdates [Greenlake, both Jon's]; remaining ping/comment/memberships belong to Jon+Nicole — kept); (2) founder-flag SQL — already applied (profiles.moderators=true on 'Jon Meisburg' verified pre-sweep, no action needed). V3 FULLY CLOSED.
@@ -832,7 +832,7 @@ anywhere to look at them.
 
 | # | Ticket | State |
 |---|---|---|
-| 01 | Settings autosave — /settings saves as you go, no Save button, no unsaved guard | not-started |
+| 01 | Settings autosave — /settings saves as you go, no Save button, no unsaved guard | **complete — `f4da2b1` + `6a7ae10`** (2026-09-17, local, unpushed); evidence + review in the Completed slices entry below |
 | 02 | The new time model — /new picks the duration for you (fast path 4 taps → 3) | not-started |
 | 03 | End an event early — the `ended` status (honest history, option A) | not-started |
 | 04 | Profile self-view + post-again — kids' photos re-surface (owner-only), the clone closes out | not-started |
@@ -879,8 +879,45 @@ the dev-agent pane `w4:p12` stays idle (the V11 coordinator loop's pane).
   the V12 filing; it is the previously-pending V11.5 bookkeeping item, now
   realized.
 
-**Next: t01** (settings autosave — the first V12 code slice —
-`.scratch/v12/issues/01-settings-autosave.md`).
+### Completed slices
+
+- **t01 — Settings autosave (ACCEPTED, green, 2026-09-17).** /settings saves
+  as you go — no Save button, no unsaved-changes guard (the explicit Save
+  button, the "unsaved changes" dirty line, and the `profile-save-note`
+  region are replaced by a compact "saving… / saved" indicator).
+  Commits: `f4da2b1` (autosave conversion) + `6a7ae10` (fix: stuck
+  "Saving…" indicator on coalesced no-op). Both local, unpushed.
+  Gate evidence (verifier-independent): `npx tsc -b` exit 0;
+  `npm run build` pass; `npm run test` 821/821 (25 files — 818 baseline +
+  3 new `src/lib/autosave.test.ts`); `npm run lint` 0 errors (41
+  pre-existing warnings); `rg '\bSave\b' src/pages/SettingsPage.tsx` → 0;
+  full e2e 76 pass / 1 designed skip (`e2e/polish.e2e.ts:226` live-SQL CDP
+  path). Review: reviewer PASS (the blocking finding on the indicator
+  settle resolved at `SettingsPage.tsx:473` / `autosave.ts:38-43`);
+  non-blocking leftovers noted: unused `_machine` param (documented),
+  missing EOF newlines in the 2 new files (cosmetic). Files:
+  `src/pages/SettingsPage.tsx`, `src/lib/autosave.ts`,
+  `src/lib/autosave.test.ts`, plus 3 updated e2e specs (`profiles-v2`,
+  `polish`, `kid-photo-exposure`).
+
+### Open risks / follow-ups
+
+1. **FOLLOW-UP (not yet ticketed):** `src/components/useUnsavedChangesGuard.tsx`
+   is now fully orphaned (zero importers after t01) → delete it, and also fix
+   the stale "Save profile" doc comments in `src/lib/profileSave.ts`. Keep out
+   of t01.
+2. **HUMAN DECISION:** `opencode.json` has a pre-existing uncommitted
+   working-tree modification (model-endpoint IP + a plaintext API key). It is
+   intentionally EXCLUDED from all V12 commits — do NOT stage it. The human
+   must decide: commit / revert / add to .gitignore.
+3. **t02 gate:** the founder must confirm the auto-suggested-duration reading
+   (vs an explicit end-time control) before t02 is dispatched.
+
+**Next:** after the t02 reading is confirmed → dispatch t02 (new time model);
+then t03 (end-event-early, includes migration 0041 + pre-apply red capture),
+t04 (profile self-view + post again), t05 (map Leaflet, no geolocation); then
+the batch gate (full e2e + lint 0 + 0041 live probes after CDP apply +
+marker sweep).
 
 ## V4 — "Drop In" mobile conversion (opened 2026-09-11)
 
