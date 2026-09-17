@@ -3471,7 +3471,7 @@ export async function listPushSubscriptions(): Promise<PushSubscriptionSummary[]
  * there is no cross-profile read anywhere, moderator included.
  *
  * `kind` is narrowed through `isNotificationKind` rather than trusted: a row
- * whose kind is not one of the four (a hand-edited table, a pre-CHECK row)
+ * whose kind is not one of the five (a hand-edited table, a pre-CHECK row)
  * must not break the list, so unknown kinds are dropped.
  */
 export async function listRecentNotificationsWithClient(

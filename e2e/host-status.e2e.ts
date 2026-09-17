@@ -6,11 +6,20 @@
  * posts a drop-in, opens its detail page, and sets the status to
  * CANCELLED via the "This is your post" panel (the ONLY status surface —
  * non-hosts + the signed-out view never render the control; the control
- * is On / Cancelled only — the third option was trimmed by ticket 06 +
- * migration 0019): the muted "Cancelled" chip appears on the detail page
+ * is On / Cancelled / "End this post now" — the third option was trimmed
+ * by ticket 06 + migration 0019 and returned by V12 ticket 03 + migration
+ * 0041 as 'ended'): the muted "Cancelled" chip appears on the detail page
  * (next to the title) AND on the feed card (the card re-fetches the row
  * — the DB round-trip), then the marker reverts to ON and the chip is
  * gone (the event stayed in the feed the whole time — no auto-expiry).
+ *
+ * V12 ticket 03 adds a SECOND test — the "ended" round-trip: the host
+ * picks "End this post now" (status='ended') on a FUTURE post. RED until
+ * 0041 is applied live (the write hits the live two-value CHECK — the
+ * constraint violation text is carried in the REST-probe assertion);
+ * green after. The UI half (the third option rendering, the "Ended" chip
+ * on the detail page + the owner's Past list) is asserted after the probe,
+ * so the failure point pre-apply is the probe, never a test-logic bug.
  *
  * Pre-0016-apply this spec FAILS (the status column does not exist — the
  * panel's write throws, the error line renders instead of the chip): an
@@ -104,6 +113,70 @@ test('the host sets CANCELLED — the muted state round-trips on the card + deta
   // (d) Revert to ON — the chip is gone (the host can flip back; no
   // auto-expiry anywhere).
   await page.goto(detailPath)
+  await page.getByRole('button', { name: 'On', exact: true }).click()
+  await expect(page.locator('h1 + span')).toHaveCount(0)
+})
+
+/**
+ * V12 ticket 03 — the "ended" round-trip: the host ends a FUTURE drop-in early
+ * ("End this post now", status='ended'). The REST probe IS the red point
+ * pre-0041-apply (the live CHECK is still 0019's two values, so the write
+ * comes back as the constraint violation and its text lands in the assertion
+ * message); the UI half — the third option rendering, the "Ended" chip on the
+ * detail page, and the revert to On — is asserted AFTER the probe, so the
+ * pre-apply failure point is the probe, never a test-logic bug. (The post
+ * also leaves the feed — the read's .neq('status','ended') — which
+ * feed-ended-out.e2e.ts covers from the feed side.)
+ */
+test('the host ends a FUTURE post early — "End this post now" (V12 t03)', async ({
+  page,
+}) => {
+  const marker = readMarkerMeta()
+  const title = `e2e ${marker.displayName} host-ended`
+  const detailPath = await postMarkerDropIn(page, title)
+  const postId = detailPath.slice('/playdate/'.length)
+
+  await page.goto(detailPath)
+  await page.getByRole('heading', { name: title, exact: true }).waitFor()
+  await expect(page.getByText('This is your post')).toBeVisible()
+
+  // (a) All three options now render (client-side — GREEN even pre-apply: the
+  // option constant carries 'ended'; only the DB CHECK is the wall).
+  await expect(page.getByRole('button', { name: 'On', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Cancelled', exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'End this post now', exact: true }),
+  ).toBeVisible()
+
+  // (b) The REST probe — pre-0041-apply this expect IS the red capture: the
+  // live CHECK is still ('on','cancelled'), so the violation text comes back
+  // in the body and lands in the message.
+  const { url, anonKey } = readSupabaseEnv()
+  const { accessToken } = readMarkerSession()
+  const res = await fetch(`${url}/rest/v1/playdates?id=eq.${postId}`, {
+    method: 'PATCH',
+    headers: {
+      apikey: anonKey,
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ status: 'ended' }),
+  })
+  const body = await res.text()
+  expect(
+    res.ok,
+    `the status='ended' write must be accepted (pre-0041-apply this is the expected RED — ` +
+      `the live CHECK violation: ${body})`,
+  ).toBe(true)
+
+  // (c) The "Ended" chip appears on the detail page (re-fetch after the
+  // out-of-band REST write — the app's React state is unaware of it).
+  await page.reload()
+  await page.getByRole('heading', { name: title, exact: true }).waitFor()
+  await expect(page.locator('h1 + span').getByText('Ended', { exact: true })).toBeVisible()
+
+  // (d) The host can bring it back — revert to ON (always CHECK-legal), the
+  // chip is gone (no stickiness).
   await page.getByRole('button', { name: 'On', exact: true }).click()
   await expect(page.locator('h1 + span')).toHaveCount(0)
 })

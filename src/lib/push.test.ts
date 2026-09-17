@@ -4,7 +4,7 @@
  * Three of these are pinned by the ticket and are the reason this file is not
  * a formality:
  *
- *  1. the PAYLOAD BUILDER — the wording of all four kinds, including the
+ *  1. the PAYLOAD BUILDER — the wording of all five kinds, including the
  *     singular "1 family is going" (the plural template would say
  *     "1 families", the same broken English the while-away inbox already
  *     fixed). These literals are the spec the SQL twin
@@ -135,6 +135,22 @@ describe('buildNotificationPayload', () => {
     })
   })
 
+  it('builds the ended kind as the host-ended-early message (V12 t03, 0041 pin d)', () => {
+    // The literal strings the SQL twin (public.notification_payload, the
+    // 0041-rewritten branch) must match char-for-char.
+    expect(
+      buildNotificationPayload({
+        kind: 'ended',
+        playdateId: POST_ID,
+        postTitle: 'Green Lake playground',
+      }),
+    ).toEqual({
+      title: 'Ended: "Green Lake playground"',
+      body: "The host ended it — don't head out.",
+      url: `/playdate/${POST_ID}`,
+    })
+  })
+
   it('builds starting_soon with the SINGULAR at exactly one family going', () => {
     expect(
       buildNotificationPayload({
@@ -249,9 +265,10 @@ describe('notificationUrl', () => {
 })
 
 describe('isNotificationKind', () => {
-  it('accepts the four kinds and rejects anything else', () => {
+  it('accepts the five kinds and rejects anything else', () => {
     expect(isNotificationKind('ping_received')).toBe(true)
     expect(isNotificationKind('cancelled')).toBe(true)
+    expect(isNotificationKind('ended')).toBe(true)
     expect(isNotificationKind('reminder')).toBe(false)
     expect(isNotificationKind(null)).toBe(false)
     expect(isNotificationKind(7)).toBe(false)

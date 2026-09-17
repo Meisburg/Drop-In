@@ -178,11 +178,16 @@ export function DropInCard({
   const live = isHappeningNow(playdate, nowIso)
   const ended = isEnded(playdate, nowIso)
   // V3 slice 2 (ticket 02; trimmed by V3 slice 3, ticket 06 + migration
-  // 0019): the host's status chip (null = 'on' / the column is absent
-  // pre-0016-apply → the normal, non-muted styling). The chip renders
-  // for "Cancelled" only (the redundant option was removed — the muted
-  // styling stays); the "Rain likely" badge is an independent forecast.
-  const statusChip = playdate.status === 'cancelled' ? 'Cancelled' : null
+  // 0019; 'ended' added by V12 t03, migration 0041): the host's status chip
+  // (null = 'on' / the column is absent pre-0016-apply → the normal,
+  // non-muted styling). The chip renders "Ended" (the host ended it early)
+  // or "Cancelled"; the "Rain likely" badge is an independent forecast.
+  const statusChip =
+    playdate.status === 'ended'
+      ? 'Ended'
+      : playdate.status === 'cancelled'
+        ? 'Cancelled'
+        : null
   const muted = ended || statusChip !== null
   // The radius feed's per-post distance (V2 slice 3, the "N mi" label,
   // integer miles — the pure haversine predicate in feed.ts). Undefined

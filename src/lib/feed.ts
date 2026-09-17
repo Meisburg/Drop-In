@@ -255,9 +255,21 @@ export function isEnded(post: { ends_at: string }, nowIso: string): boolean {
  * definition of ended (`ends_at <= nowIso`, so a post ending exactly AT now is
  * ended, and therefore not ahead), unit-tested at that boundary, so the feed,
  * the profile lists and the card cannot drift apart.
+ *
+ * V12 ticket 03 (migration 0041) adds a SECOND clause: an 'ended' post is not
+ * ahead EITHER, even while its window has not passed — the host ended it early
+ * (option A, honest history), so it leaves the feed while it stays in the
+ * owner's Past list, labelled "ended" (distinct from "cancelled"). The feed's
+ * DB query excludes it at the source (.neq('status', 'ended'),
+ * queryUpcomingFeedWithClient); this predicate is the defense-in-depth twin,
+ * agreeing with it by construction — the same two-layers-agree discipline as
+ * the time cutoff above.
  */
-export function isStillAhead(post: { ends_at: string }, nowIso: string): boolean {
-  return !isEnded(post, nowIso)
+export function isStillAhead(
+  post: { ends_at: string; status?: string | null },
+  nowIso: string,
+): boolean {
+  return !isEnded(post, nowIso) && post.status !== 'ended'
 }
 
 /**
@@ -441,6 +453,16 @@ export interface FeedPost {
    * (0005: `ends_at timestamptz not null`).
    */
   ends_at: string
+  /**
+   * The host's status (V3 ticket 02, migration 0016; the third value added by
+   * V12 ticket 03, migration 0041): 'on' is the DB default; 'cancelled' and
+   * 'ended' mute the card. OPTIONAL in this seam — pre-0016 rows (and the
+   * while-away inbox's unreadable-row shape) omit the column, and the UI
+   * treats missing as 'on' (the pre-0016 status discipline). The DB column
+   * itself is NOT NULL since 0016. 'ended' is the feed exclusion (this
+   * interface feeds isStillAhead and the queryUpcomingFeedWithClient .neq).
+   */
+  status?: string | null
   /** Set when a moderator has hidden the post (slice 5, migration 0009). */
   hidden_at?: string | null
   /** The host's location fields (V2 slice 3 — present on the joined host). */
@@ -536,6 +558,11 @@ export function filterFeed<T extends FeedPost>(
  * - .is('hidden_at', null) — hidden posts vanish from the feed for
  *   everyone (slice 5; the pure filterFeed re-filter is the defense in
  *   depth, unit-tested)
+ * - .neq('status', 'ended') — V12 ticket 03 (migration 0041): a host who
+ *   ends an event early takes it OUT of the feed immediately (honest
+ *   history, option A: it stays in the owner's Past list, labelled
+ *   "ended"). The pure filterFeed re-filter (isStillAhead) is the defense
+ *   in depth, unit-tested
  * - .not() on blocked hosts — only when the viewer actually has blocks (an
  *   empty .in() would match nothing; slice 3)
  *
@@ -598,6 +625,8 @@ export async function queryUpcomingFeedWithClient(
       '*, neighborhood:neighborhoods ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip, radius_miles )',
     )
     .gt('ends_at', cutoffIso)
+    // V12 ticket 03 (0041): a host-early-ended post leaves the feed immediately.
+    .neq('status', 'ended')
     .order('starts_at', { ascending: true })
     .is('hidden_at', null)
   if (blockedHostIds.length > 0) {
@@ -993,7 +1022,7 @@ export async function queryMyPlaydatesWithClient(
 ): Promise<unknown[]> {
   const { data, error } = await client
     .from('playdates')
-    .select('id, host_profile_id, title, place, neighborhood_id, starts_at, ends_at, age_hint, details')
+    .select('id, host_profile_id, title, place, neighborhood_id, starts_at, ends_at, age_hint, details, status')
     .eq('host_profile_id', profileId)
     .order('starts_at', { ascending: false })
   if (error) throw error
@@ -2149,6 +2178,14 @@ export interface PostPartition<T> {
  * past. So the split lines up with the card exactly: every Past card is muted
  * (opacity-60 + the "Ended" chip) and no Upcoming card is.
  *
+ * V12 t03 (migration 0041) adds a SECOND reason to be Past: a host who ENDED
+ * the event early (status 'ended', the third status option) files it under
+ * Past even while its window has not passed — the "ended" label is honest
+ * history (option A), distinct from "cancelled". The constraint's `status` is
+ * OPTIONAL (pre-0016 rows and the while-away unreadable shape omit it); a
+ * missing status reads as 'on', so only an explicit 'ended' value ever pushes
+ * a not-yet-time-ended post to Past.
+ *
  * ORDER is applied HERE, from the rows the caller has: upcoming ascending by
  * `starts_at` (soonest first), past descending (most recent first). The DB
  * orders its two queries for the cap's sake; this seam is the contract the
@@ -2157,14 +2194,19 @@ export interface PostPartition<T> {
  * The caller's array is never mutated (the lists are new arrays; only the
  * shared row objects are re-ordered, inside those new arrays).
  */
-export function partitionPostsByTime<T extends { starts_at: string; ends_at: string }>(
+export function partitionPostsByTime<
+  T extends { starts_at: string; ends_at: string; status?: string | null },
+>(
   posts: readonly T[],
   nowIso: string,
 ): PostPartition<T> {
   const upcoming: T[] = []
   const past: T[] = []
   for (const post of posts) {
-    if (isEnded(post, nowIso)) past.push(post)
+    // V12 t03 (0041): a host-early-ended post lands in Past even while its
+    // window has not passed — the owner's "ended" label (the card mutes it,
+    // the Past list says "Ended"), distinct from "cancelled".
+    if (isEnded(post, nowIso) || post.status === 'ended') past.push(post)
     else upcoming.push(post)
   }
   upcoming.sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at))

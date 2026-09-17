@@ -44,7 +44,7 @@ export type {
 }
 
 // ---------------------------------------------------------------------------
-// What the app calls the four kinds (the /settings toggle rows).
+// What the app calls the five kinds (the /settings toggle rows).
 //
 // Derived from the same NOTIFICATION_KINDS list as the payload builder, so the
 // UI cannot drift into describing a kind that no producer can create.
@@ -72,6 +72,10 @@ export const NOTIFICATION_KIND_COPY: Record<NotificationKind, NotificationKindCo
   cancelled: {
     label: 'Cancelled',
     when: 'A host cancels or deletes a drop-in you joined — before you drive out.',
+  },
+  ended: {
+    label: 'Ended',
+    when: 'A host ends a drop-in you joined early — before you drive out.',
   },
 }
 

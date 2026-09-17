@@ -16,18 +16,20 @@
  * `public.notification_payload` (migration 0032) — the same
  * "one pure seam + one SQL function" pairing as `src/lib/series.ts` ↔
  * `public.ensure_series_occurrences` (0028). Keep the two in step: the vitest
- * spec pins the wording of all four kinds and the SQL header names this file.
+ * spec pins the wording of all five kinds and the SQL header names this file.
  *
  * Everything here is deliberately string/number in, string out, so it can be
  * unit-tested without a DOM and evaluated identically in Deno and the browser.
  */
 
-/** The four kinds — the app-side twin of 0032's CHECK constraint. */
+/** The five kinds — the app-side twin of 0032's CHECK constraint (widened to
+ * five by V12 t03, migration 0041: 'ended' joins the four). */
 export const NOTIFICATION_KINDS = [
   'ping_received',
   'starting_soon',
   'cancelled',
   'new_comment',
+  'ended',
 ] as const
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
@@ -101,7 +103,7 @@ export function familiesGoingLabel(count: number | null | undefined): string {
  * The full title/body/url for one notification — the exact strings the
  * producers write into `notification_log` and the sender posts.
  *
- * The `switch` is exhaustive over NotificationKind, so a fifth kind is a
+ * The `switch` is exhaustive over NotificationKind, so a sixth kind is a
  * compile error here rather than a silent default at runtime.
  */
 export function buildNotificationPayload(input: NotificationPayloadInput): NotificationPayload {
@@ -119,6 +121,14 @@ export function buildNotificationPayload(input: NotificationPayloadInput): Notif
         title: `Cancelled: ${subject}`,
         // The "don't drive to an empty park" sentence.
         body: "The host called it off — don't head out.",
+        url,
+      }
+    case 'ended':
+      return {
+        title: `Ended: ${subject}`,
+        // 0041 pin d: the same "don't drive to an empty park" sentence class,
+        // char-for-char twin of the SQL branch in migration 0041 section 4.
+        body: "The host ended it — don't head out.",
         url,
       }
     case 'starting_soon':

@@ -100,8 +100,15 @@ export interface Profile {
  * likely" badge is an independent forecast, not a status state.
  * Authenticated-only surface: 0015's get_public_playdate (the signed-out public
  * view) does NOT return it.
+ *
+ * V12 ticket 03 (migration 0041) adds 'ended': the host ends the event early
+ * (option A, honest history — a label, not a deletion). It mutes the card like
+ * 'cancelled', takes the post out of the public feed immediately (the feed
+ * query excludes it), lands it in the owner's Past list labelled "Ended"
+ * (distinct from "Cancelled"), and owes the pingers the fifth notification
+ * kind, 'ended' (notification_log's kind CHECK, 0041).
  */
-export type PlaydateStatus = 'on' | 'cancelled'
+export type PlaydateStatus = 'on' | 'cancelled' | 'ended'
 
 /** A drop-in playdate ("at this playground, 3–5, come by if you like"). */
 export interface Playdate {

@@ -262,6 +262,13 @@ type DetailState =
  * (the DB column + the /new field stay — ticket 09 reworks /new; the
  * signed-out public view keeps its 0015 field).
  *
+ * V12 t03 (ticket 03, migration 0041): the status control gains a
+ * third, genuinely different option — "End this post now" (status
+ * 'ended'): the host ends the event early, so the post leaves the feed
+ * immediately while its window is still ahead (honest history, option
+ * A — it stays in the owner's Past list, labelled "Ended", distinct
+ * from "Cancelled"); the muted chip renders "Ended" for it.
+ *
  * V3 slice 5 (ticket 08, migration 0021): when the post has an address
  * (the /new "Address (optional)" field), the place line becomes a
  * tappable Google Maps link (the pure mapsHref seam in feed.ts —
@@ -1440,11 +1447,13 @@ export function PlaydateDetailPage() {
   // See the ticket's Comments.) The rain badge is the pure rainBadgeLabel
   // threshold on the best-effort probability (null = silently absent).
   const postStatus: PlaydateStatus = detail.status ?? 'on'
-  // V3 slice 3 (ticket 06, migration 0019): the muted chip renders for
-  // "Cancelled" only — the third status option (redundant with Cancelled,
-  // the origin-user feedback 2026-09-09) was trimmed; the Open-Meteo
-  // "Rain likely" badge is an independent forecast, not a status state.
-  const statusChip = postStatus === 'cancelled' ? 'Cancelled' : null
+  // V3 slice 3 (ticket 06, migration 0019) trimmed the chip to "Cancelled"
+  // only; V12 t03 (migration 0041) re-added a third state: the host can
+  // END the event early, and the chip renders "Ended" for it (distinct
+  // from "Cancelled"). The Open-Meteo "Rain likely" badge is an
+  // independent forecast, not a status state.
+  const statusChip =
+    postStatus === 'ended' ? 'Ended' : postStatus === 'cancelled' ? 'Cancelled' : null
   const statusMuted = statusChip !== null
   const rainLabel = rainBadgeLabel(rainProbability)
   // V3 slice 5 (ticket 08): the place line's tappable Google Maps link
@@ -1766,8 +1775,10 @@ export function PlaydateDetailPage() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        {/* V3 slice 2 (ticket 02; V3 slice 3 trimmed it to "Cancelled"
-            only — migration 0019, ticket 06): the muted-state chip —
+        {/* V3 slice 2 (ticket 02; V3 slice 3, migration 0019 trimmed it to
+             "Cancelled" only; V12 t03, migration 0041 re-added a third
+             state — "Ended", the host ended the event early): the
+             muted-state chip —
             rendered for every viewer; the host's explicit state is
             information, not a removal. (V9 ticket 04: on the FEED that
             "not a removal" now holds only while the window is ahead — an
@@ -1966,8 +1977,11 @@ export function PlaydateDetailPage() {
             </div>
           )}
           {/* V3 slice 2 (ticket 02; V3 slice 3, ticket 06 + migration
-               0019 trimmed the options to On / Cancelled — the third
-               option, redundant with Cancelled, was removed): the host's
+               0019 trimmed the options to On / Cancelled — the redundant
+               third option was removed; V12 t03, migration 0041, added a
+               genuinely different third option — "End this post now",
+               which ends the event early so it leaves the feed
+               immediately (honest history, option A)): the host's
                status control — the ONLY status surface (this panel
                renders for the host only; non-hosts + the signed-out
                view never see it). The RLS playdates_update_host is the
@@ -2470,15 +2484,20 @@ export function PlaydateDetailPage() {
 
 /**
  * The host's status control options (V3 slice 2, ticket 02; trimmed by
- * V3 slice 3, ticket 06 + migration 0019): the playdates.status values
- * with their display labels. 'on' is the DB default (the "it's on"
- * state). The third option was removed as redundant with Cancelled (the
- * origin-user feedback 2026-09-09, feedback/v3.md #5) — the Open-Meteo
- * "Rain likely" badge is an independent forecast and is unaffected.
+ * V3 slice 3, ticket 06 + migration 0019; a genuinely different third
+ * state re-added by V12 t03, migration 0041): the playdates.status
+ * values with their display labels. 'on' is the DB default (the "it's
+ * on" state). 'cancelled' is the pre-event cancel; 'ended' — labelled
+ * "End this post now" (the ticket's label) — ends an event early: it
+ * leaves the feed immediately, stays in the owner's Past list labelled
+ * "Ended" (option A, honest history), and is distinct from "Cancelled".
+ * The Open-Meteo "Rain likely" badge is an independent forecast and is
+ * unaffected.
  */
 const HOST_STATUS_OPTIONS: ReadonlyArray<{ value: PlaydateStatus; label: string }> = [
   { value: 'on', label: 'On' },
   { value: 'cancelled', label: 'Cancelled' },
+  { value: 'ended', label: 'End this post now' },
 ]
 
 /** Local day label, e.g. "Sat, Sep 12" (the device's timezone — V1). */

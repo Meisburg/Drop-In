@@ -321,6 +321,23 @@ describe('isStillAhead (V9 ticket 04: the feed\'s inclusion rule — NOT ended)'
     expect(isStillAhead(window, at(901))).toBe(false)
   })
 
+  it('is false when the host ended the post early — even while the window is still ahead (V12 t03)', () => {
+    // The host's "End this post now": the window ends at 3 PM and has not
+    // ended yet (now is noon), but the post is over, so it is no longer
+    // "ahead" under the feed rule.
+    // (The DB half of the same rule — .neq('status', 'ended') — is asserted in
+    // the queryUpcomingFeedWithClient suite.)
+    // `starts_at` is deliberately absent: isStillAhead reads only `ends_at` +
+    // `status` (the sibling test pins that the start time is irrelevant to the
+    // cutoff), so a post ending at 3 PM is "ended-early" regardless of its start.
+    const ended = { ends_at: at(900), status: 'ended' }
+    expect(isStillAhead(ended, at(720))).toBe(false) // noon, two hours before the end
+    // The 'on' twin of the same window (and the one with no status at all)
+    // is still ahead — only the explicit 'ended' flag changes the answer.
+    expect(isStillAhead({ ends_at: at(900), status: 'on' }, at(720))).toBe(true)
+    expect(isStillAhead({ ends_at: at(900) }, at(720))).toBe(true)
+  })
+
   it('is the exact complement of isEnded (never a second, drifting comparison)', () => {
     const other = { starts_at: at(-600), ends_at: at(1000) } // an all-night window
     for (const minute of [-1, 0, 720, 900, 1000, 1001, 1440]) {
@@ -709,7 +726,7 @@ describe('validateRadiusMiles (the pinned 2–35 bounds, 0012 CHECK backstop)', 
  * Minimal mock of the client surface the injected-client queries use
  * (queryUpcomingFeedWithClient, queryMyPlaydatesWithClient):
  * from('playdates') returns a recording query builder — every filter call
- * (.in, .eq, .gte, .order, .is, .not) is recorded, in order, so tests can
+ * (.in, .eq, .neq, .gte, .order, .is, .not) is recorded, in order, so tests can
  * assert the filter chain (the .is('hidden_at', null) hidden filter,
  * slice 5, sits on the same chain as the .not() block filter, slice 3).
  */
@@ -732,6 +749,10 @@ function makeFeedMockClient(rows: unknown[] = []): {
     },
     eq: (col: string, value: unknown) => {
       filters.push(`eq(${col}, ${String(value)})`)
+      return builder
+    },
+    neq: (col: string, value: unknown) => {
+      filters.push(`neq(${col}, ${String(value)})`)
       return builder
     },
     gte: (col: string, value: string) => {
@@ -823,6 +844,15 @@ describe('queryUpcomingFeedWithClient (mocked supabase client, V2 slice 3: dista
     const select = filters.find((f) => f.startsWith('select(')) ?? ''
     expect(select).toContain('neighborhood:neighborhoods ( id, name )')
     expect(select).not.toContain('!inner')
+  })
+
+  it('excludes host-ended posts at the DB level (V12 t03: the feed never fetches them)', async () => {
+    // The read half of the ticket: an 'ended' post is fetched-and-kept in the
+    // profile lists (Past, "Ended" label) but must not reach the feed query at
+    // all. The pure half of the same rule is in the isStillAhead suite.
+    const { client, filters } = makeFeedMockClient()
+    await queryUpcomingFeedWithClient(client, CUTOFF, [])
+    expect(filters).toContain('neq(status, ended)')
   })
 
   it('returns the raw rows from the (mocked) query', async () => {
@@ -1018,6 +1048,15 @@ describe('queryMyPlaydatesWithClient (mocked supabase client)', () => {
     expect(result).toEqual(rows)
     expect(filters).toContain('eq(host_profile_id, me)')
     expect(filters).toContain('order(starts_at, false)')
+  })
+
+  it('selects status (V12 t03: the profile Past list renders the "Ended" label from it)', async () => {
+    // The read side of the ticket: ended posts stay in this host's own list
+    // (Past, "Ended" label) — so the select must carry the column down.
+    const { client, filters } = makeFeedMockClient()
+    await queryMyPlaydatesWithClient(client, 'me')
+    const select = filters.find((f) => f.startsWith('select(')) ?? ''
+    expect(select).toContain('details, status')
   })
 
   it('returns [] when the host has no posts', async () => {
@@ -2358,6 +2397,17 @@ describe('partitionPostsByTime (V8 ticket 04: the Upcoming / Past split)', () =>
     const nowIso = at(600)
     const { upcoming, past } = partitionPostsByTime([slot('over', 540, 600)], nowIso)
     expect(past.map((post) => post.id)).toEqual(['over'])
+    expect(upcoming).toEqual([])
+  })
+
+  it('a host-ended post is PAST even while its window is still ahead (V12 t03)', () => {
+    // The "End this post now" case: the window starts ten minutes from now,
+    // but the host ended the post early — it lands in Past (rendered with an
+    // "Ended" label by the profile page), not in Upcoming.
+    const nowIso = at(600)
+    const endedEarly = { id: 'ended-early', starts_at: at(610), ends_at: at(670), status: 'ended' }
+    const { upcoming, past } = partitionPostsByTime([endedEarly], nowIso)
+    expect(past.map((post) => post.id)).toEqual(['ended-early'])
     expect(upcoming).toEqual([])
   })
 

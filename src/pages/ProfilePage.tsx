@@ -122,7 +122,10 @@ export function ProfilePage() {
    * One "Your posts" row (built once, rendered in BOTH sections): the title
    * (a link to the drop-in — the way this archive reaches V8/09's "Same time
    * next week"), when + place, and the Duplicate action, which stays on every
-   * row, past posts included.
+   * row, past posts included. V12 t03 (migration 0041): a host-early-ended
+   * post (status 'ended') gets an "Ended" label on the when/place line — the
+   * honest-history "ended", distinct from "Cancelled" (the label the detail
+   * page + DropInCard chips render).
    *
    * `muted` is the archive's own signal (the DropInCard opacity-60): a Past
    * row is history, an Upcoming row is a plan. It mutes the row's TEXT only —
@@ -142,6 +145,7 @@ export function ProfilePage() {
         </Link>
         <p className="text-xs text-slate-500">
           {formatPostWhen(post.starts_at)} · {post.place}
+          {post.status === 'ended' ? ' · Ended' : ''}
         </p>
       </div>
       <button

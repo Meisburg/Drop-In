@@ -95,6 +95,21 @@
  * spec's titles so it can never touch another spec's rows, and best-effort:
  * a failure is logged for the orchestrator's sweep (the `e2e-` prefix) rather
  * than failing the run. The marker account itself persists by design.
+ *
+ * V12 ticket 03 (migration 0041) adds a fourth row and its OWN test — the
+ * "ended" status: the host ends a FUTURE drop-in early ("End this post
+ * now"), which is a different act from the "ended lot" above (whose clock
+ * ran out). The new test ("a host-ended post ...") flips that post to
+ * status='ended' over REST (the marker's own JWT), then asserts it is
+ * ABSENT from the feed (the read's .neq('status', 'ended')) and PRESENT
+ * in the /profile Past list with the "Ended" label.
+ *
+ * TWO-PHASE EXPECTATION for that test: it is RED until 0041 is applied
+ * live — the live CHECK on playdates.status is still 0019's two values
+ * ('on','cancelled'), so the status write comes back as the constraint
+ * violation (the expected failure, the spec's red capture; the violation
+ * text is carried in the assertion message). Every OTHER test in this file
+ * stays green either way.
  */
 import { expect, test, type Page } from '@playwright/test'
 // The app's own copy, route and day rule for the archive line + the day-section
@@ -195,6 +210,33 @@ async function patchPostWindow(
     body: JSON.stringify({ starts_at: window.startsAt, ends_at: window.endsAt }),
   })
   return res.ok
+}
+
+/**
+ * Set ONE of the marker's OWN posts' status over REST (V12 t03: 0041's
+ * `playdates_update_host` probe admitted 'ended' into the write path — the
+ * CHECK is the wall, not RLS). Returns the body with the ok flag: the
+ * pre-0041-apply RED capture needs the constraint violation TEXT in the
+ * assertion message, not just a pass/fail.
+ */
+async function patchPostStatus(
+  postId: string,
+  status: string,
+): Promise<{ ok: boolean; body: string }> {
+  const res = await markerRest(`playdates?id=eq.${postId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  })
+  const body = await res.text()
+  return { ok: res.ok, body }
+}
+
+/** The post's status as the DB actually holds it (the write's verification). */
+async function readPostStatus(postId: string): Promise<string | null> {
+  const res = await markerRest(`playdates?id=eq.${postId}&select=status`)
+  if (!res.ok) return null
+  const rows = (await res.json()) as Array<{ status: string | null }>
+  return rows[0]?.status ?? null
 }
 
 /**
@@ -507,6 +549,60 @@ test('an ended drop-in leaves the feed, a live one stays, and the archive still 
   console.log(
     `[e2e markers] viewer ${viewerEmail} persists by design (e2e-v- prefix) — orchestrator sweep`,
   )
+})
+
+/**
+ * V12 ticket 03 — the "ended" status: a host ends a FUTURE drop-in early.
+ * Unlike the "ended lot" above (whose clock ran out), this post's window has
+ * NOT started — only the host's explicit "End this post now" takes it out of
+ * the feed (AC3: `isStillAhead` treats 'ended' as past). RED until 0041 is
+ * applied live (the status write hits the live two-value CHECK — the
+ * violation text lands in the first assertion message); green after.
+ */
+test('a host-ended post (status="ended") is absent from the feed and lands in Past (V12 t03)', async ({
+  page,
+}) => {
+  const marker = readMarkerMeta()
+  const epoch = Math.floor(Date.now() / 1000)
+  const earlyEndedTitle = `e2e-${epoch} ${marker.displayName} ended-early lot`
+  // Set BEFORE posting (the module-scoped sweep contract).
+  createdTitles = [earlyEndedTitle]
+
+  // --- The row: a FUTURE drop-in (two days out — its window has not started).
+  const endedEarlyId = await postDropIn(page, earlyEndedTitle, localDatePlusDays(2))
+
+  // --- The status write, over REST with the marker's JWT (the 0005 host
+  // policy is the wall; 0041 admits 'ended' into the CHECK). PRE-0041-APPLY
+  // this expect IS the red capture: the live CHECK is still 0019's
+  // ('on','cancelled'), so the violation text comes back in the body.
+  const { ok, body } = await patchPostStatus(endedEarlyId, 'ended')
+  expect(
+    ok,
+    `the status='ended' write must be accepted (pre-0041-apply this is the expected RED — ` +
+      `the live CHECK violation: ${body})`,
+  ).toBe(true)
+  // …and it must be ON THE ROW (a 2xx is not proof — the logged RLS lesson).
+  expect(await readPostStatus(endedEarlyId), 'status must read back as "ended" on the row').toBe(
+    'ended',
+  )
+
+  // --- The feed: ABSENT. The read's .neq('status', 'ended') is what keeps it
+  // out (the FUTURE window is the control: a clock-based cutoff would keep it
+  // for two more days).
+  await page.goto('/')
+  await settleOnRoute(page, '/')
+  await expect(page.getByText(earlyEndedTitle, { exact: true })).toHaveCount(0)
+
+  // --- The archive: the owner's Past list on /profile, with the "Ended" label
+  // (AC4: distinct from "Cancelled" — this row's window never ran out, the
+  // host ended it early).
+  await page.getByRole('link', { name: PAST_DROP_INS_LABEL }).click()
+  await settleOnRoute(page, '/profile')
+  const pastRow = page.locator('li').filter({ hasText: earlyEndedTitle })
+  await expect(pastRow, 'the ended-early post must be in the Past list').toBeVisible()
+  await expect(section(page, 'Past').getByText(earlyEndedTitle, { exact: true })).toBeVisible()
+  await expect(section(page, 'Upcoming').getByText(earlyEndedTitle, { exact: true })).toHaveCount(0)
+  await expect(pastRow).toContainText('Ended')
 })
 
 /**
