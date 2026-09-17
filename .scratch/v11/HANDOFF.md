@@ -12,7 +12,7 @@ Written 2026-09-17 at the end of the V11 coordinator session (the founder-feedba
 | Final gate (single-tenant, at HEAD `6f6e9e0`) | build exit 0 · **818/818 unit (24 files)** · **e2e 76 passed / 1 skipped** (pre-existing conditional, `polish.e2e.ts:209`) · lint 0 errors |
 | Push | **done 2026-09-17** — `d9239f4..a894a77` master→master, confirmed on origin via `git ls-remote`; `opencode.json` verified absent from the pushed range |
 | Dev agent pane | `w4:p12` (tab `w4:tP`), agent `v11dev2` (idle/done) |
-| Local HEAD | one **unpushed** task-state commit `297e887` ("V11 shipped to origin (a894a77); Vercel prod deploy pending founder check") sits on top of the pushed `origin/master` = `a894a77` — push it or leave it (human call; it is task-state only) |
+| Local HEAD | a few local bookkeeping commits (the task-state ship-status note, this handoff doc + its pointer) are **unpushed** on top of the pushed `origin/master` = `a894a77`. `git log --oneline -5` shows them. Push them (human call) so a fresh checkout includes this doc — until then they are local-only |
 
 ## The six tickets (all DONE)
 
@@ -76,7 +76,7 @@ git status                               # expect: M opencode.json + untracked .
 
 ## Recommended first moves in a new session
 
-1. `git log --oneline -20` + `npm run build && npm run test` — confirm the baseline before touching anything. Note: the top commit is `297e887` (a local, unpushed task-state ship-status note); the pushed batch tip is `a894a77` (`origin/master`).
+1. `git log --oneline -5` then `npm run build && npm run test` — confirm the baseline before touching anything. The top commits are local, unpushed bookkeeping (task-state ship-status + this handoff); the pushed batch tip is `a894a77` (`origin/master`).
 2. Resolve **RANKED 0** with the founder (the Vercel deploy confirmation) — the only thing blocking the ship's closure.
 3. Then, per the founder: open **V12** (new feedback), or file the **"V11.5"** polish ticket (RANKED 1) to clean the copy pointers.
 
