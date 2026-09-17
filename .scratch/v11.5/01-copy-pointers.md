@@ -5,7 +5,7 @@
 > and the V11 section of `task-state.md`. This batch is the V11.5 open thread
 > from that record.
 
-- **Status:** ready-for-agent
+- **Status:** DONE — 2026-09-17 — code b092886 + comment fold-in 5d85caa; gate: build exit 0, 818/818 unit, lint 0, e2e spot-check 3/3; pushed 05c9981..5a81d5c + live (entry index-Cw5AYnKF.js carries the new copy, old copy 0); review fix db.ts:3582 in the V11.5 review-fix commit
 - **Batch:** V11.5 (copy polish only — no behavior, no migration, no routes)
 
 ## Background
@@ -42,12 +42,12 @@ copy that *predates* t06 still points at "/profile" as the place to edit.
 
 ## Acceptance criteria
 
-- [ ] The 8 strings updated as above; no other source changes in the ticket commit.
-- [ ] `npm run build` exit 0.
-- [ ] `npm run test` 818/818 (or current count if changed upstream — no test
+- [x] The 8 strings updated as above; no other source changes in the ticket commit.
+- [x] `npm run build` exit 0.
+- [x] `npm run test` 818/818 (or current count if changed upstream — no test
       edits expected).
-- [ ] `npm run lint` 0 errors.
-- [ ] Spot-check in the built app: /onboarding shows the settings wording;
+- [x] `npm run lint` 0 errors.
+- [x] Spot-check in the built app: /onboarding shows the settings wording;
       /u/:handle Following line points at /settings.
 
 ## Optional fold-in (RANKED 2 — separate commit, comment-only)
