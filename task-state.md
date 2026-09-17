@@ -733,6 +733,7 @@ with the options table. `0038` moved to this ticket.
 
 ## V11 — the founder's V11 feedback batch (opened 2026-09-16)
 
+**Handoff doc: `.scratch/v11/HANDOFF.md` — start here in a fresh session (commits, gates, the dev-agent loop, open follow-ups).**
 Source: the founder's V11 feedback on the live V10 app — three directives
 (Nearby: a "back to 5 miles" escape; Places: drop the "Fits my kid's age"
 filter; Places: drop "Ages not listed yet.") plus three confirmed judgment
