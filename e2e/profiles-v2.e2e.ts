@@ -26,25 +26,22 @@ test('marker saves a bio + kid row, sees them on /u/<handle>, nudge stays for th
   await settleOnRoute(page, '/settings')
 
   // Bio: the /settings editor (app-capped at 500 chars, the 0011 CHECK is
-  // the DB backstop). V8 ticket 10: the six per-section Save buttons became
-  // ONE "Save profile" submit for the whole form (writing only the sections
-  // that changed), so this spec's copy assertion follows the button that
-  // really exists now. The behaviour asserted is identical: the bio is saved
-  // and the page says so.
+  // the DB backstop). V12 t01: the page AUTOSAVES — there is no save control
+  // anywhere on /settings, so the typed bio lands on its own after the
+  // debounce settles and the always-on indicator (the line the old save
+  // button lived on) says "Saved." The behaviour asserted is the same as
+  // the old click-then-note flow: the bio is saved and the page says so.
   //
   // V9 ticket 11 (folded ticket 08) RELABELLED the field: it is "About our
   // family" now, and the placeholder follows it: the field reads "Who's in your
   // family, and what are you into? (optional)" (it used to be "A few words about
-  // your family (optional)"). The locator below is the ONLY change in this file —
-  // same field, same column, same ≤500-char cap, same save, same render on
-  // /u/<handle>. The field is located by its placeholder (the house pattern for a
-  // textarea with no testid) and the new placeholder is the string the /settings
-  // page renders.
+  // your family (optional)"). The field is located by its placeholder (the house
+  // pattern for a textarea with no testid) and the new placeholder is the
+  // string the /settings page renders.
   await page
     .getByPlaceholder('Who’s in your family, and what are you into? (optional)')
     .fill(bio)
-  await page.getByRole('button', { name: 'Save profile', exact: true }).click()
-  await expect(page.getByText('Profile saved.')).toBeVisible()
+  await expect(page.getByTestId('profile-save-note')).toHaveText('Saved.')
 
   // Kid row: first name + age ONLY (no full names, no gender — privacy pin).
   await page.getByPlaceholder('First name').fill(kidName)
@@ -58,6 +55,9 @@ test('marker saves a bio + kid row, sees them on /u/<handle>, nudge stays for th
   const kidRow = page.getByTestId('kid-row').first()
   await expect(kidRow.getByTestId('kid-name')).toHaveValue(kidName)
   await expect(kidRow.getByTestId('kid-age')).toHaveValue(String(KID_AGE))
+  // V12 t01: the row's write rides the same autosave engine — wait for it to
+  // land so the /u/<handle> read below sees the new row (not a racing write).
+  await expect(page.getByTestId('profile-save-note')).toHaveText('Saved.')
 
   // The nudge banner persists while the photo is still missing (it is —
   // this spec never uploads one).

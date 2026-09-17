@@ -749,9 +749,10 @@ test('“About our family” saves and renders; a profile with none of the block
   // The label is the reframed one (ticket 08's ask), and the field is the SAME
   // bio column — no new column, no new cap.
   await expect(page.getByText('About our family', { exact: true })).toBeVisible()
+  // V12 t01: autosave — there is no Save button on the page any more, so the
+  // typed bio lands on its own once the debounce settles and the indicator says so.
   await page.getByPlaceholder('Who’s in your family, and what are you into? (optional)').fill(about)
-  await page.getByRole('button', { name: 'Save profile', exact: true }).click()
-  await expect(page.getByTestId('profile-save-note')).toHaveText('Profile saved.')
+  await expect(page.getByTestId('profile-save-note')).toHaveText('Saved.')
   await page.goto(`/u/${encodeURIComponent(e.markerHandle)}`)
   await expect(page.getByText(about)).toBeVisible()
 

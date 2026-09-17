@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import type { ChangeEvent, FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ChangeEvent } from 'react'
 import { Link } from 'react-router'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { NAV_ICONS } from '../components/icons'
@@ -8,7 +8,6 @@ import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
 import { useCropStep } from '../components/useCropStep'
 import { useFamilyPhotoUrl } from '../components/useFamilyPhotoUrl'
-import { useUnsavedChangesGuard } from '../components/useUnsavedChangesGuard'
 import {
   addKid,
   BIO_MAX_LENGTH,
@@ -48,6 +47,7 @@ import {
   toKidFormValues,
   toKidRowValues,
   type KidFormValues,
+  type KidRowValues,
   type ProfileFormValues,
   type ProfileSection,
 } from '../lib/profileSave'
@@ -55,6 +55,13 @@ import type { Kid, MembershipWithNeighborhood } from '../lib/types'
 // V8 ticket 09: the Following list's family rows reuse the card's 40px avatar
 // (the HostAvatar shape) rather than growing a second one.
 import { HostAvatar } from '../components/DropInCard'
+
+/**
+ * V12 t01: the autosave debounce — well past the ticket's 300ms floor, so a
+ * burst of keystrokes is ONE write. The same constant re-arms the follow-up
+ * pass a coalesced edit triggers (via the autosaveTick bump below).
+ */
+const AUTOSAVE_DEBOUNCE_MS = 400
 
 /**
  * /settings — the signed-in family's EDITING page.
@@ -77,7 +84,7 @@ import { HostAvatar } from '../components/DropInCard'
  * - location: home zip + radius (the comfort/comfort-neighborhood controls).
  * - kids: structured rows (first name + age ONLY — the privacy pin), max 5
  *   app-enforced, editable in place (name, age, and the "likes" line are fields
- *   on the row itself, saved by the same submit). Remove asks first and names
+ *   on the row itself, autosaved as they are edited). Remove asks first and names
  *   what it costs; the 5-kid cap says so on screen instead of silently
  *   disabling the inputs. A kid row has NO photo control — a sentence says so
  *   where it used to be.
@@ -89,21 +96,27 @@ import { HostAvatar } from '../components/DropInCard'
  *   labels (memberships stopped filtering anything when discovery moved to home
  *   zip + radius; there is no membership write path here).
  *
- * V8 ticket 10: **one "Save profile" submit** for the whole form (display
- * name, location, bio, interests, and every kid row) instead of the six Save
- * buttons that used to live here. The submit is the pure planProfileSave
- * (lib/profileSave.ts, unit-tested): it writes ONLY the sections that actually
- * changed, a no-op save issues no write at all, and each section is written
- * independently — so a failed bio write never discards the name a parent also
- * fixed, and the section that failed keeps its pending text on screen. The
- * per-section inline errors are unchanged in spirit (the same validators, the
- * same messages); each one is now reported by the section that owns it.
+ * V12 t01: the form AUTOSAVES — there is no save control anywhere on the
+ * page (the one "save profile" button V8 ticket 10 shipped is gone). Every
+ * keystroke — display name, home zip, radius, bio, interests, and every kid
+ * row — re-arms the AUTOSAVE_DEBOUNCE_MS debounce; when it settles, the pure
+ * planProfileSave (lib/profileSave.ts, unit-tested) decides what actually
+ * changed and writes ONLY those sections + kid rows, each write awaited on
+ * its own — a failed bio write never discards the name a parent also fixed,
+ * and the section that failed keeps its pending text + its inline error on
+ * screen (the failed section is not retried on its own; a re-edit re-
+ * triggers the pass). The line that used to hold the button is now the
+ * autosave indicator: "Changes save as you go." at rest, "Saving…" while a
+ * pass is in flight, "Saved." when it lands, and the failure sentence when a
+ * section kept its text — with the section that failed carrying its own
+ * inline message.
  *
- * UNSAVED TYPING IS GUARDED (the seed-once discipline used to drop it in
- * silence): while anything is dirty, an in-app link asks before leaving
- * (useUnsavedChangesGuard) and a refresh/tab close gets the browser's own
- * prompt. Saves refresh the shared session state so the app-shell header picks
- * up the changes.
+ * TYPING IS NEVER LOST AND NOTHING ASKS ABOUT IT: the debounced machine is
+ * fire-and-forget, so the unsaved-changes guard (the in-app link while
+ * anything was dirty, plus the refresh/close browser prompt) is gone —
+ * leaving the page mid-save lets the in-flight write land on its own, and no
+ * dialog stands between a parent and an in-app link. Saves that land refresh
+ * the shared session state so the app-shell header picks up the changes.
  *
  * A persistent nudge banner shows the still-missing items (photo + bio + kids)
  * until all three are present (the missing-items decision is the pure
@@ -125,8 +138,22 @@ export function SettingsPage() {
   // The baseline advances per SECTION, only when that section's write landed.
   const [draft, setDraft] = useState<ProfileFormValues | null>(null)
   const [baseline, setBaseline] = useState<ProfileFormValues | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [saveNote, setSaveNote] = useState<{ ok: boolean; message: string } | null>(null)
+  /**
+   * V12 t01: the autosave indicator's state (replaces the `saving` boolean +
+   * the save-note pair). 'idle' is the at-rest "Changes save as you go."
+   * line; a pass moves 'saving' → 'saved' (every write it attempted landed)
+   * or 'error' (at least one section kept its pending text + its inline
+   * error).
+   */
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  /**
+   * V12 t01: bumped when an edit lands while a pass is in flight — the
+   * completion handler cannot re-arm the debounce timer itself (that would
+   * be a self-referential timer inside the pass it completes), so it bumps
+   * this state and the scheduling effect below re-arms the timer for the
+   * follow-up pass. The indicator stays "Saving…" across the seam.
+   */
+  const [autosaveTick, setAutosaveTick] = useState(0)
   const [writeErrors, setWriteErrors] = useState<Partial<Record<ProfileSection, string>>>({})
 
   const [photoBusy, setPhotoBusy] = useState(false)
@@ -150,7 +177,7 @@ export function SettingsPage() {
   const [removingKidId, setRemovingKidId] = useState<string | null>(null)
 
   // V3 slice 6 (ticket 09, migration 0022): the per-kid "likes" editor, now
-  // part of the one submit (V8 ticket 10) together with the row's name + age.
+  // autosaved as it is edited (V12 t01) together with the row's name + age.
   // kidDrafts seeds from the fresh rows (seedKidDrafts — an in-flight local
   // value wins over a re-list, the seed-once discipline, per kid).
   //
@@ -160,7 +187,6 @@ export function SettingsPage() {
   // re-list to run after one. The rows arrive once per load and once per add.
   const [kidDrafts, setKidDrafts] = useState<Record<string, KidFormValues>>({})
   const [kidWriteErrors, setKidWriteErrors] = useState<Record<string, string>>({})
-  const [kidSavedId, setKidSavedId] = useState<string | null>(null)
 
   // V3 slice 6 (ticket 09): the profile interests field (<= INTERESTS_MAX_LENGTH,
   // trim; the db layer validates too — the updateBio defense-in-depth
@@ -232,8 +258,9 @@ export function SettingsPage() {
   }, validateFamilyPhotoFile)
 
   // Seed the whole form ONCE the profile loads; user typing wins after (the
-  // seed-once guard is what keeps a refresh() from erasing an edit — and the
-  // guard above is what keeps a navigation from erasing it silently).
+  // seed-once guard is what keeps a refresh() from erasing an edit; V12 t01
+  // dropped the unsaved-changes guard, so leaving mid-edit just lets the
+  // debounced autosave finish its write).
   useEffect(() => {
     if (draft !== null || profile === null) return
     const seeded = seedProfileFormValues(profile, DEFAULT_RADIUS_MILES)
@@ -340,10 +367,11 @@ export function SettingsPage() {
   const kidRows = (kids ?? []).map(toKidRowValues)
 
   /**
-   * THE SUBMIT'S DECISION, computed at render (the pure planProfileSave — the
-   * same plan drives the disabled state, the "unsaved changes" line and the
-   * dirty guard, so the button can never disagree with what the guard warns
-   * about).
+   * THE AUTOSAVE'S DECISION, computed at render (the pure planProfileSave —
+   * the render-time plan feeds ONLY the name field's inline "blocked" state
+   * below, so the input can show a validation error before the debounced
+   * write is even attempted; the write itself re-plans from the same inputs
+   * at write time, for the sections + kid rows it actually attempts).
    *
    * The validators are db.ts's own, so the inline message and the reason the
    * write is skipped are one string, not two copies.
@@ -364,8 +392,207 @@ export function SettingsPage() {
           },
         })
 
-  const dirty = savePlan !== null && !savePlan.empty
-  const unsavedGuard = useUnsavedChangesGuard(dirty)
+  /**
+   * V12 t01: THE AUTOSAVE MACHINE. One debounce timer (AUTOSAVE_DEBOUNCE_MS —
+   * well past the ticket's 300ms floor, so a burst of keystrokes is one
+   * write), one in-flight pass, and a `pending` flag: an edit that lands
+   * while a pass is running is coalesced (the pass reads the same
+   * draft/baseline/kid rows the edit just changed), and the completion bumps
+   * autosaveTick so the scheduling effect below re-arms the timer for the
+   * follow-up pass. The timer + the flags live in one ref object so the pass
+   * can read and mutate them without re-creating the callbacks.
+   *
+   * `autosaveInputs` is the same trick for the rest: runAutosave keeps a
+   * STABLE identity (useCallback with no deps — the scheduling effect must
+   * not re-arm just because a render happened), so it reads the current
+   * values through a ref that a no-deps effect refreshes after every render.
+   */
+  const autosaveMachine = useRef({
+    running: false,
+    pending: false,
+    timer: null as ReturnType<typeof setTimeout> | null,
+  })
+  const autosaveInputs = useRef({
+    draft: null as ProfileFormValues | null,
+    baseline: null as ProfileFormValues | null,
+    kidRows: [] as KidRowValues[],
+    kidDrafts: {} as Record<string, KidFormValues>,
+    userId: null as string | null,
+    refresh: null as (() => Promise<void>) | null,
+  })
+  useEffect(() => {
+    autosaveInputs.current = { draft, baseline, kidRows, kidDrafts, userId, refresh }
+  })
+
+  /**
+   * V12 t01: THE AUTOSAVE PASS (replaces the old one-submit handler). The
+   * plan decides what may be written: every changed + valid section and kid
+   * row. Each write is awaited on its own, so
+   *  - a failure is reported by the section that failed (its inline error
+   *    line, its own message) and
+   *  - a failure never costs the other sections their edits: the baseline
+   *    advances only for the sections whose write landed, so everything that
+   *    did not save is still on screen — and it is NOT retried on its own:
+   *    the pass ends, the indicator says so, and a re-edit re-triggers.
+   *
+   * The blocked (invalid) sections are simply not attempted — their inline
+   * error is already visible (see savePlan above).
+   */
+  const runAutosave = useCallback(async () => {
+    const machine = autosaveMachine.current
+    if (machine.running) {
+      // Coalesced: the in-flight pass reads the same inputs this edit just
+      // changed; the completion re-arms a follow-up pass for it.
+      machine.pending = true
+      return
+    }
+
+    const { draft, baseline, kidRows, kidDrafts, userId, refresh } = autosaveInputs.current
+    if (draft === null || baseline === null || userId === null) return
+
+    const plan = planProfileSave({
+      baseline,
+      draft,
+      kidRows,
+      kidDrafts,
+      validators: {
+        name: (value) => (value.trim() === '' ? 'Your display name can’t be empty.' : null),
+        bio: validateBio,
+        interests: validateInterests,
+        kid: (kid) => validateKid(kid.firstName, kid.age) ?? validateKidLikes(kid.likes),
+      },
+    })
+    if (plan.empty) {
+      // A re-armed pass with nothing to write (a landed save advanced the
+      // baseline past the draft, or an in-flight edit was reverted): settle
+      // the indicator if a coalesced pass left it on "Saving…".
+      if (machine.pending) {
+        machine.pending = false
+        setSaveStatus((status) => (status === 'saving' ? 'saved' : status))
+      }
+      return
+    }
+
+    machine.running = true
+    setSaveStatus('saving')
+    setWriteErrors({})
+    setKidWriteErrors({})
+
+    const writers: Record<ProfileSection, () => Promise<void>> = {
+      name: () => updateDisplayName(userId, draft.name.trim()),
+      location: () => updateHomeZipRadius(userId, draft.homeZip.trim(), draft.radiusMiles),
+      bio: () => updateBio(userId, draft.bio),
+      interests: () => updateInterests(userId, draft.interests),
+    }
+    const savedValues: Partial<ProfileFormValues> = {}
+    let failures = 0
+
+    for (const section of plan.sections) {
+      try {
+        await writers[section]()
+        // The write landed: advance THIS section's baseline only. The writers
+        // trim, so the baseline is the trimmed value (the draft keeps showing
+        // what was typed — the comparison is trimmed, so it is not dirty).
+        if (section === 'location') {
+          savedValues.homeZip = draft.homeZip.trim()
+          savedValues.radiusMiles = draft.radiusMiles
+        } else if (section === 'name') {
+          savedValues.name = draft.name.trim()
+        } else if (section === 'bio') {
+          savedValues.bio = draft.bio.trim()
+        } else {
+          savedValues.interests = draft.interests.trim()
+        }
+      } catch (err) {
+        failures += 1
+        const message =
+          err instanceof HandleTakenError
+            ? `“${err.handle}” is already taken — pick a different display name.`
+            : err instanceof Error
+              ? err.message
+              : 'Could not save that section.'
+        setWriteErrors((prev) => ({ ...prev, [section]: message }))
+      }
+    }
+
+    for (const kid of plan.kids) {
+      try {
+        await updateKid(kid.id, {
+          first_name: kid.firstName,
+          age: kid.age,
+          likes: kid.likes,
+        })
+        // The row's own baseline advances in place: the saved (trimmed) values
+        // become both the new row truth and the new draft, so nothing is left
+        // looking dirty after it actually saved.
+        setKids((prev) =>
+          prev === null
+            ? prev
+            : prev.map((row) =>
+                row.id === kid.id
+                  ? { ...row, first_name: kid.firstName, age: kid.age, likes: kid.likes }
+                  : row,
+              ),
+        )
+        setKidDrafts((prev) => ({
+          ...prev,
+          [kid.id]: {
+            firstName: kid.firstName,
+            age: String(kid.age),
+            likes: kid.likes,
+          },
+        }))
+      } catch (err) {
+        failures += 1
+        const message = err instanceof Error ? err.message : 'Could not save that kid. Try again.'
+        setKidWriteErrors((prev) => ({ ...prev, [kid.id]: message }))
+      }
+    }
+
+    // Advance the baseline only where a write landed (a failed section keeps
+    // its pending text, on purpose).
+    if (Object.keys(savedValues).length > 0) {
+      setBaseline((prev) => (prev === null ? prev : { ...prev, ...savedValues }))
+      // The shared session state (the header, the onboarding gate, the feed)
+      // picks up a changed display name / location.
+      if (refresh !== null) await refresh().catch(() => undefined)
+    }
+
+    machine.running = false
+    if (machine.pending) {
+      // An edit landed mid-flight: re-arm the timer for the follow-up pass
+      // (the indicator keeps showing "Saving…" until that pass settles).
+      machine.pending = false
+      setAutosaveTick((tick) => tick + 1)
+    } else {
+      setSaveStatus(failures === 0 ? 'saved' : 'error')
+    }
+  }, [])
+
+  /**
+   * V12 t01: THE DEBOUNCE. Every keystroke changes one of the keyed values —
+   * the kid rows key on the `kids` STATE, not the derived `kidRows` array (a
+   * derived identity re-arms on every render and defeats the debounce) — and
+   * the timer re-arms to the end of the burst, then the pass runs. A pass
+   * that lands advances `baseline` (re-keying this effect), which re-arms a
+   * timer that fires into an empty plan (no write, no status change), so the
+   * "Saved." line persists instead of flickering back to idle.
+   */
+  useEffect(() => {
+    if (draft === null || baseline === null) return
+    const machine = autosaveMachine.current
+    if (machine.timer !== null) clearTimeout(machine.timer)
+    machine.timer = setTimeout(() => {
+      machine.timer = null
+      void runAutosave()
+    }, AUTOSAVE_DEBOUNCE_MS)
+    return () => {
+      if (machine.timer !== null) {
+        clearTimeout(machine.timer)
+        machine.timer = null
+      }
+    }
+  }, [draft, baseline, kids, kidDrafts, userId, autosaveTick, runAutosave])
 
   /**
    * V9 ticket 11: the family photo's READ path and the optional-block decision.
@@ -401,16 +628,21 @@ export function SettingsPage() {
   // is null while the kids load is in flight / failed — best-effort).
   const missing = missingProfileItems(profile, kids === null ? null : kids.length)
 
-  /** One text section's edit: the draft changes and its write error clears. */
+  /**
+   * One text section's edit: the draft changes (the debounced autosave picks
+   * it up) and the section's pending write error clears.
+   */
   function editDraft(patch: Partial<ProfileFormValues>, section?: ProfileSection) {
     setDraft((prev) => (prev === null ? prev : { ...prev, ...patch }))
-    setSaveNote(null)
     if (section !== undefined) {
       setWriteErrors((prev) => (prev[section] === undefined ? prev : { ...prev, [section]: undefined }))
     }
   }
 
-  /** One kid row's edit: the draft changes and that row's write error clears. */
+  /**
+   * One kid row's edit: the draft changes (the debounced autosave picks it up)
+   * and that row's write error clears.
+   */
   function editKidDraft(kidId: string, patch: Partial<KidFormValues>) {
     setKidDrafts((prev) => {
       // The draft seeds on load; a row whose seed has not landed yet falls
@@ -421,7 +653,6 @@ export function SettingsPage() {
       if (current === null) return prev
       return { ...prev, [kidId]: { ...current, ...patch } }
     })
-    setKidSavedId(null)
     setKidsError(null)
     setKidWriteErrors((prev) => {
       if (prev[kidId] === undefined) return prev
@@ -429,122 +660,6 @@ export function SettingsPage() {
       delete next[kidId]
       return next
     })
-  }
-
-  /**
-   * THE ONE SUBMIT (V8 ticket 10).
-   *
-   * The plan decides what may be written: every changed + valid section and
-   * kid row. Each write is awaited on its OWN, so
-   *  - a failure is reported by the section that failed (its inline error
-   *    line, its own message) and
-   *  - a failure never costs the other sections their edits: the baseline
-   *    advances only for the sections whose write landed, so everything that
-   *    did not save is still on screen, still dirty, and still guarded.
-   *
-   * The blocked (invalid) sections are simply not attempted — their inline
-   * error is already visible (see savePlan above).
-   */
-  async function handleSaveProfile(e: FormEvent) {
-    e.preventDefault()
-    if (userId === null || draft === null || baseline === null || savePlan === null) return
-    if (saving) return
-    if (savePlan.empty) return // a no-op save issues no write at all
-    setSaving(true)
-    setSaveNote(null)
-    setWriteErrors({})
-    setKidWriteErrors({})
-    setKidSavedId(null)
-
-    const writers: Record<ProfileSection, () => Promise<void>> = {
-      name: () => updateDisplayName(userId, draft.name.trim()),
-      location: () => updateHomeZipRadius(userId, draft.homeZip.trim(), draft.radiusMiles),
-      bio: () => updateBio(userId, draft.bio),
-      interests: () => updateInterests(userId, draft.interests),
-    }
-    const savedValues: Partial<ProfileFormValues> = {}
-    let failures = 0
-
-    for (const section of savePlan.sections) {
-      try {
-        await writers[section]()
-        // The write landed: advance THIS section's baseline only. The writers
-        // trim, so the baseline is the trimmed value (the draft keeps showing
-        // what was typed — the comparison is trimmed, so it is not dirty).
-        if (section === 'location') {
-          savedValues.homeZip = draft.homeZip.trim()
-          savedValues.radiusMiles = draft.radiusMiles
-        } else if (section === 'name') {
-          savedValues.name = draft.name.trim()
-        } else if (section === 'bio') {
-          savedValues.bio = draft.bio.trim()
-        } else {
-          savedValues.interests = draft.interests.trim()
-        }
-      } catch (err) {
-        failures += 1
-        const message =
-          err instanceof HandleTakenError
-            ? `“${err.handle}” is already taken — pick a different display name.`
-            : err instanceof Error
-              ? err.message
-              : 'Could not save that section.'
-        setWriteErrors((prev) => ({ ...prev, [section]: message }))
-      }
-    }
-
-    for (const kid of savePlan.kids) {
-      try {
-        await updateKid(kid.id, {
-          first_name: kid.firstName,
-          age: kid.age,
-          likes: kid.likes,
-        })
-        // The row's own baseline advances in place: the saved (trimmed) values
-        // become both the new row truth and the new draft, so nothing is left
-        // looking dirty after it actually saved.
-        setKids((prev) =>
-          prev === null
-            ? prev
-            : prev.map((row) =>
-                row.id === kid.id
-                  ? { ...row, first_name: kid.firstName, age: kid.age, likes: kid.likes }
-                  : row,
-              ),
-        )
-        setKidDrafts((prev) => ({
-          ...prev,
-          [kid.id]: {
-            firstName: kid.firstName,
-            age: String(kid.age),
-            likes: kid.likes,
-          },
-        }))
-        setKidSavedId(kid.id)
-      } catch (err) {
-        failures += 1
-        const message =
-          err instanceof Error ? err.message : 'Could not save that kid. Try again.'
-        setKidWriteErrors((prev) => ({ ...prev, [kid.id]: message }))
-      }
-    }
-
-    // Advance the baseline only where a write landed (a failed section keeps
-    // its pending text, and stays dirty, on purpose).
-    if (Object.keys(savedValues).length > 0) {
-      setBaseline((prev) => (prev === null ? prev : { ...prev, ...savedValues }))
-      // The shared session state (the header, the onboarding gate, the feed)
-      // picks up a changed display name / location.
-      await refresh().catch(() => undefined)
-    }
-    setSaveNote({
-      ok: failures === 0,
-      message:
-        failures === 0
-          ? 'Profile saved.'
-          : 'Some changes couldn’t be saved. Your edits are still here — see the message on the section that failed.',
-    })
-    setSaving(false)
   }
 
   async function handleAddKid() {
@@ -781,11 +896,12 @@ export function SettingsPage() {
         {familyPhotoCrop.dialog}
       </div>
 
-      {/* V8 ticket 10: ONE form, ONE save. Everything a parent edits — the
+      {/* V12 t01: ONE form, NO save control. Everything a parent edits — the
           handle, the location, the bio, the interests and every kid row —
-          lives inside it, and the single "Save profile" button at the end
-          writes exactly the parts that changed. */}
-      <form className="flex flex-col gap-4" onSubmit={handleSaveProfile}>
+          autosaves (the debounced machine above); the form element stays for
+          the inputs' semantics, with the implicit submit swallowed so a stray
+          Enter cannot reload the page. */}
+      <form className="flex flex-col gap-4" onSubmit={(e) => e.preventDefault()}>
         <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-slate-700">Display name</span>
@@ -799,7 +915,7 @@ export function SettingsPage() {
               placeholder="e.g. Sam at Green Lake"
               maxLength={40}
               autoComplete="nickname"
-              disabled={saving || draft === null}
+              disabled={draft === null}
             />
           </label>
           {liveNameError !== null ? (
@@ -828,7 +944,7 @@ export function SettingsPage() {
               placeholder="e.g. 98107"
               inputMode="numeric"
               maxLength={5}
-              disabled={saving || draft === null}
+              disabled={draft === null}
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
@@ -837,7 +953,7 @@ export function SettingsPage() {
               className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
               value={draft?.radiusMiles ?? DEFAULT_RADIUS_MILES}
               onChange={(e) => editDraft({ radiusMiles: Number(e.target.value) }, 'location')}
-              disabled={saving || draft === null}
+              disabled={draft === null}
             >
               {RADIUS_MILES_OPTIONS.map((miles) => (
                 <option key={miles} value={miles}>
@@ -873,7 +989,7 @@ export function SettingsPage() {
               placeholder="Who’s in your family, and what are you into? (optional)"
               maxLength={BIO_MAX_LENGTH}
               rows={3}
-              disabled={saving || draft === null}
+              disabled={draft === null}
             />
           </label>
           <span className="text-xs text-slate-500">
@@ -918,7 +1034,7 @@ export function SettingsPage() {
               onChange={(e) => editDraft({ interests: e.target.value }, 'interests')}
               placeholder="What your family is into (optional)"
               rows={2}
-              disabled={saving || draft === null}
+              disabled={draft === null}
             />
           </label>
           <span className="text-xs text-slate-500">
@@ -936,7 +1052,7 @@ export function SettingsPage() {
           <h2 className="text-base font-semibold text-slate-900">Kids</h2>
           <p className="mt-1 text-sm text-slate-600">
             First name, age, and a “likes” line (up to {MAX_KIDS_PER_PROFILE}).
-            Edit a row and save the whole profile — nothing here saves on its own.
+            A row saves itself as you edit it — no button to press anywhere on this page.
           </p>
           {/* V9 ticket 05 shipped the privacy promise in the UI; V9 ticket 10
               (migration 0040) makes it TRUE, so the sentence is re-pinned to
@@ -1067,7 +1183,7 @@ export function SettingsPage() {
                       value={values.firstName}
                       onChange={(e) => editKidDraft(kid.id, { firstName: e.target.value })}
                       maxLength={30}
-                      disabled={saving || kidsBusyId !== null}
+                      disabled={kidsBusyId !== null}
                     />
                     <input
                       data-testid="kid-age"
@@ -1081,7 +1197,7 @@ export function SettingsPage() {
                       }
                       value={values.age}
                       onChange={(e) => editKidDraft(kid.id, { age: e.target.value })}
-                      disabled={saving || kidsBusyId !== null}
+                      disabled={kidsBusyId !== null}
                     />
                     <div className="flex min-w-0 flex-1 basis-40 items-center gap-1.5">
                       <input
@@ -1094,7 +1210,7 @@ export function SettingsPage() {
                         value={values.likes}
                         onChange={(e) => editKidDraft(kid.id, { likes: e.target.value })}
                         placeholder="Likes… (optional)"
-                        disabled={saving || kidsBusyId !== null}
+                        disabled={kidsBusyId !== null}
                       />
                       {values.likes !== '' ? (
                         <span
@@ -1113,7 +1229,7 @@ export function SettingsPage() {
                       type="button"
                       data-testid="kid-remove"
                       onClick={() => setRemovingKidId(kid.id)}
-                      disabled={kidsBusyId !== null || saving}
+                      disabled={kidsBusyId !== null}
                       className={
                         'shrink-0 rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200 ' +
                         (kidsBusyId === kid.id ? 'opacity-50' : '')
@@ -1121,9 +1237,6 @@ export function SettingsPage() {
                     >
                       {kidsBusyId === kid.id ? 'Removing…' : 'Remove'}
                     </button>
-                    {kidSavedId === kid.id ? (
-                      <span className="text-xs text-emerald-700">Saved.</span>
-                    ) : null}
                     {rowError !== null ? (
                       <p className="w-full text-sm text-red-600">{rowError}</p>
                     ) : null}
@@ -1146,7 +1259,7 @@ export function SettingsPage() {
               }}
               placeholder="First name"
               maxLength={30}
-              disabled={kidsAtCap || kidsBusyId !== null || saving}
+              disabled={kidsAtCap || kidsBusyId !== null}
             />
             <input
               type="number"
@@ -1162,12 +1275,12 @@ export function SettingsPage() {
                 setKidsError(null)
               }}
               placeholder="Age"
-              disabled={kidsAtCap || kidsBusyId !== null || saving}
+              disabled={kidsAtCap || kidsBusyId !== null}
             />
             <button
               type="button"
               onClick={() => void handleAddKid()}
-              disabled={kidsAtCap || kidsBusyId !== null || saving}
+              disabled={kidsAtCap || kidsBusyId !== null}
               className="shrink-0 rounded-md bg-indigo-600 px-3 py-2 text-xs font-medium text-white disabled:opacity-50"
             >
               {kidsBusyId === 'add' ? 'Adding…' : 'Add kid'}
@@ -1185,34 +1298,34 @@ export function SettingsPage() {
           {kidsError !== null ? <p className="mt-2 text-sm text-red-600">{kidsError}</p> : null}
         </div>
 
-        {/* THE ONE SUBMIT (V8 ticket 10). Disabled while nothing has changed —
-            a save button that would issue no write should say so instead of
-            flashing "Profile saved." over an unchanged form. */}
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <button
-            type="submit"
-            disabled={saving || savePlan === null || savePlan.empty}
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        {/* V12 t01: THE AUTOSAVE INDICATOR — the line that used to hold the save
+            button + the "unsaved changes" sentence + the result note, in one
+            always-on line where the button used to be. "Saved." is the
+            terminal state of a pass that wrote at least one section + kid
+            row; a failed pass names itself here, and the section that failed
+            carries its own inline error beside its field. */}
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p
+            data-testid="profile-save-note"
+            className={
+              'text-sm ' +
+              (saveStatus === 'error'
+                ? 'text-red-600'
+                : saveStatus === 'saving'
+                  ? 'text-slate-600'
+                  : saveStatus === 'saved'
+                    ? 'text-emerald-700'
+                    : 'text-slate-500')
+            }
           >
-            {saving ? 'Saving…' : 'Save profile'}
-          </button>
-          {dirty ? (
-            <span className="text-sm text-slate-600">
-              You have unsaved changes — this saves every section above at once.
-            </span>
-          ) : (
-            <span className="text-sm text-slate-500">
-              Nothing to save yet — change something above.
-            </span>
-          )}
-          {saveNote !== null ? (
-            <p
-              data-testid="profile-save-note"
-              className={'w-full text-sm ' + (saveNote.ok ? 'text-emerald-700' : 'text-red-600')}
-            >
-              {saveNote.message}
-            </p>
-          ) : null}
+            {saveStatus === 'saving'
+              ? 'Saving…'
+              : saveStatus === 'saved'
+                ? 'Saved.'
+                : saveStatus === 'error'
+                  ? 'Some changes couldn’t be saved. Your edits are still here — see the message on the section that failed.'
+                  : 'Changes save as you go.'}
+          </p>
         </div>
       </form>
 
@@ -1363,10 +1476,6 @@ export function SettingsPage() {
           onCancel={() => setRemovingKidId(null)}
         />
       ) : null}
-
-      {/* V8 ticket 10: the unsaved-changes guard (an in-app link while anything
-          above is dirty). */}
-      {unsavedGuard.dialog}
     </div>
   )
 }

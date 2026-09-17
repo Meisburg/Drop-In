@@ -2,8 +2,9 @@
  * Spec (V8 ticket 10 — the polish batch): the round-trips, end to end.
  *
  * (a) KID EDIT ROUND-TRIP: the marker's kid row is edited IN PLACE (first name
- *     + age) on /settings, saved by the ONE "Save profile" submit, and the new
- *     name + age render on /u/<handle>. This is the ticket's "instead of
+ *     + age) on /settings, autosaves as it is edited (V12 t01 — no save
+ *     control on the page any more), and the new name + age render on
+ *     /u/<handle>. This is the ticket's "instead of
  *     Remove + re-add": the row keeps its id, so its photo and its "who's
  *     coming" rows survive an edit (the DB-level check below proves the id is
  *     the same row, not a replacement).
@@ -20,8 +21,10 @@
  *     reason instead of failing — the gate must not depend on the operator's
  *     browser.
  *
- * (c) UNSAVED-CHANGES GUARD: typing on /settings and tapping an app link asks
- *     first (and Cancel really cancels). Data-free.
+ * (c) AUTOSAVE PERSISTENCE: typing on /settings saves itself (V12 t01 — the
+ *     unsaved-changes guard is gone), and leaving the page mid-edit loses
+ *     nothing: the in-app link goes straight through and the write lands on
+ *     its own. (Writes the marker's bio; the afterEach nulls it back.)
  *
  * (d) SHARE FAILURE IS VISIBLE: with the share sheet rejecting and the
  *     clipboard blocked, Share says "Couldn’t copy the link." and hands over a
@@ -31,7 +34,8 @@
  * orchestrator's sweep picks stragglers up): the marker's playdate rows are
  * deleted via REST with the marker's own JWT (host-only DELETE policy; comments
  * + ping rows cascade), the marker's kid rows are deleted (0011
- * kids_delete_own), and the moderator flag is put back to false.
+ * kids_delete_own), the marker's bio is nulled (V12 t01 — test (c) writes it
+ * now), and the moderator flag is put back to false.
  */
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
@@ -155,7 +159,7 @@ function readModeratorFlag(userId: string) {
   return runLiveSql(`select id, moderators from public.profiles where id = '${userId}'`)
 }
 
-test('(a) a kid row edited in place (name + age) saves with the one submit and shows on /u/:handle', async ({
+test('(a) a kid row edited in place (name + age) autosaves and shows on /u/:handle', async ({
   page,
 }) => {
   const marker = readMarkerMeta()
@@ -174,10 +178,10 @@ test('(a) a kid row edited in place (name + age) saves with the one submit and s
   await row.getByTestId('kid-name').fill(after)
   await row.getByTestId('kid-age').fill(String(KID_AGE_AFTER))
 
-  // The ONE submit for the whole form ("Save profile", not a per-row Save).
-  await expect(page.getByText('You have unsaved changes', { exact: false })).toBeVisible()
-  await page.getByRole('button', { name: 'Save profile', exact: true }).click()
-  await expect(page.getByTestId('profile-save-note')).toHaveText('Profile saved.')
+  // V12 t01: no save control on the page any more (and no "You have unsaved
+  // changes" line) — the row autosaves as it is edited. Wait for the always-on
+  // indicator to settle on "Saved." before probing the DB.
+  await expect(page.getByTestId('profile-save-note')).toHaveText('Saved.')
 
   // The write landed on the SAME row (the in-place pin: no delete + insert, so
   // the row's identity and its "who's coming" rows survive the edit). This used
@@ -281,44 +285,34 @@ test('(b) a moderator unhides a hidden comment (the mod flag flipped by the live
   }
 })
 
-test('(c) typing on /settings and following an app link asks before dropping it', async ({ page }) => {
+test('(c) typing on /settings saves itself — leaving the page loses nothing', async ({ page }) => {
   await page.goto('/settings')
   await settleOnRoute(page, '/settings')
 
-  // V9 ticket 11: the bio field is relabelled "About our family" and its
-  // placeholder follows — the ONLY change in this test, and it is a locator:
-  // the same field, the same column, the same guard behaviour asserted below.
+  // V12 t01: the unsaved-changes guard is gone. The typed text autosaves on
+  // its own (the debounce settles, the always-on indicator says so), and the
+  // in-app link goes straight through with no "leave without saving?" dialog.
+  // (Writes the marker's bio; the afterEach nulls it back.)
   const bio = page.getByPlaceholder('Who’s in your family, and what are you into? (optional)')
-  const typed = `e2e unsaved ${Math.floor(Date.now() / 1000)}`
-  const original = await bio.inputValue()
+  const typed = `e2e autosaved ${Math.floor(Date.now() / 1000)}`
   await bio.fill(typed)
-  await expect(page.getByText('You have unsaved changes', { exact: false })).toBeVisible()
+  await expect(page.getByTestId('profile-save-note')).toHaveText('Saved.')
 
-  // Cancel really cancels: still on /settings, the typing still there.
+  // The in-app link goes through: no dialog at all, straight to / (Nearby).
   const nearby = page.getByRole('link', { name: 'Nearby', exact: true })
   await nearby.click()
-  const dialog = page.getByTestId('unsaved-changes-dialog')
-  await expect(dialog).toBeVisible()
-  await expect(dialog).toContainText('Leave without saving?')
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
-  await expect(dialog).toHaveCount(0)
-  expect(new URL(page.url()).pathname).toBe('/settings')
-  await expect(bio).toHaveValue(typed)
-
-  // Leave without saving: the link the guard intercepted finally goes through.
-  await nearby.click()
-  await expect(dialog).toBeVisible()
-  await dialog.getByTestId('confirm-dialog-confirm').click()
+  await expect(page.getByTestId('unsaved-changes-dialog')).toHaveCount(0)
   await page.waitForURL('/')
   await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible()
 
-  // Nothing was written — the typing was local, so the saved bio is what it
-  // was before (a re-open of /settings proves it: the typed text is gone).
+  // And the write persisted: a re-open of /settings re-seeds from the saved
+  // profile, so the typed text is still there (nothing was lost by the
+  // mid-edit navigation).
   await page.goto('/settings')
   await settleOnRoute(page, '/settings')
   await expect(
     page.getByPlaceholder('Who’s in your family, and what are you into? (optional)'),
-  ).toHaveValue(original)
+  ).toHaveValue(typed)
 })
 
 test('(d) a dismissed share sheet plus a failed copy says so, with the URL to select', async ({
@@ -400,6 +394,13 @@ test.afterEach(async () => {
     await fetch(postQuery, { method: 'DELETE', headers: { ...headers, Prefer: 'return=representation' } })
     const kidQuery = `${url}/rest/v1/kids?profile_id=eq.${userId}&select=id`
     await fetch(kidQuery, { method: 'DELETE', headers: { ...headers, Prefer: 'return=representation' } })
+    // V12 t01: test (c) writes the marker's bio now — null it back so the
+    // e2e- prefix sweep (and the next run's seed) starts clean.
+    await fetch(`${url}/rest/v1/profiles?id=eq.${userId}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ bio: null }),
+    })
     const postCheck = await fetch(postQuery, { headers })
     const kidCheck = await fetch(kidQuery, { headers })
     const posts = postCheck.ok ? ((await postCheck.json()) as unknown[]) : null
