@@ -731,6 +731,17 @@ AC set are in `.scratch/v9/issues/11-kid-photo-storage.md`. **One decision
 remains** — what happens to the already-uploaded files — and it is recorded there
 with the options table. `0038` moved to this ticket.
 
+## V11.5 — the copy-polish batch (opened 2026-09-17, the V11 t06 reviewer finding-(a) follow-up)
+
+| Item | State |
+|---|---|
+| Ticket | `.scratch/v11.5/01-copy-pointers.md` (RANKED 1 from the V11 handoff; RANKED 0 — the Vercel deploy confirmation — was already closed by `05c9981` and independently re-verified: live entry `index-o3zQGGgw.js`, `/settings` → 200) |
+| t01 user-facing copy | **complete — `b092886`** (2026-09-17): 8 stale "/profile" strings follow the V11 t06 reorg to /settings — OnboardingPage bio/kids error strings (210/211/223/224) + display-name/location prose (282/338), UserPage:564 + PlacePage:408 Following lines (the Following list renders on /settings, `SettingsPage.tsx:1233`); strings only, no behavior/routes/migration; **no unit or e2e spec pinned the old copy** (grep-verified pre-edit, so no test edits) |
+| t01 fold-in (comment-only) | **complete — `5d85caa`** (2026-09-17): the same reviewer finding-(b)/(c)/(d) — stale `/profile` comments in db.ts (11 sites: location card, nudge banner, kid-name inline error, Notifications consumer, Following wrappers/types, family-photo render sites), push.ts (3), pushClient.ts (5), OnboardingPage.tsx (3), db-v2.test describe title, WhileAwayCard pattern reference; push-subscribe e2e historical note corrected (pre-t06 the fallback sentence's control lived on /profile); loop-closing JSDoc indent. Zero runtime changes |
+| Gate | build exit 0 · **818/818 unit (24 files)** · lint 0 · **e2e spot-check 3/3** (`onboarding-gate` + `loop-closing`, the specs whose surfaces the copy touches); built bundle verified: new copy present, old copy 0 occurrences |
+| Ship | **local only — NOT pushed** (repo rule: no push without explicit human authorization). When pushed, Vercel auto-deploys (proven on the V11 ship) |
+| Next | per the founder: open V12 (new feedback) or park; no other open threads — the V11 follow-ups list is now fully closed |
+
 ## V11 — the founder's V11 feedback batch (opened 2026-09-16)
 
 **Handoff doc: `.scratch/v11/HANDOFF.md` — start here in a fresh session (commits, gates, the dev-agent loop, open follow-ups).**
