@@ -777,7 +777,7 @@ export function loadZipCodes(): Promise<ReadonlyMap<string, ZipCoords>> {
 
 /**
  * Save the caller's home zip + radius (V2 slice 3: onboarding's Continue +
- * the /profile location card). Runs the pure validators first (the same
+ * the /settings location card). Runs the pure validators first (the same
  * defense in depth as uploadAvatar): the zip must be a 5-digit code in the
  * seeded gazetteer and the radius an integer in 2–35 (the 0012 CHECK is
  * the DB backstop).
@@ -2366,7 +2366,7 @@ export function validateInterests(interests: string): string | null {
  * Pure kid first-name validation (V8 ticket 10: the in-place kid row editor
  * writes the name on its OWN, so the name rule is its own pure unit; the
  * combined validateKid composes this and the age rule — same messages, one
- * source for the /profile inline error and the db-layer defense in depth).
+ * source for the /settings inline error and the db-layer defense in depth).
  *
  * V9 ticket 05: THE NAME IS OPTIONAL, so this rule no longer rejects a blank
  * one — "names are optional and when people start to put names like some
@@ -2400,7 +2400,7 @@ export function validateKid(firstName: string, age: number): string | null {
 }
 
 /**
- * The profile items missing for the /profile nudge banner (V2 ticket 02):
+ * The profile items missing for the /settings nudge banner (V2 ticket 02):
  * photo + bio + kids all present dismisses it. `kidsCount` is null when the
  * kids load has not settled (it counts as not-present — the nudge is
  * best-effort, never hides what is there).
@@ -2682,7 +2682,7 @@ export async function signedFamilyPhotoUrlsWithClient(
   return minted
 }
 
-/** The default-client wrapper (both render sites: /profile and /u/:handle). */
+/** The default-client wrapper (the family-photo render sites: /settings, /profile, /u/:handle). */
 export async function signedFamilyPhotoUrls(
   storedValues: Array<string | null | undefined>,
 ): Promise<Record<string, string>> {
@@ -3291,9 +3291,9 @@ export async function setSeriesActive(seriesId: string, active: boolean): Promis
 //
 // MISSING-TABLE BEHAVIOUR (the fail-safe, not the current state — 0031/0032
 // were applied live on 2026-09-12): if a table is absent, every call below
-// throws a PostgREST `PGRST205` / 404. The ONLY consumer is the /profile
+// throws a PostgREST `PGRST205` / 404. The ONLY consumer is the /settings
 // Notifications section, which catches that and renders a sentence — the rest
-// of /profile keeps working, which is why nothing here is called from a shared
+// of /settings keeps working, which is why nothing here is called from a shared
 // load path.
 // ---------------------------------------------------------------------------
 
@@ -3456,7 +3456,7 @@ export async function listPushSubscriptionsWithClient(
   }))
 }
 
-/** The default-client wrapper (the /profile Notifications section). */
+/** The default-client wrapper (the /settings Notifications section). */
 export async function listPushSubscriptions(): Promise<PushSubscriptionSummary[]> {
   const {
     data: { user },
@@ -3518,7 +3518,7 @@ export async function listRecentNotificationsWithClient(
   )
 }
 
-/** The default-client wrapper (the /profile Notifications section). */
+/** The default-client wrapper (the /settings Notifications section). */
 export async function listRecentNotifications(
   limit: number = RECENT_NOTIFICATIONS_LIMIT,
 ): Promise<NotificationLogItem[]> {
@@ -3544,7 +3544,7 @@ export async function listRecentNotifications(
 // PostgREST `PGRST205` ("Could not find the table 'public.follows' in the
 // schema cache"). Each CALLER catches it and degrades — the card's met-before
 // line stays hidden, the Follow control reports the designed error line, and
-// the /profile Following list renders one sentence. Nothing here is on a
+// the /settings Following list renders one sentence. Nothing here is on a
 // shared load path that could cost a post or a feed.
 // ---------------------------------------------------------------------------
 
@@ -3579,7 +3579,7 @@ export async function listMyFollowsWithClient(
   return (data ?? []) as FollowRow[]
 }
 
-/** The default-client wrapper (the feed's met-before line, /profile). */
+/** The default-client wrapper (the feed's met-before line, /u/:handle). */
 export async function listMyFollows(): Promise<FollowRow[]> {
   const {
     data: { user },
@@ -3588,7 +3588,7 @@ export async function listMyFollows(): Promise<FollowRow[]> {
   return listMyFollowsWithClient(supabase, user.id)
 }
 
-/** A followed FAMILY as /profile renders it (handle + avatar for the row). */
+/** A followed FAMILY as the Following list renders it (handle + avatar for the row). */
 export interface FollowingFamily {
   /** The follow row's id (the unfollow target). */
   followId: string
@@ -3598,7 +3598,7 @@ export interface FollowingFamily {
   avatarUrl: string | null
 }
 
-/** A followed PLACE as /profile renders it (name + link to /place/:id). */
+/** A followed PLACE as the Following list renders it (name + link to /place/:id). */
 export interface FollowingPlace {
   followId: string
   placeId: string
@@ -3606,7 +3606,7 @@ export interface FollowingPlace {
   name: string | null
 }
 
-/** The caller's Following list, split by target kind (the /profile section). */
+/** The caller's Following list, split by target kind (the /settings section). */
 export interface MyFollowing {
   families: FollowingFamily[]
   places: FollowingPlace[]
@@ -3676,7 +3676,7 @@ export async function listMyFollowingWithClient(
   }
 }
 
-/** The default-client wrapper (/profile's Following section). */
+/** The default-client wrapper (/settings' Following section). */
 export async function listMyFollowing(): Promise<MyFollowing> {
   const {
     data: { user },
@@ -3821,7 +3821,7 @@ export async function toggleFollowPlace(placeId: string): Promise<boolean> {
   return true
 }
 
-/** Unfollow one of the caller's own rows by its follow id (the /profile list). */
+/** Unfollow one of the caller's own rows by its follow id (the /settings list). */
 export async function unfollowById(followId: string): Promise<void> {
   const {
     data: { user },

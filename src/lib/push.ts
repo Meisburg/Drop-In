@@ -44,7 +44,7 @@ export type {
 }
 
 // ---------------------------------------------------------------------------
-// What the app calls the four kinds (the /profile toggle rows).
+// What the app calls the four kinds (the /settings toggle rows).
 //
 // Derived from the same NOTIFICATION_KINDS list as the payload builder, so the
 // UI cannot drift into describing a kind that no producer can create.
@@ -382,7 +382,7 @@ export function browserPermissionOf(value: string | null | undefined): BrowserPe
 }
 
 // ---------------------------------------------------------------------------
-// The /profile opt-in CONTROL — deliberately NOT the prompt rule above.
+// The /settings opt-in CONTROL — deliberately NOT the prompt rule above.
 //
 // These are two different questions and conflating them is a real bug, which is
 // why they are two functions with two names:
@@ -570,5 +570,5 @@ export function base64UrlToBytes(value: string): Uint8Array<ArrayBuffer> {
   return bytes
 }
 
-/** How many log rows the /profile fallback list shows. */
+/** How many log rows the /settings fallback list shows. */
 export const RECENT_NOTIFICATIONS_LIMIT = 5

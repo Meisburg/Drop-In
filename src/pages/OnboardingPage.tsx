@@ -135,7 +135,7 @@ export function OnboardingPage() {
   // validated and decoded inside the crop step, framed by the user, then encoded
   // client-side and stored at avatars/<uid>/avatar. A failed upload (0011 not
   // applied yet) surfaces the error but never traps onboarding — the items are
-  // optional, and the /profile nudge banner keeps the prompt alive.
+  // optional, and the /settings nudge banner keeps the prompt alive.
   async function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null
     e.target.value = '' // allow re-picking the same file
@@ -200,7 +200,7 @@ export function OnboardingPage() {
       await updateHomeZipRadius(session.user.id, homeZip.trim(), radiusMiles)
       // The optional items (V2 ticket 02): only what was actually entered.
       // A failure here never traps onboarding (the items are optional —
-      // the /profile nudge banner keeps the prompt) — but it is surfaced.
+      // the /settings nudge banner keeps the prompt) — but it is surfaced.
       if (bio.trim() !== '') {
         try {
           await updateBio(session.user.id, bio)
@@ -383,7 +383,7 @@ export function OnboardingPage() {
 
       {/* V2 ticket 02: the optional completion step — photo + bio + kids
           (first name + age only, the privacy pin). Skipping is fine: the
-          /profile nudge banner keeps prompting until all three are there. */}
+          /settings nudge banner keeps prompting until all three are there. */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">
           Tell parents about your family <span className="font-normal text-slate-500">(optional)</span>

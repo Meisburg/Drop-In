@@ -490,7 +490,8 @@ test('the prompt follows a real action, and "Not now" is answered with the inbox
   await expect(prompt).toHaveCount(0)
 
   // Finding F: the "not now" answer surfaces the pinned fallback sentence HERE
-  // (it used to exist only on /settings), and says it once — the trigger stands
+  // (it used to exist only on the /profile push control, pre-V11-t06), and says
+  // it once — the trigger stands
   // down, so it does not trail the parent around the app.
   const note = page.getByTestId('push-optin-note')
   await expect(note).toBeVisible()

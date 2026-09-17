@@ -105,7 +105,7 @@ describe('validateKid (V2 ticket 02 — first name + age only, the privacy pin)'
   })
 })
 
-describe('missingProfileItems (the /profile nudge banner, V2 ticket 02)', () => {
+describe('missingProfileItems (the /settings nudge banner, V2 ticket 02)', () => {
   it('lists everything when nothing is present', () => {
     expect(missingProfileItems(null, 0)).toEqual(['photo', 'bio', 'kids'])
   })

@@ -24,7 +24,7 @@
  *     viewer's follows rows returns ZERO ROWS (RLS, owner-only on all four
  *     verbs) — asserted on ROWS, never on the HTTP status (an RLS-blocked
  *     read is a 2xx with an empty array).
-*  7. A place's follower COUNT reaches a viewer only through the 0033 SECDEF
+ *  7. A place's follower COUNT reaches a viewer only through the 0033 SECDEF
   *     function, the follow control sits on /place/:id, the Following list on
   *     /settings carries both kinds with unfollow, and a SIGNED-OUT visitor to
  *     /place/:id sees the sign-in prompt and NO count (the documented

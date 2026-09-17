@@ -8,7 +8,7 @@
  * this iOS? which kind is muted?), it belongs in push.ts instead.
  *
  * The three flows:
- *   enablePush()                  the ONE opt-in path, used by both the /profile
+ *   enablePush()                  the ONE opt-in path, used by both the /settings
  *                                 button and the post-action prompt.
  *   disablePush()                 "Turn off": delete the rows, unsubscribe the
  *                                 browser, and remember not to ask again.
@@ -140,7 +140,7 @@ const installListeners = new Set<() => void>()
  *
  * `preventDefault()` on `beforeinstallprompt` is a trade: the browser's banner
  * stops appearing and our own button becomes the only way to install. That is
- * the right trade on the authed surface, where `/profile` → Notifications
+ * the right trade on the authed surface, where `/settings` → Notifications
  * really does render "Add Drop In to your Home Screen" (backed by the deferred
  * event). It is the wrong trade on the PUBLIC surface — a signed-out visitor
  * reading a shared drop-in link had the banner suppressed with no button
@@ -197,7 +197,7 @@ export async function promptInstall(): Promise<'accepted' | 'dismissed' | null> 
   }
 }
 
-/** Which install affordance belongs on /profile right now. */
+/** Which install affordance belongs on /settings right now. */
 export function currentInstallSurface(): InstallSurface {
   return installSurface({
     ...deviceFacts(),
@@ -389,7 +389,7 @@ function describeError(error: unknown): string {
 /**
  * The ONE opt-in path: ask the browser, subscribe, and write the row.
  *
- * Both entry points use it — the /profile "Turn on notifications" button and
+ * Both entry points use it — the /settings "Turn on notifications" button and
  * the post-action prompt — because "how do we turn this on" must have exactly
  * one implementation. Permission is requested FIRST so a denial costs nothing
  * else; the row is written LAST so the UI can never claim "on" without a row
@@ -460,7 +460,7 @@ export async function enablePush(): Promise<PushEnableResult> {
  * the unsubscribe then fails we are still genuinely off. The decision becomes
  * 'dismissed' so the post-action prompt does not immediately offer to undo it.
  *
- * 'dismissed' is about the PROMPT, not about the control: /profile's opt-in
+ * 'dismissed' is about the PROMPT, not about the control: /settings's opt-in
  * button is gated on the real registration (see decideOptInControl), so
  * "Turn off" stays reversible — which is what its own copy promises.
  */

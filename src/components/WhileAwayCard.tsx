@@ -2,7 +2,7 @@ import { GOING_CIRCLE_LIMIT, type WhileAwayInbox, type WhileAwayItem } from '../
 
 /**
  * The feed-top "While you were away" card (V8 ticket 03): the amber
- * nudge-banner pattern (ProfilePage's "Finish your profile" shape), full
+ * nudge-banner pattern (SettingsPage's "Finish your profile" shape), full
  * width, listing up to WHILE_AWAY_ITEM_LIMIT (3) news items — each one an
  * avatar face (or three) + one line of copy + a tap target that lands on that
  * post's /playdate/:id.
