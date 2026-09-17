@@ -207,8 +207,8 @@ export function OnboardingPage() {
         } catch (err) {
           setBioError(
             err instanceof Error
-              ? `${err.message} You can add it later in your profile.`
-              : 'Could not save your bio. You can add it later in your profile.',
+              ? `${err.message} You can add it later in your settings.`
+              : 'Could not save your bio. You can add it later in your settings.',
           )
         }
       }
@@ -220,8 +220,8 @@ export function OnboardingPage() {
         } catch (err) {
           setKidsError(
             err instanceof Error
-              ? `${err.message} You can add your kids later in your profile.`
-              : 'Could not add your kids. You can add them later in your profile.',
+              ? `${err.message} You can add your kids later in your settings.`
+              : 'Could not add your kids. You can add them later in your settings.',
           )
           break
         }
@@ -279,7 +279,7 @@ export function OnboardingPage() {
           <h1 className="text-xl font-semibold text-slate-900">Pick your display name</h1>
           <p className="mt-1 text-sm text-slate-600">
             This is your handle — how other parents see you. It isn’t your email, and you can
-            change it later in your profile.
+            change it later in your settings.
           </p>
         </div>
         <form
@@ -335,7 +335,7 @@ export function OnboardingPage() {
         <h1 className="text-xl font-semibold text-slate-900">Set your location</h1>
         <p className="mt-1 text-sm text-slate-600">
           You’ll see drop-ins near your home zip, within your radius. You can change both
-          anytime in your profile.
+          anytime in your settings.
         </p>
       </div>
 

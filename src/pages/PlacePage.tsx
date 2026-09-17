@@ -405,7 +405,7 @@ export function PlacePage() {
         ) : null}
         {session !== null && followerCount === null && followError === null ? (
           <p className="mt-2 text-xs text-slate-500">
-            Follow a place to keep it on your /profile Following list.
+            Follow a place to keep it on your /settings Following list.
           </p>
         ) : null}
       </div>

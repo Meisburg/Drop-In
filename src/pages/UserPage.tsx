@@ -561,7 +561,7 @@ export function UserPage() {
           ) : null}
           {following ? (
             <p className="text-xs text-slate-500">
-              On your Following list (/profile) — you’ll see when they’re going to something.
+              On your Following list (/settings) — you’ll see when they’re going to something.
             </p>
           ) : null}
           {blockError !== null ? <p className="text-sm text-red-600">{blockError}</p> : null}
