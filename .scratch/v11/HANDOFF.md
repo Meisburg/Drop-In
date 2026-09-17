@@ -1,6 +1,6 @@
 # V11 handoff — start here in a fresh session
 
-Written 2026-09-17 at the end of the V11 coordinator session (the founder-feedback batch built end to end, gated, pushed, and deployed). **Everything needed to continue lives in files, not in a chat window** — this page is the index to them.
+Written 2026-09-17 at the end of the V11 coordinator session (the founder-feedback batch built end to end, gated, and pushed; deploy pending founder confirmation). **Everything needed to continue lives in files, not in a chat window** — this page is the index to them.
 
 ## Where things stand
 
@@ -29,7 +29,7 @@ Close commits: t01 `14c8354`, t02 `7ef7fc7`, t03 `62d4843`, t04 `058d923`, t05 `
 
 ## Read these, in this order
 
-1. `AGENTS.md` — the workflow rules (orchestrator/coordinator + the dev-agent Herdr loop, one writer, files are the system of record, the forbidden-files list).
+1. `AGENTS.md` — the workflow rules (orchestrator/coordinator + the dev-agent Herdr loop, one writer, files are the system of record).
 2. `task-state.md` → **Current position** at the top (line 8, the V11 bullet), then the **V11 section** (ticket table, final gate, reviewer verdicts, ship record, open follow-ups).
 3. `.scratch/v11/spec.md` — the batch: 3 directives + 3 judgment calls, the out-of-scope list, and the "no migration" check.
 4. `.scratch/v11/issues/NN-*.md` — each ticket's pinned mechanics + ACs.
@@ -53,7 +53,7 @@ git status                               # expect: M opencode.json + untracked .
 
 ## Known traps (each cost time once)
 
-- **`opencode.json` is always modified and never committed** — the NInfer endpoint + live key. It shows as `M` in `git status`; that is normal. Forbidden to commit (with `supabase/`, `.agents/`, `.scratch/*.cjs`, `supabase/.temp/`).
+- **`opencode.json` (NInfer endpoint + live key) shows as `M` in `git status`; the live-key divergence is never committed or pushed** (last committed at the `f26edd1` scaffold; absent from every pushed range). Untracked clutter to leave alone: `.agents/`, `.scratch/*.cjs`, `supabase/.temp/`. Note: `supabase/` is committed normally when a batch ships a migration — it was untouched in V11 only because the batch had none.
 - **The untracked clutter is expected** — ~25 entries (`.agents/`, `.scratch/**`, `supabase/.temp/`). Never commit, never sweep.
 - **The e2e suite hits live Supabase (port 4173)** — a "stale string" failure right after a code change is often a port/contamination artifact, not a real regression (happened on t03: re-cert `rg "Ages not listed" src/` = 0 hits). Re-run the gate before declaring a failure real.
 - **Two live-API flakes**: `e2e/guest-list.e2e.ts` and `e2e/post-edit-delete.e2e.ts` sometimes fail on a viewer-signup hiccup and pass in isolation. Re-run alone before reporting a failure as real.
