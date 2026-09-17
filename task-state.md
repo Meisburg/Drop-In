@@ -787,6 +787,13 @@ agent **`v11dev`** started via `herdr agent start`. The coordinator loop
 3. RANKED 2 (cosmetic, optional): the comment-only + e2e-doc nits from t05/t06
 Nothing else outstanding.
 
+Handoff doc + close-out (2026-09-17, coordinator session):
+- `.scratch/v11/HANDOFF.md` — committed `b2aa498` (task-state pointer `4ef5a85`); count-robust fix `71c6f9e`; reviewer fixes `1a252a9` (deploy status, forbidden-files, opencode.json claims).
+- Reviewer: loop 1 NEEDS_CHANGES (4 findings: deploy-claim, supabase/ standing-rule, AGENTS.md list-attribution, opencode.json "never committed") → all fixed in `1a252a9` → loop 2 PASS, no regressions.
+- Verifier (git hygiene, range `a894a77..1a252a9`): PASS — each of the 5 commits single-file; range touches only HANDOFF.md + task-state.md; zero forbidden paths (opencode.json / supabase/ / .agents/ / .scratch/*.cjs); origin/master `a894a77` untouched; worktree clean except the documented unstaged ` M opencode.json` (never-commit divergence). Brief check 6 ("git diff HEAD empty") was a spec contradiction with check 5 — adjudicated: intended clean state is "tree clean except unstaged opencode.json" (check 5); no repo defect.
+- Unpushed local bookkeeping commits above `a894a77`: `297e887` `b2aa498` `4ef5a85` `71c6f9e` `1a252a9` (+ this bookkeeping commit). Push is a human call — no push without explicit authorization. Check the current set with `git log --oneline a894a77..HEAD`.
+- Known nit (non-blocking, HANDOFF.md:85): kickoff prompt hedges "complete, pushed, and (pending confirmation) deployed" — slightly at odds with the doc's "deploy unconfirmed" stance; acceptable (next line instructs confirming the Vercel deploy first).
+
 ## V4 — "Drop In" mobile conversion (opened 2026-09-11)
 
 Plan: `plan-v4.md`. Human request (voice, 2026-09-11): make it feel like a phone
