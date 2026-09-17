@@ -584,33 +584,47 @@ export function PlaydateFormFields({
     </div>
   )
 
+  /* V12 t02: the chip row is its own const. The /new fast path (branch 1) no
+     longer renders it in the visible flow — the duration is picked FOR the
+     parent (durationValueLine reads it back) and the override chips live at
+     the top of More options; branches 2/3 (the location-first page and /edit)
+     keep it in the flow via durationBlock. Tapping any chip writes
+     `durationMinutes` (the page records the override and stops re-deriving on
+     later start changes). */
+  const durationChipsRow = (
+    <div className="flex flex-wrap gap-2">
+      {PLAYDATE_DURATIONS_MINUTES.map((minutes) => {
+        const selected = values.durationMinutes === minutes
+        return (
+          <button
+            key={minutes}
+            type="button"
+            aria-pressed={selected}
+            onClick={() => onFieldChange('durationMinutes', minutes)}
+            className={touch(
+              'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ' +
+                (selected
+                  ? 'border-indigo-600 bg-indigo-600 text-white'
+                  : 'border-slate-300 bg-white text-slate-700'),
+            )}
+          >
+            {durationLabel(minutes)}
+          </button>
+        )
+      })}
+    </div>
+  )
+
   /* V9 ticket 03 (T5): the duration chips stay VISIBLE — the duration is one of
      the three decisions, it is required, and its "Ends …" read-back is the
-     line the specs and the parent both read. Only the date/stepper move. */
+     line the specs and the parent both read. Only the date/stepper move.
+     V12 t02: this is now the BRANCH 2/3 shape (the location-first page and
+     /edit); /new renders durationValueLine in the visible flow instead, and
+     the override chips at the top of More options are this same row. */
   const durationBlock = (
     <div className="flex flex-col gap-1 text-sm">
       <span className="text-slate-700">How long</span>
-      <div className="flex flex-wrap gap-2">
-        {PLAYDATE_DURATIONS_MINUTES.map((minutes) => {
-          const selected = values.durationMinutes === minutes
-          return (
-            <button
-              key={minutes}
-              type="button"
-              aria-pressed={selected}
-              onClick={() => onFieldChange('durationMinutes', minutes)}
-              className={touch(
-                'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ' +
-                  (selected
-                    ? 'border-indigo-600 bg-indigo-600 text-white'
-                    : 'border-slate-300 bg-white text-slate-700'),
-              )}
-            >
-              {durationLabel(minutes)}
-            </button>
-          )
-        })}
-      </div>
+      {durationChipsRow}
       {errors.durationMinutes ? (
         <p className="text-sm text-red-600">{errors.durationMinutes}</p>
       ) : null}
@@ -619,6 +633,26 @@ export function PlaydateFormFields({
           Ends {formatTimeLabel(endTotal)}
           {endTotal >= DAY_MINUTES ? ' (next day)' : ''}
         </p>
+      ) : null}
+    </div>
+  )
+
+  /* V12 t02: the /new (branch 1) DURATION — a read-back, not a control. The
+     start slot picks the duration ("until the next hour", seeded at mount and
+     re-derived on every start change until the parent taps a chip), so the
+     visible flow shows the value — "How long / 1h · Ends 3:00pm" — and the
+     override chips live at the top of More options. No `> 0` guard: /new's
+     duration is always a chip value (the page seeds and re-derives it), and
+     the error line stays in case a validation pass lands on an unpicked 0. */
+  const durationValueLine = (
+    <div className="flex flex-col gap-1 text-sm">
+      <span className="text-slate-700">How long</span>
+      <p className="text-sm text-slate-600">
+        {durationLabel(values.durationMinutes)} · Ends {formatTimeLabel(endTotal)}
+        {endTotal >= DAY_MINUTES ? ' (next day)' : ''}
+      </p>
+      {errors.durationMinutes ? (
+        <p className="text-sm text-red-600">{errors.durationMinutes}</p>
       ) : null}
     </div>
   )
@@ -757,6 +791,10 @@ line. No kids yet → the designed empty state + the /settings link (the
   // start (date + stepper) left the body for the visible "When" section, so the
   // body order is now (address, repeat, ages, details) — the specs that drove
   // the date behind the door now drive it in the When section instead.
+  // V12 t02: the duration override chips sit at the TOP of the body (the /new
+  // fast path dropped the duration from the visible flow — durationValueLine
+  // reads it back, this row is the override), so the body order is now
+  // (duration chips, address, repeat, kids, ages, details).
   const moreOptionsBlock =
     summaryLines === undefined ? null : (
       <>
@@ -787,6 +825,12 @@ line. No kids yet → the designed empty state + the /settings link (the
             data-testid="more-options-body"
             className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-slate-50 p-3"
           >
+            {/* V12 t02: the duration override chips — top of the body. /new's
+                visible flow reads the duration back (durationValueLine); this
+                row is how the parent overrides it. Only branch 1 renders
+                moreOptionsBlock (branches 2/3 have no disclosure), so the row
+                is /new-only without extra gating. */}
+            {durationChipsRow}
             {addressBlock}
             {neighborhoodBlock}
             {repeatSlot}
@@ -810,10 +854,11 @@ line. No kids yet → the designed empty state + the /settings link (the
     >
       {/* V9 ticket 03: /new opens on the SUMMARY — the day, the window and the
           place read back as text, with the editable title line under it — then
-          the three decisions (place, how long, Post), then everything else
-          behind the one disclosure. V9 ticket 01's order is kept inside that:
-          WHERE first, the chips that fill it under it, the quick-fill preset
-          (a time shortcut, not a location) after them.
+          the three decisions (place, the picked time, Post — V12 t02: the
+          duration is picked FOR the parent, read back by durationValueLine),
+          then everything else behind the one disclosure. V9 ticket 01's order is
+          kept inside that: WHERE first, the chips that fill it under it, the
+          quick-fill preset (a time shortcut, not a location) after them.
           /edit passes no summaryLines, so it renders the V8 ticket 05 markup
           with no summary and no disclosure. */}
       {summaryLines !== undefined ? (
@@ -833,9 +878,13 @@ line. No kids yet → the designed empty state + the /settings link (the
           {kidsSectionSlot}
           {/* V11 ticket 05: WHEN surfaces in the visible flow — the "When"
               section (date + stepper) sits between the surfaced kids section and
-              the duration chips, so setting the time no longer needs the door. */}
+              the duration, so setting the time no longer needs the door.
+              V12 t02: the duration is no longer a control here — the start slot
+              picks it ("until the next hour"), the visible flow reads the value
+              back (durationValueLine), and the override chips live at the top
+              of More options. The fast path is place + the picked time + Post. */}
           {whenBlock}
-          {durationBlock}
+          {durationValueLine}
           {moreOptionsBlock}
         </>
       ) : locationFirst ? (

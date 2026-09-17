@@ -245,8 +245,10 @@ test('/new leads with the place picker and never asks for a neighbourhood', asyn
   // Editing the title puts its input at the top of the summary — i.e. first in
   // DOM order — which is exactly why ticket 01's AC is pinned on the COLLAPSED
   // page above: that is the page /new OPENS as, and the page the parent meets.
-  // V11 ticket 05: the start date is in the visible "When" section (after place,
-  // before the duration chips), so the editing state reads title → place → date.
+  // V11 ticket 05: the start date is in the visible "When" section. V12 t02:
+  // the duration is read back there too (picked for the parent from the start
+  // slot; the override chips live behind "More options") — but the read-back is
+  // not an input, so the input order is unchanged: title → place → date.
   expect(fieldOrderEditing).toEqual([TITLE_PLACEHOLDER, PLACE_PLACEHOLDER, ''])
 
   // (2) Labelled so the affordance is unmistakable, with the visible Browse

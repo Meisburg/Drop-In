@@ -477,6 +477,10 @@ test('the prompt follows a real action, and "Not now" is answered with the inbox
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(place)
   // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
+  // V12 t02: the duration override chips live behind "More options" (the fast
+  // path reads the auto-picked duration back in the visible flow) — open the
+  // door, then override.
+  await openMoreOptions(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')

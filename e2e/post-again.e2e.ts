@@ -117,9 +117,11 @@ test('the Post-again chip clones the whole last post and posts it with the time 
   // ONE tap wrote the whole plan — assert every field the clone owns.
   // The place + address arrive with the chip (the applyRecentPlace
   // invariants); the title is the seed's (the parent's own words survive a
-  // clone); the duration chip reads back 1h.
+  // clone); the duration is read back as the seed's (V12 t02: the fast path
+  // shows the value, not the chips — they live behind "More options").
   await expect(page.getByPlaceholder(PLACE_PLACEHOLDER)).toHaveValue(place)
-  await expect(page.getByRole('button', { name: '1h', exact: true })).toBeVisible()
+  await expect(page.getByText('How long', { exact: true })).toBeVisible()
+  await expect(page.getByText(/^1h · Ends/)).toBeVisible()
 
   // The time moved by the rule: today's same slot when still ahead, else
   // tomorrow (the spec asserts against the summary's own read-back — the

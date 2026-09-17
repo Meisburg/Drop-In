@@ -5,13 +5,15 @@
  * The ticket's claims, end to end against the live project:
  *
  *  1. THE INTERACTION BUDGET. From a cold /new to the feed: a place (typed once,
- *     picked in one tap), one duration chip, and Post. The spec COUNTS the
- *     interactions rather than describing them — a capture listener records
- *     every click AND every input/change, in sessionStorage so the count
- *     survives the navigation to the feed — and pins the AC (<= 4 taps + 1 typed
- *     place). Review cycle 1, F4: the touched-control SET is asserted exactly
- *     ({the place field, the picked row, one duration chip, Post}), because a
- *     click count alone cannot see a newly required non-click step.
+ *     picked in one tap) and Post — the duration is picked FOR the parent
+ *     (V12 t02: the start slot auto-picks "until the next hour"; the override
+ *     chips live behind "More options"). The spec COUNTS the interactions rather
+ *     than describing them — a capture listener records every click AND every
+ *     input/change, in sessionStorage so the count survives the navigation to
+ *     the feed — and pins the AC (<= 3 taps + 1 typed place). Review cycle 1, F4:
+ *     the touched-control SET is asserted exactly ({the place field, the picked
+ *     row, Post}), because a click count alone cannot see a newly required
+ *     non-click step.
  *  2. THE READ-BACK IS EXACT. The summary's lines are the pure seam
  *     (postSummary.postSummaryLines) evaluated on the values the page opened
  *     with (bracketed around the mount, so neither a 30-minute boundary nor
@@ -24,8 +26,10 @@
  *     FIRST field, ticket 01's AC), follows the place until the parent writes
  *     their own, comes back from empty, and never comes back blank.
 *  4. THE DISCLOSURE. One "More options", collapsed by default, holding the
-  *     address's manual entry, "Kids you're bringing", Details and "Repeat
-  *     weekly" — and NOTHING that changes what will be posted is hidden: the
+  *     address's manual entry, "Kids you're bringing", Details, "Repeat
+  *     weekly" and — V12 t02 — the duration override chips (the /new fast path
+  *     reads the auto duration back in the visible flow, so this row is the
+  *     override) — and NOTHING that changes what will be posted is hidden: the
   *     address is read back on the place line and the weekly repeat is read back
   *     only while the submit would really create that series. (V11 ticket 05
   *     moved the start date + the 30-minute stepper out of the disclosure into
@@ -59,6 +63,7 @@ import type { Page } from '@playwright/test'
 import {
   defaultStartDateIso,
   nextSlotMinutes,
+  suggestedDurationMinutes,
 } from '../src/lib/feed'
 import type { PlaydateFormValues } from '../src/lib/feed'
 import { MORE_OPTIONS_FIELDS } from '../src/lib/feed'
@@ -163,7 +168,9 @@ function mountValues(nowIso: string, patch: Partial<PlaydateFormValues> = {}): P
     neighborhoodId: '',
     startDate: defaultStartDateIso(nowIso),
     startMinutes: nextSlotMinutes(nowIso),
-    durationMinutes: 0,
+    // V12 t02: /new auto-picks the duration from the start slot — the page's
+    // mount default now carries it, mirroring NewPlaydatePage's initialValues.
+    durationMinutes: suggestedDurationMinutes(nowIso),
     ageHint: '',
     details: '',
     ...patch,
@@ -310,7 +317,7 @@ async function measureControls(
   })
 }
 
-test('a cold /new is posted in four taps or fewer, typing exactly one place', async ({ page }) => {
+test('a cold /new is posted in three taps or fewer, typing exactly one place', async ({ page }) => {
   // The title is GENERATED now — the parent types a place and nothing else.
   const title = generatedTitle(PLACE_NAME)
   // The street the PICK will write, read from the directory itself: the summary
@@ -340,13 +347,14 @@ test('a cold /new is posted in four taps or fewer, typing exactly one place', as
   await expect(page.getByTestId('title-line')).toHaveText(GENERATED_TITLE_FALLBACK)
   await expect(page.getByPlaceholder(TITLE_PLACEHOLDER)).toHaveCount(0)
 
-  // (b) The three decisions are visible: the place picker, the duration chips
-  //     and Post.
+  // (b) The decisions are visible: the place picker and Post — and the duration
+  //     is picked FOR the parent (V12 t02): it is read back in the visible flow,
+  //     not asked. The override chips live behind "More options", so with the
+  //     door closed there is no chip button on the page at all.
   await expect(page.getByText(PLACE_PICKER_LABEL, { exact: true })).toBeVisible()
   await expect(page.getByTestId('browse-places')).toHaveText(BROWSE_PLACES_LABEL)
-  for (const label of DURATION_CHIP_LABELS) {
-    await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible()
-  }
+  await expect(page.getByText('How long', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '1h', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Post drop-in' })).toBeVisible()
 
   // (c) ONE typed place, one tap to pick it (the suggestion row).
@@ -364,14 +372,15 @@ test('a cold /new is posted in four taps or fewer, typing exactly one place', as
   ])
   await expect(page.getByTestId('title-line')).toHaveText(title)
 
-  // (d) One tap for how long: the summary reads the duration AND the exact
-  //     window back (computed the way the submit computes it).
-  await page.getByRole('button', { name: '1h', exact: true }).click()
+  // (d) No tap for how long (V12 t02): the start slot picked the duration at
+  //     mount — "until the next hour" — so the summary already reads the
+  //     duration AND the exact window back (computed the way the submit
+  //     computes it).
   const answered = [
-    postSummaryLines(mountValues(beforeMount, { place: PLACE_NAME, durationMinutes: 60 }), {
+    postSummaryLines(mountValues(beforeMount, { place: PLACE_NAME }), {
       address: pickedAddress,
     }),
-    postSummaryLines(mountValues(afterRead, { place: PLACE_NAME, durationMinutes: 60 }), {
+    postSummaryLines(mountValues(afterRead, { place: PLACE_NAME }), {
       address: pickedAddress,
     }),
   ]
@@ -380,29 +389,29 @@ test('a cold /new is posted in four taps or fewer, typing exactly one place', as
   expect(lines[0].endsWith(' · 1h')).toBe(true)
   expect(lines[2]).toBe(`${PLACE_NAME} · ${pickedAddress}`)
 
-  // (e) Post — the third decision. Nothing else was touched: no date, no time
-  //     (both sit in the visible "When" section now — V11 ticket 05 — but the
-  //     cold path leaves them at their defaults, so the ledger's set and the
-  //     budget are unchanged), no address, no kids, no details, no title.
+  // (e) Post — the last decision. Nothing else was touched: no date, no time
+  //     (both sit in the visible "When" section now — V11 ticket 05 — and the
+  //     duration was picked FOR the parent at mount — V12 t02 — so the ledger's
+  //     set and the budget are unchanged), no address, no kids, no details, no
+  //     title.
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
   const taps = await readTapCount(page)
   const touched = await readTouchedControls(page)
   console.log(
     `[e2e post-fast] cold /new → feed: ${taps} tap(s); controls touched: ` +
-      `${touched.map((key) => `"${key}"`).join(', ')}. AC pin: <= 4 taps + the typed place.`,
+      `${touched.map((key) => `"${key}"`).join(', ')}. AC pin: <= 3 taps + the typed place.`,
   )
-  expect(taps, 'the AC pins the interaction budget at four taps (plus the typed place)').toBeLessThanOrEqual(4)
-  // …and the count is real: the pick, the chip and Post are three clicks, or
-  // four if the typing itself is counted as one.
-  expect(taps).toBeGreaterThanOrEqual(3)
-  // The SET is the stronger pin (review cycle 1, F4): exactly four controls were
-  // touched — the place field (typed), the picked row (tapped), one duration chip
-  // (tapped) and Post (tapped). A fifth would be a step the parent now has to
-  // take, whatever its event type.
-  expect(touched).toHaveLength(4)
+  expect(taps, 'the AC pins the interaction budget at three taps (plus the typed place)').toBeLessThanOrEqual(3)
+  // …and the count is real: the pick and Post are two clicks, or three if the
+  // typing itself is counted as one.
+  expect(taps).toBeGreaterThanOrEqual(2)
+  // The SET is the stronger pin (review cycle 1, F4): exactly three controls
+  // were touched — the place field (typed), the picked row (tapped) and Post
+  // (tapped). A fourth would be a step the parent now has to take, whatever its
+  // event type.
+  expect(touched).toHaveLength(3)
   expect(touched).toContain(PLACE_PLACEHOLDER)
-  expect(touched).toContain('1h')
   expect(touched).toContain('Post drop-in')
   expect(
     touched.some((key) => key.startsWith(PLACE_NAME)),
@@ -589,6 +598,12 @@ test('the title is generated, read back, editable in place — the extras are be
   await expect(page.getByPlaceholder(ADDRESS_PLACEHOLDER)).toBeVisible()
   await expect(page.getByPlaceholder(DETAILS_PLACEHOLDER)).toBeVisible()
   await expect(page.getByTestId('repeat-weekly')).toBeVisible()
+  // V12 t02: the duration override chips now live BEHIND this door (the /new
+  // fast path reads the auto-picked duration back in the visible flow), so the
+  // door is where the parent overrides it — pin the row's presence here.
+  for (const label of DURATION_CHIP_LABELS) {
+    await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible()
+  }
 
   // V11 ticket 05: the disclosure holds no REQUIRED answer anymore (the start
   // moved into the visible "When" section), so feed.MORE_OPTIONS_FIELDS is
@@ -653,12 +668,11 @@ test('a submit that fails on the start date shows its error in the visible "When
   await page.goto('/new')
   await settleOnRoute(page, '/new')
 
-  // Answer the two VISIBLE required decisions (the place + the duration), so
-  // the only failure left is the start date. V11 ticket 05: it lives in the
-  // visible "When" section now (V9 t03's disclosure era is over), so clearing
-  // it needs no disclosure at all.
+  // Answer the one VISIBLE required decision (the place) — the duration was
+  // picked FOR the parent at mount (V12 t02), so the only failure left is the
+  // start date. V11 ticket 05: it lives in the visible "When" section now (V9
+  // t03's disclosure era is over), so clearing it needs no disclosure at all.
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(FREETEXT_PLACE)
-  await page.getByRole('button', { name: '1h', exact: true }).click()
 
   const dateInput = page.locator('input[type="date"]')
   await expect(dateInput).toBeVisible() // the When section, in the visible flow

@@ -24,6 +24,7 @@ import {
   computeEndIso,
   computeStartIso,
   defaultStartDateIso,
+  durationChipForUntilNextHour,
   durationLabel,
   formatStartDayLabel,
   formatTimeLabel,
@@ -68,8 +69,9 @@ import type { DuplicatePrefill, Kid, Place, PlacePrefill } from '../lib/types'
  * with, not this): `initialValues` fills the start date and time with today
  * and the next 30-minute slot, so `startDate`/`startMinutes` here are inert
  * placeholders that never render — every path goes through `initialValues`.
- * `durationMinutes: 0` is the real "none picked yet" state (the chips choose
- * a duration; the quick-fill preset can also set it).
+ * V12 t02: `durationMinutes: 0` is inert the same way — `initialValues`
+ * seeds the auto duration (`suggestedDurationMinutes`, "until the next
+ * hour"), so a /new form never renders 0; the 0 base only feeds the spread.
  */
 const emptyValues: PlaydateFormValues = {
   title: '',
@@ -93,6 +95,14 @@ const emptyValues: PlaydateFormValues = {
  * neighborhood, age hint, details); it deliberately does NOT carry date,
  * time, or duration (pinned in V2: those are always re-entered), so the
  * fresh defaults apply there too.
+ *
+ * V12 t02: the duration is picked FOR the parent, not asked of them —
+ * `suggestedDurationMinutes` ("until the next hour" from the mount slot,
+ * clamped to the chip set) is the default, so the form opens on a complete,
+ * postable plan and the fast path is place + the picked time + Post. The
+ * parent can still override it (a duration chip, the quick-fill preset, a
+ * "Post again" clone, or a prefill) — the page tracks that as
+ * `durationOverridden` and stops re-deriving on later start changes.
  */
 function initialValues(
   duplicate: DuplicatePrefill | null,
@@ -103,6 +113,10 @@ function initialValues(
     ...emptyValues,
     startDate: defaultStartDateIso(nowIso),
     startMinutes: nextSlotMinutes(nowIso),
+    // V12 t02: the auto duration — "until the next hour" from the mount slot
+    // (the same seam the quick-fill preset's label uses, so the value and the
+    // read-back can never disagree).
+    durationMinutes: suggestedDurationMinutes(nowIso),
   }
   // V8 ticket 07: "Start a drop-in here" (the place page) wins over a duplicate
   // prefill — the parent just tapped a place, so that place is what they mean.
@@ -388,6 +402,16 @@ export function NewPlaydatePage({
    * rule, pure and unit-tested; this flag is its input.
    */
   const [addressTouched, setAddressTouched] = useState(false)
+   /**
+    * V12 t02: has the parent (or a path standing in for them) explicitly set
+    * the duration? While it is false, a start-slot change re-derives the
+    * duration from the slot (`durationChipForUntilNextHour` — "until the next
+    * hour"); the moment they pick a chip (or a clone / prefill writes one), it
+    * goes true and their choice survives later start changes. The quick-fill
+    * preset CLEARS it: it writes exactly the auto value, so the auto behavior
+    * resumes.
+    */
+   const [durationOverridden, setDurationOverridden] = useState(false)
   // The session's user id (the kids table's profile_id — the same key
   // ProfilePage's kids load uses).
   const userId = session?.user?.id ?? null
@@ -498,6 +522,9 @@ export function NewPlaydatePage({
     // puts the generated default back in charge (the same rule
     // `withGeneratedTitle` applies at mount).
     if (field === 'title') setTitleTouched(String(value).trim() !== '')
+    // V12 t02: the parent tapped a duration chip — that is their choice, so a
+    // later start-slot change must not re-derive over it.
+    if (field === 'durationMinutes') setDurationOverridden(true)
     setValues((prev) => {
       const next = { ...prev, [field]: value }
       // V9 ticket 03: the title follows the place until the parent writes their
@@ -506,6 +533,12 @@ export function NewPlaydatePage({
       // place the post is not at.
       if (field === 'place') {
         return { ...next, title: titleAfterPlaceChange(prev.title, String(value), titleTouched) }
+      }
+      // V12 t02: picking a start slot picks the duration too — the "until the
+      // next hour" chip for the new slot (the same seam `initialValues` uses at
+      // mount), UNLESS the parent has already chosen one (`durationOverridden`).
+      if (field === 'startMinutes' && !durationOverridden) {
+        return { ...next, durationMinutes: durationChipForUntilNextHour(Number(value)) }
       }
       return next
     })
@@ -544,7 +577,14 @@ export function NewPlaydatePage({
       if (usesPlaceAlias(text)) setPicker('browse')
       else setPicker(text.trim() !== '' ? 'typing' : 'closed')
     }
-    setErrors((prev) => ({ ...prev, [field]: undefined }))
+    // V12 t02: a start-slot change re-derives the duration (a valid chip), so a
+    // stale duration error clears with the start error — the chip row's error
+    // line reads the same `errors` state.
+    setErrors((prev) =>
+      field === 'startMinutes' && !durationOverridden
+        ? { ...prev, startMinutes: undefined, durationMinutes: undefined }
+        : { ...prev, [field]: undefined },
+    )
     setSubmitError(null)
   }
 
@@ -616,6 +656,10 @@ export function NewPlaydatePage({
     setValues((prev) => ({ ...prev, ...clone.values }))
     setAddress(clone.address)
     setAddressTouched(false)
+    // V12 t02: the clone wrote an explicit duration (the source post's), so a
+    // later start change must not re-derive over it. A degenerate 0-minute
+    // source leaves the auto derivation armed — a 0 must not lock in.
+    if (clone.values.durationMinutes > 0) setDurationOverridden(true)
     setPlaceId(resolvePlaceByName(clone.values.place, places ?? [])?.id ?? null)
     setSelectedKidIds(clone.kidIds.filter((kidId) => (kids ?? []).some((kid) => kid.id === kidId)))
     setPicker('closed')
@@ -655,6 +699,11 @@ export function NewPlaydatePage({
       const fields = await prefillFetch(text, localDayKey(mountedNowIso), deviceTimeZone(), fetch)
       const merged = mergePrefill(values, fields)
       setValues(merged.values)
+      // V12 t02: a duration the LLM extracted is the parent's words made
+      // concrete — a later start change must not re-derive over it. If the LLM
+      // stated no duration, the auto derivation stays armed (it would write the
+      // same value already on the form).
+      if (merged.applied.includes('durationMinutes')) setDurationOverridden(true)
       setPlaceId(resolvePlaceByName(merged.values.place, places ?? [])?.id ?? null)
       setPicker('closed')
       setErrors((prev) => ({
@@ -841,6 +890,9 @@ export function NewPlaydatePage({
       startMinutes: quickStartMinutes,
       durationMinutes: quickDurationMinutes,
     }))
+    // V12 t02: the preset writes exactly the auto duration (the mount default),
+    // so the auto derivation resumes — a later start change re-derives.
+    setDurationOverridden(false)
     setErrors((prev) => ({
       ...prev,
       startDate: undefined,
