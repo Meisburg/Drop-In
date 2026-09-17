@@ -9,8 +9,8 @@
  * "dinosaurs"). The /new UI: the "Kids you're bringing (optional)"
  * section (the old "Best for ages" field, REPLACED by ticket 09 — the
  * playdates.age_hint DB column stays, just unused in the UI) shows one
- * chip per kid (name + age). The empty state ("Add your kids on your
- * profile" + the /profile "Add kids" link) renders only when the marker
+ * chip per kid (name + age). The empty state ("Add your kids in your
+ * settings" + the /settings "Add kids" link) renders only when the marker
  * has NO kids, so with kids present the spec pins its ABSENCE. Selecting
  * the chips + posting lands the selection in the 0022 playdate_kids
  * table (replace-on-duplicate, right after the post create — db.
@@ -173,11 +173,11 @@ async function postMarkerDropInWithKids(
   // The "Kids you're bringing (optional)" picker (the old "Best for ages"
   // section, REPLACED by ticket 09): the marker has kids (the REST
   // creates above) -> the section shows one chip per kid (name + age)
-  // and the empty state ("Add your kids on your profile" + the /profile
+  // and the empty state ("Add your kids in your settings" + the /settings
   // "Add kids" link) is ABSENT (the pin: it renders only when the
   // marker has no kids).
   await expect(page.getByText('Kids you\'re bringing')).toBeVisible()
-  await expect(page.getByText('Add your kids on your profile')).toHaveCount(0)
+  await expect(page.getByText('Add your kids in your settings')).toHaveCount(0)
   for (const kid of kids) {
     await page.getByRole('button', { name: `${kid.first_name} · ${kid.age}`, exact: true }).click()
   }

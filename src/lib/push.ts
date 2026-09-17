@@ -325,7 +325,7 @@ export const WHILE_AWAY_POINTER =
 
 export const DENIED_POINTER = `${WHILE_AWAY_POINTER} To change this, use your browser's site settings for Drop In.`
 
-export const DISMISSED_POINTER = `Not now — you can turn notifications on any time from your profile. ${WHILE_AWAY_POINTER}`
+export const DISMISSED_POINTER = `Not now — you can turn notifications on any time from your settings. ${WHILE_AWAY_POINTER}`
 
 export const UNSUPPORTED_POINTER = `This browser can't show notifications. ${WHILE_AWAY_POINTER}`
 

@@ -1,8 +1,8 @@
 /**
- * Spec (V2 ticket 02): the marker's rich profile. On /profile the marker
+ * Spec (V2 ticket 02): the marker's rich profile. On /settings the marker
  * saves a bio (<= 500 chars) + a kid row (first name + age ONLY — the
  * privacy pin, max 5 app-enforced) and sees both on /u/<handle>; the
- * /profile nudge banner persists while the photo is still missing.
+ * /settings nudge banner persists while the photo is still missing.
  *
  * Cleanup (best-effort per ticket, e2e-<epoch> marker prefix so the
  * orchestrator's sweep picks stragglers up): the marker's kid rows are
@@ -22,10 +22,10 @@ test('marker saves a bio + kid row, sees them on /u/<handle>, nudge stays for th
   const bio = `E2E bio — ${marker.displayName}, friendly family`
   const kidName = `e2e ${marker.displayName}`
 
-  await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await page.goto('/settings')
+  await settleOnRoute(page, '/settings')
 
-  // Bio: the /profile editor (app-capped at 500 chars, the 0011 CHECK is
+  // Bio: the /settings editor (app-capped at 500 chars, the 0011 CHECK is
   // the DB backstop). V8 ticket 10: the six per-section Save buttons became
   // ONE "Save profile" submit for the whole form (writing only the sections
   // that changed), so this spec's copy assertion follows the button that
@@ -38,7 +38,7 @@ test('marker saves a bio + kid row, sees them on /u/<handle>, nudge stays for th
   // your family (optional)"). The locator below is the ONLY change in this file —
   // same field, same column, same ≤500-char cap, same save, same render on
   // /u/<handle>. The field is located by its placeholder (the house pattern for a
-  // textarea with no testid) and the new placeholder is the string the /profile
+  // textarea with no testid) and the new placeholder is the string the /settings
   // page renders.
   await page
     .getByPlaceholder('Who’s in your family, and what are you into? (optional)')
@@ -52,7 +52,7 @@ test('marker saves a bio + kid row, sees them on /u/<handle>, nudge stays for th
   await page.getByRole('button', { name: 'Add kid', exact: true }).click()
   // V8 ticket 10: the row is editable IN PLACE, so the kid's values live in
   // the row's own fields rather than in a "{name} · {age}" text line. The
-  // assertion is the same fact — the kid stands on /profile with that name and
+  // assertion is the same fact — the kid stands on /settings with that name and
   // that age — read off those fields. The /u/<handle> render below is still
   // the static text line.
   const kidRow = page.getByTestId('kid-row').first()

@@ -338,7 +338,7 @@ export function armedPushTrigger(): PushPromptTrigger | null {
  *
  * It deliberately does NOT clear the armed trigger: the prompt's own note effect
  * (src/components/PushOptInPrompt.tsx) says the pinned "you can turn them on
- * any time from your profile … while you were away" sentence when it sees that
+ * any time from your settings … while you were away" sentence when it sees that
  * the answer was a fallback outcome, and THEN stands the trigger down. Clearing
  * it here would make the card vanish silently instead — which is exactly the
  * discarded-note bug of finding F.

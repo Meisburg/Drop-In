@@ -1,7 +1,7 @@
 /**
  * Spec (V2 ticket 03): zip + radius discovery.
  *
- * (a) The marker's /profile location card shows its home zip + radius
+ * (a) The marker's /settings location card shows its home zip + radius
  *     (set by the setup spec; 0012's columns back them).
  * (b) A host marker (known zip 98107) posts a drop-in; a viewer marker
  *     (different known zip 98007, ~12 mi away, a generous 20-mi radius)
@@ -35,11 +35,11 @@ import {
 const VIEWER_ZIP = '98007'
 const VIEWER_RADIUS_LABEL = '20 miles'
 
-test('the marker\'s /profile shows its home zip + radius (the location card)', async ({ page }) => {
+test('the marker\'s /settings shows its home zip + radius (the location card)', async ({ page }) => {
   const marker = readMarkerMeta()
 
-  await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await page.goto('/settings')
+  await settleOnRoute(page, '/settings')
 
   // The location card's zip input is seeded from the marker's profiles row.
   await expect(page.getByPlaceholder('e.g. 98107')).toHaveValue(marker.homeZip)

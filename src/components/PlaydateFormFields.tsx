@@ -628,8 +628,9 @@ export function PlaydateFormFields({
      (chips: name + age, 0011 kids table; the 375px layout wraps the chips like
      the duration chips). The selection lands in playdate_kids on submit
      (replace-on-duplicate) and shows on the detail page as the "Kids coming"
-     line. No kids yet → the designed empty state + the /profile link (the kids
-     are edited on the profile, V2 ticket 02). V9 ticket 03: a nice-to-have, not
+line. No kids yet → the designed empty state + the /settings link (the
+      kids are edited on the settings page, V11 ticket 06 — V2 ticket 02 put the
+      editor on /profile; the V11 reorg moved it). V9 ticket 03: a nice-to-have, not
      a gate — behind More options on /new.
      V10 ticket 02: WHEN THE PARENT HAS KIDS, /new SURFACES this block ABOVE
      the disclosure (kidsSectionSlot — the page's own section, passed in) and
@@ -645,8 +646,8 @@ export function PlaydateFormFields({
         <p className="text-sm text-slate-500">Loading your kids…</p>
       ) : kids.length === 0 ? (
         <p className="text-sm text-slate-600">
-          Add your kids on your profile, then pick the ones coming along.{' '}
-          <Link to="/profile" className="text-indigo-600">
+          Add your kids in your settings, then pick the ones coming along.{' '}
+          <Link to="/settings" className="text-indigo-600">
             Add kids
           </Link>
         </p>

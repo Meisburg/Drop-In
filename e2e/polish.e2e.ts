@@ -2,7 +2,7 @@
  * Spec (V8 ticket 10 — the polish batch): the round-trips, end to end.
  *
  * (a) KID EDIT ROUND-TRIP: the marker's kid row is edited IN PLACE (first name
- *     + age) on /profile, saved by the ONE "Save profile" submit, and the new
+ *     + age) on /settings, saved by the ONE "Save profile" submit, and the new
  *     name + age render on /u/<handle>. This is the ticket's "instead of
  *     Remove + re-add": the row keeps its id, so its photo and its "who's
  *     coming" rows survive an edit (the DB-level check below proves the id is
@@ -20,7 +20,7 @@
  *     reason instead of failing — the gate must not depend on the operator's
  *     browser.
  *
- * (c) UNSAVED-CHANGES GUARD: typing on /profile and tapping an app link asks
+ * (c) UNSAVED-CHANGES GUARD: typing on /settings and tapping an app link asks
  *     first (and Cancel really cancels). Data-free.
  *
  * (d) SHARE FAILURE IS VISIBLE: with the share sheet rejecting and the
@@ -163,8 +163,8 @@ test('(a) a kid row edited in place (name + age) saves with the one submit and s
   const after = `E2E KidB ${marker.displayName}`
   const kidId = await createMarkerKid(before, KID_AGE_BEFORE)
 
-  await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await page.goto('/settings')
+  await settleOnRoute(page, '/settings')
 
   const row = page.getByTestId('kid-row').first()
   await expect(row.getByTestId('kid-name')).toHaveValue(before)
@@ -281,9 +281,9 @@ test('(b) a moderator unhides a hidden comment (the mod flag flipped by the live
   }
 })
 
-test('(c) typing on /profile and following an app link asks before dropping it', async ({ page }) => {
-  await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+test('(c) typing on /settings and following an app link asks before dropping it', async ({ page }) => {
+  await page.goto('/settings')
+  await settleOnRoute(page, '/settings')
 
   // V9 ticket 11: the bio field is relabelled "About our family" and its
   // placeholder follows — the ONLY change in this test, and it is a locator:
@@ -294,7 +294,7 @@ test('(c) typing on /profile and following an app link asks before dropping it',
   await bio.fill(typed)
   await expect(page.getByText('You have unsaved changes', { exact: false })).toBeVisible()
 
-  // Cancel really cancels: still on /profile, the typing still there.
+  // Cancel really cancels: still on /settings, the typing still there.
   const nearby = page.getByRole('link', { name: 'Nearby', exact: true })
   await nearby.click()
   const dialog = page.getByTestId('unsaved-changes-dialog')
@@ -302,7 +302,7 @@ test('(c) typing on /profile and following an app link asks before dropping it',
   await expect(dialog).toContainText('Leave without saving?')
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
   await expect(dialog).toHaveCount(0)
-  expect(new URL(page.url()).pathname).toBe('/profile')
+  expect(new URL(page.url()).pathname).toBe('/settings')
   await expect(bio).toHaveValue(typed)
 
   // Leave without saving: the link the guard intercepted finally goes through.
@@ -313,9 +313,9 @@ test('(c) typing on /profile and following an app link asks before dropping it',
   await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible()
 
   // Nothing was written — the typing was local, so the saved bio is what it
-  // was before (a re-open of /profile proves it: the typed text is gone).
-  await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  // was before (a re-open of /settings proves it: the typed text is gone).
+  await page.goto('/settings')
+  await settleOnRoute(page, '/settings')
   await expect(
     page.getByPlaceholder('Who’s in your family, and what are you into? (optional)'),
   ).toHaveValue(original)
@@ -376,8 +376,8 @@ test('(e) the 5-kid cap says why the add fields went dead', async ({ page }) => 
     await createMarkerKid(`E2E Cap${index}`, 5 + index)
   }
 
-  await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await page.goto('/settings')
+  await settleOnRoute(page, '/settings')
 
   const cap = page.getByTestId('kids-cap')
   await expect(cap).toBeVisible()

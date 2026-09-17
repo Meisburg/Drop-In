@@ -17,7 +17,7 @@ obvious answer — it was buried in a profile editor. Gear = settings is the
 universal pattern; /profile should answer "what do other parents see about
 me?" and nothing else.
 
-**Status:** TODO
+**Status:** DONE (2026-09-16; gate 818/818 unit + 76 passed e2e (1 pre-existing conditional skip, polish.e2e.ts) + lint exit 0 + 0 editing-surface `/profile` hits left in `e2e/` (read-only specs only); commit hash recorded in the coordinator's task-state V11 update)
 
 ## Mechanics (pinned)
 

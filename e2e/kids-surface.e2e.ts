@@ -101,9 +101,9 @@ test('with kids, the picker surfaces above the disclosure, the hint swaps, and a
     await expect(chip).toBeVisible()
     await expect(chip).toHaveAttribute('aria-pressed', 'false')
   }
-  // The empty state ("Add your kids on your profile") is ABSENT — the marker
+  // The empty state ("Add your kids in your settings") is ABSENT — the marker
   // has kids.
-  await expect(page.getByText('Add your kids on your profile')).toHaveCount(0)
+  await expect(page.getByText('Add your kids in your settings')).toHaveCount(0)
 
   // Order: the section renders BEFORE the disclosure toggle in the DOM.
   const domOrder = await page.evaluate(() => {
@@ -181,7 +181,7 @@ test('with no kids, /new renders today\u2019s form (picker inside the disclosure
   await expect(page.getByText("Kids you're bringing")).toBeVisible()
   // Loading vs empty is kids-state-dependent, but a no-rows parent gets the
   // designed empty state (the load resolves to [] for a kidless profile).
-  await expect(page.getByText('Add your kids on your profile')).toBeVisible()
+  await expect(page.getByText('Add your kids in your settings')).toBeVisible()
 })
 
 test.afterEach(async () => {

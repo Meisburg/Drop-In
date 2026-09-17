@@ -24,6 +24,7 @@
 import { expect, test } from '@playwright/test'
 import {
   editTitle,
+  localDatePlusDays,
   openMoreOptions,
   readMarkerMeta,
   readMarkerSession,
@@ -105,7 +106,7 @@ test('a sentence fills the form for review, and the body carries only text/today
   const body = bodies[0]
   expect(Object.keys(body)).toHaveLength(3)
   expect(body.text).toBe(SENTENCE)
-  expect(body.todayIso).toBe(new Date().toISOString().slice(0, 10))
+  expect(body.todayIso).toBe(localDatePlusDays(0))
   expect(typeof body.timezone).toBe('string')
   expect((body.timezone as string).length).toBeGreaterThan(0)
 

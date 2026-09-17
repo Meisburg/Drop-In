@@ -28,6 +28,7 @@ import { PlacePage } from './pages/PlacePage'
 import { PlaydateDetailPage } from './pages/PlaydateDetailPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
+import { SettingsPage } from './pages/SettingsPage'
 import { UserPage } from './pages/UserPage'
 import { PLAYDATE_RETURN_KEY, isPlaydateReturnTarget, playdateDetailPathFromEditPath } from './lib/trust'
 import type { DuplicatePrefill, PlacePrefill } from './lib/types'
@@ -203,6 +204,19 @@ function ProtectedShell() {
                 className="flex min-h-11 min-w-0 max-w-32 items-center truncate text-sm font-medium text-slate-700"
               >
                 @{profile.display_name}
+              </Link>
+            ) : null}
+            {/* V11 ticket 06: the settings entry point — a gear to the
+                family's editor. Signed-in only (the route is gated by the
+                shell's auth + home-zip redirect), and it lives next to the
+                display name / sign-out controls it belongs to. */}
+            {session !== null ? (
+              <Link
+                to="/settings"
+                className="flex min-h-11 items-center justify-center text-slate-600"
+                aria-label="Settings"
+              >
+                <NavIcon path={NAV_ICONS.gear} />
               </Link>
             ) : null}
             {session !== null ? (
@@ -382,6 +396,10 @@ export default function App() {
             <Route path="/new" element={<NewRoute />} />
             <Route path="/onboarding" element={<OnboardingPage />} />
             <Route path="/profile" element={<ProfilePage />} />
+            {/* V11 ticket 06: the family's editor, split off the read-only
+                /profile (the header gear + /profile's "Edit profile" button
+                reach it). Signed-in-only via the shell gate above. */}
+            <Route path="/settings" element={<SettingsPage />} />
             <Route path="/u/:handle" element={<UserPage />} />
             <Route path="/mod" element={<ModPage />} />
           </Route>

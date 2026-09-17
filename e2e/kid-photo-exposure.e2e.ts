@@ -23,7 +23,7 @@
  *      assertion is not passing because the data is missing: it is passing
  *      because nothing reads it. No `<img>`, no photo control, and the sentence
  *      that tells a parent where the control went.
- *   4. THE FAMILY PHOTO round-trips through the real crop dialog onto /profile
+ *   4. THE FAMILY PHOTO round-trips through the real crop dialog onto /settings
  *      AND /u/:handle, as a SIGNED URL (never a public one), and what the
  *      DATABASE holds is an object PATH — a stored URL would expire on a timer.
  *      A second signed-in family can mint for it (that is what /u/:handle needs);
@@ -623,8 +623,8 @@ test('a kid row renders no photo and no photo control, even with avatar_url set'
     `${e.url}${LEGACY_PUBLIC_MARKER}${e.markerUserId}/kids/legacy-${epoch}`,
   )
 
-  await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await page.goto('/settings')
+  await settleOnRoute(page, '/settings')
 
   const row = page.getByTestId('kid-row').first()
   await expect(row.getByTestId('kid-name')).toHaveValue(kidName)
@@ -658,7 +658,7 @@ test('a kid row renders no photo and no photo control, even with avatar_url set'
 // ---------------------------------------------------------------------------
 // 4. THE FAMILY PHOTO.
 // ---------------------------------------------------------------------------
-test('the family photo uploads through the crop dialog and renders on /profile and /u/<handle>', async ({
+test('the family photo uploads through the crop dialog and renders on /settings and /u/<handle>', async ({
   page,
   browser,
 }) => {
@@ -667,8 +667,8 @@ test('the family photo uploads through the crop dialog and renders on /profile a
   const png = makePng(400, 300, 232, 85, 47)
   const storedPath = familyPhotoPath(e.markerUserId, 'jpg')
 
-  await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await page.goto('/settings')
+  await settleOnRoute(page, '/settings')
 
   await page.getByTestId('family-photo-input').setInputFiles({
     name: 'family.png',
@@ -744,8 +744,8 @@ test('“About our family” saves and renders; a profile with none of the block
   const epoch = Math.floor(Date.now() / 1000)
   const about = `E2E about ${epoch} — two grown-ups, one small person, a lot of sand.`
 
-  await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await page.goto('/settings')
+  await settleOnRoute(page, '/settings')
   // The label is the reframed one (ticket 08's ask), and the field is the SAME
   // bio column — no new column, no new cap.
   await expect(page.getByText('About our family', { exact: true })).toBeVisible()
@@ -770,9 +770,17 @@ test('“About our family” saves and renders; a profile with none of the block
   await settleOnRoute(page, '/profile')
   // `exact` matters here: the page's own h1 is "Your family" and the family-photo
   // card's heading is "A photo of your family", so a non-exact name match finds
-  // two headings.
+  // two headings. The read-only /profile shows the empty kids line and carries
+  // NO photo control (that lives on /settings).
   await expect(page.getByRole('heading', { name: 'Your family', exact: true })).toBeVisible()
   await expect(page.getByTestId('family-photo')).toHaveCount(0)
+  await expect(page.getByText('No kids yet.')).toBeVisible()
+  await expect(page.getByText('Add a family photo', { exact: true })).toHaveCount(0)
+
+  // The editing surface (/settings) keeps its controls: the photo button and the
+  // kids editor, both in their empty states.
+  await page.goto('/settings')
+  await settleOnRoute(page, '/settings')
   await expect(page.getByText('Add a family photo', { exact: true })).toBeVisible()
   await expect(page.getByText('No kids yet — add one below.')).toBeVisible()
 

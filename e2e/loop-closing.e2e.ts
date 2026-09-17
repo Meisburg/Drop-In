@@ -24,9 +24,9 @@
  *     viewer's follows rows returns ZERO ROWS (RLS, owner-only on all four
  *     verbs) — asserted on ROWS, never on the HTTP status (an RLS-blocked
  *     read is a 2xx with an empty array).
- *  7. A place's follower COUNT reaches a viewer only through the 0033 SECDEF
- *     function, the follow control sits on /place/:id, the Following list on
- *     /profile carries both kinds with unfollow, and a SIGNED-OUT visitor to
+*  7. A place's follower COUNT reaches a viewer only through the 0033 SECDEF
+  *     function, the follow control sits on /place/:id, the Following list on
+  *     /settings carries both kinds with unfollow, and a SIGNED-OUT visitor to
  *     /place/:id sees the sign-in prompt and NO count (the documented
  *     decision: the count function is EXECUTE-to-authenticated-only).
  *
@@ -41,7 +41,7 @@
  * The spec reports the failure with that line quoted plus the real API class,
  * and it asserts the page is STILL STANDING first: a crash would read as a
  * crash, not as an apply gap. Nothing else in the app changes pre-apply — a
- * viewer who follows nobody sees NO met-before line, /profile's Following
+ * viewer who follows nobody sees NO met-before line, /settings's Following
  * section renders one sentence, and the "same time next week" block is
  * unaffected by 0033 (it rides 0028 + the existing reads), which is why the
  * other 42 e2e specs stay green.
@@ -544,7 +544,7 @@ test('a follow is a bookmark: the card says who you met, and an ended post offer
   await expect(bCard).toContainText('going')
 
   // (11) The PLACE: follow it from /place/:id, read the count through the
-  //      SECDEF function, unfollow from the /profile Following list.
+  //      SECDEF function, unfollow from the /settings Following list.
   const places = await markerSelect<{ id: string; name: string }>('places?select=id,name&limit=1')
   const place = places[0]
   if (place === undefined) throw new Error('the places directory is empty — is 0029 applied?')
@@ -564,7 +564,7 @@ test('a follow is a bookmark: the card says who you met, and an ended post offer
   // family follow from step (4).
   expect(await selectWithToken('follows?select=id', tokenA)).toHaveLength(2)
 
-  await a.page.goto('/profile')
+  await a.page.goto('/settings')
   await expect(a.page.getByRole('heading', { name: 'Following' })).toBeVisible()
   const familyRow = a.page.getByRole('link', { name: `@${viewerB.name}`, exact: true })
   await expect(familyRow).toHaveAttribute('href', `/u/${viewerB.name}`)

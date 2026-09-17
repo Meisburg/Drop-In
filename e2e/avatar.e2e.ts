@@ -1,6 +1,6 @@
 /**
  * Spec (V2 ticket 02; the crop step added by photo-crop ticket 03): the avatar.
- * The marker picks a photo on /profile, confirms the crop dialog, and the encoder
+ * The marker picks a photo on /settings, confirms the crop dialog, and the encoder
  * produces a square JPEG stored at avatars/<uid>/avatar under the owner-scoped write
  * policy; it then posts a drop-in, and the 40px round avatar renders on the feed
  * card and on /u/<handle>.
@@ -90,16 +90,16 @@ test('marker uploads an avatar, sees the 40px round avatar on the feed card + /u
   // 400x300 (not square): the center-crop must square it before upload.
   const png = makePng(400, 300, 79, 70, 229)
 
-  await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await page.goto('/settings')
+  await settleOnRoute(page, '/settings')
 
-  // Upload (the /profile photo card). The ≤5MB gate and the decode run inside the
+  // Upload (the /settings photo card). The ≤5MB gate and the decode run inside the
   // crop step (this file is far under 5 MB), then the crop dialog opens on the
   // decoded image. Accepting its default frame is one tap.
   //
   // V9 ticket 11 CHANGED THE SELECTOR, and this is the only assertion change in
   // this file. It used to be the bare `page.locator('input[type="file"]')`, which
-  // worked because /profile had exactly ONE file input (the kid-photo controls
+  // worked because /settings had exactly ONE file input (the kid-photo controls
   // lived on kid rows, and this spec runs with none). Ticket 11 removes the kid
   // controls and ADDS a family-photo input, so a bare file-input locator now
   // matches two elements and Playwright's strict mode fails the upload. The

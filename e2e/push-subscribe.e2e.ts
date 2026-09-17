@@ -366,15 +366,15 @@ test('granting permission registers a push subscription row, and turning off is 
 
   await installPushStub(page, { permission: 'granted', endpoint })
 
-  await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await page.goto('/settings')
+  await settleOnRoute(page, '/settings')
 
   const section = page.getByTestId('notifications-section')
   await expect(section).toBeVisible()
   // THE STUB AND THE BROWSER FIRST: a future stub breakage must fail here, with
   // the page's own facts, not three assertions later with "no row".
   await expectPushSupported(page)
-  // The floating post-action prompt is /profile's suppressed surface — the
+  // The floating post-action prompt is /settings's suppressed surface — the
   // section's own button is the control here.
   await expect(page.getByTestId('push-optin-prompt')).toHaveCount(0)
   await expect(page.getByTestId('push-status')).toContainText('Notifications are off')
@@ -405,7 +405,7 @@ test('granting permission registers a push subscription row, and turning off is 
   // no button anywhere. A COLD LOAD is the state a parent actually returns to,
   // so that is where the button has to be.
   await page.reload()
-  await settleOnRoute(page, '/profile')
+  await settleOnRoute(page, '/settings')
   await expect(page.getByTestId('push-status')).toContainText('Notifications are off')
   await expect(page.getByTestId('push-turn-on')).toBeVisible()
 
@@ -423,8 +423,8 @@ test('a denied permission registers nothing and points at the feed inbox', async
 
   await installPushStub(page, { permission: 'denied', endpoint })
 
-  await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await page.goto('/settings')
+  await settleOnRoute(page, '/settings')
   await expectPushSupported(page)
 
   await page.getByTestId('push-turn-on').click()
@@ -445,7 +445,7 @@ test('a denied permission registers nothing and points at the feed inbox', async
   // 'denied' from the first render, like a real browser that remembers.
   const before = (await stubState(page)).requests
   await page.reload()
-  await settleOnRoute(page, '/profile')
+  await settleOnRoute(page, '/settings')
   await expect(page.getByTestId('push-fallback-note')).toBeVisible()
   expect((await stubState(page)).requests).toBe(before)
   expect((await stubState(page)).permission).toBe('denied')
@@ -490,7 +490,7 @@ test('the prompt follows a real action, and "Not now" is answered with the inbox
   await expect(prompt).toHaveCount(0)
 
   // Finding F: the "not now" answer surfaces the pinned fallback sentence HERE
-  // (it used to exist only on /profile), and says it once — the trigger stands
+  // (it used to exist only on /settings), and says it once — the trigger stands
   // down, so it does not trail the parent around the app.
   const note = page.getByTestId('push-optin-note')
   await expect(note).toBeVisible()

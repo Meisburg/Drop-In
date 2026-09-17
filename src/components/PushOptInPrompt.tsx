@@ -24,7 +24,7 @@ import {
  * THE PIN THIS COMPONENT EXISTS TO HOLD: never on a cold load. It renders
  * nothing until a MEANINGFUL ACTION has been recorded in this tab
  * (sessionStorage — `armPushPromptForAction`, called after a post is created and
- * after a ping is saved), and it renders nothing at all on /profile, where the
+ * after a ping is saved), and it renders nothing at all on /settings, where the
  * real control lives. The whole decision is the pure `decidePermissionPrompt`
  * seam; this file only reads the facts and draws the card.
  *
@@ -35,7 +35,7 @@ import {
  * `pathname` change therefore only ever caught the one action that navigates
  * (a created post). The arm now publishes through
  * `subscribePushArmed` (src/lib/pushClient.ts), which is the observation path;
- * `pathname` is still re-read for the /profile suppression.
+ * `pathname` is still re-read for the /settings suppression.
  *
  * AND WHEN IT MAY NOT ASK (fix-round finding F): a denial or a "Not now" after
  * a real action used to render NOTHING — the fallback sentence the ticket pins
@@ -73,9 +73,10 @@ export function PushOptInPrompt() {
     return subscribePushArmed(readFacts)
   }, [readFacts, pathname])
 
-  // /profile owns this surface (its Notifications section), so the floating
-  // prompt stays out of the way there.
-  const suppressed = pathname === '/profile'
+  // /settings owns this surface (its Notifications section, V11 ticket 06
+  // moved it off the read-only /profile), so the floating prompt stays out of
+  // the way there.
+  const suppressed = pathname === '/settings'
 
   const state = decidePermissionPrompt({ decision, permission, trigger, gate })
 
@@ -87,7 +88,7 @@ export function PushOptInPrompt() {
    * trigger changes nothing about what may be asked later.
    *
    * It does NOT clear on a cold load (trigger null) — an unsupported browser or
-   * an un-installed iOS Safari tab already has its explanation in /profile, and
+   * an un-installed iOS Safari tab already has its explanation in /settings, and
    * a cold load must stay silent.
    */
   useEffect(() => {

@@ -55,7 +55,7 @@ interface MarkerLocation {
 /**
  * Write the marker's location over PostgREST with the marker's own JWT — the
  * app's own write path (profiles.update + the owner RLS policy), just without
- * driving the /profile form. `Prefer: return=minimal` deliberately asks for NO
+ * driving the /settings form. `Prefer: return=minimal` deliberately asks for NO
  * row back: a write whose SELECT policy excludes the actor must never be sent
  * through RETURNING (the 42501 lesson).
  */

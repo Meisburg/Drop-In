@@ -18,10 +18,11 @@ test('a cold full-page /profile load lands on /profile (no onboarding-gate bounc
   // /onboarding → / while the membership fetch is in flight.
   await page.goto('/profile')
 
-  // The display-name field only renders on a settled /profile (the gate
+  // The display name under "About our family" only renders on a settled
+  // /profile (it is seeded from the marker's profiles row; the gate
   // must have passed). If the gate still bounced the load, the page
   // would end on / (via /onboarding) and this would time out.
-  await expect(page.locator('input[autocomplete="nickname"]')).toHaveValue(marker.displayName)
+  await expect(page.getByText(marker.displayName, { exact: true })).toBeVisible()
 
   // Settled on the requested route, and the app-shell header shows the
   // marker's handle (the profile round-trip worked).
