@@ -24,8 +24,8 @@ from a reasonable default.
   the `durationBlock` seam in the /new section order
   (`summaryBlock → placeBlock → postAgainSlot → recentChipsBlock → preset →
   describeSlot → kidsSectionSlot → whenBlock → durationBlock →
-moreOptionsBlock`, `src/components/PlaydateFormFields.tsx:821-839`,
-   `postAgainSlot` at `:823`).
+  moreOptionsBlock`, `src/components/PlaydateFormFields.tsx:821-839`,
+  `postAgainSlot` at `:823`).
 - `src/pages/NewPlaydatePage.tsx`: `quickStartMinutes` `:758`,
   `quickDurationMinutes` `:759`, `quickEndLabel` `:760`; `lastPostClone` /
   `lastPostLabel` `:767-774`, `lastPostClassName` `:778-779`; the
