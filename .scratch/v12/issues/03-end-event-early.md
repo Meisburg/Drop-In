@@ -10,6 +10,11 @@ it just stopped), the post is not "cancelled"; it *ended*. Consequences:
 3. History keeps them: the owner's "Your posts → Past" (and the archive)
    shows them labelled "ended", distinct from "cancelled".
 
+**Why:** Founder decision (V12), option A (honest history) — a host who ends
+an event early today can only cancel it, which mislabels an early end as a
+cancellation; an "ended" status keeps it in history as "ended", not
+"cancelled".
+
 **Status:** ready-for-agent
 
 ## Mechanics (pinned)
