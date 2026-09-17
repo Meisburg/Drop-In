@@ -3579,7 +3579,7 @@ export async function listMyFollowsWithClient(
   return (data ?? []) as FollowRow[]
 }
 
-/** The default-client wrapper (the feed's met-before line, /u/:handle). */
+/** The default-client wrapper (the feed's met-before line). */
 export async function listMyFollows(): Promise<FollowRow[]> {
   const {
     data: { user },
