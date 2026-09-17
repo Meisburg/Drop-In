@@ -5,6 +5,7 @@
 
 ## Current position
 
+- **V12 — the 2026-09-17 founder batch (opened 2026-09-17, the post-V11.5 feedback session).** Spec + 5 tickets in `.scratch/v12/` (queue order 01→05; 03 is the only migration — 0041 reserved, next free after 0040). Founder decisions (2026-09-17): **t05** = Leaflet + OpenStreetMap tiles, no browser geolocation; **t03** = the `ended` status (option A, honest history — an early-ended event stays in history as "ended", not "cancelled"); **t04** = kids' photos re-surface on the owner's /profile self-view ONLY (the private `kid-photos` bucket, 0038; every other surface stays photo-free — the V9 t11 invariant). **Ticket 06 dropped** — the V11 follow-up polish it covered already shipped as the V11.5 batch (`b092886` + `5d85caa`), pushed + live-verified; the V11 follow-ups list is recorded fully closed (V11.5 section). Per-ticket gate: `npm run build && npm run test`; batch gate = full suite + lint. Spine: orchestrator subagents (this session has no Herdr shell access — the dev pane `w4:p12` stays idle). **t01 next** (settings autosave — `.scratch/v12/issues/01-settings-autosave.md`). Details in the **V12** section below.
 - **V11 — the founder's V11 feedback batch (opened 2026-09-16, on the live V10 app).** Spec + 6 tickets in `.scratch/v11/` (order 01→02→03→04→05→06; 06 depends on 04). **NO migrations in the batch.** Per-ticket gate: `npm run build && npm run test`. Dev-agent pane REBUILT 2026-09-16 — the ACTIVE pane is tab `w4:tP` (label "5"), pane `w4:p12`, agent `v11dev2` (started via `herdr agent start`; the earlier `w4:tN`/`w4:p11`/`v11dev` pane is superseded — see the V11 section). **Tickets 01–06 are COMPLETE (code `aa7e991`, `61a9efa`, `b86a3bf`, `fc64dd6`, `456c7b9`, `e5d1462`) — the V11 batch is COMPLETE (tickets 01–06), final single-tenant gate GREEN on the final tree at HEAD `6f6e9e0` (coordinator verifier — raw gate results, reviewer verdicts, and open follow-ups in the V11 section below). SHIPPED to origin/master 2026-09-17 (local date) — push `d9239f4..a894a77` (16 commits: the 14 batch commits plus task-state bookkeeping `058d923` + `46aa848`, both task-state.md-only); `opencode.json` verified absent from the pushed range (grep count 0). Vercel production deploy **CONFIRMED LIVE 2026-09-17 (~09:00 PDT)** — `a894a77` is the current production deployment (deployment `3CB8rVrtcruYoMjbMSRBuR4dCd83`, auto-deployed by Vercel's git integration on the ship push; the ship record's "likely no auto-trigger" note predates the deploy landing just after the last probe window). Live proof: `https://drop-in-mu.vercel.app` serves the deployment's entry `/assets/index-o3zQGGgw.js` (sha256 `d3baa23d50ccaa60f3aec25da9c7dbfbc75b470ce2f6070213fdbeb7c4f803b5`) carrying both V11 t06 copy markers, and `/settings` answers 200 (full evidence in the V11 ship record below).**
 - **V10 — "Post again" and friends (opened 2026-09-14, the founder's fast-recall batch).** Spec + tickets in `.scratch/v10/`, origin: the /post audit (the V9-t03 form is already near-minimal; the remaining cost is RECALL — nothing remembers the whole last post, kids sit behind the disclosure, "tomorrow at 10" is a fiddly date field). **ALL THREE TICKETS COMPLETE — DEPLOYED AND LIVE-PROBED (2026-09-14):** **01 Post-again clone (commit `ae69cdd`)**, **02 kids surfaced above the disclosure (commit `f688ab0`)**, **03 sentence prefill (code `ebb6bca` + live-probe fixes `b9c6d7f`)**. Final gate on the committed tree: build exit 0 · **824/824 unit (24 files)** · **e2e 76/76** · lint 0 errors. **NO migrations in the batch.** **Ticket 03 IS LIVE:** `prefill-playdate` ACTIVE (v4), secrets set (OpenAI `gpt-4o-mini`, key rode a 0600 temp file, shredded), probes all green — real JWT → 200 with correct extraction (relative date, 30-min grid, chips, ageHint), kid-name sentence → place+time only (no echo), anon/garbage/absent → 401, oversize/bad-shape → 400. **Two recorded deviations, both probe-evidenced:** (1) deployed `--no-verify-jwt` because the platform's ES256 wall rejected the very token supabase-js accepts (the function's own `auth.getUser` wall is the gate — all four unauthorized probes 401); (2) the per-instance rate limit is best-effort under cold starts (12 rapid probes all 200) — acceptable for a bound, the real cost cap is the LLM spend. The batch design (prefill, not chat) was chosen over CopilotKit deliberately; research at `.scratch/agent-post-page/research.md`.
 - **Phase:** V3 PLAN COMPLETE — all 10 slices + tickets 01-10 closed; 0025 (guest list) applied live 2026-09-11 and verified (coordinator-verifier finish after the headless run died at its .env read). REMAINING HUMAN ITEMS CLOSED 2026-09-11 by Hermes coordinator: (1) marker sweep — 173 e2e users + opsmoke.test deleted via dashboard SQL API (safety gate: founder profiles verified outside the set; child rows scoped to markers; FINAL live DB: 2 auth users [jonmeisburg, nicolemeisburg], 2 profiles, 2 playdates [Greenlake, both Jon's]; remaining ping/comment/memberships belong to Jon+Nicole — kept); (2) founder-flag SQL — already applied (profiles.moderators=true on 'Jon Meisburg' verified pre-sweep, no action needed). V3 FULLY CLOSED.
@@ -737,7 +738,7 @@ with the options table. `0038` moved to this ticket.
 |---|---|
 | Ticket | `.scratch/v11.5/01-copy-pointers.md` (RANKED 1 from the V11 handoff; RANKED 0 — the Vercel deploy confirmation — was already closed by `05c9981` and independently re-verified: live entry `index-o3zQGGgw.js`, `/settings` → 200) |
 | t01 user-facing copy | **complete — `b092886`** (2026-09-17): 8 stale "/profile" strings follow the V11 t06 reorg to /settings — OnboardingPage bio/kids error strings (210/211/223/224) + display-name/location prose (282/338), UserPage:564 + PlacePage:408 Following lines (the Following list renders on /settings, `SettingsPage.tsx:1233`); strings only, no behavior/routes/migration; **no unit or e2e spec pinned the old copy** (grep-verified pre-edit, so no test edits) |
-| t01 fold-in (comment-only) | **complete — `5d85caa`** (2026-09-17): the same reviewer finding-(b)/(c)/(d) — stale `/profile` comments in db.ts (11 sites: location card, nudge banner, kid-name inline error, Notifications consumer, Following wrappers/types, family-photo render sites), push.ts (3), pushClient.ts (5), OnboardingPage.tsx (3), db-v2.test describe title, WhileAwayCard pattern reference; push-subscribe e2e historical note corrected (pre-t06 the fallback sentence's control lived on /profile); loop-closing JSDoc indent. Zero runtime changes |
+| t01 fold-in (comment-only) | **complete — `5d85caa`** (2026-09-17): the same reviewer finding-(b)/(c)/(d) — stale `/profile` comments in db.ts (~14 sites: the 11 pinned + 4 same-class sites at db.ts:779/2368/2686/3294, documented in the 5d85caa commit message), push.ts (3), pushClient.ts (5), OnboardingPage.tsx (3), db-v2.test describe title, WhileAwayCard pattern reference; push-subscribe e2e historical note corrected (pre-t06 the fallback sentence's control lived on /profile); loop-closing JSDoc indent. Zero runtime changes |
 | Gate | build exit 0 · **818/818 unit (24 files)** · lint 0 · **e2e spot-check 3/3** (`onboarding-gate` + `loop-closing`, the specs whose surfaces the copy touches); built bundle verified: new copy present, old copy 0 occurrences |
 | Ship | **pushed + LIVE (2026-09-17)** — push `05c9981..ea3b43d` confirmed on origin; Vercel auto-deployed, live bundle `index-Cw5AYnKF.js` carries the new copy (1 occurrence) with the old copy at 0 occurrences; `/settings` → 200 |
 | Next | per the founder: open V12 (new feedback) or park; no other open threads — the V11 follow-ups list is now fully closed |
@@ -797,8 +798,9 @@ agent **`v11dev`** started via `herdr agent start`. The coordinator loop
 
 ### Open follow-ups
 1. **RESOLVED 2026-09-17 (~09:00 PDT)** — was RANKED 0 (was blocking the ship's completion): Vercel production deploy of `a894a77` is **confirmed live** (deployment `3CB8rVrtcruYoMjbMSRBuR4dCd83`, auto-deployed on the ship push, Ready; live entry `index-o3zQGGgw.js` carries both V11 t06 markers; `/settings` 200 — see the ship record's confirmation block)
-2. RANKED 1 (recommended, founder decision): polish ticket candidate "V11.5" for t06 finding-(a) — stale /profile→/settings copy pointers
-3. RANKED 2 (cosmetic, optional): the comment-only + e2e-doc nits from t05/t06
+2. **RESOLVED 2026-09-17** — done as V11.5 t01: code `b092886` (8 user-facing strings) + comment fold-in `5d85caa`; pushed + live RANKED 1 (recommended, founder decision): polish ticket candidate "V11.5" for t06 finding-(a) — stale /profile→/settings copy pointers
+3. **RESOLVED 2026-09-17** — done as the V11.5 t01 comment-only fold-in `5d85caa` RANKED 2 (cosmetic, optional): the comment-only + e2e-doc nits from t05/t06
+4. (V12 candidate) stale "/profile" comment at `src/pages/FeedPage.tsx:452` — outside the V11.5 pinned scope, untouched by the batch; low priority
 Nothing else outstanding.
 
 Handoff doc + close-out (2026-09-17, coordinator session):
@@ -807,6 +809,52 @@ Handoff doc + close-out (2026-09-17, coordinator session):
 - Verifier (git hygiene, range `a894a77..1a252a9`): PASS — each of the 5 commits single-file; range touches only HANDOFF.md + task-state.md; zero forbidden paths (opencode.json / supabase/ / .agents/ / .scratch/*.cjs); origin/master `a894a77` untouched; worktree clean except the documented unstaged ` M opencode.json` (never-commit divergence). Brief check 6 ("git diff HEAD empty") was a spec contradiction with check 5 — adjudicated: intended clean state is "tree clean except unstaged opencode.json" (check 5); no repo defect.
 - Unpushed local bookkeeping commits above `a894a77`: `297e887` `b2aa498` `4ef5a85` `71c6f9e` `1a252a9` (+ this bookkeeping commit). Push is a human call — no push without explicit authorization. Check the current set with `git log --oneline a894a77..HEAD`.
 - Known nit (non-blocking, HANDOFF.md:85): kickoff prompt hedges "complete, pushed, and (pending confirmation) deployed" — slightly at odds with the doc's "deploy unconfirmed" stance; acceptable (next line instructs confirming the Vercel deploy first).
+
+## V12 — the 2026-09-17 founder batch (opened 2026-09-17, the post-V11.5 feedback session)
+
+**Spec: `.scratch/v12/spec.md` — start here. Five tickets in `.scratch/v12/issues/` (queue order 01→05; 03 is the only migration — 0041 reserved, next free after 0040).**
+
+Source: the founder's post-V11.5 walkthrough on the live V11 app (V11 + V11.5 are
+shipped, pushed, and live-verified; the V11 follow-ups list is fully closed —
+V11.5 section above). The batch takes the next round of the founder's
+feedback: (a) /settings still makes you press Save behind an unsaved-changes
+guard; (b) the /new time section forces a duration tap the fast path doesn't
+need; (c) a host who ends an event early can only cancel it; (d) the owner's
+own /profile self-view no longer shows the kids' photos and the post-again
+clone has loose ends; (e) places carry coordinates in the DB but no map
+anywhere to look at them.
+
+**Founder decisions (2026-09-17):**
+- **t05 — a map:** Leaflet + OpenStreetMap tiles; explicitly NO browser geolocation (coordinates come from the DB only — 0029 `places.lat/lng` nullable, 0012 `zip_codes` gazetteer).
+- **t03 — end an event early:** the `ended` status, option A (honest history) — an early-ended event stays in history labelled "ended"; it is not a cancellation.
+- **t04 — kids' photos re-surface:** on the owner's /profile self-view ONLY, read from the private `kid-photos` bucket (0038); every other surface (/u/:handle, cards, feed) stays photo-free — the V9 t11 invariant.
+- **Ticket 06 dropped** — the V11 follow-up polish it covered already shipped as the V11.5 batch (`b092886` + `5d85caa`), pushed + live-verified; recorded fully closed (V11.5 section + the spec's Out-of-scope entry, which also records the residual stale comments in `e2e/post-location.e2e.ts`). V12 ships 5 tickets, not 6.
+
+| # | Ticket | State |
+|---|---|---|
+| 01 | Settings autosave — /settings saves as you go, no Save button, no unsaved guard | not-started |
+| 02 | The new time model — /new picks the duration for you (fast path 4 taps → 3) | not-started |
+| 03 | End an event early — the `ended` status (honest history, option A) | not-started |
+| 04 | Profile self-view + post-again — kids' photos re-surface (owner-only), the clone closes out | not-started |
+| 05 | A map — Leaflet + OpenStreetMap tiles on the place surfaces | not-started |
+
+**Migration ledger (batch):** ONE — `0041` (ticket 03), reserved; last applied
+migration = `0040`. 0041 widens `playdates.status`'s `playdates_status_chk`
+(from the 0019 2-value `('on','cancelled')` at `0019_status_trim.sql:46-56`
+to `('on','cancelled','ended')`, in the 0016/0019 idempotent +
+pg_constraint-guarded structure), probes the 0005/0016 `playdates_update_host`
+host-write path, and decides — recorded in the migration header — whether an
+`ended` transition notifies through 0032's `notify_playdate_cancelled`
+trigger (`:416`, WHEN `old.status is distinct from new.status` at
+`:454-459`; default: notify, kind `ended`). Applied via the coordinator's CDP
+tooling (Tooling note) + live probe when t03's code is green.
+
+**Gates:** per-ticket `npm run build && npm run test` (plus each ticket's e2e
+spec list); batch gate = full suite + lint.
+
+**Spine:** orchestrator subagents — this session has no Herdr shell access, so
+the dev-agent pane `w4:p12` stays idle (the V11 coordinator loop's pane).
+**Next: t01** (`.scratch/v12/issues/01-settings-autosave.md`).
 
 ## V4 — "Drop In" mobile conversion (opened 2026-09-11)
 
