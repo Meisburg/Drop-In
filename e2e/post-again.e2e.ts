@@ -25,18 +25,37 @@
  *     does. Workers are pinned to 1 (playwright.config.ts), so the two
  *     contexts run serially and never race each other's rows.
  *
+ * V12 ticket 04 — the Duplicate path's prefill, end to end (the ticket's
+ * four entry points — the detail page's host-panel button, its one-off
+ * "Same time next week" branch, the profile post row, and the /new
+ * consumption path itself — all converge on the same router-state shape,
+ * so one entry point proves the consumption):
+ *
+ *  6. DUPLICATE CARRIES THE WHOLE PLAN: the host panel's Duplicate button
+ *     on a post with a linked kid opens /new with the place, the details,
+ *     the duration (read back as the value line, not the chips — V12 t02's
+ *     branch-1 shape), and the kid PRESELECTED, the start slot re-seated by
+ *     the same `clonedStart` seam as claim 3 (bracketed the same way), and
+ *     the form posts with no further input. The spec seeds the post + kid +
+ *     link through REST (the UI's own host-insert and the 42501 self-kid
+ *     walls are the policy), and the seeded kid row is cleaned in
+ *     afterEach (its playdate_kids link cascades with the post, 0022).
+ *
  * Cleanup mirrors kids-v3.e2e.ts: a best-effort REST delete of BOTH the
  * marker's playdate rows AND the fresh account's (where one was created) with
  * their own JWTs — the host-only DELETE policy is the wall, playdate_kids
- * rows cascade with the post (0022). The e2e-<epoch> prefix marks any
+ * rows cascade with the post (0022) — and, for the duplicate test, the
+ * seeded kid row (deleted AFTER the playdate rows so its link is gone
+ * first). The e2e-<epoch> prefix marks any
  * straggler for the orchestrator's sweep.
  */
 import { expect, test, type Page } from '@playwright/test'
-import { clonedStart } from '../src/lib/feed'
+import { clonedStart, computeEndIso, computeStartIso, kidLabel } from '../src/lib/feed'
 import {
   editTitle,
   localDatePlusDays,
   openMoreOptions,
+  parseTimeLabel,
   readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
@@ -46,6 +65,14 @@ import {
 
 const TITLE_PLACEHOLDER = 'e.g. Playground time at Green Lake'
 const PLACE_PLACEHOLDER = 'e.g. Green Lake playground, near the boathouse'
+
+/**
+ * The kid row the duplicate test seeds (null until that test runs): afterEach
+ * deletes it AFTER the marker's playdate rows — the playdate_kids link
+ * cascades with the post (0022), so the kid row outlives nothing by the time
+ * the delete lands.
+ */
+let createdKidId: string | null = null
 
 /** Delete every playdate row of `userId` via PostgREST (the host-only wall). */
 async function deletePlaydatesOf(userId: string): Promise<number> {
@@ -172,6 +199,151 @@ test('a parent with no posts sees no Post-again chip', async ({ page }) => {
   await expect(page.getByText('Recent places')).toHaveCount(0)
 })
 
+/**
+ * V12 ticket 04 — the duplicate's prefill, entry-point by entry point.
+ *
+ * The host panel's Duplicate button is the spec's door (the ticket's other
+ * three — the "Same time next week" one-off branch, the profile post row, and
+ * the /new consumption path — all navigate to the SAME router state through
+ * toDuplicatePrefill, so one door proves the consumption). The seed is
+ * REST-shaped deliberately: a post whose only linked kid is THIS run's, so
+ * the preselected chip is provably the duplicate's carry, not a marker kid a
+ * parent might actually have.
+ */
+test('Duplicate prefills place, details, duration, and the linked kid, and re-seats the start slot', async ({
+  page,
+}) => {
+  const marker = readMarkerMeta()
+  const { url, anonKey } = readSupabaseEnv()
+  const { accessToken, userId } = readMarkerSession()
+  const headers: Record<string, string> = {
+    apikey: anonKey,
+    Authorization: `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+  }
+
+  // The post's kid: epoch-named so it cannot collide with a kid the marker
+  // actually has (a leftover would only add a chip to the section — the
+  // assertion below names THIS kid, and the duplicate's selection must be
+  // provably the seeded link's).
+  const epoch = Date.now()
+  const kidName = `Eve ${epoch}`
+  const kidAge = 5
+  const kidRes = await fetch(`${url}/rest/v1/kids`, {
+    method: 'POST',
+    headers: { ...headers, Prefer: 'return=representation' },
+    body: JSON.stringify({ profile_id: userId, first_name: kidName, age: kidAge }),
+  })
+  const kidRows = (await kidRes.json()) as Array<{ id: string }>
+  expect(kidRes.ok, `the seeded kid must insert (HTTP ${kidRes.status})`).toBe(true)
+  expect(kidRows[0]?.id, 'the seeded kid read-back must carry its id').toBeTruthy()
+  const kidId = kidRows[0].id
+  createdKidId = kidId
+
+  // The post: upcoming (two days out — the host panel renders its usual
+  // controls), a clean 1h span (the prefill's duration comes out as a form
+  // option, 60, not the off-grid 0 fallback), and a 3:00 PM slot (on the
+  // 30-minute grid; the clone's rule only ever reads the slot's time-of-day
+  // — the stored day is irrelevant, clonedStart's contract).
+  const hoodRes = await fetch(`${url}/rest/v1/neighborhoods?select=id&limit=1`, { headers })
+  const hoods = (await hoodRes.json()) as Array<{ id: string }>
+  expect(hoodRes.ok && hoods[0]?.id, 'the neighborhoods seed must be readable').toBeTruthy()
+  const seedTitle = `e2e ${marker.displayName} duplicate seed`
+  const place = 'E2E Duplicate lot'
+  const details = 'Bring a water bottle.'
+  const seedDate = localDatePlusDays(2)
+  const seedStartMinutes = 15 * 60
+  const seedStartsAt = computeStartIso(seedDate, seedStartMinutes)
+  const seedEndsAt = computeEndIso(seedDate, seedStartMinutes, 60)
+  const postRes = await fetch(`${url}/rest/v1/playdates`, {
+    method: 'POST',
+    headers: { ...headers, Prefer: 'return=representation' },
+    body: JSON.stringify({
+      host_profile_id: userId,
+      neighborhood_id: hoods[0].id,
+      title: seedTitle,
+      place,
+      details,
+      starts_at: seedStartsAt,
+      ends_at: seedEndsAt,
+    }),
+  })
+  const postRows = (await postRes.json()) as Array<{ id: string }>
+  expect(postRes.ok, `the seeded post must insert (HTTP ${postRes.status})`).toBe(true)
+  expect(postRows[0]?.id, 'the seeded post read-back must carry its id').toBeTruthy()
+  const postId = postRows[0].id
+
+  // The link (42501's self-kid wall: the marker's own kid on the marker's own
+  // post — the exact shape the Duplicate button's fetch reads back).
+  const linkRes = await fetch(`${url}/rest/v1/playdate_kids`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ playdate_id: postId, kid_id: kidId }),
+  })
+  expect(linkRes.ok, `the playdate_kids link must insert (HTTP ${linkRes.status})`).toBe(true)
+
+  await page.goto(`/playdate/${postId}`)
+  // The host panel is the door (the "This is your post" block's controls).
+  await expect(page.getByText('This is your post')).toBeVisible()
+
+  // Bracket the mount: /new computes the clone's start ONCE at mount (the
+  // useState initializer), which falls between these two reads — the
+  // quick-post pattern, race-proof against the today/tomorrow boundary.
+  const beforeMount = new Date().toISOString()
+  await page.getByRole('button', { name: 'Duplicate', exact: true }).click()
+  await settleOnRoute(page, '/new')
+
+  // The banner names the source post and the rule: the duplicate's only
+  // required input is the new start time.
+  await expect(page.getByText(`Duplicating “${seedTitle}”`)).toBeVisible()
+  await expect(
+    page.getByText('Place, kids, and duration are filled in — pick a new start time and post.'),
+  ).toBeVisible()
+
+  // The bracket CLOSES here, after the banner: the banner only renders on the
+  // mount that carries the prefill (App's NewRoute keys the page on it — a
+  // prefill landing on an already-mounted /new remounts, re-running the
+  // mount-once initializers), so the clone's mount-time now is pinned inside
+  // [beforeMount, afterRead].
+  const afterRead = new Date().toISOString()
+
+  // The parent's words + plan arrived: the place (visible) and the duration
+  // carried as a value read-back, not the chips (V12 t02's branch-1 shape).
+  await expect(page.getByPlaceholder(PLACE_PLACEHOLDER)).toHaveValue(place)
+  await expect(page.getByText('How long', { exact: true })).toBeVisible()
+  await expect(page.getByText(/^1h · Ends/)).toBeVisible()
+
+  // The start slot was re-seated by the SAME seam the "Post again" chip uses
+  // (feed.clonedStart, bracketed): the seed's 3:00 PM time-of-day, on today
+  // when still ahead, tomorrow otherwise.
+  const cloneBefore = clonedStart(seedStartsAt, beforeMount)
+  const cloneAfter = clonedStart(seedStartsAt, afterRead)
+  const dateValue = await page.locator('input[type="date"]').inputValue()
+  expect([cloneBefore.startDate, cloneAfter.startDate], "the clone's date").toContain(dateValue)
+  const slot = parseTimeLabel(await page.getByTestId('start-time-label').innerText())
+  expect([cloneBefore.startMinutes, cloneAfter.startMinutes], "the clone's slot").toContain(slot)
+
+  // The linked kid arrived preselected: the one-shot seed effect intersected
+  // the prefill's kid ids with the marker's mounted kids.
+  await expect(
+    page
+      .getByTestId('kids-section')
+      .getByRole('button', { name: kidLabel(kidName, kidAge), exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true')
+
+  // The details came along too (behind the disclosure — open the door to read
+  // them; a collapsed field is not in the DOM).
+  await openMoreOptions(page)
+  await expect(
+    page.getByPlaceholder('Anything parents should know — what to bring, parking, weather plan…'),
+  ).toHaveValue(details)
+
+  // And it posts with no further input — the ticket's whole point.
+  await page.getByRole('button', { name: 'Post drop-in' }).click()
+  await page.waitForURL('/')
+  await expect(page.getByRole('heading', { name: seedTitle, exact: true }).first()).toBeVisible()
+})
+
 test.afterEach(async () => {
   // Best-effort cleanup (the house pattern): the marker's playdate rows are
   // deleted via REST with the marker's own JWT (host-only DELETE policy);
@@ -203,5 +375,30 @@ test.afterEach(async () => {
     console.log(
       `[e2e cleanup] FAILED (logged, best-effort): ${err instanceof Error ? err.message : err}`,
     )
+  }
+  // The duplicate test's seeded kid row, deleted AFTER the playdate rows
+  // (the link cascades with the post, so nothing references the kid by the
+  // time the delete lands).
+  if (createdKidId !== null) {
+    const kidId = createdKidId
+    createdKidId = null
+    try {
+      const { url, anonKey } = readSupabaseEnv()
+      const { accessToken } = readMarkerSession()
+      const headers: Record<string, string> = {
+        apikey: anonKey,
+        Authorization: `Bearer ${accessToken}`,
+      }
+      const del = await fetch(`${url}/rest/v1/kids?id=eq.${kidId}`, { method: 'DELETE', headers })
+      if (del.ok) {
+        console.log(`[e2e cleanup] ok — deleted seeded kid ${kidId}`)
+      } else {
+        console.log(`[e2e cleanup] FAILED (logged, best-effort): seeded kid delete HTTP ${del.status}`)
+      }
+    } catch (err) {
+      console.log(
+        `[e2e cleanup] FAILED (logged, best-effort): seeded kid delete ${err instanceof Error ? err.message : err}`,
+      )
+    }
   }
 })

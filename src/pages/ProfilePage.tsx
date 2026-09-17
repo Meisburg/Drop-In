@@ -4,10 +4,12 @@ import { NAV_ICONS } from '../components/icons'
 import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
 import { useFamilyPhotoUrl } from '../components/useFamilyPhotoUrl'
+import { useKidPhotoUrls } from '../components/useKidPhotoUrls'
 import { listKids, supabase } from '../lib/db'
 import {
   kidLabel,
   partitionPostsByTime,
+  playdateKidsKidIds,
   queryMyPlaydatesWithClient,
   toDuplicatePrefill,
 } from '../lib/feed'
@@ -32,16 +34,22 @@ import type { Kid, Playdate } from '../lib/types'
  *  - "About our family" (the display name — the public handle — and the bio,
  *    plain text; the display name renders as its own text node so a spec can
  *    match it exactly while the app-shell header shows the @-prefixed form)
- *  - kids by first name + age only (the privacy pin, the kidLabel seam — no
- *    editing, no likes line; the rows are DISPLAY li's, not the /settings
- *    inputs)
+ *  - kids by first name + age (the privacy pin, the kidLabel seam — no editing,
+ *    no likes line; the rows are DISPLAY li's, not the /settings inputs). Each
+ *    row MAY carry its photo (V12 t04): the owner-only, batched, best-effort
+ *    signed-URL image from `useKidPhotoUrls`, rendered for a kid whose
+ *    `avatar_url` is set and hidden on a failed fetch. This is the ONE place a
+ *    kid photo shows — every other surface stays photo-free.
  *  - "Your posts" (the owner's drop-ins, the same Upcoming/Past split as
  *    /u/:handle; every row keeps its Duplicate action, which is not an edit of
  *    anything on this page — it navigates to /new)
  *
  * The family photo's signed URL comes from the same batched, best-effort hook
  * /settings uses (never persisted; null while in flight or when the mint
- * failed, and the card simply shows no image in that case).
+ * failed, and the card simply shows no image in that case). The kid photos'
+ * URLs come from the same discipline via `useKidPhotoUrls` (V12 t04): absent
+ * while in flight or when the mint failed, and the kid row simply shows no
+ * image.
  */
 export function ProfilePage() {
   const navigate = useNavigate()
@@ -50,6 +58,10 @@ export function ProfilePage() {
 
   const [kids, setKids] = useState<Kid[] | null>(null)
   const [kidsError, setKidsError] = useState<string | null>(null)
+  // V12 t04: the kid ids whose photo <img> 404'd (minted but the object was
+  // never uploaded, or was deleted). Keyed by kid id because each kid's
+  // canonical path is stable, so a re-mint never resurrects a dead image.
+  const [kidPhotoErrors, setKidPhotoErrors] = useState<Record<string, boolean>>({})
   const [myPosts, setMyPosts] = useState<Playdate[] | null>(null)
   const [postsError, setPostsError] = useState<string | null>(null)
 
@@ -101,6 +113,10 @@ export function ProfilePage() {
   // a hook after an early return is the V6 regression that blanked the detail
   // page.
   const familyPhotoUrl = useFamilyPhotoUrl(profile?.family_photo_url)
+  // The owner's kid photos' signed URLs (V12 t04) — the ONE kid-photo render
+  // site, owner-only, batched + best-effort. Called above the early return for
+  // the same reason as the family-photo hook.
+  const kidPhotoUrls = useKidPhotoUrls(userId, kids)
 
   if (loading) {
     return (
@@ -150,7 +166,11 @@ export function ProfilePage() {
       </div>
       <button
         type="button"
-        onClick={() => navigate('/new', { state: { duplicate: toDuplicatePrefill(post) } })}
+        onClick={() =>
+          navigate('/new', {
+            state: { duplicate: toDuplicatePrefill(post, playdateKidsKidIds(post.playdate_kids)) },
+          })
+        }
         className="shrink-0 rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200"
       >
         Duplicate
@@ -231,9 +251,11 @@ export function ProfilePage() {
         </p>
       </div>
 
-      {/* Kids — first name + age only (the privacy pin), no editing. The row is
-          the kidLabel seam (the same one /u/:handle renders); the editor is on
-          /settings. */}
+{/* Kids — first name + age (the privacy pin), no editing. Each row MAY
+           carry its photo (V12 t04): the owner-only signed URL from
+           `useKidPhotoUrls`, hidden on a failed fetch. The row is the kidLabel
+           seam (the same one /u/:handle renders, photo-free); the editor is on
+           /settings. */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">Kids</h2>
         {kidsError !== null ? (
@@ -244,11 +266,23 @@ export function ProfilePage() {
           <p className="mt-3 text-sm text-slate-600">No kids yet.</p>
         ) : (
           <ul className="mt-2 flex flex-col gap-2">
-            {kids.map((kid) => (
-              <li key={kid.id} data-testid="kid-row" className="flex flex-wrap items-center gap-2">
-                <p className="text-sm text-slate-800">{kidLabel(kid.first_name, kid.age)}</p>
-              </li>
-            ))}
+            {kids.map((kid) => {
+              const kidPhoto = kidPhotoUrls[kid.id]
+              return (
+                <li key={kid.id} data-testid="kid-row" className="flex flex-wrap items-center gap-2">
+                  {kidPhoto !== undefined && !kidPhotoErrors[kid.id] ? (
+                    <img
+                      data-testid="kid-photo"
+                      src={kidPhoto}
+                      alt={kidLabel(kid.first_name, kid.age)}
+                      className="h-10 w-10 shrink-0 rounded-full object-cover"
+                      onError={() => setKidPhotoErrors((prev) => ({ ...prev, [kid.id]: true }))}
+                    />
+                  ) : null}
+                  <p className="text-sm text-slate-800">{kidLabel(kid.first_name, kid.age)}</p>
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>
@@ -256,7 +290,8 @@ export function ProfilePage() {
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">Your posts</h2>
         <p className="mt-1 text-sm text-slate-600">
-          Duplicate one to re-post it — you always pick a new date and time.
+          Duplicate one to re-post it — place, kids, and duration come along (V12 t04);
+          you only pick a new start time.
         </p>
 
         {postsError !== null ? (

@@ -29,6 +29,8 @@ import {
   familyPhotoMintPaths,
   familyPhotoObjectPath,
   familyPhotoPath,
+  kidPhotoMintPaths,
+  kidPhotoPath,
 } from './photoStorage'
 import {
   ageRangeFields,
@@ -2687,6 +2689,63 @@ export async function signedFamilyPhotoUrls(
   storedValues: Array<string | null | undefined>,
 ): Promise<Record<string, string>> {
   return signedFamilyPhotoUrlsWithClient(supabase, storedValues)
+}
+
+/**
+ * Mint signed URLs for the owner's OWN kid photos (V12 t04), ONE batched call
+ * for the whole list (T6), against an injected client (the house *WithClient
+ * pattern).
+ *
+ * The paths are BUILT from `profileId` + each kid id (`kidPhotoMintPaths`),
+ * never read from `kids.avatar_url` — the stored column is a bucket-qualified
+ * path (or a legacy public URL) and the read path is owner-only by
+ * construction, so the canonical `<uid>/kids/<kidId>` shape is what the policy
+ * mints for. The result is keyed by KID ID (not path) so the render site maps
+ * its own kids straight through.
+ *
+ * BEST-EFFORT BY CONTRACT, exactly like the family-photo sibling: it never
+ * throws. A failure — the bucket not applied, an outage, a policy refusal, or a
+ * mint that comes back empty because the object was never uploaded — means "no
+ * image for that kid", and the page renders the kid row without a photo. No
+ * error state (a decoration is never worth one). NEVER PERSISTED: the URLs are
+ * render-time state only.
+ */
+export async function signedKidPhotoUrlsWithClient(
+  client: SupabaseClient,
+  profileId: string,
+  kidIds: string[],
+): Promise<Record<string, string>> {
+  const paths = kidPhotoMintPaths(profileId, kidIds)
+  if (paths.length === 0) return {}
+  const minted: Record<string, string> = {}
+  try {
+    const { data, error } = await client.storage
+      .from(PHOTO_BUCKET)
+      .createSignedUrls(paths, FAMILY_PHOTO_URL_TTL_SECONDS)
+    if (error) return {}
+    const urlByPath = new Map<string, string>()
+    for (const row of data ?? []) {
+      if (typeof row.path === 'string' && typeof row.signedUrl === 'string' && row.signedUrl !== '') {
+        urlByPath.set(row.path, row.signedUrl)
+      }
+    }
+    for (const kidId of kidIds) {
+      if (kidId === '') continue
+      const url = urlByPath.get(kidPhotoPath(profileId, kidId))
+      if (url !== undefined) minted[kidId] = url
+    }
+  } catch {
+    return {}
+  }
+  return minted
+}
+
+/** The default-client wrapper (the one kid-photo render site: the owner's /profile). */
+export async function signedKidPhotoUrls(
+  profileId: string,
+  kidIds: string[],
+): Promise<Record<string, string>> {
+  return signedKidPhotoUrlsWithClient(supabase, profileId, kidIds)
 }
 
 /** Update the caller's bio (V2 ticket 02): <= 500 chars, validated pure. */

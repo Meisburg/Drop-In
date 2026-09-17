@@ -37,6 +37,7 @@ import {
   listKids,
   listKidsGoing,
   listMyPingKids,
+  listPlaydateKidIds,
   listPlaydateKidNames,
   listSeriesOccurrences,
   setPlaydateStatus,
@@ -101,8 +102,9 @@ import type {
  * posts cannot show one post's next occurrence on another's page.
  *
  * - 'one-off'      → the post does not repeat: the action prefills /new with
- *                    the existing duplicate router state (same place, same
- *                    titles — the time is always re-entered).
+ *                    the duplicate router state (place, kids, and duration
+ *                    travel along — V12 t04; the only required input is the
+ *                    new start time).
  * - 'occurrence'   → the post belongs to a 0028 series and the NEXT occurrence
  *                    is known: one tap pings it (`alreadyGoing` = the viewer
  *                    is on that roster already, so the page confirms instead
@@ -186,8 +188,8 @@ type DetailState =
  *
  * V2 slice 1: the post's own host sees an explicit "This is your post" panel
  * with the going count and a Duplicate action (navigates to /new with
- * router-state prefill of everything except the date/time — which is always
- * re-entered) — never the ping button. Everyone else sees the unchanged
+ * router-state prefill — place, kids, and duration travel along, V12 t04;
+ * only the new start time is re-entered) — never the ping button. Everyone else sees the unchanged
  * ping toggle + count (V3 slice 3, ticket 06: the labels are "Attend" /
  * "✓ Going" — same toggle semantics, the green-700 fill tracks the
  * going state).
@@ -904,10 +906,13 @@ export function PlaydateDetailPage() {
   /**
    * V8 ticket 09 (migration 0033): "Same time next week".
    *
-   * A one-off post: navigate to /new with the existing duplicate prefill —
-   * the same router-state pattern the host panel's Duplicate button uses, so
-   * /new needs no new key and the parent still picks the new date and time
-   * (the pinned duplicate rule: the date/time is always re-entered).
+   * A one-off post (V12 ticket 04 re-aimed it): navigate to /new with the
+   * duplicate prefill — the same router-state pattern the host panel's
+   * Duplicate button uses, so /new needs no new key. The prefill now
+   * carries the post's start slot, duration, and linked kids (fetched at
+   * the tap, best-effort — a failed read opens /new without the kids,
+   * never a broken duplicate), so the parent's only required input is the
+   * new start time.
    *
    * A series post: ONE TAP pings the next occurrence through the EXISTING
    * optimistic write path (db.togglePing — the same call the detail page's
@@ -922,7 +927,7 @@ export function PlaydateDetailPage() {
     const detail = state.detail
     if (sameNextWeek.postId !== detail.id) return
     if (sameNextWeek.kind === 'one-off') {
-      navigate('/new', { state: { duplicate: toDuplicatePrefill(detail) } })
+      await handleDuplicatePost()
       return
     }
     if (sameNextWeek.kind !== 'occurrence' || sameNextWeek.alreadyGoing) return
@@ -954,6 +959,21 @@ export function PlaydateDetailPage() {
     } finally {
       setNextWeekBusy(false)
     }
+  }
+
+  /**
+   * V12 ticket 04: the Duplicate navigation, shared by the host panel's
+   * button and the "Same time next week" one-off branch. The prefill now
+   * carries the post's linked kids too, so the tap fetches them first —
+   * best-effort (a failed read opens /new without the kids, never a broken
+   * duplicate, the zero-pressure discipline), exactly the edit form's
+   * kids-prefill discipline (db.listPlaydateKidIds).
+   */
+  async function handleDuplicatePost() {
+    if (state.status !== 'ready') return
+    const detail = state.detail
+    const kidIds = await listPlaydateKidIds(detail.id).catch(() => [])
+    navigate('/new', { state: { duplicate: toDuplicatePrefill(detail, kidIds) } })
   }
 
   /**
@@ -1944,9 +1964,7 @@ export function PlaydateDetailPage() {
               </button>
               <button
                 type="button"
-                onClick={() =>
-                  navigate('/new', { state: { duplicate: toDuplicatePrefill(detail) } })
-                }
+                onClick={() => void handleDuplicatePost()}
                 className="rounded-xl border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
               >
                 Duplicate

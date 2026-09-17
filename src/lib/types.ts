@@ -194,6 +194,15 @@ export interface Playdate {
    * past 0030 (undefined at runtime — the render shows no place link).
    */
   place_id?: string | null
+  /**
+   * The kids the host linked to this post (V12 ticket 04), as a PostgREST
+   * embed of the `playdate_kids` join rows (`kid_id` + `playdate_id`). Only
+   * the selects that ask for it carry it — the owner's "Your posts" duplicate
+   * path (feed.queryMyPlaydatesWithClient) and the detail page's own read;
+   * every other read has no such key (undefined at runtime, the pre-0016
+   * `status` discipline). feed.playdateKidsKidIds owns its extraction.
+   */
+  playdate_kids?: unknown
 }
 
 /**
@@ -527,9 +536,11 @@ export interface CommentWithAuthor extends Comment {
 
 /**
  * The /new duplicate-prefill (V2 slice 1, carried as router state on /new):
- * everything from a post EXCEPT the date/time — the start date, start time,
- * and duration are always re-entered by the user (pinned: the end is
- * computed, never typed).
+ * everything from a post EXCEPT the date/time — V12 ticket 04 tightens that:
+ * the source post's start slot, duration, and linked kids now travel too, so
+ * /new moves the start with `feed.clonedStart` (the same slot again when it
+ * is still ahead today, otherwise tomorrow at that time), prefills the
+ * duration + kids, and the parent's only required input is the new time.
  */
 export interface DuplicatePrefill {
   title: string
@@ -539,6 +550,23 @@ export interface DuplicatePrefill {
   ageHint: string
   /** Carried over from the source post's (nullable) details; '' = none. */
   details: string
+  /**
+   * V12 ticket 04: the source post's `starts_at` (ISO). /new does NOT use it
+   * as-is — it runs it through `feed.clonedStart` with the page's now.
+   */
+  startsAt: string
+  /**
+   * V12 ticket 04: the source post's duration in minutes, snapshotted into
+   * the form's own options (`feed.PLAYDATE_DURATIONS_MINUTES`); 0 = the
+   * source's span was not one of them (a legacy post) and the parent picks.
+   */
+  durationMinutes: number
+  /**
+   * V12 ticket 04: the kid ids the source post linked. /new intersects them
+   * with this parent's MOUNTED kids (a deleted kid must not resurrect as a
+   * ghost chip, the V10 ticket 01 clone discipline).
+   */
+  kidIds: string[]
 }
 
 /**

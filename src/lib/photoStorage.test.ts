@@ -17,7 +17,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { AVATAR_MAX_BYTES, signedFamilyPhotoUrlsWithClient, validateAvatarFile, validateFamilyPhotoFile } from './db'
+import { AVATAR_MAX_BYTES, signedFamilyPhotoUrlsWithClient, signedKidPhotoUrlsWithClient, validateAvatarFile, validateFamilyPhotoFile } from './db'
 import {
   FAMILY_PHOTO_FILE,
   FAMILY_PHOTO_URL_TTL_SECONDS,
@@ -27,6 +27,7 @@ import {
   familyPhotoPath,
   familyPhotoVisibility,
   isKidPhotoPath,
+  kidPhotoMintPaths,
   kidPhotoPath,
   kidPhotoStoredRef,
   kidPhotoVisibility,
@@ -62,6 +63,23 @@ describe('the kid-photo path and visibility decision (V9 ticket 11)', () => {
     expect(kidPhotoVisibility(OTHER_UID, UID)).toBe('denied')
     expect(kidPhotoVisibility(null, UID)).toBe('denied')
     expect(kidPhotoVisibility('', UID)).toBe('denied')
+  })
+})
+
+describe('kidPhotoMintPaths (V12 t04: the owner\'s batched kid-photo mint list)', () => {
+  it('builds the canonical path for each kid id, in the caller\'s order', () => {
+    expect(kidPhotoMintPaths(UID, [KID])).toEqual([kidPhotoPath(UID, KID)])
+    expect(kidPhotoMintPaths(UID, [KID, OTHER_UID])).toEqual([
+      kidPhotoPath(UID, KID),
+      kidPhotoPath(UID, OTHER_UID),
+    ])
+  })
+
+  it('dedupes repeated ids and skips empty ones', () => {
+    expect(kidPhotoMintPaths(UID, [KID, KID, KID])).toEqual([kidPhotoPath(UID, KID)])
+    expect(kidPhotoMintPaths(UID, [KID, '', KID])).toEqual([kidPhotoPath(UID, KID)])
+    expect(kidPhotoMintPaths(UID, [''])).toEqual([])
+    expect(kidPhotoMintPaths(UID, [])).toEqual([])
   })
 })
 
@@ -227,6 +245,47 @@ describe('signedFamilyPhotoUrlsWithClient (V9 ticket 11: batched, best-effort, k
       `${UID}/family/photo.jpg`,
     ])
     expect(Object.keys(result)).toEqual([`${UID}/family/photo.jpg`])
+  })
+})
+
+describe('signedKidPhotoUrlsWithClient (V12 t04: batched, best-effort, keyed by kid id)', () => {
+  it('mints ONE batched call for the whole kid list, keyed by KID ID', async () => {
+    const { client, calls } = makeStorageMock([
+      { path: kidPhotoPath(UID, KID), signedUrl: 'https://x/signed-kid', error: null },
+    ])
+    const result = await signedKidPhotoUrlsWithClient(client, UID, [KID])
+    expect(result).toEqual({ [KID]: 'https://x/signed-kid' })
+    // The BATCHED API (createSignedUrls) with the whole path list at once.
+    expect(calls).toEqual([
+      { bucket: PHOTO_BUCKET, paths: [kidPhotoPath(UID, KID)], expiresIn: FAMILY_PHOTO_URL_TTL_SECONDS },
+    ])
+  })
+
+  it('issues NO call at all when there are no mintable kid ids', async () => {
+    const { client, calls } = makeStorageMock([])
+    expect(await signedKidPhotoUrlsWithClient(client, UID, [])).toEqual({})
+    expect(await signedKidPhotoUrlsWithClient(client, UID, ['', ''])).toEqual({})
+    expect(calls).toEqual([])
+  })
+
+  it('NEVER throws: a storage error, a missing object, and a thrown call all land as "no image"', async () => {
+    const errored = makeStorageMock(null, { message: 'bucket not found' })
+    expect(await signedKidPhotoUrlsWithClient(errored.client, UID, [KID])).toEqual({})
+
+    const missing = makeStorageMock([
+      { path: kidPhotoPath(UID, KID), signedUrl: null, error: 'Object not found' },
+      { path: null, signedUrl: 'https://x/ignored', error: null },
+    ])
+    expect(await signedKidPhotoUrlsWithClient(missing.client, UID, [KID])).toEqual({})
+
+    const throwing = {
+      storage: {
+        from: () => ({
+          createSignedUrls: () => Promise.reject(new Error('network down')),
+        }),
+      },
+    } as unknown as SupabaseClient
+    expect(await signedKidPhotoUrlsWithClient(throwing, UID, [KID])).toEqual({})
   })
 })
 

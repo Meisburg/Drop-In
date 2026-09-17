@@ -1015,6 +1015,11 @@ export function playdateEditKidIdsChanged(
  * queryUpcomingFeedWithClient). The playdates SELECT policy is open to any
  * authenticated user, so the host's own rows come back directly. Rows keep
  * their loose shape; the caller (ProfilePage) casts to Playdate.
+ *
+ * V12 ticket 04 adds the `playdate_kids(kid_id)` embed: the duplicate
+ * prefill now carries the source post's linked kids (the page intersects
+ * them with the parent's mounted kids), so the owner's read is the one that
+ * asks for the join.
  */
 export async function queryMyPlaydatesWithClient(
   client: SupabaseClient,
@@ -1022,7 +1027,9 @@ export async function queryMyPlaydatesWithClient(
 ): Promise<unknown[]> {
   const { data, error } = await client
     .from('playdates')
-    .select('id, host_profile_id, title, place, neighborhood_id, starts_at, ends_at, age_hint, details, status')
+    .select(
+      'id, host_profile_id, title, place, neighborhood_id, starts_at, ends_at, age_hint, details, status, playdate_kids(kid_id)',
+    )
     .eq('host_profile_id', profileId)
     .order('starts_at', { ascending: false })
   if (error) throw error
@@ -1030,25 +1037,58 @@ export async function queryMyPlaydatesWithClient(
 }
 
 /**
- * Everything from a post worth carrying into a duplicate — everything
- * EXCEPT the date/time: the start date, start time, and duration are always
- * re-entered (pinned: the end is computed, never typed). The duplicate
+ * The `playdate_kids` PostgREST embed → the kid ids it carries (V12 ticket
+ * 04). Defensive on the embed shape: a post with no kids embeds `playdate_kids:
+ * []`, and a select that did not ask for it has no such key at all (the
+ * pre-0016 `status` discipline — undefined, never a crash). The same
+ * extraction `lastOwnPlaydateFrom` uses for the "Post again" clone.
+ */
+export function playdateKidsKidIds(embed: unknown): string[] {
+  const rows = Array.isArray(embed) ? embed : []
+  return rows
+    .map((row) => (row as { kid_id?: unknown } | null)?.kid_id)
+    .filter((kidId): kidId is string => typeof kidId === 'string' && kidId.length > 0)
+}
+
+/**
+ * Everything from a post worth carrying into a duplicate (V2 slice 1,
+ * re-aimed by V12 ticket 04): the parent's words and the plan — AND the
+ * source post's start slot, duration, and linked kids. /new moves the slot
+ * with `clonedStart` (the same rule the "Post again" chip uses: the same
+ * slot again when it is still ahead today, otherwise tomorrow at that time)
+ * and intersects the kids with the parent's mounted list, so the only
+ * required input left for the parent is the new start time. The duplicate
  * navigates to /new with this as router state.
  */
-export function toDuplicatePrefill(post: {
-  title: string
-  place: string
-  /** V9 ticket 01: NULL once 0035 lands — '' ("none") in the prefill. */
-  neighborhood_id: string | null
-  age_hint: string | null
-  details: string | null
-}): DuplicatePrefill {
+export function toDuplicatePrefill(
+  post: {
+    title: string
+    place: string
+    /** V9 ticket 01: NULL once 0035 lands — '' ("none") in the prefill. */
+    neighborhood_id: string | null
+    age_hint: string | null
+    details: string | null
+    /** V12 ticket 04: the source post's slot — what /new moves. */
+    starts_at: string
+    /** V12 ticket 04: the source post's end — the duration is what carries. */
+    ends_at: string
+  },
+  /** V12 ticket 04: the source post's linked kids (feed.playdateKidsKidIds). */
+  kidIds: string[],
+): DuplicatePrefill {
+  // The span as its duration, snapped to the form's own options — a legacy
+  // post with an off-grid span yields 0, which /new reads as "parent picks"
+  // (the auto value stands in; the form never opens on a 0 duration).
+  const durationRaw = Math.round((Date.parse(post.ends_at) - Date.parse(post.starts_at)) / 60_000)
   return {
     title: post.title,
     place: post.place,
     neighborhoodId: post.neighborhood_id ?? '',
     ageHint: post.age_hint ?? '',
     details: post.details ?? '',
+    startsAt: post.starts_at,
+    durationMinutes: isDuration(durationRaw) ? durationRaw : 0,
+    kidIds,
   }
 }
 
@@ -2268,10 +2308,7 @@ export function lastOwnPlaydateFrom(row: unknown): LastOwnPlaydate | null {
   ) {
     return null
   }
-  const kids = Array.isArray(r.playdate_kids) ? r.playdate_kids : []
-  const kidIds = kids
-    .map((k) => (k as { kid_id?: unknown } | null)?.kid_id)
-    .filter((kidId): kidId is string => typeof kidId === 'string' && kidId.length > 0)
+  const kidIds = playdateKidsKidIds(r.playdate_kids)
   return {
     id: r.id,
     title: r.title,

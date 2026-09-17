@@ -15,9 +15,11 @@
  *   * `kid-photos` (PRIVATE, new) ............ TWO path classes, TWO policies:
  *       - `<uid>/kids/<kidId>`  → the OWNER alone, forever. Nobody else — not
  *         even another signed-in parent — may list it or mint a signed URL for
- *         it. (The app renders no kid photo at all any more; the class stays
- *         readable by its owner so the images the human asked to KEEP are still
- *         reachable if this decision is ever reversed.)
+ *         it. (V12 t04 re-surfaces these on the OWNER's `/profile` self-view
+ *         only, via a batched best-effort signed-URL read; every other surface
+ *         — `/u/:handle`, `/settings`, the feed, the place pages — stays
+ *         photo-free, so the images the human asked to KEEP remain reachable by
+ *         their owner without re-opening the exposure.)
  *       - `<uid>/family/photo.<ext>` → any signed-in family
  *         (`familyPhotoVisibility`). A "photo of your family" will USUALLY
  *         DEPICT THE CHILDREN, so it cannot be anonymous (T4): it is not in a
@@ -33,8 +35,10 @@
  * THE PATHS ARE THE PUBLIC API OF THIS MODULE. Every rule that decides "where
  * an image goes" or "who may fetch it" is a pure function here, unit-tested in
  * `photoStorage.test.ts`, and used by exactly the callers that need it:
- *   - `db.ts` (the family-photo upload + the batched signed-URL mint),
- *   - `ProfilePage` / `UserPage` (the two render sites),
+ *   - `db.ts` (the family-photo upload + the batched signed-URL mints, family
+ *     AND kid),
+ *   - `ProfilePage` / `UserPage` (the family-photo render sites; `ProfilePage`
+ *     also renders the owner-only kid-photo list),
  *   - `e2e/kid-photo-exposure.e2e.ts` (which asserts these INTENTIONS and then
  *     proves the live storage policies enforce them — the seam is the intent,
  *     the policy is the wall),
@@ -113,6 +117,26 @@ export function kidPhotoStoredRef(profileId: string, kidId: string): string {
   return `${PHOTO_BUCKET}/${kidPhotoPath(profileId, kidId)}`
 }
 
+/**
+ * The distinct kid-photo object paths to mint a signed URL for, from the ids of
+ * the kids a page renders (V12 t04: the owner's `/profile` kid-photo list).
+ *
+ * The paths are BUILT from the ids, never read from `kids.avatar_url`: the
+ * stored column is a bucket-qualified object path (or a legacy public URL) and
+ * the read path is owner-only by construction, so the canonical
+ * `<uid>/kids/<kidId>` shape is what the storage policy mints for. One batched
+ * mint per page (the sibling `familyPhotoMintPaths`), so the dedupe lives here:
+ * a list that names the same kid twice mints once. An empty id is skipped.
+ */
+export function kidPhotoMintPaths(profileId: string, kidIds: string[]): string[] {
+  const seen = new Set<string>()
+  for (const kidId of kidIds) {
+    if (kidId === '') continue
+    seen.add(kidPhotoPath(profileId, kidId))
+  }
+  return [...seen]
+}
+
 /** The path segments of an object key (`a/b/c` → ['a','b','c']); '' has none. */
 function segments(objectPath: string): string[] {
   return objectPath.split('/').filter((part) => part !== '')
@@ -140,9 +164,11 @@ export function isKidPhotoPath(objectPath: string): boolean {
  * stranger (the case ticket 10's gate is about — a signed-URL path must never
  * let one parent fetch another family's kid photos) and an anonymous caller.
  *
- * The app never mints a kid-photo URL (no kid photo renders anywhere), so this
- * is the rule the storage policies implement and the e2e asserts; it is not a
- * gate the client could be trusted to apply.
+ * The client mints a kid-photo URL in exactly ONE place — the owner's
+ * `/profile` self-view (V12 t04) — and only for the logged-in owner's own kids,
+ * so this decision is the rule the storage policies implement and the e2e
+ * asserts; it is not a gate the client could be trusted to apply, and no other
+ * surface ever calls the mint.
  */
 export function kidPhotoVisibility(
   viewerProfileId: string | null,

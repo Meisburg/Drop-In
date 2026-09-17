@@ -60,6 +60,7 @@ import {
   playdateEditFieldsChanged,
   playdateEditKidIdsChanged,
   playdateFormValuesFromPost,
+  playdateKidsKidIds,
   queryLastOwnPlaydateWithClient,
   queryMyPlaydatesWithClient,
   queryRecentOwnPlacesWithClient,
@@ -1005,35 +1006,95 @@ describe('duration math + the 30-minute stepper (pure, unit-tested)', () => {
   })
 })
 
-describe('toDuplicatePrefill (everything except the date/time)', () => {
-  it('carries the post fields and drops date/time', () => {
+describe('toDuplicatePrefill (V2 slice 1, re-aimed by V12 ticket 04)', () => {
+  it('carries the parent\'s words AND the plan (slot, duration, kids)', () => {
     expect(
-      toDuplicatePrefill({
-        title: 'Playground time',
-        place: 'Green Lake',
-        neighborhood_id: 'n1',
-        age_hint: '2-5',
-        details: 'Bring water',
-      }),
+      toDuplicatePrefill(
+        {
+          title: 'Playground time',
+          place: 'Green Lake',
+          neighborhood_id: 'n1',
+          age_hint: '2-5',
+          details: 'Bring water',
+          starts_at: '2026-09-04T15:00:00.000Z',
+          ends_at: '2026-09-04T16:30:00.000Z', // 90-minute span
+        },
+        ['kid-1', 'kid-2'],
+      ),
     ).toEqual({
       title: 'Playground time',
       place: 'Green Lake',
       neighborhoodId: 'n1',
       ageHint: '2-5',
       details: 'Bring water',
+      startsAt: '2026-09-04T15:00:00.000Z',
+      durationMinutes: 90, // snapped to the form\'s own options
+      kidIds: ['kid-1', 'kid-2'],
     })
   })
 
-  it('maps null age_hint / details to empty strings', () => {
+  it('maps null age_hint / details / neighborhood to empty strings, and no kids to []', () => {
     expect(
-      toDuplicatePrefill({
-        title: 'T',
-        place: 'P',
-        neighborhood_id: 'n1',
-        age_hint: null,
-        details: null,
-      }),
-    ).toEqual({ title: 'T', place: 'P', neighborhoodId: 'n1', ageHint: '', details: '' })
+      toDuplicatePrefill(
+        {
+          title: 'T',
+          place: 'P',
+          neighborhood_id: null,
+          age_hint: null,
+          details: null,
+          starts_at: '2026-09-04T15:00:00.000Z',
+          ends_at: '2026-09-04T16:00:00.000Z', // 60-minute span
+        },
+        [],
+      ),
+    ).toEqual({
+      title: 'T',
+      place: 'P',
+      neighborhoodId: '',
+      ageHint: '',
+      details: '',
+      startsAt: '2026-09-04T15:00:00.000Z',
+      durationMinutes: 60,
+      kidIds: [],
+    })
+  })
+
+  it('a legacy off-grid span degrades to 0 (the parent picks the duration)', () => {
+    expect(
+      toDuplicatePrefill(
+        {
+          title: 'T',
+          place: 'P',
+          neighborhood_id: null,
+          age_hint: null,
+          details: null,
+          starts_at: '2026-09-04T15:00:00.000Z',
+          ends_at: '2026-09-04T15:45:00.000Z', // 45-minute span — not a chip
+        },
+        [],
+      ),
+    ).toMatchObject({ durationMinutes: 0 })
+  })
+})
+
+describe('playdateKidsKidIds (V12 ticket 04: the playdate_kids embed → kid ids)', () => {
+  it('extracts kid_id from the embed rows', () => {
+    expect(playdateKidsKidIds([{ kid_id: 'kid-1' }, { kid_id: 'kid-2' }])).toEqual([
+      'kid-1',
+      'kid-2',
+    ])
+  })
+
+  it('is [] for an empty embed and for a select that did not ask for it', () => {
+    expect(playdateKidsKidIds([])).toEqual([])
+    expect(playdateKidsKidIds(undefined)).toEqual([])
+    expect(playdateKidsKidIds(null)).toEqual([])
+  })
+
+  it('drops rows without a non-empty string kid_id (defensive)', () => {
+    expect(
+      playdateKidsKidIds([{ kid_id: 'kid-1' }, { kid_id: null }, null, 42, { kid_id: '' }]),
+    ).toEqual(['kid-1'])
   })
 })
 
@@ -1057,6 +1118,14 @@ describe('queryMyPlaydatesWithClient (mocked supabase client)', () => {
     await queryMyPlaydatesWithClient(client, 'me')
     const select = filters.find((f) => f.startsWith('select(')) ?? ''
     expect(select).toContain('details, status')
+  })
+
+  it('selects starts_at/ends_at + the playdate_kids embed (V12 t04: the duplicate prefill carries the plan and the linked kids)', async () => {
+    const { client, filters } = makeFeedMockClient()
+    await queryMyPlaydatesWithClient(client, 'me')
+    const select = filters.find((f) => f.startsWith('select(')) ?? ''
+    expect(select).toContain('starts_at, ends_at')
+    expect(select).toContain('playdate_kids(kid_id)')
   })
 
   it('returns [] when the host has no posts', async () => {

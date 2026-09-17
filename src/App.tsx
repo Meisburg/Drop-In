@@ -295,14 +295,41 @@ function shellRedirect(
  * object, because they come from different screens and mean different things:
  * a duplicate says "the same plan again", a place prefill says "this place".
  * The page resolves the precedence (the place wins).
+ *
+ * V12 ticket 04: the route also keys the page on the prefill source (see
+ * `prefillKey` below) — a prefill that lands on an already-mounted /new
+ * (the Duplicate tap's kids fetch in flight) must remount, not just update
+ * the props.
  */
 function NewRoute() {
   const { state } = useLocation()
   const routerState = state as { duplicate?: DuplicatePrefill; place?: PlacePrefill } | null
+  const duplicate = routerState?.duplicate ?? null
+  const placePrefill = routerState?.place ?? null
+  /**
+   * V12 ticket 04: a prefill source IS the mount's identity. The Duplicate
+   * tap is async — the detail page fetches the post's linked kids BEFORE
+   * navigating (db.listPlaydateKidIds, best-effort) — so the parent can land
+   * on /new WITHOUT the prefill first (a tap on the Post tab while that fetch
+   * is in flight), and the prefill navigation then arrives at an
+   * ALREADY-MOUNTED page. The page's useState initializers run once per
+   * mount, so without a key change the form would open at its defaults while
+   * the prop-driven banner already promises the prefill (e2e/post-again.e2e.ts
+   * caught exactly this). One key per prefill source: a new source remounts
+   * and re-runs every initializer; the SAME source arriving again is a
+   * no-op (the prefill is already applied — idempotent).
+   */
+  const prefillKey =
+    duplicate !== null
+      ? `duplicate-${duplicate.startsAt}-${duplicate.title}`
+      : placePrefill !== null
+        ? `place-${placePrefill.placeId}`
+        : 'new'
   return (
     <NewPlaydatePage
-      duplicate={routerState?.duplicate ?? null}
-      placePrefill={routerState?.place ?? null}
+      key={prefillKey}
+      duplicate={duplicate}
+      placePrefill={placePrefill}
     />
   )
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 import {
@@ -21,6 +21,7 @@ import {
 } from '../lib/db'
 import {
   cloneLastPost,
+  clonedStart,
   computeEndIso,
   computeStartIso,
   defaultStartDateIso,
@@ -28,6 +29,7 @@ import {
   durationLabel,
   formatStartDayLabel,
   formatTimeLabel,
+  isDuration,
   kidLabel,
   localDayKey,
   moreOptionsHoldsError,
@@ -91,18 +93,20 @@ const emptyValues: PlaydateFormValues = {
  * mount-time `now` — a per-render recompute would move the fields under the
  * parent's finger.
  *
- * A duplicate prefill still wins on everything it carries (title, place,
- * neighborhood, age hint, details); it deliberately does NOT carry date,
- * time, or duration (pinned in V2: those are always re-entered), so the
- * fresh defaults apply there too.
+ * A duplicate prefill wins on the parent's words (title, place,
+ * neighborhood, age hint, details) AND — as of V12 t04 — on the plan: the
+ * source post's start slot (re-seated by `clonedStart`, so it is the same
+ * slot again when it is still ahead today, otherwise tomorrow at that time),
+ * its duration, and its linked kids (the one-shot effect below). The ONLY
+ * required input left is the new start time.
  *
  * V12 t02: the duration is picked FOR the parent, not asked of them —
  * `suggestedDurationMinutes` ("until the next hour" from the mount slot,
  * clamped to the chip set) is the default, so the form opens on a complete,
  * postable plan and the fast path is place + the picked time + Post. The
  * parent can still override it (a duration chip, the quick-fill preset, a
- * "Post again" clone, or a prefill) — the page tracks that as
- * `durationOverridden` and stops re-deriving on later start changes.
+ * "Post again" clone, a duplicate prefill, or a prefill) — the page tracks
+ * that as `durationOverridden` and stops re-deriving on later start changes.
  */
 function initialValues(
   duplicate: DuplicatePrefill | null,
@@ -118,6 +122,8 @@ function initialValues(
     // read-back can never disagree).
     durationMinutes: suggestedDurationMinutes(nowIso),
   }
+  const withDuplicate =
+    duplicate === null ? defaults : duplicateFormValues(duplicate, defaults, nowIso)
   // V8 ticket 07: "Start a drop-in here" (the place page) wins over a duplicate
   // prefill — the parent just tapped a place, so that place is what they mean.
   // The generated title (V9 ticket 03) applies here too, so arriving from a
@@ -125,13 +131,51 @@ function initialValues(
   // required field.
   if (placePrefill !== null) {
     return withGeneratedTitle({
-      ...defaults,
-      ...(duplicate === null ? {} : duplicate),
+      ...withDuplicate,
       place: placePrefill.place,
       neighborhoodId: placePrefill.neighborhoodId ?? '',
     })
   }
-  return withGeneratedTitle(duplicate === null ? defaults : { ...defaults, ...duplicate })
+  return withGeneratedTitle(withDuplicate)
+}
+
+/**
+ * V12 t04: what a DUPLICATE prefill writes into the form — explicit field by
+ * field, never a blind spread (the spread is where the pre-V12 shape hid: a
+ * key it did not carry silently fell back to a default, a key it carried
+ * silently won, and neither was a decision). Now every carried field is
+ * named and its rule stated:
+ *
+ * - the START SLOT is re-seated, not copied: `clonedStart` (the "Post again"
+ *   chip's seam, run with the page's mount-time `nowIso`) lands it on the
+ *   same slot again when it is still ahead today, otherwise tomorrow at that
+ *   time. It is still the parent's to change — it is the ONE required input
+ *   the ticket leaves.
+ * - the DURATION carries the source post's only when it is one of the form's
+ *   own options (`isDuration`); a legacy off-grid span (0) falls back to the
+ *   base's auto value, so a 0 never locks in (the applyLastPost rule).
+ * - the PARENT'S WORDS pass through as-is (title, place, neighborhood, age
+ *   hint, details).
+ */
+function duplicateFormValues(
+  duplicate: DuplicatePrefill,
+  base: PlaydateFormValues,
+  nowIso: string,
+): PlaydateFormValues {
+  const { startDate, startMinutes } = clonedStart(duplicate.startsAt, nowIso)
+  return {
+    ...base,
+    title: duplicate.title,
+    place: duplicate.place,
+    neighborhoodId: duplicate.neighborhoodId,
+    ageHint: duplicate.ageHint,
+    details: duplicate.details,
+    startDate,
+    startMinutes,
+    durationMinutes: isDuration(duplicate.durationMinutes)
+      ? duplicate.durationMinutes
+      : base.durationMinutes,
+  }
 }
 
 /**
@@ -236,11 +280,22 @@ function titleAfterPlaceChange(title: string, place: string, touched: boolean): 
  * pre-0035 red is exactly that line: an insert with no neighbourhood 400s on
  * the NOT NULL column (23502) until migration 0035 lands.
  *
- * Duplicate prefill (V2 slice 1): a "Duplicate" on one of the viewer's own
- * posts navigates here with router state (the /new route in App.tsx hands
- * it over as the `duplicate` prop). Everything except the date/time is
- * prefilled — the start date, start time, and duration are always
- * re-entered.
+ * Duplicate prefill (V2 slice 1, re-aimed by V12 t04): a "Duplicate" on one
+ * of the viewer's own posts navigates here with router state (the /new route
+ * in App.tsx hands it over as the `duplicate` prop). As of V12 t04 the
+ * prefill carries the WHOLE plan — the parent's words (title, place,
+ * neighbourhood, age hint, details) AND the source post's start slot,
+ * duration, and linked kids: the slot is re-seated by `clonedStart` (the
+ * "Post again" rule, with this page's mount-time now) and the kids are
+* intersected with the mounted list (the one-shot effect above), so the
+  * ONLY required input left for the parent is the new start time.
+  *
+  * V12 t04 mount contract: a prefill source is a MOUNT — App's NewRoute keys
+  * this page on the prefill (the `prefillKey`), so a prefill that lands on an
+  * ALREADY-MOUNTED /new (the Duplicate tap's kids fetch still in flight when
+  * the parent taps the Post tab) remounts the page and re-runs every
+  * mount-once initializer, instead of leaving the form at its defaults while
+  * the prop-driven banner promises the prefill.
  *
  * V8 ticket 06 (migration 0028): "Repeat weekly" — OFF by default, so the
  * form a parent already knows is unchanged unless they ask for it. When it is
@@ -410,8 +465,14 @@ export function NewPlaydatePage({
     * goes true and their choice survives later start changes. The quick-fill
     * preset CLEARS it: it writes exactly the auto value, so the auto behavior
     * resumes.
+    *
+    * V12 t04: a DUPLICATE prefill that carries a valid duration arms it the
+    * same way the "Post again" clone does (a degenerate 0 never locks in —
+    * the auto derivation stays armed).
     */
-   const [durationOverridden, setDurationOverridden] = useState(false)
+   const [durationOverridden, setDurationOverridden] = useState(
+     () => duplicate !== null && isDuration(duplicate.durationMinutes),
+   )
   // The session's user id (the kids table's profile_id — the same key
   // ProfilePage's kids load uses).
   const userId = session?.user?.id ?? null
@@ -434,6 +495,24 @@ export function NewPlaydatePage({
       cancelled = true
     }
   }, [userId])
+
+  // V12 t04: a DUPLICATE prefill's linked kids — seeded into the picker ONE
+  // time, the moment the mounted kids list settles (null → the load is in
+  // flight; [] = none yet OR the load failed). The one-shot guard is a ref,
+  // not a dependency: the effect must run exactly once per mount, never
+  // re-run on a later kids-state change (a parent who deletes a chip after
+  // the prefill owns that deletion). Intersected with the mounted list the
+  // same way the "Post again" clone does (applyLastPost above): a kid deleted
+  // since the source post must not resurrect as a ghost chip.
+  const duplicateKidsSeeded = useRef(false)
+  useEffect(() => {
+    if (duplicate === null || duplicate.kidIds.length === 0 || kids === null) return
+    if (duplicateKidsSeeded.current) return
+    duplicateKidsSeeded.current = true
+    setSelectedKidIds(
+      duplicate.kidIds.filter((kidId) => kids.some((kid) => kid.id === kidId)),
+    )
+  }, [duplicate, kids])
 
   // V8 ticket 01: the recent-places chips, fetched once the session settles
   // (the ProfilePage kids-load pattern). A failed load stays [] — no chips
@@ -1071,8 +1150,7 @@ export function NewPlaydatePage({
             Duplicating “{duplicate.title}”
           </p>
           <p className="mt-0.5 text-xs text-indigo-700">
-            Everything except the date and time is filled in — pick a new start time and
-            duration.
+            Place, kids, and duration are filled in — pick a new start time and post.
           </p>
         </div>
       ) : null}
