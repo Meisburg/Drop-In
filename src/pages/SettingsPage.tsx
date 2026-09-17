@@ -51,6 +51,7 @@ import {
   type ProfileFormValues,
   type ProfileSection,
 } from '../lib/profileSave'
+import { autosaveEmptyPass } from '../lib/autosave'
 import type { Kid, MembershipWithNeighborhood } from '../lib/types'
 // V8 ticket 09: the Following list's family rows reuse the card's 40px avatar
 // (the HostAvatar shape) rather than growing a second one.
@@ -465,11 +466,11 @@ export function SettingsPage() {
     if (plan.empty) {
       // A re-armed pass with nothing to write (a landed save advanced the
       // baseline past the draft, or an in-flight edit was reverted): settle
-      // the indicator if a coalesced pass left it on "Saving…".
-      if (machine.pending) {
-        machine.pending = false
-        setSaveStatus((status) => (status === 'saving' ? 'saved' : status))
-      }
+      // the indicator unconditionally. A coalesced pass leaves it on
+      // "Saving…" across the in-flight → follow-up seam (the completion
+      // consumes the coalesce flag and re-arms instead of settling), and
+      // every other state passes through the rule untouched.
+      setSaveStatus((status) => autosaveEmptyPass(machine, status))
       return
     }
 
@@ -575,7 +576,8 @@ export function SettingsPage() {
    * derived identity re-arms on every render and defeats the debounce) — and
    * the timer re-arms to the end of the burst, then the pass runs. A pass
    * that lands advances `baseline` (re-keying this effect), which re-arms a
-   * timer that fires into an empty plan (no write, no status change), so the
+   * timer that fires into an empty plan (no write; the settle only turns a
+   * leftover "Saving…" into "Saved."), so the
    * "Saved." line persists instead of flickering back to idle.
    */
   useEffect(() => {
