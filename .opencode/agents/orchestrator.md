@@ -1,7 +1,6 @@
 ---
-description: Owns the implementation plan, delegation, and acceptance. Routes on evidence from files and subagent reports; never implements itself.
+description: Owns the implementation plan, delegation, and acceptance. Routes on evidence from files and subagent reports; never implements itself. Runs on the tab's active model (no pin) so orchestrate exists under local AND cloud.
 mode: primary
-model: ninfer/qwen3.8-27b
 temperature: 0.3
 permission:
   edit: deny
