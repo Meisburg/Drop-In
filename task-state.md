@@ -836,7 +836,7 @@ anywhere to look at them.
 | 02 | The new time model — /new picks the duration for you (fast path 4 taps → 3) | **complete — `6d7fc73`** (2026-09-17, local, unpushed); evidence + review in the Completed slices entry below |
 | 03 | End an event early — the `ended` status (honest history, option A) | **code complete — `29c19a2` + migration `0041` written (2026-09-17, local, unpushed); LIVE APPLY PENDING — Phase B blocked on the expired dashboard session in the CDP profile (human re-auth needed); evidence in the Completed-slices entry below** |
 | 04 | Profile self-view + post-again — kids' photos re-surface (owner-only), the clone closes out | **complete — `b7aa220`** (2026-09-17, local, unpushed); reviewer PASS + verifier GREEN; evidence in the Completed-slices entry below |
-| 05 | A map — Leaflet + OpenStreetMap tiles on the place surfaces | not-started |
+| 05 | A map — Leaflet + OpenStreetMap tiles on the place surfaces | **complete — `3ed8043` + fix `db817fd`** (2026-09-17, local, unpushed); reviewer PASS (1 NEEDS_CHANGES loop) + verifier GREEN; evidence in the Completed-slices entry below |
 
 **Migration ledger (batch):** ONE — `0041` (ticket 03), reserved; last applied
 migration = `0040`. 0041 widens `playdates.status`'s `playdates_status_chk`
@@ -1029,9 +1029,70 @@ the dev-agent pane `w4:p12` stays idle (the V11 coordinator loop's pane).
   (a) rapid double-tap of Duplicate fires `listPlaydateKidIds` RPC twice —
   harmless (best-effort, both resolve the same); (b) new files lack EOF
   newline — cosmetic (oxlint has no formatter config, inert); (c) "Same
-  time next week" → `clonedStart` confirmed intentional (ticket-pinned
-  post-again semantics). Migration: NONE (ticket pin; the private bucket +
-  policies are 0038, already live). No migration file in the diff.
+time next week" → `clonedStart` confirmed intentional (ticket-pinned
+   post-again semantics). Migration: NONE (ticket pin; the private bucket +
+   policies are 0038, already live). No migration file in the diff.
+- **t05 — Map (Leaflet + OSM) on the place surfaces (ACCEPTED, 2026-09-17).**
+  The place surfaces now show a Leaflet + OpenStreetMap map; no browser
+  geolocation (coordinates come from the DB only). Commits: `3ed8043`
+  (8 files, +356/−5; parent `3dd38f0`) + fix `db817fd` (3 files, +41/−10;
+  parent `3ed8043`), both local, unpushed. Deps: `leaflet ^1.9.4`
+  (dependency) + `@types/leaflet ^1.9.22` (dev) — the ONLY new packages
+  (package.json delta verified). `src/components/PlaceMap.tsx` (new, 174
+  lines): an internal `MapCanvas` (one map per mount, `map.remove()`
+  teardown, a `markersKey`-re-keyed circleMarker group,
+  `initialMarkerRef` so the mount effect keeps `[]` deps — the "Map
+  container is already initialized" trap) + two thin exports: `PlaceMap`
+  (testId `place-map`, fixed zoom 15) and `PlacesMap` (testId
+  `places-map`, `fitBounds` guarded by `coords.length > 0`). OSM tiles
+  `https://tile.openstreetmap.org/{z}/{x}/{y}.png`, attribution, maxZoom
+  19; renders null when coordinates don't resolve (0029's rule: never a
+  fake pin). `src/lib/places.ts` pure seams: `resolveMapCoords` (own
+  `lat`/`lng` → address-zip gazetteer fallback → null) +
+  `zipFromAddress`. NOTE: `places` has NO zip column — the zip is a
+  5-digit number embedded in the stored address string (the ticket's
+  pinned mechanism assumed a place→zip relationship; the builder
+  discovered the actual shape). The gazetteer = the 0012 `zip_codes`
+  seed data. Surfaces: `PlacePage.tsx` renders `<PlaceMap>` in the
+  address card (after the address link, before the age line);
+  `BrowsePage.tsx` renders `<PlacesMap>` in a bordered card above the
+  placed rows (list branch only; the fix commit guards the wrapper on
+  `mappedMarkers.length > 0` so no empty card when nothing resolves).
+  e2e (`e2e/places.e2e.ts`, extended — no new spec file/tests): the
+  directory test asserts `places-map` visible + ≥1 marker path +
+  tile-pane presence; the place-page test asserts `place-map` visible +
+  exactly 1 marker at Green Lake Park's own 0029 coords + tile pane.
+  Recorded choice: LIVE OSM tiles, assertions target
+  container/marker-path/tile-pane EXISTENCE only (no tile-load wait, no
+  pixel inspection) — a tile outage can't fail the spec. Unit:
+  `src/lib/places.test.ts` 11 tests total (9 from `3ed8043` + 2 from the
+  fix). THE REVIEWER LOOP (1 of 2, NEEDS_CHANGES → PASS): blocking =
+  `zipFromAddress` took the FIRST 5-digit run (`/\b(\d{5})\b/.exec`)
+  while its own doc + the ticket AC2 + the test name all said the zip =
+  the LAST (trailing) run — a 5-digit non-zip token before the zip
+  (≥10000 street number, suite number) would pin the wrong city,
+  violating 0029's never-fake-pin rule; the old "trailing" test passed
+  vacuously (single 5-digit-run fixture ⇒ first==last). Fix `db817fd`:
+  last-run via `address.match(/\b\d{5}\b/g)` → `runs.at(-1) ?? null`,
+  doc re-pinned, + 2 NON-VACUOUS tests ("Suite 98107, 200 5th Ave S,
+  Seattle, WA 98128" → 98128; "10000 1st Ave S, Seattle, WA 98128" →
+  98128 — both fail under the old code) + the BrowsePage empty-card
+  guard (cosmetic finding, fixed in the same commit). Gate
+  (verifier-independent, at `db817fd`): `npx tsc -b` exit 0; `npm run
+  build` exit 0 (leaflet CSS in the bundle); `npm run test` 847/847 (25
+  files); `npm run lint` 0 errors (only pre-existing warnings; the
+  single hit in the fix files — BrowsePage.tsx:79 — is pre-existing,
+  outside the touched regions); full e2e 79 pass / 2 fail / 1 skip (the
+  2 = the t03 RED pair at 23514 pre-0041-apply; the 1 =
+  `e2e/polish.e2e.ts:226` CDP env-skip); `e2e/places.e2e.ts` 6/6;
+  `grep -rn geolocation src/` → 0 matches (AC4 invariant). Target =
+  hosted `ayzvjwxb…supabase.co` (local :54321 down). Non-blocking parked:
+  double-derivation drift — `BrowsePage` computes `mappedMarkers` and
+  `PlacesMap` re-derives the same array internally (same pure seam,
+  same inputs; the inline "Matches PlacesMap exactly" comment is the
+  only drift guard; if `PlacesMap` ever gains a filter, funnel markers
+  down as a prop). Migration: NONE (ticket pin; `supabase/` untouched by
+  both commits).
 
 ### Open risks / follow-ups
 
@@ -1051,15 +1112,15 @@ the dev-agent pane `w4:p12` stays idle (the V11 coordinator loop's pane).
    min); then the coordinator re-runs the documented apply→probe→e2e-flip
    sequence. Do not push t03 before 0041 is live.
 
-**Next:** Immediate (human, under 2 min, UNBLOCKS t03): sign in to
-supabase.com/dashboard in your normal Chrome (same account as the 0040
-apply). Then: coordinator applies 0041 via the documented CDP + SQL-API
-path, re-runs e2e/feed-ended-out.e2e.ts + e2e/host-status.e2e.ts
-(RED→GREEN) + the full gate (expect 81/0/1), records t03 complete, then
-runs the final V12 batch gate (full e2e + lint 0 + marker sweep incl. the
-~11 e2e-* families + residual ended rows). t05 (map Leaflet, no
-geolocation) can land any time — it is migration-free and independent of
-0041.
+**Next:** t01–t05 code complete (t03's CODE + migration file done; its
+LIVE APPLY is the only remaining build-side item). Immediate (human,
+under 2 min, UNBLOCKS t03 Phase B): sign in to supabase.com/dashboard in
+your normal Chrome (same account as the 0040 apply). Then: coordinator
+applies 0041 via the documented CDP + SQL-API path → re-runs
+e2e/feed-ended-out.e2e.ts + e2e/host-status.e2e.ts (RED→GREEN) → full
+gate (expect 81/0/1 + the t05 map specs) → records t03 complete → runs
+the final V12 batch gate (full e2e + lint 0 + 0041 live probes + marker
+sweep incl. the ~11 e2e-* families + residual ended rows).
 
 ## V4 — "Drop In" mobile conversion (opened 2026-09-11)
 
