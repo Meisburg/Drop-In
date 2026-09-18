@@ -1128,6 +1128,7 @@ done (verify e2e_left = 0). Remaining open items are ONLY: the `opencode.json`
 human decision (open-risk item 2 above) and the un-ticketed
 `useUnsavedChangesGuard` follow-up (open-risk item 1 above).
 SHIPPED 2026-09-17: `5a81d5c..d7035c2` → origin/master → Vercel live (entry asset `/assets/index-E4lVM8Wd.js` + /settings 200); the live app at https://drop-in-mu.vercel.app now carries all of V12.
+PUSHED 2026-09-17: `978e82d` (gitignore: stop tracking machine-local `opencode.json`) → origin/master as a 1-commit fast-forward on top of `75aa994` (the qa-jev workstream commit, committed + pushed by the dev-agent pane); `opencode.json` now untracked + gitignored (`.gitignore:69`), local key intact on disk and never in git history; no app-code change in the range, so the live entry asset is expected unchanged.
 
 ## V4 — "Drop In" mobile conversion (opened 2026-09-11)
 
