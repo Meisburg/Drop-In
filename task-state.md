@@ -1111,25 +1111,19 @@ the dev-agent pane `w4:p12` stays idle (the V11 coordinator loop's pane).
 
 ### Open risks / follow-ups
 
-1. **FOLLOW-UP (not yet ticketed):** `src/components/useUnsavedChangesGuard.tsx`
-   is now fully orphaned (zero importers after t01) → delete it, and also fix
-   the stale "Save profile" doc comments in `src/lib/profileSave.ts`. Keep out
-   of t01.
-2. **HUMAN DECISION:** `opencode.json` has a pre-existing uncommitted
-   working-tree modification (model-endpoint IP + a plaintext API key). It is
-   intentionally EXCLUDED from all V12 commits — do NOT stage it. The human
-   must decide: commit / revert / add to .gitignore.
+1. **DONE (2026-09-17, `b64ae17`):** the un-ticketed cleanup — `src/components/useUnsavedChangesGuard.tsx` deleted (zero importers since t01; the e2e pin at `e2e/polish.e2e.ts:304` had already asserted the dialog was gone from the UI) + the stale "Save profile" doc comments fixed in `src/lib/profileSave.ts` / `src/lib/profileSave.test.ts` / `src/components/ConfirmDialog.tsx` (the guard's caller-list line; its `destructive: false` branch is now un-called but kept as the component's ordinary-confirm mode). Gate: build ✓ + unit 847/847 + lint 0 errors (warnings pre-existing).
+2. **RESOLVED (2026-09-17, `978e82d`):** the `opencode.json` human decision — untracked + gitignored (`.gitignore:69`); the local key stays on disk and never enters git history; no app-code change in the range, so the live entry asset is unchanged.
 3. **t02 gate — CONFIRMED (2026-09-17):** the founder confirmed the
    auto-suggested-duration reading (vs an explicit end-time control); t02
    was dispatched on that reading and is complete (`6d7fc73`).
 4. **t03 PHASE B RESOLVED (2026-09-17):** 0041 live-applied after the human
    re-auth; final batch gate green; see the t03 Completed-slices entry.
 
-**Next:** V12 batch complete — t01–t05 all accepted; 0041 live; final batch
-gate green (full e2e 81/0/1 + unit 847/847 + lint 0 errors); marker sweep
-done (verify e2e_left = 0). Remaining open items are ONLY: the `opencode.json`
-human decision (open-risk item 2 above) and the un-ticketed
-`useUnsavedChangesGuard` follow-up (open-risk item 1 above).
+**Next:** V12 batch CLOSED — both open items resolved: the `opencode.json`
+human decision (RESOLVED by `978e82d`: untracked + gitignored, local key
+intact) and the un-ticketed `useUnsavedChangesGuard` cleanup (DONE in
+`b64ae17`). Nothing left open in the V12 batch; next move is the founder's
+call (a new feedback batch, or park).
 SHIPPED 2026-09-17: `5a81d5c..d7035c2` → origin/master → Vercel live (entry asset `/assets/index-E4lVM8Wd.js` + /settings 200); the live app at https://drop-in-mu.vercel.app now carries all of V12.
 PUSHED 2026-09-17: `978e82d` (gitignore: stop tracking machine-local `opencode.json`) → origin/master as a 1-commit fast-forward on top of `75aa994` (the qa-jev workstream commit, committed + pushed by the dev-agent pane); `opencode.json` now untracked + gitignored (`.gitignore:69`), local key intact on disk and never in git history; no app-code change in the range, so the live entry asset is expected unchanged.
 
