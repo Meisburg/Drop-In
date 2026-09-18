@@ -1029,9 +1029,9 @@ the dev-agent pane `w4:p12` stays idle (the V11 coordinator loop's pane).
   (a) rapid double-tap of Duplicate fires `listPlaydateKidIds` RPC twice —
   harmless (best-effort, both resolve the same); (b) new files lack EOF
   newline — cosmetic (oxlint has no formatter config, inert); (c) "Same
-time next week" → `clonedStart` confirmed intentional (ticket-pinned
-   post-again semantics). Migration: NONE (ticket pin; the private bucket +
-   policies are 0038, already live). No migration file in the diff.
+  time next week" → `clonedStart` confirmed intentional (ticket-pinned
+  post-again semantics). Migration: NONE (ticket pin; the private bucket +
+  policies are 0038, already live). No migration file in the diff.
 - **t05 — Map (Leaflet + OSM) on the place surfaces (ACCEPTED, 2026-09-17).**
   The place surfaces now show a Leaflet + OpenStreetMap map; no browser
   geolocation (coordinates come from the DB only). Commits: `3ed8043`
