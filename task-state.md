@@ -834,20 +834,23 @@ anywhere to look at them.
 |---|---|---|
 | 01 | Settings autosave — /settings saves as you go, no Save button, no unsaved guard | **complete — `f4da2b1` + `6a7ae10`** (2026-09-17, local, unpushed); evidence + review in the Completed slices entry below |
 | 02 | The new time model — /new picks the duration for you (fast path 4 taps → 3) | **complete — `6d7fc73`** (2026-09-17, local, unpushed); evidence + review in the Completed slices entry below |
-| 03 | End an event early — the `ended` status (honest history, option A) | **code complete — `29c19a2` + migration `0041` written (2026-09-17, local, unpushed); LIVE APPLY PENDING — Phase B blocked on the expired dashboard session in the CDP profile (human re-auth needed); evidence in the Completed-slices entry below** |
+| 03 | End an event early — the `ended` status (honest history, option A) | **complete — `29c19a2` + migration `0041` live-applied (2026-09-17, local, unpushed); reviewer PASS + verifier GREEN (final batch gate); evidence in the Completed-slices entry below** |
 | 04 | Profile self-view + post-again — kids' photos re-surface (owner-only), the clone closes out | **complete — `b7aa220`** (2026-09-17, local, unpushed); reviewer PASS + verifier GREEN; evidence in the Completed-slices entry below |
 | 05 | A map — Leaflet + OpenStreetMap tiles on the place surfaces | **complete — `3ed8043` + fix `db817fd`** (2026-09-17, local, unpushed); reviewer PASS (1 NEEDS_CHANGES loop) + verifier GREEN; evidence in the Completed-slices entry below |
 
-**Migration ledger (batch):** ONE — `0041` (ticket 03), reserved; last applied
-migration = `0040`. 0041 widens `playdates.status`'s `playdates_status_chk`
+**Migration ledger (batch):** ONE — `0041` (ticket 03); last applied
+migration = `0041` (applied 2026-09-17 via the coordinator's CDP + SQL-API
+path (Tooling note amendment #2), after the human's dashboard re-auth;
+post-apply probes match the header). 0041 widens `playdates.status`'s
+`playdates_status_chk`
 (from the 0019 2-value `('on','cancelled')` at `0019_status_trim.sql:46-56`
 to `('on','cancelled','ended')`, in the 0016/0019 idempotent +
 pg_constraint-guarded structure), probes the 0005/0016 `playdates_update_host`
 host-write path, and decides — recorded in the migration header — whether an
 `ended` transition notifies through 0032's `notify_playdate_cancelled`
 trigger (`:416`, WHEN `old.status is distinct from new.status` at
-`:454-459`; default: notify, kind `ended`). Applied via the coordinator's CDP
-tooling (Tooling note) + live probe when t03's code is green.
+`:454-459`; default: notify, kind `ended`). Live since 2026-09-17 — the t03
+Completed-slices entry below records the apply + probes.
 
 **Gates:** per-ticket `npm run build && npm run test` (plus each ticket's e2e
 spec list); batch gate = full suite + lint.
@@ -968,20 +971,29 @@ the dev-agent pane `w4:p12` stays idle (the V11 coordinator loop's pane).
   `playdates_update_host` probe (0005:78-82) = generic host-write RPC
   admits 'ended', NO RLS change; send-push catch-up scan stays
   `.eq('playdate.status','on')` so ended posts are never re-pushed.
-  PHASE B (coordinator apply) status: **BLOCKED 2026-09-17** — the
-  dashboard session token in the CDP profile copy is expired (last apply
-  2026-09-13, 1h TTL); CDP relaunch (stale + fresh re-copy) lands on
-  sign-in, `supabase.dashboard.auth.token` absent from Local Storage; the
-  documented SQL-API path (tooling note amendment #2) therefore
-  unrunnable. UNBLOCK = human signs in to supabase.com/dashboard once in
-  their normal Chrome (the tooling re-copies the profile storage on next
-  launch). Until 0041 is live: do NOT push t03 as "shipped"; the "End this
-  post now" UI write 23514s on the live DB by design.
-  Markers now due for sweep (approximate, to be enumerated via SQL API
-  post-apply): `e2e-1789595576, 1789596078, 1789596528, 1789596784,
-  1789597848, 1789600461, 1789605246, 1789606124, 1789663463, 1789682435,
-  1789683382 @gmail.com` + 0–2 residual `ended`-status playdate rows from
-  the RED specs (unverifiable pre-apply).
+  PHASE B (coordinator apply) status: **COMPLETE 2026-09-17** — unblocked
+  by the human's dashboard sign-in (normal Chrome, 2026-09-17; the tooling
+  re-copied the profile storage on the fresh CDP launch). 0041 applied the
+  same day via the documented CDP + SQL-API path (Tooling note amendment
+  #2): pre-apply probe = the 0019 baseline (2-value
+  `playdates_status_chk` / 4-value `notification_log_kind_check`); apply
+  succeeded (SQL API HTTP 201); post-apply probes match
+  `0041_end_event_early.sql:119` + `:163-166` (the 3-value status CHECK
+  incl. 'ended'; the 5-value kind CHECK incl. 'ended'). The designed RED
+  pair flipped GREEN (`e2e/feed-ended-out.e2e.ts:562` +
+  `e2e/host-status.e2e.ts:131`). FINAL V12 BATCH GATE GREEN: `npm run build`
+  exit 0; unit 847/847 (25 files); `npm run lint` 0 errors (40 pre-existing
+  warnings); full e2e 81/0/1 (the 1 skip = `e2e/polish.e2e.ts:226`, the
+  designed CDP env-skip). 0041 notification-row live probe (`select
+  count(*) from public.notification_log where kind = 'ended'`) = 0 — the
+  acceptable no-owed case (the e2e flows owed no notification — no going
+  parent); a count > 0 would have been functional proof the generalized
+  trigger writes 'ended' rows. Marker sweep done the same day (the batch's
+  final gate item): delete gate passed (811 accounts, 0 founder overlap;
+  `e2e_playdates` 1 residual) then verify e2e_left = 0 (2 users / 2
+  profiles / 5 playdates left; the select output is counts-only, so no
+  account families listed). ROLLBACK NOTE (preserved): re-applying 0019's
+  2-value CHECK reverses the status half.
 - **t04 — Profile self-view + post-again (ACCEPTED, 2026-09-17).** Commit
   `b7aa220` (full `b7aa2209796ba0323fe1f29b93cef3253777ad26`, parent
   `7799b25`), 13 files, +1143/−94, local, unpushed. Half 1 (owner-only
@@ -1107,20 +1119,14 @@ the dev-agent pane `w4:p12` stays idle (the V11 coordinator loop's pane).
 3. **t02 gate — CONFIRMED (2026-09-17):** the founder confirmed the
    auto-suggested-duration reading (vs an explicit end-time control); t02
    was dispatched on that reading and is complete (`6d7fc73`).
-4. **t03 PHASE B BLOCKED (2026-09-17):** `0041` unapplied; live DB still
-   has the 0019 2-value CHECK; unblock = human dashboard sign-in (under 2
-   min); then the coordinator re-runs the documented apply→probe→e2e-flip
-   sequence. Do not push t03 before 0041 is live.
+4. **t03 PHASE B RESOLVED (2026-09-17):** 0041 live-applied after the human
+   re-auth; final batch gate green; see the t03 Completed-slices entry.
 
-**Next:** t01–t05 code complete (t03's CODE + migration file done; its
-LIVE APPLY is the only remaining build-side item). Immediate (human,
-under 2 min, UNBLOCKS t03 Phase B): sign in to supabase.com/dashboard in
-your normal Chrome (same account as the 0040 apply). Then: coordinator
-applies 0041 via the documented CDP + SQL-API path → re-runs
-e2e/feed-ended-out.e2e.ts + e2e/host-status.e2e.ts (RED→GREEN) → full
-gate (expect 81/0/1 + the t05 map specs) → records t03 complete → runs
-the final V12 batch gate (full e2e + lint 0 + 0041 live probes + marker
-sweep incl. the ~11 e2e-* families + residual ended rows).
+**Next:** V12 batch complete — t01–t05 all accepted; 0041 live; final batch
+gate green (full e2e 81/0/1 + unit 847/847 + lint 0 errors); marker sweep
+done (verify e2e_left = 0). Remaining open items are ONLY: the `opencode.json`
+human decision (open-risk item 2 above) and the un-ticketed
+`useUnsavedChangesGuard` follow-up (open-risk item 1 above).
 
 ## V4 — "Drop In" mobile conversion (opened 2026-09-11)
 
