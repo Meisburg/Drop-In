@@ -484,9 +484,19 @@ describe('placeDistanceMiles re-exported from the place module', () => {
  * gazetteer's real 98107 (West Seattle), so the fallback assertions are about
  * real geography, matching this file's discipline.
  */
-describe('zipFromAddress (the 5-digit zip embedded in the stored address)', () => {
+describe('zipFromAddress (the trailing 5-digit zip embedded in the address)', () => {
   it('extracts the trailing 5-digit zip', () => {
     expect(zipFromAddress('5614 22nd Ave. N.W., Seattle, WA 98107')).toBe('98107')
+  })
+
+  it('takes the LAST 5-digit run when a non-zip 5-digit token precedes the zip (reviewer shape)', () => {
+    // 98107 is a suite number, not the zip; 98128 (Ballard) is the trailing
+    // run. The first-run bug would have keyed the gazetteer to 98107's city.
+    expect(zipFromAddress('Suite 98107, 200 5th Ave S, Seattle, WA 98128')).toBe('98128')
+  })
+
+  it('takes the LAST 5-digit run past a 5-digit street number', () => {
+    expect(zipFromAddress('10000 1st Ave S, Seattle, WA 98128')).toBe('98128')
   })
 
   it('is null for an address with no 5-digit zip', () => {

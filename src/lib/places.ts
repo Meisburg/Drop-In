@@ -23,15 +23,23 @@ import type { Place, PlaceKind } from './types'
 export { coordNumber, placeDistanceMiles, postDistanceMiles } from './feed'
 
 /**
- * The 5-digit zip embedded in a stored address ("5614 22nd Ave. N.W.,
- * Seattle, WA 98107" -> "98107"), or null. The `places` table has no zip
+ * The TRAILING 5-digit zip embedded in a stored address ("5614 22nd Ave.
+ * N.W., Seattle, WA 98107" -> "98107"), or null. The `places` table has no zip
  * column — the zip, when present at all, lives inside the address string —
  * so this is the only way a place's zip reaches the gazetteer (V12 t05).
+ *
+ * The zip is the address's LAST 5-digit run, not its first: a 5-digit
+ * NON-zip token (a 10000+ street number, a suite number) can precede the
+ * zip, and taking the first would key the gazetteer to the wrong city —
+ * 0029's header rule says never a fake pin.
  */
 export function zipFromAddress(address: string | null | undefined): string | null {
   if (address === null || address === undefined) return null
-  const match = /\b(\d{5})\b/.exec(address)
-  return match === null ? null : match[1]
+  const runs = address.match(/\b\d{5}\b/g)
+  if (runs === null) return null
+  // .at(-1) is `string | undefined` by type even though a non-null match
+  // guarantees a hit; `?? null` maps the (impossible) miss back to null.
+  return runs.at(-1) ?? null
 }
 
 /**

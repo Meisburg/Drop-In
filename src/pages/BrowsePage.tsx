@@ -14,6 +14,7 @@ import {
   placeKindLabel,
   placePath,
   placeUpcomingLabel,
+  resolveMapCoords,
 } from '../lib/places'
 import type { PlaceListRow } from '../lib/places'
 import type { Place } from '../lib/types'
@@ -157,6 +158,15 @@ export function BrowsePage() {
   const placed = rows.filter((row) => row.distanceMiles !== null)
   const unplaced = rows.filter((row) => row.distanceMiles === null)
 
+  // V12 t05: the overview map's null condition, computed once here so the
+  // wrapper card renders only when at least one placed row resolves to a
+  // stored coordinate. Matches PlacesMap exactly (same seam, same input):
+  // an all-NULL-coord placed list — or a failed gazetteer load — yields an
+  // empty card, so the card is skipped and the list stands alone.
+  const mappedMarkers = placed
+    .map((row) => resolveMapCoords(row.place, zipCoords))
+    .filter((c): c is { lat: number; lng: number } => c !== null)
+
   // The shared radius empty state is the honest answer ONLY when the radius is
   // actually the reason nothing is showing: no search text, no kind filter.
   // Otherwise the copy would blame the radius for a filter the parent set.
@@ -265,11 +275,14 @@ export function BrowsePage() {
               zip's gazetteer coordinates). The "Not on the map yet" rows below
               get NO marker here on purpose: that section is the places the
               distance model itself could not place, and their detail pages
-              still render the map when a zip resolves. Renders nothing when
-              nothing resolves — the list stands alone. */}
-          <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-            <PlacesMap places={placed.map((row) => row.place)} zipCoords={zipCoords} />
-          </div>
+              still render the map when a zip resolves. The card renders only
+              when at least one placed row resolves (mappedMarkers, above) — an
+              empty list or an all-NULL-coord list leaves no empty card. */}
+          {mappedMarkers.length > 0 ? (
+            <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+              <PlacesMap places={placed.map((row) => row.place)} zipCoords={zipCoords} />
+            </div>
+          ) : null}
           {placed.map((row) => (
             <PlaceRow key={row.place.id} row={row} />
           ))}
