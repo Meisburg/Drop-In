@@ -835,7 +835,7 @@ anywhere to look at them.
 | 01 | Settings autosave — /settings saves as you go, no Save button, no unsaved guard | **complete — `f4da2b1` + `6a7ae10`** (2026-09-17, local, unpushed); evidence + review in the Completed slices entry below |
 | 02 | The new time model — /new picks the duration for you (fast path 4 taps → 3) | **complete — `6d7fc73`** (2026-09-17, local, unpushed); evidence + review in the Completed slices entry below |
 | 03 | End an event early — the `ended` status (honest history, option A) | **code complete — `29c19a2` + migration `0041` written (2026-09-17, local, unpushed); LIVE APPLY PENDING — Phase B blocked on the expired dashboard session in the CDP profile (human re-auth needed); evidence in the Completed-slices entry below** |
-| 04 | Profile self-view + post-again — kids' photos re-surface (owner-only), the clone closes out | not-started |
+| 04 | Profile self-view + post-again — kids' photos re-surface (owner-only), the clone closes out | **complete — `b7aa220`** (2026-09-17, local, unpushed); reviewer PASS + verifier GREEN; evidence in the Completed-slices entry below |
 | 05 | A map — Leaflet + OpenStreetMap tiles on the place surfaces | not-started |
 
 **Migration ledger (batch):** ONE — `0041` (ticket 03), reserved; last applied
@@ -982,6 +982,56 @@ the dev-agent pane `w4:p12` stays idle (the V11 coordinator loop's pane).
   1789597848, 1789600461, 1789605246, 1789606124, 1789663463, 1789682435,
   1789683382 @gmail.com` + 0–2 residual `ended`-status playdate rows from
   the RED specs (unverifiable pre-apply).
+- **t04 — Profile self-view + post-again (ACCEPTED, 2026-09-17).** Commit
+  `b7aa220` (full `b7aa2209796ba0323fe1f29b93cef3253777ad26`, parent
+  `7799b25`), 13 files, +1143/−94, local, unpushed. Half 1 (owner-only
+  kids' photos): new `src/components/useKidPhotoUrls.ts` (batched
+  best-effort signed-URL read of the private `kid-photos` bucket — the
+  /settings seam; 1h-TTL URLs never persisted; dead object → name+age, no
+  stale image, keyed by kid id) + `src/lib/photoStorage.ts`
+  `kidPhotoMintPaths` (canonical `kid-photos/<uid>/kids/<kidId>`, never
+  parses stored `avatar_url`) + `src/lib/db.ts`
+  `signedKidPhotoUrls(WithClient)` + `ProfilePage.tsx` owner self-view Kids
+  card renders the photo. Gate verified: the ONE render site is ProfilePage
+  (`UserPage.tsx:432-490` stays kidLabel-only; feed cards / place pages
+  photo-free); V9 t11 invariant `e2e/kid-photo-exposure.e2e.ts` untouched
+  (not in the diff). Half 2 (clone closes out): `DuplicatePrefill` widened
+  (`startsAt`/`durationMinutes`/`kidIds`, `src/lib/types.ts`),
+  `toDuplicatePrefill` carries the source post's `clonedStart` + form-snapped
+  duration + linked kid ids (`src/lib/feed.ts`), `queryMyPlaydatesWithClient`
+  selects `playdate_kids(kid_id)`; all FOUR entry points converge on the
+  full prefill (the `post-again` slot, App router duplicate/place,
+  `PlaydateDetailPage.tsx:976` host panel + "Same time next week" — the
+  latter intentionally routes through `clonedStart`'s today/tomorrow
+  30-min-grid rule — and `ProfilePage.tsx:171` own-posts row).
+  `NewPlaydatePage.tsx` `duplicateFormValues` seeds place/details/duration +
+  one-shot kids effect + `durationOverridden` init so the t02 auto-derive
+  model is respected (latch marks the cloned duration as overridden; only
+  the new start time is required). The previously-unused `clonedStart`
+  import in `e2e/post-again.e2e.ts` was put to work (bracket re-seat). New
+  e2e `e2e/profile-kid-photos.e2e.ts` (owner view renders signed kid photo;
+  /u/<handle> stays photo-free; no-avatar kid degrades to name+age even
+  when a bucket object exists) + extended `e2e/post-again.e2e.ts` (full
+  prefill asserted: place, details, duration chip, linked kid chip; start
+  slot re-seated via the `clonedStart` bracket). Unit: `src/lib/feed.test.ts`
+  (widened prefill + my-playdates `playdate_kids(kid_id)` select) +
+  `src/lib/photoStorage.test.ts` (`kidPhotoMintPaths` canonical-path gate).
+  Gate (verifier-independent, `b7aa220`): `npx tsc -b` exit 0; `npm run
+  build` exit 0; `npm run test` 836/836 (25 files); `npm run lint` 0 errors
+  (40 pre-existing warnings; 8 set-state-in-effect inside the 13 t04 files
+  are inherited from parent `7799b25` — zero new); full e2e 79 pass / 2
+  fail / 1 skip — the 2 fails are EXACTLY the t03 RED pair
+  (`feed-ended-out.e2e.ts` + `host-status.e2e.ts`, CHECK 23514
+  `playdates_status_chk` pre-0041-apply), the 1 skip =
+  `e2e/polish.e2e.ts:226` CDP env-skip. Target = hosted
+  `ayzvjwxb…supabase.co` (local :54321 down). `opencode.json` excluded
+  (still ` M`). Reviewer: PASS, no blocking. Non-blocking recorded:
+  (a) rapid double-tap of Duplicate fires `listPlaydateKidIds` RPC twice —
+  harmless (best-effort, both resolve the same); (b) new files lack EOF
+  newline — cosmetic (oxlint has no formatter config, inert); (c) "Same
+  time next week" → `clonedStart` confirmed intentional (ticket-pinned
+  post-again semantics). Migration: NONE (ticket pin; the private bucket +
+  policies are 0038, already live). No migration file in the diff.
 
 ### Open risks / follow-ups
 
@@ -1001,14 +1051,15 @@ the dev-agent pane `w4:p12` stays idle (the V11 coordinator loop's pane).
    min); then the coordinator re-runs the documented apply→probe→e2e-flip
    sequence. Do not push t03 before 0041 is live.
 
-**Next:** Immediate (human, under 2 min): sign in to supabase.com/dashboard
-in your normal Chrome (same account as the 0040 apply). Then: coordinator
-applies 0041 via the documented CDP + SQL-API path (tooling note
-amendment #2), re-runs `e2e/feed-ended-out.e2e.ts` + `e2e/host-status.e2e.ts`
-(RED→GREEN) + the full gate (expect 78/0/1), records t03 complete, then
-dispatches t04 (profile self-view + post-again — no migration), t05 (map
-Leaflet, no geolocation), then the batch gate (full e2e + lint 0 + marker
-sweep incl. the ~11 e2e-* families + residual ended rows).
+**Next:** Immediate (human, under 2 min, UNBLOCKS t03): sign in to
+supabase.com/dashboard in your normal Chrome (same account as the 0040
+apply). Then: coordinator applies 0041 via the documented CDP + SQL-API
+path, re-runs e2e/feed-ended-out.e2e.ts + e2e/host-status.e2e.ts
+(RED→GREEN) + the full gate (expect 81/0/1), records t03 complete, then
+runs the final V12 batch gate (full e2e + lint 0 + marker sweep incl. the
+~11 e2e-* families + residual ended rows). t05 (map Leaflet, no
+geolocation) can land any time — it is migration-free and independent of
+0041.
 
 ## V4 — "Drop In" mobile conversion (opened 2026-09-11)
 
