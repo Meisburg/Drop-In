@@ -108,13 +108,32 @@ the next work. **Never ask the human to relay messages between the two agents
 ### Coordinator guardrails
 - Factual disagreements settle via tests / verifiable evidence, not opinions;
   judgment calls go to the human.
-- No push, publish, deploy, production, or sending sensitive data externally
-  without explicit human authorization.
+- No publish, deploy, production, or sending sensitive data externally
+  without explicit human authorization. End-of-slice git pushes to
+  origin/master are automatic — the Auto-push rule below.
 - One writer (the dev agent) in this repo — no concurrent-writer worktrees
   needed. Release resources you created (e.g. the CDP Chrome) when done;
   preserve the human's existing work and undelivered artifacts.
 - Finish with: what completed, verification evidence, anything unresolved, and
   any panes/worktrees still retained.
+
+### Auto-push (founder decision, 2026-09-17)
+- End-of-slice pushes to origin/master do not need per-push human
+  authorization. At the end of a slice, push when ALL THREE hold:
+  1. **Gate green** — the slice's verification command (the plan slice's
+     gate: `npm run build && npm run test`, plus lint / e2e where the plan
+     pins them) passes on the final tree.
+  2. **Clean range** — `git diff --name-only origin/master..HEAD` lists
+     only the slice's intended files; zero local-only artifacts (`.agents/`,
+     `.scratch/*.cjs|mjs|html`, `supabase/.temp/`, `opencode.json` —
+     untracked + gitignored, `.gitignore:69`). A slice's own migration under
+     `supabase/migrations/` is an intended file when the plan slice says so.
+  3. **Fast-forward** — plain `git push origin master`; no force, no amend,
+     no rebase.
+- Any one fails → STOP, report the failing check verbatim, founder decides.
+- Scope: git pushes to origin/master only. Publish, deploy, production
+  changes, and sending sensitive data externally still require explicit
+  human authorization.
 
 ## Skills (mattpocock/skills, discovered from ~/.claude/skills/)
 
