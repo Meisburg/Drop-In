@@ -135,6 +135,42 @@ the next work. **Never ask the human to relay messages between the two agents
   changes, and sending sensitive data externally still require explicit
   human authorization.
 
+### Playtest lane (fleet rule, 2026-09-18 — from the Grokbot Galaxy 3-day playbook)
+
+A slice is NOT "done" on green unit tests alone. Before acceptance, the
+orchestrator runs the headless playtest over the built app:
+
+```bash
+python3 scripts/playtest_check.py --base <served-dist-url> --port 9444 \
+  --out .scratch/playtest --routes .scratch/playtest/routes.json
+```
+
+- `routes.json` lists public routes with `must_contain` text assertions;
+  the script drives a DEDICATED headless Chrome (isolated profile
+  `~/.hermes/playtest-hl`, port 9444), harvests uncaught JS errors, and
+  saves a screenshot per route into `.scratch/playtest/`.
+- Verdict (`verdict.md`, PASS/FAIL) gets recorded in task-state.md next to
+  the gate result. A FAIL blocks acceptance exactly like a red gate.
+- No visible browser windows, ever — this check is the repro-before-accept
+  instrument for bot-built slices. Screenshots ARE the evidence.
+- Extend `routes.json` whenever a slice adds a reachable route, so the
+  lane grows with the app instead of being rebuilt per batch.
+- Full doc: `docs/agents/playtest-lane.md`.
+
+## Fleet roles (org layer around this repo)
+
+- Cora (@orchestrator) — routes feedback and goals, owns acceptance records.
+- Pete (@builder-product) — clarifies goals into specs; restates the brief
+  back in his own words before ticketing.
+- Emily (@emily) — eng manager; converts user feedback into tickets ONLY
+  after a reproduction exists (playtest evidence or unit repro).
+- Einstein (@builder-dev) — implementation via herdr panes; never edits
+  product code outside a ticket.
+- Pixel (@builder-design) — design review on UI tickets before build.
+- Compass — runs the always-disagree check on any plan before it dispatches.
+- Every batch: build → unit gate → playtest lane → review → push (auto-push
+  rule above), then real-user feedback re-enters through Emily.
+
 ## Skills (mattpocock/skills, discovered from ~/.claude/skills/)
 
 Two orthogonal layers: agents define WHO does what; skills hold HOW to do it.
