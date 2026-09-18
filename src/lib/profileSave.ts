@@ -1,13 +1,14 @@
 /**
- * The /profile save seam (V8 ticket 10): "Save profile" is ONE submit for the
- * whole form, and it writes ONLY the sections that actually changed.
+ * The /settings autosave seam (born as the /profile save seam, V8 ticket 10;
+ * V12 t01 replaced the one "Save profile" submit with a debounced autosave):
+ * every settled pass writes ONLY the sections that actually changed.
  *
- * WHY THIS EXISTS. /profile used to carry six separate Save buttons (display
- * name, location, bio, interests, plus one per kid row). Six buttons means six
- * round trips for one intention, six places a parent has to remember to press,
- * and — the real cost — six ways to walk away believing you saved something
- * you did not. One submit fixes that, but one submit has a decision in it:
- * which sections does this submit actually write? That decision is pure and
+ * WHY THIS EXISTS. The editing page used to carry six separate Save buttons
+ * (display name, location, bio, interests, plus one per kid row). Six buttons
+ * means six round trips for one intention, six places a parent has to remember
+ * to press, and — the real cost — six ways to walk away believing you saved
+ * something you did not. One pass fixes that, but one pass has a decision in
+ * it: which sections does this pass actually write? That decision is pure and
  * lives here, so it is unit-tested instead of being spread across the page's
  * handlers.
  *
@@ -16,22 +17,25 @@
  *    must not make the form dirty, and it must not put a whitespace-only
  *    value on the wire (the writers trim too — this is the same rule, one
  *    step earlier).
- *  - A NO-OP SAVE ISSUES NO WRITE AT ALL (`empty: true`): no request, no
- *    "Profile saved." lie.
+ *  - A NO-OP PASS ISSUES NO WRITE AT ALL (`empty: true`): no request. The
+ *    page's settle rule (lib/autosave.ts) lands the indicator on "Saved." for
+ *    the empty plan — the in-flight pass's writes already advanced the
+ *    baseline, so nothing is left pending.
  *  - INVALID BLOCKS ONLY ITSELF. A section (or one kid row) that is changed
  *    but fails its validator goes into `blocked*` with the message the inline
  *    error already shows; every other changed section still writes. The page
  *    keeps the per-section inline errors it always had — this seam just
- *    decides what a submit may write, not what it may say.
+ *    decides what a pass may write, not what it may say.
  *  - AN INVALID VALUE IS STILL A CHANGE. Clearing a kid's age is not "no
- *    edit" — it is an edit that cannot be saved yet, so it stays pending
- *    (the form stays dirty, the guard still warns) instead of vanishing.
+ *    edit" — it is an edit that cannot be saved yet, so it stays pending on
+ *    screen (its text + its inline error, until a re-edit re-triggers the
+ *    pass) instead of vanishing.
  *
  * Validation is INJECTED (the page passes db.ts's own validators) so the seam
  * stays pure and free of React/Supabase, the feed.ts / trust.ts convention.
  */
 
-/** The form sections that ride the one "Save profile" submit. */
+/** The form sections one autosave pass may write. */
 export type ProfileSection = 'name' | 'location' | 'bio' | 'interests'
 
 /** The profile section values as EDITABLE TEXT (name/zip/bio/interests + the radius). */
@@ -69,7 +73,7 @@ export interface KidSave {
   likes: string
 }
 
-/** What one submit may write, and what it may not (with the inline message for each). */
+/** What one autosave pass may write, and what it may not (with the inline message for each). */
 export interface ProfileSavePlan {
   /** Changed AND valid sections, in the form's own order. */
   sections: ProfileSection[]
@@ -95,7 +99,7 @@ export interface ProfileSaveValidators {
   kid?: (kid: KidSave) => string | null
 }
 
-/** The profile row a fresh /profile seeds its form from (pre-0022 columns optional). */
+/** The profile row a fresh /settings seeds its form from (pre-0022 columns optional). */
 export interface ProfileSeedSource {
   display_name: string
   bio?: string | null
@@ -176,13 +180,13 @@ export function kidRowChanged(row: KidRowValues, draft: KidFormValues | undefine
 }
 
 /**
- * THE DECISION: what does this submit write?
+ * THE DECISION: what does this autosave pass write?
  *
  * Every changed section and kid row is validated through the injected
  * validators; the valid ones land in `sections` / `kids`, the invalid ones in
  * `blockedSections` / `blockedKids` with the message the field already shows.
  * `empty` is true only when nothing differs at all — the caller then issues no
- * write (and, on the page, the submit is disabled).
+ * write (on the page, the settle rule lands the indicator — lib/autosave.ts).
  */
 export function planProfileSave(input: ProfileSaveInput): ProfileSavePlan {
   const { baseline, draft, kidRows, kidDrafts } = input

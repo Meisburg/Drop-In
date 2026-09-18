@@ -16,9 +16,10 @@ import { createPortal } from 'react-dom'
  * Focus lands on Cancel (never the destructive button), so a stray Enter
  * cancels instead of destroying something.
  *
- * Callers today: the comment delete confirm, the kid-row Remove confirm, and
- * the /profile unsaved-changes guard (destructive: false there — leaving loses
- * typing, it does not delete anything).
+ * Callers today: the comment delete confirm and the kid-row Remove confirm —
+ * both destructive. The `destructive: false` branch (a plain indigo confirm)
+ * has no caller left since the unsaved-changes guard went (V12 t01); it stays
+ * as the component's ordinary-confirm mode.
  */
 export function ConfirmDialog({
   title,

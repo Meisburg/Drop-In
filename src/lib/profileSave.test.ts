@@ -1,12 +1,14 @@
 /**
- * Unit tests for the /profile save seam (V8 ticket 10): the changed-section
- * patch builder behind the one "Save profile" submit.
+ * Unit tests for the /settings autosave seam (V8 ticket 10; the page
+ * autosaves since V12 t01): the changed-section patch builder behind one
+ * autosave pass.
  *
  * The three things these tests exist for:
- *  1. only CHANGED sections are written (a no-op save issues no write);
+ *  1. only CHANGED sections are written (a no-op pass issues no write);
  *  2. change is compared TRIMMED, and a kid's age as a NUMBER;
  *  3. an INVALID section blocks only itself — the other sections still write,
- *     and an invalid value still counts as a change (the form stays dirty).
+ *     and an invalid value still counts as a change (so it stays pending,
+ *     not dropped).
  */
 import { describe, expect, it } from 'vitest'
 import {
