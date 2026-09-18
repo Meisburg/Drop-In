@@ -67,3 +67,4 @@ logo-mockup.png
 
 # machine-local provider config (local API key + Tailscale URL — never commit)
 opencode.json
+.vercel
