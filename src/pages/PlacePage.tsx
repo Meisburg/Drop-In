@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { DropInCard } from '../components/DropInCard'
+import { PlaceMap } from '../components/PlaceMap'
 import { useSessionContext } from '../components/SessionProvider'
 import {
   countPlaceFollowers,
@@ -349,6 +350,12 @@ export function PlacePage() {
             place.address
           )}
         </p>
+        {/* V12 t05: where this place IS — the shared Leaflet + OpenStreetMap
+            map, from stored coordinates only (the place's own lat/lng, else the
+            gazetteer's coordinates for the zip in its address). No
+            coordinates at all → nothing renders (0029's rule: no fake pin),
+            and the map never uses a browser location API (the ticket's invariant). */}
+        <PlaceMap place={place} zipCoords={zipCoords} className="mt-3" />
         {/* The age line states the data we have and NOTHING more: when the
             directory carries no age range, the page stays silent rather than
             implying "all ages" — a claim the data would not support (V11 t03). */}

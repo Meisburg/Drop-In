@@ -9,7 +9,7 @@
  * thing they share is the distance math (feed.haversineMiles), which is
  * imported rather than reimplemented.
  */
-import { placeDistanceMiles, statedAgeRangeLine } from './feed'
+import { coordNumber, placeDistanceMiles, statedAgeRangeLine } from './feed'
 import type { ZipCoords } from './feed'
 import type { Place, PlaceKind } from './types'
 
@@ -21,6 +21,42 @@ import type { Place, PlaceKind } from './types'
  * direction of that dependency: no cycle).
  */
 export { coordNumber, placeDistanceMiles, postDistanceMiles } from './feed'
+
+/**
+ * The 5-digit zip embedded in a stored address ("5614 22nd Ave. N.W.,
+ * Seattle, WA 98107" -> "98107"), or null. The `places` table has no zip
+ * column — the zip, when present at all, lives inside the address string —
+ * so this is the only way a place's zip reaches the gazetteer (V12 t05).
+ */
+export function zipFromAddress(address: string | null | undefined): string | null {
+  if (address === null || address === undefined) return null
+  const match = /\b(\d{5})\b/.exec(address)
+  return match === null ? null : match[1]
+}
+
+/**
+ * A place's map coordinates (V12 t05): the place's OWN lat/lng first (the
+ * 0029 columns, coerced — PostgREST returns numerics as strings at runtime,
+ * which is what coordNumber is for), else the gazetteer's coordinates for the
+ * zip embedded in the address (the 0012 fallback), else null.
+ *
+ * The null is 0029's header rule made concrete: a NULL coordinate means
+ * UNKNOWN — the map renders NOTHING rather than a fake pin, and never a
+ * 404-tile-flooding default view. No browser location access anywhere: every
+ * coordinate in this chain is stored in the database.
+ */
+export function resolveMapCoords(
+  place: { lat?: number | string | null; lng?: number | string | null; address?: string | null },
+  zipCoords: ReadonlyMap<string, ZipCoords> | null,
+): { lat: number; lng: number } | null {
+  const lat = coordNumber(place.lat)
+  const lng = coordNumber(place.lng)
+  if (lat !== null && lng !== null) return { lat, lng }
+  const zip = zipFromAddress(place.address)
+  if (zip === null || zipCoords === null) return null
+  const found = zipCoords.get(zip)
+  return found === undefined ? null : { lat: found.lat, lng: found.lng }
+}
 
 /**
  * The place kinds the schema allows (the 0029 CHECK constraint, verbatim —

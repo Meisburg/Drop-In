@@ -15,7 +15,13 @@
  *     drop-in under "Upcoming drop-ins here";
  * (4) "Start a drop-in here" prefills /new with the place (the
  *     duplicate-prefill router-state pattern);
- * (5) the Places tab's indoor/outdoor filter really filters.
+ * (5) the Places tab's indoor/outdoor filter really filters;
+ * (6) V12 t05: the map surfaces render — the directory's overview map (one
+ *     marker per placed row) and the place page's Leaflet map (a marker at
+ *     the seeded place's OWN coordinates). Tiles are LIVE OpenStreetMap; the
+ *     assertions target the map container + marker DOM, never tile pixels, so
+ *     an offline or flaky tile fetch can never fail this spec (recorded
+ *     choice, per the ticket's AC5).
  *
  * RED BY DESIGN pre-0029-apply: `places` does not exist live yet, so PostgREST
  * answers the first read with PGRST205 (schema cache: table not found). The
@@ -130,6 +136,17 @@ test('the Places tab is the seeded directory, and anon can read it (RED pre-0029
   await expect(page.getByTestId('place-row').first()).toContainText(
     /Playground|Splash pad|Pool|Beach|Library|Museum|Indoor play|Park|Place/,
   )
+
+  // (6) V12 t05: the directory's overview map — the list branch renders it
+  // above the rows, with ONE marker per placed row (the rows the distance
+  // model could place, i.e. the ones with stored coordinates). Live OSM
+  // tiles; we assert the container + the SVG marker paths (the circleMarkers'
+  // <path> inside the overlay pane's <svg>), never tile pixels.
+  const overviewMap = page.getByTestId('places-map')
+  await expect(overviewMap).toBeVisible()
+  await expect(overviewMap.locator('.leaflet-overlay-pane svg path')).not.toHaveCount(0)
+  // The tile pane exists whether or not the live tiles have loaded yet.
+  await expect(overviewMap.locator('.leaflet-tile-pane')).toHaveCount(1)
 })
 
 test('a place page renders the seeded data with the existing Maps link', async ({ page }) => {
@@ -153,6 +170,17 @@ test('a place page renders the seeded data with the existing Maps link', async (
   // stays silent rather than claiming "all ages" (or "not listed").
   await expect(page.getByText('Ages not listed yet.')).toHaveCount(0)
   await expect(page.getByTestId('start-here')).toBeVisible()
+
+  // V12 t05: the place's Leaflet map (OpenStreetMap tiles). Green Lake Park
+  // carries its OWN coordinates in the 0029 seed (47.68064949,
+  // -122.32764197), so the detail surface renders exactly ONE marker at them.
+  // Live tiles: the assertions are the container + the circleMarker's <path>
+  // inside the overlay pane's <svg> (never tile pixels — an offline tile
+  // fetch can never fail this spec).
+  const map = page.getByTestId('place-map')
+  await expect(map).toBeVisible()
+  await expect(map.locator('.leaflet-overlay-pane svg path')).toHaveCount(1)
+  await expect(map.locator('.leaflet-tile-pane')).toHaveCount(1)
 })
 
 test('picking a place on /new posts a drop-in that links to its place page, which lists it', async ({

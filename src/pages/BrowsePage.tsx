@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { NAV_ICONS } from '../components/icons'
+import { PlacesMap } from '../components/PlaceMap'
 import { RadiusEmptyState } from '../components/RadiusEmptyState'
 import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
@@ -259,6 +260,16 @@ export function BrowsePage() {
         </div>
       ) : (
         <div className="flex flex-col gap-2">
+          {/* V12 t05: the directory's overview map — one marker per place that
+              resolves to stored coordinates (own lat/lng, else the address
+              zip's gazetteer coordinates). The "Not on the map yet" rows below
+              get NO marker here on purpose: that section is the places the
+              distance model itself could not place, and their detail pages
+              still render the map when a zip resolves. Renders nothing when
+              nothing resolves — the list stands alone. */}
+          <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+            <PlacesMap places={placed.map((row) => row.place)} zipCoords={zipCoords} />
+          </div>
           {placed.map((row) => (
             <PlaceRow key={row.place.id} row={row} />
           ))}

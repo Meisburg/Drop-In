@@ -15,12 +15,14 @@ import {
   placeUpcomingLabel,
   PLACE_BROWSE_LIMIT,
   PLACE_SUGGESTION_LIMIT,
+  resolveMapCoords,
   resolvePlaceByName,
   SOMEWHERE_ELSE_LABEL,
   sortPlaceUpcoming,
   stripPlaceAlias,
   upcomingCountByPlace,
   usesPlaceAlias,
+  zipFromAddress,
 } from './places'
 import { neighborhoodIdField } from './feed'
 import type { Place } from './types'
@@ -474,5 +476,64 @@ describe('placeDistanceMiles re-exported from the place module', () => {
   it('is the same seam the feed uses (one implementation, two import sites)', () => {
     expect(placeDistanceMiles(NEAR, VIEWER, ZIP_COORDS)).not.toBeNull()
     expect(coordNumber('47.5')).toBe(47.5)
+  })
+})
+
+/**
+ * V12 t05: the map-coordinate seam. The gazetteer below is the seeded
+ * gazetteer's real 98107 (West Seattle), so the fallback assertions are about
+ * real geography, matching this file's discipline.
+ */
+describe('zipFromAddress (the 5-digit zip embedded in the stored address)', () => {
+  it('extracts the trailing 5-digit zip', () => {
+    expect(zipFromAddress('5614 22nd Ave. N.W., Seattle, WA 98107')).toBe('98107')
+  })
+
+  it('is null for an address with no 5-digit zip', () => {
+    expect(zipFromAddress('7201 East Green Lake Dr N')).toBe(null)
+  })
+
+  it('is null for a null or undefined address', () => {
+    expect(zipFromAddress(null)).toBe(null)
+    expect(zipFromAddress(undefined)).toBe(null)
+  })
+})
+
+describe('resolveMapCoords (own lat/lng, else the address zip, else null)', () => {
+  const GAZETTEER: Map<string, ZipCoords> = new Map([
+    ['98107', { lat: 47.66757, lng: -122.37789 }],
+  ])
+
+  it('prefers the place\'s own coordinates', () => {
+    const p = place({ name: 'A', lat: 47.68, lng: -122.32 })
+    expect(resolveMapCoords(p, GAZETTEER)).toEqual({ lat: 47.68, lng: -122.32 })
+  })
+
+  it('coerces string coordinates (PostgREST returns numerics as strings)', () => {
+    // The seam's parameter is deliberately wider than Place (string | number |
+    // null): at runtime PostgREST hands back numerics as strings, and that is
+    // exactly what the seam must absorb.
+    const raw = { lat: '47.68', lng: '-122.32', address: '1 Test St' }
+    expect(resolveMapCoords(raw, GAZETTEER)).toEqual({ lat: 47.68, lng: -122.32 })
+  })
+
+  it('falls back to the address zip\'s gazetteer coordinates when the place has none', () => {
+    const p = place({ name: 'A', lat: null, lng: null, address: '1 Somewhere, Seattle, WA 98107' })
+    expect(resolveMapCoords(p, GAZETTEER)).toEqual({ lat: 47.66757, lng: -122.37789 })
+  })
+
+  it('is null when the address zip is not in the gazetteer', () => {
+    const p = place({ name: 'A', lat: null, lng: null, address: '1 Nowhere, Elsewhere, WA 99999' })
+    expect(resolveMapCoords(p, GAZETTEER)).toBe(null)
+  })
+
+  it('is null when the address carries no zip to look up', () => {
+    const p = place({ name: 'A', lat: null, lng: null, address: '7201 East Green Lake Dr N' })
+    expect(resolveMapCoords(p, GAZETTEER)).toBe(null)
+  })
+
+  it('is null when the gazetteer is unavailable (a failed load)', () => {
+    const p = place({ name: 'A', lat: null, lng: null, address: '1 Somewhere, Seattle, WA 98107' })
+    expect(resolveMapCoords(p, null)).toBe(null)
   })
 })
