@@ -32,6 +32,12 @@ playwright-report/
 # Verification artifacts that can carry a live session token — never commit
 .scratch/**/marker-state.json
 
+# Jev QA lane (scripts/qa-jev.sh) — the pinned jev-ultrafast clone, its uv venv,
+# the clean Chrome profile, and the NInfer key (.qa/ninfer.env) are all local and
+# must never ship. The reproducible model.py fix lives in scripts/qa-jev.patch
+# (tracked) and is re-applied over the pinned commit each bootstrap.
+.qa/
+
 # Throwaway commit-message files written by the agent loop
 .scratch/**/*.txt
 

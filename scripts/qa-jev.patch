@@ -1,0 +1,13 @@
+diff --git i/jev_ultrafast/model.py w/jev_ultrafast/model.py
+index d311747..3b65195 100644
+--- i/jev_ultrafast/model.py
++++ w/jev_ultrafast/model.py
+@@ -173,7 +173,7 @@ def field_text(context):
+         {
+             "model": model,
+             "max_tokens": 1024,
+-            "response_format": {"type": "json_object"},
++            **({} if os.environ.get("TEXT_MODEL_NO_RESPONSE_FORMAT") == "1" else {"response_format": {"type": "json_object"}}),
+             **reasoning,
+             "messages": [
+                 {"role": "system", "content": TEXT_VALUE},

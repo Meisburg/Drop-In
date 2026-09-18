@@ -98,8 +98,11 @@ the next work. **Never ask the human to relay messages between the two agents
 4. Once code is green, THIS session applies the new Supabase migrations via
    browser-use/CDP (task-state.md tooling note + `scripts/cdp-migration-tooling.sh`)
    and runs the live check.
-5. Route the next slice to the dev agent with `herdr agent prompt`.
-6. Bring the human in for judgment calls, BLOCKED states, or anything touching
+5. After the ship + live check, run the Jev fresh-eyes QA lane
+   (`bash scripts/qa-jev.sh`; tooling note in task-state.md) and record its
+   verdict in task-state.md — a non-zero verdict is surfaced, never decided.
+6. Route the next slice to the dev agent with `herdr agent prompt`.
+7. Bring the human in for judgment calls, BLOCKED states, or anything touching
    production. Otherwise work back and forth autonomously.
 
 ### Coordinator guardrails
