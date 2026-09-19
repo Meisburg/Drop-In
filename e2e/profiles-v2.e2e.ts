@@ -1,8 +1,9 @@
 /**
- * Spec (V2 ticket 02): the marker's rich profile. On /settings the marker
- * saves a bio (<= 500 chars) + a kid row (first name + age ONLY — the
- * privacy pin, max 5 app-enforced) and sees both on /u/<handle>; the
- * /settings nudge banner persists while the photo is still missing.
+ * Spec (V2 ticket 02, re-homed by V13 ticket 01): the marker's rich profile.
+ * On /profile the marker saves a bio (<= 500 chars) + a kid row (first name +
+ * age ONLY — the privacy pin, max 5 app-enforced) and sees both on
+ * /u/<handle>; the /settings nudge banner persists while the photo is still
+ * missing.
  *
  * Cleanup (best-effort per ticket, e2e-<epoch> marker prefix so the
  * orchestrator's sweep picks stragglers up): the marker's kid rows are
@@ -22,46 +23,44 @@ test('marker saves a bio + kid row, sees them on /u/<handle>, nudge stays for th
   const bio = `E2E bio — ${marker.displayName}, friendly family`
   const kidName = `e2e ${marker.displayName}`
 
-  await page.goto('/settings')
-  await settleOnRoute(page, '/settings')
+  // V13 ticket 01: the bio + kid editor MOVED from /settings to /profile
+  // (the now-editable "what other families see" view). The autosave machine
+  // is the same V12 t01 engine — no save control anywhere on /profile either,
+  // so the typed bio lands on its own after the debounce settles and the
+  // always-on indicator says "Saved."
+  await page.goto('/profile')
+  await settleOnRoute(page, '/profile')
 
-  // Bio: the /settings editor (app-capped at 500 chars, the 0011 CHECK is
-  // the DB backstop). V12 t01: the page AUTOSAVES — there is no save control
-  // anywhere on /settings, so the typed bio lands on its own after the
-  // debounce settles and the always-on indicator (the line the old save
-  // button lived on) says "Saved." The behaviour asserted is the same as
-  // the old click-then-note flow: the bio is saved and the page says so.
-  //
-  // V9 ticket 11 (folded ticket 08) RELABELLED the field: it is "About our
-  // family" now, and the placeholder follows it: the field reads "Who's in your
-  // family, and what are you into? (optional)" (it used to be "A few words about
-  // your family (optional)"). The field is located by its placeholder (the house
-  // pattern for a textarea with no testid) and the new placeholder is the
-  // string the /settings page renders.
-  await page
-    .getByPlaceholder('Who’s in your family, and what are you into? (optional)')
-    .fill(bio)
+  // Bio: the /profile "About the parents" field (app-capped at 500 chars, the
+  // 0011 CHECK is the DB backstop). Located by its placeholder (the house
+  // pattern for a textarea with no testid).
+  await page.getByPlaceholder('Who’s in your family, and what are you into? (optional)').fill(bio)
   await expect(page.getByTestId('profile-save-note')).toHaveText('Saved.')
 
   // Kid row: first name + age ONLY (no full names, no gender — privacy pin).
   await page.getByPlaceholder('First name').fill(kidName)
   await page.getByPlaceholder('Age').fill(String(KID_AGE))
   await page.getByRole('button', { name: 'Add kid', exact: true }).click()
-  // V8 ticket 10: the row is editable IN PLACE, so the kid's values live in
-  // the row's own fields rather than in a "{name} · {age}" text line. The
-  // assertion is the same fact — the kid stands on /settings with that name and
-  // that age — read off those fields. The /u/<handle> render below is still
-  // the static text line.
+  // The row is editable IN PLACE, so the kid's values live in the row's own
+  // fields rather than in a "{name} · {age}" text line. The assertion is the
+  // same fact — the kid stands on /profile with that name and that age — read
+  // off those fields. The /u/<handle> render below is still the static text
+  // line.
   const kidRow = page.getByTestId('kid-row').first()
   await expect(kidRow.getByTestId('kid-name')).toHaveValue(kidName)
   await expect(kidRow.getByTestId('kid-age')).toHaveValue(String(KID_AGE))
-  // V12 t01: the row's write rides the same autosave engine — wait for it to
-  // land so the /u/<handle> read below sees the new row (not a racing write).
+  // The row's write rides the same autosave engine — wait for it to land so
+  // the /u/<handle> read below sees the new row (not a racing write).
   await expect(page.getByTestId('profile-save-note')).toHaveText('Saved.')
 
   // The nudge banner persists while the photo is still missing (it is —
-  // this spec never uploads one).
+  // this spec never uploads one). It lives on /settings (the count-only
+  // kids read + the missingProfileItems seam), not on /profile. V13 ticket 01:
+  // the banner now links to /profile where the photo controls live.
+  await page.goto('/settings')
+  await settleOnRoute(page, '/settings')
   await expect(page.getByText('Still to add: a photo.')).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Add them on your profile page' })).toBeVisible()
 
   // The public face (/u/<handle>) renders the bio + the kid (first name +
   // age only).

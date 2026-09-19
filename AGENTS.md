@@ -66,43 +66,42 @@ mode" or "normal mode" — confirm in one line, then revert to default style.
 5. Verifier (tests/lint/typecheck) is the final authority on "works"; the
     reviewer is the authority on "right".
 
-## Coordinator role (this orchestrator session)
+## Coordinator role (this DeepSeek Harness session)
 
-This orchestrator session is also the human-facing COORDINATOR for a second
-opencode agent (the "dev agent") that does the slice coding in a separate
-Herdr pane of this same repo. The dev agent codes; this session monitors it,
-verifies its output, runs the Supabase DB apply (browser-use/CDP), and routes
-the next work. **Never ask the human to relay messages between the two agents
-— do it yourself via Herdr.**
+This orchestrator session is the human-facing COORDINATOR operating directly in
+the DeepSeek Harness. Slice coding happens here via DSH subagents (spawned with
+the `subagent` tool), not in a separate terminal multiplexer pane. The coordinator
+routes work, verifies output, runs the Supabase DB apply (browser-use/CDP), and
+routes the next slice — all within this session.
 
-### Herdr access (dev agent = a pane in the local Herdr server)
-- `herdr agent list` — enumerate agents. Note each `pane_id` (e.g. `w3:p2`) and
-  `agent_status` (working/idle/blocked/done). The `pane_id` is the target for
-  the commands below — NOT the `agent_session.value` session id. Pane ids can
-  change, so re-run `list` fresh each time.
-- `herdr agent read <pane_id> --lines N` — read the dev agent's terminal output
-  (its reports land here).
-- `herdr agent wait <pane_id> [--until idle|done|blocked] [--timeout MS]` —
-  block until it reaches a state (no `--until` = idle/done/blocked).
-- `herdr agent prompt <pane_id> "<text>" [--wait --until idle]` — hand it a task
-  or follow-up. Rejected if the agent is already blocked.
-- `herdr agent get <pane_id>` / `herdr agent explain` — inspect / debug.
+### Subagent access (dev work = DSH subagents)
+- `subagent` — spawn a focused child agent for ONE bounded task (a slice, a
+  review, an analysis). The child returns a structured report; inspect it plus
+  the files before accepting.
+- `subagent_fork` — inherit this conversation's context into a child when the
+  task builds on what was just discussed.
+- Both run in the background by default; collect results via the runtime notice
+  or `job_output`. Steer a running child with `send_message`; stop it with
+  `interrupt_agent`.
+- Give each subagent ONE bounded outcome: working dir, context (point at
+  plan.md / task-state.md — never paste chat), the deliverable, how it's checked,
+  what it may change, what it must NOT touch.
 
 ### The coordinator loop (per slice)
-1. Give the dev agent ONE bounded outcome: working dir, context (point at
-   plan.md / task-state.md — never paste chat), the deliverable, how it's
-   checked, what it may change, what it must NOT touch.
-2. `herdr agent wait` for it to finish, then `herdr agent read` its report.
-3. Do NOT accept a completion message alone: re-run the real checks
-   (`npm run build && npm run test`) and inspect the diff / artifacts.
-4. Once code is green, THIS session applies the new Supabase migrations via
+1. Spawn a builder subagent with ONE bounded outcome: working dir, context
+   (point at plan.md / task-state.md — never paste chat), the deliverable, how
+   it's checked, what it may change, what it must NOT touch.
+2. Collect its report when the runtime settles it. Do NOT accept a completion
+   message alone: re-run the real checks (`npm run build && npm run test`) and
+   inspect the diff / artifacts.
+3. Once code is green, THIS session applies the new Supabase migrations via
    browser-use/CDP (task-state.md tooling note + `scripts/cdp-migration-tooling.sh`)
    and runs the live check.
-5. After the ship + live check, run the Jev fresh-eyes QA lane
+4. After the ship + live check, run the Jev fresh-eyes QA lane
    (`bash scripts/qa-jev.sh`; tooling note in task-state.md) and record its
    verdict in task-state.md — a non-zero verdict is surfaced, never decided.
-6. Route the next slice to the dev agent with `herdr agent prompt`.
-7. Bring the human in for judgment calls, BLOCKED states, or anything touching
+5. Route the next slice to a fresh subagent.
+6. Bring the human in for judgment calls, BLOCKED states, or anything touching
    production. Otherwise work back and forth autonomously.
 
 ### Coordinator guardrails
@@ -111,11 +110,12 @@ the next work. **Never ask the human to relay messages between the two agents
 - No publish, deploy, production, or sending sensitive data externally
   without explicit human authorization. End-of-slice git pushes to
   origin/master are automatic — the Auto-push rule below.
-- One writer (the dev agent) in this repo — no concurrent-writer worktrees
-  needed. Release resources you created (e.g. the CDP Chrome) when done;
-  preserve the human's existing work and undelivered artifacts.
+- One writer per slice (the active builder subagent) in this repo — no
+  concurrent-writer worktrees needed. Release resources you created (e.g. the
+  CDP Chrome) when done; preserve the human's existing work and undelivered
+  artifacts.
 - Finish with: what completed, verification evidence, anything unresolved, and
-  any panes/worktrees still retained.
+  any subagents/worktrees still retained.
 
 ### Auto-push (founder decision, 2026-09-17)
 - End-of-slice pushes to origin/master do not need per-push human
@@ -164,7 +164,7 @@ python3 scripts/playtest_check.py --base <served-dist-url> --port 9444 \
   back in his own words before ticketing.
 - Emily (@emily) — eng manager; converts user feedback into tickets ONLY
   after a reproduction exists (playtest evidence or unit repro).
-- Einstein (@builder-dev) — implementation via herdr panes; never edits
+- Einstein (@builder-dev) — implementation via DSH subagents; never edits
   product code outside a ticket.
 - Pixel (@builder-design) — design review on UI tickets before build.
 - Compass — runs the always-disagree check on any plan before it dispatches.

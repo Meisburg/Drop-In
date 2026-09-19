@@ -113,6 +113,9 @@ test('the host’s real posts: Upcoming + Past on /u/:handle and /profile, with 
 
   // --- /u/:handle — the real lists. ---
   await page.goto(`/u/${encodeURIComponent(marker.displayName)}`)
+  // V13 ticket 01: the identity block (@handle + "Here since" + "Hosted N")
+  // MOVED to the bottom of the page — it no longer heads the page, but the
+  // @handle heading still renders (now in the bottom identity card).
   await expect(page.getByRole('heading', { name: `@${marker.displayName}` })).toBeVisible()
 
   // (1) The tomorrow post is in the Upcoming section, rendered as a card (the
@@ -140,7 +143,9 @@ test('the host’s real posts: Upcoming + Past on /u/:handle and /profile, with 
   // --- /profile — the viewer's own posts, same split. ---
   await page.goto('/profile')
   await settleOnRoute(page, '/profile')
-  await expect(page.getByRole('heading', { name: 'Your posts' })).toBeVisible()
+  // V13 ticket 01: the "Your posts" heading was renamed to "Hosted drop-ins"
+  // (to match the /u/:handle heading).
+  await expect(page.getByRole('heading', { name: 'Hosted drop-ins' })).toBeVisible()
 
   await expect(section(page, 'Upcoming').getByText(upcomingTitle, { exact: true })).toBeVisible()
   await expect(section(page, 'Past').getByText(pastTitle, { exact: true })).toBeVisible()

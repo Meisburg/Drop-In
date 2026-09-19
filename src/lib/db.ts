@@ -31,6 +31,7 @@ import {
   familyPhotoPath,
   kidPhotoMintPaths,
   kidPhotoPath,
+  kidPhotoStoredRef,
 } from './photoStorage'
 import {
   ageRangeFields,
@@ -2500,7 +2501,7 @@ export async function prepareAvatarFile(
  * IT SERVES PARENT AVATARS ONLY NOW. V9 ticket 11 ends kid photos (`<uid>/kids/
  * <kidId>`, the class that made this bucket's public read an exposure) and adds
  * `uploadPrivatePhotoObject` for the private bucket; the family photo goes
- * through THAT one, not this one, and `uploadKidPhoto` no longer exists. What
+ * through THAT one, not this one; `uploadKidPhoto` (re-added by V13 ticket 01 for the /profile per-kid photo control) goes through it as well. What
  * stays here is the public posture the ticket deliberately preserved (T5): every
  * card, the detail page and both profile pages render an avatar straight from
  * this URL, and putting those behind signed URLs was the option the human did
@@ -2790,13 +2791,15 @@ export async function updateInterests(userId: string, interests: string): Promis
  * 42703 the load pre-apply and break the /new picker's designed empty
  * state).
  *
- * V9 ticket 11: `avatar_url` still arrives on these rows and NOTHING RENDERS
- * IT — no kid photo appears anywhere in the app any more, so a caller that
- * starts reading it for display is re-opening a closed decision (and, after
- * migration 0038, the value is a private-bucket object PATH, not a URL, so an
- * `<img src>` fed from it would simply break). The kids SELECT policy is gate
- * 0040's (`kids_select_own_host_pinger_mod`); a read failure throws, and the
- * caller renders a designed state.
+ * V13 ticket 01 (reversing V9 ticket 11's "nothing renders it"): the owner's
+ * /profile renders each kid's photo, but ONLY through the signed-URL mint
+ * (`useKidPhotoUrls` / `signedKidPhotoUrls`, built from `kidPhotoMintPaths`) —
+ * a caller that feeds this column to an `<img src>` is still re-opening the
+ * closed decision (after migration 0038 the value is a private-bucket object
+ * PATH, not a URL, so an `<img src>` fed from it would simply break).
+ * `uploadKidPhoto` writes the path; the render site never reads it. The kids
+ * SELECT policy is gate 0040's (`kids_select_own_host_pinger_mod`); a read
+ * failure throws, and the caller renders a designed state.
  */
 export async function listKids(profileId: string): Promise<Kid[]> {
   const { data, error } = await supabase
@@ -2858,13 +2861,15 @@ export async function removeKid(profileId: string, kidId: string): Promise<void>
  * starter (<= LIKES_MAX_LENGTH after trim — the UI pin; no DB CHECK, the 0021
  * address lesson).
  *
- * `avatar_url` IS KEPT BUT HAS NO CALLER (V9 ticket 11). The kid-photo upload
- * that used to write it is gone and nothing renders it, so no app path sets it;
- * it stays a writable field because the column stays (the human's
- * "delete nothing" intent) and because the reversal this decision allows needs
- * a place to write — the column is documented on `photoStorage.kidPhotoStoredRef`
- * (after migration 0038 the value is an OBJECT PATH like
- * `kid-photos/<uid>/kids/<kidId>`, never a URL).
+ * `avatar_url` HAS A CALLER AGAIN (V13 ticket 01, reversing V9 ticket 11's
+ * "no caller"). `uploadKidPhoto` — the /profile per-kid photo control — writes
+ * the OBJECT PATH, and the owner's /profile renders the kid's photo through
+ * the signed-URL mint (`useKidPhotoUrls` / `signedKidPhotoUrls`), never by
+ * reading this column directly. It stays a writable field because the column
+ * stays (the human's "delete nothing" intent) and because the reversal this
+ * decision allows needs a place to write — the column is documented on
+ * `photoStorage.kidPhotoStoredRef` (after migration 0038 the value is an OBJECT
+ * PATH like `kid-photos/<uid>/kids/<kidId>`, never a URL).
  *
  * V8 ticket 10 adds the in-place row edit: first_name + age (the row used to
  * be Remove + re-add to change a name, which threw away the photo, the likes
@@ -2888,8 +2893,9 @@ export interface KidPatch {
 /**
  * Update one kid row (V3 slice 6, ticket 09, migration 0022), against an
  * injected client (the house *WithClient pattern — mockable): the owner's
- * kid editor's row save (name, age, likes — `avatar_url` has no caller any
- * more, see KidPatch). The 0011 kids_update_own policy (owner-only) is the DB
+ * kid editor's row save (name, age, likes, and — V13 ticket 01 — the photo's
+ * object path via `uploadKidPhoto`, see KidPatch). The 0011
+ * kids_update_own policy (owner-only) is the DB
  * wall — a non-owner write is a silent RLS no-op (the 0014 lesson); the
  * owner is the only caller. The likes value is validated pure first (the
  * updateBio defense-in-depth pattern); an empty/null likes is a clear (the
@@ -2935,6 +2941,48 @@ export async function updateKidWithClient(
 /** The default-client wrapper (the profile kid editor's row save). */
 export async function updateKid(kidId: string, patch: KidPatch): Promise<void> {
   return updateKidWithClient(supabase, kidId, patch)
+}
+
+/**
+ * Upload the signed-in user's kid photo for one kid row (V13 ticket 01): the
+ * per-kid photo control the /profile kid editor re-owns after V9 ticket 11
+ * removed it. Encode the chosen crop of the decoded `source` (the SAME
+ * square-JPEG encoder the avatar + family photo use — one pipeline), upload to
+ * `PHOTO_BUCKET` at `<uid>/kids/<kidId>` (the pure `kidPhotoPath`), then point
+ * `kids.avatar_url` at the BUCKET-QUALIFIED object path (`kidPhotoStoredRef` —
+ * 0038's end state, the same shape the migration script's rewrite lands).
+ * Returns that path.
+ *
+ * A PATH, not a URL — the `uploadFamilyPhoto` discipline (T6): a signed URL
+ * expires, so persisting one would hand the parent a broken image on a timer.
+ * The render site mints from the canonical path (`signedKidPhotoUrls`, via the
+ * `useKidPhotoUrls` hook) and never reads `kids.avatar_url` for display.
+ *
+ * `source` + `rect` rather than a File: the file was already validated and
+ * decoded by the crop step (the default avatar gate runs there, kid photos
+ * never took the family-photo gate) and re-decoding here would cost a second
+ * ~48MB decode of the same 12MP photo.
+ *
+ * The kid writer (`updateKidWithClient`) rather than a profiles-style update:
+ * the kid row is the source of truth for its own photo, and the owner-only
+ * 0011 kids_update_own policy is the DB wall (a non-owner write is a silent
+ * RLS no-op). The upload is scoped the same way — the path's first folder is
+ * the caller's own uid (the 0011/0038 write policy).
+ */
+export async function uploadKidPhoto(
+  profileId: string,
+  kidId: string,
+  source: CanvasImageSource,
+  rect: CropRect,
+): Promise<string> {
+  const objectPath = kidPhotoPath(profileId, kidId)
+  await uploadPrivatePhotoObject(supabase, objectPath, source, rect)
+  // The object lands at the in-bucket path; the column holds the BUCKET-
+  // QUALIFIED form (kidPhotoStoredRef) so every post-0038 row — the migration
+  // script's rewrites and the app's new uploads — carries the same shape.
+  const storedRef = kidPhotoStoredRef(profileId, kidId)
+  await updateKidWithClient(supabase, kidId, { avatar_url: storedRef })
+  return storedRef
 }
 
 // ---------------------------------------------------------------------------

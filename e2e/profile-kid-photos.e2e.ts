@@ -235,8 +235,11 @@ test('the owner’s /profile shows a kid’s photo as a signed URL — and /u/<h
   await page.goto('/profile')
   await settleOnRoute(page, '/profile')
 
-  const row = page.getByTestId('kid-row').filter({ hasText: kidName })
-  await expect(row).toContainText(kidName)
+  // V13 ticket 01: /profile is now the EDITOR (name lives in <input kid-name>,
+  // not plain text), so hasText won't match the row. This test creates exactly
+  // one kid, so .first() identifies it.
+  const row = page.getByTestId('kid-row').first()
+  await expect(row).toBeVisible()
   const img = row.getByTestId('kid-photo')
   await expect(img, 'the owner’s /profile kid row must show its photo').toBeVisible()
   const src = (await img.getAttribute('src')) ?? ''
@@ -289,8 +292,11 @@ test('a kid with no avatar_url renders name + age on /profile even when its obje
   await page.goto('/profile')
   await settleOnRoute(page, '/profile')
 
-  const row = page.getByTestId('kid-row').filter({ hasText: kidName })
-  await expect(row).toContainText(kidName)
+  // V13 ticket 01: /profile is now the EDITOR (name lives in <input kid-name>,
+  // not plain text), so hasText won't match the row. This test creates exactly
+  // one kid, so .first() identifies it.
+  const row = page.getByTestId('kid-row').first()
+  await expect(row).toBeVisible()
   await expect(
     row.getByTestId('kid-photo'),
     'a kid without an avatar_url must render no photo, object or no object',

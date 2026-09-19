@@ -23,12 +23,12 @@
  *      assertion is not passing because the data is missing: it is passing
  *      because nothing reads it. No `<img>`, no photo control, and the sentence
  *      that tells a parent where the control went.
- *   4. THE FAMILY PHOTO round-trips through the real crop dialog onto /settings
+ *   4. THE FAMILY PHOTO round-trips through the real crop dialog onto /profile
  *      AND /u/:handle, as a SIGNED URL (never a public one), and what the
  *      DATABASE holds is an object PATH — a stored URL would expire on a timer.
  *      A second signed-in family can mint for it (that is what /u/:handle needs);
  *      anon cannot (T4: it usually depicts the children).
- *   5. "ABOUT OUR FAMILY" saves and renders, and a profile with none of the
+ *   5. "ABOUT THE PARENTS" saves and renders, and a profile with none of the
  *      optional blocks still renders cleanly (no placeholder, no empty card).
  *
  * ============================ THE PIVOTS ============================
@@ -71,9 +71,10 @@
  *   - anon cannot list or fetch anything in `kid-photos`, and the old
  *     public-URL SHAPE of a kid photo does not resolve;
  *   - the parent avatar stays public (upload, list, fetch, all with the anon key);
- *   - the kid row renders no `<img>` and no photo control, whatever its
- *     `avatar_url` holds;
- *   - "About our family" saves and renders; an empty profile renders cleanly.
+ *   - the kid row renders no `<img>` and no photo control on /u/:handle (the
+ *     visitor surface stays photo-free — V13 ticket 01 re-homed the editor to
+ *     /profile, so the photo-free pin is now the visitor page);
+ *   - "About the parents" saves and renders; an empty profile renders cleanly.
  * A failure in one of THOSE is a real assertion failure with the received value
  * quoted — never a crash, never a bare timeout.
  *
@@ -609,9 +610,10 @@ test('a signed-in stranger cannot mint a URL for another family’s kid photo �
 })
 
 // ---------------------------------------------------------------------------
-// 3. NO KID PHOTO RENDERS — and no control offers one.
+// 3. NO KID PHOTO RENDERS ON THE VISITOR SURFACE — and the owner's /profile is
+//    the one place a kid photo control lives.
 // ---------------------------------------------------------------------------
-test('a kid row renders no photo and no photo control, even with avatar_url set', async ({ page }) => {
+test('a kid row renders no photo on /u/:handle; the owner’s /profile is the one render site', async ({ page }) => {
   const e = env()
   const epoch = Math.floor(Date.now() / 1000)
   const kidName = `E2E NoPhoto ${epoch}`
@@ -623,42 +625,36 @@ test('a kid row renders no photo and no photo control, even with avatar_url set'
     `${e.url}${LEGACY_PUBLIC_MARKER}${e.markerUserId}/kids/legacy-${epoch}`,
   )
 
-  await page.goto('/settings')
-  await settleOnRoute(page, '/settings')
-
-  const row = page.getByTestId('kid-row').first()
-  await expect(row.getByTestId('kid-name')).toHaveValue(kidName)
-  // THE ASSERTION, and why it is not vacuous: the row's avatar_url IS set (a
-  // legacy public URL, fetched above), so this passes because nothing renders it,
-  // not because there is nothing to render.
-  await expect(row.locator('img, picture, [role="img"], svg')).toHaveCount(0)
-  await expect(row.locator('input[type="file"]')).toHaveCount(0)
-  await expect(row.getByText('Add photo', { exact: true })).toHaveCount(0)
-
-  // The page-level control is gone too, and the sentence that says where it went
-  // is there instead (T11: never remove it in silence).
-  await expect(page.getByText('Add photo', { exact: true })).toHaveCount(0)
-  await expect(page.getByTestId('kids-photo-notice')).toBeVisible()
-  await expect(page.getByTestId('kids-photo-notice')).toContainText('no kid photo is shown anywhere')
-
-  // The two file inputs that DO exist on this page are named ones — the parent's
-  // avatar and the family photo — which is why `input[type="file"]` is no longer
-  // a usable selector here (and why the avatar spec targets its own testid).
-  await expect(page.getByTestId('avatar-photo-input')).toHaveCount(1)
-  await expect(page.getByTestId('family-photo-input')).toHaveCount(1)
-
-  // The public face (/u/:handle) in the SELF view: the kid row is name · age and
-  // carries no image either.
+  // V13 ticket 01: the visitor surface (/u/:handle) is the photo-free pin. The
+  // kid row is name · age · likes, exactly — no <img>, no photo control. (The
+  // old spec pinned this on /settings; the editor moved to /profile, so the
+  // photo-free surface is now the visitor page.)
   await page.goto(`/u/${encodeURIComponent(e.markerHandle)}`)
   const publicRow = page.getByTestId('kid-row').first()
   await expect(publicRow).toContainText(kidName)
   await expect(publicRow.locator('img, picture, [role="img"], svg')).toHaveCount(0)
+  await expect(page.getByTestId('kid-photo'), 'no kid photo may render on /u/<handle>').toHaveCount(0)
+
+  // THE OWNER'S /PROFILE IS THE ONE RENDER SITE (V12 t04): the row carries its
+  // own "Add photo" / "Change photo" control (the crop step), and a SET
+  // avatar_url keys the signed-URL render. The row's avatar_url IS set (a
+  // legacy public URL, deliberately), so the photo here is evidence that the
+  // column gates the render — not that the data is missing. The control is a
+  // <label> wrapping a hidden file input (not a <button>), so match by text.
+  await page.goto('/profile')
+  await settleOnRoute(page, '/profile')
+  // The kid name lives in an <input data-testid="kid-name"> (the editor), not as
+  // plain text on the <li>, so hasText won't match it. This test creates exactly
+  // one kid, so .first() is safe.
+  const ownerRow = page.getByTestId('kid-row').first()
+  await expect(ownerRow).toBeVisible()
+  await expect(ownerRow.getByText('photo', { exact: false })).toBeVisible()
 })
 
 // ---------------------------------------------------------------------------
 // 4. THE FAMILY PHOTO.
 // ---------------------------------------------------------------------------
-test('the family photo uploads through the crop dialog and renders on /settings and /u/<handle>', async ({
+test('the family photo uploads through the crop dialog and renders on /profile and /u/<handle>', async ({
   page,
   browser,
 }) => {
@@ -667,8 +663,11 @@ test('the family photo uploads through the crop dialog and renders on /settings 
   const png = makePng(400, 300, 232, 85, 47)
   const storedPath = familyPhotoPath(e.markerUserId, 'jpg')
 
-  await page.goto('/settings')
-  await settleOnRoute(page, '/settings')
+  // V13 ticket 01: the family-photo control MOVED from /settings to /profile
+  // (the now-editable "what other families see" view). The crop step + the
+  // signed-URL render live here now.
+  await page.goto('/profile')
+  await settleOnRoute(page, '/profile')
 
   await page.getByTestId('family-photo-input').setInputFiles({
     name: 'family.png',
@@ -735,22 +734,22 @@ test('the family photo uploads through the crop dialog and renders on /settings 
 })
 
 // ---------------------------------------------------------------------------
-// 5. "ABOUT OUR FAMILY", and an empty profile.
+// 5. "ABOUT THE PARENTS", and an empty profile.
 // ---------------------------------------------------------------------------
-test('“About our family” saves and renders; a profile with none of the blocks still renders cleanly', async ({
+test('“About the parents” saves and renders; a profile with none of the blocks still renders cleanly', async ({
   page,
 }) => {
   const e = env()
   const epoch = Math.floor(Date.now() / 1000)
   const about = `E2E about ${epoch} — two grown-ups, one small person, a lot of sand.`
 
-  await page.goto('/settings')
-  await settleOnRoute(page, '/settings')
-  // The label is the reframed one (ticket 08's ask), and the field is the SAME
-  // bio column — no new column, no new cap.
-  await expect(page.getByText('About our family', { exact: true })).toBeVisible()
-  // V12 t01: autosave — there is no Save button on the page any more, so the
-  // typed bio lands on its own once the debounce settles and the indicator says so.
+  // V13 ticket 01: the bio editor MOVED from /settings to /profile (the
+  // "About the parents" card). The autosave machine is the same V12 t01 engine
+  // — no Save button anywhere on /profile either, so the typed bio lands on its
+  // own once the debounce settles and the indicator says so.
+  await page.goto('/profile')
+  await settleOnRoute(page, '/profile')
+  await expect(page.getByRole('heading', { name: 'About the parents', exact: true })).toBeVisible()
   await page.getByPlaceholder('Who’s in your family, and what are you into? (optional)').fill(about)
   await expect(page.getByTestId('profile-save-note')).toHaveText('Saved.')
   await page.goto(`/u/${encodeURIComponent(e.markerHandle)}`)
@@ -771,19 +770,12 @@ test('“About our family” saves and renders; a profile with none of the block
   await settleOnRoute(page, '/profile')
   // `exact` matters here: the page's own h1 is "Your family" and the family-photo
   // card's heading is "A photo of your family", so a non-exact name match finds
-  // two headings. The read-only /profile shows the empty kids line and carries
-  // NO photo control (that lives on /settings).
+  // two headings. The editable /profile shows the empty kids line and carries
+  // the photo control (V13 ticket 01 re-homed it here from /settings).
   await expect(page.getByRole('heading', { name: 'Your family', exact: true })).toBeVisible()
   await expect(page.getByTestId('family-photo')).toHaveCount(0)
   await expect(page.getByText('No kids yet.')).toBeVisible()
-  await expect(page.getByText('Add a family photo', { exact: true })).toHaveCount(0)
-
-  // The editing surface (/settings) keeps its controls: the photo button and the
-  // kids editor, both in their empty states.
-  await page.goto('/settings')
-  await settleOnRoute(page, '/settings')
   await expect(page.getByText('Add a family photo', { exact: true })).toBeVisible()
-  await expect(page.getByText('No kids yet — add one below.')).toBeVisible()
 
   await page.goto(`/u/${encodeURIComponent(e.markerHandle)}`)
   await expect(page.getByRole('heading', { name: `@${e.markerHandle}` })).toBeVisible()
@@ -791,7 +783,7 @@ test('“About our family” saves and renders; a profile with none of the block
   await expect(page.getByText(about)).toHaveCount(0)
   // The kids card is absent entirely (not an empty "No kids listed." line) —
   // the ticket's "looks finished with none of them".
-  await expect(page.getByRole('heading', { name: 'Kids' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'About the kids' })).toHaveCount(0)
 })
 
 test.afterEach(async () => {

@@ -364,35 +364,21 @@ export function UserPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex items-center gap-3">
-          <HostAvatar host={profile} expandable />
-          <div className="min-w-0">
-            <h1 className="text-xl font-semibold text-slate-900">@{profile.display_name}</h1>
-            <p className="mt-1 text-sm text-slate-600">Here since {joined}.</p>
-            {/* V3 slice 9 (ticket 04): the "Hosted N drop-ins" line — the
-                shared header render (self view AND /u/:handle). Hidden
-                when 0 or unsettled; singular "Hosted 1 drop-in" when
-                N = 1 (the e2e AC pin). */}
-            {hostedCount !== null && hostedCount > 0 ? (
-              <p className="text-sm text-slate-600">
-                Hosted {hostedCount} {hostedCount === 1 ? 'drop-in' : 'drop-ins'}
-              </p>
-            ) : null}
-          </div>
-        </div>
+        {/* V13 ticket 01: the identity row (avatar + @handle + "Here since" +
+            "Hosted N drop-ins") MOVED to the bottom of the page — it is no longer
+            the page's header. This card now carries the family photo + the
+            "About the parents" block (the bio + interests, under a real heading). */}
         {/* V9 ticket 11 (folded ticket 08): the optional blocks render IN THE
-            PINNED ORDER — family photo → "About our family" → the kids list.
-            This header card carries the first two (the identity row above is the
-            page's header, not one of the three blocks), the kids card below is
-            the third, and every one of them is optional: a family with none of
-            them gets this card with a handle, a date and a hosted count, and no
+            PINNED ORDER — family photo → "About the parents" → the kids list.
+            Every one of them is optional: a family with none of them gets this
+            card with nothing but the identity block at the bottom, and no
             placeholder anywhere.
             "A PHOTO OF YOUR FAMILY" IS NOT PUBLIC — it is in the private bucket
             and only a signed-in family can mint for it (T4: the photo usually
             depicts the children). The signed URL arrives from the hook above;
             without one there is simply no image. */}
         {familyPhotoUrl !== null ? (
-          <div className="mt-3">
+          <div className="mt-3 first:mt-0">
             <PhotoButton
               src={familyPhotoUrl}
               alt={`@${profile.display_name}’s family photo`}
@@ -408,7 +394,10 @@ export function UserPage() {
           </div>
         ) : null}
         {showsAbout ? (
-          <p className="mt-3 whitespace-pre-line text-sm text-slate-700">{profile.bio}</p>
+          <div className="mt-3 first:mt-0">
+            <h2 className="text-base font-semibold text-slate-900">About the parents</h2>
+            <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{profile.bio}</p>
+          </div>
         ) : null}
         {/* V3 slice 6 (ticket 09, migration 0022): the family's interests line —
             hidden when empty/absent, and pre-0022-apply the column is undefined
@@ -477,7 +466,7 @@ export function UserPage() {
           parent adds kids, and that editor is always there. */}
       {showsKids ? (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="text-base font-semibold text-slate-900">Kids</h2>
+          <h2 className="text-base font-semibold text-slate-900">About the kids</h2>
           <ul className="mt-2 flex flex-col gap-2">
             {profile.kids.map((kid) => {
               const likes = kid.likes?.trim() ?? ''
@@ -582,7 +571,7 @@ export function UserPage() {
           upcoming is the complement of isEnded, so nothing-upcoming means every
           post has ended). */}
       <div className="flex flex-col gap-2">
-        <h2 className="text-base font-semibold text-slate-900">Posts</h2>
+        <h2 className="text-base font-semibold text-slate-900">Hosted drop-ins</h2>
         {postsError !== null ? (
           <p className="text-sm text-red-600">{postsError}</p>
         ) : posts === null ? (
@@ -641,6 +630,26 @@ export function UserPage() {
           onClose={() => setReporting(false)}
         />
       ) : null}
+
+      {/* V13 ticket 01: THE IDENTITY BLOCK — moved to the BOTTOM of the page
+          (it used to head the page). The avatar + @handle + "Here since" +
+          "Hosted N drop-ins" line now close the page instead of opening it. */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center gap-3">
+          <HostAvatar host={profile} expandable />
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold text-slate-900">@{profile.display_name}</h2>
+            <p className="mt-1 text-sm text-slate-600">Here since {joined}.</p>
+            {/* V3 slice 9 (ticket 04): the "Hosted N drop-ins" line — hidden
+                when 0 or unsettled; singular "Hosted 1 drop-in" when N = 1. */}
+            {hostedCount !== null && hostedCount > 0 ? (
+              <p className="text-sm text-slate-600">
+                Hosted {hostedCount} {hostedCount === 1 ? 'drop-in' : 'drop-ins'}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

@@ -1,53 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChangeEvent } from 'react'
 import { Link } from 'react-router'
-import { ConfirmDialog } from '../components/ConfirmDialog'
 import { NAV_ICONS } from '../components/icons'
 import { NotificationsSection } from '../components/NotificationsSection'
 import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
-import { useCropStep } from '../components/useCropStep'
-import { useFamilyPhotoUrl } from '../components/useFamilyPhotoUrl'
 import {
-  addKid,
-  BIO_MAX_LENGTH,
   HandleTakenError,
   INTERESTS_MAX_LENGTH,
-  LIKES_MAX_LENGTH,
   listKids,
   listMemberships,
   listMyFollowing,
-  MAX_KIDS_PER_PROFILE,
   missingProfileItems,
-  removeKid,
   unfollowById,
   updateBio,
   updateDisplayName,
   updateHomeZipRadius,
   updateInterests,
-  updateKid,
-  uploadAvatar,
-  uploadFamilyPhoto,
   validateBio,
-  validateFamilyPhotoFile,
-  validateKid,
-  validateKidLikes,
   validateInterests,
   type MyFollowing,
 } from '../lib/db'
-import { profileBlurbOrder } from '../lib/photoStorage'
 import {
   DEFAULT_RADIUS_MILES,
   RADIUS_MILES_OPTIONS,
 } from '../lib/feed'
 import {
   planProfileSave,
-  seedKidDrafts,
   seedProfileFormValues,
-  toKidFormValues,
-  toKidRowValues,
-  type KidFormValues,
-  type KidRowValues,
   type ProfileFormValues,
   type ProfileSection,
 } from '../lib/profileSave'
@@ -65,30 +44,21 @@ import { HostAvatar } from '../components/DropInCard'
 const AUTOSAVE_DEBOUNCE_MS = 400
 
 /**
- * /settings — the signed-in family's EDITING page.
+ * /settings — the signed-in family's EDITING page, the narrow half of the
+ * profile/settings split (V13 ticket 01).
  *
- * V11 ticket 06 split the old monolithic /profile in two. /settings is the
- * place a parent changes anything about their family; the read-only /profile
- * (ProfilePage) is the place a parent (or a follower) looks at them — avatar,
- * display name, bio, kids by name + age, and the owner's own posts. /settings
- * owns every control, /profile owns none: the one "Edit profile" button on
- * /profile routes here.
- *
- * What /settings owns (V11 ticket 06):
- * - profile: display name + the persistent public handle (inline "handle taken"
- *   on a unique violation — 0004's constraint, surfaced as HandleTakenError),
- *   "About our family" (the <= 500-char bio), the avatar (cropped, resized to
- *   512px, > 5 MB rejected before upload, stored at avatars/<uid>/avatar), and
- *   the optional family photo (same crop/validate/encode pipeline, stored in
- *   the PRIVATE kid-photos bucket, read back through a batched, best-effort
- *   signed URL that is never persisted).
+ * V11 ticket 06 split the old monolithic /profile in two; V13 ticket 01 split
+ * the two halves again. /settings keeps the family's IDENTITY + PREFERENCE
+ * controls:
+ * - profile: the display name — the persistent public handle (inline "handle
+ *   taken" on a unique violation: 0004's constraint, surfaced as
+ *   HandleTakenError). The avatar card, the optional family photo, the
+ *   "About our family" bio and the kids section all MOVED to the now-editable
+ *   /profile (ProfilePage) in V13 ticket 01; /settings owns none of them any
+ *   more.
  * - location: home zip + radius (the comfort/comfort-neighborhood controls).
- * - kids: structured rows (first name + age ONLY — the privacy pin), max 5
- *   app-enforced, editable in place (name, age, and the "likes" line are fields
- *   on the row itself, autosaved as they are edited). Remove asks first and names
- *   what it costs; the 5-kid cap says so on screen instead of silently
- *   disabling the inputs. A kid row has NO photo control — a sentence says so
- *   where it used to be.
+ * - interests: the app's ONLY interests editor — /profile displays the line,
+ *   /settings edits it, so it stays here even after the split.
  * - notifications: the NotificationsSection (push opt-in / status / dismiss).
  * - following: the families and places this parent has bookmarked, with an
  *   Unfollow button on every row (the owner-only 0033 SELECT policy makes this
@@ -97,20 +67,28 @@ const AUTOSAVE_DEBOUNCE_MS = 400
  *   labels (memberships stopped filtering anything when discovery moved to home
  *   zip + radius; there is no membership write path here).
  *
+ * The persistent nudge banner (the still-missing items — photo + bio + kids,
+ * decided by the pure missingProfileItems) STAYS on this page as an aid even
+ * though the items it names now live on /profile. Its kids count is a
+ * best-effort count-only read (listKids): the rows themselves are the editor's
+ * concern, not this page's, so a failed read is left silent and the banner
+ * simply cannot count (an unknown count reads as "maybe missing").
+ *
  * V12 t01: the form AUTOSAVES — there is no save control anywhere on the
  * page (the one "save profile" button V8 ticket 10 shipped is gone). Every
- * keystroke — display name, home zip, radius, bio, interests, and every kid
- * row — re-arms the AUTOSAVE_DEBOUNCE_MS debounce; when it settles, the pure
- * planProfileSave (lib/profileSave.ts, unit-tested) decides what actually
- * changed and writes ONLY those sections + kid rows, each write awaited on
- * its own — a failed bio write never discards the name a parent also fixed,
- * and the section that failed keeps its pending text + its inline error on
- * screen (the failed section is not retried on its own; a re-edit re-
- * triggers the pass). The line that used to hold the button is now the
- * autosave indicator: "Changes save as you go." at rest, "Saving…" while a
- * pass is in flight, "Saved." when it lands, and the failure sentence when a
- * section kept its text — with the section that failed carrying its own
- * inline message.
+ * keystroke — display name, home zip, radius, and interests — re-arms the
+ * AUTOSAVE_DEBOUNCE_MS debounce; when it settles, the pure planProfileSave
+ * (lib/profileSave.ts, unit-tested) decides what actually changed and writes
+ * ONLY those sections, each write awaited on its own — a failed name write
+ * never discards the location a parent also fixed, and the section that
+ * failed keeps its pending text + its inline error on screen (the failed
+ * section is not retried on its own; a re-edit re-triggers the pass). The
+ * bio + kid rows no longer flow through this page's machine at all: their
+ * autosave lives on /profile (the same seam, re-homed). The line that used to
+ * hold the button is now the autosave indicator: "Changes save as you go." at
+ * rest, "Saving…" while a pass is in flight, "Saved." when it lands, and the
+ * failure sentence when a section kept its text — with the section that
+ * failed carrying its own inline message.
  *
  * TYPING IS NEVER LOST AND NOTHING ASKS ABOUT IT: the debounced machine is
  * fire-and-forget, so the unsaved-changes guard (the in-app link while
@@ -118,17 +96,6 @@ const AUTOSAVE_DEBOUNCE_MS = 400
  * leaving the page mid-save lets the in-flight write land on its own, and no
  * dialog stands between a parent and an in-app link. Saves that land refresh
  * the shared session state so the app-shell header picks up the changes.
- *
- * A persistent nudge banner shows the still-missing items (photo + bio + kids)
- * until all three are present (the missing-items decision is the pure
- * missingProfileItems); it is kept here, on the editing page, as an aid.
- *
- * The "Your posts" list (the owner's own drop-ins, newest first, each with a
- * Duplicate action) and its Upcoming/Past split (V8 ticket 04; the pure
- * feed.partitionPostsByTime) moved to the read-only /profile in V11 ticket 06,
- * so this page no longer imports the own-posts query. The V9 ticket 04 archive
- * rules (past rows are links, muted with the archive's opacity-60, no
- * "I'm going" toggle) now live on /profile.
  */
 export function SettingsPage() {
   const { session, loading, profile, refresh } = useSessionContext()
@@ -157,37 +124,12 @@ export function SettingsPage() {
   const [autosaveTick, setAutosaveTick] = useState(0)
   const [writeErrors, setWriteErrors] = useState<Partial<Record<ProfileSection, string>>>({})
 
-  const [photoBusy, setPhotoBusy] = useState(false)
-  const [photoError, setPhotoError] = useState<string | null>(null)
-  const [photoSaved, setPhotoSaved] = useState(false)
-
-  // V9 ticket 11 (folded ticket 08): the family photo — the OPTIONAL photo the
-  // parent adds instead of photos of each kid. Its own busy/error/saved triple,
-  // exactly like the avatar's above, because it is a second independent upload
-  // on the same page and one's failure must not read as the other's.
-  const [familyPhotoBusy, setFamilyPhotoBusy] = useState(false)
-  const [familyPhotoError, setFamilyPhotoError] = useState<string | null>(null)
-  const [familyPhotoSaved, setFamilyPhotoSaved] = useState(false)
-
+  // V13 ticket 01: the kids load is COUNT-ONLY (the nudge banner's
+  // missingProfileItems call) — the editor's rows, drafts, busy flags and
+  // confirm dialog all live on /profile now. `kids` holds the rows the count
+  // read returned; null while that read is in flight or failed (the banner
+  // treats an unknown count as "maybe missing" — best-effort, on purpose).
   const [kids, setKids] = useState<Kid[] | null>(null)
-  const [kidsError, setKidsError] = useState<string | null>(null)
-  const [kidsBusyId, setKidsBusyId] = useState<string | null>(null)
-  const [newKidName, setNewKidName] = useState('')
-  const [newKidAge, setNewKidAge] = useState('')
-  /** The kid row a Remove is armed against (the confirm dialog names it). */
-  const [removingKidId, setRemovingKidId] = useState<string | null>(null)
-
-  // V3 slice 6 (ticket 09, migration 0022): the per-kid "likes" editor, now
-  // autosaved as it is edited (V12 t01) together with the row's name + age.
-  // kidDrafts seeds from the fresh rows (seedKidDrafts — an in-flight local
-  // value wins over a re-list, the seed-once discipline, per kid).
-  //
-  // V9 ticket 11 removed the per-row kidPhoto* state that used to live here
-  // (busy/saved/error + the row the crop dialog was framing for): the row's
-  // photo control is gone, so there is no per-row upload to track and no
-  // re-list to run after one. The rows arrive once per load and once per add.
-  const [kidDrafts, setKidDrafts] = useState<Record<string, KidFormValues>>({})
-  const [kidWriteErrors, setKidWriteErrors] = useState<Record<string, string>>({})
 
   // V3 slice 6 (ticket 09): the profile interests field (<= INTERESTS_MAX_LENGTH,
   // trim; the db layer validates too — the updateBio defense-in-depth
@@ -205,58 +147,6 @@ export function SettingsPage() {
   const [following, setFollowing] = useState<MyFollowing | null>(null)
   const [followingError, setFollowingError] = useState<string | null>(null)
   const [unfollowBusyId, setUnfollowBusyId] = useState<string | null>(null)
-
-  /**
-   * THE TWO CROP STEPS (photo-crop ticket 03) — the parent's own avatar, and
-   * (V9 ticket 11) the family photo. Two instances rather than one, because
-   * their confirm handlers do different things (the avatar refreshes the session
-   * so the header and the nudge banner update; the family photo refreshes it so
-   * the card's minted signed URL follows the new path); only one dialog can be
-   * open at a time anyway.
-   *
-   * Between tickets 09 and 11 there was a THIRD step here, for a kid's row
-   * photo. It is gone with the control it served: no kid photo is uploaded,
-   * stored or rendered by the app any more.
-   *
-   * Declared with the other hooks and above every early return — the V6 regression
-   * that blanked the detail page was exactly this mistake.
-   */
-  const avatarCrop = useCropStep(async (source, rect) => {
-    if (userId === null) return
-    setPhotoBusy(true)
-    setPhotoError(null)
-    setPhotoSaved(false)
-    try {
-      await uploadAvatar(userId, source, rect)
-      await refresh()
-      setPhotoSaved(true)
-    } catch (err) {
-      setPhotoError(err instanceof Error ? err.message : 'Could not upload your photo. Try again.')
-    } finally {
-      setPhotoBusy(false)
-    }
-  })
-
-  const familyPhotoCrop = useCropStep(async (source, rect) => {
-    if (userId === null) return
-    setFamilyPhotoBusy(true)
-    setFamilyPhotoError(null)
-    setFamilyPhotoSaved(false)
-    try {
-      await uploadFamilyPhoto(userId, source, rect)
-      // refresh() re-reads the profile row, so the card's stored path (and the
-      // signed URL minted from it) follows the upload. No re-list of anything
-      // else: this photo belongs to no kid row.
-      await refresh()
-      setFamilyPhotoSaved(true)
-    } catch (err) {
-      setFamilyPhotoError(
-        err instanceof Error ? err.message : 'Could not upload your family photo. Try again.',
-      )
-    } finally {
-      setFamilyPhotoBusy(false)
-    }
-  }, validateFamilyPhotoFile)
 
   // Seed the whole form ONCE the profile loads; user typing wins after (the
   // seed-once guard is what keeps a refresh() from erasing an edit; V12 t01
@@ -290,23 +180,25 @@ export function SettingsPage() {
     }
   }, [userId])
 
-  // The owner's own kids (V2 ticket 02). A failed load (0011 not applied
-  // yet) renders a designed error, never a crash — same discipline as the
-  // rest of the page.
+  // V13 ticket 01: the kids read is COUNT-ONLY — the nudge banner's
+  // missingProfileItems call needs `kids.length`, and nothing else on this
+  // page does (the kid editor's rows + drafts live on /profile now). A
+  // failed read (0011 not applied yet) is left SILENT on purpose: the
+  // banner's count is best-effort — `kids` stays null, the banner treats an
+  // unknown count as "maybe missing" — and there is no kids section on this
+  // page any more that a designed error sentence would belong to.
   useEffect(() => {
     if (userId === null) return
     let cancelled = false
     setKids(null)
-    setKidsError(null)
     listKids(userId)
       .then((rows) => {
         if (cancelled) return
         setKids(rows)
-        setKidDrafts((prev) => seedKidDrafts(rows.map(toKidRowValues), prev))
       })
-      .catch((err: unknown) => {
-        if (cancelled) return
-        setKidsError(err instanceof Error ? err.message : 'Could not load your kids.')
+      .catch(() => {
+        // Silent by design (the count-only note above): the banner simply
+        // cannot count when its read fails, and that is the whole read's job.
       })
     return () => {
       cancelled = true
@@ -365,14 +257,18 @@ export function SettingsPage() {
     }
   }
 
-  const kidRows = (kids ?? []).map(toKidRowValues)
-
   /**
    * THE AUTOSAVE'S DECISION, computed at render (the pure planProfileSave —
    * the render-time plan feeds ONLY the name field's inline "blocked" state
    * below, so the input can show a validation error before the debounced
    * write is even attempted; the write itself re-plans from the same inputs
-   * at write time, for the sections + kid rows it actually attempts).
+   * at write time, for the sections it actually attempts).
+   *
+   * V13 ticket 01: the plan now runs over ZERO kid rows + drafts (they live
+   * on /profile's own autosave machine) — `planProfileSave` takes them as
+   * required inputs, so the empty literals are the honest values here. The
+   * `kid` validator is omitted for the same reason: there is no kid row on
+   * this page to validate, and the field is optional in the validators map.
    *
    * The validators are db.ts's own, so the inline message and the reason the
    * write is skipped are one string, not two copies.
@@ -383,13 +279,12 @@ export function SettingsPage() {
       : planProfileSave({
           baseline,
           draft,
-          kidRows,
-          kidDrafts,
+          kidRows: [],
+          kidDrafts: {},
           validators: {
             name: (value) => (value.trim() === '' ? 'Your display name can’t be empty.' : null),
             bio: validateBio,
             interests: validateInterests,
-            kid: (kid) => validateKid(kid.firstName, kid.age) ?? validateKidLikes(kid.likes),
           },
         })
 
@@ -398,7 +293,7 @@ export function SettingsPage() {
    * well past the ticket's 300ms floor, so a burst of keystrokes is one
    * write), one in-flight pass, and a `pending` flag: an edit that lands
    * while a pass is running is coalesced (the pass reads the same
-   * draft/baseline/kid rows the edit just changed), and the completion bumps
+   * draft/baseline the edit just changed), and the completion bumps
    * autosaveTick so the scheduling effect below re-arms the timer for the
    * follow-up pass. The timer + the flags live in one ref object so the pass
    * can read and mutate them without re-creating the callbacks.
@@ -407,6 +302,10 @@ export function SettingsPage() {
    * STABLE identity (useCallback with no deps — the scheduling effect must
    * not re-arm just because a render happened), so it reads the current
    * values through a ref that a no-deps effect refreshes after every render.
+   *
+   * V13 ticket 01: the ref no longer carries kid rows + drafts — the kid
+   * editor's autosave machine is /profile's own, and this pass writes only the
+   * profile sections.
    */
   const autosaveMachine = useRef({
     running: false,
@@ -416,19 +315,17 @@ export function SettingsPage() {
   const autosaveInputs = useRef({
     draft: null as ProfileFormValues | null,
     baseline: null as ProfileFormValues | null,
-    kidRows: [] as KidRowValues[],
-    kidDrafts: {} as Record<string, KidFormValues>,
     userId: null as string | null,
     refresh: null as (() => Promise<void>) | null,
   })
   useEffect(() => {
-    autosaveInputs.current = { draft, baseline, kidRows, kidDrafts, userId, refresh }
+    autosaveInputs.current = { draft, baseline, userId, refresh }
   })
 
   /**
    * V12 t01: THE AUTOSAVE PASS (replaces the old one-submit handler). The
-   * plan decides what may be written: every changed + valid section and kid
-   * row. Each write is awaited on its own, so
+   * plan decides what may be written: every changed + valid section. Each
+   * write is awaited on its own, so
    *  - a failure is reported by the section that failed (its inline error
    *    line, its own message) and
    *  - a failure never costs the other sections their edits: the baseline
@@ -438,6 +335,9 @@ export function SettingsPage() {
    *
    * The blocked (invalid) sections are simply not attempted — their inline
    * error is already visible (see savePlan above).
+   *
+   * V13 ticket 01: no kid rows in the pass any more (they plan + write on
+   * /profile's machine) — and no kid write-error map to clear, with them.
    */
   const runAutosave = useCallback(async () => {
     const machine = autosaveMachine.current
@@ -448,19 +348,20 @@ export function SettingsPage() {
       return
     }
 
-    const { draft, baseline, kidRows, kidDrafts, userId, refresh } = autosaveInputs.current
+    const { draft, baseline, userId, refresh } = autosaveInputs.current
     if (draft === null || baseline === null || userId === null) return
 
     const plan = planProfileSave({
       baseline,
       draft,
-      kidRows,
-      kidDrafts,
+      // V13 ticket 01: this page owns no kid rows + drafts (see savePlan
+      // above) — the empty literals keep the pure planner's contract.
+      kidRows: [],
+      kidDrafts: {},
       validators: {
         name: (value) => (value.trim() === '' ? 'Your display name can’t be empty.' : null),
         bio: validateBio,
         interests: validateInterests,
-        kid: (kid) => validateKid(kid.firstName, kid.age) ?? validateKidLikes(kid.likes),
       },
     })
     if (plan.empty) {
@@ -477,11 +378,15 @@ export function SettingsPage() {
     machine.running = true
     setSaveStatus('saving')
     setWriteErrors({})
-    setKidWriteErrors({})
 
     const writers: Record<ProfileSection, () => Promise<void>> = {
       name: () => updateDisplayName(userId, draft.name.trim()),
       location: () => updateHomeZipRadius(userId, draft.homeZip.trim(), draft.radiusMiles),
+      // The bio writer is a TYPE requirement of the Record (every section
+      // needs a writer), not a live path: V13 ticket 01 moved the bio input
+      // to /profile, so this page's draft bio can never change from its
+      // baseline and the planner never schedules this section. It stays so
+      // the machine's contract is complete rather than patched.
       bio: () => updateBio(userId, draft.bio),
       interests: () => updateInterests(userId, draft.interests),
     }
@@ -516,40 +421,6 @@ export function SettingsPage() {
       }
     }
 
-    for (const kid of plan.kids) {
-      try {
-        await updateKid(kid.id, {
-          first_name: kid.firstName,
-          age: kid.age,
-          likes: kid.likes,
-        })
-        // The row's own baseline advances in place: the saved (trimmed) values
-        // become both the new row truth and the new draft, so nothing is left
-        // looking dirty after it actually saved.
-        setKids((prev) =>
-          prev === null
-            ? prev
-            : prev.map((row) =>
-                row.id === kid.id
-                  ? { ...row, first_name: kid.firstName, age: kid.age, likes: kid.likes }
-                  : row,
-              ),
-        )
-        setKidDrafts((prev) => ({
-          ...prev,
-          [kid.id]: {
-            firstName: kid.firstName,
-            age: String(kid.age),
-            likes: kid.likes,
-          },
-        }))
-      } catch (err) {
-        failures += 1
-        const message = err instanceof Error ? err.message : 'Could not save that kid. Try again.'
-        setKidWriteErrors((prev) => ({ ...prev, [kid.id]: message }))
-      }
-    }
-
     // Advance the baseline only where a write landed (a failed section keeps
     // its pending text, on purpose).
     if (Object.keys(savedValues).length > 0) {
@@ -572,12 +443,12 @@ export function SettingsPage() {
 
   /**
    * V12 t01: THE DEBOUNCE. Every keystroke changes one of the keyed values —
-   * the kid rows key on the `kids` STATE, not the derived `kidRows` array (a
-   * derived identity re-arms on every render and defeats the debounce) — and
-   * the timer re-arms to the end of the burst, then the pass runs. A pass
-   * that lands advances `baseline` (re-keying this effect), which re-arms a
-   * timer that fires into an empty plan (no write; the settle only turns a
-   * leftover "Saving…" into "Saved."), so the
+   * name, home zip, radius, interests (the V13 ticket 01 split removed the kid
+   * rows from this page's machine, so the effect's key set shrank to the four
+   * section fields) — and the timer re-arms to the end of the burst, then
+   * the pass runs. A pass that lands advances `baseline` (re-keying this
+   * effect), which re-arms a timer that fires into an empty plan (no write;
+   * the settle only turns a leftover "Saving…" into "Saved."), so the
    * "Saved." line persists instead of flickering back to idle.
    */
   useEffect(() => {
@@ -594,26 +465,7 @@ export function SettingsPage() {
         machine.timer = null
       }
     }
-  }, [draft, baseline, kids, kidDrafts, userId, autosaveTick, runAutosave])
-
-  /**
-   * V9 ticket 11: the family photo's READ path and the optional-block decision.
-   *
-   * Both are called HERE, above the `loading` early return, for the reason the
-   * crop steps' own comment records: a hook after an early return is the V6
-   * regression that blanked the detail page.
-   *
-   * `blurb` is the pure decision for which optional profile blocks exist; the
-   * card below uses its `familyPhoto` member to know whether to offer "Add a
-   * photo" or "Change photo", and `/u/:handle` uses the same seam for the same
-   * three blocks. The signed URL itself comes from the hook (batched,
-   * best-effort, never persisted) and is null while it is in flight, when there
-   * is no photo, or when the mint failed — in all three cases the card shows no
-   * image and no error.
-   */
-  const blurb = profileBlurbOrder(profile, kids !== null && kids.length > 0)
-  const familyPhotoUrl = useFamilyPhotoUrl(profile?.family_photo_url)
-  const hasFamilyPhoto = blurb.includes('familyPhoto')
+  }, [draft, baseline, userId, autosaveTick, runAutosave])
 
   if (loading) {
     return (
@@ -628,6 +480,9 @@ export function SettingsPage() {
   // The nudge banner (V2 ticket 02): persistent until photo + bio + kids
   // are all present (the pure missingProfileItems decides; the kids count
   // is null while the kids load is in flight / failed — best-effort).
+  // V13 ticket 01 keeps the banner HERE even though the items it names now
+  // live on /profile: this page still owns the display name + location, and
+  // the count read above is its only touch of the kid data.
   const missing = missingProfileItems(profile, kids === null ? null : kids.length)
 
   /**
@@ -641,148 +496,27 @@ export function SettingsPage() {
     }
   }
 
-  /**
-   * One kid row's edit: the draft changes (the debounced autosave picks it up)
-   * and that row's write error clears.
-   */
-  function editKidDraft(kidId: string, patch: Partial<KidFormValues>) {
-    setKidDrafts((prev) => {
-      // The draft seeds on load; a row whose seed has not landed yet falls
-      // back to the ROW, never to blanks (blanks would wipe the field on the
-      // first keystroke).
-      const row = (kids ?? []).find((kid) => kid.id === kidId)
-      const current = prev[kidId] ?? (row === undefined ? null : toKidFormValues(toKidRowValues(row)))
-      if (current === null) return prev
-      return { ...prev, [kidId]: { ...current, ...patch } }
-    })
-    setKidsError(null)
-    setKidWriteErrors((prev) => {
-      if (prev[kidId] === undefined) return prev
-      const next = { ...prev }
-      delete next[kidId]
-      return next
-    })
-  }
-
-  async function handleAddKid() {
-    // An empty age field must not coerce to 0 (Number('') is 0) — NaN trips
-    // the pure validateKid before any insert.
-    const age = newKidAge === '' ? NaN : Number(newKidAge)
-    const kidError = validateKid(newKidName, age)
-    if (userId === null || kidsBusyId !== null) return
-    if (kidError !== null) {
-      setKidsError(kidError)
-      return
-    }
-    setKidsBusyId('add')
-    setKidsError(null)
-    try {
-      await addKid(userId, newKidName, age)
-      const rows = await listKids(userId)
-      setKids(rows)
-      setKidDrafts((prev) => seedKidDrafts(rows.map(toKidRowValues), prev))
-      setNewKidName('')
-      setNewKidAge('')
-    } catch (err) {
-      setKidsError(err instanceof Error ? err.message : 'Could not add your kid. Try again.')
-    } finally {
-      setKidsBusyId(null)
-    }
-  }
-
-  /**
-   * Remove one kid row — after the confirmation (V8 ticket 10): the dialog
-   * names the kid and what the delete actually costs (both cascade: the 0022
-   * playdate_kids and the 0026 ping_kids FKs are ON DELETE CASCADE, so the kid
-   * also drops off every drop-in they were listed as coming to). The photo
-   * OBJECT stays in the bucket, so the copy does not claim it is deleted.
-   */
-  async function handleRemoveKid(kidId: string) {
-    if (userId === null || kidsBusyId !== null) return
-    setRemovingKidId(null)
-    setKidsBusyId(kidId)
-    setKidsError(null)
-    try {
-      await removeKid(userId, kidId)
-      const rows = await listKids(userId)
-      setKids(rows)
-      setKidDrafts((prev) => seedKidDrafts(rows.map(toKidRowValues), prev))
-    } catch (err) {
-      setKidsError(err instanceof Error ? err.message : 'Could not remove that kid. Try again.')
-    } finally {
-      setKidsBusyId(null)
-    }
-  }
-
-  // V2 ticket 02: the avatar upload — the ≤5MB gate and the decode run inside the
-  // crop step (photo-crop ticket 03), the user frames the photo, and the encoder
-  // produces the square; then the session state refreshes so the header + the nudge
-  // banner see the new URL.
-  async function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0] ?? null
-    e.target.value = '' // allow re-picking the same file
-    if (userId === null || file === null || photoBusy) return
-    setPhotoError(null)
-    setPhotoSaved(false)
-    const error = await avatarCrop.beginCrop(file)
-    if (error !== null) setPhotoError(error)
-  }
-
-  /**
-   * V9 ticket 11 (folded ticket 08): the family photo upload — the SAME crop
-   * step the avatar uses, with the gate passed explicitly
-   * (`validateFamilyPhotoFile`, which delegates to the avatar rules), so a
-   * non-image or a file over 5 MB is refused before the decode and before the
-   * dialog opens. The parent frames it; the encoder produces the 512px square;
-   * the object lands at `<uid>/family/photo.jpg` in the PRIVATE bucket and
-   * `profiles.family_photo_url` stores the PATH (never a URL — T6).
-   *
-   * A failure reports in this card's own line, never as a crash and never mixed
-   * into the avatar's messages beside it.
-   */
-  async function handleFamilyPhotoChange(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0] ?? null
-    e.target.value = '' // allow re-picking the same file
-    if (userId === null || file === null || familyPhotoBusy) return
-    setFamilyPhotoError(null)
-    setFamilyPhotoSaved(false)
-    const error = await familyPhotoCrop.beginCrop(file)
-    if (error !== null) setFamilyPhotoError(error)
-  }
-
   const missingLabels: Record<'photo' | 'bio' | 'kids', string> = {
     photo: 'a photo',
     bio: 'a bit about your family',
     kids: 'your kids',
   }
-  const kidsAtCap = kids !== null && kids.length >= MAX_KIDS_PER_PROFILE
-  const removingKid = (kids ?? []).find((kid) => kid.id === removingKidId) ?? null
-  /**
-   * V9 ticket 05 (review cycle 1, F1): the Remove dialog NAMES the kid, and a
-   * first name is optional now — so it must never interpolate a raw
-   * `kid.first_name`. Both failure spellings are reachable: `null` (post-0037,
-   * the row the Add button just wrote) renders "Remove null?" / "null comes off
-   * your family profile…", and a cleared in-page draft (`''`) renders
-   * "Remove ?".
-   *
-   * The TYPE change (`Kid.first_name: string | null`) cannot find this on its
-   * own: a template literal accepts `string | null` and compiles clean, so the
-   * compiler walked the method calls and assignments, not the interpolations.
-   * A grep over `src/` found this one and the two photo alts (fixed above); the
-   * migration header's note is corrected to say exactly that.
-   */
-  const removingKidName = (removingKid?.first_name ?? '').trim()
-  const removingKidSubject = removingKidName === '' ? 'This kid' : removingKidName
   const nameBlocked =
     savePlan?.blockedSections.find((item) => item.section === 'name')?.error ?? null
   const liveNameError = writeErrors.name ?? nameBlocked
-  const liveBioError = validateBio(draft?.bio ?? '')
   const liveInterestsError = validateInterests(draft?.interests ?? '')
+
+  /**
+   * V13 ticket 01: the page's own tagline follows its narrowed scope — it
+   * owns the display name + location + notifications, and /profile (now
+   * editable) owns the photos, the bio and the kids.
+   */
+  const tagline = 'Your display name, location, and notifications'
 
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <SectionHeader icon={NAV_ICONS.gear} title="Settings" tagline="Profile, location, and notifications" />
+        <SectionHeader icon={NAV_ICONS.gear} title="Settings" tagline={tagline} />
         <p className="mt-1 text-sm text-slate-600">
           Your display name is your persistent public handle — it shows on everything you
           post.
@@ -794,115 +528,28 @@ export function SettingsPage() {
           <p className="font-semibold">Finish your profile</p>
           <p className="mt-1">
             Still to add: {missing.map((item) => missingLabels[item]).join(', ')}. Parents
-            like knowing who they’re meeting.
+            like knowing who they’re meeting.{' '}
+            <Link to="/profile" className="font-medium underline underline-offset-2">
+              Add them on your profile page
+            </Link>
+            .
           </p>
         </div>
       ) : null}
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900">Photo</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Your photo shows on your posts and profile. Under 5 MB — it’s resized to a 512px
-          square for you.
-        </p>
-        <div className="mt-3 flex items-center gap-3">
-          {profile?.avatar_url ? (
-            <img
-              src={profile.avatar_url}
-              alt="Your avatar"
-              className="h-10 w-10 shrink-0 rounded-full object-cover"
-            />
-          ) : (
-            <span
-              aria-hidden
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-500"
-            >
-              {((draft?.name ?? profile?.display_name ?? '?').charAt(0) || '?').toUpperCase()}
-            </span>
-          )}
-          <label className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700">
-            {photoBusy ? 'Uploading…' : profile?.avatar_url ? 'Change photo' : 'Add a photo'}
-            {/* data-testid (V9 ticket 11): this page now has TWO file inputs (this
-                one and the family photo's below), so `input[type="file"]` no longer
-                identifies a control here. Specs target the testid. */}
-            <input
-              data-testid="avatar-photo-input"
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              disabled={photoBusy}
-              onChange={(e) => void handlePhotoChange(e)}
-            />
-          </label>
-        </div>
-        {photoError !== null ? <p className="mt-3 text-sm text-red-600">{photoError}</p> : null}
-        {photoSaved ? <p className="mt-3 text-sm text-emerald-700">Photo updated.</p> : null}
-        {avatarCrop.dialog}
-      </div>
+      {/* V13 ticket 01: the two photo cards (the parent's avatar + the family
+          photo) moved to the now-editable /profile (ProfilePage) — its family
+          photo card is always present (add or change), and its avatar card
+          displays the photo the shell header already uses. This page keeps no
+          photo control: the nudge banner above still names a missing photo
+          (the items it lists now live on /profile). */}
 
-      {/* V9 ticket 11 (folded ticket 08): "A photo of your family" — the
-          optional family photo that REPLACES the kid-photo control ticket 08
-          reversed. It sits directly under the avatar's card because they are the
-          same kind of thing (one picture, cropped by the parent, ≤5MB) and
-          because the ticket pins the profile's block order: family photo →
-          "About our family" → the kids list, all three optional.
-
-          WHAT IS DELIBERATELY NOT HERE: a placeholder box, a "no photo yet"
-          sentence, or a disabled control. Every one of the three blocks is
-          optional and the page must look finished with none of them, so an
-          unset family photo is simply a heading, a sentence and the button.
-
-          The image renders only when a signed URL was minted (the hook above);
-          when the stored path exists but the mint failed, the button says
-          "Change photo" and no image appears — no error state, because a parent
-          can do nothing about a storage failure and nothing is actually broken
-          about their profile. */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900">A photo of your family</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Optional. One photo of your family — you, and whoever else you bring. It shows on
-          your profile, to signed-in families. Under 5 MB — it’s resized to a 512px square
-          for you.
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          {familyPhotoUrl !== null ? (
-            <img
-              data-testid="family-photo"
-              src={familyPhotoUrl}
-              alt="Your family photo"
-              className="h-20 w-20 shrink-0 rounded-xl object-cover"
-            />
-          ) : null}
-          <label className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700">
-            {familyPhotoBusy
-              ? 'Uploading…'
-              : hasFamilyPhoto
-                ? 'Change photo'
-                : 'Add a family photo'}
-            <input
-              data-testid="family-photo-input"
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              disabled={familyPhotoBusy}
-              onChange={(e) => void handleFamilyPhotoChange(e)}
-            />
-          </label>
-        </div>
-        {familyPhotoError !== null ? (
-          <p className="mt-3 text-sm text-red-600">{familyPhotoError}</p>
-        ) : null}
-        {familyPhotoSaved ? (
-          <p className="mt-3 text-sm text-emerald-700">Family photo updated.</p>
-        ) : null}
-        {familyPhotoCrop.dialog}
-      </div>
-
-      {/* V12 t01: ONE form, NO save control. Everything a parent edits — the
-          handle, the location, the bio, the interests and every kid row —
-          autosaves (the debounced machine above); the form element stays for
-          the inputs' semantics, with the implicit submit swallowed so a stray
-          Enter cannot reload the page. */}
+      {/* V12 t01: ONE form, NO save control. Everything a parent edits on this
+          page — the display name, the location, and the interests — autosaves
+          (the debounced machine above); the form element stays for the
+          inputs' semantics, with the implicit submit swallowed so a stray
+          Enter cannot reload the page. (The bio and the kid rows no longer
+          edit here — /profile's machine owns them since V13 ticket 01.) */}
       <form className="flex flex-col gap-4" onSubmit={(e) => e.preventDefault()}>
         <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <label className="flex flex-col gap-1 text-sm">
@@ -969,41 +616,10 @@ export function SettingsPage() {
           ) : null}
         </div>
 
-        <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          {/* V9 ticket 11 (folded ticket 08): the bio field is REFRAMED as
-              "About our family" — label and placeholder only. No new column, no
-              schema change: `profiles.bio` (0011, ≤500 chars, the DB CHECK as
-              the backstop) is the same field the /u/:handle paragraph reads.
-              The label is a real sentence a parent can answer ("who are you
-              people?") instead of the one-word "About", which is what the human
-              asked for: a little place to describe your family, optional. */}
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-slate-700">About our family</span>
-            <textarea
-              className={
-                'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-                (liveBioError !== null || writeErrors.bio !== undefined
-                  ? 'border-red-400'
-                  : 'border-slate-300')
-              }
-              value={draft?.bio ?? ''}
-              onChange={(e) => editDraft({ bio: e.target.value }, 'bio')}
-              placeholder="Who’s in your family, and what are you into? (optional)"
-              maxLength={BIO_MAX_LENGTH}
-              rows={3}
-              disabled={draft === null}
-            />
-          </label>
-          <span className="text-xs text-slate-500">
-            {(draft?.bio ?? '').length}/{BIO_MAX_LENGTH}
-          </span>
-          {liveBioError !== null ? (
-            <p className="text-sm text-red-600">{liveBioError}</p>
-          ) : null}
-          {writeErrors.bio !== undefined ? (
-            <p className="text-sm text-red-600">{writeErrors.bio}</p>
-          ) : null}
-        </div>
+        {/* V13 ticket 01: the "About our family" bio field moved to the
+            now-editable /profile (ProfilePage) — this page's machine still
+            carries the bio WRITER (the Record's type contract), but there is
+            no bio input left to feed it. */}
 
         {/* V3 slice 6 (ticket 09): the interests field (the conversation
             starter — the /u/:handle line under the bio). <= INTERESTS_MAX_LENGTH
@@ -1050,262 +666,20 @@ export function SettingsPage() {
           ) : null}
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="text-base font-semibold text-slate-900">Kids</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            First name, age, and a “likes” line (up to {MAX_KIDS_PER_PROFILE}).
-            A row saves itself as you edit it — no button to press anywhere on this page.
-          </p>
-          {/* V9 ticket 05 shipped the privacy promise in the UI; V9 ticket 10
-              (migration 0040) makes it TRUE, so the sentence is re-pinned to
-              the stronger reality instead of the weaker one.
-              WHAT THIS COPY PROMISES NOW, and why it is worded this way: the
-              gate lives in the database — `kids_select_own_host_pinger_mod` —
-              and it is exactly four viewers: this family, the host of a
-              drop-in the kid is listed as coming to, the families who said
-              they're going to that drop-in (0026's gate), and moderators.
-              Nothing else: not a signed-in stranger (that was TRUE before
-              ticket 10 and is FALSE now — a stranger could read every
-              family's kids rows over REST), not a signed-out visitor, not
-              this family's public profile page (which shows the kids section
-              to its owner alone), and not a card (the cards carry the age
-              range, never a name — ticket 05's absolute rule, unchanged).
-              The sentence names the moderators because their access is real
-              and omitting it would over-promise; it says nothing about
-              initials or counts because no such substitute exists anywhere.
-              IT CLAIMS NOTHING ABOUT THE PHOTO — DELIBERATELY (review cycle 1,
-              F1). An earlier draft of this sentence said "A name and a kid
-              photo are visible only to …", and that was FALSE: kid photos live
-              in the `avatars` bucket, which is a PUBLIC bucket (0011 sets
-              `storage.buckets.public = true` and adds `avatars_public_read` for
-              `{public}`), the object path is `<uid>/kids/<kidId>`, and
-              `kids.avatar_url` stores the resulting public URL permanently —
-              deleting the kid row does not delete the object, so every URL ever
-              handed out stays fetchable signed out. Narrowing `kids` (ticket
-              10's gate) does not touch any of that.
-              THE STORAGE HALF IS FIXED NOW, AND THIS SENTENCE STILL DOES NOT
-              MENTION IT (V9 ticket 11, which closed that exposure: the photos
-              moved to the private `kid-photos` bucket, owner-only, and 0038 +
-              scripts/migrate-kid-photos.mjs are what did it). The sentence stays
-              a statement about the NAME gate, for two reasons: it is the promise
-              this field's own policy can be held to, and photo claims on a
-              surface whose data comes from `kids` would make copy depend on a
-              storage state the client cannot read. The photo's fate is stated
-              once, in its own sentence below, in words that are true whether or
-              not the migration has been applied. (A kid photo still never renders
-              on a card or an event line, and now it renders nowhere at all: the
-              kid-photo pin, and then some.) */}
-          <p className="mt-1 text-sm text-slate-600">
-            A first name is optional — skip it and your kid still shows up by age
-            (the cards say “ages 3–6”, never a name). A name is visible only to
-            your family, the host of a drop-in where you listed them, the
-            families who said they’re going, and our moderators.
-          </p>
-          {/* V9 ticket 11's ONE THING THE PARENT MUST BE TOLD (T11): the kid
-              photo control that used to sit on every row is GONE, and removing
-              it in silence would leave a parent who uploaded one unable to tell
-              whether they had broken something. So the row-level control's
-              absence is explained where the control used to be.
-
-              WHY THE SENTENCE STOPS WHERE IT DOES. It claims only what the APP
-              does — it collects no kid photo, and it displays none — which is
-              true before AND after migration 0038 and needs no migration to have
-              been applied. It deliberately does NOT say "the photo is private
-              now" or "nobody can see the old one": the storage closure is 0038's
-              job plus the coordinator's move of the existing objects, and copy
-              that promised privacy the storage layer might not yet deliver is
-              exactly the mistake ticket 10's review caught.
-
-              "NOTHING WAS DELETED" WAS REMOVED (review cycle 1, F9) and it was
-              the one word here that could become false: the IMAGES are kept —
-              the human's "keep the files" intent — but the PUBLIC OBJECT holding
-              each one IS deleted once its private copy verifies, so an absolute
-              "nothing was deleted" would be a lie in exactly the state the
-              coordinator is about to create. The replacement says what a parent
-              can act on and stays true in both states: the picture is kept, and
-              the public copy is on its way out. 0038's own phrasing — "the FILES
-              survive but their old public URLs cannot" — is the same fact in the
-              migration's words. */}
-          <p data-testid="kids-photo-notice" className="mt-2 text-sm text-slate-600">
-            A kid’s row is a first name (optional), an age and a likes line — there’s no
-            photo on a kid any more, and no kid photo is shown anywhere on Drop In. If you
-            added one before, it isn’t shown either: the public copy is being taken down, and
-            the picture itself is kept with your family. For a photo on your profile, add
-            “A photo of your family” above.
-          </p>
-
-          {kids === null ? (
-            <p className="mt-3 text-sm text-slate-600">Loading…</p>
-          ) : kids.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-600">No kids yet — add one below.</p>
-          ) : (
-            <ul className="mt-3 flex flex-col gap-2">
-              {kids.map((kid) => {
-                // V3 slice 6 (ticket 09, migration 0022) put a 40px photo on this
-                // row — the kid's `avatar_url` or an initial-fallback circle.
-                // V9 TICKET 11 REMOVED IT, and the initial circle went with the
-                // photo: the row is first name + age + likes, exactly (the
-                // ticket's AC), and an initial standing in for a photo would be
-                // the "partial substitute" V9 ticket 10's own record rejects.
-                // NOTHING HERE MAY READ `kid.avatar_url` — no code path reaches a
-                // kid's avatar_url for display, and after migration 0038 the
-                // stored value is a private-bucket object PATH, not a URL.
-                //
-                // V8 ticket 10: the row is EDITABLE IN PLACE — first name, age
-                // and "likes" are fields on the row, saved by the one submit
-                // (savePlan.kids). The name + age inputs carry aria-labels and
-                // testids rather than placeholders, because the "Add kid" form
-                // below owns the 'First name' / 'Age' placeholders and two
-                // elements answering to the same placeholder is how a spec (and
-                // a screen reader) starts guessing.
-                const rowValues = toKidRowValues(kid)
-                const values = kidDrafts[kid.id] ?? {
-                  firstName: rowValues.firstName,
-                  age: String(rowValues.age),
-                  likes: rowValues.likes,
-                }
-                const rowAge = values.age.trim() === '' ? NaN : Number(values.age)
-                const rowError =
-                  kidWriteErrors[kid.id] ??
-                  validateKid(values.firstName, rowAge) ??
-                  validateKidLikes(values.likes)
-                return (
-                  <li
-                    key={kid.id}
-                    data-testid="kid-row"
-                    className="flex flex-wrap items-center gap-2 rounded-xl px-2 py-1.5"
-                  >
-                    <input
-                      data-testid="kid-name"
-                      aria-label="Kid first name"
-                      className={
-                        'w-28 min-w-0 shrink-0 rounded-xl border px-2 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-                        (rowError !== null ? 'border-red-400' : 'border-slate-300')
-                      }
-                      value={values.firstName}
-                      onChange={(e) => editKidDraft(kid.id, { firstName: e.target.value })}
-                      maxLength={30}
-                      disabled={kidsBusyId !== null}
-                    />
-                    <input
-                      data-testid="kid-age"
-                      aria-label="Kid age"
-                      type="number"
-                      min={0}
-                      max={17}
-                      className={
-                        'w-16 shrink-0 rounded-xl border px-2 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-                        (rowError !== null ? 'border-red-400' : 'border-slate-300')
-                      }
-                      value={values.age}
-                      onChange={(e) => editKidDraft(kid.id, { age: e.target.value })}
-                      disabled={kidsBusyId !== null}
-                    />
-                    <div className="flex min-w-0 flex-1 basis-40 items-center gap-1.5">
-                      <input
-                        data-testid="kid-likes"
-                        aria-label="Kid likes"
-                        className={
-                          'min-w-0 flex-1 rounded-xl border px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-                          (rowError !== null ? 'border-red-400' : 'border-slate-300')
-                        }
-                        value={values.likes}
-                        onChange={(e) => editKidDraft(kid.id, { likes: e.target.value })}
-                        placeholder="Likes… (optional)"
-                        disabled={kidsBusyId !== null}
-                      />
-                      {values.likes !== '' ? (
-                        <span
-                          className={
-                            'shrink-0 text-xs ' +
-                            (validateKidLikes(values.likes) !== null
-                              ? 'text-red-600'
-                              : 'text-slate-500')
-                          }
-                        >
-                          {values.likes.length}/{LIKES_MAX_LENGTH}
-                        </span>
-                      ) : null}
-                    </div>
-                    <button
-                      type="button"
-                      data-testid="kid-remove"
-                      onClick={() => setRemovingKidId(kid.id)}
-                      disabled={kidsBusyId !== null}
-                      className={
-                        'shrink-0 rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200 ' +
-                        (kidsBusyId === kid.id ? 'opacity-50' : '')
-                      }
-                    >
-                      {kidsBusyId === kid.id ? 'Removing…' : 'Remove'}
-                    </button>
-                    {rowError !== null ? (
-                      <p className="w-full text-sm text-red-600">{rowError}</p>
-                    ) : null}
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-
-          <div className="mt-3 flex items-center gap-2">
-            <input
-              className={
-                'min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-                (kidsError !== null ? 'border-red-400' : 'border-slate-300')
-              }
-              value={newKidName}
-              onChange={(e) => {
-                setNewKidName(e.target.value)
-                setKidsError(null)
-              }}
-              placeholder="First name"
-              maxLength={30}
-              disabled={kidsAtCap || kidsBusyId !== null}
-            />
-            <input
-              type="number"
-              min={0}
-              max={17}
-              className={
-                'w-20 shrink-0 rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-                (kidsError !== null ? 'border-red-400' : 'border-slate-300')
-              }
-              value={newKidAge}
-              onChange={(e) => {
-                setNewKidAge(e.target.value)
-                setKidsError(null)
-              }}
-              placeholder="Age"
-              disabled={kidsAtCap || kidsBusyId !== null}
-            />
-            <button
-              type="button"
-              onClick={() => void handleAddKid()}
-              disabled={kidsAtCap || kidsBusyId !== null}
-              className="shrink-0 rounded-md bg-indigo-600 px-3 py-2 text-xs font-medium text-white disabled:opacity-50"
-            >
-              {kidsBusyId === 'add' ? 'Adding…' : 'Add kid'}
-            </button>
-          </div>
-          {/* V8 ticket 10: the cap says so. The inputs used to just go dead at
-              five kids with no word about why — a disabled field with no
-              explanation reads as a broken app, not as a limit. */}
-          {kidsAtCap ? (
-            <p data-testid="kids-cap" className="mt-2 text-sm text-slate-600">
-              That’s {MAX_KIDS_PER_PROFILE} kids — the most a profile can list. Remove one to
-              add another.
-            </p>
-          ) : null}
-          {kidsError !== null ? <p className="mt-2 text-sm text-red-600">{kidsError}</p> : null}
-        </div>
+        {/* V13 ticket 01: the Kids section — the rows (name + age + likes), the add
+            form, the five-kid cap, and the privacy + photo notices — moved to
+            the now-editable /profile (ProfilePage), whose rows autosave on the
+            same V12 t01 seam. This page keeps a COUNT-ONLY kids read (for the
+            nudge banner above) and nothing else of the kid data. */}
 
         {/* V12 t01: THE AUTOSAVE INDICATOR — the line that used to hold the save
             button + the "unsaved changes" sentence + the result note, in one
             always-on line where the button used to be. "Saved." is the
-            terminal state of a pass that wrote at least one section + kid
-            row; a failed pass names itself here, and the section that failed
-            carries its own inline error beside its field. */}
+            terminal state of a pass that wrote at least one section (V13
+            ticket 01: this page's pass writes the profile sections only — the
+            kid rows write on /profile's own machine); a failed pass names
+            itself here, and the section that failed carries its own inline
+            error beside its field. */}
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <p
             data-testid="profile-save-note"
@@ -1459,25 +833,11 @@ export function SettingsPage() {
         )}
       </div>
 
-      {/* V8 ticket 10: the Remove confirmation — it names the kid and what the
-          delete costs (their "kids coming" rows on every drop-in cascade away
-          with them: 0022 + 0026 are ON DELETE CASCADE).
-          V9 ticket 05: the subject falls back to the noun "This kid" when there
-          is no name to use — a nameless kid's dialog says "Remove this kid?" and
-          "This kid comes off your family profile…", never "null" and never a
-          dangling "Remove ?". */}
-      {removingKid !== null ? (
-        <ConfirmDialog
-          testId="remove-kid-dialog"
-          title={removingKidName === '' ? 'Remove this kid?' : `Remove ${removingKidName}?`}
-          body={`${removingKidSubject} comes off your family profile, and off every drop-in you listed them as coming to. This can’t be undone.`}
-          confirmLabel="Remove kid"
-          busyLabel="Removing…"
-          busy={kidsBusyId !== null}
-          onConfirm={() => void handleRemoveKid(removingKid.id)}
-          onCancel={() => setRemovingKidId(null)}
-        />
-      ) : null}
+      {/* V13 ticket 01: the Remove-kid confirmation used to live here (V8
+          ticket 10 — it named the kid and what the delete costs, their
+          "kids coming" rows cascading away per 0022 + 0026). It moved to
+          /profile with the kid rows it confirms: the dialog, the handler and
+          the state behind it are all ProfilePage's now. */}
     </div>
   )
 }
