@@ -10,6 +10,8 @@ import { DEFAULT_RADIUS_MILES, formatDistanceLabel, RADIUS_MILES_OPTIONS } from 
 import type { ZipCoords } from '../lib/feed'
 import {
   browsePlaces,
+  BROWSE_LIST_LEAD_LIMIT,
+  groupPlacesByKind,
   placeIndoorLabel,
   placeKindLabel,
   placePath,
@@ -27,6 +29,20 @@ import type { Place } from '../lib/types'
  * product's premise needs and nothing had: a searchable directory of the city's
  * playgrounds, pools, splash pads, beaches, community centers and indoor
  * options, with "N upcoming" per place.
+ *
+ * V13 ticket 05 (A6): the map is the mental model for "what's happening
+ * nearby", so the overview map now sits at the TOP of the page — above the
+ * search/filter card and the list — and a marker tap opens the place's info
+ * (name + address) with a "Host here" action (the existing place pre-fill
+ * router state; see PlacesMap). The list below defaults to distance-sorted,
+ * closest first (distance from the user's stored zip — NO geolocation, the
+ * V12 t05 invariant).
+ *
+ * V13 ticket 05 (A7): the raw unbroken long-list is gone. The list leads with
+ * the BROWSE_LIST_LEAD_LIMIT closest places grouped by kind (the pure
+ * groupPlacesByKind seam), then a single "See all N places" overflow door that
+ * reveals every remaining row — all place data stays reachable, no new
+ * dependencies, mobile-first (the shell's max-w-md column).
  *
  * FILTERS, all of them narrowing and none of them inventing:
  * - SEARCH: the pure `matchPlaces` (case-insensitive, prefixes above
@@ -71,6 +87,11 @@ export function BrowsePage() {
   // re-renders off the refreshed profile). 'any' = no ceiling. A number = the
   // parent picked one.
   const [distanceChoice, setDistanceChoice] = useState<'profile' | 'any' | number>('profile')
+  // V13 ticket 05 (A7): the overflow door. Collapsed shows the lead (the
+  // BROWSE_LIST_LEAD_LIMIT closest, grouped by kind); expanded shows every
+  // row. Resetting on any filter change keeps "see all" honest — a widened
+  // result set must not stay collapsed around a stale lead.
+  const [showAll, setShowAll] = useState(false)
 
   // The directory. A failed read is disclosed (placesFailed) rather than
   // rendered as a wall — see the page doc.
@@ -167,12 +188,33 @@ export function BrowsePage() {
     .map((row) => resolveMapCoords(row.place, zipCoords))
     .filter((c): c is { lat: number; lng: number } => c !== null)
 
+  // V13 ticket 05 (A7): the grouped lead + overflow. browsePlaces already
+  // distance-sorts (closest first; unknown distances last), so the LEAD is
+  // simply the first BROWSE_LIST_LEAD_LIMIT rows — the closest places — and
+  // the overflow door reveals the rest. Grouping (groupPlacesByKind) only
+  // buckets by kind; it never re-ranks within a group.
+  const leadRows = placed.slice(0, BROWSE_LIST_LEAD_LIMIT)
+  const overflowRows = placed.slice(BROWSE_LIST_LEAD_LIMIT)
+  const leadGroups = groupPlacesByKind(leadRows)
+  const overflowGroups = groupPlacesByKind(overflowRows)
+
   // The shared radius empty state is the honest answer ONLY when the radius is
   // actually the reason nothing is showing: no search text, no kind filter.
   // Otherwise the copy would blame the radius for a filter the parent set.
   const radiusIsTheReason =
     maxMiles !== null && placed.length === 0 && query.trim() === '' && indoorFilter === null
   const nothingMatches = placed.length === 0 && unplaced.length === 0
+
+  /** Any filter change collapses the list back to its lead (a widened result
+      set must not stay expanded around a stale lead). */
+  function resetShowAll() {
+    setShowAll(false)
+  }
+
+  /** The overflow door's label: "See all N places" when collapsed, "Hide" when
+      expanded. N is the TOTAL placed count (lead + overflow), so the door
+      names the full directory, not just the hidden remainder. */
+  const seeAllLabel = showAll ? 'Hide' : `See all ${placed.length} places`
 
   return (
     <div className="flex flex-col gap-4">
@@ -189,6 +231,18 @@ export function BrowsePage() {
         </p>
       ) : null}
 
+      {/* V13 ticket 05 (A6): the map leads the page — the mental model for
+          "what's happening nearby". It sits above the filters and the list,
+          and a marker tap opens the place's info + "Host here" (the existing
+          place pre-fill router state, inside PlacesMap). Renders only when at
+          least one placed row resolves to stored coordinates (mappedMarkers,
+          below) — an empty list or an all-NULL-coord list leaves no empty card. */}
+      {places !== null && mappedMarkers.length > 0 ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+          <PlacesMap places={placed.map((row) => row.place)} zipCoords={zipCoords} />
+        </div>
+      ) : null}
+
       <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-slate-700">Search</span>
@@ -197,7 +251,10 @@ export function BrowsePage() {
             data-testid="places-search"
             className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              resetShowAll()
+            }}
             placeholder="e.g. Green Lake, splash pad, library"
             autoComplete="off"
           />
@@ -208,7 +265,10 @@ export function BrowsePage() {
             type="button"
             data-testid="places-indoor-filter"
             aria-pressed={indoorFilter === true}
-            onClick={() => setIndoorFilter((prev) => (prev === true ? null : true))}
+            onClick={() => {
+              setIndoorFilter((prev) => (prev === true ? null : true))
+              resetShowAll()
+            }}
             className={
               'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ' +
               (indoorFilter === true
@@ -222,7 +282,10 @@ export function BrowsePage() {
             type="button"
             data-testid="places-outdoor-filter"
             aria-pressed={indoorFilter === false}
-            onClick={() => setIndoorFilter((prev) => (prev === false ? null : false))}
+            onClick={() => {
+              setIndoorFilter((prev) => (prev === false ? null : false))
+              resetShowAll()
+            }}
             className={
               'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ' +
               (indoorFilter === false
@@ -245,6 +308,7 @@ export function BrowsePage() {
               setDistanceChoice(
                 value === 'profile' ? 'profile' : value === 'any' ? 'any' : Number(value),
               )
+              resetShowAll()
             }}
           >
             <option value="profile">Within your radius ({viewerRadius} mi)</option>
@@ -270,22 +334,49 @@ export function BrowsePage() {
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {/* V12 t05: the directory's overview map — one marker per place that
-              resolves to stored coordinates (own lat/lng, else the address
-              zip's gazetteer coordinates). The "Not on the map yet" rows below
-              get NO marker here on purpose: that section is the places the
-              distance model itself could not place, and their detail pages
-              still render the map when a zip resolves. The card renders only
-              when at least one placed row resolves (mappedMarkers, above) — an
-              empty list or an all-NULL-coord list leaves no empty card. */}
-          {mappedMarkers.length > 0 ? (
-            <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-              <PlacesMap places={placed.map((row) => row.place)} zipCoords={zipCoords} />
+          {/* V13 ticket 05 (A7): the grouped lead — the closest
+              BROWSE_LIST_LEAD_LIMIT places, bucketed by kind (kind chips as
+              section headers, rows in the caller's distance order inside each
+              group). The raw unbroken long-list is gone. */}
+          {leadGroups.map((group) => (
+            <section key={group.kind} className="flex flex-col gap-2">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
+                {group.label}
+              </h2>
+              {group.rows.map((row) => (
+                <PlaceRow key={row.place.id} row={row} />
+              ))}
+            </section>
+          ))}
+
+          {/* The overflow door: every remaining row stays reachable behind ONE
+              affordance (the ticket's "all place data must remain reachable").
+              Expanded, the same grouping continues from where the lead left
+              off, and the door flips to "Hide". */}
+          {overflowRows.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                data-testid="places-see-all"
+                onClick={() => setShowAll((prev) => !prev)}
+                className="self-start rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-indigo-700 transition-colors hover:bg-slate-50"
+              >
+                {seeAllLabel}
+              </button>
+              {showAll
+                ? overflowGroups.map((group) => (
+                    <section key={group.kind} className="flex flex-col gap-2">
+                      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
+                        {group.label}
+                      </h2>
+                      {group.rows.map((row) => (
+                        <PlaceRow key={row.place.id} row={row} />
+                      ))}
+                    </section>
+                  ))
+                : null}
             </div>
           ) : null}
-          {placed.map((row) => (
-            <PlaceRow key={row.place.id} row={row} />
-          ))}
         </div>
       )}
 

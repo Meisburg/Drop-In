@@ -25,10 +25,11 @@
  */
 import * as L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router'
 import type { ZipCoords } from '../lib/feed'
-import { resolveMapCoords } from '../lib/places'
-import type { Place } from '../lib/types'
+import { placePath, resolveMapCoords } from '../lib/places'
+import type { Place, PlacePrefill } from '../lib/types'
 
 /** The tile source (pinned by the ticket — the only tile host the app fetches). */
 const OSM_TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
@@ -156,6 +157,14 @@ export function PlaceMap({
  * The directory's overview map (the /browse list): a marker per place that
  * resolves to coordinates, fitted to their bounds. Renders nothing when
  * nothing resolves — the caller shows the list either way.
+ *
+ * V13 ticket 05 (A6): a marker tap is an ENTRY POINT, not just a tooltip.
+ * Tapping one opens a small info panel under the map with the place's name +
+ * address and two actions: "Host here" (the existing place pre-fill router
+ * state — navigate('/new', { state: { place } }), exactly the place page's
+ * "Start a drop-in here" payload) and "Details" (the place page). The panel
+ * lives in THIS component because the tapped place is Leaflet-side state;
+ * everything it renders is presentational data handed back from the click.
  */
 export function PlacesMap({
   places,
@@ -166,11 +175,123 @@ export function PlacesMap({
   zipCoords: ReadonlyMap<string, ZipCoords> | null
   className?: string
 }) {
-  const markers = places
-    .map((p) => resolveMapCoords(p, zipCoords))
-    .filter((c): c is MapMarker => c !== null)
-  if (markers.length === 0) return null
-  return <MapCanvas markers={markers} fit testId="places-map" className={className} />
+  const navigate = useNavigate()
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  // Resolve each place's coords; keep the (place, coords) pairs so a tap can
+  // hand back the full row, not just the coordinate.
+  const entries = places
+    .map((p) => ({ place: p, coords: resolveMapCoords(p, zipCoords) }))
+    .filter((e): e is { place: Place; coords: MapMarker } => e.coords !== null)
+
+  const markers = entries.map((e) => e.coords)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const mapRef = useRef<L.Map | null>(null)
+  const initialMarkerRef = useRef(markers[0])
+  const markersKey = markers.map((m) => `${m.lat}:${m.lng}`).join('|')
+  // The clicked id must survive re-renders that rebuild an identical entries
+  // array (the page hands this component fresh arrays every render); keying
+  // off the id keeps the selection stable across those.
+  const selected = selectedId === null ? null : (entries.find((e) => e.place.id === selectedId)?.place ?? null)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (el === null || markers.length === 0) return
+    const first = initialMarkerRef.current
+    const map = L.map(el, { scrollWheelZoom: false }).setView(
+      first === undefined ? SEATTLE_CENTER : [first.lat, first.lng],
+      first === undefined ? 11 : DETAIL_ZOOM,
+    )
+    L.tileLayer(OSM_TILE_URL, { attribution: OSM_ATTRIBUTION, maxZoom: 19 }).addTo(map)
+    mapRef.current = map
+    return () => {
+      map.remove()
+      mapRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (map === null || markers.length === 0) return
+    const group = L.layerGroup(
+      entries.map(({ place, coords }) => {
+        const marker = L.circleMarker([coords.lat, coords.lng], {
+          radius: 8,
+          color: '#4f46e5',
+          weight: 2,
+          fillColor: '#4f46e5',
+          fillOpacity: 0.35,
+        })
+        marker.bindTooltip(place.name, { direction: 'top', offset: [0, -8] })
+        marker.on('click', () => setSelectedId(place.id))
+        return marker
+      }),
+    ).addTo(map)
+    map.fitBounds(L.latLngBounds(entries.map((e) => [e.coords.lat, e.coords.lng])), {
+      padding: [28, 28],
+    })
+    return () => {
+      group.remove()
+    }
+  }, [markersKey])
+
+  if (entries.length === 0) return null
+
+  /**
+   * "Host here" — the SAME payload the place page's "Start a drop-in here"
+   * builds (App.tsx NewRoute reads state.place as a typed PlacePrefill): the
+   * post lands with the place link, its address, and its coordinates for
+   * distance; the parent still picks the time. Reusing the existing pattern
+   * rather than inventing a second navigation shape.
+   */
+  function hostHere() {
+    if (selected === null) return
+    const prefill: PlacePrefill = {
+      placeId: selected.id,
+      place: selected.name,
+      address: selected.address,
+      neighborhoodId: selected.neighborhood_id,
+    }
+    navigate('/new', { state: { place: prefill } })
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div
+        ref={containerRef}
+        data-testid="places-map"
+        className={`h-64 w-full overflow-hidden rounded-xl border border-slate-200 ${className ?? ''}`}
+      />
+      {selected !== null ? (
+        <div
+          data-testid="place-marker-info"
+          className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+        >
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm font-semibold text-slate-900">{selected.name}</span>
+            <span className="text-xs text-slate-600">{selected.address}</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              data-testid="host-here"
+              onClick={() => hostHere()}
+              className="rounded-xl bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-700"
+            >
+              Host here
+            </button>
+            <Link
+              to={placePath(selected.id)}
+              data-testid="marker-details"
+              className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+            >
+              Details
+            </Link>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 /**

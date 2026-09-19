@@ -512,3 +512,59 @@ export function browsePlaces(
 export function sortPlaceUpcoming<T extends { starts_at: string }>(posts: readonly T[]): T[] {
   return [...posts].sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at))
 }
+
+/**
+ * V13 ticket 05 (A7): how many place rows the /browse list shows before the
+ * overflow affordance takes over.
+ *
+ * The raw unbroken long-list was the complaint: 239 seeded rows rendered
+ * inline on a phone bury everything below them. A short lead (the closest
+ * places, which are what "nearby" means) plus a single "See all N places"
+ * door keeps every row reachable while the screen stays scannable. Mobile-
+ * first (max-w-md shell), no new dependencies — the cap is a number, not a
+ * library.
+ */
+export const BROWSE_LIST_LEAD_LIMIT = 6
+
+/** One kind group in the browse list: the kind label + that kind's rows. */
+export interface PlaceKindGroup {
+  kind: string
+  label: string
+  rows: PlaceListRow[]
+}
+
+/**
+ * V13 ticket 05 (A7): group the browse rows by KIND, for the grouped/chips
+ * presentation. Pure + unit-tested (no React, no DB — the house pattern).
+ *
+ * Group order: kinds in their schema order (PLACE_KINDS, the 0029 CHECK
+ * constraint's mirror), with an unknown-kind bucket last; within a group the
+ * caller's row order is kept (distance-sorted when there is no search query,
+ * relevance-ordered when there is — grouping must never re-rank). An empty
+ * input yields [] (the caller renders nothing, exactly as today).
+ */
+export function groupPlacesByKind(rows: readonly PlaceListRow[]): PlaceKindGroup[] {
+  const groups = new Map<string, PlaceKindGroup>()
+  for (const row of rows) {
+    const kind = row.place.kind
+    const label = placeKindLabel(kind)
+    let group = groups.get(kind)
+    if (group === undefined) {
+      group = { kind, label, rows: [] }
+      groups.set(kind, group)
+    }
+    group.rows.push(row)
+  }
+  const ordered = PLACE_KINDS.filter((kind) => groups.has(kind)).map(
+    (kind) => groups.get(kind)!,
+  )
+  // Unknown kinds (a future CHECK value the app does not know yet) keep their
+  // own bucket, alphabetized after the known kinds — never dropped.
+  const unknownKinds = [...groups.keys()]
+    .filter((kind) => !(PLACE_KINDS as readonly string[]).includes(kind))
+    .sort()
+  for (const kind of unknownKinds) {
+    ordered.push(groups.get(kind)!)
+  }
+  return ordered
+}

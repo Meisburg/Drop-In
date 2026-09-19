@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   browsePlaces,
   browsePlaceList,
+  BROWSE_LIST_LEAD_LIMIT,
   coordNumber,
+  groupPlacesByKind,
   matchPlaces,
   placeAgeFitLabel,
   placeDistanceMiles,
@@ -24,8 +26,9 @@ import {
   usesPlaceAlias,
   zipFromAddress,
 } from './places'
+import type { PlaceListRow } from './places'
 import { neighborhoodIdField } from './feed'
-import type { Place } from './types'
+import type { Place, PlaceKind } from './types'
 import type { ZipCoords } from './feed'
 
 /**
@@ -292,6 +295,60 @@ describe('sortPlaceUpcoming (soonest first — the place page asked about THIS p
     ]
     expect(sortPlaceUpcoming(input).map((post) => post.id)).toEqual(['a', 'b'])
     expect(input.map((post) => post.id)).toEqual(['b', 'a'])
+  })
+})
+
+describe('groupPlacesByKind (V13 ticket 05 A7: the browse list\'s grouped presentation)', () => {
+  function row(name: string, kind: PlaceKind, distanceMiles: number | null = 1): PlaceListRow {
+    return { place: place({ name, kind }), distanceMiles, upcomingCount: null }
+  }
+
+  it('groups rows by kind and orders groups in schema order (PLACE_KINDS)', () => {
+    const rows = [row('A', 'pool'), row('B', 'park'), row('C', 'playground')]
+    const groups = groupPlacesByKind(rows)
+    expect(groups.map((g) => g.kind)).toEqual(['park', 'playground', 'pool'])
+    expect(groups.map((g) => g.label)).toEqual(['Park', 'Playground', 'Pool'])
+  })
+
+  it('keeps the caller\'s row order inside each group (distance sort survives grouping)', () => {
+    const rows = [
+      row('Near park', 'park', 1),
+      row('Far park', 'park', 9),
+      row('Mid pool', 'pool', 4),
+    ]
+    const groups = groupPlacesByKind(rows)
+    expect(groups.find((g) => g.kind === 'park')!.rows.map((r) => r.place.name)).toEqual([
+      'Near park',
+      'Far park',
+    ])
+    expect(groups.find((g) => g.kind === 'pool')!.rows.map((r) => r.place.name)).toEqual([
+      'Mid pool',
+    ])
+  })
+
+  it('omits empty kinds (only kinds present in the input get a group)', () => {
+    const groups = groupPlacesByKind([row('A', 'beach')])
+    expect(groups.map((g) => g.kind)).toEqual(['beach'])
+  })
+
+  it('yields [] for an empty input (the caller renders nothing, exactly as today)', () => {
+    expect(groupPlacesByKind([])).toEqual([])
+  })
+
+  it('keeps unknown kinds in their own alphabetized bucket, never dropped', () => {
+    const rows = [
+      row('X', 'zeta' as PlaceKind),
+      row('A', 'alpha' as PlaceKind),
+      row('P', 'park'),
+    ]
+    const groups = groupPlacesByKind(rows)
+    // Known kinds first in schema order, then unknown kinds alphabetized.
+    expect(groups.map((g) => g.kind)).toEqual(['park', 'alpha', 'zeta'])
+    expect(groups[1].label).toBe('Place') // the fallback label, not a crash
+  })
+
+  it('pins the lead limit to the ticket (6 — mobile-first scannable lead)', () => {
+    expect(BROWSE_LIST_LEAD_LIMIT).toBe(6)
   })
 })
 

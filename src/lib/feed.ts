@@ -1818,16 +1818,16 @@ export function emptyRadiusCopy(radiusMiles: number): string {
 /**
  * The archive link's one label (V9 ticket 04): "See past drop-ins".
  *
- * ONE constant behind both places the feed offers the archive (the line under
- * the day sections in FeedPage and the empty state's RadiusEmptyState), so the
- * two can never drift apart — and the e2e spec asserts the link against the
- * SAME string the app renders rather than a copy of it (the
- * `emptyRadiusCopy` / `formatTimeWindow` discipline).
+ * ONE constant behind the feed's day-sections archive line in FeedPage, so the
+ * e2e spec asserts the link against the SAME string the app renders rather than
+ * a copy of it (the `emptyRadiusCopy` / `formatTimeWindow` discipline).
+ * V13 ticket 05 (A1) removed the empty-radius state's archive link — the
+ * RadiusEmptyState no longer carries it; the day-sections line is the only
+ * remaining consumer.
  *
  * WHAT IT IS ALLOWED TO IMPLY (the ticket's honesty pin): the link says where
  * the past ones ARE, never that there are any. It is deliberately not "See
- * your past drop-ins (3)" — the feed does not read the viewer's history, and
- * the empty state must not imply the archive is empty OR full.
+ * your past drop-ins (3)" — the feed does not read the viewer's history.
  */
 export const PAST_DROP_INS_LABEL = 'See past drop-ins'
 

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { updateHomeZipRadius } from '../lib/db'
-import { emptyRadiusCopy, PAST_DROP_INS_LABEL, radiusEscapes } from '../lib/feed'
+import { emptyRadiusCopy, radiusEscapes } from '../lib/feed'
 import { useSessionContext } from './SessionProvider'
 
 /**
@@ -35,26 +35,16 @@ import { useSessionContext } from './SessionProvider'
  * shared session state — which is what re-runs the page's feed query, since
  * both pages key their load effect on `profile`.
  *
- * V9 ticket 04 — `seePastHref`, and why it is a PROP rather than something this
- * component decides: "nothing ahead" is not "nothing ever", and the feed is
- * the screen where a parent would stop visiting because of that impression, so
- * the FEED offers the archive (V8/04's Past list on /profile) from here too.
- * Browse renders this same component for the PLACES directory, which has no
- * personal archive behind it — a "See past drop-ins" link there would promise
- * the viewer their own history from a screen about parks. So the caller that
- * HAS an archive passes the route, and the ones that do not pass nothing
- * (the link is not merely hidden; it does not exist).
+ * V13 ticket 05 (A1): the "past drop-ins" archive line that lived here (V9
+ * ticket 04's see-past prop) is GONE. The feed still offers its own
+ * archive door under the day sections (FeedPage renders PAST_DROP_INS_LABEL
+ * itself); the empty-radius state no longer promises a personal archive from
+ * either screen.
  */
 export function RadiusEmptyState({
   radiusMiles,
-  seePastHref,
 }: {
   radiusMiles: number
-  /**
-   * V9 ticket 04: the viewer's own archive (e.g. feed.PAST_DROP_INS_HREF —
-   * /profile's Past list). Omitted = no archive line (Browse).
-   */
-  seePastHref?: string
 }) {
   const { session, profile, refresh } = useSessionContext()
   const [busyRadius, setBusyRadius] = useState<number | null>(null)
@@ -109,19 +99,6 @@ export function RadiusEmptyState({
         </div>
       ) : null}
       {escapeError !== null ? <p className="text-sm text-red-600">{escapeError}</p> : null}
-      {/* V9 ticket 04: the archive line — after the escapes and above the post
-          CTA (which stays the last and strongest element; "nothing ahead" is
-          usually a supply problem, and posting is the answer to that). It says
-          only WHERE the past ones are, never how many — see
-          feed.PAST_DROP_INS_LABEL for why it carries no count. */}
-      {seePastHref !== undefined ? (
-        <Link
-          to={seePastHref}
-          className="text-sm font-medium text-indigo-600 underline-offset-2 hover:underline"
-        >
-          {PAST_DROP_INS_LABEL}
-        </Link>
-      ) : null}
       <Link
         to="/new"
         className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white"

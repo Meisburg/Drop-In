@@ -116,7 +116,7 @@ import { expect, test, type Page } from '@playwright/test'
 // assertion, imported so this spec asserts the string, the destination and the
 // day the feed actually uses rather than copies of them (feed.ts is pure — its
 // only import is `import type`).
-import { localDayKey, PAST_DROP_INS_HREF, PAST_DROP_INS_LABEL } from '../src/lib/feed'
+import { localDayKey, PAST_DROP_INS_LABEL } from '../src/lib/feed'
 import {
   editTitle,
   localDatePlusDays,
@@ -660,13 +660,11 @@ test('the empty state offers the archive; the places directory does not', async 
   await expect(empty).toContainText(`Nothing within ${marker.radiusMiles} miles yet.`)
   await expect(empty.getByRole('button', { name: 'Widen to 20 miles' })).toBeEnabled()
   await expect(empty.getByRole('link', { name: 'Post a drop-in' })).toBeVisible()
-  // …plus the archive line: visible, and pointing at the viewer's own history.
-  const archiveLink = empty.getByRole('link', { name: PAST_DROP_INS_LABEL })
-  await expect(archiveLink).toBeVisible()
-  await expect(archiveLink).toHaveAttribute('href', PAST_DROP_INS_HREF)
-  // It says where the past ones are, never how many there are: a count would be
-  // a claim this screen cannot make (it never reads the viewer's history).
-  await expect(archiveLink).toHaveText(PAST_DROP_INS_LABEL)
+  // V13 ticket 05 (A1): the empty-radius state no longer carries the archive
+  // link — it was removed from RadiusEmptyState. The day-sections archive line
+  // (FeedPage's own link under the feed) is the only remaining one, and it is
+  // NOT visible in the empty state (no posts = no day sections).
+  await expect(empty.getByRole('link', { name: PAST_DROP_INS_LABEL })).toHaveCount(0)
 
   // --- The same component, the other caller. ---
   await page.goto('/browse')

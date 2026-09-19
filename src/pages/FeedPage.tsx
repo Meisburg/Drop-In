@@ -782,14 +782,10 @@ export function FeedPage() {
            ACTUAL radius in the copy (never "today") plus the way out of an
            empty radius. The radius N is the same value the filter above just
            used (profile.radius_miles with the DEFAULT_RADIUS_MILES fallback).
-           V9 ticket 04: the FEED passes seePastHref, so the archive is
-           reachable from the one state that most looks like a dead end —
-           "nothing ahead" is not "nothing ever" (Browse, the places
-           directory, deliberately passes nothing). */
-        <RadiusEmptyState
-          radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES}
-          seePastHref={PAST_DROP_INS_HREF}
-        />
+           V13 ticket 05 (A1): the archive door no longer lives inside this
+           shared state — it is the quiet line UNDER the day sections below,
+           which only exists when there IS something to list. */
+        <RadiusEmptyState radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES} />
       ) : (
         <div className="flex flex-col gap-4">
           {dayGroups.map((group) => {
@@ -828,8 +824,7 @@ export function FeedPage() {
               the day sections (the ticket's placement) as a quiet line, not a
               card and not a button: it is navigation to the viewer's own
               history, never a claim that the history is interesting. The label
-              is a shared constant so this line and the empty state's cannot
-              drift. */}
+              is a shared constant so this line and any future empty-state usage cannot drift. V13 ticket 05 (A1): this is now the ONLY "past drop-ins" link in the app — the empty-radius state no longer carries one. */}
           <p className="text-center text-sm">
             <Link
               to={PAST_DROP_INS_HREF}

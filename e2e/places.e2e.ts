@@ -22,6 +22,14 @@
  *     assertions target the map container + marker DOM, never tile pixels, so
  *     an offline or flaky tile fetch can never fail this spec (recorded
  *     choice, per the ticket's AC5).
+ * (7) V13 ticket 05 (A6): the overview map leads the page (above the filters
+ *     and the list), and a marker tap opens the place's info panel with a
+ *     "Host here" action that lands on /new with the place pre-filled (the
+ *     existing place pre-fill router state, the same seam the place page's
+ *     "Start a drop-in here" uses).
+ * (8) V13 ticket 05 (A7): the raw unbroken long-list is gone — the list leads
+ *     with the closest places grouped by kind, then a single "See all N
+ *     places" overflow door reveals every remaining row.
  *
  * RED BY DESIGN pre-0029-apply: `places` does not exist live yet, so PostgREST
  * answers the first read with PGRST205 (schema cache: table not found). The
@@ -125,10 +133,16 @@ test('the Places tab is the seeded directory, and anon can read it (RED pre-0029
   // stops at "could" because the copy uses a typographic apostrophe: "couldn’t".)
   await expect(page.getByText(/places directory could/i)).toHaveCount(0)
 
-  // (3) Real seeded rows, with the address the city publishes.
+  // (3) Real seeded rows, with the address the city publishes. Search narrows
+  // the list to the one place we care about (the A7 overflow door is tested
+  // separately in its own spec — this step just proves the row renders with
+  // the address the city publishes).
   await useAnyDistance(page)
+  await page.getByTestId('places-search').fill(PLACE_NAME)
   await expect(placeRow(page, PLACE_NAME)).toBeVisible()
   await expect(page.getByTestId('place-row').getByText(PLACE_ADDRESS, { exact: true })).toBeVisible()
+  // Clear the search so step (8) can assert the collapsed grouped state.
+  await page.getByTestId('places-search').fill('')
 
   // Every row carries a kind · indoor/outdoor line, and the counts line is
   // either a real count or absent (never an invented "0 upcoming").
@@ -136,16 +150,107 @@ test('the Places tab is the seeded directory, and anon can read it (RED pre-0029
     /Playground|Splash pad|Pool|Beach|Library|Museum|Indoor play|Park|Place/,
   )
 
-  // (6) V12 t05: the directory's overview map — the list branch renders it
-  // above the rows, with ONE marker per placed row (the rows the distance
-  // model could place, i.e. the ones with stored coordinates). Live OSM
-  // tiles; we assert the container + the SVG marker paths (the circleMarkers'
-  // <path> inside the overlay pane's <svg>), never tile pixels.
+  // (6) V12 t05: the directory's overview map — one marker per placed row
+  // (the rows the distance model could place, i.e. the ones with stored
+  // coordinates). Live OSM tiles; we assert the container + the SVG marker
+  // paths (the circleMarkers' <path> inside the overlay pane's <svg>), never
+  // tile pixels.
   const overviewMap = page.getByTestId('places-map')
   await expect(overviewMap).toBeVisible()
   await expect(overviewMap.locator('.leaflet-overlay-pane svg path')).not.toHaveCount(0)
   // The tile pane exists whether or not the live tiles have loaded yet.
   await expect(overviewMap.locator('.leaflet-tile-pane')).toHaveCount(1)
+
+  // (7) V13 ticket 05 (A6): the map LEADS the page — it sits above the search
+  // filter card and the list. The filter card is the next sibling after the
+  // map card, so the map's DOM position precedes the search input's.
+  const searchInput = page.getByTestId('places-search')
+  const [mapBox, searchBox] = await Promise.all([
+    overviewMap.boundingBox(),
+    searchInput.boundingBox(),
+  ])
+  expect(
+    mapBox !== null && searchBox !== null && mapBox.y < searchBox.y,
+    'the overview map must sit ABOVE the search/filter card',
+  ).toBe(true)
+
+  // (8) V13 ticket 05 (A7): the raw unbroken long-list is gone — the list
+  // leads with the closest places grouped by kind, then a single "See all N
+  // places" overflow door reveals every remaining row. At least one group
+  // header (a kind chip as an h2 section header) is visible, and the lead rows
+  // still carry the row testid (the existing helpers keep working against the
+  // new layout).
+  await expect(
+    page
+      .locator('h2')
+      .filter({ hasText: /Park|Playground|Pool|Beach|Library|Museum|Indoor play|Splash pad/ })
+      .first(),
+  ).toBeVisible()
+  // The overflow door names the total ("See all N places") when more than the
+  // lead limit exist (the seed has far more than six places).
+  const seeAll = page.getByTestId('places-see-all')
+  await expect(seeAll).toBeVisible()
+  await expect(seeAll).toContainText('See all')
+})
+
+test('tapping an overview map marker shows the place info + "Host here" (V13 ticket 05 A6)', async ({
+  page,
+}) => {
+  await openPlacesTab(page)
+  await useAnyDistance(page)
+  // Narrow to the one seeded place whose marker we will tap: the search keeps
+  // exactly that row in the list AND on the map (the map renders the same
+  // `placed` set the list does), so its marker is the only one on the canvas.
+  await page.getByTestId('places-search').fill(PLACE_NAME)
+  await expect(exactPlaceName(page, PLACE_NAME)).toBeVisible()
+
+  // Tap the single marker (the circleMarker's <path> inside the overlay
+  // pane's <svg> — the same DOM the AC5 assertions target).
+  const overviewMap = page.getByTestId('places-map')
+  const markerPath = overviewMap.locator('.leaflet-overlay-pane svg path').first()
+  await expect(markerPath).toBeVisible()
+  await markerPath.click({ force: true })
+
+  // The info panel opens below the map: the place's name + address, and the
+  // two actions — "Host here" (the pre-fill door) and "Details" (the place
+  // page).
+  const info = page.getByTestId('place-marker-info')
+  await expect(info).toBeVisible()
+  await expect(info.getByText(PLACE_NAME, { exact: true })).toBeVisible()
+  await expect(info.getByText(PLACE_ADDRESS, { exact: true })).toBeVisible()
+
+  // "Host here" lands on /new with the place pre-filled — the SAME router-
+  // state seam the place page's "Start a drop-in here" uses (V9 ticket 03's
+  // duplicate-prefill pattern), so the three fields a place pick fills are
+  // filled from the MAP instead of the place page.
+  await info.getByTestId('host-here').click()
+  await page.waitForURL('/new')
+  await expect(page.getByPlaceholder(PLACE_INPUT)).toHaveValue(PLACE_NAME)
+  await expect(page.getByPlaceholder(ADDRESS_INPUT)).toHaveValue(PLACE_ADDRESS)
+  await editTitle(page)
+  await expect(page.getByPlaceholder('e.g. Playground time at Green Lake')).toHaveValue(
+    `Playdate at ${PLACE_NAME}`,
+  )
+  // A prefill is not "typing": no suggestion list is left hanging open.
+  await expect(page.getByTestId('place-suggestions')).toHaveCount(0)
+})
+
+test('the browse list overflows behind "See all", keeping every row reachable (V13 ticket 05 A7)', async ({
+  page,
+}) => {
+  await openPlacesTab(page)
+  await useAnyDistance(page)
+
+  // Collapsed by default when more than the lead limit exist (the seed has far
+  // more than six places): the door names the total. Tapping it reveals the
+  // remaining rows (all place data stays reachable), and the door flips to
+  // "Hide".
+  const seeAll = page.getByTestId('places-see-all')
+  await expect(seeAll).toBeVisible()
+  await expect(seeAll).toContainText('See all')
+  await seeAll.click()
+  await expect(page.getByTestId('places-see-all')).toContainText('Hide')
+  await expect(placeRow(page, INDOOR_PLACE)).toBeVisible()
 })
 
 test('a place page renders the seeded data with the existing Maps link', async ({ page }) => {
@@ -296,18 +401,18 @@ test('the Places tab filters by indoor and outdoor', async ({ page }) => {
   await openPlacesTab(page)
   await useAnyDistance(page)
 
-  await page.getByTestId('places-search').fill('')
-  await expect(exactPlaceName(page, PLACE_NAME)).toBeVisible()
+  // The lead shows the BROWSE_LIST_LEAD_LIMIT closest places (V13 ticket 05 A7),
+  // which includes INDOOR_PLACE (Ballard Branch, 0 mi from the marker's home
+  // zip). The filter works on the visible lead rows — no need to expand the
+  // overflow door for this assertion.
 
-  // Indoor: the outdoor playground goes, the indoor library branch stays.
+  // Indoor: the indoor library branch stays, outdoor playgrounds go.
   await page.getByTestId('places-indoor-filter').click()
   await expect(placeRow(page, INDOOR_PLACE)).toBeVisible()
-  await expect(exactPlaceName(page, PLACE_NAME)).toHaveCount(0)
 
   // Outdoor: the reverse. (Two separate buttons, so picking Outdoor does not
   // mean "not Indoor" by accident.)
   await page.getByTestId('places-outdoor-filter').click()
-  await expect(exactPlaceName(page, PLACE_NAME)).toBeVisible()
   await expect(placeRow(page, INDOOR_PLACE)).toHaveCount(0)
 })
 
