@@ -209,7 +209,10 @@ export async function editTitle(page: Page): Promise<void> {
 export async function stepStartTimeOnce(page: Page): Promise<{
   startMinutes: number
   startLabel: string
-  endLabel: (durationMinutes: number) => string
+  /** V13 ticket 03: the end stepper's current label (read from the DOM, not
+      computed from a duration) — the /new flow now shows an End stepper
+      instead of the "Ends …" read-back line. */
+  endLabel: () => Promise<string>
 }> {
   // V13 ticket 02: the "More options" disclosure is gone — the start-time
   // stepper lives in the visible "When" section, so no door to open.
@@ -222,7 +225,7 @@ export async function stepStartTimeOnce(page: Page): Promise<{
   return {
     startMinutes,
     startLabel,
-    endLabel: (durationMinutes: number) => formatTimeLabel(startMinutes + durationMinutes),
+    endLabel: async () => (await page.getByTestId('end-time-label').innerText()),
   }
 }
 

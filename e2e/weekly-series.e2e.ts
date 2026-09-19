@@ -187,7 +187,6 @@ test('a weekly series posts its weeks, and each week’s roster is its own', asy
   // The start time is whatever the form opened with (V8 ticket 01's next
   // 30-minute slot) — read, never assumed; the series stores THIS wall clock.
   const startMinutes = parseTimeLabel(await page.getByTestId('start-time-label').innerText())
-  await page.getByRole('button', { name: '1h', exact: true }).click()
 
   const repeat = page.getByTestId('repeat-weekly')
   await expect(repeat).toHaveAttribute('aria-pressed', 'false')

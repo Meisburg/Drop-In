@@ -309,7 +309,6 @@ async function postDropIn(page: Page, title: string, startDate: string): Promise
   // The date + the 30-minute stepper live behind "More options".
   await page.locator('input[type="date"]').fill(startDate)
   await stepStartTimeOnce(page)
-  await page.getByRole('button', { name: '1h', exact: true }).click()
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   // A successful create always lands on the feed.
   await page.waitForURL('/')

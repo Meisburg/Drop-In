@@ -139,7 +139,6 @@ test('with kids, the picker surfaces above the disclosure, the hint swaps, and a
     await chip.click()
     await expect(chip).toHaveAttribute('aria-pressed', 'true')
   }
-  await page.getByRole('button', { name: '1h', exact: true }).click()
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
   const card = page.locator('a').filter({ hasText: title }).first()

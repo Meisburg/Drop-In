@@ -579,25 +579,39 @@ export function PlaydateFormFields({
     </div>
   )
 
-  /* V12 t02: the /new (branch 1) DURATION — a read-back, not a control. The
-     start slot picks the duration ("until the next hour", seeded at mount and
-     re-derived on every start change until the parent taps a chip), so the
-     visible flow shows the value — "How long / 1h · Ends 3:00pm" — and the
-     override chips live in the visible tail block. No `> 0` guard: /new's
-     duration is always a chip value (the page seeds and re-derives it), and
-     the error line stays in case a validation pass lands on an unpicked 0. */
-  const durationValueLine = (
+  /* V13 ticket 03 (A16/A17): the /new (branch 1) END TIME — a second stepper
+     (the same TimeStepper shape as the start, labeled "End" with testid
+     `end-time-label`). Stepping it writes `durationMinutes = end − start`
+     (wrapping past midnight is allowed, matching the existing `(next day)`
+     handling). The "How long" label and the duration-chips row are GONE from
+     the /new flow (AC1: no "how long" control, no "Ends …" line on /new);
+     branches 2/3 keep durationBlock byte-identical so /edit is untouched. */
+  const endBlock = (
     <div className="flex flex-col gap-1 text-sm">
-      <span className="text-slate-700">How long</span>
-      <p className="text-sm text-slate-600">
-        {durationLabel(values.durationMinutes)} · Ends {formatTimeLabel(endTotal)}
-        {endTotal >= DAY_MINUTES ? ' (next day)' : ''}
-      </p>
+      <span className="text-slate-700">End</span>
+      <TimeStepper
+        minutes={endTotal}
+        onStep={(delta) => {
+          const newEnd = stepTimeMinutes(endTotal, delta)
+          // duration = end − start (wrap past midnight allowed: if the end
+          // wraps below the start, the window crosses midnight and the
+          // duration is the difference modulo the day).
+          const duration = ((newEnd - values.startMinutes) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES
+          onFieldChange('durationMinutes', duration)
+        }}
+        label="end"
+        testId="end-time-label"
+      />
       {errors.durationMinutes ? (
         <p className="text-sm text-red-600">{errors.durationMinutes}</p>
       ) : null}
     </div>
   )
+
+  /* V13 ticket 03: the /new (branch 1) DURATION read-back is REPLACED by the
+     end stepper above. The old `durationValueLine` ("How long / 1h · Ends …")
+     is gone from the /new flow (AC1: no "Ends …" line on /new). Branches 2/3
+     still use durationBlock (byte-identical to before this ticket). */
 
   /* V3 slice 6 (ticket 09): the "Best for ages" section is REPLACED by the
      "Kids you're bringing" picker — a multi-select of the host's own kids
@@ -760,14 +774,10 @@ line. No kids yet → the designed empty state + the /settings link (the
           {placeBlock}
           {mapSlot}
           {postAgainSlot}
-          {/* V11 ticket 05: WHEN surfaces in the visible flow — the "When"
-              section (date + stepper) sits between place and the duration, so
-              setting the time never needs a door. V12 t02: the duration is no
-              longer a control here — the start slot picks it ("until the next
-              hour"), the visible flow reads the value back
-              (durationValueLine). */}
+          {/* V13 ticket 03: the END stepper replaces the duration read-back —
+              three picks (date, start, end), no "how long" control. */}
           {whenBlock}
-          {durationValueLine}
+          {endBlock}
           {/* V13 ticket 02: address details moved OUT of More options into the
               visible flow, right after When. The normal path fills it from the
               picked place; the parent can type one instead if it is not quite
@@ -961,32 +971,38 @@ export function PlaydateTitleField({
 }
 
 /**
- * The 30-minute start-time stepper (V2 slice 1): the time is shown, never
- * typed — each press steps 30 minutes, wrapping at midnight.
+ * The 30-minute time stepper (V2 slice 1): the time is shown, never
+ * typed — each press steps 30 minutes, wrapping at midnight. V13 ticket 03:
+ * parameterized with a label + testid so the same component serves both the
+ * start and the end steppers (the end's testid is `end-time-label`).
  */
 function TimeStepper({
   minutes,
   onStep,
+  label = 'start',
+  testId = 'start-time-label',
 }: {
   minutes: number
   onStep: (deltaMinutes: number) => void
+  label?: string
+  testId?: string
 }) {
   return (
     <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-300 px-1 py-0.5">
       <button
         type="button"
-        aria-label="Earlier start time"
+        aria-label={`Earlier ${label} time`}
         onClick={() => onStep(-TIME_STEP_MINUTES)}
         className="h-11 w-11 rounded-md text-lg text-slate-600 transition-colors hover:bg-slate-100"
       >
         −
       </button>
-      <span className="text-sm font-medium tabular-nums text-slate-900" data-testid="start-time-label">
+      <span className="text-sm font-medium tabular-nums text-slate-900" data-testid={testId}>
         {formatTimeLabel(minutes)}
       </span>
       <button
         type="button"
-        aria-label="Later start time"
+        aria-label={`Later ${label} time`}
         onClick={() => onStep(TIME_STEP_MINUTES)}
         className="h-11 w-11 rounded-md text-lg text-slate-600 transition-colors hover:bg-slate-100"
       >

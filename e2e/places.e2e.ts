@@ -213,8 +213,9 @@ test('picking a place on /new posts a drop-in that links to its place page, whic
   // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   const start = await stepStartTimeOnce(page)
-  await page.getByRole('button', { name: '1h', exact: true }).click()
-  await expect(page.getByText(`Ends ${start.endLabel(60)}`)).toBeVisible()
+  // V13 ticket 03: no duration chips on /new — the End stepper shows
+  // the current end time (start + auto-duration). Verify it's visible.
+  await expect(page.getByTestId('end-time-label')).toBeVisible()
   await page.getByRole('button', { name: 'Post drop-in' }).click()
 
   try {

@@ -108,8 +108,9 @@ async function seedPostViaUi(page: Page, title: string, place: string): Promise<
     .getByPlaceholder('Anything parents should know — what to bring, parking, weather plan…')
     .fill('Bring a snack to share.')
   const stepped = await stepStartTimeOnce(page)
-  await page.getByRole('button', { name: '1h', exact: true }).click()
-  await expect(page.getByText(`Ends ${stepped.endLabel(60)}`)).toBeVisible()
+  // V13 ticket 03: no duration chips on /new — the End stepper shows
+  // the current end time (start + auto-duration). Verify it's visible.
+  await expect(page.getByTestId('end-time-label')).toBeVisible()
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
@@ -142,11 +143,10 @@ test('the Post-again chip clones the whole last post and posts it with the time 
   // ONE tap wrote the whole plan — assert every field the clone owns.
   // The place + address arrive with the chip (the applyRecentPlace
   // invariants); the title is the seed's (the parent's own words survive a
-  // clone); the duration is read back as the seed's (V12 t02: the fast path
-  // shows the value, not the chips — they live behind "More options").
+  // clone); the duration is carried as the seed's (V13 ticket 03: the End
+  // stepper shows start + duration, no "How long" label or chips on /new).
   await expect(page.getByPlaceholder(PLACE_PLACEHOLDER)).toHaveValue(place)
-  await expect(page.getByText('How long', { exact: true })).toBeVisible()
-  await expect(page.getByText(/^1h · Ends/)).toBeVisible()
+  await expect(page.getByTestId('end-time-label')).toBeVisible()
 
   // The time moved by the rule: today's same slot when still ahead, else
   // tomorrow (the spec asserts against the summary's own read-back — the
@@ -305,10 +305,10 @@ test('Duplicate prefills place, details, duration, and the linked kid, and re-se
   const afterRead = new Date().toISOString()
 
   // The parent's words + plan arrived: the place (visible) and the duration
-  // carried as a value read-back, not the chips (V12 t02's branch-1 shape).
+  // carried as the End stepper's value (V13 ticket 03: no "How long" label,
+  // no chips on /new — the end time is start + cloned duration).
   await expect(page.getByPlaceholder(PLACE_PLACEHOLDER)).toHaveValue(place)
-  await expect(page.getByText('How long', { exact: true })).toBeVisible()
-  await expect(page.getByText(/^1h · Ends/)).toBeVisible()
+  await expect(page.getByTestId('end-time-label')).toBeVisible()
 
   // The start slot was re-seated by the SAME seam the "Post again" chip uses
   // (feed.clonedStart, bracketed): the seed's 3:00 PM time-of-day, on today

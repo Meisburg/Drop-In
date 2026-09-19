@@ -325,7 +325,6 @@ test('typing @ opens the picker, and picking a place fills place + address in on
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
   // V13 ticket 02: the start date lives in the visible "When" section.
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
-  await page.getByRole('button', { name: '1h', exact: true }).click()
 
   await submitAndLandOnFeed(page)
 
@@ -459,7 +458,6 @@ test('"Somewhere else" still posts free text — and its address is still the Ma
   // V13 ticket 02: the address is a visible field (this post's whole point is a typed address).
   await page.getByPlaceholder(ADDRESS_PLACEHOLDER).fill(address)
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
-  await page.getByRole('button', { name: '1h', exact: true }).click()
 
   await submitAndLandOnFeed(page)
 
@@ -579,7 +577,6 @@ test('a remembered neighbourhood cannot survive a place pick (review cycle 1, F1
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
   // V9 ticket 03: the start date lives behind "More options".
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
-  await page.getByRole('button', { name: '1h', exact: true }).click()
   await submitAndLandOnFeed(page)
 
   // (3) The post carries the PICKED place and NO neighbourhood: the chip's id

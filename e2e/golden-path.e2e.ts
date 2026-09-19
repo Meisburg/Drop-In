@@ -57,8 +57,9 @@ test('post a drop-in via the V2 slice-1 UI, see it in the feed, clean it up', as
 
   // Duration: pick the 1h chip — the end (start + 1h) is computed, never
   // typed (pinned contract).
-  await page.getByRole('button', { name: '1h', exact: true }).click()
-  await expect(page.getByText(`Ends ${start.endLabel(60)}`)).toBeVisible()
+  // V13 ticket 03: no duration chips on /new — the End stepper shows
+  // the current end time (start + auto-duration). Verify it's visible.
+  await expect(page.getByTestId('end-time-label')).toBeVisible()
 
   // Post → the page navigates to / and the feed re-fetches on mount, so
   // the marker's post appears in its own feed. Since V9 ticket 01 the post

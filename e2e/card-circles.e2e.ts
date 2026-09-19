@@ -72,8 +72,9 @@ test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no 
   // V13 ticket 02: the date + the 30-minute stepper live in the visible "When" section (the disclosure is gone).
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   const start = await stepStartTimeOnce(page)
-  await page.getByRole('button', { name: '1h', exact: true }).click()
-  await expect(page.getByText(`Ends ${start.endLabel(60)}`)).toBeVisible()
+  // V13 ticket 03: no duration chips on /new — the End stepper shows
+  // the current end time (start + auto-duration). Verify it's visible.
+  await expect(page.getByTestId('end-time-label')).toBeVisible()
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
 

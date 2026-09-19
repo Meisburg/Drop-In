@@ -335,8 +335,9 @@ async function postDropIn(page: Page, title: string, place: string): Promise<voi
   // V13 ticket 02: the date + the 30-minute stepper live in the visible "When" section (the disclosure is gone).
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   const start = await stepStartTimeOnce(page)
-  await page.getByRole('button', { name: '1h', exact: true }).click()
-  await expect(page.getByText(`Ends ${start.endLabel(60)}`)).toBeVisible()
+  // V13 ticket 03: no duration chips on /new — the End stepper shows
+  // the current end time (start + auto-duration). Verify it's visible.
+  await expect(page.getByTestId('end-time-label')).toBeVisible()
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
 }
@@ -475,10 +476,7 @@ test('the prompt follows a real action, and "Not now" is answered with the inbox
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(place)
   // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
-  // V12 t02: the duration override chips live behind "More options" (the fast
-  // path reads the auto-picked duration back in the visible flow) — open the
-  // door, then override.
-  await page.getByRole('button', { name: '1h', exact: true }).click()
+  // V13 ticket 03: no duration chips on /new — the auto-duration is already set.
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
 

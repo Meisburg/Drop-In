@@ -77,7 +77,6 @@ test('opens on today and the next slot, and posts without date/time work', async
   await editTitle(page)
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(place)
-  await page.getByRole('button', { name: '1h', exact: true }).click()
 
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
@@ -113,7 +112,6 @@ test('/new re-mount renders the new layout and posts end-to-end', async ({
   // and typing one is the adjustment.
   await page.getByPlaceholder(ADDRESS_PLACEHOLDER).fill(address)
   // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
-  await page.getByRole('button', { name: '1h', exact: true }).click()
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
 
@@ -149,7 +147,6 @@ test('/new re-mount renders the new layout and posts end-to-end', async ({
 
   // V13 ticket 02: the preset card is gone — the When section's stepper
   // picks the duration ("until the next hour"). Just pick a duration chip.
-  await page.getByRole('button', { name: '1h', exact: true }).click()
   await expect(titleInput).toHaveValue(`Playdate at ${place}`)
 
   await page.getByRole('button', { name: 'Post drop-in' }).click()

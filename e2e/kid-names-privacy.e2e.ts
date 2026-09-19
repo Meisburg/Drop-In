@@ -223,8 +223,9 @@ async function postWithKids(page: Page, title: string, labels: string[]): Promis
   await page.getByPlaceholder('e.g. Green Lake playground, near the boathouse').fill(PLACE)
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   const start = await stepStartTimeOnce(page)
-  await page.getByRole('button', { name: '1h', exact: true }).click()
-  await expect(page.getByText(`Ends ${start.endLabel(60)}`)).toBeVisible()
+  // V13 ticket 03: no duration chips on /new — the End stepper shows
+  // the current end time (start + auto-duration). Verify it's visible.
+  await expect(page.getByTestId('end-time-label')).toBeVisible()
   for (const label of labels) {
     const chip = page.getByRole('button', { name: label, exact: true })
     await chip.click()

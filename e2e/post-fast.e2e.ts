@@ -347,12 +347,11 @@ test('a cold /new is posted in three taps or fewer, typing exactly one place', a
   await expect(page.getByPlaceholder(TITLE_PLACEHOLDER)).toHaveCount(0)
 
   // (b) The decisions are visible: the place picker and Post — and the duration
-  //     is picked FOR the parent (V12 t02): it is read back in the visible flow,
-  //     not asked. The override chips live behind "More options", so with the
-  //     door closed there is no chip button on the page at all.
+  //     is picked FOR the parent (V13 ticket 03): the End stepper shows
+  //     start + auto-duration in the visible flow, no "How long" label, no chips.
   await expect(page.getByText(PLACE_PICKER_LABEL, { exact: true })).toBeVisible()
   await expect(page.getByTestId('browse-places')).toHaveText(BROWSE_PLACES_LABEL)
-  await expect(page.getByText('How long', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('end-time-label')).toBeVisible()
   await expect(page.getByRole('button', { name: '1h', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Post drop-in' })).toBeVisible()
 
@@ -487,7 +486,7 @@ test('typing over a picked place drops the address it came with — and a typed 
   await expect(addressInput).toHaveValue('')
 
   // (3) The post that lands carries no place link and no address.
-  await page.getByRole('button', { name: '1h', exact: true }).click()
+  // V13 ticket 03: no duration chips on /new — the auto-duration is already set.
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
   const row = await readMarkerPost(title)
@@ -629,10 +628,10 @@ test('the title is generated, read back, editable in place — the extras are be
   await expect(page.getByTestId('post-summary-line')).toHaveCount(3)
 
   // (8) A TYPED title is the title that posts (the affordance proved, not
-  //     assumed): type it, answer the duration, post, and read the feed.
+  //     assumed): type it, post (V13 ticket 03: auto-duration is already set),
+  //     and read the feed.
   const posted = 'Our post-fast park plan'
   await titleInput.fill(posted)
-  await page.getByRole('button', { name: '1h', exact: true }).click()
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
   await expect(page.getByRole('heading', { name: posted, exact: true })).toBeVisible()

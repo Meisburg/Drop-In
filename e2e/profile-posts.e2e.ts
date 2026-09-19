@@ -81,7 +81,6 @@ async function postDropIn(page: Page, title: string, startDate: string): Promise
   // V13 ticket 02: the date + the 30-minute stepper live in the visible "When" section (the disclosure is gone).
   await page.locator('input[type="date"]').fill(startDate)
   await stepStartTimeOnce(page)
-  await page.getByRole('button', { name: '1h', exact: true }).click()
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   // /new always lands on the feed after a successful create (the past post is
   // not in the feed — the radius query starts today — which is fine: nothing
