@@ -434,9 +434,10 @@ test('the ages read fails closed for signed-out callers (the privacy line)', asy
 test('a kid can be saved with NO first name — the optional name, end to end', async ({ page }) => {
   const age = 4
 
-  // (1) /settings: age only, the name field left BLANK.
-  await page.goto('/settings')
-  await settleOnRoute(page, '/settings')
+  // (1) /profile: age only, the name field left BLANK. (V13 ticket 01 moved the
+  // kid controls from /settings to /profile.)
+  await page.goto('/profile')
+  await settleOnRoute(page, '/profile')
   await page.getByPlaceholder('Age').fill(String(age))
   await page.getByRole('button', { name: 'Add kid', exact: true }).click()
 

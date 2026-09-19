@@ -167,8 +167,8 @@ test('(a) a kid row edited in place (name + age) autosaves and shows on /u/:hand
   const after = `E2E KidB ${marker.displayName}`
   const kidId = await createMarkerKid(before, KID_AGE_BEFORE)
 
-  await page.goto('/settings')
-  await settleOnRoute(page, '/settings')
+  await page.goto('/profile')
+  await settleOnRoute(page, '/profile')
 
   const row = page.getByTestId('kid-row').first()
   await expect(row.getByTestId('kid-name')).toHaveValue(before)
@@ -285,14 +285,15 @@ test('(b) a moderator unhides a hidden comment (the mod flag flipped by the live
   }
 })
 
-test('(c) typing on /settings saves itself — leaving the page loses nothing', async ({ page }) => {
-  await page.goto('/settings')
-  await settleOnRoute(page, '/settings')
+test('(c) typing on /profile saves itself — leaving the page loses nothing', async ({ page }) => {
+  await page.goto('/profile')
+  await settleOnRoute(page, '/profile')
 
   // V12 t01: the unsaved-changes guard is gone. The typed text autosaves on
   // its own (the debounce settles, the always-on indicator says so), and the
   // in-app link goes straight through with no "leave without saving?" dialog.
   // (Writes the marker's bio; the afterEach nulls it back.)
+  // V13 ticket 01: the bio editor moved from /settings to /profile.
   const bio = page.getByPlaceholder('Who’s in your family, and what are you into? (optional)')
   const typed = `e2e autosaved ${Math.floor(Date.now() / 1000)}`
   await bio.fill(typed)
@@ -305,11 +306,11 @@ test('(c) typing on /settings saves itself — leaving the page loses nothing', 
   await page.waitForURL('/')
   await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible()
 
-  // And the write persisted: a re-open of /settings re-seeds from the saved
+  // And the write persisted: a re-open of /profile re-seeds from the saved
   // profile, so the typed text is still there (nothing was lost by the
   // mid-edit navigation).
-  await page.goto('/settings')
-  await settleOnRoute(page, '/settings')
+  await page.goto('/profile')
+  await settleOnRoute(page, '/profile')
   await expect(
     page.getByPlaceholder('Who’s in your family, and what are you into? (optional)'),
   ).toHaveValue(typed)
@@ -370,8 +371,8 @@ test('(e) the 5-kid cap says why the add fields went dead', async ({ page }) => 
     await createMarkerKid(`E2E Cap${index}`, 5 + index)
   }
 
-  await page.goto('/settings')
-  await settleOnRoute(page, '/settings')
+  await page.goto('/profile')
+  await settleOnRoute(page, '/profile')
 
   const cap = page.getByTestId('kids-cap')
   await expect(cap).toBeVisible()

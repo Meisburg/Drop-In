@@ -451,7 +451,7 @@ test('an ended drop-in leaves the feed, a live one stays, and the archive still 
   await expect(page.getByRole('link', { name: PAST_DROP_INS_LABEL })).toBeVisible()
   await page.getByRole('link', { name: PAST_DROP_INS_LABEL }).click()
   await settleOnRoute(page, '/profile')
-  await expect(page.getByRole('heading', { name: 'Your posts' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Hosted drop-ins' })).toBeVisible()
   const pastRow = page.locator('li').filter({ hasText: endedTitle })
   await expect(pastRow).toBeVisible()
   // …and it is in PAST, not Upcoming (the split is not just "somewhere").
@@ -536,7 +536,7 @@ test('an ended drop-in leaves the feed, a live one stays, and the archive still 
   // drop-ins, never the ones they merely attended.
   await viewerPage.goto('/profile')
   await settleOnRoute(viewerPage, '/profile')
-  await expect(viewerPage.getByRole('heading', { name: 'Your posts' })).toBeVisible()
+  await expect(viewerPage.getByRole('heading', { name: 'Hosted drop-ins' })).toBeVisible()
   await expect(viewerPage.getByText('No posts yet.', { exact: true })).toBeVisible()
   await expect(viewerPage.getByText(endedTitle, { exact: true })).toHaveCount(0)
   // …and the ended drop-in IS reachable by URL for that viewer (the detail page
