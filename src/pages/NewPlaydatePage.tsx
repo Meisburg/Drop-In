@@ -6,6 +6,7 @@ import {
   AgeRangeChips,
   PlaydateFormFields,
 } from '../components/PlaydateFormFields'
+import { PlacePickerMap } from '../components/PlaceMap'
 import { NAV_ICONS } from '../components/icons'
 import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
@@ -16,7 +17,6 @@ import {
   listKids,
   listLastOwnPlaydate,
   listPlaces,
-  listRecentOwnPlaces,
   linkKidsToPlaydate,
 } from '../lib/db'
 import {
@@ -26,13 +26,10 @@ import {
   computeStartIso,
   defaultStartDateIso,
   durationChipForUntilNextHour,
-  durationLabel,
   formatStartDayLabel,
-  formatTimeLabel,
   isDuration,
   kidLabel,
   localDayKey,
-  moreOptionsHoldsError,
   nextSlotMinutes,
   suggestedDurationMinutes,
   validatePlaydateForm,
@@ -42,9 +39,8 @@ import type {
   LastOwnPlaydate,
   PlaydateFormErrors,
   PlaydateFormValues,
-  RecentPlace,
 } from '../lib/feed'
-import { addressAfterPlaceTextEdit, generatedTitle, postSummaryLines } from '../lib/postSummary'
+import { addressAfterPlaceTextEdit, generatedTitle } from '../lib/postSummary'
 import { mergePrefill, prefillFetch } from '../lib/prefill'
 import {
   PLACE_BROWSE_LIMIT,
@@ -234,7 +230,7 @@ function titleAfterPlaceChange(title: string, place: string, touched: boolean): 
  * picker) — and the whole form is THREE DECISIONS: the place picker (ticket
  * 01's), the duration chips, and Post. Everything else (the address's manual
  * entry, the start date + the 30-minute stepper, "Kids you're bringing",
- * Details and "Repeat weekly") sits behind ONE collapsed "More options"
+ * Details and "Repeat weekly") sit in the VISIBLE tail block (V13 t02: disclosure gone)
  * disclosure. The title is no longer a question: it is GENERATED from the place
  * (postSummary.generatedTitle) and follows the place until the parent types
  * their own. Validation is unchanged and unweakened — the title keeps its
@@ -373,11 +369,7 @@ export function NewPlaydatePage({
   // The picker's selection (page-local until submit — nothing is saved
   // until the post is created, then linkKidsToPlaydate lands it).
   const [selectedKidIds, setSelectedKidIds] = useState<string[]>([])
-  // V8 ticket 01: the "Recent places" chips — the places this parent posted
-  // to last (newest first, deduped, capped at 3). [] renders NO chips row,
-  // whether that is because they have never posted or because the load
-  // failed: the zero-pressure discipline (no error state on /new).
-  const [recentPlaces, setRecentPlaces] = useState<RecentPlace[]>([])
+
   // V10 ticket 01: the ONE row the "Post again" chip clones from — the parent's
   // most recent post, kids included. null = no chip (never posted, load
   // failed, or the row did not map): the same convenience discipline as
@@ -385,10 +377,8 @@ export function NewPlaydatePage({
   const [lastPost, setLastPost] = useState<LastOwnPlaydate | null>(null)
   // V8 ticket 06: "Repeat weekly" — OFF by default (a one-off drop-in is the
   // common case, and the form a parent knows must not change under them).
-  // V9 ticket 03: the control lives behind "More options" now, and the SUMMARY
-  // reads the series back as a fourth line while it is on — one drop-in or a
-  // standing weekly meetup is the one hidden answer that changes what is
-  // posted, so it is never hidden.
+  // V13 ticket 02: relocated out of More options into the visible flow after
+  // address; the SUMMARY reads the series back while it is on.
   const [repeatWeekly, setRepeatWeekly] = useState(false)
   /**
    * V9 ticket 03: has the parent written their OWN title? The generated title
@@ -399,20 +389,7 @@ export function NewPlaydatePage({
   const [titleTouched, setTitleTouched] = useState(
     () => duplicate !== null && duplicate.title.trim() !== '',
   )
-  /**
-   * V9 ticket 03: the ONE disclosure ("More options"), collapsed by default.
-   * The page owns this state rather than the form component (which owns no
-   * state) so that a FAILED SUBMIT can open it.
-   *
-   * V11 ticket 05: the start (date + stepper) moved out of the disclosure into
-   * the visible "When" section, so `MORE_OPTIONS_FIELDS` is now EMPTY and the
-   * "open on a hidden error" rule (feed.moreOptionsHoldsError) never fires — a
-   * failed submit no longer opens the door. The state is kept (not deleted) as
-   * the drift hook: the address-overflow handler below still opens it to show a
-   * too-long address, and a required field added behind the door later re-arms
-   * the rule via MORE_OPTIONS_FIELDS.
-   */
-  const [moreOptionsOpen, setMoreOptionsOpen] = useState(false)
+
   /**
    * V9 ticket 05: the "Ages (optional)" chip the parent pressed, or null
    * ("nothing stated"). It is NOT in PlaydateFormValues — the /edit form shares
@@ -514,25 +491,7 @@ export function NewPlaydatePage({
     )
   }, [duplicate, kids])
 
-  // V8 ticket 01: the recent-places chips, fetched once the session settles
-  // (the ProfilePage kids-load pattern). A failed load stays [] — no chips
-  // row, never an error line (db.listRecentOwnPlaces returns [] with no
-  // session rather than throwing; the chips are a convenience, not a feature
-  // the form depends on).
-  useEffect(() => {
-    if (userId === null) return
-    let cancelled = false
-    listRecentOwnPlaces()
-      .then((rows) => {
-        if (!cancelled) setRecentPlaces(rows)
-      })
-      .catch(() => {
-        if (!cancelled) setRecentPlaces([])
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [userId])
+
 
   // V10 ticket 01: the "Post again" source row, fetched alongside the recent
   // places (the same load pattern — a failed load stays null = no chip, never
@@ -675,37 +634,6 @@ export function NewPlaydatePage({
   function changeAddress(value: string) {
     setAddressTouched(true)
     setAddress(value)
-  }
-
-  /**
-   * V8 ticket 01: one tap fills place + address + neighborhood from a place
-   * this parent already posted to (three fields they have told us once
-   * already). The address is written even when it is '' — the remembered
-   * post had none, and leaving a stale address behind would be worse.
-   *
-   * V8 ticket 07: it ALSO carries a place_id when the remembered text is
-   * exactly a directory name (places.resolvePlaceByName — no fuzzy matching,
-   * no rewriting of the remembered text), so re-posting to the same playground
-   * keeps the place's coordinates instead of falling back to the host zip. A
-   * remembered place the directory does not know stays free text, unchanged.
-   *
-   * V9 ticket 03 (review cycle 1, F1): the chip writes the address, so the chip
-   * owns it — `addressTouched` goes back to false and a later place-text edit
-   * clears it, exactly as a pick's address is cleared.
-   */
-  function applyRecentPlace(recent: RecentPlace) {
-    setValues((prev) => ({
-      ...prev,
-      place: recent.place,
-      neighborhoodId: recent.neighborhoodId,
-      title: titleAfterPlaceChange(prev.title, recent.place, titleTouched),
-    }))
-    setAddress(recent.address)
-    setAddressTouched(false)
-    setPlaceId(resolvePlaceByName(recent.place, places ?? [])?.id ?? null)
-    setPicker('closed')
-    setErrors((prev) => ({ ...prev, place: undefined, neighborhoodId: undefined }))
-    setSubmitError(null)
   }
 
   /**
@@ -881,11 +809,7 @@ export function NewPlaydatePage({
     setSubmitError(null)
   }
 
-  // The quick-fill preset's own values — both from the mount-time `now`, so
-  // the label it renders is exactly what it writes (see `mountedNowIso`).
-  const quickStartMinutes = nextSlotMinutes(mountedNowIso)
-  const quickDurationMinutes = suggestedDurationMinutes(mountedNowIso)
-  const quickEndLabel = formatTimeLabel(quickStartMinutes + quickDurationMinutes)
+
   // V10 ticket 01: the "Post again" chip's label — the plan it will write, so
   // the offer is not a mystery tap: the title (the parent's own words, or the
   // place it names) + the day the clone will land on. Computed from the SAME
@@ -911,7 +835,7 @@ export function NewPlaydatePage({
   const repeatWeeklyLabel = everyWeekdayLabel(weekdayFromDateIso(values.startDate))
   /**
    * V10 ticket 02: the SURFACED kids section — the picker as its own block
-   * ABOVE "More options", passed ONLY when the loaded list is non-empty. The
+   * LAST in the form flow (before Post), passed ONLY when the loaded list is non-empty. The
    * slot markup is a wrapper around the same picker the disclosure body used
    * to render: the heading moves into the slot (the picker's own label is the
    * section's label), the chips are the identical controls (accessible names
@@ -952,35 +876,6 @@ export function NewPlaydatePage({
       </div>
     ) : null
 
-  /**
-   * V8 ticket 01: "we're here until <the next hour>" — the spontaneous
-   * drop-in in one tap. Sets the start (today, next slot) and the duration.
-   * Everything it writes stays editable, and nothing is submitted (the parent
-   * still confirms).
-   *
-   * V9 ticket 03: it deliberately does NOT touch the title any more — the
-   * generated title belongs to the place, and the summary reads the times it
-   * writes back on the next render (one source: the same `values`).
-   */
-  function applyQuickFill() {
-    setValues((prev) => ({
-      ...prev,
-      startDate: defaultStartDateIso(mountedNowIso),
-      startMinutes: quickStartMinutes,
-      durationMinutes: quickDurationMinutes,
-    }))
-    // V12 t02: the preset writes exactly the auto duration (the mount default),
-    // so the auto derivation resumes — a later start change re-derives.
-    setDurationOverridden(false)
-    setErrors((prev) => ({
-      ...prev,
-      startDate: undefined,
-      startMinutes: undefined,
-      durationMinutes: undefined,
-    }))
-    setSubmitError(null)
-  }
-
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     // V9 ticket 01: the place the app will actually write — the field's text
@@ -1009,13 +904,6 @@ export function NewPlaydatePage({
     const fieldErrors = validatePlaydateForm({ ...values, place: placeText, title })
     if (Object.keys(fieldErrors).length > 0) {
       setErrors(fieldErrors)
-      // V9 ticket 03: an error the parent cannot SEE is not an error. V11 ticket 05:
-      // the start moved into the visible "When" section, so MORE_OPTIONS_FIELDS
-      // is empty and this rule (feed.moreOptionsHoldsError) never fires today —
-      // the line is kept as the drift hook: a required field added behind the
-      // disclosure re-arms it (the address-overflow handler below still opens
-      // the door on its own).
-      if (moreOptionsHoldsError(fieldErrors)) setMoreOptionsOpen(true)
       return
     }
     // V3 slice 5 (ticket 08): the optional address — trimmed, capped at
@@ -1023,10 +911,8 @@ export function NewPlaydatePage({
     // omitted from the insert (the address stays null).
     const trimmedAddress = address.trim()
     if (trimmedAddress.length > ADDRESS_MAX_LENGTH) {
-      // The inline field error is already visible — in the disclosure the
-      // parent typed the address into, which they may have collapsed since.
-      // Open it, then return: nothing is saved either way.
-      setMoreOptionsOpen(true)
+      // The inline field error is already visible (the address field is in the
+      // visible flow now — no door to open). Return: nothing is saved.
       return
     }
     setSubmitting(true)
@@ -1179,20 +1065,16 @@ export function NewPlaydatePage({
            Review cycle 1, F1: the address is read back because the detail page's
            Maps link is built from (place, address) — it is part of what is
            posted, not a detail of the form. */
-        summaryLines={postSummaryLines(values, {
-          repeatsWeekly: repeatWeekly,
-          address,
-        })}
+                 /* V13 ticket 02: the summary card shows TITLE ONLY (the AC pins it).
+            The full read-back lines are gone from the summary card; the
+            individual fields (When, address, repeat) are visible in their own
+            sections below. */
+         summaryLines={[values.title]}
         /* V9 ticket 03 (review cycle 1, F2): the title line is a READ-BACK the
            parent taps; only then is it the input, so the place picker stays the
            form's first field (ticket 01's AC) and its first tab stop. */
         titleEditing={titleEditing}
-        onEditTitle={() => setTitleEditing(true)}
-        /* V9 ticket 03: the one disclosure, collapsed by default and owned
-           here, so a failed submit can open what it needs the parent to see. */
-        moreOptionsOpen={moreOptionsOpen}
-        onToggleMoreOptions={() => setMoreOptionsOpen((prev) => !prev)}
-        /* V9 ticket 03: /new's controls meet the 44px phone tap-target floor
+        onEditTitle={() => setTitleEditing(true)}        /* V9 ticket 03: /new's controls meet the 44px phone tap-target floor
            (scripts/mobile-audit.mjs cannot walk this route — it is behind the
            session — so e2e/post-fast.e2e.ts measures it at 320/375/390/430). */
         minTouchTargets
@@ -1210,10 +1092,7 @@ export function NewPlaydatePage({
         /* V10 ticket 02: the kids picker SURFACES above the disclosure when
            this parent has kids (the slot renders the section); null/loading
            keeps the picker inside the disclosure — today's exact form. */
-        kidsSectionSlot={kidsSectionSlot ?? undefined}
-        recentPlaces={recentPlaces}
-        onApplyRecentPlace={applyRecentPlace}
-        /* V8 ticket 07: the place autocomplete. It stays CLOSED while the
+        kidsSectionSlot={kidsSectionSlot ?? undefined}        /* V8 ticket 07: the place autocomplete. It stays CLOSED while the
            directory is unavailable (null), so a pre-0029-apply /new renders
            exactly the form it rendered yesterday.
            V9 ticket 01: the list is whatever `placePickerMatches` decides for
@@ -1235,6 +1114,15 @@ export function NewPlaydatePage({
            stay usable with no places table at all. */
         onBrowsePlaces={places !== null && places.length > 0 ? toggleBrowsePlaces : undefined}
         browsePlacesOpen={picker === 'browse'}
+         /* V13 ticket 02: the interactive place-picker map — markers per
+            directory place (DB coords only), tap pre-fills the place field
+            through the same pick path as the suggestion list. /edit passes
+            nothing here. */
+         mapSlot={
+           places !== null && places.length > 0 ? (
+             <PlacePickerMap places={places} zipCoords={null} onPick={pickPlace} />
+           ) : null
+         }
         /* V10 ticket 01: the "Post again" chip — the whole last post (place,
            address, neighbourhood, time, details, kids) in one tap, rendered as
            a slot so the form component stays stateless (the preset pattern).
@@ -1255,35 +1143,44 @@ export function NewPlaydatePage({
             </div>
           ) : null
         }
-          preset={
-            /* V8 ticket 01: the spontaneous drop-in in one tap — start at the
-               next 30-minute slot, run to the next hour. The label states the
-               end it will actually write, and both come from the same
-               mount-time `now`, so it cannot promise one time and set another.
-               Nothing is submitted: the parent still taps Post. */
-            <div className="flex flex-col gap-1 rounded-xl border border-indigo-200 bg-indigo-50 p-3">
-              <button
-                type="button"
-                onClick={applyQuickFill}
-                className="min-h-11 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white"
-              >
-                We’re here until {quickEndLabel}
-              </button>
-              <p className="text-xs text-indigo-700">
-                Fills the start time ({formatTimeLabel(quickStartMinutes)}) and how long (
-                {durationLabel(quickDurationMinutes)}) — then just say where you’ll be.
-              </p>
-            </div>
-          }
         /* V10 ticket 03: the "Describe it instead" affordance — one sentence
            in, the form filled for review. Collapsed by default; a failed
            prefill is a quiet inline line, never a blocked Post. */
         describeSlot={
-          <div className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <span className="text-sm font-medium text-slate-700">How do you want to fill this in?</span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                data-testid="describe-toggle"
+                onClick={() => setDescribeOpen(true)}
+                className={
+                  'min-h-11 flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ' +
+                  (describeOpen
+                    ? 'border-indigo-600 bg-indigo-600 text-white'
+                    : 'border-slate-300 bg-white text-slate-700')
+                }
+              >
+                Describe with AI
+              </button>
+              <button
+                type="button"
+                data-testid="write-yourself"
+                onClick={() => setDescribeOpen(false)}
+                className={
+                  'min-h-11 flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ' +
+                  (!describeOpen
+                    ? 'border-indigo-600 bg-indigo-600 text-white'
+                    : 'border-slate-300 bg-white text-slate-700')
+                }
+              >
+                Write it yourself
+              </button>
+            </div>
             {describeOpen ? (
               <>
                 <label className="flex flex-col gap-1 text-sm" htmlFor="describe-input">
-                  <span className="text-slate-700">Describe it instead</span>
+                  <span className="text-slate-700">Describe your playdate</span>
                   <textarea
                     id="describe-input"
                     data-testid="describe-input"
@@ -1313,24 +1210,8 @@ export function NewPlaydatePage({
                     Fills the form below — review it, then Post. Nothing posts itself.
                   </p>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setDescribeOpen(false)}
-                  className="min-h-11 text-left text-xs font-medium text-slate-500"
-                >
-                  Hide
-                </button>
               </>
-            ) : (
-              <button
-                type="button"
-                data-testid="describe-toggle"
-                onClick={() => setDescribeOpen(true)}
-                className="min-h-11 text-left text-sm font-medium text-indigo-600"
-              >
-                Describe it instead
-              </button>
-            )}
+            ) : null}
           </div>
         }
           /* V8 ticket 06: the "Repeat weekly" control — off by default. The

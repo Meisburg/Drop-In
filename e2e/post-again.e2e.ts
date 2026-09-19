@@ -54,7 +54,6 @@ import { clonedStart, computeEndIso, computeStartIso, kidLabel } from '../src/li
 import {
   editTitle,
   localDatePlusDays,
-  openMoreOptions,
   parseTimeLabel,
   readMarkerMeta,
   readMarkerSession,
@@ -103,7 +102,6 @@ async function seedPostViaUi(page: Page, title: string, place: string): Promise<
   // clone's date/time writes are provably the CLONE's, not the form defaults.
   // The address + details give the clone something to carry (both live
   // behind the disclosure).
-  await openMoreOptions(page)
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   await page.getByPlaceholder('e.g. 7200 4th Ave NE, near the boathouse').fill('1234 E2E Ave NE')
   await page
@@ -165,7 +163,6 @@ test('the Post-again chip clones the whole last post and posts it with the time 
   await expect(page.getByTestId('title-line')).toBeVisible()
 
   // The address arrived with the clone (open the disclosure to read it).
-  await openMoreOptions(page)
   await expect(page.getByPlaceholder('e.g. 7200 4th Ave NE, near the boathouse')).toHaveValue(
     '1234 E2E Ave NE',
   )
@@ -333,7 +330,6 @@ test('Duplicate prefills place, details, duration, and the linked kid, and re-se
 
   // The details came along too (behind the disclosure — open the door to read
   // them; a collapsed field is not in the DOM).
-  await openMoreOptions(page)
   await expect(
     page.getByPlaceholder('Anything parents should know — what to bring, parking, weather plan…'),
   ).toHaveValue(details)

@@ -97,7 +97,6 @@ import { NOTIFICATION_KINDS, buildNotificationPayload } from '../src/lib/push'
 import {
   editTitle,
   localDatePlusDays,
-  openMoreOptions,
   readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
@@ -222,7 +221,6 @@ async function postWithKids(page: Page, title: string, labels: string[]): Promis
   await editTitle(page)
   await page.getByPlaceholder('e.g. Playground time at Green Lake').fill(title)
   await page.getByPlaceholder('e.g. Green Lake playground, near the boathouse').fill(PLACE)
-  await openMoreOptions(page)
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   const start = await stepStartTimeOnce(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()

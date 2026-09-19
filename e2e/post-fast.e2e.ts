@@ -74,7 +74,6 @@ import {
   postSummaryLines,
 } from '../src/lib/postSummary'
 import {
-  openMoreOptions,
   readMarkerSession,
   readSupabaseEnv,
   settleOnRoute,
@@ -485,7 +484,6 @@ test('typing over a picked place drops the address it came with — and a typed 
   expect((await summaryLines(page))[2]).toBe(FREETEXT_PLACE)
   // …and the address field itself is empty: "nothing hidden" means nothing, not
   // "nothing visible".
-  await openMoreOptions(page)
   await expect(addressInput).toHaveValue('')
 
   // (3) The post that lands carries no place link and no address.
@@ -503,7 +501,6 @@ test('typing over a picked place drops the address it came with — and a typed 
   //     back, typed or not.
   await page.goto('/new')
   await settleOnRoute(page, '/new')
-  await openMoreOptions(page)
   await addressInput.fill(TYPED_ADDRESS)
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(FREETEXT_PLACE)
   await expect(addressInput).toHaveValue(TYPED_ADDRESS)
@@ -569,48 +566,30 @@ test('the title is generated, read back, editable in place — the extras are be
   await expect(titleInput).toHaveValue(generatedTitle(PLACE_NAME))
   await placeInput.fill(FREETEXT_PLACE)
 
-  // (6) The disclosure: collapsed by default, holding the OPTIONAL answers —
-  //     nothing that changes what will be posted. V11 ticket 05: the start date
-  //     + the 30-minute stepper LEFT the disclosure for the visible "When"
-  //     section, so with the door CLOSED they are visible (the ticket's point),
-  //     and the door itself holds only the optional extras.
-  const toggle = page.getByTestId('more-options')
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
-  for (const absent of [
-    page.getByPlaceholder(ADDRESS_PLACEHOLDER),
-    page.getByText("Kids you're bringing"),
-    page.getByPlaceholder(DETAILS_PLACEHOLDER),
-    page.getByTestId('repeat-weekly'),
-    page.getByTestId('more-options-body'),
-  ]) {
-    await expect(absent).toHaveCount(0)
-  }
-  // The "When" section is in the VISIBLE flow — no door to open.
+  // (6) V13 ticket 02: the "More options" disclosure is GONE — every field
+  //     (address, details, repeat weekly, kids) now has a visible home in the
+  //     form's tail block. Pin their presence directly; there is no door to
+  //     open and no more-options-body container.
+  await expect(page.getByTestId('more-options')).toHaveCount(0)
+  await expect(page.getByTestId('more-options-body')).toHaveCount(0)
+  // The "When" section is in the VISIBLE flow.
   await expect(page.getByText('When', { exact: true })).toBeVisible()
   await expect(page.locator('input[type="date"]')).toBeVisible()
   await expect(page.getByTestId('start-time-label')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Later start time' })).toBeVisible()
-
-  await openMoreOptions(page)
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
-  const body = page.getByTestId('more-options-body')
-  await expect(body).toBeVisible()
+  // The visible tail block: address, details, repeat weekly all render.
   await expect(page.getByPlaceholder(ADDRESS_PLACEHOLDER)).toBeVisible()
   await expect(page.getByPlaceholder(DETAILS_PLACEHOLDER)).toBeVisible()
   await expect(page.getByTestId('repeat-weekly')).toBeVisible()
-  // V12 t02: the duration override chips now live BEHIND this door (the /new
-  // fast path reads the auto-picked duration back in the visible flow), so the
-  // door is where the parent overrides it — pin the row's presence here.
+  // V12 t02: the duration override chips live in the visible flow (the /new
+  // fast path reads the auto-picked duration back in the visible flow).
   for (const label of DURATION_CHIP_LABELS) {
     await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible()
   }
 
-  // V11 ticket 05: the disclosure holds no REQUIRED answer anymore (the start
-  // moved into the visible "When" section), so feed.MORE_OPTIONS_FIELDS is
-  // EMPTY — pinned here so a required field added behind the door is forced
-  // into the list (the drift hook; the rule itself is unit-tested in
-  // feed.test.ts, and the failed start-date submit in the next spec shows its
-  // error in the When section with the door still closed).
+  // V13 ticket 02: MORE_OPTIONS_FIELDS is empty (the disclosure is gone, so
+  // there are no fields behind a door) — pinned here so a regression that
+  // re-introduces a hidden field set is caught.
   expect([...MORE_OPTIONS_FIELDS]).toEqual([])
 
   // (7) "Repeat weekly" is behind the door — and the summary states the series
@@ -680,11 +659,10 @@ test('a submit that fails on the start date shows its error in the visible "When
 
   await page.getByRole('button', { name: 'Post drop-in' }).click()
 
-  // The error renders WHERE the field is — the visible "When" section — and the
-  // disclosure STAYS COLLAPSED: MORE_OPTIONS_FIELDS is empty (V11 t05), so the
-  // open-on-hidden-error rule (feed.moreOptionsHoldsError) has nothing to open.
+  // The error renders WHERE the field is — the visible "When" section.
+  // V13 ticket 02: the disclosure is gone, so there is no door state to check.
   await expect(page.getByText('Pick a start date.')).toBeVisible()
-  await expect(page.getByTestId('more-options')).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByTestId('more-options')).toHaveCount(0)
   await expect(page.getByTestId('more-options-body')).toHaveCount(0)
   // Nothing was posted: the designed submit error is NOT rendered (that line is
   // for a failed create, not for a validation stop), and the route is still /new.
@@ -692,7 +670,7 @@ test('a submit that fails on the start date shows its error in the visible "When
   expect(new URL(page.url()).pathname).toBe('/new')
 })
 
-test('the phone pass: /new at 320/375/390/430 and both orientations, collapsed and expanded', async ({
+test('the phone pass: /new at 320/375/390/430 and both orientations', async ({
   page,
 }) => {
   // scripts/mobile-audit.mjs cannot walk /new (it is behind the session and the
@@ -711,29 +689,20 @@ test('the phone pass: /new at 320/375/390/430 and both orientations, collapsed a
     await page.goto('/new')
     await settleOnRoute(page, '/new')
 
-    const collapsed = await measureControls(page)
+    // V13 ticket 02: the disclosure is gone — the form is always fully visible,
+    // so there is no collapsed/expanded distinction. Measure once per viewport.
+    const measured = await measureControls(page)
     expect(
-      collapsed.scrollWidth,
+      measured.scrollWidth,
       `${viewport.width}px: nothing may push the page sideways`,
-    ).toBeLessThanOrEqual(collapsed.innerWidth)
-    // A sweep that found nothing would pass vacuously: the three decisions and
-    // their affordances are always there.
-    expect(collapsed.controls.length).toBeGreaterThanOrEqual(8)
-    for (const control of collapsed.controls) {
+    ).toBeLessThanOrEqual(measured.innerWidth)
+    // A sweep that found nothing would pass vacuously: the decisions and their
+    // affordances are always in the DOM.
+    expect(measured.controls.length).toBeGreaterThanOrEqual(8)
+    for (const control of measured.controls) {
       expect(
         control.height,
-        `${viewport.width}px collapsed: ${control.label} must be >= 44px (got ${control.height})`,
-      ).toBeGreaterThanOrEqual(44)
-    }
-
-    await openMoreOptions(page)
-    const expanded = await measureControls(page)
-    expect(expanded.scrollWidth).toBeLessThanOrEqual(expanded.innerWidth)
-    expect(expanded.controls.length).toBeGreaterThan(collapsed.controls.length)
-    for (const control of expanded.controls) {
-      expect(
-        control.height,
-        `${viewport.width}px expanded: ${control.label} must be >= 44px (got ${control.height})`,
+        `${viewport.width}px: ${control.label} must be >= 44px (got ${control.height})`,
       ).toBeGreaterThanOrEqual(44)
     }
   }

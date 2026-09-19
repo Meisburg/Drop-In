@@ -1,22 +1,23 @@
 /**
- * V10 ticket 02 — "Kids you're bringing" surfaces above "More options" for a
- * parent who HAS kids.
+ * V10 ticket 02 — "Kids you're bringing" surfaces in the visible flow for a
+ * parent who HAS kids. V13 ticket 02: the "More options" disclosure is GONE;
+ * the kids section now renders LAST in the form (right before Post), in the
+ * visible flow.
  *
  * The ticket's claims, end to end against the live project:
  *
  *  1. THE SURFACED SECTION. With the marker's seeded kids live, /new renders
- *     the "kids-section" ABOVE the disclosure (before "more-options" in the
- *     DOM), with the same chips the disclosure used to hold (accessible names
+ *     the "kids-section" LAST in the form flow (after When/address/repeat/ages,
+ *     before the Post button), with the same chips (accessible names
  *     "Bernie · 6" — kidLabel, V9 t05's optional-name rule), the same
  *     aria-pressed state, and ≥44px targets (min-h-11).
- *  2. THE DISCLOSURE'S HINT TELLS THE TRUTH. With kids surfaced, the hint no
-     longer claims "kids" live behind the door (MORE_OPTIONS_HINT_WITHOUT_KIDS);
-     the picker is NOT in the body (a field in two places is two tab stops for
-     one answer).
+ *  2. NO DISCLOSURE. There is no "more-options" toggle, no hint line, and no
+     `more-options-body` container — everything that lived behind the door now
+     has a visible home in the form's tail block.
  *  3. THE NO-KIDS FORM. With NO kid rows (the marker's kids deleted), /new
-     renders NO kids-section, the picker + the "Add kids" empty state stay
-     inside the disclosure, and the hint is the no-kids copy (V11 t05 dropped
-     "A date," from both hints) — asserted by this spec's second test.
+     renders NO kids-section; the picker + the "Add kids" empty state render in
+     the visible flow (the kidsBlock fallback when kidsSectionSlot is
+     undefined) — asserted by this spec's second test.
  *  4. THE SUBMIT PATH IS UNCHANGED. Picking a surfaced chip + posting lands
      the playdate_kids rows (the "Kids coming" line on the detail page) — the
      same contract kids-v3 pins through the disclosure.
@@ -27,7 +28,6 @@ import { expect, test } from '@playwright/test'
 import {
   editTitle,
   localDatePlusDays,
-  openMoreOptions,
   readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
@@ -105,26 +105,26 @@ test('with kids, the picker surfaces above the disclosure, the hint swaps, and a
   // has kids.
   await expect(page.getByText('Add your kids in your settings')).toHaveCount(0)
 
-  // Order: the section renders BEFORE the disclosure toggle in the DOM.
+  // V13 ticket 02: the "More options" disclosure is GONE — the kids section now
+  // renders LAST in the form flow, right before the Post button (the AC's order:
+  // title/describe → place → time → address → repeat/ages/details → kids → Post).
+  // Assert it comes AFTER the When section and BEFORE the submit button.
   const domOrder = await page.evaluate(() => {
     const sectionEl = document.querySelector('[data-testid="kids-section"]')
-    const toggleEl = document.querySelector('[data-testid="more-options"]')
-    if (sectionEl === null || toggleEl === null) return null
-    return sectionEl.compareDocumentPosition(toggleEl) & Node.DOCUMENT_POSITION_FOLLOWING
-      ? 'section-first'
-      : 'toggle-first'
+    const whenEl = document.querySelector('[data-testid="start-time-label"]')
+    const submitBtn = document.querySelector('button[type="submit"]')
+    if (sectionEl === null || whenEl === null || submitBtn === null) return null
+    const afterWhen = whenEl.compareDocumentPosition(sectionEl) & Node.DOCUMENT_POSITION_FOLLOWING
+    const beforeSubmit = sectionEl.compareDocumentPosition(submitBtn) & Node.DOCUMENT_POSITION_FOLLOWING
+    return afterWhen && beforeSubmit ? 'last-before-post' : 'wrong-position'
   })
-  expect(domOrder).toBe('section-first')
+  expect(domOrder).toBe('last-before-post')
 
-  // 2. The hint tells the truth: no "kids" behind this door now, and no date
-  //    (V11 t05 moved the start into the visible "When" section).
-  await expect(page.getByText('An address, details, or a weekly repeat.')).toBeVisible()
-  await openMoreOptions(page)
-  const body = page.getByTestId('more-options-body')
-  await expect(body).toBeVisible()
-  // The picker is NOT in the body (and not anywhere else a second time).
+  // V13 ticket 02: the disclosure is gone — there is no hint line and no
+  // `more-options-body` container. The kids section is the only place the
+  // picker renders (count 1, visible), sitting in the visible flow.
+  await expect(page.getByTestId('more-options-body')).toHaveCount(0)
   await expect(page.getByText("Kids you're bringing")).toHaveCount(1)
-  await expect(body.getByText("Kids you're bringing")).toHaveCount(0)
 
   // 3. Pick both surfaced chips (the submit path unchanged) and post.
   await editTitle(page)
@@ -171,13 +171,11 @@ test('with no kids, /new renders today\u2019s form (picker inside the disclosure
   await page.goto('/new')
   await settleOnRoute(page, '/new')
 
-  // The surfaced section is ABSENT; the disclosure holds the picker + the
-  // empty state + the no-kids hint (V11 t05: "A date," dropped from both hints,
-  // so this is the no-kids copy, not V9 t03's original).
+  // V13 ticket 02: the disclosure is gone — a no-kids parent sees the picker's
+  // empty state in the VISIBLE flow (the kidsBlock fallback renders when
+  // kidsSectionSlot is undefined). No hint line, no more-options-body.
   await expect(page.getByTestId('kids-section')).toHaveCount(0)
-  await expect(page.getByText('An address, kids, details, or a weekly repeat.')).toBeVisible()
-  await expect(page.getByText("Kids you're bringing")).toHaveCount(0)
-  await openMoreOptions(page)
+  await expect(page.getByTestId('more-options-body')).toHaveCount(0)
   await expect(page.getByText("Kids you're bringing")).toBeVisible()
   // Loading vs empty is kids-state-dependent, but a no-rows parent gets the
   // designed empty state (the load resolves to [] for a kidless profile).

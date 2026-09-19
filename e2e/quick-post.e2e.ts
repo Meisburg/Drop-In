@@ -31,7 +31,6 @@ import { expect, test } from '@playwright/test'
 import { defaultStartDateIso, nextSlotMinutes } from '../src/lib/feed'
 import {
   editTitle,
-  openMoreOptions,
   parseTimeLabel,
   readMarkerMeta,
   readMarkerSession,
@@ -61,7 +60,6 @@ test('opens on today and the next slot, and posts without date/time work', async
   // V9 ticket 03: the date input now lives behind "More options" (the summary
   // reads the day back as text), so the door is opened before the default is
   // read. The ASSERTION is unchanged: it is still the control's own value.
-  await openMoreOptions(page)
   const dateValue = await page.locator('input[type="date"]').inputValue()
   expect(dateValue).not.toBe('')
   expect([defaultStartDateIso(beforeMount), defaultStartDateIso(afterRead)]).toContain(dateValue)
@@ -86,12 +84,11 @@ test('opens on today and the next slot, and posts without date/time work', async
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
 })
 
-// The FREE-TEXT half of the "Recent places" memory (V9 ticket 01, review cycle
-// 1, F4): this spec seeds a typed place, so what it pins is the chip on a place
-// the directory does not know. The SEEDED/picked half lives in
-// e2e/post-location.e2e.ts (a chip for a post created from a directory place,
-// whose text resolves back to the directory row).
-test('a recent-place chip fills place + address, and the preset fills the time it promises', async ({
+// V13 ticket 02: the "Recent places" chips and the quick-fill preset card are
+// GONE. This test now seeds a post through the UI, then re-mounts /new to
+// confirm the new layout renders (describe choice, map picker, visible
+// address field) and the Post path still works end-to-end.
+test('/new re-mount renders the new layout and posts end-to-end', async ({
   page,
 }) => {
   const marker = readMarkerMeta()
@@ -114,7 +111,6 @@ test('a recent-place chip fills place + address, and the preset fills the time i
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(place)
   // V9 ticket 03: the address is behind "More options" now — the pick fills it,
   // and typing one is the adjustment.
-  await openMoreOptions(page)
   await page.getByPlaceholder(ADDRESS_PLACEHOLDER).fill(address)
   // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
   await page.getByRole('button', { name: '1h', exact: true }).click()
@@ -133,29 +129,14 @@ test('a recent-place chip fills place + address, and the preset fills the time i
   const titleInput = page.getByPlaceholder(TITLE_PLACEHOLDER)
   // V9 ticket 03: the address lives behind "More options", so it is read there
   // (a collapsed disclosure's contents are not in the DOM at all).
-  await openMoreOptions(page)
   // The form does not guess a place — that is the one thing only the parent
   // knows (the chips are an offer, not a prefill).
   await expect(placeInput).toHaveValue('')
   await expect(addressInput).toHaveValue('')
 
-  const chip = page.getByRole('button', { name: place, exact: true })
-  await expect(chip).toBeVisible()
-  await chip.click()
-
-  // 375px: the chips row wraps like the duration chips — nothing pushes the
-  // page sideways (the preset card, the two chip rows and the form all fit).
-  const width = await page.evaluate(() => ({
-    scrollWidth: document.documentElement.scrollWidth,
-    innerWidth: window.innerWidth,
-  }))
-  expect(width.scrollWidth).toBeLessThanOrEqual(width.innerWidth)
-
-  // One tap, TWO fields — place and address (V9 ticket 01, review cycle 1, F4:
-  // this line used to say "three fields", the third being the neighbourhood,
-  // which is no longer a question on this page).
-  await expect(placeInput).toHaveValue(place)
-  await expect(addressInput).toHaveValue(address)
+  // V13 ticket 02: the chips are gone — fill the fields directly.
+  await placeInput.fill(place)
+  await addressInput.fill(address)
   // V9 ticket 01 replaced the `toHaveValue(/.+/)` assertion that used to be
   // here — it pinned the neighbourhood SELECT's value, and both the field and
   // that assertion are gone from /new. This is a DIFFERENT assertion about the
@@ -166,12 +147,9 @@ test('a recent-place chip fills place + address, and the preset fills the time i
   // …and the title was seeded from the place, only because it was EMPTY.
   await expect(titleInput).toHaveValue(`Playdate at ${place}`)
 
-  // The quick-fill preset: its label is the end it writes.
-  const preset = page.getByRole('button', { name: /^We’re here until / })
-  const promisedEnd = (await preset.innerText()).replace('We’re here until ', '').trim()
-  await preset.click()
-  await expect(page.getByText(`Ends ${promisedEnd}`)).toBeVisible()
-  // A typed title is never overwritten by the preset.
+  // V13 ticket 02: the preset card is gone — the When section's stepper
+  // picks the duration ("until the next hour"). Just pick a duration chip.
+  await page.getByRole('button', { name: '1h', exact: true }).click()
   await expect(titleInput).toHaveValue(`Playdate at ${place}`)
 
   await page.getByRole('button', { name: 'Post drop-in' }).click()

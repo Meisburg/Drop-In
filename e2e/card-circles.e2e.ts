@@ -40,7 +40,6 @@ import { expect, test } from '@playwright/test'
 import {
   editTitle,
   localDatePlusDays,
-  openMoreOptions,
   readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
@@ -70,8 +69,7 @@ test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no 
     .getByPlaceholder('e.g. Green Lake playground, near the boathouse')
     .fill('E2E going lot')
   // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
-  // V9 ticket 03: the date + the 30-minute stepper live behind "More options".
-  await openMoreOptions(page)
+  // V13 ticket 02: the date + the 30-minute stepper live in the visible "When" section (the disclosure is gone).
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   const start = await stepStartTimeOnce(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()

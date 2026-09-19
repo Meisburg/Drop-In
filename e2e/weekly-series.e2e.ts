@@ -52,7 +52,6 @@ import {
 import {
   editTitle,
   localDatePlusDays,
-  openMoreOptions,
   parseTimeLabel,
   readMarkerMeta,
   readMarkerSession,
@@ -183,8 +182,7 @@ test('a weekly series posts its weeks, and each week’s roster is its own', asy
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(PLACE)
   // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
-  // V9 ticket 03: the date + the 30-minute stepper live behind "More options".
-  await openMoreOptions(page)
+  // V13 ticket 02: the date + the 30-minute stepper live in the visible "When" section (the disclosure is gone).
   await page.locator('input[type="date"]').fill(startDate)
   // The start time is whatever the form opened with (V8 ticket 01's next
   // 30-minute slot) — read, never assumed; the series stores THIS wall clock.

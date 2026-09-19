@@ -79,7 +79,6 @@ import type { Page } from '@playwright/test'
 import {
   editTitle,
   localDatePlusDays,
-  openMoreOptions,
   readMarkerSession,
   readSupabaseEnv,
   settleOnRoute,
@@ -207,12 +206,9 @@ async function postDropIn(
     .getByPlaceholder('e.g. Green Lake playground, near the boathouse')
     .fill(PLACE)
 
-  // V9 ticket 05's placement pin, asserted here: the chip row lives INSIDE the
-  // "More options" disclosure. A collapsed disclosure UNMOUNTS its body (ticket
-  // 03's own rule), so the row is not in the DOM at all until the door opens —
-  // which is why this is checked before openMoreOptions runs.
+  // V13 ticket 02: the "More options" disclosure is gone — the ages chips now
+  // have a visible home in the form's tail block, so they are always in the DOM.
   await expect(page.getByTestId('ages-chips')).toHaveCount(0)
-  await openMoreOptions(page)
   await expect(page.getByTestId('ages-chips')).toBeVisible()
 
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))

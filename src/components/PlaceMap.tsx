@@ -172,3 +172,101 @@ export function PlacesMap({
   if (markers.length === 0) return null
   return <MapCanvas markers={markers} fit testId="places-map" className={className} />
 }
+
+/**
+ * V13 ticket 02: the interactive PICK-MODE map for /new's place picker.
+ *
+ * A marker per directory place that resolves to coordinates (DB lat/lng first,
+ * else the gazetteer zip via `resolveMapCoords` — the same seam as PlacesMap).
+ * Tapping a marker calls `onPick(place)` with the full Place row, so the page
+ * can pre-fill the place field through the SAME pick path as the suggestion
+ * list (`pickPlace` → `placePickPatch`). No browser geolocation anywhere:
+ * coordinates come from the database only (the V12 t05 invariant), and a
+ * place whose coordinates resolve to null simply has no marker (never a fake
+ * pin).
+ *
+ * The canvas is interactive (scrollWheelZoom on, drag pan on) unlike the
+ * read-only detail/browse surfaces — this is a picker, not a display. The
+ * container keeps the `place-map` testid family so e2e specs can target it.
+ */
+export function PlacePickerMap({
+  places,
+  zipCoords,
+  onPick,
+  className,
+}: {
+  /** The directory rows to plot (the page passes whatever it loaded). */
+  places: readonly Place[]
+  /** The gazetteer zip→coords map (null while loading or on failure). */
+  zipCoords: ReadonlyMap<string, ZipCoords> | null
+  /** Called with the tapped Place; the page routes it through its pick seam. */
+  onPick: (place: Place) => void
+  className?: string
+}) {
+  // Resolve each place's coords; keep the (place, coords) pairs so a tap can
+  // hand back the full row, not just the coordinate. Hooks must be called
+  // unconditionally (rules-of-hooks), so they sit ABOVE the early return and
+  // branch inside their effects when there is nothing to plot.
+  const entries = places
+    .map((p) => ({ place: p, coords: resolveMapCoords(p, zipCoords) }))
+    .filter((e): e is { place: Place; coords: MapMarker } => e.coords !== null)
+
+  const markers = entries.map((e) => e.coords)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const mapRef = useRef<L.Map | null>(null)
+  const initialMarkerRef = useRef(markers[0])
+  const markersKey = markers.map((m) => `${m.lat}:${m.lng}`).join('|')
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (el === null || markers.length === 0) return
+    const first = initialMarkerRef.current
+    const map = L.map(el, { scrollWheelZoom: true }).setView(
+      first === undefined ? SEATTLE_CENTER : [first.lat, first.lng],
+      first === undefined ? 11 : DETAIL_ZOOM,
+    )
+    L.tileLayer(OSM_TILE_URL, { attribution: OSM_ATTRIBUTION, maxZoom: 19 }).addTo(map)
+    mapRef.current = map
+    return () => {
+      map.remove()
+      mapRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (map === null || markers.length === 0) return
+    const group = L.layerGroup(
+      entries.map(({ place, coords }) => {
+        const marker = L.circleMarker([coords.lat, coords.lng], {
+          radius: 8,
+          color: '#4f46e5',
+          weight: 2,
+          fillColor: '#4f46e5',
+          fillOpacity: 0.35,
+        })
+        marker.bindTooltip(place.name, { direction: 'top', offset: [0, -8] })
+        marker.on('click', () => onPick(place))
+        return marker
+      }),
+    ).addTo(map)
+    if (entries.length > 0) {
+      map.fitBounds(L.latLngBounds(entries.map((e) => [e.coords.lat, e.coords.lng])), {
+        padding: [28, 28],
+      })
+    }
+    return () => {
+      group.remove()
+    }
+  }, [markersKey])
+
+  if (entries.length === 0) return null
+
+  return (
+    <div
+      ref={containerRef}
+      data-testid="place-picker-map"
+      className={`h-64 w-full overflow-hidden rounded-xl border border-slate-200 ${className ?? ''}`}
+    />
+  )
+}

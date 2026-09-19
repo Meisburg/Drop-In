@@ -186,37 +186,6 @@ export async function editTitle(page: Page): Promise<void> {
 }
 
 /**
- * Open /new's "More options" disclosure if it is collapsed (V9 ticket 03).
- *
- * Ticket 03 kept three decisions visible on /new (the place picker, the
- * duration chips, Post) and put everything else — the address's manual entry,
- * "Kids you're bringing", Details and "Repeat weekly" — behind ONE collapsed
- * disclosure. (V11 ticket 05 moved the start date + the 30-minute stepper out
- * of the disclosure into the visible "When" section, so they no longer need
- * opening the door.) A field behind a collapsed disclosure is not in the DOM
- * at all (it unmounts), so a spec that drives one opens the door first.
- *
- * This is that one step, in one place: the 20-odd specs that drive /new call
- * it instead of each growing their own click, and `stepStartTimeOnce` calls it
- * for them. It is IDEMPOTENT — the aria-expanded state is read first, so a spec
- * that already opened it (or that runs after another helper opened it) is a
- * no-op, not a toggle-closed.
- *
- * `data-testid="more-options"` is the disclosure's own button; `aria-expanded`
- * is its state, which is why the helper can wait for it rather than guess.
- */
-export async function openMoreOptions(page: Page): Promise<void> {
-  const toggle = page.getByTestId('more-options')
-  // Retrying first: settleOnRoute guarantees the ROUTE, not that the form has
-  // painted (the V9 ticket 01 review-cycle lesson in e2e/post-location).
-  await expect(toggle).toBeVisible()
-  if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
-    await toggle.click()
-  }
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
-}
-
-/**
  * The /new start-time stepper, made DEFAULT-AGNOSTIC (V8 ticket 01).
  *
  * Ticket 01 changed the stepper's mount-once default from a hardcoded
@@ -242,7 +211,8 @@ export async function stepStartTimeOnce(page: Page): Promise<{
   startLabel: string
   endLabel: (durationMinutes: number) => string
 }> {
-  await openMoreOptions(page)
+  // V13 ticket 02: the "More options" disclosure is gone — the start-time
+  // stepper lives in the visible "When" section, so no door to open.
   const label = page.getByTestId('start-time-label')
   const before = parseTimeLabel(await label.innerText())
   await page.getByRole('button', { name: 'Later start time' }).click()

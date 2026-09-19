@@ -120,7 +120,6 @@ import { localDayKey, PAST_DROP_INS_HREF, PAST_DROP_INS_LABEL } from '../src/lib
 import {
   editTitle,
   localDatePlusDays,
-  openMoreOptions,
   readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
@@ -308,7 +307,6 @@ async function postDropIn(page: Page, title: string, startDate: string): Promise
     .getByPlaceholder('e.g. Green Lake playground, near the boathouse')
     .fill('E2E ended-out lot, not a real place')
   // The date + the 30-minute stepper live behind "More options".
-  await openMoreOptions(page)
   await page.locator('input[type="date"]').fill(startDate)
   await stepStartTimeOnce(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()

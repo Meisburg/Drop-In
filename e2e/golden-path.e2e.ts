@@ -15,7 +15,6 @@ import { expect, test } from '@playwright/test'
 import {
   editTitle,
   localDatePlusDays,
-  openMoreOptions,
   readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
@@ -52,8 +51,7 @@ test('post a drop-in via the V2 slice-1 UI, see it in the feed, clean it up', as
   // 10:00 AM — stepStartTimeOnce reads the label the form rendered, presses
   // + once, and hands back the start, so what is asserted here is the
   // 30-minute GRID (one press == +30 minutes), not a default.
-  // V9 ticket 03: the date + the 30-minute stepper live behind "More options".
-  await openMoreOptions(page)
+  // V13 ticket 02: the date + the 30-minute stepper live in the visible "When" section (the disclosure is gone).
   await page.locator('input[type="date"]').fill(startDate)
   const start = await stepStartTimeOnce(page)
 

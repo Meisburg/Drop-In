@@ -61,7 +61,6 @@ import {
 import {
   editTitle,
   localDatePlusDays,
-  openMoreOptions,
   readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
@@ -247,7 +246,7 @@ test('/new leads with the place picker and never asks for a neighbourhood', asyn
   // page above: that is the page /new OPENS as, and the page the parent meets.
   // V11 ticket 05: the start date is in the visible "When" section. V12 t02:
   // the duration is read back there too (picked for the parent from the start
-  // slot; the override chips live behind "More options") — but the read-back is
+  // slot; the override chips live in the visible flow (V13 t02: disclosure gone) — but the read-back is
   // not an input, so the input order is unchanged: title → place → date.
   expect(fieldOrderEditing).toEqual([TITLE_PLACEHOLDER, PLACE_PLACEHOLDER, ''])
 
@@ -309,10 +308,9 @@ test('typing @ opens the picker, and picking a place fills place + address in on
   // ONE tap: the place AND its published address. The neighbourhood question is
   // not asked, and there is no field to answer it in.
   //
-  // V9 ticket 03: the address is the MANUAL entry behind "More options" now (the
+  // V13 ticket 02: the address is a VISIBLE field in the form's tail block (the
   // pick is what fills it), so the door is opened to read the value the pick
   // wrote. The assertion is unchanged.
-  await openMoreOptions(page)
   await expect(placeInput).toHaveValue(PLACE_NAME)
   await expect(addressInput).toHaveValue(PLACE_ADDRESS)
   await expect(page.getByTestId('place-suggestions')).toHaveCount(0)
@@ -325,8 +323,7 @@ test('typing @ opens the picker, and picking a place fills place + address in on
   await editTitle(page)
   await expect(page.getByPlaceholder(TITLE_PLACEHOLDER)).toHaveValue(`Playdate at ${PLACE_NAME}`)
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
-  // V9 ticket 03: the start date lives behind "More options".
-  await openMoreOptions(page)
+  // V13 ticket 02: the start date lives in the visible "When" section.
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   await page.getByRole('button', { name: '1h', exact: true }).click()
 
@@ -388,8 +385,7 @@ test('typing @ opens the picker, and picking a place fills place + address in on
   const chip = page.getByRole('button', { name: PLACE_NAME, exact: true })
   await expect(chip).toBeVisible()
   await chip.click()
-  // V9 ticket 03: the address the chip fills is readable behind "More options".
-  await openMoreOptions(page)
+  // V13 ticket 02: the address the pick fills is readable in the visible flow.
   await expect(page.getByPlaceholder(PLACE_PLACEHOLDER)).toHaveValue(PLACE_NAME)
   await expect(page.getByPlaceholder(ADDRESS_PLACEHOLDER)).toHaveValue(PLACE_ADDRESS)
   await expect(page.getByTestId('place-suggestions')).toHaveCount(0)
@@ -460,8 +456,7 @@ test('"Somewhere else" still posts free text — and its address is still the Ma
   await editTitle(page)
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
   // V9 ticket 03: the address's manual entry and the start date are both behind
-  // "More options" (this post's whole point is a typed address, so it opens it).
-  await openMoreOptions(page)
+  // V13 ticket 02: the address is a visible field (this post's whole point is a typed address).
   await page.getByPlaceholder(ADDRESS_PLACEHOLDER).fill(address)
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   await page.getByRole('button', { name: '1h', exact: true }).click()
@@ -583,7 +578,6 @@ test('a remembered neighbourhood cannot survive a place pick (review cycle 1, F1
   await editTitle(page)
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
   // V9 ticket 03: the start date lives behind "More options".
-  await openMoreOptions(page)
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   await page.getByRole('button', { name: '1h', exact: true }).click()
   await submitAndLandOnFeed(page)

@@ -45,7 +45,6 @@ import type { Page } from '@playwright/test'
 import {
   editTitle,
   localDatePlusDays,
-  openMoreOptions,
   readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
@@ -205,7 +204,6 @@ test('picking a place on /new posts a drop-in that links to its place page, whic
   // V9 ticket 03: the address's MANUAL entry (which the pick fills) and the
   // start date + the 30-minute stepper live behind "More options", so this spec
   // opens the door before reading or using them.
-  await openMoreOptions(page)
 
   // Picking the place filled the address in one tap (the street the city
   // publishes for that playground), and closed the list.
@@ -280,7 +278,6 @@ test('"Start a drop-in here" prefills the post form with that place', async ({ p
   // plus the generated title (V9 ticket 03: the default, not a convenience).
   // V9 ticket 03: the address is the MANUAL entry behind "More options" now (the
   // prefill writes it either way — the door has to be open to read it).
-  await openMoreOptions(page)
   await expect(page.getByPlaceholder(PLACE_INPUT)).toHaveValue(PLACE_NAME)
   await expect(page.getByPlaceholder(ADDRESS_INPUT)).toHaveValue(PLACE_ADDRESS)
   // V9 ticket 03 (review cycle 1, F2): the summary's title is a read-back —

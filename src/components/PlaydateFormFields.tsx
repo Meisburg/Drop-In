@@ -10,7 +10,7 @@ import {
   TIME_STEP_MINUTES,
   TITLE_MAX_LENGTH,
 } from '../lib/feed'
-import type { AgeBounds, PlaydateFormErrors, PlaydateFormValues, RecentPlace } from '../lib/feed'
+import type { AgeBounds, PlaydateFormErrors, PlaydateFormValues } from '../lib/feed'
 import {
   BROWSE_PLACES_LABEL,
   PLACE_PICKER_LABEL,
@@ -30,11 +30,11 @@ import type { Kid, Neighborhood, Place } from '../lib/types'
  *
  * What the two pages keep for themselves (deliberately NOT here): the /new
  * quick-fill preset card (V8 ticket 01's "we're here until 5" — an
- * affordance for writing a NEW plan, passed in as `preset`), the /new
- * "Recent places" chips (a form-filling convenience, passed in as
- * `recentPlaces` + `onApplyRecentPlace`), and the duplicate banner. The
- * edit page passes neither, so a form that is fixing existing values gets
- * no new-plan shortcuts — and no dead controls.
+ * affordance for writing a NEW plan, passed in as `preset`), and the
+ * duplicate banner. The edit page passes neither, so a form that is fixing
+ * existing values gets no new-plan shortcuts — and no dead controls.
+ * V13 ticket 02 removed the /new "Recent places" chips and the "More options"
+ * disclosure; everything they held now sits in the visible flow.
  *
  * EVERY user-visible string, placeholder, aria-label and control name in
  * here is byte-identical to the /new form it came from: the e2e suite drives
@@ -52,7 +52,7 @@ import type { Kid, Neighborhood, Place } from '../lib/types'
  * V9 ticket 03 (SUMMARY mode): /new also passes `summaryLines` — the answers
  * read back as text, at the top of the form — and with it the form splits into
  * "the three decisions" (the place picker, the duration chips and the editable
- * title line, all visible) and ONE "More options" disclosure holding the rest
+ * title line, all visible) and a VISIBLE tail block (V13 t02: disclosure gone) holding the rest
  * (the address, the start date + the 30-minute stepper, "Kids you're bringing",
  * Details, and "Repeat weekly"). The disclosure is collapsed by default and is
  * CONTROLLED from the page (`moreOptionsOpen` / `onToggleMoreOptions`) so the
@@ -68,33 +68,6 @@ import type { Kid, Neighborhood, Place } from '../lib/types'
 /** V3 slice 5 (ticket 08): the optional address field's cap (trim only, no DB CHECK). */
 export const ADDRESS_MAX_LENGTH = 120
 const DAY_MINUTES = 24 * 60
-
-/**
- * V9 ticket 03: the ONE disclosure's copy. "More options" is deliberately
- * plain — it is a door, not a feature name — and the hint says what is behind
- * it, so a parent can tell whether they need to open it without opening it.
- */
-export const MORE_OPTIONS_LABEL = 'More options'
-/**
- * V11 ticket 05: WHEN (the start date + the 30-minute stepper) moved out of
- * this disclosure into the visible "When" section, so the hint no longer names
- * a date. The base hint is the one the NO-KIDS form shows — the kids picker
- * (and its empty state) still lives behind this door, so "kids" stays in it.
- * (The ticket's name↔string mapping was swapped vs the render below: this is
- * the no-kids / kids-behind-door string, `MORE_OPTIONS_HINT_WITHOUT_KIDS` the
- * with-kids / kids-surfaced one.)
- */
-export const MORE_OPTIONS_HINT = 'An address, kids, details, or a weekly repeat.'
-/**
- * V10 ticket 02: the hint the disclosure shows when the kids picker is
- * SURFACED above it (the parent has kids) — the hint must say what is
- * actually behind the door (the V9 ticket 03 contract), and "kids" behind a
- * door that no longer holds the kids picker would be a lie. V11 ticket 05
- * drops the now-visible start date from it. The no-kids / loading form keeps
- * `MORE_OPTIONS_HINT`.
- */
-export const MORE_OPTIONS_HINT_WITHOUT_KIDS =
-  'An address, details, or a weekly repeat.'
 
 /** The summary's title read-back: a stable handle for the affordance's e2e. */
 export const TITLE_LINE_TESTID = 'title-line'
@@ -174,14 +147,6 @@ export interface PlaydateFormFieldsProps {
   titleEditing?: boolean
   onEditTitle?: () => void
   /**
-   * V9 ticket 03: is the "More options" disclosure open? Owned by the PAGE
-   * (this component owns no state) for one reason: a failed submit must be
-   * able to open it — an error for the start date lives in there, and a
-   * message rendered inside something the parent collapsed is not a message.
-   */
-  moreOptionsOpen?: boolean
-  onToggleMoreOptions?: () => void
-  /**
    * V9 ticket 03: grow every control this form renders to a 44px minimum
    * height (the phone tap-target rule scripts/mobile-audit.mjs enforces on the
    * signed-out routes, which cannot walk /new — it is behind the session).
@@ -195,10 +160,6 @@ export interface PlaydateFormFieldsProps {
   kids: Kid[] | null
   selectedKidIds: string[]
   onToggleKid: (kidId: string) => void
-  /** /new only: the remembered places (no chips row when empty/omitted). */
-  recentPlaces?: RecentPlace[]
-  /** /new only: one tap fills place + address + neighborhood. */
-  onApplyRecentPlace?: (place: RecentPlace) => void
   /**
    * V8 ticket 07: the /new-only place AUTOCOMPLETE — the matches for what the
    * parent has typed, rendered INLINE (in the form's flow, never as an overlay:
@@ -213,6 +174,16 @@ export interface PlaydateFormFieldsProps {
   onPickPlace?: (place: Place) => void
   /** "Somewhere else": keep the typed text, no place link. */
   onSomewhereElse?: () => void
+  /**
+   * V13 ticket 02: the /new-only interactive MAP picker — a Leaflet canvas of
+   * the directory's places (DB coordinates only, never browser geolocation),
+   * rendered under the place field and its suggestion list. Tapping a marker
+   * pre-fills the place field through the SAME pick path as the list rows
+   * (`onPickPlace`), so one seam owns what a pick writes. The page passes the
+   * whole canvas (a stateless slot, like `preset`) — this component owns no
+   * state and /edit passes nothing, so no map appears there.
+   */
+  mapSlot?: ReactNode
   /** /new only: the quick-fill preset card, rendered inside the form first. */
   preset?: ReactNode
   /**
@@ -234,7 +205,7 @@ export interface PlaydateFormFieldsProps {
   repeatSlot?: ReactNode
   /**
    * V9 ticket 05: the /new-only "Ages (optional)" chip row (the exported
-   * AgeRangeChips above), rendered INSIDE the "More options" disclosure —
+   * AgeRangeChips above), rendered in the VISIBLE tail block (V13 t02) —
    * under the kids picker, which is the same subject ("who's coming / what
    * ages"). Another slot rather than props, for the exact reason `repeatSlot`
    * is one: this component owns no state, and the EDIT form passes nothing, so
@@ -243,7 +214,7 @@ export interface PlaydateFormFieldsProps {
   agesSlot?: ReactNode
   /**
    * V10 ticket 02: the /new-only SURFACED kids section, rendered ABOVE the
-   * "More options" disclosure. The PAGE passes it only when the parent HAS
+   * visible kids section. The PAGE passes it only when the parent HAS
    * kids (the loaded list is non-empty) — a no-kids parent (or a still-loading
    * list) keeps today's exact form with the picker inside the disclosure. A
    * slot, not props, for the exact reason `preset` is one: this component
@@ -280,18 +251,15 @@ export function PlaydateFormFields({
   summaryLines,
   titleEditing = false,
   onEditTitle,
-  moreOptionsOpen = false,
-  onToggleMoreOptions,
   minTouchTargets = false,
   kids,
   selectedKidIds,
   onToggleKid,
-  recentPlaces,
-  onApplyRecentPlace,
   placeSuggestionsOpen = false,
   placeSuggestions,
   onPickPlace,
   onSomewhereElse,
+  mapSlot,
   preset,
   postAgainSlot,
   kidsSectionSlot,
@@ -313,7 +281,6 @@ export function PlaydateFormFields({
     address.trim().length > ADDRESS_MAX_LENGTH
       ? `Keep the address to ${ADDRESS_MAX_LENGTH} characters.`
       : null
-  const chips = recentPlaces ?? []
   // V9 ticket 03: the 44px phone tap-target rule, applied to the controls this
   // form renders only when the page asks for it (`minTouchTargets`, /new).
   // Appending a class keeps every other class byte-identical — /edit's markup
@@ -438,31 +405,6 @@ export function PlaydateFormFields({
     </>
   )
 
-  // V8 ticket 01: the remembered places this parent posted to last —
-  // one tap fills place + address + neighborhood. Hidden entirely
-  // when there are none (a first-timer sees no empty chip row), and
-  // never rendered on the edit form (which passes no chips).
-  const recentChipsBlock =
-    chips.length > 0 && onApplyRecentPlace !== undefined ? (
-      <div className="flex flex-col gap-1">
-        <span className="text-xs text-slate-500">Recent places</span>
-        <div className="flex flex-wrap gap-2">
-          {chips.map((recent) => (
-            <button
-              key={recent.place}
-              type="button"
-              onClick={() => onApplyRecentPlace(recent)}
-              className={touch(
-                'rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors',
-              )}
-            >
-              {recent.place}
-            </button>
-          ))}
-        </div>
-      </div>
-    ) : null
-
   // -------------------------------------------------------------------------
   // V9 ticket 03: the fields, as named blocks, so the three layouts below can
   // compose them without a second copy of any markup. /edit's render order and
@@ -477,7 +419,7 @@ export function PlaydateFormFields({
      fills it — so /new drops the "(optional)" marker and says where it came
      from. The Maps link itself is unchanged (V3 ticket 08's seam, untouched).
      V9 ticket 03: on /new this is the MANUAL entry — the normal path fills it
-     from the picked place — so it lives behind More options. */
+     from the picked place — now a visible field in the form's tail. */
   const addressBlock = (
     <>
       <label className="flex flex-col gap-1 text-sm">
@@ -587,7 +529,7 @@ export function PlaydateFormFields({
   /* V12 t02: the chip row is its own const. The /new fast path (branch 1) no
      longer renders it in the visible flow — the duration is picked FOR the
      parent (durationValueLine reads it back) and the override chips live at
-     the top of More options; branches 2/3 (the location-first page and /edit)
+     the top of the visible tail block; branches 2/3 (the location-first page and /edit)
      keep it in the flow via durationBlock. Tapping any chip writes
      `durationMinutes` (the page records the override and stops re-deriving on
      later start changes). */
@@ -620,7 +562,7 @@ export function PlaydateFormFields({
      line the specs and the parent both read. Only the date/stepper move.
      V12 t02: this is now the BRANCH 2/3 shape (the location-first page and
      /edit); /new renders durationValueLine in the visible flow instead, and
-     the override chips at the top of More options are this same row. */
+     the override chips in the visible tail block are this same row. */
   const durationBlock = (
     <div className="flex flex-col gap-1 text-sm">
       <span className="text-slate-700">How long</span>
@@ -641,7 +583,7 @@ export function PlaydateFormFields({
      start slot picks the duration ("until the next hour", seeded at mount and
      re-derived on every start change until the parent taps a chip), so the
      visible flow shows the value — "How long / 1h · Ends 3:00pm" — and the
-     override chips live at the top of More options. No `> 0` guard: /new's
+     override chips live in the visible tail block. No `> 0` guard: /new's
      duration is always a chip value (the page seeds and re-derives it), and
      the error line stays in case a validation pass lands on an unpicked 0. */
   const durationValueLine = (
@@ -665,7 +607,7 @@ export function PlaydateFormFields({
 line. No kids yet → the designed empty state + the /settings link (the
       kids are edited on the settings page, V11 ticket 06 — V2 ticket 02 put the
       editor on /profile; the V11 reorg moved it). V9 ticket 03: a nice-to-have, not
-     a gate — behind More options on /new.
+     a gate — in the visible tail block on /new.
      V10 ticket 02: WHEN THE PARENT HAS KIDS, /new SURFACES this block ABOVE
      the disclosure (kidsSectionSlot — the page's own section, passed in) and
      the disclosure holds the rest. The picker itself is byte-identical: the
@@ -776,73 +718,20 @@ line. No kids yet → the designed empty state + the /settings link (the
       </div>
     )
 
-  // V9 ticket 03: the ONE disclosure. It is a plain button (not <details>) so
-  // its state is `aria-expanded`, its contents UNMOUNT when it closes (a field
-  // behind a collapsed box is not in the form's flow at all), and the PAGE can
-  // open it — a failed submit on the start date must not leave its error inside
-  // something the parent collapsed.
-  //
-  // V10 ticket 02: when the page passes `kidsSectionSlot` (the parent HAS
-  // kids), the kids picker renders ABOVE this block as its own section and is
-  // OMITTED from the body — a field in two places is two tab stops for one
-  // answer. The hint swaps to WITHOUT_KIDS for the same "the door says what is
-  // behind it" contract. The AGES chips stay in the body either way: they are
-  // the same SUBJECT as kids but a separate optional answer. V11 ticket 05: the
-  // start (date + stepper) left the body for the visible "When" section, so the
-  // body order is now (address, repeat, ages, details) — the specs that drove
-  // the date behind the door now drive it in the When section instead.
-  // V12 t02: the duration override chips sit at the TOP of the body (the /new
-  // fast path dropped the duration from the visible flow — durationValueLine
-  // reads it back, this row is the override), so the body order is now
-  // (duration chips, address, repeat, kids, ages, details).
-  const moreOptionsBlock =
+  // V13 ticket 02: the "More options" disclosure is GONE — everything it held
+  // now has a visible home in the branch-1 flow (the ticket's AC: address
+  // details moved out of More options, repeat + ages relocated, no disclosure).
+  // The duration override chips read back through `durationValueLine` above and
+  // are overridden by tapping any chip in the same row; the address block sits
+  // in the visible flow right after When; repeat/ages/details form a compact
+  // tail before the kids section. Only branch 1 renders this block (branches
+  // 2/3 keep their own order), so no extra gating is needed.
+  const moreTailBlock =
     summaryLines === undefined ? null : (
       <>
-        <div className="flex flex-col gap-1">
-          <button
-            type="button"
-            data-testid="more-options"
-            aria-expanded={moreOptionsOpen}
-            /* Review cycle 1, F7: only while the body EXISTS. A collapsed
-               disclosure unmounts it, and an aria-controls pointing at an id
-               that is not in the document is a broken relationship, not a
-               helpful hint. */
-            aria-controls={moreOptionsOpen ? 'more-options-body' : undefined}
-            onClick={onToggleMoreOptions}
-            className={touch(
-              'w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-left text-sm font-medium text-slate-700 transition-colors',
-            )}
-          >
-            {MORE_OPTIONS_LABEL}
-          </button>
-          <p className="text-xs text-slate-500">
-            {kidsSectionSlot !== undefined ? MORE_OPTIONS_HINT_WITHOUT_KIDS : MORE_OPTIONS_HINT}
-          </p>
-        </div>
-        {moreOptionsOpen ? (
-          <div
-            id="more-options-body"
-            data-testid="more-options-body"
-            className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-slate-50 p-3"
-          >
-            {/* V12 t02: the duration override chips — top of the body. /new's
-                visible flow reads the duration back (durationValueLine); this
-                row is how the parent overrides it. Only branch 1 renders
-                moreOptionsBlock (branches 2/3 have no disclosure), so the row
-                is /new-only without extra gating. */}
-            {durationChipsRow}
-            {addressBlock}
-            {neighborhoodBlock}
-            {repeatSlot}
-            {kidsSectionSlot === undefined ? kidsBlock : null}
-            {/* V9 ticket 05: the "Ages (optional)" chips, right under the kids
-                picker — the derived range and the stated one are the same fact
-                (what age crowd this is), so they read as one pair. /edit passes
-                nothing here (the ticket scopes the chips to /new). */}
-            {agesSlot}
-            {detailsBlock}
-          </div>
-        ) : null}
+        {repeatSlot}
+        {agesSlot}
+        {detailsBlock}
       </>
     )
 
@@ -864,33 +753,39 @@ line. No kids yet → the designed empty state + the /settings link (the
       {summaryLines !== undefined ? (
         <>
           {summaryBlock}
-          {placeBlock}
-          {postAgainSlot}
-          {recentChipsBlock}
-          {preset}
-          {/* V10 ticket 03: the "Describe it instead" affordance — under the
-              preset (the last shortcut row), above the surfaced kids section.
-              /edit passes nothing. */}
+          {/* V13 ticket 02: the describe 2-option choice leads — the parent
+              picks "describe with AI" or "write it yourself" before anything
+              else. /edit passes nothing here. */}
           {describeSlot}
-          {/* V10 ticket 02: the SURFACED kids section — ABOVE the disclosure,
-              only when the page passes it (the parent has kids). The
-              disclosure stays where it is, holding the rest. */}
-          {kidsSectionSlot}
+          {placeBlock}
+          {mapSlot}
+          {postAgainSlot}
           {/* V11 ticket 05: WHEN surfaces in the visible flow — the "When"
-              section (date + stepper) sits between the surfaced kids section and
-              the duration, so setting the time no longer needs the door.
-              V12 t02: the duration is no longer a control here — the start slot
-              picks it ("until the next hour"), the visible flow reads the value
-              back (durationValueLine), and the override chips live at the top
-              of More options. The fast path is place + the picked time + Post. */}
+              section (date + stepper) sits between place and the duration, so
+              setting the time never needs a door. V12 t02: the duration is no
+              longer a control here — the start slot picks it ("until the next
+              hour"), the visible flow reads the value back
+              (durationValueLine). */}
           {whenBlock}
           {durationValueLine}
-          {moreOptionsBlock}
+          {/* V13 ticket 02: address details moved OUT of More options into the
+              visible flow, right after When. The normal path fills it from the
+              picked place; the parent can type one instead if it is not quite
+              right. */}
+          {addressBlock}
+          {/* V13 ticket 02: repeat + ages + details now have visible homes in
+              the compact tail before kids (the disclosure is gone). */}
+          {moreTailBlock}
+          {/* V10 ticket 02: the SURFACED kids section — last, right before Post.
+              Only when the page passes it (the parent has kids). A no-kids
+              parent (or a still-loading list) keeps the picker in its own
+              block below. */}
+          {kidsSectionSlot}
+          {kidsSectionSlot === undefined ? kidsBlock : null}
         </>
       ) : locationFirst ? (
         <>
           {placeBlock}
-          {recentChipsBlock}
           {preset}
           {titleBlock}
           {addressBlock}
@@ -906,7 +801,6 @@ line. No kids yet → the designed empty state + the /settings link (the
           {preset}
           {titleBlock}
           {placeBlock}
-          {recentChipsBlock}
           {addressBlock}
           {neighborhoodBlock}
           {startBlock}
@@ -952,7 +846,7 @@ line. No kids yet → the designed empty state + the /settings link (the
  * thing"). These chips are that answer, and they WIN over the derived range
  * when both exist (feed.playdateAgeRangeLine owns the precedence).
  *
- * WHERE IT RENDERS: inside the ONE "More options" disclosure on /new
+ * WHERE IT RENDERS: in the visible tail block on /new (V13 t02: disclosure gone)
  * (V9 ticket 03), not among the three decisions — it is optional, and the
  * three answers the parent must give stay visible. `/edit` does not render it
  * at all (the page passes no `agesSlot`), exactly like "Repeat weekly": the

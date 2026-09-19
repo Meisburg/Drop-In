@@ -53,7 +53,6 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import {
   editTitle,
   localDatePlusDays,
-  openMoreOptions,
   readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
@@ -333,8 +332,7 @@ async function postDropIn(page: Page, title: string, place: string): Promise<voi
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(place)
   // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
-  // V9 ticket 03: the date + the 30-minute stepper live behind "More options".
-  await openMoreOptions(page)
+  // V13 ticket 02: the date + the 30-minute stepper live in the visible "When" section (the disclosure is gone).
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   const start = await stepStartTimeOnce(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()
@@ -480,7 +478,6 @@ test('the prompt follows a real action, and "Not now" is answered with the inbox
   // V12 t02: the duration override chips live behind "More options" (the fast
   // path reads the auto-picked duration back in the visible flow) — open the
   // door, then override.
-  await openMoreOptions(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')

@@ -42,7 +42,6 @@ import type { Page } from '@playwright/test'
 import {
   editTitle,
   localDatePlusDays,
-  openMoreOptions,
   readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
@@ -64,8 +63,7 @@ async function postDropIn(page: Page, title: string, place: string): Promise<voi
   await page.getByPlaceholder('e.g. Playground time at Green Lake').fill(title)
   await page.getByPlaceholder('e.g. Green Lake playground, near the boathouse').fill(place)
   // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
-  // V9 ticket 03: the date + the 30-minute stepper live behind "More options".
-  await openMoreOptions(page)
+  // V13 ticket 02: the date + the 30-minute stepper live in the visible "When" section (the disclosure is gone).
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   const start = await stepStartTimeOnce(page)
   await page.getByRole('button', { name: '1h', exact: true }).click()

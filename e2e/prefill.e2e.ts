@@ -25,7 +25,6 @@ import { expect, test } from '@playwright/test'
 import {
   editTitle,
   localDatePlusDays,
-  openMoreOptions,
   readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
@@ -96,7 +95,6 @@ test('a sentence fills the form for review, and the body carries only text/today
   await expect(page.getByPlaceholder(PLACE_PLACEHOLDER)).toHaveValue('E2E Describe lot')
   const summaryLines = page.getByTestId('post-summary-line')
   await expect(summaryLines.nth(1)).toHaveText('10:00 AM–12:00 PM')
-  await openMoreOptions(page)
   await expect(page.getByPlaceholder('Anything parents should know — what to bring, parking, weather plan…')).toHaveValue(
     'Look for the red wagon',
   )
