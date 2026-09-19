@@ -12,7 +12,7 @@
  * V3 slice 10 (ticket 05): the guest-list seams (resolveGuestListVisibility, formatGuestLine).
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { DuplicatePrefill } from './types'
+import type { DuplicatePrefill, PlaydateStatus } from './types'
 
 /**
  * Client-local midnight of today as an ISO string.
@@ -1751,6 +1751,45 @@ export async function queryLastOwnPlaydateWithClient(
   if (error) throw error
   const rows = (data ?? []) as unknown[]
   return rows.length > 0 ? rows[0] : null
+}
+
+/**
+ * The user's past posts for the "Post again" picker (V13 ticket 04): every
+ * post the parent has made, newest by START (the same ordering as
+ * queryLastOwnPlaydateWithClient — a series occurrence created ahead of time
+ * would make created_at lie about "the last thing I did"), with status and
+ * the playdate_kids embed so the picker can render labels and pre-fill kids.
+ *
+ * `status` is deliberately NOT filtered: ended and cancelled posts stay in
+ * the list (AC3) — they are still plans the parent made, and duplicating one
+ * is harmless (the clone is a new post; the parent taps Post themselves).
+ */
+export async function queryPastOwnPlaydatesWithClient(
+  client: SupabaseClient,
+  profileId: string,
+): Promise<unknown[]> {
+  const { data, error } = await client
+    .from('playdates')
+    .select(
+      'id, title, place, neighborhood_id, starts_at, ends_at, details, address, status, playdate_kids(kid_id)',
+    )
+    .eq('host_profile_id', profileId)
+    .order('starts_at', { ascending: false })
+    .order('id', { ascending: false })
+  if (error) throw error
+  return (data ?? []) as unknown[]
+}
+
+/**
+ * The picker row's status label (V13 ticket 04): 'ended' → "Ended",
+ * 'cancelled' → "Cancelled", anything else (including missing, the
+ * pre-0016 discipline) → null (no label — an 'on' post needs no chip).
+ * Mirrors DropInCard's own rendering so the two sites cannot drift.
+ */
+export function pastPostStatusLabel(status: PlaydateStatus | undefined | null): string | null {
+  if (status === 'ended') return 'Ended'
+  if (status === 'cancelled') return 'Cancelled'
+  return null
 }
 
 // ---------------------------------------------------------------------------

@@ -1,13 +1,13 @@
 /**
- * V10 ticket 01 — "Post again": the whole last post, one tap.
+ * V13 ticket 04 — "Post again": the explicit picker over past drop-ins.
  *
  * The ticket's claims, end to end against the live project:
  *
- *  1. THE CHIP EXISTS FOR A PARENT WITH POSTS, and its label states the plan
- *     it will write (the quick-fill preset's rule: the label is the same seam's
- *     output — cloneLastPost — so a label that promises one thing and writes
- *     another is not expressible). The chip leads the shortcuts (above the
- *     "Recent places" chips) because it is the bigger one.
+ *  1. THE PICKER EXISTS FOR A PARENT WITH POSTS, and each row's label states
+ *     the plan it will write (the quick-fill preset's rule: the label is the
+ *     same seam's output — cloneLastPost — so a label that promises one thing
+ *     and writes another is not expressible). The picker leads the shortcuts
+ *     (above the "Recent places" chips) because it is the bigger one.
  *  2. ONE TAP CLONES EVERYTHING: place + address + the summary's read-back
  *     (day/window/place) move to the clone's values, kids are preselected,
  *     and Post lands a card in the feed identical to a hand-filled clone.
@@ -19,9 +19,9 @@
  *     read-back, a place-text edit still clears the app-written address (the
  *     applyRecentPlace invariants hold for the clone's writes too), and no
  *     field is locked.
- *  5. THE CHIP IS ABSENT for a parent with no posts — the spec's SECOND
+ *  5. THE PICKER IS ABSENT for a parent with no posts — the spec's SECOND
  *     context (a fresh e2e- signup, the onboarding-gate pattern) sees /new
- *     with no "Post again" row at all, while the marker (who has posts)
+ *     with no "Post again" rows at all, while the marker (who has posts)
  *     does. Workers are pinned to 1 (playwright.config.ts), so the two
  *     contexts run serially and never race each other's rows.
  *
@@ -90,7 +90,7 @@ async function deletePlaydatesOf(userId: string): Promise<number> {
 
 /**
  * Seed ONE post through the /new UI (the golden-path pattern) — this is the
- * post the chip should clone. Returns the title it was posted under.
+ * post the picker should clone. Returns the title it was posted under.
  */
 async function seedPostViaUi(page: Page, title: string, place: string): Promise<void> {
   await page.goto('/new')
@@ -116,7 +116,7 @@ async function seedPostViaUi(page: Page, title: string, place: string): Promise<
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
 }
 
-test('the Post-again chip clones the whole last post and posts it with the time advanced', async ({
+test('the Post-again picker clones the whole last post and posts it with the time advanced', async ({
   page,
 }) => {
   const marker = readMarkerMeta()
@@ -125,23 +125,24 @@ test('the Post-again chip clones the whole last post and posts it with the time 
 
   await seedPostViaUi(page, seedTitle, place)
 
-  // A FRESH mount: the chip comes from this parent's own last post.
+  // A FRESH mount: the picker comes from this parent's own past posts.
   await page.goto('/new')
   await settleOnRoute(page, '/new')
 
-  // The chip: present, leads the shortcuts, and its label names the plan
-  // (the title + the day the clone will land on).
-  const chip = page.getByTestId('post-again')
-  await expect(chip).toBeVisible()
-  await expect(chip).toContainText(seedTitle)
+  // The picker: present, leads the shortcuts, and its label names the plan
+  // (the title + the day the clone will land on). V13 ticket 04: the picker
+  // shows a list of past posts (most recent first), not a single silent chip.
+  const pickerRows = page.getByTestId('post-again')
+  await expect(pickerRows.first()).toBeVisible()
+  await expect(pickerRows.first()).toContainText(seedTitle)
 
   // Bracket the tap: the clone's start is computed from a MOUNT-time now,
   // which falls between these two reads (the quick-post spec's race-proof
-  // pattern). The clone's day label on the chip must match the pure seam.
-  await chip.click()
+  // pattern). The clone's day label on the row must match the pure seam.
+  await pickerRows.first().click()
 
   // ONE tap wrote the whole plan — assert every field the clone owns.
-  // The place + address arrive with the chip (the applyRecentPlace
+  // The place + address arrive with the picker row (the applyRecentPlace
   // invariants); the title is the seed's (the parent's own words survive a
   // clone); the duration is carried as the seed's (V13 ticket 03: the End
   // stepper shows start + duration, no "How long" label or chips on /new).
@@ -157,7 +158,7 @@ test('the Post-again chip clones the whole last post and posts it with the time 
   await expect(summaryLines.nth(2)).toHaveText(`${place} · 1234 E2E Ave NE`)
 
   // Editing after the clone is free: the title read-back is still a
-  // read-back (tap-to-edit), and the place text edit clears the chip-written
+  // read-back (tap-to-edit), and the place text edit clears the picker-written
   // address (the F1 rule — asserted over the pick path in post-fast; here
   // over the clone path).
   await expect(page.getByTestId('title-line')).toBeVisible()
@@ -178,14 +179,14 @@ test('the Post-again chip clones the whole last post and posts it with the time 
   await expect(page.getByRole('heading', { name: seedTitle, exact: true }).first()).toBeVisible()
 })
 
-test('a parent with no posts sees no Post-again chip', async ({ page }) => {
+test('a parent with no posts sees no Post-again picker', async ({ page }) => {
   // The marker HAS posts only after the first test seeds one — order is not
   // guaranteed across retries, so this spec does NOT depend on which ran
-  // first: it asserts the chip is absent EXACTLY when the parent has no
+  // first: it asserts the picker is absent EXACTLY when the parent has no
   // posts, by first cleaning the marker's rows (the same REST delete the
   // afterEach uses) and then loading /new.
   const deleted = await deletePlaydatesOf(readMarkerSession().userId)
-  if (deleted < 0) throw new Error('marker playdate cleanup failed — cannot pin the no-chip case')
+  if (deleted < 0) throw new Error('marker playdate cleanup failed — cannot pin the no-picker case')
 
   await page.goto('/new')
   await settleOnRoute(page, '/new')

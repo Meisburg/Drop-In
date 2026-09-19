@@ -982,6 +982,26 @@ export function ProfilePage() {
           <p className="mt-3 text-sm text-slate-600">No posts yet.</p>
         ) : (
           <div className="mt-3 flex flex-col gap-3">
+            {/* V13 ticket 04: "Duplicate previous drop-in" — the explicit picker
+                entry point (A20). Shows the same past-posts list as /new's
+                "Post again" picker; selecting a row navigates to /new with the
+                duplicate prefill (the same toDuplicatePrefill path as the
+                per-row Duplicate buttons). */}
+            <button
+              type="button"
+              data-testid="duplicate-previous"
+              onClick={() => {
+                const latest = myPosts[0]
+                if (latest) {
+                  navigate('/new', {
+                    state: { duplicate: toDuplicatePrefill(latest, playdateKidsKidIds(latest.playdate_kids)) },
+                  })
+                }
+              }}
+              className="min-h-11 w-fit max-w-full rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-left text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
+            >
+              Duplicate previous drop-in
+            </button>
             {upcomingPosts.length === 0 ? (
               <p className="text-sm text-slate-600">
                 Nothing coming up — past drop-ins below.

@@ -41,6 +41,7 @@ import {
   neighborhoodIdField,
   postDistanceMiles,
   queryLastOwnPlaydateWithClient,
+  queryPastOwnPlaydatesWithClient,
   queryRecentOwnPlacesWithClient,
   queryUpcomingFeedWithClient,
   recentPlacesFrom,
@@ -969,6 +970,23 @@ export async function listLastOwnPlaydate(): Promise<LastOwnPlaydate | null> {
   if (!user) return null
   const row = await queryLastOwnPlaydateWithClient(supabase, user.id)
   return lastOwnPlaydateFrom(row)
+}
+
+/**
+ * The caller's past posts for the "Post again" picker (V13 ticket 04) — every
+ * post, newest by START, with status + kids embed (see
+ * queryPastOwnPlaydatesWithClient). No session → []; a failed read THROWS:
+ * the caller (the /new page) swallows it into "no picker" (the same
+ * convenience discipline as listLastOwnPlaydate).
+ */
+export async function listPastOwnPlaydates(): Promise<unknown[]> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (!user) return []
+  return queryPastOwnPlaydatesWithClient(supabase, user.id)
 }
 
 // ---------------------------------------------------------------------------

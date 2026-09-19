@@ -15,7 +15,7 @@ import {
   createPlaydateSeries,
   ensureSeriesOccurrences,
   listKids,
-  listLastOwnPlaydate,
+  listPastOwnPlaydates,
   listPlaces,
   linkKidsToPlaydate,
 } from '../lib/db'
@@ -31,6 +31,7 @@ import {
   kidLabel,
   localDayKey,
   nextSlotMinutes,
+  pastPostStatusLabel,
   suggestedDurationMinutes,
   validatePlaydateForm,
 } from '../lib/feed'
@@ -40,6 +41,7 @@ import type {
   PlaydateFormErrors,
   PlaydateFormValues,
 } from '../lib/feed'
+import type { PlaydateStatus } from '../lib/types'
 import { addressAfterPlaceTextEdit, generatedTitle } from '../lib/postSummary'
 import { mergePrefill, prefillFetch } from '../lib/prefill'
 import {
@@ -370,11 +372,12 @@ export function NewPlaydatePage({
   // until the post is created, then linkKidsToPlaydate lands it).
   const [selectedKidIds, setSelectedKidIds] = useState<string[]>([])
 
-  // V10 ticket 01: the ONE row the "Post again" chip clones from — the parent's
-  // most recent post, kids included. null = no chip (never posted, load
-  // failed, or the row did not map): the same convenience discipline as
-  // recentPlaces above — no error state, never a crash.
-  const [lastPost, setLastPost] = useState<LastOwnPlaydate | null>(null)
+  // V13 ticket 04: the parent's past posts for the "Post again" picker —
+  // every post, newest by start (the queryPastOwnPlaydatesWithClient order),
+  // with status + kids embed. [] = no picker (never posted, load failed):
+  // the same convenience discipline as recentPlaces above — no error state,
+  // never a crash.
+  const [pastPosts, setPastPosts] = useState<LastOwnPlaydate[]>([])
   // V8 ticket 06: "Repeat weekly" — OFF by default (a one-off drop-in is the
   // common case, and the form a parent knows must not change under them).
   // V13 ticket 02: relocated out of More options into the visible flow after
@@ -493,18 +496,19 @@ export function NewPlaydatePage({
 
 
 
-  // V10 ticket 01: the "Post again" source row, fetched alongside the recent
-  // places (the same load pattern — a failed load stays null = no chip, never
-  // an error line; the chip is an offer, not a feature the form depends on).
+  // V13 ticket 04: the "Post again" picker's source list — every past post,
+  // fetched alongside the recent places (the same load pattern — a failed
+  // load stays [] = no picker, never an error line; the picker is an offer,
+  // not a feature the form depends on).
   useEffect(() => {
     if (userId === null) return
     let cancelled = false
-    listLastOwnPlaydate()
-      .then((row) => {
-        if (!cancelled) setLastPost(row)
+    listPastOwnPlaydates()
+      .then((rows) => {
+        if (!cancelled) setPastPosts(rows as unknown as LastOwnPlaydate[])
       })
       .catch(() => {
-        if (!cancelled) setLastPost(null)
+        if (!cancelled) setPastPosts([])
       })
     return () => {
       cancelled = true
@@ -637,16 +641,16 @@ export function NewPlaydatePage({
   }
 
   /**
-   * V10 ticket 01: "Post again" — the whole last post in one tap. The clone is
-   * the PURE seam (feed.cloneLastPost, unit-tested): place, address,
+   * V13 ticket 04: "Post again" — the whole selected post in one tap. The
+   * clone is the PURE seam (feed.cloneLastPost, unit-tested): place, address,
    * neighbourhood, duration, details, title (kept when it fits the cap,
    * regenerated when it does not) and kids, with the start moved by the
    * clonedStart rule (the same slot again when it is still ahead today,
    * otherwise tomorrow at that time — snapped to the 30-minute grid).
    *
-   * The SAME invariants as applyRecentPlace, deliberately: the chip wrote the
-   * address, so addressTouched goes back to false and a later place-text edit
-   * clears it; the place resolves against the directory by exact name (a
+   * The SAME invariants as applyRecentPlace, deliberately: the picker wrote
+   * the address, so addressTouched goes back to false and a later place-text
+   * edit clears it; the place resolves against the directory by exact name (a
    * match keeps the place's coordinates); the picker closes; the errors clear.
    *
    * KIDS: prefill ONLY ids that still exist in the mounted list — a kid
@@ -657,9 +661,8 @@ export function NewPlaydatePage({
    * for typed places — here the title NAMES the place the clone is going to).
    * Nothing submits itself: the parent still taps Post.
    */
-  function applyLastPost() {
-    if (lastPost === null) return
-    const clone = cloneLastPost(lastPost, mountedNowIso)
+  function applyLastPost(post: LastOwnPlaydate) {
+    const clone = cloneLastPost(post, mountedNowIso)
     setValues((prev) => ({ ...prev, ...clone.values }))
     setAddress(clone.address)
     setAddressTouched(false)
@@ -810,23 +813,23 @@ export function NewPlaydatePage({
   }
 
 
-  // V10 ticket 01: the "Post again" chip's label — the plan it will write, so
-  // the offer is not a mystery tap: the title (the parent's own words, or the
-  // place it names) + the day the clone will land on. Computed from the SAME
-  // seam the tap applies (cloneLastPost), so the label cannot promise
-  // something else — the quick-fill preset's rule (the label states what it
-  // writes, both from one mount-time `now`).
-  const lastPostClone =
-    lastPost === null
-      ? null
-      : cloneLastPost(lastPost, mountedNowIso)
-  const lastPostLabel =
-    lastPostClone === null
-      ? null
-      : `${lastPostClone.values.title} · ${formatStartDayLabel(lastPostClone.values.startDate)}`
-  // The chip's classes: the recent-place chip's pill, at the form's 44px floor
-  // (minTouchTargets is on for this page — the class is spelled out because a
-  // slot carries its own markup; the form's `touch()` helper is not in scope).
+  // V13 ticket 04: the "Post again" picker's row labels — each row states the
+  // plan it will write (the title + the day the clone will land on), computed
+  // from the SAME seam the tap applies (cloneLastPost), so a label cannot
+  // promise something else. The status label (Ended / Cancelled) rides along
+  // so ended/cancelled posts stay visible and distinguishable (AC3).
+  const pastPostRows = pastPosts.map((post) => {
+    const clone = cloneLastPost(post, mountedNowIso)
+    return {
+      post,
+      label: `${clone.values.title} · ${formatStartDayLabel(clone.values.startDate)}`,
+      statusLabel: pastPostStatusLabel((post as unknown as { status?: PlaydateStatus }).status),
+    }
+  })
+  // The picker row's classes: the recent-place chip's pill, at the form's 44px
+  // floor (minTouchTargets is on for this page — the class is spelled out
+  // because a slot carries its own markup; the form's `touch()` helper is not
+  // in scope).
   const lastPostClassName =
     'min-h-11 w-fit max-w-full rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-left text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100'
   // V8 ticket 06: the weekday the "Repeat weekly" control is about, derived
@@ -1123,23 +1126,29 @@ export function NewPlaydatePage({
              <PlacePickerMap places={places} zipCoords={null} onPick={pickPlace} />
            ) : null
          }
-        /* V10 ticket 01: the "Post again" chip — the whole last post (place,
-           address, neighbourhood, time, details, kids) in one tap, rendered as
-           a slot so the form component stays stateless (the preset pattern).
-           Passed ONLY when a last post actually loaded: a first-timer sees no
-           chip at all, not a disabled one (the recentChipsBlock rule). */
+        /* V13 ticket 04: the "Post again" picker — a list of the parent's past
+            drop-ins (most recent first; each row: place + date + status label),
+            rendered as a slot so the form component stays stateless (the preset
+            pattern). Passed ONLY when at least one post loaded: a first-timer
+            sees no picker at all, not an empty one (the recentChipsBlock rule).
+            Selecting a row pre-fills the whole plan (place, time window,
+            address, kids, details) via applyLastPost. */
         postAgainSlot={
-          lastPost !== null && lastPostLabel !== null ? (
+          pastPosts.length > 0 ? (
             <div className="flex flex-col gap-1">
               <span className="text-xs text-slate-500">Post again</span>
-              <button
-                type="button"
-                data-testid="post-again"
-                onClick={applyLastPost}
-                className={lastPostClassName}
-              >
-                {lastPostLabel}
-              </button>
+              {pastPostRows.map((row) => (
+                <button
+                  key={row.post.id}
+                  type="button"
+                  data-testid="post-again"
+                  onClick={() => applyLastPost(row.post)}
+                  className={lastPostClassName}
+                >
+                  {row.label}
+                  {row.statusLabel !== null ? ` · ${row.statusLabel}` : ''}
+                </button>
+              ))}
             </div>
           ) : null
         }

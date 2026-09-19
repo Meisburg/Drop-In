@@ -55,6 +55,7 @@ import {
   partitionPostsByTime,
   PAST_DROP_INS_HREF,
   PAST_DROP_INS_LABEL,
+  pastPostStatusLabel,
   PLAYDATE_DURATIONS_MINUTES,
   playdateAgeRangeLine,
   playdateEditFieldsChanged,
@@ -63,6 +64,7 @@ import {
   playdateKidsKidIds,
   queryLastOwnPlaydateWithClient,
   queryMyPlaydatesWithClient,
+  queryPastOwnPlaydatesWithClient,
   queryRecentOwnPlacesWithClient,
   queryUpcomingFeedWithClient,
   rainBadgeLabel,
@@ -3396,5 +3398,62 @@ describe('lastOwnPlaydateFrom (V10 ticket 01: the embed row → the typed payloa
   it('a row missing a required field maps to null (the chip degrades to absent)', () => {
     expect(lastOwnPlaydateFrom({ title: 'T', place: 'P', starts_at: 'x', ends_at: 'y' })).toBeNull()
     expect(lastOwnPlaydateFrom(null)).toBeNull()
+  })
+})
+
+describe('queryPastOwnPlaydatesWithClient (V13 ticket 04, mocked supabase client)', () => {
+  const rows = [
+    {
+      id: 'pd-2',
+      title: 'Newer post',
+      place: 'Green Lake Park',
+      neighborhood_id: null,
+      starts_at: '2026-09-05T22:00:00.000Z',
+      ends_at: '2026-09-06T00:00:00.000Z',
+      details: null,
+      address: '7201 East Green Lake Dr N',
+      status: 'ended',
+      playdate_kids: [{ kid_id: 'kid-a' }],
+    },
+    {
+      id: 'pd-1',
+      title: 'Older post',
+      place: 'Seward Park',
+      neighborhood_id: null,
+      starts_at: '2026-09-03T22:00:00.000Z',
+      ends_at: '2026-09-04T00:00:00.000Z',
+      details: null,
+      address: null,
+      status: 'cancelled',
+      playdate_kids: [],
+    },
+  ]
+
+  it('scopes to the host, newest by START (not created_at), ALL rows with status + kids embed', async () => {
+    const { client, filters } = makeFeedMockClient(rows)
+    expect(await queryPastOwnPlaydatesWithClient(client, 'me')).toEqual(rows)
+    expect(filters).toContain('eq(host_profile_id, me)')
+    expect(filters).toContain('order(starts_at, false)')
+    expect(filters).toContain('order(id, false)')
+    // No limit — every past post is listed (AC3: ended/cancelled stay visible).
+    expect(filters.some((f: string) => f.startsWith('limit'))).toBe(false)
+  })
+
+  it('returns [] when the parent has never posted', async () => {
+    const { client } = makeFeedMockClient([])
+    expect(await queryPastOwnPlaydatesWithClient(client, 'me')).toEqual([])
+  })
+})
+
+describe('pastPostStatusLabel (V13 ticket 04: the picker row status chip)', () => {
+  it('maps ended → "Ended", cancelled → "Cancelled"', () => {
+    expect(pastPostStatusLabel('ended')).toBe('Ended')
+    expect(pastPostStatusLabel('cancelled')).toBe('Cancelled')
+  })
+
+  it('on / undefined / null → null (no chip — an upcoming post needs no label)', () => {
+    expect(pastPostStatusLabel('on')).toBeNull()
+    expect(pastPostStatusLabel(undefined)).toBeNull()
+    expect(pastPostStatusLabel(null)).toBeNull()
   })
 })
