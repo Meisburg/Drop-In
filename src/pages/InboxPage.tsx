@@ -5,13 +5,17 @@ import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
 import {
   listConversations,
+  listDirectConversations,
   markConversationRead,
+  queryDirectMessages,
   queryMessagesForPlaydate,
+  searchProfiles,
+  sendDirectMessage,
   sendMessage,
   supabase,
   validateMessageBody,
 } from '../lib/db'
-import type { ConversationSummary, MessageRow } from '../lib/db'
+import type { ConversationSummary, MessageRow, ProfileSearchResult } from '../lib/db'
 
 /**
  * /inbox — parent↔parent messaging (V14 ticket 01, migration 0042).
@@ -134,10 +138,20 @@ export function InboxPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { session, profile } = useSessionContext()
   const threadId = searchParams.get('thread')
+  const dmTargetId = searchParams.get('dm')
 
   // --- Conversation list state -------------------------------------------
   const [list, setList] = useState<ListState>({ status: 'loading' })
   const [reloadToken, setReloadToken] = useState(0)
+
+  // --- Free-form DM state --------------------------------------------------
+  const [directConvs, setDirectConvs] = useState<
+    Array<{ otherPartyId: string; otherPartyName: string; latestAt: string; preview: string; unreadCount: number }>
+  >([])
+  const [showNewMessage, setShowNewMessage] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<ProfileSearchResult[]>([])
+  const [searching, setSearching] = useState(false)
 
   // --- Thread state --------------------------------------------------------
   const [thread, setThread] = useState<ThreadState | null>(null)
@@ -147,7 +161,7 @@ export function InboxPage() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
   // Load (or reload) the conversation list. Pre-0042-apply the read 42703s —
-  // the honest error line, never a crash.
+  // the honest error line, never a crash. Also loads free-form DMs.
   useEffect(() => {
     let cancelled = false
     if (session === null) return
@@ -164,15 +178,49 @@ export function InboxPage() {
           })
         }
       })
+    // Free-form DMs (best-effort: pre-0043-apply this 42703s, which is fine).
+    listDirectConversations(session.user.id)
+      .then((convs) => {
+        if (!cancelled) setDirectConvs(convs)
+      })
+      .catch(() => {
+        // Pre-0043: table doesn't exist yet. Show empty list, no crash.
+        if (!cancelled) setDirectConvs([])
+      })
     return () => {
       cancelled = true
     }
   }, [session, reloadToken])
 
-  // Open a thread: load its messages + stamp the read cursor (clears the
-  // unread badge). Re-runs on every thread change.
+  // User search for the "New message" modal.
   useEffect(() => {
-    if (threadId === null) {
+    if (!showNewMessage || searchQuery.trim().length < 2) {
+      setSearchResults([])
+      return
+    }
+    let cancelled = false
+    setSearching(true)
+    const timer = setTimeout(async () => {
+      try {
+        const results = await searchProfiles(searchQuery)
+        if (!cancelled) setSearchResults(results)
+      } catch {
+        if (!cancelled) setSearchResults([])
+      } finally {
+        if (!cancelled) setSearching(false)
+      }
+    }, 250)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [searchQuery, showNewMessage])
+
+  // Open a thread: load its messages + stamp the read cursor (clears the
+  // unread badge). Re-runs on every thread change. Also handles free-form DMs
+  // (?dm=<profileId>).
+  useEffect(() => {
+    if (threadId === null && dmTargetId === null) {
       setThread(null)
       setDraft('')
       setSendError(null)
@@ -182,11 +230,22 @@ export function InboxPage() {
     setThread({ status: 'loading' })
     setDraft('')
     setSendError(null)
-    queryMessagesForPlaydate(threadId)
-      .then(async (messages) => {
+
+    const loadMessages = async () => {
+      if (dmTargetId !== null) {
+        // Free-form DM thread.
+        const messages = await queryDirectMessages(dmTargetId)
         if (cancelled) return
-        // Stamp the read cursor AFTER the load so the just-read batch does not
-        // count as unread (the ticket's "badge clears on open").
+        setThread({
+          status: 'ready',
+          messages,
+          otherPartyName: '',
+          playdateTitle: '',
+        })
+      } else if (threadId !== null) {
+        // Playdate-scoped thread (existing logic).
+        const messages = await queryMessagesForPlaydate(threadId)
+        if (cancelled) return
         try {
           await markConversationRead(threadId)
         } catch {
@@ -199,7 +258,10 @@ export function InboxPage() {
           otherPartyName: '',
           playdateTitle: '',
         })
-      })
+      }
+    }
+
+    loadMessages()
       .catch((err: unknown) => {
         if (!cancelled) {
           setThread({
@@ -211,7 +273,7 @@ export function InboxPage() {
     return () => {
       cancelled = true
     }
-  }, [threadId])
+  }, [threadId, dmTargetId])
 
   // Resolve the thread header's other-party name + post title from the loaded
   // list (cheap: the list is always loaded before a thread opens) — the
@@ -227,6 +289,17 @@ export function InboxPage() {
       return { ...prev, otherPartyName: conv.otherPartyDisplayName, playdateTitle: conv.playdateTitle }
     })
   }, [list, threadId])
+
+  // For free-form DMs: resolve the other party's name from directConvs.
+  useEffect(() => {
+    if (dmTargetId === null || directConvs.length === 0) return
+    const conv = directConvs.find((c) => c.otherPartyId === dmTargetId)
+    if (conv === undefined) return
+    setThread((prev) => {
+      if (prev === null || prev.status !== 'ready') return prev
+      return { ...prev, otherPartyName: conv.otherPartyName }
+    })
+  }, [directConvs, dmTargetId])
 
   // Fallback: when the conversation list has no row for this playdate (e.g.
   // the host opened the thread directly via ?thread=<id> before any message
@@ -282,35 +355,59 @@ export function InboxPage() {
 
   // Real-time: append INSERTs for the open thread without a reload. The
   // channel is rebuilt on every thread change (and torn down on unmount) so
-  // a stale filter can never deliver into the wrong conversation.
+  // a stale filter can never deliver into the wrong conversation. For
+  // free-form DMs, we subscribe to messages where sender_id = me OR the
+  // other party (filtered client-side by playdate_id IS NULL).
   useEffect(() => {
-    if (threadId === null) return
-    const channel = supabase
-      .channel(`messages-${threadId}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages', filter: `playdate_id=eq.${threadId}` },
-        (payload) => {
-          const newRow = payload.new as Partial<MessageRow>
-          if (newRow.id === undefined || newRow.created_at === undefined) return
-          setThread((prev) => {
-            if (prev === null || prev.status !== 'ready') return prev
-            // Dedupe: a message we sent ourselves already arrived optimistically.
-            if (prev.messages.some((m) => m.id === newRow.id)) return prev
-            return { ...prev, messages: [...prev.messages, newRow as MessageRow] }
-          })
-          // A new message also refreshes the list's preview + unread counts.
-          setReloadToken((token) => token + 1)
-        },
-      )
-      .subscribe((status) => {
-        // Log the subscription status for diagnostics (the e2e real-time test).
-        console.log(`[InboxPage] Realtime channel ${threadId} status: ${status}`)
-      })
+    if (threadId === null && dmTargetId === null) return
+    const channelName = dmTargetId !== null ? `dm-${dmTargetId}` : `messages-${threadId}`
+    const channel = supabase.channel(channelName)
+    if (dmTargetId !== null) {
+      // Free-form: listen for all new messages, filter client-side.
+      channel
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'messages' },
+          (payload) => {
+            const newRow = payload.new as Partial<MessageRow>
+            if (newRow.id === undefined || newRow.created_at === undefined) return
+            // Only show messages where I'm the sender or recipient.
+            const myId = session?.user.id ?? ''
+            if (newRow.sender_id !== myId && newRow.sender_id !== dmTargetId) return
+            setThread((prev) => {
+              if (prev === null || prev.status !== 'ready') return prev
+              if (prev.messages.some((m) => m.id === newRow.id)) return prev
+              return { ...prev, messages: [...prev.messages, newRow as MessageRow] }
+            })
+            setReloadToken((token) => token + 1)
+          },
+        )
+        .subscribe()
+    } else {
+      // Playdate-scoped: existing filtered subscription.
+      channel
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'messages', filter: `playdate_id=eq.${threadId}` },
+          (payload) => {
+            const newRow = payload.new as Partial<MessageRow>
+            if (newRow.id === undefined || newRow.created_at === undefined) return
+            setThread((prev) => {
+              if (prev === null || prev.status !== 'ready') return prev
+              if (prev.messages.some((m) => m.id === newRow.id)) return prev
+              return { ...prev, messages: [...prev.messages, newRow as MessageRow] }
+            })
+            setReloadToken((token) => token + 1)
+          },
+        )
+        .subscribe((status) => {
+          console.log(`[InboxPage] Realtime channel ${channelName} status: ${status}`)
+        })
+    }
     return () => {
       void supabase.removeChannel(channel)
     }
-  }, [threadId])
+  }, [threadId, dmTargetId, session])
 
   // Keep the newest message in view as the thread grows.
   useEffect(() => {
@@ -321,7 +418,7 @@ export function InboxPage() {
 
   /** Optimistic append + the real write; on failure the optimistic row is rolled back. */
   async function handleSend(): Promise<void> {
-    if (threadId === null || userId === null) return
+    if (userId === null) return
     const validationError = validateMessageBody(draft)
     if (validationError !== null) {
       setSendError(validationError)
@@ -333,7 +430,7 @@ export function InboxPage() {
     // realtime echo is deduped by id once the server confirms.
     const optimistic: MessageRow = {
       id: `pending-${Date.now()}`,
-      playdate_id: threadId,
+      playdate_id: threadId ?? '',
       sender_id: userId,
       body: draft.trim(),
       created_at: new Date().toISOString(),
@@ -345,7 +442,11 @@ export function InboxPage() {
     )
     setDraft('')
     try {
-      await sendMessage(threadId, draft)
+      if (dmTargetId !== null) {
+        await sendDirectMessage(dmTargetId, draft)
+      } else if (threadId !== null) {
+        await sendMessage(threadId, draft)
+      }
     } catch (err: unknown) {
       // Roll back the optimistic row + say so honestly.
       setThread((prev) =>
@@ -380,6 +481,13 @@ export function InboxPage() {
     setSearchParams({ thread: playdateId })
   }
 
+  const openDmThread = (profileId: string) => {
+    setShowNewMessage(false)
+    setSearchQuery('')
+    setSearchResults([])
+    setSearchParams({ dm: profileId })
+  }
+
   const closeThread = () => {
     setSearchParams({})
   }
@@ -395,13 +503,70 @@ export function InboxPage() {
 
   return (
     <div className="mx-auto max-w-md">
-      {threadId === null ? (
+      {threadId === null && dmTargetId === null ? (
         <>
           <SectionHeader
             icon={NAV_ICONS.inbox}
             title="Inbox"
             tagline="Messages from the drop-ins you're both going to."
           />
+          {/* "New message" button (free-form DMs, V15 T01). */}
+          <button
+            type="button"
+            data-testid="new-message-button"
+            onClick={() => setShowNewMessage(true)}
+            className="mt-3 w-full rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-100"
+          >
+            + New message
+          </button>
+
+          {/* User-search modal (the "New message" picker). */}
+          {showNewMessage ? (
+            <div className="mt-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-sm font-semibold text-slate-900">Message a parent</p>
+              <input
+                type="text"
+                data-testid="dm-search-input"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by name…"
+                className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
+                autoFocus
+              />
+              {searching ? (
+                <p className="mt-2 text-xs text-slate-500">Searching…</p>
+              ) : searchResults.length > 0 ? (
+                <ul className="mt-2 flex flex-col gap-1">
+                  {searchResults.map((result) => (
+                    <li key={result.id}>
+                      <button
+                        type="button"
+                        data-testid={`dm-result-${result.id}`}
+                        onClick={() => openDmThread(result.id)}
+                        className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-800 transition-colors hover:bg-slate-50"
+                      >
+                        {result.display_name}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : searchQuery.trim().length >= 2 ? (
+                <p className="mt-2 text-xs text-slate-500">No matches found.</p>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNewMessage(false)
+                  setSearchQuery('')
+                  setSearchResults([])
+                }}
+                className="mt-3 text-xs text-slate-500 underline"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : null}
+
           {list.status === 'loading' ? (
             <p className="mt-6 text-sm text-slate-600">Loading your conversations…</p>
           ) : list.status === 'error' ? (
@@ -415,30 +580,69 @@ export function InboxPage() {
                 Retry
               </button>
             </div>
-          ) : list.conversations.length === 0 ? (
-            <div className="mt-6 rounded-xl border border-slate-200 bg-white p-6 text-center">
-              <p className="text-sm font-semibold text-slate-900">No conversations yet.</p>
-              <p className="mt-1 text-sm text-slate-600">
-                Message a parent from a drop-in page once you're both going.
-              </p>
-              <Link
-                to="/browse"
-                className="mt-3 inline-block rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"
-              >
-                Browse places
-              </Link>
-            </div>
           ) : (
-            <ul className="mt-4 flex flex-col gap-2">
-              {list.conversations.map((conversation) => (
-                <li key={conversation.playdateId}>
-                  <ConversationCard
-                    conversation={conversation}
-                    onOpen={() => openThread(conversation.playdateId)}
-                  />
-                </li>
-              ))}
-            </ul>
+            <>
+              {/* Free-form DM conversations (V15 T01). */}
+              {directConvs.length > 0 ? (
+                <ul className="mt-4 flex flex-col gap-2">
+                  {directConvs.map((conv) => (
+                    <li key={conv.otherPartyName || conv.otherPartyId}>
+                      <button
+                        type="button"
+                        data-testid={`dm-conversation-${conv.otherPartyId || conv.otherPartyName}`}
+                        onClick={() => openDmThread(conv.otherPartyId)}
+                        className="w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-colors hover:bg-slate-50"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="truncate text-sm font-semibold text-slate-900">
+                            {conv.otherPartyName || 'Unknown'}
+                          </p>
+                          {conv.unreadCount > 0 ? (
+                            <span className="shrink-0 rounded-full bg-indigo-600 px-2 py-0.5 text-xs font-semibold text-white">
+                              {conv.unreadCount}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="mt-2 flex items-baseline justify-between gap-2">
+                          <p className="truncate text-sm text-slate-600">{conv.preview}</p>
+                          <p className="shrink-0 text-xs text-slate-400">
+                            {relativeTimeLabel(conv.latestAt, new Date().toISOString())}
+                          </p>
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
+              {/* Playdate-scoped conversations (V14 T01). */}
+              {list.conversations.length === 0 && directConvs.length === 0 ? (
+                <div className="mt-6 rounded-xl border border-slate-200 bg-white p-6 text-center">
+                  <p className="text-sm font-semibold text-slate-900">No conversations yet.</p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Message a parent from a drop-in page once you're both going, or start a new
+                    conversation above.
+                  </p>
+                  <Link
+                    to="/browse"
+                    className="mt-3 inline-block rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"
+                  >
+                    Browse places
+                  </Link>
+                </div>
+              ) : (
+                <ul className="mt-4 flex flex-col gap-2">
+                  {list.conversations.map((conversation) => (
+                    <li key={conversation.playdateId}>
+                      <ConversationCard
+                        conversation={conversation}
+                        onOpen={() => openThread(conversation.playdateId)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
         </>
       ) : (

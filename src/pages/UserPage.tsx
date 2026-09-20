@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useNavigate, useParams } from 'react-router'
 import { DropInCard, HostAvatar } from '../components/DropInCard'
 import { PhotoButton } from '../components/ImageLightbox'
 import { ReportDialog } from '../components/ReportDialog'
@@ -85,6 +85,7 @@ type UserPageState =
  */
 export function UserPage() {
   const { handle } = useParams<{ handle: string }>()
+  const navigate = useNavigate()
   const { session } = useSessionContext()
   const [state, setState] = useState<UserPageState>({ status: 'loading' })
   const [blocked, setBlocked] = useState(false)
@@ -516,6 +517,17 @@ export function UserPage() {
                 : following
                   ? `Unfollow @${profile.display_name}`
                   : `Follow @${profile.display_name}`}
+            </button>
+            <button
+              type="button"
+              data-testid="message-profile"
+              onClick={() => {
+                const profileId = state.status === 'ready' ? state.profile.id : null
+                if (profileId !== null) navigate(`/inbox?dm=${profileId}`)
+              }}
+              className="rounded-xl border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700"
+            >
+              Message
             </button>
             <button
               type="button"

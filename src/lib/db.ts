@@ -4409,3 +4409,334 @@ export async function markConversationRead(playdateId: string): Promise<void> {
   if (user === null) throw new Error('No authenticated user — cannot mark a conversation read.')
   return markConversationReadWithClient(supabase, playdateId, user.id)
 }
+
+// ---------------------------------------------------------------------------
+// V15 ticket 01: free-form DMs (message any parent by name search).
+// ---------------------------------------------------------------------------
+
+/** A profile match from the user-search modal. */
+export interface ProfileSearchResult {
+  id: string
+  display_name: string
+}
+
+/**
+ * Search profiles by display name (the "New message" user picker), against an
+ * injected client (mockable in unit tests). Top 10 matches by ILIKE.
+ */
+export async function searchProfilesWithClient(
+  client: SupabaseClient,
+  query: string,
+): Promise<ProfileSearchResult[]> {
+  const trimmed = query.trim()
+  if (trimmed.length === 0) return []
+  const { data, error } = await client
+    .from('profiles')
+    .select('id, display_name')
+    .ilike('display_name', `%${trimmed}%`)
+    .limit(10)
+  if (error) throw error
+  return ((data ?? []) as unknown as ProfileSearchResult[])
+}
+
+/** The default-client wrapper (the inbox's "New message" search). */
+export async function searchProfiles(query: string): Promise<ProfileSearchResult[]> {
+  return searchProfilesWithClient(supabase, query)
+}
+
+/**
+ * Send a free-form message to a specific recipient (no playdate context).
+ * Two-step: insert the message (get its id via select single), then upsert
+ * the recipient row. Against an injected client (mockable).
+ */
+export async function sendDirectMessageWithClient(
+  client: SupabaseClient,
+  recipientId: string,
+  body: string,
+  senderId: string,
+): Promise<void> {
+  const validationError = validateMessageBody(body)
+  if (validationError !== null) throw new Error(validationError)
+  // Insert the message and get its id back.
+  const { data: inserted, error: insErr } = await client
+    .from('messages')
+    .insert({
+      playdate_id: null,
+      sender_id: senderId,
+      body: body.trim(),
+    })
+    .select('id')
+    .single()
+  if (insErr) throw insErr
+  if (inserted === null || inserted === undefined) throw new Error('Insert returned no row.')
+  const messageId = (inserted as { id: string }).id
+  // Add the recipient (the trigger already added the sender).
+  const { error: recErr } = await client
+    .from('message_recipients')
+    .upsert(
+      { message_id: messageId, profile_id: recipientId },
+      { onConflict: 'message_id,profile_id' },
+    )
+  if (recErr) throw recErr
+}
+
+/**
+ * Send a free-form message to a specific recipient (default client).
+ * Two-step: insert the message (get its id via select single), then upsert
+ * the recipient row.
+ */
+export async function sendDirectMessage(recipientId: string, body: string): Promise<void> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (user === null) throw new Error('No authenticated user — cannot send a message.')
+  const validationError = validateMessageBody(body)
+  if (validationError !== null) throw new Error(validationError)
+  // Insert the message and get its id back.
+  const { data: inserted, error: insErr } = await supabase
+    .from('messages')
+    .insert({
+      playdate_id: null,
+      sender_id: user.id,
+      body: body.trim(),
+    })
+    .select('id')
+    .single()
+  if (insErr) throw insErr
+  if (inserted === null || inserted === undefined) throw new Error('Insert returned no row.')
+  const messageId = (inserted as { id: string }).id
+  // Add the recipient (the trigger already added the sender).
+  const { error: recErr } = await supabase
+    .from('message_recipients')
+    .upsert(
+      { message_id: messageId, profile_id: recipientId },
+      { onConflict: 'message_id,profile_id' },
+    )
+  if (recErr) throw recErr
+}
+
+/**
+ * List all messages for a free-form conversation between two profiles,
+ * oldest first. Against an injected client (mockable).
+ */
+export async function queryDirectMessagesWithClient(
+  client: SupabaseClient,
+  otherPartyId: string,
+  myId: string,
+): Promise<MessageRow[]> {
+  const { data, error } = await client
+    .from('messages')
+    .select('id, playdate_id, sender_id, body, created_at')
+    .is('playdate_id', null)
+    .or(`sender_id.eq.${myId},sender_id.eq.${otherPartyId}`)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  const rows = (data ?? []) as unknown as Array<{
+    id: string
+    playdate_id: string | null
+    sender_id: string
+    body: string
+    created_at: string
+  }>
+  return rows.map((row) => ({
+    id: row.id,
+    playdate_id: row.playdate_id ?? '',
+    sender_id: row.sender_id,
+    body: row.body,
+    created_at: row.created_at,
+  }))
+}
+
+/** The default-client wrapper (the thread view's load for free-form threads). */
+export async function queryDirectMessages(otherPartyId: string): Promise<MessageRow[]> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (user === null) throw new Error('No authenticated user — cannot read messages.')
+  return queryDirectMessagesWithClient(supabase, otherPartyId, user.id)
+}
+
+/**
+ * Get the list of distinct counterparties the caller has free-form
+ * conversations with (for the inbox's conversation list). Returns one entry
+ * per other profile who has at least one message with the caller.
+ */
+export async function listDirectConversationsWithClient(
+  client: SupabaseClient,
+  userId: string,
+): Promise<Array<{ otherPartyId: string; otherPartyName: string; latestAt: string; preview: string; unreadCount: number }>> {
+  // All free-form messages where I'm the sender or recipient.
+  const { data, error } = await client
+    .from('messages')
+    .select(
+      'id, sender_id, body, created_at, ' +
+        'sender:profiles!messages_sender_id_fkey ( display_name )',
+    )
+    .is('playdate_id', null)
+    .or(`sender_id.eq.${userId}`)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+
+  const rows = (data ?? []) as unknown as Array<{
+    id: string
+    sender_id: string
+    body: string
+    created_at: string
+    sender: { display_name: string } | null
+  }>
+
+  // Group by counterparty (the sender when it's not me; otherwise resolve
+  // from the recipient side — but we only have sender info here, so we use
+  // the message_recipients table for the other party).
+  const byCounterpart = new Map<
+    string,
+    { latest: { body: string; created_at: string }; count: number }
+  >()
+  for (const row of rows) {
+    const counterpartId = row.sender_id === userId ? '__recipient__' : row.sender_id
+    const entry = byCounterpart.get(counterpartId)
+    if (entry === undefined) {
+      byCounterpart.set(counterpartId, {
+        latest: { body: row.body, created_at: row.created_at },
+        count: 1,
+      })
+    } else {
+      entry.count += 1
+    }
+  }
+
+  // For "__recipient__" entries, we need to find who the recipient was.
+  // Query message_recipients for the messages where I'm the sender.
+  const mySentIds = rows.filter((r) => r.sender_id === userId).map((r) => r.id)
+  let recipientNames: Record<string, string> = {}
+  if (mySentIds.length > 0) {
+    const { data: recData, error: recErr } = await client
+      .from('message_recipients')
+      .select(
+        'message_id, profile:profiles!message_recipients_profile_id_fkey ( display_name )',
+      )
+      .in('message_id', mySentIds)
+      .neq('profile_id', userId)
+    if (!recErr && recData !== null) {
+      for (const rec of recData as unknown as Array<{
+        message_id: string
+        profile: { display_name: string } | null
+      }>) {
+        if (rec.profile !== null && rec.profile.display_name !== '') {
+          recipientNames[rec.message_id] = rec.profile.display_name
+        }
+      }
+    }
+  }
+
+  // Build summaries: one per distinct counterparty.
+  const results: Array<{ otherPartyId: string; otherPartyName: string; latestAt: string; preview: string; unreadCount: number }> = []
+  const seen = new Set<string>()
+  for (const row of rows) {
+    if (row.sender_id !== userId) {
+      // They sent to me — counterparty is the sender.
+      const key = row.sender_id
+      if (seen.has(key)) continue
+      seen.add(key)
+      results.push({
+        otherPartyId: key,
+        otherPartyName: row.sender?.display_name ?? '',
+        latestAt: row.created_at,
+        preview: truncateMessagePreview(row.body),
+        unreadCount: 0,
+      })
+    } else {
+      // I sent to them — counterparty is the recipient (resolved above).
+      const name = recipientNames[row.id] ?? ''
+      if (name === '') continue
+      // Find or create the entry for this recipient.
+      const existing = results.find((r) => r.otherPartyName === name)
+      if (existing === undefined) {
+        results.push({
+          otherPartyId: '',
+          otherPartyName: name,
+          latestAt: row.created_at,
+          preview: truncateMessagePreview(row.body),
+          unreadCount: 0,
+        })
+      }
+    }
+  }
+  results.sort((a, b) => (a.latestAt < b.latestAt ? 1 : -1))
+  return results
+}
+
+/** The default-client wrapper (the inbox's free-form conversation list). */
+export async function listDirectConversations(userId: string): Promise<
+  Array<{ otherPartyId: string; otherPartyName: string; latestAt: string; preview: string; unreadCount: number }>
+> {
+  return listDirectConversationsWithClient(supabase, userId)
+}
+
+// ---------------------------------------------------------------------------
+// V15 ticket 08: message reactions (thumbs-up).
+// ---------------------------------------------------------------------------
+
+/** Toggle a thumbs-up reaction on a message (INSERT or DELETE). */
+export async function toggleReactionWithClient(
+  client: SupabaseClient,
+  messageId: string,
+  profileId: string,
+): Promise<boolean> {
+  // Check if the reaction exists.
+  const { data: existing } = await client
+    .from('message_reactions')
+    .select('message_id')
+    .eq('message_id', messageId)
+    .eq('profile_id', profileId)
+    .maybeSingle()
+  if (existing !== null && existing !== undefined) {
+    // Remove it.
+    const { error } = await client
+      .from('message_reactions')
+      .delete()
+      .eq('message_id', messageId)
+      .eq('profile_id', profileId)
+    if (error) throw error
+    return false
+  }
+  // Add it.
+  const { error } = await client
+    .from('message_reactions')
+    .insert({ message_id: messageId, profile_id: profileId })
+  if (error) throw error
+  return true
+}
+
+/** The default-client wrapper. */
+export async function toggleReaction(messageId: string): Promise<boolean> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (user === null) throw new Error('No authenticated user — cannot react.')
+  return toggleReactionWithClient(supabase, messageId, user.id)
+}
+
+/** Count reactions on a message (for the counter display). */
+export async function countReactionsWithClient(
+  client: SupabaseClient,
+  messageId: string,
+): Promise<number> {
+  const { count, error } = await client
+    .from('message_reactions')
+    .select('*', { count: 'exact', head: true })
+    .eq('message_id', messageId)
+  if (error) throw error
+  return count ?? 0
+}
+
+/** The default-client wrapper. */
+export async function countReactions(messageId: string): Promise<number> {
+  return countReactionsWithClient(supabase, messageId)
+}
