@@ -25,7 +25,7 @@ LOG="/tmp/chrome-cdp.log"
 
 xruntime="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 dbus="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${xruntime}/bus}"
-display="${DISPLAY:-:0}"
+display="${DISPLAY:-:0}"; wayland_display="${WAYLAND_DISPLAY:-wayland-1}"
 
 already_up() { curl -s --max-time 4 "http://127.0.0.1:${PORT}/json/version" >/dev/null 2>&1; }
 
@@ -59,7 +59,7 @@ rsync -a \
   "$PROFILE_SRC/" "$PROFILE_COPY"/
 
 # Fully detached launch (setsid + stdio to /dev/null) so it outlives this script.
-setsid env DBUS_SESSION_BUS_ADDRESS="$dbus" XDG_RUNTIME_DIR="$xruntime" DISPLAY="$display" \
+setsid env DBUS_SESSION_BUS_ADDRESS="$dbus" XDG_RUNTIME_DIR="$xruntime" DISPLAY="$display" WAYLAND_DISPLAY="$wayland_display" \
   "$CHROME_BIN" --ozone-platform=wayland \
     --user-data-dir="$PROFILE_COPY" \
     --remote-debugging-port="$PORT" \

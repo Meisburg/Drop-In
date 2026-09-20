@@ -11,12 +11,15 @@ import { useCropStep } from '../components/useCropStep'
 import {
   addKid,
   BIO_MAX_LENGTH,
+  clearAvatar,
+  HandleTakenError,
   listKids,
   LIKES_MAX_LENGTH,
   MAX_KIDS_PER_PROFILE,
   removeKid,
   supabase,
   updateBio,
+  updateDisplayName,
   updateKid,
   uploadAvatar,
   uploadFamilyPhoto,
@@ -28,7 +31,6 @@ import {
   validateKidLikes,
 } from '../lib/db'
 import {
-  kidLabel,
   partitionPostsByTime,
   playdateKidsKidIds,
   queryMyPlaydatesWithClient,
@@ -146,6 +148,9 @@ export function ProfilePage() {
   // so an already-onboarded parent needs this card to add or change it.
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [avatarError, setAvatarError] = useState<string | null>(null)
+  // V15 ticket 06 (A19): the avatar's in-flight REMOVE flag — the × on the
+  // avatar corner clears profiles.avatar_url (clearAvatar); one at a time.
+  const [avatarRemoving, setAvatarRemoving] = useState(false)
 
   const [myPosts, setMyPosts] = useState<Playdate[] | null>(null)
   const [postsError, setPostsError] = useState<string | null>(null)
@@ -262,6 +267,27 @@ export function ProfilePage() {
   )
 
   /**
+   * Remove the parent's avatar (V15 ticket 06, A19): clear profiles.avatar_url
+   * (the storage object stays in the bucket — only the column stops pointing at
+   * it), then refresh() so the identity block's HostAvatar render + this card's
+   * image pick up the null. A failed clear surfaces the error but never traps
+   * the page (the item is optional).
+   */
+  async function handleRemoveAvatar() {
+    if (userId === null || avatarRemoving) return
+    setAvatarRemoving(true)
+    setAvatarError(null)
+    try {
+      await clearAvatar(userId)
+      await refresh().catch(() => undefined)
+    } catch (err) {
+      setAvatarError(err instanceof Error ? err.message : 'Could not remove the photo. Try again.')
+    } finally {
+      setAvatarRemoving(false)
+    }
+  }
+
+  /**
    * Upload one kid's photo (V13 ticket 01): the crop step (owned by the row's
    * KidPhotoControl) decodes + frames the bitmap, then this writes the object
    * (uploadKidPhoto → the canonical <uid>/kids/<kidId> path + the row's
@@ -284,7 +310,28 @@ export function ProfilePage() {
     }
   }
 
-  // The family photo's signed URL — called ABOVE the `loading` early return:
+  /**
+ * V15 ticket 06 (A19): remove a kid's photo — the × on the photo's corner.
+ * Sets the kid's avatar_url to NULL in the DB (the storage object stays; only
+ * the marker is cleared), then re-lists so the signed-URL map drops it. The
+ * busy flag is shared with handleKidPhotoUpload (one kid at a time).
+ */
+async function handleKidPhotoRemove(kidId: string) {
+  if (userId === null || kidPhotoBusyId !== null) return
+  setKidPhotoBusyId(kidId)
+  try {
+    await updateKid(kidId, { avatar_url: null })
+    const rows = await listKids(userId)
+    setKids(rows)
+    setKidDrafts((prev) => seedKidDrafts(rows.map(toKidRowValues), prev))
+  } catch (err) {
+    setKidsError(err instanceof Error ? err.message : 'Could not remove that kid’s photo. Try again.')
+  } finally {
+    setKidPhotoBusyId(null)
+  }
+}
+
+// The family photo's signed URL — called ABOVE the `loading` early return:
   // a hook after an early return is the V6 regression that blanked the detail
   // page.
   const familyPhotoUrl = useFamilyPhotoUrl(profile?.family_photo_url)
@@ -378,12 +425,15 @@ export function ProfilePage() {
     setWriteErrors({})
 
     const writers: Record<ProfileSection, () => Promise<void>> = {
-      // The name/location/interests writers are TYPE requirements of the
-      // Record (every section needs a writer), not live paths: this page owns
-      // no name/location/interests input (they live on /settings), so the
-      // planner never schedules those sections here. They stay so the
-      // machine's contract is complete rather than patched.
-      name: () => Promise.resolve(),
+      // V15 ticket 06 (A20): the display name is now edited INLINE on this page
+      // (the identity block at the top) — the writer moved here from /settings
+      // (which still keeps its own input; both pages share the same seam). The
+      // location/interests writers remain TYPE requirements of the Record
+      // (every section needs a writer), not live paths: this page owns no
+      // location/interests input (they live on /settings), so the planner never
+      // schedules those sections here. They stay so the machine's contract is
+      // complete rather than patched.
+      name: () => updateDisplayName(userId, draft.name.trim()),
       location: () => Promise.resolve(),
       bio: () => updateBio(userId, draft.bio),
       interests: () => Promise.resolve(),
@@ -399,10 +449,17 @@ export function ProfilePage() {
         // what was typed — the comparison is trimmed, so it is not dirty).
         if (section === 'bio') {
           savedValues.bio = draft.bio.trim()
+        } else if (section === 'name') {
+          savedValues.name = draft.name.trim()
         }
       } catch (err) {
         failures += 1
-        const message = err instanceof Error ? err.message : 'Could not save that section.'
+        const message =
+          err instanceof HandleTakenError
+            ? `“${err.handle}” is already taken — pick a different display name.`
+            : err instanceof Error
+              ? err.message
+              : 'Could not save that section.'
         setWriteErrors((prev) => ({ ...prev, [section]: message }))
       }
     }
@@ -522,6 +579,11 @@ export function ProfilePage() {
           kidRows: (kids ?? []).map(toKidRowValues),
           kidDrafts,
           validators: {
+            // V15 ticket 06 (A20): the display name is now edited inline on this
+            // page — same validator /settings uses (the empty check; the db
+            // layer's own updateDisplayName handles the taken-handle case at
+            // write time).
+            name: (value) => (value.trim() === '' ? 'Your display name can’t be empty.' : null),
             bio: validateBio,
             kid: (kid) => validateKid(kid.firstName, kid.age) ?? validateKidLikes(kid.likes),
           },
@@ -675,43 +737,122 @@ export function ProfilePage() {
         </p>
       </div>
 
+      {/* V15 ticket 06 (A20): THE IDENTITY BLOCK — moved to the TOP of the page
+          (it used to head the page before V13 ticket 01 demoted it; this ticket
+          restores that order). The display name is the FIRST thing on /profile:
+          an inline-editable input (the same tap-to-edit, autosave-as-you-go
+          pattern as every other field here) + the @handle line. The avatar
+          renders beside it via HostAvatar (the feed-card shape); its editor
+          lives in the "Your photo" card below. */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center gap-3">
+          {profile !== null && profile.avatar_url !== null && profile.avatar_url !== undefined ? (
+            <HostAvatar
+              host={{
+                id: profile.id,
+                display_name: profile.display_name,
+                avatar_url: profile.avatar_url,
+              }}
+            />
+          ) : null}
+          <div className="min-w-0 flex-1">
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-slate-700">Display name</span>
+              <input
+                data-testid="display-name-input"
+                aria-label="Display name"
+                className={
+                  'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                  (writeErrors.name !== undefined ? 'border-red-400' : 'border-slate-300')
+                }
+                value={draft?.name ?? ''}
+                onChange={(e) => editDraft({ name: e.target.value }, 'name')}
+                maxLength={30}
+                disabled={draft === null}
+              />
+            </label>
+            <p className="mt-1 text-sm text-slate-600">@{draft?.name.trim() || profile?.display_name}</p>
+            {writeErrors.name !== undefined ? (
+              <p className="mt-1 text-sm text-red-600">{writeErrors.name}</p>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
       {/* "Your photo" — the parent's avatar (V2 ticket 02; V13 ticket 01 moved the
           editor here from /onboarding). Always present: add OR change. The
-          HostAvatar render in the identity block below shows the result. */}
+          HostAvatar render in the identity block above shows the result. */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">Your photo</h2>
         <p className="mt-1 text-sm text-slate-600">
           Optional. A photo of you — it shows on your drop-in cards and your public page.
         </p>
+        {/* V15 ticket 06 (A19): TAP THE AVATAR TO CHANGE IT. The circle itself is
+            now the trigger for the file picker (no text button); a small × on
+            its corner removes the photo (hover to reveal on desktop, long-press
+            on mobile). No photo yet → the whole card's empty state is one
+            tappable "Add a photo" label (the same pattern). */}
         {profile !== null && profile.avatar_url !== null && profile.avatar_url !== undefined ? (
-          <img
-            data-testid="avatar-photo"
-            src={profile.avatar_url}
-            alt="Your avatar"
-            className="mt-3 h-20 w-20 rounded-full object-cover"
-          />
-        ) : null}
-        <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-slate-50">
-          <input
-            data-testid="avatar-photo-input"
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file !== undefined && file !== null) {
-                void avatarCrop.beginCrop(file)
-              }
-              e.target.value = ''
-            }}
-          />
-          {profile !== null && profile.avatar_url !== null && profile.avatar_url !== undefined
-            ? 'Change your photo'
-            : 'Add a photo'}
-        </label>
+          <div className="group relative mt-3 inline-block">
+            <label
+              data-testid="avatar-photo-trigger"
+              className="flex h-20 w-20 cursor-pointer items-center justify-center rounded-full transition-transform active:scale-95"
+            >
+              <input
+                data-testid="avatar-photo-input"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file !== undefined && file !== null) {
+                    void avatarCrop.beginCrop(file)
+                  }
+                  e.target.value = ''
+                }}
+              />
+              <img
+                data-testid="avatar-photo"
+                src={profile.avatar_url}
+                alt="Your avatar"
+                className="h-20 w-20 rounded-full object-cover"
+              />
+            </label>
+            <button
+              type="button"
+              data-testid="avatar-remove"
+              aria-label="Remove photo"
+              onClick={() => void handleRemoveAvatar()}
+              disabled={avatarRemoving}
+              className="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white text-sm font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-100 disabled:opacity-50 sm:opacity-0 sm:focus-within:opacity-100 sm:group-hover:opacity-100"
+            >
+              ×
+            </button>
+          </div>
+        ) : (
+          <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-slate-50">
+            <input
+              data-testid="avatar-photo-input"
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file !== undefined && file !== null) {
+                  void avatarCrop.beginCrop(file)
+                }
+                e.target.value = ''
+              }}
+            />
+            Add a photo
+          </label>
+        )}
         {avatarCrop.dialog}
         {avatarUploading ? (
           <p className="mt-2 text-sm text-slate-600">Uploading…</p>
+        ) : null}
+        {avatarRemoving ? (
+          <p className="mt-2 text-sm text-slate-600">Removing…</p>
         ) : null}
         {avatarError !== null ? (
           <p className="mt-2 text-sm text-red-600">{avatarError}</p>
@@ -786,10 +927,10 @@ export function ProfilePage() {
         ) : null}
       </div>
 
-      {/* "About the kids" — each kid's first name + age + likes (editable,
-          autosaving), an optional per-kid photo (OWNER-ONLY render — the
-          V9 t11 / V12 t04 invariant: the visitor /u/:handle surface stays
-          photo-free), and Remove. Plus the add-a-kid row and the five-kid cap. */}
+      {/* V15 ticket 06 (A17/A18): each kid row now labels its fields inline —
+          "Name" / "Age" / "Likes:" prefixes make it unambiguous which input is
+          which, matching the /u/:handle render. The photo control (tap-to-change,
+          × to remove) sits beside the inputs; Remove stays at the end. */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">About the kids</h2>
         <p className="mt-1 text-sm text-slate-600">
@@ -829,68 +970,80 @@ export function ProfilePage() {
                         <img
                           data-testid="kid-photo"
                           src={kidPhoto}
-                          alt={kidLabel(kid.first_name, kid.age)}
+                          alt={`${values.firstName || kid.first_name} · Age ${rowAge}`}
                           className="h-10 w-10 shrink-0 rounded-full object-cover"
                           onError={() => setKidPhotoErrors((prev) => ({ ...prev, [kid.id]: true }))}
                         />
                       ) : null}
-                      <input
-                        data-testid="kid-name"
-                        aria-label="Kid first name"
-                        className={
-                          'w-28 min-w-0 shrink-0 rounded-xl border px-2 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-                          (rowError !== null ? 'border-red-400' : 'border-slate-300')
-                        }
-                        value={values.firstName}
-                        onChange={(e) => editKidDraft(kid.id, { firstName: e.target.value })}
-                        maxLength={30}
-                        disabled={kidsBusyId !== null}
-                      />
-                      <input
-                        data-testid="kid-age"
-                        aria-label="Kid age"
-                        type="number"
-                        min={0}
-                        max={17}
-                        className={
-                          'w-16 shrink-0 rounded-xl border px-2 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-                          (rowError !== null ? 'border-red-400' : 'border-slate-300')
-                        }
-                        value={values.age}
-                        onChange={(e) => editKidDraft(kid.id, { age: e.target.value })}
-                        disabled={kidsBusyId !== null}
-                      />
-                      <div className="flex min-w-0 flex-1 basis-40 items-center gap-1.5">
-                        <input
-                          data-testid="kid-likes"
-                          aria-label="Kid likes"
-                          className={
-                            'min-w-0 flex-1 rounded-xl border px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-                            (rowError !== null ? 'border-red-400' : 'border-slate-300')
-                          }
-                          value={values.likes}
-                          onChange={(e) => editKidDraft(kid.id, { likes: e.target.value })}
-                          placeholder="Likes… (optional)"
-                          disabled={kidsBusyId !== null}
-                        />
-                        {values.likes !== '' ? (
-                          <span
+                      {/* V15 ticket 06 (A17/A18): labeled inline inputs — "Name" / "Age" / "Likes:"
+          prefixes make each field unambiguous without a separate label line. */}
+                      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                        <label className="flex items-center gap-1 text-sm">
+                          <span className="shrink-0 text-slate-600">Name</span>
+                          <input
+                            data-testid="kid-name"
+                            aria-label="Kid first name"
                             className={
-                              'shrink-0 text-xs ' +
-                              (validateKidLikes(values.likes) !== null
-                                ? 'text-red-600'
-                                : 'text-slate-500')
+                              'w-28 min-w-0 rounded-xl border px-2 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                              (rowError !== null ? 'border-red-400' : 'border-slate-300')
                             }
-                          >
-                            {values.likes.length}/{LIKES_MAX_LENGTH}
-                          </span>
-                        ) : null}
+                            value={values.firstName}
+                            onChange={(e) => editKidDraft(kid.id, { firstName: e.target.value })}
+                            maxLength={30}
+                            disabled={kidsBusyId !== null}
+                          />
+                        </label>
+                        <label className="flex items-center gap-1 text-sm">
+                          <span className="shrink-0 text-slate-600">Age</span>
+                          <input
+                            data-testid="kid-age"
+                            aria-label="Kid age"
+                            type="number"
+                            min={0}
+                            max={17}
+                            className={
+                              'w-16 shrink-0 rounded-xl border px-2 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                              (rowError !== null ? 'border-red-400' : 'border-slate-300')
+                            }
+                            value={values.age}
+                            onChange={(e) => editKidDraft(kid.id, { age: e.target.value })}
+                            disabled={kidsBusyId !== null}
+                          />
+                        </label>
+                        <label className="flex min-w-0 flex-1 basis-40 items-center gap-1 text-sm">
+                          <span className="shrink-0 text-slate-600">Likes:</span>
+                          <input
+                            data-testid="kid-likes"
+                            aria-label="Kid likes"
+                            className={
+                              'min-w-0 flex-1 rounded-xl border px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                              (rowError !== null ? 'border-red-400' : 'border-slate-300')
+                            }
+                            value={values.likes}
+                            onChange={(e) => editKidDraft(kid.id, { likes: e.target.value })}
+                            placeholder="(optional)"
+                            disabled={kidsBusyId !== null}
+                          />
+                          {values.likes !== '' ? (
+                            <span
+                              className={
+                                'shrink-0 text-xs ' +
+                                (validateKidLikes(values.likes) !== null
+                                  ? 'text-red-600'
+                                  : 'text-slate-500')
+                              }
+                            >
+                              {values.likes.length}/{LIKES_MAX_LENGTH}
+                            </span>
+                          ) : null}
+                        </label>
                       </div>
                       <KidPhotoControl
                         kidId={kid.id}
-                        hasPhoto={kidPhoto !== undefined && !kidPhotoErrors[kid.id]}
+                        photoUrl={kidPhoto !== undefined && !kidPhotoErrors[kid.id] ? kidPhoto : undefined}
                         busy={kidPhotoBusyId === kid.id}
                         onUpload={(k, source, rect) => void handleKidPhotoUpload(k, source, rect)}
+                        onRemove={() => void handleKidPhotoRemove(kid.id)}
                       />
                       <button
                         type="button"
@@ -1026,33 +1179,6 @@ export function ProfilePage() {
         )}
       </div>
 
-      {/* THE IDENTITY BLOCK — moved to the BOTTOM of the page in V13 ticket 01
-          (it used to head the page). The display name is the persistent public
-          handle; it renders as its OWN text node so a spec can match it exactly
-          while the app-shell header shows the @-prefixed form. The display name
-          itself is EDITED on /settings (the founder decision: it stays there);
-          this block is the read-only "who you are" footer. */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900">Identity</h2>
-        {/* V13 ticket 01: the parent's avatar (V2 ticket 02) now displays here —
-            its editor lives on /onboarding (the "Add a photo" step); this is the
-            read-only render. The HostAvatar shape matches the feed card + /u/:handle. */}
-        {profile !== null && profile.avatar_url !== null && profile.avatar_url !== undefined ? (
-          <HostAvatar
-            host={{
-              id: profile.id,
-              display_name: profile.display_name,
-              avatar_url: profile.avatar_url,
-            }}
-          />
-        ) : null}
-        <p className="mt-2 text-sm font-medium text-slate-800">{profile?.display_name}</p>
-        <p className="mt-1 text-sm text-slate-600">
-          Your display name is your persistent public handle — it shows on everything you post.
-          To change it, go to your settings.
-        </p>
-      </div>
-
       {/* V12 t01: THE AUTOSAVE INDICATOR — the line that used to hold the save
           button + the "unsaved changes" sentence + the result note, in one
           always-on line where the button used to be. "Saved." is the terminal
@@ -1107,52 +1233,96 @@ export function ProfilePage() {
 }
 
 /**
- * One kid row's photo control (V13 ticket 01): the "Add photo" / "Change
- * photo" button that opens THAT kid's own crop step. A small component rather
- * than a hook-in-a-loop because useCropStep cannot be called inside the
- * kids.map callback (hooks must run at the top level of a component). The
- * parent owns the shared busy flag (one kid at a time) + the re-list; this
- * component owns only the per-kid crop step, which on confirm calls the
- * parent's handleKidPhotoUpload with the decoded bitmap + frame.
+ * One kid row's photo control (V13 ticket 01, reworked in V15 ticket 06 A19):
+ * TAP THE PHOTO ITSELF to open that kid's crop step (no text button); a small ×
+ * on the photo's corner removes it (hover to reveal on desktop, long-press on
+ * mobile). No photo yet → a tappable "Add photo" label. The hidden file input
+ * stays for the e2e specs. A small component rather than a hook-in-a-loop
+ * because useCropStep cannot be called inside the kids.map callback (hooks must
+ * run at the top level of a component). The parent owns the shared busy flag
+ * (one kid at a time) + the re-list; this component owns only the per-kid crop
+ * step, which on confirm calls the parent's handleKidPhotoUpload with the
+ * decoded bitmap + frame.
  */
 function KidPhotoControl({
   kidId,
-  hasPhoto,
+  photoUrl,
   busy,
   onUpload,
+  onRemove,
 }: {
   kidId: string
-  hasPhoto: boolean
+  /** The signed URL of the kid's current photo (the tap-to-update trigger shows
+      it); undefined when the row has no photo yet. */
+  photoUrl?: string
   busy: boolean
   onUpload: (kidId: string, source: ImageBitmap, rect: CropRect) => void
+  onRemove: () => void
 }) {
   const crop = useCropStep(async (source, rect) => {
     onUpload(kidId, source, rect)
   })
   return (
     <>
-      <label
-        className={
-          'flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200 ' +
-          (busy ? 'opacity-50' : '')
-        }
-      >
-        <input
-          data-testid={`kid-photo-input-${kidId}`}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          disabled={busy}
-          onChange={(e) => {
-            const file = e.target.files?.[0]
-            if (file !== undefined && file !== null) {
-              void crop.beginCrop(file)
-            }
-            e.target.value = ''
-          }}
-        />
-        {busy ? 'Uploading…' : hasPhoto ? 'Change photo' : 'Add photo'}
-      </label>
+      <input
+        data-testid={`kid-photo-input-${kidId}`}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        disabled={busy}
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file !== undefined && file !== null) {
+            void crop.beginCrop(file)
+          }
+          e.target.value = ''
+        }}
+      />
+      {photoUrl !== undefined ? (
+        <div className="group relative shrink-0">
+          {/* The photo itself is now the trigger — tapping it opens the crop
+              step for THIS kid's photo (the same pattern as the parent avatar). */}
+          <button
+            type="button"
+            data-testid="kid-photo-trigger"
+            aria-label="Update photo"
+            onClick={() => {
+              // Find the hidden input by its testid and click it (opens the picker).
+              const input = document.querySelector<HTMLInputElement>(
+                `[data-testid="kid-photo-input-${kidId}"]`,
+              )
+              input?.click()
+            }}
+            disabled={busy}
+            className="relative block h-10 w-10 overflow-hidden rounded-full transition-transform active:scale-95 disabled:opacity-50"
+          >
+            <img
+              src={photoUrl}
+              alt=""
+              className="h-10 w-10 rounded-full object-cover"
+            />
+          </button>
+          <button
+            type="button"
+            data-testid="kid-photo-remove"
+            aria-label="Remove photo"
+            onClick={onRemove}
+            disabled={busy}
+            className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-xs font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-100 disabled:opacity-50 sm:opacity-0 sm:focus-within:opacity-100 sm:group-hover:opacity-100"
+          >
+            ×
+          </button>
+        </div>
+      ) : (
+        <label
+          className={
+            'flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200 ' +
+            (busy ? 'opacity-50' : '')
+          }
+        >
+          Add photo
+        </label>
+      )}
       {crop.dialog}
     </>
   )

@@ -2587,6 +2587,21 @@ export async function uploadAvatar(
 }
 
 /**
+ * Clear the caller's avatar (V15 ticket 06, A19): point profiles.avatar_url at
+ * NULL. The storage OBJECT stays in the bucket (the remove-kid-photo discipline:
+ * a photo object is never deleted on clear — only the column stops pointing at
+ * it), so this touches no storage logic, only the profile row's own UPDATE
+ * policy (the same self-only posture updateDisplayName rides).
+ */
+export async function clearAvatar(userId: string): Promise<void> {
+  const { error } = await supabase
+    .from('profiles')
+    .update({ avatar_url: null })
+    .eq('id', userId)
+  if (error) throw error
+}
+
+/**
  * The PRIVATE-bucket upload core (V9 ticket 11): encode the chosen crop of the
  * decoded `source` as a square JPEG (the same encoder the avatar uses — one
  * pipeline, ticket 08's AC) and upload it to `PHOTO_BUCKET` at `objectPath`.

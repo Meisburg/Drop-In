@@ -364,11 +364,31 @@ export function UserPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* V15 ticket 06 (A20): THE IDENTITY BLOCK — moved to the TOP of /u/:handle
+          (it used to close the page in V13 ticket 01). The display name + @handle
+          is the FIRST thing on the public profile, integrated with the avatar. */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center gap-3">
+          <HostAvatar host={profile} expandable />
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold text-slate-900">@{profile.display_name}</h2>
+            <p className="mt-1 text-sm text-slate-600">Here since {joined}.</p>
+            {/* V3 slice 9 (ticket 04): the "Hosted N drop-ins" line — hidden
+                when 0 or unsettled; singular "Hosted 1 drop-in" when N = 1. */}
+            {hostedCount !== null && hostedCount > 0 ? (
+              <p className="text-sm text-slate-600">
+                Hosted {hostedCount} {hostedCount === 1 ? 'drop-in' : 'drop-ins'}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         {/* V13 ticket 01: the identity row (avatar + @handle + "Here since" +
-            "Hosted N drop-ins") MOVED to the bottom of the page — it is no longer
-            the page's header. This card now carries the family photo + the
-            "About the parents" block (the bio + interests, under a real heading). */}
+            "Hosted N drop-ins") MOVED to the top of the page in V15 ticket 06 (A20)
+            — it is no longer the page's closer. This card now carries the family
+            photo + the "About the parents" block (the bio + interests, under a real heading). */}
         {/* V9 ticket 11 (folded ticket 08): the optional blocks render IN THE
             PINNED ORDER — family photo → "About the parents" → the kids list.
             Every one of them is optional: a family with none of them gets this
@@ -474,14 +494,14 @@ export function UserPage() {
               return (
                 <li key={kid.id} data-testid="kid-row" className="flex flex-wrap items-center gap-2">
                   <div className="min-w-0 flex-1">
+                    {/* V15 ticket 06 (A17/A18): one unambiguous inline line —
+                        "Sam · Age 6 · Likes: soccer". The likes label is always
+                        present when the field has content; name/age fall back
+                        to kidLabel's age-only / name-only forms. */}
                     <p className="text-sm text-slate-800">
-                      {/* V9 ticket 05: an age-only kid reads "Age 6", never
-                          " · 6" (feed.kidLabel is the one kid-label seam). */}
                       {kidLabel(kid.first_name, kid.age)}
+                      {likes !== '' ? ` · Likes: ${likes}` : null}
                     </p>
-                    {likes !== '' ? (
-                      <p className="mt-0.5 text-xs text-slate-600">likes {likes}</p>
-                    ) : null}
                   </div>
                 </li>
               )
@@ -642,26 +662,6 @@ export function UserPage() {
           onClose={() => setReporting(false)}
         />
       ) : null}
-
-      {/* V13 ticket 01: THE IDENTITY BLOCK — moved to the BOTTOM of the page
-          (it used to head the page). The avatar + @handle + "Here since" +
-          "Hosted N drop-ins" line now close the page instead of opening it. */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex items-center gap-3">
-          <HostAvatar host={profile} expandable />
-          <div className="min-w-0">
-            <h2 className="text-lg font-semibold text-slate-900">@{profile.display_name}</h2>
-            <p className="mt-1 text-sm text-slate-600">Here since {joined}.</p>
-            {/* V3 slice 9 (ticket 04): the "Hosted N drop-ins" line — hidden
-                when 0 or unsettled; singular "Hosted 1 drop-in" when N = 1. */}
-            {hostedCount !== null && hostedCount > 0 ? (
-              <p className="text-sm text-slate-600">
-                Hosted {hostedCount} {hostedCount === 1 ? 'drop-in' : 'drop-ins'}
-              </p>
-            ) : null}
-          </div>
-        </div>
-      </div>
     </div>
   )
 }
