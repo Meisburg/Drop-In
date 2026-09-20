@@ -9,7 +9,7 @@
  * thing they share is the distance math (feed.haversineMiles), which is
  * imported rather than reimplemented.
  */
-import { coordNumber, placeDistanceMiles, statedAgeRangeLine } from './feed'
+import { coordNumber, haversineMiles, placeDistanceMiles, statedAgeRangeLine } from './feed'
 import type { ZipCoords } from './feed'
 import type { Place, PlaceKind } from './types'
 
@@ -567,4 +567,44 @@ export function groupPlacesByKind(rows: readonly PlaceListRow[]): PlaceKindGroup
     ordered.push(groups.get(kind)!)
   }
   return ordered
+}
+
+/**
+ * V15 ticket 02: the browse map rework's pure distance seam — the haversine
+ * miles between two lat/lng points. A thin alias over feed.haversineMiles so
+ * a place consumer has one import site (the same re-export discipline as
+ * placeDistanceMiles above). Pure + unit-tested.
+ */
+export function distanceMiles(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  return haversineMiles(a, b)
+}
+
+/**
+ * V15 ticket 02: keep only the places whose coordinates fall within
+ * `radiusMiles` of `center` (boundary inclusive — the app's existing radius
+ * predicate, withinRadius). A place with UNKNOWN coordinates (lat/lng null or
+ * unresolvable) is EXCLUDED here: this is a radius filter, not the directory's
+ * "unknown never hides" rule — the caller (BrowsePage's "See places") has
+ * chosen a specific center and radius, and a place we cannot measure against
+ * it cannot be shown as inside it.
+ *
+ * Places are resolved through resolveMapCoords (their own lat/lng first, else
+ * the gazetteer zip embedded in the address) — the same seam the map renders
+ * from, so the list and the circle always agree. Pure + unit-tested.
+ */
+export function filterPlacesByRadius(
+  places: readonly Place[],
+  center: { lat: number; lng: number },
+  radiusMiles: number,
+  zipCoords?: ReadonlyMap<string, ZipCoords> | null,
+): Place[] {
+  if (radiusMiles <= 0) return []
+  const kept: Place[] = []
+  for (const place of places) {
+    const coords = resolveMapCoords(place, zipCoords ?? null)
+    if (coords === null) continue
+    const distance = distanceMiles(center, coords)
+    if (distance <= radiusMiles) kept.push(place)
+  }
+  return kept
 }

@@ -4,6 +4,8 @@ import {
   browsePlaceList,
   BROWSE_LIST_LEAD_LIMIT,
   coordNumber,
+  distanceMiles,
+  filterPlacesByRadius,
   groupPlacesByKind,
   matchPlaces,
   placeAgeFitLabel,
@@ -602,5 +604,74 @@ describe('resolveMapCoords (own lat/lng, else the address zip, else null)', () =
   it('is null when the gazetteer is unavailable (a failed load)', () => {
     const p = place({ name: 'A', lat: null, lng: null, address: '1 Somewhere, Seattle, WA 98107' })
     expect(resolveMapCoords(p, null)).toBe(null)
+  })
+})
+
+// V15 ticket 02: the browse map rework's pure distance + radius-filter seams.
+describe('distanceMiles (haversine alias over feed.haversineMiles)', () => {
+  it('returns 0 for identical points', () => {
+    expect(distanceMiles({ lat: 47.6, lng: -122.3 }, { lat: 47.6, lng: -122.3 })).toBeCloseTo(0, 6)
+  })
+
+  it('matches the known ~11.5 mi gap between the two seeded zips', () => {
+    // 98107 West Seattle → 98007 Bellevue (the test file's own constants).
+    const d = distanceMiles(ZIP_COORDS.get('98107')!, ZIP_COORDS.get('98007')!)
+    expect(d).toBeGreaterThan(10)
+    expect(d).toBeLessThan(13)
+  })
+
+  it('is symmetric', () => {
+    const a = { lat: 47.68, lng: -122.32 }
+    const b = { lat: 47.61, lng: -122.14 }
+    expect(distanceMiles(a, b)).toBeCloseTo(distanceMiles(b, a), 6)
+  })
+})
+
+describe('filterPlacesByRadius (pure radius filter over resolveMapCoords)', () => {
+  const GAZETTEER: Map<string, ZipCoords> = new Map([
+    ['98107', { lat: 47.66757, lng: -122.37789 }],
+  ])
+  const CENTER = { lat: 47.68, lng: -122.32 } // Green Lake area
+
+  it('keeps places within the radius and excludes those outside', () => {
+    const near = place({ name: 'Near', lat: 47.68, lng: -122.32 }) // ~0 mi
+    const far = place({ name: 'Far', lat: 46.9, lng: -122.0 }) // ~53 mi
+    const result = filterPlacesByRadius([near, far], CENTER, 5, GAZETTEER)
+    expect(result.map((p) => p.name)).toEqual(['Near'])
+  })
+
+  it('includes the boundary (distance <= radius)', () => {
+    // A place exactly at the center is always included.
+    const atCenter = place({ name: 'At Center', lat: CENTER.lat, lng: CENTER.lng })
+    const result = filterPlacesByRadius([atCenter], CENTER, 1, GAZETTEER)
+    expect(result.map((p) => p.name)).toEqual(['At Center'])
+  })
+
+  it('excludes places with no resolvable coordinates', () => {
+    const noCoords = place({ name: 'No Coords', lat: null, lng: null, address: '1 Nowhere St' })
+    const result = filterPlacesByRadius([noCoords], CENTER, 30, GAZETTEER)
+    expect(result).toEqual([])
+  })
+
+  it('falls back to the gazetteer zip when the place has no own coords', () => {
+    // 98107 resolves to West Seattle (~2.5 mi from CENTER via haversine).
+    const byZip = place({
+      name: 'By Zip',
+      lat: null,
+      lng: null,
+      address: '1 Somewhere, Seattle, WA 98107',
+    })
+    const result = filterPlacesByRadius([byZip], CENTER, 5, GAZETTEER)
+    expect(result.map((p) => p.name)).toEqual(['By Zip'])
+  })
+
+  it('returns an empty array for a non-positive radius', () => {
+    const near = place({ name: 'Near', lat: CENTER.lat, lng: CENTER.lng })
+    expect(filterPlacesByRadius([near], CENTER, 0, GAZETTEER)).toEqual([])
+    expect(filterPlacesByRadius([near], CENTER, -5, GAZETTEER)).toEqual([])
+  })
+
+  it('works with an empty places array', () => {
+    expect(filterPlacesByRadius([], CENTER, 10, GAZETTEER)).toEqual([])
   })
 })

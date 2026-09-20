@@ -8,9 +8,11 @@ import { useSessionContext } from '../components/SessionProvider'
 import { listPlaces, loadZipCodes, upcomingCountsByPlace } from '../lib/db'
 import { DEFAULT_RADIUS_MILES, formatDistanceLabel, RADIUS_MILES_OPTIONS } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
+import { geocodeAddress } from '../lib/geocode'
 import {
   browsePlaces,
   BROWSE_LIST_LEAD_LIMIT,
+  filterPlacesByRadius,
   groupPlacesByKind,
   placeIndoorLabel,
   placeKindLabel,
@@ -93,6 +95,15 @@ export function BrowsePage() {
   // result set must not stay collapsed around a stale lead.
   const [showAll, setShowAll] = useState(false)
 
+  // V15 ticket 02: the address + radius modal ("Set location"). The geocoded
+  // center + radius drive both the map overlay and the filtered list.
+  const [locationModalOpen, setLocationModalOpen] = useState(false)
+  const [locationAddress, setLocationAddress] = useState('')
+  const [geocodeCenter, setGeocodeCenter] = useState<{ lat: number; lng: number } | null>(null)
+  const [radiusMiles, setRadiusMiles] = useState<number>(DEFAULT_RADIUS_MILES)
+  const [geocodeError, setGeocodeError] = useState<string | null>(null)
+  const [geocoding, setGeocoding] = useState(false)
+
   // The directory. A failed read is disclosed (placesFailed) rather than
   // rendered as a wall — see the page doc.
   useEffect(() => {
@@ -157,6 +168,15 @@ export function BrowsePage() {
   }
 
   const viewerRadius = profile.radius_miles ?? DEFAULT_RADIUS_MILES
+  // V15 t02: the home pin's coords — the stored home_zip resolved through the
+  // same gazetteer seam the feed uses. Null when the zip is unset or missing
+  // from the gazetteer (AC5: no home pin renders for a new user).
+  const homePinCoords = (() => {
+    if (profile.home_zip === null || profile.home_zip === undefined) return null
+    if (zipCoords === null) return null
+    const found = zipCoords.get(profile.home_zip)
+    return found === undefined ? null : { lat: found.lat, lng: found.lng }
+  })()
   const maxMiles =
     distanceChoice === 'profile' ? viewerRadius : distanceChoice === 'any' ? null : distanceChoice
   // A place's distance is unknown when the gazetteer failed to load; the pure
@@ -188,13 +208,31 @@ export function BrowsePage() {
     .map((row) => resolveMapCoords(row.place, zipCoords))
     .filter((c): c is { lat: number; lng: number } => c !== null)
 
+  // V15 t02: when the user has geocoded an address via "Set location", the list
+  // is filtered to places within the chosen radius of that center (the pure
+  // filterPlacesByRadius seam). The existing browsePlaces pipeline still runs
+  // (it feeds the map + the un-geocoded path); this overrides the LIST only.
+  const effectiveRows: PlaceListRow[] = (() => {
+    if (geocodeCenter === null) return rows
+    const filtered = filterPlacesByRadius(places ?? [], geocodeCenter, radiusMiles, zipCoords)
+    return filtered.map((place) => ({
+      place,
+      distanceMiles: null as number | null,
+      upcomingCount: upcoming === null ? null : (upcoming.get(place.id) ?? 0),
+    }))
+  })()
+
   // V13 ticket 05 (A7): the grouped lead + overflow. browsePlaces already
   // distance-sorts (closest first; unknown distances last), so the LEAD is
   // simply the first BROWSE_LIST_LEAD_LIMIT rows — the closest places — and
   // the overflow door reveals the rest. Grouping (groupPlacesByKind) only
   // buckets by kind; it never re-ranks within a group.
-  const leadRows = placed.slice(0, BROWSE_LIST_LEAD_LIMIT)
-  const overflowRows = placed.slice(BROWSE_LIST_LEAD_LIMIT)
+  // V15 t02: when geocodeCenter is set, the LIST uses effectiveRows (filtered
+  // by radius); the MAP still shows the full placed set (the circle overlay
+  // communicates the active filter visually).
+  const listRows = geocodeCenter !== null ? effectiveRows : placed
+  const leadRows = listRows.slice(0, BROWSE_LIST_LEAD_LIMIT)
+  const overflowRows = listRows.slice(BROWSE_LIST_LEAD_LIMIT)
   const leadGroups = groupPlacesByKind(leadRows)
   const overflowGroups = groupPlacesByKind(overflowRows)
 
@@ -203,7 +241,7 @@ export function BrowsePage() {
   // Otherwise the copy would blame the radius for a filter the parent set.
   const radiusIsTheReason =
     maxMiles !== null && placed.length === 0 && query.trim() === '' && indoorFilter === null
-  const nothingMatches = placed.length === 0 && unplaced.length === 0
+  const nothingMatches = listRows.length === 0 && unplaced.length === 0
 
   /** Any filter change collapses the list back to its lead (a widened result
       set must not stay expanded around a stale lead). */
@@ -214,7 +252,36 @@ export function BrowsePage() {
   /** The overflow door's label: "See all N places" when collapsed, "Hide" when
       expanded. N is the TOTAL placed count (lead + overflow), so the door
       names the full directory, not just the hidden remainder. */
-  const seeAllLabel = showAll ? 'Hide' : `See all ${placed.length} places`
+  const seeAllLabel = showAll ? 'Hide' : `See all ${listRows.length} places`
+
+  // V15 t02: geocode the address from the modal and drop a temporary pin.
+  async function handleGeocode(address: string) {
+    setGeocoding(true)
+    setGeocodeError(null)
+    const result = await geocodeAddress(address)
+    if (result === null) {
+      setGeocodeError('Could not find that address. Try a more specific one.')
+    } else {
+      setGeocodeCenter(result)
+    }
+    setGeocoding(false)
+  }
+
+  /** Open the "Set location" modal with the profile's stored radius as default. */
+  function openLocationModal() {
+    setRadiusMiles(viewerRadius)
+    setLocationAddress('')
+    setGeocodeError(null)
+    setLocationModalOpen(true)
+  }
+
+  /** Close the modal and clear the geocoded center (resets the list to full). */
+  function closeLocationModal() {
+    setLocationModalOpen(false)
+    setGeocodeCenter(null)
+    setGeocodeError(null)
+    setLocationAddress('')
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -239,7 +306,26 @@ export function BrowsePage() {
           below) — an empty list or an all-NULL-coord list leaves no empty card. */}
       {places !== null && mappedMarkers.length > 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-          <PlacesMap places={placed.map((row) => row.place)} zipCoords={zipCoords} />
+          {/* V15 t02: "Set location" button above the map opens the modal. */}
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-medium text-slate-500">Nearby places</span>
+            <button
+              type="button"
+              data-testid="set-location-btn"
+              onClick={openLocationModal}
+              className="rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
+            >
+              Set location
+            </button>
+          </div>
+          <PlacesMap
+            places={placed.map((row) => row.place)}
+            zipCoords={zipCoords}
+            homePin={homePinCoords}
+            radiusCircle={
+              geocodeCenter !== null ? { center: geocodeCenter, radiusMiles } : null
+            }
+          />
         </div>
       ) : null}
 
@@ -396,6 +482,89 @@ export function BrowsePage() {
             ))}
           </div>
         </section>
+      ) : null}
+
+      {/* V15 t02: the "Set location" modal — address input + radius slider +
+          "See places" button. Geocodes on submit, drops a temporary pin, and
+          draws the radius circle on the map. */}
+      {locationModalOpen ? (
+        <div
+          data-testid="location-modal"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeLocationModal()
+          }}
+        >
+          <div className="w-full max-w-md rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-900">Set location</h3>
+              <button
+                type="button"
+                data-testid="location-modal-close"
+                onClick={closeLocationModal}
+                className="rounded-full p-1 text-slate-400 hover:bg-slate-100"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <label className="mb-3 flex flex-col gap-1 text-sm">
+              <span className="text-slate-700">Address</span>
+              <input
+                type="text"
+                data-testid="location-address-input"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                placeholder="e.g. Green Lake Park, Seattle"
+                autoComplete="off"
+                value={locationAddress}
+                onChange={(e) => setLocationAddress(e.target.value)}
+              />
+            </label>
+
+            <label className="mb-4 flex flex-col gap-1 text-sm">
+              <span className="text-slate-700">Radius: {radiusMiles} miles</span>
+              <input
+                type="range"
+                data-testid="location-radius-slider"
+                min={1}
+                max={30}
+                step={1}
+                value={radiusMiles}
+                onChange={(e) => setRadiusMiles(Number(e.target.value))}
+                className="w-full accent-indigo-600"
+              />
+            </label>
+
+            {geocodeError !== null ? (
+              <p data-testid="location-geocode-error" className="mb-3 text-xs text-red-600">
+                {geocodeError}
+              </p>
+            ) : null}
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                data-testid="location-cancel-btn"
+                onClick={closeLocationModal}
+                className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="location-see-places-btn"
+                disabled={geocoding || locationAddress.trim() === ''}
+                onClick={() => {
+                  void handleGeocode(locationAddress)
+                }}
+                className="flex-1 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {geocoding ? 'Finding…' : 'See places'}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </div>
   )

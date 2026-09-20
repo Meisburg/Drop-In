@@ -40,6 +40,8 @@ const OSM_ATTRIBUTION =
 const SEATTLE_CENTER: [number, number] = [47.6062, -122.3321]
 /** A single-place view (the detail surface). */
 const DETAIL_ZOOM = 15
+/** The home pin's zoom (V15 ticket 02: centered on the viewer's home zip). */
+const HOME_PIN_ZOOM = 13
 
 interface MapMarker {
   lat: number
@@ -165,15 +167,28 @@ export function PlaceMap({
  * "Start a drop-in here" payload) and "Details" (the place page). The panel
  * lives in THIS component because the tapped place is Leaflet-side state;
  * everything it renders is presentational data handed back from the click.
+ *
+ * V15 ticket 02: optional `homePin` + `radiusCircle` overlays (additive only —
+ * the place-dot rendering above is unchanged). The home pin is a distinct red
+ * marker at the viewer's stored home_zip coords; the radius circle is a
+ * translucent overlay around the chosen center. When a homePin is provided the
+ * map centers on it at mount instead of fitting all markers.
  */
 export function PlacesMap({
   places,
   zipCoords,
   className,
+  homePin,
+  radiusCircle,
 }: {
   places: readonly Place[]
   zipCoords: ReadonlyMap<string, ZipCoords> | null
   className?: string
+  /** V15 t02: the viewer's home location (from the stored home_zip gazetteer).
+      Rendered as a distinct red pin; the map centers on it at mount. */
+  homePin?: { lat: number; lng: number } | null
+  /** V15 t02: a radius overlay (center + miles). Drawn as a translucent circle. */
+  radiusCircle?: { center: { lat: number; lng: number }; radiusMiles: number } | null
 }) {
   const navigate = useNavigate()
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -187,7 +202,11 @@ export function PlacesMap({
   const markers = entries.map((e) => e.coords)
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
-  const initialMarkerRef = useRef(markers[0])
+  // V15 t02: anchor on the home pin when provided (the ticket's AC1), else the
+  // first place marker (existing behavior). Read through a ref so the mount
+  // effect's dependency list stays empty.
+  const initialAnchorRef = useRef<MapMarker | undefined>(homePin ?? markers[0])
+  const hasHomePinRef = useRef(homePin !== undefined && homePin !== null)
   const markersKey = markers.map((m) => `${m.lat}:${m.lng}`).join('|')
   // The clicked id must survive re-renders that rebuild an identical entries
   // array (the page hands this component fresh arrays every render); keying
@@ -197,10 +216,11 @@ export function PlacesMap({
   useEffect(() => {
     const el = containerRef.current
     if (el === null || markers.length === 0) return
-    const first = initialMarkerRef.current
+    const anchor = initialAnchorRef.current
+    const zoom = hasHomePinRef.current ? HOME_PIN_ZOOM : anchor === undefined ? 11 : DETAIL_ZOOM
     const map = L.map(el, { scrollWheelZoom: false }).setView(
-      first === undefined ? SEATTLE_CENTER : [first.lat, first.lng],
-      first === undefined ? 11 : DETAIL_ZOOM,
+      anchor === undefined ? SEATTLE_CENTER : [anchor.lat, anchor.lng],
+      zoom,
     )
     L.tileLayer(OSM_TILE_URL, { attribution: OSM_ATTRIBUTION, maxZoom: 19 }).addTo(map)
     mapRef.current = map
@@ -209,6 +229,40 @@ export function PlacesMap({
       mapRef.current = null
     }
   }, [])
+
+  // V15 t02: the home pin + radius circle overlay. A separate layerGroup so it
+  // never mixes with the place-marker group (which is re-keyed by markersKey).
+  const overlayKey = `${homePin?.lat ?? ''}:${homePin?.lng ?? ''}|${radiusCircle?.center.lat ?? ''}:${radiusCircle?.center.lng ?? ''}:${radiusCircle?.radiusMiles ?? ''}`
+  useEffect(() => {
+    const map = mapRef.current
+    if (map === null) return
+    const layers: L.Layer[] = []
+    if (homePin !== undefined && homePin !== null) {
+      const pin = L.circleMarker([homePin.lat, homePin.lng], {
+        radius: 10,
+        color: '#dc2626',
+        weight: 3,
+        fillColor: '#dc2626',
+        fillOpacity: 0.85,
+      })
+      pin.bindTooltip('Home', { direction: 'top', offset: [0, -10] })
+      layers.push(pin.addTo(map))
+    }
+    if (radiusCircle !== undefined && radiusCircle !== null) {
+      const meters = radiusCircle.radiusMiles * 1609.344
+      const circle = L.circle([radiusCircle.center.lat, radiusCircle.center.lng], {
+        radius: meters,
+        color: '#dc2626',
+        weight: 2,
+        fillColor: '#dc2626',
+        fillOpacity: 0.08,
+      })
+      layers.push(circle.addTo(map))
+    }
+    return () => {
+      for (const layer of layers) layer.remove()
+    }
+  }, [overlayKey])
 
   useEffect(() => {
     const map = mapRef.current
@@ -227,15 +281,43 @@ export function PlacesMap({
         return marker
       }),
     ).addTo(map)
-    map.fitBounds(L.latLngBounds(entries.map((e) => [e.coords.lat, e.coords.lng])), {
-      padding: [28, 28],
-    })
+    // V15 t02: when a home pin anchors the view, do NOT fitBounds over all
+    // markers (that would zoom out past the home pin). Fit only when there is
+    // no home pin (the existing behavior).
+    if (!hasHomePinRef.current) {
+      map.fitBounds(L.latLngBounds(entries.map((e) => [e.coords.lat, e.coords.lng])), {
+        padding: [28, 28],
+      })
+    }
     return () => {
       group.remove()
     }
   }, [markersKey])
 
-  if (entries.length === 0) return null
+  // V15 t02: when the caller sets a radiusCircle, recenter + zoom to fit it.
+  // A separate effect so the circle's appearance (after geocoding) triggers
+  // the recenter without touching the place-marker group.
+  const circleKey =
+    radiusCircle !== undefined && radiusCircle !== null
+      ? `${radiusCircle.center.lat}:${radiusCircle.center.lng}:${radiusCircle.radiusMiles}`
+      : ''
+  useEffect(() => {
+    const map = mapRef.current
+    if (map === null || circleKey === '') return
+    const parts = circleKey.split(':')
+    const lat = Number(parts[0])
+    const lng = Number(parts[1])
+    const miles = Number(parts[2])
+    // Fit bounds to the circle's extent (center ± radius in degrees, approx).
+    const degPerMile = 1 / 69.0 // ~miles per degree of latitude
+    const halfSpan = miles * degPerMile
+    map.fitBounds(
+      L.latLngBounds([lat - halfSpan, lng - halfSpan], [lat + halfSpan, lng + halfSpan]),
+      { padding: [16, 16] },
+    )
+  }, [circleKey])
+
+  if (entries.length === 0 && homePin === undefined && homePin === null) return null
 
   /**
    * "Host here" — the SAME payload the place page's "Start a drop-in here"
