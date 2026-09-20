@@ -296,7 +296,7 @@ export function ProfilePage() {
    * is shared (one kid at a time) so two rows' controls never race.
    */
   async function handleKidPhotoUpload(kidId: string, source: ImageBitmap, rect: CropRect) {
-    if (userId === null || kidsBusyId !== null) return
+    if (userId === null || kidPhotoBusyId !== null) return
     setKidPhotoBusyId(kidId)
     try {
       await uploadKidPhoto(userId, kidId, source, rect)
@@ -311,25 +311,25 @@ export function ProfilePage() {
   }
 
   /**
- * V15 ticket 06 (A19): remove a kid's photo — the × on the photo's corner.
- * Sets the kid's avatar_url to NULL in the DB (the storage object stays; only
- * the marker is cleared), then re-lists so the signed-URL map drops it. The
- * busy flag is shared with handleKidPhotoUpload (one kid at a time).
- */
-async function handleKidPhotoRemove(kidId: string) {
-  if (userId === null || kidPhotoBusyId !== null) return
-  setKidPhotoBusyId(kidId)
-  try {
-    await updateKid(kidId, { avatar_url: null })
-    const rows = await listKids(userId)
-    setKids(rows)
-    setKidDrafts((prev) => seedKidDrafts(rows.map(toKidRowValues), prev))
-  } catch (err) {
-    setKidsError(err instanceof Error ? err.message : 'Could not remove that kid’s photo. Try again.')
-  } finally {
-    setKidPhotoBusyId(null)
+   * V15 ticket 06 (A19): remove a kid's photo — the × on the photo's corner.
+   * Sets the kid's avatar_url to NULL in the DB (the storage object stays; only
+   * the marker is cleared), then re-lists so the signed-URL map drops it. The
+   * busy flag is shared with handleKidPhotoUpload (one kid at a time).
+   */
+  async function handleKidPhotoRemove(kidId: string) {
+    if (userId === null || kidPhotoBusyId !== null) return
+    setKidPhotoBusyId(kidId)
+    try {
+      await updateKid(kidId, { avatar_url: null })
+      const rows = await listKids(userId)
+      setKids(rows)
+      setKidDrafts((prev) => seedKidDrafts(rows.map(toKidRowValues), prev))
+    } catch (err) {
+      setKidsError(err instanceof Error ? err.message : 'Could not remove that kid’s photo. Try again.')
+    } finally {
+      setKidPhotoBusyId(null)
+    }
   }
-}
 
 // The family photo's signed URL — called ABOVE the `loading` early return:
   // a hook after an early return is the V6 regression that blanked the detail
@@ -967,11 +967,12 @@ async function handleKidPhotoRemove(kidId: string) {
                       className="flex flex-wrap items-center gap-2 rounded-xl px-2 py-1.5"
                     >
                       {kidPhoto !== undefined && !kidPhotoErrors[kid.id] ? (
-                        <img
-                          data-testid="kid-photo"
-                          src={kidPhoto}
-                          alt={`${values.firstName || kid.first_name} · Age ${rowAge}`}
-                          className="h-10 w-10 shrink-0 rounded-full object-cover"
+                        <KidPhotoControl
+                          kidId={kid.id}
+                          photoUrl={kidPhoto}
+                          busy={kidPhotoBusyId === kid.id}
+                          onUpload={(k, source, rect) => void handleKidPhotoUpload(k, source, rect)}
+                          onRemove={() => void handleKidPhotoRemove(kid.id)}
                           onError={() => setKidPhotoErrors((prev) => ({ ...prev, [kid.id]: true }))}
                         />
                       ) : null}
@@ -1038,13 +1039,6 @@ async function handleKidPhotoRemove(kidId: string) {
                           ) : null}
                         </label>
                       </div>
-                      <KidPhotoControl
-                        kidId={kid.id}
-                        photoUrl={kidPhoto !== undefined && !kidPhotoErrors[kid.id] ? kidPhoto : undefined}
-                        busy={kidPhotoBusyId === kid.id}
-                        onUpload={(k, source, rect) => void handleKidPhotoUpload(k, source, rect)}
-                        onRemove={() => void handleKidPhotoRemove(kid.id)}
-                      />
                       <button
                         type="button"
                         data-testid="kid-remove"
@@ -1250,6 +1244,7 @@ function KidPhotoControl({
   busy,
   onUpload,
   onRemove,
+  onError,
 }: {
   kidId: string
   /** The signed URL of the kid's current photo (the tap-to-update trigger shows
@@ -1258,6 +1253,8 @@ function KidPhotoControl({
   busy: boolean
   onUpload: (kidId: string, source: ImageBitmap, rect: CropRect) => void
   onRemove: () => void
+  /** Called when the photo image fails to load (the parent hides the control). */
+  onError?: () => void
 }) {
   const crop = useCropStep(async (source, rect) => {
     onUpload(kidId, source, rect)
@@ -1279,29 +1276,30 @@ function KidPhotoControl({
         }}
       />
       {photoUrl !== undefined ? (
-        <div className="group relative shrink-0">
+        <div className={'group relative shrink-0' + (busy ? ' opacity-50' : '')}>
           {/* The photo itself is now the trigger — tapping it opens the crop
               step for THIS kid's photo (the same pattern as the parent avatar). */}
-          <button
-            type="button"
+          <label
             data-testid="kid-photo-trigger"
             aria-label="Update photo"
             onClick={() => {
+              if (busy) return
               // Find the hidden input by its testid and click it (opens the picker).
               const input = document.querySelector<HTMLInputElement>(
                 `[data-testid="kid-photo-input-${kidId}"]`,
               )
               input?.click()
             }}
-            disabled={busy}
-            className="relative block h-10 w-10 overflow-hidden rounded-full transition-transform active:scale-95 disabled:opacity-50"
+            className="relative block h-10 w-10 cursor-pointer overflow-hidden rounded-full transition-transform active:scale-95"
           >
             <img
+              data-testid="kid-photo"
               src={photoUrl}
               alt=""
               className="h-10 w-10 rounded-full object-cover"
+              onError={onError}
             />
-          </button>
+          </label>
           <button
             type="button"
             data-testid="kid-photo-remove"

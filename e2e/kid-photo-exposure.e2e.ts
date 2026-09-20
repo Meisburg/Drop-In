@@ -636,7 +636,7 @@ test('a kid row renders no photo on /u/:handle; the owner’s /profile is the on
   await expect(page.getByTestId('kid-photo'), 'no kid photo may render on /u/<handle>').toHaveCount(0)
 
   // THE OWNER'S /PROFILE IS THE ONE RENDER SITE (V12 t04): the row carries its
-  // own "Add photo" / "Change photo" control (the crop step), and a SET
+  // own "Add photo" / tap-to-update control (the crop step), and a SET
   // avatar_url keys the signed-URL render. The row's avatar_url IS set (a
   // legacy public URL, deliberately), so the photo here is evidence that the
   // column gates the render — not that the data is missing. The control is a
