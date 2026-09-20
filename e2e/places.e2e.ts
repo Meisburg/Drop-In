@@ -24,7 +24,7 @@
  *     choice, per the ticket's AC5).
  * (7) V13 ticket 05 (A6): the overview map leads the page (above the filters
  *     and the list), and a marker tap opens the place's info panel with a
- *     "Host here" action that lands on /new with the place pre-filled (the
+ *     "Start a drop-in" action that lands on /new with the place pre-filled (the
  *     existing place pre-fill router state, the same seam the place page's
  *     "Start a drop-in here" uses).
  * (8) V13 ticket 05 (A7): the raw unbroken long-list is gone — the list leads
@@ -34,6 +34,9 @@
  *     multi-select + a sort dropdown + an optional radius input; Apply closes
  *     it and the list re-renders in the chosen order. The default order is
  *     alphabetical (A–Z), not distance-sorted.
+ * (10) V15 ticket 04: the marker panel's "Learn more" link carries the derived
+ *     OSM search URL (target=_blank rel=noopener), and each browse list row
+ *     carries its own compact "Start a drop-in" button + "Learn more" link.
  *
  * RED BY DESIGN pre-0029-apply: `places` does not exist live yet, so PostgREST
  * answers the first read with PGRST205 (schema cache: table not found). The
@@ -154,6 +157,22 @@ test('the Places tab is the seeded directory, and anon can read it (RED pre-0029
     /Playground|Splash pad|Pool|Beach|Library|Museum|Indoor play|Park|Place/,
   )
 
+  // (10) V15 ticket 04: each list row carries its own compact "Start a drop-in"
+  // button + "Learn more" link (AC4 — the actions are not map-only). The first
+  // visible row's button is present and its Learn-more link carries the derived
+  // OSM search URL for that row's place name.
+  const firstRow = page.getByTestId('place-row').first()
+  await expect(firstRow.locator('[data-testid^="row-start-dropin-"]')).toBeVisible()
+  await expect(firstRow.locator('[data-testid^="row-learn-more-"]')).toBeVisible()
+  await expect(firstRow.locator('[data-testid^="row-learn-more-"]')).toHaveAttribute(
+    'href',
+    /^https:\/\/www\.openstreetmap\.org\/search\?query=.+/s,
+  )
+  await expect(firstRow.locator('[data-testid^="row-learn-more-"]')).toHaveAttribute(
+    'target',
+    '_blank',
+  )
+
   // (6) V12 t05: the directory's overview map — one marker per placed row
   // (the rows the distance model could place, i.e. the ones with stored
   // coordinates). Live OSM tiles; we assert the container + the SVG marker
@@ -197,7 +216,7 @@ test('the Places tab is the seeded directory, and anon can read it (RED pre-0029
   await expect(seeAll).toContainText('See all')
 })
 
-test('tapping an overview map marker shows the place info + "Host here" (V13 ticket 05 A6)', async ({
+test('tapping an overview map marker shows the place info + "Start a drop-in" (V13 ticket 05 A6)', async ({
   page,
 }) => {
   await openPlacesTab(page)
@@ -216,18 +235,34 @@ test('tapping an overview map marker shows the place info + "Host here" (V13 tic
   await markerPath.click({ force: true })
 
   // The info panel opens below the map: the place's name + address, and the
-  // two actions — "Host here" (the pre-fill door) and "Details" (the place
-  // page).
+  // three actions — "Start a drop-in" (the pre-fill door), "Learn more" (the
+  // derived OSM link, V15 ticket 04), and "Details" (the place page).
   const info = page.getByTestId('place-marker-info')
   await expect(info).toBeVisible()
   await expect(info.getByText(PLACE_NAME, { exact: true })).toBeVisible()
   await expect(info.getByText(PLACE_ADDRESS, { exact: true })).toBeVisible()
 
-  // "Host here" lands on /new with the place pre-filled — the SAME router-
+  // V15 ticket 04: the renamed action button is visible with its new label.
+  const startDropInBtn = info.getByTestId('host-here')
+  await expect(startDropInBtn).toBeVisible()
+  await expect(startDropInBtn).toHaveText('Start a drop-in')
+
+  // V15 ticket 04: "Learn more" carries the derived OSM search URL, opening in
+  // a new tab (AC3: a valid OSM href, never a broken link for a named place).
+  const learnMore = info.getByTestId('learn-more')
+  await expect(learnMore).toBeVisible()
+  await expect(learnMore).toHaveAttribute(
+    'href',
+    `https://www.openstreetmap.org/search?query=${encodeURIComponent(PLACE_NAME)},+Seattle`,
+  )
+  await expect(learnMore).toHaveAttribute('target', '_blank')
+  await expect(learnMore).toHaveAttribute('rel', 'noopener')
+
+  // "Start a drop-in" lands on /new with the place pre-filled — the SAME router-
   // state seam the place page's "Start a drop-in here" uses (V9 ticket 03's
   // duplicate-prefill pattern), so the three fields a place pick fills are
   // filled from the MAP instead of the place page.
-  await info.getByTestId('host-here').click()
+  await startDropInBtn.click()
   await page.waitForURL('/new')
   await expect(page.getByPlaceholder(PLACE_INPUT)).toHaveValue(PLACE_NAME)
   await expect(page.getByPlaceholder(ADDRESS_INPUT)).toHaveValue(PLACE_ADDRESS)

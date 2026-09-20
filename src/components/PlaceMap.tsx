@@ -28,7 +28,7 @@ import 'leaflet/dist/leaflet.css'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import type { ZipCoords } from '../lib/feed'
-import { placePath, resolveMapCoords } from '../lib/places'
+import { placeExternalUrl, placeKindLabel, placePath, resolveMapCoords } from '../lib/places'
 import type { Place, PlacePrefill } from '../lib/types'
 
 /** The tile source (pinned by the ticket — the only tile host the app fetches). */
@@ -162,11 +162,13 @@ export function PlaceMap({
  *
  * V13 ticket 05 (A6): a marker tap is an ENTRY POINT, not just a tooltip.
  * Tapping one opens a small info panel under the map with the place's name +
- * address and two actions: "Host here" (the existing place pre-fill router
- * state — navigate('/new', { state: { place } }), exactly the place page's
- * "Start a drop-in here" payload) and "Details" (the place page). The panel
- * lives in THIS component because the tapped place is Leaflet-side state;
- * everything it renders is presentational data handed back from the click.
+ * address and three actions: "Start a drop-in" (the existing place pre-fill
+ * router state — navigate('/new', { state: { place } }), exactly the place
+ * page's "Start a drop-in here" payload), "Learn more" (V15 ticket 04: the
+ * derived OSM search URL in a new tab; inline details when there is no name to
+ * search), and "Details" (the place page). The panel lives in THIS component
+ * because the tapped place is Leaflet-side state; everything it renders is
+ * presentational data handed back from the click.
  *
  * V15 ticket 02: optional `homePin` + `radiusCircle` overlays (additive only —
  * the place-dot rendering above is unchanged). The home pin is a distinct red
@@ -320,7 +322,7 @@ export function PlacesMap({
   if (entries.length === 0 && homePin === undefined && homePin === null) return null
 
   /**
-   * "Host here" — the SAME payload the place page's "Start a drop-in here"
+   * "Start a drop-in" — the SAME payload the place page's "Start a drop-in here"
    * builds (App.tsx NewRoute reads state.place as a typed PlacePrefill): the
    * post lands with the place link, its address, and its coordinates for
    * distance; the parent still picks the time. Reusing the existing pattern
@@ -336,6 +338,11 @@ export function PlacesMap({
     }
     navigate('/new', { state: { place: prefill } })
   }
+
+  // V15 ticket 04: the "Learn more" external URL (the derived OSM search URL).
+  // Null only when the place has no name (defensive); the panel then shows the
+  // place's details inline instead of a broken link.
+  const learnMoreUrl = selected !== null ? placeExternalUrl(selected) : null
 
   return (
     <div className="flex flex-col gap-2">
@@ -360,8 +367,26 @@ export function PlacesMap({
               onClick={() => hostHere()}
               className="rounded-xl bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-700"
             >
-              Host here
+              Start a drop-in
             </button>
+            {learnMoreUrl !== null ? (
+              <a
+                href={learnMoreUrl}
+                target="_blank"
+                rel="noopener"
+                data-testid="learn-more"
+                className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                Learn more
+              </a>
+            ) : (
+              // No external URL (no name to search): show the place's details
+              // inline instead of a broken link (V15 ticket 04 AC5).
+              <span data-testid="learn-more-inline" className="text-xs text-slate-600">
+                {placeKindLabel(selected.kind)}
+                {selected.notes !== null && selected.notes !== '' ? ` · ${selected.notes}` : ''}
+              </span>
+            )}
             <Link
               to={placePath(selected.id)}
               data-testid="marker-details"

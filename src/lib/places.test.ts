@@ -17,6 +17,7 @@ import {
   placePickerMatches,
   placePickPatch,
   placeUpcomingLabel,
+  placeExternalUrl,
   PLACE_BROWSE_LIMIT,
   PLACE_SUGGESTION_LIMIT,
   resolveMapCoords,
@@ -653,6 +654,28 @@ describe('placePickPatch (V9 ticket 01: what one tap on a suggestion writes into
     expect(placePickPatch(place({ name: 'Carkeek Park', address: '950 NW Carkeek Park Rd' })).address).toBe(
       '950 NW Carkeek Park Rd',
     )
+  })
+})
+
+describe('placeExternalUrl (V15 ticket 04: the "Learn more" link\'s derived OSM URL)', () => {
+  it('returns an OSM search URL containing the encoded name for a valid name', () => {
+    expect(placeExternalUrl({ name: 'Green Lake Park' })).toBe(
+      'https://www.openstreetmap.org/search?query=Green%20Lake%20Park,+Seattle',
+    )
+  })
+
+  it('encodes special characters in the name', () => {
+    const url = placeExternalUrl({ name: 'Ballard Branch, Seattle Public Library' })
+    expect(url).toContain(encodeURIComponent('Ballard Branch, Seattle Public Library'))
+    expect(url).toContain(',+Seattle')
+  })
+
+  it('returns null for an empty name', () => {
+    expect(placeExternalUrl({ name: '' })).toBeNull()
+  })
+
+  it('returns null for a whitespace-only name', () => {
+    expect(placeExternalUrl({ name: '   ' })).toBeNull()
   })
 })
 

@@ -305,6 +305,23 @@ export function placePickPatch(place: Place): {
 }
 
 /**
+ * V15 ticket 04: the external URL for a place (the "Learn more" link in the
+ * marker panel and the browse list rows). Places have no canonical URL column,
+ * so one is derived: an OpenStreetMap search URL for the place's name + city
+ * (Seattle — the city the app serves). The caller renders it as a new-tab link
+ * (`target="_blank" rel="noopener"`); when this returns null the caller shows
+ * the place's details inline instead of a broken link.
+ *
+ * Returns null only when the name is empty or whitespace-only (defensive — a
+ * place without a name cannot be searched anywhere).
+ */
+export function placeExternalUrl(place: Pick<Place, 'name'>): string | null {
+  const name = place.name.trim()
+  if (name === '') return null
+  return `https://www.openstreetmap.org/search?query=${encodeURIComponent(name)},+Seattle`
+}
+
+/**
  * The directory, A→Z, capped — the BROWSE list. Deterministic (name, then id,
  * the matchPlaces tiebreak) so the same directory never reshuffles between
  * renders, and NOT a ranking: browsing shows the alphabet, not a guess at

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router'
+import type { MouseEvent as ReactMouseEvent } from 'react'
+import { Link, useNavigate } from 'react-router'
 import { NAV_ICONS } from '../components/icons'
 import { PlacesMap } from '../components/PlaceMap'
 import { RadiusEmptyState } from '../components/RadiusEmptyState'
@@ -15,6 +16,7 @@ import {
   filterPlacesByRadius,
   groupPlacesByKind,
   PLACE_KINDS,
+  placeExternalUrl,
   placeIndoorLabel,
   placeKindLabel,
   placePath,
@@ -23,7 +25,7 @@ import {
   sortPlaces,
 } from '../lib/places'
 import type { PlaceListRow, SortMode } from '../lib/places'
-import type { Place } from '../lib/types'
+import type { Place, PlacePrefill } from '../lib/types'
 
 /**
  * /browse — the PLACES directory (V8 ticket 07). The day-grouped list of
@@ -730,7 +732,30 @@ export function BrowsePage() {
 
 /** One place row: the whole row taps through to the place page. */
 function PlaceRow({ row }: { row: PlaceListRow }) {
+  const navigate = useNavigate()
   const upcomingLabel = placeUpcomingLabel(row.upcomingCount)
+
+  /**
+   * V15 ticket 04: "Start a drop-in" — the SAME PlacePrefill router-state seam
+   * the map panel's button uses (navigate('/new', { state: { place } })).
+   * stopPropagation keeps the row's tap-through (the Link) from also firing.
+   */
+  function startDropIn(e: ReactMouseEvent) {
+    e.stopPropagation()
+    const prefill: PlacePrefill = {
+      placeId: row.place.id,
+      place: row.place.name,
+      address: row.place.address,
+      neighborhoodId: row.place.neighborhood_id,
+    }
+    navigate('/new', { state: { place: prefill } })
+  }
+
+  // V15 ticket 04: the "Learn more" external URL (derived OSM search URL).
+  // Null only when the place has no name; then the row shows inline details
+  // instead of a broken link.
+  const learnMoreUrl = placeExternalUrl(row.place)
+
   return (
     <Link
       to={placePath(row.place.id)}
@@ -749,6 +774,35 @@ function PlaceRow({ row }: { row: PlaceListRow }) {
       {upcomingLabel !== null ? (
         <span className="text-xs font-medium text-indigo-700">{upcomingLabel}</span>
       ) : null}
+      {/* V15 ticket 04: the two row actions (AC4) — compact, below the meta. */}
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          data-testid={`row-start-dropin-${row.place.id}`}
+          onClick={(e) => startDropIn(e)}
+          className="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-indigo-700"
+        >
+          Start a drop-in
+        </button>
+        {learnMoreUrl !== null ? (
+          <a
+            href={learnMoreUrl}
+            target="_blank"
+            rel="noopener"
+            data-testid={`row-learn-more-${row.place.id}`}
+            className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"
+          >
+            Learn more
+          </a>
+        ) : (
+          <span className="text-xs text-slate-500">
+            {placeKindLabel(row.place.kind)}
+            {row.place.notes !== null && row.place.notes !== ''
+              ? ` · ${row.place.notes}`
+              : ''}
+          </span>
+        )}
+      </div>
     </Link>
   )
 }
