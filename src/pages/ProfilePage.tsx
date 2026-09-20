@@ -1089,6 +1089,7 @@ export function ProfilePage() {
                   setKidsError(null)
                 }}
                 placeholder="Age"
+                aria-label="Kid age"
                 disabled={kidsAtCap || kidsBusyId !== null}
               />
               <button

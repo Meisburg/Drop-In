@@ -392,7 +392,7 @@ export function UserPage() {
         {/* V9 ticket 11 (folded ticket 08): the optional blocks render IN THE
             PINNED ORDER — family photo → "About the parents" → the kids list.
             Every one of them is optional: a family with none of them gets this
-            card with nothing but the identity block at the bottom, and no
+            card with nothing but the identity block at the top, and no
             placeholder anywhere.
             "A PHOTO OF YOUR FAMILY" IS NOT PUBLIC — it is in the private bucket
             and only a signed-in family can mint for it (T4: the photo usually
@@ -444,6 +444,11 @@ export function UserPage() {
           circle went with it (an initial standing in for a photo is the
           "partial substitute" ticket 10's own record rejects). No code path may
           reach a kid's `avatar_url` for display.
+
+          V13 ticket 01 RE-INTRODUCED the owner-only kid-photo render on
+          /profile (signed URL, one render site); V15 ticket 06 made it
+          tap-to-update. The visitor surface (/u/:handle) stays photo-free —
+          this page never mints or renders a kid photo.
 
           V9 ticket 10 (the accepted cost, CONFIRMED by the human 2026-09-13
           and recorded in .scratch/v9/issues/10-kid-names-privacy-gate.md):
