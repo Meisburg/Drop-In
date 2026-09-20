@@ -20,6 +20,7 @@ import {
 import { BrowsePage } from './pages/BrowsePage'
 import { EditPlaydatePage } from './pages/EditPlaydatePage'
 import { FeedPage } from './pages/FeedPage'
+import { InboxPage } from './pages/InboxPage'
 import { LoginPage } from './pages/LoginPage'
 import { ModPage } from './pages/ModPage'
 import { NewPlaydatePage } from './pages/NewPlaydatePage'
@@ -261,6 +262,9 @@ function ProtectedShell() {
         <nav className="pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white">
           <div className="mx-auto flex max-w-md">
             <NavTab to="/" label="Nearby" icon={<NavIcon path={NAV_ICONS.nearby} />} />
+            {/* V14 ticket 01: the inbox — parent↔parent messaging, scoped to
+                the drop-ins both parties are going to (host ↔ pinger). */}
+            <NavTab to="/inbox" label="Inbox" icon={<NavIcon path={NAV_ICONS.inbox} />} />
             {/* V8 ticket 07: /browse is the PLACES directory now (the tab label
                 follows the screen — a "Browse" tab over a places list would be
                 the same drift the ticket removed). */}
@@ -407,6 +411,9 @@ export default function App() {
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route element={<ProtectedShell />}>
             <Route path="/" element={<FeedPage />} />
+            {/* V14 ticket 01: the inbox — conversation list + inline thread
+                view (?thread=<playdate_id>). Inside the shell (auth gate). */}
+            <Route path="/inbox" element={<InboxPage />} />
             <Route path="/browse" element={<BrowsePage />} />
             {/* V8 ticket 07: the place page. Inside the shell (so it keeps the
                 app chrome and the onboarding gate) — the SIGNED-OUT entry point

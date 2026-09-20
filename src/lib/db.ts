@@ -4070,3 +4070,342 @@ export async function listSeriesOccurrences(seriesId: string): Promise<SeriesOcc
   }>
   return rows.map((row) => ({ id: row.id, starts_at: row.starts_at, ends_at: row.ends_at ?? null }))
 }
+
+// ---------------------------------------------------------------------------
+// V14 ticket 01 (migration 0042): parent↔parent messaging — the inbox.
+//
+// Messages are playdate-scoped: a conversation belongs to a drop-in and its
+// participants are the post's host + pingers (the going_pings gate). The RLS
+// policies in 0042 enforce participation at the DB level; these seams are the
+// app's read/write paths on top of them. Pre-0042-apply every call here
+// 42703s (missing table) and the caller catches it: the inbox shows an honest
+// error state, never a crash (the house DB-not-applied discipline).
+// ---------------------------------------------------------------------------
+
+/** One row of `public.messages`, as the thread view renders it. */
+export interface MessageRow {
+  id: string
+  playdate_id: string
+  sender_id: string
+  body: string
+  created_at: string
+}
+
+/** One row of the inbox's conversation list (one per participating playdate with ≥1 message). */
+export interface ConversationSummary {
+  /** The playdate the conversation belongs to. */
+  playdateId: string
+  /** The post's title (the muted line under the other party's name). */
+  playdateTitle: string
+  /** The other participant's display name (the bold line). */
+  otherPartyDisplayName: string
+  /** The latest message's body, truncated to 60 chars. */
+  latestMessagePreview: string
+  /** The latest message's created_at (ISO). */
+  latestMessageAt: string
+  /** Unread count: messages newer than this user's last_read_at (all when no read row). */
+  unreadCount: number
+}
+
+/** The client-side validation cap for a message body (the DB CHECK matches). */
+export const MESSAGE_MAX_LENGTH = 2000
+
+/**
+ * Validate a message body before sending (the client-side mirror of 0042's
+ * CHECK constraint): trim must leave 1–2000 characters. Returns an error
+ * string, or null when the body is sendable (the validateCommentBody shape).
+ */
+export function validateMessageBody(body: string): string | null {
+  const trimmed = body.trim()
+  if (trimmed.length === 0) return 'Write a message first — it cannot be empty.'
+  if (trimmed.length > MESSAGE_MAX_LENGTH) {
+    return `Keep messages to ${MESSAGE_MAX_LENGTH} characters.`
+  }
+  return null
+}
+
+/**
+ * The inbox's conversation list (V14 ticket 01), against an injected client
+ * (the trust.togglePingWithClient / feed.queryUpcomingFeedWithClient pattern
+ * — mockable in unit tests).
+ *
+ * Two sequential requests (PostgREST cannot group-by in one query without a
+ * custom RPC, and the ticket allows "two sequential requests"):
+ *   1. Every message the caller may READ (the RLS SELECT policy already
+ *      scopes to participation), joined to the post's title + the sender's
+ *      display name, ordered by created_at desc. Grouped client-side: one
+ *      summary per playdate, latest message wins (preview + time).
+ *   2. The caller's conversation_reads rows (SELECT policy: own rows only) —
+ *      the unread count per playdate = messages with created_at strictly
+ *      after last_read_at, or the full count when no read row exists.
+ *
+ * The other party's name is derived from the latest message's sender: when
+ * the latest sender is the caller themselves, the preview still names the
+ * OTHER party (the host, when the caller pinged; the pinger, when the caller
+ * hosts). A playdate where the caller has sent every message (no reply yet)
+ * falls back to the host's name when the caller is a pinger, or the most
+ * recent pinger's name when the caller hosts — both resolved from the same
+ * request set below.
+ */
+export async function listConversationsWithClient(
+  client: SupabaseClient,
+  userId: string,
+): Promise<ConversationSummary[]> {
+  // Request 1: the caller's readable messages (RLS-scoped), newest first,
+  // with the post's title + the sender's display name embedded.
+  const { data: msgData, error: msgError } = await client
+    .from('messages')
+    .select(
+      'id, playdate_id, sender_id, body, created_at, ' +
+        'playdate:playdates!messages_playdate_id_fkey ( title ), ' +
+        'sender:profiles!messages_sender_id_fkey ( display_name )',
+    )
+    .order('created_at', { ascending: false })
+  if (msgError) throw msgError
+
+  // Request 2: the caller's read cursors (own rows only by RLS).
+  const { data: readData, error: readError } = await client
+    .from('conversation_reads')
+    .select('playdate_id, last_read_at')
+    .eq('profile_id', userId)
+  if (readError) throw readError
+
+  // Request 3: who the other party is per playdate — the post's host + the
+  // pinger profiles (the guest-list embed, pinned to the 0007 FK constraint).
+  // Only needed for playdates that actually have messages; the set comes
+  // from request 1.
+  const playdateIds = Array.from(
+    new Set(
+      ((msgData ?? []) as unknown as Array<{ playdate_id: string | null }>)
+        .map((row) => row.playdate_id)
+        .filter((id): id is string => id !== null),
+    ),
+  )
+  let counterpartNames: Record<string, string> = {}
+  if (playdateIds.length > 0) {
+    const { data: postData, error: postError } = await client
+      .from('playdates')
+      .select(
+        'id, host_profile_id, host:profiles!playdates_host_profile_id_fkey ( display_name ), ' +
+          'pings:going_pings ( profile:profiles!going_pings_profile_id_fkey ( display_name ) )',
+      )
+      .in('id', playdateIds)
+    if (postError) throw postError
+    for (const post of (postData ?? []) as unknown as Array<{
+      id: string
+      host_profile_id: string
+      host: { display_name: string } | null
+      pings: Array<{ profile: { display_name: string } | null }>
+    }>) {
+      // The counterpart of THIS caller: the host when the caller is a pinger
+      // (host_profile_id !== userId); otherwise the most recent pinger's name
+      // (the pings array arrives in ping order — the embed's natural key).
+      const pingerNames = post.pings
+        .map((ping) => ping.profile?.display_name ?? '')
+        .filter((name) => name !== '')
+      if (post.host_profile_id !== userId) {
+        counterpartNames[post.id] = post.host?.display_name ?? ''
+      } else {
+        counterpartNames[post.id] = pingerNames[pingerNames.length - 1] ?? ''
+      }
+    }
+  }
+
+  const reads = new Map<
+    string,
+    { playdate_id: string; last_read_at: string }
+  >()
+  for (const row of (readData ?? []) as unknown as Array<{
+    playdate_id: string
+    last_read_at: string
+  }>) {
+    reads.set(row.playdate_id, row)
+  }
+
+  // Group request 1's rows by playdate (newest-first input → the FIRST row
+  // seen per playdate is its latest message).
+  const byPlaydate = new Map<
+    string,
+    {
+      playdateTitle: string
+      latest: {
+        body: string
+        created_at: string
+        sender_id: string
+        senderName: string
+      }
+      all: Array<{ created_at: string }>
+    }
+  >()
+  for (const row of (msgData ?? []) as unknown as Array<{
+    id: string
+    playdate_id: string
+    sender_id: string
+    body: string
+    created_at: string
+    playdate: { title: string } | null
+    sender: { display_name: string } | null
+  }>) {
+    if (row.playdate_id === undefined || row.playdate_id === null) continue
+    const entry = byPlaydate.get(row.playdate_id)
+    if (entry === undefined) {
+      byPlaydate.set(row.playdate_id, {
+        playdateTitle: row.playdate?.title ?? '',
+        latest: {
+          body: row.body,
+          created_at: row.created_at,
+          sender_id: row.sender_id,
+          senderName: row.sender?.display_name ?? '',
+        },
+        all: [{ created_at: row.created_at }],
+      })
+    } else {
+      entry.all.push({ created_at: row.created_at })
+    }
+  }
+
+  const summaries: ConversationSummary[] = []
+  for (const [playdateId, entry] of byPlaydate.entries()) {
+    const readRow = reads.get(playdateId)
+    const unreadCount =
+      readRow === undefined
+        ? entry.all.length
+        : entry.all.filter((message) => message.created_at > readRow.last_read_at).length
+    const counterpart =
+      entry.latest.sender_id === userId
+        ? (counterpartNames[playdateId] ?? '')
+        : (entry.latest.senderName || counterpartNames[playdateId] || '')
+    summaries.push({
+      playdateId,
+      playdateTitle: entry.playdateTitle,
+      otherPartyDisplayName: counterpart,
+      latestMessagePreview: truncateMessagePreview(entry.latest.body),
+      latestMessageAt: entry.latest.created_at,
+      unreadCount,
+    })
+  }
+  // Latest conversation first (request 1 was newest-first, so insertion
+  // order already is — but re-sort defensively: a playdate whose LATEST
+  // message is older than another's must sort below it).
+  summaries.sort((a, b) => (a.latestMessageAt < b.latestMessageAt ? 1 : -1))
+  return summaries
+}
+
+/** Truncate a message body to a 60-char preview (the list card's muted line). */
+export function truncateMessagePreview(body: string): string {
+  const trimmed = body.trim()
+  if (trimmed.length <= 60) return trimmed
+  return `${trimmed.slice(0, 57)}…`
+}
+
+/** The default-client wrapper (the inbox page's list view). */
+export async function listConversations(userId: string): Promise<ConversationSummary[]> {
+  return listConversationsWithClient(supabase, userId)
+}
+
+/**
+ * Send one message on a playdate's conversation (V14 ticket 01), against an
+ * injected client (mockable in unit tests). Client-side validation mirrors
+ * the DB CHECK (trim, 1–2000 chars); the RLS INSERT policy enforces
+ * sender_id = auth.uid() + participation at the DB level.
+ */
+export async function sendMessageWithClient(
+  client: SupabaseClient,
+  playdateId: string,
+  body: string,
+  senderId: string,
+): Promise<void> {
+  const validationError = validateMessageBody(body)
+  if (validationError !== null) throw new Error(validationError)
+  const { error } = await client
+    .from('messages')
+    .insert({
+      playdate_id: playdateId,
+      sender_id: senderId,
+      body: body.trim(),
+    })
+  if (error) throw error
+}
+
+/** The default-client wrapper (resolves the auth user, then delegates). */
+export async function sendMessage(playdateId: string, body: string): Promise<void> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (user === null) throw new Error('No authenticated user — cannot send a message.')
+  return sendMessageWithClient(supabase, playdateId, body, user.id)
+}
+
+/**
+ * All messages for one playdate, oldest first (the thread view's read),
+ * against an injected client (mockable in unit tests). The RLS SELECT
+ * policy scopes the rows to participants.
+ */
+export async function queryMessagesForPlaydateWithClient(
+  client: SupabaseClient,
+  playdateId: string,
+): Promise<MessageRow[]> {
+  const { data, error } = await client
+    .from('messages')
+    .select('id, playdate_id, sender_id, body, created_at')
+    .eq('playdate_id', playdateId)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  const rows = (data ?? []) as unknown as Array<{
+    id: string
+    playdate_id: string
+    sender_id: string
+    body: string
+    created_at: string
+  }>
+  return rows.map((row) => ({
+    id: row.id,
+    playdate_id: row.playdate_id,
+    sender_id: row.sender_id,
+    body: row.body,
+    created_at: row.created_at,
+  }))
+}
+
+/** The default-client wrapper (the thread view's load). */
+export async function queryMessagesForPlaydate(playdateId: string): Promise<MessageRow[]> {
+  return queryMessagesForPlaydateWithClient(supabase, playdateId)
+}
+
+/**
+ * Stamp the caller's read cursor for a playdate's conversation (V14 ticket
+ * 01), against an injected client (mockable in unit tests). An upsert with
+ * the composite PK's onConflict (the savePushSubscriptionWithClient pattern):
+ * opening a thread again moves the cursor forward, never fails on the
+ * existing row.
+ */
+export async function markConversationReadWithClient(
+  client: SupabaseClient,
+  playdateId: string,
+  profileId: string,
+): Promise<void> {
+  const { error } = await client
+    .from('conversation_reads')
+    .upsert(
+      {
+        playdate_id: playdateId,
+        profile_id: profileId,
+        last_read_at: new Date().toISOString(),
+      },
+      { onConflict: 'playdate_id,profile_id' },
+    )
+  if (error) throw error
+}
+
+/** The default-client wrapper (resolves the auth user, then delegates). */
+export async function markConversationRead(playdateId: string): Promise<void> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (user === null) throw new Error('No authenticated user — cannot mark a conversation read.')
+  return markConversationReadWithClient(supabase, playdateId, user.id)
+}

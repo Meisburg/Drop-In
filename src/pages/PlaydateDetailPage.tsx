@@ -1528,6 +1528,24 @@ export function PlaydateDetailPage() {
     resolveGuestListVisibility(isHost, going, count)
       ? formatGuestLine(guestNames, profile?.display_name ?? null, isHost) || null
       : null
+  // V14 ticket 01: the inbox entry point — "Message the host" for a pinger,
+  // one "Message <pinger>" button per pinger for the host. Visibility mirrors
+  // the conversation's participant gate (the RLS policy in 0042): a caller
+  // with a going_ping may message the host; the host may message each pinger;
+  // a stranger sees nothing (no free-form DM). The names come from the SAME
+  // fetchGuestList read as the guest line above (no new request); when that
+  // read has not landed (guestNames null — pre-0025-apply), the buttons stay
+  // hidden rather than guessing names. Tap → /inbox?thread=<playdate_id>.
+  const canMessageHost = !isHost && going === true
+  // The host's per-pinger buttons: the SAME names as the guest list read
+  // above (the get_guest_list RPC — pingers' display_names, ping order).
+  // Hidden when that read has not landed (guestNames null — pre-0025-apply)
+  // or there is no pinger yet; a stranger never sees these (no free-form DM).
+  const hostPingerNames =
+    isHost && guestNames !== null && count !== null && count > 0 ? guestNames : []
+  const openInboxThread = () => {
+    navigate(`/inbox?thread=${detail.id}`)
+  }
   // V2 slice 4 (ticket 04) + V3 slice 7 (ticket 10): the per-row comment
   // action plan's context (the signed-in viewer, the event's host, the
   // moderator flag) — shared by the top-level rows and their one-level
@@ -2312,6 +2330,33 @@ export function PlaydateDetailPage() {
       {guestLine !== null ? (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-sm text-slate-700">{guestLine}</p>
+        </div>
+      ) : null}
+
+      {/* V14 ticket 01: the inbox entry point — "Message the host" for a
+          pinger, one "Message <pinger>" button per pinger for the host.
+          Hidden otherwise (a stranger sees nothing; no free-form DM). */}
+      {canMessageHost ? (
+        <button
+          type="button"
+          onClick={openInboxThread}
+          className="mt-3 w-full rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-100"
+        >
+          Message the host
+        </button>
+      ) : null}
+      {hostPingerNames.length > 0 ? (
+        <div className="mt-3 flex flex-col gap-2">
+          {hostPingerNames.map((name) => (
+            <button
+              key={name}
+              type="button"
+              onClick={openInboxThread}
+              className="w-full rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-left text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-100"
+            >
+              Message {name}
+            </button>
+          ))}
         </div>
       ) : null}
 
