@@ -23,6 +23,7 @@ import {
   resolvePlaceByName,
   SOMEWHERE_ELSE_LABEL,
   sortPlaceUpcoming,
+  sortPlaces,
   stripPlaceAlias,
   upcomingCountByPlace,
   usesPlaceAlias,
@@ -297,6 +298,130 @@ describe('sortPlaceUpcoming (soonest first — the place page asked about THIS p
     ]
     expect(sortPlaceUpcoming(input).map((post) => post.id)).toEqual(['a', 'b'])
     expect(input.map((post) => post.id)).toEqual(['b', 'a'])
+  })
+})
+
+// V15 ticket 03: the browse list's sort seam (alpha default, distance, newest).
+describe('sortPlaces (V15 ticket 03: the browse list\'s ordering decision)', () => {
+  function row(
+    name: string,
+    overrides: Partial<{ kind: PlaceKind; lat: number | null; lng: number | null; created_at?: string }> & {
+      distanceMiles?: number | null
+    } = {},
+  ): PlaceListRow {
+    const { distanceMiles: dist, ...placeOverrides } = overrides
+    return {
+      place: place({ name, ...placeOverrides }),
+      // `dist ?? 1` is the fixture default; an EXPLICIT null must stay null
+      // (the "unknown distance" cases pin that).
+      distanceMiles: dist === undefined ? 1 : dist,
+      upcomingCount: null,
+    }
+  }
+
+  // One fixture, deliberately ordered so that NO mode is a no-op on it:
+  // - names are NOT alphabetical (Zed < Milo < Aiden);
+  // - distances are NOT ascending (9 < 2 < 4);
+  // - dates are NOT descending (oldest < middle < newest).
+  const FIXTURE = [
+    row('Zed Park', { distanceMiles: 9, lat: NEAR.lat, lng: NEAR.lng, created_at: '2026-01-01T00:00:00Z' }),
+    row('Milo Pool', { distanceMiles: 2, lat: FAR.lat, lng: FAR.lng, created_at: '2026-06-01T00:00:00Z' }),
+    row('Aiden Playground', { distanceMiles: 4, lat: NEAR.lat, lng: FAR.lng, created_at: '2026-09-01T00:00:00Z' }),
+  ]
+
+  it('alpha: orders A→Z by name regardless of distance or date', () => {
+    const names = sortPlaces(FIXTURE, 'alpha').map((r) => r.place.name)
+    expect(names).toEqual(['Aiden Playground', 'Milo Pool', 'Zed Park'])
+  })
+
+  it('distance: uses each row\'s distanceMiles, ascending, when no center is given', () => {
+    const names = sortPlaces(FIXTURE, 'distance').map((r) => r.place.name)
+    expect(names).toEqual(['Milo Pool', 'Aiden Playground', 'Zed Park'])
+  })
+
+  it('distance: puts unknown (null) distances LAST, never first', () => {
+    const rows = [
+      row('Known Near', { distanceMiles: 1 }),
+      row('Unknown One', { distanceMiles: null }),
+      row('Known Far', { distanceMiles: 50 }),
+    ]
+    // "Last" is the precise contract: every known row precedes every unknown
+    // row. (The full tie-break — alphabetical among equal keys — is pinned by
+    // its own test below.)
+    const names = sortPlaces(rows, 'distance').map((r) => r.place.name)
+    expect(names).toEqual(['Known Near', 'Known Far', 'Unknown One'])
+  })
+
+  it('distance: ties break alphabetically (stable order across renders)', () => {
+    const rows = [
+      row('Zeta Park', { distanceMiles: 3 }),
+      row('Alpha Pool', { distanceMiles: 3 }),
+      row('Mid Playground', { distanceMiles: 3 }),
+      row('Unknown One', { distanceMiles: null }),
+      row('Unknown Two', { distanceMiles: null }),
+    ]
+    // Equal keys — including the two unknowns — fall back to name, so the
+    // order is deterministic no matter how the input was arranged.
+    const names = sortPlaces(rows, 'distance').map((r) => r.place.name)
+    expect(names).toEqual(['Alpha Pool', 'Mid Playground', 'Zeta Park', 'Unknown One', 'Unknown Two'])
+  })
+
+  it('distance: measures from the provided center to the place\'s own coordinates', () => {
+    const center = { lat: NEAR.lat, lng: NEAR.lng } // Green Lake area
+    const rows = [
+      // ~0 mi from center (own coords at the center), stored distance says 50.
+      row('At Center', { distanceMiles: 50, lat: NEAR.lat, lng: NEAR.lng }),
+      // ~53 mi from center (own coords far away), stored distance says 1.
+      row('Far From Center', { distanceMiles: 1, lat: FAR.lat, lng: FAR.lng }),
+    ]
+    const names = sortPlaces(rows, 'distance', center).map((r) => r.place.name)
+    expect(names).toEqual(['At Center', 'Far From Center'])
+  })
+
+  it('distance: a place with no own coordinates is unknown and sorts last when a center is given', () => {
+    const center = { lat: NEAR.lat, lng: NEAR.lng }
+    const rows = [
+      row('No Coords', { distanceMiles: 1, lat: null, lng: null }),
+      row('Has Coords', { distanceMiles: 99, lat: NEAR.lat, lng: NEAR.lng }),
+    ]
+    const names = sortPlaces(rows, 'distance', center).map((r) => r.place.name)
+    expect(names).toEqual(['Has Coords', 'No Coords'])
+  })
+
+  it('newest: most recent created_at first, missing dates last', () => {
+    const rows = [
+      row('Oldest', { created_at: '2026-01-01T00:00:00Z' }),
+      row('No Date'),
+      row('Newest', { created_at: '2026-09-01T00:00:00Z' }),
+    ]
+    const names = sortPlaces(rows, 'newest').map((r) => r.place.name)
+    expect(names).toEqual(['Newest', 'Oldest', 'No Date'])
+  })
+
+  it('returns a NEW array and never mutates the input', () => {
+    const originalOrder = FIXTURE.map((r) => r.place.name)
+    const result = sortPlaces(FIXTURE, 'alpha')
+    expect(result).not.toBe(FIXTURE) // a new array, not the input itself
+    // The input array is untouched: same order as before the call.
+    expect(FIXTURE.map((r) => r.place.name)).toEqual(originalOrder)
+  })
+
+  it('yields [] for an empty input in every mode', () => {
+    expect(sortPlaces([], 'alpha')).toEqual([])
+    expect(sortPlaces([], 'distance')).toEqual([])
+    expect(sortPlaces([], 'newest')).toEqual([])
+  })
+
+  it('the three modes produce different orders on the same fixture', () => {
+    const alpha = sortPlaces(FIXTURE, 'alpha').map((r) => r.place.name)
+    const distance = sortPlaces(FIXTURE, 'distance').map((r) => r.place.name)
+    const newest = sortPlaces(FIXTURE, 'newest').map((r) => r.place.name)
+    // The fixture is built so each mode picks a DIFFERENT first row:
+    expect(alpha[0]).toBe('Aiden Playground') // A–Z
+    expect(distance[0]).toBe('Milo Pool') // closest (2 mi)
+    expect(newest[0]).toBe('Aiden Playground') // most recent created_at
+    expect(distance).not.toEqual(alpha)
+    expect(newest).not.toEqual(distance)
   })
 })
 

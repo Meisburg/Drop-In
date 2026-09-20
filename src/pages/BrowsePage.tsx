@@ -14,13 +14,15 @@ import {
   BROWSE_LIST_LEAD_LIMIT,
   filterPlacesByRadius,
   groupPlacesByKind,
+  PLACE_KINDS,
   placeIndoorLabel,
   placeKindLabel,
   placePath,
   placeUpcomingLabel,
   resolveMapCoords,
+  sortPlaces,
 } from '../lib/places'
-import type { PlaceListRow } from '../lib/places'
+import type { PlaceListRow, SortMode } from '../lib/places'
 import type { Place } from '../lib/types'
 
 /**
@@ -36,9 +38,10 @@ import type { Place } from '../lib/types'
  * nearby", so the overview map now sits at the TOP of the page — above the
  * search/filter card and the list — and a marker tap opens the place's info
  * (name + address) with a "Host here" action (the existing place pre-fill
- * router state; see PlacesMap). The list below defaults to distance-sorted,
- * closest first (distance from the user's stored zip — NO geolocation, the
- * V12 t05 invariant).
+ * router state; see PlacesMap). The list below defaults to ALPHABETICAL, A–Z
+ * (V15 ticket 03 — the founder's order); filtering and re-sorting live in the
+ * "Filter & sort" modal above the list, never below it. Distances are still
+ * measured from the user's stored zip — NO geolocation, the V12 t05 invariant.
  *
  * V13 ticket 05 (A7): the raw unbroken long-list is gone. The list leads with
  * the BROWSE_LIST_LEAD_LIMIT closest places grouped by kind (the pure
@@ -94,6 +97,16 @@ export function BrowsePage() {
   // row. Resetting on any filter change keeps "see all" honest — a widened
   // result set must not stay collapsed around a stale lead.
   const [showAll, setShowAll] = useState(false)
+
+  // V15 ticket 03: the filter & sort modal. The list DEFAULTS to alphabetical
+  // (the founder's A–Z); the modal is where filtering + re-sorting lives —
+  // there are no sort/filter controls below the list anymore.
+  const [sortMode, setSortMode] = useState<SortMode>('alpha')
+  const [filterModalOpen, setFilterModalOpen] = useState(false)
+  // Empty set = all kinds (no kind filter active).
+  const [selectedKinds, setSelectedKinds] = useState<Set<string>>(new Set())
+  // Miles from the home pin; null = no radius constraint from the modal.
+  const [radiusFilter, setRadiusFilter] = useState<number | null>(null)
 
   // V15 ticket 02: the address + radius modal ("Set location"). The geocoded
   // center + radius drive both the map overlay and the filtered list.
@@ -222,15 +235,36 @@ export function BrowsePage() {
     }))
   })()
 
-  // V13 ticket 05 (A7): the grouped lead + overflow. browsePlaces already
-  // distance-sorts (closest first; unknown distances last), so the LEAD is
-  // simply the first BROWSE_LIST_LEAD_LIMIT rows — the closest places — and
-  // the overflow door reveals the rest. Grouping (groupPlacesByKind) only
-  // buckets by kind; it never re-ranks within a group.
+  // V15 ticket 03: the LIST is now alphabetical by default (the founder's A–Z).
+  // The modal's kind chips + radius filter narrow the rows first, then
+  // sortPlaces orders them. The MAP still shows the full placed set — the
+  // modal filters the list only (the map's circle overlay communicates the
+  // t02 geocode filter visually).
+  const filteredRows: PlaceListRow[] = (() => {
+    let base = rows
+    if (selectedKinds.size > 0) {
+      base = base.filter((row) => selectedKinds.has(row.place.kind))
+    }
+    if (radiusFilter !== null && homePinCoords !== null) {
+      const keptIds = new Set(
+        filterPlacesByRadius(places ?? [], homePinCoords, radiusFilter, zipCoords).map(
+          (p) => p.id,
+        ),
+      )
+      base = base.filter((row) => keptIds.has(row.place.id))
+    }
+    return sortPlaces(base, sortMode, homePinCoords ?? undefined)
+  })()
+
+  // V13 ticket 05 (A7): the grouped lead + overflow. The list rows are
+  // filtered + sorted by the modal (filteredRows above); the LEAD is simply
+  // the first BROWSE_LIST_LEAD_LIMIT rows and the overflow door reveals the
+  // rest. Grouping (groupPlacesByKind) only buckets by kind; it never
+  // re-ranks within a group.
   // V15 t02: when geocodeCenter is set, the LIST uses effectiveRows (filtered
   // by radius); the MAP still shows the full placed set (the circle overlay
   // communicates the active filter visually).
-  const listRows = geocodeCenter !== null ? effectiveRows : placed
+  const listRows = geocodeCenter !== null ? effectiveRows : filteredRows
   const leadRows = listRows.slice(0, BROWSE_LIST_LEAD_LIMIT)
   const overflowRows = listRows.slice(BROWSE_LIST_LEAD_LIMIT)
   const leadGroups = groupPlacesByKind(leadRows)
@@ -247,6 +281,28 @@ export function BrowsePage() {
       set must not stay expanded around a stale lead). */
   function resetShowAll() {
     setShowAll(false)
+  }
+
+  /** V15 t03: open the filter & sort modal. */
+  function openFilterModal() {
+    setFilterModalOpen(true)
+  }
+
+  /** V15 t03: close the filter & sort modal (Apply or Cancel — the state is
+      committed live as the parent toggles, so closing needs no extra work). */
+  function closeFilterModal() {
+    setFilterModalOpen(false)
+  }
+
+  /** V15 t03: toggle one kind chip in the modal. An empty selection means
+      "all kinds" — tapping the last selected chip clears the filter. */
+  function toggleKind(kind: string) {
+    setSelectedKinds((prev) => {
+      const next = new Set(prev)
+      if (next.has(kind)) next.delete(kind)
+      else next.add(kind)
+      return next
+    })
   }
 
   /** The overflow door's label: "See all N places" when collapsed, "Hide" when
@@ -349,6 +405,14 @@ export function BrowsePage() {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
+            data-testid="filter-sort-btn"
+            onClick={openFilterModal}
+            className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-indigo-700 transition-colors hover:bg-slate-50"
+          >
+            Filter &amp; sort
+          </button>
+          <button
+            type="button"
             data-testid="places-indoor-filter"
             aria-pressed={indoorFilter === true}
             onClick={() => {
@@ -420,9 +484,10 @@ export function BrowsePage() {
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {/* V13 ticket 05 (A7): the grouped lead — the closest
-              BROWSE_LIST_LEAD_LIMIT places, bucketed by kind (kind chips as
-              section headers, rows in the caller's distance order inside each
+          {/* V13 ticket 05 (A7): the grouped lead — the first BROWSE_LIST_LEAD_LIMIT
+              places in the list's current order (alphabetical by default, or
+              whatever the Filter & sort modal set), bucketed by kind (kind
+              chips as section headers, rows in the caller's order inside each
               group). The raw unbroken long-list is gone. */}
           {leadGroups.map((group) => (
             <section key={group.kind} className="flex flex-col gap-2">
@@ -482,6 +547,99 @@ export function BrowsePage() {
             ))}
           </div>
         </section>
+      ) : null}
+
+      {/* V15 t03: the "Filter & sort" modal — kind chips (multi-select), a sort
+          dropdown, and an optional radius input. State commits live as the
+          parent toggles; Apply just closes (the list already re-rendered). */}
+      {filterModalOpen ? (
+        <div
+          data-testid="filter-sort-modal"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeFilterModal()
+          }}
+        >
+          <div className="w-full max-w-md rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-900">Filter &amp; sort</h3>
+              <button
+                type="button"
+                onClick={closeFilterModal}
+                className="rounded-full p-1 text-slate-400 hover:bg-slate-100"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mb-3">
+              <span className="mb-2 block text-xs font-medium text-slate-700">Place types</span>
+              <div className="flex flex-wrap gap-2">
+                {PLACE_KINDS.map((kind) => {
+                  const selected = selectedKinds.has(kind)
+                  return (
+                    <button
+                      key={kind}
+                      type="button"
+                      data-testid={`filter-kind-chip-${kind}`}
+                      aria-pressed={selected}
+                      onClick={() => toggleKind(kind)}
+                      className={
+                        'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ' +
+                        (selected
+                          ? 'border-indigo-600 bg-indigo-600 text-white'
+                          : 'border-slate-300 bg-white text-slate-700')
+                      }
+                    >
+                      {placeKindLabel(kind)}
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="mt-1 text-xs text-slate-500">None selected = show all types.</p>
+            </div>
+
+            <label className="mb-3 flex flex-col gap-1 text-sm">
+              <span className="text-slate-700">Sort by</span>
+              <select
+                data-testid="filter-sort-select"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                value={sortMode}
+                onChange={(e) => setSortMode(e.target.value as SortMode)}
+              >
+                <option value="alpha">A–Z</option>
+                <option value="distance">Closest to me</option>
+                <option value="newest">Newest</option>
+              </select>
+            </label>
+
+            <label className="mb-4 flex flex-col gap-1 text-sm">
+              <span className="text-slate-700">Within (miles of home pin, optional)</span>
+              <input
+                type="number"
+                min={1}
+                data-testid="filter-radius-input"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                placeholder="e.g. 5"
+                value={radiusFilter ?? ''}
+                onChange={(e) => {
+                  const raw = e.target.value
+                  setRadiusFilter(raw === '' ? null : Math.max(1, Number(raw)))
+                }}
+              />
+            </label>
+
+            <button
+              type="button"
+              data-testid="filter-apply-btn"
+              onClick={closeFilterModal}
+              className="w-full rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700"
+            >
+              Apply
+            </button>
+          </div>
+        </div>
       ) : null}
 
       {/* V15 t02: the "Set location" modal — address input + radius slider +

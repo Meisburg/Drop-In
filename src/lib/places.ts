@@ -570,6 +570,89 @@ export function groupPlacesByKind(rows: readonly PlaceListRow[]): PlaceKindGroup
 }
 
 /**
+ * V15 ticket 03: how the browse list orders its rows. 'alpha' is the default
+ * (the founder's A–Z); 'distance' reorders by closeness; 'newest' by creation
+ * date. Pure + unit-tested (no React, no DB).
+ */
+export type SortMode = 'alpha' | 'distance' | 'newest'
+
+/**
+ * V15 ticket 03: sort browse rows by the chosen mode. Returns a NEW array —
+ * the input is never mutated.
+ *
+ * - 'alpha': A→Z by place name (localeCompare), ties broken by id so the
+ *   order is stable across renders (the matchPlaces tiebreak discipline).
+ * - 'distance': closest first. When `center` is provided, each row's distance
+ *   is measured from that center to the place's OWN coordinates (haversine,
+ *   the same math as filterPlacesByRadius) — the geocoded "Set location" path
+ *   has no per-row distanceMiles. Otherwise the row's own distanceMiles is
+ *   used (the home-zip path). Unknown distances (null / unresolvable) sort
+ *   LAST — "we don't know how far this is" belongs at the end of a
+ *   distance-ordered list, never the top. Ties break alphabetically.
+ * - 'newest': most recent created_at first (descending); missing dates last,
+ *   then alphabetical within the unknown block.
+ */
+export function sortPlaces(
+  rows: readonly PlaceListRow[],
+  mode: SortMode,
+  center?: { lat: number; lng: number },
+): PlaceListRow[] {
+  const copy = [...rows]
+  switch (mode) {
+    case 'alpha':
+      copy.sort((a, b) => {
+        const byName = a.place.name.localeCompare(b.place.name)
+        if (byName !== 0) return byName
+        return a.place.id < b.place.id ? -1 : a.place.id > b.place.id ? 1 : 0
+      })
+      return copy
+    case 'distance': {
+      // Per-row key: measured-from-center when a center is given, else the
+      // row's stored distanceMiles. null = unknown → sorts last.
+      const key = (row: PlaceListRow): number | null => {
+        if (center !== undefined) {
+          const lat = row.place.lat
+          const lng = row.place.lng
+          if (lat === null || lng === null) return null
+          return haversineMiles(center, { lat, lng })
+        }
+        return row.distanceMiles
+      }
+      copy.sort((a, b) => {
+        const da = key(a)
+        const db = key(b)
+        if (da === null && db !== null) return 1
+        if (da !== null && db === null) return -1
+        if (da !== null && db !== null && da !== db) return da - db
+        const byName = a.place.name.localeCompare(b.place.name)
+        if (byName !== 0) return byName
+        return a.place.id < b.place.id ? -1 : a.place.id > b.place.id ? 1 : 0
+      })
+      return copy
+    }
+    case 'newest': {
+      const time = (row: PlaceListRow): number | null => {
+        const raw = row.place.created_at
+        if (raw === undefined || raw === null || raw === '') return null
+        const parsed = Date.parse(raw)
+        return Number.isNaN(parsed) ? null : parsed
+      }
+      copy.sort((a, b) => {
+        const ta = time(a)
+        const tb = time(b)
+        if (ta === null && tb !== null) return 1
+        if (ta !== null && tb === null) return -1
+        if (ta !== null && tb !== null && ta !== tb) return tb - ta
+        const byName = a.place.name.localeCompare(b.place.name)
+        if (byName !== 0) return byName
+        return a.place.id < b.place.id ? -1 : a.place.id > b.place.id ? 1 : 0
+      })
+      return copy
+    }
+  }
+}
+
+/**
  * V15 ticket 02: the browse map rework's pure distance seam — the haversine
  * miles between two lat/lng points. A thin alias over feed.haversineMiles so
  * a place consumer has one import site (the same re-export discipline as

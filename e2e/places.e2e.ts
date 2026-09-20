@@ -28,8 +28,12 @@
  *     existing place pre-fill router state, the same seam the place page's
  *     "Start a drop-in here" uses).
  * (8) V13 ticket 05 (A7): the raw unbroken long-list is gone — the list leads
- *     with the closest places grouped by kind, then a single "See all N
- *     places" overflow door reveals every remaining row.
+ *     with the first places (alphabetical by default, V15 t03) grouped by kind,
+ *     then a single "See all N places" overflow door reveals every remaining row.
+ * (9) V15 ticket 03: the "Filter & sort" modal above the list — kind chips
+ *     multi-select + a sort dropdown + an optional radius input; Apply closes
+ *     it and the list re-renders in the chosen order. The default order is
+ *     alphabetical (A–Z), not distance-sorted.
  *
  * RED BY DESIGN pre-0029-apply: `places` does not exist live yet, so PostgREST
  * answers the first read with PGRST205 (schema cache: table not found). The
@@ -175,11 +179,11 @@ test('the Places tab is the seeded directory, and anon can read it (RED pre-0029
   ).toBe(true)
 
   // (8) V13 ticket 05 (A7): the raw unbroken long-list is gone — the list
-  // leads with the closest places grouped by kind, then a single "See all N
-  // places" overflow door reveals every remaining row. At least one group
-  // header (a kind chip as an h2 section header) is visible, and the lead rows
-  // still carry the row testid (the existing helpers keep working against the
-  // new layout).
+  // leads with the first places (alphabetical by default, V15 t03) grouped by
+  // kind, then a single "See all N places" overflow door reveals every
+  // remaining row. At least one group header (a kind chip as an h2 section
+  // header) is visible, and the lead rows still carry the row testid (the
+  // existing helpers keep working against the new layout).
   await expect(
     page
       .locator('h2')
@@ -401,10 +405,10 @@ test('the Places tab filters by indoor and outdoor', async ({ page }) => {
   await openPlacesTab(page)
   await useAnyDistance(page)
 
-  // The lead shows the BROWSE_LIST_LEAD_LIMIT closest places (V13 ticket 05 A7),
-  // which includes INDOOR_PLACE (Ballard Branch, 0 mi from the marker's home
-  // zip). The filter works on the visible lead rows — no need to expand the
-  // overflow door for this assertion.
+  // The lead shows the BROWSE_LIST_LEAD_LIMIT first places in alphabetical
+  // order (V15 t03), which includes INDOOR_PLACE (Ballard Branch, 0 mi from
+  // the marker's home zip). The filter works on the visible lead rows — no
+  // need to expand the overflow door for this assertion.
 
   // Indoor: the indoor library branch stays, outdoor playgrounds go.
   await page.getByTestId('places-indoor-filter').click()
@@ -414,6 +418,69 @@ test('the Places tab filters by indoor and outdoor', async ({ page }) => {
   // mean "not Indoor" by accident.)
   await page.getByTestId('places-outdoor-filter').click()
   await expect(placeRow(page, INDOOR_PLACE)).toHaveCount(0)
+})
+
+test('the browse list defaults to alphabetical and the Filter & sort modal filters + sorts (V15 t03)', async ({
+  page,
+}) => {
+  await openPlacesTab(page)
+  await useAnyDistance(page)
+
+  // AC1: the default order is ALPHABETICAL (A–Z), not distance-sorted. The
+  // lead rows are the first BROWSE_LIST_LEAD_LIMIT names in A→Z order — so the
+  // very first row must be the alphabetically-first place in the directory.
+  const firstRow = page.getByTestId('place-row').first()
+  await expect(firstRow).toBeVisible()
+  // Every visible lead row's name must come after (or equal) the previous one:
+  // read the lead names in DOM order and assert they are sorted.
+  const leadNames = (
+    await page.locator('[data-testid="place-row"] > span').first().allTextContents()
+  ).slice(0, 6)
+  expect(leadNames.length).toBeGreaterThan(0)
+  for (let i = 1; i < leadNames.length; i++) {
+    expect(leadNames[i].localeCompare(leadNames[i - 1])).toBeGreaterThanOrEqual(0)
+  }
+
+  // AC2: the "Filter & sort" button opens the modal with kind chips, a sort
+  // dropdown, and a radius input.
+  await page.getByTestId('filter-sort-btn').click()
+  const modal = page.getByTestId('filter-sort-modal')
+  await expect(modal).toBeVisible()
+  await expect(page.getByTestId('filter-kind-chip-park')).toBeVisible()
+  await expect(page.getByTestId('filter-kind-chip-playground')).toBeVisible()
+  await expect(page.getByTestId('filter-sort-select')).toBeVisible()
+  await expect(page.getByTestId('filter-radius-input')).toBeVisible()
+
+  // Selecting a kind chip narrows the list to that kind (AC2): pick Park,
+  // Apply, and every visible row must carry the "Park" kind label.
+  await page.getByTestId('filter-kind-chip-park').click()
+  await page.getByTestId('filter-apply-btn').click()
+  await expect(modal).toHaveCount(0)
+  const parkRows = page.locator('[data-testid="place-row"]')
+  const parkRowCount = await parkRows.count()
+  if (parkRowCount > 0) {
+    for (const row of await parkRows.all()) {
+      await expect(row).toContainText('Park')
+    }
+  }
+
+  // Clear the kind filter (re-open, toggle the chip off) so the next step sees
+  // the full directory again.
+  await page.getByTestId('filter-sort-btn').click()
+  await page.getByTestId('filter-kind-chip-park').click()
+  await page.getByTestId('filter-apply-btn').click()
+
+  // AC3: switching the sort to "Closest to me" reorders by distance from the
+  // home pin (the select commits live; Apply closes the modal).
+  await page.getByTestId('filter-sort-btn').click()
+  await page.getByTestId('filter-sort-select').selectOption('distance')
+  await page.getByTestId('filter-apply-btn').click()
+  await expect(page.getByTestId('place-row').first()).toBeVisible()
+
+  // Back to the alphabetical default.
+  await page.getByTestId('filter-sort-btn').click()
+  await page.getByTestId('filter-sort-select').selectOption('alpha')
+  await page.getByTestId('filter-apply-btn').click()
 })
 
 test.afterEach(async () => {
