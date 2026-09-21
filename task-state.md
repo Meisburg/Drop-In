@@ -3,6 +3,9 @@
 > The system of record. The orchestrator updates this after every phase
 > transition. Subagent chat contexts are ephemeral — this file is not.
 
+- **V15.2 SHIPPED + BOTH ACCEPTANCE LANES GREEN (2026-09-21). Auto-push `d26a6b5..dedec54` to origin/master (fast-forward; gate green; clean range = 19 files: 3 src + 15 e2e + task-state).** Playtest lane **PASS — 8 routes, 0 uncaught JS errors**. Jev QA lane **PASS (done)** on `https://drop-in-mu.vercel.app/login` (0 actions). **Live-verified after the deploy:** the served CSS carries the 44px zoom override verbatim (`.leaflet-container.leaflet-touch .leaflet-bar a{width:44px;height:44px;line-height:44px}` + the 1024px breakpoint), and `/`, `/inbox`, `/new`, `/browse` all answer 200. All lane Chromes + preview servers released (ports 9333/9444/4173/4180 down).
+- **Method note:** "pre-existing failure" is a claim about the BASE, not a reason to skip diagnosis. Across V15.1+V15.2, chasing 14 long-red specs turned up **5 real product defects** (unclickable map markers after a search; a kind filter that leaked unplaced rows; a post that could never be linked to a series; 30px map zoom buttons; plus the DM send family in V15.1). None were visible to the unit gate — they live in DOM projection, RLS, and CSS cascade.
+
 ## Current position
 
 - **V15.2 COMPLETE — THE FULL 91-SPEC E2E SUITE IS GREEN (2026-09-21). `91 passed` in one run, for the first time in the repo's recorded history.** Gate on the final tree: build exit 0 · **898/898 unit** · tsc clean · lint 0 errors (75 warnings). Two more REAL PRODUCT BUGS were found in this batch (3 and 4 below, plus 5), and 9 stale expectations were corrected. No migration, no schema change.
