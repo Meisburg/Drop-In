@@ -751,8 +751,26 @@ export function NewPlaydatePage({
   })
   // The picker row's classes: the recent-place chip's pill, at the form's 44px
   // floor (minTouchTargets is on for this page).
+  //
+  // V16 t03 (item 3): `w-fit` is GONE. It sized the pill to the label's
+  // UNWRAPPED width inside a container that is already a COLUMN flex
+  // (`flex-col`, :973) — every row is its own full-width line, so `w-fit` was
+  // fighting the parent: on a narrow phone a long title + day label still
+  // wrapped to two lines, but the pill stayed 44px tall (`min-h-11`, the tap
+  // floor) and `rounded-full` drew a stadium around ONE line of text. The
+  // second line then painted outside the rounded shape — the overflow the
+  // founder photographed.
+  //
+  // `w-full` is the fix rather than `truncate`: the row's label carries real
+  // information (the title AND the day the clone lands on, plus ` · Ended` /
+  // ` · Cancelled`), and nothing else in the DOM repeats it — no `title`
+  // attribute, no adjacent text. Truncating to one line would silently drop
+  // the date. Full width lets the text wrap sanely, and `min-h-11` is a floor,
+  // not a fixed height, so the pill GROWS to fit the wrapped lines and the
+  // rounded shape always contains its text. `max-w-full` is now implied by
+  // `w-full`, so it goes too. The 44px tap floor is untouched.
   const lastPostClassName =
-    'min-h-11 w-fit max-w-full rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-left text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100'
+    'min-h-11 w-full rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-left text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100'
 
   // V15 T05 (A10): the top-of-page duplicate picker state.
   const [dupPickerOpen, setDupPickerOpen] = useState(false)
