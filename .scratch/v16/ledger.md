@@ -397,3 +397,30 @@ V16: CONCURRENT WRITER CONFIRMED LIVE, MID-EXPERIMENT (round 26).
   and Chrome I had started for the check.
   NOTE FOR THE NEXT AUDIT: run the playtest lane fresh before trusting
   routes.json; it is under active edit by another writer.
+V16: CONCURRENT WRITER FINISHED AND COMMITTED (round 28) — c6762ad "Factory:
+  enforce the gate, prune the steering layer, arm the playtest lane".
+  The tree is CLEAN again and the second writer has stopped.
+  WHAT THEY LANDED (15 files, 1128 insertions):
+   * scripts/pre-push + install-git-hooks.sh — a REAL git hook that refuses a
+     push on a dirty range (never skippable) or a red gate (FAST_PUSH=1). They
+     verified it in a throwaway repo against supabase/.temp/linked-project.json
+     -- the exact leak this batch made -- and confirmed FAST_PUSH cannot bypass
+     the range check.
+   * npm run verify = build && test && lint && steering-lint; npm run typecheck.
+   * AGENTS.md 3,150 -> 1,660 words; always-on payload 3,221 tokens = 3% of the
+     98k window; four docs extracted behind when-to-read pointers.
+   * .scratch/context-load.sh measures the payload and flags pointer rot.
+   * routes.json armed with real must_contain needles.
+  IT DOES NOT CONFLICT WITH V16: `git show --name-only c6762ad` touches NO src/
+  or e2e/ file. All four V16 factory sections (ocr, Review lanes, escalating fix
+  loop, build law) are still present in the rewritten AGENTS.md.
+  VERIFIED AFTER THEIR COMMIT, on the merged tree:
+   * `npm run verify` exit 0 — including their steering-lint ("every steering doc
+     is reachable from AGENTS.md").
+   * playtest lane PASS, 8 routes, 0 uncaught JS errors, with THEIR armed routes.
+   * my task-state record survived (V16 present; the corrected live asset hash
+     index-wZsbF7if is intact).
+  Their thesis, which matches what this batch kept re-learning: our verification
+  stack was excellent and ENTIRELY VOLUNTARY. This batch lost a night to exactly
+  that -- a hand-typed range check reported clean while carrying a leaked project
+  ref. Now the gate runs whether or not an agent remembers it.
