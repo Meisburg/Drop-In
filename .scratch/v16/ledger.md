@@ -648,3 +648,34 @@ V16 t03 item 1: complete (5ac2a2f). Founder ruled OPTION (ii) on round 36, and t
   COST ACCEPTED, recorded because it is invisible: a host can no longer state a
   range WIDER than their own selected kids. That is inherent to the ruling.
 V16 t07 item 2: dispatched (base 5ac2a2f), agent 5a0714ba, option (b).
+V16 t07 item 2: complete (93f313b + 5912a93 review fixes). Founder ruled OPTION
+  (b) on round 36 and the slice shipped the same round.
+  HALF 1: the points-fit is DELETED from the marker-group effect. Verified:
+  `grep boundsPoints` returns nothing, and the only remaining camera-moving
+  fitBounds on Browse is the circle effect.
+  HALF 2 (not optional, found before dispatch): radiusCircle was passed ONLY
+  after a geocode, so in the common case the map would have had no framing
+  authority once the points-fit went. New pure `framingCircle` in lib/places.ts:
+  geocode wins, else home pin at the viewer's radius, else null (mount view).
+  FIVE sibling tests, red-green verified.
+  I ALSO AUDITED THE TWO OTHER fitBounds CALLS IN THAT FILE before trusting the
+  fix, because a partial fix here would have looked complete: MapCanvas's is
+  gated behind fit={false} on those paths, and PlacePickerMap's is the
+  single-place picker on /new. Neither is the Browse blob.
+  THE RESIDUAL RISK THE BUILDER FLAGGED, CLOSED: with the circle as frame a place
+  outside the radius is off-canvas and untappable. The builder said the
+  marker-click spec must be re-run and that it could not run browser lanes. I ran
+  it: e2e/places.e2e.ts -> 9 passed, including the marker-click test.
+  ocr on the ages slice found three accuracy issues; two fixed (a diagnosis
+  message that described with-kids posts as kidless, and a "three parts" header
+  over a four-item list), one recorded for later (a duplicated href->id
+  extraction in that spec).
+
+*** V16 BATCH CLOSED — EVERY TICKET SHIPPED ***
+  t01, t02, t03(items 1 and 3), t04, t05, t06(items 1 and 2), t07(items 1, 2, 3,
+  4), t08, t09. Four sub-items were DROPPED as already correct in the code.
+  Item t07 items 5-7 (the Airbnb redesign) remain DEFERRED BY THE FOUNDER'S OWN
+  DECISION (Q5: its own spec + batch) -- not outstanding work.
+  Final state: `npm run verify` exit 0, 961/961 unit (26 files), lint 0 errors,
+  steering-lint PASS. Playtest PASS 8 routes / 0 JS errors. Migration 0045
+  APPLIED and confirmed by its acceptance test. Production deployed and verified.
