@@ -349,3 +349,27 @@ V16: CONCURRENT SESSION DETECTED (round 24) — another agent refactored the doc
   to commit or fold into a V16 slice. Flagged to the human instead. Note their
   change and mine both touch AGENTS.md, so a commit now would either absorb
   their WIP or conflict with it.
+V16: CONCURRENT SESSION STILL ACTIVE (round 25). Their refactor kept GROWING:
+  plan.template.md, task-state.template.md and scripts/pre-push are newly
+  touched since round 24, and five files changed within the last 5 minutes.
+  SO I DID NOT COMMIT THEIR WORK — a second writer is live in this repo, and
+  staging their in-flight edits into a V16 slice would be wrong.
+
+  WHAT I VERIFIED INSTEAD (the safe, useful work available):
+   * ALL 11 V16-shipped product files are byte-identical to HEAD: stacking.ts,
+     feed.ts, db.ts, FeedPage, UserPage, ProfilePage, BrowsePage, InboxPage,
+     ImageLightbox, feed-empty-state.e2e.ts, dm.e2e.ts. Nothing of mine was
+     disturbed by the other session.
+   * One scare investigated and cleared: src/lib/stacking.ts showed a fresh
+     mtime, but `git diff` proves it is UNMODIFIED — the timestamp moved from a
+     build/read, not an edit. Checked rather than assumed, because a silent edit
+     to a shipped file would be the worst possible finding.
+   * `npm run verify` exits 0 WITH their changes present: 952/952, lint 0 errors.
+     So the concurrent refactor does not break the product or the gate.
+   * Their hook design is clean: scripts/pre-push is the TRACKED source and
+     .git/hooks/pre-push the installed copy — byte-identical (3178 bytes each),
+     so the install is reproducible rather than a mystery file in .git/.
+
+  RULING: do not touch AGENTS.md or package.json while another writer is active
+  in them. My round-24 edit attempt failed for exactly this reason (the file
+  changed under me), which is the system working.
