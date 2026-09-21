@@ -231,3 +231,15 @@ V16 t06 item 2: complete (6664274 + 9d88ec1). Feed gets a "Where you are" ZIP
 V16: with this, EVERY non-blocked item is shipped. Genuinely blocked: t03 item 1
   (Ages i/ii) and t07 item 2 (map a/b/c). Deferred by decision Q5: the Airbnb
   redesign. Needs a credential: migration 0045 apply.
+V16: BATCH-END PLAYTEST LANE RUN (round 12) — PASS, 8 routes, 0 uncaught JS
+  errors, 8 screenshots. The lane covers the public routes only.
+  ALSO CAUGHT MYSELF SHIPPING FALSE COVERAGE: I added /u/:handle to routes.json
+  to close a real gap (t05 changed that page heavily and the lane did not cover
+  it). The run said PASS 9 routes -- but the SCREENSHOT WAS THE LOGIN PAGE. The
+  playtest script has no auth support, so an auth-gated route just redirects and
+  the entry passes while asserting nothing. Reverted; routes.json is unchanged.
+  The route IS covered, by ten e2e specs under the marker storageState. Recorded
+  the trap in docs/agents/playtest-lane.md so the next agent does not re-add it.
+V16: NON-BLOCKED WORK IS NOW EXHAUSTED. Remaining: t03 item 1 (Ages i/ii),
+  t07 item 2 (map a/b/c), migration 0045 apply (needs a credential). Deferred by
+  decision Q5: the Airbnb redesign.
