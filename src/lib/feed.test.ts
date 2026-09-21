@@ -71,6 +71,7 @@ import {
   RADIUS_MAX_MILES,
   RADIUS_MIN_MILES,
   distanceChoiceFromValue,
+  feedZipSaveIsNoop,
   distanceSelectValue,
   type DistanceChoice,
   RADIUS_MILES_OPTIONS,
@@ -3645,5 +3646,39 @@ describe('homeZipControlLabel (V16 t06 item 2: the feed says where "near you" is
     // know.
     expect(homeZipControlLabel(null)).not.toMatch(/\d/)
     expect(homeZipControlLabel(null).toLowerCase()).not.toContain('seattle')
+  })
+})
+
+/**
+ * V16 t06 item 2 review: whether the Feed's zip Save should write at all. The
+ * first version of this rule let an empty draft through over a saved zip — the
+ * ORDINARY flow, since the field is a scratch buffer — so tapping Save showed
+ * "Add your home zip." directly beneath "Showing drop-ins near 98107", a false
+ * error contradicting the label above it. These cases pin all five branches.
+ */
+describe('feedZipSaveIsNoop (V16 t06 item 2 — Save must not raise a false error)', () => {
+  it('no-ops an empty draft over a SAVED zip (the scratch-buffer case)', () => {
+    expect(feedZipSaveIsNoop('', '98107')).toBe(true)
+    expect(feedZipSaveIsNoop('   ', '98107')).toBe(true)
+  })
+
+  it('no-ops a draft identical to the saved zip', () => {
+    expect(feedZipSaveIsNoop('98107', '98107')).toBe(true)
+    expect(feedZipSaveIsNoop('  98107  ', '98107')).toBe(true)
+  })
+
+  it('WRITES an empty draft when no zip is saved, so the validator can answer', () => {
+    // The one case that must not be swallowed: "Add your home zip." is the true
+    // and useful message here.
+    expect(feedZipSaveIsNoop('', null)).toBe(false)
+    expect(feedZipSaveIsNoop('', undefined)).toBe(false)
+    expect(feedZipSaveIsNoop('', '')).toBe(false)
+    expect(feedZipSaveIsNoop('   ', '   ')).toBe(false)
+  })
+
+  it('WRITES a real change in either direction', () => {
+    expect(feedZipSaveIsNoop('98101', '')).toBe(false)
+    expect(feedZipSaveIsNoop('98101', null)).toBe(false)
+    expect(feedZipSaveIsNoop('98101', '98107')).toBe(false)
   })
 })

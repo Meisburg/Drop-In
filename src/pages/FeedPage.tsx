@@ -37,6 +37,7 @@ import {
   DEFAULT_RADIUS_MILES,
   dueToRefreshLastSeen,
   groupByDay,
+  feedZipSaveIsNoop,
   homeZipControlLabel,
   isStartingSoon,
   localDayKey,
@@ -790,7 +791,7 @@ export function FeedPage() {
     // than inventing a zip.
     if (homeZip === '') return
     if (nextRadius === (profile.radius_miles ?? DEFAULT_RADIUS_MILES)) return
-    if (radiusBusy) return
+    if (radiusBusy || zipBusy) return
     setRadiusBusy(true)
     setRadiusControlError(null)
     try {
@@ -827,12 +828,14 @@ export function FeedPage() {
     // The same three-part guard every write handler on this page opens with.
     if (loading || session === null || profile === null) return
     const nextZip = zipDraft.trim()
-    if (zipBusy) return
-    // A save with nothing typed, or with the zip already in effect, is a no-op:
-    // it must not blank a good list for a round trip that changes nothing.
-    // (An EMPTY saved zip plus an empty draft is the one case that still has to
-    // reach the validator, so its "Add your home zip." message can be shown.)
-    if (nextZip === (profile.home_zip ?? '') && nextZip !== '') return
+    if (zipBusy || radiusBusy) return
+    // A save that changes nothing is a no-op — it must not blank a good list for
+    // a round trip that changes nothing. The rule is `feedZipSaveIsNoop` in
+    // lib/feed.ts (pure + tested), because the first version of it was WRONG in
+    // a way that showed a false error: an empty draft over a saved zip slipped
+    // through and the validator rejected it with "Add your home zip." directly
+    // under the label "Showing drop-ins near 98107".
+    if (feedZipSaveIsNoop(zipDraft, profile.home_zip)) return
     setZipBusy(true)
     setZipControlError(null)
     try {
@@ -916,7 +919,7 @@ export function FeedPage() {
             // 16px, and `scripts/mobile-audit.mjs` measures every select.
             className="min-h-11 flex-1 rounded-lg border border-slate-300 bg-white px-2 py-2 text-base text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 disabled:opacity-50"
             value={String(profile.radius_miles ?? DEFAULT_RADIUS_MILES)}
-            disabled={radiusBusy || session === null || (profile.home_zip ?? '') === ''}
+            disabled={(radiusBusy || zipBusy) || session === null || (profile.home_zip ?? '') === ''}
             onChange={(e) => void handleRadiusChoice(Number(e.target.value))}
           >
             {radiusChoices(profile.radius_miles ?? DEFAULT_RADIUS_MILES).map((choice) => (
@@ -983,7 +986,7 @@ export function FeedPage() {
             <button
               data-testid="feed-zip-save"
               type="submit"
-              disabled={zipBusy || session === null}
+              disabled={zipBusy || radiusBusy || session === null}
               className="min-h-11 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               {zipBusy ? 'Saving…' : 'Save'}

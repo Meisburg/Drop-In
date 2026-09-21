@@ -2041,6 +2041,46 @@ export function homeZipControlLabel(homeZip: string | null | undefined): string 
 }
 
 /**
+ * Whether tapping Save on the Feed's zip row should write at all (V16 t06
+ * item 2 review). Pure, so the three-way rule is assertable without a DOM.
+ *
+ * THE BUG THIS ENCODES: the first version guarded only
+ * `nextZip === savedZip && nextZip !== ''`, which let an EMPTY draft through
+ * whenever a zip WAS saved. That is the ordinary flow, not an edge case — the
+ * field is a scratch buffer that starts empty on every page load and is cleared
+ * after each successful save — so tapping Save on the empty box called
+ * `updateHomeZipRadius(user, '', radius)`, the validator rejected it with
+ * "Add your home zip.", and that false error printed directly beneath the label
+ * "Showing drop-ins near 98107": a message contradicting the line above it.
+ *
+ * The rule has two no-op cases and one that must reach the validator:
+ *
+ *   saved 98107, draft ''      -> NO-OP   (empty buffer is not a request to clear)
+ *   saved 98107, draft 98107   -> NO-OP   (nothing changed)
+ *   no zip,      draft ''      -> WRITE   ("Add your home zip." is the true answer)
+ *   no zip,      draft 98101   -> WRITE
+ *   saved 98107, draft 98101   -> WRITE
+ *
+ * The third row is why an empty draft cannot simply be "always no-op": a viewer
+ * with no zip genuinely needs the validator's message.
+ */
+export function feedZipSaveIsNoop(
+  draft: string,
+  savedZip: string | null | undefined,
+): boolean {
+  const next = draft.trim()
+  const saved = (savedZip ?? '').trim()
+  // Nothing typed over an existing zip: the buffer is empty because it is a
+  // scratch field, not because the viewer asked to clear their location.
+  if (next === '' && saved !== '') return true
+  // Both empty falls THROUGH to the validator, so it is deliberately not a
+  // no-op (see the third row of the table above).
+  if (next === '' && saved === '') return false
+  // A real value identical to what is already saved.
+  return next === saved
+}
+
+/**
  * Whether the feed is due for a visibility-triggered refetch (V8 ticket 02):
  * no load yet (null — the first load establishes the clock) or the last load
  * is at least `windowMs` old. `windowMs` is owned by the call site
