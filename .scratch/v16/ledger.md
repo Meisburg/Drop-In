@@ -75,3 +75,24 @@ V16 t04: dispatched (base 1c238bd) — agent 77d74e16. Profile page: unify photo
   already `text`, so NO migration), remove the Hosted-drop-ins card after
   verifying nothing orphaned (must check /new's own duplicate picker exists
   before deleting the only past-posts list on /profile).
+V16 t04: complete (24defc6 + dac9137, pushed 15fa3a2..dac9137). THREE LANES
+  EARNED THEIR COST: ocr found 9 issues in 24defc6 (3.46M tokens, 9m21s) and
+  FIVE were real:
+  (1) HIGH — feed-ended-out.e2e.ts has TWO tests; t04 migrated only the first,
+      so the second still asserted the deleted card and would have timed out.
+  (2) A USER-FACING DEAD END: the feed's only archive link pointed at
+      PAST_DROP_INS_HREF='/profile', which no longer lists past drop-ins after
+      the card removal. FIXED as a function pastDropInsHref(handle) ->
+      /u/<handle> with a /profile fallback. This is the best catch of the batch.
+  (3) LIKES_MAX_LENGTH had NO test (how a cap bump ships silently) -> 5 new pin
+      tests in db-v3.test.ts.
+  (4) A stale `>100` stand-in in profileSave.test.ts spuriously blocked
+      101-500-char saves -> now imports the constant.
+  (5) KidRow.likes doc still said "<=100" -> now refers to the constant.
+  Follow-up NOT hidden: queryMyPlaydatesWithClient now has no production
+  consumer (dead code kept alive by tests).
+  Gate: build 0, 910/910 (+5), lint 0 errors, playtest PASS 8 routes.
+V16 t04 content: profile photo+name unified into ONE card (visual unify; save
+  wiring untouched), likes is a textarea rows=3 with a 500 cap (NO migration —
+  kids.likes is text), Hosted-drop-ins card + its queryMyPlaydatesWithClient
+  effect removed.
