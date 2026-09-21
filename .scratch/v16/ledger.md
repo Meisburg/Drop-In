@@ -70,3 +70,8 @@ V16 t03: items 1 and 2 NOT in that commit. Item 2 (section order) was already
   (migration 0037), so no post could ever carry a stated age range again.
   Options in spec: (i) remove outright, (ii) derive from selected kids,
   (iii) move behind More options.
+V16 t04: dispatched (base 1c238bd) — agent 77d74e16. Profile page: unify photo
+  + display-name cards, fix the kid-likes input (UI-only cap; DB column is
+  already `text`, so NO migration), remove the Hosted-drop-ins card after
+  verifying nothing orphaned (must check /new's own duplicate picker exists
+  before deleting the only past-posts list on /profile).
