@@ -12,8 +12,6 @@ import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
 import {
   createPlaydate,
-  createPlaydateSeries,
-  ensureSeriesOccurrences,
   listKids,
   listPastOwnPlaydates,
   listPlaces,
@@ -29,7 +27,6 @@ import {
   formatStartDayLabel,
   isDuration,
   kidLabel,
-  localDayKey,
   nextSlotMinutes,
   pastPostStatusLabel,
   suggestedDurationMinutes,
@@ -43,7 +40,6 @@ import type {
 } from '../lib/feed'
 import type { PlaydateStatus } from '../lib/types'
 import { addressAfterPlaceTextEdit, generatedTitle } from '../lib/postSummary'
-import { mergePrefill, prefillFetch } from '../lib/prefill'
 import {
   PLACE_BROWSE_LIMIT,
   PLACE_SUGGESTION_LIMIT,
@@ -56,12 +52,6 @@ import {
 // V8 ticket 08: recording the meaningful action that may precede the
 // notification opt-in (this page arms it; the shell's PushOptInPrompt decides).
 import { armPushPromptForAction } from '../lib/pushClient'
-import {
-  deviceTimeZone,
-  everyWeekdayLabel,
-  seriesTimeLabel,
-  weekdayFromDateIso,
-} from '../lib/series'
 import type { DuplicatePrefill, Kid, Place, PlacePrefill } from '../lib/types'
 
 /**
@@ -378,11 +368,6 @@ export function NewPlaydatePage({
   // the same convenience discipline as recentPlaces above — no error state,
   // never a crash.
   const [pastPosts, setPastPosts] = useState<LastOwnPlaydate[]>([])
-  // V8 ticket 06: "Repeat weekly" — OFF by default (a one-off drop-in is the
-  // common case, and the form a parent knows must not change under them).
-  // V13 ticket 02: relocated out of More options into the visible flow after
-  // address; the SUMMARY reads the series back while it is on.
-  const [repeatWeekly, setRepeatWeekly] = useState(false)
   /**
    * V9 ticket 03: has the parent written their OWN title? The generated title
    * follows the place until they do, and never after (see
@@ -397,8 +382,7 @@ export function NewPlaydatePage({
    * V9 ticket 05: the "Ages (optional)" chip the parent pressed, or null
    * ("nothing stated"). It is NOT in PlaydateFormValues — the /edit form shares
    * that shape and the ticket scopes these chips to /new — so it rides its own
-   * page state and its own slot, exactly like `repeatWeekly` and the quick-fill
-   * preset.
+   * page state and its own slot.
    *
    * What it does on Post: feed.ageRangeFields turns it into the age_min /
    * age_max insert keys, and no chip means NO keys (so a post that states
@@ -413,17 +397,6 @@ export function NewPlaydatePage({
    * input (PlaydateFormFields owns both renderings; this owns which one).
    */
   const [titleEditing, setTitleEditing] = useState(false)
-  /**
-   * V10 ticket 03: the "Describe it instead" affordance's state — collapsed
-   * by default (the summary-first form is the primary path; this is the
-   * fallback for a NEW place or a non-today day), open while in use. The
-   * busy/error pair is its own: a failed prefill is a quiet inline line, not
-   * a blocked Post and not a crash.
-   */
-  const [describeOpen, setDescribeOpen] = useState(false)
-  const [describeText, setDescribeText] = useState('')
-  const [prefillBusy, setPrefillBusy] = useState(false)
-  const [prefillError, setPrefillError] = useState<string | null>(null)
   /**
    * V9 ticket 03 (review cycle 1, F1): has the parent TYPED (or corrected) the
    * address themselves?
@@ -686,56 +659,6 @@ export function NewPlaydatePage({
   }
 
   /**
-   * V10 ticket 03: the "Fill the form" press — one round-trip to the
-   * prefill-playdate edge function with ONLY the sentence + the two clock
-   * facts (the privacy pin; prefillFetch's own test snapshots the body), then
-   * ONE merge (prefill.mergePrefill — clamped to the form's own rules).
-   *
-   * AFTER the merge, the place is free text unless it exactly matches a
-   * directory name (resolvePlaceByName — the applyRecentPlace rule: the post
-   * never claims coordinates the LLM didn't earn). The merge never touches
-   * the neighbourhood or the kids. The parent's own edits after this always
-   * win (this runs once, on the press).
-   *
-   * Degradation: a failure is a QUIET inline line (never a crash, never a
-   * blocked Post) — the form is untouched when the call fails.
-   */
-  async function applyPrefill() {
-    const text = describeText.trim()
-    if (text === '' || prefillBusy) return
-    setPrefillBusy(true)
-    setPrefillError(null)
-    try {
-      const fields = await prefillFetch(text, localDayKey(mountedNowIso), deviceTimeZone(), fetch)
-      const merged = mergePrefill(values, fields)
-      setValues(merged.values)
-      // V12 t02: a duration the LLM extracted is the parent's words made
-      // concrete — a later start change must not re-derive over it. If the LLM
-      // stated no duration, the auto derivation stays armed (it would write the
-      // same value already on the form).
-      if (merged.applied.includes('durationMinutes')) setDurationOverridden(true)
-      setPlaceId(resolvePlaceByName(merged.values.place, places ?? [])?.id ?? null)
-      setPicker('closed')
-      setErrors((prev) => ({
-        ...prev,
-        place: undefined,
-        startDate: undefined,
-        startMinutes: undefined,
-        durationMinutes: undefined,
-        title: undefined,
-      }))
-      // The merged title is generated-or-LLM text, not the parent's typed
-      // words — the generated-title follow rule stays armed until they edit.
-      setTitleTouched(false)
-      setPrefillError(null)
-    } catch {
-      setPrefillError('Couldn\u2019t fill the form from that — try again or fill it in below.')
-    } finally {
-      setPrefillBusy(false)
-    }
-  }
-
-  /**
    * V8 ticket 07: picking a suggestion fills the place, the address and the
    * neighborhood in ONE tap, plus the place_id that makes the post's location
    * the place's coordinates.
@@ -813,11 +736,11 @@ export function NewPlaydatePage({
   }
 
 
-  // V13 ticket 04: the "Post again" picker's row labels — each row states the
+  // V15 T05 (A10): the "Post again" picker's row labels — each row states the
   // plan it will write (the title + the day the clone will land on), computed
   // from the SAME seam the tap applies (cloneLastPost), so a label cannot
   // promise something else. The status label (Ended / Cancelled) rides along
-  // so ended/cancelled posts stay visible and distinguishable (AC3).
+  // so ended/cancelled posts stay visible and distinguishable.
   const pastPostRows = pastPosts.map((post) => {
     const clone = cloneLastPost(post, mountedNowIso)
     return {
@@ -827,15 +750,12 @@ export function NewPlaydatePage({
     }
   })
   // The picker row's classes: the recent-place chip's pill, at the form's 44px
-  // floor (minTouchTargets is on for this page — the class is spelled out
-  // because a slot carries its own markup; the form's `touch()` helper is not
-  // in scope).
+  // floor (minTouchTargets is on for this page).
   const lastPostClassName =
     'min-h-11 w-fit max-w-full rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-left text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100'
-  // V8 ticket 06: the weekday the "Repeat weekly" control is about, derived
-  // from the chosen start date ('' until a date is chosen — the pure seam
-  // says nothing rather than guessing).
-  const repeatWeeklyLabel = everyWeekdayLabel(weekdayFromDateIso(values.startDate))
+
+  // V15 T05 (A10): the top-of-page duplicate picker state.
+  const [dupPickerOpen, setDupPickerOpen] = useState(false)
   /**
    * V10 ticket 02: the SURFACED kids section — the picker as its own block
    * LAST in the form flow (before Post), passed ONLY when the loaded list is non-empty. The
@@ -926,38 +846,6 @@ export function NewPlaydatePage({
       // the moment the parent meant, whatever their timezone). The end is
       // always computed (start + duration) — never typed.
       const trimmedDetails = values.details.trim() || undefined
-      // V8 ticket 06: "Repeat weekly" — derive the weekday from the chosen
-      // start date (the pure seam: a date with no parts yields null, and
-      // validation has already required a date) and create the series FIRST,
-      // so the post below can carry its id. The series stores the WALL CLOCK
-      // rule + the browser's IANA zone; the instant is never stored (10 AM
-      // stays 10 AM across the March and November transitions).
-      //
-      // This order is also the documented red-by-design point pre-0028-apply:
-      // the missing table fails the submit here, before anything is written.
-      // A failed POST create AFTER a successful series create would leave an
-      // unreferenced series row (no occurrences, invisible in the UI — the
-      // series line only renders for a post that points at one); that is
-      // preferable to a post that fails for a reason the parent cannot act on.
-      const seriesWeekday = weekdayFromDateIso(values.startDate)
-      let seriesId: string | undefined
-      if (repeatWeekly && seriesWeekday !== null) {
-        const series = await createPlaydateSeries({
-          title: title.trim(),
-          place: placeText,
-          address: trimmedAddress.length > 0 ? trimmedAddress : undefined,
-          details: trimmedDetails,
-          neighborhoodId: values.neighborhoodId,
-          weekday: seriesWeekday,
-          startMinutes: values.startMinutes,
-          durationMinutes: values.durationMinutes,
-          timezone: deviceTimeZone(),
-          // V8 ticket 07: the series carries the place too, when one was picked
-          // (the key is omitted entirely for free text — placeIdField).
-          placeId: placeId ?? undefined,
-        })
-        seriesId = series.id
-      }
       const createdPlaydate = await createPlaydate({
         title: title.trim(),
         place: placeText,
@@ -966,7 +854,6 @@ export function NewPlaydatePage({
         endsAt: computeEndIso(values.startDate, values.startMinutes, values.durationMinutes),
         details: trimmedDetails,
         address: trimmedAddress.length > 0 ? trimmedAddress : undefined,
-        seriesId,
         // V8 ticket 07: the picked place. undefined for free text, so the
         // insert payload carries no place_id key at all.
         placeId: placeId ?? undefined,
@@ -978,21 +865,6 @@ export function NewPlaydatePage({
         ageMin: ageRange?.min,
         ageMax: ageRange?.max,
       })
-      // V8 ticket 06: the occurrences the parent is not looking at. The post
-      // just created IS this series' first occurrence and the generator
-      // skips it (the unique (series_id, starts_at) index + on conflict do
-      // nothing), so this only fills in the weeks ahead.
-      //
-      // Swallowed on purpose: the series and the post are already real, and
-      // the host opening this post later re-runs the same generator (the
-      // pinned (a)+(b) strategy), so a failed top-up here is transient, not
-      // a reason to fail a post that exists. Nothing is silently lost: the
-      // weeks simply arrive on the next open.
-      if (seriesId !== undefined) {
-        await ensureSeriesOccurrences(seriesId).catch(() => {
-          /* Swallowed — the host's next open of this post regenerates. */
-        })
-      }
       // V3 slice 6 (ticket 09): land the picker's selection in playdate_kids
       // right after the create succeeds (replace-on-duplicate — the post is
       // fresh, so this is effectively the insert). An empty selection
@@ -1043,6 +915,62 @@ export function NewPlaydatePage({
           </p>
         </div>
       ) : null}
+
+      {/* V15 T05 (A10): the top-of-page duplicate picker — a two-choice header
+          ("Create new" | "Duplicate existing") that sits ABOVE the form.
+          Selecting "Duplicate existing" opens a lightbox listing all past posts;
+          selecting one calls applyLastPost(row.post). */}
+      <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-3">
+        <span className="text-sm font-medium text-slate-700">Start from</span>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            data-testid="dup-create"
+            onClick={() => setDupPickerOpen(false)}
+            className={
+              'min-h-11 flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ' +
+              (!dupPickerOpen
+                ? 'border-indigo-600 bg-indigo-600 text-white'
+                : 'border-slate-300 bg-white text-slate-700')
+            }
+          >
+            Create new
+          </button>
+          <button
+            type="button"
+            data-testid="dup-duplicate"
+            onClick={() => setDupPickerOpen(true)}
+            disabled={pastPosts.length === 0}
+            className={
+              'min-h-11 flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition-colors disabled:opacity-40 ' +
+              (dupPickerOpen
+                ? 'border-indigo-600 bg-indigo-600 text-white'
+                : 'border-slate-300 bg-white text-slate-700')
+            }
+          >
+            Duplicate existing
+          </button>
+        </div>
+        {dupPickerOpen && pastPosts.length > 0 ? (
+          <div className="flex max-h-64 flex-col gap-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
+            {pastPostRows.map((row) => (
+              <button
+                key={row.post.id}
+                type="button"
+                data-testid="post-again"
+                onClick={() => {
+                  applyLastPost(row.post)
+                  setDupPickerOpen(false)
+                }}
+                className={lastPostClassName}
+              >
+                {row.label}
+                {row.statusLabel !== null ? ` · ${row.statusLabel}` : ''}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
 
       {/* V9 ticket 01 (T7): the `loadError` wall is GONE. It existed because
           the neighbourhood select was REQUIRED and its options had to load —
@@ -1126,143 +1054,6 @@ export function NewPlaydatePage({
              <PlacePickerMap places={places} zipCoords={null} onPick={pickPlace} />
            ) : null
          }
-        /* V13 ticket 04: the "Post again" picker — a list of the parent's past
-            drop-ins (most recent first; each row: place + date + status label),
-            rendered as a slot so the form component stays stateless (the preset
-            pattern). Passed ONLY when at least one post loaded: a first-timer
-            sees no picker at all, not an empty one (the recentChipsBlock rule).
-            Selecting a row pre-fills the whole plan (place, time window,
-            address, kids, details) via applyLastPost. */
-        postAgainSlot={
-          pastPosts.length > 0 ? (
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500">Post again</span>
-              {pastPostRows.map((row) => (
-                <button
-                  key={row.post.id}
-                  type="button"
-                  data-testid="post-again"
-                  onClick={() => applyLastPost(row.post)}
-                  className={lastPostClassName}
-                >
-                  {row.label}
-                  {row.statusLabel !== null ? ` · ${row.statusLabel}` : ''}
-                </button>
-              ))}
-            </div>
-          ) : null
-        }
-        /* V10 ticket 03: the "Describe it instead" affordance — one sentence
-           in, the form filled for review. Collapsed by default; a failed
-           prefill is a quiet inline line, never a blocked Post. */
-        describeSlot={
-          <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <span className="text-sm font-medium text-slate-700">How do you want to fill this in?</span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                data-testid="describe-toggle"
-                onClick={() => setDescribeOpen(true)}
-                className={
-                  'min-h-11 flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ' +
-                  (describeOpen
-                    ? 'border-indigo-600 bg-indigo-600 text-white'
-                    : 'border-slate-300 bg-white text-slate-700')
-                }
-              >
-                Describe with AI
-              </button>
-              <button
-                type="button"
-                data-testid="write-yourself"
-                onClick={() => setDescribeOpen(false)}
-                className={
-                  'min-h-11 flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ' +
-                  (!describeOpen
-                    ? 'border-indigo-600 bg-indigo-600 text-white'
-                    : 'border-slate-300 bg-white text-slate-700')
-                }
-              >
-                Write it yourself
-              </button>
-            </div>
-            {describeOpen ? (
-              <>
-                <label className="flex flex-col gap-1 text-sm" htmlFor="describe-input">
-                  <span className="text-slate-700">Describe your playdate</span>
-                  <textarea
-                    id="describe-input"
-                    data-testid="describe-input"
-                    rows={2}
-                    maxLength={300}
-                    value={describeText}
-                    onChange={(e) => setDescribeText(e.target.value)}
-                    placeholder="e.g. Green Lake tomorrow 10 to noon, best for 2-5"
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                  />
-                </label>
-                <button
-                  type="button"
-                  data-testid="describe-fill"
-                  onClick={applyPrefill}
-                  disabled={prefillBusy || describeText.trim() === ''}
-                  className="min-h-11 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-                >
-                  {prefillBusy ? 'Filling…' : 'Fill the form'}
-                </button>
-                {prefillError !== null ? (
-                  <p data-testid="describe-error" className="text-sm text-red-600">
-                    {prefillError}
-                  </p>
-                ) : (
-                  <p className="text-xs text-slate-500">
-                    Fills the form below — review it, then Post. Nothing posts itself.
-                  </p>
-                )}
-              </>
-            ) : null}
-          </div>
-        }
-          /* V8 ticket 06: the "Repeat weekly" control — off by default. The
-             weekday is DERIVED from the chosen start date and said back in
-             words, so a parent sees the rule they are about to create ("every
-             Saturday") rather than having to work it out from the date field.
-             Nothing is submitted here; it only arms the series on Post. */
-          repeatSlot={
-            <div className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <button
-                type="button"
-                aria-pressed={repeatWeekly}
-                data-testid="repeat-weekly"
-                onClick={() => setRepeatWeekly((prev) => !prev)}
-                className={
-                  'min-h-11 w-full rounded-xl border px-4 py-2 text-sm font-medium transition-colors ' +
-                  (repeatWeekly
-                    ? 'border-indigo-600 bg-indigo-600 text-white'
-                    : 'border-slate-300 bg-white text-slate-700')
-                }
-              >
-                Repeat weekly
-              </button>
-              {repeatWeekly ? (
-                repeatWeeklyLabel !== '' ? (
-                  <p data-testid="repeat-weekly-label" className="text-xs text-slate-600">
-                    Repeats{' '}
-                    <span className="font-medium text-indigo-700">{repeatWeeklyLabel}</span> at{' '}
-                    {seriesTimeLabel(values.startMinutes)} — the weeks ahead post themselves.
-                  </p>
-                ) : (
-                  <p className="text-xs text-slate-600">
-                    Pick a start date and this becomes a standing weekly meetup.
-                  </p>
-                )
-              ) : (
-                <p className="text-xs text-slate-500">
-                  Off — this is a one-off. Turn it on for a standing meetup.
-                </p>
-              )}
-            </div>
-          }
         /* V9 ticket 05: the "Ages (optional)" chips — inside the same "More
            options" disclosure, under the kids picker (PlaydateFormFields
            renders this slot there). Tapping the pressed chip again clears it,

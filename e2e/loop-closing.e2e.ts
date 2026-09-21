@@ -56,9 +56,11 @@
 import { expect, test } from '@playwright/test'
 import type { Browser, BrowserContext, Page } from '@playwright/test'
 import { nextOccurrencePlan, placeFollowerLine } from '../src/lib/follows'
+import { weekdayFromDateIso } from '../src/lib/series'
 import {
   editTitle,
   localDatePlusDays,
+  parseTimeLabel,
   readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
@@ -220,7 +222,6 @@ async function postDropIn(
   options: {
     title: string
     startDate: string
-    weekly?: boolean
     durationLabel?: string
   },
 ): Promise<MarkerPostRow> {
@@ -236,11 +237,6 @@ async function postDropIn(
   // V13 ticket 02: the date + the 30-minute stepper live in the visible "When" section (the disclosure is gone).
   await page.locator('input[type="date"]').fill(options.startDate)
   await page.getByRole('button', { name: options.durationLabel ?? '1h', exact: true }).click()
-  if (options.weekly === true) {
-    const repeat = page.getByTestId('repeat-weekly')
-    await repeat.click()
-    await expect(repeat).toHaveAttribute('aria-pressed', 'true')
-  }
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/', { timeout: 20_000 })
   const rows = await markerSelect<MarkerPostRow>(
@@ -250,6 +246,51 @@ async function postDropIn(
   const row = rows[0]
   if (row === undefined) throw new Error(`the post "${options.title}" did not land`)
   return row
+}
+
+/**
+ * V15 T05 (A12): seed a weekly series via REST (the UI toggle is gone).
+ * Creates a playdate_series row and links the post to it.
+ */
+async function seedWeeklySeries(page: Page, postId: string, startDate: string): Promise<string> {
+  const weekday = weekdayFromDateIso(startDate)
+  if (weekday === null) throw new Error(`Not a calendar date: "${startDate}"`)
+  const startMinutes = parseTimeLabel(await page.getByTestId('start-time-label').innerText())
+  const url = readSupabaseEnv().url
+  const headers = { ...markerHeaders(), Prefer: 'return=representation' }
+  const response = await fetch(`${url}/rest/v1/playdate_series`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      title: 'e2e loop weekly',
+      place: PLACE,
+      neighborhood_id: null,
+      details: null,
+      address: null,
+      weekday,
+      start_minutes: startMinutes,
+      duration_minutes: 60,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      active: true,
+    }),
+  })
+  if (!response.ok) {
+    throw new Error(`Failed to create series: HTTP ${response.status} ${await response.text()}`)
+  }
+  const series = (await response.json()) as { id: string }
+  // Link the post to the series.
+  const linkResponse = await fetch(
+    `${url}/rest/v1/playdates?id=eq.${postId}`,
+    {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ series_id: series.id }),
+    },
+  )
+  if (!linkResponse.ok) {
+    throw new Error(`Failed to link post to series: HTTP ${linkResponse.status} ${await linkResponse.text()}`)
+  }
+  return series.id
 }
 
 test('a follow is a bookmark: the card says who you met, and an ended post offers next week', async ({
@@ -290,8 +331,10 @@ test('a follow is a bookmark: the card says who you met, and an ended post offer
   const endedWeekly = await postDropIn(page, {
     title: titleEndedWeekly,
     startDate: localDatePlusDays(-1),
-    weekly: true,
   })
+  // V15 T05 (A12): the weekly series is seeded via REST (the UI toggle is gone).
+  const weeklySeriesId = await seedWeeklySeries(page, endedWeekly.id, localDatePlusDays(-1))
+  endedWeekly.series_id = weeklySeriesId
   const next = await postDropIn(page, {
     title: titleNext,
     startDate: localDatePlusDays(0),

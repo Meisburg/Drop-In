@@ -576,10 +576,11 @@ test('the title is generated, read back, editable in place — the extras are be
   await expect(page.locator('input[type="date"]')).toBeVisible()
   await expect(page.getByTestId('start-time-label')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Later start time' })).toBeVisible()
-  // The visible tail block: address, details, repeat weekly all render.
+  // The visible tail block: address, details render.
   await expect(page.getByPlaceholder(ADDRESS_PLACEHOLDER)).toBeVisible()
   await expect(page.getByPlaceholder(DETAILS_PLACEHOLDER)).toBeVisible()
-  await expect(page.getByTestId('repeat-weekly')).toBeVisible()
+  // V15 T05 (A12): the "Repeat weekly" toggle is gone from /new.
+  await expect(page.getByTestId('repeat-weekly')).toHaveCount(0)
   // V12 t02: the duration override chips live in the visible flow (the /new
   // fast path reads the auto-picked duration back in the visible flow).
   for (const label of DURATION_CHIP_LABELS) {
@@ -590,42 +591,6 @@ test('the title is generated, read back, editable in place — the extras are be
   // there are no fields behind a door) — pinned here so a regression that
   // re-introduces a hidden field set is caught.
   expect([...MORE_OPTIONS_FIELDS]).toEqual([])
-
-  // (7) "Repeat weekly" is behind the door — and the summary states the series
-  //     ONLY while the submit would really create one (review cycle 1, F3).
-  const repeat = page.getByTestId('repeat-weekly')
-  const dateInput = page.locator('input[type="date"]')
-  const dateValue = await dateInput.inputValue()
-  expect(dateValue).not.toBe('')
-  await expect(repeat).toHaveAttribute('aria-pressed', 'false')
-  await repeat.click()
-  await expect(repeat).toHaveAttribute('aria-pressed', 'true')
-  const repeatLine = postSummaryLines(
-    { ...mountValues(new Date().toISOString()), startDate: dateValue, place: FREETEXT_PLACE },
-    { repeatsWeekly: true },
-  )
-  let lines = await summaryLines(page)
-  expect(lines).toHaveLength(4)
-  expect(lines[3]).toBe(repeatLine[3])
-  expect(lines[3].startsWith('Repeats every ')).toBe(true)
-
-  // Clear the start date: the submit would create NO series (its own guard needs
-  // a weekday), so the promise goes — and the control says why. The old version
-  // of this spec pinned the opposite, which is the silent series of F3.
-  await dateInput.fill('')
-  lines = await summaryLines(page)
-  expect(lines).toHaveLength(3)
-  await expect(repeat).toHaveAttribute('aria-pressed', 'true')
-  await expect(
-    page.getByText('Pick a start date and this becomes a standing weekly meetup.'),
-  ).toBeVisible()
-
-  // Put the date back → the promise returns; then turn it off for the post below.
-  await dateInput.fill(dateValue)
-  expect(await summaryLines(page)).toHaveLength(4)
-  await repeat.click()
-  await expect(repeat).toHaveAttribute('aria-pressed', 'false')
-  await expect(page.getByTestId('post-summary-line')).toHaveCount(3)
 
   // (8) A TYPED title is the title that posts (the affordance proved, not
   //     assumed): type it, post (V13 ticket 03: auto-duration is already set),

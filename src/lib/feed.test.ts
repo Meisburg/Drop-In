@@ -1515,9 +1515,9 @@ describe('the age-range seams (V9 ticket 05: ages first on a card)', () => {
     })
   })
 
-  describe('kidLabel (a kid whose name may be absent — V9 ticket 05)', () => {
-    it('reads "Name · Age" when both are known', () => {
-      expect(kidLabel('Bernie', 6)).toBe('Bernie · 6')
+  describe('kidLabel (a kid whose name may be absent — V9 ticket 05, V15 T05 A13)', () => {
+    it('reads "Name · Age N" when both are known', () => {
+      expect(kidLabel('Bernie', 6)).toBe('Bernie · Age 6')
     })
 
     it('reads "Age 6" for a nameless kid — never " · 6", never "null"', () => {

@@ -332,7 +332,7 @@ test('a kid’s name reaches the host and a pinger — and never a signed-in str
   const detailPath = await postWithKids(
     page,
     title,
-    kids.map((kid) => `${kid.first_name} · ${kid.age}`),
+    kids.map((kid) => `${kid.first_name} · Age ${kid.age}`),
   )
   const postId = detailPath.slice('/playdate/'.length)
 
@@ -359,7 +359,7 @@ test('a kid’s name reaches the host and a pinger — and never a signed-in str
   await expect(page.getByText("Kids you're bringing")).toBeVisible()
   for (const kid of kids) {
     await expect(
-      page.getByRole('button', { name: `${kid.first_name} · ${kid.age}`, exact: true }),
+      page.getByRole('button', { name: `${kid.first_name} · Age ${kid.age}`, exact: true }),
     ).toHaveAttribute('aria-pressed', 'true')
   }
   await page.getByRole('button', { name: 'Save changes' }).click()

@@ -129,9 +129,15 @@ test('the Post-again picker clones the whole last post and posts it with the tim
   await page.goto('/new')
   await settleOnRoute(page, '/new')
 
-  // The picker: present, leads the shortcuts, and its label names the plan
-  // (the title + the day the clone will land on). V13 ticket 04: the picker
-  // shows a list of past posts (most recent first), not a single silent chip.
+  // V15 T05 (A10): the "Post again" picker moved to the top of the page as a
+  // two-choice header ("Create new" | "Duplicate existing"). Selecting
+  // "Duplicate existing" opens a lightbox listing all past posts.
+  const dupButton = page.getByTestId('dup-duplicate')
+  await expect(dupButton).toBeVisible()
+  await dupButton.click()
+
+  // The lightbox: present, lists past posts (most recent first), and its label
+  // names the plan (the title + the day the clone will land on).
   const pickerRows = page.getByTestId('post-again')
   await expect(pickerRows.first()).toBeVisible()
   await expect(pickerRows.first()).toContainText(seedTitle)
@@ -190,6 +196,9 @@ test('a parent with no posts sees no Post-again picker', async ({ page }) => {
 
   await page.goto('/new')
   await settleOnRoute(page, '/new')
+  // V15 T05 (A10): the picker is now behind the "Duplicate existing" button.
+  // With no posts, the button is disabled and the lightbox never opens.
+  await expect(page.getByTestId('dup-duplicate')).toBeDisabled()
   await expect(page.getByTestId('post-again')).toHaveCount(0)
   // The form is otherwise exactly today's form: the summary opens, the
   // recent-places row is absent (no posts), and nothing crashed.

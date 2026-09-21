@@ -178,7 +178,7 @@ async function postMarkerDropInWithKids(
   await expect(page.getByText('Kids you\'re bringing')).toBeVisible()
   await expect(page.getByText('Add your kids in your settings')).toHaveCount(0)
   for (const kid of kids) {
-    await page.getByRole('button', { name: `${kid.first_name} · ${kid.age}`, exact: true }).click()
+    await page.getByRole('button', { name: `${kid.first_name} · Age ${kid.age}`, exact: true }).click()
   }
 
   await page.getByRole('button', { name: 'Post drop-in' }).click()
@@ -224,7 +224,7 @@ test('the /new kids picker lands a selection that shows as the "Kids coming" lin
   //   const line = page.locator('p').filter({ hasText: 'Kids coming:' })
   //   await expect(line).toHaveText(`Kids coming: ${expectedLine}`)
   //
-  // i.e. "Kids coming: Bernie · 6, Lily · 4" — the per-kid name·age pairs. The
+  // i.e. "Kids coming: Bernie · Age 6, Lily · Age 4" — the per-kid name·age pairs. The
   // ticket re-pins the line itself: "the detail page's 'Kids coming' line is
   // demoted from names-first to AGES-first ('Ages 3–6 · Bernie, Lily' — names
   // last)". So the expectation BELOW is the new rule over the same kids (4 and

@@ -305,7 +305,7 @@ test('the card leads with the ages of the kids the host is bringing — and neve
   // Part 1a: two kids (3 and 6), no chip → the DERIVED range.
   await postDropIn(page, {
     title: withKidsTitle,
-    kidLabels: kids.map((kid) => `${kid.first_name} · ${kid.age}`),
+    kidLabels: kids.map((kid) => `${kid.first_name} · Age ${kid.age}`),
     chip: null,
   })
 
@@ -389,7 +389,7 @@ test('the explicit "Ages (optional)" chips are stored and win over the derived r
   // parent said it out loud, so 2–5 is what the card must read.
   await postDropIn(page, {
     title,
-    kidLabels: kids.map((kid) => `${kid.first_name} · ${kid.age}`),
+    kidLabels: kids.map((kid) => `${kid.first_name} · Age ${kid.age}`),
     chip: '2–5',
   })
 

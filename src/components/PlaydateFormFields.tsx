@@ -187,29 +187,11 @@ export interface PlaydateFormFieldsProps {
   /** /new only: the quick-fill preset card, rendered inside the form first. */
   preset?: ReactNode
   /**
-   * V10 ticket 01: the /new-only "Post again" chip (the whole last post in one
-   * tap), rendered ABOVE the recent-place chips — it is the BIGGER shortcut
-   * (everything, not just the place), so it leads. Another slot rather than
-   * props for the exact reason `preset` is one: this component owns no state,
-   * and the EDIT form passes nothing, so no dead control appears there.
-   */
-  postAgainSlot?: ReactNode
-  /**
-   * V8 ticket 06: the /new-only "Repeat weekly" control (the series toggle +
-   * the weekday it derives from the chosen start date), rendered under the
-   * duration chips — next to the time it repeats. Passed in as a slot for the
-   * same reason as `preset`: this component owns no state and no submit
-   * logic, and the EDIT form must never show it (changing one occurrence of a
-   * series is not how a series is edited).
-   */
-  repeatSlot?: ReactNode
-  /**
    * V9 ticket 05: the /new-only "Ages (optional)" chip row (the exported
    * AgeRangeChips above), rendered in the VISIBLE tail block (V13 t02) —
    * under the kids picker, which is the same subject ("who's coming / what
-   * ages"). Another slot rather than props, for the exact reason `repeatSlot`
-   * is one: this component owns no state, and the EDIT form passes nothing, so
-   * no dead control appears there.
+   * ages"). Another slot rather than props: this component owns no state, and
+   * the EDIT form passes nothing, so no dead control appears there.
    */
   agesSlot?: ReactNode
   /**
@@ -221,13 +203,6 @@ export interface PlaydateFormFieldsProps {
    * owns no state, and /edit passes nothing, so no dead control appears there.
    */
   kidsSectionSlot?: ReactNode
-  /**
-   * V10 ticket 03: the /new-only "Describe it instead" affordance (the LLM
-   * prefill), rendered under the quick-fill preset — the LAST shortcut row,
-   * because it is the broadest but least certain path (the form-first
-   * shortcuts lead). Another stateless slot.
-   */
-  describeSlot?: ReactNode
   submitLabel: string
   submittingLabel: string
   submitBusy: boolean
@@ -261,10 +236,7 @@ export function PlaydateFormFields({
   onSomewhereElse,
   mapSlot,
   preset,
-  postAgainSlot,
   kidsSectionSlot,
-  describeSlot,
-  repeatSlot,
   agesSlot,
   submitLabel,
   submittingLabel,
@@ -658,11 +630,10 @@ line. No kids yet → the designed empty state + the /settings link (the
                       : 'border-slate-300 bg-white text-slate-700'),
                 )}
               >
-                {/* V9 ticket 05: a kid's first name is optional, so a nameless
-                    kid's chip reads "Age 6" rather than " · 6" (feed.kidLabel
-                    — the one seam every kid label goes through). A NAMED kid's
-                    chip is byte-identical to the V3 line the specs click by
-                    accessible name: "Bernie · 6". */}
+                {/* V15 T05 (A13): a kid's first name is optional, so a nameless
+                    kid's chip reads "Age 6" rather than just "6". A NAMED kid's
+                    chip now includes the "Age" prefix: "Bernie · Age 6"
+                    (feed.kidLabel — the one seam every kid label goes through). */}
                 {kidLabel(kid.first_name, kid.age)}
               </button>
             )
@@ -743,7 +714,6 @@ line. No kids yet → the designed empty state + the /settings link (the
   const moreTailBlock =
     summaryLines === undefined ? null : (
       <>
-        {repeatSlot}
         {agesSlot}
         {detailsBlock}
       </>
@@ -767,13 +737,8 @@ line. No kids yet → the designed empty state + the /settings link (the
       {summaryLines !== undefined ? (
         <>
           {summaryBlock}
-          {/* V13 ticket 02: the describe 2-option choice leads — the parent
-              picks "describe with AI" or "write it yourself" before anything
-              else. /edit passes nothing here. */}
-          {describeSlot}
           {placeBlock}
           {mapSlot}
-          {postAgainSlot}
           {/* V13 ticket 03: the END stepper replaces the duration read-back —
               three picks (date, start, end), no "how long" control. */}
           {whenBlock}
@@ -802,7 +767,6 @@ line. No kids yet → the designed empty state + the /settings link (the
           {neighborhoodBlock}
           {startBlock}
           {durationBlock}
-          {repeatSlot}
           {kidsBlock}
           {detailsBlock}
         </>
@@ -815,7 +779,6 @@ line. No kids yet → the designed empty state + the /settings link (the
           {neighborhoodBlock}
           {startBlock}
           {durationBlock}
-          {repeatSlot}
           {kidsBlock}
           {detailsBlock}
         </>

@@ -1416,10 +1416,11 @@ export function ageRangeFields(
 /**
  * One kid's own label, where the NAME MAY BE ABSENT (V9 ticket 05: a first
  * name is optional — "names are optional and when people start to put names
- * like some people get weird about that"). "Bernie · 6" when both are known,
+ * like some people get weird about that"). "Bernie · Age 6" when both are known,
  * "Bernie" for a name with no age, "Age 6" for an age with no name — never
  * " · 6" (the dangling separator that reads as a rendering bug) and never the
- * word "null". Nothing at all → '' (the caller decides what, if anything, to
+ * word "null". A named kid with an age now includes the "Age" prefix:
+ * "Bernie · Age 6" (V15 T05 A13). Nothing at all → '' (the caller decides what, if anything, to
  * render).
  */
 export function kidLabel(
@@ -1428,7 +1429,7 @@ export function kidLabel(
 ): string {
   const trimmed = (name ?? '').trim()
   const hasAge = typeof age === 'number' && Number.isFinite(age)
-  if (trimmed !== '' && hasAge) return `${trimmed} · ${age}`
+  if (trimmed !== '' && hasAge) return `${trimmed} · Age ${age}`
   if (trimmed !== '') return trimmed
   if (hasAge) return `Age ${age}`
   return ''

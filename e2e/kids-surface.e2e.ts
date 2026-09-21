@@ -9,7 +9,7 @@
  *  1. THE SURFACED SECTION. With the marker's seeded kids live, /new renders
  *     the "kids-section" LAST in the form flow (after When/address/repeat/ages,
  *     before the Post button), with the same chips (accessible names
- *     "Bernie · 6" — kidLabel, V9 t05's optional-name rule), the same
+ *     "Bernie · Age 6" — kidLabel, V15 T05 A13's optional-name rule), the same
  *     aria-pressed state, and ≥44px targets (min-h-11).
  *  2. NO DISCLOSURE. There is no "more-options" toggle, no hint line, and no
      `more-options-body` container — everything that lived behind the door now
@@ -95,7 +95,7 @@ test('with kids, the picker surfaces above the disclosure, the hint swaps, and a
   await expect(page.getByText("Kids you're bringing")).toBeVisible()
   for (const kid of kids) {
     const chip = section.getByRole('button', {
-      name: `${kid.first_name} · ${kid.age}`,
+      name: `${kid.first_name} · Age ${kid.age}`,
       exact: true,
     })
     await expect(chip).toBeVisible()
@@ -133,7 +133,7 @@ test('with kids, the picker surfaces above the disclosure, the hint swaps, and a
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   for (const kid of kids) {
     const chip = section.getByRole('button', {
-      name: `${kid.first_name} · ${kid.age}`,
+      name: `${kid.first_name} · Age ${kid.age}`,
       exact: true,
     })
     await chip.click()
