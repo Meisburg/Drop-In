@@ -55,19 +55,55 @@ Plain `git push origin master`; no force, no amend, no rebase.
 
 ## The machine now enforces this
 
-As of 2026-09-21 the three conditions are no longer advice. `scripts/pre-push`
-is installed into `.git/hooks/pre-push` (via `bash scripts/install-git-hooks.sh`)
-and refuses a push to master when:
+As of 2026-09-21 the three conditions are no longer advice. The hook lives at
+**`scripts/git-hooks/pre-push`** — a *tracked* file — and git is pointed at it
+with `core.hooksPath`, so the hook body travels with every clone.
+
+It refuses a push to master when:
 
 | Condition | Hook behaviour |
 |---|---|
 | Rule 2 (clean range) | Always enforced. Cannot be skipped. |
+| Rule 3 (fast-forward) | Always enforced. Cannot be skipped. |
 | Rule 1 (gate green) | Enforced — runs `npm run verify`. Skip with `FAST_PUSH=1`. |
-| Rule 3 (fast-forward) | Not enforced — git itself rejects non-ff on a plain push. |
 
 ```bash
 FAST_PUSH=1 git push origin master   # skip the build/test/lint gate only
 ```
 
-`FAST_PUSH=1` intentionally does **not** bypass the range check: that check is
-seconds, and it is the one that has already failed in production once.
+`FAST_PUSH=1` intentionally does **not** bypass rules 2 and 3: those are
+seconds, and the range check is the one that has already failed in production
+once.
+
+### Why `core.hooksPath` and not `.git/hooks/`
+
+`.git/hooks/` is **not version-controlled**. A hook copied there is invisible to
+every clone, and it is lost entirely if `.git/` is ever recreated — at which
+point enforcement silently reverts to "trust the agent", the exact failure this
+hook exists to prevent.
+
+`core.hooksPath` is *local* config and does not travel with a clone either, so
+the config is self-healed two ways:
+
+1. **`npm install` does it for you** — the `prepare` script runs
+   `scripts/install-git-hooks.sh`. Any fresh clone that installs dependencies is
+   gated automatically, with no manual step.
+2. **Manually, once:** `bash scripts/install-git-hooks.sh` (or
+   `npm run hooks:install`).
+
+Both are idempotent. If you are ever unsure whether the gate is live:
+
+```bash
+git config core.hooksPath          # expect: scripts/git-hooks
+git rev-parse --git-path hooks/pre-push   # expect: scripts/git-hooks/pre-push
+```
+
+If that prints `.git/hooks/pre-push`, the gate is **not** armed in this clone.
+
+### Verified behaviour (2026-09-21)
+
+Each rule was observed firing, not assumed: a dirty range containing
+`supabase/.temp/linked-project.json` was blocked (`FAST_PUSH=1` could not bypass
+it), a red gate (`"verify": "exit 7"`) was blocked, a non-fast-forward was
+blocked, a clean+green range passed, and non-master pushes skip the gate
+entirely.

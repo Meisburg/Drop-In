@@ -293,7 +293,8 @@ Everything below is now in the repo, verified. See §8 for the evidence.
 
 1. ✅ **Pinned the gate as artifacts** — `npm run verify`
    (`build && test && lint && steering-lint`) and `npm run typecheck`, plus a
-   real pre-push hook (`scripts/pre-push` + `scripts/install-git-hooks.sh`).
+   real pre-push hook (`scripts/git-hooks/pre-push`, tracked via
+   `core.hooksPath` + `scripts/install-git-hooks.sh`).
 2. ✅ **Pruned `AGENTS.md`** — 3,150 → 1,660 words; four docs extracted
    (`auto-push.md`, `browser-lanes.md`, `coordinator.md`, `model-routing.md`).
 3. ✅ **Slice-budget line** added to `plan.template.md`, citing the 98k window.
