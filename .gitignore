@@ -72,3 +72,10 @@ opencode.json
 # Supabase CLI local state (machine-specific: linked project ref, cached CLI
 # version). Never version-control -- see V16 t07 item 3 review.
 supabase/.temp/
+
+# A literal `~/` directory: the result of a shell that failed to expand a tilde
+# (e.g. `--user-data-dir=~/.hermes/...` inside a quoted string). On 2026-09-21
+# one existed here holding a 6.7MB copy of the headless Chrome profile, and it
+# pulled browser binaries into every lint scan. Never a source file.
+~/
+

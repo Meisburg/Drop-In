@@ -11,7 +11,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
-    "lint": "oxlint",
+    "lint": "oxlint --ignore-pattern '.scratch/**' --ignore-pattern '.agents/**' --ignore-pattern '.qa/**' --ignore-pattern 'dist/**'",
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",

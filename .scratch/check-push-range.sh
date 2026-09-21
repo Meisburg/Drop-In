@@ -50,6 +50,12 @@ FORBIDDEN=(
   '^\.env\.push\.local$'
   '^\.vercel/'
   '(^|/)tsconfig\.sw\.json$'
+  # A literal `~/` directory (a shell that failed to expand a tilde) is a real
+  # hazard: on 2026-09-21 one existed here holding a 6.7MB copy of the headless
+  # Chrome profile from `~/.hermes/playtest-hl`. It was untracked and UNIGNORED,
+  # so any `git add -A` would have swept it in — and it also silently pulled
+  # browser extensions into every lint scan.
+  '^~'
 )
 
 RANGE="$(git diff --name-only "$UPSTREAM"..HEAD)"
