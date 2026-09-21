@@ -60,13 +60,27 @@ is indistinguishable from a browser hijack.
 
 - Confirm with the human BEFORE running any of them, and say which URL will
   appear and in which window.
-- Prefer the API path where one exists: `apply-migration.mjs` and the others fall
-  back to `fetch()` against `api.supabase.com/v1/projects/<ref>/database/query`,
-  which needs no browser at all. Check whether the API key is present before
-  reaching for CDP.
+- **Prefer the browserless path: `bash scripts/db-sql.sh`.** It uses
+  `SUPABASE_ACCESS_TOKEN` from `.env` against `api.supabase.com` and needs no
+  browser at all. `apply-migration.mjs` has NO API fallback — it always harvests
+  its token from CDP Chrome, so it always touches the human's window. Use
+  `db-sql.sh` unless there is a specific reason not to.
 - If you did not start a browser, do not assume a URL that appeared is yours —
   say so plainly and let the human identify it, rather than guessing or
   apologising for something you did not do.
+
+### Identifying whose Chrome is whose
+
+Before touching a CDP Chrome, check who owns it:
+
+```bash
+ps -o pid,etime,args -p "$(ss -ltnp | grep 9222 | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)"
+```
+
+A `--ozone-platform=wayland --user-data-dir=/tmp/opencode/chrome-cdp` process
+with a long elapsed time is **the human's** — it is their real desktop browser,
+and on 2026-09-21 it held Todoist, Notion, GitHub and a Supabase SQL editor.
+Leave it alone; use `db-sql.sh` instead.
 
 ## The rule of thumb
 
