@@ -321,10 +321,29 @@ Seven sub-items; the redesign is the large one.
    scale. This needs a founder ruling on which wins — see "Open questions".
 
 3. Distance options are missing `Within 1 mile`.
-   **CONFIRMED,** and it needs migration 0045: the options come from
-   `RADIUS_MILES_OPTIONS = [2, 5, 10, 20, 35]` (`src/lib/feed.ts:58`) and the DB
-   backstop is `check (radius_miles between 2 and 35)`
-   (`0012_zip_radius.sql:676`). Founder decision Q1 = widen to 1–35.
+   **CONFIRMED,** and the change is WIDER than one constant — it touches FOUR
+   sites, one of them a live DB constraint (founder decision Q1 = widen to
+   1–35):
+
+   | # | Site | Change |
+   |---|---|---|
+   | 1 | `supabase/migrations/` — new **0045** | `drop constraint if exists profiles_radius_miles_chk` then re-add `check (radius_miles between 1 and 35)` (0012:676 holds the current 2–35) |
+   | 2 | `src/lib/feed.ts:58` `RADIUS_MILES_OPTIONS` | `[1, 2, 5, 10, 20, 35]` |
+   | 3 | `src/lib/feed.ts:64` `RADIUS_MIN_MILES` | `2` → `1` (feeds `validateRadiusMiles`, :135) |
+   | 4 | Any test asserting the 2–35 bounds or the options array | update |
+
+   **BLAST RADIUS the founder should know about:** `RADIUS_MILES_OPTIONS` has
+   **TWO consumers**, not one — `BrowsePage.tsx:480` AND
+   **`OnboardingPage.tsx:374`**. So adding 1 mile adds it to the ONBOARDING
+   radius picker too, not just the Places filter. That is probably desirable,
+   but it is a bigger surface than "let me zoom in on the places page".
+   `validateRadiusMiles` (:135) enforces the min, so site 3 is NOT optional —
+   without it a 1-mile choice would be rejected at save time.
+
+   **Migration discipline (from `.opencodereview/rule.json`):** must be
+   strictly additive and idempotent, with the `drop constraint if exists` guard
+   BEFORE the `add constraint`, because migrations here are applied live to a
+   database with real family data.
 
 4. The `places-distance-filter` dropdown is now **redundant** if a Set location
    control sits above the map — remove it.
