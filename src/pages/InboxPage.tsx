@@ -145,6 +145,7 @@ function MessageBubble({
   reaction: ReactionState
   onToggleReaction: (messageId: string) => void
 }) {
+  const countLabel = reactionCountLabel(reaction.count)
   return (
     <div className={isOwn ? 'flex justify-end' : 'flex justify-start'}>
       <div className={`max-w-[80%] ${isOwn ? 'text-right' : ''}`}>
@@ -168,11 +169,12 @@ function MessageBubble({
           >
             <ThumbIcon />
             {/* The count rides INSIDE the button (the "👍 3" pill shape the
-                ticket asks for); at 0 only the thumb shows. */}
-            {reactionCountLabel(reaction.count) !== null ? (
-              <span data-testid={`react-count-${message.id}`}>
-                {reactionCountLabel(reaction.count)}
-              </span>
+                ticket asks for); at 0 only the thumb shows. Hoisted to a const
+                (V16 t02 review): the guard and the rendered text must come from
+                the SAME evaluation, so they cannot drift apart if the label
+                ever becomes locale-aware. */}
+            {countLabel !== null ? (
+              <span data-testid={`react-count-${message.id}`}>{countLabel}</span>
             ) : null}
           </button>
         </div>
