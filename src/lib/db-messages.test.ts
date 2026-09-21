@@ -6,6 +6,8 @@ import {
   markConversationReadWithClient,
   MESSAGE_MAX_LENGTH,
   queryMessagesForPlaydateWithClient,
+  reactionButtonClasses,
+  reactionCountLabel,
   reactionStatesForMessagesWithClient,
   reconcileOptimisticMessage,
   sendMessageWithClient,
@@ -444,8 +446,68 @@ describe('applyReactionToggle (V15 ticket 08 — the optimistic count math)', ()
   })
 })
 
-describe('reactionStatesForMessagesWithClient (the thread\'s initial batch read)', () => {
-  it('groups rows into per-message counts and flags the viewer\'s own reaction', async () => {
+/**
+ * V16 ticket 02: the founder read the react button at rest as "looks yellow /
+ * already selected". The fill was already white at rest — the yellow was the
+ * 👍 EMOJI, which paints its own colour and ignores the button's `color`. So
+ * the rule being pinned here is: the rest state carries NO saturated styling,
+ * and the glyph (an inline SVG now) inherits `currentColor`. The emoji is gone,
+ * so this can be asserted as text.
+ */
+describe('reactionButtonClasses (V16 ticket 02 — rest must not read as selected)', () => {
+  /** Every "active" signal the button is allowed to use, in one place. */
+  const SATURATED = ['indigo', 'bg-indigo-600', 'text-white']
+
+  it('rest state carries no saturated fill and no active text colour', () => {
+    const rest = reactionButtonClasses(false)
+    expect(rest).toContain('bg-white')
+    expect(rest).toContain('text-slate-500')
+    expect(rest).toContain('border-slate-300')
+    for (const token of SATURATED) expect(rest).not.toContain(token)
+  })
+
+  it('pressed state carries the active indigo fill', () => {
+    const pressed = reactionButtonClasses(true)
+    expect(pressed).toContain('bg-indigo-600')
+    expect(pressed).toContain('text-white')
+    expect(pressed).not.toContain('bg-white')
+  })
+
+  it('the two states never share their fill (they cannot look alike)', () => {
+    const rest = reactionButtonClasses(false).split(' ')
+    const pressed = reactionButtonClasses(true).split(' ')
+    const fill = (classes: string[]) => classes.filter((c) => c.startsWith('bg-'))
+    expect(fill(rest)).not.toEqual(fill(pressed))
+  })
+
+  it('keeps the shared pill geometry in both states', () => {
+    // Only the colour half may vary — the tap target must not change with state.
+    for (const mine of [false, true]) {
+      expect(reactionButtonClasses(mine)).toContain('h-7')
+      expect(reactionButtonClasses(mine)).toContain('rounded-full')
+    }
+  })
+})
+
+describe('reactionCountLabel (V16 ticket 02 — the pill is hidden at 0)', () => {
+  it('renders nothing at 0 (no "👍 0" litter in a quiet thread)', () => {
+    expect(reactionCountLabel(0)).toBeNull()
+  })
+
+  it('renders the number once anyone has reacted', () => {
+    expect(reactionCountLabel(1)).toBe('1')
+    expect(reactionCountLabel(3)).toBe('3')
+    expect(reactionCountLabel(12)).toBe('12')
+  })
+
+  it('stays hidden for a negative count rather than rendering a lie', () => {
+    // A stale realtime delivery must never paint "-1" (applyReactionToggle
+    // floors the optimistic math for the same reason).
+    expect(reactionCountLabel(-1)).toBeNull()
+  })
+})
+
+describe('reactionStatesForMessagesWithClient (the thread\'s initial batch read)', () => {  it('groups rows into per-message counts and flags the viewer\'s own reaction', async () => {
     const { client, calls } = makeMessageMockClient({
       messageReactions: {
         data: [

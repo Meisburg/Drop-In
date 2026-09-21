@@ -10,6 +10,8 @@ import {
   markConversationRead,
   queryDirectMessages,
   queryMessagesForPlaydate,
+  reactionButtonClasses,
+  reactionCountLabel,
   reactionStatesForMessages,
   reconcileOptimisticMessage,
   searchProfiles,
@@ -123,6 +125,12 @@ function ConversationCard({
  * must be something to tap). Your own reaction fills the button indigo; a
  * stranger's reaction is a plain slate outline. The button is presentational
  * — the page owns the toggle + the optimistic math (applyReactionToggle).
+ *
+ * V16 ticket 02: the glyph is an inline stroked SVG thumb, NOT the 👍 emoji.
+ * A colour-emoji glyph paints its own yellow and ignores `color`, so the rest
+ * state stayed fully saturated and read as "already selected". The SVG honours
+ * `currentColor`, so both the fill and the glyph go neutral at rest and white
+ * on the indigo fill. The class decision is `reactionButtonClasses` in lib/.
  */
 function MessageBubble({
   message,
@@ -156,22 +164,43 @@ function MessageBubble({
             aria-pressed={reaction.mine}
             aria-label={reaction.mine ? 'Remove your thumbs-up' : 'Thumbs-up this message'}
             onClick={() => onToggleReaction(message.id)}
-            className={`flex h-7 items-center gap-1 rounded-full border px-2 text-xs transition-colors ${
-              reaction.mine
-                ? 'border-indigo-600 bg-indigo-600 text-white'
-                : 'border-slate-300 bg-white text-slate-500 hover:border-slate-400'
-            }`}
+            className={reactionButtonClasses(reaction.mine)}
           >
+            <ThumbIcon />
             {/* The count rides INSIDE the button (the "👍 3" pill shape the
                 ticket asks for); at 0 only the thumb shows. */}
-            <span aria-hidden="true">👍</span>
-            {reaction.count > 0 ? (
-              <span data-testid={`react-count-${message.id}`}>{reaction.count}</span>
+            {reactionCountLabel(reaction.count) !== null ? (
+              <span data-testid={`react-count-${message.id}`}>
+                {reactionCountLabel(reaction.count)}
+              </span>
             ) : null}
           </button>
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * The thumbs-up glyph (V16 ticket 02) — same 24px stroked currentColor family
+ * as NAV_ICONS/SectionHeader, drawn inline because the emoji could not be
+ * tinted. Sized h-3.5/w-3.5 to sit inside the h-7 pill; `aria-hidden` because
+ * the button carries the accessible name.
+ */
+function ThumbIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-3.5 w-3.5 shrink-0"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M7 10v10 M7 20H5a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2h2Z M7 10l4-7a2 2 0 0 1 2 2v5h5.4a2 2 0 0 1 2 2.4l-1 6A2 2 0 0 1 17.4 20H7" />
+    </svg>
   )
 }
 

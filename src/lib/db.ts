@@ -4909,3 +4909,42 @@ export function applyReactionToggle(
   const count = Math.max(0, current.count + (mine ? 1 : -1))
   return { ...states, [messageId]: { count, mine } }
 }
+
+/**
+ * The class names the react button wears, decided PURELY (the component just
+ * applies them) — the `planPing` split from `src/lib/trust.ts`: a pure
+ * decision in `lib/`, execution in the caller.
+ *
+ * WHY IT EXISTS (V16 ticket 02): a colour-emoji glyph paints its own native
+ * yellow and IGNORES the CSS `color` property, so the old `text-slate-500` on
+ * the rest state was a dead style and the 👍 stayed fully saturated — the one
+ * saturated thing in a row of neutral slate controls, which the founder read
+ * as "already selected" (his screenshot carried `aria-pressed="false"`, so the
+ * fill was never the problem). The glyph is an inline SVG now, which honours
+ * `currentColor`; these strings are the seam a test can assert so the states
+ * cannot drift back into looking alike.
+ *
+ * The resting button stays neutral in BOTH axes — fill AND text colour:
+ * `bg-white text-slate-500` with a slate-300 hairline, no saturated value
+ * anywhere. The pressed state is the indigo fill that already shipped and is
+ * correct. Kept here rather than in the page because "what the rest state is
+ * allowed to look like" is the rule under test, not a layout choice.
+ */
+export function reactionButtonClasses(mine: boolean): string {
+  const base =
+    'flex h-7 items-center gap-1 rounded-full border px-2 text-xs transition-colors'
+  return mine
+    ? `${base} border-indigo-600 bg-indigo-600 text-white`
+    : `${base} border-slate-300 bg-white text-slate-500 hover:border-slate-400`
+}
+
+/**
+ * The text for the count pill inside the button, or `null` when there is
+ * nothing to show. Hidden at 0 so a quiet thread is not littered with "👍 0" —
+ * the button always renders (there must be something to tap); only the pill is
+ * conditional. Pure, so the "0 renders nothing" rule is assertable without a
+ * DOM.
+ */
+export function reactionCountLabel(count: number): string | null {
+  return count > 0 ? String(count) : null
+}

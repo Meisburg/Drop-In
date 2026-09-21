@@ -74,15 +74,71 @@ button's `color` declaration has no effect on it — a dead style.
   visual check in the playtest lane.
 
 ### t03 — Post form: remove Ages chips, fix section order, fix duplicate overflow
-Three bounded changes:
+
+**CODE-VERIFIED 2026-09-21 (round 1) — two of the three items changed shape.**
 
 1. Remove the entire `ages-chips` block (Ages optional).
-2. Order must be: `Kids you're bringing (optional)` then `Details (optional)`.
-3. **Defect**: "Duplicate existing" list — text spills outside the buttons
-   (image 4).
+   **CONFIRMED PRESENT**, but **NOT A SAFE DELETION — see the consequence
+   below.** The block is `src/components/PlaydateFormFields.tsx:847`
+   (`data-testid="ages-chips"`, comment at :815), rendered by exactly ONE
+   consumer: `NewPlaydatePage.tsx:1064`
+   (`agesSlot={<AgeRangeChips selected={ageRange} onSelect={setAgeRange} .../>}`).
 
-- **Gate**: unit + e2e `post-fast` / `post-edit-delete` updates; the overflow is
-  verifiable at 320px in the mobile audit.
+   **THE CONSEQUENCE, code-verified:** the chips are the ONLY way a host can
+   set a STATED age range. `ageRange` feeds the submit at
+   `NewPlaydatePage.tsx:865-866` (`ageMin: ageRange?.min, ageMax:
+   ageRange?.max`), which `db.createPlaydate`'s `ageRangeFields` writes to
+   `playdates.age_min` / `age_max` (migration `0037_playdates_age_range.sql`).
+   Removing the chips means **no post can ever carry a stated age range again**
+   — every card would fall back to the DERIVED from-kids path.
+
+   The existing comment at `NewPlaydatePage.tsx:1055-1061` pins the current
+   semantics: *"The stated range wins over the derived one on the card."*
+   Removing the chips deletes the stated path entirely.
+
+   **This is a PRODUCT DECISION, not a cleanup.** It needs a founder ruling
+   before dispatch:
+   - **(i)** Remove the chips and accept that ages are always derived from the
+     kids a host is bringing (simpler form; the DB columns stay, nothing writes
+     them; the card's stated-over-derived precedence becomes dead code).
+   - **(ii)** Remove the chips but KEEP the stated path by deriving it
+     automatically from the selected kids (no new UI, ages still stated).
+   - **(iii)** Keep the chips; the founder's instinct was about form length, so
+     move them behind the existing "More options" disclosure instead.
+   Recommendation: **(ii)** or **(iii)**. (i) silently degrades the card's
+   information for every future post.
+
+2. Order must be: `Kids you're bringing (optional)` then `Details (optional)`.
+   **ALREADY CORRECT — NO WORK.** `PlaydateFormFields.tsx:608` is "Kids you're
+   bringing" and `:652` is "Details", in that order. The founder's item is a
+   fourth instance of this batch's recurring pattern: the feedback describes a
+   state the code is not in. Recorded as verified-existing, dropped from the
+   slice.
+
+3. **Defect**: "Duplicate existing" list — text spills outside the buttons
+   (founder image 4).
+
+   **DIAGNOSED, exact cause:** `src/pages/NewPlaydatePage.tsx:754-755` defines
+   `lastPostClassName` with **`w-fit`**, and the row button at `:965` applies it.
+   The row label is `{row.label}{statusLabel ? ' · ' + statusLabel : ''}` — a
+   long title plus a date. `w-fit` sizes the pill to its *unwrapped* content
+   width, but the pill also carries `min-h-11` (a fixed 44px floor) and
+   `rounded-full`. When the text wraps to two lines inside that pill, the text
+   overflows the visible rounded shape — the exact spilling the founder
+   photographed.
+
+   **The fix** is a layout correction, not a string change: the row must either
+   truncate to one line (`truncate` + `min-w-0`, letting the flex parent bound
+   it) or drop `w-fit` so the pill grows to a real width and wraps sanely. The
+   container at `:953` is `flex max-h-64 flex-col gap-1 overflow-y-auto` —
+   a **column** flex, so each row button is its own full-width line already;
+   `w-fit` is fighting that.
+
+   **Gate**: unit + e2e `post-fast` / `post-edit-delete` updates; the overflow
+   is verifiable at 320px in the mobile audit.
+
+**Slice size after verification: 2 real items (ages chips out, duplicate rows
+fixed), 1 dropped as already-correct.**
 
 ### t04 — Profile: combine the two modals, fix likes field, remove hosted modal
 1. Combine "Your photo" + display-name into ONE modal — hover the photo circle
