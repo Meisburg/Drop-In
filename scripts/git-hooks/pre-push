@@ -120,4 +120,13 @@ if [ "$FAIL" -ne 0 ]; then
 fi
 
 echo "pre-push: PASS — gated push to $REMOTE/master is clean and green."
+
+# --- Human-action reminder --------------------------------------------------
+# The end of a batch is the moment the human is most likely present, and the
+# moment work that only THEY can do tends to get stranded in task-state.md.
+# Informational only — never affects the exit code.
+if [ -x scripts/remind-human.sh ]; then
+  bash scripts/remind-human.sh --hook
+fi
+
 exit 0
