@@ -45,13 +45,15 @@ where conname = 'profiles_radius_miles_chk'
   and conrelid = 'public.profiles'::regclass;
 ```
 
-**Success looks like exactly this:**
+**Success looks like exactly this** (verified against a real Postgres 16, not
+guessed — note the TRIPLE parentheses, which is what the catalog actually
+renders for a `between`):
 
 | now_enforced |
 |---|
-| `CHECK ((radius_miles >= 1) AND (radius_miles <= 35))` |
+| `CHECK (((radius_miles >= 1) AND (radius_miles <= 35)))` |
 
-If it still says `>= 2`, the widen did not take — re-run the first block (it is
+If it still shows `>= 2`, the widen did not take — re-run the first block (it is
 idempotent, so running it twice is safe and expected).
 
 **Then tell me it's done** and I will verify from here that a 1-mile radius

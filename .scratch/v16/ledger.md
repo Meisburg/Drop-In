@@ -515,3 +515,24 @@ V16: RULE-3 FIX INDEPENDENTLY RE-VERIFIED (round 32) — with a CLEAN test this
   the right behaviour for a destructive push, but it is INCIDENTAL rather than
   designed — a future refactor that special-cased ZERO on the LOCAL side would
   silently open a hole. Flagged, not changed: it behaves correctly today.
+V16: MIGRATION 0045 VERIFIED AGAINST A REAL POSTGRES (round 33) — the first time
+  this batch has actually executed it. Throwaway postgres:16-alpine in docker,
+  the migration piped in verbatim. Container removed afterwards.
+  RESULTS:
+   * Run 1 on a table carrying the OLD 2-35 constraint -> exit 0, and the catalog
+     then reads `CHECK (((radius_miles >= 1) AND (radius_miles <= 35)))`.
+   * RUNS 2 AND 3 -> exit 0, constraint unchanged. IDEMPOTENCY PROVEN, not
+     asserted. This matters because the migration may be re-pasted by hand, and
+     a non-idempotent widen would fail on the second attempt.
+   * DATA SAFETY: inserted rows at the OLD bound (2, 5, 35), then ran the widen
+     -> all 3 rows survived (the widen admits a superset), and a NEW row at 1
+     inserted successfully. So the change both preserves existing data and
+     delivers the capability the app needs.
+  A CLAIM IN MY OWN APPLY GUIDE WAS WRONG AND IS NOW FIXED: I had written the
+  success read-back as `CHECK ((radius_miles >= 1) AND (radius_miles <= 35))`
+  with TWO parentheses. Postgres actually renders a `between` as THREE:
+  `CHECK (((radius_miles >= 1) AND (radius_miles <= 35)))`. A founder comparing
+  my guide to their dashboard would have seen a mismatch and reasonably concluded
+  the apply had failed. Verified by running it, not by recalling it.
+  The apply guide now also includes the read-back query itself, so a single
+  dashboard session both applies and PROVES the change.
