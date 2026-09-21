@@ -85,3 +85,35 @@ radius the circle IS small, so everything in it is on screen and tappable. At 35
 miles the circle is the honest frame — "here is everything you asked to see" —
 rather than an arbitrary zoom or a blob. And it needs the least new code: the
 radius effect already exists; the points-fit is the thing fighting it.
+
+---
+
+## ROUND 36 REFINEMENT — (b) is NOT purely a deletion; one fallback is needed
+
+Verified before dispatch, and it changes the brief:
+
+`radiusCircle` is only passed when the viewer has **geocoded an address**
+(`BrowsePage.tsx:405`: `geocodeCenter !== null ? {...} : null`). In the COMMON
+case — no geocode — it is null, so the radius effect does not run and the map
+would have no framing authority at all once the points-fit is removed.
+
+So (b) has two halves:
+1. **Delete** the points-fit in the marker-group effect (`PlaceMap.tsx:305-312`)
+   and keep `invalidateSize()` + the group cleanup. The effect still adds
+   markers; it just stops moving the camera.
+2. **Frame from the HOME PIN + the viewer's radius when there is no geocoded
+   centre.** Both values are already on hand in BrowsePage: `homePinCoords`
+   (`:198`) and `viewerRadius` (`:194`, `profile.radius_miles ??
+   DEFAULT_RADIUS_MILES`). The cleanest shape is to pass the radius circle
+   whenever a home pin exists, not only after a geocode — so the circle effect
+   becomes the SOLE framing authority in every case.
+
+The existing mount `setView(..., hasHomePin ? HOME_PIN_ZOOM : ...)` (`:222-225`)
+stays as the no-pin fallback and needs no change.
+
+**Risk to re-check (from the round-6 brief, still valid):** the V15 t02 spec
+exists because a marker once became UNTAPPABLE when the view was wrong. With the
+circle as the frame, a place OUTSIDE the radius is legitimately off-canvas — so
+the marker-click spec must be run at the WIDEST radius, not the default, and the
+"every place tappable" claim must be explicitly retired in the comment rather
+than silently dropped.
