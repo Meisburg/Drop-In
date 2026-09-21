@@ -495,3 +495,23 @@ V16: FIXED THE RULE-3 GAP (round 31) — I set that deadline last round and kept
    * the real repo's own pending push -> still PASS, so the new check does not
      block normal work.
   Installed to .git/hooks/pre-push (byte-identical to scripts/pre-push).
+V16: RULE-3 FIX INDEPENDENTLY RE-VERIFIED (round 32) — with a CLEAN test this
+  time, since my round-30 repro was invalid. Built fresh in a throwaway repo,
+  using an AMEND (the canonical history rewrite rule 3 exists to stop):
+    published = b97cbd6..., local = 59d7b67... (amend changed the sha)
+    merge-base --is-ancestor -> NO, i.e. a genuine rewrite
+    hook -> BLOCKED, exit 1. Valid reproduction.
+  FIVE CASES NOW COVERED, all correct:
+   * genuine non-fast-forward (amend/divergence) -> BLOCKED, exit 1          ok
+   * legitimate fast-forward (published is an ancestor) -> PASS, exit 0      ok
+   * new ref / all-zero REMOTE sha -> allowed, "nothing to compare"          ok
+   * MULTI-REF stdin (master + feature on two lines) -> still BLOCKED on the
+     master line, i.e. the loop keeps the right line's shas                 ok
+   * DELETING master (all-zero LOCAL sha) -> BLOCKED, exit 1. Fails CLOSED for
+     a destructive operation, which is the correct default                 ok
+   * non-master branch deletion -> not gated at all (correctly ignored)      ok
+  Note the deletion case is worth recording: it passes only because an all-zero
+  local sha is not an ancestor-of anything, so the check fails closed. That is
+  the right behaviour for a destructive push, but it is INCIDENTAL rather than
+  designed — a future refactor that special-cased ZERO on the LOCAL side would
+  silently open a hole. Flagged, not changed: it behaves correctly today.
