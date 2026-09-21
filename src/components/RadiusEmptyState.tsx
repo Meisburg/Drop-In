@@ -31,7 +31,7 @@ import { useSessionContext } from './SessionProvider'
  *
  * The write path is the EXISTING `updateHomeZipRadius` (no new write path):
  * it validates the zip against the seeded gazetteer and the radius against the
- * 2–35 bounds before writing, then `refresh()` lands the new radius in the
+ * 1–35 bounds before writing, then `refresh()` lands the new radius in the
  * shared session state — which is what re-runs the page's feed query, since
  * both pages key their load effect on `profile`.
  *

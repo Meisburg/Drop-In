@@ -1953,6 +1953,14 @@ describe('emptyRadiusCopy (V8 ticket 02: the honest empty state)', () => {
     expect(emptyRadiusCopy(35)).toBe('Nothing within 35 miles yet.')
   })
 
+  // V16 t07 item 3: the floor dropped to 1, which breaks the "always plural by
+  // construction" invariant this function's doc used to rely on. Before the
+  // change every reachable radius was plural, so nothing caught it — the empty
+  // state literally shipped "Nothing within 1 miles yet."
+  it('says "1 mile", not "1 miles"', () => {
+    expect(emptyRadiusCopy(1)).toBe('Nothing within 1 mile yet.')
+  })
+
   it('never claims "today" (the list is not-ended-yet — the old copy\'s lie)', () => {
     for (const radius of RADIUS_MILES_OPTIONS) {
       expect(emptyRadiusCopy(radius).toLowerCase()).not.toContain('today')
@@ -2055,6 +2063,16 @@ describe('radiusChoices (V16 t06 item 1: the radius control that stays on screen
     // default — the exact dead end this slice removes.
     expect(radiusChoices(5).map((c) => c.radiusMiles)).toEqual([1, 2, 5, 10, 20, 35])
     expect(radiusChoices(20).map((c) => c.radiusMiles)).toEqual([1, 2, 5, 10, 20, 35])
+  })
+
+  it('labels the 1-mile option "1 mile", not "1 miles"', () => {
+    // V16 t07 item 3: the label template is what the <option> in the feed and
+    // the onboarding picker both render, so the grammar fix has to be here and
+    // not only in the empty-state copy.
+    const labels = new Map(radiusChoices(5).map((c) => [c.radiusMiles, c.label]))
+    expect(labels.get(1)).toBe('Within 1 mile')
+    expect(labels.get(2)).toBe('Within 2 miles')
+    expect(labels.get(35)).toBe('See everything in Seattle (35 mi)')
   })
 
   it('is the pinned option list itself at every shipped radius', () => {

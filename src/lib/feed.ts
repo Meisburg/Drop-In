@@ -55,7 +55,8 @@ export interface RadiusViewer {
 }
 
 /**
- * The radius options (pinned in plan-v2 Interfaces: 2/5/10/20/35).
+ * The radius options (pinned in plan-v2 Interfaces; the floor moved 2 -> 1 in
+ * V16 t07 item 3 via migration 0045, so the list is 1/2/5/10/20/35).
  *
  * V16 t07 item 3: the floor is now 1 mile — the founder's ask was to zoom in
  * close ("Within 1 mile"), and the DB constraint was widened to match in
@@ -1810,6 +1811,25 @@ export function pastPostStatusLabel(status: PlaydateStatus | undefined | null): 
 // copy + escape hatches, and the visibility-refresh gate.
 
 /**
+ * "mile" or "miles" for a radius (V16 t07 item 3).
+ *
+ * This exists because the radius floor dropped to 1: `1 miles` is simply wrong
+ * English, and the option ladder, the empty-state copy, and every `<option>`
+ * label built from `RADIUS_MILES_OPTIONS` all interpolate a radius. Before the
+ * floor moved, every possible value happened to be plural, so three separate
+ * template strings each hardcoded "miles" and no one noticed — the docs even
+ * asserted "there is no '1 miles' case to guard" (feed.ts:1824-1825, now
+ * corrected). One helper means the next floor move cannot reintroduce it in
+ * three places at once.
+ *
+ * Deliberately `=== 1` rather than `<= 1`: a radius of 0 or a negative is not a
+ * real input (the validator rejects it), so the only singular case is exactly 1.
+ */
+export function milesWord(radiusMiles: number): string {
+  return radiusMiles === 1 ? 'mile' : 'miles'
+}
+
+/**
  * The empty-radius copy (V8 ticket 02), shared by the feed ("Near you") and
  * Browse so the two screens can never drift apart.
  *
@@ -1821,11 +1841,12 @@ export function pastPostStatusLabel(status: PlaydateStatus | undefined | null): 
  * is the VIEWER's actual radius: the number the filter just used, which is
  * the only honest one to quote.
  *
- * Always plural by construction (radius options are 2/5/10/20/35, and the DB
- * CHECK is 2–35), so there is no "1 miles" case to guard.
+ * V16 t07 item 3: the radius options are now 1/2/5/10/20/35, so the "always
+ * plural" invariant this doc used to claim is GONE — 1 renders "1 mile" via
+ * `milesWord`. The DB CHECK is 1–35 (migration 0045).
  */
 export function emptyRadiusCopy(radiusMiles: number): string {
-  return `Nothing within ${radiusMiles} miles yet.`
+  return `Nothing within ${radiusMiles} ${milesWord(radiusMiles)} yet.`
 }
 
 /**
@@ -1902,10 +1923,10 @@ export interface RadiusEscape {
 export function radiusEscapes(radiusMiles: number): RadiusEscape[] {
   const escapes: RadiusEscape[] = []
   if (radiusMiles > DEFAULT_RADIUS_MILES && radiusMiles < SEE_ALL_RADIUS_MILES) {
-    escapes.push({ radiusMiles: DEFAULT_RADIUS_MILES, label: `Back to ${DEFAULT_RADIUS_MILES} miles` })
+    escapes.push({ radiusMiles: DEFAULT_RADIUS_MILES, label: `Back to ${DEFAULT_RADIUS_MILES} ${milesWord(DEFAULT_RADIUS_MILES)}` })
   }
   if (WIDEN_RADIUS_MILES > radiusMiles) {
-    escapes.push({ radiusMiles: WIDEN_RADIUS_MILES, label: `Widen to ${WIDEN_RADIUS_MILES} miles` })
+    escapes.push({ radiusMiles: WIDEN_RADIUS_MILES, label: `Widen to ${WIDEN_RADIUS_MILES} ${milesWord(WIDEN_RADIUS_MILES)}` })
   }
   if (SEE_ALL_RADIUS_MILES > radiusMiles) {
     escapes.push({ radiusMiles: SEE_ALL_RADIUS_MILES, label: 'See everything in Seattle' })
@@ -1938,7 +1959,7 @@ export interface RadiusChoice {
  *   inserted in order. A `<select>` whose `value` matches no `<option>` renders
  *   the FIRST option while the list below filters on something else — a control
  *   that lies about the state it drives. No such value ships today (the DB
- *   CHECK and `validateRadiusMiles` both pin 2–35), but this keeps the control
+ *   CHECK and `validateRadiusMiles` both pin 1–35), but this keeps the control
  *   honest for any radius it is handed, including a sub-floor one;
  * - never a candidate at or beyond the 35-mile ceiling: `RADIUS_MAX_MILES` is
  *   the DB ceiling, so anything past it could not be saved anyway.
@@ -1964,7 +1985,7 @@ export function radiusChoices(radiusMiles: number): RadiusChoice[] {
           // would silently disagree with the option it labels if that constant
           // ever moved (the sibling branch already interpolates).
           { radiusMiles: miles, label: `See everything in Seattle (${miles} mi)` }
-        : { radiusMiles: miles, label: `Within ${miles} miles` },
+        : { radiusMiles: miles, label: `Within ${miles} ${milesWord(miles)}` },
     )
 }
 

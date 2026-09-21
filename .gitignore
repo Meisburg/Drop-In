@@ -68,3 +68,7 @@ logo-mockup.png
 # machine-local provider config (local API key + Tailscale URL — never commit)
 opencode.json
 .vercel
+
+# Supabase CLI local state (machine-specific: linked project ref, cached CLI
+# version). Never version-control -- see V16 t07 item 3 review.
+supabase/.temp/

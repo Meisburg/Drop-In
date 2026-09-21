@@ -42,9 +42,10 @@ export interface Profile {
    */
   home_zip?: string | null
   /**
-   * The discovery radius in miles (V2 slice 3, migration 0012): 2–35,
-   * default 5; the app offers the pinned options 2/5/10/20/35. Optional:
-   * absent until the live project is past 0012.
+   * The discovery radius in miles (V2 slice 3, migration 0012; floor moved to 1
+   * by migration 0045 in V16 t07 item 3): 1–35, default 5; the app offers the
+   * pinned options 1/2/5/10/20/35. Optional: absent until the live project is
+   * past 0012.
    */
   radius_miles?: number
   /**

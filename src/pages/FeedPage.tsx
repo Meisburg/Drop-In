@@ -758,7 +758,7 @@ export function FeedPage() {
   /**
    * V16 t06 item 1: the persistent radius control's one write path — the
    * EXISTING `updateHomeZipRadius` (which validates the saved zip against the
-   * seeded gazetteer and the radius against the 2–35 bounds before writing),
+   * seeded gazetteer and the radius against the 1–35 bounds before writing),
    * then `refresh()` lands the new radius in the shared session state.
    *
    * The refetch is free and deliberate: the load effect keys on

@@ -25,7 +25,7 @@ import { resolveOnboardingRedirect } from '../lib/onboarding'
  * V2 slice 3 (ticket 03): the neighborhood multi-select is GONE — the
  * location step is a home zip (validated against the seeded zip_codes
  * gazetteer; unknown zips show an inline error) + a radius picker (pinned
- * options 2/5/10/20/35, default 5). Neighborhoods are display labels only;
+ * options 1/2/5/10/20/35, default 5). Neighborhoods are display labels only;
  * discovery is radius-based. Memberships stay in the schema but stop being
  * created here.
  *

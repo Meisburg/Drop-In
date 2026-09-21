@@ -783,7 +783,7 @@ export function loadZipCodes(): Promise<ReadonlyMap<string, ZipCoords>> {
  * Save the caller's home zip + radius (V2 slice 3: onboarding's Continue +
  * the /settings location card). Runs the pure validators first (the same
  * defense in depth as uploadAvatar): the zip must be a 5-digit code in the
- * seeded gazetteer and the radius an integer in 2–35 (the 0012 CHECK is
+ * seeded gazetteer and the radius an integer in 1–35 (the 0045 CHECK is
  * the DB backstop).
  */
 export async function updateHomeZipRadius(

@@ -21,8 +21,13 @@
 -- old one — [1,35] ⊇ [2,35] — so every value the old CHECK admitted the new one
 -- admits too. A constraint WIDEN cannot fail validation on existing data (unlike
 -- a tighten, which would need a row audit first). No row conversion, no
--- backfill, no down-time concern: `alter table ... add constraint` validates
--- existing rows, and that validation is guaranteed to pass here.
+-- backfill.
+--
+-- ONE HONEST CAVEAT (raised in review): `add constraint` validates existing rows
+-- and takes a SHARE lock on `profiles` for the duration of that scan, so
+-- concurrent writes to that table are briefly blocked. At family scale the scan
+-- is trivial and the block is milliseconds — but "no down-time concern" would
+-- overstate the guarantee, so it is stated precisely instead.
 --
 -- Idempotent + re-paste-safe (house pattern, 2026-09-04 lesson; 0012 / 0040 /
 -- 0041 / 0044 precedents): a WIDEN cannot use 0012's guard-and-add shape
