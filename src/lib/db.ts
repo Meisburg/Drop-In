@@ -4461,8 +4461,8 @@ export async function searchProfiles(query: string): Promise<ProfileSearchResult
 
 /**
  * Send a free-form message to a specific recipient (no playdate context).
- * Two-step: insert the message (get its id via select single), then upsert
- * the recipient row. Against an injected client (mockable).
+ * ONE write: `recipient_hint` is consumed by the AFTER INSERT trigger, which
+ * records the sender + recipient rows. Against an injected client (mockable).
  */
 export async function sendDirectMessageWithClient(
   client: SupabaseClient,
@@ -4472,27 +4472,13 @@ export async function sendDirectMessageWithClient(
 ): Promise<void> {
   const validationError = validateMessageBody(body)
   if (validationError !== null) throw new Error(validationError)
-  // Insert the message and get its id back.
-  const { data: inserted, error: insErr } = await client
-    .from('messages')
-    .insert({
-      playdate_id: null,
-      sender_id: senderId,
-      body: body.trim(),
-    })
-    .select('id')
-    .single()
+  const { error: insErr } = await client.from('messages').insert({
+    playdate_id: null,
+    sender_id: senderId,
+    body: body.trim(),
+    recipient_hint: recipientId,
+  })
   if (insErr) throw insErr
-  if (inserted === null || inserted === undefined) throw new Error('Insert returned no row.')
-  const messageId = (inserted as { id: string }).id
-  // Add the recipient (the trigger already added the sender).
-  const { error: recErr } = await client
-    .from('message_recipients')
-    .upsert(
-      { message_id: messageId, profile_id: recipientId },
-      { onConflict: 'message_id,profile_id' },
-    )
-  if (recErr) throw recErr
 }
 
 /**
@@ -4509,43 +4495,71 @@ export async function sendDirectMessage(recipientId: string, body: string): Prom
   if (user === null) throw new Error('No authenticated user — cannot send a message.')
   const validationError = validateMessageBody(body)
   if (validationError !== null) throw new Error(validationError)
-  // Insert the message and get its id back.
-  const { data: inserted, error: insErr } = await supabase
-    .from('messages')
-    .insert({
-      playdate_id: null,
-      sender_id: user.id,
-      body: body.trim(),
-    })
-    .select('id')
-    .single()
+  // ONE write. `recipient_hint` is read by the AFTER INSERT trigger
+  // (messages_participation_guard), which records BOTH the sender and this
+  // recipient as message_recipients rows.
+  //
+  // V15 fix: this used to be an insert followed by a client-side
+  // `.upsert()` on message_recipients. That two-step never worked live —
+  // ON CONFLICT DO UPDATE needs an UPDATE policy AND a SELECT of the
+  // conflicting row, and the SELECT policy is scoped to `profile_id =
+  // auth.uid()`, so a sender could never see (let alone update) the row
+  // they were adding for the OTHER party: every send failed 403 "new row
+  // violates row-level security policy". The trigger owns the write now;
+  // the client sends one row and no longer touches message_recipients.
+  const { error: insErr } = await supabase.from('messages').insert({
+    playdate_id: null,
+    sender_id: user.id,
+    body: body.trim(),
+    recipient_hint: recipientId,
+  })
   if (insErr) throw insErr
-  if (inserted === null || inserted === undefined) throw new Error('Insert returned no row.')
-  const messageId = (inserted as { id: string }).id
-  // Add the recipient (the trigger already added the sender).
-  const { error: recErr } = await supabase
-    .from('message_recipients')
-    .upsert(
-      { message_id: messageId, profile_id: recipientId },
-      { onConflict: 'message_id,profile_id' },
-    )
-  if (recErr) throw recErr
 }
 
 /**
  * List all messages for a free-form conversation between two profiles,
  * oldest first. Against an injected client (mockable).
+ *
+ * `myId` is retained for signature compatibility with existing callers and
+ * tests; the query no longer needs it because RLS + message_recipients
+ * already pin the conversation to the caller.
  */
 export async function queryDirectMessagesWithClient(
   client: SupabaseClient,
   otherPartyId: string,
   myId: string,
 ): Promise<MessageRow[]> {
+  void myId
+  // V15 fix: a free-form thread is the pair {me, otherParty}, and the pair is
+  // recorded in message_recipients — NOT inferable from sender_id alone.
+  //
+  // The previous filter was `.or(sender_id.eq.me, sender_id.eq.other)`, which
+  // matches every free-form message either of us ever sent, including ones I
+  // sent to a THIRD person. Those leaked into this thread (reproduced by the
+  // dm e2e: a message to viewer A rendered inside the thread with viewer B).
+  //
+  // The correct scoping: messages addressed to me from them, plus messages I
+  // addressed to them. message_recipients carries exactly that, and RLS
+  // already restricts the rows to conversations I participate in.
+  const { data: sentIds, error: idsError } = await client
+    .from('message_recipients')
+    .select('message_id')
+    .eq('profile_id', otherPartyId)
+  if (idsError) throw idsError
+  const candidates = ((sentIds ?? []) as unknown as Array<{ message_id: string }>).map(
+    (r) => r.message_id,
+  )
+  // Nothing addressed to them means there is no thread yet.
+  if (candidates.length === 0) return []
+
   const { data, error } = await client
     .from('messages')
-    .select('id, playdate_id, sender_id, body, created_at')
+    .select('id, playdate_id, sender_id, body, created_at, recipient_hint')
     .is('playdate_id', null)
-    .or(`sender_id.eq.${myId},sender_id.eq.${otherPartyId}`)
+    .in('id', candidates)
+    // Only the two parties of THIS thread: their messages to me and mine to
+    // them. A message of theirs addressed to someone else is excluded.
+    .or(`sender_id.eq.${otherPartyId},recipient_hint.eq.${otherPartyId}`)
     .order('created_at', { ascending: true })
   if (error) throw error
   const rows = (data ?? []) as unknown as Array<{
@@ -4584,7 +4598,16 @@ export async function listDirectConversationsWithClient(
   client: SupabaseClient,
   userId: string,
 ): Promise<Array<{ otherPartyId: string; otherPartyName: string; latestAt: string; preview: string; unreadCount: number }>> {
-  // All free-form messages where I'm the sender or recipient.
+  // All free-form messages the caller can see. RLS
+  // (messages_select_participants) already scopes this to the caller's own
+  // conversations — both the ones they SENT and the ones they RECEIVED — so
+  // there is deliberately NO client-side sender filter here.
+  //
+  // V15 fix: this used to apply `.or('sender_id.eq.<me>')`, a single-condition
+  // OR that meant "messages I sent". A parent who had only ever RECEIVED a DM
+  // therefore saw an empty inbox ("No conversations yet") even though the
+  // message was sitting in the database and readable. The filter was redundant
+  // with RLS and actively wrong.
   const { data, error } = await client
     .from('messages')
     .select(
@@ -4592,7 +4615,6 @@ export async function listDirectConversationsWithClient(
         'sender:profiles!messages_sender_id_fkey ( display_name )',
     )
     .is('playdate_id', null)
-    .or(`sender_id.eq.${userId}`)
     .order('created_at', { ascending: false })
   if (error) throw error
 
@@ -4626,23 +4648,32 @@ export async function listDirectConversationsWithClient(
 
   // For "__recipient__" entries, we need to find who the recipient was.
   // Query message_recipients for the messages where I'm the sender.
+  //
+  // V15 fix: this resolves the recipient's ID as well as their name. The
+  // conversation card is keyed by `dm-conversation-<profileId>` and tapping it
+  // navigates to /inbox?dm=<profileId>, so a name-only entry rendered a card
+  // that could not be opened.
   const mySentIds = rows.filter((r) => r.sender_id === userId).map((r) => r.id)
-  let recipientNames: Record<string, string> = {}
+  const recipientByMessage: Record<string, { id: string; name: string }> = {}
   if (mySentIds.length > 0) {
     const { data: recData, error: recErr } = await client
       .from('message_recipients')
       .select(
-        'message_id, profile:profiles!message_recipients_profile_id_fkey ( display_name )',
+        'message_id, profile_id, profile:profiles!message_recipients_profile_id_fkey ( display_name )',
       )
       .in('message_id', mySentIds)
       .neq('profile_id', userId)
     if (!recErr && recData !== null) {
       for (const rec of recData as unknown as Array<{
         message_id: string
+        profile_id: string
         profile: { display_name: string } | null
       }>) {
         if (rec.profile !== null && rec.profile.display_name !== '') {
-          recipientNames[rec.message_id] = rec.profile.display_name
+          recipientByMessage[rec.message_id] = {
+            id: rec.profile_id,
+            name: rec.profile.display_name,
+          }
         }
       }
     }
@@ -4666,14 +4697,15 @@ export async function listDirectConversationsWithClient(
       })
     } else {
       // I sent to them — counterparty is the recipient (resolved above).
-      const name = recipientNames[row.id] ?? ''
-      if (name === '') continue
-      // Find or create the entry for this recipient.
-      const existing = results.find((r) => r.otherPartyName === name)
+      const recipient = recipientByMessage[row.id]
+      if (recipient === undefined) continue
+      // Find or create the entry for this recipient. The ID (not the name) is
+      // the card's identity: it keys the testid and the ?dm= navigation.
+      const existing = results.find((r) => r.otherPartyId === recipient.id)
       if (existing === undefined) {
         results.push({
-          otherPartyId: '',
-          otherPartyName: name,
+          otherPartyId: recipient.id,
+          otherPartyName: recipient.name,
           latestAt: row.created_at,
           preview: truncateMessagePreview(row.body),
           unreadCount: 0,
@@ -4815,6 +4847,41 @@ export async function reactionStatesForMessages(
   viewerId: string,
 ): Promise<Record<string, ReactionState>> {
   return reactionStatesForMessagesWithClient(supabase, messageIds, viewerId)
+}
+
+/**
+ * Reconcile a realtime INSERT against the optimistic row the composer already
+ * appended (V15 send fix) — a PURE function, unit-testable without a wire.
+ *
+ * WHY IT EXISTS: the inbox's handleSend appends a placeholder row with a
+ * `pending-<timestamp>` id so the bubble shows on the same frame as the tap.
+ * The server then echoes the SAME message back through the realtime channel
+ * carrying its real uuid — which an id check alone can never match. Without
+ * this the thread rendered the message TWICE (the optimistic bubble plus the
+ * echo), which the dm e2e caught as a strict-mode violation.
+ *
+ * Matching is on the placeholder marker plus sender + body: the optimistic
+ * row is uniquely identified by the `pending-` prefix and the body it was
+ * created with. Returns the messages array with the placeholder REPLACED by
+ * the real row, or null when there is nothing to reconcile (the caller then
+ * appends).
+ */
+export function reconcileOptimisticMessage(
+  messages: MessageRow[],
+  incoming: MessageRow,
+): MessageRow[] | null {
+  // Already present by real id — a duplicate delivery, nothing to do.
+  if (messages.some((m) => m.id === incoming.id)) return null
+  const index = messages.findIndex(
+    (m) =>
+      m.id.startsWith('pending-') &&
+      m.sender_id === incoming.sender_id &&
+      m.body === incoming.body,
+  )
+  if (index === -1) return null
+  const next = messages.slice()
+  next[index] = incoming
+  return next
 }
 
 /**

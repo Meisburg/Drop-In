@@ -391,7 +391,10 @@ export function PlaydateFormFields({
      fills it — so /new drops the "(optional)" marker and says where it came
      from. The Maps link itself is unchanged (V3 ticket 08's seam, untouched).
      V9 ticket 03: on /new this is the MANUAL entry — the normal path fills it
-     from the picked place — now a visible field in the form's tail. */
+     from the picked place.
+     V15 fix (founder feedback): on /new it now renders DIRECTLY under the
+     place field (inside placeBlock's section), because it is the same answer
+     as the place — the pick fills it — and it must read as one question. */
   const addressBlock = (
     <>
       <label className="flex flex-col gap-1 text-sm">
@@ -706,11 +709,10 @@ line. No kids yet → the designed empty state + the /settings link (the
   // V13 ticket 02: the "More options" disclosure is GONE — everything it held
   // now has a visible home in the branch-1 flow (the ticket's AC: address
   // details moved out of More options, repeat + ages relocated, no disclosure).
-  // The duration override chips read back through `durationValueLine` above and
-  // are overridden by tapping any chip in the same row; the address block sits
-  // in the visible flow right after When; repeat/ages/details form a compact
-  // tail before the kids section. Only branch 1 renders this block (branches
-  // 2/3 keep their own order), so no extra gating is needed.
+  // V15 fix: the address moved UP to sit directly under the place field (see
+  // the branch-1 render below), so this tail is repeat/ages/details only.
+  // Only branch 1 renders this block (branches 2/3 keep their own order), so no
+  // extra gating is needed.
   const moreTailBlock =
     summaryLines === undefined ? null : (
       <>
@@ -738,16 +740,17 @@ line. No kids yet → the designed empty state + the /settings link (the
         <>
           {summaryBlock}
           {placeBlock}
+          {/* V15 fix (founder feedback): the address sits DIRECTLY under the
+              "Where? — pick a place" field, not down after When. It is the
+              same answer as the place — the pick fills it — so the two must
+              read as one question. It used to render after When + End, which
+              put the auto-filled value far from the field that filled it. */}
+          {addressBlock}
           {mapSlot}
           {/* V13 ticket 03: the END stepper replaces the duration read-back —
               three picks (date, start, end), no "how long" control. */}
           {whenBlock}
           {endBlock}
-          {/* V13 ticket 02: address details moved OUT of More options into the
-              visible flow, right after When. The normal path fills it from the
-              picked place; the parent can type one instead if it is not quite
-              right. */}
-          {addressBlock}
           {/* V13 ticket 02: repeat + ages + details now have visible homes in
               the compact tail before kids (the disclosure is gone). */}
           {moreTailBlock}

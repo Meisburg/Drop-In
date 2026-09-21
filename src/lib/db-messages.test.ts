@@ -7,10 +7,12 @@ import {
   MESSAGE_MAX_LENGTH,
   queryMessagesForPlaydateWithClient,
   reactionStatesForMessagesWithClient,
+  reconcileOptimisticMessage,
   sendMessageWithClient,
   truncateMessagePreview,
   validateMessageBody,
 } from './db'
+import type { MessageRow } from './db'
 
 /**
  * V14 ticket 01 (migration 0042): the inbox's db.ts seams against a recording
@@ -499,5 +501,65 @@ describe('reactionStatesForMessagesWithClient (the thread\'s initial batch read)
     // 250 ids at a chunk of 100 → three requests (100 + 100 + 50).
     expect(calls.filter((c) => c === 'from(message_reactions)').length).toBe(3)
     expect(Object.keys(states).length).toBe(250)
+  })
+})
+
+describe('reconcileOptimisticMessage (V15 send fix — the duplicate-bubble guard)', () => {
+  const row = (over: Partial<MessageRow>): MessageRow => ({
+    id: 'real-1',
+    playdate_id: '',
+    sender_id: 'me',
+    body: 'hello',
+    created_at: '2026-09-21T00:00:00.000Z',
+    ...over,
+  })
+
+  it('replaces the pending placeholder with the realtime row', () => {
+    const pending = row({ id: 'pending-123', body: 'hello' })
+    const incoming = row({ id: 'real-1', body: 'hello' })
+    const next = reconcileOptimisticMessage([pending], incoming)
+    expect(next).not.toBeNull()
+    expect(next).toHaveLength(1)
+    expect(next?.[0].id).toBe('real-1')
+  })
+
+  it('is null when the real row is already present (duplicate delivery)', () => {
+    const existing = row({ id: 'real-1' })
+    // No placeholder, and the id already exists: the caller must NOT append.
+    expect(reconcileOptimisticMessage([existing], row({ id: 'real-1' }))).toBeNull()
+  })
+
+  it('is null for a genuinely new message (the caller appends)', () => {
+    const other = row({ id: 'real-9', sender_id: 'them', body: 'hi back' })
+    expect(reconcileOptimisticMessage([row({ id: 'real-1' })], other)).toBeNull()
+  })
+
+  it('does not match a pending row with a different body', () => {
+    const pending = row({ id: 'pending-1', body: 'first' })
+    const incoming = row({ id: 'real-2', body: 'second' })
+    expect(reconcileOptimisticMessage([pending], incoming)).toBeNull()
+  })
+
+  it('does not match a pending row from a different sender', () => {
+    const pending = row({ id: 'pending-1', sender_id: 'them', body: 'hello' })
+    const incoming = row({ id: 'real-2', sender_id: 'me', body: 'hello' })
+    expect(reconcileOptimisticMessage([pending], incoming)).toBeNull()
+  })
+
+  it('keeps surrounding messages and their order', () => {
+    const messages = [
+      row({ id: 'real-0', body: 'before' }),
+      row({ id: 'pending-1', body: 'hello' }),
+      row({ id: 'real-2', body: 'after' }),
+    ]
+    const next = reconcileOptimisticMessage(messages, row({ id: 'real-1', body: 'hello' }))
+    expect(next?.map((m) => m.id)).toEqual(['real-0', 'real-1', 'real-2'])
+  })
+
+  it('does not mutate the array it is given (React state discipline)', () => {
+    const messages = [row({ id: 'pending-1' })]
+    const next = reconcileOptimisticMessage(messages, row({ id: 'real-1' }))
+    expect(messages[0].id).toBe('pending-1')
+    expect(next).not.toBe(messages)
   })
 })

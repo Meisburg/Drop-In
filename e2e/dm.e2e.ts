@@ -92,7 +92,19 @@ test('new message: search a parent, open DM thread, send a message', async ({
 
   // Send a message.
   await page.getByPlaceholder('Write a message…').fill('Hey! Want to play this weekend?')
+  // V15 fix: wait for the send's own POST to be answered before navigating.
+  // The optimistic bubble appears on the same frame as the tap, so asserting
+  // the bubble alone does NOT prove the write committed — and the /inbox
+  // reload below queries the server. Racing that gap left the conversation
+  // card missing (the row was still in flight), which read as a UI bug.
+  const sendSettled = page.waitForResponse(
+    (res) =>
+      res.url().includes('/rest/v1/messages') &&
+      res.request().method() === 'POST' &&
+      res.status() < 400,
+  )
   await page.getByRole('button', { name: 'Send' }).click()
+  await sendSettled
   await expect(page.getByTestId('own-message')).toContainText('Hey! Want to play this weekend?')
 
   // Navigate back to /inbox → the free-form conversation card appears.
@@ -161,7 +173,16 @@ test('RLS isolation: a stranger cannot read a free-form DM', async ({
   await settleOnRoute(page, '/inbox')
   await expect(page.getByText('No messages yet')).toBeVisible()
   await page.getByPlaceholder('Write a message…').fill('Secret DM content')
+  // V15 fix: same send-race guard as the spec above — the RLS assertion below
+  // is meaningless if the write has not committed yet.
+  const sendSettled = page.waitForResponse(
+    (res) =>
+      res.url().includes('/rest/v1/messages') &&
+      res.request().method() === 'POST' &&
+      res.status() < 400,
+  )
   await page.getByRole('button', { name: 'Send' }).click()
+  await sendSettled
   await expect(page.getByTestId('own-message')).toContainText('Secret DM content')
 
   // --- The stranger: create an account, then try to read the DM via REST. ---

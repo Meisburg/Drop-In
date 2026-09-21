@@ -11,6 +11,7 @@ import {
   queryDirectMessages,
   queryMessagesForPlaydate,
   reactionStatesForMessages,
+  reconcileOptimisticMessage,
   searchProfiles,
   sendDirectMessage,
   sendMessage,
@@ -517,7 +518,8 @@ export function InboxPage() {
             if (newRow.sender_id !== myId && newRow.sender_id !== dmTargetId) return
             setThread((prev) => {
               if (prev === null || prev.status !== 'ready') return prev
-              if (prev.messages.some((m) => m.id === newRow.id)) return prev
+              const reconciled = reconcileOptimisticMessage(prev.messages, newRow as MessageRow)
+              if (reconciled !== null) return { ...prev, messages: reconciled }
               return { ...prev, messages: [...prev.messages, newRow as MessageRow] }
             })
             setReloadToken((token) => token + 1)
@@ -535,7 +537,8 @@ export function InboxPage() {
             if (newRow.id === undefined || newRow.created_at === undefined) return
             setThread((prev) => {
               if (prev === null || prev.status !== 'ready') return prev
-              if (prev.messages.some((m) => m.id === newRow.id)) return prev
+              const reconciled = reconcileOptimisticMessage(prev.messages, newRow as MessageRow)
+              if (reconciled !== null) return { ...prev, messages: reconciled }
               return { ...prev, messages: [...prev.messages, newRow as MessageRow] }
             })
             setReloadToken((token) => token + 1)
