@@ -741,3 +741,41 @@ export function framingCircle(input: {
   if (homePin !== null) return { center: homePin, radiusMiles }
   return null
 }
+
+/**
+ * V17 t02: which PLACES the caller follows, as a plain id set — what a browse
+ * card's heart reads to decide whether it is filled.
+ *
+ * WHY THIS EXISTS BESIDE `follows.followTargetsFrom`: that seam is shaped
+ * around the FOLLOW ROW (`FollowRowLike` -> `{ followeeIds, placeIds }`) and is
+ * the right answer for a surface that asks the follow graph about BOTH kinds
+ * at once (the feed's met-before line needs the family half). The browse grid
+ * asks one narrow question about one kind — "is THIS place hearted?" — and a
+ * grid of 239 cards should not carry a two-set aggregate to answer it.
+ *
+ * (An earlier attempt returned `Map<placeId, followId>` on the theory that the
+ * unfollow path needs the row id. It does not: `db.toggleFollowPlace` resolves
+ * the row itself via `findFollowRow`, so the value was dead data. A Set is the
+ * honest shape.)
+ *
+ * A row with a null (or absent) `place_id` is a FAMILY follow and is SKIPPED —
+ * the exactly-one-target rule in `follows.validateFollowTarget`; a browse card
+ * is never a family. Rows with a blank id are skipped too: a row we cannot
+ * identify is not a row we should claim to hold.
+ *
+ * The input type is structural, not `db.FollowRow`: this module imports no
+ * Supabase types, so the seam stays callable from a pure test (and a wider row
+ * passes through with no re-projection).
+ */
+export function placeFollowIdSet(
+  rows: ReadonlyArray<{ id?: string | null; place_id?: string | null }>,
+): Set<string> {
+  const followed = new Set<string>()
+  for (const row of rows) {
+    if (typeof row.id !== 'string' || row.id === '') continue
+    const placeId = row.place_id
+    if (placeId === null || placeId === undefined || placeId === '') continue
+    followed.add(placeId)
+  }
+  return followed
+}

@@ -19,6 +19,7 @@ import {
   placePickPatch,
   placeUpcomingLabel,
   placeExternalUrl,
+  placeFollowIdSet,
   PLACE_BROWSE_LIMIT,
   PLACE_SUGGESTION_LIMIT,
   resolveMapCoords,
@@ -853,5 +854,59 @@ describe('framingCircle', () => {
   it('returns null for a non-positive radius (a degenerate box has no extent)', () => {
     expect(framingCircle({ geocodeCenter: GEO, homePin: HOME, radiusMiles: 0 })).toBeNull()
     expect(framingCircle({ geocodeCenter: GEO, homePin: HOME, radiusMiles: -5 })).toBeNull()
+  })
+})
+
+describe('placeFollowIdSet (V17 t02: the place ids the caller follows, for the card heart)', () => {
+  it('collects the followed PLACE ids (the membership the heart reads)', () => {
+    const followed = placeFollowIdSet([
+      { id: 'follow-1', place_id: 'place-a' },
+      { id: 'follow-2', place_id: 'place-b' },
+    ])
+    expect([...followed].sort()).toEqual(['place-a', 'place-b'])
+    expect(followed.has('place-a')).toBe(true)
+    // The ROW id never leaks into the set — the heart asks about places.
+    expect(followed.has('follow-1')).toBe(false)
+  })
+
+  it('skips a null place_id — that row is a FAMILY follow, never a card heart', () => {
+    const followed = placeFollowIdSet([
+      { id: 'follow-family', place_id: null },
+      { id: 'follow-place', place_id: 'place-a' },
+    ])
+    expect([...followed]).toEqual(['place-a'])
+  })
+
+  it('skips a row with no place_id key at all (the same family case)', () => {
+    expect(placeFollowIdSet([{ id: 'follow-family' }]).size).toBe(0)
+  })
+
+  it('skips a blank place_id — an empty string is not a place', () => {
+    expect(placeFollowIdSet([{ id: 'follow-1', place_id: '' }]).size).toBe(0)
+  })
+
+  it('skips a blank or absent follow id — a row we cannot identify is not claimed', () => {
+    const followed = placeFollowIdSet([
+      { id: '', place_id: 'place-a' },
+      { place_id: 'place-b' },
+      { id: 'follow-3', place_id: 'place-c' },
+    ])
+    expect([...followed]).toEqual(['place-c'])
+  })
+
+  it('returns an empty set for no rows (the viewer who follows nothing)', () => {
+    expect(placeFollowIdSet([]).size).toBe(0)
+  })
+
+  it('takes db.FollowRow rows directly — the input shape is structural', () => {
+    // The seam reads `id` and `place_id` only, so BrowsePage hands over the
+    // read's own row objects with no re-projection; the family row in the same
+    // array is skipped.
+    const rows = [
+      { id: 'follow-family', followee_profile_id: 'profile-1', place_id: null },
+      { id: 'follow-1', followee_profile_id: null, place_id: 'place-a' },
+    ]
+    const followed: Set<string> = placeFollowIdSet(rows)
+    expect([...followed]).toEqual(['place-a'])
   })
 })

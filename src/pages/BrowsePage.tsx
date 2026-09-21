@@ -6,7 +6,13 @@ import { PlacesMap } from '../components/PlaceMap'
 import { RadiusEmptyState } from '../components/RadiusEmptyState'
 import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
-import { listPlaces, loadZipCodes, upcomingCountsByPlace } from '../lib/db'
+import {
+  listMyFollows,
+  listPlaces,
+  loadZipCodes,
+  toggleFollowPlace,
+  upcomingCountsByPlace,
+} from '../lib/db'
 import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
 import {
   DEFAULT_RADIUS_MILES,
@@ -27,6 +33,7 @@ import {
   groupPlacesByKind,
   PLACE_KINDS,
   placeExternalUrl,
+  placeFollowIdSet,
   placeIndoorLabel,
   placeKindLabel,
   placePath,
@@ -87,6 +94,23 @@ import type { Place, PlacePrefill } from '../lib/types'
  * own clearly-labelled section instead, because the rule is that a filter may
  * not hide a place for missing data. That section is also why 0029's lat/lng
  * are nullable.
+ *
+ * V17 t02: THE HEART IS THE EXISTING FOLLOW, not a second save concept. A
+ * signed-in parent sees one heart per card, filled when they already follow
+ * that place, and tapping it toggles the SAME `follows` row the /place/:id
+ * Follow control writes (0033's exactly-one-target table, owner-only RLS) —
+ * there is no `saved_places` table and no per-card follower COUNT. A count
+ * would be one `countPlaceFollowers` RPC PER CARD (239 cards = 239 round
+ * trips, and a popularity score on a place), so the grid shows only the
+ * caller's own state, read ONCE for the whole page via `listMyFollows` + the
+ * pure `placeFollowIdSet` seam. Signed out
+ * renders no heart at all, and issues no follows request — the /place/:id
+ * decision (a control a visitor cannot press is decoration).
+ *
+ * THE FOLLOW READ IS BEST-EFFORT, exactly like the gazetteer read above it: a
+ * failure (pre-0033-apply: PGRST205) leaves every heart unfilled and the
+ * directory rendering normally. A heart is a card decoration; it is never
+ * worth an error state, and it must never cost the page its places.
  */
 export function BrowsePage() {
   const { session, loading, profile } = useSessionContext()
@@ -96,6 +120,21 @@ export function BrowsePage() {
   // null = the count read failed (pre-0030-apply: no place_id column) → no
   // count is rendered at all, because "0 upcoming" is a claim we cannot make.
   const [upcoming, setUpcoming] = useState<Map<string, number> | null>(null)
+  /**
+   * V17 t02: the PLACE ids the caller already follows (the pure
+   * placeFollowIdSet seam) — what each card's heart reads. ONE batched read for
+   * the whole grid, never one call per card, and never `countPlaceFollowers` (a
+   * grid of 239 cards must not make 239 RPCs; the heart shows the caller's OWN
+   * state, which is all this read returns).
+   *
+   * The empty set is the honest default twice over: a signed-out viewer (the
+   * effect never runs) and a FAILED read (the catch below lands the empty set)
+   * both render every heart unfilled — identical to the page before this slice,
+   * never an error state and never an empty page (the `zipCoords` precedent).
+   */
+  const [followedPlaceIds, setFollowedPlaceIds] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  )
 
   const [query, setQuery] = useState('')
   const [indoorFilter, setIndoorFilter] = useState<boolean | null>(null)
@@ -178,6 +217,32 @@ export function BrowsePage() {
       })
       .catch(() => {
         if (!cancelled) setUpcoming(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [loading, session])
+
+  // V17 t02: the caller's own place follows, ONCE for the whole grid — the
+  // hearts' first paint comes from this read, never from a per-card call. The
+  // same signed-in-only shape as the counts effect above: signed out returns
+  // before the call, so no follows request is ever issued, and a failure lands
+  // the EMPTY SET so every heart renders unfilled and the page is otherwise
+  // untouched.
+  //
+  // The read is the DEFAULT-CLIENT wrapper (listMyFollows), the repo's
+  // established page-side pattern — no page in src/ imports the Supabase client
+  // directly. The wrapper resolves the user itself; the `session` guard here is
+  // what keeps a signed-out visitor from issuing the request at all.
+  useEffect(() => {
+    if (loading || session === null) return
+    let cancelled = false
+    listMyFollows()
+      .then((rows) => {
+        if (!cancelled) setFollowedPlaceIds(placeFollowIdSet(rows))
+      })
+      .catch(() => {
+        if (!cancelled) setFollowedPlaceIds(new Set<string>())
       })
     return () => {
       cancelled = true
@@ -364,6 +429,45 @@ export function BrowsePage() {
     setLocationAddress('')
   }
 
+  /**
+   * V17 t02: heart / un-heart ONE place — the EXISTING follow write, never a
+   * competing "save". The local set is flipped FIRST (the heart moves on tap,
+   * the ping toggle's optimistic discipline), then `toggleFollowPlace` — which
+   * is a read-then-write against the owner-only row (it resolves the follow row
+   * itself, which is why the heart never needs the row id) and already treats a
+   * concurrent 23505 as success — confirms it in the background.
+   *
+   * Both writes use the FUNCTIONAL updater, not a value captured from this
+   * render's closure. The follows read is a concurrent effect: it can land a
+   * fresh set between the tap and the write settling, and rolling back to a
+   * captured `previous` would then restore a set that is no longer the one we
+   * replaced — silently discarding a read that arrived mid-flight. The updater
+   * receives the CURRENT state and inverts only this place, so the rollback
+   * restores exactly what it changed.
+   *
+   * There is no second local write when the promise resolves: the database
+   * decides, the UI only reflects it.
+   */
+  async function handleTogglePlaceFollow(placeId: string) {
+    const wasFollowed = followedPlaceIds.has(placeId)
+    setFollowedPlaceIds((prev) => {
+      const next = new Set(prev)
+      if (wasFollowed) next.delete(placeId)
+      else next.add(placeId)
+      return next
+    })
+    try {
+      await toggleFollowPlace(placeId)
+    } catch {
+      setFollowedPlaceIds((prev) => {
+        const next = new Set(prev)
+        if (wasFollowed) next.add(placeId)
+        else next.delete(placeId)
+        return next
+      })
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -529,7 +633,13 @@ export function BrowsePage() {
                 {group.label}
               </h2>
               {group.rows.map((row) => (
-                <PlaceRow key={row.place.id} row={row} />
+                <PlaceRow
+                  key={row.place.id}
+                  row={row}
+                  followed={followedPlaceIds.has(row.place.id)}
+                  canFollow={session !== null}
+                  onToggleFollow={(placeId) => void handleTogglePlaceFollow(placeId)}
+                />
               ))}
             </section>
           ))}
@@ -555,7 +665,13 @@ export function BrowsePage() {
                         {group.label}
                       </h2>
                       {group.rows.map((row) => (
-                        <PlaceRow key={row.place.id} row={row} />
+                        <PlaceRow
+                          key={row.place.id}
+                          row={row}
+                          followed={followedPlaceIds.has(row.place.id)}
+                          canFollow={session !== null}
+                          onToggleFollow={(placeId) => void handleTogglePlaceFollow(placeId)}
+                        />
                       ))}
                     </section>
                   ))
@@ -577,7 +693,13 @@ export function BrowsePage() {
           </p>
           <div className="flex flex-col gap-2">
             {filteredUnplaced.map((row) => (
-              <PlaceRow key={row.place.id} row={row} />
+              <PlaceRow
+                key={row.place.id}
+                row={row}
+                followed={followedPlaceIds.has(row.place.id)}
+                canFollow={session !== null}
+                onToggleFollow={(placeId) => void handleTogglePlaceFollow(placeId)}
+              />
             ))}
           </div>
         </section>
@@ -775,7 +897,19 @@ export function BrowsePage() {
 }
 
 /** One place row: the whole row taps through to the place page. */
-function PlaceRow({ row }: { row: PlaceListRow }) {
+function PlaceRow({
+  row,
+  followed,
+  canFollow,
+  onToggleFollow,
+}: {
+  row: PlaceListRow
+  /** V17 t02: the caller already follows this place (the batched read). */
+  followed: boolean
+  /** V17 t02: signed in? Signed OUT renders no heart at all — see the page doc. */
+  canFollow: boolean
+  onToggleFollow: (placeId: string) => void
+}) {
   const navigate = useNavigate()
   const upcomingLabel = placeUpcomingLabel(row.upcomingCount)
 
@@ -806,7 +940,39 @@ function PlaceRow({ row }: { row: PlaceListRow }) {
       data-testid="place-row"
       className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition-colors hover:bg-slate-50"
     >
-      <span className="text-sm font-semibold text-slate-900">{row.place.name}</span>
+      {/* V17 t02: name + the heart. The heart is at the row's top-right and is
+          rendered ONLY for a signed-in parent — a signed-out visitor sees the
+          row exactly as it was (the /place/:id decision, where signed-out gets
+          a sign-in prompt instead of a Follow control).
+
+          `min-h-11 min-w-11` is the measured 44px tap-target floor (the V16 t07
+          control discipline); the -m-1 keeps the larger hit area from shifting
+          the row's own padding. It is a <button> INSIDE the row's <Link>, so
+          the click is preventDefault'd + stopPropagation'd — the same guard the
+          card ping toggle uses — or tapping the heart would also navigate. */}
+      <span className="flex items-start justify-between gap-2">
+        <span className="text-sm font-semibold text-slate-900">{row.place.name}</span>
+        {canFollow ? (
+          <button
+            type="button"
+            data-testid={`place-heart-${row.place.id}`}
+            aria-pressed={followed}
+            aria-label={
+              followed
+                ? `Following ${row.place.name} — tap to unfollow`
+                : `Follow ${row.place.name}`
+            }
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              onToggleFollow(row.place.id)
+            }}
+            className="-m-1 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-slate-100"
+          >
+            <HeartIcon filled={followed} />
+          </button>
+        ) : null}
+      </span>
       <span className="text-xs text-slate-600">
         {placeKindLabel(row.place.kind)} · {placeIndoorLabel(row.place)}
         {' · '}
@@ -848,5 +1014,33 @@ function PlaceRow({ row }: { row: PlaceListRow }) {
         )}
       </div>
     </Link>
+  )
+}
+
+/**
+ * V17 t02: the place heart. One inline SVG in the repo's own glyph family
+ * (24px viewBox, `currentColor`, the `NAV_ICONS` stroke convention) rather
+ * than a new icon dependency.
+ *
+ * FILLED and EMPTY are the two states the parent reads at a glance: an
+ * unfollowed place is an indigo OUTLINE, a followed one is a SOLID indigo
+ * heart. The fill is decided by the prop, never by this component, and
+ * `aria-hidden` keeps the glyph itself out of the accessibility tree — the
+ * button around it carries the label and the pressed state.
+ */
+function HeartIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={`h-6 w-6 ${filled ? 'text-indigo-600' : 'text-slate-400'}`}
+      fill={filled ? 'currentColor' : 'none'}
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 20.5S4 15.3 4 9.9A4.6 4.6 0 0 1 12 6.4a4.6 4.6 0 0 1 8 3.5c0 5.4-8 10.6-8 10.6Z" />
+    </svg>
   )
 }

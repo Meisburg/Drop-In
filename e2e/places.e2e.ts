@@ -37,6 +37,12 @@
  * (10) V15 ticket 04: the marker panel's "Learn more" link carries the derived
  *     OSM search URL (target=_blank rel=noopener), and each browse list row
  *     carries its own compact "Start a drop-in" button + "Learn more" link.
+ * (11) V17 t02: the card heart IS the existing place follow (0033) — the
+ *     signed-in marker sees one `place-heart-<id>` per card, tapping it writes
+ *     exactly ONE `follows` row for that place (read back through REST with the
+ *     marker's own JWT), the heart reports pressed, and tapping it again
+ *     deletes the row. A SIGNED-OUT visitor to /browse renders NO heart at all
+ *     and issues no follows request. Every heart is ≥44px in both dimensions.
  *
  * RED BY DESIGN pre-0029-apply: `places` does not exist live yet, so PostgREST
  * answers the first read with PGRST205 (schema cache: table not found). The
@@ -49,14 +55,17 @@
  * the dashboard SQL API (the house procedure).
  *
  * Cleanup (best-effort, per house): the marker's own playdate rows are deleted
- * via REST with the marker's JWT (the host-only DELETE policy); the marker
- * account (e2e- prefix) is left for the orchestrator's sweep. Nothing this
- * spec does touches the marker's home zip or radius — it drives the Places
- * distance filter instead, so it is independent of whatever location an earlier
- * spec left the marker on.
+ * via REST with the marker's JWT (the host-only DELETE policy); the marker's
+ * own place-follow rows (V17 t02) are deleted the same way — the follows table
+ * is owner-only on every verb, so the marker's JWT is the ONLY credential that
+ * can remove them, and the heart spec deletes its own row as part of its run.
+ * The marker account (e2e- prefix) is left for the orchestrator's sweep.
+ * Nothing this spec does touches the marker's home zip or radius — it drives
+ * the Places distance filter instead, so it is independent of whatever location
+ * an earlier spec left the marker on.
  */
 import { expect, test } from '@playwright/test'
-import type { Page } from '@playwright/test'
+import type { BrowserContext, Page } from '@playwright/test'
 import {
   editTitle,
   localDatePlusDays,
@@ -118,6 +127,53 @@ async function useAnyDistance(page: Page): Promise<void> {
 /** The seeded place row for `name` (the row is a link to the place page). */
 function placeRow(page: Page, name: string) {
   return page.getByTestId('place-row').filter({ hasText: name }).first()
+}
+
+/** The marker's REST headers (its OWN JWT — the follows table is owner-only). */
+function markerHeaders(): Record<string, string> {
+  const { anonKey } = readSupabaseEnv()
+  const { accessToken } = readMarkerSession()
+  return { apikey: anonKey, Authorization: `Bearer ${accessToken}` }
+}
+
+/**
+ * V17 t02: the marker's own `follows` rows for one place, read straight from
+ * PostgREST with the marker's JWT. An RLS-blocked read is a 2xx with an empty
+ * array (never an error), so this asserts on ROWS, not on the status.
+ */
+async function markerPlaceFollows(placeId: string): Promise<Array<{ id: string }>> {
+  const { url } = readSupabaseEnv()
+  const query = `follows?place_id=eq.${placeId}&select=id`
+  const response = await fetch(`${url}/rest/v1/${query}`, { headers: markerHeaders() })
+  if (!response.ok) {
+    throw new Error(`REST ${query} → HTTP ${response.status} ${await response.text()}`)
+  }
+  return (await response.json()) as Array<{ id: string }>
+}
+
+/**
+ * V17 t02: remove every place-follow row the marker owns (best-effort). The
+ * heart spec deletes its own row as part of the flow; this is the safety net
+ * for a run that failed midway, so a leftover row can never make the NEXT run's
+ * "starts unfilled" assertion fail.
+ */
+async function clearMarkerPlaceFollows(): Promise<void> {
+  try {
+    const { url } = readSupabaseEnv()
+    const response = await fetch(`${url}/rest/v1/follows?place_id=not.is.null`, {
+      method: 'DELETE',
+      headers: markerHeaders(),
+    })
+    if (!response.ok) {
+      console.log(`[e2e cleanup] follows delete HTTP ${response.status} (best-effort)`)
+    }
+  } catch (err) {
+    console.log(
+      `[e2e cleanup] follows delete failed (logged, best-effort): ${
+        err instanceof Error ? err.message : err
+      }`,
+    )
+  }
 }
 
 /** The one place row whose NAME is exactly `name` (titles repeat across places). */
@@ -553,6 +609,121 @@ test('the browse list defaults to alphabetical and the Filter & sort modal filte
   await page.getByTestId('filter-apply-btn').click()
 })
 
+test('a signed-in parent hearts a place — the existing follow row, filled from one batched read (V17 t02)', async ({
+  page,
+  browser,
+}) => {
+  // The heart's own place: a name matching EXACTLY ONE seeded place (the
+  // MARKER_PLACE discipline — "Green Lake Park" matches four), narrowed by
+  // search so the assertion is about ONE unambiguous `place-heart-<id>`.
+  await openPlacesTab(page)
+  await useAnyDistance(page)
+  await page.getByTestId('places-search').fill(MARKER_PLACE_NAME)
+  await expect(exactPlaceName(page, MARKER_PLACE_NAME)).toBeVisible()
+
+  // The row IS the directory read: its id is the id in the heart's testid
+  // (`place-heart-<placeId>`), so this spec never guesses an id.
+  const row = placeRow(page, MARKER_PLACE_NAME)
+  await expect(row).toHaveAttribute('href', /\/place\//)
+  const href = await row.getAttribute('href')
+  const placeId = (href ?? '').replace('/place/', '')
+  expect(placeId).not.toBe('')
+  const heart = page.getByTestId(`place-heart-${placeId}`)
+
+  // AC: every heart is a ≥44px tap target in BOTH dimensions (the repo's
+  // measured floor — Tailwind's h-11/w-11 = 2.75rem = 44px).
+  await expect(heart).toBeVisible()
+  const box = await heart.boundingBox()
+  if (box === null) throw new Error('the heart has no box — it is not rendered')
+  expect(box.width).toBeGreaterThanOrEqual(44)
+  expect(box.height).toBeGreaterThanOrEqual(44)
+
+  // AC: the heart's state comes from the ONE batched follows read, so it
+  // renders on first paint already reflecting the caller's row. Start from a
+  // known state — any leftover row from an earlier run is removed first, since
+  // the marker is a single long-lived account.
+  await clearMarkerPlaceFollows()
+  await page.reload()
+  await settleOnRoute(page, '/browse')
+  // A reload resets the distance filter to the viewer's own radius, so the
+  // narrowed place can fall out of the list — re-apply it (the same control the
+  // rest of this spec drives) before searching again.
+  await useAnyDistance(page)
+  await page.getByTestId('places-search').fill(MARKER_PLACE_NAME)
+  await expect(exactPlaceName(page, MARKER_PLACE_NAME)).toBeVisible()
+  await expect(page.getByTestId(`place-heart-${placeId}`)).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  )
+  expect(await markerPlaceFollows(placeId)).toHaveLength(0)
+
+  // AC: tapping an empty heart fills it AND writes the `follows` row — the
+  // EXISTING 0033 row (place_id target), read back through REST with the
+  // marker's own JWT. One tap, one row.
+  await page.getByTestId(`place-heart-${placeId}`).click()
+  await expect(page.getByTestId(`place-heart-${placeId}`)).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await expect.poll(async () => (await markerPlaceFollows(placeId)).length).toBe(1)
+
+  // The row survives a reload: the filled heart on first paint really is the
+  // BATCHED read's answer, not a leftover bit of local state.
+  await page.reload()
+  await settleOnRoute(page, '/browse')
+  // A reload resets the distance filter to the viewer's own radius, so the
+  // narrowed place can fall out of the list — re-apply it (the same control the
+  // rest of this spec drives) before searching again.
+  await useAnyDistance(page)
+  await page.getByTestId('places-search').fill(MARKER_PLACE_NAME)
+  await expect(exactPlaceName(page, MARKER_PLACE_NAME)).toBeVisible()
+  await expect(page.getByTestId(`place-heart-${placeId}`)).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+
+  // Tapping the heart does NOT navigate (it is a button inside the row's link):
+  // the same guard the card ping toggle carries.
+  await expect(page).toHaveURL(/\/browse/)
+
+  // AC: tapping a filled heart empties it and DELETES the row.
+  await page.getByTestId(`place-heart-${placeId}`).click()
+  await expect(page.getByTestId(`place-heart-${placeId}`)).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  )
+  await expect.poll(async () => (await markerPlaceFollows(placeId)).length).toBe(0)
+
+  // AC: SIGNED OUT renders NO heart at all on any card, and issues no follows
+  // request (the `session === null` guard).
+  //
+  // /browse is INSIDE the ProtectedShell, so a signed-out visitor is bounced to
+  // /login before BrowsePage ever mounts — there are no cards to inspect, and
+  // that is itself the proof at the SHELL level. The guard's second half (the
+  // page issues no follows request) is asserted on the REQUEST, never the
+  // status: the follows table is owner-only, so an anon read is a 2xx with zero
+  // rows and would look like a success.
+  const anonContext: BrowserContext = await browser.newContext({
+    baseURL: 'http://localhost:4173',
+    storageState: { cookies: [], origins: [] },
+  })
+  const anonPage = await anonContext.newPage()
+  const anonFollowRequests: string[] = []
+  anonPage.on('request', (request) => {
+    if (request.url().includes('/rest/v1/follows')) anonFollowRequests.push(request.url())
+  })
+  try {
+    await anonPage.goto('/browse')
+    await expect(anonPage.getByRole('heading', { name: 'Sign in' })).toBeVisible()
+    await expect(anonPage.locator('[data-testid^="place-heart-"]')).toHaveCount(0)
+    // A beat first: the assertion is about what the page did NOT do.
+    await anonPage.waitForTimeout(1000)
+    expect(anonFollowRequests).toHaveLength(0)
+  } finally {
+    await anonContext.close()
+  }
+})
+
 test.afterEach(async () => {
   // Best-effort cleanup (per house): delete the HOST marker's playdate rows via
   // REST with the marker's own JWT (the host-only DELETE policy). Child rows
@@ -584,4 +755,12 @@ test.afterEach(async () => {
       }`,
     )
   }
+
+  // V17 t02: the marker's own PLACE-follow rows, the same best-effort sweep.
+  // The heart spec removes its row as part of its own flow; this is the net for
+  // a run that failed midway, so a leftover row cannot make the next run's
+  // "starts unfilled" assertion fail. Family follows are deliberately NOT
+  // touched — this spec never writes one, and another spec's rows are not ours
+  // to delete.
+  await clearMarkerPlaceFollows()
 })
