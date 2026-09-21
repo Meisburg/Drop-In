@@ -435,3 +435,79 @@ test('a 1-mile radius really saves (the migration-0045 acceptance check)', async
   // deliberately leaves the shared marker at its narrowest radius.
   expect(await patchMarkerLocation(marker.homeZip, marker.radiusMiles)).toBe(true)
 })
+
+/**
+ * V16 t06 item 2 — the Feed's home-ZIP control, end to end.
+ *
+ * This control had NO e2e coverage despite being the surface where two real
+ * defects were found in review, so neither fix was pinned by anything that runs:
+ *
+ *  1. THE FALSE ERROR. Tapping Save with an empty box over a SAVED zip used to
+ *     reach the validator and render "Add your home zip." directly under the
+ *     label "Showing drop-ins near 98107" — a message contradicting the line
+ *     above it. This is the ORDINARY path (the field is a scratch buffer that is
+ *     empty on every page load), not an edge case.
+ *  2. THE WRITE RACE. The zip form and the radius select both PATCH home_zip AND
+ *     radius_miles in one statement; each used to guard only its own busy flag,
+ *     so overlapping writes could silently discard the loser's change. THE TEST
+ *     FOR THIS IS THE ROUND TRIP BELOW: change the radius, then the zip, and
+ *     assert BOTH survived. A regression that reintroduced the race would drop
+ *     one of them and fail here.
+ *
+ * It restores the marker's location at the end, and the file's existing
+ * afterEach is the backstop.
+ */
+test('the home-ZIP control saves, keeps the radius, and never shows a false error', async ({
+  page,
+}) => {
+  const marker = readMarkerMeta()
+
+  await page.goto('/')
+  await settleOnRoute(page, '/')
+
+  const label = page.getByTestId('feed-home-zip')
+  const input = page.getByTestId('feed-zip-input')
+  const save = page.getByTestId('feed-zip-save')
+  const error = page.getByTestId('feed-zip-error')
+
+  // The file's beforeEach pins the marker to FAR_ZIP / FAR_RADIUS before every
+  // test, so that — not the marker.json defaults — is the zip in effect here.
+  await expect(label).toContainText(FAR_ZIP)
+  await expect(error).toHaveCount(0)
+
+  // (1) THE FALSE-ERROR REGRESSION. Save with the field untouched. The box is
+  // empty (a scratch buffer), an empty draft over a saved zip must be a NO-OP,
+  // and no error may appear — least of all one contradicting the label above.
+  await save.click()
+  await expect(error, 'an untouched Save must not raise a false error').toHaveCount(0)
+  await expect(label).toContainText(FAR_ZIP)
+
+  // (2) THE ROUND TRIP. Set a different radius through the picker, then change
+  // the zip, and assert BOTH landed. If the two writes raced, one is lost here.
+  const radiusPicker = page.getByTestId('feed-radius-filter')
+  await radiusPicker.selectOption('20')
+  await expect.poll(async () => (await readMarkerLocation())?.radius_miles).toBe(20)
+
+  // A DIFFERENT valid zip from the seeded gazetteer, so the change is a real
+  // write rather than a no-op that would pass even with the handler broken.
+  const NEW_ZIP = '98007'
+  await input.fill(NEW_ZIP)
+  await save.click()
+  await expect(label).toContainText(NEW_ZIP)
+  const after = await readMarkerLocation()
+  expect(after?.home_zip, 'the zip must have been written').toBe(NEW_ZIP)
+  expect(
+    after?.radius_miles,
+    'changing the zip must NOT reset the radius the viewer chose (the write race)',
+  ).toBe(20)
+
+  // A rejected zip says so, in English, and does not change the saved value.
+  await input.fill('00000')
+  await save.click()
+  await expect(error, 'a zip we do not serve must produce a readable message').toBeVisible()
+  await expect(error).not.toContainText(/violates check constraint|PGRST/i)
+  expect((await readMarkerLocation())?.home_zip).toBe(NEW_ZIP)
+
+  // Restore immediately; afterEach is the backstop.
+  expect(await patchMarkerLocation(marker.homeZip, marker.radiusMiles)).toBe(true)
+})
