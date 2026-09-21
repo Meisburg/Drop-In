@@ -172,3 +172,19 @@ V16: CORRECTION (round 8) — I had OVER-CLASSIFIED the blockers. Re-read the
   LESSON: "blocked" means "no ruling exists", NOT "no code written yet". I was
   reporting accepted decisions as blockers, which understates how much is
   actually dispatchable.
+V16 t07 item 4: complete (1d15859 + 6c1c07b). Browse distance control DEMOTED
+  (Q4: kept, not removed -- Set location = origin, dropdown = range). Moved from
+  a full-width form row into the filter-chip row as an inline pill. Presentation
+  only: `git diff -w` proves the value/onChange/option VALUES are byte-identical.
+  ocr found THREE things; the best was an INCOMPLETE PLURAL FIX: the Set
+  location modal still rendered "Radius: 1 miles" (slider min={1}), the third
+  site of the same bug I had fixed at two. Also extracted the nested ternary
+  into pure distanceSelectValue/distanceChoiceFromValue + 4 round-trip tests
+  (the mapping was untestable inline). Gate: build 0, 932/932, lint 0 errors,
+  targeted e2e places+feed-empty-state 12/12.
+V16: factory hardening this round — .scratch/check-push-range.sh makes the
+  auto-push "clean range" check MECHANICAL. The rule already listed
+  supabase/.temp/; I violated it anyway by typing the check from memory and
+  omitting that path. The script was TESTED against a reproduction of the real
+  leak (fails, exit 1, names the pattern) and against a legitimate
+  supabase/migrations/ file (passes). AGENTS.md now bans `git add -A <dir>`.
