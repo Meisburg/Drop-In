@@ -243,3 +243,27 @@ V16: BATCH-END PLAYTEST LANE RUN (round 12) — PASS, 8 routes, 0 uncaught JS
 V16: NON-BLOCKED WORK IS NOW EXHAUSTED. Remaining: t03 item 1 (Ages i/ii),
   t07 item 2 (map a/b/c), migration 0045 apply (needs a credential). Deferred by
   decision Q5: the Airbnb redesign.
+V16: *** LIVE PRODUCTION INCONSISTENCY — FOUND ROUND 13, NEEDS MIGRATION 0045 ***
+  Verified against the DEPLOYED bundle, not inferred:
+    live entry asset  /assets/index-CQ4p4YVb.js  (816,901 bytes)
+    local built asset /assets/index-BKVu1wLU.js  (different -> live is behind,
+      but Vercel has auto-deployed MOST of this batch)
+  LIVE and confirmed present in the served bundle: t01 login copy ("See what
+  families are up to in your area"), t06.1 feed radius picker
+  (feed-radius-filter), t06.2 zip setter ("No home zip set yet"), t04 profile
+  unify ("Your photo & name"), t01 settings heading.
+  AND the live bundle ships the radius ladder as [1,2,5,10,20,35].
+  BUT the live DATABASE still carries `profiles_radius_miles_chk` = between 2
+  and 35, because 0045 is NOT applied.
+  CONSEQUENCE, on production right now: the deployed UI OFFERS "Within 1 mile"
+  and the DB REJECTS the write. The JS validator passes it (RADIUS_MIN_MILES is
+  already 1), so the failure comes back from Postgres as an error, which
+  handleRadiusChoice catches and shows as a red line -- a graceful failure, but
+  the user is offered an option that cannot be saved.
+  THIS REORDERS THE REMAINING WORK: applying 0045 is no longer a tidy-up, it is
+  the fix for a live defect. It needs a credential (options A/B/C in the ledger
+  above).
+  NOT a defect in the shipped code: the code and the migration are consistent
+  with each other. The gap is purely that the DB half of a two-part change has
+  not landed. That is what the batch-end apply step exists for, and why the
+  migration shipped with its UI in the same slice.
