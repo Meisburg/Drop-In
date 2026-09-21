@@ -33,8 +33,33 @@ $$;
 
 Expected: "Success. No rows returned."
 
-**Then tell me it's done** and I will verify it from here by checking that a
-1-mile radius saves, and record it in task-state.
+### Then confirm it in the SAME window (one more Run)
+
+Paste this and Run. It reads the constraint back out of the catalog, so it
+proves the change landed rather than assuming the first statement worked:
+
+```sql
+select pg_get_constraintdef(oid) as now_enforced
+from pg_constraint
+where conname = 'profiles_radius_miles_chk'
+  and conrelid = 'public.profiles'::regclass;
+```
+
+**Success looks like exactly this:**
+
+| now_enforced |
+|---|
+| `CHECK ((radius_miles >= 1) AND (radius_miles <= 35))` |
+
+If it still says `>= 2`, the widen did not take — re-run the first block (it is
+idempotent, so running it twice is safe and expected).
+
+**Then tell me it's done** and I will verify from here that a 1-mile radius
+actually saves, run the migration-acceptance e2e test that is waiting for this
+exact moment, and record it in task-state. That test
+(`e2e/feed-empty-state.e2e.ts` → "a 1-mile radius really saves") currently FAILS
+— it is the acceptance check for this migration and it flips green when the
+widen lands.
 
 ---
 
