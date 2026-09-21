@@ -320,3 +320,32 @@ V16: AUDIT AXES NOW COVERED — e2e coverage per testid (rounds 19-21), unit
   coverage per new exported function (round 22), commit/ledger/deploy integrity
   (round 23). All three are clean except the two known blocked tickets and the
   0045 apply. The remaining V16 work genuinely requires the founder.
+V16: CONCURRENT SESSION DETECTED (round 24) — another agent refactored the docs
+  and installed a git hook while this batch was running. NOT MINE; left
+  uncommitted deliberately.
+  WHAT THEY CHANGED (file mtimes 11:40-12:16, uncommitted):
+   * AGENTS.md condensed 217 lines -> 27 changed, with detail moved out:
+     `npm run verify` is now the declared single gate (build+test+lint), a slice
+     budget section (98k local window), and a "read on demand" doc index.
+   * NEW docs/agents/: auto-push.md, browser-lanes.md, coordinator.md,
+     model-routing.md, course-review-2026-09-21.md. All four referenced docs
+     EXIST (verified).
+   * NEW scripts/install-git-hooks.sh + a REAL .git/hooks/pre-push that enforces
+     the auto-push rule: it blocks on machine-local artifacts in the range, and
+     runs the gate unless FAST_PUSH=1.
+   * package.json: added `typecheck` (tsc -b --noEmit) and `verify`.
+  VERIFIED, not assumed:
+   * `npm run verify` exits 0; 952 tests; lint 0 errors.
+   * `npm run typecheck` correctly exits 2 on a planted type error and 0 on a
+     clean tree. (My first reading said "exit 0 on error" — that was MY
+     measurement bug: piping through `tail` masks the exit code. Worth recording
+     because that is exactly the class of error this batch has been hunting.)
+   * The pre-push hook RUNS and PASSES on this tree: "PASS — gated push to
+     origin/master is clean and green."
+  MY V16 WORK SURVIVED THE REWRITE: Review lanes / escalating fix loop / build
+  law / ocr are all still in AGENTS.md; browser-lane etiquette moved into
+  docs/agents/browser-lanes.md (12 matching rules there).
+  DELIBERATELY NOT COMMITTED: another session's in-flight refactor is not mine
+  to commit or fold into a V16 slice. Flagged to the human instead. Note their
+  change and mine both touch AGENTS.md, so a commit now would either absorb
+  their WIP or conflict with it.
