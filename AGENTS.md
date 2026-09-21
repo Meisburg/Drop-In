@@ -216,9 +216,26 @@ routes the next slice — all within this session.
      `.scratch/*.cjs|mjs|html`, `supabase/.temp/`, `opencode.json` —
      untracked + gitignored, `.gitignore:69`). A slice's own migration under
      `supabase/migrations/` is an intended file when the plan slice says so.
+
+     **RUN THIS, do not eyeball it** (`.scratch/check-push-range.sh`):
+     ```bash
+     bash .scratch/check-push-range.sh
+     ```
+     It applies the whole rule above mechanically and exits non-zero on any
+     forbidden path. This exists because the rule was ALREADY correct and was
+     still violated: on 2026-09-21 a slice ran `git add -A supabase/` and
+     committed `supabase/.temp/linked-project.json` (project ref + org id,
+     machine-local CLI state), then checked the range with a hand-typed regex
+     that omitted `supabase/.temp/` and reported "clean". The file was caught
+     by the third review lane before it reached origin — but only by luck of
+     ordering. **A safety check the agent types from memory is not a check.**
+     If the script is missing, write it from this rule before pushing.
   3. **Fast-forward** — plain `git push origin master`; no force, no amend,
      no rebase.
 - Any one fails → STOP, report the failing check verbatim, founder decides.
+- **Never `git add -A` a directory.** Stage the slice's own files by name, or
+  `git add -A src/ e2e/ supabase/migrations/` — never a bare `supabase/`,
+  which is what let CLI temp state into a commit.
 - Scope: git pushes to origin/master only. Publish, deploy, production
   changes, and sending sensitive data externally still require explicit
   human authorization.
