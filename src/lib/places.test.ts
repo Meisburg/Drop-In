@@ -6,6 +6,7 @@ import {
   coordNumber,
   distanceMiles,
   filterPlacesByRadius,
+  framingCircle,
   groupPlacesByKind,
   matchPlaces,
   placeAgeFitLabel,
@@ -821,5 +822,36 @@ describe('filterPlacesByRadius (pure radius filter over resolveMapCoords)', () =
 
   it('works with an empty places array', () => {
     expect(filterPlacesByRadius([], CENTER, 10, GAZETTEER)).toEqual([])
+  })
+})
+
+describe('framingCircle', () => {
+  const GEO = { lat: 47.6, lng: -122.3 }
+  const HOME = { lat: 47.7, lng: -122.4 }
+
+  it('frames on the geocoded center when the viewer set one', () => {
+    expect(framingCircle({ geocodeCenter: GEO, homePin: HOME, radiusMiles: 5 })).toEqual({
+      center: GEO,
+      radiusMiles: 5,
+    })
+  })
+
+  it('falls back to the home pin at the viewer radius when there is no geocode', () => {
+    const framed = framingCircle({ geocodeCenter: null, homePin: HOME, radiusMiles: 35 })
+    expect(framed).toEqual({ center: HOME, radiusMiles: 35 })
+  })
+
+  it('lets a geocoded center win over the home pin', () => {
+    const framed = framingCircle({ geocodeCenter: GEO, homePin: HOME, radiusMiles: 10 })
+    expect(framed?.center).toEqual(GEO)
+  })
+
+  it('returns null with no center to frame on (the caller keeps its mount view)', () => {
+    expect(framingCircle({ geocodeCenter: null, homePin: null, radiusMiles: 5 })).toBeNull()
+  })
+
+  it('returns null for a non-positive radius (a degenerate box has no extent)', () => {
+    expect(framingCircle({ geocodeCenter: GEO, homePin: HOME, radiusMiles: 0 })).toBeNull()
+    expect(framingCircle({ geocodeCenter: GEO, homePin: HOME, radiusMiles: -5 })).toBeNull()
   })
 })

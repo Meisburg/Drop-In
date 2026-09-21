@@ -23,6 +23,7 @@ import {
   browsePlaces,
   BROWSE_LIST_LEAD_LIMIT,
   filterPlacesByRadius,
+  framingCircle,
   groupPlacesByKind,
   PLACE_KINDS,
   placeExternalUrl,
@@ -402,9 +403,11 @@ export function BrowsePage() {
             places={placed.map((row) => row.place)}
             zipCoords={zipCoords}
             homePin={homePinCoords}
-            radiusCircle={
-              geocodeCenter !== null ? { center: geocodeCenter, radiusMiles } : null
-            }
+            radiusCircle={framingCircle({
+              geocodeCenter,
+              homePin: homePinCoords,
+              radiusMiles: geocodeCenter !== null ? radiusMiles : viewerRadius,
+            })}
           />
         </div>
       ) : null}

@@ -173,8 +173,13 @@ export function PlaceMap({
  * V15 ticket 02: optional `homePin` + `radiusCircle` overlays (additive only —
  * the place-dot rendering above is unchanged). The home pin is a distinct red
  * marker at the viewer's stored home_zip coords; the radius circle is a
- * translucent overlay around the chosen center. When a homePin is provided the
- * map centers on it at mount instead of fitting all markers.
+ * translucent overlay around the chosen center.
+ *
+ * V16 t07 item 2: the map is framed by that RADIUS CIRCLE, not by the bounds of
+ * every place. The caller (BrowsePage's pure `framingCircle`) passes a circle
+ * whenever the viewer has a geocoded center OR a home pin, so this is the sole
+ * framing authority; only a viewer with neither falls back to the mount view
+ * below (centered on the home pin / first marker).
  */
 export function PlacesMap({
   places,
@@ -283,31 +288,31 @@ export function PlacesMap({
         return marker
       }),
     ).addTo(map)
-    // V15.1 fix — ALWAYS FIT TO THE CURRENT SET.
+    // V16 t07 item 2 — THE CAMERA IS NOT MOVED HERE ANY MORE.
     //
-    // The map card in BrowsePage is CONDITIONALLY rendered on its marker list,
-    // so narrowing the search can unmount and REMOUNT this whole component:
-    // the fresh Leaflet instance is created by the mount effect (whose
-    // dependency list is empty) and, with the old code, only the no-home-pin
-    // branch ever called fitBounds. Whenever a home pin was present the
-    // remounted map kept Leaflet's default view around the pin's anchor and
-    // projected the surviving markers outside its 256px canvas — where Leaflet
-    // renders them as the SVG path `d="M0 0"`: in the DOM, zero-size, invisible
-    // and UNCLICKABLE. Searching for a place therefore left that place's own
-    // marker untappable, which is exactly what the marker-info spec caught.
+    // This effect used to fitBounds over every place PLUS the home pin, on the
+    // theory (V15.1) that it kept the pin on screen and every marker tappable.
+    // Those two goals CONFLICT at city scale: fitBounds picks the zoom that fits
+    // ALL points, and `maxZoom` only caps how far IN it may go — nothing stopped
+    // it zooming OUT. With dozens of places across Seattle the fit became a
+    // city-wide view and every marker collapsed into the overlapping blue blob
+    // the founder photographed.
     //
-    // So: fit every time this effect runs (mount and each set change), over the
-    // current places PLUS the home pin, so the pin can never scroll out of view
-    // (V15 t02's AC1 — the view is anchored on home) and every place on the map
-    // is inside the canvas and tappable. maxZoom keeps a single-marker set from
-    // slamming to street level.
-    const boundsPoints: Array<[number, number]> = entries.map((e) => [e.coords.lat, e.coords.lng])
-    if (homePin !== undefined && homePin !== null) {
-      boundsPoints.push([homePin.lat, homePin.lng])
-    }
-    if (boundsPoints.length > 0) {
-      map.fitBounds(L.latLngBounds(boundsPoints), { padding: [28, 28], maxZoom: DETAIL_ZOOM })
-    }
+    // The invariant is now: **the view is framed by the SEARCH RADIUS**, by the
+    // circle effect below — the only place that moves the camera. The home pin
+    // is the frame's center whenever there is no geocoded address (BrowsePage
+    // passes the circle either way), so the pin still cannot scroll out of view.
+    //
+    // RETIRED, EXPLICITLY: "every place on the map is inside the canvas and
+    // tappable". A place OUTSIDE the radius is legitimately off-canvas — that is
+    // what a radius means. Markers still in range are tappable; the marker-click
+    // spec must be run at the WIDEST radius, not the default, because that is
+    // where the frame is largest and this trade is most visible.
+    //
+    // The V15 t02 bug this comment block once guarded — a marker rendered at
+    // SVG `d="M0 0"` (in the DOM, zero-size, UNCLICKABLE) after a search
+    // narrowed the set — was caused by a wrong VIEW, not by a missing fit here.
+    // The circle effect now sets that view on every mount and set change.
     // The container is measured when Leaflet builds the map; a remount (or a
     // late layout) can leave that measurement stale, so re-measure here.
     map.invalidateSize()
@@ -316,9 +321,12 @@ export function PlacesMap({
     }
   }, [markersKey])
 
-  // V15 t02: when the caller sets a radiusCircle, recenter + zoom to fit it.
-  // A separate effect so the circle's appearance (after geocoding) triggers
-  // the recenter without touching the place-marker group.
+  // V15 t02 / V16 t07 item 2: THE framing authority. When the caller sets a
+  // radiusCircle — geocoded center, else the home pin at the viewer's radius —
+  // recenter and zoom to fit it. A separate effect so the circle's appearance
+  // triggers the recenter without touching the place-marker group. This is now
+  // the ONLY effect that moves the camera (the marker group above just adds
+  // circles), so the view is always the circle the viewer asked to see.
   const circleKey =
     radiusCircle !== undefined && radiusCircle !== null
       ? `${radiusCircle.center.lat}:${radiusCircle.center.lng}:${radiusCircle.radiusMiles}`

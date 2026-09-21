@@ -708,3 +708,36 @@ export function filterPlacesByRadius(
   }
   return kept
 }
+
+/** The circle a map should frame itself on: a center and a radius in miles. */
+export interface FramingCircle {
+  center: { lat: number; lng: number }
+  radiusMiles: number
+}
+
+/**
+ * V16 t07 item 2: WHICH circle frames the /browse overview map. A pure decision
+ * so the component renders what it is given and the page never encodes it.
+ *
+ * The map is framed by the SEARCH RADIUS, never by the bounds of every place
+ * (that fit zoomed out to the whole city and collapsed every marker into an
+ * overlapping blob). A geocoded "Set location" center wins when present — that
+ * is the center the viewer explicitly chose. Otherwise the viewer's HOME PIN
+ * frames the map at their stored radius, so the circle effect stays the sole
+ * framing authority in the common no-geocode case. With neither there is no
+ * circle to frame and the caller falls back to its mount view.
+ *
+ * `radiusMiles` <= 0 yields null: a zero-radius circle has no extent to fit and
+ * leaflet's fitBounds on a degenerate box zooms to street level.
+ */
+export function framingCircle(input: {
+  geocodeCenter: { lat: number; lng: number } | null
+  homePin: { lat: number; lng: number } | null
+  radiusMiles: number
+}): FramingCircle | null {
+  const { geocodeCenter, homePin, radiusMiles } = input
+  if (!(radiusMiles > 0)) return null
+  if (geocodeCenter !== null) return { center: geocodeCenter, radiusMiles }
+  if (homePin !== null) return { center: homePin, radiusMiles }
+  return null
+}
