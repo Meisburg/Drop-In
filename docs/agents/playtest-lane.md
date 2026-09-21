@@ -18,6 +18,54 @@ zero visible windows — and checks each route in
 
 Verdict lands in `verdict.md` / `verdict.json` (PASS/FAIL, exit 0/1).
 
+## Running it (the three things that are easy to get wrong)
+
+The script does **not** launch Chrome and does **not** serve the app — it expects
+both to already exist. `websocket-client` is not in the system Python, so invoke
+it through `uv`. And `--out` must exist before the run, or the script dies
+writing `verdict.json` after having done all the work.
+
+```bash
+# 1. serve the built app
+npm run build
+npx serve -s dist -l 4173 &
+
+# 2. start the dedicated headless Chrome. --remote-allow-origins is REQUIRED:
+#    without it the CDP websocket handshake returns 403 Forbidden.
+nohup nice -n 19 google-chrome-stable --headless=new --disable-gpu \
+  --no-first-run --no-default-browser-check --remote-allow-origins='*' \
+  --user-data-dir="$HOME/.hermes/playtest-hl" \
+  --remote-debugging-port=9444 about:blank &
+
+# 3. run the lane
+mkdir -p .scratch/playtest
+~/.hermes/bin/uv run --with websocket-client python scripts/playtest_check.py \
+  --base http://127.0.0.1:4173 --port 9444 \
+  --out .scratch/playtest --routes .scratch/playtest/routes.json
+```
+
+**Release both when done** — kill the listener *by port*, never `pkill -f`
+(which matches the agent's own shell and kills the wrong thing):
+
+```bash
+kill "$(ss -ltnp | grep 9444 | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)"
+```
+
+## `routes.json` is armed (2026-09-21)
+
+Every entry now carries a real `must_contain` assertion. Before this, 7 of 8
+entries had `must_contain: []`, so the lane proved only "no crash" — real value,
+but far less than a PASS implied. Public routes assert their own copy; the five
+auth-gated routes (`/new`, `/browse`, `/inbox`, `/profile`, `/settings`) assert
+`"Sign in"`, which is the honest claim: **the gate redirects**.
+
+Verified both directions on 2026-09-21: 8/8 routes PASS with 0 JS errors, and a
+deliberately false needle correctly FAILs the run — so the assertions bite.
+
+Note the script iterates *every* array element and reads `rt["path"]`, so a
+comment object in the array crashes it. Keep comments in this doc, not in the
+JSON.
+
 ## Orchestrator acceptance loop
 
 1. Serve `dist/` (any static SPA server with index.html fallback).

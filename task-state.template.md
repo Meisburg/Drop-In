@@ -12,10 +12,23 @@
 
 ## Slices
 
-| Slice | State | Evidence | Notes |
-|---|---|---|---|
-| 1 | pending / done / blocked | <review verdict, verification output pointer> | |
-| 2 | pending | | |
+| Slice | State | Gate | Tokens | Evidence | Notes |
+|---|---|---|---|---|---|
+| 1 | pending / done / blocked | PASS/FAIL | ~Nk | <review verdict, verification output pointer> | |
+| 2 | pending | | | | |
+
+> **Tokens** = the builder's peak context for that slice (from `/context` or the
+> session log). Record it every slice: it is the only way slice sizing becomes
+> empirical instead of a guess. Budget is one local builder window (~98k); a
+> slice that runs near the ceiling was mis-sized and should split next time.
+
+## Phase boundaries
+
+One line per slice, recording the explicit continue / clear / compact decision.
+The default is **clear** — durable state lives in plan.md, this file, the ledger,
+and the commit.
+
+    Slice N: phase boundary — CLEAR (durable: plan.md S-N, task-state.md, commit <sha7>)
 
 ## Open risks
 

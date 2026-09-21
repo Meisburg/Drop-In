@@ -1,10 +1,11 @@
 [
-  { "path": "/", "must_contain": [] },
-  { "path": "/login", "must_contain": [] },
+  { "path": "/", "must_contain": ["Drop In", "Sign in"] },
+  { "path": "/login", "must_contain": ["Drop In", "Sign in", "Password"] },
   { "path": "/reset-password", "must_contain": ["didn\u2019t work"] },
-  { "path": "/inbox", "must_contain": [] },
-  { "path": "/new", "must_contain": [] },
-  { "path": "/browse", "must_contain": [] },
-  { "path": "/settings", "must_contain": [] },
-  { "path": "/profile", "must_contain": [] }
+
+  { "path": "/new", "must_contain": ["Sign in"] },
+  { "path": "/browse", "must_contain": ["Sign in"] },
+  { "path": "/inbox", "must_contain": ["Sign in"] },
+  { "path": "/profile", "must_contain": ["Sign in"] },
+  { "path": "/settings", "must_contain": ["Sign in"] }
 ]

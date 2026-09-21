@@ -4,6 +4,9 @@
 > below must be executable without interpretation. If a slice cannot state its
 > acceptance criteria and verification command, it is not ready — dispatch the
 > explorer first.
+>
+> The default slice gate is `npm run verify` (build + test + lint). Pin anything
+> extra (targeted e2e, a live check) explicitly in the slice.
 
 ## Goal
 
@@ -29,6 +32,9 @@ don't re-decide them.>
 - **Acceptance criteria:**
   - <checkable statement, e.g. "POST /api/limit returns 429 after 5 req/min per key">
 - **Verification command:** `<exact command, run from repo root>`
+- **Budget:** one local builder context (~98k tokens, `qwen3.8-27b`). If the
+  slice cannot plausibly finish inside that, split it — a slice that overruns
+  hits the dumb zone, and the second half drifts from the first.
 - **Depends on:** <slice numbers or "nothing">
 
 ### Slice 2: <name>

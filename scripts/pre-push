@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Pre-push gate — the machine-enforced half of the auto-push rule.
+#
+# WHY THIS EXISTS: AGENTS.md has always said "a safety check the agent types
+# from memory is not a check" — but until now that principle was applied to ONE
+# check (the push-range check) while the entire gate stack stayed advisory. No
+# CI, no hooks: every gate was something an agent had to remember to run. The
+# gate is only real if something enforces it.
+#
+# This hook runs on `git push` to origin/master and blocks when:
+#   1. the pushed range contains machine-local artifacts (rule 2), or
+#   2. the working tree is unverified (rule 1) — unless FAST_PUSH=1.
+#
+# Rule 1 is the expensive one (build + test + lint, ~1-2 min). It is skipped
+# automatically for non-master pushes, and can be forced off with:
+#     FAST_PUSH=1 git push origin master
+# The range check (rule 2) is NEVER skippable — it is seconds, and it is the
+# check that has already failed in production once.
+#
+# Install: see docs/agents/auto-push.md (`bash scripts/install-git-hooks.sh`).
+
+set -uo pipefail
+
+REPO="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+  echo "pre-push: FATAL: not inside a git repository" >&2
+  exit 1
+}
+cd "$REPO" || exit 1
+
+ZERO="0000000000000000000000000000000000000000"
+REMOTE="${1:-origin}"
+FAIL=0
+
+# --- Decide whether this push even needs gating -----------------------------
+# stdin carries: <local-ref> <local-sha> <remote-ref> <remote-sha> per line.
+NEEDS_GATE=0
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  [ -z "${remote_ref:-}" ] && continue
+  case "$remote_ref" in
+    refs/heads/master|refs/heads/main) NEEDS_GATE=1 ;;
+  esac
+done
+
+if [ "$NEEDS_GATE" -eq 0 ]; then
+  exit 0
+fi
+
+echo "pre-push: gating a push to $REMOTE/master"
+
+# --- Rule 2: clean range (never skippable) ----------------------------------
+if [ -x .scratch/check-push-range.sh ]; then
+  if ! bash .scratch/check-push-range.sh; then
+    echo
+    echo "pre-push: BLOCKED by the clean-range check (AGENTS.md auto-push rule 2)."
+    FAIL=1
+  fi
+else
+  echo "pre-push: WARNING: .scratch/check-push-range.sh missing — cannot apply" >&2
+  echo "          the clean-range rule. Restore it before pushing." >&2
+  FAIL=1
+fi
+
+# --- Rule 1: gate green (skippable with FAST_PUSH=1) ------------------------
+if [ "${FAST_PUSH:-0}" = "1" ]; then
+  echo "pre-push: FAST_PUSH=1 — SKIPPING the build/test/lint gate."
+  echo "pre-push: the human owns the consequences of an unverified push."
+elif [ ! -f package.json ]; then
+  echo "pre-push: no package.json — nothing to verify."
+elif ! command -v npm >/dev/null 2>&1; then
+  echo "pre-push: WARNING: npm not found — cannot run the gate." >&2
+  FAIL=1
+else
+  echo "pre-push: running 'npm run verify' (build + test + lint)..."
+  if ! nice -n 19 npm run verify; then
+    echo
+    echo "pre-push: BLOCKED — 'npm run verify' failed (auto-push rule 1)."
+    echo "          Fix the tree, or push with FAST_PUSH=1 to override."
+    FAIL=1
+  fi
+fi
+
+if [ "$FAIL" -ne 0 ]; then
+  echo
+  echo "pre-push: push refused. Nothing was sent to $REMOTE."
+  exit 1
+fi
+
+echo "pre-push: PASS — gated push to $REMOTE/master is clean and green."
+exit 0

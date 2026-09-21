@@ -10,10 +10,13 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "typecheck": "tsc -b --noEmit",
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "steering-lint": "bash scripts/steering-lint.sh",
+    "verify": "npm run build && npm run test && npm run lint && npm run steering-lint"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.115.0",
