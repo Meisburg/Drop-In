@@ -26,7 +26,14 @@ const VIEWPORTS = [
 // Pass a real drop-in id as the second argument to audit a content-bearing
 // detail page; the default exercises the not-found state (also a real screen).
 const DETAIL_ID = process.argv[3] ?? '00000000-0000-0000-0000-000000000000'
-const ROUTES = ['/login', `/playdate/${DETAIL_ID}`]
+// V17: /browse added. It is the page the redesign changed most (a map band, a
+// card per place, a floating control, a 44px heart), and until now this audit
+// never loaded it — so the measured floors the `ocr` rules also enforce had no
+// lane watching the one screen V17 rebuilt. Signed out it redirects to /login,
+// which is the state audited here (no marker account is available to this
+// throwaway script); the signed-in layout is measured by the places e2e specs
+// at 390 and by the mobile-audit assertions those specs carry.
+const ROUTES = ['/login', `/playdate/${DETAIL_ID}`, '/browse']
 
 const browser = await chromium.launch()
 let failures = 0
