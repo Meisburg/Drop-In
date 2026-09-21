@@ -96,3 +96,21 @@ V16 t04 content: profile photo+name unified into ONE card (visual unify; save
   wiring untouched), likes is a textarea rows=3 with a 500 cap (NO migration —
   kids.likes is text), Hosted-drop-ins card + its queryMyPlaydatesWithClient
   effect removed.
+V16 t05: complete (662cb2d + e2e fixes 603adca). UserPage avatar size="lg"
+  (new variant; md default untouched), sections re-ordered via the
+  profileBlurbOrder SEAM (kids -> about -> familyPhoto; family photo is now the
+  CLOSER) with tests + a new closer-pinning test, kid photos owner-gated via the
+  EXISTING useKidPhotoUrls hook (kidPhotoVisibility byte-identical; visitor path
+  unchanged), parent photo added, Message button left alone (already existed).
+V16: FULL E2E SUITE RUN — 89 passed, 2 FAILED, both in feed-ended-out.e2e.ts
+  and both caused by MY OWN t04 archive-door fix. FIXED in 603adca:
+  (1) 'Your family' heading locator became ambiguous once t04 renamed the photo
+      card heading to 'A photo of your family' -> strict-mode violation. Fixed
+      at intent level (navigate to the surface the door really opens).
+  (2) the row locator stayed `locator('li')` after the surface moved from
+      /profile (<li> rows) to /u/:handle (DropInCard <a> cards). Fixed to the
+      same selector the passing blocks in that file already used.
+  Rerun: feed-ended-out 4/4 green. LESSON: targeted e2e runs are NOT a
+  substitute for the full suite when a change repoints navigation.
+V16: e2e lane note — the full suite takes >10 min (89-91 tests, live Supabase)
+  and exceeds the default 600s tool cap; run it as a background job.
