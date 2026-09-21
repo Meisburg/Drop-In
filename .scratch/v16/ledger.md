@@ -58,3 +58,15 @@ V16 t03: CODE-VERIFIED, NOT YET DISPATCHED — item 2 (section order) is ALREADY
   range again. NEEDS FOUNDER RULING (i/ii/iii in spec). Item 3 (duplicate row
   overflow) DIAGNOSED: w-fit at NewPlaydatePage.tsx:754-755 fights the column
   flex container at :953.
+V16 t03: item 3 SHIPPED as commit 22c00d3 — duplicate-row pills no longer
+  overflow. Root cause was w-fit fighting an already-column flex container;
+  w-full lets the pill grow to contain wrapped text with the 44px floor intact.
+  Builder explicitly verified truncation was NOT acceptable (would silently drop
+  the date; nothing else in the DOM repeats the label). THIRD LANE: ocr clean,
+  0 findings (47k tokens, 27s). Gate: build 0, 905/905, playtest PASS 8 routes.
+V16 t03: items 1 and 2 NOT in that commit. Item 2 (section order) was already
+  correct -> dropped. Item 1 (Ages chips) is BLOCKED on a founder ruling:
+  removing the chips kills the only path that writes playdates.age_min/age_max
+  (migration 0037), so no post could ever carry a stated age range again.
+  Options in spec: (i) remove outright, (ii) derive from selected kids,
+  (iii) move behind More options.
