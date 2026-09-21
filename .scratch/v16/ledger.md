@@ -133,3 +133,26 @@ V16: browser-lane etiquette added to AGENTS.md (human works on this machine):
   Rule 7: several repo scripts (apply-migration.mjs, cdp-sql-runner.py,
   sweep-e2e-markers.mjs, migrate-kid-photos.mjs) drive the HUMAN'S OWN Chrome
   to supabase.com/dashboard via page.goto -- confirm first, prefer the API path.
+V16 t06 item 1: complete (c6000e9 + 893d53b). Feed gets a PERSISTENT radius
+  picker (feed-radius-filter) above the list, rendering in all three list states;
+  reuses updateHomeZipRadius + refresh() so the refetch is free via the load
+  effect's contextKey. RadiusEmptyState gains showEscapes (default true) and the
+  FEED passes false -- coexist but never simultaneously, since on the feed's
+  empty branch the picker and the escapes would be two near-identical radius
+  rows one line apart. New pure seam radiusChoices(radiusMiles) + 7 tests,
+  including an off-ladder insert guard (a <select> whose value matches no
+  <option> lies about the state it drives).
+  THIRD LANE FOUND A CRITICAL MISS: I had updated feed-ended-out.e2e.ts and
+  claimed the coverage was handled, but e2e/feed-empty-state.e2e.ts ALSO drove
+  the escape buttons (widen.click() + stored-radius assertions) and would have
+  timed out. ocr found it by searching for other consumers of the removed
+  control; I had only checked the spec I already knew about. Fixed by driving
+  the new picker; both specs rerun 7/7 green. Also interpolated the hardcoded
+  '35 mi' ceiling label.
+  Gate: build 0, 924/924 (26 files), lint 0 errors, targeted e2e 7/7.
+V16: REMAINING WORK IS ALL FOUNDER-BLOCKED. t03 item 1 (Ages chips) and t07
+  items 2-4 (map zoom policy, 1-mile migration, Airbnb redesign). Both blockers
+  now carry a coordinator recommendation + the cost-if-wrong in the spec:
+  Ages -> (ii) derive from kids [option (iii) is IMPOSSIBLE: the More options
+  disclosure was deleted in V13]; map -> (b) fit the radius circle [no safe
+  interim default, so undispatched].
