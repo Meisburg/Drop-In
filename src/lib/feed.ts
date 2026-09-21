@@ -54,14 +54,21 @@ export interface RadiusViewer {
   radiusMiles: number
 }
 
-/** The radius options (pinned in plan-v2 Interfaces: 2/5/10/20/35). */
-export const RADIUS_MILES_OPTIONS = [2, 5, 10, 20, 35] as const
+/**
+ * The radius options (pinned in plan-v2 Interfaces: 2/5/10/20/35).
+ *
+ * V16 t07 item 3: the floor is now 1 mile — the founder's ask was to zoom in
+ * close ("Within 1 mile"), and the DB constraint was widened to match in
+ * migration 0045. This list has TWO consumers, `BrowsePage` and
+ * `OnboardingPage`, so 1 mile appears in the onboarding picker too.
+ */
+export const RADIUS_MILES_OPTIONS = [1, 2, 5, 10, 20, 35] as const
 
 /** The default radius (pinned: 5 miles). */
 export const DEFAULT_RADIUS_MILES = 5
 
-/** The DB backstop bounds (migration 0012 CHECK: between 2 and 35). */
-export const RADIUS_MIN_MILES = 2
+/** The DB backstop bounds (migration 0045 CHECK: between 1 and 35). */
+export const RADIUS_MIN_MILES = 1
 export const RADIUS_MAX_MILES = 35
 
 /**
@@ -131,14 +138,19 @@ export function validateHomeZip(zip: string, knownZips: ReadonlySet<string>): st
   return null
 }
 
-/** Validate a radius choice (pinned options 2/5/10/20/35; DB CHECK 2–35). */
+/**
+ * Validate a radius choice (options 1/2/5/10/20/35; DB CHECK 1–35 — the
+ * floor widened from 2 in V16 t07 item 3 / migration 0045). The message is
+ * interpolated from the same constants the check uses so it can never
+ * disagree with them.
+ */
 export function validateRadiusMiles(radiusMiles: number): string | null {
   if (
     !Number.isInteger(radiusMiles) ||
     radiusMiles < RADIUS_MIN_MILES ||
     radiusMiles > RADIUS_MAX_MILES
   ) {
-    return 'Pick a radius between 2 and 35 miles.'
+    return `Pick a radius between ${RADIUS_MIN_MILES} and ${RADIUS_MAX_MILES} miles.`
   }
   return null
 }

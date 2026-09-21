@@ -69,6 +69,7 @@ import {
   queryUpcomingFeedWithClient,
   rainBadgeLabel,
   RADIUS_MAX_MILES,
+  RADIUS_MIN_MILES,
   RADIUS_MILES_OPTIONS,
   radiusEscapes,
   radiusChoices,
@@ -711,18 +712,33 @@ describe('validateHomeZip (the onboarding /profile zip rules)', () => {
   })
 })
 
-describe('validateRadiusMiles (the pinned 2–35 bounds, 0012 CHECK backstop)', () => {
-  it('accepts every pinned option', () => {
+describe('validateRadiusMiles (the pinned 1–35 bounds, 0045 CHECK backstop)', () => {
+  it('accepts every pinned option — including the new 1-mile floor', () => {
     for (const miles of RADIUS_MILES_OPTIONS) {
       expect(validateRadiusMiles(miles)).toBeNull()
     }
   })
 
+  it('accepts the 1-mile option (V16 t07 item 3: the UI must not offer what it cannot save)', () => {
+    // The defect this pins: RADIUS_MILES_OPTIONS carrying 1 while
+    // RADIUS_MIN_MILES stayed 2 would render a "Within 1 mile" choice that
+    // validateRadiusMiles rejects at save time. The two constants must agree.
+    expect(RADIUS_MILES_OPTIONS).toContain(1)
+    expect(RADIUS_MIN_MILES).toBe(1)
+    expect(validateRadiusMiles(RADIUS_MIN_MILES)).toBeNull()
+  })
+
   it('rejects out-of-range and non-integer values', () => {
-    expect(validateRadiusMiles(1)).not.toBeNull()
+    expect(validateRadiusMiles(0)).not.toBeNull()
     expect(validateRadiusMiles(36)).not.toBeNull()
-    expect(validateRadiusMiles(2.5)).not.toBeNull()
+    expect(validateRadiusMiles(1.5)).not.toBeNull()
     expect(validateRadiusMiles(Number.NaN)).not.toBeNull()
+  })
+
+  it('states the same bounds its constants carry', () => {
+    expect(validateRadiusMiles(0)).toBe(
+      `Pick a radius between ${RADIUS_MIN_MILES} and ${RADIUS_MAX_MILES} miles.`,
+    )
   })
 })
 
@@ -2037,8 +2053,8 @@ describe('radiusChoices (V16 t06 item 1: the radius control that stays on screen
     // The founder's ask is "widen OR narrow" from the feed. A picker that only
     // listed radii <= the saved one would make 35 unreachable from the 5-mile
     // default — the exact dead end this slice removes.
-    expect(radiusChoices(5).map((c) => c.radiusMiles)).toEqual([2, 5, 10, 20, 35])
-    expect(radiusChoices(20).map((c) => c.radiusMiles)).toEqual([2, 5, 10, 20, 35])
+    expect(radiusChoices(5).map((c) => c.radiusMiles)).toEqual([1, 2, 5, 10, 20, 35])
+    expect(radiusChoices(20).map((c) => c.radiusMiles)).toEqual([1, 2, 5, 10, 20, 35])
   })
 
   it('is the pinned option list itself at every shipped radius', () => {
@@ -2075,14 +2091,16 @@ describe('radiusChoices (V16 t06 item 1: the radius control that stays on screen
     // so this pins the guard, not a live state: a <select> whose value matches
     // no <option> renders the FIRST option while the list filters on something
     // else. 7 must appear as itself.
-    expect(radiusChoices(7).map((c) => c.radiusMiles)).toEqual([2, 5, 7, 10, 20, 35])
+    expect(radiusChoices(7).map((c) => c.radiusMiles)).toEqual([1, 2, 5, 7, 10, 20, 35])
   })
 
   it('keeps the ladder intact when the viewer sits below the narrowest option', () => {
-    // 1 mile is NOT an option yet (that is migration 0045, a separate ruling).
-    // If a profile ever sits below the floor, the picker must still show the
-    // whole ladder with that radius represented as itself — never a select
-    // that silently renders "Within 2 miles" while the feed filters on 1.
+    // 1 mile IS an option now (V16 t07 item 3 / migration 0045), so this case is
+    // reachable rather than hypothetical: 1 is on the ladder itself, so a
+    // viewer sitting there sees it as the first rung, at its own value. The
+    // guard still matters for any sub-floor radius the DB could not hold
+    // before — the picker must represent it as itself, never silently render
+    // "Within 2 miles" while the feed filters on something else.
     expect(radiusChoices(1).map((c) => c.radiusMiles)).toEqual([1, 2, 5, 10, 20, 35])
   })
 
