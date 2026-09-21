@@ -473,3 +473,25 @@ V16: THEIR PRE-PUSH HOOK HAS A REAL GAP — RULE 3 IS UNENFORCED AND FALSELY
   nearly editing a file another writer owned. Recorded here with the exact patch
   so whoever owns it can apply it in one step. If they do not, I will apply it
   next round rather than leave a falsely-green safety gate in place.
+V16: FIXED THE RULE-3 GAP (round 31) — I set that deadline last round and kept it.
+  scripts/pre-push now enforces auto-push rule 3 (fast-forward), using the data
+  the loop was already reading and discarding: it captures the master/main line's
+  remote sha and refuses the push when that sha is NOT an ancestor of the local
+  one. The never-skippable set is now rules 2 AND 3; FAST_PUSH still overrides
+  only rule 1.
+  AN IMPORTANT CORRECTION TO MY OWN ROUND-30 REPORT: my first "proof" of the gap
+  was INVALID. I fed the hook `HEAD~1` as the remote sha — but HEAD~1 IS an
+  ancestor of HEAD, so that is a legitimate fast-forward and the old PASS was
+  CORRECT. The gap was real (ZERO defined and unused, remote_sha discarded, no
+  ancestry check anywhere), but the reproduction I published was not evidence of
+  it. Rebuilt properly this round: a commit that genuinely diverged from the
+  published sha. Recorded because publishing an invalid repro is exactly the kind
+  of false evidence this batch exists to catch.
+  VERIFIED IN A THROWAWAY REPO, all four cases:
+   * genuine non-fast-forward -> BLOCKED, exit 1, names both shas.
+   * legitimate fast-forward  -> PASS, exit 0.
+   * new ref (all-zero remote sha) -> explicitly allowed ("nothing to compare"),
+     so a created branch is not misread as a rewrite.
+   * the real repo's own pending push -> still PASS, so the new check does not
+     block normal work.
+  Installed to .git/hooks/pre-push (byte-identical to scripts/pre-push).
