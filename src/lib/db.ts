@@ -2293,11 +2293,22 @@ export const BIO_MAX_LENGTH = 500
 export const MAX_KIDS_PER_PROFILE = 5
 
 /**
- * The kid "likes" cap (V3 slice 6, ticket 09, migration 0022): <= 100
- * characters, UI pin — the caps are app-enforced (the UI wall), NO DB
- * CHECK (the 0021 address lesson; 0022 adds the column plain).
+ * The kid "likes" cap (V3 slice 6, ticket 09, migration 0022): a UI pin — the
+ * caps are app-enforced (the UI wall), NO DB CHECK (the 0021 address lesson;
+ * 0022 adds the column plain). The column is `kids.likes text` (nullable), so
+ * any length fits and NO migration is needed to change this number.
+ *
+ * 100 → 500 in V16 t04. The founder's complaint was that a parent cannot say
+ * anything real about their kid in 100 characters: this is PROSE a parent
+ * writes ("loves dinosaurs, building couch forts, and will eat anything with
+ * peanut butter on it"), not a tag list — 100 is about one sentence. 500 is the
+ * same ceiling the bio (BIO_MAX_LENGTH) uses, so the product has ONE prose
+ * budget instead of two numbers to remember, and it is deliberately NOT
+ * unlimited: the value rides profile/feed read paths and into kid labels, so a
+ * finite pin keeps a pathological paste out of every render while still being
+ * ~5× the space that felt too small.
  */
-export const LIKES_MAX_LENGTH = 100
+export const LIKES_MAX_LENGTH = 500
 
 /**
  * The profile "interests" cap (V3 slice 6, ticket 09, migration 0022):

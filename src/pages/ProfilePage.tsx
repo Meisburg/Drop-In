@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router'
 import { NAV_ICONS } from '../components/icons'
 import { SectionHeader } from '../components/SectionHeader'
 import { ConfirmDialog } from '../components/ConfirmDialog'
-import { HostAvatar } from '../components/DropInCard'
 import { useSessionContext } from '../components/SessionProvider'
 import { useFamilyPhotoUrl } from '../components/useFamilyPhotoUrl'
 import { useKidPhotoUrls } from '../components/useKidPhotoUrls'
@@ -17,7 +15,6 @@ import {
   LIKES_MAX_LENGTH,
   MAX_KIDS_PER_PROFILE,
   removeKid,
-  supabase,
   updateBio,
   updateDisplayName,
   updateKid,
@@ -30,13 +27,7 @@ import {
   validateKid,
   validateKidLikes,
 } from '../lib/db'
-import {
-  partitionPostsByTime,
-  playdateKidsKidIds,
-  queryMyPlaydatesWithClient,
-  toDuplicatePrefill,
-} from '../lib/feed'
-import type { Kid, Playdate } from '../lib/types'
+import type { Kid } from '../lib/types'
 import {
   planProfileSave,
   seedProfileFormValues,
@@ -75,18 +66,23 @@ const AUTOSAVE_DEBOUNCE_MS = 400
  * (useCropStep) and write their OBJECT PATHS (uploadFamilyPhoto /
  * uploadKidPhoto) — never URLs, which expire.
  *
- * The read set, in the pinned block order (family photo → "About the parents"
- * → the kids list, all optional, the page looks finished with none of them):
+ * The read set, in the pinned block order (V16 t04 dropped the last one):
+ *  - "Your photo & name" (the identity card: the tap-the-circle photo control
+ *    AND the inline display-name field in ONE card — the name editor moved out
+ *    of its own identity block in V16 t04, with its save/validation wiring
+ *    unchanged)
  *  - "A photo of your family" (always-present card: the signed-URL image when
  *    set, plus the Add/Change control either way)
  *  - "About the parents" (the bio, editable textarea; the display name renders
- *    as its OWN text node at the bottom of the page so a spec can match it
+ *    as its OWN text node inside the photo card above, so a spec can match it
  *    exactly while the app-shell header shows the @-prefixed form)
- *  - "About the kids" (kid rows: first name + age + likes inputs, an optional
- *    per-kid photo (owner-only render via useKidPhotoUrls), and Remove; plus
- *    the add-a-kid row and the five-kid cap)
- *  - "Hosted drop-ins" (the owner's own posts, the same Upcoming/Past split as
- *    /u/:handle; every row keeps its Duplicate action, which navigates to /new)
+ *  - "About the kids" (kid rows: first name + age + a full-width multi-line
+ *    likes textarea, an optional per-kid photo (owner-only render via
+ *    useKidPhotoUrls), and Remove; plus the add-a-kid row and the five-kid cap)
+ *
+ * V16 t04 REMOVED the "Hosted drop-ins" card (and with it this page's own-posts
+ * load — see the removal note at its old position). Duplicating a past post
+ * lives on /new's "Duplicate existing" picker and on a drop-in's host panel.
  *
  * The family photo's signed URL comes from the same batched, best-effort hook
  * /settings used (never persisted; null while in flight or when the mint
@@ -97,7 +93,6 @@ const AUTOSAVE_DEBOUNCE_MS = 400
  * photo-free.
  */
 export function ProfilePage() {
-  const navigate = useNavigate()
   const { session, loading, profile, refresh } = useSessionContext()
   const userId = session?.user?.id ?? null
 
@@ -152,9 +147,6 @@ export function ProfilePage() {
   // avatar corner clears profiles.avatar_url (clearAvatar); one at a time.
   const [avatarRemoving, setAvatarRemoving] = useState(false)
 
-  const [myPosts, setMyPosts] = useState<Playdate[] | null>(null)
-  const [postsError, setPostsError] = useState<string | null>(null)
-
   // Seed the form ONCE the profile loads; user typing wins after (the
   // seed-once guard is what keeps a refresh() from erasing an edit).
   useEffect(() => {
@@ -187,27 +179,10 @@ export function ProfilePage() {
     }
   }, [userId])
 
-  // The "Your posts" list (V2 slice 1): the owner's own drop-ins, newest
-  // first. A failed load (e.g. the playdates table not applied yet) renders a
-  // designed error, never a crash.
-  useEffect(() => {
-    if (userId === null) return
-    let cancelled = false
-    setMyPosts(null)
-    setPostsError(null)
-    queryMyPlaydatesWithClient(supabase, userId)
-      .then((rows) => {
-        if (cancelled) return
-        setMyPosts(rows as unknown as Playdate[])
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return
-        setPostsError(err instanceof Error ? err.message : 'Could not load your posts.')
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [userId])
+  // V16 t04: the owner's own-posts load used to sit here. It fed only the
+  // removed "Hosted drop-ins" card, so it is gone with it — /profile no longer
+  // issues the query my-playdates request at all. The duplicate path lives on
+  // /new (the "Duplicate existing" picker), which does its own load.
 
   // THE TWO CROP STEPS (photo-crop ticket 03, re-homed here): the family photo
   // and the per-kid photo. The family photo's step is declared HERE (one
@@ -553,14 +528,6 @@ export function ProfilePage() {
     )
   }
 
-  // The "Your posts" split — the same pure seam /u/:handle uses (upcoming
-  // ascending, past descending). nowIso is read once per render.
-  const nowIso = new Date().toISOString()
-  const { upcoming: upcomingPosts, past: pastPosts } = partitionPostsByTime(
-    myPosts ?? [],
-    nowIso,
-  )
-
   /**
    * THE AUTOSAVE'S DECISION, computed at render (the pure planProfileSave —
    * the render-time plan feeds ONLY the bio field's inline "blocked" state
@@ -681,78 +648,99 @@ export function ProfilePage() {
   const kidsAtCap = (kids ?? []).length >= MAX_KIDS_PER_PROFILE
   const liveBioError = writeErrors.bio ?? savePlan?.blockedSections.find((item) => item.section === 'bio')?.error ?? null
 
-  /**
-   * One "Your posts" row (built once, rendered in BOTH sections): the title
-   * (a link to the drop-in — the way this archive reaches V8/09's "Same time
-   * next week"), when + place, and the Duplicate action, which stays on every
-   * row, past posts included. V12 t03 (migration 0041): a host-early-ended
-   * post (status 'ended') gets an "Ended" label on the when/place line — the
-   * honest-history "ended", distinct from "Cancelled" (the label the detail
-   * page + DropInCard chips render).
-   *
-   * `muted` is the archive's own signal (the DropInCard opacity-60): a Past
-   * row is history, an Upcoming row is a plan. It mutes the row's TEXT only —
-   * Duplicate stays at full strength because it works.
-   */
-  const renderPostRow = (post: Playdate, muted: boolean) => (
-    <li
-      key={post.id}
-      className="flex items-center justify-between gap-2 rounded-xl px-2 py-1.5"
-    >
-      <div className={'min-w-0' + (muted ? ' opacity-60' : '')}>
-        <Link
-          to={`/playdate/${post.id}`}
-          className="block truncate text-sm text-slate-800 underline-offset-2 hover:underline"
-        >
-          {post.title}
-        </Link>
-        <p className="text-xs text-slate-500">
-          {formatPostWhen(post.starts_at)} · {post.place}
-          {post.status === 'ended' ? ' · Ended' : ''}
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={() =>
-          navigate('/new', {
-            state: { duplicate: toDuplicatePrefill(post, playdateKidsKidIds(post.playdate_kids)) },
-          })
-        }
-        className="shrink-0 rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200"
-      >
-        Duplicate
-      </button>
-    </li>
-  )
-
   return (
     <div className="flex flex-col gap-4">
       <div>
         <SectionHeader
           icon={NAV_ICONS.profile}
           title="Your family"
-          tagline="Your profile, kids, and hosted drop-ins"
+          tagline="Your photo, name, and family"
         />
       </div>
 
-      {/* V15 ticket 06 (A20): THE IDENTITY BLOCK — moved to the TOP of the page
-          (it used to head the page before V13 ticket 01 demoted it; this ticket
-          restores that order). The display name is the FIRST thing on /profile:
-          an inline-editable input (the same tap-to-edit, autosave-as-you-go
-          pattern as every other field here) + the @handle line. The avatar
-          renders beside it via HostAvatar (the feed-card shape); its editor
-          lives in the "Your photo" card below. */}
+      {/* V16 t04: THE IDENTITY CARD AND THE "Your photo" CARD ARE ONE. The
+          separate identity block that used to sit above this card is GONE — the
+          name field and the avatar now live in the same card, which is exactly
+          what the founder asked for (hover/tap the photo circle to change or
+          remove the photo AND change your display name in one place).
+
+          SCOPE, stated so the next reader does not mistake this for a rewrite:
+          this is the VISUAL unify. The name input keeps the SAME wiring it had
+          in the identity block — the same `draft.name` value, the same
+          `editDraft(..., 'name')` edit, the same debounced autosave, the same
+          writers['name'] → updateDisplayName path and the same HandleTakenError
+          / handle-uniqueness handling (see the writers Record above). Nothing
+          about display-name save or validation changed; only its container did.
+          Test ids (display-name-input, avatar-photo-trigger, avatar-photo,
+          avatar-remove, avatar-photo-input) are unchanged, so the specs that
+          drive them keep working. */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex items-center gap-3">
+        <h2 className="text-base font-semibold text-slate-900">Your photo &amp; name</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Optional photo. It shows on your drop-in cards and your public page.
+        </p>
+        <div className="mt-3 flex items-start gap-3">
+          {/* V15 ticket 06 (A19): TAP THE AVATAR TO CHANGE IT. The circle itself is
+              the trigger for the file picker (no text button); a small × on its
+              corner removes the photo (hover to reveal on desktop, long-press on
+              mobile). No photo yet → a tappable "Add a photo" label (the same
+              pattern). The circle also carries the page's identity render
+              (HostAvatar's photo shape), so what you tap is what you get. */}
           {profile !== null && profile.avatar_url !== null && profile.avatar_url !== undefined ? (
-            <HostAvatar
-              host={{
-                id: profile.id,
-                display_name: profile.display_name,
-                avatar_url: profile.avatar_url,
-              }}
-            />
-          ) : null}
+            <div className="group relative shrink-0">
+              <label
+                data-testid="avatar-photo-trigger"
+                className="flex h-20 w-20 cursor-pointer items-center justify-center rounded-full transition-transform active:scale-95"
+              >
+                <input
+                  data-testid="avatar-photo-input"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file !== undefined && file !== null) {
+                      void avatarCrop.beginCrop(file)
+                    }
+                    e.target.value = ''
+                  }}
+                />
+                <img
+                  data-testid="avatar-photo"
+                  src={profile.avatar_url}
+                  alt="Your avatar"
+                  className="h-20 w-20 rounded-full object-cover"
+                />
+              </label>
+              <button
+                type="button"
+                data-testid="avatar-remove"
+                aria-label="Remove photo"
+                onClick={() => void handleRemoveAvatar()}
+                disabled={avatarRemoving}
+                className="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white text-sm font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-100 disabled:opacity-50 sm:opacity-0 sm:focus-within:opacity-100 sm:group-hover:opacity-100"
+              >
+                ×
+              </button>
+            </div>
+          ) : (
+            <label className="flex shrink-0 cursor-pointer items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-slate-50">
+              <input
+                data-testid="avatar-photo-input"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file !== undefined && file !== null) {
+                    void avatarCrop.beginCrop(file)
+                  }
+                  e.target.value = ''
+                }}
+              />
+              Add a photo
+            </label>
+          )}
           <div className="min-w-0 flex-1">
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-slate-700">Display name</span>
@@ -775,76 +763,6 @@ export function ProfilePage() {
             ) : null}
           </div>
         </div>
-      </div>
-
-      {/* "Your photo" — the parent's avatar (V2 ticket 02; V13 ticket 01 moved the
-          editor here from /onboarding). Always present: add OR change. The
-          HostAvatar render in the identity block above shows the result. */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900">Your photo</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Optional. A photo of you — it shows on your drop-in cards and your public page.
-        </p>
-        {/* V15 ticket 06 (A19): TAP THE AVATAR TO CHANGE IT. The circle itself is
-            now the trigger for the file picker (no text button); a small × on
-            its corner removes the photo (hover to reveal on desktop, long-press
-            on mobile). No photo yet → the whole card's empty state is one
-            tappable "Add a photo" label (the same pattern). */}
-        {profile !== null && profile.avatar_url !== null && profile.avatar_url !== undefined ? (
-          <div className="group relative mt-3 inline-block">
-            <label
-              data-testid="avatar-photo-trigger"
-              className="flex h-20 w-20 cursor-pointer items-center justify-center rounded-full transition-transform active:scale-95"
-            >
-              <input
-                data-testid="avatar-photo-input"
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  if (file !== undefined && file !== null) {
-                    void avatarCrop.beginCrop(file)
-                  }
-                  e.target.value = ''
-                }}
-              />
-              <img
-                data-testid="avatar-photo"
-                src={profile.avatar_url}
-                alt="Your avatar"
-                className="h-20 w-20 rounded-full object-cover"
-              />
-            </label>
-            <button
-              type="button"
-              data-testid="avatar-remove"
-              aria-label="Remove photo"
-              onClick={() => void handleRemoveAvatar()}
-              disabled={avatarRemoving}
-              className="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white text-sm font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-100 disabled:opacity-50 sm:opacity-0 sm:focus-within:opacity-100 sm:group-hover:opacity-100"
-            >
-              ×
-            </button>
-          </div>
-        ) : (
-          <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-slate-50">
-            <input
-              data-testid="avatar-photo-input"
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0]
-                if (file !== undefined && file !== null) {
-                  void avatarCrop.beginCrop(file)
-                }
-                e.target.value = ''
-              }}
-            />
-            Add a photo
-          </label>
-        )}
         {avatarCrop.dialog}
         {avatarUploading ? (
           <p className="mt-2 text-sm text-slate-600">Uploading…</p>
@@ -1009,24 +927,36 @@ export function ProfilePage() {
                             disabled={kidsBusyId !== null}
                           />
                         </label>
-                        <label className="flex min-w-0 flex-1 basis-40 items-center gap-1 text-sm">
-                          <span className="shrink-0 text-slate-600">Likes:</span>
-                          <input
+                        {/* V16 t04: LIKES IS ITS OWN FULL-WIDTH ROW. It used to
+                            share a `basis-40` line with Name + Age, so the
+                            text you typed was cut off at a few words. Now it
+                            gets a `w-full basis-full` row of its own inside the
+                            same wrapping flex container (so Name/Age keep
+                            their line and nothing else moves), and it is a
+                            real multi-line <textarea> that shows several lines
+                            at once — the founder's "you cannot read what you
+                            typed". The counter + limit ride below it instead of
+                            stealing width from the field. */}
+                        <label className="flex w-full min-w-0 basis-full flex-col gap-1 text-sm">
+                          <span className="text-slate-600">Likes:</span>
+                          <textarea
                             data-testid="kid-likes"
                             aria-label="Kid likes"
+                            rows={3}
                             className={
-                              'min-w-0 flex-1 rounded-xl border px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                              'w-full min-w-0 rounded-xl border px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
                               (rowError !== null ? 'border-red-400' : 'border-slate-300')
                             }
                             value={values.likes}
                             onChange={(e) => editKidDraft(kid.id, { likes: e.target.value })}
-                            placeholder="(optional)"
+                            placeholder="(optional) — what are they into?"
+                            maxLength={LIKES_MAX_LENGTH}
                             disabled={kidsBusyId !== null}
                           />
                           {values.likes !== '' ? (
                             <span
                               className={
-                                'shrink-0 text-xs ' +
+                                'text-xs ' +
                                 (validateKidLikes(values.likes) !== null
                                   ? 'text-red-600'
                                   : 'text-slate-500')
@@ -1109,68 +1039,20 @@ export function ProfilePage() {
         )}
       </div>
 
-      {/* "Hosted drop-ins" — the owner's own posts (renamed from "Your posts"
-          in V13 ticket 01 to match the /u/:handle heading). Same Upcoming/Past
-          split; every row keeps its Duplicate action (it navigates to /new,
-          which is not an edit of anything on this page). */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900">Hosted drop-ins</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Duplicate one to re-post it — place, kids, and duration come along (V12 t04);
-          you only pick a new start time.
-        </p>
+      {/* V16 t04: the "Hosted drop-ins" card is REMOVED from /profile (the
+          founder's ask). It was the ONLY consumer of this page's own-posts
+          load, so the load went with it: the `myPosts`/`postsError` state, the
+          queryMyPlaydatesWithClient effect, `renderPostRow`, the Upcoming/Past
+          split and the `duplicate-previous` button are all gone — no orphaned
+          request, no dead state.
 
-        {postsError !== null ? (
-          <p className="mt-3 text-sm text-red-600">{postsError}</p>
-        ) : myPosts === null ? (
-          <p className="mt-3 text-sm text-slate-600">Loading…</p>
-        ) : myPosts.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-600">No posts yet.</p>
-        ) : (
-          <div className="mt-3 flex flex-col gap-3">
-            {/* V13 ticket 04: "Duplicate previous drop-in" — the explicit picker
-                entry point (A20). Shows the same past-posts list as /new's
-                "Post again" picker; selecting a row navigates to /new with the
-                duplicate prefill (the same toDuplicatePrefill path as the
-                per-row Duplicate buttons). */}
-            <button
-              type="button"
-              data-testid="duplicate-previous"
-              onClick={() => {
-                const latest = myPosts[0]
-                if (latest) {
-                  navigate('/new', {
-                    state: { duplicate: toDuplicatePrefill(latest, playdateKidsKidIds(latest.playdate_kids)) },
-                  })
-                }
-              }}
-              className="min-h-11 w-fit max-w-full rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-left text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
-            >
-              Duplicate previous drop-in
-            </button>
-            {upcomingPosts.length === 0 ? (
-              <p className="text-sm text-slate-600">
-                Nothing coming up — past drop-ins below.
-              </p>
-            ) : (
-              <section className="flex flex-col gap-1">
-                <h3 className="text-sm font-semibold text-slate-700">Upcoming</h3>
-                <ul className="flex flex-col gap-1">
-                  {upcomingPosts.map((post) => renderPostRow(post, false))}
-                </ul>
-              </section>
-            )}
-            {pastPosts.length > 0 ? (
-              <section className="flex flex-col gap-1">
-                <h3 className="text-sm font-semibold text-slate-700">Past</h3>
-                <ul className="flex flex-col gap-1">
-                  {pastPosts.map((post) => renderPostRow(post, true))}
-                </ul>
-              </section>
-            ) : null}
-          </div>
-        )}
-      </div>
+          DUPLICATING A PAST POST IS STILL REACHABLE, checked before deleting:
+          /new owns the "Duplicate existing" picker (NewPlaydatePage, the
+          V15 T05 A10 two-choice header → the `post-again` lightbox), and the
+          drop-in detail page's host panel keeps its own Duplicate button. The
+          e2e specs that pin both (post-again.e2e.ts, post-location.e2e.ts) are
+          the ones that ran before this change and still pass; only
+          profile-posts.e2e.ts asserted the removed card and was updated. */}
 
       {/* V12 t01: THE AUTOSAVE INDICATOR — the line that used to hold the save
           button + the "unsaved changes" sentence + the result note, in one
@@ -1325,11 +1207,3 @@ function KidPhotoControl({
   )
 }
 
-/** Local "Sep 12 · 3 PM" for an own-post row. */
-function formatPostWhen(iso: string): string {
-  const d = new Date(iso)
-  return `${d.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-  })} · ${d.toLocaleTimeString(undefined, { hour: 'numeric' })}`
-}

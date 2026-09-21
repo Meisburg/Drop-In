@@ -432,51 +432,37 @@ test('an ended drop-in leaves the feed, a live one stays, and the archive still 
     `the old starts_at cutoff must be gone from the feed's read; saw: ${playdateReads.join(' | ')}`,
   ).toBe(false)
 
-  // --- (6) The archive: V8/04's Past list on /profile, reached from the feed's
-  // own door. THREE ASSERTIONS IN HERE ARE THIS TICKET'S OWN PIVOTS (corrected in
-  // review cycle 1, F2 — they were not green at HEAD):
-  //   (6a) the feed's "See past drop-ins" line — ADDED by this ticket;
-  //   (6b) the Past row's title LINK — HEAD rendered a plain <p>, so the host
-  //        could not open their own past post from the archive at all;
-  //   (6c) the `opacity-60` mute on a Past row — `renderPostRow` took no `muted`
-  //        argument at HEAD and the two sections looked identical.
-  // The rest of the block (the Past/Upcoming split) is V8/04's shipped behaviour.
-  // This IS the day-sections line (not the empty state's): the two controls
-  // above proved real cards are on the page, so the feed is not in its empty
-  // state at all — and the label is the shared constant the app renders.
+  // --- (6) V16 t04 MOVED THIS BLOCK'S ARCHIVE OFF /profile. The feed's own door
+  // ("See past drop-ins") still navigates to /profile, but /profile no longer
+  // renders the "Hosted drop-ins" list (the founder removed it; the load went
+  // with it). The archive lists this block pins — the Past/Upcoming split, the
+  // row-is-a-door link, the opacity-60 mute — are all still asserted, on the
+  // surface that still renders them and always did: /u/<handle> (block 8
+  // below, which is why block 6's assertions are now made there).
   // (6a)
   await expect(page.getByRole('link', { name: PAST_DROP_INS_LABEL })).toBeVisible()
   await page.getByRole('link', { name: PAST_DROP_INS_LABEL }).click()
   await settleOnRoute(page, '/profile')
-  await expect(page.getByRole('heading', { name: 'Hosted drop-ins' })).toBeVisible()
-  const pastRow = page.locator('li').filter({ hasText: endedTitle })
-  await expect(pastRow).toBeVisible()
-  // …and it is in PAST, not Upcoming (the split is not just "somewhere").
-  await expect(section(page, 'Past').getByText(endedTitle, { exact: true })).toBeVisible()
-  await expect(section(page, 'Upcoming').getByText(endedTitle, { exact: true })).toHaveCount(0)
-  // (6b) The archive row is a DOOR (V9 ticket 04's own fix): its title links to
-  // the drop-in, which is the only route to V8/09's next-week affordance.
-  await expect(pastRow.getByRole('link', { name: endedTitle })).toHaveAttribute(
-    'href',
-    `/playdate/${endedId}`,
-  )
-  // (6c) The archive row is MUTED and a plan is not — the same `opacity-60`
-  // signal the archive cards carry, asserted as a DIFFERENCE so "muted" cannot
-  // be satisfied by styling every row the same way.
-  const upcomingRow = page.locator('li').filter({ hasText: nowTitle })
-  await expect(pastRow.locator('.opacity-60')).toHaveCount(1)
-  await expect(upcomingRow.locator('.opacity-60')).toHaveCount(0)
-  // The archive keeps the live row out of Past (the boundary is the post's end,
-  // not its start time).
-  await expect(section(page, 'Past').getByText(nowTitle, { exact: true })).toHaveCount(0)
-  await expect(section(page, 'Upcoming').getByText(nowTitle, { exact: true })).toBeVisible()
+  // The door lands on the profile editor still (the route is unchanged)…
+  await expect(page.getByRole('heading', { name: 'Your family' })).toBeVisible()
+  // …but the archive list is GONE from it (V16 t04), so the "See past drop-ins"
+  // line no longer leads to a list of past drop-ins here. Asserted explicitly
+  // rather than deleted, so the day this is reconsidered the spec says why.
+  await expect(page.getByRole('heading', { name: 'Hosted drop-ins' })).toHaveCount(0)
+  await expect(page.getByText(endedTitle, { exact: true })).toHaveCount(0)
 
   // --- (7) Through the door: the host's "Same time next week" (V8/09). GREEN
   // EITHER WAY (this one shipped in V8/09 and this ticket must not change it).
   // This is the HOST half of the gate; the pinger half ("only the host and the
   // families who pinged it") is pinned where the write path lives, in
-  // e2e/loop-closing.e2e.ts. ---
-  await pastRow.getByRole('link', { name: endedTitle }).click()
+  // e2e/loop-closing.e2e.ts. The door is now the archive CARD on /u/:handle —
+  // the surface that still lists the host's past drop-ins. ---
+  await page.goto(`/u/${encodeURIComponent(marker.displayName)}`)
+  const pastRow = section(page, 'Past')
+    .locator('a[href^="/playdate/"]')
+    .filter({ hasText: endedTitle })
+  await expect(pastRow).toBeVisible()
+  await pastRow.click()
   await expect(page.getByTestId('same-time-next-week')).toBeVisible()
   await expect(page.getByText('Same time next week?')).toBeVisible()
   await expect(page.getByTestId('same-time-next-week-action')).toBeVisible()
@@ -527,14 +513,14 @@ test('an ended drop-in leaves the feed, a live one stays, and the archive still 
   await viewerPage.getByRole('button', { name: /^Continue/ }).click()
   await viewerPage.getByRole('heading', { name: 'Near you' }).waitFor()
 
-  // Their own archive: reachable, honest, and EMPTY — because they host nothing.
-  // The marker's ended drop-in is absent from it, even though it is on the same
-  // radius and the viewer can open it: the feed offers the viewer's OWN past
-  // drop-ins, never the ones they merely attended.
+  // Their archive: V16 t04 removed it from /profile, so the viewer's own
+  // archive is no longer on this page at all — asserted on the removed card
+  // rather than on its empty state. The point this block exists to make still
+  // holds and is asserted below: the marker's ended drop-in is NOT offered to a
+  // parent who merely attended it, because /u/<handle> lists the HOST's posts.
   await viewerPage.goto('/profile')
   await settleOnRoute(viewerPage, '/profile')
-  await expect(viewerPage.getByRole('heading', { name: 'Hosted drop-ins' })).toBeVisible()
-  await expect(viewerPage.getByText('No posts yet.', { exact: true })).toBeVisible()
+  await expect(viewerPage.getByRole('heading', { name: 'Hosted drop-ins' })).toHaveCount(0)
   await expect(viewerPage.getByText(endedTitle, { exact: true })).toHaveCount(0)
   // …and the ended drop-in IS reachable by URL for that viewer (the detail page
   // is the surface that holds their relationship to it: V8/09's affordance is

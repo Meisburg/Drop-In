@@ -24,9 +24,14 @@
  * (3) the "Hosted N drop-ins" line is still there, exactly as it was (its N is
  *     agnostic on purpose: this spec's two posts guarantee the line renders;
  *     no live count is asserted).
- * And on /profile the same two rows render in the same two sections, with the
- * per-post Duplicate action asserted on the PAST row — the copy the ticket
- * pins ("Duplicate stays on every card, past posts included").
+ * And on /profile — V16 t04 REMOVED the "Hosted drop-ins" card from that page
+ * (the founder's ask), so this spec now asserts the OPPOSITE there: the card,
+ * its headings, its rows and its Duplicate action are GONE, and the page still
+ * renders its own cards intact. The duplicate capability itself is NOT lost and
+ * is pinned elsewhere: /new's "Duplicate existing" picker (post-again.e2e.ts,
+ * which drives the `dup-duplicate` button → the `post-again` lightbox) and the
+ * drop-in host panel's Duplicate button. The /u/:handle half of this spec is
+ * unchanged — that page keeps its lists (t05's surface).
  *
  * LIVE-DATA DISCIPLINE: every assertion is about the two rows THIS spec
  * created (its own `e2e-<epoch>` titles). Nothing here asserts a count, or the
@@ -137,20 +142,26 @@ test('the host’s real posts: Upcoming + Past on /u/:handle and /profile, with 
   // spec's two posts only guarantee that the line renders at all).
   await expect(page.getByText(/^Hosted \d+ drop-ins?$/)).toBeVisible()
 
-  // --- /profile — the viewer's own posts, same split. ---
+  // --- /profile — V16 t04: the "Hosted drop-ins" card is REMOVED. ---
   await page.goto('/profile')
   await settleOnRoute(page, '/profile')
-  // V13 ticket 01: the "Your posts" heading was renamed to "Hosted drop-ins"
-  // (to match the /u/:handle heading).
-  await expect(page.getByRole('heading', { name: 'Hosted drop-ins' })).toBeVisible()
-
-  await expect(section(page, 'Upcoming').getByText(upcomingTitle, { exact: true })).toBeVisible()
-  await expect(section(page, 'Past').getByText(pastTitle, { exact: true })).toBeVisible()
-
-  // The Duplicate action survives the split — asserted on the PAST row, the
-  // case the ticket calls out ("past posts included").
-  const pastRow = page.locator('li').filter({ hasText: pastTitle })
-  await expect(pastRow.getByRole('button', { name: 'Duplicate' })).toBeVisible()
+  // (4) The card, its heading and its copy are gone…
+  await expect(page.getByRole('heading', { name: 'Hosted drop-ins' })).toHaveCount(0)
+  await expect(
+    page.getByText('Duplicate one to re-post it — place, kids, and duration come along (V12 t04); you only pick a new start time.', {
+      exact: true,
+    }),
+  ).toHaveCount(0)
+  // …and neither of this spec's posts is listed here any more (the whole list
+  // went with the card, not just its heading).
+  await expect(page.getByText(upcomingTitle, { exact: true })).toHaveCount(0)
+  await expect(page.getByText(pastTitle, { exact: true })).toHaveCount(0)
+  await expect(page.getByTestId('duplicate-previous')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Duplicate' })).toHaveCount(0)
+  // (5) The page is otherwise intact — the identity card (photo + name) and
+  // the kids card still render, so "removed a card" did not blank the editor.
+  await expect(page.getByTestId('display-name-input')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'About the kids' })).toBeVisible()
 })
 
 test.afterEach(async () => {
