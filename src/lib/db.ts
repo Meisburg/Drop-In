@@ -4959,3 +4959,60 @@ export function reactionButtonClasses(mine: boolean): string {
 export function reactionCountLabel(count: number): string | null {
   return count > 0 ? String(count) : null
 }
+
+/**
+ * V16 ticket 07 item 1: the z-index a MODAL must wear to out-stack Leaflet's
+ * OWN controls. Pure, and it exists because the last one was WRONG in a way no
+ * unit test was watching.
+ *
+ * THE DEFECT: both modals in BrowsePage.tsx wore Tailwind's `z-50`, which the
+ * built stylesheet emits as `.z-50{z-index:50}`. Leaflet's controls sit far
+ * above that, so the +/− zoom box and the attribution line painted ON TOP of
+ * the dimmed backdrop and the dialog. The founder photographed it.
+ *
+ * WHY A CONSTANT AND NOT JUST A BIGGER NUMBER IN THE CLASS: the number is a
+ * COMPARISON against values Leaflet owns, not a taste call, and those values
+ * are not visible from BrowsePage. Written down once, with its reason, the next
+ * person to touch a modal over a map inherits the comparison instead of
+ * rediscovering it.
+ *
+ * THE LAYERS THAT MATTER, read from the shipped stylesheets rather than guessed
+ * (this is the part the first attempt got wrong — it stopped at 800):
+ *
+ *     Leaflet  .leaflet-control            z-index:  800
+ *     Leaflet  .leaflet-top/.leaflet-bottom z-index: 1000   <-- the REAL ceiling
+ *     app      modal backdrop (z-50)       z-index:   50
+ *     app      lightbox (ImageLightbox)    z-index:   60
+ *
+ * `.leaflet-control` is 800, but the zoom control is WRAPPED in
+ * `.leaflet-top`, which is **1000** — so 800 is not the number to beat. A modal
+ * has to clear 1000.
+ *
+ * WHY 1100 AND NOT 900: the first attempt chose `z-[900]`, which beats 800 and
+ * loses to 1000 — it would have left the bug half-fixed. 900 is also BELOW the
+ * app's own lightbox at 60? No: 900 > 60, which is the second bug — it would
+ * have lifted both Browse modals ABOVE the app-wide image lightbox, so opening
+ * a photo from inside a modal would have rendered the photo BEHIND the dialog.
+ * The modal must out-stack Leaflet AND stay under the lightbox.
+ *
+ * THE CONSTRAINT IS THEREFORE A BAND: strictly greater than Leaflet's 1000, and
+ * strictly less than the lightbox. Since the lightbox is at 60 that band does
+ * not exist with the current lightbox value — so the lightbox is raised to
+ * 1200 in the same change, restoring the intended order:
+ *
+ *     Leaflet panes/controls  <= 1000
+ *     a modal over a map         1100
+ *     the image lightbox         1200   (always the topmost overlay)
+ *
+ * Lowering Leaflet's index globally was rejected: that is a shared-component
+ * change for a modal-local bug, and it would weaken every map.
+ */
+export const MODAL_OVER_LEAFLET_Z_CLASS = 'z-[1100]'
+
+/**
+ * The z-index the app-wide image lightbox wears. It must out-stack EVERYTHING,
+ * including a modal that is itself out-stacking Leaflet — see
+ * `MODAL_OVER_LEAFLET_Z_CLASS` for the full layer table and why this is 1200
+ * rather than the 60 it used to be.
+ */
+export const IMAGE_LIGHTBOX_Z_CLASS = 'z-[1200]'

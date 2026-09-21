@@ -6,7 +6,7 @@ import { PlacesMap } from '../components/PlaceMap'
 import { RadiusEmptyState } from '../components/RadiusEmptyState'
 import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
-import { listPlaces, loadZipCodes, upcomingCountsByPlace } from '../lib/db'
+import { listPlaces, loadZipCodes, MODAL_OVER_LEAFLET_Z_CLASS, upcomingCountsByPlace } from '../lib/db'
 import { DEFAULT_RADIUS_MILES, formatDistanceLabel, RADIUS_MILES_OPTIONS } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
 import { geocodeAddress } from '../lib/geocode'
@@ -566,11 +566,15 @@ export function BrowsePage() {
 
       {/* V15 t03: the "Filter & sort" modal — kind chips (multi-select), a sort
           dropdown, and an optional radius input. State commits live as the
-          parent toggles; Apply just closes (the list already re-rendered). */}
+          parent toggles; Apply just closes (the list already re-rendered).
+          V16 t07: the stacking class comes from MODAL_OVER_LEAFLET_Z_CLASS —
+          this modal sits over the Leaflet overview map, whose own controls
+          carry z-index 800 (the old literal `z-50` lost that comparison and
+          painted the +/− buttons over the dialog). */}
       {filterModalOpen ? (
         <div
           data-testid="filter-sort-modal"
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center"
+          className={`fixed inset-0 ${MODAL_OVER_LEAFLET_Z_CLASS} flex items-end justify-center bg-black/40 sm:items-center`}
           onClick={(e) => {
             if (e.target === e.currentTarget) closeFilterModal()
           }}
@@ -659,11 +663,15 @@ export function BrowsePage() {
 
       {/* V15 t02: the "Set location" modal — address input + radius slider +
           "See places" button. Geocodes on submit, drops a temporary pin, and
-          draws the radius circle on the map. */}
+          draws the radius circle on the map.
+          V16 t07 item 1: the founder photographed Leaflet's +/− zoom box
+          painting ON TOP of this dialog. Same fix as the filter modal above —
+          the class comes from MODAL_OVER_LEAFLET_Z_CLASS (z-index 900) so it
+          clears Leaflet's control layer at 800. */}
       {locationModalOpen ? (
         <div
           data-testid="location-modal"
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center"
+          className={`fixed inset-0 ${MODAL_OVER_LEAFLET_Z_CLASS} flex items-end justify-center bg-black/40 sm:items-center`}
           onClick={(e) => {
             if (e.target === e.currentTarget) closeLocationModal()
           }}

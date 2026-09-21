@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
+import { IMAGE_LIGHTBOX_Z_CLASS } from '../lib/db'
 
 /**
  * Full-screen photo viewer (V6).
@@ -63,7 +64,7 @@ export function ImageLightbox({
       aria-modal="true"
       aria-label={alt}
       onClick={onClose}
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4"
+      className={`fixed inset-0 ${IMAGE_LIGHTBOX_Z_CLASS} flex items-center justify-center bg-black/90 p-4`}
     >
       <img src={src} alt={alt} className="max-h-full max-w-full object-contain" />
       <button

@@ -245,6 +245,37 @@ python3 scripts/playtest_check.py --base <served-dist-url> --port 9444 \
   lane grows with the app instead of being rebuilt per batch.
 - Full doc: `docs/agents/playtest-lane.md`.
 
+### Browser-lane etiquette (founder rule, 2026-09-21 — the human works on this machine)
+
+**The human is on this box while agents run.** A browser lane that eats CPU for
+ten minutes is an interruption even when it is invisible. These rules are not
+about visible windows (those were already banned) — they are about LOAD.
+
+1. **Headless, always, and explicitly.** Every browser this repo starts passes
+   `--headless=new`, a dedicated `--user-data-dir`, and its own
+   `--remote-debugging-port`. Never attach to, drive, or kill the human's own
+   Chrome (a Wayland `--ozone-platform=wayland` profile under
+   `~/.config/google-chrome` or `/tmp/opencode/chrome-cdp` is almost always
+   theirs — leave it alone).
+2. **Full e2e is a BATCH-END lane, not a per-slice one.** `npm run test:e2e` is
+   ~90 specs against a live database and takes **8–10 minutes** of real CPU. Run
+   it ONCE per batch, when the human is away, and say so in the report.
+3. **During a slice, run TARGETED specs only** — name the files the change can
+   reach (`npx playwright test e2e/that-spec.e2e.ts`). That is seconds, not
+   minutes, and it is what actually catches a regression in the slice's blast
+   radius.
+4. **Never run a browser lane in the foreground of a long turn.** Background it
+   with output redirected to a file, then read the file. The full suite exceeds
+   the default 600s tool timeout and will be killed mid-run otherwise.
+5. **Deprioritize it.** Wrap heavy lanes in `nice -n 19` so the human's work
+   always wins the CPU. There is no latency requirement on a check.
+6. **Release what you start.** Kill the playtest Chrome and any preview server
+   when the lane finishes — kill the LISTENER by port, not by `pkill -f`
+   (which matches the agent's own shell and kills the wrong thing).
+
+The rule of thumb: **if a check takes longer than the human's patience, it is
+a batch-end check.** Targeted runs during slices; full runs at the boundary.
+
 ## Fleet roles (org layer around this repo)
 
 - Cora (@orchestrator) — routes feedback and goals, owns acceptance records.
