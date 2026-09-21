@@ -577,3 +577,31 @@ V16: FULL BATCH RE-VERIFICATION (round 34) — every lane run fresh, nothing
   SO THE BATCH STANDS: all non-blocked work shipped and verified, exactly one
   live defect (the unapplied 0045) with a test waiting to confirm its fix, and
   two founder rulings outstanding.
+V16: GOAL DECLARED BLOCKED (round 35). The objective "complete all tickets" cannot
+  advance without the founder. Not a difficulty complaint -- a resource one, and
+  each item is verified immovable:
+   1. APPLY 0045 (live defect: deployed UI offers 1 mile, DB rejects it).
+      Needs a DATABASE CREDENTIAL. Verified absent from this machine: no
+      ~/.supabase/access-token, no sbp_ token in any .env, no Supabase CLI, and
+      the anon key present in .env cannot execute DDL. Three paths are documented
+      in .scratch/v16/APPLY-0045.md (paste-it-yourself, hand me a token, or run
+      the CDP script which opens a tab in the human's Chrome).
+   2. T03 ITEM 1 (Ages chips) — a PRODUCT decision: (i) remove and let ages
+      always derive from the kids, or (ii) remove the UI and derive the stated
+      range automatically. Option (iii) is impossible (the "More options"
+      disclosure was deleted in V13). Briefs for both are pre-staged.
+   3. T07 ITEM 2 (map zoom / the blue blob) — a PRODUCT decision: (a) anchor on
+      home, (b) fit the radius circle, or (c) keep fitting all points. Briefs for
+      all three are pre-staged.
+  PERSISTENCE: the same three have been recorded unresolved since rounds 6-7,
+  i.e. 29 consecutive rounds, with every non-blocked item shipped and verified in
+  that time. That satisfies the "same blocking condition across 3+ rounds"
+  criterion by a wide margin.
+  TICKET ACCOUNTING (so this is not overstated): every V16 ticket is shipped.
+  t01, t02, t03(item 3), t04, t05, t06(items 1-2), t07(items 1,3,4), t08, t09 --
+  with four sub-items DROPPED as already correct in the code. t08 showed as "not
+  shipped" in one grep only because its ledger line says "wired" rather than
+  "complete"; it shipped as cf143f9.
+  WHAT UNBLOCKS IT: one line from the founder -- "apply 0045 and ii and b" -- or
+  any subset. Both slice briefs are written; the migration is verified idempotent
+  and data-safe against a real Postgres; the acceptance test is waiting.
