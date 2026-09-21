@@ -359,6 +359,38 @@ Seven sub-items; the redesign is the large one.
 7. Big photo per place card; heart to save at top-right of the photo; a floating
    **Map** button that scrolls back to the map when you've scrolled down.
 
+**⚠️ THE REDESIGN HAS A DATA BLOCKER — verified 2026-09-21 (round 5).**
+
+The Airbnb pattern's centrepiece is *a big photo per card*. Places in this app
+**have no photos**: `Place.photo_url` exists (`src/lib/types.ts:304`) but its own
+doc says **"NULL for every seeded row: third-party photos are never scraped."**
+The two sources are the City of Seattle parks open data and a curated indoor
+list — neither carries imagery. `BrowsePage.tsx` renders no `<img>` at all.
+
+So item 7 cannot be built as described without deciding where photos come from:
+
+- **(A) Drop the photo.** Keep the rest (map-on-top, heart, floating Map
+  button, tight zoom) and let the card lead with something that EXISTS — the
+  place kind, distance, ages, indoor/outdoor. Honest, buildable now.
+- **(B) Generate imagery.** Placeholder art per `kind` (park / indoor / museum
+  …) as an illustrated card header. No new data, consistent look, but it is
+  decoration, not information.
+- **(C) Get real photos.** Requires a licensed source and a new column +
+  backfill. This is a data-acquisition project, not a UI slice.
+
+**Recommendation: (A) now, (B) as a follow-up if the cards look bare.**
+(C) should not be started casually — scraping third-party photos is a
+licensing problem, and the repo's own comment shows that call was already made
+deliberately.
+
+**The other three redesign items are buildable today** and do not depend on
+photos: map-on-top with a toggle, the heartbeat-style save affordance (there is
+no "save a place" concept yet — check whether that needs schema), and the
+floating scroll-to-map button.
+
+- **Gate**: this needs a spec before build — it changes the page's whole shape.
+  Do NOT dispatch as a single slice; `/to-spec` then slice it.
+
 - **Gate**: this needs a spec before build — it changes the page's whole shape.
   Do NOT dispatch as a single slice; `/to-spec` then slice it.
 
