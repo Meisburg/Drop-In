@@ -103,10 +103,31 @@ button's `color` declaration has no effect on it — a dead style.
      them; the card's stated-over-derived precedence becomes dead code).
    - **(ii)** Remove the chips but KEEP the stated path by deriving it
      automatically from the selected kids (no new UI, ages still stated).
-   - **(iii)** Keep the chips; the founder's instinct was about form length, so
-     move them behind the existing "More options" disclosure instead.
-   Recommendation: **(ii)** or **(iii)**. (i) silently degrades the card's
-   information for every future post.
+   - **(iii)** ~~Move the chips behind the "More options" disclosure.~~
+     **NO LONGER AVAILABLE — verified round 7: that disclosure was REMOVED in
+     V13 ticket 02** (`PlaydateFormFields.tsx:36` and `:709-711`: *"the 'More
+     options' disclosure is GONE — everything it held ... no disclosure"*).
+     Re-creating it to hide one control would be re-adding machinery V13
+     deliberately deleted. Rule this option out.
+
+   **COORDINATOR'S RECOMMENDATION: (ii) — derive the stated range from the
+   selected kids.** Reasons:
+   1. It achieves what the founder actually asked for (a shorter form) WITHOUT
+      silently degrading the card. That is the whole difference between (i) and
+      (ii), and (i)'s degradation is invisible until months of posts have no
+      stated ranges.
+   2. The derivation already exists: the card ALREADY has a derived-from-kids
+      path (`cardAgeRangeLabel(post, kidAgesByPostId)`). (ii) makes the stated
+      column agree with it at WRITE time instead of relying on read-time
+      precedence — one source of truth instead of two.
+   3. It is the smaller diff of the two real options: deleting the chip UI plus
+      computing the bounds from the already-selected kids, versus deleting and
+      documenting a now-dead precedence rule.
+   **Cost if wrong:** a host who wants an age range WIDER than their own kids'
+   ages (e.g. "bring anyone 0–12") loses that ability — the post would state
+   only their kids' range. That is a real capability loss and the reason this
+   is the founder's call, not mine. If that use case matters, (iii-reborn) is
+   to keep the chips and accept the longer form.
 
 2. Order must be: `Kids you're bringing (optional)` then `Details (optional)`.
    **ALREADY CORRECT — NO WORK.** `PlaydateFormFields.tsx:608` is "Kids you're
@@ -334,7 +355,31 @@ Seven sub-items; the redesign is the large one.
    **Note the V15 t02 invariant at :300-303:** *"the pin can never scroll out of
    view (V15 t02's AC1 — the view is anchored on home) and every place on the
    map is inside the canvas and tappable."* Those two goals CONFLICT at city
-   scale. This needs a founder ruling on which wins — see "Open questions".
+   scale. This needs a founder ruling on which wins.
+
+   **COORDINATOR'S RECOMMENDATION (recorded so the choice is actionable, not
+   abstract): option (b) — fit to the RADIUS CIRCLE, not to the points.**
+   Reasons, in order:
+   1. It satisfies BOTH goals in the case that matters. Inside the saved radius
+      (the default 5 mi) the circle IS small, so everything in it is on screen
+      and tappable — the V15 t02 invariant holds exactly where the founder
+      wants it. At a 35-mile radius the circle is the honest frame: "here is
+      everything you asked to see," which is a better answer than either an
+      arbitrary fixed zoom or a blob.
+   2. It needs the LEAST new machinery: `radiusCircle` already recenters and
+      fits (`PlaceMap.tsx:319+`), and the points-fit is actively FIGHTING it.
+      Choosing (b) mostly means REMOVING the competing `fitBounds` call at
+      :305-310, not writing a new one.
+   3. It is the only option that is a real policy rather than a magic number.
+      Option (a) hard-codes `HOME_PIN_ZOOM = 13` and silently makes far places
+      unreachable; option (c) keeps the defect.
+   **Cost if wrong:** the map frames the search area instead of the family's
+   immediate neighbourhood, so at a wide radius the home pin is small rather
+   than centered. Reversible in one commit (it is one `fitBounds` call).
+
+   **INTERIM DEFAULT IF UNRULED:** do NOT dispatch this item. Unlike the Ages
+   chip, there is no safe default that preserves current behaviour — every
+   option changes what the user sees, and (c) is the defect itself.
 
 3. Distance options are missing `Within 1 mile`.
    **CONFIRMED,** and the change is WIDER than one constant — it touches FOUR
