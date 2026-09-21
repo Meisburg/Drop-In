@@ -21,3 +21,23 @@ V16: founder decision round complete ("accept all") — Q1 widen radius CHECK to
   now, redesign separate; Q6 measurable rules + route screenshots; Q7 merge
   three attendee toggles
 V16 t01: dispatched (base aafb0a4) — copy removals + one rewrite; agent 79a305f2
+V16 t01: complete (commit 9050706) — copy changes; gates build 0 + 898/898 +
+  lint 0 errors; playtest PASS 8 routes 0 JS errors; login copy confirmed in
+  screenshot route_login.png. SPEC DEFECT found: the founder's Login string
+  never existed on /login (git log -S empty; it lives only at InboxPage.tsx:682
+  from 29625a4) — builder returned BLOCKED rather than inventing copy.
+  Ruling: replaced the /login brand line instead.
+V16 t08: ocr wired as third review lane (open-code-review v1.12.8, npm global).
+  Custom provider 'ninfer' -> local NInfer /v1, protocol openai, model
+  qwen3.8-27b. PROVED it works: reviewed b259d6a..9050706, 6 files, 212,798
+  tokens, 1m20s, tool use (13 code_search + 11 file_read + 4 file_find).
+  It found 1 REAL defect on its first run: the committed absolute symlink at
+  .opencode/skills/verification-before-completion (mode 120000) would dangle
+  on every other checkout. FIXED by vendoring the SKILL.md as real content
+  (mode 100644, matching i-have-adhd).
+  Ruling: ocr is a COMPLEMENT, not a replacement — its own README trades
+  recall for precision, and it reviews code only (skips .md/config as
+  unsupported_ext).
+V16: playtest lane PASS on the t01 tree (8 routes, 0 uncaught JS errors).
+  Tooling note: Chrome must be launched with --remote-allow-origins='*' or
+  CDP handshake 403s; script needs `uv run --with websocket-client`.

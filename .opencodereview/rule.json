@@ -1,0 +1,28 @@
+{
+  "rules": [
+    {
+      "path": "src/pages/**/*.tsx",
+      "rule": "This repo's build law (docs/agents/code-structure.md): pages COMPOSE, they do not decide. A `.tsx` page must not encode a domain RULE.\n\nFLAG AS A REQUIRED CHANGE any branch in a page that decides whether a user is ALLOWED to do something (permission, privacy, ownership, eligibility), or computes a business threshold (a limit, a radius, an age bound, a window). Those decisions belong in `src/lib/` as a pure exported function that the page CALLS.\n\nDO NOT flag: presentation branches (loading/empty/error states, conditional classNames), event handlers, or calls INTO lib functions. Branching on how to RENDER is a page's job.\n\nWhen flagging, name the rule being encoded and the `lib/` module it should move to.",
+      "merge_system_rule": true
+    },
+    {
+      "path": "src/lib/**/*.ts",
+      "rule": "This repo's build law (docs/agents/code-structure.md): `src/lib/` is the service layer, and its modules must stay testable without a browser or a database.\n\nFLAG AS A REQUIRED CHANGE any `lib/` module that imports a Supabase client as a module-level singleton, or reads `import.meta.env` / `localStorage` at module scope, instead of taking the dependency as a PARAMETER. The established pattern is a pure decision function plus an execution function that receives its client (see `planPing` and `togglePingWithClient` in `src/lib/trust.ts`).\n\nFLAG any new `src/lib/<name>.ts` that does NOT ship a sibling `src/lib/<name>.test.ts`. 24 of 24 lib modules have one; a module without a test is an incomplete slice.\n\nFLAG tests that merely execute lines without asserting behavior (a test with no `expect`, or one asserting only that a function was called).\n\nDO NOT flag: type-only imports of `SupabaseClient` (those are correct — the type is the injection contract).",
+      "merge_system_rule": true
+    },
+    {
+      "path": "supabase/migrations/*.sql",
+      "rule": "FLAG any migration that is not strictly additive and idempotent.\n\nREQUIRED: every DDL statement must be guarded (`create table if not exists`, `add column if not exists`, `drop constraint if exists` BEFORE `add constraint`). FLAG a bare `add constraint` or `create table` without its guard — re-running the migration must be safe.\n\nFLAG any migration that DROPS or RENAMES a column or table without an accompanying comment explaining the data-loss risk, since migrations here are applied live to a database with real family data.\n\nFLAG any new CHECK constraint whose bounds are ALSO duplicated as a UI constant without a comment naming both sides (the repo has form: `profiles_radius_miles_chk` between 2 and 35 must agree with `RADIUS_MILES_MIN/MAX` in src/lib/feed.ts; a mismatch is a real defect class here).",
+      "merge_system_rule": true
+    },
+    {
+      "path": "src/**/*.tsx",
+      "rule": "Accessibility and mobile rules that are MEASURED in this repo, not aspirational. A regression here fails the mobile audit lane (scripts/mobile-audit.mjs).\n\nFLAG AS A REQUIRED CHANGE:\n- A tappable control smaller than 44px in its smallest dimension (`h-*`/`w-*` below 11 on the Tailwind scale, or an explicit px value under 44).\n- A text input, select, or textarea with font size below 16px (`text-sm` or smaller on an input) — iOS zooms the viewport on focus.\n- An `<img>` with no `alt` attribute at all (an explicit `alt=\"\"` for a decorative image is CORRECT and must not be flagged).\n- A modal, popover, or dropdown whose rendered element does not participate in a stacking context that puts it ABOVE the map — Leaflet panes use high z-index values, and a control that opens behind the map is a real defect that has shipped here before.\n\nDO NOT flag inline `style` attributes used for Leaflet positioning, or third-party component internals.",
+      "merge_system_rule": true
+    },
+    {
+      "path": "src/**/*.{ts,tsx}",
+      "rule": "Test and evidence hygiene for this repo.\n\nFLAG any commit or diff that deletes or weakens a test assertion to make a gate pass WITHOUT a comment in the code or commit body explaining why the old assertion was wrong. Silently relaxing an assertion is the failure mode this repo's review lanes exist to catch.\n\nFLAG any change to a string that an e2e spec or `.scratch/playtest/routes.json` asserts via `must_contain`, where the spec was NOT updated in the same change. The playtest lane is a real acceptance gate; a stale assertion there is a broken gate, not a passing one.\n\nFLAG any new user-visible route that is not added to `.scratch/playtest/routes.json`, since the playtest lane only covers what that file lists."
+    }
+  ]
+}

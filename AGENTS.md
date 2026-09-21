@@ -71,6 +71,46 @@ mode" or "normal mode" — confirm in one line, then revert to default style.
    command was not run in the current turn, the claim is not made. A
    subagent's "DONE" is a belief, not evidence — the diff and the command
    output are evidence.
+7. **`ocr` is the third review lane** — an independent, non-agentic reviewer
+   with machine-enforced project rules. See "Review lanes" below.
+
+## Review lanes (three, and they ask different questions)
+
+A slice passes through three reviewers. They are not redundant: each answers a
+question the others cannot.
+
+| Lane | Question | Mechanism |
+|---|---|---|
+| `orchestrator-reviewer` (agent) | Does the diff match the PLAN SLICE — intent, scope, completeness? | fresh-context subagent on local `qwen3.8-27b` |
+| **`ocr`** (CLI) | Are there DEFECTS in these lines — portability, null safety, rule violations? | Alibaba's open-code-review, own tool-use loop, own rules file |
+| `orchestrator-verifier` (agent) | Do the DETERMINISTIC checks actually pass? | runs the real commands |
+
+`ocr` exists because the agent reviewer shares a model family with the builder.
+`ocr` is a *different agent structure* — its own prompt scaffolding, its own
+tool-use loop, its own rule resolution — so it is a genuinely independent
+instrument even on the same underlying model.
+
+```bash
+# The third lane, at the end of a slice (base = the commit before the slice)
+ocr review --from <base-sha> --to HEAD --format json --output .scratch/ocr-<slice>.json
+```
+
+- **Rules live in `.opencodereview/rule.json`** — this repo's build law
+  (`docs/agents/code-structure.md`) expressed as machine-enforced, path-scoped
+  checks: pages must not encode domain rules, `lib/` modules must inject their
+  client and ship a sibling test, migrations must be idempotent, tap targets
+  ≥44px, inputs ≥16px, new routes must join the playtest `routes.json`.
+  **It found a real defect on its first run** (a committed absolute symlink).
+- Config is a **custom provider** pointed at local NInfer
+  (`ocr config set provider ninfer`), so this lane runs on the 5090, not cloud.
+- `ocr delegate rule <files>` prints the resolved rules WITHOUT running an LLM —
+  use it to confirm a rule file actually matches before trusting it. A rules
+  file that silently doesn't match is worse than none.
+- **Known limitations:** `ocr` reviews CODE only — it skips `.md`, agent
+  definitions, and config as `unsupported_ext`, so this file and
+  `docs/agents/` are outside its view. Its own README states recall is
+  deliberately traded for precision, so it is a complement to the agent
+  reviewer, never a replacement.
 
 ## The escalating fix loop (why it escalates by model)
 
