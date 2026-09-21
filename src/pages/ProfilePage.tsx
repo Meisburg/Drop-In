@@ -733,9 +733,6 @@ export function ProfilePage() {
           title="Your family"
           tagline="Your profile, kids, and hosted drop-ins"
         />
-        <p className="mt-2 text-sm text-slate-600">
-          This is what other families see about you. Edits save as you go.
-        </p>
       </div>
 
       {/* V15 ticket 06 (A20): THE IDENTITY BLOCK — moved to the TOP of the page

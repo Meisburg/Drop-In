@@ -342,8 +342,13 @@ export function NotificationsSection() {
       {/* Per-kind mutes. Enforced by the service worker on this device (see
           src/sw.ts + 0032's accepted residual) — a muted kind arrives and is
           dropped before it shows. */}
-      <div className="mt-4 border-t border-slate-100 pt-3">
-        <p className="text-sm font-medium text-slate-800">What to tell me about</p>
+      <div className="mt-4 border-t border-slate-100 pt-3" data-testid="push-kind-prefs">
+        <h2 className="text-base font-semibold text-slate-900">
+          Choose what you get notified about
+        </h2>
+        <p className="mt-1 text-xs text-slate-500">
+          Tap any row below to switch a kind on or off.
+        </p>
         <ul className="mt-2 flex flex-col gap-2">
           {NOTIFICATION_KINDS.map((kind) => {
             const copy = NOTIFICATION_KIND_COPY[kind]

@@ -676,11 +676,7 @@ export function InboxPage() {
     <div className="mx-auto max-w-md">
       {threadId === null && dmTargetId === null ? (
         <>
-          <SectionHeader
-            icon={NAV_ICONS.inbox}
-            title="Inbox"
-            tagline="Messages from the drop-ins you're both going to."
-          />
+          <SectionHeader icon={NAV_ICONS.inbox} title="Inbox" />
           {/* "New message" button (free-form DMs, V15 T01). */}
           <button
             type="button"

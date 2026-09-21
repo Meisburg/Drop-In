@@ -173,7 +173,7 @@ export function LoginPage() {
         <DropInMark className="h-14 w-14 text-indigo-600" />
         <p className="font-display text-2xl font-bold text-indigo-600">Drop In</p>
         <p className="text-center text-sm text-slate-600">
-          Drop-in playdates for Seattle families.
+          See what families are up to in your area!
         </p>
       </div>
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">

@@ -4,6 +4,10 @@
  * a one-line tagline that says what THIS screen is for. No images; the
  * feed/cards stay above the fold. The component owns the h1, so a page that
  * renders it renders no other.
+ *
+ * The tagline is OPTIONAL: a screen whose purpose is already obvious from its
+ * title (Inbox) renders title-only rather than an empty line. Omitting it
+ * renders no <p> at all, so there is no blank gap in the band.
  */
 export function SectionHeader({
   icon,
@@ -13,7 +17,8 @@ export function SectionHeader({
   /** An SVG path from NAV_ICONS (the shared 24px stroked glyph family). */
   icon: string
   title: string
-  tagline: string
+  /** Omit when the title alone says what the screen is for. */
+  tagline?: string
 }) {
   return (
     <div className="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-slate-50 px-4 py-3">
@@ -34,7 +39,9 @@ export function SectionHeader({
         </div>
         <div className="flex flex-col">
           <h1 className="font-display text-lg font-semibold text-slate-900">{title}</h1>
-          <p className="text-sm text-slate-600">{tagline}</p>
+          {tagline === undefined || tagline === '' ? null : (
+            <p className="text-sm text-slate-600">{tagline}</p>
+          )}
         </div>
       </div>
     </div>
