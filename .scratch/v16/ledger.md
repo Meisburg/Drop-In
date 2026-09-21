@@ -114,3 +114,22 @@ V16: FULL E2E SUITE RUN — 89 passed, 2 FAILED, both in feed-ended-out.e2e.ts
   substitute for the full suite when a change repoints navigation.
 V16: e2e lane note — the full suite takes >10 min (89-91 tests, live Supabase)
   and exceeds the default 600s tool cap; run it as a background job.
+V16 t07 item 1: complete (ab33fce + d284c32). THE FIRST ATTEMPT WAS WRONG TWICE
+  and I stopped the builder before it shipped: it proposed z-[900] after reading
+  .leaflet-control{z-index:800}, but (1) the zoom box is WRAPPED in
+  .leaflet-top/.leaflet-bottom at z-index 1000, so 900 loses to the real
+  ceiling, and (2) 900 is ABOVE the lightbox (z-60), which would have rendered
+  a tapped photo BEHIND a dialog. The constraint is a BAND, not a floor:
+  Leaflet <=1000 < modal 1100 < lightbox 1200. VERIFIED IN BUILT CSS:
+  .z-[1100]{z-index:1100} .z-[1200]{z-index:1200}
+  .leaflet-control{z-index:800} .leaflet-top,.leaflet-bottom{z-index:1000}.
+  ocr then found the tokens were in db.ts (wrong: forces ImageLightbox to boot
+  the whole data layer + Supabase client for a class string) -> moved to
+  src/lib/stacking.ts with a sibling test. Gate: build 0, 916/916 (26 files),
+  lint 0 errors, targeted e2e polish+places 14/14.
+V16: browser-lane etiquette added to AGENTS.md (human works on this machine):
+  full e2e is a BATCH-END lane (8-10 min CPU, run once when they are away),
+  slices use TARGETED specs only, backgrounded, nice -n 19, released after.
+  Rule 7: several repo scripts (apply-migration.mjs, cdp-sql-runner.py,
+  sweep-e2e-markers.mjs, migrate-kid-photos.mjs) drive the HUMAN'S OWN Chrome
+  to supabase.com/dashboard via page.goto -- confirm first, prefer the API path.
