@@ -107,3 +107,30 @@ Each rule was observed firing, not assumed: a dirty range containing
 it), a red gate (`"verify": "exit 7"`) was blocked, a non-fast-forward was
 blocked, a clean+green range passed, and non-master pushes skip the gate
 entirely.
+
+## The human-action reminder
+
+A successful gated push also prints a **WAITING ON YOU** block, from
+`scripts/remind-human.sh`. It is informational and never affects the exit code.
+
+This exists because `task-state.md` is 1,300+ lines: work that only the human can
+do (applying a migration that needs a credential, a one-time SQL statement, a
+product decision) gets recorded there and then never resurfaces. The end of a
+batch is the moment the human is most likely present, so that is when the nudge
+fires.
+
+```bash
+bash scripts/remind-human.sh          # run any time
+bash scripts/remind-human.sh --hook   # the terse pre-push form
+```
+
+**Keep it working — it reads two things from `task-state.md`:**
+
+1. Any line matching `ACTION REQUIRED` (or `⚠️ ACTION`).
+2. Open entries (lines starting with `- `) in the
+   `## Escalations (waiting on human)` section.
+
+Entries containing `RESOLVED`, `APPLIED + VERIFIED`, or `not blocking` are
+skipped automatically. So: when you record human-pending work, put it in one of
+those two places — anywhere else in the file is invisible to the reminder, which
+defeats the point.

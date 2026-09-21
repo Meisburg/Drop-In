@@ -40,6 +40,21 @@ all within this session.
 6. Bring the human in for judgment calls, BLOCKED states, or anything touching
    production. Otherwise work back and forth autonomously.
 
+## Reminding the human (do not let work strand)
+
+Work only the human can do — a migration needing a credential `.env` lacks, a
+one-time SQL statement, a product judgment, a production authorization — gets
+recorded in `task-state.md` and then never resurfaces, because that file is
+1,300+ lines.
+
+**The contract:** record human-pending work as either a line matching
+**`ACTION REQUIRED`**, or an open entry under
+**`## Escalations (waiting on human)`**. Anywhere else is invisible to the
+reminder (`scripts/remind-human.sh`; full details in `docs/agents/auto-push.md`).
+
+**In every end-of-batch report, state the outstanding human actions in prose.**
+The file is the record; the report is the reminder.
+
 ## Phase boundaries: continue, clear, or compact
 
 At the end of every slice, decide **explicitly** what happens to the session
