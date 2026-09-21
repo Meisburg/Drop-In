@@ -1,0 +1,10 @@
+[
+  { "path": "/", "must_contain": [] },
+  { "path": "/login", "must_contain": [] },
+  { "path": "/reset-password", "must_contain": ["didn\u2019t work"] },
+  { "path": "/inbox", "must_contain": [] },
+  { "path": "/new", "must_contain": [] },
+  { "path": "/browse", "must_contain": [] },
+  { "path": "/settings", "must_contain": [] },
+  { "path": "/profile", "must_contain": [] }
+]
