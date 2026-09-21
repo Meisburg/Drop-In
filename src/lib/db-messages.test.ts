@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
+  applyReactionToggle,
   listConversationsWithClient,
   markConversationReadWithClient,
   MESSAGE_MAX_LENGTH,
   queryMessagesForPlaydateWithClient,
+  reactionStatesForMessagesWithClient,
   sendMessageWithClient,
   truncateMessagePreview,
   validateMessageBody,
@@ -48,6 +50,7 @@ function makeMessageMockClient(overrides: {
   messages?: { data: unknown; error: unknown }
   conversationReads?: { data: unknown; error: unknown }
   playdates?: { data: unknown; error: unknown }
+  messageReactions?: { data: unknown; error: unknown }
   insertResult?: { data: unknown; error: unknown }
   upsertResult?: { data: unknown; error: unknown }
 } = {}): Recorded {
@@ -100,6 +103,8 @@ function makeMessageMockClient(overrides: {
         result = overrides.conversationReads ?? { data: null, error: null }
       } else if (lastTable === 'playdates') {
         result = overrides.playdates ?? { data: null, error: null }
+      } else if (lastTable === 'message_reactions') {
+        result = overrides.messageReactions ?? { data: null, error: null }
       } else {
         result = { data: null, error: null }
       }
@@ -389,5 +394,110 @@ describe('markConversationReadWithClient (the read-cursor upsert)', () => {
       upsertResult: { data: null, error: new Error('boom') },
     })
     await expect(markConversationReadWithClient(client, 'pd-1', 'me')).rejects.toThrow('boom')
+  })
+})
+describe('applyReactionToggle (V15 ticket 08 — the optimistic count math)', () => {
+  it('increments when the viewer reacts to an unreacted message', () => {
+    const next = applyReactionToggle({ m1: { count: 2, mine: false } }, 'm1', true)
+    expect(next.m1).toEqual({ count: 3, mine: true })
+  })
+
+  it('decrements when the viewer removes their own reaction', () => {
+    const next = applyReactionToggle({ m1: { count: 3, mine: true } }, 'm1', false)
+    expect(next.m1).toEqual({ count: 2, mine: false })
+  })
+
+  it('floors the decrement at 0 (a stale count never renders -1)', () => {
+    // The realtime stream already removed the last other reaction: the local
+    // count is 0 but `mine` is still true. Un-reacting must clamp, not go
+    // negative — a "-1" pill is a visible lie.
+    const next = applyReactionToggle({ m1: { count: 0, mine: true } }, 'm1', false)
+    expect(next.m1).toEqual({ count: 0, mine: false })
+  })
+
+  it('starts from 0/false for a message it has never seen', () => {
+    const next = applyReactionToggle({}, 'm9', true)
+    expect(next.m9).toEqual({ count: 1, mine: true })
+  })
+
+  it('leaves every other message untouched (a per-message toggle)', () => {
+    const before = { m1: { count: 1, mine: true }, m2: { count: 4, mine: false } }
+    const next = applyReactionToggle(before, 'm2', true)
+    expect(next.m1).toEqual({ count: 1, mine: true })
+    expect(next.m2).toEqual({ count: 5, mine: true })
+  })
+
+  it('does not mutate the map it is given (React state discipline)', () => {
+    const before = { m1: { count: 1, mine: false } }
+    const snapshot = JSON.stringify(before)
+    applyReactionToggle(before, 'm1', true)
+    expect(JSON.stringify(before)).toBe(snapshot)
+  })
+
+  it('is its own inverse: toggle on then off returns to the start', () => {
+    const start = { m1: { count: 2, mine: false } }
+    const on = applyReactionToggle(start, 'm1', true)
+    const off = applyReactionToggle(on, 'm1', false)
+    expect(off.m1).toEqual(start.m1)
+  })
+})
+
+describe('reactionStatesForMessagesWithClient (the thread\'s initial batch read)', () => {
+  it('groups rows into per-message counts and flags the viewer\'s own reaction', async () => {
+    const { client, calls } = makeMessageMockClient({
+      messageReactions: {
+        data: [
+          { message_id: 'm1', profile_id: 'me' },
+          { message_id: 'm1', profile_id: 'other' },
+          { message_id: 'm2', profile_id: 'other' },
+        ],
+        error: null,
+      },
+    })
+    const states = await reactionStatesForMessagesWithClient(client, ['m1', 'm2', 'm3'], 'me')
+    expect(calls).toContain('from(message_reactions)')
+    expect(states.m1).toEqual({ count: 2, mine: true })
+    expect(states.m2).toEqual({ count: 1, mine: false })
+    // A message with no reactions is present and zeroed, never absent — the
+    // UI reads `states[id]` directly and must not have to null-check.
+    expect(states.m3).toEqual({ count: 0, mine: false })
+  })
+
+  it('reads the message_id + profile_id columns only (the minimal wire)', async () => {
+    const { client, calls } = makeMessageMockClient({ messageReactions: { data: [], error: null } })
+    await reactionStatesForMessagesWithClient(client, ['m1'], 'me')
+    expect(calls).toContain('select(message_id, profile_id)')
+    expect(calls).toContain('in(message_id, m1)')
+  })
+
+  it('issues ONE request for a whole thread (not one per message)', async () => {
+    const { client, calls } = makeMessageMockClient({ messageReactions: { data: [], error: null } })
+    await reactionStatesForMessagesWithClient(client, ['m1', 'm2', 'm3', 'm4'], 'me')
+    expect(calls.filter((c) => c === 'from(message_reactions)').length).toBe(1)
+  })
+
+  it('returns every id zeroed without a wire call when the thread is empty', async () => {
+    const { client, calls } = makeMessageMockClient()
+    const states = await reactionStatesForMessagesWithClient(client, [], 'me')
+    expect(states).toEqual({})
+    expect(calls).not.toContain('from(message_reactions)')
+  })
+
+  it('propagates a failed read (the caller treats it as best-effort)', async () => {
+    const { client } = makeMessageMockClient({
+      messageReactions: { data: null, error: new Error('permission denied') },
+    })
+    await expect(
+      reactionStatesForMessagesWithClient(client, ['m1'], 'me'),
+    ).rejects.toThrow('permission denied')
+  })
+
+  it('chunks a very long thread so the id list never overflows one URL', async () => {
+    const { client, calls } = makeMessageMockClient({ messageReactions: { data: [], error: null } })
+    const ids = Array.from({ length: 250 }, (_, i) => `m${i}`)
+    const states = await reactionStatesForMessagesWithClient(client, ids, 'me')
+    // 250 ids at a chunk of 100 → three requests (100 + 100 + 50).
+    expect(calls.filter((c) => c === 'from(message_reactions)').length).toBe(3)
+    expect(Object.keys(states).length).toBe(250)
   })
 })

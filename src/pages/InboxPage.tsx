@@ -4,18 +4,26 @@ import { NAV_ICONS } from '../components/icons'
 import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
 import {
+  applyReactionToggle,
   listConversations,
   listDirectConversations,
   markConversationRead,
   queryDirectMessages,
   queryMessagesForPlaydate,
+  reactionStatesForMessages,
   searchProfiles,
   sendDirectMessage,
   sendMessage,
   supabase,
+  toggleReaction,
   validateMessageBody,
 } from '../lib/db'
-import type { ConversationSummary, MessageRow, ProfileSearchResult } from '../lib/db'
+import type {
+  ConversationSummary,
+  MessageRow,
+  ProfileSearchResult,
+  ReactionState,
+} from '../lib/db'
 
 /**
  * /inbox — parent↔parent messaging (V14 ticket 01, migration 0042).
@@ -107,15 +115,26 @@ function ConversationCard({
  * One bubble in the thread: the sender's display name (small, muted, above
  * the bubble) + the body in a rounded bubble. Own messages are right-aligned
  * + tinted; the other party's are left-aligned + white.
+ *
+ * V15 ticket 08 (A26): a compact reaction row sits under each bubble — a 👍
+ * button plus the participant count. The count is hidden at 0 so a quiet
+ * thread is not littered with "👍 0", but the button always renders (there
+ * must be something to tap). Your own reaction fills the button indigo; a
+ * stranger's reaction is a plain slate outline. The button is presentational
+ * — the page owns the toggle + the optimistic math (applyReactionToggle).
  */
 function MessageBubble({
   message,
   isOwn,
   senderName,
+  reaction,
+  onToggleReaction,
 }: {
   message: MessageRow
   isOwn: boolean
   senderName: string
+  reaction: ReactionState
+  onToggleReaction: (messageId: string) => void
 }) {
   return (
     <div className={isOwn ? 'flex justify-end' : 'flex justify-start'}>
@@ -129,6 +148,27 @@ function MessageBubble({
         >
           {message.body}
         </p>
+        <div className={`mt-1 flex items-center gap-1.5 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+          <button
+            type="button"
+            data-testid={`react-${message.id}`}
+            aria-pressed={reaction.mine}
+            aria-label={reaction.mine ? 'Remove your thumbs-up' : 'Thumbs-up this message'}
+            onClick={() => onToggleReaction(message.id)}
+            className={`flex h-7 items-center gap-1 rounded-full border px-2 text-xs transition-colors ${
+              reaction.mine
+                ? 'border-indigo-600 bg-indigo-600 text-white'
+                : 'border-slate-300 bg-white text-slate-500 hover:border-slate-400'
+            }`}
+          >
+            {/* The count rides INSIDE the button (the "👍 3" pill shape the
+                ticket asks for); at 0 only the thumb shows. */}
+            <span aria-hidden="true">👍</span>
+            {reaction.count > 0 ? (
+              <span data-testid={`react-count-${message.id}`}>{reaction.count}</span>
+            ) : null}
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -159,6 +199,12 @@ export function InboxPage() {
   const [sendError, setSendError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
+
+  // --- Reaction state (V15 ticket 08, A26) ---------------------------------
+  // Keyed by message id: { count, mine }. Loaded in one batch when the thread
+  // opens, moved optimistically on every tap, and reconciled by the realtime
+  // subscription below.
+  const [reactions, setReactions] = useState<Record<string, ReactionState>>({})
 
   // Load (or reload) the conversation list. Pre-0042-apply the read 42703s —
   // the honest error line, never a crash. Also loads free-form DMs.
@@ -224,12 +270,40 @@ export function InboxPage() {
       setThread(null)
       setDraft('')
       setSendError(null)
+      // Closing the thread drops the reaction state with it — a stale map
+      // must never colour a bubble in the NEXT conversation.
+      setReactions({})
       return
     }
     let cancelled = false
     setThread({ status: 'loading' })
     setDraft('')
     setSendError(null)
+    setReactions({})
+
+    /**
+     * The thread's starting reaction state, in ONE bounded request for all of
+     * its messages (reactionStatesForMessages — the V15 T08 helper). A failure
+     * here is cosmetic, never fatal: every message simply starts at 0/unreacted
+     * and the taps + realtime events still work, so this never renders an error
+     * line and never blocks the thread.
+     */
+    const loadReactionStates = async (messages: MessageRow[]) => {
+      // Read the id off `session` (not the later `userId` binding): this
+      // closure runs after render, so it must not depend on a `const` that is
+      // declared further down the component body.
+      const viewerId = session?.user.id ?? null
+      if (viewerId === null || messages.length === 0) return
+      try {
+        const states = await reactionStatesForMessages(
+          messages.map((m) => m.id),
+          viewerId,
+        )
+        if (!cancelled) setReactions(states)
+      } catch {
+        // Best-effort: reactions are a garnish on the thread, not the thread.
+      }
+    }
 
     const loadMessages = async () => {
       if (dmTargetId !== null) {
@@ -242,6 +316,7 @@ export function InboxPage() {
           otherPartyName: '',
           playdateTitle: '',
         })
+        await loadReactionStates(messages)
       } else if (threadId !== null) {
         // Playdate-scoped thread (existing logic).
         const messages = await queryMessagesForPlaydate(threadId)
@@ -258,6 +333,7 @@ export function InboxPage() {
           otherPartyName: '',
           playdateTitle: '',
         })
+        await loadReactionStates(messages)
       }
     }
 
@@ -273,7 +349,7 @@ export function InboxPage() {
     return () => {
       cancelled = true
     }
-  }, [threadId, dmTargetId])
+  }, [threadId, dmTargetId, session])
 
   // Resolve the thread header's other-party name + post title from the loaded
   // list (cheap: the list is always loaded before a thread opens) — the
@@ -358,10 +434,75 @@ export function InboxPage() {
   // a stale filter can never deliver into the wrong conversation. For
   // free-form DMs, we subscribe to messages where sender_id = me OR the
   // other party (filtered client-side by playdate_id IS NULL).
+  //
+  // V15 ticket 08 (A26) adds a SECOND table to the SAME channel: every
+  // message_reactions INSERT/DELETE, filtered CLIENT-SIDE to the ids in the
+  // open thread. The ticket allows a per-message filter
+  // (`message_id=eq.<id>`); the per-thread subscription is preferred here
+  // because it is one channel instead of one per message, and it matches the
+  // shape above. The filter is by id against the CURRENT thread's messages, so
+  // a reaction in some other conversation is dropped before it can touch this
+  // one's counters.
   useEffect(() => {
     if (threadId === null && dmTargetId === null) return
     const channelName = dmTargetId !== null ? `dm-${dmTargetId}` : `messages-${threadId}`
     const channel = supabase.channel(channelName)
+
+    /**
+     * Apply one realtime reaction change to the local map. `count` is
+     * recomputed as a +1/-1 delta against the event (never re-fetched): the
+     * payload carries the affected message_id, which is all the counter needs.
+     * Our OWN reaction is reconciled from the event too, so a tap in another
+     * tab lands here as well.
+     */
+    const applyReactionEvent = (
+      eventType: 'INSERT' | 'DELETE',
+      row: { message_id?: string; profile_id?: string },
+    ) => {
+      const messageId = row.message_id
+      if (messageId === undefined) return
+      const delta = eventType === 'INSERT' ? 1 : -1
+      const mine = row.profile_id !== undefined && row.profile_id === (session?.user.id ?? '')
+      setReactions((prev) => {
+        const current = prev[messageId] ?? { count: 0, mine: false }
+        // Our OWN write already moved this map optimistically in
+        // handleToggleReaction; the echo must not move the count a second
+        // time. It is still useful for `mine` (a reaction made in another tab
+        // reconciles the button here), so apply that half and skip the delta.
+        if (mine) return { ...prev, [messageId]: { count: current.count, mine: eventType === 'INSERT' } }
+        return {
+          ...prev,
+          [messageId]: {
+            count: Math.max(0, current.count + delta),
+            // Someone else's reaction moves the count and leaves our button's
+            // fill alone.
+            mine: current.mine,
+          },
+        }
+      })
+    }
+
+    channel
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'message_reactions' },
+        (payload) => {
+          applyReactionEvent('INSERT', payload.new as { message_id?: string; profile_id?: string })
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'message_reactions' },
+        (payload) => {
+          // DELETE payloads carry the removed row under `old`. 0043 sets no
+          // REPLICA IDENTITY FULL, so `old` holds the PK only — and for this
+          // table the PK is (message_id, profile_id), exactly the two fields
+          // this handler reads. Confirmed live by the reactions e2e spec, which
+          // un-reacts and asserts the other side's count falls back to 0.
+          applyReactionEvent('DELETE', payload.old as { message_id?: string; profile_id?: string })
+        },
+      )
+
     if (dmTargetId !== null) {
       // Free-form: listen for all new messages, filter client-side.
       channel
@@ -415,6 +556,33 @@ export function InboxPage() {
   }, [thread?.status === 'ready' ? thread.messages.length : 0])
 
   const userId = session?.user.id ?? null
+
+  /**
+   * Toggle the viewer's 👍 on one message (V15 ticket 08, A26).
+   *
+   * Optimistic, exactly like handleSend: the local map flips IMMEDIATELY via
+   * the pure applyReactionToggle (so the button fills and the count moves on
+   * the same frame as the tap), then the write goes out. On failure the flip
+   * is rolled back to the value it had before the tap — the same
+   * optimistic-then-reconcile discipline the composer uses.
+   *
+   * Our own write also echoes back through the realtime subscription. That
+   * echo must NOT move the count (handleToggleReaction already did), so
+   * applyReactionEvent skips the delta when the row is ours and only uses it to
+   * reconcile `mine` — which is what makes a reaction made in ANOTHER tab show
+   * up correctly here.
+   */
+  async function handleToggleReaction(messageId: string): Promise<void> {
+    const before = reactions[messageId] ?? { count: 0, mine: false }
+    const nextMine = !before.mine
+    setReactions((prev) => applyReactionToggle(prev, messageId, nextMine))
+    try {
+      await toggleReaction(messageId)
+    } catch {
+      // Roll the optimistic flip back (the write never landed).
+      setReactions((prev) => ({ ...prev, [messageId]: before }))
+    }
+  }
 
   /** Optimistic append + the real write; on failure the optimistic row is rolled back. */
   async function handleSend(): Promise<void> {
@@ -700,6 +868,8 @@ export function InboxPage() {
                           ? (profile?.display_name ?? 'You')
                           : threadHeaderName || 'Unknown'
                       }
+                      reaction={reactions[message.id] ?? { count: 0, mine: false }}
+                      onToggleReaction={(messageId) => void handleToggleReaction(messageId)}
                     />
                   ))
                 )}

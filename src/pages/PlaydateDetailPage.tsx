@@ -1812,137 +1812,15 @@ export function PlaydateDetailPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        {/* V3 slice 2 (ticket 02; V3 slice 3, migration 0019 trimmed it to
-             "Cancelled" only; V12 t03, migration 0041 re-added a third
-             state — "Ended", the host ended the event early): the
-             muted-state chip —
-            rendered for every viewer; the host's explicit state is
-            information, not a removal. (V9 ticket 04: on the FEED that
-            "not a removal" now holds only while the window is ahead — an
-            ended cancelled post leaves `/` like any ended one, and this page
-            is where it stays reachable. See the ticket's Comments.) */}
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-xl font-semibold text-slate-900">{detail.title}</h1>
-          {statusChip !== null ? (
-            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-              {statusChip}
-            </span>
-          ) : null}
-        </div>
-        <p className="mt-1 text-sm text-slate-600">
-          {/* V8 ticket 07: a directory place links to its own page; a free-text
-              place keeps the V3 slice 5 Maps link (the place page carries the
-              Maps link for the posts that have a place_id). */}
-          {detail.place_id != null ? (
-            <Link
-              to={placePath(detail.place_id)}
-              className="font-medium text-indigo-600 hover:underline"
-            >
-              {detail.place}
-            </Link>
-          ) : placeMapsHref !== null ? (
-            <a
-              href={placeMapsHref}
-              target="_blank"
-              rel="noopener"
-              className="font-medium text-indigo-600 hover:underline"
-            >
-              {detail.place}
-            </a>
-          ) : (
-            detail.place
-          )}
-          {/* V9 ticket 01: the neighbourhood label only when the post HAS one
-              (the LEFT JOIN embed yields null, and every post created from this
-              version on has none — the parent was never asked). `place · window`
-              is the shape: the place on this line, the window in the card
-              below, and no dangling separator in between. */}
-          {detail.neighborhood !== null && detail.neighborhood !== undefined
-            ? ` · ${detail.neighborhood.name}`
-            : ''}
-        </p>
-      </div>
-
-      <div
-        className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm${
-          statusMuted ? ' opacity-60' : ''
-        }`}
-      >
-        <p className="text-sm text-slate-700">
-          {formatDay(detail.starts_at)} · {formatTime(detail.starts_at)}–{formatTime(detail.ends_at)}
-          {/* V8 ticket 06: ` · weekly` as TEXT after the time window when this
-              post is an occurrence of a series (the pure weeklyMetaSuffix seam
-              returns '' for a one-off). Not a badge — the badge slot is full,
-              and the rain badge below keeps its place. Rendered for every
-              viewer: it is a property of the post, not of the host panel. */}
-          {weeklyMetaSuffix(detail.series_id)}
-          {/* V3 slice 2 (ticket 02): the best-effort "Rain likely" badge
-              (Open-Meteo, host's home zip, >= 50%) — silently absent when
-              the fetch fails or the probability is below the threshold. */}
-          {rainLabel !== null ? (
-            <span className="ml-2 inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 align-middle text-xs font-medium text-sky-700">
-              ☔ {rainLabel}
-            </span>
-          ) : null}
-        </p>
-        {/* V3 slice 3 (ticket 06, feedback #4): the "Best for …" age-hint line
-            is out of the authenticated detail view — the DB column + the
-            /new field stay (ticket 09 reworks /new); the signed-out
-            public view keeps its 0015 field. */}
-        {detail.details !== null ? (
-          <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{detail.details}</p>
-        ) : null}
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
-          {/* V6 (decision #3): the avatar and the name do different things.
-              Tapping the PHOTO enlarges it — 'the first thing I'd do is
-              tap their profile picture to see a bigger picture' — and the
-              name is what goes to the profile. They used to be one link,
-              which is why the tap did the thing nobody expected. */}
-          <div className="flex items-center gap-2">
-            <HostAvatar host={detail.host} expandable />
-            <Link
-              to={`/u/${encodeURIComponent(detail.host.display_name)}`}
-              className="text-sm font-medium text-indigo-600"
-            >
-              Hosted by @{detail.host.display_name}
-            </Link>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => void handleShare()}
-              disabled={shareBusy}
-              className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 disabled:opacity-50"
-            >
-              {shareCopied ? 'Copied' : 'Share'}
-            </button>
-            {/* V3 slice 8 (ticket 03): "Add to calendar" — the pure
-                buildIcs Blob download, beside Share for every viewer
-                (the public-surface fields only; the row's flex-wrap
-                keeps it fitting at 375px with no horizontal scroll). */}
-            <button
-              type="button"
-              onClick={handleDownloadIcs}
-              className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900"
-            >
-              Add to calendar
-            </button>
-            <button
-              type="button"
-              onClick={() => setReporting(true)}
-              className="text-sm text-slate-500 transition-colors hover:text-slate-600"
-            >
-              Report
-            </button>
-          </div>
-          {/* V8 ticket 10: the share fallback (same as the public view) — a
-              dismissed sheet plus a failed copy says so and hands over the
-              URL. */}
-          {renderShareFallback(getShareUrl(detail.id))}
-        </div>
-      </div>
-
+      {/* A14 (V15 ticket 08): the ping/RSVP block is the page's PRIMARY
+          action — the founder's note is "they should be at the very top of
+          the page", and the button's own comment calls it "the one control
+          the page exists for". It used to render after the title/status
+          chip, the place line, the date/time card and the host info card;
+          it now renders FIRST and everything else shifts down. Pure
+          render-order move: both branches (the host's own-post panel and
+          the non-host RSVP block), the toggle logic and every viewer
+          branch are byte-for-byte unchanged. */}
       {isHost ? (
         // The host sees an explicit "This is your post" panel with the going
         // count and a Duplicate action (V2 slice 1) — no ping button (the
@@ -2161,6 +2039,137 @@ export function PlaydateDetailPage() {
           ) : null}
         </div>
       )}
+
+      <div>
+        {/* V3 slice 2 (ticket 02; V3 slice 3, migration 0019 trimmed it to
+             "Cancelled" only; V12 t03, migration 0041 re-added a third
+             state — "Ended", the host ended the event early): the
+             muted-state chip —
+            rendered for every viewer; the host's explicit state is
+            information, not a removal. (V9 ticket 04: on the FEED that
+            "not a removal" now holds only while the window is ahead — an
+            ended cancelled post leaves `/` like any ended one, and this page
+            is where it stays reachable. See the ticket's Comments.) */}
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-xl font-semibold text-slate-900">{detail.title}</h1>
+          {statusChip !== null ? (
+            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+              {statusChip}
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-1 text-sm text-slate-600">
+          {/* V8 ticket 07: a directory place links to its own page; a free-text
+              place keeps the V3 slice 5 Maps link (the place page carries the
+              Maps link for the posts that have a place_id). */}
+          {detail.place_id != null ? (
+            <Link
+              to={placePath(detail.place_id)}
+              className="font-medium text-indigo-600 hover:underline"
+            >
+              {detail.place}
+            </Link>
+          ) : placeMapsHref !== null ? (
+            <a
+              href={placeMapsHref}
+              target="_blank"
+              rel="noopener"
+              className="font-medium text-indigo-600 hover:underline"
+            >
+              {detail.place}
+            </a>
+          ) : (
+            detail.place
+          )}
+          {/* V9 ticket 01: the neighbourhood label only when the post HAS one
+              (the LEFT JOIN embed yields null, and every post created from this
+              version on has none — the parent was never asked). `place · window`
+              is the shape: the place on this line, the window in the card
+              below, and no dangling separator in between. */}
+          {detail.neighborhood !== null && detail.neighborhood !== undefined
+            ? ` · ${detail.neighborhood.name}`
+            : ''}
+        </p>
+      </div>
+
+      <div
+        className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm${
+          statusMuted ? ' opacity-60' : ''
+        }`}
+      >
+        <p className="text-sm text-slate-700">
+          {formatDay(detail.starts_at)} · {formatTime(detail.starts_at)}–{formatTime(detail.ends_at)}
+          {/* V8 ticket 06: ` · weekly` as TEXT after the time window when this
+              post is an occurrence of a series (the pure weeklyMetaSuffix seam
+              returns '' for a one-off). Not a badge — the badge slot is full,
+              and the rain badge below keeps its place. Rendered for every
+              viewer: it is a property of the post, not of the host panel. */}
+          {weeklyMetaSuffix(detail.series_id)}
+          {/* V3 slice 2 (ticket 02): the best-effort "Rain likely" badge
+              (Open-Meteo, host's home zip, >= 50%) — silently absent when
+              the fetch fails or the probability is below the threshold. */}
+          {rainLabel !== null ? (
+            <span className="ml-2 inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 align-middle text-xs font-medium text-sky-700">
+              ☔ {rainLabel}
+            </span>
+          ) : null}
+        </p>
+        {/* V3 slice 3 (ticket 06, feedback #4): the "Best for …" age-hint line
+            is out of the authenticated detail view — the DB column + the
+            /new field stay (ticket 09 reworks /new); the signed-out
+            public view keeps its 0015 field. */}
+        {detail.details !== null ? (
+          <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{detail.details}</p>
+        ) : null}
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+          {/* V6 (decision #3): the avatar and the name do different things.
+              Tapping the PHOTO enlarges it — 'the first thing I'd do is
+              tap their profile picture to see a bigger picture' — and the
+              name is what goes to the profile. They used to be one link,
+              which is why the tap did the thing nobody expected. */}
+          <div className="flex items-center gap-2">
+            <HostAvatar host={detail.host} expandable />
+            <Link
+              to={`/u/${encodeURIComponent(detail.host.display_name)}`}
+              className="text-sm font-medium text-indigo-600"
+            >
+              Hosted by @{detail.host.display_name}
+            </Link>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void handleShare()}
+              disabled={shareBusy}
+              className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 disabled:opacity-50"
+            >
+              {shareCopied ? 'Copied' : 'Share'}
+            </button>
+            {/* V3 slice 8 (ticket 03): "Add to calendar" — the pure
+                buildIcs Blob download, beside Share for every viewer
+                (the public-surface fields only; the row's flex-wrap
+                keeps it fitting at 375px with no horizontal scroll). */}
+            <button
+              type="button"
+              onClick={handleDownloadIcs}
+              className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900"
+            >
+              Add to calendar
+            </button>
+            <button
+              type="button"
+              onClick={() => setReporting(true)}
+              className="text-sm text-slate-500 transition-colors hover:text-slate-600"
+            >
+              Report
+            </button>
+          </div>
+          {/* V8 ticket 10: the share fallback (same as the public view) — a
+              dismissed sheet plus a failed copy says so and hands over the
+              URL. */}
+          {renderShareFallback(getShareUrl(detail.id))}
+        </div>
+      </div>
 
       {/* V8 ticket 09 (migration 0033): "Same time next week" — the loop
           closer. Rendered ONLY on a post that ENDED within the last 7 days,

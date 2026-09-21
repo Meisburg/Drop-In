@@ -4755,3 +4755,90 @@ export async function countReactionsWithClient(
 export async function countReactions(messageId: string): Promise<number> {
   return countReactionsWithClient(supabase, messageId)
 }
+
+/**
+ * The reaction state for one message, as the thread view holds it. `count` is
+ * the number of participants who reacted; `mine` is whether the viewer is one
+ * of them. The two travel together because the UI needs both (the filled-vs-
+ * outline button reads `mine`, the "👍 3" pill reads `count`).
+ */
+export interface ReactionState {
+  count: number
+  mine: boolean
+}
+
+/**
+ * Initial reaction state for a list of messages (V15 ticket 08) — ONE request
+ * for the whole thread instead of N count queries.
+ *
+ * The wire reads every reaction row the caller is allowed to see for these
+ * messages (the 0043 SELECT policy already scopes that to conversation
+ * participants) and groups them client-side. `viewerId` is what separates
+ * "3 people reacted" from "3 people reacted, one of them is you" — the row set
+ * carries profile_id, so `mine` costs no extra request.
+ *
+ * The `in` filter is chunked: PostgREST puts the id list in the query string,
+ * and a very long thread would otherwise build a URL past the server's limit.
+ * The chunk size is a bounded constant, not a tuning knob.
+ */
+export const REACTION_ID_CHUNK = 100
+
+export async function reactionStatesForMessagesWithClient(
+  client: SupabaseClient,
+  messageIds: readonly string[],
+  viewerId: string,
+): Promise<Record<string, ReactionState>> {
+  const states: Record<string, ReactionState> = {}
+  for (const id of messageIds) states[id] = { count: 0, mine: false }
+  if (messageIds.length === 0) return states
+  for (let i = 0; i < messageIds.length; i += REACTION_ID_CHUNK) {
+    const chunk = messageIds.slice(i, i + REACTION_ID_CHUNK)
+    const { data, error } = await client
+      .from('message_reactions')
+      .select('message_id, profile_id')
+      .in('message_id', chunk)
+    if (error) throw error
+    for (const row of (data ?? []) as Array<{ message_id: string; profile_id: string }>) {
+      const prev = states[row.message_id] ?? { count: 0, mine: false }
+      states[row.message_id] = {
+        count: prev.count + 1,
+        mine: prev.mine || row.profile_id === viewerId,
+      }
+    }
+  }
+  return states
+}
+
+/** The default-client wrapper. */
+export async function reactionStatesForMessages(
+  messageIds: readonly string[],
+  viewerId: string,
+): Promise<Record<string, ReactionState>> {
+  return reactionStatesForMessagesWithClient(supabase, messageIds, viewerId)
+}
+
+/**
+ * The optimistic toggle (V15 ticket 08) — a PURE function, so the count math
+ * is unit-testable without a wire.
+ *
+ * Tapping 👍 is a toggle: the viewer's own reaction flips. That makes the
+ * count move by exactly one, in the direction of the new `mine`:
+ *   - not mine → mine:  count + 1
+ *   - mine → not mine:  count - 1
+ * The decrement is floored at 0: a stale `count` (e.g. a realtime event that
+ * already removed someone else's reaction) must never render "-1". The floor
+ * is the one place this helper is opinionated, and it is deliberate — a
+ * negative counter is a visible lie, a clamped one is merely brief.
+ *
+ * Unknown messages start from `{ count: 0, mine: false }`, so the first tap on
+ * a message whose count never loaded still increments honestly from zero.
+ */
+export function applyReactionToggle(
+  states: Readonly<Record<string, ReactionState>>,
+  messageId: string,
+  mine: boolean,
+): Record<string, ReactionState> {
+  const current = states[messageId] ?? { count: 0, mine: false }
+  const count = Math.max(0, current.count + (mine ? 1 : -1))
+  return { ...states, [messageId]: { count, mine } }
+}
