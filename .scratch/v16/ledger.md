@@ -536,3 +536,23 @@ V16: MIGRATION 0045 VERIFIED AGAINST A REAL POSTGRES (round 33) — the first ti
   the apply had failed. Verified by running it, not by recalling it.
   The apply guide now also includes the read-back query itself, so a single
   dashboard session both applies and PROVES the change.
+V16: THE OTHER SESSION PUSHED WHILE I WAS PUSHING (round 33) — and the outcome is
+  the good case worth recording.
+  My push was REJECTED: "cannot lock ref 'refs/heads/master': is at 568b7e4 but
+  expected 6d2b699" — a concurrent push had moved the remote. On fetch: my commit
+  abb850e (the 0045 Postgres verification) was ALREADY ON THE REMOTE, carried up
+  by their push. Local and remote are identical at 568b7e4.
+  What they added (568b7e4): the pre-push hook body was tracked but the config
+  that ACTS on it (core.hooksPath) is local, so a fresh clone got the file and an
+  UNGATED push. They found that by testing an actual clone, and fixed it with an
+  npm `prepare` step plus a self-healing installer. That is the same class of
+  defect I found in their rule 3 — a gate that looks present but does not act.
+  THEY ALSO MOVED THE HOOK: scripts/pre-push -> scripts/git-hooks/pre-push, with
+  core.hooksPath=scripts/git-hooks. MY RULE-3 FIX SURVIVED THE MOVE — verified,
+  not assumed: `grep -c fast-forward` = 6 in the new location, the
+  `git merge-base --is-ancestor` line is present at :75, and a live run against
+  the real repo prints the PASS line. A file move is exactly where a fix like
+  that gets silently dropped, so it was worth checking.
+  NOTE FOR FUTURE ROUNDS: the hook path is now scripts/git-hooks/pre-push, NOT
+  scripts/pre-push. Any earlier note in this ledger referring to scripts/pre-push
+  is stale on the path and correct on the content.
