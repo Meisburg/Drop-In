@@ -173,26 +173,31 @@ test('the feed\'s empty state names the real radius, never claims "today", and o
   await page.waitForTimeout(700)
   expect(feedQueries, 'a fresh load must not be re-fetched by a focus bounce').toBe(beforeBounce)
 
-  // Both escapes are real, tappable controls — not decoration.
-  const widen = empty.getByRole('button', { name: 'Widen to 20 miles' })
-  const seeAll = empty.getByRole('button', { name: 'See everything in Seattle' })
-  await expect(widen).toBeEnabled()
-  await expect(seeAll).toBeEnabled()
+  // V16 t06 item 1: the FEED now owns a persistent radius picker above the
+  // list, so the empty state's escape buttons are suppressed HERE — otherwise
+  // the picker and the escapes would be two near-identical radius controls one
+  // line apart. On the feed the widen path is therefore driven through the
+  // PICKER. (The escapes still exist, and the /browse test below still asserts
+  // them on the surface where the picker does not render.)
+  const radiusPicker = page.getByTestId('feed-radius-filter')
+  await expect(radiusPicker).toBeVisible()
+  await expect(radiusPicker).toBeEnabled()
+  // The escapes are deliberately absent on the feed's empty state now.
+  await expect(empty.getByRole('button', { name: 'Widen to 20 miles' })).toHaveCount(0)
 
-  // Tapping widen writes through the EXISTING updateHomeZipRadius and re-runs
-  // the feed query. Still nothing at 20 mi (118 mi away) — and the state must
-  // stay a state, not a second dead end: the copy re-names itself with the new
-  // radius, and an escape is still offered.
-  await widen.click()
+  // Choosing a wider radius writes through the EXISTING updateHomeZipRadius and
+  // re-runs the feed query. Still nothing at 20 mi (118 mi away) — and the
+  // state must stay a state, not a second dead end: the copy re-names itself
+  // with the new radius.
+  await radiusPicker.selectOption(String(WIDEN_RADIUS_MILES))
   await expect(empty).toContainText(emptyRadiusCopy(WIDEN_RADIUS_MILES))
   // …and the widen really did re-issue the feed query (which also proves the
   // request counter above observes the app's feed queries — a control for the
   // "no refetch on a bounce" assertion).
   await expect.poll(() => feedQueries).toBeGreaterThan(beforeBounce)
-  await expect(empty.getByRole('button', { name: 'See everything in Seattle' })).toBeEnabled()
-  // The "Widen to 20 miles" button is gone rather than being a no-op re-write
-  // of the radius the viewer is already on.
-  await expect(empty.getByRole('button', { name: 'Widen to 20 miles' })).toHaveCount(0)
+  // The picker reflects the radius it just wrote — the control must not lie
+  // about the state it drives.
+  await expect(radiusPicker).toHaveValue(String(WIDEN_RADIUS_MILES))
 
   // The write really landed on the marker's row (the UI could re-render from
   // its own optimistic state; the profiles row cannot).

@@ -1947,7 +1947,11 @@ export function radiusChoices(radiusMiles: number): RadiusChoice[] {
     .sort((a, b) => a - b)
     .map((miles) =>
       miles === SEE_ALL_RADIUS_MILES
-        ? { radiusMiles: miles, label: 'See everything in Seattle (35 mi)' }
+        ? // Interpolate the ceiling rather than hardcoding "35 mi": the branch
+          // above compares against SEE_ALL_RADIUS_MILES, so a literal here
+          // would silently disagree with the option it labels if that constant
+          // ever moved (the sibling branch already interpolates).
+          { radiusMiles: miles, label: `See everything in Seattle (${miles} mi)` }
         : { radiusMiles: miles, label: `Within ${miles} miles` },
     )
 }
