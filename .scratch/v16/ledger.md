@@ -627,3 +627,24 @@ V16: *** 0045 APPLIED BY THE FOUNDER — LIVE DEFECT CLOSED (2026-09-21) ***
   acceptance test made the gap visible, and the migration closed it.
   REMAINING: t03 item 1 (Ages i/ii) and t07 item 2 (map a/b/c). Both are product
   rulings with pre-staged briefs; neither is a defect.
+V16 t03 item 1: complete (5ac2a2f). Founder ruled OPTION (ii) on round 36, and the
+  slice shipped the same round.
+  WHAT IT DID: removed the Ages chip UI and replaced the chip press with a
+  DERIVATION from the kids the host is bringing, so the founder's ask (a shorter
+  form) is met WITHOUT losing the stated age range on every future post.
+  REUSED THE EXISTING SEAM, verified not asserted: the new pure
+  `ageBoundsFromSelectedKids` delegates to the already-tested `ageBounds` -- the
+  same function the card's own age line is built on. No parallel derivation.
+  THE NO-KEYS CONTRACT PRESERVED, and checked at runtime rather than trusted:
+  ageRangeFields(undefined, undefined) -> {} (neither column named, so a chipless
+  post is byte-identical to a pre-0037 post), one kid -> {6,6}, two -> {4,9}.
+  THE PRECEDENCE COMMENT WAS CORRECTED, NOT DELETED -- posts from the chip era
+  carry a hand-stated pair and must keep reading back what their host said.
+  E2E RUN, closing the builder's own flagged risk #3 (it could not run browser
+  lanes): feed-ages + post-fast -> 10 passed. feed-ages now asserts the ABSENCE of
+  ages-chips, so a regression that reintroduces the UI fails.
+  Red-green on the new units: breaking the selection filter failed 5 tests.
+  Gate: verify exit 0, 956/956 (26 files, +4), lint 0 errors, steering-lint PASS.
+  COST ACCEPTED, recorded because it is invisible: a host can no longer state a
+  range WIDER than their own selected kids. That is inherent to the ruling.
+V16 t07 item 2: dispatched (base 5ac2a2f), agent 5a0714ba, option (b).
