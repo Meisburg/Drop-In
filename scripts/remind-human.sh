@@ -27,7 +27,15 @@ found=0
 # --- 1. Explicit ACTION REQUIRED markers ------------------------------------
 # Match the ⚠️ marker and the literal phrase; take the first line of each entry
 # so the output stays scannable (the full detail stays in task-state.md).
-actions="$(grep -nE 'ACTION REQUIRED|⚠️ ACTION' "$STATE" 2>/dev/null | head -5 || true)"
+# --- 1. Explicit ACTION REQUIRED markers ------------------------------------
+# Match the marker or the literal phrase, then skip anything already closed.
+# Without the skip, correcting the record (marking it RESOLVED in place) leaves
+# the entry flagged forever — and a reminder that shows resolved work is a
+# reminder that stops being read. Resolved-ness is detected the same way here as
+# in the escalations scan below, so both agree.
+actions="$(grep -nE 'ACTION REQUIRED|⚠️ ACTION' "$STATE" 2>/dev/null \
+  | grep -vE 'RESOLVED|APPLIED \+ VERIFIED|SUPERSEDED|not blocking' \
+  | head -5 || true)"
 
 # --- 2. Open escalations ----------------------------------------------------
 # The `## Escalations (waiting on human)` section, minus resolved entries.
