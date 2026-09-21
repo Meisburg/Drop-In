@@ -211,3 +211,23 @@ V16: REMAINING-WORK INVENTORY (round 11) — verified by reading every ticket, n
   LESSON (second time this batch): I keep under-counting dispatchable work by
   treating "no ruling recorded yet" and "not yet built" as the same thing. Only
   i/ii and a/b/c are genuine blockers.
+V16 t06 item 2: complete (6664274 + 9d88ec1). Feed gets a "Where you are" ZIP
+  row: current zip label (or "No home zip set yet."), 5-digit input, Save.
+  Reuses updateHomeZipRadius and passes the CURRENT radius through unchanged so
+  changing the zip cannot reset it; refetch free via contextKey.
+  THE BUILDER FOUND A REAL DEAD END: with t06.1 suppressing the escapes and the
+  escapes already disabled without a zip, a viewer with no home_zip on the Feed
+  had NO radius control, NO escapes, and NO zip control -- only "Post a drop-in".
+  Three suppressions stacking. The zip row closes it (enabled in that state).
+  ocr then found TWO defects in the INTERACTION between this batch's two new
+  controls -- the class per-slice review misses:
+   (1) a FALSE ERROR: an empty draft over a saved zip reached the validator and
+       printed "Add your home zip." under "Showing drop-ins near 98107". Fixed
+       as the pure tested seam feedZipSaveIsNoop (5 branches).
+   (2) a WRITE RACE: both controls PATCH home_zip AND radius_miles in one
+       statement but guarded only their own busy flag, so overlapping writes
+       could silently discard the loser's change. Fixed on both sides.
+  Gate: build 0, 940/940, lint 0 errors, targeted e2e 7/7.
+V16: with this, EVERY non-blocked item is shipped. Genuinely blocked: t03 item 1
+  (Ages i/ii) and t07 item 2 (map a/b/c). Deferred by decision Q5: the Airbnb
+  redesign. Needs a credential: migration 0045 apply.
