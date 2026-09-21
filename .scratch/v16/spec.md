@@ -166,8 +166,31 @@ fixed), 1 dropped as already-correct.**
    hosted drop-ins.
 3. **About the parents**: show a parent photo + description, plus a "Message"
    button routing to Inbox.
+
+   **ITEM 3 IS PARTLY ALREADY BUILT (code-verified 2026-09-21, round 2).** The
+   Message button EXISTS: `UserPage.tsx:548-557`, `data-testid=
+   "message-profile"`, and it already routes to the inbox
+   (`navigate(\`/inbox?dm=${profileId}\`)`). What is genuinely missing from
+   item 3 is only the **parent photo** in the About-the-parents block — today
+   that block renders `profile.bio` + `profile.interests` and no image
+   (`UserPage.tsx:419-436`). **Restated scope: add the parent photo, keep the
+   existing Message button as-is.**
+   NOTE: `UserPage.tsx:518-520` gates the whole action row on
+   `isOwnProfile ? null : ...` — so on your OWN page there is no Message button
+   (correct: you cannot message yourself). The founder's ask was about the
+   visitor view.
+
 4. **About the kids**: show each kid's photo + description. Photos exist in the
    private `kid-photos` bucket but are NOT rendering here.
+
+   **CONFIRMED.** The kids rows (`UserPage.tsx:495-513`) render
+   `kidLabel(kid.first_name, kid.age)` plus an optional ` · Likes: ...` and no
+   `<img>` at all; the existing comment at :442-446 pins *"no code path may
+   reach a kid's avatar_url for display"*, and `kidPhotoVisibility` returns
+   `'owner'` only for the owner. Founder decision Q3 = render kid photos on
+   `/u/:handle` **when `isOwnProfile` is true**. The kids section already
+   gates on `isOwnProfile` (:493), so the visitor path stays photo-free with
+   no change to the privacy rule.
 
 - **Note**: item 4 may be the V9 t04 invariant biting — kid photos are
   owner-self-view only *by design*. **This is a judgment call for the founder**:
