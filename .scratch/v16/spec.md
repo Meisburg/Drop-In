@@ -177,25 +177,126 @@ fixed), 1 dropped as already-correct.**
 ### t06 — Nearby: distance filter, location setter, map at top (design-sized)
 The biggest item, and the one the Airbnb reference actually informs.
 
+**CODE-VERIFIED 2026-09-21 (round 2) — item 1 is PARTIALLY ALREADY BUILT.**
+
 1. `Nothing within 35 miles yet.` needs the same Distance filter the Places
    section has — let the user widen/narrow.
+
+   **PARTIALLY EXISTS, and the gap is narrower than the founder thought.**
+   The empty state is the shared `RadiusEmptyState` (`src/components/
+   RadiusEmptyState.tsx`), and it **already renders escape buttons** that
+   change the radius — no new control is needed to widen:
+   - `radiusEscapes(radiusMiles)` (`src/lib/feed.ts:1874-1886`) returns, in
+     ascending order: `Back to 5 miles` (only when current > 5), `Widen to 20
+     miles`, `See everything in Seattle` (35).
+   - Each button calls the EXISTING `updateHomeZipRadius` and then `refresh()`,
+     which re-runs the feed query (`RadiusEmptyState.tsx:63-78`).
+   - Buttons are disabled when there is no session or no home zip (:61).
+
+   **So what the founder is actually missing is:** (a) the escapes only appear
+   in the EMPTY state — a feed with one result at 5 miles offers no way to
+   widen, and (b) there is no way to NARROW below the saved radius from the
+   feed, and (c) no address/ZIP entry on this screen at all.
+
+   **Restated scope for t06.1**: promote the radius control from empty-state-only
+   into a persistent control on the feed (the founder's ask), rather than
+   building escapes that already exist. Verify the "already built" claim in
+   the built app before writing code.
+
 2. Let the user set ZIP or address here, so they trust "near you".
+
+   **CONFIRMED ABSENT on the feed.** The only ZIP control is inside
+   `RadiusEmptyState`'s escape write path, which reuses the ALREADY-SAVED
+   `home_zip` (`profile?.home_zip`, :52) — it can change the radius but not the
+   zip. Setting a zip lives on `/profile` (or onboarding). Real work.
+
 3. Show a map at the TOP of the nearby list (like Places does), with a
    **map/list toggle**.
 
+   **CONFIRMED ABSENT.** `FeedPage.tsx` has no `PlacesMap` import; Browse is the
+   only page with a map (`BrowsePage.tsx:392`). Real work — and note the feed is
+   a DIFFERENT data shape from Browse (posts vs places), so `PlacesMap`
+   (which takes `places`) cannot be reused as-is. A post-marker map is new
+   work, not a wiring job.
+
 - **Gate**: unit on distance filtering; playtest route grows; visual check.
+- **Sequencing note:** t06.3 depends on t07's map work (marker rendering,
+  z-index discipline). Decide whether the feed map shares t07's component
+  before dispatching either.
 
 ### t07 — Places: map fixes, default zoom, distance options, Airbnb-style redesign
 Seven sub-items; the redesign is the large one.
 
 **Real defects (do first):**
 1. **Set location opens BEHIND the map** (image 1 — clear visual proof).
+
+   **DIAGNOSED 2026-09-21 (round 2) — root cause is a z-index INVERSION, proven
+   from the BUILT css, not inferred:**
+   - The `location-modal` carries Tailwind **`z-50`**, which the built
+     stylesheet emits as `.z-50{z-index:50}` (`BrowsePage.tsx:666`).
+   - Leaflet's own controls (the +/− zoom buttons, the attribution bar) carry
+     **`z-index: 800`** — `leaflet-control{z-index:800}` in the built CSS
+     (source: node_modules/leaflet/dist/leaflet.css:100,134).
+   - **50 < 800**, so the Leaflet zoom control paints ON TOP of the modal
+     backdrop. The founder's screenshot shows exactly this: the +/− box sitting
+     over the dimmed map inside the "Set location" dialog.
+
+   Note this is NOT the usual leaflet.css-source-order trap the repo already
+   documents in `src/index.css:217-229`; that one is about specificity in the
+   tap-target override. This is a plain stacking comparison the modal loses.
+
+   **The fix:** the modal must out-stack Leaflet. Options, in order of
+   preference: (a) raise the modal above 800 (Tailwind `z-[900]`, or the
+   repo's own convention if one exists); (b) give the modal's stacking context
+   an isolated root so Leaflet's internal z-indexes are contained — but a
+   `fixed` overlay already creates a stacking context, so this alone does NOT
+   fix it (the comparison is between two positioned siblings at the root);
+   (c) lower Leaflet's control z-index globally — REJECT, that affects every
+   map and is a shared-component change for a modal-local bug.
+   **Prefer (a)**, and apply it to BOTH modals in `BrowsePage.tsx` (`:573`
+   filter-sort and `:666` location) since they share the bug — the founder only
+   photographed one, but they are the same `z-50` string.
+   **Gate:** this is verifiable in the rendered DOM — assert the modal's
+   computed z-index exceeds the Leaflet control's, in a unit-adjacent way, or
+   assert the class string via the existing pattern.
 2. Map defaults to a wide view where dozens of blue dots cluster into a blob.
    Default to a tight zoom at the user's ZIP/address, showing their home pin and
    the nearest places.
+
+   **DIAGNOSED 2026-09-21 (round 2), exact cause:**
+   `src/components/PlaceMap.tsx:305-310` builds `boundsPoints` from **every
+   place PLUS the home pin**, then calls
+   `map.fitBounds(L.latLngBounds(boundsPoints), { padding: [28,28], maxZoom: DETAIL_ZOOM })`.
+   `fitBounds` picks the zoom that fits **all** points, and `maxZoom: 15`
+   (`DETAIL_ZOOM`, :42) only caps how far IN it may go — it does nothing to stop
+   the view zooming OUT. With dozens of places spread across Seattle the fit is
+   a wide city view, and every marker collapses into the overlapping blue blob
+   the founder photographed. The home pin is then a dot in that blob.
+   **The fix is a policy change, not a bug fix:** the view must anchor on
+   HOME at a fixed zoom (`HOME_PIN_ZOOM = 13`, :44 — already defined and used
+   for the home-pin-only branch at :222) and let off-screen places sit outside
+   the canvas, OR fit to the RADIUS CIRCLE rather than to the points. The
+   existing `radiusCircle` effect (:319+) already recenters to fit the radius —
+   that is the anchor the founder actually wants, and the points-fit is
+   fighting it.
+   **Note the V15 t02 invariant at :300-303:** *"the pin can never scroll out of
+   view (V15 t02's AC1 — the view is anchored on home) and every place on the
+   map is inside the canvas and tappable."* Those two goals CONFLICT at city
+   scale. This needs a founder ruling on which wins — see "Open questions".
+
 3. Distance options are missing `Within 1 mile`.
+   **CONFIRMED,** and it needs migration 0045: the options come from
+   `RADIUS_MILES_OPTIONS = [2, 5, 10, 20, 35]` (`src/lib/feed.ts:58`) and the DB
+   backstop is `check (radius_miles between 2 and 35)`
+   (`0012_zip_radius.sql:676`). Founder decision Q1 = widen to 1–35.
+
 4. The `places-distance-filter` dropdown is now **redundant** if a Set location
    control sits above the map — remove it.
+   **CONFIRMED PRESENT** at `BrowsePage.tsx:470-490`, options built from
+   `RADIUS_MILES_OPTIONS`. Founder decision Q4 = keep both, demote the dropdown
+   to a compact control (they do different jobs: Set location = origin, dropdown
+   = range). **This supersedes the founder's "remove" ask** — recorded so the
+   builder does not delete it.
 
 **Redesign (from the Airbnb reference, images 2–3):**
 5. Search results open already zoomed to the user's area.
