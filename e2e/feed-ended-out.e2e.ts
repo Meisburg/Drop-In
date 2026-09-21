@@ -442,12 +442,17 @@ test('an ended drop-in leaves the feed, a live one stays, and the archive still 
   // (6a)
   await expect(page.getByRole('link', { name: PAST_DROP_INS_LABEL })).toBeVisible()
   await page.getByRole('link', { name: PAST_DROP_INS_LABEL }).click()
+  // V16 t04 moved the door's DESTINATION. It used to land on /profile, whose
+  // "Hosted drop-ins" card held the Past list; that card is gone, so /profile
+  // became a dead end for this link and the door now opens the viewer's own
+  // public page, which is the surface that really lists their past drop-ins.
+  await settleOnRoute(page, `/u/${encodeURIComponent(marker.displayName)}`)
+  // The archive list genuinely IS here (the door is honest now)...
+  await expect(section(page, 'Past').getByText(endedTitle, { exact: true })).toBeVisible()
+  // ...and /profile no longer claims to hold it. Asserted explicitly rather
+  // than deleted, so the day this is reconsidered the spec says why.
+  await page.goto('/profile')
   await settleOnRoute(page, '/profile')
-  // The door lands on the profile editor still (the route is unchanged)…
-  await expect(page.getByRole('heading', { name: 'Your family' })).toBeVisible()
-  // …but the archive list is GONE from it (V16 t04), so the "See past drop-ins"
-  // line no longer leads to a list of past drop-ins here. Asserted explicitly
-  // rather than deleted, so the day this is reconsidered the spec says why.
   await expect(page.getByRole('heading', { name: 'Hosted drop-ins' })).toHaveCount(0)
   await expect(page.getByText(endedTitle, { exact: true })).toHaveCount(0)
 
@@ -597,8 +602,15 @@ test('a host-ended post (status="ended") is absent from the feed and lands in Pa
   // V16 t04: the archive door now lands on the viewer's OWN public page, not
   // /profile — the "Hosted drop-ins" card that used to hold this Past list was
   // removed from /profile, which made the old destination a dead end.
+  //
+  // The ROW SHAPE changed with the surface, so the locator had to change too:
+  // /profile rendered `<li>` rows, but /u/:handle renders DropInCard `<a>`
+  // cards (see the passing locators at :461 and :473 above). A bare
+  // `locator('li')` finds nothing here.
   await settleOnRoute(page, `/u/${encodeURIComponent(marker.displayName)}`)
-  const pastRow = page.locator('li').filter({ hasText: earlyEndedTitle })
+  const pastRow = section(page, 'Past')
+    .locator('a[href^="/playdate/"]')
+    .filter({ hasText: earlyEndedTitle })
   await expect(pastRow, 'the ended-early post must be in the Past list').toBeVisible()
   await expect(section(page, 'Past').getByText(earlyEndedTitle, { exact: true })).toBeVisible()
   await expect(section(page, 'Upcoming').getByText(earlyEndedTitle, { exact: true })).toHaveCount(0)
