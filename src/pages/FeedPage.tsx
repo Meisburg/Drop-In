@@ -37,6 +37,7 @@ import {
   DEFAULT_RADIUS_MILES,
   dueToRefreshLastSeen,
   groupByDay,
+  homeZipControlLabel,
   isStartingSoon,
   localDayKey,
   pastDropInsHref,
@@ -257,21 +258,26 @@ export function FeedPage() {
    */
   const [feedReloadToken, setFeedReloadToken] = useState(0)
   /**
-   * V16 t06 item 1: the persistent radius control's write state. This page
-   * holds NO radius of its own — `profile.radius_miles ?? DEFAULT_RADIUS_MILES`
-   * is the one value, and it is folded into the load effect's contextKey — so
-   * the control needs no local override and no second query: it writes the
-   * SAVED radius through the same `updateHomeZipRadius` the empty state's
-   * escapes use, and `refresh()` re-runs the feed because the key changed.
+   * V16 t06 items 1–2: the location controls' write state. This page holds NO
+   * location of its own — `profile.home_zip` and `profile.radius_miles ??
+   * DEFAULT_RADIUS_MILES` are the values, and BOTH are folded into the load
+   * effect's contextKey — so neither control needs a local override or a second
+   * query: each writes the SAVED columns through the same `updateHomeZipRadius`
+   * the empty state's escapes use, and `refresh()` re-runs the feed because the
+   * key changed.
    *
-   * These two are the write's bookkeeping, not a mirror of the value:
-   * `radiusBusyChoice` dims and locks the control for the one in-flight write
-   * (a second write mid-flight could land out of order), and
-   * `radiusControlError` says so out loud — a control that silently does
-   * nothing is the dead end this page exists to remove.
+   * These are the write's bookkeeping, not a mirror of the values:
+   * `radiusBusy` / `zipBusy` lock their control for the one in-flight write (a
+   * second write mid-flight could land out of order), and the two error strings
+   * say so out loud — a control that silently does nothing is the dead end this
+   * page exists to remove. `zipDraft` is the EDIT buffer (what is typed, before
+   * it is a saved zip) — the one thing here with no server-side counterpart.
    */
-  const [radiusBusyChoice, setRadiusBusyChoice] = useState<number | null>(null)
+  const [radiusBusy, setRadiusBusy] = useState(false)
   const [radiusControlError, setRadiusControlError] = useState<string | null>(null)
+  const [zipDraft, setZipDraft] = useState('')
+  const [zipBusy, setZipBusy] = useState(false)
+  const [zipControlError, setZipControlError] = useState<string | null>(null)
   /**
    * When the feed query was last ISSUED (the visibility gate's clock; the
    * pure shouldRefreshFeed compares against it). A ref, not state: reading it
@@ -784,8 +790,8 @@ export function FeedPage() {
     // than inventing a zip.
     if (homeZip === '') return
     if (nextRadius === (profile.radius_miles ?? DEFAULT_RADIUS_MILES)) return
-    if (radiusBusyChoice !== null) return
-    setRadiusBusyChoice(nextRadius)
+    if (radiusBusy) return
+    setRadiusBusy(true)
     setRadiusControlError(null)
     try {
       await updateHomeZipRadius(session.user.id, homeZip, nextRadius)
@@ -795,7 +801,56 @@ export function FeedPage() {
         err instanceof Error ? err.message : 'Could not update your radius. Try again.',
       )
     } finally {
-      setRadiusBusyChoice(null)
+      setRadiusBusy(false)
+    }
+  }
+
+  /**
+   * V16 t06 item 2: the home ZIP control's one write path — the SAME EXISTING
+   * `updateHomeZipRadius` the radius picker and the empty state's escapes use.
+   * It validates the zip against the seeded gazetteer (and the radius against
+   * the 1–35 bounds) and writes BOTH columns in one update, so there is no
+   * second way for `home_zip` to reach the database.
+   *
+   * The radius passed through is the viewer's CURRENT one, not a default:
+   * changing where you are must never silently reset how far you look. The
+   * saved radius is already a valid choice (`validateRadiusMiles` gated the
+   * write that put it there), so re-sending it cannot fail the write.
+   *
+   * `refresh()` is the same refetch the radius handler gets: `home_zip` is in
+   * the load effect's contextKey, so landing the new zip re-runs the query with
+   * no new state and no second code path. A rejected zip (bad shape, or one the
+   * gazetteer does not serve) THROWS with the validator's own message — it is
+   * surfaced inline, never swallowed.
+   */
+  async function handleZipSave() {
+    // The same three-part guard every write handler on this page opens with.
+    if (loading || session === null || profile === null) return
+    const nextZip = zipDraft.trim()
+    if (zipBusy) return
+    // A save with nothing typed, or with the zip already in effect, is a no-op:
+    // it must not blank a good list for a round trip that changes nothing.
+    // (An EMPTY saved zip plus an empty draft is the one case that still has to
+    // reach the validator, so its "Add your home zip." message can be shown.)
+    if (nextZip === (profile.home_zip ?? '') && nextZip !== '') return
+    setZipBusy(true)
+    setZipControlError(null)
+    try {
+      await updateHomeZipRadius(
+        session.user.id,
+        nextZip,
+        profile.radius_miles ?? DEFAULT_RADIUS_MILES,
+      )
+      await refresh()
+      // Clear the buffer only on success: the saved zip is now the label, and
+      // leaving the old draft in the field would contradict it.
+      setZipDraft('')
+    } catch (err) {
+      setZipControlError(
+        err instanceof Error ? err.message : 'Could not update your zip. Try again.',
+      )
+    } finally {
+      setZipBusy(false)
     }
   }
 
@@ -861,7 +916,7 @@ export function FeedPage() {
             // 16px, and `scripts/mobile-audit.mjs` measures every select.
             className="min-h-11 flex-1 rounded-lg border border-slate-300 bg-white px-2 py-2 text-base text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 disabled:opacity-50"
             value={String(profile.radius_miles ?? DEFAULT_RADIUS_MILES)}
-            disabled={radiusBusyChoice !== null || session === null || (profile.home_zip ?? '') === ''}
+            disabled={radiusBusy || session === null || (profile.home_zip ?? '') === ''}
             onChange={(e) => void handleRadiusChoice(Number(e.target.value))}
           >
             {radiusChoices(profile.radius_miles ?? DEFAULT_RADIUS_MILES).map((choice) => (
@@ -873,6 +928,72 @@ export function FeedPage() {
         </label>
         {radiusControlError !== null ? (
           <p className="text-sm text-red-600">{radiusControlError}</p>
+        ) : null}
+      </div>
+
+      {/* V16 t06 item 2: where "near you" actually IS. The founder's words were
+          "you should be able to set your zip code here as well… to make sure
+          that you feel confident that the drop-ins that are showing you is next
+          to where you are" — and the feed is the one screen that spends the
+          saved zip without ever showing it. It sits directly under the radius
+          control (its sibling: one writes how far, this one writes from where)
+          and it renders on the feed's EVERY state, including the empty-radius
+          one, which is the state a viewer with no zip would otherwise be stuck
+          in — the escapes in `RadiusEmptyState` are suppressed on this page and
+          are disabled without a zip, so this row is what keeps that state from
+          being a dead end.
+
+          The radius is passed through UNCHANGED so fixing the zip cannot
+          quietly reset a radius the viewer chose. Same write path, same
+          `refresh()`, no new state and no new query: `home_zip` is in the load
+          effect's contextKey. A rejected zip throws the validator's own message
+          and it is shown below the row — never a silent failure. */}
+      <div className="flex flex-col gap-1">
+        <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+          <span data-testid="feed-home-zip" className="text-sm font-medium text-slate-700">
+            {homeZipControlLabel(profile.home_zip)}
+          </span>
+          <form
+            className="flex flex-1 items-center gap-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void handleZipSave()
+            }}
+          >
+            <input
+              data-testid="feed-zip-input"
+              // text-base, not text-sm: iOS zooms the viewport on focus below
+              // 16px, and `scripts/mobile-audit.mjs` measures every input.
+              className="min-h-11 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2 py-2 text-base text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              // placeholder + maxLength, not a filter: truncating keystrokes
+              // hides the mistake, and `validateHomeZip` is what judges the
+              // shape (its "Use a 5-digit zip code." is the honest error).
+              placeholder="e.g. 98107"
+              aria-label="Home zip"
+              inputMode="numeric"
+              maxLength={5}
+              value={zipDraft}
+              onChange={(e) => {
+                setZipDraft(e.target.value)
+                // The error belongs to the value that produced it: a new keystroke
+                // clears it rather than leaving a stale complaint on screen.
+                setZipControlError(null)
+              }}
+            />
+            <button
+              data-testid="feed-zip-save"
+              type="submit"
+              disabled={zipBusy || session === null}
+              className="min-h-11 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {zipBusy ? 'Saving…' : 'Save'}
+            </button>
+          </form>
+        </div>
+        {zipControlError !== null ? (
+          <p data-testid="feed-zip-error" className="text-sm text-red-600">
+            {zipControlError}
+          </p>
         ) : null}
       </div>
 

@@ -2022,6 +2022,25 @@ export function radiusChoices(radiusMiles: number): RadiusChoice[] {
 }
 
 /**
+ * The feed's current-home-zip label (V16 t06 item 2, pure + unit-tested).
+ *
+ * The feed's radius filter is spent from `profiles.home_zip`, but the feed was
+ * the one screen that never SAID which zip it was using — so "Drop-ins around
+ * your area" was unfalsifiable, and a viewer who moved (or whose zip was set
+ * wrong once, on onboarding) had nothing on this screen to check it against.
+ *
+ * The decision worth isolating here is the ABSENT case, because it is the one a
+ * blank render gets wrong: no zip must say so in words, rather than render an
+ * empty label beside a live input (which reads as a loading state or a bug).
+ * The value itself is rendered as stored — never reformatted, never padded — so
+ * the label and the filter cannot disagree about which zip is in effect.
+ */
+export function homeZipControlLabel(homeZip: string | null | undefined): string {
+  const zip = (homeZip ?? '').trim()
+  return zip === '' ? 'No home zip set yet.' : `Showing drop-ins near ${zip}`
+}
+
+/**
  * Whether the feed is due for a visibility-triggered refetch (V8 ticket 02):
  * no load yet (null — the first load establishes the clock) or the last load
  * is at least `windowMs` old. `windowMs` is owned by the call site

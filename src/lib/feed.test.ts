@@ -75,6 +75,7 @@ import {
   type DistanceChoice,
   RADIUS_MILES_OPTIONS,
   radiusEscapes,
+  homeZipControlLabel,
   radiusChoices,
   coordNumber,
   placeDistanceMiles,
@@ -3613,5 +3614,36 @@ describe('distanceSelectValue / distanceChoiceFromValue (V16 t07 item 4)', () =>
     // compare / sort as text and silently select the wrong radius.
     expect(distanceChoiceFromValue('5')).toBe(5)
     expect(typeof distanceChoiceFromValue('5')).toBe('number')
+  })
+})
+
+describe('homeZipControlLabel (V16 t06 item 2: the feed says where "near you" is)', () => {
+  it('names the zip the radius filter is actually spending', () => {
+    // The value is rendered as stored, so the label and the query can never
+    // disagree about which zip is in effect.
+    expect(homeZipControlLabel('98107')).toBe('Showing drop-ins near 98107')
+  })
+
+  it('says there is no zip in words, rather than rendering a blank label', () => {
+    // The case a blank render gets wrong: an empty label next to a live input
+    // reads as a loading state or a bug, and this is the exact state the feed's
+    // own control exists to fix (the escapes are suppressed here).
+    for (const missing of [null, undefined, '', '   ']) {
+      expect(homeZipControlLabel(missing)).toBe('No home zip set yet.')
+    }
+  })
+
+  it('treats a whitespace-padded stored zip as the zip it is', () => {
+    // The same trim `validateHomeZip` applies before it checks the shape, so a
+    // padded value is not reported as missing by one and accepted by the other.
+    expect(homeZipControlLabel(' 98107 ')).toBe('Showing drop-ins near 98107')
+  })
+
+  it('never claims a location the viewer does not have', () => {
+    // The honesty pin: the missing-zip label must not name a zip, a city or a
+    // radius — it is the one line on this screen stating what the app does NOT
+    // know.
+    expect(homeZipControlLabel(null)).not.toMatch(/\d/)
+    expect(homeZipControlLabel(null).toLowerCase()).not.toContain('seattle')
   })
 })
