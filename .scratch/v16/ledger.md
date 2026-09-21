@@ -156,3 +156,19 @@ V16: REMAINING WORK IS ALL FOUNDER-BLOCKED. t03 item 1 (Ages chips) and t07
   Ages -> (ii) derive from kids [option (iii) is IMPOSSIBLE: the More options
   disclosure was deleted in V13]; map -> (b) fit the radius circle [no safe
   interim default, so undispatched].
+V16: CORRECTION (round 8) — I had OVER-CLASSIFIED the blockers. Re-read the
+  accepted decisions table and separated "accepted, just not yet built" from
+  "genuinely unruled":
+  * t07 item 3 (1-mile) — Q1 WAS ACCEPTED ("widen to 1-35, one migration").
+    Never blocked; I mis-filed it. DISPATCHED round 8.
+  * t07 item 4 (distance dropdown) — Q4 WAS ACCEPTED (keep both, demote the
+    dropdown to a compact control). Not blocked.
+  * t07 items 5-7 (Airbnb redesign) — Q5 ACCEPTED (defects now, redesign to its
+    own spec+batch). Not blocked; deliberately deferred by decision, not by
+    missing input.
+  * t07 item 2 (map zoom / blue blob) — GENUINELY UNRULED (a/b/c).
+  * t03 item 1 (Ages chips) — GENUINELY UNRULED (i/ii); option (iii) is
+    impossible.
+  LESSON: "blocked" means "no ruling exists", NOT "no code written yet". I was
+  reporting accepted decisions as blockers, which understates how much is
+  actually dispatchable.
