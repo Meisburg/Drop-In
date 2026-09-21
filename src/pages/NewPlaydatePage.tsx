@@ -3,7 +3,6 @@ import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 import {
   ADDRESS_MAX_LENGTH,
-  AgeRangeChips,
   PlaydateFormFields,
 } from '../components/PlaydateFormFields'
 import { PlacePickerMap } from '../components/PlaceMap'
@@ -18,6 +17,7 @@ import {
   linkKidsToPlaydate,
 } from '../lib/db'
 import {
+  ageBoundsFromSelectedKids,
   cloneLastPost,
   clonedStart,
   computeEndIso,
@@ -33,7 +33,6 @@ import {
   validatePlaydateForm,
 } from '../lib/feed'
 import type {
-  AgeBounds,
   LastOwnPlaydate,
   PlaydateFormErrors,
   PlaydateFormValues,
@@ -379,18 +378,24 @@ export function NewPlaydatePage({
   )
 
   /**
-   * V9 ticket 05: the "Ages (optional)" chip the parent pressed, or null
-   * ("nothing stated"). It is NOT in PlaydateFormValues — the /edit form shares
-   * that shape and the ticket scopes these chips to /new — so it rides its own
-   * page state and its own slot.
+   * V16 t03 item 1 (option ii): the range /new STATES for this post, DERIVED
+   * from the kids the host picked — there is no chip UI any more, so there is
+   * nothing to hold in state. Computed at render from the same two inputs the
+   * `playdate_kids` write uses (`kids`, `selectedKidIds`), through the SAME
+   * pure seam the card's own ages line is built on
+   * (`feed.ageBoundsFromSelectedKids` → `ageBounds` → `ageRangeLine`): the
+   * stored pair and the derived line can never disagree, because there is only
+   * one derivation.
    *
    * What it does on Post: feed.ageRangeFields turns it into the age_min /
-   * age_max insert keys, and no chip means NO keys (so a post that states
-   * nothing is byte-identical to a pre-0037 post). What it does to the card:
-   * the stated range WINS over the derived one
-   * (feed.playdateAgeRangeLine — the precedence seam, unit-tested).
+   * age_max insert keys, and NO kids with a known age means NO keys (so a post
+   * that states nothing is byte-identical to a pre-0037 post). What it does to
+   * the card: the stated range still WINS over the derived one
+   * (feed.playdateAgeRangeLine — the precedence seam, unit-tested). That rule
+   * is now belt-and-braces for what /new writes, and it remains the ONLY rule
+   * that matters for the HISTORICAL posts that carry a hand-stated pair.
    */
-  const [ageRange, setAgeRange] = useState<AgeBounds | null>(null)
+  const statedAgeRange = ageBoundsFromSelectedKids(kids ?? [], selectedKidIds)
   /**
    * V9 ticket 03 (review cycle 1, F2): is the summary's title line being
    * EDITED? Off, the line reads the title back as text and a tap opens the
@@ -875,13 +880,14 @@ export function NewPlaydatePage({
         // V8 ticket 07: the picked place. undefined for free text, so the
         // insert payload carries no place_id key at all.
         placeId: placeId ?? undefined,
-        // V9 ticket 05: the stated age range — undefined when no chip was
-        // pressed, so the age_min / age_max keys are absent and this insert is
-        // unchanged for every post that states nothing (the placeId/seriesId
-        // discipline; the reason the derived half of the new e2e is green
-        // before 0037 is applied).
-        ageMin: ageRange?.min,
-        ageMax: ageRange?.max,
+        // V16 t03 item 1 (option ii): the stated age range — now DERIVED from
+        // the kids just picked (statedAgeRange, above) instead of a chip. The
+        // discipline is unchanged and is why the columns get named at all:
+        // undefined when no selected kid has a known age, so the age_min /
+        // age_max keys are absent and this insert is unchanged for every post
+        // that states nothing (the placeId/seriesId discipline).
+        ageMin: statedAgeRange?.min,
+        ageMax: statedAgeRange?.max,
       })
       // V3 slice 6 (ticket 09): land the picker's selection in playdate_kids
       // right after the create succeeds (replace-on-duplicate — the post is
@@ -1072,14 +1078,18 @@ export function NewPlaydatePage({
              <PlacePickerMap places={places} zipCoords={null} onPick={pickPlace} />
            ) : null
          }
-        /* V9 ticket 05: the "Ages (optional)" chips — inside the same "More
-           options" disclosure, under the kids picker (PlaydateFormFields
-           renders this slot there). Tapping the pressed chip again clears it,
-           so the answer is never a trap. The stated range wins over the
-           derived one on the card; with no chip pressed, nothing is written at
-           all (db.createPlaydate's ageRangeFields — the keys are absent, not
-           null, so a chipless post is byte-identical to a pre-0037 post). */
-        agesSlot={<AgeRangeChips selected={ageRange} onSelect={setAgeRange} minTouchTargets />}
+        /* V16 t03 item 1 (option ii): the "Ages (optional)" chips are GONE from
+           /new (the founder asked for a shorter form), and with them this slot
+           and the chip list behind it. The stated range is not gone: it is
+           DERIVED from the kids picked above (`statedAgeRange`), so no future
+           card loses its age line. The precedence rule is untouched and still
+           matters — the stated range wins over the derived one on the card
+           (feed.playdateAgeRangeLine) — because the posts that carry a
+           HAND-STATED pair from the chip era must keep reading back what their
+           host said; for a post made from this form the two sources now agree
+           by construction. With no kids selected, nothing is written at all
+           (db.createPlaydate's ageRangeFields — the keys are absent, not null,
+           so a kidless post is byte-identical to a pre-0037 post). */
         submitLabel="Post drop-in"
         submittingLabel="Posting…"
         submitBusy={submitting}

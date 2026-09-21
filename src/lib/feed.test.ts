@@ -5,8 +5,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { placeAgeFitLabel } from './places'
 import {
   AGE_RANGE_ALL_AGES_WIDTH,
-  AGE_RANGE_CHIPS,
   ageBounds,
+  ageBoundsFromSelectedKids,
   ageBoundsLine,
   ageRangeFields,
   ageRangeLine,
@@ -1599,41 +1599,98 @@ describe('the age-range seams (V9 ticket 05: ages first on a card)', () => {
       expect(cardAgeRangeLabel({}, [])).toBeNull()
     })
 
-    it('the "All ages" chip (stored as the full kid domain) reads "all ages"', () => {
-      const allAges = AGE_RANGE_CHIPS[AGE_RANGE_CHIPS.length - 1]
-      expect(allAges.label).toBe('All ages')
-      expect(allAges.min).toBe(KID_AGE_MIN)
-      expect(allAges.max).toBe(KID_AGE_MAX)
-      expect(playdateAgeRangeLine({ ageMin: allAges.min, ageMax: allAges.max })).toBe('all ages')
+    it('the "All ages" band (the full kid domain) reads "all ages"', () => {
+      // V16 t03 item 1: the chip LIST is gone, but the wide band it used to
+      // store is still a legal stated pair — a post from the chip era carries
+      // it, and the card must keep reading it back.
+      expect(playdateAgeRangeLine({ ageMin: KID_AGE_MIN, ageMax: KID_AGE_MAX })).toBe('all ages')
       // …and it still beats a derived range, like every other stated pair.
       expect(
-        playdateAgeRangeLine({ ageMin: allAges.min, ageMax: allAges.max, kidAges: [6] }),
+        playdateAgeRangeLine({ ageMin: KID_AGE_MIN, ageMax: KID_AGE_MAX, kidAges: [6] }),
       ).toBe('all ages')
     })
   })
 
-  describe('AGE_RANGE_CHIPS (the one list behind the row, the store and the tests)', () => {
-    it('is exactly the ticket\'s five chips', () => {
-      expect(AGE_RANGE_CHIPS.map((chip) => chip.label)).toEqual([
-        '0–2',
-        '2–5',
-        '5–8',
-        '8–12',
-        'All ages',
-      ])
+  describe('ageBoundsFromSelectedKids (V16 t03 item 1: /new DERIVES what it used to ask)', () => {
+    /**
+     * The bounds as the `ageRangeFields(min, max)` argument pair — the exact
+     * shape the page's submit passes, so the tests below exercise the real
+     * call rather than a paraphrase of it. Null bounds spread to
+     * `(undefined, undefined)`, which is what `ageRangeFields` sees when no kid
+     * with a known age was selected.
+     */
+    const boundsPair = (
+      bounds: { min: number; max: number } | null,
+    ): [number | undefined, number | undefined] => [bounds?.min, bounds?.max]
+
+    const kids = [
+      { id: 'a', age: 3 },
+      { id: 'b', age: 6 },
+      { id: 'c', age: 11 },
+    ]
+
+    it('no kids selected → null (and the insert then names no column)', () => {
+      expect(ageBoundsFromSelectedKids(kids, [])).toBeNull()
+      // A selection that names no kid this host has (a stale id) is the same
+      // nothing: never a guess.
+      expect(ageBoundsFromSelectedKids(kids, ['zzz'])).toBeNull()
+      expect(ageBoundsFromSelectedKids([], ['a'])).toBeNull()
     })
 
-    it('every chip is a valid, forward range inside the kid domain', () => {
-      for (const chip of AGE_RANGE_CHIPS) {
-        expect(chip.min).toBeGreaterThanOrEqual(KID_AGE_MIN)
-        expect(chip.max).toBeLessThanOrEqual(KID_AGE_MAX)
-        expect(chip.min).toBeLessThanOrEqual(chip.max)
+    it('one kid → a single-age bound, both ends equal', () => {
+      expect(ageBoundsFromSelectedKids(kids, ['b'])).toEqual({ min: 6, max: 6 })
+    })
+
+    it('several kids → the min and max of the SELECTED ones only, in any order', () => {
+      expect(ageBoundsFromSelectedKids(kids, ['a', 'c'])).toEqual({ min: 3, max: 11 })
+      expect(ageBoundsFromSelectedKids(kids, ['c', 'a'])).toEqual({ min: 3, max: 11 })
+      // The unselected kid (6) is not in the range's reach, but it is inside it.
+      expect(ageBoundsFromSelectedKids(kids, ['a', 'b', 'c'])).toEqual({ min: 3, max: 11 })
+    })
+
+    it('kids with unknown ages are ignored — the name/age-may-be-absent discipline', () => {
+      const partial = [
+        { id: 'a', age: null },
+        { id: 'b', age: undefined },
+        { id: 'c', age: 9 },
+      ]
+      expect(ageBoundsFromSelectedKids(partial, ['a', 'b'])).toBeNull()
+      expect(ageBoundsFromSelectedKids(partial, ['a', 'b', 'c'])).toEqual({ min: 9, max: 9 })
+      // A kid row with no `age` key at all (the optional shape) reads the same.
+      expect(ageBoundsFromSelectedKids([{ id: 'a' }], ['a'])).toBeNull()
+    })
+
+    it('the bounds are the SAME ones the card\'s derived line words (one derivation)', () => {
+      // The pin that matters: what /new STORES and what the card derives from
+      // the same kids can never disagree, because both come from `ageBounds`.
+      for (const selected of [[], ['a'], ['b'], ['a', 'c'], ['a', 'b', 'c']]) {
+        const bounds = ageBoundsFromSelectedKids(kids, selected)
+        const selectedAges = kids.filter((kid) => selected.includes(kid.id)).map((kid) => kid.age)
+        expect(bounds).toEqual(ageBounds(selectedAges))
+        expect(ageBoundsLine(bounds)).toBe(ageRangeLine(selectedAges))
       }
+    })
+
+    it('a stored pair round-trips through ageRangeFields, and null writes NOTHING', () => {
+      // The no-kids case is the byte-identical-to-pre-0037 guarantee.
+      expect(ageRangeFields(...boundsPair(ageBoundsFromSelectedKids(kids, [])))).toEqual({})
+      expect(ageRangeFields(...boundsPair(ageBoundsFromSelectedKids(kids, ['a', 'c'])))).toEqual({
+        age_min: 3,
+        age_max: 11,
+      })
+      // …and the STATED pair then wins on the card, which is the rule the
+      // chip-era posts still rely on.
+      expect(
+        playdateAgeRangeLine({
+          ...ageRangeFields(...boundsPair(ageBoundsFromSelectedKids(kids, ['a', 'c']))),
+          kidAges: [3, 11],
+        }),
+      ).toBe('ages 3–11')
     })
   })
 
-  describe('ageRangeFields (the insert keys — present only when a chip was pressed)', () => {
-    it('no chip → {} (the payload never names the columns; a chipless post is unchanged)', () => {
+  describe('ageRangeFields (the insert keys — present only when a range was stated)', () => {
+    it('nothing stated → {} (the payload never names the columns)', () => {
       expect(ageRangeFields(undefined, undefined)).toEqual({})
       expect(ageRangeFields(null, null)).toEqual({})
       // A half-pair is not a range: both or neither.
@@ -1642,7 +1699,7 @@ describe('the age-range seams (V9 ticket 05: ages first on a card)', () => {
       expect(ageRangeFields(2, null)).toEqual({})
     })
 
-    it('a chip → both columns', () => {
+    it('a stated pair → both columns', () => {
       expect(ageRangeFields(2, 5)).toEqual({ age_min: 2, age_max: 5 })
       expect(ageRangeFields(KID_AGE_MIN, KID_AGE_MAX)).toEqual({ age_min: 0, age_max: 17 })
     })

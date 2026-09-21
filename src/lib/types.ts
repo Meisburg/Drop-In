@@ -138,10 +138,13 @@ export interface Playdate {
    */
   age_hint: string | null
   /**
-   * V9 ticket 05 (migration 0037): the age range the HOST STATED with the
-   * "Ages (optional)" chips on /new (`0–2` / `2–5` / `5–8` / `8–12` /
-   * `All ages`). smallint + nullable, with a CHECK that `age_min <= age_max`
-   * whenever both are present.
+   * V9 ticket 05 (migration 0037): the age range STATED on the post. V16 t03
+   * item 1 (option ii): /new no longer ASKS for it — the "Ages (optional)"
+   * chips (`0–2` / `2–5` / `5–8` / `8–12` / `All ages`) are gone and the pair is
+   * DERIVED from the kids the host picked, so every post from this form still
+   * fills it; the chip-era values are simply rows whose host chose by hand.
+   * smallint + nullable, with a CHECK that `age_min <= age_max` whenever both
+   * are present.
    *
    * OPTIONAL and absent pre-0037: the feed's and the detail page's `*` selects
    * carry these columns for free once the migration is applied, and a row read

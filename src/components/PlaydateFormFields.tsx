@@ -1,7 +1,6 @@
 import type { FormEvent, ReactNode } from 'react'
 import { Link } from 'react-router'
 import {
-  AGE_RANGE_CHIPS,
   durationLabel,
   formatTimeLabel,
   kidLabel,
@@ -10,7 +9,7 @@ import {
   TIME_STEP_MINUTES,
   TITLE_MAX_LENGTH,
 } from '../lib/feed'
-import type { AgeBounds, PlaydateFormErrors, PlaydateFormValues } from '../lib/feed'
+import type { PlaydateFormErrors, PlaydateFormValues } from '../lib/feed'
 import {
   BROWSE_PLACES_LABEL,
   PLACE_PICKER_LABEL,
@@ -187,14 +186,6 @@ export interface PlaydateFormFieldsProps {
   /** /new only: the quick-fill preset card, rendered inside the form first. */
   preset?: ReactNode
   /**
-   * V9 ticket 05: the /new-only "Ages (optional)" chip row (the exported
-   * AgeRangeChips above), rendered in the VISIBLE tail block (V13 t02) —
-   * under the kids picker, which is the same subject ("who's coming / what
-   * ages"). Another slot rather than props: this component owns no state, and
-   * the EDIT form passes nothing, so no dead control appears there.
-   */
-  agesSlot?: ReactNode
-  /**
    * V10 ticket 02: the /new-only SURFACED kids section, rendered ABOVE the
    * visible kids section. The PAGE passes it only when the parent HAS
    * kids (the loaded list is non-empty) — a no-kids parent (or a still-loading
@@ -237,7 +228,6 @@ export function PlaydateFormFields({
   mapSlot,
   preset,
   kidsSectionSlot,
-  agesSlot,
   submitLabel,
   submittingLabel,
   submitBusy,
@@ -710,16 +700,12 @@ line. No kids yet → the designed empty state + the /settings link (the
   // now has a visible home in the branch-1 flow (the ticket's AC: address
   // details moved out of More options, repeat + ages relocated, no disclosure).
   // V15 fix: the address moved UP to sit directly under the place field (see
-  // the branch-1 render below), so this tail is repeat/ages/details only.
-  // Only branch 1 renders this block (branches 2/3 keep their own order), so no
-  // extra gating is needed.
+  // the branch-1 render below), so this tail is repeat/details only.
+  // V16 t03 item 1: the ages chip row is gone too, so `detailsBlock` is the
+  // whole tail now. Only branch 1 renders this block (branches 2/3 keep their
+  // own order), so no extra gating is needed.
   const moreTailBlock =
-    summaryLines === undefined ? null : (
-      <>
-        {agesSlot}
-        {detailsBlock}
-      </>
-    )
+    summaryLines === undefined ? null : <>{detailsBlock}</>
 
   return (
     <form
@@ -808,72 +794,6 @@ line. No kids yet → the designed empty state + the /settings link (the
         ) : null}
       </div>
     </form>
-  )
-}
-
-/**
- * The "Ages (optional)" chip row (V9 ticket 05).
- *
- * WHY IT EXISTS: the derived range (the ages of the kids the host is bringing)
- * answers only for a host who has kids and picks them. A host with no kids
- * listed — or one who does not want their kids on the post at all — could not
- * say what age crowd this is for, which is the single question another parent
- * asks first ("if it's toddlers you're going to bring your kid to a toddler
- * thing"). These chips are that answer, and they WIN over the derived range
- * when both exist (feed.playdateAgeRangeLine owns the precedence).
- *
- * WHERE IT RENDERS: in the visible tail block on /new (V13 t02: disclosure gone)
- * (V9 ticket 03), not among the three decisions — it is optional, and the
- * three answers the parent must give stay visible. `/edit` does not render it
- * at all (the page passes no `agesSlot`), exactly like "Repeat weekly": the
- * ticket scopes the chips to /new, and an edit that does not touch the columns
- * leaves them standing.
- *
- * DESELECT: tapping the pressed chip again clears the answer (aria-pressed
- * false, both columns back to "nothing stated" on the next create). A chip the
- * parent cannot take back would be a trap.
- */
-export function AgeRangeChips({
-  selected,
-  onSelect,
-  minTouchTargets = false,
-}: {
-  /** The pressed range, or null ("nothing stated"). */
-  selected: AgeBounds | null
-  onSelect: (range: AgeBounds | null) => void
-  minTouchTargets?: boolean
-}) {
-  return (
-    <div className="flex flex-col gap-1 text-sm" data-testid="ages-chips">
-      <span className="text-slate-700">
-        Ages <span className="text-slate-500">(optional)</span>
-      </span>
-      <div className="flex flex-wrap gap-2">
-        {AGE_RANGE_CHIPS.map((chip) => {
-          const pressed = selected !== null && selected.min === chip.min && selected.max === chip.max
-          return (
-            <button
-              key={chip.label}
-              type="button"
-              aria-pressed={pressed}
-              onClick={() => onSelect(pressed ? null : { min: chip.min, max: chip.max })}
-              className={
-                'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ' +
-                (minTouchTargets ? 'min-h-11 ' : '') +
-                (pressed
-                  ? 'border-indigo-600 bg-indigo-600 text-white'
-                  : 'border-slate-300 bg-white text-slate-700')
-              }
-            >
-              {chip.label}
-            </button>
-          )
-        })}
-      </div>
-      <span className="text-xs text-slate-500">
-        What ages this drop-in is for. Skip it and your kids’ ages fill it in.
-      </span>
-    </div>
   )
 }
 

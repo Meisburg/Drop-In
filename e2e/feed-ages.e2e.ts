@@ -1,22 +1,32 @@
 /**
  * Spec (V9 ticket 05): ages first on a card, and a kid's name is optional.
  *
- * WHAT THIS PROVES, in four parts:
+ * WHAT THIS PROVES, in three parts:
  *  1. THE DERIVED HALF — the host picks two kids (ages 3 and 6) on /new and the
  *     feed card reads `ages 3–6` as the FIRST line of its meta, ABOVE the
  *     place. The card carries NO kid name (asserted by absence, the ticket's
- *     own wording). A second post with no kids picked and no chips shows NO ages
- *     line at all (never a guess, never an empty line).
- *  2. THE CHIPS HALF — the explicit "Ages (optional)" row (inside ticket 03's
- *     "More options" disclosure) stores the stated pair and WINS over the
- *     derived range: the same host with the same two kids (derived `ages 3–6`)
- *     who also presses `2–5` gets a card that reads `ages 2–5`.
+ *     own wording). A second post with no kids picked shows NO ages line at all
+ *     (never a guess, never an empty line).
+ *  2. THE STATED HALF — V16 t03 item 1 (option ii) DELETED the "Ages
+ *     (optional)" chips: /new no longer ASKS for a range, it DERIVES the pair it
+ *     stores from the kids the host picked, so a post made from this form still
+ *     carries age_min / age_max. What that half proves now is the no-kids
+ *     contract: a post with no kids writes NEITHER column and its card shows no
+ *     line — the same "never a guess" rule as part 1b.
+ *
+ *     THE PRECEDENCE IS STILL REAL, and is pinned in UNITS rather than here:
+ *     `playdateAgeRangeLine` still prefers a stated pair over the derived one,
+ *     because the posts made during the chip era carry a HAND-STATED pair and
+ *     their cards must keep reading back what their host said
+ *     (src/lib/feed.test.ts → playdateAgeRangeLine — THE PRECEDENCE). There is
+ *     no UI left that can produce a stated pair DIFFERENT from the derived one,
+ *     so no browser lane can construct that divergence any more.
  *  3. THE PRIVACY LINE — signed-out callers get NOTHING from the ages read
  *     (RLS is `to authenticated`; the payload the app reads is
  *     `playdate_id` + `kid.age`, no name and no kid id).
  *  4. THE OPTIONAL NAME, end to end — a kid saved with NO first name exists,
  *     survives a reload, renders sensibly (rows, the Remove dialog's copy, the
- *     /new chip, the card's range, the detail line) and never prints "null".
+ *     /new kid chip, the card's range, the detail line) and never prints "null".
  *
  * ---------------------------------------------------------------------------
  * THE PIVOT — HISTORY, because the committed tree has 0037 APPLIED
@@ -34,10 +44,10 @@
  *    select and is simply ABSENT pre-0037, which reads as "nothing stated". Both
  *    this half and part 3 passed with no migration at all.
  *
- *  * THE CHIPS HALF WAS RED BY DESIGN, at exactly ONE documented point — the
- *    /new submit. db.createPlaydate sends age_min / age_max ONLY when a chip was
- *    pressed (feed.ageRangeFields), so pre-0037 the INSERT named columns that
- *    did not exist and PostgREST's schema cache refused it:
+ *  * THE (THEN) CHIPS HALF WAS RED BY DESIGN, at exactly ONE documented point —
+ *    the /new submit. db.createPlaydate sends age_min / age_max ONLY when a
+ *    range was stated (feed.ageRangeFields), so pre-0037 the INSERT named
+ *    columns that did not exist and PostgREST's schema cache refused it:
  *
  *      HTTP 400 {"code":"PGRST204","details":null,"hint":null,
  *                "message":"Could not find the 'age_max' column of 'playdates'
@@ -104,9 +114,6 @@ const KIDS = [
   { first_name: 'Rosa', age: 3 },
   { first_name: 'Theo', age: 6 },
 ] as const
-
-/** The exact pre-0037 failure text (probed live; see the header). */
-const PRE_0037_ERROR = "Could not find the 'age_max' column of 'playdates' in the schema cache"
 
 type MarkerKid = { id: string; first_name: string; age: number }
 
@@ -185,17 +192,18 @@ function cardFor(page: Page, title: string) {
 }
 
 /**
- * Post one drop-in THROUGH the /new UI as the marker, optionally picking the
- * given kid chips and pressing one "Ages (optional)" chip.
+ * Post one drop-in THROUGH the /new UI as the marker, picking the given kid
+ * chips. There is NO age chip to press any more (V16 t03 item 1, option ii):
+ * the stated range is derived from the kids picked, so a kidless post is the
+ * only way to reach the "nothing stated" state.
  *
- * The pre-0037 red point is HERE, in the submit's catch (the header explains
- * why): a chip press makes the insert name a column that does not exist yet,
- * and the failure is surfaced as this exact documented error rather than as an
- * anonymous timeout.
+ * The catch below is the diagnosis path this spec has always had: ANY failed
+ * create is reported with its real wire error next to the app's designed line
+ * rather than as an anonymous timeout.
  */
 async function postDropIn(
   page: Page,
-  input: { title: string; kidLabels: string[]; chip: string | null },
+  input: { title: string; kidLabels: string[] },
 ): Promise<void> {
   await page.goto('/new')
   await settleOnRoute(page, '/new')
@@ -206,15 +214,13 @@ async function postDropIn(
     .getByPlaceholder('e.g. Green Lake playground, near the boathouse')
     .fill(PLACE)
 
-  // V13 ticket 02: the "More options" disclosure is gone — the ages chips now
-  // have a visible home in the form's tail block, so they are ALWAYS in the DOM.
-  //
-  // V15.2 fix: this block used to assert `toHaveCount(0)` and then
-  // `toBeVisible()` — a self-contradictory pair left over from the disclosure
-  // era, when the chips were absent until "More options" was opened. The
-  // visibility assertion is the one that matches the shipped form; the
-  // count-0 assertion could never pass again and was failing three specs here.
-  await expect(page.getByTestId('ages-chips')).toBeVisible()
+  // V16 t03 item 1 (option ii): the "Ages (optional)" chip row is GONE from
+  // /new — the founder asked for a shorter form and the range is now derived
+  // from the kids picked below. Asserted by ABSENCE, so a regression that
+  // quietly re-adds a chip row (or leaves the slot rendering) fails here rather
+  // than passing unnoticed.
+  await expect(page.getByTestId('ages-chips')).toHaveCount(0)
+  await expect(page.getByText('Ages (optional)')).toHaveCount(0)
 
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   const start = await stepStartTimeOnce(page)
@@ -224,11 +230,6 @@ async function postDropIn(
 
   for (const label of input.kidLabels) {
     await page.getByRole('button', { name: label, exact: true }).click()
-  }
-  if (input.chip !== null) {
-    const chip = page.getByRole('button', { name: input.chip, exact: true })
-    await chip.click()
-    await expect(chip).toHaveAttribute('aria-pressed', 'true')
   }
 
   // The INSERT's own wire answer is watched BEFORE the click, because the app
@@ -269,27 +270,11 @@ async function postDropIn(
           } — wire: ${wire}`,
       )
     }
-    if (input.chip === null) {
-      // A chipless post must NOT fail this way: it never names the new columns
-      // (feed.ageRangeFields), which is what keeps the derived half green before
-      // 0037. Any failure here is a real failure, reported as one.
-      throw new Error(
-        `the chipless post "${input.title}" failed to create (it names neither age_min nor age_max, ` +
-          `so 0037 cannot be the reason) — wire: ${wire}`,
-      )
-    }
-    if (!wire.includes(PRE_0037_ERROR)) {
-      throw new Error(
-        `the chips post "${input.title}" failed, but NOT at the documented pre-0037 point. ` +
-          `Expected the schema-cache miss "${PRE_0037_ERROR}"; the wire answered: ${wire}`,
-      )
-    }
     throw new Error(
-      `DOCUMENTED PRE-0037 RED (the chips half of V9 ticket 05 — GREEN once 0037 is applied): ` +
-        `the /new submit with the "${input.chip}" chip names playdates.age_min / age_max, which do not ` +
-        `exist until 0037, so the INSERT is refused before anything is written — the wire answered ` +
-        `${wire}, and the form rendered its designed line "${submitError}" (never a crash). ` +
-        `NOTHING was written: the derived half of this spec is green; only this chips half is red.`,
+      `the post "${input.title}" failed to create — the form rendered its designed line ` +
+        `"${submitError}" (never a crash), and the wire answered: ${wire}. ` +
+        `With no age chips left on /new (V16 t03 item 1), a kidless post names neither ` +
+        `age_min nor age_max, so a 0037 schema-cache miss is not a possible reason for this.`,
     )
   }
   await createPost.catch(() => undefined)
@@ -307,11 +292,10 @@ test('the card leads with the ages of the kids the host is bringing — and neve
   const withKidsTitle = `e2e range derived ${Date.now()}`
   const bareTitle = `e2e range none ${Date.now()}`
 
-  // Part 1a: two kids (3 and 6), no chip → the DERIVED range.
+  // Part 1a: two kids (3 and 6) → the DERIVED range.
   await postDropIn(page, {
     title: withKidsTitle,
     kidLabels: kids.map((kid) => `${kid.first_name} · Age ${kid.age}`),
-    chip: null,
   })
 
   const card = cardFor(page, withKidsTitle)
@@ -370,9 +354,10 @@ test('the card leads with the ages of the kids the host is bringing — and neve
     expect(raw).not.toContain(kid.id)
   }
 
-  // Part 1b: a post with NO kids picked and NO chip states nothing → the card
-  // shows no ages line at all ("never a guess"), not an empty one.
-  await postDropIn(page, { title: bareTitle, kidLabels: [], chip: null })
+  // Part 1b (this is now the whole STATED half too — V16 t03 item 1): a post
+  // with NO kids picked states nothing → the card shows no ages line at all
+  // ("never a guess"), not an empty one.
+  await postDropIn(page, { title: bareTitle, kidLabels: [] })
   const bareCard = cardFor(page, bareTitle)
   await expect(bareCard).toBeVisible()
   await expect(bareCard.getByTestId('card-age-range')).toHaveCount(0)
@@ -384,27 +369,43 @@ test('the card leads with the ages of the kids the host is bringing — and neve
   await expect(bareCard).not.toContainText('age')
 })
 
-test('the explicit "Ages (optional)" chips are stored and win over the derived range', async ({
-  page,
-}) => {
-  const kids = await createMarkerKids()
-  const title = `e2e range stated ${Date.now()}`
-
-  // The same two kids (3 and 6 → derived `ages 3–6`) PLUS the `2–5` chip. The
-  // parent said it out loud, so 2–5 is what the card must read.
-  await postDropIn(page, {
-    title,
-    kidLabels: kids.map((kid) => `${kid.first_name} · Age ${kid.age}`),
-    chip: '2–5',
-  })
+test('a post with no kids states NOTHING — no age_min / age_max are written', async ({ page }) => {
+  // V16 t03 item 1 (option ii), the STATED half as it now reads. The chips that
+  // used to write this pair are gone; /new derives it from the kids picked, and
+  // the contract `feed.ageRangeFields` has always had is what this pins: with
+  // nothing to derive, the INSERT names NEITHER column (the keys are ABSENT, not
+  // null) — byte-identical to a pre-0037 post.
+  //
+  // The card half of the same fact is part 1b of the first test (no line at
+  // all). This one reads the ROW, because "no line" and "no column" are
+  // different claims and only the row can settle the second.
+  const title = `e2e range none stored ${Date.now()}`
+  await postDropIn(page, { title, kidLabels: [] })
 
   const card = cardFor(page, title)
-  await expect(card.getByTestId('card-age-range')).toHaveText('ages 2–5')
-  await expect(card).not.toContainText('ages 3–6')
-  for (const kid of kids) {
-    await expect(card).not.toContainText(kid.first_name)
+  await expect(card).toBeVisible()
+  const href = (await card.getAttribute('href')) ?? ''
+  if (!href.startsWith('/playdate/')) {
+    throw new Error(`the card for "${title}" has no detail href (got "${href}")`)
   }
+  const postId = href.slice('/playdate/'.length)
+
+  const { url, anonKey } = readSupabaseEnv()
+  const { accessToken } = readMarkerSession()
+  const res = await fetch(
+    `${url}/rest/v1/playdates?id=eq.${postId}&select=age_min,age_max,title`,
+    { headers: { apikey: anonKey, Authorization: `Bearer ${accessToken}` } },
+  )
+  if (!res.ok) throw new Error(`the playdates read HTTP ${res.status}: ${await res.text()}`)
+  const rows = (await res.json()) as Array<{ age_min: unknown; age_max: unknown; title: string }>
+  expect(rows).toHaveLength(1)
+  // BOTH columns are SQL NULL: the insert omitted the keys, and 0037's columns
+  // default to NULL. null (written) and absent (never named) are the same fact
+  // in the row — which is why the row read, not the network body, settles it.
+  expect(rows[0].age_min).toBeNull()
+  expect(rows[0].age_max).toBeNull()
 })
+
 
 test('the ages read fails closed for signed-out callers (the privacy line)', async () => {
   const { url, anonKey } = readSupabaseEnv()
@@ -430,7 +431,7 @@ test('the ages read fails closed for signed-out callers (the privacy line)', asy
  * What it walks: the Add button with an empty name → the column really holds
  * NULL → the row survives a reload → the page renders it as an empty name plus
  * its age (never "null") → the Remove dialog names it with the noun fallback
- * (the F1 fix) → the /new chip, the card's age line and the detail page's
+ * (the F1 fix) → the /new kid chip, the card's age line and the detail page's
  * "Ages-first" line all render it sensibly, with no name anywhere.
  */
 test('a kid can be saved with NO first name — the optional name, end to end', async ({ page }) => {
@@ -478,12 +479,12 @@ test('a kid can be saved with NO first name — the optional name, end to end', 
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
   await expect(dialog).toHaveCount(0)
 
-  // (5) The rest of the app renders the same kid sensibly. The /new chip is
+  // (5) The rest of the app renders the same kid sensibly. The /new kid chip is
   //     "Age 4" (never " · 4"), the card's line is the derived `age 4`, and the
   //     detail page's ages-first line carries the kid through the RANGE — the
   //     T3 case, live.
   const title = `e2e range nameless ${Date.now()}`
-  await postDropIn(page, { title, kidLabels: [`Age ${age}`], chip: null })
+  await postDropIn(page, { title, kidLabels: [`Age ${age}`] })
 
   const card = cardFor(page, title)
   await expect(card.getByTestId('card-age-range')).toHaveText('age 4')

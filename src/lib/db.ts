@@ -842,12 +842,13 @@ export interface NewPlaydateInput {
    */
   seriesId?: string
   /**
-   * V9 ticket 05 (migration 0037): the age range the host STATED with the
-   * "Ages (optional)" chips on /new. UNDEFINED when no chip was picked — the
+   * V9 ticket 05 (migration 0037): the post's STATED age range. V16 t03 item 1
+   * (option ii): /new derives it from the kids picked (feed.ageBoundsFromSelectedKids)
+   * rather than asking — UNDEFINED when no selected kid has a known age, and the
    * age_min / age_max keys are then ABSENT from the insert payload rather than
    * null (the neighborhoodIdField / seriesIdField / placeIdField pattern via
-   * feed.ageRangeFields), so a chipless post posts exactly as it did before
-   * 0037 and pre-apply nothing 42703s on that path.
+   * feed.ageRangeFields), so a post that states nothing posts exactly as it did
+   * before 0037 and pre-apply nothing 42703s on that path.
    */
   ageMin?: number
   ageMax?: number
@@ -895,7 +896,9 @@ export async function createPlaydate(input: NewPlaydateInput): Promise<Playdate>
       // duplicate prefill carries it dormant, pinned V2). V9 ticket 05 leaves
       // `age_hint` alone entirely (the ticket pins that the new chips do NOT
       // repurpose it) and writes the STRUCTURED pair instead — only when the
-      // host actually picked a chip (ageRangeFields; 0037's columns).
+      // host actually stated a range (ageRangeFields; 0037's columns). V16 t03
+      // item 1 (option ii): /new derives that range from the kids picked, so
+      // "stated" now means "at least one selected kid has a known age".
       ...ageRangeFields(input.ageMin, input.ageMax),
       details: input.details ?? null,
       // V3 slice 5 (ticket 08): the optional address — undefined when empty,

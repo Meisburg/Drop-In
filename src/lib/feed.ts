@@ -1343,9 +1343,14 @@ export function mapsHref(place: string, address: string | null | undefined): str
 //     (playdate_kids → kids.age, live since 0022). The host does nothing new:
 //     pick your kids and the crowd's age is stated. No kids picked → nothing
 //     is shown, and nothing is invented.
-//   * STATED — the "Ages (optional)" chip row on /new, stored in
-//     playdates.age_min / age_max (0037). A host with no kids listed can still
-//     say it out loud.
+//   * STATED — the host's range, stored in playdates.age_min / age_max (0037).
+//     V16 t03 item 1 (option ii): the "Ages (optional)" chips that used to
+//     collect it are GONE from /new, and /new now WRITES the derived bounds
+//     into them (ageBoundsFromSelectedKids) so a post from this form still
+//     carries them. The pair therefore survives for two reasons: the posts made
+//     during the chip era carry a range their host chose by hand, and a stated
+//     pair is what lets the card read a fixed band rather than recomputing it
+//     from a live kid read.
 // The STATED pair WINS whenever both exist ("the parent said so out loud").
 // That precedence lives HERE, in a pure seam, never inline in a component
 // (ticket pin T5), and every consumer — the feed card, the detail line — runs
@@ -1493,31 +1498,42 @@ export function cardAgeRangeLabel(
 }
 
 /**
- * The "Ages (optional)" chips of /new (V9 ticket 05) — ONE list, so the row,
- * the stored pair and the unit tests cannot disagree. `All ages` is stored as
- * the full kid domain rather than as "no answer": a chip the parent pressed is
- * an answer, and it must still be an answer after a reload (null/null is
- * exactly what "nothing stated" is, and the derived range would then win).
+ * V16 t03 item 1 (option ii): the bounds to STORE for a post, derived from the
+ * kids the host is bringing — the same bounds `ageRangeLine` words, from the
+ * same `ageBounds` seam, so the stored pair can never disagree with the derived
+ * line it came from.
+ *
+ * WHY IT EXISTS AT ALL: /new used to ask the host for a range with the "Ages
+ * (optional)" chips (V9 ticket 05). The chips are GONE — the form is shorter —
+ * but the STATED columns are not: they are still what `playdateAgeRangeLine`
+ * prefers over the derived range, and they are what a post's detail page reads
+ * back. Dropping the write would silently blank the age line on every future
+ * post, so /new now STATES what it used to DERIVE.
+ *
+ * NO KIDS (or none with a known age) → null, and `ageRangeFields` then returns
+ * `{}`: the insert names neither column, byte-identical to a pre-0037 post.
+ * That is the deliberate part — an invented range would be a guess, and the
+ * card's "never a guess" rule is the same one `ageBounds` already enforces.
  */
-export const AGE_RANGE_CHIPS = [
-  { label: '0–2', min: 0, max: 2 },
-  { label: '2–5', min: 2, max: 5 },
-  { label: '5–8', min: 5, max: 8 },
-  { label: '8–12', min: 8, max: 12 },
-  { label: 'All ages', min: KID_AGE_MIN, max: KID_AGE_MAX },
-] as const
+export function ageBoundsFromSelectedKids(
+  kids: ReadonlyArray<{ id: string; age?: number | null }>,
+  selectedKidIds: ReadonlyArray<string>,
+): AgeBounds | null {
+  const selected = new Set(selectedKidIds)
+  return ageBounds(kids.filter((kid) => selected.has(kid.id)).map((kid) => kid.age))
+}
 
 /**
- * The age_min / age_max INSERT keys — present ONLY when the host actually
- * picked a chip (the neighborhoodIdField / seriesIdField / placeIdField
- * pattern), and both or neither (a half-pair would store a range with one end
+ * The age_min / age_max INSERT keys — present ONLY when a range was actually
+ * stated, and both or neither (a half-pair would store a range with one end
  * missing).
  *
- * This is what keeps an ORDINARY post's payload untouched by 0037: a post
- * whose host picked no chip never names either column, so it posts exactly as
- * it did before the migration — which is why the DERIVED half of
- * e2e/feed-ages is green before 0037 is applied, while the chips half fails
- * at the documented point (42703 on the missing column) and only there.
+ * V16 t03 item 1 (option ii): the caller on /new is now
+ * `ageBoundsFromSelectedKids` rather than a chip press, so "stated" means "the
+ * host picked kids with at least one known age". The CONTRACT is unchanged and
+ * is the reason this function was left alone: a post that states nothing names
+ * NEITHER column, so it posts exactly as it did before 0037 — pre-apply
+ * nothing 42703s on that path (the placeId / seriesId discipline).
  */
 export function ageRangeFields(
   ageMin?: number | null,
