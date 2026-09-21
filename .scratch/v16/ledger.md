@@ -447,3 +447,29 @@ V16: THEIR PRE-PUSH HOOK VERIFIED INDEPENDENTLY (round 29). Reproduced the
   MEASUREMENT ERROR I MADE TWICE: `cmd | tail` masks the exit code, so I twice
   read "exit 0" from something that exits 1. Recorded because this batch has
   been hunting exactly this class of false-negative evidence.
+V16: THEIR PRE-PUSH HOOK HAS A REAL GAP — RULE 3 IS UNENFORCED AND FALSELY
+  REPORTED AS PASSING (round 30). Reproduced, not inferred.
+  THE HOOK ENFORCES RULES 1 AND 2, NOT RULE 3. `docs/agents/auto-push.md:41-43`
+  states condition 3 as "Plain `git push origin master`; no force, no amend, no
+  rebase" — but the hook never checks ancestry. It DEFINES `ZERO` (line 30) and
+  READS `_remote_sha` (line 37) and then uses NEITHER: `grep -c ZERO` returns 1,
+  i.e. only its own definition. The data needed to enforce rule 3 is captured and
+  discarded.
+  PROOF (throwaway repo, hook installed verbatim): fed it a line where the local
+  sha is NOT a descendant of the remote sha — a force-push — and it printed
+  "PASS — gated push to origin/master is clean and green" and exited 0. Git would
+  have proceeded.
+  WHY THIS IS THE WORST KIND OF GATE DEFECT: a missing check makes you cautious;
+  a check that REPORTS PASS while not performing the check makes you confident.
+  It would let a force-push to master through under a green banner, which is
+  precisely the failure mode the hook was built to prevent for rules 1 and 2.
+  THE FIX IS THREE LINES and uses data already in hand:
+      [ "$_remote_sha" != "$ZERO" ] && \
+        git merge-base --is-ancestor "$_remote_sha" "$_local_sha" || FAIL=1
+  (The ZERO guard matters: a brand-new branch carries an all-zero remote sha and
+  is legitimately a fast-forward.)
+  NOT FIXED BY ME — deliberately. scripts/pre-push is the other session's new
+  file, the design is theirs, and I have already been burned this batch by
+  nearly editing a file another writer owned. Recorded here with the exact patch
+  so whoever owns it can apply it in one step. If they do not, I will apply it
+  next round rather than leave a falsely-green safety gate in place.
