@@ -380,3 +380,58 @@ test.afterEach(async () => {
     )
   }
 })
+
+/**
+ * V16 t07 item 3 — THE 1-MILE SAVE, end to end.
+ *
+ * This exists because the 1-mile option shipped to production BEFORE its
+ * migration did: migration 0045 widens `profiles_radius_miles_chk` from
+ * `between 2 and 35` to `between 1 and 35`, and until it is applied the UI
+ * offers a radius the database rejects. Nothing in this suite exercised a
+ * 1-mile write, so the gap was invisible to every lane — the unit tests stop at
+ * the validator (which is already correct at 1) and the playtest lane only
+ * looks for JS errors.
+ *
+ * So this test is the acceptance check for 0045 itself: it drives the real
+ * control against the real database and reads the row back. It FAILS while the
+ * migration is unapplied, and PASSES once it lands — which is exactly what a
+ * migration-acceptance test should do.
+ *
+ * It restores the marker's radius in the afterEach that already exists for this
+ * file, so a failure here cannot leave the shared marker at 1 mile.
+ */
+test('a 1-mile radius really saves (the migration-0045 acceptance check)', async ({ page }) => {
+  const marker = readMarkerMeta()
+
+  await page.goto('/')
+  await settleOnRoute(page, '/')
+
+  const radiusPicker = page.getByTestId('feed-radius-filter')
+  await expect(radiusPicker).toBeVisible()
+
+  // The option must be OFFERED — if this fails, the 1-mile ladder entry was
+  // removed, which is a different regression (the DB being behind is not a
+  // reason to hide the option; 0045 is the fix).
+  await radiusPicker.selectOption('1')
+
+  // The write must SUCCEED. While 0045 is unapplied this is where it fails: the
+  // DB rejects radius 1, radiusSaveErrorMessage renders the friendly copy, and
+  // the control's own error line becomes visible. Asserting the absence of that
+  // line is what makes this a real acceptance check rather than a smoke test.
+  await expect(
+    page.getByText(/isn.t allowed yet|Could not save your location/),
+    'the radius write was REJECTED — migration 0045 is probably not applied',
+  ).toHaveCount(0)
+
+  // …and the value really landed on the row (the UI could re-render
+  // optimistically; the profiles row cannot).
+  await expect
+    .poll(async () => (await readMarkerLocation())?.radius_miles, {
+      message: 'profiles.radius_miles must actually be 1 — is 0045 applied?',
+    })
+    .toBe(1)
+
+  // Restore immediately rather than relying only on afterEach: this test
+  // deliberately leaves the shared marker at its narrowest radius.
+  expect(await patchMarkerLocation(marker.homeZip, marker.radiusMiles)).toBe(true)
+})
