@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { NAV_ICONS } from '../components/icons'
+import { NAV_ICONS, PLACE_KIND_ICONS } from '../components/icons'
 import { PlacesMap } from '../components/PlaceMap'
 import { RadiusEmptyState } from '../components/RadiusEmptyState'
 import { SectionHeader } from '../components/SectionHeader'
@@ -111,6 +111,28 @@ import type { Place, PlacePrefill } from '../lib/types'
  * failure (pre-0033-apply: PGRST205) leaves every heart unfilled and the
  * directory rendering normally. A heart is a card decoration; it is never
  * worth an error state, and it must never cost the page its places.
+ *
+ * V17 t01 (D2 = 6a): the map is a deliberate BAND at the top of the page, not
+ * a card-sized map box. Its height is pinned to 45dvh with a 240px floor — the
+ * spec's measurable rule (§3: ">= 240px and <= 60dvh at 390px", and the first
+ * list row's top edge BELOW the band's bottom edge). 45dvh is a phone height,
+ * so the band is a stable fraction of the viewport rather than a fixed pixel
+ * box that a tall phone renders as a letterbox. The band's own container
+ * carries `data-testid="places-map-band"`; `PlacesMap` is handed the height as
+ * `className` (the prop it already had — no new prop was needed), so the map
+ * component itself stays layout-agnostic.
+ *
+ * V17 t01 (7a): each row is a CONTENT-FORWARD CARD, not a text line. The card
+ * leads with a photo slot, the heart (t02) sits at that slot's top-right, and
+ * the place's name / kind / distance / address / actions follow beneath it.
+ * THERE ARE NO PHOTOS YET — `photo_url` is NULL for every seeded row
+ * (`types.ts:307`; third-party photos are deliberately never scraped), and
+ * sourcing real ones is t05. So the slot renders the place's KIND
+ * ILLUSTRATION (the `PLACE_KIND_ICONS` glyph family in components/icons.ts,
+ * the same 24px stroked `currentColor` vocabulary as the nav) and a real photo
+ * is an `<img>` swap in the SAME slot when t05 lands. The slot is never a
+ * broken image and never an empty box: every one of the ten `PLACE_KINDS`
+ * draws a glyph, and an unknown kind falls back to `other`.
  */
 export function BrowsePage() {
   const { session, loading, profile } = useSessionContext()
@@ -503,16 +525,42 @@ export function BrowsePage() {
               Set location
             </button>
           </div>
-          <PlacesMap
-            places={placed.map((row) => row.place)}
-            zipCoords={zipCoords}
-            homePin={homePinCoords}
-            radiusCircle={framingCircle({
-              geocodeCenter,
-              homePin: homePinCoords,
-              radiusMiles: geocodeCenter !== null ? radiusMiles : viewerRadius,
-            })}
-          />
+          {/* V17 t01: the BAND. 45dvh with a 240px floor is the spec's §3
+              measurable rule (>= 240px and <= 60dvh at 390px) — the floor is
+              what keeps the band a map on a short viewport, and 45dvh is what
+              makes it a stable fraction of a phone's height rather than a
+              letterboxed fixed box. `dvh` (not `vh`) so a mobile URL bar
+              appearing does not clip it.
+
+              The height is given to the MAP itself (`className`), not to a
+              wrapper, and that is deliberate — measured, not assumed.
+              `PlacesMap` renders `flex flex-col gap-2` around the map div, and
+              that wrapper has AUTO height. Passing `h-full` to the map (the
+              first thing I tried) resolves `height: 100%` against an auto
+              parent and collapses the map to its 2px border: the band still
+              measures 380px, but the map inside it is invisible. Both `h-64`
+              (the component's own default) and `h-full` are in Tailwind's
+              `utilities` layer, so `h-full` simply wins by source order.
+              Giving the map a self-sufficient height sidesteps the whole
+              question and keeps `PlaceMap.tsx` untouched (no new prop — the
+              component already took `className`). e2e asserts the map element
+              itself has a real height, so this cannot silently regress. */}
+          <div
+            data-testid="places-map-band"
+            className="h-[45dvh] min-h-[240px] w-full overflow-hidden"
+          >
+            <PlacesMap
+              className="h-[45dvh] min-h-[240px]"
+              places={placed.map((row) => row.place)}
+              zipCoords={zipCoords}
+              homePin={homePinCoords}
+              radiusCircle={framingCircle({
+                geocodeCenter,
+                homePin: homePinCoords,
+                radiusMiles: geocodeCenter !== null ? radiusMiles : viewerRadius,
+              })}
+            />
+          </div>
         </div>
       ) : null}
 
@@ -896,7 +944,11 @@ export function BrowsePage() {
   )
 }
 
-/** One place row: the whole row taps through to the place page. */
+/**
+ * One place CARD (V17 t01, item 7a): the whole card taps through to the place
+ * page. The card leads with the photo slot, then the place's facts, then the
+ * two row actions.
+ */
 function PlaceRow({
   row,
   followed,
@@ -938,20 +990,37 @@ function PlaceRow({
     <Link
       to={placePath(row.place.id)}
       data-testid="place-row"
-      className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition-colors hover:bg-slate-50"
+      className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors hover:bg-slate-50"
     >
-      {/* V17 t02: name + the heart. The heart is at the row's top-right and is
-          rendered ONLY for a signed-in parent — a signed-out visitor sees the
-          row exactly as it was (the /place/:id decision, where signed-out gets
-          a sign-in prompt instead of a Follow control).
+      {/* V17 t01: the PHOTO SLOT, with the heart (V17 t02) at its top-right.
+          The slot is the card's lead — the founder's Airbnb shape (item 7a) —
+          and it is `relative` so the heart can pin to it. `h-32` is the slot's
+          band height: big enough to read as a photo, small enough that six
+          lead cards still scan on a phone.
 
-          `min-h-11 min-w-11` is the measured 44px tap-target floor (the V16 t07
-          control discipline); the -m-1 keeps the larger hit area from shifting
-          the row's own padding. It is a <button> INSIDE the row's <Link>, so
-          the click is preventDefault'd + stopPropagation'd — the same guard the
-          card ping toggle uses — or tapping the heart would also navigate. */}
-      <span className="flex items-start justify-between gap-2">
-        <span className="text-sm font-semibold text-slate-900">{row.place.name}</span>
+          A real photo is `<img src={row.place.photo_url}>` HERE, in this same
+          slot, when t05 lands. There is no broken image today because there is
+          no `<img>` at all yet: `photo_url` is NULL for every seeded row
+          (`types.ts:307`) and sourcing real photos is t05's job. Rendering an
+          `<img>` whose src is null would be the "broken image" the acceptance
+          criteria forbid, so the fallback is the branch taken, not an error
+          path. */}
+      <div className="relative h-32 w-full">
+        <PlacePhotoSlot place={row.place} />
+        {/* V17 t02, moved but UNCHANGED in behavior: the heart is the EXISTING
+            place follow, rendered ONLY for a signed-in parent — a signed-out
+            visitor sees the card without it (the /place/:id decision, where
+            signed-out gets a sign-in prompt instead of a Follow control).
+
+            `min-h-11 min-w-11` is the measured 44px tap-target floor (the V16
+            t07 control discipline), kept from the previous header. It is a
+            <button> INSIDE the card's <Link>, so the click is
+            preventDefault'd + stopPropagation'd — the card ping toggle's guard
+            — or tapping the heart would also navigate. The opaque background
+            is what keeps the glyph legible over the slot's tint, in both
+            themes the parent might be in; there is no `-m-1` here because the
+            heart now floats on the slot rather than sitting in the card's
+            text padding. */}
         {canFollow ? (
           <button
             type="button"
@@ -967,53 +1036,122 @@ function PlaceRow({
               event.stopPropagation()
               onToggleFollow(row.place.id)
             }}
-            className="-m-1 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-slate-100"
+            className="absolute right-2 top-2 flex min-h-11 min-w-11 items-center justify-center rounded-full bg-white/95 shadow-sm transition-colors hover:bg-white"
           >
             <HeartIcon filled={followed} />
           </button>
         ) : null}
-      </span>
-      <span className="text-xs text-slate-600">
-        {placeKindLabel(row.place.kind)} · {placeIndoorLabel(row.place)}
-        {' · '}
-        {row.distanceMiles !== null
-          ? formatDistanceLabel(row.distanceMiles)
-          : 'Distance unknown'}
-      </span>
-      <span className="text-xs text-slate-500">{row.place.address}</span>
-      {upcomingLabel !== null ? (
-        <span className="text-xs font-medium text-indigo-700">{upcomingLabel}</span>
-      ) : null}
-      {/* V15 ticket 04: the two row actions (AC4) — compact, below the meta. */}
-      <div className="mt-1 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          data-testid={`row-start-dropin-${row.place.id}`}
-          onClick={(e) => startDropIn(e)}
-          className="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-indigo-700"
-        >
-          Start a drop-in
-        </button>
-        {learnMoreUrl !== null ? (
-          <a
-            href={learnMoreUrl}
-            target="_blank"
-            rel="noopener"
-            data-testid={`row-learn-more-${row.place.id}`}
-            className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"
+      </div>
+
+      {/* The card's content, below the slot. The padding lives here rather than
+          on the Link so the slot can run edge to edge. */}
+      <div className="flex flex-col gap-1 p-3">
+        <span data-testid="place-card-name" className="text-sm font-semibold text-slate-900">
+          {row.place.name}
+        </span>
+        <span className="text-xs text-slate-600">
+          {placeKindLabel(row.place.kind)} · {placeIndoorLabel(row.place)}
+          {' · '}
+          {row.distanceMiles !== null
+            ? formatDistanceLabel(row.distanceMiles)
+            : 'Distance unknown'}
+        </span>
+        <span className="text-xs text-slate-500">{row.place.address}</span>
+        {upcomingLabel !== null ? (
+          <span className="text-xs font-medium text-indigo-700">{upcomingLabel}</span>
+        ) : null}
+        {/* V15 ticket 04: the two row actions (AC4) — compact, below the meta. */}
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            data-testid={`row-start-dropin-${row.place.id}`}
+            onClick={(e) => startDropIn(e)}
+            className="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-indigo-700"
           >
-            Learn more
-          </a>
-        ) : (
-          <span className="text-xs text-slate-500">
-            {placeKindLabel(row.place.kind)}
-            {row.place.notes !== null && row.place.notes !== ''
-              ? ` · ${row.place.notes}`
-              : ''}
-          </span>
-        )}
+            Start a drop-in
+          </button>
+          {learnMoreUrl !== null ? (
+            <a
+              href={learnMoreUrl}
+              target="_blank"
+              rel="noopener"
+              data-testid={`row-learn-more-${row.place.id}`}
+              className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"
+            >
+              Learn more
+            </a>
+          ) : (
+            <span className="text-xs text-slate-500">
+              {placeKindLabel(row.place.kind)}
+              {row.place.notes !== null && row.place.notes !== ''
+                ? ` · ${row.place.notes}`
+                : ''}
+            </span>
+          )}
+        </div>
       </div>
     </Link>
+  )
+}
+
+/**
+ * V17 t01: the card's photo slot — the photo when there is one, the place's
+ * KIND illustration when there is not.
+ *
+ * Today there never is one: `Place.photo_url` is NULL for all 239 seeded rows
+ * (`types.ts:307`), and t05 is the separate batch that sources real photos.
+ * So this renders the fallback branch, and it renders it DELIBERATELY — a
+ * tinted panel plus the kind's glyph in the repo's own stroked 24px family
+ * (`PLACE_KIND_ICONS`, `components/icons.ts`), never a broken image and never
+ * an empty box.
+ *
+ * `data-testid="place-card-photo"` marks the slot itself, so the slot's
+ * presence is assertable independently of which branch it took; `data-photo`
+ * records which branch that was, which is how a spec (or t05) tells them
+ * apart without reading private DOM structure.
+ *
+ * The glyph is wrapped in `aria-hidden` and labelled by the slot's
+ * `aria-label`: a decorative drawing should not be announced, but the slot
+ * still says what it is to a screen reader.
+ */
+function PlacePhotoSlot({ place }: { place: Place }) {
+  const label = `${placeKindLabel(place.kind)} illustration`
+  if (place.photo_url !== null && place.photo_url !== '') {
+    return (
+      <img
+        src={place.photo_url}
+        alt={place.name}
+        data-testid="place-card-photo"
+        data-photo="real"
+        loading="lazy"
+        className="h-full w-full object-cover"
+      />
+    )
+  }
+  // The per-kind glyph. An unknown kind is not an empty box: it falls back to
+  // the `other` pin, which is exactly what `other` is for.
+  const glyph = PLACE_KIND_ICONS[place.kind as keyof typeof PLACE_KIND_ICONS]
+  const path = glyph ?? PLACE_KIND_ICONS.other
+  return (
+    <div
+      data-testid="place-card-photo"
+      data-photo="kind"
+      aria-label={label}
+      className="flex h-full w-full items-center justify-center bg-gradient-to-br from-indigo-50 via-slate-50 to-emerald-50"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        className="h-12 w-12 text-indigo-400"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d={path} />
+      </svg>
+    </div>
   )
 }
 

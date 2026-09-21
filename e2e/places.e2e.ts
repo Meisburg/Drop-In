@@ -43,6 +43,13 @@
  *     marker's own JWT), the heart reports pressed, and tapping it again
  *     deletes the row. A SIGNED-OUT visitor to /browse renders NO heart at all
  *     and issues no follows request. Every heart is ≥44px in both dimensions.
+ * (12) V17 t01: the map is a fixed-height BAND (spec §3's measurable rule: at
+ *     390px wide it renders >=240px and <=60dvh tall, and the first list row's
+ *     top edge sits BELOW the band's bottom edge), and every card leads with a
+ *     photo slot — the kind-illustration fallback while `photo_url` is NULL for
+ *     every seeded row (t05 supplies real ones), never a broken image and never
+ *     an empty box. The heart is pinned INSIDE that slot (top-right), so the
+ *     t02 behavior spec above and this position spec together cover the move.
  *
  * RED BY DESIGN pre-0029-apply: `places` does not exist live yet, so PostgREST
  * answers the first read with PGRST205 (schema cache: table not found). The
@@ -365,6 +372,118 @@ test('tapping an overview map marker shows the place info + "Start a drop-in" (V
   await expect(page.getByTestId('place-suggestions')).toHaveCount(0)
 })
 
+test('the map is a fixed-height band and every card leads with its photo slot (V17 t01)', async ({
+  page,
+}) => {
+  // The spec's §3 measurable rule is a PHONE measurement, so this spec pins the
+  // viewport the rule names. The default desktop-sized viewport would make the
+  // dvh ceiling meaningless (60dvh of 720px is 432px, which trivially contains
+  // a 240px band), so measuring here would not test the rule at all.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openPlacesTab(page)
+  await useAnyDistance(page)
+
+  // AC: at 390px the band renders >= 240px and <= 60dvh tall.
+  const band = page.getByTestId('places-map-band')
+  await expect(band).toBeVisible()
+  const bandBox = await band.boundingBox()
+  if (bandBox === null) throw new Error('the map band has no box — it is not rendered')
+  const dvh = page.viewportSize()!.height / 100
+  expect(
+    bandBox.height,
+    `the map band must be >= 240px tall at 390px wide (got ${bandBox.height}px)`,
+  ).toBeGreaterThanOrEqual(240)
+  expect(
+    bandBox.height,
+    `the map band must be <= 60dvh tall at 390px wide (got ${bandBox.height}px, 60dvh = ${
+      60 * dvh
+    }px)`,
+  ).toBeLessThanOrEqual(60 * dvh)
+
+  // The band is a REAL band, not two borders around nothing. This assertion is
+  // here because the first version of this slice passed the band measurement
+  // while the MAP inside it had collapsed to a 2px border: `PlacesMap` was
+  // handed `h-full`, which resolves `height: 100%` against the auto-height
+  // wrapper the component itself renders, and both classes sit in Tailwind's
+  // `utilities` layer so `h-full` won by source order. A band-only assertion
+  // would have shipped an invisible map. So the map element is measured too.
+  const mapBox = await page.getByTestId('places-map').boundingBox()
+  if (mapBox === null) throw new Error('the map has no box')
+  expect(
+    mapBox.height,
+    `the map must fill the band, not collapse inside it (got ${mapBox.height}px of a ${bandBox.height}px band)`,
+  ).toBeGreaterThanOrEqual(bandBox.height - 2)
+
+  // AC: the first list row's top edge is BELOW the band's bottom edge — the
+  // list really does scroll beneath the map rather than beside it.
+  const firstRow = page.getByTestId('place-row').first()
+  await expect(firstRow).toBeVisible()
+  const rowBox = await firstRow.boundingBox()
+  if (rowBox === null) throw new Error('the first place row has no box')
+  expect(
+    rowBox.y,
+    `the first row's top (${rowBox.y}) must be at or below the band's bottom (${bandBox.y + bandBox.height})`,
+  ).toBeGreaterThanOrEqual(bandBox.y + bandBox.height)
+
+  // AC: EVERY card renders the photo slot, and with no photo_url (NULL for
+  // every seeded row — t05 sources real ones) it renders the kind-illustration
+  // fallback. Never a broken image, never an empty box: the slot has a real
+  // box, and it took the `kind` branch rather than an <img> with a null src.
+  const slots = page.getByTestId('place-card-photo')
+  const slotCount = await slots.count()
+  expect(slotCount).toBeGreaterThan(0)
+  expect(slotCount, 'every rendered card carries exactly one photo slot').toBe(
+    await page.getByTestId('place-row').count(),
+  )
+  for (const slot of await slots.all()) {
+    const slotBox = await slot.boundingBox()
+    expect(slotBox?.width ?? 0, 'the photo slot must have a real width').toBeGreaterThan(20)
+    expect(slotBox?.height ?? 0, 'the photo slot must have a real height').toBeGreaterThan(20)
+  }
+  await expect(slots.first()).toHaveAttribute('data-photo', 'kind')
+  // The fallback is a DRAWN glyph, not an empty box: the slot holds an SVG.
+  await expect(slots.first().locator('svg')).toHaveCount(1)
+  // …and there is no <img> at all yet, so there is no broken image to find.
+  await expect(page.locator('[data-testid="place-card-photo"][data-photo="real"]')).toHaveCount(0)
+
+  // AC: the heart (V17 t02) is now in the CARD HEADER — the top-right of the
+  // photo slot — and is still a >=44px tap target. The t02 spec proves its
+  // behavior; this pins its new POSITION so the move cannot silently regress.
+  const heart = page.locator('[data-testid^="place-heart-"]').first()
+  await expect(heart).toBeVisible()
+  const heartBox = await heart.boundingBox()
+  if (heartBox === null) throw new Error('the heart has no box — it is not rendered')
+  expect(heartBox.width).toBeGreaterThanOrEqual(44)
+  expect(heartBox.height).toBeGreaterThanOrEqual(44)
+  const heartSlotBox = await page.getByTestId('place-card-photo').first().boundingBox()
+  if (heartSlotBox === null) throw new Error('the first card photo slot has no box')
+  // Inside the slot's own rectangle (the slot spans its card's full width, so
+  // this is the "top-right of the photo" contract, not an approximate one).
+  expect(heartBox.x).toBeGreaterThanOrEqual(heartSlotBox.x)
+  expect(heartBox.x + heartBox.width).toBeLessThanOrEqual(heartSlotBox.x + heartSlotBox.width + 1)
+  expect(heartBox.y).toBeGreaterThanOrEqual(heartSlotBox.y)
+  expect(heartBox.y + heartBox.height).toBeLessThanOrEqual(heartSlotBox.y + heartSlotBox.height + 1)
+  // Top-right, not merely somewhere inside: the heart sits in the slot's upper
+  // half and its right edge is in the slot's right half.
+  expect(heartBox.y + heartBox.height / 2).toBeLessThanOrEqual(
+    heartSlotBox.y + heartSlotBox.height / 2,
+  )
+  expect(heartBox.x + heartBox.width / 2).toBeGreaterThanOrEqual(
+    heartSlotBox.x + heartSlotBox.width / 2,
+  )
+
+  // AC: the grouped lead + overflow door still work under the new card shape.
+  await expect(
+    page
+      .locator('h2')
+      .filter({ hasText: /Park|Playground|Pool|Beach|Library|Museum|Indoor play|Splash pad/ })
+      .first(),
+  ).toBeVisible()
+  const seeAll = page.getByTestId('places-see-all')
+  await expect(seeAll).toBeVisible()
+  await expect(seeAll).toContainText('See all')
+})
+
 test('the browse list overflows behind "See all", keeping every row reachable (V13 ticket 05 A7)', async ({
   page,
 }) => {
@@ -552,20 +671,56 @@ test('the browse list defaults to alphabetical and the Filter & sort modal filte
   await openPlacesTab(page)
   await useAnyDistance(page)
 
-  // AC1: the default order is ALPHABETICAL (A–Z), not distance-sorted. The
-  // lead rows are the first BROWSE_LIST_LEAD_LIMIT names in A→Z order — so the
-  // very first row must be the alphabetically-first place in the directory.
-  const firstRow = page.getByTestId('place-row').first()
-  await expect(firstRow).toBeVisible()
-  // Every visible lead row's name must come after (or equal) the previous one:
-  // read the lead names in DOM order and assert they are sorted.
-  const leadNames = (
-    await page.locator('[data-testid="place-row"] > span').first().allTextContents()
-  ).slice(0, 6)
-  expect(leadNames.length).toBeGreaterThan(0)
-  for (let i = 1; i < leadNames.length; i++) {
-    expect(leadNames[i].localeCompare(leadNames[i - 1])).toBeGreaterThanOrEqual(0)
+  // AC1: the default order is ALPHABETICAL (A–Z), not distance-sorted.
+  //
+  // V17 t01: this assertion was repaired, and the repair found a real latent
+  // bug in the ORIGINAL spec worth recording. It used to read
+  // `[data-testid="place-row"] > span` — a direct-child selector that the card
+  // restructure invalidated (a row's children are DIVs now), so it silently
+  // matched nothing and asserted over an empty list: a passing test that tested
+  // nothing.
+  //
+  // Reading the real names then revealed what the old version got right only by
+  // accident. The lead is rendered GROUPED BY KIND (`groupPlacesByKind`), so
+  // the rows are alphabetical WITHIN a kind group, and the groups themselves
+  // follow PLACE_KINDS order — not one global A–Z run. The old assertion passed
+  // only because the first BROWSE_LIST_LEAD_LIMIT rows happened to fall inside
+  // a single kind group ("Playground"); the moment the seed's data shifted so a
+  // second kind entered the lead, it would have failed against correct code.
+  //
+  // So this asserts the ordering rule the page actually implements: within each
+  // group section, the names ascend. Asserting a global sort would be testing a
+  // rule nobody wrote.
+  //
+  // `locator('section:has(h2)')` rather than `filter({ has: page.locator('h2') })`:
+  // a locator passed to `has:` is resolved against the PAGE, not against the
+  // outer locator, so the filter matched nothing here. Every card group is a
+  // `section` whose first child is its kind `h2`, which is what the CSS
+  // `:has()` says directly.
+  //
+  // The explicit `first` wait is load-bearing, not decoration. `count()` and
+  // `allTextContents()` are NON-WAITING snapshots, so without it this read the
+  // DOM before the directory's async read had rendered anything and swept zero
+  // groups. (The original assertion survived that only by accident: it ended in
+  // `.first()`, which auto-waits.) The `checkedGroups` guard below is what
+  // turned that silent vacuity into a loud failure — keep both.
+  await expect(page.getByTestId('place-card-name').first()).toBeVisible()
+  const groups = page.locator('section:has(h2)')
+  let checkedGroups = 0
+  for (const section of await groups.all()) {
+    const names = await section.getByTestId('place-card-name').allTextContents()
+    if (names.length < 2) continue
+    checkedGroups++
+    for (let i = 1; i < names.length; i++) {
+      expect(
+        names[i].localeCompare(names[i - 1]),
+        `within one kind group, names must ascend A–Z ("${names[i - 1]}" then "${names[i]}")`,
+      ).toBeGreaterThanOrEqual(0)
+    }
   }
+  // A sweep over zero groups would pass vacuously, which is the failure this
+  // whole repair exists to remove: the seed guarantees multi-row kind groups.
+  expect(checkedGroups).toBeGreaterThan(0)
 
   // AC2: the "Filter & sort" button opens the modal with kind chips, a sort
   // dropdown, and a radius input.
@@ -626,7 +781,13 @@ test('a signed-in parent hearts a place — the existing follow row, filled from
   const row = placeRow(page, MARKER_PLACE_NAME)
   await expect(row).toHaveAttribute('href', /\/place\//)
   const href = await row.getAttribute('href')
-  const placeId = (href ?? '').replace('/place/', '')
+  // Anchored, not `String.replace`: a STRING-pattern replace swaps only the
+  // FIRST occurrence, so an href carrying a query string or a second `/place/`
+  // segment would silently yield a WRONG id — and the non-empty guard below
+  // would not catch it. This spec's whole discipline is "never guess an id,
+  // read it off the row", so the extraction is pinned to a whole trailing
+  // segment. The non-empty assertion stays as the guard.
+  const placeId = /\/place\/([^/?#]+)\/?$/.exec(href ?? '')?.[1] ?? ''
   expect(placeId).not.toBe('')
   const heart = page.getByTestId(`place-heart-${placeId}`)
 
