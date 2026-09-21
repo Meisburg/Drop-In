@@ -1,7 +1,7 @@
 /**
  * Spec (V9 ticket 05): ages first on a card, and a kid's name is optional.
  *
- * WHAT THIS PROVES, in three parts:
+ * WHAT THIS PROVES, in four parts:
  *  1. THE DERIVED HALF — the host picks two kids (ages 3 and 6) on /new and the
  *     feed card reads `ages 3–6` as the FIRST line of its meta, ABOVE the
  *     place. The card carries NO kid name (asserted by absence, the ticket's
@@ -273,8 +273,9 @@ async function postDropIn(
     throw new Error(
       `the post "${input.title}" failed to create — the form rendered its designed line ` +
         `"${submitError}" (never a crash), and the wire answered: ${wire}. ` +
-        `With no age chips left on /new (V16 t03 item 1), a kidless post names neither ` +
-        `age_min nor age_max, so a 0037 schema-cache miss is not a possible reason for this.`,
+        `With no age chips left on /new (V16 t03 item 1, option ii), the stated range is ` +
+        `DERIVED from the kid chips this helper picked (${input.kidLabels.length === 0 ? 'none picked here, so neither age column is named' : `${input.kidLabels.length} picked here, so both age columns ARE named from their ages`}). ` +
+        `A 0037 schema-cache miss is therefore only a candidate reason on the no-kids path.`,
     )
   }
   await createPost.catch(() => undefined)
