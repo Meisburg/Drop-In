@@ -1830,6 +1830,38 @@ export function milesWord(radiusMiles: number): string {
 }
 
 /**
+ * The Browse distance filter's three-way choice (V16 t07 item 4).
+ *
+ * 'profile' means "use my saved radius", 'any' means "no distance filter", and
+ * a number is an explicit mileage. The three are stored as one union because
+ * the select renders them in one list, but only a number converts to a string
+ * for the DOM `value` attribute.
+ *
+ * WHY THIS IS HERE AND NOT INLINE IN THE PAGE: the mapping was a nested ternary
+ * in BrowsePage's JSX, which the repo's review rules flag on sight
+ * (`.opencodereview/rule.json`: "Nested ternary expressions are not allowed").
+ * Per `docs/agents/code-structure.md`, a decision belongs in `lib/` as a pure
+ * function the page calls — so the page now renders
+ * `value={distanceSelectValue(distanceChoice)}` and the mapping is unit-testable
+ * instead of being buried in an attribute.
+ */
+export type DistanceChoice = 'profile' | 'any' | number
+
+/** The DOM `value` string for a `DistanceChoice` (see the type's doc). */
+export function distanceSelectValue(choice: DistanceChoice): string {
+  if (choice === 'profile') return 'profile'
+  if (choice === 'any') return 'any'
+  return String(choice)
+}
+
+/** The inverse: a select's `value` string back to a `DistanceChoice`. */
+export function distanceChoiceFromValue(value: string): DistanceChoice {
+  if (value === 'profile') return 'profile'
+  if (value === 'any') return 'any'
+  return Number(value)
+}
+
+/**
  * The empty-radius copy (V8 ticket 02), shared by the feed ("Near you") and
  * Browse so the two screens can never drift apart.
  *

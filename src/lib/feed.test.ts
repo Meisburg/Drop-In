@@ -70,6 +70,9 @@ import {
   rainBadgeLabel,
   RADIUS_MAX_MILES,
   RADIUS_MIN_MILES,
+  distanceChoiceFromValue,
+  distanceSelectValue,
+  type DistanceChoice,
   RADIUS_MILES_OPTIONS,
   radiusEscapes,
   radiusChoices,
@@ -3573,5 +3576,42 @@ describe('pastPostStatusLabel (V13 ticket 04: the picker row status chip)', () =
     expect(pastPostStatusLabel('on')).toBeNull()
     expect(pastPostStatusLabel(undefined)).toBeNull()
     expect(pastPostStatusLabel(null)).toBeNull()
+  })
+})
+
+/**
+ * V16 t07 item 4: the Browse distance filter's three-way choice. These were a
+ * nested ternary inline in the page's JSX — which the repo's review rules flag
+ * outright ("Nested ternary expressions are not allowed"), and which nothing
+ * could test. Extracting them makes the round trip assertable: whatever the
+ * select renders as its `value` must map back to the same choice, or the
+ * control shows one thing while the list filters on another (the same
+ * "control that lies" failure the feed picker's off-ladder guard exists for).
+ */
+describe('distanceSelectValue / distanceChoiceFromValue (V16 t07 item 4)', () => {
+  it('renders the two sentinels as their own strings', () => {
+    expect(distanceSelectValue('profile')).toBe('profile')
+    expect(distanceSelectValue('any')).toBe('any')
+  })
+
+  it('renders a numeric choice as its digit string (the DOM value attribute)', () => {
+    expect(distanceSelectValue(1)).toBe('1')
+    expect(distanceSelectValue(35)).toBe('35')
+  })
+
+  it('maps a select value back to the same choice, for every option offered', () => {
+    // The round trip is the point: a value that does not survive it would make
+    // the select display one radius while filtering on another.
+    const choices: DistanceChoice[] = ['profile', 'any', ...RADIUS_MILES_OPTIONS]
+    for (const choice of choices) {
+      expect(distanceChoiceFromValue(distanceSelectValue(choice))).toBe(choice)
+    }
+  })
+
+  it('parses a numeric value to a NUMBER, not a string', () => {
+    // The bug this guards: a string "5" reaching the distance filter would
+    // compare / sort as text and silently select the wrong radius.
+    expect(distanceChoiceFromValue('5')).toBe(5)
+    expect(typeof distanceChoiceFromValue('5')).toBe('number')
   })
 })
