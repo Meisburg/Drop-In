@@ -41,3 +41,20 @@ V16 t08: ocr wired as third review lane (open-code-review v1.12.8, npm global).
 V16: playtest lane PASS on the t01 tree (8 routes, 0 uncaught JS errors).
   Tooling note: Chrome must be launched with --remote-allow-origins='*' or
   CDP handshake 403s; script needs `uv run --with websocket-client`.
+V16 t02: complete (commits 192f5f0 + 70e2c6e, pushed f57c5d7..70e2c6e) —
+  reaction thumb is now an inline SVG honoring currentColor (the emoji ignored
+  CSS color). Class decision extracted to PURE reactionButtonClasses /
+  reactionCountLabel in src/lib/db.ts (planPing split), 8 sibling tests,
+  red-green verified (reverting failed 3 tests). THIRD LANE EARNED ITS KEEP:
+  ocr found reactionCountLabel called twice (guard + render) -> hoisted to a
+  const in 70e2c6e. Gate: build 0, 905/905, lint 0 errors, playtest PASS 8
+  routes. Founder's diagnosis confirmed right, obvious cause wrong — the
+  button FILL was never the problem.
+V16 t03: CODE-VERIFIED, NOT YET DISPATCHED — item 2 (section order) is ALREADY
+  CORRECT (PlaydateFormFields.tsx:608 kids, :652 Details) -> dropped. Item 1
+  (remove Ages chips) is NOT A SAFE DELETION: the chips are the ONLY way to set
+  a stated age range (NewPlaydatePage.tsx:865-866 -> playdates.age_min/age_max,
+  migration 0037), so removing them means no post can ever carry a stated
+  range again. NEEDS FOUNDER RULING (i/ii/iii in spec). Item 3 (duplicate row
+  overflow) DIAGNOSED: w-fit at NewPlaydatePage.tsx:754-755 fights the column
+  flex container at :953.
