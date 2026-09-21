@@ -23,6 +23,7 @@ import {
   type ProfileFormValues,
   type KidRowValues,
 } from './profileSave'
+import { LIKES_MAX_LENGTH } from './db'
 
 const BASE: ProfileFormValues = {
   name: 'Sam at Green Lake',
@@ -46,7 +47,14 @@ const validators = {
     if (!Number.isInteger(kid.age) || kid.age < 0 || kid.age > 17) {
       return 'Age must be a whole number from 0 to 17.'
     }
-    if (kid.likes.trim().length > 100) return 'Keep likes to 100 characters.'
+    // V16 t04: this stand-in must track the REAL validator's cap. It hardcoded
+    // 100 while LIKES_MAX_LENGTH moved to 500, so any test planning a
+    // 101-500-char likes save through planProfileSave was spuriously blocked
+    // with a stale message. Import the constant rather than repeating the
+    // number — the same discipline the bio stand-in already follows.
+    if (kid.likes.trim().length > LIKES_MAX_LENGTH) {
+      return `Keep likes to ${LIKES_MAX_LENGTH} characters.`
+    }
     return null
   },
 }

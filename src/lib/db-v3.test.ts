@@ -13,7 +13,13 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { listMyPingPostIdsWithClient, listPingsForPostsWithClient, updateKidWithClient } from './db'
+import {
+  LIKES_MAX_LENGTH,
+  listMyPingPostIdsWithClient,
+  listPingsForPostsWithClient,
+  updateKidWithClient,
+  validateKidLikes,
+} from './db'
 
 /** A going_pings row as the (loose) select returns it (the profile embed). */
 interface PingRowFixture {
@@ -237,5 +243,41 @@ describe('updateKidWithClient (mocked supabase client, V8 ticket 10)', () => {
     const { client, calls } = makeKidPatchMockClient()
     await updateKidWithClient(client, 'kid-1', {})
     expect(calls).toEqual([])
+  })
+})
+/**
+ * V16 t04: the kid "likes" cap had NO test pinning it, which is exactly how a
+ * cap bump silently ships. The founder's original complaint was that 100
+ * characters is too few for prose about a child; the number is now 500 (one
+ * prose budget with BIO_MAX_LENGTH). These tests exist so a future change to
+ * the constant is a deliberate act with a failing test behind it, not a silent
+ * drift that leaves the UI counter, the validator, and this pin disagreeing.
+ *
+ * The rule is a UI pin only — `kids.likes` is a `text` column with no DB
+ * CHECK (0022_kids_v3.sql:161) — so this is the ONLY thing standing between the
+ * app and an unbounded value, which is why it is worth pinning.
+ */
+describe('validateKidLikes (V16 t04 — the cap is 500, and it is the only pin)', () => {
+  it('accepts a value at exactly the cap', () => {
+    expect(LIKES_MAX_LENGTH).toBe(500)
+    expect(validateKidLikes('x'.repeat(LIKES_MAX_LENGTH))).toBeNull()
+  })
+
+  it('rejects one character past the cap, naming the real limit', () => {
+    expect(validateKidLikes('x'.repeat(LIKES_MAX_LENGTH + 1))).toBe(
+      `Keep likes to ${LIKES_MAX_LENGTH} characters.`,
+    )
+  })
+
+  it('measures AFTER trim, so trailing whitespace cannot push a valid value over', () => {
+    // The founder's use case is prose about a kid; a stray trailing newline
+    // must not be treated as content.
+    expect(validateKidLikes('x'.repeat(LIKES_MAX_LENGTH) + '   \n')).toBeNull()
+    expect(validateKidLikes('x'.repeat(LIKES_MAX_LENGTH + 1) + '   \n')).not.toBeNull()
+  })
+
+  it('accepts the empty string (likes are optional everywhere)', () => {
+    expect(validateKidLikes('')).toBeNull()
+    expect(validateKidLikes('   ')).toBeNull()
   })
 })

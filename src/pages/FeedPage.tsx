@@ -38,7 +38,7 @@ import {
   groupByDay,
   isStartingSoon,
   localDayKey,
-  PAST_DROP_INS_HREF,
+  pastDropInsHref,
   PAST_DROP_INS_LABEL,
   rainBadgeLabel,
   shouldRefreshFeed,
@@ -827,7 +827,7 @@ export function FeedPage() {
               is a shared constant so this line and any future empty-state usage cannot drift. V13 ticket 05 (A1): this is now the ONLY "past drop-ins" link in the app — the empty-radius state no longer carries one. */}
           <p className="text-center text-sm">
             <Link
-              to={PAST_DROP_INS_HREF}
+              to={pastDropInsHref(profile?.display_name)}
               className="font-medium text-indigo-600 underline-offset-2 hover:underline"
             >
               {PAST_DROP_INS_LABEL}

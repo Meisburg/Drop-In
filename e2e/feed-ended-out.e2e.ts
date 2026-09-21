@@ -594,7 +594,10 @@ test('a host-ended post (status="ended") is absent from the feed and lands in Pa
   await settleOnRoute(page, '/')
 
   await page.getByRole('link', { name: PAST_DROP_INS_LABEL }).click()
-  await settleOnRoute(page, '/profile')
+  // V16 t04: the archive door now lands on the viewer's OWN public page, not
+  // /profile — the "Hosted drop-ins" card that used to hold this Past list was
+  // removed from /profile, which made the old destination a dead end.
+  await settleOnRoute(page, `/u/${encodeURIComponent(marker.displayName)}`)
   const pastRow = page.locator('li').filter({ hasText: earlyEndedTitle })
   await expect(pastRow, 'the ended-early post must be in the Past list').toBeVisible()
   await expect(section(page, 'Past').getByText(earlyEndedTitle, { exact: true })).toBeVisible()

@@ -372,9 +372,13 @@ export interface Kid {
    */
   avatar_url?: string | null
   /**
-   * The kid's "likes" (V3 slice 6, ticket 09, migration 0022): <= 100
-   * characters, app-capped (no DB CHECK — the 0021 address lesson); the
-   * conversation-starter line on /u/:handle.
+   * The kid's "likes" (V3 slice 6, ticket 09, migration 0022): app-capped at
+   * `LIKES_MAX_LENGTH` (src/lib/db.ts — 500 since V16 t04, raised from 100),
+   * with no DB CHECK (the 0021 address lesson); the conversation-starter line
+   * on /u/:handle.
+   *
+   * The number is NOT restated here on purpose: it drifted once already when
+   * the cap moved and this comment kept saying 100. Read the constant.
    */
   likes?: string | null
 }

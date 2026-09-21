@@ -53,7 +53,7 @@ import {
   neighborhoodIdField,
   nextSlotMinutes,
   partitionPostsByTime,
-  PAST_DROP_INS_HREF,
+  pastDropInsHref,
   PAST_DROP_INS_LABEL,
   pastPostStatusLabel,
   PLAYDATE_DURATIONS_MINUTES,
@@ -1959,8 +1959,18 @@ describe('the archive link (V9 ticket 04: the feed\'s door to the Past list)', (
     expect(PAST_DROP_INS_LABEL).not.toMatch(/\d/)
   })
 
-  it('points at V8 ticket 04\'s Past list on /profile', () => {
-    expect(PAST_DROP_INS_HREF).toBe('/profile')
+  // V16 t04: the destination MOVED. The Past list used to live in /profile's
+  // "Hosted drop-ins" card; that card was removed, so a constant pointing at
+  // /profile became a dead end whose label promised a list the page no longer
+  // rendered. The archive surface is now the viewer's own public page.
+  it('points at the viewer\'s own public page, where their past drop-ins now live', () => {
+    expect(pastDropInsHref('Jon Meisburg')).toBe('/u/Jon%20Meisburg')
+  })
+
+  it('falls back to /profile rather than producing a dead href for an empty handle', () => {
+    expect(pastDropInsHref(null)).toBe('/profile')
+    expect(pastDropInsHref(undefined)).toBe('/profile')
+    expect(pastDropInsHref('   ')).toBe('/profile')
   })
 })
 

@@ -1832,8 +1832,24 @@ export function emptyRadiusCopy(radiusMiles: number): string {
  */
 export const PAST_DROP_INS_LABEL = 'See past drop-ins'
 
-/** Where the archive link goes (V8 ticket 04's Past list lives on /profile). */
-export const PAST_DROP_INS_HREF = '/profile'
+/**
+ * Where the archive link goes.
+ *
+ * V16 t04: this was the constant `/profile`, because the viewer's Past list
+ * lived in the "Hosted drop-ins" card on /profile. That card is GONE, so the
+ * old value pointed at a page that no longer lists past drop-ins at all — the
+ * link's label promised a list its destination did not render. The archive
+ * surface is now the viewer's OWN public page (`/u/<handle>`), whose "Hosted
+ * drop-ins" section carries the same Upcoming/Past split.
+ *
+ * It is a FUNCTION of the handle rather than a constant because the handle is
+ * per-viewer state, not a fixed route. A null/empty handle falls back to
+ * `/profile` (the editor still exists) so the link is never a dead href.
+ */
+export function pastDropInsHref(handle: string | null | undefined): string {
+  const trimmed = (handle ?? '').trim()
+  return trimmed === '' ? '/profile' : `/u/${encodeURIComponent(trimmed)}`
+}
 
 /** The "widen" escape's radius (V8 ticket 02 pin: 20 miles). */
 export const WIDEN_RADIUS_MILES = 20
