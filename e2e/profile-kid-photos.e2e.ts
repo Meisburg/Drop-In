@@ -1,7 +1,15 @@
 /**
- * Spec (V12 ticket 04): the owner's /profile is the ONE surface where a kid
- * photo renders, and it does so through the batched, best-effort signed-URL
- * read path — never a public URL, and never anywhere else.
+ * Spec (V12 ticket 04): the owner's /profile is the app's ORIGINAL kid-photo
+ * render site, and it renders through the batched, best-effort signed-URL read
+ * path — never a public URL.
+ *
+ * V16 t05 (founder decision Q3) ADDED A SECOND SITE: the owner's own self view
+ * of /u/:handle (`isOwnProfile`) now renders the same photos through the same
+ * hook. Test 1 below covers both halves. The visitor half of the privacy line
+ * — a signed-in STRANGER gets no kid rows and therefore no kid photo — lives in
+ * e2e/kid-photo-exposure.e2e.ts test 3 and e2e/kid-names-privacy.e2e.ts 3b,
+ * which use a real second account; this spec's marker always IS the owner, so
+ * it can only make the owner-side assertion.
  *
  * WHAT IT WALKS, in file order (the tests share the live project and run
  * serially — workers are pinned to 1 in playwright.config.ts — so each one
@@ -14,9 +22,8 @@
  *      `kid-photos` bucket, with the marker's own JWT. On /profile the kid row
  *      shows its photo: a SIGNED URL (a `token=` from the private bucket,
  *      never `/object/public/`) that a plain GET can actually fetch. The same
- *      run then walks to /u/<handle> — the public face of the SAME family —
- *      and the kid photo is absent there: the ticket's AC2, pinned at the
- *      surface that would otherwise be the leak.
+ *      run then walks to /u/<handle> — the marker's own self view — and the
+ *      photo renders there too (V16 t05), still from the private bucket.
  *   2. THE COLUMN IS THE GATE, NOT THE OBJECT. A second kid row with
  *      `avatar_url = null` gets an object uploaded to ITS canonical path. On
  *      /profile the row still renders name + age and carries NO <img> — the
@@ -31,11 +38,11 @@
  * would also pass on missing data is not evidence.
  *
  * THE HOUSE INvariants this spec does NOT re-prove: the stranger's mint
- * refusal, the anon bucket walk, and the no-<img> pin on /settings live in
+ * refusal, the anon bucket walk, and the no-<img> pin for a VISITOR live in
  * e2e/kid-photo-exposure.e2e.ts (V9 ticket 11), which this ticket leaves
  * untouched — that spec's test 3 seeds a SET `avatar_url` and pins the
- * photo-free render on /settings + /u/:handle, so a regression there is its
- * failure, not this one.
+ * photo-free render on a stranger's view of /u/:handle, so a regression there
+ * is its failure, not this one.
  *
  * WHAT THIS SPEC DOES NOT DO: it never uploads a kid photo to the PUBLIC
  * `avatars` bucket (that would re-create the exposure ticket 11 exists to
@@ -202,7 +209,7 @@ const created: { kidPhotoA: string | null; kidPhotoB: string | null } = {
 // ---------------------------------------------------------------------------
 // 1. THE POSITIVE ROUND-TRIP, AND THE SURFACE THAT STAYS PHOTO-FREE.
 // ---------------------------------------------------------------------------
-test('the owner’s /profile shows a kid’s photo as a signed URL — and /u/<handle> stays photo-free', async ({
+test('the owner’s /profile shows a kid’s photo as a signed URL — and so does the owner’s own /u/<handle> self view (V16 t05)', async ({
   page,
 }) => {
   const e = env()
@@ -253,15 +260,27 @@ test('the owner’s /profile shows a kid’s photo as a signed URL — and /u/<h
   const fetched = await fetch(src)
   expect(fetched.status, `the signed kid-photo URL must be fetchable (HTTP ${fetched.status})`).toBe(200)
 
-  // AC2: the public face of the SAME family carries no kid photo. The marker IS
-  // the owner, so this is the self view of /u/:handle — and it must stay
-  // photo-free (the render site is /profile only).
+  // AC2, RE-PINNED BY V16 t05 (founder decision Q3): the SELF view of
+  // /u/:handle is now a SECOND kid-photo render site — the owner looking at
+  // their own public page is still the owner, so the photo renders there too,
+  // minted through the same private-bucket read path as the /profile row above.
+  // What Q3 did NOT change is the privacy line: the VISITOR path stays
+  // photo-free, and that is pinned by e2e/kid-photo-exposure.e2e.ts test 3 and
+  // e2e/kid-names-privacy.e2e.ts 3b (a signed-in stranger sees no kids section
+  // at all, hence no photo to render). The marker IS the owner, so this walk
+  // asserts the owner half: the row is there AND carries the signed photo.
   await page.goto(`/u/${encodeURIComponent(e.markerHandle)}`)
   await expect(page.getByTestId('kid-row').filter({ hasText: kidName })).toContainText(kidName)
+  const selfImg = page.getByTestId('kid-photo')
   await expect(
-    page.getByTestId('kid-photo'),
-    'no kid photo may render on /u/<handle> — the owner’s /profile is the one render site',
-  ).toHaveCount(0)
+    selfImg,
+    'V16 t05: the owner’s own self view of /u/<handle> renders the kid photo',
+  ).toBeVisible()
+  const selfSrc = (await selfImg.getAttribute('src')) ?? ''
+  expect(selfSrc, `the self-view kid photo must render from '${PHOTO_BUCKET}'`).toContain(
+    PHOTO_BUCKET,
+  )
+  expect(selfSrc, 'and never from a public object URL').not.toContain('/object/public/')
 })
 
 // ---------------------------------------------------------------------------

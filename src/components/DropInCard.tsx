@@ -415,8 +415,15 @@ export interface DropInCardPingToggle {
  *
  * V3 slice 7 (ticket 10): `size` — 'md' (the default, 40px: every
  * existing call site — the card's host line, the detail page's host line,
- * /u/:handle, and top-level comment rows) or 'sm' (24px — the indented
- * one-level reply rows under the detail page's comment thread).
+ * and top-level comment rows) or 'sm' (24px — the indented one-level reply
+ * rows under the detail page's comment thread).
+ *
+ * V16 t05: `'lg'` (80px) — the IDENTITY surface only (`/u/:handle`'s handle
+ * header, alongside the `text-lg` @name). It exists so the profile page can
+ * size its avatar to its heading WITHOUT moving the default: the drop-in
+ * cards, the detail page's host line and the comment rows all keep their
+ * 40px circle, because they were never the founder's complaint and their
+ * density is deliberate.
  */
 export function HostAvatar({
   host,
@@ -424,7 +431,7 @@ export function HostAvatar({
   expandable = false,
 }: {
   host: PlaydateHost
-  size?: 'md' | 'sm'
+  size?: 'md' | 'sm' | 'lg'
   /**
    * V6: when the avatar has a photo, tapping it opens the full-screen
    * viewer instead of doing nothing. Deliberately opt-in — on the feed card
@@ -434,8 +441,8 @@ export function HostAvatar({
    */
   expandable?: boolean
 }) {
-  const box = size === 'sm' ? 'h-6 w-6' : 'h-10 w-10'
-  const initialClass = size === 'sm' ? 'text-xs' : 'text-sm'
+  const box = size === 'sm' ? 'h-6 w-6' : size === 'lg' ? 'h-20 w-20' : 'h-10 w-10'
+  const initialClass = size === 'sm' ? 'text-xs' : size === 'lg' ? 'text-2xl' : 'text-sm'
   const photoUrl = host.avatar_url ?? ''
   if (photoUrl !== '') {
     const photo = (

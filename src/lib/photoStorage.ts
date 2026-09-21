@@ -274,12 +274,19 @@ export function familyPhotoMintPaths(
   return [...seen]
 }
 
-/** The optional blocks a profile page renders, in the pinned order (ticket 11). */
+/** The optional blocks a profile page renders, in the pinned order (V16 t05). */
 export type ProfileBlurbBlock = 'familyPhoto' | 'about' | 'kids'
 
 /**
  * WHICH of the three optional profile blocks render, in the order the ticket
- * pins: family photo → "About our family" → the kids list.
+ * pins: the kids list → "About the parents" → the family photo.
+ *
+ * V16 t05 RE-PINNED THIS ORDER. It used to be family photo → about → kids;
+ * the founder's own reading of the page put the people first and the family
+ * photo last, so the photo is now the CLOSER and the kids block leads. The
+ * `ProfileBlurbBlock` union is unchanged (the same three blocks exist); only
+ * the order this function emits them in moved, which is why the reorder is a
+ * change here plus a test update rather than a JSX shuffle.
  *
  * This is the single decision for all three, so the two render sites
  * (`/u/:handle` and `/profile`) cannot drift apart on "is there a bio" or "does
@@ -304,8 +311,8 @@ export function profileBlurbOrder(
   kidsVisible: boolean,
 ): ProfileBlurbBlock[] {
   const blocks: ProfileBlurbBlock[] = []
-  if (familyPhotoObjectPath(profile?.family_photo_url) !== null) blocks.push('familyPhoto')
-  if ((profile?.bio ?? '').trim() !== '') blocks.push('about')
   if (kidsVisible) blocks.push('kids')
+  if ((profile?.bio ?? '').trim() !== '') blocks.push('about')
+  if (familyPhotoObjectPath(profile?.family_photo_url) !== null) blocks.push('familyPhoto')
   return blocks
 }

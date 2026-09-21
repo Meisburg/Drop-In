@@ -289,18 +289,18 @@ describe('signedKidPhotoUrlsWithClient (V12 t04: batched, best-effort, keyed by 
   })
 })
 
-describe('profileBlurbOrder (V9 ticket 11: which optional blocks render, and in what order)', () => {
-  it('returns EVERY present block in the pinned order: photo, about, kids', () => {
+describe('profileBlurbOrder (V9 ticket 11; V16 t05 re-pinned the order)', () => {
+  it('returns EVERY present block in the pinned order: kids, about, photo', () => {
     expect(
       profileBlurbOrder({ family_photo_url: `${UID}/family/photo.jpg`, bio: 'Hi' }, true),
-    ).toEqual(['familyPhoto', 'about', 'kids'])
+    ).toEqual(['kids', 'about', 'familyPhoto'])
   })
 
   it('drops each block independently', () => {
-    expect(profileBlurbOrder({ family_photo_url: null, bio: 'Hi' }, true)).toEqual(['about', 'kids'])
+    expect(profileBlurbOrder({ family_photo_url: null, bio: 'Hi' }, true)).toEqual(['kids', 'about'])
     expect(profileBlurbOrder({ family_photo_url: `${UID}/family/photo.jpg` }, true)).toEqual([
-      'familyPhoto',
       'kids',
+      'familyPhoto',
     ])
     expect(profileBlurbOrder({ bio: 'Hi' }, false)).toEqual(['about'])
   })
@@ -310,6 +310,17 @@ describe('profileBlurbOrder (V9 ticket 11: which optional blocks render, and in 
     expect(profileBlurbOrder({ family_photo_url: null, bio: null }, false)).toEqual([])
     // A whitespace-only bio is empty (the /u/:handle render's own rule).
     expect(profileBlurbOrder({ bio: '   ' }, false)).toEqual([])
+  })
+
+  it('V16 t05: the family photo is the CLOSER, never the opener', () => {
+    // The founder's reorder ask — kids first, family photo last — pinned so a
+    // later edit cannot quietly restore the old leading photo.
+    const blocks = profileBlurbOrder(
+      { family_photo_url: `${UID}/family/photo.jpg`, bio: 'Hi' },
+      true,
+    )
+    expect(blocks[0]).toBe('kids')
+    expect(blocks[blocks.length - 1]).toBe('familyPhoto')
   })
 
   it('counts a photo URL that is not mintable as NO photo (the render would show nothing)', () => {

@@ -71,9 +71,11 @@
  *   - anon cannot list or fetch anything in `kid-photos`, and the old
  *     public-URL SHAPE of a kid photo does not resolve;
  *   - the parent avatar stays public (upload, list, fetch, all with the anon key);
- *   - the kid row renders no `<img>` and no photo control on /u/:handle (the
- *     visitor surface stays photo-free — V13 ticket 01 re-homed the editor to
- *     /profile, so the photo-free pin is now the visitor page);
+ *   - the kid row renders no `<img>` on `/u/:handle` for a kid whose only photo
+ *     data is the retired public `avatar_url` column (V16 t05: the owner's own
+ *     self view MAY render a private-bucket photo, so the pin here is the
+ *     COLUMN, and the visitor half — a stranger sees no kids section at all —
+ *     lives in e2e/kid-names-privacy.e2e.ts 3b);
  *   - "About the parents" saves and renders; an empty profile renders cleanly.
  * A failure in one of THOSE is a real assertion failure with the received value
  * quoted — never a crash, never a bare timeout.
@@ -610,10 +612,17 @@ test('a signed-in stranger cannot mint a URL for another family’s kid photo �
 })
 
 // ---------------------------------------------------------------------------
-// 3. NO KID PHOTO RENDERS ON THE VISITOR SURFACE — and the owner's /profile is
-//    the one place a kid photo control lives.
+// 3. THE KID ROW'S PHOTO ON /u/:handle FOLLOWS THE SELF-VIEW GATE.
+//    V16 t05 (founder decision Q3) sharpened this test: the page is no longer
+//    photo-free for EVERYONE, it is photo-free for everyone BUT the owner. This
+//    spec's session IS the owner (the marker), so the assertion below pins the
+//    owner half only — which is that a SET `avatar_url` does NOT by itself
+//    produce an image, because the legacy public column is retired and only a
+//    private-bucket object mints. The STRANGER half of the privacy line is
+//    pinned by test 2's stranger walk (that page carries no kid rows at all)
+//    and by e2e/kid-names-privacy.e2e.ts 3b.
 // ---------------------------------------------------------------------------
-test('a kid row renders no photo on /u/:handle; the owner’s /profile is the one render site', async ({ page }) => {
+test('a kid row with only a legacy avatar_url renders no photo on /u/:handle; the private bucket is the only source', async ({ page }) => {
   const e = env()
   const epoch = Math.floor(Date.now() / 1000)
   const kidName = `E2E NoPhoto ${epoch}`
@@ -625,15 +634,18 @@ test('a kid row renders no photo on /u/:handle; the owner’s /profile is the on
     `${e.url}${LEGACY_PUBLIC_MARKER}${e.markerUserId}/kids/legacy-${epoch}`,
   )
 
-  // V13 ticket 01: the visitor surface (/u/:handle) is the photo-free pin. The
-  // kid row is name · age · likes, exactly — no <img>, no photo control. (The
-  // old spec pinned this on /settings; the editor moved to /profile, so the
-  // photo-free surface is now the visitor page.)
+  // V13 ticket 01 / V16 t05: the marker IS the owner, so this is the SELF view
+  // — the one view where a kid photo may render at all. The row's `avatar_url`
+  // IS set, but to the RETIRED public shape with no object behind it, so no
+  // signed URL can be minted and the row renders name · age · likes with no
+  // image. The assertion is that the column does not drive the render; the
+  // private bucket does. (A real upload to the canonical path DOES render here
+  // — that positive is pinned by e2e/profile-kid-photos.e2e.ts test 1.)
   await page.goto(`/u/${encodeURIComponent(e.markerHandle)}`)
   const publicRow = page.getByTestId('kid-row').first()
   await expect(publicRow).toContainText(kidName)
   await expect(publicRow.locator('img, picture, [role="img"], svg')).toHaveCount(0)
-  await expect(page.getByTestId('kid-photo'), 'no kid photo may render on /u/<handle>').toHaveCount(0)
+  await expect(page.getByTestId('kid-photo'), 'no mintable kid photo → no image').toHaveCount(0)
 
   // THE OWNER'S /PROFILE IS THE ONE RENDER SITE (V12 t04): the row carries its
   // own "Add photo" / tap-to-update control (the crop step), and a SET

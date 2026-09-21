@@ -5,6 +5,7 @@ import { PhotoButton } from '../components/ImageLightbox'
 import { ReportDialog } from '../components/ReportDialog'
 import { useSessionContext } from '../components/SessionProvider'
 import { useFamilyPhotoUrl } from '../components/useFamilyPhotoUrl'
+import { useKidPhotoUrls } from '../components/useKidPhotoUrls'
 import {
   countPostsByHost,
   getBlockState,
@@ -69,19 +70,29 @@ type UserPageState =
  * V9 ticket 11 (kid photos; folds ticket 08) changes what this page shows, in
  * three ways:
  *  1. THE KID ROWS DROP THEIR PHOTO — name · age · likes, exactly (the 40px
- *     circle and its full-screen lightbox are gone, and no code path reaches a
- *     kid's `avatar_url`). A kid photo must not be reachable from here for the
- *     same reason ticket 10 gated the name: the row rides one policy.
- *  2. THE OPTIONAL BLOCKS GET A PINNED ORDER — family photo → "About our
- *     family" → the kids list (the pure `profileBlurbOrder` decides which of the
- *     three exist; the JSX lays them out in that order). All three are optional
- *     and independent, and the page looks finished with none of them. The
- *     "family photo" is the PRIVATE one (signed URL, signed-in viewers only —
- *     it usually depicts the children), never a public object.
+ *     circle and its full-screen lightbox are gone). A kid photo must not be
+ *     reachable from here for the same reason ticket 10 gated the name: the row
+ *     rides one policy. **V16 t05 (founder decision Q3) RESTORES the photo for
+ *     the OWNER'S OWN SELF VIEW ONLY** — minted through the app's one kid-photo
+ *     read path (`useKidPhotoUrls`, the PRIVATE `kid-photos` bucket), never by
+ *     reading `kids.avatar_url`. The privacy rule is untouched
+ *     (`kidPhotoVisibility` still answers `'owner'` or `'denied'`, nothing
+ *     else) and the visitor path is unchanged: the whole kids block sits behind
+ *     `isOwnProfile`, and the mint is handed no owner id for anyone else.
+ *  2. THE OPTIONAL BLOCKS GET A PINNED ORDER — the pure `profileBlurbOrder`
+ *     decides which of the three exist. **V16 t05 RE-PINNED the order to
+ *     kids → "About the parents" → the family photo** (it was family photo →
+ *     about → kids; the family photo is now the page's CLOSER). The JSX lays
+ *     them out in that same sequence. All three are optional and independent,
+ *     and the page looks finished with none of them. The "family photo" is the
+ *     PRIVATE one (signed URL, signed-in viewers only — it usually depicts the
+ *     children), never a public object.
  *  3. THE HANDLE HEADER IS NOT ONE OF THE THREE. It stays first (it is the
  *     page's identity), and "Interests" stays with the family description rather
  *     than up in the header — the ticket pins the order of the three OPTIONAL
- *     blocks, not that they precede the family's own name.
+ *     blocks, not that they precede the family's own name. **V16 t05 sizes the
+ *     header's avatar (`HostAvatar size="lg"`) to the identity heading** without
+ *     moving that shared component's default.
  */
 export function UserPage() {
   const { handle } = useParams<{ handle: string }>()
@@ -158,6 +169,24 @@ export function UserPage() {
   // change the hook count between renders).
   const familyPhotoUrl = useFamilyPhotoUrl(
     state.status === 'ready' ? state.profile.family_photo_url : null,
+  )
+
+  // V16 t05 (founder decision Q3): THE OWNER'S OWN KID PHOTOS. The kids block
+  // below already renders in the SELF VIEW only, and this hook is the app's one
+  // kid-photo mint path (`signedKidPhotoUrls` → the PRIVATE `kid-photos`
+  // bucket). It is called with `null` as the owner for every viewer who is not
+  // the owner, which is what keeps this page's visitor path exactly as
+  // photo-free as it was: the hook's own contract is "no owner id, no mint",
+  // and `kidPhotoVisibility` (the rule the storage policies implement) allows
+  // `'owner'` and nothing else. So the gate here is NOT a new privacy rule —
+  // it is the same `isOwnProfile` the kids block has always used, wired to the
+  // existing mint.
+  //
+  // Called HERE, above every early return, for the same conditional-hook reason
+  // as the family-photo hook above.
+  const kidPhotoUrls = useKidPhotoUrls(
+    isOwnProfile && state.status === 'ready' ? state.profile.id : null,
+    state.status === 'ready' ? state.profile.kids : null,
   )
 
   // The initial block state, for other people's profiles only. A failed
@@ -349,10 +378,16 @@ export function UserPage() {
     month: 'long',
     year: 'numeric',
   })
-  // The pinned optional-block order: family photo → "About our family" → the
-  // kids list (the pure `profileBlurbOrder`; all three optional and independent,
-  // and `[]` for a family with none of them). `kidsVisible` is this page's own
-  // rule — the self view only — not something the pure seam could know.
+  // The pinned optional-block order (V16 t05 re-pinned it): the kids list →
+  // "About the parents" → the family photo. The pure `profileBlurbOrder`
+  // decides which of the three exist AND their order; all three are optional
+  // and independent, and `[]` for a family with none of them. `kidsVisible` is
+  // this page's own rule — the self view only — not something the pure seam
+  // could know.
+  //
+  // NOTE the JSX below does consume this seam in order: the kids card is
+  // emitted first, then the about-the-parents card, then the family photo —
+  // the same three blocks the function names, laid out in the same sequence.
   const blurb = profileBlurbOrder(profile, isOwnProfile && profile.kids.length > 0)
   const showsAbout = blurb.includes('about')
   const showsKids = blurb.includes('kids')
@@ -368,8 +403,13 @@ export function UserPage() {
           (it used to close the page in V13 ticket 01). The display name + @handle
           is the FIRST thing on the public profile, integrated with the avatar. */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        {/* V16 t05: the avatar is sized to THIS page's identity heading
+            (`size="lg"` = 80px against the `text-lg` @name) — it was the
+            40px `md` default, which read as an afterthought beside a name
+            heading. The default is deliberately unchanged: every drop-in card
+            and the detail page's host line keep their 40px circle. */}
         <div className="flex items-center gap-3">
-          <HostAvatar host={profile} expandable />
+          <HostAvatar host={profile} size="lg" expandable />
           <div className="min-w-0">
             <h2 className="text-lg font-semibold text-slate-900">@{profile.display_name}</h2>
             <p className="mt-1 text-sm text-slate-600">Here since {joined}.</p>
@@ -384,71 +424,31 @@ export function UserPage() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        {/* V13 ticket 01: the identity row (avatar + @handle + "Here since" +
-            "Hosted N drop-ins") MOVED to the top of the page in V15 ticket 06 (A20)
-            — it is no longer the page's closer. This card now carries the family
-            photo + the "About the parents" block (the bio + interests, under a real heading). */}
-        {/* V9 ticket 11 (folded ticket 08): the optional blocks render IN THE
-            PINNED ORDER — family photo → "About the parents" → the kids list.
-            Every one of them is optional: a family with none of them gets this
-            card with nothing but the identity block at the top, and no
-            placeholder anywhere.
-            "A PHOTO OF YOUR FAMILY" IS NOT PUBLIC — it is in the private bucket
-            and only a signed-in family can mint for it (T4: the photo usually
-            depicts the children). The signed URL arrives from the hook above;
-            without one there is simply no image. */}
-        {familyPhotoUrl !== null ? (
-          <div className="mt-3 first:mt-0">
-            <PhotoButton
-              src={familyPhotoUrl}
-              alt={`@${profile.display_name}’s family photo`}
-              className="block max-w-full overflow-hidden rounded-xl"
-            >
-              <img
-                data-testid="family-photo"
-                src={familyPhotoUrl}
-                alt={`@${profile.display_name}’s family photo`}
-                className="max-h-72 w-full object-cover"
-              />
-            </PhotoButton>
-          </div>
-        ) : null}
-        {showsAbout ? (
-          <div className="mt-3 first:mt-0">
-            <h2 className="text-base font-semibold text-slate-900">About the parents</h2>
-            <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{profile.bio}</p>
-          </div>
-        ) : null}
-        {/* V3 slice 6 (ticket 09, migration 0022): the family's interests line —
-            hidden when empty/absent, and pre-0022-apply the column is undefined
-            (the null-safe render, the pre-0016 discipline).
-            V9 ticket 11 groups it with the family description rather than leaving
-            it up in the header: its own /profile copy pins it there ("Shown with
-            “About our family”"), and the ticket pins the three optional blocks
-            ahead of it. It is deliberately OUTSIDE the `showsAbout` gate — a
-            family that wrote interests and no description still shows its
-            interests (which is what this page has always done). */}
-        {profile.interests != null && profile.interests.trim() !== '' ? (
-          <p className="mt-2 text-sm text-slate-600">
-            Interests: {profile.interests}
-          </p>
-        ) : null}
-      </div>
+      {/* V16 t05: THE KIDS CARD COMES FIRST — the founder's reorder (kids →
+          parents → the family photo). The order is the pure
+          `profileBlurbOrder` seam's, re-pinned in this slice; this JSX lays the
+          three optional blocks out in exactly the sequence that function emits
+          them.
 
-      {/* V2 ticket 02: the kids list (privacy pin: first name + age — no full
+          V2 ticket 02: the kids list (privacy pin: first name + age — no full
           names, no gender, anywhere in the schema or the UI). V3 slice 6
           (ticket 09, migration 0022): the row gained the 40px kid photo
-          (the kid's avatar_url) + the "likes" line. V9 ticket 11 REMOVES THE
-          PHOTO — a row is name · age · likes, exactly, and the initial-fallback
-          circle went with it (an initial standing in for a photo is the
-          "partial substitute" ticket 10's own record rejects). No code path may
-          reach a kid's `avatar_url` for display.
+          (the kid's avatar_url) + the "likes" line. V9 ticket 11 REMOVED the
+          PHOTO from this row — a row was name · age · likes, exactly — and the
+          initial-fallback circle went with it (an initial standing in for a
+          photo is the "partial substitute" ticket 10's own record rejects).
+          No code path may read a kid's `avatar_url` for display: the photo
+          below is minted from the CANONICAL object path
+          (`useKidPhotoUrls` → `signedKidPhotoUrls`), never from that column.
 
-          V13 ticket 01 RE-INTRODUCED the owner-only kid-photo render on
-          /profile (signed URL, one render site); V15 ticket 06 made it
-          tap-to-update. The visitor surface (/u/:handle) stays photo-free —
-          this page never mints or renders a kid photo.
+          V16 t05 (founder decision Q3) RESTORES THE PHOTO — but only here, and
+          only for the owner. The rule that makes that safe is unchanged:
+          `kidPhotoVisibility` (`photoStorage.ts`) answers `'owner'` for the
+          owner and `'denied'` for everyone else, and the mint call above is
+          handed `null` as the owner for every other viewer, so a visitor's
+          page never mints and never renders a kid photo. The visitor path is
+          byte-for-byte what it was: this whole block is behind `showsKids`,
+          which is `isOwnProfile && kids.length > 0`.
 
           V9 ticket 10 (the accepted cost, CONFIRMED by the human 2026-09-13
           and recorded in .scratch/v9/issues/10-kid-names-privacy-gate.md):
@@ -496,8 +496,23 @@ export function UserPage() {
           <ul className="mt-2 flex flex-col gap-2">
             {profile.kids.map((kid) => {
               const likes = kid.likes?.trim() ?? ''
+              const kidPhoto = kidPhotoUrls[kid.id]
               return (
                 <li key={kid.id} data-testid="kid-row" className="flex flex-wrap items-center gap-2">
+                  {/* V16 t05: the kid's photo, when this page minted one.
+                      `kidPhoto === undefined` is the EVERY-viewer-but-the-owner
+                      case (the hook returns `{}`) AND the owner's
+                      no-photo-yet case — both render exactly the old
+                      name · age · likes row, so the fallback is the previous
+                      design rather than a new placeholder. */}
+                  {kidPhoto !== undefined ? (
+                    <img
+                      data-testid="kid-photo"
+                      src={kidPhoto}
+                      alt=""
+                      className="h-12 w-12 shrink-0 rounded-full object-cover"
+                    />
+                  ) : null}
                   <div className="min-w-0 flex-1">
                     {/* V15 ticket 06 (A17/A18): one unambiguous inline line —
                         "Sam · Age 6 · Likes: soccer". The likes label is always
@@ -514,6 +529,84 @@ export function UserPage() {
           </ul>
         </div>
       ) : null}
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        {/* V13 ticket 01: the identity row (avatar + @handle + "Here since" +
+            "Hosted N drop-ins") MOVED to the top of the page in V15 ticket 06 (A20)
+            — it is no longer the page's closer. This card carries the "About the
+            parents" block (the bio + interests, under a real heading) and, after
+            it, the family photo.
+
+            V9 ticket 11 (folded ticket 08) pinned these optional blocks; V16 t05
+            RE-PINNED THE ORDER to kids → about → photo (the kids card now sits
+            above this one, and the family photo is the page's closer). Every
+            one of them is optional: a family with none of them gets the
+            identity block at the top and nothing else, no placeholder anywhere. */}
+        {showsAbout ? (
+          <div className="mt-3 first:mt-0">
+            <h2 className="text-base font-semibold text-slate-900">About the parents</h2>
+            {/* V16 t05: the parent photo (the founder's item 3 — the one part of
+                "photo + description + Message" that was genuinely missing; the
+                Message button is the visitor-only action row below).
+                `profile.avatar_url` is the PUBLIC parent avatar — a plain URL
+                in the public `avatars` bucket (0011), the same value every
+                drop-in card renders — so this is not a signed-URL mint and
+                needs no hook; a family with no avatar simply gets no image. */}
+            <div className="mt-2 flex items-start gap-3">
+              {profile.avatar_url != null && profile.avatar_url !== '' ? (
+                <PhotoButton
+                  src={profile.avatar_url}
+                  alt={`@${profile.display_name}’s photo`}
+                  className="block shrink-0 overflow-hidden rounded-full"
+                >
+                  <img
+                    data-testid="parent-photo"
+                    src={profile.avatar_url}
+                    alt={`@${profile.display_name}’s photo`}
+                    className="h-12 w-12 rounded-full object-cover"
+                  />
+                </PhotoButton>
+              ) : null}
+              <p className="min-w-0 whitespace-pre-line text-sm text-slate-700">{profile.bio}</p>
+            </div>
+          </div>
+        ) : null}
+        {/* V3 slice 6 (ticket 09, migration 0022): the family's interests line —
+            hidden when empty/absent, and pre-0022-apply the column is undefined
+            (the null-safe render, the pre-0016 discipline).
+            V9 ticket 11 groups it with the family description rather than leaving
+            it up in the header: its own /profile copy pins it there ("Shown with
+            “About our family”"), and the ticket pins the three optional blocks
+            ahead of it. It is deliberately OUTSIDE the `showsAbout` gate — a
+            family that wrote interests and no description still shows its
+            interests (which is what this page has always done). */}
+        {profile.interests != null && profile.interests.trim() !== '' ? (
+          <p className="mt-2 text-sm text-slate-600">
+            Interests: {profile.interests}
+          </p>
+        ) : null}
+        {/* V16 t05: THE FAMILY PHOTO IS THE CLOSER (it used to lead this card).
+            "A PHOTO OF YOUR FAMILY" IS NOT PUBLIC — it is in the private bucket
+            and only a signed-in family can mint for it (T4: the photo usually
+            depicts the children). The signed URL arrives from the hook above;
+            without one there is simply no image. */}
+        {familyPhotoUrl !== null ? (
+          <div className="mt-3 first:mt-0">
+            <PhotoButton
+              src={familyPhotoUrl}
+              alt={`@${profile.display_name}’s family photo`}
+              className="block max-w-full overflow-hidden rounded-xl"
+            >
+              <img
+                data-testid="family-photo"
+                src={familyPhotoUrl}
+                alt={`@${profile.display_name}’s family photo`}
+                className="max-h-72 w-full object-cover"
+              />
+            </PhotoButton>
+          </div>
+        ) : null}
+      </div>
 
       {isOwnProfile ? null : (
         <div className="flex flex-col gap-2">
