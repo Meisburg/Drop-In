@@ -794,8 +794,21 @@ export function framingCircle(input: {
 
   // The tightest circle about `center` that still covers every focus point. The
   // radius can only shrink: `base.radiusMiles` is the ceiling.
+  //
+  // Non-finite points are skipped. `focusCenter` above already skips them, so
+  // this keeps the two halves of the function agreeing about which points count.
+  //
+  // HONEST SCOPE — this is defence in depth, NOT a live bug fix. A V17 t04
+  // review flagged it as a real hole ("`NaN > span` is false, so the frame
+  // collapses to the 0.5-mile floor") and I could not reproduce that: traced
+  // with the guard REMOVED, a non-finite point anywhere in the list still yields
+  // the CORRECT radius, because any later finite point sets `span`, and a list
+  // with NO finite point never reaches here at all (`focusCenter` returns null
+  // and the caller keeps its radius frame). Recorded so a later reader does not
+  // treat this guard as evidence of a defect that was actually present.
   let span = 0
   for (const point of focusPoints) {
+    if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)) continue
     const miles = distanceMiles(center, point)
     if (miles > span) span = miles
   }

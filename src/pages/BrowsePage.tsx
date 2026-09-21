@@ -1365,6 +1365,13 @@ function PlacePhotoSlot({ place }: { place: Place }) {
     <div
       data-testid="place-card-photo"
       data-photo="kind"
+      // `role="img"` is LOAD-BEARING, not decoration. ARIA-in-HTML ignores
+      // `aria-label` on a generic element with no role, so without this the
+      // label below is never announced — the comment's promise that "the slot
+      // still says what it is to a screen reader" was silently false. The role
+      // is honest here: the slot IS a drawn illustration, and it makes the
+      // label take effect. Found by the `ocr` review lane.
+      role="img"
       aria-label={label}
       className="flex h-full w-full items-center justify-center bg-gradient-to-br from-indigo-50 via-slate-50 to-emerald-50"
     >

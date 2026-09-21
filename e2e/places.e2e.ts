@@ -86,10 +86,33 @@ import {
   settleOnRoute,
   stepStartTimeOnce,
 } from './fixtures'
+import { PLACE_KINDS, placeKindLabel } from '../src/lib/places'
 
 /** A real seeded playground (Play Areas -> kind 'playground', 0029's seed). */
 const PLACE_NAME = 'Green Lake Park'
 const PLACE_ADDRESS = '7201 East Green Lake Dr N'
+
+/**
+ * Every kind-group heading the browse list can render, built from the APP'S OWN
+ * seam rather than hand-typed.
+ *
+ * WHY THIS EXISTS (V17 t01, found by the `ocr` review lane): this list was a
+ * hand-written regex covering 8 of the 10 `PLACE_KINDS`. It omitted "Trail" and
+ * "Other" — and the seed's Community Centers are kind `other`, so an "Other"
+ * group can legitimately be the lead group. The assertion would then either
+ * match a DIFFERENT group (`.first()` silently succeeding on the wrong thing)
+ * or time out, depending on the seed's lead composition.
+ *
+ * Deriving it from `placeKindLabel` over `PLACE_KINDS` means a kind added to the
+ * DB's allowed set can never drift out of this assertion again — the same
+ * discipline as the V15 specs that import `TIME_STEP_MINUTES` and
+ * `PAST_DROP_INS_LABEL` from `src/lib` instead of re-typing them.
+ */
+const KIND_GROUP_LABEL = new RegExp(
+  PLACE_KINDS.map((kind) => placeKindLabel(kind))
+    .map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|'),
+)
 
 /**
  * The marker-tap spec's place: a name that matches EXACTLY ONE seeded place and
@@ -298,7 +321,7 @@ test('the Places tab is the seeded directory, and anon can read it (RED pre-0029
   await expect(
     page
       .locator('h2')
-      .filter({ hasText: /Park|Playground|Pool|Beach|Library|Museum|Indoor play|Splash pad/ })
+      .filter({ hasText: KIND_GROUP_LABEL })
       .first(),
   ).toBeVisible()
   // The overflow door names the total ("See all N places") when more than the
@@ -552,7 +575,7 @@ test('the map is a fixed-height band and every card leads with its photo slot (V
   await expect(
     page
       .locator('h2')
-      .filter({ hasText: /Park|Playground|Pool|Beach|Library|Museum|Indoor play|Splash pad/ })
+      .filter({ hasText: KIND_GROUP_LABEL })
       .first(),
   ).toBeVisible()
   const seeAll = page.getByTestId('places-see-all')

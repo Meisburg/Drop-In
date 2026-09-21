@@ -980,6 +980,55 @@ describe('framingCircle', () => {
     ).toEqual({ center: HOME, radiusMiles: 5 })
   })
 
+  it('frames on the FINITE points when the set mixes finite and non-finite', () => {
+    // V17 t04 review raised this as a latent hole: "`NaN > span` is false, so a
+    // non-finite point leaves span at 0 and the frame collapses to the 0.5-mile
+    // floor". I could not reproduce that, so I traced the loop rather than
+    // trusting either the finding or my first test — and the premise does not
+    // hold. `NaN > span` IS false, but that only matters if no LATER finite
+    // point runs: with the guard REMOVED, [NaN, finite, finite] still returns
+    // the correct 0.729 miles, because the finite points set span afterwards.
+    // The only way span stays 0 is having NO finite point at all, which
+    // `focusCenter` already catches by returning null (the case above).
+    //
+    // So this test documents the REAL contract rather than a bug that is not
+    // there: the non-finite points are ignored, the finite ones size the frame,
+    // and the center never drifts toward NaN. The guard in the span loop is kept
+    // as defence in depth — it makes the two halves of the function agree about
+    // which points count without relying on iteration order — but it is NOT
+    // load-bearing, and the comment says so rather than overclaiming.
+    //
+    // Ordering is still varied deliberately (non-finite FIRST and LAST) so a
+    // future change that makes the guard load-bearing shows up here.
+    const nonFiniteFirst = [
+      { lat: Number.NaN, lng: Number.NaN },
+      { lat: HOME.lat + 0.02, lng: HOME.lng },
+      { lat: HOME.lat + 0.04, lng: HOME.lng + 0.01 },
+    ]
+    const nonFiniteLast = [...nonFiniteFirst.slice(1), { lat: HOME.lat, lng: Number.POSITIVE_INFINITY }]
+    for (const mixed of [nonFiniteFirst, nonFiniteLast]) {
+      const framed = framingCircle({
+        geocodeCenter: null,
+        homePin: HOME,
+        radiusMiles: 5,
+        focusPoints: mixed,
+      })
+      expect(framed).not.toBeNull()
+      expect(
+        framed!.radiusMiles,
+        'the frame must be sized by the usable points, not collapsed to the floor',
+      ).toBeGreaterThan(MIN_FOCUS_RADIUS_MILES)
+      // …and every USABLE point is still inside it, the seam's core promise.
+      for (const point of mixed) {
+        if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)) continue
+        expect(distanceMiles(framed!.center, point)).toBeLessThanOrEqual(framed!.radiusMiles)
+      }
+      // The unusable point must not have dragged the center toward NaN.
+      expect(Number.isFinite(framed!.center.lat)).toBe(true)
+      expect(Number.isFinite(framed!.center.lng)).toBe(true)
+    }
+  })
+
   it('centers on the searched subset, not on the viewer home pin', () => {
     // All matches cluster north of home: the returned center moves to them,
     // which is what "frames the results" means.
