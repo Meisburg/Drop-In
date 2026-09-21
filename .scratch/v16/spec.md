@@ -242,6 +242,19 @@ The biggest item, and the one the Airbnb reference actually informs.
    (which takes `places`) cannot be reused as-is. A post-marker map is new
    work, not a wiring job.
 
+   **HOW THE JOIN WOULD WORK (verified round 4):** a playdate row carries
+   **`place_id`** (`src/lib/types.ts:196`) and `address` (:178), so a feed map
+   joins posts → `places` for coordinates. `PlacesMap` takes
+   `places: readonly Place[]` (`PlaceMap.tsx:179-191`), so the feed either
+   (a) passes the DISTINCT places its posts reference and uses its own marker
+   layer for per-post pins, or (b) the map component grows a post-marker mode.
+   Option (a) needs no change to the shared component; note that posts with
+   `place_id === null` (free-text places) have NO coordinates and must be
+   handled — the feed already tracks an `unplaced` concept for Browse's
+   equivalent (`filteredUnplaced`).
+   **Size: this is a real slice, not a one-liner.** It also depends on t07's
+   map work (default zoom policy, z-index), so sequence it AFTER t07.
+
 - **Gate**: unit on distance filtering; playtest route grows; visual check.
 - **Sequencing note:** t06.3 depends on t07's map work (marker rendering,
   z-index discipline). Decide whether the feed map shares t07's component
