@@ -272,9 +272,27 @@ about visible windows (those were already banned) — they are about LOAD.
 6. **Release what you start.** Kill the playtest Chrome and any preview server
    when the lane finishes — kill the LISTENER by port, not by `pkill -f`
    (which matches the agent's own shell and kills the wrong thing).
+7. **NEVER open a real URL in the human's browser.** Several scripts in this
+   repo drive the human's OWN Chrome over CDP to reach a logged-in session:
+   `scripts/apply-migration.mjs`, `scripts/cdp-sql-runner.py`,
+   `scripts/sweep-e2e-markers.mjs`, `scripts/migrate-kid-photos.mjs`. They call
+   `page.goto('https://supabase.com/dashboard')`, which **visibly navigates the
+   window the human is working in.** That is an interruption, and on a machine
+   where the human is mid-task it is indistinguishable from a browser hijack.
+   - Confirm with the human BEFORE running any of them, and say which URL will
+     appear and in which window.
+   - Prefer the API path where one exists: `apply-migration.mjs` and the others
+     fall back to `fetch()` against `api.supabase.com/v1/projects/<ref>/
+     database/query`, which needs no browser at all. Check whether the API key
+     is present before reaching for CDP.
+   - If you did not start a browser, do not assume a URL that appeared is
+     yours — say so plainly and let the human identify it, rather than
+     guessing or apologising for something you did not do.
 
 The rule of thumb: **if a check takes longer than the human's patience, it is
 a batch-end check.** Targeted runs during slices; full runs at the boundary.
+And if a check would put pixels on the human's screen, it is not a check —
+it is an interruption, and it needs their explicit yes first.
 
 ## Fleet roles (org layer around this repo)
 

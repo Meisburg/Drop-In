@@ -6,7 +6,8 @@ import { PlacesMap } from '../components/PlaceMap'
 import { RadiusEmptyState } from '../components/RadiusEmptyState'
 import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
-import { listPlaces, loadZipCodes, MODAL_OVER_LEAFLET_Z_CLASS, upcomingCountsByPlace } from '../lib/db'
+import { listPlaces, loadZipCodes, upcomingCountsByPlace } from '../lib/db'
+import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
 import { DEFAULT_RADIUS_MILES, formatDistanceLabel, RADIUS_MILES_OPTIONS } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
 import { geocodeAddress } from '../lib/geocode'
@@ -568,9 +569,11 @@ export function BrowsePage() {
           dropdown, and an optional radius input. State commits live as the
           parent toggles; Apply just closes (the list already re-rendered).
           V16 t07: the stacking class comes from MODAL_OVER_LEAFLET_Z_CLASS —
-          this modal sits over the Leaflet overview map, whose own controls
-          carry z-index 800 (the old literal `z-50` lost that comparison and
-          painted the +/− buttons over the dialog). */}
+          this modal sits over the Leaflet overview map, whose zoom control is
+          wrapped in a layer at z-index 1000 (NOT 800: that is only the inner
+          `.leaflet-control`). The old literal `z-50` lost that comparison and
+          painted the +/− buttons over the dialog. Read that constant's doc in
+          src/lib/stacking.ts for the full layer table before changing it. */}
       {filterModalOpen ? (
         <div
           data-testid="filter-sort-modal"
@@ -666,8 +669,8 @@ export function BrowsePage() {
           draws the radius circle on the map.
           V16 t07 item 1: the founder photographed Leaflet's +/− zoom box
           painting ON TOP of this dialog. Same fix as the filter modal above —
-          the class comes from MODAL_OVER_LEAFLET_Z_CLASS (z-index 900) so it
-          clears Leaflet's control layer at 800. */}
+          the class comes from MODAL_OVER_LEAFLET_Z_CLASS, which is 1100: above
+          Leaflet's 1000 wrapper AND below the image lightbox at 1200. */}
       {locationModalOpen ? (
         <div
           data-testid="location-modal"
