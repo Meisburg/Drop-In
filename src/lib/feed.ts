@@ -183,8 +183,17 @@ const SQLSTATE_CHECK_VIOLATION = '23514'
 export const RADIUS_SAVE_REJECTED_COPY =
   `That radius isn’t allowed yet. Pick between ${RADIUS_MIN_MILES} and ${RADIUS_MAX_MILES} miles.`
 
-/** The fallback when the failure is unrecognised — still actionable, never silent. */
-export const RADIUS_SAVE_FAILED_COPY = 'Could not update your radius. Try again.'
+/**
+ * The fallback when the failure is unrecognised — still actionable, never
+ * silent.
+ *
+ * NEUTRAL ON PURPOSE (V16 t09 review): this one mapper serves the radius
+ * control, the ZIP control, the empty-state escape, AND onboarding — and the
+ * ZIP control's own failure would read "Could not update your **radius**" if
+ * this named a subject. "location" is the word that is true for every caller,
+ * and it is the wording onboarding already used for this same write.
+ */
+export const RADIUS_SAVE_FAILED_COPY = 'Could not save your location. Try again.'
 
 /**
  * Whether a thrown value is a CHECK-constraint violation.
@@ -205,15 +214,19 @@ function isCheckConstraintViolation(err: unknown): boolean {
     const code = (err as { code?: unknown }).code
     if (typeof code === 'string' && code === SQLSTATE_CHECK_VIOLATION) return true
   }
-  const message = err instanceof Error ? err.message : typeof err === 'string' ? err : ''
+  // An if-chain, not a nested ternary (the repo's rules prohibit the latter).
+  let message = ''
+  if (err instanceof Error) message = err.message
+  else if (typeof err === 'string') message = err
   return message.toLowerCase().includes('violates check constraint')
 }
 
 /**
- * Map a thrown error from `updateHomeZipRadius` (or `updateHomeZip`) to the
- * line the user reads — V16 t09. Pure, no React and no Supabase, so the two
- * FeedPage handlers and RadiusEmptyState's escape all render ONE decision
- * rather than three copies of the same branch.
+ * Map a thrown error from `updateHomeZipRadius` to the line the user reads —
+ * V16 t09. Pure, no React and no Supabase, so ALL FOUR surfaces that perform
+ * this write render ONE decision rather than four copies of the same branch:
+ * FeedPage's radius handler, FeedPage's zip handler, RadiusEmptyState's escape,
+ * and OnboardingPage's continue. (The t09 review found the fourth.)
  *
  * The three cases:
  *

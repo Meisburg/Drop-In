@@ -15,7 +15,13 @@ import {
   uploadAvatar,
   validateKid,
 } from '../lib/db'
-import { DEFAULT_RADIUS_MILES, milesWord, RADIUS_MILES_OPTIONS, validateHomeZip } from '../lib/feed'
+import {
+  DEFAULT_RADIUS_MILES,
+  milesWord,
+  radiusSaveErrorMessage,
+  RADIUS_MILES_OPTIONS,
+  validateHomeZip,
+} from '../lib/feed'
 import { suggestedHandle } from '../lib/oauth'
 import { resolveOnboardingRedirect } from '../lib/onboarding'
 
@@ -231,9 +237,13 @@ export function OnboardingPage() {
       await refresh()
       navigate('/', { replace: true })
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Could not save your location. Try again.',
-      )
+      // V16 t09 review: this write goes through updateHomeZipRadius too, and
+      // this picker renders RADIUS_MILES_OPTIONS (so it offers 1 mile). Its
+      // catch used to inline `err.message`, which renders the raw PostgREST
+      // CHECK text while migration 0045 is unapplied -- the same defect t09
+      // fixed on the three Feed/Browse surfaces. Routing it through the shared
+      // mapper makes all FOUR call sites say the same thing in English.
+      setError(radiusSaveErrorMessage(err))
     } finally {
       setSaving(false)
     }

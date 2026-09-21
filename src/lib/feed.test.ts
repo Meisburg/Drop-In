@@ -3792,3 +3792,24 @@ describe('feedZipSaveIsNoop (V16 t06 item 2 — Save must not raise a false erro
     expect(feedZipSaveIsNoop('98101', '98107')).toBe(false)
   })
 })
+
+/**
+ * V16 t09 review: the generic fallback is shared by FOUR surfaces that all
+ * perform the same write — the Feed's radius control, the Feed's zip control,
+ * RadiusEmptyState's escape, and onboarding. It must therefore name no subject:
+ * a zip failure rendering "Could not update your radius" misattributes the
+ * failure to the control the user did NOT touch. The t09 review caught exactly
+ * that, and also caught that onboarding (a fourth call site) was still inlining
+ * `err.message` and therefore still showing the raw PostgREST text.
+ */
+describe('RADIUS_SAVE_FAILED_COPY (V16 t09 review — one fallback, no wrong subject)', () => {
+  it('names no single control, since four different controls render it', () => {
+    const copy = RADIUS_SAVE_FAILED_COPY.toLowerCase()
+    expect(copy).not.toContain('radius')
+    expect(copy).not.toContain('zip')
+  })
+
+  it('says what to do next rather than only that something broke', () => {
+    expect(RADIUS_SAVE_FAILED_COPY).toContain('Try again')
+  })
+})
