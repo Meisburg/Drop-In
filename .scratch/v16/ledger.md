@@ -267,3 +267,24 @@ V16: *** LIVE PRODUCTION INCONSISTENCY — FOUND ROUND 13, NEEDS MIGRATION 0045 
   with each other. The gap is purely that the DB half of a two-part change has
   not landed. That is what the batch-end apply step exists for, and why the
   migration shipped with its UI in the same slice.
+V16 t09: complete (ae09937 + d24ba3b). A rejected radius write now renders
+  English, not a raw PostgREST CHECK string. Pure radiusSaveErrorMessage in
+  lib/feed.ts, used by ALL FOUR surfaces that perform this write.
+  FOUND BY VERIFYING THE DEPLOYED BUNDLE, not by reading code: Vercel already
+  shipped the 1-mile UI while the DB still rejects it, so real users could hit
+  this. Nothing in src/ handled SQLSTATE 23514.
+  TWO BUGS INSIDE THE FIX ITSELF, both caught before ship:
+   (a) the builder's FIRST attempt had the branches in the wrong order --
+       supabase-js wraps the PostgREST body in an `Error`, so a passthrough
+       keyed on instanceof Error swallowed the CHECK case and re-rendered the
+       raw SQL. Its own red test caught it; a test now pins the order.
+   (b) MY commit claimed "three copies of the branch" -- ocr found a FOURTH
+       call site: OnboardingPage writes through the same function, offers the
+       same 1-mile option, and still inlined err.message. Now routed through
+       the mapper too.
+V16: the generic fallback is now subject-neutral ("Could not save your
+  location") because ONE mapper serves radius + zip + escape + onboarding; the
+  old radius-specific wording misattributed a zip failure.
+V16: gate on this tree — build 0, 948/948 unit (26 files), lint 0 errors,
+  targeted e2e 5/5. Migration 0045 STILL NEEDS A CREDENTIAL; t09 makes the
+  transient failure legible but does NOT remove it.
