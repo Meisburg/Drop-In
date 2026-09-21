@@ -36,6 +36,21 @@ Verdict lands in `verdict.md` / `verdict.json` (PASS/FAIL, exit 0/1).
   crash); deeper flows stay with the e2e suite — this lane is the cheap
   always-on repro instrument, not a replacement for e2e.
 
+**A TRAP, learned the hard way (V16 round 12):** this script has NO auth
+support — it never loads a storage state, so **every** route it visits is
+fetched signed-out. Adding an auth-gated path to `routes.json` therefore
+produces a PASS whose screenshot is the LOGIN page: the route redirects at the
+shell gate, `chars`/`errors` come from the login render, and the entry asserts
+nothing about the page you meant to cover. That is worse than no coverage,
+because the verdict reads as green.
+
+Concretely: `/u/:handle` was added and then removed for exactly this reason. That
+route IS covered — by ten e2e specs that navigate to `/u/<handle>` under the
+marker's `storageState` (`avatar`, `profile-posts`, `profile-kid-photos`,
+`kid-photo-exposure`, `kid-names-privacy`, `host-retention`, `loop-closing`,
+`polish`, `feed-ended-out`, `profiles-v2`). Before adding a route here, check
+whether it is public; if it is not, the e2e lane is where it belongs.
+
 ## First verified run (2026-09-18)
 
 3 routes (/ , /login, /reset-password) — PASS, 0 JS errors, 3 screenshots.
