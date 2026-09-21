@@ -60,11 +60,59 @@ mode" or "normal mode" — confirm in one line, then revert to default style.
 2. Every slice has acceptance criteria + verification command in plan.md
    before dispatch. A slice with neither is a plan defect, not a builder
    problem.
-3. Reviewer loops: max 2 NEEDS_CHANGES cycles per slice, then escalate to the
-   human.
+3. Reviewer loops escalate by **model**, not by count: rounds 1–3 resume the
+   original local builder, rounds 4–5 dispatch a FRESH builder on cloud
+   DeepSeek, and round 5's breaker hands adjudication to the orchestrator.
+   Five rounds maximum. See "The escalating fix loop" below.
 4. BLOCKED anywhere means stop and surface — never silently decide.
 5. Verifier (tests/lint/typecheck) is the final authority on "works"; the
     reviewer is the authority on "right".
+6. **No completion claim without fresh verification evidence.** If the
+   command was not run in the current turn, the claim is not made. A
+   subagent's "DONE" is a belief, not evidence — the diff and the command
+   output are evidence.
+
+## The escalating fix loop (why it escalates by model)
+
+Builders, reviewers, and verifiers all run the same local model
+(`qwen3.8-27b`). A builder and its reviewer are siblings, so a hard slice
+deadlocks: the model that wrote the bug is the model judging it. Repeating the
+same attempt cannot break that. Changing the model can.
+
+| Round | Who | Model |
+|---|---|---|
+| 1–3 | resume the original builder with findings verbatim | local `qwen3.8-27b` |
+| 4–5 | fresh builder + fresh reviewer | cloud `deepseek-v4.1-flash:cloud` |
+| breaker | orchestrator adjudicates each open finding | — |
+
+Every adjudication is a **ledger entry**, never a silent discard:
+
+    Slice N: parked — <finding> — Ruling: <why the code stands>
+    Slice N: Ruling: <decision> — <why> — <cost if wrong>
+
+## The build law
+
+`docs/agents/code-structure.md` is the written structure contract: domain logic
+in `src/lib/` as pure functions with injected dependencies, React renders and
+does not decide, every `lib/*.ts` ships a `lib/*.test.ts` sibling. Builders
+read it before writing; reviewers check the diff against it. It exists because
+the workflow is the part that is not native to the agent.
+
+## The ledger (compaction survival)
+
+task-state.md is the long-lived record. Alongside it, the active batch keeps a
+short append-only ledger of one line per event, because compaction destroys
+conversation memory and the expensive failure is a controller that lost its
+place and re-dispatched completed work:
+
+    Slice N: dispatched (base <sha7>)
+    Slice N: complete (commits <base7>..<head7>, review clean)
+    Slice N: fix round R/5 (<X> addressed, <Y> open)
+    Slice N: parked — <finding> — Ruling: <why>
+
+After any compaction, read the ledger and `git log` before re-dispatching.
+Commits named in the ledger exist in git even when context no longer
+remembers creating them. Trust the ledger over recollection.
 
 ## Coordinator role (this DeepSeek Harness session)
 
@@ -181,11 +229,16 @@ Two orthogonal layers: agents define WHO does what; skills hold HOW to do it.
   one session). Run `/setup-matt-pocock-skills` once per repo; choose the
   local-files tracker.
 - Inside builder slices (model-invoked): `tdd` for red-green-refactor,
-  `diagnosing-bugs` when verification fails. Allowed via per-agent
-  `permission.skill`; every other agent has skills denied — the reviewer
-  stays skill-free and fresh.
+  `diagnosing-bugs` when verification fails, `codebase-design` for module
+  boundaries, and `verification-before-completion` before any success claim.
+  Allowed via per-agent `permission.skill`; every other agent has skills
+  denied — the reviewer stays skill-free and fresh, because a reviewer that
+  loads a workflow skill stops being an independent judge.
 - Do NOT run `/implement` here — it is a competing orchestration spine. The
-  orchestrator pattern is the spine; skills are disciplines within it.
+  orchestrator pattern is the spine; skills are disciplines within it. The
+  same reasoning rejects `superpowers:subagent-driven-development`: it is a
+  second spine. Its *disciplines* (worktrees, ledgers, verification, the
+  escalating fix loop) are already adopted above; the spine is ours.
 
 ## Agent skills
 
@@ -201,6 +254,13 @@ Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `
 
 Single-context: `CONTEXT.md` + `docs/adr/` at the repo root (created lazily by `/domain-modeling`). See `docs/agents/domain.md`.
 
+### Build law
+
+`docs/agents/code-structure.md` — the written structure contract (service layer
+in `src/lib/`, pure decisions, injected dependencies, sibling tests). Builders
+read it before writing; reviewers check the diff against it. See "The build law"
+above.
+
 ## Model notes (NInfer specifics)
 
 - Endpoint: http://127.0.0.1:18080/v1, model id `qwen3.8-27b`.
@@ -211,3 +271,22 @@ Single-context: `CONTEXT.md` + `docs/adr/` at the repo root (created lazily by `
   (greedy), which triggered reasoning loops on this artifact.
 - Context ceiling 262K is a ceiling, not a target — keep each agent under
   ~40-60K tokens. The orchestration pattern is what keeps contexts small.
+
+## Split-model routing (cloud orchestrator + local coders)
+
+The factory runs two models on purpose:
+
+- **Cloud** `deepseek-v4.1-flash:cloud` (via Ollama) — the orchestrator and
+  any escalated fix round. Judgment, routing, adjudication.
+- **Local** `qwen3.8-27b` (via NInfer on the RTX 5090, port 18080) — every
+  builder, reviewer, verifier, and explorer. The volume work, on hardware we
+  own.
+
+Configured in `~/.dsh/settings.yaml` (`agent-default-model`) and pinned per
+tool in `~/.dsh/.agent-presets/code/agent.cordis.yml`: `tool-subagent` and
+`tool-subagent-fork` both carry `agentOptions: {provider: qwen-local, model:
+qwen3.8-27b}`.
+
+**Known gap:** `tool-workflow` and `tool-ralph` carry no `agentOptions`, so
+their workers fall back to the agent default — cloud. Fan-out through those
+tools spends cloud tokens; `subagent` is the local path.

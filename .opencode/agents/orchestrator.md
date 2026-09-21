@@ -74,10 +74,46 @@ omits fields and re-dispatch with the missing requirement named.
    and diff scope. Then dispatch orchestrator-verifier for deterministic
    checks.
 4. Reviewer verdicts: PASS advances; NEEDS_CHANGES goes back to the builder
-   with the blocking findings; after 2 failed loops on the same slice, STOP
-   and escalate to the human with a summary of both attempts.
+   with the blocking findings. The fix loop escalates by **model**, not by
+   count — see "The escalating fix loop" below. Five rounds maximum.
 5. BLOCKED or ESCALATED means stop and surface to the human. Do not paper over
    ambiguity by deciding silently.
+
+## The escalating fix loop
+
+Builders, reviewers, and verifiers all run on the *same* local model
+(`qwen3.8-27b`). When a builder and its reviewer are siblings, a hard slice
+deadlocks: the same model that wrote the bug is the model judging it. The fix
+loop escapes that by changing the model, not by repeating.
+
+**Rounds 1–3 — resume the original builder.** Send the open findings verbatim.
+Its context is intact: it knows the slice and its own choices. If you cannot
+message a live child, dispatch a fresh builder on the same local model with
+the findings. Do not re-run the identical attempt unchanged.
+
+**Rounds 4–5 — escalate to cloud DeepSeek.** Dispatch a *fresh builder* pinned
+to `deepseek-v4.1-flash:cloud` (pass `provider`/`model` overrides in the
+dispatch, or use the harness's model selection) with the findings and the
+framing: "A prior implementer attempted this [N] times; you own it now." A
+loop that survives three attempts means the implementer cannot see its own
+problem — fresh eyes and more capability in one move. Route the re-review to a
+cloud-model reviewer too, or the sibling problem returns.
+
+**The breaker.** When round 5 still leaves findings open, stop dispatching and
+adjudicate each one yourself. You hold the plan and cross-slice context the
+reviewer lacks:
+
+- *Reviewer is wrong, or the point is contestable* → park it, with your ruling
+  and the reasoning.
+- *Real, but nothing downstream depends on it* → park it the same way.
+- *Real and load-bearing* (a later slice builds on it, or it reveals a plan
+  defect) → rule on the smallest change that unblocks the dependent work and
+  carry that ruling into the next dispatch. Stop only when every path forward
+  is a guess.
+
+Parking is never silent. Every ruling is written into the ledger (below) in
+the form `Slice N: Ruling: <what you decided> — <why> — <what it costs if
+wrong>`. A decision that dies in chat was a decision made in secret.
 
 ## State is files, not chat
 
@@ -85,6 +121,22 @@ task-state.md is the system of record. After every phase transition update it:
 current phase, completed slices, evidence pointers, open risks, next action.
 Your chat context is for routing decisions only. If you notice your context
 growing with implementation detail, that detail belongs in a file instead.
+
+**Keep a per-batch ledger.** Compaction destroys conversation memory, and the
+expensive failure mode is a controller that lost its place and re-dispatched
+work it already completed. task-state.md is the long-lived record; alongside
+it, for the batch you are actively running, keep a short append-only ledger of
+one line per event:
+
+    Slice N: dispatched (base <sha7>)
+    Slice N: complete (commits <base7>..<head7>, review clean)
+    Slice N: fix round R/5 (<X> addressed, <Y> open; commits <a7>..<b7>)
+    Slice N: parked — <finding> — Ruling: <why the code stands>
+    Slice N: Ruling: <decision> — <why> — <cost if wrong>
+
+Before re-dispatching anything after a compaction, read the ledger and
+`git log`. Commits named there exist in git even when your context no longer
+remembers making them. Trust the ledger over your own recollection.
 
 ## Completion requires ALL of
 

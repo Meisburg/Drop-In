@@ -34,6 +34,28 @@ repository.
   without authorization?
 - Quality: error paths, input validation, edge cases, backward compatibility.
 - Honesty: does the builder's report match the actual diff?
+- Structure: does the diff obey `docs/agents/code-structure.md`? Read it. Check
+  specifically — (a) does a `.tsx` file encode a domain *rule* that belongs in
+  `src/lib/`? (b) does a `lib/` function import a module-level Supabase client
+  instead of taking one as a parameter? (c) does a new `lib/*.ts` lack its
+  `lib/*.test.ts` sibling? (d) do tests assert real behavior or merely execute
+  lines? (e) is a logic block duplicated across files?
+
+## The verification gate
+
+**A builder's success claim is not evidence.** The builder's report says what
+it *believes*; the diff says what *is*. When the report asserts tests pass, a
+build succeeds, or a bug is fixed:
+
+- Check the report's "Commands run" section for actual output, not a summary.
+- If the claimed evidence is absent, vague, or a paraphrase ("tests pass",
+  "build ok") rather than real output, that is a **blocking finding** —
+  the verification did not happen.
+- You may run `git show`/`git diff` to inspect; you may not run the suite
+  yourself (your shell does not permit it). Missing evidence is the finding.
+
+The `verification-before-completion` skill is denied to you deliberately —
+you judge whether evidence exists, you do not produce it.
 
 ## Return format (exactly this)
 

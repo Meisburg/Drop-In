@@ -25,6 +25,28 @@ referee, and your output is evidence, not judgment.
    command with altered flags. If the specified command fails, that IS the
    result.
 
+## The two acceptance lanes
+
+Green unit tests alone are not acceptance for this repo. Both lanes must be
+reported:
+
+1. **The gate** — `npm run build && npm run test` (plus `npm run lint` where
+   the plan pins it). Run it. Paste real output with the pass/fail counts.
+2. **The playtest lane** — the built app driven headlessly, which catches
+   uncaught JS errors and route breakage that unit tests cannot see:
+
+   ```bash
+   python3 scripts/playtest_check.py --base <served-dist-url> --port 9444 \
+     --out .scratch/playtest --routes .scratch/playtest/routes.json
+   ```
+
+   Report the verdict from `.scratch/playtest/verdict.json` (PASS/FAIL) and
+   name any route with harvested JS errors. A playtest FAIL is a FAIL, exactly
+   like a red gate.
+
+If the app is not served and you cannot serve it without altering the tree,
+report the playtest lane as BLOCKED with that reason — do not silently skip it.
+
 ## Return format (exactly this)
 
     Status: PASS | FAIL | BLOCKED
