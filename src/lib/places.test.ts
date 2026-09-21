@@ -8,6 +8,7 @@ import {
   filterPlacesByRadius,
   framingCircle,
   groupPlacesByKind,
+  MIN_FOCUS_RADIUS_MILES,
   matchPlaces,
   placeAgeFitLabel,
   placeDistanceMiles,
@@ -854,6 +855,144 @@ describe('framingCircle', () => {
   it('returns null for a non-positive radius (a degenerate box has no extent)', () => {
     expect(framingCircle({ geocodeCenter: GEO, homePin: HOME, radiusMiles: 0 })).toBeNull()
     expect(framingCircle({ geocodeCenter: GEO, homePin: HOME, radiusMiles: -5 })).toBeNull()
+  })
+
+  // ---------------------------------------------------------------------
+  // V17 t04: the regression guard. With no searched subset the frame must be
+  // IDENTICAL to pre-t04 for the same inputs. This is the assertion that fails
+  // if anyone re-introduces a points-fit, or lets an empty/absent focus set
+  // perturb the radius frame V16 t07 item 2 (`93f313b`) settled.
+  // ---------------------------------------------------------------------
+  it('is identical to pre-t04 when there is no query (the 93f313b guard)', () => {
+    const cases = [
+      { geocodeCenter: GEO, homePin: HOME, radiusMiles: 5 },
+      { geocodeCenter: null, homePin: HOME, radiusMiles: 35 },
+      { geocodeCenter: GEO, homePin: null, radiusMiles: 10 },
+      { geocodeCenter: null, homePin: null, radiusMiles: 5 },
+      { geocodeCenter: GEO, homePin: HOME, radiusMiles: 0 },
+    ] as const
+    for (const input of cases) {
+      const expected = framingCircle({ ...input })
+      // Absent and empty are both "no query" — a caller may pass either, and
+      // both must return the pre-t04 answer unchanged.
+      expect(framingCircle({ ...input, focusPoints: undefined })).toEqual(expected)
+      expect(framingCircle({ ...input, focusPoints: [] })).toEqual(expected)
+    }
+    // …and the pre-t04 answers themselves are spelled out, so this test cannot
+    // pass by both sides drifting together.
+    expect(framingCircle({ geocodeCenter: GEO, homePin: HOME, radiusMiles: 5 })).toEqual({
+      center: GEO,
+      radiusMiles: 5,
+    })
+    expect(framingCircle({ geocodeCenter: null, homePin: HOME, radiusMiles: 35 })).toEqual({
+      center: HOME,
+      radiusMiles: 35,
+    })
+    expect(framingCircle({ geocodeCenter: null, homePin: null, radiusMiles: 5 })).toBeNull()
+  })
+
+  it('tightens to the searched subset when the matches sit inside the radius', () => {
+    // Four points within ~2 miles of home, well inside a 5-mile radius.
+    const focusPoints = [
+      { lat: HOME.lat, lng: HOME.lng + 0.01 },
+      { lat: HOME.lat + 0.01, lng: HOME.lng + 0.01 },
+      { lat: HOME.lat + 0.02, lng: HOME.lng + 0.02 },
+      { lat: HOME.lat + 0.01, lng: HOME.lng + 0.03 },
+    ]
+    const unfiltered = framingCircle({ geocodeCenter: null, homePin: HOME, radiusMiles: 5 })
+    const framed = framingCircle({ geocodeCenter: null, homePin: HOME, radiusMiles: 5, focusPoints })
+    expect(unfiltered).toEqual({ center: HOME, radiusMiles: 5 })
+    expect(framed).not.toBeNull()
+    expect(framed).not.toEqual(unfiltered)
+    expect(framed?.radiusMiles).toBeLessThan(5)
+    // Every matched point is INSIDE the returned circle — the results are
+    // framed, not merely zoomed at.
+    for (const point of focusPoints) {
+      expect(distanceMiles(framed!.center, point)).toBeLessThanOrEqual(framed!.radiusMiles)
+    }
+  })
+
+  it('never exceeds the viewer radius, even when the matches spread wider than it', () => {
+    // Points a full degree apart in both axes — far further than 5 miles.
+    const focusPoints = [
+      { lat: HOME.lat - 0.5, lng: HOME.lng - 0.5 },
+      { lat: HOME.lat + 0.5, lng: HOME.lng + 0.5 },
+    ]
+    expect(
+      framingCircle({ geocodeCenter: null, homePin: HOME, radiusMiles: 5, focusPoints }),
+    ).toEqual({ center: HOME, radiusMiles: 5 })
+  })
+
+  it('keeps the radius ceiling under a geocoded center too', () => {
+    const spread = [
+      { lat: GEO.lat - 1, lng: GEO.lng - 1 },
+      { lat: GEO.lat + 1, lng: GEO.lng + 1 },
+    ]
+    expect(
+      framingCircle({ geocodeCenter: GEO, homePin: HOME, radiusMiles: 2, focusPoints: spread }),
+    ).toEqual({ center: GEO, radiusMiles: 2 })
+  })
+
+  it('a query with zero placed results falls back to the radius frame', () => {
+    const framed = framingCircle({ geocodeCenter: null, homePin: HOME, radiusMiles: 5, focusPoints: [] })
+    expect(framed).toEqual({ center: HOME, radiusMiles: 5 })
+    expect(framed!.radiusMiles).toBeGreaterThan(0)
+  })
+
+  it('a single match (or many at one coordinate) never yields a zero-extent circle', () => {
+    const one = framingCircle({
+      geocodeCenter: null,
+      homePin: HOME,
+      radiusMiles: 5,
+      focusPoints: [{ lat: HOME.lat + 0.1, lng: HOME.lng + 0.1 }],
+    })
+    expect(one).not.toBeNull()
+    expect(one?.radiusMiles).toBeGreaterThan(0)
+    expect(one?.radiusMiles).toBe(MIN_FOCUS_RADIUS_MILES)
+
+    const sameSpot = framingCircle({
+      geocodeCenter: null,
+      homePin: HOME,
+      radiusMiles: 5,
+      focusPoints: Array.from({ length: 12 }, () => ({ lat: 47.61, lng: -122.33 })),
+    })
+    expect(sameSpot?.radiusMiles).toBe(MIN_FOCUS_RADIUS_MILES)
+    // The floor is still bounded by the ceiling: a viewer on a tiny radius is
+    // never framed wider than the radius they asked for.
+    expect(
+      framingCircle({
+        geocodeCenter: null,
+        homePin: HOME,
+        radiusMiles: 0.25,
+        focusPoints: [{ lat: 47.61, lng: -122.33 }],
+      })?.radiusMiles,
+    ).toBe(0.25)
+  })
+
+  it('falls back to the radius frame when no focus point carries usable coordinates', () => {
+    expect(
+      framingCircle({
+        geocodeCenter: null,
+        homePin: HOME,
+        radiusMiles: 5,
+        focusPoints: [{ lat: Number.NaN, lng: Number.NaN }],
+      }),
+    ).toEqual({ center: HOME, radiusMiles: 5 })
+  })
+
+  it('centers on the searched subset, not on the viewer home pin', () => {
+    // All matches cluster north of home: the returned center moves to them,
+    // which is what "frames the results" means.
+    const cluster = [
+      { lat: HOME.lat + 0.02, lng: HOME.lng },
+      { lat: HOME.lat + 0.04, lng: HOME.lng + 0.01 },
+    ]
+    const framed = framingCircle({ geocodeCenter: null, homePin: HOME, radiusMiles: 5, focusPoints: cluster })
+    expect(framed?.center).not.toEqual(HOME)
+    expect(framed!.center.lat).toBeGreaterThan(HOME.lat)
+    for (const point of cluster) {
+      expect(distanceMiles(framed!.center, point)).toBeLessThanOrEqual(framed!.radiusMiles)
+    }
   })
 })
 

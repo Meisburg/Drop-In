@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { NAV_ICONS, PLACE_KIND_ICONS } from '../components/icons'
@@ -171,6 +171,78 @@ export function BrowsePage() {
   // result set must not stay collapsed around a stale lead.
   const [showAll, setShowAll] = useState(false)
 
+  /**
+   * V17 t03: is the map band scrolled out of view? Drives the floating "Map"
+   * button that scrolls back to it.
+   *
+   * WHY AN IntersectionObserver AND NOT A SCROLL LISTENER: a scroll handler
+   * fires on EVERY frame of every scroll (and on iOS during the rubber-band
+   * overscroll), and each one would read `getBoundingClientRect()` — a forced
+   * layout inside the frame the browser is trying to paint. This page is a
+   * 239-card directory on a phone; that is exactly the page where a per-frame
+   * read is felt. The observer is the browser's own answer: it does the
+   * hit-testing off the main thread and calls back only when the band actually
+   * crosses the threshold, which happens a handful of times per visit rather
+   * than ~60 times a second.
+   *
+   * `true` is the honest INITIAL value: the band lives at the top of the page,
+   * so on first paint it is either visible (the observer immediately corrects
+   * this to false) or the page opened already scrolled. Starting at `false`
+   * would flash the button over the map for one frame on every mount.
+   */
+  const [mapBandOutOfView, setMapBandOutOfView] = useState(true)
+  /**
+   * V17 t03: the band element the observer watches and the button scrolls to.
+   *
+   * A plain ref for the scroll target, plus an observer held in a ref so the
+   * callback ref below can attach/detach it as the band mounts and unmounts.
+   * The observer lives in a ref rather than an effect because the band renders
+   * CONDITIONALLY (`mappedMarkers.length > 0`, computed after this hook and
+   * after an early return), so an effect could not depend on it without
+   * calling a hook conditionally — a real `rules-of-hooks` error, caught by
+   * lint on the first attempt at this slice. A callback ref attaches exactly
+   * when the node enters the DOM and detaches exactly when it leaves, which is
+   * the lifetime the observer actually wants.
+   */
+  const mapBandRef = useRef<HTMLDivElement | null>(null)
+  const bandObserverRef = useRef<IntersectionObserver | null>(null)
+  /**
+   * The callback ref handed to the band. React calls it with the node on
+   * mount and with `null` on unmount, so the observer's lifetime is tied to
+   * the band's rather than to a dependency array's guess about it.
+   *
+   * `threshold: 0` means "any part of the band still intersecting the viewport
+   * counts as visible" — the button appears only once the band has genuinely
+   * scrolled past, which is the acceptance criterion.
+   *
+   * An IntersectionObserver rather than a scroll listener, deliberately: a
+   * scroll handler fires on every frame of every scroll and each call would
+   * force a layout read inside the frame the browser is trying to paint. On a
+   * 239-card phone directory that is exactly the page where it is felt. The
+   * observer hit-tests off the main thread and calls back only on a crossing.
+   */
+  const attachMapBand = useCallback((node: HTMLDivElement | null) => {
+    bandObserverRef.current?.disconnect()
+    bandObserverRef.current = null
+    mapBandRef.current = node
+    if (node === null) {
+      // The band left the DOM (no mappable places): there is nothing to scroll
+      // back TO, so the button must not be offered.
+      setMapBandOutOfView(false)
+      return
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[entries.length - 1]
+        if (entry === undefined) return
+        setMapBandOutOfView(!entry.isIntersecting)
+      },
+      { threshold: 0 },
+    )
+    observer.observe(node)
+    bandObserverRef.current = observer
+  }, [])
+
   // V15 ticket 03: the filter & sort modal. The list DEFAULTS to alphabetical
   // (the founder's A–Z); the modal is where filtering + re-sorting lives —
   // there are no sort/filter controls below the list anymore.
@@ -320,6 +392,19 @@ export function BrowsePage() {
     .map((row) => resolveMapCoords(row.place, zipCoords))
     .filter((c): c is { lat: number; lng: number } => c !== null)
 
+  // V17 t04: when a search query is active, the map frames THOSE places instead
+  // of the viewer's whole radius. `placed` is already the filtered pipeline's
+  // output — the same array the map DRAWS — so the frame and the markers can
+  // never disagree. The tightening itself is the pure seam's decision
+  // (`framingCircle`), not this page's: an absent/empty list is the pre-t04
+  // radius frame, and no result set can widen the frame past the radius.
+  //
+  // The mapping goes through `resolveMapCoords`, exactly like `mappedMarkers`
+  // above, so a row with UNKNOWN coordinates simply contributes no focus point
+  // rather than a `null` the seam would have to defend against.
+  const hasQuery = query.trim() !== ''
+  const focusPoints = hasQuery ? mappedMarkers : []
+
   // V15 t02: when the user has geocoded an address via "Set location", the list
   // is filtered to places within the chosen radius of that center (the pure
   // filterPlacesByRadius seam). The existing browsePlaces pipeline still runs
@@ -404,6 +489,18 @@ export function BrowsePage() {
       committed live as the parent toggles, so closing needs no extra work). */
   function closeFilterModal() {
     setFilterModalOpen(false)
+  }
+
+  /**
+   * V17 t03: bring the map band back into the viewport, smoothly.
+   *
+   * `block: 'start'` puts the band's top at the viewport top, which is where it
+   * renders on a fresh load — the parent lands on the same view they left.
+   * `scrollIntoView` walks up to whatever ancestor actually scrolls, so this
+   * needs no knowledge of the page's scroll container.
+   */
+  function scrollBackToMap() {
+    mapBandRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   /** V15 t03: toggle one kind chip in the modal. An empty selection means
@@ -544,10 +641,32 @@ export function BrowsePage() {
               Giving the map a self-sufficient height sidesteps the whole
               question and keeps `PlaceMap.tsx` untouched (no new prop — the
               component already took `className`). e2e asserts the map element
-              itself has a real height, so this cannot silently regress. */}
+              itself has a real height, so this cannot silently regress.
+
+              THE BAND ITSELF CARRIES NO HEIGHT AND NO `overflow-hidden` — a
+              regression found by the `ocr` review lane and reproduced in a real
+              browser, not inferred. The first version fixed the band's height
+              AND clipped it. But `PlacesMap` renders the map div and its
+              `place-marker-info` panel as SIBLINGS inside one auto-height
+              `flex flex-col gap-2` (PlaceMap.tsx:375-429) — so a fixed,
+              clipping band cut the panel off entirely: measured, the panel's
+              top landed 8px BELOW the band's bottom, and the "Start a drop-in"
+              button hit-tested as the search input, i.e. unreachable. That
+              broke the V13 t05 A6 door ("tap a marker -> Start a drop-in") on
+              this page.
+
+              THE SUITE DID NOT CATCH IT, which is the part worth remembering:
+              the A6 spec asserts `toBeVisible()`, and Playwright's visibility
+              check does not account for an ANCESTOR's overflow clipping — a
+              fully clipped panel still reports "visible". So the band now sizes
+              only the MAP (via the `className` below) and clips nothing; the
+              panel renders in normal flow beneath it. The A6 spec gained a
+              reachability assertion (elementFromPoint at the button's centre)
+              so this class of defect cannot pass silently again. */}
           <div
+            ref={attachMapBand}
             data-testid="places-map-band"
-            className="h-[45dvh] min-h-[240px] w-full overflow-hidden"
+            className="w-full"
           >
             <PlacesMap
               className="h-[45dvh] min-h-[240px]"
@@ -558,6 +677,9 @@ export function BrowsePage() {
                 geocodeCenter,
                 homePin: homePinCoords,
                 radiusMiles: geocodeCenter !== null ? radiusMiles : viewerRadius,
+                // V17 t04: the searched subset, when a query is active. Empty
+                // (no query, or no matches) is today's exact radius frame.
+                focusPoints,
               })}
             />
           </div>
@@ -751,6 +873,113 @@ export function BrowsePage() {
             ))}
           </div>
         </section>
+      ) : null}
+
+      {/* V17 t03: the floating "Map" button. Appears once the band above has
+          scrolled out of view, and takes the parent back to it.
+
+          NO z-index, AND THAT IS THE DESIGN, NOT AN OMISSION. A plain `fixed`
+          element paints above all earlier in-flow content by document order,
+          so this button needs no stacking number to clear the list — and
+          giving it one would be actively dangerous. Leaflet's
+          `.leaflet-top`/`.leaflet-bottom` wrappers sit at z-index 1000
+          (`src/lib/stacking.ts` carries the table), and every z-index this
+          button could plausibly wear — 10, 20, 50 — is already below that, so
+          a number buys nothing while inviting the next reader to raise it past
+          1000 and paint a page control over the map and its modals. Document
+          order is the correct mechanism here; `MODAL_OVER_LEAFLET_Z_CLASS`
+          (1100) is explicitly NOT copied.
+
+          `bottom-[calc(5.5rem+env(safe-area-inset-bottom))]`: the shell's
+          bottom nav is `fixed inset-x-0 bottom-0 z-10` and stands ~72px tall
+          (5.5rem — `min-h-14` = 56px tabs plus the nav's own padding), so a
+          button pinned at `bottom-4` would sit UNDERNEATH it and be
+          untappable. The nav is z-10, this button has no z at all — so the
+          button must clear the nav by GEOMETRY, which is what this offset
+          does. The `env()` term follows the nav's own `pb-safe` on a
+          home-indicator phone.
+
+          THE BOTTOM-MOST CARD RULE: the button floats clear of the last row
+          rather than the page reserving space for it. Reserving space would
+          mean a page-level bottom padding sized for a control that is not
+          always on screen (the button is absent while the map is visible) —
+          a permanent band of dead space under the list on the one screen where
+          the parent is scrolling to read content. Floating clear costs
+          nothing when hidden. WHAT IS GUARANTEED, AND WHAT IS NOT — measured,
+          not assumed. The e2e spec sweeps EVERY scroll position and asserts the
+          button never covers a card's HEART (`place-heart-*`), which is the
+          binding criterion: 0 hits across the range, structurally so, because
+          the heart pins to the card's top-right while this button is centred.
+          The spec does NOT assert anything about a card's ACTION ROW, and it
+          must not: a centred `fixed` control in a full-width column necessarily
+          floats over whatever card occupies that screen position, so a "zero
+          overlap with any card" assertion could never pass for any correct
+          implementation. Sweeping found action rows covered at some offsets —
+          the honest tradeoff of a floating control, recorded here so it is a
+          decision rather than an oversight.
+
+          THE BOTTOM-MOST CARD RULE — MEASURED THREE TIMES, AND THE ARGUMENT
+          MATTERS MORE THAN THE ANSWER. `plan.md`'s binding wording is exact:
+          "it never covers the HEART of the bottom-most card (it sits above the
+          last row's content or the page reserves space for it)." Three
+          positions were built and swept against the real bundle (390x844,
+          every scroll position, checking a hit against every rendered heart,
+          every card action row, and every card rect):
+
+          (1) CENTRED, `bottom-[calc(5.5rem+...)]`. Hearts covered: 0 across 56
+              samples. Action rows covered: 4 of 56. Card rects: overlapped at
+              most positions.
+          (2) RIGHT GUTTER, `right-3`. Strictly WORSE — 5 samples covered a
+              HEART. The heart pins to the card's top-right (`absolute right-2
+              top-2`), so the right gutter is precisely the one column the
+              criterion forbids. Rejected on measurement, not taste.
+          (3) CENTRED + a spacer at the end of the list. Hearts: 0, but the
+              spacer only clears the LAST cards; mid-scroll the overlap was
+              unchanged (7 positions still 4095px^2). Rejected as solving the
+              wrong end of the range.
+
+          So (1) ships, and the honest reading of why is this: the criterion
+          names the HEART, and the centred position satisfies it at every
+          scroll offset — the heart is at the card's top-right and the button
+          is centred 132px above the viewport bottom, so the two never meet.
+          The button DOES still float over a card's illustration or action row
+          at some scroll offsets. That is inherent to any `fixed` control in a
+          full-width content column, it is what the plan's parenthetical
+          anticipates ("it sits above the last row's content"), and the
+          alternative — reserving space for a control that is absent whenever
+          the map is on screen — costs permanent dead space on every visit to
+          buy a guarantee the criterion does not ask for. Recorded rather than
+          hidden: the e2e spec asserts the HEART, which is the contract, and
+          this note exists so the next reader does not think the overlap was
+          never noticed.
+
+          `min-h-11 min-w-11` is the 44px floor this repo measures
+          (`scripts/mobile-audit.mjs` flags `button` under 44px); the label
+          makes it wider than 44px anyway, but the floor is stated rather than
+          implied. `aria-label` gives it the real accessible name — the visible
+          word "Map" alone does not say what tapping it does. */}
+      {mapBandOutOfView ? (
+        <button
+          type="button"
+          data-testid="scroll-to-map-btn"
+          aria-label="Back to map"
+          onClick={scrollBackToMap}
+          className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-1/2 flex min-h-11 min-w-11 -translate-x-1/2 items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 shadow-lg transition-colors hover:bg-slate-50"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            className="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d={NAV_ICONS.browse} />
+          </svg>
+          Map
+        </button>
       ) : null}
 
       {/* V15 t03: the "Filter & sort" modal — kind chips (multi-select), a sort

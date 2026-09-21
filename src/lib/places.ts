@@ -729,18 +729,118 @@ export interface FramingCircle {
  *
  * `radiusMiles` <= 0 yields null: a zero-radius circle has no extent to fit and
  * leaflet's fitBounds on a degenerate box zooms to street level.
+ *
+ * ---
+ *
+ * V17 t04: the frame also accounts for the SEARCHED subset — `focusPoints`, the
+ * coordinates of the FILTERED rows. A parent who typed "pool" wants the camera
+ * on the pools, not on the whole radius they happen to live inside.
+ *
+ * WHERE THIS LINE IS, AND WHY IT IS NOT IN THE COMPONENT. V16 t07 item 2
+ * (`93f313b`) DELETED a `fitBounds` over every marker because that fit picks the
+ * zoom which fits ALL points — nothing caps how far OUT it may go — so it zoomed
+ * to the whole city and collapsed every dot into the blob the founder
+ * photographed. That ruling stands; nothing here re-adds a points-fit to
+ * `PlaceMap.tsx`. What t04 does instead is give the ONE remaining framing
+ * authority (this circle) a second input, so the frame follows the results while
+ * staying a circle the radius still governs.
+ *
+ * THE RADIUS IS A CEILING, NOT A STARTING POINT. The returned radius is
+ * `min(radiusMiles, the miles that cover every focus point)`:
+ *
+ * - points spread wider than the viewer radius -> the radius itself, unchanged;
+ *   t04 can never zoom out past it, which is the "never reverts `93f313b`" rule
+ *   expressed as arithmetic;
+ * - points inside it -> a circle centered on them that just covers them, so a
+ *   narrow result set tightens the camera;
+ * - absent or EMPTY `focusPoints` -> `{ center, radiusMiles }` verbatim, byte for
+ *   byte the pre-t04 return. That identity is the regression guard and is
+ *   asserted in `places.test.ts`.
+ *
+ * A DEGENERATE SUBSET IS NOT A DEGENERATE CIRCLE. One point, or twenty copies of
+ * one coordinate, has zero extent — handing Leaflet that circle would zoom to
+ * street level (the same failure `radiusMiles <= 0` guards against). So the
+ * result radius is floored at `MIN_FOCUS_RADIUS_MILES`: a single match frames a
+ * small neighbourhood, never a zero-extent box.
+ *
+ * The inputs are structural (`{ lat, lng }`), matching the rest of this module —
+ * a `PlaceListRow`'s resolved coordinates pass through with no re-projection.
  */
 export function framingCircle(input: {
   geocodeCenter: { lat: number; lng: number } | null
   homePin: { lat: number; lng: number } | null
   radiusMiles: number
+  /** t04: the SEARCHED subset. Absent/empty = today's behaviour exactly. */
+  focusPoints?: ReadonlyArray<{ lat: number; lng: number }>
 }): FramingCircle | null {
-  const { geocodeCenter, homePin, radiusMiles } = input
+  const { geocodeCenter, homePin, radiusMiles, focusPoints } = input
   if (!(radiusMiles > 0)) return null
-  if (geocodeCenter !== null) return { center: geocodeCenter, radiusMiles }
-  if (homePin !== null) return { center: homePin, radiusMiles }
-  return null
+
+  const base =
+    geocodeCenter !== null
+      ? { center: geocodeCenter, radiusMiles }
+      : homePin !== null
+        ? { center: homePin, radiusMiles }
+        : null
+  if (base === null) return null
+
+  // No searched subset — the pre-t04 return, unchanged. `undefined`, `[]` and an
+  // all-unusable array all land here, which is what "falls back to today's
+  // radius frame" means for a query with zero placed results.
+  if (focusPoints === undefined || focusPoints.length === 0) return base
+
+  const center = focusCenter(focusPoints)
+  if (center === null) return base
+
+  // The tightest circle about `center` that still covers every focus point. The
+  // radius can only shrink: `base.radiusMiles` is the ceiling.
+  let span = 0
+  for (const point of focusPoints) {
+    const miles = distanceMiles(center, point)
+    if (miles > span) span = miles
+  }
+  const fitted = Math.max(span, MIN_FOCUS_RADIUS_MILES)
+  return { center, radiusMiles: Math.min(base.radiusMiles, fitted) }
 }
+
+/**
+ * The focus points' own center: the midpoint of their lat/lng EXTENT (not the
+ * mean), so the covering radius above is genuinely tight and every point is
+ * inside it by construction. Returns null when no point carries usable
+ * coordinates — the caller then keeps its radius frame rather than framing on
+ * `NaN`, which would blank the map.
+ */
+function focusCenter(
+  points: ReadonlyArray<{ lat: number; lng: number }>,
+): { lat: number; lng: number } | null {
+  let minLat = Number.POSITIVE_INFINITY
+  let maxLat = Number.NEGATIVE_INFINITY
+  let minLng = Number.POSITIVE_INFINITY
+  let maxLng = Number.NEGATIVE_INFINITY
+  let usable = 0
+  for (const point of points) {
+    if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)) continue
+    usable += 1
+    if (point.lat < minLat) minLat = point.lat
+    if (point.lat > maxLat) maxLat = point.lat
+    if (point.lng < minLng) minLng = point.lng
+    if (point.lng > maxLng) maxLng = point.lng
+  }
+  if (usable === 0) return null
+  return { lat: (minLat + maxLat) / 2, lng: (minLng + maxLng) / 2 }
+}
+
+/**
+ * The smallest radius a t04 focus frame may collapse to, in miles.
+ *
+ * Pinned numerically because the alternative is a zero-extent circle: a single
+ * matching place (or several at one coordinate) has no extent at all, and
+ * Leaflet's `fitBounds` on a degenerate box zooms to street level — the map
+ * would frame one doorway instead of a neighbourhood. Half a mile keeps the
+ * tightest search at "a few blocks", which is what a parent searching for one
+ * place actually wants to see around it.
+ */
+export const MIN_FOCUS_RADIUS_MILES = 0.5
 
 /**
  * V17 t02: which PLACES the caller follows, as a plain id set — what a browse
