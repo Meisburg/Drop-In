@@ -605,3 +605,25 @@ V16: GOAL DECLARED BLOCKED (round 35). The objective "complete all tickets" cann
   WHAT UNBLOCKS IT: one line from the founder -- "apply 0045 and ii and b" -- or
   any subset. Both slice briefs are written; the migration is verified idempotent
   and data-safe against a real Postgres; the acceptance test is waiting.
+V16: *** 0045 APPLIED BY THE FOUNDER — LIVE DEFECT CLOSED (2026-09-21) ***
+  Founder pasted the migration into the Supabase SQL editor and read the catalog
+  back: `CHECK (((radius_miles >= 1) AND (radius_miles <= 35)))` -- exactly the
+  string the apply guide predicted (verified against a real Postgres in round 33,
+  which is how the triple-parenthesis form got corrected from my wrong first
+  guess of two).
+  VERIFIED FROM HERE, not taken on trust:
+   * THE ACCEPTANCE TEST NOW PASSES. `e2e/feed-empty-state.e2e.ts` -> "a 1-mile
+     radius really saves (the migration-0045 acceptance check)": PASSED (2 passed
+     in its group). It had FAILED for 20+ consecutive rounds with "profiles.
+     radius_miles must actually be 1 — is 0045 applied?".
+     NOT A VACUOUS PASS: the test drives the real radius control, asserts the
+     friendly rejection copy does NOT appear, and then polls
+     profiles.radius_miles until it equals 1. It failed for every round before
+     this one, so it is measuring the thing it claims to measure.
+   * WHOLE FEED SUITE GREEN: feed-empty-state + feed-ended-out -> 9 passed, 0
+     failed. This is the first run in the batch with no 0045-shaped failure.
+  SO: production no longer offers a radius it cannot save. The three-part story
+  ends correctly -- t09 made the failure legible while the DB was behind, the
+  acceptance test made the gap visible, and the migration closed it.
+  REMAINING: t03 item 1 (Ages i/ii) and t07 item 2 (map a/b/c). Both are product
+  rulings with pre-staged briefs; neither is a defect.
