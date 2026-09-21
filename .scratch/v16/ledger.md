@@ -288,3 +288,19 @@ V16: the generic fallback is now subject-neutral ("Could not save your
 V16: gate on this tree — build 0, 948/948 unit (26 files), lint 0 errors,
   targeted e2e 5/5. Migration 0045 STILL NEEDS A CREDENTIAL; t09 makes the
   transient failure legible but does NOT remove it.
+V16: LIVE PRODUCTION RE-VERIFIED (round 15) — Vercel deployed again, entry asset
+  moved CQ4p4YVb -> index-wZsbF7if.js (817,110 bytes). Confirmed present in the
+  SERVED bundle:
+    t01 login copy ("See what families are up to in your area")     LIVE
+    t06.1 feed radius picker (feed-radius-filter)                   LIVE
+    t06.2 zip setter ("No home zip set yet")                        LIVE
+    t04 profile unify ("Your photo & name")                         LIVE
+    t09 friendly CHECK copy ("That radius isn't allowed yet. Pick
+        between 1 and 35 miles.")                                   LIVE
+  AND the live radius ladder is still [1,2,5,10,20,35].
+  SO THE LIVE STATE IS NOW: the UI offers 1 mile, the DB still rejects it, and
+  the rejection renders ENGLISH instead of raw SQL. t09 did its job — the
+  failure is legible, not fixed. 0045 remains the actual fix.
+  TOOLING NOTE: grepping the bundle for a straight quote MISSED the t09 copy
+  until I used the curly apostrophe — the bundle uses U+2019. This is the exact
+  trap docs/agents/playtest-lane.md already records for must_contain needles.
