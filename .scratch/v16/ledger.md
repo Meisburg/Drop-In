@@ -556,3 +556,24 @@ V16: THE OTHER SESSION PUSHED WHILE I WAS PUSHING (round 33) — and the outcome
   NOTE FOR FUTURE ROUNDS: the hook path is now scripts/git-hooks/pre-push, NOT
   scripts/pre-push. Any earlier note in this ledger referring to scripts/pre-push
   is stale on the path and correct on the content.
+V16: FULL BATCH RE-VERIFICATION (round 34) — every lane run fresh, nothing
+  assumed from earlier rounds.
+  * GATE: `npm run verify` exit 0. 952/952 unit (26 files). Steering-lint PASS.
+  * LINT WARNING DROP INVESTIGATED, NOT CELEBRATED: warnings fell 3583 -> 62.
+    That is a real change in the lint invocation (the other session added
+    `--ignore-pattern` for .scratch/.agents/.qa/dist), so I checked whether it
+    SUPPRESSES product warnings rather than fixing them. It does not: those four
+    dirs contain ZERO product files (verified per dir via git ls-files), and
+    `npx oxlint src/` alone still reports 38 warnings / 0 errors across 87 files.
+    The drop was scratch-directory noise. Recorded because a 58x improvement in a
+    warning count is exactly the kind of thing that should be distrusted first.
+  * PLAYTEST: PASS, 8 routes, 0 uncaught JS errors, screenshots written.
+    Chrome + preview released; both ports confirmed down.
+  * TARGETED E2E: feed-empty-state + dm + push-subscribe -> 14 passed, 1 failed.
+    THE ONLY FAILURE IS THE 0045 ACCEPTANCE TEST, failing by design with
+    "profiles.radius_miles must actually be 1 — is 0045 applied?". That is the
+    signal the test exists to give; it is not a regression.
+  * SYNC: local == origin/master at 7347fe9; tree clean.
+  SO THE BATCH STANDS: all non-blocked work shipped and verified, exactly one
+  live defect (the unapplied 0045) with a test waiting to confirm its fix, and
+  two founder rulings outstanding.
