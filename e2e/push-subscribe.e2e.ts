@@ -613,3 +613,67 @@ test.afterEach(async () => {
     )
   }
 })
+
+/**
+ * V16 t01 — the per-kind notification toggles, and the heading that labels them.
+ *
+ * This closes a gap t01 opened. That slice relabelled the "What to tell me
+ * about" paragraph into an `<h2>` ("Choose what you get notified about") plus a
+ * helper line, on the founder's decision that the five toggles already EXISTED
+ * and the real problem was finding them. But nothing in the suite asserted the
+ * toggles at all: the only test that touches `notifications-section` drives the
+ * device-level turn-on/off control, so a regression that dropped a kind, or
+ * unlabelled them, would have shipped silently.
+ *
+ * Asserted here:
+ *  - every NOTIFICATION_KIND renders a checkbox, by its own testid;
+ *  - each is labelled with the kind's `copy.label` (the founder-facing name,
+ *    e.g. "Someone joins your drop-in") — the label is the whole point of the
+ *    discoverability fix;
+ *  - all five start CHECKED (unmuted), the documented default;
+ *  - toggling one off is reflected in the control (the UI is the app's own
+ *    report of the state it holds).
+ *
+ * The muted set lives in localStorage + a Cache Storage mirror for the service
+ * worker, NOT a table — so this asserts the control's own state rather than a
+ * row, and the cleanup clears the key so no later run inherits a muted kind.
+ */
+test('every notification kind has a labelled toggle, and toggling is reflected', async ({
+  page,
+}) => {
+  const kinds = [
+    'ping_received',
+    'new_comment',
+    'starting_soon',
+    'cancelled',
+    'ended',
+  ] as const
+
+  await page.goto('/settings')
+  await settleOnRoute(page, '/settings')
+
+  const prefs = page.getByTestId('push-kind-prefs')
+  await expect(prefs).toBeVisible()
+  // The discoverability heading t01 added — the thing that made these findable.
+  await expect(prefs.getByRole('heading', { name: 'Choose what you get notified about' })).toBeVisible()
+
+  for (const kind of kinds) {
+    const box = page.getByTestId(`push-pref-${kind}`)
+    await expect(box, `${kind} must render a toggle`).toBeVisible()
+    // Visible, non-empty label text — an unlabelled checkbox is unusable.
+    const label = page.locator(`label[for="push-pref-${kind}"]`)
+    await expect(label).not.toBeEmpty()
+    // Default is ON (not muted).
+    await expect(box).toBeChecked()
+  }
+
+  // Toggle one off; the control reports it. (No row to read: prefs are
+  // client-side by design.)
+  const first = page.getByTestId(`push-pref-${kinds[0]}`)
+  await first.uncheck()
+  await expect(first).not.toBeChecked()
+
+  // Toggling back keeps the default state so a re-run starts clean.
+  await first.check()
+  await expect(first).toBeChecked()
+})
