@@ -426,13 +426,14 @@ export function ProfilePage() {
 
     const writers: Record<ProfileSection, () => Promise<void>> = {
       // V15 ticket 06 (A20): the display name is now edited INLINE on this page
-      // (the identity block at the top) — the writer moved here from /settings
-      // (which still keeps its own input; both pages share the same seam). The
-      // location/interests writers remain TYPE requirements of the Record
+      // (the identity block at the top) — the writer moved here from /settings.
+      // The location/interests writers remain TYPE requirements of the Record
       // (every section needs a writer), not live paths: this page owns no
-      // location/interests input (they live on /settings), so the planner never
-      // schedules those sections here. They stay so the machine's contract is
-      // complete rather than patched.
+      // location/interests input (V15 T07 removed them from /settings entirely;
+      // zip is set during onboarding, radius in the browse modal, and interests
+      // belong to the "About the parents" bio), so the planner never schedules
+      // those sections here. They stay so the machine's contract is complete
+      // rather than patched.
       name: () => updateDisplayName(userId, draft.name.trim()),
       location: () => Promise.resolve(),
       bio: () => updateBio(userId, draft.bio),

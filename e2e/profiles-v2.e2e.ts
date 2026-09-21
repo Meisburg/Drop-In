@@ -2,8 +2,8 @@
  * Spec (V2 ticket 02, re-homed by V13 ticket 01): the marker's rich profile.
  * On /profile the marker saves a bio (<= 500 chars) + a kid row (first name +
  * age ONLY — the privacy pin, max 5 app-enforced) and sees both on
- * /u/<handle>; the /settings nudge banner persists while the photo is still
- * missing.
+ * /u/<handle>. V15 T07 removed the /settings nudge banner ("Finish your
+ * profile" / "Still to add: ...") — this spec no longer asserts it.
  *
  * Cleanup (best-effort per ticket, e2e-<epoch> marker prefix so the
  * orchestrator's sweep picks stragglers up): the marker's kid rows are
@@ -16,9 +16,7 @@ import { readMarkerMeta, readMarkerSession, readSupabaseEnv, settleOnRoute } fro
 
 const KID_AGE = 7
 
-test('marker saves a bio + kid row, sees them on /u/<handle>, nudge stays for the photo', async ({
-  page,
-}) => {
+test('marker saves a bio + kid row, sees them on /u/<handle>', async ({ page }) => {
   const marker = readMarkerMeta()
   const bio = `E2E bio — ${marker.displayName}, friendly family`
   const kidName = `e2e ${marker.displayName}`
@@ -53,14 +51,13 @@ test('marker saves a bio + kid row, sees them on /u/<handle>, nudge stays for th
   // the /u/<handle> read below sees the new row (not a racing write).
   await expect(page.getByTestId('profile-save-note')).toHaveText('Saved.')
 
-  // The nudge banner persists while the photo is still missing (it is —
-  // this spec never uploads one). It lives on /settings (the count-only
-  // kids read + the missingProfileItems seam), not on /profile. V13 ticket 01:
-  // the banner now links to /profile where the photo controls live.
+  // V15 T07: the /settings nudge banner ("Finish your profile" / "Still to add:
+  // a photo.") was removed — assert its ABSENCE as the flip of the old
+  // persistence check.
   await page.goto('/settings')
   await settleOnRoute(page, '/settings')
-  await expect(page.getByText('Still to add: a photo.')).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Add them on your profile page' })).toBeVisible()
+  await expect(page.getByText('Still to add: a photo.')).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'Add them on your profile page' })).toHaveCount(0)
 
   // The public face (/u/<handle>) renders the bio + the kid (first name +
   // age only).

@@ -1,8 +1,9 @@
 /**
  * Spec (V2 ticket 03): zip + radius discovery.
  *
- * (a) The marker's /settings location card shows its home zip + radius
- *     (set by the setup spec; 0012's columns back them).
+ * (a) V15 T07: the /settings location card is GONE — the marker's /settings
+ *     page renders no zip input and no radius select (the location card was
+ *     removed; zip is set during onboarding, radius in the browse modal).
  * (b) A host marker (known zip 98107) posts a drop-in; a viewer marker
  *     (different known zip 98007, ~12 mi away, a generous 20-mi radius)
  *     sees the card in its radius feed WITH the "N mi" distance label.
@@ -34,16 +35,15 @@ import {
 const VIEWER_ZIP = '98007'
 const VIEWER_RADIUS_LABEL = '20 miles'
 
-test('the marker\'s /settings shows its home zip + radius (the location card)', async ({ page }) => {
-  const marker = readMarkerMeta()
-
+test('the marker\'s /settings has no location card (V15 T07)', async ({ page }) => {
   await page.goto('/settings')
   await settleOnRoute(page, '/settings')
 
-  // The location card's zip input is seeded from the marker's profiles row.
-  await expect(page.getByPlaceholder('e.g. 98107')).toHaveValue(marker.homeZip)
-  // The radius select shows the marker's radius (pinned options 2/5/10/20/35).
-  await expect(page.locator('select').first()).toHaveValue(String(marker.radiusMiles))
+  // V15 T07: the location card was removed from /settings — no zip input and
+  // no radius select render on this page. The viewer's location step in spec
+  // (b) still uses the onboarding "e.g. 98107" placeholder (that one stays).
+  await expect(page.getByPlaceholder('e.g. 98107')).toHaveCount(0)
+  await expect(page.locator('select')).toHaveCount(0)
 })
 
 test('a host marker\'s drop-in reaches a viewer\'s radius feed with an "N mi" label', async ({
