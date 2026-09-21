@@ -70,6 +70,10 @@ import {
 const TITLE_PLACEHOLDER = 'e.g. Playground time at Green Lake'
 const PLACE_PLACEHOLDER = 'e.g. Green Lake playground, near the boathouse'
 const ADDRESS_PLACEHOLDER = 'e.g. 7200 4th Ave NE, near the boathouse'
+/** V13 ticket 02: the details field is in the VISIBLE flow, so the input-order
+ * assertions below see it (it used to be behind the removed disclosure). */
+const DETAILS_PLACEHOLDER =
+  'Anything parents should know — what to bring, parking, weather plan…'
 
 /** A real seeded playground (0029's seed), with the street the city publishes. */
 const PLACE_NAME = 'Green Lake Park'
@@ -219,19 +223,28 @@ test('/new leads with the place picker and never asks for a neighbourhood', asyn
       ),
     )
   const fieldOrder = await formFieldOrder()
-  // The place picker is the FIRST input. V11 ticket 05: the start date now sits
-  // in the visible "When" section (no longer behind the disclosure), so the
-  // collapsed form has exactly two inputs — the place picker, then the start
-  // date. The title on the summary is still a READ-BACK (a <p> and a button), it
-  // becomes the input only when tapped, and the address, the stepper and the
-  // repeat toggle are behind the disclosure. ("''" is the date input: a date
-  // input carries no placeholder, so the helper's `placeholder ?? type` read
-  // yields the empty string.) This is ticket 01's "the affordance is
-  // unmistakable" AC, and it is exactly what an always-open title input at the
-  // top of the form would have inverted (it would also have been the form's
-  // first tab stop).
+  // The place picker is the FIRST input, and the address sits DIRECTLY under it.
+  //
+  // V13 ticket 02 removed the "More options" disclosure: the address, the
+  // stepper and the details field are now in the VISIBLE flow, so the collapsed
+  // form is place → address → date → details, not the two inputs this assertion
+  // used to expect ("the address ... behind the disclosure" is no longer true —
+  // that stale expectation is why this spec failed). V15.1 then moved the
+  // address UP to sit immediately under the place field, because the pick is
+  // what fills it: the two must read as one question.
+  // The title on the summary is still a READ-BACK (a <p> and a button), it
+  // becomes an input only when tapped. ("''" is the date input: a date input
+  // carries no placeholder, so the helper's `placeholder ?? type` read yields
+  // the empty string.) This is ticket 01's "the affordance is unmistakable" AC,
+  // and it is exactly what an always-open title input at the top of the form
+  // would have inverted (it would also have been the form's first tab stop).
   expect(fieldOrder[0]).toBe(PLACE_PLACEHOLDER)
-  expect(fieldOrder).toEqual([PLACE_PLACEHOLDER, ''])
+  expect(fieldOrder).toEqual([
+    PLACE_PLACEHOLDER,
+    ADDRESS_PLACEHOLDER,
+    '',
+    DETAILS_PLACEHOLDER,
+  ])
 
   // …and the title is STILL a form field, one tap away in the summary — the line
   // the parent taps to change it (V9 ticket 03's AC). The old assertion here
@@ -244,11 +257,16 @@ test('/new leads with the place picker and never asks for a neighbourhood', asyn
   // Editing the title puts its input at the top of the summary — i.e. first in
   // DOM order — which is exactly why ticket 01's AC is pinned on the COLLAPSED
   // page above: that is the page /new OPENS as, and the page the parent meets.
-  // V11 ticket 05: the start date is in the visible "When" section. V12 t02:
-  // the duration is read back there too (picked for the parent from the start
-  // slot; the override chips live in the visible flow (V13 t02: disclosure gone) — but the read-back is
-  // not an input, so the input order is unchanged: title → place → date.
-  expect(fieldOrderEditing).toEqual([TITLE_PLACEHOLDER, PLACE_PLACEHOLDER, ''])
+  // V13 ticket 02: the disclosure is gone, so the visible flow is title → place
+  // → address → date → details. The duration read-back is not an input, so it
+  // does not appear here.
+  expect(fieldOrderEditing).toEqual([
+    TITLE_PLACEHOLDER,
+    PLACE_PLACEHOLDER,
+    ADDRESS_PLACEHOLDER,
+    '',
+    DETAILS_PLACEHOLDER,
+  ])
 
   // (2) Labelled so the affordance is unmistakable, with the visible Browse
   //     places button beside it.
@@ -373,17 +391,30 @@ test('typing @ opens the picker, and picking a place fills place + address in on
   await expect(detailPlaceLink).toBeVisible()
   await expect(page.locator('p').filter({ has: detailPlaceLink })).toHaveText(PLACE_NAME)
 
-  // The "Recent places" chips on the SEEDED-PLACE path (V8 ticket 01's memory,
-  // kept by this ticket — review cycle 1, F4: quick-post.e2e.ts covers the
-  // FREE-TEXT path only, so this is the picked path it does not reach). The post
-  // just created was at a directory place, so a FRESH /new mount must offer it
-  // back; one tap fills the place and its address, the remembered text resolves
-  // to the directory row (places.resolvePlaceByName), and the picker stays shut.
+  // The remembered place on the SEEDED-PLACE path (V8 ticket 01's memory).
+  //
+  // HISTORY (this assertion was stale and is why the spec failed): the block
+  // used to drive a "Recent places" CHIP for the place just posted. V13 ticket
+  // 02 deliberately removed that chip row when it rebuilt the /new form, so the
+  // button no longer exists and the assertion could never pass again. V8 ticket
+  // 01's MEMORY itself is intact — the remembered place still resolves to the
+  // directory row (places.resolvePlaceByName) and is reachable from a fresh
+  // /new mount through the picker, which is the affordance the form ships. The
+  // assertions below therefore pin BOTH halves: the removed chips stay gone,
+  // and the place is still reachable and still fills place + address in one tap.
   await page.goto('/new')
   await settleOnRoute(page, '/new')
-  const chip = page.getByRole('button', { name: PLACE_NAME, exact: true })
-  await expect(chip).toBeVisible()
-  await chip.click()
+  const placeInputAgain = page.getByPlaceholder(PLACE_PLACEHOLDER)
+  // No chip row: V13 ticket 02 removed the "Recent places" chips, and the
+  // removed affordance must not come back by accident.
+  await expect(page.getByRole('button', { name: PLACE_NAME, exact: true })).toHaveCount(0)
+  // The place is still reachable from a fresh /new mount — through the picker,
+  // which is the affordance the rebuilt form actually ships (the previous
+  // assertion drove the removed chip button, which is why this spec failed).
+  await placeInputAgain.fill(`@${PLACE_NAME}`)
+  const remembered = page.getByTestId('place-suggestions').getByText(PLACE_NAME, { exact: true })
+  await expect(remembered).toBeVisible()
+  await remembered.click()
   // V13 ticket 02: the address the pick fills is readable in the visible flow.
   await expect(page.getByPlaceholder(PLACE_PLACEHOLDER)).toHaveValue(PLACE_NAME)
   await expect(page.getByPlaceholder(ADDRESS_PLACEHOLDER)).toHaveValue(PLACE_ADDRESS)
@@ -517,15 +548,22 @@ test('"Somewhere else" still posts free text — and its address is still the Ma
 test('a remembered neighbourhood cannot survive a place pick (review cycle 1, F1)', async ({
   page,
 }) => {
-  // THE SEQUENCE THE REVIEWER FOUND. A "Recent places" chip (V8 ticket 01)
-  // writes the remembered post's neighbourhood into the form; /new renders NO
-  // neighbourhood field, so that id is INVISIBLE to the parent. Picking a
-  // directory place afterwards used to inherit it (`?? prev.neighborhoodId`),
-  // and since every seeded place has a NULL neighbourhood the fallback always
-  // fired — so the new post silently carried the OLD place's neighbourhood.
-  // The fixture therefore has to be a post WITH a real neighbourhood, which /new
-  // can no longer produce: it is seeded over REST (the polish.e2e.ts pattern),
-  // on the pinned 30-minute grid so /edit-style validation never enters it.
+  // THE SEQUENCE THE REVIEWER FOUND, re-pointed at a control that still exists.
+  //
+  // The original fixture drove a "Recent places" chip (V8 ticket 01) to write a
+  // remembered post's neighbourhood into the form. V13 ticket 02 removed that
+  // chip row, so the chip is gone — but the BUG IT EXPOSED is not: /new renders
+  // no neighbourhood field (showNeighborhood = false), yet a neighbourhood id
+  // can still ride `values.neighborhoodId` from a prefill. Picking a directory
+  // place afterwards must REPLACE it (with NULL), never inherit it — every
+  // seeded place has a NULL neighbourhood, so an inheriting fallback silently
+  // stamps the OLD place's neighbourhood onto the new post.
+  //
+  // The DUPLICATE path is the surviving carrier of that hidden value: /new's
+  // "Duplicate existing" picker clones a past post INCLUDING its neighborhood_id
+  // (NewPlaydatePage applyDuplicate), and /new still renders no field for it.
+  // So the sequence is: duplicate a post that carries a real neighbourhood, then
+  // pick a directory place, then post — and assert the pick won.
   const marker = readMarkerMeta()
   const stalePlace = 'E2E stale chip lot'
   const title = `e2e ${marker.displayName} stale neighbourhood`
@@ -542,7 +580,7 @@ test('a remembered neighbourhood cannot survive a place pick (review cycle 1, F1
     headers: { ...markerHeaders(), Prefer: 'return=representation' },
     body: JSON.stringify({
       host_profile_id: userId,
-      // The stale id the chip will put into the form.
+      // The stale id the duplicate will carry into the form.
       neighborhood_id: hoods[0].id,
       title: `e2e ${marker.displayName} stale seed`,
       place: stalePlace,
@@ -555,11 +593,15 @@ test('a remembered neighbourhood cannot survive a place pick (review cycle 1, F1
   await page.goto('/new')
   await settleOnRoute(page, '/new')
 
-  // (1) The chip fills place + address, and with it the form holds a REAL
-  //     neighbourhood id that this page does not render.
-  const chip = page.getByRole('button', { name: stalePlace, exact: true })
-  await expect(chip).toBeVisible()
-  await chip.click()
+  // (1) Duplicate the seeded post: the form now holds a REAL neighbourhood id
+  //     that this page does not render (there is no field for it at all).
+  // The picker row is labelled by title + day (not the place), so it is matched
+  // on the seeded TITLE.
+  const seedTitle = `e2e ${marker.displayName} stale seed`
+  await page.getByTestId('dup-duplicate').click()
+  const seededRow = page.getByTestId('post-again').filter({ hasText: seedTitle })
+  await expect(seededRow).toBeVisible()
+  await seededRow.click()
   await expect(page.getByPlaceholder(PLACE_PLACEHOLDER)).toHaveValue(stalePlace)
   await expect(page.locator('select')).toHaveCount(0)
 

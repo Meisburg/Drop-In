@@ -52,6 +52,40 @@ test('the repeat-weekly toggle is absent from /new', async ({ page }) => {
   await expect(page).toHaveURL('/')
 
   // The post appears in the feed with its day label.
-  const dayLabel = formatDayLabel(startDate)
-  await expect(page.getByText(dayLabel)).toBeVisible()
+  //
+  // V15.2 fix two separate defects here:
+  //  1. `formatDayLabel(startIso, nowIso)` takes TWO arguments, and this call
+  //     passed only one — `nowIso` was undefined, so the label seam threw
+  //     `RangeError: Invalid time value` before the assertion ever ran.
+  //  2. The label is computed from a clock that can move UNDER the assertion:
+  //     `+2 days` flips from a weekday name ("Tue, Sep 22") to "Tomorrow" the
+  //     moment the wall clock crosses midnight between the post and this read.
+  //     That is a real flake, not a rare one — it surfaced on a run that started
+  //     at 23:52. Bracket the two candidate labels instead of pinning one: the
+  //     post is `+2 days` from the spec's own start, so at most one midnight can
+  //     fall between the two reads. `formatDayLabel` is still the single source
+  //     of both strings (no second copy of the day-label rule).
+  //  3. The feed renders the section label with CSS `uppercase`, so the DOM text
+  //     is "TUE, SEP 22" while `formatDayLabel` returns "Tue, Sep 22" —
+  //     `getByText` is case-SENSITIVE by default, so an exact-case locator can
+  //     never match what the page paints. Match case-insensitively.
+  //  4. The label seam is fed a full TIMESTAMP by the app (`daySectionIso` hands
+  //     it an ISO instant); this spec handed it the bare "YYYY-MM-DD" from the
+  //     date INPUT. JS parses a bare date as UTC MIDNIGHT, so `getDay()` reads it
+  //     a day early in any timezone behind UTC — the label came back "Tomorrow"
+  //     while the feed correctly painted "TUE, SEP 22". Anchoring the date at
+  //     local noon (the same trick the app's own summary code uses) keeps the
+  //     calendar day stable in every timezone.
+  const startIso = `${startDate}T12:00:00`
+  const beforeLabel = formatDayLabel(startIso, new Date().toISOString())
+  const dayLabels = [beforeLabel]
+  const afterLabel = formatDayLabel(startIso, new Date(Date.now() + 60_000).toISOString())
+  if (afterLabel !== beforeLabel) dayLabels.push(afterLabel)
+  const labelText = new RegExp(dayLabels.map(escapeForRegExp).join('|'), 'i')
+  await expect(page.getByText(labelText).first()).toBeVisible()
 })
+
+/** Escape a literal string for safe use inside a RegExp (the labels carry commas). */
+function escapeForRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}

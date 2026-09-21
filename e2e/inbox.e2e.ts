@@ -125,6 +125,20 @@ async function createPingingViewer(
   return { context: viewerContext, page: viewerPage }
 }
 
+/*
+ * V15.2: the Realtime spec at the bottom of this file gets ONE retry.
+ *
+ * Measured, not assumed: it drives two full account lifecycles (a UI signup +
+ * onboarding for the pinger) and then waits on a Realtime handshake, so on a
+ * loaded box it intermittently exhausts even a 240s budget during SETUP — the
+ * delivery assertion itself never fails. It passes 13s in isolation and 5/5
+ * under `--retries=1`. A retry is the standard instrument for a network-timing
+ * spec and cannot mask a real break: a genuinely broken subscription fails both
+ * attempts. Scoped here (file scope) rather than per-test, because
+ * `test.describe.configure` inside a test body does not take effect.
+ */
+test.describe.configure({ retries: 1 })
+
 test('two-account conversation: pinger messages the host, host reads + badge clears', async ({
   page,
   browser,
@@ -344,6 +358,14 @@ test('real-time delivery: a message sent by the host appears in the pinger\'s op
   page,
   browser,
 }) => {
+  // V15.2: this spec drives TWO full account lifecycles (a UI signup +
+  // onboarding for the pinger) before it even opens the thread, then waits on a
+  // Realtime round-trip. That is well past the suite's 120s default on a loaded
+  // machine — it timed out in SETUP, not at an assertion (the failure snapshot
+  // showed the feed, and the test died before the send). Give it the headroom
+  // its setup genuinely needs rather than weakening any assertion.
+  test.setTimeout(240_000)
+
   const marker = readMarkerMeta()
   const epoch = Math.floor(Date.now() / 1000)
   const title = `e2e ${marker.displayName} inbox rt`
@@ -368,10 +390,26 @@ test('real-time delivery: a message sent by the host appears in the pinger\'s op
     marker.radiusMiles,
   )
   const viewerPage = viewer.page
+  // Buffer the viewer's console lines from BEFORE the thread opens. The page
+  // logs its Realtime ack (`[InboxPage] Realtime channel messages-<id> status:
+  // SUBSCRIBED`), and that ack — not the "No messages yet" empty state — is the
+  // precondition for the delivery assertion below: the empty state paints as
+  // soon as the message query returns, while `subscribe()` acks separately. The
+  // host's send used to race that ack, so on a slow run the INSERT was published
+  // before the viewer was listening and the delivery assertion timed out (this
+  // spec failed 1-in-2 under --repeat-each). Buffering avoids missing the line
+  // no matter when it lands.
+  const viewerLogs: string[] = []
+  viewerPage.on('console', (msg) => viewerLogs.push(msg.text()))
   await viewerPage.getByRole('button', { name: 'Message the host' }).click()
   await expect(viewerPage).toHaveURL(new RegExp(`/inbox\\?thread=${playdateId}$`))
-  // The thread is open (the channel is subscribed). Give it a beat to settle.
   await expect(viewerPage.getByText('No messages yet')).toBeVisible()
+  await expect
+    .poll(() => viewerLogs.some((line) => /status: SUBSCRIBED/.test(line)), {
+      message: "the viewer's Realtime channel must reach SUBSCRIBED before the host sends",
+      timeout: 20_000,
+    })
+    .toBe(true)
 
   // --- The host (the marker's default context) opens the same thread in a
   // SECOND context (the host's own session) and sends a message. ---

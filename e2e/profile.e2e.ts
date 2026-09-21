@@ -15,10 +15,18 @@ test('signed in as the marker, /profile renders the marker display name', async 
 
   // V13 ticket 01 re-homed the editor onto /profile (it was read-only + a
   // /settings link before). The page's own "Your family" heading proves the
-  // route stood, and the display name renders as its own text node in the
-  // bottom identity block (seeded from the marker's profiles row).
+  // route stood.
+  //
+  // V15.2 fix: V15 ticket 06 moved the identity block to the TOP of /profile and
+  // made the display name an editable INPUT, so the name is an input VALUE, not
+  // a text node — `getByText(displayName)` could never match it. The input is
+  // the same "seeded from the marker's profiles row" proof.
   await expect(page.getByRole('heading', { name: 'Your family', exact: true })).toBeVisible()
-  await expect(page.getByText(marker.displayName, { exact: true })).toBeVisible()
-  // The app-shell header shows the marker's public handle.
-  await expect(page.getByText(`@${marker.displayName}`, { exact: true })).toBeVisible()
+  await expect(page.getByTestId('display-name-input')).toHaveValue(marker.displayName)
+  // The app-shell header shows the marker's public handle. Scoped to the banner:
+  // the identity block renders its own "@handle" read-back too (V15 ticket 06),
+  // so an unscoped locator is a strict-mode violation.
+  await expect(
+    page.getByRole('banner').getByText(`@${marker.displayName}`, { exact: true }),
+  ).toBeVisible()
 })

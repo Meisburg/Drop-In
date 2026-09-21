@@ -207,8 +207,13 @@ async function postDropIn(
     .fill(PLACE)
 
   // V13 ticket 02: the "More options" disclosure is gone — the ages chips now
-  // have a visible home in the form's tail block, so they are always in the DOM.
-  await expect(page.getByTestId('ages-chips')).toHaveCount(0)
+  // have a visible home in the form's tail block, so they are ALWAYS in the DOM.
+  //
+  // V15.2 fix: this block used to assert `toHaveCount(0)` and then
+  // `toBeVisible()` — a self-contradictory pair left over from the disclosure
+  // era, when the chips were absent until "More options" was opened. The
+  // visibility assertion is the one that matches the shipped form; the
+  // count-0 assertion could never pass again and was failing three specs here.
   await expect(page.getByTestId('ages-chips')).toBeVisible()
 
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))

@@ -12,6 +12,7 @@
  * here is logged, not fatal.
  */
 import { expect, test } from '@playwright/test'
+import { kidLabel } from '../src/lib/feed'
 import { readMarkerMeta, readMarkerSession, readSupabaseEnv, settleOnRoute } from './fixtures'
 
 const KID_AGE = 7
@@ -63,7 +64,10 @@ test('marker saves a bio + kid row, sees them on /u/<handle>', async ({ page }) 
   // age only).
   await page.goto(`/u/${encodeURIComponent(marker.displayName)}`)
   await expect(page.getByText(bio)).toBeVisible()
-  await expect(page.getByText(`${kidName} · ${KID_AGE}`, { exact: true })).toBeVisible()
+  // V15.2 fix: V15 ticket 05 (A13) made `kidLabel` emit "Name · Age 7" — the
+  // bare "Name · 7" this asserted is the OLD format, so it could never match.
+  // The expectation is built from the app's own seam so it tracks the rule.
+  await expect(page.getByText(kidLabel(kidName, KID_AGE), { exact: true })).toBeVisible()
 })
 
 test.afterEach(async () => {

@@ -85,7 +85,12 @@ async function postMarkerDropIn(
   // V13 ticket 02: the date + the 30-minute stepper live in the visible "When" section (the disclosure is gone).
   await page.locator('input[type="date"]').fill(startDate)
   const start = await stepStartTimeOnce(page)
-  await page.getByRole('button', { name: '1h', exact: true }).click()
+  // V15.2 fix: the /new duration CHIPS are gone (V13 ticket 03 replaced them
+  // with the End stepper — see the passing golden-path/quota specs). Clicking
+  // "1h" here waited forever on a control that no longer exists, which is what
+  // timed out three specs in this file. The form already picks a duration for
+  // the parent from the start slot; the End stepper is the read-back.
+  await expect(page.getByTestId('end-time-label')).toBeVisible()
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
   return { startLabel: start.startLabel, startMinutes: start.startMinutes }

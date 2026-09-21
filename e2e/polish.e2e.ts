@@ -39,6 +39,10 @@
  */
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
+// The app's own kid-line seam: the "Name · Age 6" string is defined in ONE place
+// (V15 ticket 05, A13), so the assertion below reads it rather than re-spelling
+// it (the feed.ts import the other specs already use — it is pure).
+import { kidLabel } from '../src/lib/feed'
 import {
   readMarkerMeta,
   readMarkerSession,
@@ -205,9 +209,14 @@ test('(a) a kid row edited in place (name + age) autosaves and shows on /u/:hand
   expect((await readKid(kidId)).id).toBe(kidId)
 
   // And the public face renders it.
+  //
+  // V15.2 fix: V15 ticket 05 (A13) made `kidLabel` emit "Name · Age 6" — the
+  // bare "Name · 6" this spec expected was the old format, so the assertion
+  // could never match again. `kidLabel` is the single source of that string, so
+  // the expectation is built from the same seam rather than re-spelling it.
   await page.goto(`/u/${encodeURIComponent(marker.displayName)}`)
-  await expect(page.getByText(`${after} · ${KID_AGE_AFTER}`, { exact: true })).toBeVisible()
-  await expect(page.getByText(`${before} · ${KID_AGE_BEFORE}`, { exact: true })).toHaveCount(0)
+  await expect(page.getByText(kidLabel(after, KID_AGE_AFTER), { exact: true })).toBeVisible()
+  await expect(page.getByText(kidLabel(before, KID_AGE_BEFORE), { exact: true })).toHaveCount(0)
 })
 
 test('(b) a moderator unhides a hidden comment (the mod flag flipped by the live SQL path, then reverted)', async ({

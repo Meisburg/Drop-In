@@ -18,14 +18,25 @@ test('a cold full-page /profile load lands on /profile (no onboarding-gate bounc
   // /onboarding → / while the membership fetch is in flight.
   await page.goto('/profile')
 
-  // The display name under "About our family" only renders on a settled
-  // /profile (it is seeded from the marker's profiles row; the gate
-  // must have passed). If the gate still bounced the load, the page
-  // would end on / (via /onboarding) and this would time out.
-  await expect(page.getByText(marker.displayName, { exact: true })).toBeVisible()
+  // V15.2 fix: the display name is now an editable INPUT (V15 ticket 06 moved
+  // the identity block to the top of /profile as a name field, with a live
+  // "@handle" read-back under it), so the bare name is an input VALUE, not page
+  // text — `getByText(displayName)` can never match it and this spec failed.
+  // The name input is the equivalent "the profile row loaded" signal: it is
+  // seeded from the marker's profiles row, so it only renders on a settled
+  // /profile. If the gate still bounced the load, the page would end on / (via
+  // /onboarding) and this would time out.
+  await expect(page.getByTestId('display-name-input')).toHaveValue(marker.displayName)
 
   // Settled on the requested route, and the app-shell header shows the
   // marker's handle (the profile round-trip worked).
+  //
+  // V15.2 fix: the handle is now rendered TWICE on /profile — the header link
+  // and the identity block's own "@handle" read-back (V15 ticket 06) — so a bare
+  // getByText hit a strict-mode violation. The BANNER is what this assertion is
+  // about (the app shell's handle), so it is scoped there.
   expect(new URL(page.url()).pathname).toBe('/profile')
-  await expect(page.getByText(`@${marker.displayName}`, { exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('banner').getByText(`@${marker.displayName}`, { exact: true }),
+  ).toBeVisible()
 })

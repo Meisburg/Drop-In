@@ -207,3 +207,41 @@ h3 {
     font-size: 16px;
   }
 }
+
+/*
+ * Leaflet's zoom control meets the 44px tap-target floor.
+ *
+ * WHY: the map is a real, tappable control surface (/new's place picker and
+ * /browse both render one), and its +/- buttons are the primary way a parent
+ * zooms on a phone. Leaflet ships them at 26px — and 30px whenever the
+ * container carries `.leaflet-touch`, which Leaflet adds on touch devices — so
+ * on a phone they were the ONLY sub-44px controls on /new. e2e/post-fast.e2e.ts
+ * (the phone pass, which measures every control inside the form at
+ * 320/375/390/430 and both orientations) caught exactly that.
+ *
+ * Deliberately UNLAYERED, like the iOS-zoom rule above: these anchors are
+ * Leaflet's own markup, so the app's `touch()`/`min-h-11` helper cannot reach
+ * them, and an unlayered declaration outranks leaflet.css without !important.
+ *
+ * The `.leaflet-container` ancestor and the doubled class are required, not
+ * decorative: leaflet.css is bundled AFTER this file, so at EQUAL specificity
+ * its 30px rule wins on source order alone (verified in the built CSS — the
+ * naive `.leaflet-touch .leaflet-bar a` loses, because `.leaflet-touch` sits on
+ * the SAME element as `.leaflet-container`, not above it).
+ *
+ * Sized at the coarse-pointer breakpoint AND up to 1024px wide. The width clause
+ * is not redundant with `pointer: coarse`: a phone in LANDSCAPE is 667–932px
+ * wide, which slips past a 640px rule, and a device can report a fine pointer
+ * (headless Chrome does, and so do some touch laptops). The audit measures both
+ * orientations, so the control has to clear the floor in both. Desktop keeps
+ * Leaflet's compact control above 1024px.
+ */
+@media (pointer: coarse), (max-width: 1024px) {
+  .leaflet-container.leaflet-touch .leaflet-bar a,
+  .leaflet-container .leaflet-bar a {
+    width: 44px;
+    height: 44px;
+    /* Leaflet centers the glyph with line-height; track the new box. */
+    line-height: 44px;
+  }
+}

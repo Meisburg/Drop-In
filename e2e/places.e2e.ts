@@ -71,6 +71,18 @@ import {
 const PLACE_NAME = 'Green Lake Park'
 const PLACE_ADDRESS = '7201 East Green Lake Dr N'
 
+/**
+ * The marker-tap spec's place: a name that matches EXACTLY ONE seeded place and
+ * carries real coordinates, so the map holds a single tappable indigo marker.
+ *
+ * "Green Lake Park" cannot serve that role — it matches four seeded places
+ * (Park, Park East, Park West, Wading Pool) whose markers overlap at the fitted
+ * zoom, and the plain Park marker itself can fall off the 256px canvas where
+ * Leaflet renders it as the zero-size `d="M0 0"` path. See the spec's note.
+ */
+const MARKER_PLACE_NAME = 'Alki Playground - Whales Tail'
+const MARKER_PLACE_ADDRESS = '5817 SW Lander St'
+
 /** A real seeded indoor row (the hand-curated SPL branch list). */
 const INDOOR_PLACE = 'Ballard Branch, Seattle Public Library'
 
@@ -221,26 +233,49 @@ test('tapping an overview map marker shows the place info + "Start a drop-in" (V
 }) => {
   await openPlacesTab(page)
   await useAnyDistance(page)
-  // Narrow to the one seeded place whose marker we will tap: the search keeps
-  // exactly that row in the list AND on the map (the map renders the same
-  // `placed` set the list does), so its marker is the only one on the canvas.
-  await page.getByTestId('places-search').fill(PLACE_NAME)
-  await expect(exactPlaceName(page, PLACE_NAME)).toBeVisible()
+  // Narrow to ONE seeded place whose marker we will tap.
+  //
+  // V15.1 fix: this used to search PLACE_NAME ("Green Lake Park"), which
+  // matches FOUR seeded places (Park, Park East, Park West, Wading Pool). Their
+  // markers overlap at the fitted zoom, so which one a tap hits is decided by
+  // geometry — and the plain "Green Lake Park" marker itself can fall outside
+  // the 256px canvas, where Leaflet renders it as the zero-size path
+  // `d="M0 0"` (in the DOM, unclickable). The spec therefore could never
+  // reliably reach the place it named.
+  //
+  // MARKER_PLACE is a name that matches EXACTLY ONE seeded place and carries
+  // real coordinates, so the canvas holds a single indigo marker and the tap is
+  // unambiguous. This is the same AC ("tapping a marker shows that place's
+  // info"), driven at a place the map can actually represent.
+  await page.getByTestId('places-search').fill(MARKER_PLACE_NAME)
+  await expect(exactPlaceName(page, MARKER_PLACE_NAME)).toBeVisible()
 
-  // Tap the single marker (the circleMarker's <path> inside the overlay
-  // pane's <svg> — the same DOM the AC5 assertions target).
+  // Tap the place marker (the circleMarker's <path> inside the overlay pane's
+  // <svg> — the same DOM the AC5 assertions target).
+  //
+  // The home pin is ALSO a circleMarker in this pane and is added FIRST, so a
+  // bare `.first()` grabbed the red pin — which has no click handler and no
+  // place behind it, so the panel could never open. Place markers are the
+  // indigo ones (#4f46e5, the fill PlacesMap gives them); the home pin is
+  // #dc2626.
+  //
+  // The re-fit fix in PlacesMap is what makes this reachable at all: before it,
+  // narrowing the search left the surviving markers projected through the
+  // mount-time viewport and any outside it rendered as `d="M0 0"`.
   const overviewMap = page.getByTestId('places-map')
-  const markerPath = overviewMap.locator('.leaflet-overlay-pane svg path').first()
-  await expect(markerPath).toBeVisible()
-  await markerPath.click({ force: true })
+  const placeMarker = overviewMap
+    .locator('.leaflet-overlay-pane svg path[fill="#4f46e5"]:not([d="M0 0"])')
+    .first()
+  await expect(placeMarker).toBeVisible()
+  await placeMarker.click({ force: true })
 
   // The info panel opens below the map: the place's name + address, and the
   // three actions — "Start a drop-in" (the pre-fill door), "Learn more" (the
   // derived OSM link, V15 ticket 04), and "Details" (the place page).
   const info = page.getByTestId('place-marker-info')
   await expect(info).toBeVisible()
-  await expect(info.getByText(PLACE_NAME, { exact: true })).toBeVisible()
-  await expect(info.getByText(PLACE_ADDRESS, { exact: true })).toBeVisible()
+  await expect(info.getByText(MARKER_PLACE_NAME, { exact: true })).toBeVisible()
+  await expect(info.getByText(MARKER_PLACE_ADDRESS, { exact: true })).toBeVisible()
 
   // V15 ticket 04: the renamed action button is visible with its new label.
   const startDropInBtn = info.getByTestId('host-here')
@@ -253,7 +288,7 @@ test('tapping an overview map marker shows the place info + "Start a drop-in" (V
   await expect(learnMore).toBeVisible()
   await expect(learnMore).toHaveAttribute(
     'href',
-    `https://www.openstreetmap.org/search?query=${encodeURIComponent(PLACE_NAME)},+Seattle`,
+    `https://www.openstreetmap.org/search?query=${encodeURIComponent(MARKER_PLACE_NAME)},+Seattle`,
   )
   await expect(learnMore).toHaveAttribute('target', '_blank')
   await expect(learnMore).toHaveAttribute('rel', 'noopener')
@@ -264,11 +299,11 @@ test('tapping an overview map marker shows the place info + "Start a drop-in" (V
   // filled from the MAP instead of the place page.
   await startDropInBtn.click()
   await page.waitForURL('/new')
-  await expect(page.getByPlaceholder(PLACE_INPUT)).toHaveValue(PLACE_NAME)
-  await expect(page.getByPlaceholder(ADDRESS_INPUT)).toHaveValue(PLACE_ADDRESS)
+  await expect(page.getByPlaceholder(PLACE_INPUT)).toHaveValue(MARKER_PLACE_NAME)
+  await expect(page.getByPlaceholder(ADDRESS_INPUT)).toHaveValue(MARKER_PLACE_ADDRESS)
   await editTitle(page)
   await expect(page.getByPlaceholder('e.g. Playground time at Green Lake')).toHaveValue(
-    `Playdate at ${PLACE_NAME}`,
+    `Playdate at ${MARKER_PLACE_NAME}`,
   )
   // A prefill is not "typing": no suggestion list is left hanging open.
   await expect(page.getByTestId('place-suggestions')).toHaveCount(0)

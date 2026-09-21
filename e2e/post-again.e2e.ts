@@ -155,13 +155,13 @@ test('the Post-again picker clones the whole last post and posts it with the tim
   await expect(page.getByPlaceholder(PLACE_PLACEHOLDER)).toHaveValue(place)
   await expect(page.getByTestId('end-time-label')).toBeVisible()
 
-  // The time moved by the rule: today's same slot when still ahead, else
-  // tomorrow (the spec asserts against the summary's own read-back — the
-  // SAME seam the submit writes with, so no second copy of the math here).
-  // The place line reads back place + the cloned address (the F1 read-back
-  // rule — the address is part of what is posted).
-  const summaryLines = page.getByTestId('post-summary-line')
-  await expect(summaryLines.nth(2)).toHaveText(`${place} · 1234 E2E Ave NE`)
+  // V15.2 fix: this step used to read `post-summary-line` index 2, asserting a
+  // combined "place · address" read-back line. V13 ticket 02 reduced the summary
+  // card to TITLE ONLY (its AC pins that) and gave the address its own visible
+  // field, so no index 2 and no combined line exist. The claim is unchanged —
+  // the clone carries the address with it — and it is asserted below against the
+  // control that actually holds the value (see "The address arrived with the
+  // clone").
 
   // Editing after the clone is free: the title read-back is still a
   // read-back (tap-to-edit), and the place text edit clears the picker-written

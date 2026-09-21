@@ -14,42 +14,59 @@
  *     the touched-control SET is asserted exactly ({the place field, the picked
  *     row, Post}), because a click count alone cannot see a newly required
  *     non-click step.
- *  2. THE READ-BACK IS EXACT. The summary's lines are the pure seam
- *     (postSummary.postSummaryLines) evaluated on the values the page opened
- *     with (bracketed around the mount, so neither a 30-minute boundary nor
- *     midnight can flake it) and on the values the spec then answers — and the
- *     day, the window, the place and the ADDRESS it reads back are asserted
- *     against the card in the feed AND against the row in the database.
+ *  2. THE READ-BACK IS EXACT — AND IT IS NOW TITLE-ONLY (V13 ticket 02). The
+ *     /new summary card shows the TITLE ONLY (`NewPlaydatePage` passes
+ *     `summaryLines={[values.title]}` to the form), so `post-summary-line`
+ *     yields exactly ONE line and every field that used to be a summary line is
+ *     asserted against the control that actually SHOWS it:
+ *
+ *       - the day + duration  → the visible "When" section (`input[type=date]`
+ *         and the `end-time-label` stepper), plus the row the submit writes;
+ *       - the exact window    → `start-time-label` / `end-time-label`;
+ *       - place (+ address)   → the place and address INPUTS (their own visible
+ *         fields since V13 ticket 02 — place, then address, in that order).
+ *
+ *     THIS IS THE THIRD SWEEP OF THIS SAME STALENESS (V11 t05 moved the start
+ *     date out of the disclosure, V13 t02 deleted the disclosure and made the
+ *     card title-only). The old assertions read the DOM against
+ *     `postSummaryLines(values, options)` output — a pure seam that STILL
+ *     returns the old multi-line array but that `NewPlaydatePage` NO LONGER
+ *     RENDERS. Do not re-add it: importing that seam for a DOM assertion is the
+ *     bug, not the fixture. (The seam keeps its own unit tests; the DOM is
+ *     asserted through the controls above.) The window is still computed from
+ *     the SAME values the submit writes (bracketed around the mount, so neither
+ *     a 30-minute boundary nor midnight can flake it) and is still checked
+ *     against the card in the feed AND the row in the database.
  *  3. THE TITLE IS NO LONGER A QUESTION. It is generated ("Playdate at
  *     <place>"), shown as a read-back line on the summary that a tap turns into
  *     the input in place (review cycle 1, F2 — so the place picker stays /new's
  *     FIRST field, ticket 01's AC), follows the place until the parent writes
  *     their own, comes back from empty, and never comes back blank.
-*  4. THE DISCLOSURE. One "More options", collapsed by default, holding the
-  *     address's manual entry, "Kids you're bringing", Details, "Repeat
-  *     weekly" and — V12 t02 — the duration override chips (the /new fast path
-  *     reads the auto duration back in the visible flow, so this row is the
-  *     override) — and NOTHING that changes what will be posted is hidden: the
-  *     address is read back on the place line and the weekly repeat is read back
-  *     only while the submit would really create that series. (V11 ticket 05
-  *     moved the start date + the 30-minute stepper out of the disclosure into
-  *     the visible "When" section, so the disclosure now holds no REQUIRED
-  *     answer.)
-  *  5. NO REQUIRED ANSWER LIVES BEHIND THE DOOR. V11 ticket 05: the start date
-  *     (the only required answer that once sat behind "More options") moved into
-  *     the visible "When" section, so MORE_OPTIONS_FIELDS is empty — a submit
-  *     that fails on the start date shows its error in the visible When section
-  *     and LEAVES the disclosure collapsed (the open-on-hidden-error rule is
-  *     kept as the drift hook but no longer fires).
- *  6. NOTHING STALE HIDES BEHIND THE DOOR. Picking a place writes its published
- *     street into the address; typing over the place text drops that street with
- *     it (review cycle 1, F1) — while an address the parent TYPED survives.
+ *  4. THE DISCLOSURE IS GONE (V13 ticket 02). There is no "More options" door
+ *     to open, so nothing that changes what will be posted can hide behind one:
+ *     the address, the details, "Kids you're bringing" and — V12 t02 — the
+ *     duration override chips all live in the visible flow (V11 ticket 05 had
+ *     already moved the start date + the 30-minute stepper into the visible
+ *     "When" section). This file therefore does NOT assert a summary read-back
+ *     of the address or the weekly repeat: V13 ticket 02 made the card
+ *     TITLE-ONLY, and the address is asserted where it is really shown — its own
+ *     visible input — and the repeat is gone from /new entirely (V15 T05).
+ *  5. NOTHING REQUIRED BEHIND A DOOR — because there is no door. V13 ticket 02
+ *     deleted the disclosure outright (MORE_OPTIONS_FIELDS is empty), so a
+ *     submit that fails on the start date shows its error in the visible "When"
+ *     section and there is no door state left to check.
+ *  6. NOTHING STALE SURVIVES A RETYPE. Picking a place writes its published
+ *     street into the (now visible) address input; typing over the place text
+ *     drops that street with it (review cycle 1, F1) — while an address the
+ *     parent TYPED survives. Both halves are asserted against that address INPUT,
+ *     which is what the parent sees and what the submit reads.
  *  7. THE PHONE PASS. scripts/mobile-audit.mjs walks only the SIGNED-OUT routes
  *     (/login and the public detail page — recorded V8 ticket 01 finding #5), so
  *     it cannot cover /new: the ticket's mobile AC is asserted HERE instead, at
- *     320/375/390/430 x portrait and 667x375 landscape, with the disclosure
- *     collapsed and expanded — no horizontal overflow and every visible control
- *     at least 44px tall (the script's own tap-target rule).
+ *     320/375/390/430 x portrait and 667x375 landscape — no horizontal overflow
+ *     and every visible control at least 44px tall (the script's own tap-target
+ *     rule). V13 ticket 02: the form is always fully visible, so there is no
+ *     collapsed/expanded pass to run.
  *
  * Cleanup mirrors golden-path.e2e.ts / quick-post.e2e.ts: a best-effort REST
  * delete of the marker's playdate rows with the marker's own JWT (the host-only
@@ -68,11 +85,7 @@ import {
 import type { PlaydateFormValues } from '../src/lib/feed'
 import { MORE_OPTIONS_FIELDS } from '../src/lib/feed'
 import { BROWSE_PLACES_LABEL, PLACE_PICKER_LABEL } from '../src/lib/places'
-import {
-  GENERATED_TITLE_FALLBACK,
-  generatedTitle,
-  postSummaryLines,
-} from '../src/lib/postSummary'
+import { GENERATED_TITLE_FALLBACK, generatedTitle } from '../src/lib/postSummary'
 import {
   readMarkerSession,
   readSupabaseEnv,
@@ -139,7 +152,18 @@ async function readPlaceAddress(placeName: string): Promise<string> {
   return rows[0]?.address ?? ''
 }
 
-/** The summary's lines, in the order the seam returns them. */
+/**
+ * The summary card's lines — and since V13 ticket 02 there is exactly ONE.
+ *
+ * The card is TITLE-ONLY: `NewPlaydatePage` passes `summaryLines={[values.title]}`,
+ * so `post-summary-line` holds the title. This helper USED to be read against
+ * `postSummaryLines(values, options)` (src/lib/postSummary.ts) — a pure seam that
+ * still returns the old multi-line array (day · duration, window, place · address)
+ * but that the /new page NO LONGER RENDERS. That is the whole third-sweep
+ * lesson: the seam is not the DOM. Assert the fields on the controls that
+ * actually show them (the `start-time-label` / `end-time-label` steppers, the
+ * place + address inputs), not on this array.
+ */
 async function summaryLines(page: Page): Promise<string[]> {
   const lines = page.getByTestId('post-summary-line')
   await expect(lines.first()).toBeVisible()
@@ -147,15 +171,19 @@ async function summaryLines(page: Page): Promise<string[]> {
 }
 
 /**
- * Assert the summary is exactly `candidates` — the seam's own output for the
- * values the page can legitimately be holding. Two candidates, because the
- * form's `now` is read ONCE at mount and this spec brackets that instant: a run
- * crossing a 30-minute boundary (or midnight) must not flake, and the assertion
- * stays exact rather than approximate.
+ * Assert the TITLE-ONLY summary (V13 ticket 02) reads back `candidates`, one
+ * title each — the values the page can legitimately be holding. Two candidates
+ * where a test brackets the mount (the generated title depends only on the
+ * place, but keeping the shape lets the mount-bracket stay explicit); the card
+ * is exactly one line, so an old multi-line read-back fails loudly here rather
+ * than silently passing.
  */
-async function expectSummary(page: Page, candidates: string[][]): Promise<string[]> {
+async function expectTitleOnlySummary(page: Page, candidates: string[]): Promise<string[]> {
   const lines = await summaryLines(page)
-  expect(candidates).toContainEqual(lines)
+  expect(lines, 'V13 ticket 02: the summary card is TITLE ONLY — exactly one line').toHaveLength(
+    1,
+  )
+  expect(candidates).toContain(lines[0])
   return lines
 }
 
@@ -248,6 +276,12 @@ function parseAnyTimeLabel(label: string): number {
   return base * 60 + Number(match[2] ?? '0')
 }
 
+/** Minutes since local midnight, wrapped onto a single day. */
+const DAY_MINUTES = 24 * 60
+function wrapMinutes(minutes: number): number {
+  return ((minutes % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES
+}
+
 /** "3:30 PM–4:30 PM" → [startMinutes, endMinutes] (either label format). */
 function parseWindowLine(line: string): [number, number] {
   const [start, end] = line.split('–')
@@ -333,12 +367,11 @@ test('a cold /new is posted in three taps or fewer, typing exactly one place', a
 
   await installInteractionRecorder(page)
 
-  // (a) The page opens on the SUMMARY: the day and the slot it opened with, and
-  //     the two decisions a parent has not answered yet, said plainly.
-  await expectSummary(page, [
-    postSummaryLines(mountValues(beforeMount)),
-    postSummaryLines(mountValues(afterRead)),
-  ])
+  // (a) The page opens on the SUMMARY — and V13 ticket 02 made that card
+  //     TITLE ONLY, so it reads back the generated title and NOTHING else. The
+  //     day and the slot it opened with are NOT summary lines any more: they are
+  //     asserted on the controls that really show them, below.
+  await expectTitleOnlySummary(page, [generatedTitle(''), generatedTitle('')])
   // The generated title is READ BACK as text on the summary — and there is no
   // title INPUT in the form at all (review cycle 1, F2): the summary's title line
   // becomes the input when it is tapped, which is what keeps the place picker
@@ -362,30 +395,49 @@ test('a cold /new is posted in three taps or fewer, typing exactly one place', a
   await expect(suggestion).toBeVisible()
   await suggestion.click()
 
-  // The read-back now names the place AND the street the pick wrote (F1), and the
-  // generated title line follows the place — the parent typed nothing into it.
-  await expectSummary(page, [
-    postSummaryLines(mountValues(beforeMount, { place: PLACE_NAME }), { address: pickedAddress }),
-    postSummaryLines(mountValues(afterRead, { place: PLACE_NAME }), { address: pickedAddress }),
-  ])
+  // The summary now reads back the PLACE-GENERATED TITLE (the parent typed
+  // nothing into it), and the street the pick wrote (F1) is asserted where it is
+  // really shown — the visible address INPUT (V13 ticket 02).
+  await expectTitleOnlySummary(page, [title])
+  await expect(page.getByPlaceholder(PLACE_PLACEHOLDER)).toHaveValue(PLACE_NAME)
+  await expect(page.getByPlaceholder(ADDRESS_PLACEHOLDER)).toHaveValue(pickedAddress)
   await expect(page.getByTestId('title-line')).toHaveText(title)
 
   // (d) No tap for how long (V12 t02): the start slot picked the duration at
-  //     mount — "until the next hour" — so the summary already reads the
-  //     duration AND the exact window back (computed the way the submit
-  //     computes it).
-  const answered = [
-    postSummaryLines(mountValues(beforeMount, { place: PLACE_NAME }), {
-      address: pickedAddress,
-    }),
-    postSummaryLines(mountValues(afterRead, { place: PLACE_NAME }), {
-      address: pickedAddress,
-    }),
+  //     mount — "until the next hour". V13 ticket 02: the WINDOW is no longer a
+  //     summary line — it is read off the two steppers that show it, the start
+  //     (`start-time-label`) and the end (`end-time-label`), which is the same
+  //     window the submit writes (`start + durationMinutes`). `now` is read ONCE
+  //     at mount and bracketed by beforeMount/afterRead, so a run crossing a
+  //     30-minute boundary still matches one of the two candidates.
+  const windowCandidates = [mountValues(beforeMount), mountValues(afterRead)].map(
+    (values) => [values.startMinutes, values.startMinutes + values.durationMinutes] as const,
+  )
+  const readStepper = async (testid: string): Promise<string> =>
+    (await page.getByTestId(testid).innerText()).replace(/\s+/g, ' ').trim()
+  // Each stepper is parsed on its OWN: `parseAnyTimeLabel` folds a label onto a
+  // single day, so a window that crosses midnight would read as a NEGATIVE
+  // duration if the two were parsed as one range. Comparing the steppers as a
+  // pair of wall-clock minutes is exact for both cases.
+  const [shownStart, shownEnd] = [
+    parseAnyTimeLabel(await readStepper('start-time-label')),
+    parseAnyTimeLabel(await readStepper('end-time-label')),
   ]
-  const lines = await expectSummary(page, answered)
-  const [summaryStart, summaryEnd] = parseWindowLine(lines[1])
-  expect(lines[0].endsWith(' · 1h')).toBe(true)
-  expect(lines[2]).toBe(`${PLACE_NAME} · ${pickedAddress}`)
+  expect(
+    windowCandidates.map(([start, end]) => [start, wrapMinutes(end)]),
+    `the visible When section must show the mounted window (start stepper "${await readStepper(
+      'start-time-label',
+    )}", end stepper "${await readStepper('end-time-label')}")`,
+  ).toContainEqual([shownStart, shownEnd])
+  // The auto-picked duration is one hour (V12 t02) — modulo the day, so a
+  // 11:30 PM start ending at 12:30 AM is still the one-hour window it promises.
+  expect(wrapMinutes(shownEnd - shownStart)).toBe(60)
+  const [summaryStart, summaryEnd] = [shownStart, shownEnd]
+  // The visible "When" section's date input, read HERE — the form is gone once
+  // the submit navigates to the feed, so this is the last moment it exists (V13
+  // ticket 02: the day is a visible control, not a summary line).
+  const shownDate = await page.locator('input[type="date"]').inputValue()
+  expect(shownDate, 'the visible start date must be answered before posting').not.toBe('')
 
   // (e) Post — the last decision. Nothing else was touched: no date, no time
   //     (both sit in the visible "When" section now — V11 ticket 05 — and the
@@ -433,16 +485,24 @@ test('a cold /new is posted in three taps or fewer, typing exactly one place', a
   expect(row, 'the posted drop-in must exist in the database').not.toBeNull()
   expect(row?.place).toBe(PLACE_NAME)
   expect(row?.place_id, 'the picked place carries its id').toBeTruthy()
-  // The address: the street the pick wrote, read back on the summary line the
-  // parent saw, and carried by the row (it is what the Maps link is built from).
+  // The address: the street the pick wrote, read back in the visible address
+  // input the parent saw (V13 ticket 02 — no longer a summary line), and carried
+  // by the row (it is what the Maps link is built from).
   expect(row?.address).toBe(pickedAddress)
-  // The day: the summary's day line is the day of the instant that was written,
-  // checked against Node's own formatting rather than the app's seam (F7).
-  expect(lines[0].split(' · ')[0]).toBe(nodeDayLabel(row?.starts_at ?? ''))
-  // The window: exactly the start and end the summary promised.
+  // The day: the date the visible "When" section showed before the submit is the
+  // day of the instant that was written — the same calendar day, compared
+  // through NODE'S own formatting on both sides rather than the app's seam (F7).
+  // V13 ticket 02: the day is a visible DATE INPUT now, not a summary line, and
+  // V15 T05: the store also carries the time, so the input's DATE part is what
+  // this compares (read before the post — see above).
+  expect(nodeDayLabel(row?.starts_at ?? '')).toBe(nodeDayLabel(`${shownDate}T12:00:00`))
+  // The window: exactly the start and end the two steppers showed (compared
+  // modulo the day, so a window that crosses midnight is still the one hour the
+  // steppers promised). V13 ticket 02: the steppers are where the window is
+  // shown now — there is no summary window line to read.
   expect(localMinutes(row?.starts_at ?? '')).toBe(summaryStart)
   expect(localMinutes(row?.ends_at ?? '')).toBe(summaryEnd)
-  expect(summaryEnd - summaryStart).toBe(60)
+  expect(wrapMinutes(summaryEnd - summaryStart)).toBe(60)
   // …and the feed's card shows that same window (its meta line is the card's
   // second <p>, the card's own formatTimeWindow of the stored instants).
   const metaText = (await card.locator('p').nth(1).innerText()).replace(/\s+/g, ' ').trim()
@@ -453,11 +513,15 @@ test('a cold /new is posted in three taps or fewer, typing exactly one place', a
 test('typing over a picked place drops the address it came with — and a typed address survives', async ({
   page,
 }) => {
-  // The defect this test pins (review cycle 1, F1): the address is invisible
-  // behind the disclosure but it is part of what is posted (the detail page's
-  // Maps link is built from place + address). Pick a place — one tap writes the
-  // street — then type over the place text, and the row must NOT still carry the
-  // picked place's street.
+  // The defect this test pins (review cycle 1, F1): the address is part of what
+  // is posted (the detail page's Maps link is built from place + address). Pick a
+  // place — one tap writes the street — then type over the place text, and the
+  // row must NOT still carry the picked place's street.
+  //
+  // V13 ticket 02 made the summary card TITLE-ONLY and gave the address its own
+  // VISIBLE input (the third sweep of this staleness — do not put these back on
+  // `postSummaryLines`): every assertion below reads the ADDRESS INPUT, which is
+  // the control the parent sees and the one the submit reads.
   const pickedAddress = await readPlaceAddress(PLACE_NAME)
   const title = generatedTitle(FREETEXT_PLACE)
 
@@ -467,23 +531,29 @@ test('typing over a picked place drops the address it came with — and a typed 
   const placeInput = page.getByPlaceholder(PLACE_PLACEHOLDER)
   const addressInput = page.getByPlaceholder(ADDRESS_PLACEHOLDER)
 
-  // (1) Pick: place + address arrive together, and the summary reads both back.
+  // (1) Pick: place + address arrive together, and BOTH are read back in the
+  //     visible flow — the place input and the address input, in that order.
   await placeInput.fill(PLACE_NAME)
   const suggestion = page.getByTestId('place-suggestions').getByText(PLACE_NAME, { exact: true })
   await expect(suggestion).toBeVisible()
   await suggestion.click()
-  expect((await summaryLines(page))[2]).toBe(`${PLACE_NAME} · ${pickedAddress}`)
+  await expect(placeInput).toHaveValue(PLACE_NAME)
+  await expect(addressInput).toHaveValue(pickedAddress)
+  // …and the title-only summary card reads back the place-generated title (V13
+  // ticket 02) — the card's one and only line.
+  await expectTitleOnlySummary(page, [generatedTitle(PLACE_NAME)])
 
   // (2) Type over the place text: the directory link is dropped (V8 ticket 07)
   //     and the address the pick wrote goes with it — the place text no longer
-  //     names that place, and behind the door nobody would see the stale street.
+  //     names that place, so the stale street must not survive in the input the
+  //     submit reads.
   await placeInput.fill(FREETEXT_PLACE)
   await expect(page.getByTestId('place-suggestions')).toBeVisible()
   await page.getByTestId('place-somewhere-else').click()
-  expect((await summaryLines(page))[2]).toBe(FREETEXT_PLACE)
-  // …and the address field itself is empty: "nothing hidden" means nothing, not
-  // "nothing visible".
+  await expect(placeInput).toHaveValue(FREETEXT_PLACE)
   await expect(addressInput).toHaveValue('')
+  // The title follows the new place text (the retype is what the parent said).
+  await expectTitleOnlySummary(page, [title])
 
   // (3) The post that lands carries no place link and no address.
   // V13 ticket 03: no duration chips on /new — the auto-duration is already set.
@@ -496,14 +566,16 @@ test('typing over a picked place drops the address it came with — and a typed 
   expect(row?.place_id ?? null).toBeNull()
 
   // (4) The NON-DESTRUCTIVE half: an address the PARENT typed is theirs, so
-  //     correcting the place text must not wipe it — and the summary reads it
-  //     back, typed or not.
+  //     correcting the place text must not wipe it — asserted on the address
+  //     input, which is where the parent typed it and where the submit reads it.
   await page.goto('/new')
   await settleOnRoute(page, '/new')
   await addressInput.fill(TYPED_ADDRESS)
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(FREETEXT_PLACE)
   await expect(addressInput).toHaveValue(TYPED_ADDRESS)
-  expect((await summaryLines(page))[2]).toBe(`${FREETEXT_PLACE} · ${TYPED_ADDRESS}`)
+  // The title-only card still reads back the title, and it does NOT read back
+  // the address (that is the point of V13 ticket 02: no multi-line card).
+  await expectTitleOnlySummary(page, [title])
 })
 
 test('the title is generated, read back, editable in place — the extras are behind "More options" (V11 t05: the start is the visible "When" section)', async ({
@@ -527,7 +599,7 @@ test('the title is generated, read back, editable in place — the extras are be
   await expect(titleLine).toHaveText(generatedTitle(FREETEXT_PLACE))
 
   // …then a directory pick, which replaces it (the title never names a place the
-  // post is not at) and brings its address into the read-back.
+  // post is not at) and brings its address into the visible address INPUT.
   const pickedAddress = await readPlaceAddress(PLACE_NAME)
   const placeInput = page.getByPlaceholder(PLACE_PLACEHOLDER)
   await placeInput.fill(PLACE_NAME)
@@ -535,9 +607,12 @@ test('the title is generated, read back, editable in place — the extras are be
   await expect(suggestion).toBeVisible()
   await suggestion.click()
   await expect(titleLine).toHaveText(generatedTitle(PLACE_NAME))
-  const followed = await summaryLines(page)
-  expect(followed).toHaveLength(3)
-  expect(followed[2]).toBe(`${PLACE_NAME} · ${pickedAddress}`)
+  // The card is TITLE ONLY (V13 ticket 02) — exactly one line, and it is the
+  // title. The picked street is asserted where the parent can see it: the
+  // address input.
+  const followed = await expectTitleOnlySummary(page, [generatedTitle(PLACE_NAME)])
+  expect(followed).toHaveLength(1)
+  await expect(page.getByPlaceholder(ADDRESS_PLACEHOLDER)).toHaveValue(pickedAddress)
 
   // (3) TAPPING THE LINE makes it the input in place — the same value, the
   //     field's own placeholder and its live n/80 counter (the specs that type a
@@ -546,8 +621,9 @@ test('the title is generated, read back, editable in place — the extras are be
   await expect(titleLine).toHaveCount(0)
   await expect(titleInput).toHaveValue(generatedTitle(PLACE_NAME))
   await expect(page.getByText(`${generatedTitle(PLACE_NAME).length}/80`)).toBeVisible()
-  // It is still ON the summary — the summary's lines are unchanged by editing it.
-  await expect(page.getByTestId('post-summary-line')).toHaveCount(3)
+  // It is still ON the summary — and V13 ticket 02's card is TITLE ONLY, so the
+  // summary's line count is still exactly one while the title is being edited.
+  await expectTitleOnlySummary(page, [generatedTitle(PLACE_NAME)])
 
   // (4) The parent's own words WIN: typing a title stops the generated one from
   //     following the place, for good.
@@ -581,11 +657,18 @@ test('the title is generated, read back, editable in place — the extras are be
   await expect(page.getByPlaceholder(DETAILS_PLACEHOLDER)).toBeVisible()
   // V15 T05 (A12): the "Repeat weekly" toggle is gone from /new.
   await expect(page.getByTestId('repeat-weekly')).toHaveCount(0)
-  // V12 t02: the duration override chips live in the visible flow (the /new
-  // fast path reads the auto-picked duration back in the visible flow).
+  // V13 ticket 03 (A16/A17): /new has NO "How long" control and NO duration
+  // chips — the END stepper is the duration control, and the auto-picked
+  // duration is simply the gap between the two steppers. Pin the absence so a
+  // regression that re-adds a chip row to /new is caught here.
   for (const label of DURATION_CHIP_LABELS) {
-    await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: label, exact: true })).toHaveCount(0)
   }
+  await expect(page.getByText('How long', { exact: true })).toHaveCount(0)
+  // …and the duration IS shown, on the two steppers that replaced it.
+  await expect(page.getByTestId('start-time-label')).toBeVisible()
+  await expect(page.getByTestId('end-time-label')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Later end time' })).toBeVisible()
 
   // V13 ticket 02: MORE_OPTIONS_FIELDS is empty (the disclosure is gone, so
   // there are no fields behind a door) — pinned here so a regression that

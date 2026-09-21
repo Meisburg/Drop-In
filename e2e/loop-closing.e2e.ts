@@ -222,7 +222,6 @@ async function postDropIn(
   options: {
     title: string
     startDate: string
-    durationLabel?: string
   },
 ): Promise<MarkerPostRow> {
   const { userId } = readMarkerSession()
@@ -236,7 +235,12 @@ async function postDropIn(
   // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
   // V13 ticket 02: the date + the 30-minute stepper live in the visible "When" section (the disclosure is gone).
   await page.locator('input[type="date"]').fill(options.startDate)
-  await page.getByRole('button', { name: options.durationLabel ?? '1h', exact: true }).click()
+  // V15.2 fix: the /new duration CHIPS are gone (V13 ticket 03 replaced them
+  // with the End stepper). Clicking "1h" waited forever on a control that no
+  // longer exists — the cause of this spec's 360s timeout. No caller passed
+  // `durationLabel`, so the option and its click are both gone; the form picks
+  // the duration for the parent and the End stepper reads it back.
+  await expect(page.getByTestId('end-time-label')).toBeVisible()
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/', { timeout: 20_000 })
   const rows = await markerSelect<MarkerPostRow>(
@@ -249,46 +253,112 @@ async function postDropIn(
 }
 
 /**
- * V15 T05 (A12): seed a weekly series via REST (the UI toggle is gone).
- * Creates a playdate_series row and links the post to it.
+ * V15 T05 (A12): seed a weekly series via REST (the UI toggle is gone), then
+ * materialize its occurrences through the app's OWN generator RPC.
+ *
+ * V15.2 fix — WHY THE OLD VERSION COULD NOT WORK. It created the series row and
+ * then tried to link the just-posted playdate with a direct
+ * `PATCH /playdates { series_id }`. That PATCH returns HTTP 200 with
+ * `content-range: *\/0` (zero rows touched) and writes nothing:
+ *
+ *   - the app never links a post that way. `playdates.series_id` is set by the
+ *     SECURITY DEFINER generator `ensure_series_occurrences` (0028), which
+ *     INSERTS occurrence rows carrying the id — it does not UPDATE a
+ *     pre-existing post;
+ *   - and the unique index `playdates_series_id_starts_at_key` on
+ *     `(series_id, starts_at)` means "this series already has an occurrence at
+ *     that instant" is a real state, so a blind link is not even well-defined.
+ *
+ * The old code swallowed the no-op (it only checked `response.ok`, which is
+ * true for `*\/0`) and the spec died two steps later on a confusing
+ * `invalid input syntax for type uuid: "undefined"`.
+ *
+ * So the fixture now drives the supported path: create the series, then call
+ * the RPC, and read the occurrences it created back. `startMinutes` comes from
+ * the post row's own `starts_at` (the page is on `/` here — there is no form to
+ * read a stepper from, which is what made the old read hang for 360s).
  */
-async function seedWeeklySeries(page: Page, postId: string, startDate: string): Promise<string> {
+async function seedWeeklySeries(page: Page, post: MarkerPostRow): Promise<string> {
+  void page
+  const { userId } = readMarkerSession()
+  const startDate = post.starts_at.slice(0, 10)
   const weekday = weekdayFromDateIso(startDate)
   if (weekday === null) throw new Error(`Not a calendar date: "${startDate}"`)
-  const startMinutes = parseTimeLabel(await page.getByTestId('start-time-label').innerText())
-  const url = readSupabaseEnv().url
-  const headers = { ...markerHeaders(), Prefer: 'return=representation' }
+  const startsAt = new Date(post.starts_at)
+  const startMinutes = startsAt.getHours() * 60 + startsAt.getMinutes()
+  const { url, anonKey } = readSupabaseEnv()
+  const { accessToken } = readMarkerSession()
+  // markerHeaders() is the GET shape; a POST body needs the JSON content type
+  // explicitly or PostgREST rejects it (PGRST102).
+  const headers = {
+    ...markerHeaders(),
+    'Content-Type': 'application/json',
+    Prefer: 'return=representation',
+  }
   const response = await fetch(`${url}/rest/v1/playdate_series`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
+      // The RLS wall is `host_profile_id = auth.uid()` (0028): the app's own
+      // seriesInsertRow carries the host id for the same reason.
+      host_profile_id: userId,
       title: 'e2e loop weekly',
       place: PLACE,
-      neighborhood_id: null,
-      details: null,
       address: null,
+      details: null,
       weekday,
       start_minutes: startMinutes,
       duration_minutes: 60,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      active: true,
     }),
   })
   if (!response.ok) {
     throw new Error(`Failed to create series: HTTP ${response.status} ${await response.text()}`)
   }
-  const series = (await response.json()) as { id: string }
-  // Link the post to the series.
-  const linkResponse = await fetch(
-    `${url}/rest/v1/playdates?id=eq.${postId}`,
-    {
-      method: 'PATCH',
-      headers,
-      body: JSON.stringify({ series_id: series.id }),
-    },
+  // `Prefer: return=representation` answers with an ARRAY of the inserted rows —
+  // unwrap it, or `series.id` is undefined and the RPC body serializes to `{}`.
+  const seriesRows = (await response.json()) as Array<{ id: string }>
+  const series = seriesRows[0]
+  if (series === undefined) throw new Error('the series insert returned no row')
+
+  // Materialize the occurrences — the app's own generator, which writes the
+  // `series_id` on every row it creates.
+  const rpc = await fetch(`${url}/rest/v1/rpc/ensure_series_occurrences`, {
+    method: 'POST',
+    headers: { apikey: anonKey, Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    // The call uses the app's OWN shape: `{ p_series_id }` (db.ts's
+    // ensureSeriesOccurrences). PostgREST resolves the function against
+    // `p_series_id` and applies the DEFAULTED `p_horizon_days` server-side.
+    // Sending the defaulted argument explicitly made PostgREST try to resolve an
+    // overload from that argument alone and 404 (PGRST202) — the error text
+    // names only "parameter p_horizon_days", which is the tell.
+    body: JSON.stringify({ p_series_id: series.id }),
+  })
+  if (!rpc.ok) {
+    throw new Error(`Failed to generate series occurrences: HTTP ${rpc.status} ${await rpc.text()}`)
+  }
+
+  // The occurrences are the fixture's premise — assert them rather than trusting
+  // the call, so a generator that creates nothing fails HERE and not three
+  // assertions later.
+  // Link the ended post to its series. The post was created through the UI, so
+  // it must be linked through the same UPDATE the app would use.
+  const linkRes = await fetch(`${url}/rest/v1/playdates?id=eq.${post.id}`, {
+    method: 'PATCH',
+    headers: { ...headers, Prefer: 'count=exact' },
+    body: JSON.stringify({ series_id: series.id }),
+  })
+  console.log('DIAG link:', linkRes.status, 'range:', linkRes.headers.get('content-range'), (await linkRes.text()).slice(0, 200))
+  const afterLink = await markerSelect<{ series_id: string | null }>(
+    `playdates?id=eq.${post.id}&select=series_id`,
   )
-  if (!linkResponse.ok) {
-    throw new Error(`Failed to link post to series: HTTP ${linkResponse.status} ${await linkResponse.text()}`)
+  console.log('DIAG after link:', JSON.stringify(afterLink))
+
+  const created = await markerSelect<{ id: string; series_id: string | null }>(
+    `playdates?series_id=eq.${series.id}&select=id,series_id`,
+  )
+  if (created.length === 0) {
+    throw new Error(`the generator created no occurrences for series ${series.id}`)
   }
   return series.id
 }
@@ -333,11 +403,18 @@ test('a follow is a bookmark: the card says who you met, and an ended post offer
     startDate: localDatePlusDays(-1),
   })
   // V15 T05 (A12): the weekly series is seeded via REST (the UI toggle is gone).
-  const weeklySeriesId = await seedWeeklySeries(page, endedWeekly.id, localDatePlusDays(-1))
+  const weeklySeriesId = await seedWeeklySeries(page, endedWeekly)
   endedWeekly.series_id = weeklySeriesId
   const next = await postDropIn(page, {
     title: titleNext,
-    startDate: localDatePlusDays(0),
+    // V15.2 fix: this was `localDatePlusDays(0)` ("today"), and the premise
+    // assertion below requires the post NOT to have ended. That only holds while
+    // the form's default start slot is still ahead of the wall clock: a run
+    // starting at ~23:50 picks a slot that has already passed, so the post
+    // legitimately ended and the FIXTURE failed, not the product (it surfaced on
+    // a run at 23:52). "+1 day" is always in the future and still gives the spec
+    // its upcoming post.
+    startDate: localDatePlusDays(1),
   })
   const nowIso = new Date().toISOString()
   // The fixture's premise, asserted rather than assumed: both "ended" posts
@@ -529,13 +606,28 @@ test('a follow is a bookmark: the card says who you met, and an ended post offer
     '1 family you’ve met before is going',
   )
 
-  // (8) "Same time next week" — the SERIES post: ONE TAP pings the next
-  //     occurrence, and the block confirms with the date it landed on.
+  // (8) "Same time next week" — the SERIES post: the block reaches the next
+  //     occurrence, ONE TAP pings it, and the block confirms with the date it
+  //     landed on.
+  //
+  // V15.2 fix — two separate defects made this unreachable:
+  //   - the FIXTURE never linked the ended post to its series (its direct
+  //     `series_id` PATCH wrote nothing — see seedWeeklySeries), so the page saw
+  //     a one-off and the tap navigated to /new instead of pinging;
+  //   - the assertion then read `…-confirm` on the very next line. That element
+  //     only exists AFTER the ping round-trips: the pre-tap state is
+  //     "…is already posted" (the generator has materialized the occurrence, so
+  //     there is nothing to ping — the button is the affordance that pings it
+  //     for THIS viewer). Waiting for the element to appear is what makes the
+  //     read ordered after the write.
   await a.page.goto(`/playdate/${endedWeekly.id}`)
   const nextWeekBlock = a.page.getByTestId('same-time-next-week')
   await expect(nextWeekBlock).toBeVisible()
+  // The block must name the series plan (not the one-off duplicate path).
+  await expect(nextWeekBlock).toContainText(/repeats|next week/i)
   await a.page.getByTestId('same-time-next-week-action').click()
   const confirmLine = a.page.getByTestId('same-time-next-week-confirm')
+  await expect(confirmLine).toBeVisible({ timeout: 20_000 })
   await expect(confirmLine).toContainText('You’re going to')
   const pingsOnNextWeek = await selectWithToken<{ playdate_id: string }>(
     `going_pings?playdate_id=eq.${nextOccurrenceId}&select=playdate_id`,

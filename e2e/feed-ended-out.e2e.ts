@@ -593,6 +593,20 @@ test('a host-ended post (status="ended") is absent from the feed and lands in Pa
   // --- The archive: the owner's Past list on /profile, with the "Ended" label
   // (AC4: distinct from "Cancelled" — this row's window never ran out, the
   // host ended it early).
+  //
+  // V15.2 fix: the "See past drop-ins" link lives INSIDE the feed's non-empty
+  // branch — with `posts.length === 0` the page renders `RadiusEmptyState`
+  // instead, which has no archive door. This spec's only post is future-dated
+  // and then marked ended, so the feed was EMPTY and the click waited its full
+  // 120s on a link that is not rendered in that state. Seed one live post so the
+  // feed is non-empty for the reason it is non-empty in real use — a parent
+  // looking at this week's drop-ins — and the assertion tests the door.
+  const liveControlTitle = `e2e-${epoch} ${marker.displayName} live control`
+  createdTitles = [earlyEndedTitle, liveControlTitle]
+  await postDropIn(page, liveControlTitle, localDatePlusDays(1))
+  await page.goto('/')
+  await settleOnRoute(page, '/')
+
   await page.getByRole('link', { name: PAST_DROP_INS_LABEL }).click()
   await settleOnRoute(page, '/profile')
   const pastRow = page.locator('li').filter({ hasText: earlyEndedTitle })

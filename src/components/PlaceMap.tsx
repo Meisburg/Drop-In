@@ -283,14 +283,34 @@ export function PlacesMap({
         return marker
       }),
     ).addTo(map)
-    // V15 t02: when a home pin anchors the view, do NOT fitBounds over all
-    // markers (that would zoom out past the home pin). Fit only when there is
-    // no home pin (the existing behavior).
-    if (!hasHomePinRef.current) {
-      map.fitBounds(L.latLngBounds(entries.map((e) => [e.coords.lat, e.coords.lng])), {
-        padding: [28, 28],
-      })
+    // V15.1 fix — ALWAYS FIT TO THE CURRENT SET.
+    //
+    // The map card in BrowsePage is CONDITIONALLY rendered on its marker list,
+    // so narrowing the search can unmount and REMOUNT this whole component:
+    // the fresh Leaflet instance is created by the mount effect (whose
+    // dependency list is empty) and, with the old code, only the no-home-pin
+    // branch ever called fitBounds. Whenever a home pin was present the
+    // remounted map kept Leaflet's default view around the pin's anchor and
+    // projected the surviving markers outside its 256px canvas — where Leaflet
+    // renders them as the SVG path `d="M0 0"`: in the DOM, zero-size, invisible
+    // and UNCLICKABLE. Searching for a place therefore left that place's own
+    // marker untappable, which is exactly what the marker-info spec caught.
+    //
+    // So: fit every time this effect runs (mount and each set change), over the
+    // current places PLUS the home pin, so the pin can never scroll out of view
+    // (V15 t02's AC1 — the view is anchored on home) and every place on the map
+    // is inside the canvas and tappable. maxZoom keeps a single-marker set from
+    // slamming to street level.
+    const boundsPoints: Array<[number, number]> = entries.map((e) => [e.coords.lat, e.coords.lng])
+    if (homePin !== undefined && homePin !== null) {
+      boundsPoints.push([homePin.lat, homePin.lng])
     }
+    if (boundsPoints.length > 0) {
+      map.fitBounds(L.latLngBounds(boundsPoints), { padding: [28, 28], maxZoom: DETAIL_ZOOM })
+    }
+    // The container is measured when Leaflet builds the map; a remount (or a
+    // late layout) can leave that measurement stale, so re-measure here.
+    map.invalidateSize()
     return () => {
       group.remove()
     }

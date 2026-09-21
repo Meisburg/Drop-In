@@ -646,9 +646,32 @@ test('a kid row renders no photo on /u/:handle; the owner’s /profile is the on
   // The kid name lives in an <input data-testid="kid-name"> (the editor), not as
   // plain text on the <li>, so hasText won't match it. This test creates exactly
   // one kid, so .first() is safe.
+  //
+  // V15.2 fix: this step used to assert the row's `photo` TEXT was visible. Two
+  // things changed underneath it, and neither is a regression:
+  //   - V15 ticket 06 (A17–A20) replaced the old visible "Add photo" label with
+  //     a TAP-TO-UPDATE avatar (`aria-label="Update photo"`), so the bare text
+  //     "photo" no longer exists.
+  //   - The control renders only when the kid HAS an uploaded photo
+  //     (`kidPhotoUrls[kid.id]` — a signed URL minted from the PRIVATE bucket).
+  //     This kid was seeded with a LEGACY PUBLIC `avatar_url` and no uploaded
+  //     object, and by design that column no longer drives the render (V9
+  //     ticket 11 / V12 t04: private-bucket photos only). The owner row
+  //     therefore correctly shows NO photo control.
+  //
+  // The invariant this spec protects is the PRIVACY line — a kid photo renders
+  // on the owner's /profile and NOWHERE else. The visitor half above pins that,
+  // and the sibling spec ("the family photo uploads through the crop dialog…")
+  // proves the owner-side render with a REAL upload. Asserted here is the honest
+  // corollary for a kid whose only photo data is the retired public column: no
+  // photo control, but the row is still editable (the name input is present).
   const ownerRow = page.getByTestId('kid-row').first()
   await expect(ownerRow).toBeVisible()
-  await expect(ownerRow.getByText('photo', { exact: false })).toBeVisible()
+  await expect(ownerRow.getByTestId('kid-name')).toBeVisible()
+  await expect(
+    ownerRow.getByTestId('kid-photo-trigger'),
+    'a legacy public avatar_url must not mint a photo control (the private bucket is the only source)',
+  ).toHaveCount(0)
 })
 
 // ---------------------------------------------------------------------------

@@ -272,12 +272,25 @@ export function BrowsePage() {
   const leadGroups = groupPlacesByKind(leadRows)
   const overflowGroups = groupPlacesByKind(overflowRows)
 
+  // V15.1 fix: the KIND filter must reach the "Not on the map yet" section too.
+  //
+  // That section renders the UNPLACED rows (no coordinates, so no distance), and
+  // it used the raw `unplaced` array — so a kind chip never touched it.
+  // Selecting "Park" therefore left every unmeasured indoor-play / museum row on
+  // screen, which reads as the filter doing the OPPOSITE of what the chip says.
+  // The distance-shaped filters are deliberately NOT applied here — a place may
+  // not be hidden for MISSING DATA (this section's own rule) — but the kind is
+  // stated data, and an explicit kind choice is the parent's instruction to
+  // hide everything else.
+  const filteredUnplaced =
+    selectedKinds.size > 0 ? unplaced.filter((row) => selectedKinds.has(row.place.kind)) : unplaced
+
   // The shared radius empty state is the honest answer ONLY when the radius is
   // actually the reason nothing is showing: no search text, no kind filter.
   // Otherwise the copy would blame the radius for a filter the parent set.
   const radiusIsTheReason =
     maxMiles !== null && placed.length === 0 && query.trim() === '' && indoorFilter === null
-  const nothingMatches = listRows.length === 0 && unplaced.length === 0
+  const nothingMatches = listRows.length === 0 && filteredUnplaced.length === 0
 
   /** Any filter change collapses the list back to its lead (a widened result
       set must not stay expanded around a stale lead). */
@@ -535,7 +548,7 @@ export function BrowsePage() {
 
       {/* Places we could not measure. Never hidden (a filter may not hide a
           place for missing data) and never given an invented distance. */}
-      {unplaced.length > 0 ? (
+      {filteredUnplaced.length > 0 ? (
         <section className="flex flex-col gap-2">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
             Not on the map yet
@@ -544,7 +557,7 @@ export function BrowsePage() {
             We don’t have coordinates for these, so the distance filter can’t place them.
           </p>
           <div className="flex flex-col gap-2">
-            {unplaced.map((row) => (
+            {filteredUnplaced.map((row) => (
               <PlaceRow key={row.place.id} row={row} />
             ))}
           </div>
