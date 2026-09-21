@@ -424,3 +424,26 @@ V16: CONCURRENT WRITER FINISHED AND COMMITTED (round 28) — c6762ad "Factory:
   stack was excellent and ENTIRELY VOLUNTARY. This batch lost a night to exactly
   that -- a hand-typed range check reported clean while carrying a leaked project
   ref. Now the gate runs whether or not an agent remembers it.
+V16: THEIR PRE-PUSH HOOK VERIFIED INDEPENDENTLY (round 29). Reproduced the
+  original leak in a throwaway repo (supabase/.temp/linked-project.json inside
+  the pushed range) and ran the installed hook against it:
+   * it BLOCKED the push, naming the offending path and the pattern;
+   * FAST_PUSH=1 could NOT bypass the range check (it skipped only the
+     build/test/lint half, exactly as documented);
+   * it exits 1 on refusal, which is what makes git actually stop.
+  So the protection this batch lacked -- a hand-typed check that reported clean
+  while carrying a leaked project ref -- is now machine-enforced.
+  ALSO VERIFIED: every V16 rule survived their AGENTS.md rewrite. My first grep
+  said "never git add -A" was MISSING; it is NOT -- it moved to
+  docs/agents/auto-push.md:49 (capitalised), reachable from AGENTS.md. Pattern
+  too strict, not a real gap.
+  ONE GENUINE FRAGILITY, recorded not fixed (it is their design call): the hook
+  HARD-DEPENDS on `.scratch/check-push-range.sh` and FAILS CLOSED -- if that
+  file is absent it refuses EVERY push rather than degrading. The file IS
+  tracked and not gitignored, so it survives here; but it lives under .scratch/,
+  which the repo treats as scratch and which .gitignore partially covers. A
+  cleaner home is scripts/ (its siblings pre-push and install-git-hooks.sh live
+  there). Worth flagging to them rather than moving it myself.
+  MEASUREMENT ERROR I MADE TWICE: `cmd | tail` masks the exit code, so I twice
+  read "exit 0" from something that exits 1. Recorded because this batch has
+  been hunting exactly this class of false-negative evidence.
