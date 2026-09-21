@@ -71,6 +71,7 @@ import {
   RADIUS_MAX_MILES,
   RADIUS_MILES_OPTIONS,
   radiusEscapes,
+  radiusChoices,
   coordNumber,
   placeDistanceMiles,
   postDistanceMiles,
@@ -2028,6 +2029,77 @@ describe('radiusEscapes (V8 ticket 02 + V11 ticket 01: the way out of an empty r
 
   it('keeps the escapes present for a 2-mile radius (the far-zip e2e case)', () => {
     expect(radiusEscapes(2).map((e) => e.radiusMiles)).toEqual([20, 35])
+  })
+})
+
+describe('radiusChoices (V16 t06 item 1: the radius control that stays on screen)', () => {
+  it('offers the whole ladder, not just the radii below the saved one', () => {
+    // The founder's ask is "widen OR narrow" from the feed. A picker that only
+    // listed radii <= the saved one would make 35 unreachable from the 5-mile
+    // default — the exact dead end this slice removes.
+    expect(radiusChoices(5).map((c) => c.radiusMiles)).toEqual([2, 5, 10, 20, 35])
+    expect(radiusChoices(20).map((c) => c.radiusMiles)).toEqual([2, 5, 10, 20, 35])
+  })
+
+  it('is the pinned option list itself at every shipped radius', () => {
+    for (const radius of RADIUS_MILES_OPTIONS) {
+      expect(radiusChoices(radius).map((c) => c.radiusMiles)).toEqual([
+        ...RADIUS_MILES_OPTIONS,
+      ])
+    }
+  })
+
+  it('always includes the saved radius itself (the control cannot misreport the filter)', () => {
+    for (const radius of RADIUS_MILES_OPTIONS) {
+      const chosen = radiusChoices(radius).map((c) => c.radiusMiles)
+      expect(chosen).toContain(radius)
+      expect(chosen).toEqual([...chosen].sort((a, b) => a - b))
+    }
+  })
+
+  it('offers "See everything in Seattle" only at the 35-mile ceiling, and never past it', () => {
+    expect(radiusChoices(35).at(-1)).toEqual({
+      radiusMiles: 35,
+      label: 'See everything in Seattle (35 mi)',
+    })
+    for (const radius of RADIUS_MILES_OPTIONS) {
+      for (const choice of radiusChoices(radius)) {
+        expect(choice.radiusMiles).toBeLessThanOrEqual(RADIUS_MAX_MILES)
+        expect(choice.radiusMiles).toBeGreaterThan(0)
+      }
+    }
+  })
+
+  it('represents an off-menu saved radius rather than rounding it (the picker must not lie)', () => {
+    // No such value ships today (validateRadiusMiles + the DB CHECK pin 2–35),
+    // so this pins the guard, not a live state: a <select> whose value matches
+    // no <option> renders the FIRST option while the list filters on something
+    // else. 7 must appear as itself.
+    expect(radiusChoices(7).map((c) => c.radiusMiles)).toEqual([2, 5, 7, 10, 20, 35])
+  })
+
+  it('keeps the ladder intact when the viewer sits below the narrowest option', () => {
+    // 1 mile is NOT an option yet (that is migration 0045, a separate ruling).
+    // If a profile ever sits below the floor, the picker must still show the
+    // whole ladder with that radius represented as itself — never a select
+    // that silently renders "Within 2 miles" while the feed filters on 1.
+    expect(radiusChoices(1).map((c) => c.radiusMiles)).toEqual([1, 2, 5, 10, 20, 35])
+  })
+
+  it('labels each option once, and every label carries the number it writes', () => {
+    for (const radius of RADIUS_MILES_OPTIONS) {
+      const labels = radiusChoices(radius).map((c) => c.label)
+      expect(new Set(labels).size).toBe(labels.length)
+      for (const choice of radiusChoices(radius)) {
+        expect(choice.label).toContain(String(choice.radiusMiles))
+      }
+    }
+  })
+
+  it('carries the 35-mile option at every radius (the founder\'s "widen" path is always one tap)', () => {
+    for (const radius of RADIUS_MILES_OPTIONS) {
+      expect(radiusChoices(radius).map((c) => c.radiusMiles)).toContain(SEE_ALL_RADIUS_MILES)
+    }
   })
 })
 

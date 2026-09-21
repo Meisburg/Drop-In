@@ -40,17 +40,28 @@ import { useSessionContext } from './SessionProvider'
  * archive door under the day sections (FeedPage renders PAST_DROP_INS_LABEL
  * itself); the empty-radius state no longer promises a personal archive from
  * either screen.
+ *
+ * V16 t06 item 1 adds ONE opt-out prop, `showEscapes` (default true), and
+ * nothing else: the feed now renders a persistent radius picker directly
+ * above this state, so on THAT one call site the three escapes would be a
+ * second row of near-identical radius buttons doing the same job one line
+ * apart — the "two controls that look identical" failure. Browse keeps the
+ * defaults (it is the escape's only remaining home, and its caller is
+ * untouched); the copy and the post CTA render either way, so suppressing the
+ * escapes never turns this state into a dead end.
  */
 export function RadiusEmptyState({
   radiusMiles,
+  showEscapes = true,
 }: {
   radiusMiles: number
+  showEscapes?: boolean
 }) {
   const { session, profile, refresh } = useSessionContext()
   const [busyRadius, setBusyRadius] = useState<number | null>(null)
   const [escapeError, setEscapeError] = useState<string | null>(null)
   const homeZip = profile?.home_zip ?? ''
-  const escapes = radiusEscapes(radiusMiles)
+  const escapes = showEscapes ? radiusEscapes(radiusMiles) : []
   /**
    * V8 ticket 02 REVIEW ROUND: an escape with nothing to widen FROM (no
    * session, no home zip) must not render as a live control — a button that

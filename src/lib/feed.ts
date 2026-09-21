@@ -1902,6 +1902,57 @@ export function radiusEscapes(radiusMiles: number): RadiusEscape[] {
 }
 
 /**
+ * One row of the feed's persistent radius picker: the radius it writes + the
+ * `<option>`'s own copy (V16 t06 item 1).
+ */
+export interface RadiusChoice {
+  radiusMiles: number
+  label: string
+}
+
+/**
+ * The radius control the FEED keeps on screen (V16 t06 item 1, pure +
+ * unit-tested). The founder's report was "Nothing within 35 miles yet." with
+ * no way to widen — and, once widening worked, no way to narrow either,
+ * because the only radius controls in the product lived INSIDE the empty
+ * state (`radiusEscapes`, which by construction renders only when the list is
+ * empty) or on Browse. So this is the same decision the escapes make, asked
+ * for a surface that is ALWAYS on screen:
+ *
+ * - every radius in `RADIUS_MILES_OPTIONS`, ascending — so the 35-mile ceiling
+ *   is one tap from the 5-mile default (the founder's actual ask: "widen"),
+ *   and every narrower option is one tap the other way;
+ * - plus the viewer's own CURRENT radius when it is not already on that list,
+ *   inserted in order. A `<select>` whose `value` matches no `<option>` renders
+ *   the FIRST option while the list below filters on something else — a control
+ *   that lies about the state it drives. No such value ships today (the DB
+ *   CHECK and `validateRadiusMiles` both pin 2–35), but this keeps the control
+ *   honest for any radius it is handed, including a sub-floor one;
+ * - never a candidate at or beyond the 35-mile ceiling: `RADIUS_MAX_MILES` is
+ *   the DB ceiling, so anything past it could not be saved anyway.
+ *
+ * Deliberately wider than `radiusEscapes` (which is narrow: three named
+ * escapes, rendered only when they would change something, and empty at the
+ * 35-mile max). The two return DIFFERENT things for the same radius, so
+ * FeedPage renders the escapes ONLY while the list is empty — the picker is
+ * the one control that survives into the non-empty feed, which is the whole
+ * point of the slice.
+ */
+export function radiusChoices(radiusMiles: number): RadiusChoice[] {
+  const radii = new Set<number>(RADIUS_MILES_OPTIONS)
+  if (Number.isFinite(radiusMiles) && radiusMiles > 0 && radiusMiles < SEE_ALL_RADIUS_MILES) {
+    radii.add(radiusMiles)
+  }
+  return [...radii]
+    .sort((a, b) => a - b)
+    .map((miles) =>
+      miles === SEE_ALL_RADIUS_MILES
+        ? { radiusMiles: miles, label: 'See everything in Seattle (35 mi)' }
+        : { radiusMiles: miles, label: `Within ${miles} miles` },
+    )
+}
+
+/**
  * Whether the feed is due for a visibility-triggered refetch (V8 ticket 02):
  * no load yet (null — the first load establishes the clock) or the last load
  * is at least `windowMs` old. `windowMs` is owned by the call site

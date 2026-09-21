@@ -23,6 +23,7 @@ import {
   listRadiusFeed,
   restampLastSeen,
   togglePing,
+  updateHomeZipRadius,
   type PingForPost,
   type PingProfileRow,
 } from '../lib/db'
@@ -40,6 +41,7 @@ import {
   localDayKey,
   pastDropInsHref,
   PAST_DROP_INS_LABEL,
+  radiusChoices,
   rainBadgeLabel,
   shouldRefreshFeed,
   WHILE_AWAY_ITEM_LIMIT,
@@ -254,6 +256,22 @@ export function FeedPage() {
    * load path stays the effect (no second fetch implementation).
    */
   const [feedReloadToken, setFeedReloadToken] = useState(0)
+  /**
+   * V16 t06 item 1: the persistent radius control's write state. This page
+   * holds NO radius of its own — `profile.radius_miles ?? DEFAULT_RADIUS_MILES`
+   * is the one value, and it is folded into the load effect's contextKey — so
+   * the control needs no local override and no second query: it writes the
+   * SAVED radius through the same `updateHomeZipRadius` the empty state's
+   * escapes use, and `refresh()` re-runs the feed because the key changed.
+   *
+   * These two are the write's bookkeeping, not a mirror of the value:
+   * `radiusBusyChoice` dims and locks the control for the one in-flight write
+   * (a second write mid-flight could land out of order), and
+   * `radiusControlError` says so out loud — a control that silently does
+   * nothing is the dead end this page exists to remove.
+   */
+  const [radiusBusyChoice, setRadiusBusyChoice] = useState<number | null>(null)
+  const [radiusControlError, setRadiusControlError] = useState<string | null>(null)
   /**
    * When the feed query was last ISSUED (the visibility gate's clock; the
    * pure shouldRefreshFeed compares against it). A ref, not state: reading it
@@ -737,6 +755,50 @@ export function FeedPage() {
    * pair rides the feed row (age_min / age_max, undefined pre-0037), and the
    * derived ages come from the ONE batched read above.
    */
+  /**
+   * V16 t06 item 1: the persistent radius control's one write path — the
+   * EXISTING `updateHomeZipRadius` (which validates the saved zip against the
+   * seeded gazetteer and the radius against the 2–35 bounds before writing),
+   * then `refresh()` lands the new radius in the shared session state.
+   *
+   * The refetch is free and deliberate: the load effect keys on
+   * `${session.user.id}|${home_zip}|${radius_miles}`, so a changed radius is a
+   * CHANGED CONTEXT and the query re-runs with "Loading…" rather than the
+   * stale-but-correct-list refresh path. That is the same mechanism the empty
+   * state's escapes already rely on — this handler adds no state, no query and
+   * no new seam, only the surface that was missing.
+   *
+   * A no-op choice returns before writing: the picker only offers radii that
+   * change something, and a write that would not change the radius must not
+   * blank a good list for a round trip.
+   */
+  async function handleRadiusChoice(nextRadius: number) {
+    // The same three-part guard every write handler on this page opens with
+    // (the render gate at line 651 returns the sign-in prompt before the
+    // control exists; this keeps the handler honest on its own).
+    if (loading || session === null || profile === null) return
+    const homeZip = profile.home_zip ?? ''
+    // The same belt-and-braces guard RadiusEmptyState carries: an empty home
+    // zip cannot be widened FROM (the validator rejects it). The onboarding
+    // gate keeps that state off this page, so the control stays inert rather
+    // than inventing a zip.
+    if (homeZip === '') return
+    if (nextRadius === (profile.radius_miles ?? DEFAULT_RADIUS_MILES)) return
+    if (radiusBusyChoice !== null) return
+    setRadiusBusyChoice(nextRadius)
+    setRadiusControlError(null)
+    try {
+      await updateHomeZipRadius(session.user.id, homeZip, nextRadius)
+      await refresh()
+    } catch (err) {
+      setRadiusControlError(
+        err instanceof Error ? err.message : 'Could not update your radius. Try again.',
+      )
+    } finally {
+      setRadiusBusyChoice(null)
+    }
+  }
+
   function buildCardAgeRangeLabel(post: PlaydateWithNeighborhood) {
     // feed.cardAgeRangeLabel is the ONE composition of that precedence over a
     // row's own columns — the same call PlacePage and UserPage make, so the
@@ -772,6 +834,48 @@ export function FeedPage() {
         />
       )}
 
+      {/* V16 t06 item 1: the radius control, persistently. The founder's
+          report was "Nothing within 35 miles yet." with no way out — the only
+          radius controls in the product were the ones INSIDE the empty state,
+          which by construction render only when this list is empty. So a feed
+          with a single result at 5 miles offered no way to widen, and nothing
+          anywhere let a viewer narrow below their saved radius.
+
+          The options come from the pure `feed.radiusChoices` (the full 2/5/10/
+          20/35 ladder, plus "See everything in Seattle"), and the choice
+          writes the SAVED radius through the EXISTING `updateHomeZipRadius` +
+          `refresh()` — no new state, no new query. `profile.radius_miles ??
+          DEFAULT_RADIUS_MILES` is what the load effect keys on, so the refetch
+          is a consequence of the write, not a second code path.
+
+          It renders BELOW the WhileAway card (the inbox stays the first thing
+          on the page) and ABOVE the list — and it stays up while the list is
+          loading, so the control never disappears under the viewer mid-tap. */}
+      <div className="flex flex-col gap-1">
+        <label className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm">
+          <span className="text-sm font-medium text-slate-700">Distance</span>
+          <select
+            data-testid="feed-radius-filter"
+            aria-label="Distance"
+            // text-base, not text-sm: iOS zooms the viewport on focus below
+            // 16px, and `scripts/mobile-audit.mjs` measures every select.
+            className="min-h-11 flex-1 rounded-lg border border-slate-300 bg-white px-2 py-2 text-base text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 disabled:opacity-50"
+            value={String(profile.radius_miles ?? DEFAULT_RADIUS_MILES)}
+            disabled={radiusBusyChoice !== null || session === null || (profile.home_zip ?? '') === ''}
+            onChange={(e) => void handleRadiusChoice(Number(e.target.value))}
+          >
+            {radiusChoices(profile.radius_miles ?? DEFAULT_RADIUS_MILES).map((choice) => (
+              <option key={choice.radiusMiles} value={choice.radiusMiles}>
+                {choice.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {radiusControlError !== null ? (
+          <p className="text-sm text-red-600">{radiusControlError}</p>
+        ) : null}
+      </div>
+
       {posts === null ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm">
           Loading…
@@ -784,8 +888,18 @@ export function FeedPage() {
            used (profile.radius_miles with the DEFAULT_RADIUS_MILES fallback).
            V13 ticket 05 (A1): the archive door no longer lives inside this
            shared state — it is the quiet line UNDER the day sections below,
-           which only exists when there IS something to list. */
-        <RadiusEmptyState radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES} />
+           which only exists when there IS something to list.
+
+           V16 t06 item 1: the escapes still render HERE, and only here. The
+           picker above is the persistent surface; the escapes are the
+           empty-state's own copy and vanish the moment there is something to
+           list, so the two never sit on screen together and nothing looks
+           duplicated. RadiusEmptyState stays prop-compatible (its Browse
+           caller is untouched) — the suppression is this call site's. */
+        <RadiusEmptyState
+          radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES}
+          showEscapes={false}
+        />
       ) : (
         <div className="flex flex-col gap-4">
           {dayGroups.map((group) => {
