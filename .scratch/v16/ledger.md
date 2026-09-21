@@ -188,3 +188,26 @@ V16: factory hardening this round — .scratch/check-push-range.sh makes the
   omitting that path. The script was TESTED against a reproduction of the real
   leak (fails, exit 1, names the pattern) and against a legitimate
   supabase/migrations/ file (passes). AGENTS.md now bans `git add -A <dir>`.
+V16: REMAINING-WORK INVENTORY (round 11) — verified by reading every ticket, not
+  by memory. Of the 26 triaged items:
+  SHIPPED: t01 (copy), t02 (reaction), t03 item 3 (duplicate rows), t04
+    (profile), t05 (UserPage), t06 item 1 (feed radius picker), t07 items 1, 3, 4
+    (modal z-index, 1-mile, dropdown demotion), t08 (ocr lane).
+  DROPPED AS ALREADY-CORRECT (4): t03 item 2 (section order already right),
+    t05 item 3 (Message button already existed), t06 item 1's escapes (partly
+    built), t02's obvious diagnosis (was the emoji, not the fill).
+  STILL UNBUILT (3):
+    * t06 item 2 (ZIP setter on the feed) — NOT BLOCKED. Reuses the existing
+      validating updateHomeZipRadius; the refetch is free via contextKey.
+      DISPATCHED round 11. I had been leaving this out of the unbuilt list.
+    * t03 item 1 (Ages chips) — BLOCKED: founder ruling i/ii.
+    * t07 item 2 (map zoom / blue blob) — BLOCKED: founder ruling a/b/c.
+  DEFERRED BY DECISION: t07 items 5-7 (Airbnb redesign) — founder decision Q5
+    says it gets its own spec + batch. Not blocked, not this batch.
+  NEEDS A CREDENTIAL: migration 0045 apply — .env has only the anon key, which
+    cannot run DDL; the existing script extracts a token from the human's own
+    logged-in Chrome (opens a window). Options given: A (run script, tab
+    appears), B (paste a sbp_ token, no browser), C (human runs the SQL).
+  LESSON (second time this batch): I keep under-counting dispatchable work by
+  treating "no ruling recorded yet" and "not yet built" as the same thing. Only
+  i/ii and a/b/c are genuine blockers.
