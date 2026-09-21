@@ -226,6 +226,22 @@ The biggest item, and the one the Airbnb reference actually informs.
    building escapes that already exist. Verify the "already built" claim in
    the built app before writing code.
 
+   **HOW THE FEED GETS ITS RADIUS — verified round 6 (this is what makes the
+   control cheap):** the feed does NOT hold a radius of its own. It reads
+   `profile.radius_miles ?? DEFAULT_RADIUS_MILES` into the query
+   (`FeedPage.tsx:292,305`) and — crucially — folds it into the load effect's
+   `contextKey` (`:296-298`). So a write to the SAVED radius changes the key,
+   which re-runs the query automatically. That is exactly why
+   `RadiusEmptyState`'s escape buttons need no wiring beyond
+   `updateHomeZipRadius(...)` + `refresh()`.
+   **Consequence:** a persistent control can reuse the SAME write path
+   (`updateHomeZipRadius` + `refresh`) and get the refetch for free. No new
+   state, no new query, no new seam. The slice is a UI promotion, not a data
+   change — which is why it does not need the founder's rulings.
+   **Note the feed currently renders NO controls at all** above the list: the
+   SectionHeader, then the WhileAway card, then straight to posts/empty state
+   (`FeedPage.tsx:761-789`). The control is genuinely new UI on this page.
+
 2. Let the user set ZIP or address here, so they trust "near you".
 
    **CONFIRMED ABSENT on the feed.** The only ZIP control is inside
