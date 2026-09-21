@@ -15,7 +15,7 @@ import {
   uploadAvatar,
   validateKid,
 } from '../lib/db'
-import { DEFAULT_RADIUS_MILES, RADIUS_MILES_OPTIONS, validateHomeZip } from '../lib/feed'
+import { DEFAULT_RADIUS_MILES, milesWord, RADIUS_MILES_OPTIONS, validateHomeZip } from '../lib/feed'
 import { suggestedHandle } from '../lib/oauth'
 import { resolveOnboardingRedirect } from '../lib/onboarding'
 
@@ -373,7 +373,7 @@ export function OnboardingPage() {
             >
               {RADIUS_MILES_OPTIONS.map((miles) => (
                 <option key={miles} value={miles}>
-                  {miles} miles
+                  {miles} {milesWord(miles)}
                 </option>
               ))}
             </select>

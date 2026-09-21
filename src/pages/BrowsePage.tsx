@@ -8,7 +8,12 @@ import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
 import { listPlaces, loadZipCodes, upcomingCountsByPlace } from '../lib/db'
 import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
-import { DEFAULT_RADIUS_MILES, formatDistanceLabel, RADIUS_MILES_OPTIONS } from '../lib/feed'
+import {
+  DEFAULT_RADIUS_MILES,
+  formatDistanceLabel,
+  milesWord,
+  RADIUS_MILES_OPTIONS,
+} from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
 import { geocodeAddress } from '../lib/geocode'
 import {
@@ -463,29 +468,48 @@ export function BrowsePage() {
           </button>
         </div>
 
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-slate-700">Distance</span>
-          <select
-            data-testid="places-distance-filter"
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-            value={distanceChoice === 'profile' ? 'profile' : distanceChoice === 'any' ? 'any' : String(distanceChoice)}
-            onChange={(e) => {
-              const value = e.target.value
-              setDistanceChoice(
-                value === 'profile' ? 'profile' : value === 'any' ? 'any' : Number(value),
-              )
-              resetShowAll()
-            }}
-          >
-            <option value="profile">Within your radius ({viewerRadius} mi)</option>
-            {RADIUS_MILES_OPTIONS.map((miles) => (
-              <option key={miles} value={miles}>
-                Within {miles} miles
-              </option>
-            ))}
-            <option value="any">Any distance</option>
-          </select>
-        </label>
+        {/* V16 t07 item 4 (founder decision Q4): the distance control is KEPT but
+            DEMOTED. It used to be a full-width labelled form field — the same
+            visual weight as a primary input — which is why the founder read it as
+            "redundant, the Set location thing above the map does this". It does a
+            DIFFERENT job (Set location = the origin, this = the range), so
+            deleting it would lose the ability to widen the search without
+            changing the saved home. Here it joins the filter-chip row instead:
+            inline, auto-width, no `w-full`, and a quiet label rather than a
+            heading, so "Filter & sort" reads as the real control.
+
+            The `min-h-11` / `text-base` are the measured floors, not decoration —
+            scripts/mobile-audit.mjs flags any select under 16px font (iOS zooms
+            the viewport on focus) and any control under 44px tall. The
+            `max-w-full` keeps a long option label from overflowing a 320px
+            viewport. The testid, the option VALUES, and the onChange mapping are
+            all unchanged — e2e/places.e2e.ts and e2e/feed-empty-state.e2e.ts
+            drive this control by testid. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex min-h-11 items-center gap-2 text-sm">
+            <span className="text-slate-500">Distance</span>
+            <select
+              data-testid="places-distance-filter"
+              className="min-h-11 max-w-full rounded-full border border-slate-300 bg-white px-3 text-base text-slate-600 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              value={distanceChoice === 'profile' ? 'profile' : distanceChoice === 'any' ? 'any' : String(distanceChoice)}
+              onChange={(e) => {
+                const value = e.target.value
+                setDistanceChoice(
+                  value === 'profile' ? 'profile' : value === 'any' ? 'any' : Number(value),
+                )
+                resetShowAll()
+              }}
+            >
+              <option value="profile">Within your radius ({viewerRadius} mi)</option>
+              {RADIUS_MILES_OPTIONS.map((miles) => (
+                <option key={miles} value={miles}>
+                  Within {miles} {milesWord(miles)}
+                </option>
+              ))}
+              <option value="any">Any distance</option>
+            </select>
+          </label>
+        </div>
       </div>
 
       {places === null ? (
