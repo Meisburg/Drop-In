@@ -75,6 +75,7 @@ import {
   radiusSaveErrorMessage,
   distanceChoiceFromValue,
   feedZipSaveIsNoop,
+  milesWord,
   distanceSelectValue,
   type DistanceChoice,
   RADIUS_MILES_OPTIONS,
@@ -3811,5 +3812,47 @@ describe('RADIUS_SAVE_FAILED_COPY (V16 t09 review — one fallback, no wrong sub
 
   it('says what to do next rather than only that something broke', () => {
     expect(RADIUS_SAVE_FAILED_COPY).toContain('Try again')
+  })
+})
+
+/**
+ * V16 t07 item 3 — `milesWord`, the singular/plural helper.
+ *
+ * It WAS untested directly, which is precisely how "1 miles" reached a running
+ * app: the floor dropped to 1, three templates each hardcoded "miles", and the
+ * only reason it was caught is that a REVIEW read the rendered copy. The
+ * indirect coverage was no coverage — `emptyRadiusCopy(1)` and the option ladder
+ * each assert a full string, so they would have caught a break in THEIR OWN
+ * template but not in the two page-level call sites (BrowsePage's filter label,
+ * OnboardingPage's picker), which have no unit test at all and are guarded by
+ * nothing but this helper being right.
+ *
+ * Deliberately `=== 1` and not `<= 1`: a radius of 0 or a negative is not a
+ * real input (validateRadiusMiles rejects it), so 1 is the only singular case.
+ * The last case pins that reading — if someone "simplifies" it to `<= 1`, this
+ * fails and they have to decide deliberately.
+ */
+describe('milesWord (V16 t07 item 3 — the plural that shipped wrong once)', () => {
+  it('says "mile" for exactly 1', () => {
+    expect(milesWord(1)).toBe('mile')
+  })
+
+  it('says "miles" for every other real radius', () => {
+    expect(milesWord(2)).toBe('miles')
+    expect(milesWord(5)).toBe('miles')
+    expect(milesWord(20)).toBe('miles')
+    expect(milesWord(35)).toBe('miles')
+  })
+
+  it('is singular ONLY at 1 — 0 and negatives are not real radii but must not read "mile"', () => {
+    // Pins the `=== 1` reading against a future `<= 1` "simplification".
+    expect(milesWord(0)).toBe('miles')
+    expect(milesWord(-1)).toBe('miles')
+  })
+
+  it('reads correctly in the exact sentence the app renders', () => {
+    expect(`Nothing within 1 ${milesWord(1)} yet.`).toBe('Nothing within 1 mile yet.')
+    expect(`Within 1 ${milesWord(1)}`).toBe('Within 1 mile')
+    expect(`Radius: 1 ${milesWord(1)}`).toBe('Radius: 1 mile')
   })
 })
