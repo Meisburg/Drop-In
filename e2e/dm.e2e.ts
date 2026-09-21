@@ -122,6 +122,85 @@ test('new message: search a parent, open DM thread, send a message', async ({
   await viewerContext.close()
 })
 
+/**
+ * V16 t05 — the OTHER door into a DM: the "Message" button on a family's
+ * public page (/u/:handle).
+ *
+ * The two tests above both enter the inbox via /inbox's own "New message"
+ * search. That left the profile-page entry point entirely uncovered, even though
+ * it is the one a parent uses after looking at a family ("About the parents" ->
+ * Message). t05 verified this button already existed and deliberately left it
+ * alone; nothing pinned that it still works, so a change to UserPage's action
+ * row could have stranded it silently.
+ *
+ * The button is visitor-only by design: the action row is gated
+ * `isOwnProfile ? null : ...`, so it must NOT appear on your own page. Both
+ * halves are asserted here.
+ */
+test('the Message button on a family page opens the DM thread (and is absent on your own)', async ({
+  page,
+  browser,
+}) => {
+  const marker = readMarkerMeta()
+  const epoch = Math.floor(Date.now() / 1000)
+  const viewerName = `e2e-v-${epoch}-dm-profile`
+  const viewerEmail = `e2e-v-${epoch}-dm-profile@gmail.com`
+  const viewerPassword = `e2e-v-pw-${epoch}-dm-profile`
+
+  // --- Create the family whose page we will visit. ---
+  const viewerContext = await browser.newContext({
+    baseURL: 'http://localhost:4173',
+    storageState: { cookies: [], origins: [] },
+  })
+  const viewerPage = await viewerContext.newPage()
+  await viewerPage.goto('/login')
+  await viewerPage.getByRole('button', { name: 'New here? Create an account' }).click()
+  await viewerPage.locator('input[autocomplete="nickname"]').fill(viewerName)
+  await viewerPage.locator('input[type="email"]').fill(viewerEmail)
+  await viewerPage.locator('input[type="password"]').fill(viewerPassword)
+  await viewerPage.getByRole('button', { name: 'Create account' }).click()
+  await viewerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
+  await viewerPage.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
+  await viewerPage
+    .locator('select')
+    .first()
+    .selectOption({ label: `${marker.radiusMiles} miles` })
+  await viewerPage.getByRole('button', { name: /^Continue/ }).click()
+  await viewerPage.getByRole('heading', { name: 'Near you' }).waitFor()
+
+  const { url, anonKey } = readSupabaseEnv()
+  const { accessToken } = readMarkerSession()
+  const searchRes = await fetch(
+    `${url}/rest/v1/profiles?display_name=ilike.${encodeURIComponent(viewerName)}&select=id`,
+    { headers: { apikey: anonKey, Authorization: `Bearer ${accessToken}` } },
+  )
+  expect(searchRes.ok).toBe(true)
+  const viewerProfiles = (await searchRes.json()) as Array<{ id: string }>
+  expect(viewerProfiles.length).toBe(1)
+  const viewerProfileId = viewerProfiles[0].id
+
+  // --- The marker visits that family's public page. ---
+  await page.goto(`/u/${encodeURIComponent(viewerName)}`)
+  await settleOnRoute(page, `/u/${encodeURIComponent(viewerName)}`)
+
+  const messageButton = page.getByTestId('message-profile')
+  await expect(messageButton).toBeVisible()
+  await messageButton.click()
+
+  // It lands on the DM thread for THAT family — the deep link the inbox owns.
+  await expect(page).toHaveURL(new RegExp(`/inbox\\?dm=${viewerProfileId}$`))
+  await expect(page.getByText('No messages yet')).toBeVisible()
+
+  // --- The button must NOT appear on your OWN page (you cannot message
+  // yourself): the action row is gated on isOwnProfile. ---
+  await page.goto(`/u/${encodeURIComponent(marker.displayName)}`)
+  await settleOnRoute(page, `/u/${encodeURIComponent(marker.displayName)}`)
+  await expect(
+    page.getByTestId('message-profile'),
+    'the Message button must be absent on your own page',
+  ).toHaveCount(0)
+})
+
 test('RLS isolation: a stranger cannot read a free-form DM', async ({
   page,
   browser,
