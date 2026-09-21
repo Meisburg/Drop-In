@@ -53,6 +53,33 @@ Plain `git push origin master`; no force, no amend, no rebase.
   changes, and sending sensitive data externally still require explicit human
   authorization.
 
+## Run it yourself (founder rule, 2026-09-21)
+
+**Do not hand the human work an agent can do.** The founder's standing
+instruction: *"just run anything you need to run yourself, and let me know if
+there's something I have to do that you can't do."*
+
+Before writing "WAITING ON YOU" or asking for a manual step, check whether the
+capability is actually absent — **most of the time it is not**:
+
+| Task | Who does it |
+|---|---|
+| `npm run verify`, targeted e2e, playtest lane | **the agent** |
+| Applying a migration | **the agent** — `POST api.supabase.com/v1/projects/<ref>/database/query` with `SUPABASE_ACCESS_TOKEN` from `.env`. No browser, no dashboard, no paste. |
+| Reading/probing the live DB for verification | **the agent** (same token) |
+| Running Docker/Postgres tests of a migration | **the agent** |
+| A product/judgment call | **the human** — and it needs a *decision*, not labour |
+| Publish, deploy, send data externally | **the human's authorization** — a one-word yes; the agent still does the work |
+
+The failure this rule exists to prevent: during V16 an agent asserted "no
+credential exists on this machine" **without reading `.env` properly**, and asked
+the founder to paste SQL by hand for ~25 rounds while a working `sbp_` token sat
+in the file. **Verify a negative as carefully as a positive.** The cost of
+getting it wrong is the human's time, spent on work the agent could have done.
+
+When you *do* need the human, say precisely what you need and why it is theirs:
+*"May I apply this migration to production?"* — not *"here is some SQL to paste."*
+
 ## The machine now enforces this
 
 As of 2026-09-21 the three conditions are no longer advice. The hook lives at
@@ -114,10 +141,24 @@ A successful gated push also prints a **WAITING ON YOU** block, from
 `scripts/remind-human.sh`. It is informational and never affects the exit code.
 
 This exists because `task-state.md` is 1,300+ lines: work that only the human can
-do (applying a migration that needs a credential, a one-time SQL statement, a
-product decision) gets recorded there and then never resurfaces. The end of a
+do (a **product decision**, or an action needing their **authorization** rather
+than their hands) gets recorded there and then never resurfaces. The end of a
 batch is the moment the human is most likely present, so that is when the nudge
 fires.
+
+**Do not put "needs a credential" on that list without checking.** A migration
+apply does NOT need the human: `.env` carries `SUPABASE_ACCESS_TOKEN` (`sbp_…`)
+and the apply is a plain
+`POST https://api.supabase.com/v1/projects/<ref>/database/query`. During V16 an
+agent asserted "no credential exists on this machine" without reading `.env`
+properly, and asked the human to paste SQL by hand for ~25 rounds when the token
+was sitting right there. **Verify a negative as carefully as a positive** — the
+cost of getting it wrong is the human's time, spent on work the agent could have
+done.
+
+The genuine human-only categories are: a product/judgment call, and anything
+your AGENTS.md requires explicit authorization for (publish, deploy, sending
+data externally, production changes). Those need a **yes**, not manual labour.
 
 ```bash
 bash scripts/remind-human.sh          # run any time
