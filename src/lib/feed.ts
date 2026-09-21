@@ -157,6 +157,95 @@ export function validateRadiusMiles(radiusMiles: number): string | null {
 }
 
 /**
+ * SQLSTATE for a CHECK-constraint violation (`check_violation`). Named because
+ * the string would otherwise be an unexplained magic number in a branch.
+ */
+const SQLSTATE_CHECK_VIOLATION = '23514'
+
+/**
+ * The copy shown when the DATABASE — not the app — rejected a radius write.
+ *
+ * Why this exists (V16 t09): the deployed UI offered "Within 1 mile" while the
+ * live database still carried `profiles_radius_miles_chk = check (radius_miles
+ * between 2 and 35)`. Migration 0045 widens it to 1–35 but was not yet applied,
+ * so choosing 1 mile threw a PostgREST error whose `.message` is literally
+ *
+ *   new row for relation "profiles" violates check constraint
+ *   "profiles_radius_miles_chk"
+ *
+ * and that raw string was rendered straight into the red error line. The
+ * failure is real and must still be REPORTED as a failure — this only replaces
+ * the copy. It states what happened and what to do, without the constraint name
+ * or any SQL wording (an internal identifier is not something a parent can act
+ * on), and it stays correct AFTER 0045 lands: it can only render when the DB
+ * itself refused a write, which by then means a genuinely out-of-range radius.
+ */
+export const RADIUS_SAVE_REJECTED_COPY =
+  `That radius isn’t allowed yet. Pick between ${RADIUS_MIN_MILES} and ${RADIUS_MAX_MILES} miles.`
+
+/** The fallback when the failure is unrecognised — still actionable, never silent. */
+export const RADIUS_SAVE_FAILED_COPY = 'Could not update your radius. Try again.'
+
+/**
+ * Whether a thrown value is a CHECK-constraint violation.
+ *
+ * Two independent signals, because the two are not equally reliable:
+ * - `code === '23514'` is the SQLSTATE and is what PostgREST actually sends —
+ *   but a Supabase error is a plain object, NOT an `Error`, so it must be read
+ *   off the raw value before any `instanceof` narrowing.
+ * - the message match is the message-level backstop for a rethrown/stringified
+ *   error that lost its `code` on the way up.
+ *
+ * The message match is deliberately NOT the primary signal: matching prose is
+ * brittle, so the code is checked first and the phrase only rescues a shape
+ * that would otherwise fall through to the generic copy.
+ */
+function isCheckConstraintViolation(err: unknown): boolean {
+  if (typeof err === 'object' && err !== null) {
+    const code = (err as { code?: unknown }).code
+    if (typeof code === 'string' && code === SQLSTATE_CHECK_VIOLATION) return true
+  }
+  const message = err instanceof Error ? err.message : typeof err === 'string' ? err : ''
+  return message.toLowerCase().includes('violates check constraint')
+}
+
+/**
+ * Map a thrown error from `updateHomeZipRadius` (or `updateHomeZip`) to the
+ * line the user reads — V16 t09. Pure, no React and no Supabase, so the two
+ * FeedPage handlers and RadiusEmptyState's escape all render ONE decision
+ * rather than three copies of the same branch.
+ *
+ * The three cases:
+ *
+ * 1. **A CHECK violation** (`23514`) gets the honest range copy above. Note the
+ *    ORDER: an `instanceof Error` passthrough cannot come first, because
+ *    supabase-js hands back the PostgREST rejection as an `Error` too — that
+ *    is exactly how the raw SQL text reached the screen.
+ * 2. **The app's OWN validation errors pass through UNCHANGED.** `db.ts` throws
+ *    `new Error(zipError)` / `new Error(radiusError)` from `validateHomeZip` /
+ *    `validateRadiusMiles`, and those strings are already written for a parent
+ *    ("Add your home zip.", "We don't cover that zip yet — try one we serve.").
+ *    Wrapping or rewording them would be a regression: the mapper's job is to
+ *    cover the failures the app did NOT author, not to second-guess the ones it
+ *    did.
+ * 3. **Anything else** falls back to RADIUS_SAVE_FAILED_COPY — the original is
+ *    never swallowed into silence, only replaced by a sentence the user can act
+ *    on; the raw text still reaches the console via the throw site's own error.
+ */
+export function radiusSaveErrorMessage(err: unknown): string {
+  // (1) A CHECK-constraint violation from the database — checked FIRST,
+  //     because PostgREST wraps it in an `Error` too (the supabase-js client
+  //     normalises `{message, code}` into one), so a branch keyed on
+  //     `instanceof Error` would swallow it into the passthrough.
+  if (isCheckConstraintViolation(err)) return RADIUS_SAVE_REJECTED_COPY
+  // (2) The app's own validator messages — already human, pass through verbatim.
+  if (err instanceof Error && err.message.trim() !== '') return err.message
+  if (typeof err === 'string' && err.trim() !== '') return err
+  // (3) Unrecognised — safe, actionable, never silent.
+  return RADIUS_SAVE_FAILED_COPY
+}
+
+/**
  * A drop-in is "happening now" when starts_at <= now <= ends_at
  * (boundaries inclusive).
  */

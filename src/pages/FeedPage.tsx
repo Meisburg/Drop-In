@@ -44,6 +44,7 @@ import {
   pastDropInsHref,
   PAST_DROP_INS_LABEL,
   radiusChoices,
+  radiusSaveErrorMessage,
   rainBadgeLabel,
   shouldRefreshFeed,
   WHILE_AWAY_ITEM_LIMIT,
@@ -798,9 +799,10 @@ export function FeedPage() {
       await updateHomeZipRadius(session.user.id, homeZip, nextRadius)
       await refresh()
     } catch (err) {
-      setRadiusControlError(
-        err instanceof Error ? err.message : 'Could not update your radius. Try again.',
-      )
+      // V16 t09: the copy is radiusSaveErrorMessage's decision (lib/feed.ts),
+      // not this handler's. A raw PostgREST CHECK violation used to be rendered
+      // verbatim here. The write still FAILS — only the words changed.
+      setRadiusControlError(radiusSaveErrorMessage(err))
     } finally {
       setRadiusBusy(false)
     }
@@ -849,9 +851,10 @@ export function FeedPage() {
       // leaving the old draft in the field would contradict it.
       setZipDraft('')
     } catch (err) {
-      setZipControlError(
-        err instanceof Error ? err.message : 'Could not update your zip. Try again.',
-      )
+      // V16 t09: same mapper as the radius handler. A rejected zip keeps the
+      // validator's own sentence ("We don't cover that zip yet…") verbatim; a
+      // DB-level rejection gets the honest range copy instead of SQL.
+      setZipControlError(radiusSaveErrorMessage(err))
     } finally {
       setZipBusy(false)
     }

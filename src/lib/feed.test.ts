@@ -70,6 +70,9 @@ import {
   rainBadgeLabel,
   RADIUS_MAX_MILES,
   RADIUS_MIN_MILES,
+  RADIUS_SAVE_FAILED_COPY,
+  RADIUS_SAVE_REJECTED_COPY,
+  radiusSaveErrorMessage,
   distanceChoiceFromValue,
   feedZipSaveIsNoop,
   distanceSelectValue,
@@ -744,6 +747,113 @@ describe('validateRadiusMiles (the pinned 1–35 bounds, 0045 CHECK backstop)', 
     expect(validateRadiusMiles(0)).toBe(
       `Pick a radius between ${RADIUS_MIN_MILES} and ${RADIUS_MAX_MILES} miles.`,
     )
+  })
+})
+
+/**
+ * V16 t09: what the user READS when a radius write is rejected.
+ *
+ * The bug this covers was live, not hypothetical: the deployed UI offered
+ * "Within 1 mile" while the deployed DB still had
+ * `profiles_radius_miles_chk = check (radius_miles between 2 and 35)` (0045
+ * committed, not applied), so choosing it threw a PostgREST error whose
+ * `.message` — "new row for relation \"profiles\" violates check constraint
+ * \"profiles_radius_miles_chk\"" — was rendered verbatim into the red line.
+ *
+ * The middle case below is the one that matters most: the app's OWN validator
+ * messages are already written for a parent, and a mapper that "improves" them
+ * is a regression, not a fix.
+ */
+describe('radiusSaveErrorMessage (V16 t09 — the DB error, said in English)', () => {
+  it('explains a CHECK-constraint violation without leaking the constraint name', () => {
+    // The real shape PostgREST sends: a plain object with a `code`, NOT an
+    // Error instance — the trap that makes `err instanceof Error` alone wrong.
+    const postgrestError = {
+      code: '23514',
+      message:
+        'new row for relation "profiles" violates check constraint "profiles_radius_miles_chk"',
+      details: 'Failing row contains (..., 1).',
+      hint: null,
+    }
+    const copy = radiusSaveErrorMessage(postgrestError)
+    expect(copy).toBe(RADIUS_SAVE_REJECTED_COPY)
+    expect(copy).toContain(`${RADIUS_MIN_MILES} and ${RADIUS_MAX_MILES}`)
+    // The whole point: no SQL, no table name, no constraint identifier.
+    expect(copy).not.toContain('profiles_radius_miles_chk')
+    expect(copy).not.toContain('check constraint')
+    expect(copy).not.toContain('new row for relation')
+    expect(copy).not.toMatch(/23514|relation "|SQL/i)
+  })
+
+  it('still catches it when the code was lost and only the message survived', () => {
+    // A rethrown / stringified error keeps the prose but drops the SQLSTATE.
+    const copy = radiusSaveErrorMessage(
+      new Error('new row for relation "profiles" violates check constraint "profiles_radius_miles_chk"'),
+    )
+    expect(copy).toBe(RADIUS_SAVE_REJECTED_COPY)
+    expect(copy).not.toContain('profiles_radius_miles_chk')
+  })
+
+  it('passes the app’s OWN validator messages through UNCHANGED', () => {
+    // These are the exact strings db.ts throws (new Error(zipError) /
+    // new Error(radiusError)); each one must survive byte for byte.
+    const ownErrors = [
+      'Add your home zip.',
+      'Use a 5-digit zip code.',
+      'We don’t cover that zip yet — try one we serve.',
+      `Pick a radius between ${RADIUS_MIN_MILES} and ${RADIUS_MAX_MILES} miles.`,
+    ]
+    for (const ownError of ownErrors) {
+      expect(radiusSaveErrorMessage(new Error(ownError))).toBe(ownError)
+    }
+    // And the same value the validator actually produces, end to end — so this
+    // test fails if either the validator's wording OR the mapper drifts.
+    const zipMessage = validateHomeZip('', new Set(['98107']))
+    expect(zipMessage).not.toBeNull()
+    expect(radiusSaveErrorMessage(new Error(zipMessage as string))).toBe(zipMessage)
+    const radiusMessage = validateRadiusMiles(0)
+    expect(radiusMessage).not.toBeNull()
+    expect(radiusSaveErrorMessage(new Error(radiusMessage as string))).toBe(radiusMessage)
+  })
+
+  it('falls back to copy the user can act on when there is no message at all', () => {
+    // The fallback exists for a throwable the mapper cannot read a sentence out
+    // of — NOT for a real (if technical) Error message, which still beats a
+    // generic line by naming something the user can retry or report.
+    expect(radiusSaveErrorMessage(null)).toBe(RADIUS_SAVE_FAILED_COPY)
+    expect(radiusSaveErrorMessage(undefined)).toBe(RADIUS_SAVE_FAILED_COPY)
+    expect(radiusSaveErrorMessage(42)).toBe(RADIUS_SAVE_FAILED_COPY)
+    expect(radiusSaveErrorMessage({})).toBe(RADIUS_SAVE_FAILED_COPY)
+    // A non-Error object carrying a message but no CHECK code: unrecognised DB
+    // failure, so it gets the generic copy rather than leaking `details`.
+    expect(
+      radiusSaveErrorMessage({ code: '42501', message: 'permission denied for table profiles' }),
+    ).toBe(RADIUS_SAVE_FAILED_COPY)
+    // An empty message is not a passthrough — it would render a blank red line.
+    expect(radiusSaveErrorMessage(new Error('   '))).toBe(RADIUS_SAVE_FAILED_COPY)
+    expect(RADIUS_SAVE_FAILED_COPY.trim()).not.toBe('')
+  })
+
+  it('passes a non-CHECK Error message through, so a network failure stays actionable', () => {
+    // Deliberate: "Failed to fetch" tells the user to check their connection,
+    // which the generic line does not. Only the CHECK case is rewritten.
+    expect(radiusSaveErrorMessage(new Error('Failed to fetch'))).toBe('Failed to fetch')
+  })
+
+  it('beats the passthrough when supabase-js hands the rejection back as an Error', () => {
+    // The trap the FIRST version of this mapper fell into: supabase-js
+    // normalises the PostgREST body into an Error, so a passthrough branch
+    // keyed on `instanceof Error` runs first and re-renders the SQL. The
+    // CHECK branch must win for a DB rejection while an app-authored Error
+    // (no `23514`, no constraint prose) still passes through untouched.
+    const asError = Object.assign(
+      new Error(
+        'new row for relation "profiles" violates check constraint "profiles_radius_miles_chk"',
+      ),
+      { code: '23514' },
+    )
+    expect(radiusSaveErrorMessage(asError)).toBe(RADIUS_SAVE_REJECTED_COPY)
+    expect(radiusSaveErrorMessage(asError)).not.toContain('profiles_radius_miles_chk')
   })
 })
 

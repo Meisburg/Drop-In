@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { updateHomeZipRadius } from '../lib/db'
-import { emptyRadiusCopy, radiusEscapes } from '../lib/feed'
+import { emptyRadiusCopy, radiusEscapes, radiusSaveErrorMessage } from '../lib/feed'
 import { useSessionContext } from './SessionProvider'
 
 /**
@@ -82,7 +82,11 @@ export function RadiusEmptyState({
       await updateHomeZipRadius(session.user.id, homeZip, target)
       await refresh()
     } catch (err) {
-      setEscapeError(err instanceof Error ? err.message : 'Could not update your radius. Try again.')
+      // V16 t09: this escape writes the SAME column through the SAME
+      // `updateHomeZipRadius` as the feed's handlers, so it shows the same
+      // copy decision (radiusSaveErrorMessage) rather than a second wording —
+      // and no longer the raw PostgREST CHECK text.
+      setEscapeError(radiusSaveErrorMessage(err))
     } finally {
       setBusyRadius(null)
     }
