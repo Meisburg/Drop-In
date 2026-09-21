@@ -304,3 +304,19 @@ V16: LIVE PRODUCTION RE-VERIFIED (round 15) — Vercel deployed again, entry ass
   TOOLING NOTE: grepping the bundle for a straight quote MISSED the t09 copy
   until I used the curly apostrophe — the bundle uses U+2019. This is the exact
   trap docs/agents/playtest-lane.md already records for must_contain needles.
+V16: AUDIT AXIS 3 (round 23) — commit/ledger/deploy integrity. Result: CLEAN.
+  * Every commit NAMED in this ledger is on origin/master (the 3 that first
+    looked unpushed were SUBAGENT ids caught by a too-greedy sha regex, not
+    commits — worth recording so the next audit does not re-raise them).
+  * 54 commits in the aafb0a4..origin/master range.
+  * Deploy sync: the live asset (index-wZsbF7if.js) is BEHIND the final tree
+    (index-3n-_HuUV.js), and that is HARMLESS — verified rather than assumed:
+    `git diff --name-only 5cb6901..HEAD` shows the five commits after the last
+    deploy touch ONLY e2e specs, src/lib/feed.test.ts, and .scratch docs. ZERO
+    product code. So production matches the shipped product exactly; the
+    difference is tests and planning artifacts, which never ship.
+  * t09 (the user-facing fix for the 1-mile rejection) IS live.
+V16: AUDIT AXES NOW COVERED — e2e coverage per testid (rounds 19-21), unit
+  coverage per new exported function (round 22), commit/ledger/deploy integrity
+  (round 23). All three are clean except the two known blocked tickets and the
+  0045 apply. The remaining V16 work genuinely requires the founder.
