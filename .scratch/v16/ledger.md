@@ -373,3 +373,27 @@ V16: CONCURRENT SESSION STILL ACTIVE (round 25). Their refactor kept GROWING:
   RULING: do not touch AGENTS.md or package.json while another writer is active
   in them. My round-24 edit attempt failed for exactly this reason (the file
   changed under me), which is the system working.
+V16: CONCURRENT WRITER CONFIRMED LIVE, MID-EXPERIMENT (round 26).
+  `.scratch/playtest/routes.json` CHANGED TWICE WHILE I WAS READING IT:
+   * first read: a version adding real must_contain needles AND a `_comment`
+     entry explaining the auth-gate trap (better than my version — it encodes
+     the round-12 lesson in the file itself)
+   * that version had a LATENT BUG I verified and then watched disappear:
+     `scripts/playtest_check.py:80` does `rt["path"]` unconditionally, so any
+     entry without a `path` key raises KeyError. I REPRODUCED IT (`KeyError:
+     'path'`) and confirmed their own lane would have crashed on the next run.
+   * second read, minutes later: the `_comment` entry was GONE and a deliberate
+     `THIS-STRING-DOES-NOT-EXIST` probe was in its place on `/` — i.e. THEY were
+     testing the lane's failure detection at the same moment.
+   * third read: 8 clean entries, probe removed. They had already moved on.
+  CONCLUSION: they are not just leaving edits behind, they are actively working
+  in this file. Two consequences:
+   1. My round-25 ruling to not commit their WIP was correct and should be held.
+   2. I must not "fix" files they are editing either — I nearly patched the
+      KeyError, which was theirs to fix and which they did fix themselves.
+  WHAT I DID INSTEAD: verified the lane RUNS against their current file and
+  reported honestly (one failure was MY missing --out dir, not their bug —
+  recorded so it is not mistaken for a regression). Released the preview server
+  and Chrome I had started for the check.
+  NOTE FOR THE NEXT AUDIT: run the playtest lane fresh before trusting
+  routes.json; it is under active edit by another writer.
