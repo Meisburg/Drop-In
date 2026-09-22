@@ -137,51 +137,98 @@ export function placeIdField(placeId?: string | null): { place_id?: string } {
 }
 
 /**
- * V19 t02 — the FEED's map pins: one per drop-in that resolves to a coordinate.
+ * V19 t02 — the FEED's map pins: one per drop-in that resolves to a coordinate,
+ * each carrying the drop-in's REAL place identity where it has one.
  *
  * The founder's ask was a map on the posts screen showing "drop-ins CLOSEST to
- * you". This is the pure half of that: given the feed's posts, return the points
- * the map should draw.
+ * you". This is the pure half of that.
  *
- * THREE THINGS THIS DELIBERATELY DOES, each of them a decision rather than an
- * implementation detail:
+ * ---------------------------------------------------------------------------
+ * WHY A PIN CARRIES `placeId` AND NOT JUST COORDINATES.
  *
- * 1. **A post with no `place_id` gets NO pin.** Free-text posts ("Somewhere
- *    else") carry `place_coords: null` — they name a place, not a location — and
- *    the map must not invent one. This is the same `unplaced` distinction
- *    `/browse` already draws, and it matters more here: a map pin is a spatial
- *    claim, and a made-up one sends a parent to the wrong park.
+ * The first version returned bare `{ lat, lng }`, and FeedPage synthesised a
+ * fake `Place` around each one (`id: 'feed-pin-0'`). The `ocr` review lane
+ * caught what that breaks, and it is not cosmetic: the shared map's marker panel
+ * offers "Start a drop-in", which navigates to `/new` with
+ * `placeId: selected.id`. `playdates.place_id` is a **uuid with an FK to
+ * `places(id)`** (migration 0030 — re-verified against the live catalog), so
+ * posting from that panel would try to insert the string `'feed-pin-0'` and fail
+ * with a raw Postgres error. "Details" was equally broken, linking to
+ * `/place/feed-pin-0`.
  *
- * 2. **Duplicate coordinates collapse to ONE pin.** The feed can hold several
- *    drop-ins at the same place (a morning and an afternoon session at Green
- *    Lake). Drawing two pins on the identical pixel makes an unclickable pile
- *    and reads as clutter, so they collapse. The LIST still shows both — this
- *    only de-duplicates the map's dots.
+ * THE FIX IS TO STOP INVENTING IDENTITY. A post that links a directory place
+ * already knows which place it is; a post with no `place_id` is free text and
+ * has no directory identity to offer. So a pin carries the real id when there is
+ * one and null when there is not, and the caller renders such a pin without
+ * offering place actions it could not honour.
+ * ---------------------------------------------------------------------------
+ *
+ * THREE RULES, each a decision rather than an implementation detail:
+ *
+ * 1. **A post with no resolvable coordinate gets NO pin.** Free-text posts
+ *    ("Somewhere else") carry `place_coords: null` — they name a place, not a
+ *    location — and the map must not invent one. A made-up pin sends a parent to
+ *    the wrong park.
+ *
+ * 2. **Posts at the same PLACE collapse to one pin.** The feed can hold several
+ *    drop-ins at one place (a morning and an afternoon session). Two pins on the
+ *    identical pixel make an unclickable pile. De-duplication keys on the PLACE
+ *    when the post has one and on the coordinate otherwise, so two sessions at
+ *    one park are one dot while two genuinely different spots both survive.
  *
  * 3. **Order is preserved from the input.** The caller passes posts in its own
- *    display order, so the pins come back in that order; nothing here re-sorts,
- *    because a map's draw order is not a ranking.
- *
- * The count returned is therefore "places with drop-ins", not "drop-ins" —
- * which is what a pin means and what the caller's label should say.
+ *    display order; nothing here re-sorts, because a map's draw order is not a
+ *    ranking.
  */
+export interface FeedMapPin {
+  /** The drop-in's real directory place, or null for a free-text post. */
+  placeId: string | null
+  /** What to label the pin with: the post's own place text. */
+  name: string
+  address: string
+  lat: number
+  lng: number
+}
+
 export function feedMapPins(
   posts: ReadonlyArray<{
+    place?: string | null
+    address?: string | null
+    place_id?: string | null
     place_coords?: { lat?: number | string | null; lng?: number | string | null } | null
   }>,
-  zipCoords: ReadonlyMap<string, ZipCoords> | null = null,
-): Array<{ lat: number; lng: number }> {
+): FeedMapPin[] {
   const seen = new Set<string>()
-  const pins: Array<{ lat: number; lng: number }> = []
+  const pins: FeedMapPin[] = []
   for (const post of posts) {
-    const coords = resolveMapCoords(post.place_coords ?? {}, zipCoords)
+    /**
+     * NO GAZETTEER PARAMETER, deliberately. The first version took a
+     * `zipCoords` map so `resolveMapCoords` could fall back to a zip found in
+     * the address — but that fallback can never fire here, and `ocr` was right
+     * to flag the parameter as dead. `listRadiusFeed` stitches each post's
+     * coordinates through `placeCoordsFor`, which returns a bare
+     * `{ lat, lng } | null` with NO `address` field, so `resolveMapCoords`
+     * never sees the address it would need. A parameter that no caller can
+     * exercise is worse than none: it advertises behaviour the function does
+     * not have. If the feed ever gains address-bearing coordinates, add the
+     * parameter back WITH a caller that uses it.
+     */
+    const coords = resolveMapCoords(post.place_coords ?? {}, null)
     if (coords === null) continue
-    // Key on the exact coordinate pair, so two posts at the same place collapse
-    // and two posts at genuinely different spots both survive.
-    const key = `${coords.lat},${coords.lng}`
+    const placeId =
+      typeof post.place_id === 'string' && post.place_id !== '' ? post.place_id : null
+    // Key on the PLACE where the post names one, so every drop-in there is one
+    // dot; otherwise on the exact coordinate pair.
+    const key = placeId ?? `${coords.lat},${coords.lng}`
     if (seen.has(key)) continue
     seen.add(key)
-    pins.push(coords)
+    pins.push({
+      placeId,
+      name: (post.place ?? '').trim(),
+      address: (post.address ?? '').trim(),
+      lat: coords.lat,
+      lng: coords.lng,
+    })
   }
   return pins
 }

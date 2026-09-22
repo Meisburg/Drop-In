@@ -13,7 +13,7 @@ import {
   HandleTakenError,
   listKids,
   deleteParentCard,
-  listMyAccountLinks,
+  listMyAccountLinksWithHandles,
   listParentCards,
   LinkTargetUnknownError,
   requestAccountLink,
@@ -243,7 +243,11 @@ export function ProfilePage() {
     if (userId === null) return
     let cancelled = false
     setAccountLinks(null)
-    listMyAccountLinks()
+    // WITH HANDLES: the section renders `@handle`, so resolving the
+    // counterparty is what makes it able to say WHO the link is with. `ocr`
+    // (medium) caught that the first version read the bare rows and left every
+    // `@…` branch unreachable.
+    listMyAccountLinksWithHandles()
       .then((rows) => {
         if (!cancelled) setAccountLinks(rows)
       })
@@ -335,7 +339,7 @@ export function ProfilePage() {
    */
   async function reloadLinks() {
     try {
-      setAccountLinks(await listMyAccountLinks())
+      setAccountLinks(await listMyAccountLinksWithHandles())
     } catch {
       // Leave the previous list in place; a failed refresh must not blank a
       // link the parent can see.

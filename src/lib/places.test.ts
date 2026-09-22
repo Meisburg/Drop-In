@@ -1290,27 +1290,57 @@ describe('MAP_FOCUS_RADIUS_MILES (V19 t01 — D1: the map frames the neighbourho
  * unclickable pile).
  */
 describe('feedMapPins (V19 t02 — the feed map)', () => {
-  const zipCoords = new Map<string, ZipCoords>([
-    ['98107', { lat: 47.6687, lng: -122.3836 }],
-  ])
-
   it('returns a pin for every post that has real coordinates', () => {
     const pins = feedMapPins([
-      { place_coords: { lat: 47.67, lng: -122.38 } },
-      { place_coords: { lat: 47.68, lng: -122.39 } },
+      { place: 'Green Lake', place_coords: { lat: 47.67, lng: -122.38 } },
+      { place: 'Alki', place_coords: { lat: 47.68, lng: -122.39 } },
     ])
-    expect(pins).toEqual([
-      { lat: 47.67, lng: -122.38 },
-      { lat: 47.68, lng: -122.39 },
+    expect(pins.map((p) => [p.lat, p.lng])).toEqual([
+      [47.67, -122.38],
+      [47.68, -122.39],
     ])
   })
 
-  it('gives NO pin to a free-text post — a place name is not a location', () => {
-    // The "Somewhere else" case: `place_coords` is null because the post names
-    // a place rather than linking one. Inventing a pin would send a parent to
-    // the wrong park, so the honest answer is no pin at all.
-    expect(feedMapPins([{ place_coords: null }])).toEqual([])
-    expect(feedMapPins([{}])).toEqual([])
+  /**
+   * THE FIX THE `ocr` LANE FORCED.
+   *
+   * The first version returned bare coordinates, and FeedPage synthesised
+   * `id: 'feed-pin-0'` around them. The map's marker panel then offered "Start
+   * a drop-in", which hands `/new` that id as `placeId` — and
+   * `playdates.place_id` is a uuid with an FK to places(id), so the post would
+   * fail on submit. These tests pin the identity that prevents it.
+   */
+  it('carries the REAL place id when the post links a directory place', () => {
+    const pins = feedMapPins([
+      {
+        place: 'Ballard Corners Park',
+        place_id: '26a77f22-7f99-4bd5-88df-4169b91ae7c7',
+        place_coords: { lat: 47.6743, lng: -122.3791 },
+      },
+    ])
+    expect(pins[0].placeId).toBe('26a77f22-7f99-4bd5-88df-4169b91ae7c7')
+    expect(pins[0].name).toBe('Ballard Corners Park')
+  })
+
+  it('carries a NULL place id for a free-text post, never a synthesised one', () => {
+    // A free-text post can still have coordinates (from its address) but it has
+    // NO directory row, so there is no id to hand to a place action. Null is the
+    // honest answer; a fake id is what broke posting.
+    const pins = feedMapPins([
+      { place: 'Somewhere else entirely', place_id: null, place_coords: { lat: 47.67, lng: -122.38 } },
+    ])
+    expect(pins).toHaveLength(1)
+    expect(pins[0].placeId).toBeNull()
+    // The parent's own words survive, so the panel can still say where it is.
+    expect(pins[0].name).toBe('Somewhere else entirely')
+  })
+
+  it('gives NO pin to a post with no coordinates at all', () => {
+    // The "Somewhere else" case with no resolvable location: `place_coords` is
+    // null, so the map must not invent one — a made-up pin sends a parent to
+    // the wrong park.
+    expect(feedMapPins([{ place: 'Somewhere', place_coords: null }])).toEqual([])
+    expect(feedMapPins([{ place: 'Somewhere' }])).toEqual([])
     expect(feedMapPins([{ place_coords: { lat: null, lng: null } }])).toEqual([])
   })
 
@@ -1318,10 +1348,19 @@ describe('feedMapPins (V19 t02 — the feed map)', () => {
     // A morning and an afternoon session at the same park: the LIST shows both
     // (they are separate drop-ins), but the map draws one dot, because two dots
     // on the identical pixel cannot be told apart or clicked separately.
+    const id = '26a77f22-7f99-4bd5-88df-4169b91ae7c7'
     const pins = feedMapPins([
-      { place_coords: { lat: 47.67, lng: -122.38 } },
-      { place_coords: { lat: 47.67, lng: -122.38 } },
-      { place_coords: { lat: 47.67, lng: -122.38 } },
+      { place_id: id, place_coords: { lat: 47.67, lng: -122.38 } },
+      { place_id: id, place_coords: { lat: 47.67, lng: -122.38 } },
+      { place_id: id, place_coords: { lat: 47.67, lng: -122.38 } },
+    ])
+    expect(pins).toHaveLength(1)
+  })
+
+  it('collapses two free-text posts at one coordinate too (no id to key on)', () => {
+    const pins = feedMapPins([
+      { place: 'A', place_coords: { lat: 47.67, lng: -122.38 } },
+      { place: 'B', place_coords: { lat: 47.67, lng: -122.38 } },
     ])
     expect(pins).toHaveLength(1)
   })
@@ -1334,33 +1373,24 @@ describe('feedMapPins (V19 t02 — the feed map)', () => {
     expect(pins).toHaveLength(2)
   })
 
-  it('resolves a zip-only post through the gazetteer (the address fallback)', () => {
-    const pins = feedMapPins(
-      [{ place_coords: { lat: null, lng: null, address: 'Seattle, WA 98107' } as never }],
-      zipCoords,
-    )
-    // A post whose place carries no coords but whose address names a known zip
-    // still gets a pin — the same fallback `resolveMapCoords` gives /browse.
-    expect(pins).toEqual([{ lat: 47.6687, lng: -122.3836 }])
-  })
-
-  it('never invents a pin from an unknown zip', () => {
-    expect(
-      feedMapPins([{ place_coords: { lat: null, lng: null, address: 'Nowhere, XX 00000' } as never }], zipCoords),
-    ).toEqual([])
-  })
-
   it('preserves input order rather than re-sorting', () => {
     // A map draws in the order it is given; the caller's order is a display
-    // decision (soonest first), not something this seat should re-rank.
+    // decision (soonest first), not something this seam should re-rank.
     const pins = feedMapPins([
       { place_coords: { lat: 47.9, lng: -122.1 } },
       { place_coords: { lat: 47.1, lng: -122.9 } },
     ])
-    expect(pins[0]).toEqual({ lat: 47.9, lng: -122.1 })
+    expect(pins[0]).toMatchObject({ lat: 47.9, lng: -122.1 })
   })
 
   it('accepts an empty feed', () => {
     expect(feedMapPins([])).toEqual([])
+  })
+
+  it('trims the place text and tolerates it being absent', () => {
+    const pins = feedMapPins([{ place: '  Green Lake  ', place_coords: { lat: 47.67, lng: -122.38 } }])
+    expect(pins[0].name).toBe('Green Lake')
+    const noName = feedMapPins([{ place_coords: { lat: 47.67, lng: -122.38 } }])
+    expect(noName[0].name).toBe('')
   })
 })

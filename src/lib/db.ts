@@ -23,6 +23,7 @@ import type {
 // frame the user chose rather than computing one of its own, and refuses a frame
 // that could not be drawn.
 import { isDrawableRect, type CropRect } from './photoCrop'
+import type { LinkRowForView } from './links'
 // V9 ticket 11: where a family's images live and who may fetch each kind. The
 // paths are the pure seams (photoStorage.ts) so this file never spells one out.
 import {
@@ -5027,10 +5028,24 @@ export async function findProfileIdByHandleWithClient(
   client: SupabaseClient,
   handle: string,
 ): Promise<{ id: string; display_name: string } | null> {
+  /**
+   * ESCAPE THE ILIKE PATTERN CHARACTERS. `ocr` (low) caught this and it is a
+   * real correctness bug, not a style note: `%` and `_` inside a display name
+   * are WILDCARDS to ILIKE, so a parent whose handle contains either would
+   * match other people. Worse, `profiles_display_name_key` (migration 0004) is
+   * CASE-SENSITIVE, so `nicole` and `Nicole` can coexist — and a case-
+   * insensitive ILIKE then matches BOTH rows and `.maybeSingle()` throws a raw
+   * multi-row error instead of the `LinkTargetUnknownError` this section
+   * promises.
+   *
+   * Escaping `\`, `%` and `_` makes the comparison an exact case-insensitive
+   * match, which is what "find the parent with this handle" means.
+   */
+  const pattern = handle.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
   const { data, error } = await client
     .from('profiles')
     .select('id, display_name')
-    .ilike('display_name', handle)
+    .ilike('display_name', pattern)
     .maybeSingle()
   if (error) throw error
   return (data as unknown as { id: string; display_name: string } | null) ?? null
@@ -5111,11 +5126,17 @@ export async function unlinkAccounts(linkId: string): Promise<void> {
  * The other party's profile, for rendering a linked partner: their handle and
  * avatar. Deliberately narrow — a link shows WHO the partner is, not their
  * whole profile, which they already control the visibility of.
+ *
+ * Takes the client so it is injectable and testable like every other seam in
+ * this section. `ocr` flagged the first version for hard-coding `supabase`,
+ * which broke that house pattern and made it the one function here a unit test
+ * could not exercise.
  */
-export async function getProfileSummaryById(
+export async function getProfileSummaryByIdWithClient(
+  client: SupabaseClient,
   profileId: string,
 ): Promise<{ id: string; display_name: string; avatar_url: string | null } | null> {
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from('profiles')
     .select('id, display_name, avatar_url')
     .eq('id', profileId)
@@ -5125,6 +5146,55 @@ export async function getProfileSummaryById(
     (data as unknown as { id: string; display_name: string; avatar_url: string | null } | null) ??
     null
   )
+}
+
+/**
+ * The account's link rows, EACH CARRYING THE OTHER PARENT'S HANDLE.
+ *
+ * `ocr` (medium) caught that the first version left this out entirely: the link
+ * section renders `@${view.otherHandle}`, but nothing ever populated a handle,
+ * so every state fell back to the neutral placeholder ("your partner", "them")
+ * and the four `@…` branches were unreachable. A parent could link an account
+ * and never see whose it was — the handshake worked, the confirmation did not.
+ *
+ * One BATCHED read of the counterparty ids (never one query per row — the same
+ * discipline the card hearts follow at 239 rows), keyed into the rows so
+ * `linkView` receives what it needs. A counterparty that cannot be read (an RLS
+ * edge, or a deleted profile) yields an absent handle and the caller's neutral
+ * fallback — the `host_display_name` null-fidelity discipline.
+ */
+export async function listMyAccountLinksWithHandles(): Promise<LinkRowForView[]> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) return []
+  const links = await listMyAccountLinksWithClient(supabase, user.id)
+  const otherIds = [
+    ...new Set(
+      links.map((link) => (link.requester_id === user.id ? link.addressee_id : link.requester_id)),
+    ),
+  ]
+  const handles = new Map<string, string>()
+  if (otherIds.length > 0) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, display_name')
+      .in('id', otherIds)
+    if (error) throw error
+    for (const row of (data as unknown as Array<{ id: string; display_name: string }>) ?? []) {
+      handles.set(row.id, row.display_name)
+    }
+  }
+  return links.map((link) => ({
+    ...link,
+    // The viewer's OWN handle is deliberately null: only the counterparty's
+    // matters here, and leaving ours empty makes it impossible to accidentally
+    // render our own name as the linked partner.
+    requester_handle:
+      link.requester_id === user.id ? null : (handles.get(link.requester_id) ?? null),
+    addressee_handle:
+      link.addressee_id === user.id ? null : (handles.get(link.addressee_id) ?? null),
+  }))
 }
 
 /* ===========================================================================

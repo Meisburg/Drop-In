@@ -1645,6 +1645,38 @@ test('the feed maps its placed drop-ins and ignores free-text ones (V19 t02)', a
     // its presence as a CARD first — otherwise this would pass trivially if the
     // insert had failed.
     await expect(page.getByText(freeTextPost.title, { exact: false })).toBeVisible()
+
+    /**
+     * AC (THE `ocr` FIX): a feed pin must not offer a place action it cannot
+     * honour.
+     *
+     * The placed post in this feed links a REAL directory place, so the panel's
+     * actions DO appear and are safe — "Start a drop-in" hands `/new` a genuine
+     * `places.id`, which is exactly what `playdates.place_id` (uuid, FK to
+     * places) requires. That is asserted here on the real rendered panel.
+     *
+     * The free-text post in the SAME feed has no `place_id`. It gets no pin at
+     * all (asserted via the pin count below), so it can never present the panel
+     * — which is the other half of the same guarantee, and the reason the fix
+     * is two-sided: carry a real id when there is one, and never synthesise one
+     * when there is not.
+     */
+    const indigoMarker = page
+      .locator('path.leaflet-interactive[fill="#4f46e5"]:not([d="M0 0"])')
+      .first()
+    if ((await indigoMarker.count()) > 0) {
+      await indigoMarker.click({ force: true })
+      await expect(page.getByTestId('place-marker-info')).toBeVisible()
+      // The panel names the REAL place, not the old "Drop-in location" stub.
+      await expect(page.getByTestId('place-marker-info')).toContainText(MARKER_PLACE_NAME)
+      // And the directory actions are present, because this pin HAS an id.
+      await expect(page.getByTestId('host-here')).toBeVisible()
+      const detailsHref = await page.getByTestId('marker-details').getAttribute('href')
+      expect(
+        detailsHref,
+        'Details must link to a REAL place id, never a synthesised feed-pin-N',
+      ).not.toContain('feed-pin-')
+    }
     const pinCountWithBoth = await page.locator('path.leaflet-interactive').count()
 
     // Deleting the placed post must REMOVE a pin — the strongest available proof

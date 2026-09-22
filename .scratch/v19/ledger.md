@@ -190,3 +190,68 @@ Slice t04 (part 2) + t05: THE PROFILE UI — parent cards and the link section.
   Note on lint: +2 warnings (62 -> 64), both `react(set-state-in-effect)` on the
   two new load effects — the SAME pattern the file's two existing loads use at
   lines 169/179. House pattern, not a defect; recorded rather than hidden.
+
+Slice t06 (lanes):
+  FULL E2E SUITE: 102 passed, exit 0 — the whole suite, including both new V19
+    specs (the D1 map spec and the feed-map spec). evidence/t06-e2e-full.log.
+  playtest lane PASS — 8 routes, 0 uncaught JS errors, exit 0.
+    evidence/t06-playtest.log. Both lane processes released.
+  mobile audit PASS 18/18 (6 viewports x 3 routes), exit 0.
+    evidence/t06-mobile.log.
+  ocr third lane: running (results in evidence/t06-ocr.log + ocr-v19.json).
+
+ocr ADJUDICATION — 17 findings, 16 fixed, 1 kept as documentation.
+  * HIGH (fixed) — A REAL BUG THAT WOULD HAVE BROKEN POSTING. FeedPage
+    synthesised `id: 'feed-pin-N'` Place rows for the map, so tapping a feed pin
+    offered "Start a drop-in", which hands /new that id as `placeId`. VERIFIED
+    against the live catalog: `playdates.place_id` is uuid with an FK to
+    places(id) — the insert would have failed with a raw Postgres error behind a
+    button that looked fine. "Details" was equally broken (/place/feed-pin-0).
+    FIX, two-sided: `feedMapPins` now returns a `FeedMapPin` carrying the post's
+    REAL place_id (null for free text), and `PlacesMap` gained `placeActions`
+    (default true) so a map holding a non-directory pin drops the controls it
+    cannot honour while keeping the informational panel. The e2e spec now
+    asserts `Details` never contains 'feed-pin-'.
+  * MEDIUM (fixed) — RACE in my own migration trigger. A bare `select count(*)`
+    is insufficient under READ COMMITTED: two concurrent accepts sharing a
+    person lock DIFFERENT rows, neither sees the other, both commit, and the
+    parent ends up with two partners — the exact invariant the trigger exists to
+    hold. FIXED with `pg_advisory_xact_lock` on both people's keys (ordered
+    least→greatest to avoid deadlock), so same-person accepts serialise and
+    different-person accepts do not block.
+  * MEDIUM (fixed) — the link section could never show WHO it was linked to:
+    nothing populated `otherHandle`, so every `@…` branch was unreachable and
+    every state fell back to "your partner"/"them". A parent could link an
+    account and never see whose. FIXED with `listMyAccountLinksWithHandles` (one
+    BATCHED counterparty read, never one per row), wired into ProfilePage.
+  * MEDIUM (fixed) — the feed band said "N places with drop-ins" while the map
+    frames only 1 mile, so the two numbers could visibly contradict each other.
+    FIXED with the same honest affordance /browse has: "N places are outside
+    this mile view".
+  * MEDIUM (fixed) — `feedMapPins` took a `zipCoords` parameter no caller could
+    exercise (placeCoordsFor returns {lat,lng} with no address, so the gazetteer
+    fallback never fires). Removed, with the reason recorded; the signature
+    change surfaced every caller that passed it.
+  * LOW (fixed) — `.ilike()` wildcard injection: `_`/`%` in a handle matched
+    OTHER parents, and since display_name is case-SENSITIVE-unique, 'nicole' and
+    'Nicole' could coexist and maybeSingle() would throw a raw multi-row error
+    instead of the promised typed one. PROVED on the live DB: unescaped 'j_n'
+    matches BOTH 'jon' and 'jan'; escaped matches neither. Now escaped.
+  * LOW (fixed) — removed the dead `partnerByProfileId` export (its doc
+    described a return shape it did not have) and gave
+    `getProfileSummaryByIdWithClient` the client parameter every other seam in
+    the section takes.
+  * LOW (fixed) — migration doc corrections: the header's "strictly additive"
+    claim was overstated (the first-draft cleanup DOES mutate rows — corrected
+    to say so honestly), the redundant delete policy is now labelled as
+    redundant rather than justified by a wrong claim, and both duplicated bound
+    sets (position 1..2 ↔ MAX_PARENT_CARDS; status ↔ AccountLinkStatus) now name
+    their TS counterpart.
+  * LOW (fixed) — `ocr` noted the RLS claims had NO in-repo regression guard.
+    Added `e2e/account-links.e2e.ts` (2 tests) against the REAL database with
+    REAL JWTs: a third account reads ZERO link rows, cannot alter one, anon
+    reads zero, C cannot forge a card for A, and a THIRD card is refused.
+    Self-cleaning. 2 passed.
+  All fixes re-verified: npm run verify exit 0 · 1053/1053 unit (30 files) ·
+  lint 0 errors / 64 warnings · places e2e (feed map) 2 passed · account-links
+  e2e 2 passed · clean-range PASS.

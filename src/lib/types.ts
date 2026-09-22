@@ -420,26 +420,6 @@ export interface AccountLink {
 /** The closed set `account_links_status_chk` allows. */
 export type AccountLinkStatus = 'pending' | 'accepted' | 'declined'
 
-/**
- * Resolve each account to its accepted partner: `accountLinks` → a map of
- * `profileId -> partnerProfileId`, symmetric in both directions.
- *
- * Pure, so the profile page can render "linked to @handle" without deciding
- * anything itself. Only `accepted` links count — a pending invitation is not a
- * relationship, and a declined one certainly is not.
- */
-export function partnerByProfileId(
-  links: ReadonlyArray<Pick<AccountLink, 'requester_id' | 'addressee_id' | 'status'>>,
-  viewerId: string,
-): string | null {
-  for (const link of links) {
-    if (link.status !== 'accepted') continue
-    if (link.requester_id === viewerId) return link.addressee_id
-    if (link.addressee_id === viewerId) return link.requester_id
-  }
-  return null
-}
-
 export interface Kid {
   id: string
   profile_id: string

@@ -187,6 +187,7 @@ export function PlacesMap({
   className,
   homePin,
   radiusCircle,
+  placeActions = true,
 }: {
   places: readonly Place[]
   zipCoords: ReadonlyMap<string, ZipCoords> | null
@@ -196,6 +197,24 @@ export function PlacesMap({
   homePin?: { lat: number; lng: number } | null
   /** V15 t02: a radius overlay (center + miles). Drawn as a translucent circle. */
   radiusCircle?: { center: { lat: number; lng: number }; radiusMiles: number } | null
+  /**
+   * V19 t02: whether a tapped marker offers the DIRECTORY actions — "Start a
+   * drop-in" (which navigates to /new with `placeId`) and "Details" (which links
+   * to `/place/:id`).
+   *
+   * Defaults to TRUE, the behaviour every existing caller wants: on /browse and
+   * /place/:id the markers ARE directory rows, so both actions resolve.
+   *
+   * The FEED passes false for pins that are not directory places. The `ocr`
+   * review lane caught why this matters: synthesising a fake `Place` with
+   * `id: 'feed-pin-0'` made "Start a drop-in" hand `/new` a non-uuid, which the
+   * `playdates.place_id` FK (uuid → places.id, migration 0030) rejects on
+   * submit — a guaranteed failure behind a button that looked fine. A panel
+   * offering an action it cannot honour is worse than no action, so a
+   * non-directory pin keeps the informational panel (name + address) and drops
+   * the two controls that need a real id.
+   */
+  placeActions?: boolean
 }) {
   const navigate = useNavigate()
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -388,41 +407,48 @@ export function PlacesMap({
             <span className="text-sm font-semibold text-slate-900">{selected.name}</span>
             <span className="text-xs text-slate-600">{selected.address}</span>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              data-testid="host-here"
-              onClick={() => hostHere()}
-              className="rounded-xl bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-700"
-            >
-              Start a drop-in
-            </button>
-            {learnMoreUrl !== null ? (
-              <a
-                href={learnMoreUrl}
-                target="_blank"
-                rel="noopener"
-                data-testid="learn-more"
+          {/* V19 t02: the ACTION row is directory-only. `placeActions=false`
+              (the feed) keeps the informational panel above — the pin's name
+              and address — and drops every control that needs a real place id,
+              because each of them would otherwise fail on use. See the prop's
+              doc comment for the `ocr` finding this prevents. */}
+          {placeActions ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                data-testid="host-here"
+                onClick={() => hostHere()}
+                className="rounded-xl bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-700"
+              >
+                Start a drop-in
+              </button>
+              {learnMoreUrl !== null ? (
+                <a
+                  href={learnMoreUrl}
+                  target="_blank"
+                  rel="noopener"
+                  data-testid="learn-more"
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+                >
+                  Learn more
+                </a>
+              ) : (
+                // No external URL (no name to search): show the place's details
+                // inline instead of a broken link (V15 ticket 04 AC5).
+                <span data-testid="learn-more-inline" className="text-xs text-slate-600">
+                  {placeKindLabel(selected.kind)}
+                  {selected.notes !== null && selected.notes !== '' ? ` · ${selected.notes}` : ''}
+                </span>
+              )}
+              <Link
+                to={placePath(selected.id)}
+                data-testid="marker-details"
                 className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
               >
-                Learn more
-              </a>
-            ) : (
-              // No external URL (no name to search): show the place's details
-              // inline instead of a broken link (V15 ticket 04 AC5).
-              <span data-testid="learn-more-inline" className="text-xs text-slate-600">
-                {placeKindLabel(selected.kind)}
-                {selected.notes !== null && selected.notes !== '' ? ` · ${selected.notes}` : ''}
-              </span>
-            )}
-            <Link
-              to={placePath(selected.id)}
-              data-testid="marker-details"
-              className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
-            >
-              Details
-            </Link>
-          </div>
+                Details
+              </Link>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

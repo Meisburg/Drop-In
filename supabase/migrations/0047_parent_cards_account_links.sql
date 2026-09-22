@@ -8,8 +8,15 @@
 --   2. `account_links` — a parent-to-parent link: one account invites another
 --                        by handle, the other accepts, and both then appear on
 --                        each other's profile.
--- No existing table or row is touched. Strictly additive and re-paste-safe:
--- this is a LIVE-DATABASE migration (the project holds real family data).
+-- No existing TABLE is touched and no pre-existing row is rewritten by the
+-- intended path. One honest exception, because `ocr` was right to flag the
+-- original claim as overstated: the FIRST-DRAFT CLEANUP block below runs a
+-- data-mutating UPDATE that demotes surplus accepted links. That is a repair of
+-- rows THIS migration's own earlier draft created, it converges (a second run
+-- finds nothing to demote, so the UPDATE is a no-op), and it exists because
+-- shipping the fix without it would leave a real account holding two partners.
+-- So: re-paste-safe and additive for every table that existed before 0047, with
+-- exactly one deliberate repair of 0047's own mistake.
 --
 -- Why (the founder's ask, 2026-09-21):
 --   "on the profile section, on 'About the parents', there should be a place
@@ -96,6 +103,9 @@ create table if not exists public.parent_cards (
   -- limit rather than a hope (see the unique constraint below).
   position integer not null,
   created_at timestamptz not null default now(),
+  -- The 1..2 bounds MUST stay in sync with MAX_PARENT_CARDS in
+  -- src/lib/parentCards.ts (the house rule for duplicated bounds, cf.
+  -- profiles_radius_miles_chk <-> RADIUS_MIN_MILES/MAX_MILES).
   constraint parent_cards_position_chk check (position between 1 and 2)
 );
 
@@ -180,6 +190,9 @@ create table if not exists public.account_links (
   responded_at timestamptz,
   -- A closed set the app branches on, so a CHECK is right here (unlike a bio):
   -- an unknown status would render as nothing and silently strand an invite.
+  -- Must stay in sync with AccountLinkStatus in src/lib/types.ts, so a status
+  -- added to only one side is caught as a divergence rather than rendering as
+  -- nothing.
   constraint account_links_status_chk check (status in ('pending', 'accepted', 'declined')),
   -- Nobody links to themselves. Enforced in the DB as well as the UI, because
   -- a self-link would make a parent appear twice on their own profile.
@@ -220,6 +233,30 @@ create unique index if not exists account_links_one_pending_per_pair
 -- an explicit existence check. It is BEFORE, so it rejects the write rather than
 -- repairing it afterwards, and it only inspects rows that are leaving or
 -- entering the accepted state.
+--
+-- ---------------------------------------------------------------------------
+-- THE LOCK IS REQUIRED, AND ITS ABSENCE WAS A REAL RACE (found by `ocr`).
+--
+-- A bare `select count(*)` here is NOT sufficient under READ COMMITTED. Two
+-- concurrent accepts that share a person — the same parent answering two
+-- pending invitations in two tabs, or a scripted client — lock two DIFFERENT
+-- rows, so neither trigger sees the other's uncommitted accept: both counts
+-- return 0, both commit, and the parent ends up with two accepted partners.
+-- That is precisely the invariant this trigger exists to hold, so the check
+-- would have been defeated by exactly the situation it was written for.
+--
+-- `pg_advisory_xact_lock` serialises the check. It is taken on a key derived
+-- from the row's two people, so two accepts involving the SAME parent contend
+-- on the same lock and the second sees the first's committed row; accepts
+-- involving different parents do not block each other at all. The lock is
+-- transaction-scoped (`_xact_`), so it is released on commit or rollback with
+-- no cleanup of our own.
+--
+-- Why not `SELECT ... FOR UPDATE` on the conflicting rows: the conflict is a
+-- row that may not exist YET (both transactions are inserting), and there is
+-- nothing to lock in that case. An advisory lock on the PERSON covers the gap
+-- where no row exists.
+-- ---------------------------------------------------------------------------
 create or replace function public.account_links_one_partner_guard()
 returns trigger
 language plpgsql
@@ -233,6 +270,14 @@ begin
   if new.status <> 'accepted' then
     return new;
   end if;
+
+  -- Serialise concurrent accepts that share either person. `hashtext` gives a
+  -- stable 32-bit key for the pair; taking the lock on BOTH people's keys (in a
+  -- fixed order, smallest first) means two accepts that share one person always
+  -- contend. Ordering by value avoids a deadlock between two transactions that
+  -- each hold one and want the other.
+  perform pg_advisory_xact_lock(hashtext(least(new.requester_id::text, new.addressee_id::text)));
+  perform pg_advisory_xact_lock(hashtext(greatest(new.requester_id::text, new.addressee_id::text)));
 
   -- Count accepted links that would leave this row's TWO PEOPLE with more than
   -- one partner. The pair is treated as a set: whichever column each id sits in
@@ -359,6 +404,14 @@ $$;
 -- UNLINK: either party may end an accepted link. Expressed as a DELETE so an
 -- unlink is complete — no half-row left behind for a later reader to
 -- misinterpret as an active relationship.
+--
+-- NOTE, corrected after `ocr` (low) pointed it out: this policy ALSO covers
+-- withdrawing a pending invitation, because it matches either party in ANY
+-- status. The separate `account_links_delete_requester_pending` policy below is
+-- therefore redundant — Postgres OR-combines DELETE policies, so it grants
+-- nothing new. It is kept as an EXPLICIT statement of intent (a reader asking
+-- "can a requester withdraw?" finds a policy that says so), but the honest
+-- position is that this one already does the work.
 do $$
 begin
   if not exists (
@@ -374,9 +427,13 @@ begin
 end
 $$;
 
--- A requester may also WITHDRAW a pending invite they sent. Without this the
--- INSERT/UPDATE/DELETE set would leave a parent unable to cancel their own
--- mistake — they could only wait for the other party to decline.
+-- A requester may also WITHDRAW a pending invite they sent.
+--
+-- REDUNDANT BY DESIGN (see the note above): `account_links_delete_parties`
+-- already permits this, so this policy changes no behaviour. It is kept as
+-- documentation-in-code of an intended capability, and this comment says so
+-- rather than repeating the earlier, incorrect claim that withdrawal would
+-- otherwise be impossible.
 do $$
 begin
   if not exists (

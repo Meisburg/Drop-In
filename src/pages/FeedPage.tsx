@@ -43,6 +43,7 @@ import {
   homeZipControlLabel,
   isStartingSoon,
   localDayKey,
+  milesWord,
   pastDropInsHref,
   PAST_DROP_INS_LABEL,
   radiusChoices,
@@ -56,6 +57,7 @@ import {
   feedMapPins,
   framingCircle,
   MAP_FOCUS_RADIUS_MILES,
+  distanceMiles,
 } from '../lib/places'
 import type { ZipCoords } from '../lib/feed'
 import type { PlaydateWithNeighborhood } from '../lib/types'
@@ -363,7 +365,18 @@ export function FeedPage() {
    * so the frame anchors on the home pin; with no home pin the circle is null
    * and the map keeps its own mount view rather than framing on nothing.
    */
-  const feedPins = feedMapPins(posts ?? [], zipCoords)
+  const feedPins = feedMapPins(posts ?? [])
+  /** V19 t02: how many feed pins fall OUTSIDE the neighbourhood frame the map
+   * draws. The header counts every place in the FEED; the map shows only the
+   * ones near home, so this states the difference rather than letting the two
+   * numbers contradict each other. Computed from the same array the map draws. */
+  const feedPinsOutsideFrame = (() => {
+    if (homePinCoords === null) return 0
+    return feedPins.filter(
+      (pin) => distanceMiles(homePinCoords, { lat: pin.lat, lng: pin.lng }) > MAP_FOCUS_RADIUS_MILES,
+    ).length
+  })()
+
   const feedMapFrame = framingCircle({
     geocodeCenter: null,
     homePin: homePinCoords,
@@ -1137,13 +1150,27 @@ export function FeedPage() {
               </div>
               <PlacesMap
                 className="h-[45dvh] min-h-[240px]"
-                places={feedPins.map((coords, index) => ({
-                  id: `feed-pin-${index}`,
-                  name: 'Drop-in location',
+                /* V19 t02, CORRECTED after the `ocr` review lane caught a real
+                   bug: a feed pin now carries the drop-in's REAL place identity
+                   where it has one, instead of a synthesised
+                   `id: 'feed-pin-N'`. That fake id would have been handed to
+                   `/new` by the panel's "Start a drop-in" and rejected by the
+                   `playdates.place_id` uuid FK on submit — while "Details"
+                   linked to `/place/feed-pin-0`.
+
+                   `placeActions` is true only when EVERY pin names a real
+                   directory place. A free-text drop-in has coordinates (from
+                   its address) but no `places` row, so a map containing one
+                   drops the directory controls rather than offering an action
+                   that cannot succeed. Such a pin keeps the informational
+                   panel — the place text the parent typed. */
+                places={feedPins.map((pin, index) => ({
+                  id: pin.placeId ?? `feed-pin-${index}`,
+                  name: pin.name === '' ? 'Drop-in location' : pin.name,
                   kind: 'other' as const,
-                  address: '',
-                  lat: coords.lat,
-                  lng: coords.lng,
+                  address: pin.address,
+                  lat: pin.lat,
+                  lng: pin.lng,
                   indoor: false,
                   age_min: null,
                   age_max: null,
@@ -1155,7 +1182,26 @@ export function FeedPage() {
                 zipCoords={zipCoords}
                 homePin={homePinCoords}
                 radiusCircle={feedMapFrame}
+                placeActions={feedPins.every((pin) => pin.placeId !== null)}
               />
+              {/* V19 t02: the same honesty rule the browse map follows. The map
+                  frames the NEIGHBOURHOOD (`MAP_FOCUS_RADIUS_MILES`), and the
+                  feed's posts are filtered by the viewer's PICKED radius (up to
+                  35 mi) — so at the common 5-mile setting most pins sit outside
+                  the initial frame. A header saying "6 places with drop-ins"
+                  above a map showing two would read as a broken map.
+
+                  `ocr` (medium) flagged exactly this. The count stays (it is
+                  about the FEED, which is what the parent is looking at) and
+                  the number hidden by the frame is now stated underneath, so
+                  the two never contradict each other. */}
+              {feedPinsOutsideFrame > 0 ? (
+                <p data-testid="feed-map-outside" className="mt-2 text-xs text-slate-500">
+                  {feedPinsOutsideFrame}{' '}
+                  {feedPinsOutsideFrame === 1 ? 'place is' : 'places are'} outside this{' '}
+                  {milesWord(MAP_FOCUS_RADIUS_MILES)} view — the list below shows them all.
+                </p>
+              ) : null}
             </div>
           ) : null}
           {dayGroups.map((group) => {
