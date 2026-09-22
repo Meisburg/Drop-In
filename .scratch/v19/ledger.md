@@ -144,3 +144,24 @@ PRIVACY PROBED LIVE with three real accounts + real JWTs (not read off the SQL):
   account_links verified back to 0 rows.
   Evidence: evidence/t03-apply.log, t03-apply2.log, t03-rls-probe.log.
 Slice t03 gate: npm run verify exit 0 · 1023/1023 unit · lint 0 errors / 62.
+
+Slice t04 (part 1): the pure seams + DB writers.
+  NEW `src/lib/links.ts` + `links.test.ts` (18 tests): normalizeHandle,
+  validateLinkRequest, linkStatusLabel, and `linkView` — a discriminated union
+  of the five states a parent can be in (none / outgoing / incoming / declined /
+  linked). Each REJECTION gets its OWN message, which is the reason the module
+  exists: "no parent has that handle" and "that is your own handle" need
+  different fixes from the user, so they must not collapse into one generic
+  failure. `declined` is its own state rather than folded into `none` — the
+  sender is owed the news, and silently showing the empty form again would leave
+  them wondering whether the invite ever sent.
+  NEW db.ts seams: listMyAccountLinks(+WithClient), findProfileIdByHandle
+  (ilike = case-insensitive, matching normalizeHandle), requestAccountLink
+  (throws LinkTargetUnknownError so the UI can show the spelling message;
+  treats 23505 as SUCCESS because the invitation the parent wanted already
+  exists), respondToAccountLink, unlinkAccounts, getProfileSummaryById, and the
+  parent-card writers (listParentCards, saveParentCard upserting on
+  (profile_id, position) so one statement covers first write and every edit,
+  setParentCardPhoto, deleteParentCard).
+  Writers deliberately do NOT use .select().single() — the 42501 discipline.
+  Gate: npm run verify exit 0 · 1041/1041 unit (29 files) · lint 0 errors / 62.

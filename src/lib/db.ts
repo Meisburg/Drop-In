@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import type {
+  AccountLink,
   CommentWithAuthor,
+  ParentCard,
   Kid,
   MembershipWithNeighborhood,
   Neighborhood,
@@ -4961,4 +4963,248 @@ export function reactionButtonClasses(mine: boolean): string {
  */
 export function reactionCountLabel(count: number): string | null {
   return count > 0 ? String(count) : null
+}
+
+/* ===========================================================================
+ * V19 t04 — LINKED PARENT ACCOUNTS (migration 0047)
+ * ===========================================================================
+ *
+ * The handshake: `requestAccountLink(handle)` sends, `respondToAccountLink`
+ * answers, `unlinkAccounts` ends it. Every read is scoped by RLS to the two
+ * parties — a third account receives zero rows, which is asserted live against
+ * the real database rather than assumed here.
+ *
+ * WHY THE WRITES DO NOT USE `.select().single()`: the 2025-09-09 42501 lesson.
+ * `account_links` has a SELECT policy, so RETURNING would work here — but the
+ * house discipline after that incident is that a write returns no row unless
+ * the caller genuinely needs it, so a future policy tightening cannot turn a
+ * successful write into an opaque 403. The caller re-reads instead, which is
+ * also what makes `requestAccountLink` able to report "already invited".
+ */
+
+/** The columns every link read shares. Handles are resolved separately. */
+const ACCOUNT_LINK_COLUMNS = 'id, requester_id, addressee_id, status, created_at, responded_at'
+
+/**
+ * Every link row this account is part of — and, by RLS, ONLY those.
+ *
+ * Returns an empty array (never throws) when there is no session: a signed-out
+ * visitor has no links by definition, and the profile renders the "link a
+ * parent" form rather than an error.
+ */
+export async function listMyAccountLinksWithClient(
+  client: SupabaseClient,
+  profileId: string,
+): Promise<AccountLink[]> {
+  const { data, error } = await client
+    .from('account_links')
+    .select(ACCOUNT_LINK_COLUMNS)
+    .or(`requester_id.eq.${profileId},addressee_id.eq.${profileId}`)
+  if (error) throw error
+  return (data as unknown as AccountLink[]) ?? []
+}
+
+export async function listMyAccountLinks(): Promise<AccountLink[]> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) return []
+  return listMyAccountLinksWithClient(supabase, user.id)
+}
+
+/**
+ * Resolve a display_name (handle) to the profile that owns it, or null.
+ *
+ * Case-insensitive, matching `normalizeHandle` on the client: a parent typing
+ * `@Nicole` must find `nicole`. `ilike` with no wildcards is an exact
+ * case-insensitive match in PostgREST.
+ *
+ * Reads only `id` and `display_name` — the minimum needed to address an
+ * invitation. The full profile is not this function's business, and fetching it
+ * here would put another account's data in the caller's hands for no reason.
+ */
+export async function findProfileIdByHandleWithClient(
+  client: SupabaseClient,
+  handle: string,
+): Promise<{ id: string; display_name: string } | null> {
+  const { data, error } = await client
+    .from('profiles')
+    .select('id, display_name')
+    .ilike('display_name', handle)
+    .maybeSingle()
+  if (error) throw error
+  return (data as unknown as { id: string; display_name: string } | null) ?? null
+}
+
+export async function findProfileIdByHandle(
+  handle: string,
+): Promise<{ id: string; display_name: string } | null> {
+  return findProfileIdByHandleWithClient(supabase, handle)
+}
+
+/**
+ * Send an invitation to another parent, by handle.
+ *
+ * Throws `LinkTargetUnknownError` when the handle matches nobody, so the caller
+ * can show the "check the spelling" message rather than a generic failure —
+ * each rejection being its own message is the point of `links.ts`.
+ *
+ * A duplicate invite is NOT an error from the caller's point of view: the
+ * outcome the parent wanted (an invitation exists) is already true. The unique
+ * index answers 409, and this treats that as success rather than reporting a
+ * failure for a state the user was trying to reach anyway.
+ */
+export class LinkTargetUnknownError extends Error {
+  constructor(handle: string) {
+    super(`No parent has the handle "${handle}".`)
+    this.name = 'LinkTargetUnknownError'
+  }
+}
+
+export async function requestAccountLink(handle: string): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) throw new Error('Sign in to link a parent.')
+  const target = await findProfileIdByHandle(handle)
+  if (target === null) throw new LinkTargetUnknownError(handle)
+  const { error } = await supabase
+    .from('account_links')
+    .insert({ requester_id: user.id, addressee_id: target.id, status: 'pending' })
+  if (error) {
+    // 23505 = the partial unique index on (requester, addressee) where pending.
+    // The invitation the parent wanted already exists, so this is not a failure.
+    if (error.code === '23505') return
+    throw error
+  }
+}
+
+/**
+ * Answer a pending invitation: accept or decline. Only the ADDRESSEE may do
+ * this — the RLS UPDATE policy enforces it, so a requester attempting it
+ * changes zero rows rather than succeeding silently.
+ */
+export async function respondToAccountLink(
+  linkId: string,
+  response: 'accepted' | 'declined',
+): Promise<void> {
+  const { error } = await supabase
+    .from('account_links')
+    .update({ status: response, responded_at: new Date().toISOString() })
+    .eq('id', linkId)
+  if (error) throw error
+}
+
+/**
+ * Unlink: delete the row outright.
+ *
+ * A delete rather than a status change, so nothing half-there is left for a
+ * later reader to mistake for a live relationship. RLS allows it for either
+ * party, and for a requester withdrawing their own still-pending invitation.
+ */
+export async function unlinkAccounts(linkId: string): Promise<void> {
+  const { error } = await supabase.from('account_links').delete().eq('id', linkId)
+  if (error) throw error
+}
+
+/**
+ * The other party's profile, for rendering a linked partner: their handle and
+ * avatar. Deliberately narrow — a link shows WHO the partner is, not their
+ * whole profile, which they already control the visibility of.
+ */
+export async function getProfileSummaryById(
+  profileId: string,
+): Promise<{ id: string; display_name: string; avatar_url: string | null } | null> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, display_name, avatar_url')
+    .eq('id', profileId)
+    .maybeSingle()
+  if (error) throw error
+  return (
+    (data as unknown as { id: string; display_name: string; avatar_url: string | null } | null) ??
+    null
+  )
+}
+
+/* ===========================================================================
+ * V19 t05 — PARENT CARDS (migration 0047)
+ * ===========================================================================
+ *
+ * Up to two parent cards per account, each with a name, a private-bucket photo,
+ * and some words. The DATABASE enforces the cap (CHECK position 1..2 plus a
+ * unique index on (profile_id, position)), so these writers do not need to race
+ * each other politely — a third card is refused however it is attempted.
+ */
+
+/** A card's columns, shared by every read. */
+const PARENT_CARD_COLUMNS = 'id, profile_id, name, photo_url, about, position, created_at'
+
+/** Every card for one account, in render order. Empty when there are none. */
+export async function listParentCardsWithClient(
+  client: SupabaseClient,
+  profileId: string,
+): Promise<ParentCard[]> {
+  const { data, error } = await client
+    .from('parent_cards')
+    .select(PARENT_CARD_COLUMNS)
+    .eq('profile_id', profileId)
+    .order('position', { ascending: true })
+  if (error) throw error
+  return (data as unknown as ParentCard[]) ?? []
+}
+
+export async function listParentCards(profileId: string): Promise<ParentCard[]> {
+  return listParentCardsWithClient(supabase, profileId)
+}
+
+/**
+ * Create or update the card in one SLOT.
+ *
+ * Upsert on `(profile_id, position)` rather than insert-or-update decided in
+ * the client: the unique index makes the conflict unambiguous, so one statement
+ * covers both the first write and every later edit, and two rapid saves cannot
+ * race into a duplicate.
+ */
+export async function saveParentCard(input: {
+  profileId: string
+  position: number
+  name: string
+  about: string | null
+}): Promise<void> {
+  const { error } = await supabase.from('parent_cards').upsert(
+    {
+      profile_id: input.profileId,
+      position: input.position,
+      name: input.name,
+      about: input.about,
+    },
+    { onConflict: 'profile_id,position' },
+  )
+  if (error) throw error
+}
+
+/** Set (or clear) one card's photo path. Separate from `saveParentCard` so a
+ * photo upload never rewrites the text and vice versa. */
+export async function setParentCardPhoto(
+  profileId: string,
+  position: number,
+  photoPath: string | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from('parent_cards')
+    .update({ photo_url: photoPath })
+    .eq('profile_id', profileId)
+    .eq('position', position)
+  if (error) throw error
+}
+
+/** Remove a card from a slot entirely. */
+export async function deleteParentCard(profileId: string, position: number): Promise<void> {
+  const { error } = await supabase
+    .from('parent_cards')
+    .delete()
+    .eq('profile_id', profileId)
+    .eq('position', position)
+  if (error) throw error
 }
