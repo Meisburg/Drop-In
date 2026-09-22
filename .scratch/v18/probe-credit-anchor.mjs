@@ -1,0 +1,16 @@
+import { chromium } from '@playwright/test'
+const b = await chromium.launch()
+const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, storageState: 'e2e/.auth/marker-state.json' })
+const p = await ctx.newPage()
+await p.goto('http://localhost:4173/browse?q=Green+Lake+Community+Center', { waitUntil: 'networkidle', timeout: 60000 })
+await p.waitForTimeout(3000)
+console.log('rows after search:', await p.locator('[data-testid="place-row"]').count())
+console.log('real slots:', await p.locator('[data-photo="real"]').count())
+console.log('credits   :', JSON.stringify(await p.locator('[data-testid="place-card-photo-credit"]').allTextContents()))
+// Prove the CREDIT itself is never an anchor (my change adds no nested <a>)
+const creditIsAnchor = await p.evaluate(() =>
+  [...document.querySelectorAll('[data-testid="place-card-photo-credit"]')].some(e => e.tagName === 'A' || e.querySelector('a')))
+console.log('credit contains an <a>:', creditIsAnchor)
+const img = p.locator('[data-photo="real"]').first()
+if (await img.count()) console.log('img:', JSON.stringify(await img.evaluate(el=>({complete:el.complete,nw:el.naturalWidth,nh:el.naturalHeight,src:el.getAttribute('src')?.slice(0,70)}))))
+await b.close()

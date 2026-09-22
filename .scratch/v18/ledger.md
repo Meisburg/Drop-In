@@ -45,3 +45,43 @@ Slice t02: complete. New: src/lib/commons.ts + commons.test.ts (21 tests), the
   changes never need the network. A module that crawls on import is a defect.
   Gate: npm run verify exit 0 - 1001/1001 unit (28 files) - lint 0 errors /
   62 warnings (baseline held). Evidence: t02-fetch.log, t02-verify.log.
+
+Slice t03+t04: dispatched (base 31789bb)
+Slice t03: complete — scripts/apply-place-photos.mjs. SAFETY PROPERTY VERIFIED
+  FIRST, before anything else: run against the unreviewed sheet it prints
+  "keep 0 / pending 239" and writes NOTHING, and the DB read-back stayed
+  0 photos. Default state is inert. It writes all five columns together (a
+  photo without its licence is a licence violation), refuses to write any row
+  missing licence/source/image, and confirms by READ-BACK count rather than
+  trusting the DML result (the 2025-09-04 lesson: the API reports rows for DML
+  unreliably).
+Slice t04: complete — photoCreditLine seam in lib/places.ts (+6 unit tests),
+  BrowsePage renders the credit as a TEXT SPAN (never a nested <a>: the card is
+  itself a <Link>). Full gate 1007/1007, lint 0 errors / 62 warnings.
+END-TO-END PROOF, on a real browser against the real DB:
+  Applied 1 probe photo (Green Lake Community Center, "Joe Mabel / CC BY 3.0"),
+  built, served the bundle, drove /browse authenticated at 390px. Result:
+  data-photo="real" = 1, data-photo="kind" = 119, credits = ["Joe Mabel /
+  CC BY 3.0"], and the <img> really LOADED: naturalWidth 960x638 after scroll
+  (lazy loading means it is complete:false until scrolled into view — measured,
+  not assumed). Screenshot: evidence/probe-photo-card.png shows the photo with
+  its credit over the Bitter Lake illustration fallback directly above it.
+  Probe photo then REVERTED; DB confirmed back to 0 photos / 239 rows.
+THE SPEC WAS WRONG AND THE RED CHECK CAUGHT IT (recorded because it is the
+  batch's most valuable find). The first version asserted `slot.locator('img')`
+  for the real branch. It PASSED on the all-illustration tree (0 real slots, so
+  the branch never ran) and FAILED the moment a real photo existed. Cause, read
+  from the DOM: on the `real` branch the slot element IS the <img> itself, so a
+  descendant search looks for an img inside an img. The two branches have
+  DIFFERENT SHAPES. Fixed to assert tagName===IMG for real and a descendant svg
+  for kind. This is exactly the "a test that does not fail on the bug is not
+  evidence" lesson from V17, and it is why the probe photo was applied at all.
+  Red-green BOTH directions: with the photo -> "120 slots, 1 real, 119
+  illustration", 2 passed; without it -> "120 slots, 0 real, 120 illustration",
+  14/14 passed.
+V17's own AC had to be REWRITTEN, not just kept: the old spec asserted
+  `[data-photo="real"]` count is 0 ("there is no <img> at all yet"). That was an
+  accurate statement about the pre-V18 tree and became false by design. Replaced
+  with the invariant that holds for both branches (exactly one branch; real =>
+  IMG with an http src + exactly one SPAN credit; kind => an svg and no credit).
+Lane: places.e2e.ts 14 passed exit 0 (all-illustration state).

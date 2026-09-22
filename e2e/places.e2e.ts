@@ -524,10 +524,18 @@ test('the map is a fixed-height band and every card leads with its photo slot (V
     `the first row's top (${rowBox.y}) must be at or below the band's bottom (${bandBox.y + bandBox.height})`,
   ).toBeGreaterThanOrEqual(bandBox.y + bandBox.height)
 
-  // AC: EVERY card renders the photo slot, and with no photo_url (NULL for
-  // every seeded row — t05 sources real ones) it renders the kind-illustration
-  // fallback. Never a broken image, never an empty box: the slot has a real
-  // box, and it took the `kind` branch rather than an <img> with a null src.
+  // AC: EVERY card renders the photo slot. V18 made this branch on real data:
+  // a place the founder approved a Commons photo for renders <img
+  // data-photo="real">, every other place renders the kind-illustration
+  // fallback. BOTH branches are valid end states — the illustration is the
+  // permanent answer for the 22 places Commons has no image for and the ones
+  // curation rejected, not a gap waiting to be filled.
+  //
+  // What this asserts is therefore the INVARIANT rather than one branch:
+  // whatever branch a slot took, it is never a broken image and never an empty
+  // box. The previous form of this check ("there is no <img> at all yet")
+  // described the pre-V18 world and had to change when photos landed — it was
+  // an accurate statement about a tree that no longer exists.
   const slots = page.getByTestId('place-card-photo')
   const slotCount = await slots.count()
   expect(slotCount).toBeGreaterThan(0)
@@ -538,12 +546,29 @@ test('the map is a fixed-height band and every card leads with its photo slot (V
     const slotBox = await slot.boundingBox()
     expect(slotBox?.width ?? 0, 'the photo slot must have a real width').toBeGreaterThan(20)
     expect(slotBox?.height ?? 0, 'the photo slot must have a real height').toBeGreaterThan(20)
+    const branch = await slot.getAttribute('data-photo')
+    expect(branch, 'a slot takes exactly one of the two branches').toMatch(/^(real|kind)$/)
+    if (branch === 'kind') {
+      // The fallback is a DRAWN glyph, not an empty box: the slot holds an SVG.
+      await expect(slot.locator('svg')).toHaveCount(1)
+    }
   }
-  await expect(slots.first()).toHaveAttribute('data-photo', 'kind')
-  // The fallback is a DRAWN glyph, not an empty box: the slot holds an SVG.
-  await expect(slots.first().locator('svg')).toHaveCount(1)
-  // …and there is no <img> at all yet, so there is no broken image to find.
-  await expect(page.locator('[data-testid="place-card-photo"][data-photo="real"]')).toHaveCount(0)
+
+  // A `real` slot must carry a credit line (V18 t04 — CC BY / CC BY-SA require
+  // attribution, so a photo without one is a licence violation, not a cosmetic
+  // gap). A `kind` slot must NOT: crediting our own drawing to a photographer
+  // would be a false statement.
+  const realSlots = page.locator('[data-testid="place-card-photo"][data-photo="real"]')
+  const realCount = await realSlots.count()
+  const creditCount = await page.getByTestId('place-card-photo-credit').count()
+  expect(creditCount, 'every real photo carries exactly one credit line').toBe(realCount)
+  // The credit is TEXT, never an anchor: it sits inside the card's own <Link>,
+  // and an <a> within an <a> is invalid HTML with unpredictable browser
+  // behaviour. (The card DOES contain a "Learn more" anchor — a pre-existing
+  // V15 affordance — so this asserts the credit specifically, not the card.)
+  for (const credit of await page.getByTestId('place-card-photo-credit').all()) {
+    expect(await credit.evaluate((el) => el.tagName)).toBe('SPAN')
+  }
 
   // AC: the heart (V17 t02) is now in the CARD HEADER — the top-right of the
   // photo slot — and is still a >=44px tap target. The t02 spec proves its
@@ -1298,4 +1323,94 @@ test.afterEach(async () => {
   // touched — this spec never writes one, and another spec's rows are not ours
   // to delete.
   await clearMarkerPlaceFollows()
+})
+
+/**
+ * V18 t04 — the photo slot and its CREDIT LINE.
+ *
+ * WHY THIS SPEC DOES NOT SET UP A PHOTO ITSELF: `public.places` carries only a
+ * SELECT policy for `anon`/`authenticated` (verified via `pg_policies`), so no
+ * app-side role can write a `photo_url` — by design, since places are seeded
+ * reference data and a parent must never be able to rewrite them. The photos
+ * arrive through the management-API apply step (`scripts/apply-place-photos.mjs`
+ * with the service token). A spec that "set up" a photo would therefore have to
+ * forge a privileged write, and a test that exercises a path production cannot
+ * reach is not evidence.
+ *
+ * So this asserts the INVARIANT over whatever the applied state actually is —
+ * which is also the stronger claim, because it must hold for every one of the
+ * rendered rows:
+ *
+ *   1. Every slot took exactly one branch (real | kind).
+ *   2. A `real` slot has an <img> whose src is a non-empty http(s) URL.
+ *   3. A `kind` slot has the drawn SVG glyph — never an empty box.
+ *   4. Every `real` slot has EXACTLY ONE credit line, and it is a SPAN, not an
+ *      anchor (the card is itself a Link; an <a> inside an <a> is invalid).
+ *   5. A `kind` slot has NO credit line — crediting our own drawing to a
+ *      Commons photographer would be a false statement.
+ *
+ * Point 4 is licence compliance, not cosmetics: the sourced photos are CC BY /
+ * CC BY-SA, both of which REQUIRE attribution as a condition of use.
+ */
+test('every card photo slot is a real image with a credit, or a drawn glyph with none (V18 t04)', async ({
+  page,
+}) => {
+  await openPlacesTab(page)
+  await expect(page.getByTestId('place-row').first()).toBeVisible()
+
+  // Reach the full list: the lead is 6 rows per kind, and the interesting rows
+  // (a curated photo, a place Commons has nothing for) are spread throughout.
+  const seeAll = page.getByTestId('places-see-all')
+  if ((await seeAll.count()) > 0) {
+    await seeAll.first().click()
+    await expect(page.getByTestId('place-row').first()).toBeVisible()
+  }
+
+  const slots = page.getByTestId('place-card-photo')
+  const total = await slots.count()
+  expect(total).toBeGreaterThan(0)
+
+  let real = 0
+  let kind = 0
+  for (const slot of await slots.all()) {
+    const branch = await slot.getAttribute('data-photo')
+    expect(branch, 'a photo slot takes exactly one branch').toMatch(/^(real|kind)$/)
+
+    if (branch === 'real') {
+      real++
+      // (2) a real image with a usable src — never an <img src="">.
+      //
+      // NOTE THE SHAPE, because getting it wrong is what this test caught: for
+      // the `real` branch the slot element IS the <img> itself (PlacePhotoSlot
+      // returns a bare <img> carrying the testid), so `slot.locator('img')`
+      // searches for an <img> INSIDE an <img> and always finds zero. The
+      // assertion is on the slot directly for `real`, and on a descendant
+      // `svg` for `kind` — the two branches have different shapes, and a spec
+      // that assumes one shape will pass for the branch it happens to run
+      // against while being wrong about the other.
+      expect(await slot.evaluate((el) => el.tagName)).toBe('IMG')
+      const src = await slot.getAttribute('src')
+      expect(src, 'a real photo slot must carry a non-empty src').toMatch(/^https?:\/\/.+/)
+    } else {
+      kind++
+      // (3) the fallback is a DRAWN glyph, not an empty box.
+      await expect(slot.locator('svg')).toHaveCount(1)
+    }
+  }
+
+  // (5) credits appear for real photos and ONLY for real photos. Counting them
+  // globally is the honest form: a stray credit on an illustration slot would
+  // make the total exceed `real`.
+  const credits = page.getByTestId('place-card-photo-credit')
+  expect(
+    await credits.count(),
+    'exactly one credit line per real photo, and none on an illustration',
+  ).toBe(real)
+
+  // The credit is text, never a nested anchor.
+  for (const credit of await credits.all()) {
+    expect(await credit.evaluate((el) => el.tagName)).toBe('SPAN')
+  }
+
+  console.log(`[V18 photos] ${total} slots — ${real} real with credit, ${kind} illustration`)
 })

@@ -20,6 +20,7 @@ import {
   placePickPatch,
   placeUpcomingLabel,
   placeExternalUrl,
+  photoCreditLine,
   placeFollowIdSet,
   PLACE_BROWSE_LIMIT,
   PLACE_SUGGESTION_LIMIT,
@@ -1096,5 +1097,69 @@ describe('placeFollowIdSet (V17 t02: the place ids the caller follows, for the c
     ]
     const followed: Set<string> = placeFollowIdSet(rows)
     expect([...followed]).toEqual(['place-a'])
+  })
+})
+
+/**
+ * V18 t04: the photo credit line.
+ *
+ * This is a LICENCE-COMPLIANCE seam (CC BY / CC BY-SA require attribution), so
+ * the cases that matter are the ones where it must stay SILENT: no photo, or a
+ * photo whose attribution was never recorded. Showing a credit for the app's
+ * own illustration would be a false statement about who made the drawing, and
+ * showing an empty label would reserve card space for nothing.
+ */
+describe('photoCreditLine (V18 — the licence-compliance line)', () => {
+  function place(overrides: Partial<Place>): Place {
+    return {
+      id: 'p1',
+      name: 'Green Lake Park',
+      kind: 'playground',
+      address: '7201 E Green Lake Dr N',
+      lat: 47.68,
+      lng: -122.33,
+      indoor: false,
+      age_min: null,
+      age_max: null,
+      notes: null,
+      photo_url: null,
+      neighborhood_id: null,
+      source: 'seattle-parks',
+      ...overrides,
+    }
+  }
+
+  it('returns null when there is no photo — the illustration is not credited to Commons', () => {
+    expect(photoCreditLine(place({ photo_url: null }))).toBeNull()
+  })
+
+  it('treats an empty-string photo_url as no photo, matching PlacePhotoSlot exactly', () => {
+    // PlacePhotoSlot's real branch is `!== null && !== ''`. If these two
+    // conditions ever disagree, a credit could render on a slot showing the
+    // illustration — so the agreement is pinned here rather than assumed.
+    expect(photoCreditLine(place({ photo_url: '', photo_attribution: 'Someone / CC0' }))).toBeNull()
+  })
+
+  it('returns the stored line when there is a photo and an attribution', () => {
+    expect(
+      photoCreditLine(
+        place({ photo_url: 'https://x/y.jpg', photo_attribution: 'en:user:Shakespeare / CC BY-SA 3.0' }),
+      ),
+    ).toBe('en:user:Shakespeare / CC BY-SA 3.0')
+  })
+
+  it('returns null for a photo with no recorded attribution, rather than inventing one', () => {
+    expect(photoCreditLine(place({ photo_url: 'https://x/y.jpg', photo_attribution: null }))).toBeNull()
+    expect(photoCreditLine(place({ photo_url: 'https://x/y.jpg' }))).toBeNull()
+  })
+
+  it('treats whitespace-only attribution as missing', () => {
+    expect(photoCreditLine(place({ photo_url: 'https://x/y.jpg', photo_attribution: '   ' }))).toBeNull()
+  })
+
+  it('trims a padded attribution', () => {
+    expect(
+      photoCreditLine(place({ photo_url: 'https://x/y.jpg', photo_attribution: '  Someone / CC0  ' })),
+    ).toBe('Someone / CC0')
   })
 })

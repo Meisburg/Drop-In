@@ -38,6 +38,7 @@ import {
   placeKindLabel,
   placePath,
   placeUpcomingLabel,
+  photoCreditLine,
   resolveMapCoords,
   sortPlaces,
 } from '../lib/places'
@@ -1342,19 +1343,46 @@ function PlaceRow({
  * The glyph is wrapped in `aria-hidden` and labelled by the slot's
  * `aria-label`: a decorative drawing should not be announced, but the slot
  * still says what it is to a screen reader.
+ *
+ * V18 t04: the real branch also renders its CREDIT LINE. The photos come from
+ * Wikimedia Commons under CC BY / CC BY-SA / CC0, and the first two require
+ * attribution as a condition of use — so this is licence compliance, not
+ * decoration. It is rendered as TEXT, deliberately, and NOT as a link to the
+ * source page: the slot lives inside the card's own `<Link>`, and an `<a>`
+ * inside an `<a>` is invalid HTML that browsers resolve unpredictably (and
+ * which breaks keyboard navigation). The full source page is reachable from
+ * the place detail page instead. The line itself is computed by the
+ * `photoCreditLine` seam (`lib/places.ts`), so this component decides nothing.
  */
 function PlacePhotoSlot({ place }: { place: Place }) {
   const label = `${placeKindLabel(place.kind)} illustration`
   if (place.photo_url !== null && place.photo_url !== '') {
+    const credit = photoCreditLine(place)
     return (
-      <img
-        src={place.photo_url}
-        alt={place.name}
-        data-testid="place-card-photo"
-        data-photo="real"
-        loading="lazy"
-        className="h-full w-full object-cover"
-      />
+      <>
+        <img
+          src={place.photo_url}
+          alt={place.name}
+          data-testid="place-card-photo"
+          data-photo="real"
+          loading="lazy"
+          className="h-full w-full object-cover"
+        />
+        {credit !== null ? (
+          // `aria-hidden` is honest here: the same attribution is available as
+          // real text on the place detail page, and this corner label is a
+          // visual credit on a decorative-ish photo whose `alt` already names
+          // the place. Announcing it would interrupt the card's own label with
+          // a photographer's handle on every row of a 239-row list.
+          <span
+            aria-hidden="true"
+            data-testid="place-card-photo-credit"
+            className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/70 to-transparent px-2 pb-1 pt-3 text-[10px] leading-tight text-white/90"
+          >
+            {credit}
+          </span>
+        ) : null}
+      </>
     )
   }
   // The per-kind glyph. An unknown kind is not an empty box: it falls back to
