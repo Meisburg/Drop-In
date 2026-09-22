@@ -1,6 +1,6 @@
 # V18 candidate sheet — place photos from Wikimedia Commons
 
-Generated: 2026-09-22T04:21:10.133Z
+Generated: 2026-09-22T04:38:15.537Z
 
 ## Summary — read these three numbers separately
 
@@ -23,7 +23,7 @@ Edit `candidates.json`: set `"disposition"` on each row to one of
 
 Only `keep` rows are ever written to the database.
 
-## Tier 1 — file name shares a word with the place (134)
+## Tier 1 — file name shares a word with the place (127)
 
 These are the ones most likely to be right. Still look at each one.
 
@@ -71,15 +71,6 @@ These are the ones most likely to be right. Still look at each one.
 - licence: CC BY 2.0
 - author: Seattle Municipal Archives from Seattle, WA
 - credit line: Seattle Municipal Archives from Seattle, WA / CC BY 2.0
-
-### Ballard Playground  `playground`
-
-- disposition: **pending**
-- image: https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f9/Ballard_playground_and_Adams_Elementary%2C_ca._1910_-_DPLA_-_83aca545ec1204211ef351b4310ae346_%28page_2%29.jpg/960px-Ballard_playground_and_Adams_Elementary%2C_ca._1910_-_DPLA_-_83aca545ec1204211ef351b4310ae346_%28page_2%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
-- file page: https://commons.wikimedia.org/wiki/File:Ballard_playground_and_Adams_Elementary,_ca._1910_-_DPLA_-_83aca545ec1204211ef351b4310ae346_(page_2).jpg
-- licence: Public domain
-- author: (not named)
-- credit line: Public domain
 
 ### Ballard Pool  `pool`
 
@@ -657,15 +648,6 @@ These are the ones most likely to be right. Still look at each one.
 - author: Joe Mabel
 - credit line: Joe Mabel / CC BY-SA 4.0
 
-### Madison Pool  `pool`
-
-- disposition: **pending**
-- image: https://upload.wikimedia.org/wikipedia/commons/b/b4/Louisa_Pool_Belcher_%281849-1931%29_and_Wesley_Madison_Shuford_%281848-1914%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled
-- file page: https://commons.wikimedia.org/wiki/File:Louisa_Pool_Belcher_(1849-1931)_and_Wesley_Madison_Shuford_(1848-1914).jpg
-- licence: Public domain
-- author: Anonymous Unknown author
-- credit line: Anonymous Unknown author / Public domain
-
 ### Madrona Park  `beach`
 
 - disposition: **pending**
@@ -918,15 +900,6 @@ These are the ones most likely to be right. Still look at each one.
 - author: Seattle Municipal Archives
 - credit line: Seattle Municipal Archives / CC BY 2.0
 
-### Pritchard Beach  `beach`
-
-- disposition: **pending**
-- image: https://upload.wikimedia.org/wikipedia/commons/1/1d/Edward_Francis_Drew_Pritchard_%281809-1905%29_-_A_Wreck_on_a_Beach_%28possibly_either_the_%27Edwin_and_Sarah%27_or_the_%27Result%27%29_-_1998-PM-16_-_Portland_Museum.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled
-- file page: https://commons.wikimedia.org/wiki/File:Edward_Francis_Drew_Pritchard_(1809-1905)_-_A_Wreck_on_a_Beach_(possibly_either_the_'Edwin_and_Sarah'_or_the_'Result')_-_1998-PM-16_-_Portland_Museum.jpg
-- licence: Public domain
-- author: Edward Francis Drew Pritchard
-- credit line: Edward Francis Drew Pritchard / Public domain
-
 ### Queen Anne Community Center  `other`
 
 - disposition: **pending**
@@ -944,15 +917,6 @@ These are the ones most likely to be right. Still look at each one.
 - licence: CC BY 2.0
 - author: Seattle Municipal Archives from Seattle, WA
 - credit line: Seattle Municipal Archives from Seattle, WA / CC BY 2.0
-
-### Rainier Playfield  `playground`
-
-- disposition: **pending**
-- image: https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e6/Lake_Washington_and_Mount_Rainier%2C_ca._1910_-_DPLA_-_18e28817b6e06f5efa2a7222ecebde37.jpg/960px-Lake_Washington_and_Mount_Rainier%2C_ca._1910_-_DPLA_-_18e28817b6e06f5efa2a7222ecebde37.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
-- file page: https://commons.wikimedia.org/wiki/File:Lake_Washington_and_Mount_Rainier,_ca._1910_-_DPLA_-_18e28817b6e06f5efa2a7222ecebde37.jpg
-- licence: Public domain
-- author: Piper, Walter F
-- credit line: Piper, Walter F / Public domain
 
 ### Ravenna-Eckstein Community Center  `other`
 
@@ -1016,15 +980,6 @@ These are the ones most likely to be right. Still look at each one.
 - licence: Public domain
 - author: Dcoetzee
 - credit line: Dcoetzee / Public domain
-
-### Southwest Branch, Seattle Public Library  `library`
-
-- disposition: **pending**
-- image: https://thumb.wikimedia.org/wikipedia/commons/thumb/0/03/Southwest_Branch%2C_Seattle_Public_Library%2C_1961_-_DPLA_-_524aa4a71de66d7349b123036072024f.jpg/960px-Southwest_Branch%2C_Seattle_Public_Library%2C_1961_-_DPLA_-_524aa4a71de66d7349b123036072024f.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
-- file page: https://commons.wikimedia.org/wiki/File:Southwest_Branch,_Seattle_Public_Library,_1961_-_DPLA_-_524aa4a71de66d7349b123036072024f.jpg
-- licence: No restrictions
-- author: Hupy, Arthur (Art) E., 1925-2003
-- credit line: Hupy, Arthur (Art) E., 1925-2003 / No restrictions
 
 ### Southwest Community Center  `playground`
 
@@ -1179,15 +1134,6 @@ These are the ones most likely to be right. Still look at each one.
 - author: Rhododendrites
 - credit line: Rhododendrites / CC BY-SA 4.0
 
-### Webster Playground  `playground`
-
-- disposition: **pending**
-- image: https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f1/Thomas_George_Webster_%281800-1886%29_-_The_Playground_-_744_-_Guildhall_Art_Gallery.jpg/960px-Thomas_George_Webster_%281800-1886%29_-_The_Playground_-_744_-_Guildhall_Art_Gallery.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
-- file page: https://commons.wikimedia.org/wiki/File:Thomas_George_Webster_(1800-1886)_-_The_Playground_-_744_-_Guildhall_Art_Gallery.jpg
-- licence: Public domain
-- author: Thomas Webster
-- credit line: Thomas Webster / Public domain
-
 ### Westlake Park  `playground`
 
 - disposition: **pending**
@@ -1196,15 +1142,6 @@ These are the ones most likely to be right. Still look at each one.
 - licence: CC BY-SA 3.0
 - author: User:Jon Stockton
 - credit line: User:Jon Stockton / CC BY-SA 3.0
-
-### Woodland Park  `playground`
-
-- disposition: **pending**
-- image: https://upload.wikimedia.org/wikipedia/commons/1/1d/Woodland_Park%2C_Colorado_%281887%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled
-- file page: https://commons.wikimedia.org/wiki/File:Woodland_Park,_Colorado_(1887).jpg
-- licence: Public domain
-- author: Unknown author Unknown author
-- credit line: Unknown author Unknown author / Public domain
 
 ### Wunderkind  `indoor_play`
 
@@ -1233,11 +1170,13 @@ These are the ones most likely to be right. Still look at each one.
 - author: Joe Mabel
 - credit line: Joe Mabel / CC BY-SA 3.0
 
-## Tier 2 — DOUBTFUL: no name agreement, or a scanned document (83)
+## Tier 2 — DOUBTFUL: no name agreement, a scanned document, or a historical image (90)
 
 Expected to be mostly wrong — this tier is where the V17 probe found a
 congressman's portrait and a 1919 seed catalogue, and where this run found
-Internet Archive book scans matching a park on a surname. Reject by default.
+Internet Archive book scans matching a park on a surname, plus archival
+photos of places as they looked a century ago. Reject by default; a card
+should show somewhere a parent can go THIS WEEK.
 
 ### 12th Ave Square Park  `playground`
 
@@ -1310,6 +1249,14 @@ Internet Archive book scans matching a park on a surname. Reject by default.
 - file page: https://commons.wikimedia.org/wiki/File:An_empty_corner_at_the_Park_and_Ride_-_geograph.org.uk_-_767870.jpg
 - licence: CC BY-SA 2.0
 - credit line: Sebastian Ballard / CC BY-SA 2.0
+
+### Ballard Playground  `playground`
+
+- disposition: **pending**
+- image: https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f9/Ballard_playground_and_Adams_Elementary%2C_ca._1910_-_DPLA_-_83aca545ec1204211ef351b4310ae346_%28page_2%29.jpg/960px-Ballard_playground_and_Adams_Elementary%2C_ca._1910_-_DPLA_-_83aca545ec1204211ef351b4310ae346_%28page_2%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+- file page: https://commons.wikimedia.org/wiki/File:Ballard_playground_and_Adams_Elementary,_ca._1910_-_DPLA_-_83aca545ec1204211ef351b4310ae346_(page_2).jpg
+- licence: Public domain
+- credit line: Public domain
 
 ### Bayview-Kinnear Park  `playground`
 
@@ -1607,6 +1554,14 @@ Internet Archive book scans matching a park on a surname. Reject by default.
 - licence: Public domain
 - credit line: Dent, C. T. (Clinton Thomas), 1850-1912 / Public domain
 
+### Madison Pool  `pool`
+
+- disposition: **pending**
+- image: https://upload.wikimedia.org/wikipedia/commons/b/b4/Louisa_Pool_Belcher_%281849-1931%29_and_Wesley_Madison_Shuford_%281848-1914%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled
+- file page: https://commons.wikimedia.org/wiki/File:Louisa_Pool_Belcher_(1849-1931)_and_Wesley_Madison_Shuford_(1848-1914).jpg
+- licence: Public domain
+- credit line: Anonymous Unknown author / Public domain
+
 ### Magnuson Community Center  `other`
 
 - disposition: **pending**
@@ -1711,6 +1666,14 @@ Internet Archive book scans matching a park on a surname. Reject by default.
 - licence: Public domain
 - credit line: Illinois State Normal University / Public domain
 
+### Pritchard Beach  `beach`
+
+- disposition: **pending**
+- image: https://upload.wikimedia.org/wikipedia/commons/1/1d/Edward_Francis_Drew_Pritchard_%281809-1905%29_-_A_Wreck_on_a_Beach_%28possibly_either_the_%27Edwin_and_Sarah%27_or_the_%27Result%27%29_-_1998-PM-16_-_Portland_Museum.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled
+- file page: https://commons.wikimedia.org/wiki/File:Edward_Francis_Drew_Pritchard_(1809-1905)_-_A_Wreck_on_a_Beach_(possibly_either_the_'Edwin_and_Sarah'_or_the_'Result')_-_1998-PM-16_-_Portland_Museum.jpg
+- licence: Public domain
+- credit line: Edward Francis Drew Pritchard / Public domain
+
 ### Puget Ridge Playground  `playground`
 
 - disposition: **pending**
@@ -1758,6 +1721,14 @@ Internet Archive book scans matching a park on a surname. Reject by default.
 - file page: https://commons.wikimedia.org/wiki/File:Community_Center_at_Longmire_(14413346359).jpg
 - licence: Public domain
 - credit line: Mount Rainier National Park from Ashford, WA, United States / Public domain
+
+### Rainier Playfield  `playground`
+
+- disposition: **pending**
+- image: https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e6/Lake_Washington_and_Mount_Rainier%2C_ca._1910_-_DPLA_-_18e28817b6e06f5efa2a7222ecebde37.jpg/960px-Lake_Washington_and_Mount_Rainier%2C_ca._1910_-_DPLA_-_18e28817b6e06f5efa2a7222ecebde37.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+- file page: https://commons.wikimedia.org/wiki/File:Lake_Washington_and_Mount_Rainier,_ca._1910_-_DPLA_-_18e28817b6e06f5efa2a7222ecebde37.jpg
+- licence: Public domain
+- credit line: Piper, Walter F / Public domain
 
 ### Ravenna Park  `playground`
 
@@ -1847,6 +1818,14 @@ Internet Archive book scans matching a park on a surname. Reject by default.
 - licence: Public domain
 - credit line: Godenrath, Percy F. (Percy Francis), 1875-1944 / Public domain
 
+### Southwest Branch, Seattle Public Library  `library`
+
+- disposition: **pending**
+- image: https://thumb.wikimedia.org/wikipedia/commons/thumb/0/03/Southwest_Branch%2C_Seattle_Public_Library%2C_1961_-_DPLA_-_524aa4a71de66d7349b123036072024f.jpg/960px-Southwest_Branch%2C_Seattle_Public_Library%2C_1961_-_DPLA_-_524aa4a71de66d7349b123036072024f.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+- file page: https://commons.wikimedia.org/wiki/File:Southwest_Branch,_Seattle_Public_Library,_1961_-_DPLA_-_524aa4a71de66d7349b123036072024f.jpg
+- licence: No restrictions
+- credit line: Hupy, Arthur (Art) E., 1925-2003 / No restrictions
+
 ### TT Minor Playground  `playground`
 
 - disposition: **pending**
@@ -1895,6 +1874,14 @@ Internet Archive book scans matching a park on a surname. Reject by default.
 - licence: CC BY 3.0
 - credit line: Michael Gäbler / CC BY 3.0
 
+### Webster Playground  `playground`
+
+- disposition: **pending**
+- image: https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f1/Thomas_George_Webster_%281800-1886%29_-_The_Playground_-_744_-_Guildhall_Art_Gallery.jpg/960px-Thomas_George_Webster_%281800-1886%29_-_The_Playground_-_744_-_Guildhall_Art_Gallery.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+- file page: https://commons.wikimedia.org/wiki/File:Thomas_George_Webster_(1800-1886)_-_The_Playground_-_744_-_Guildhall_Art_Gallery.jpg
+- licence: Public domain
+- credit line: Thomas Webster / Public domain
+
 ### Westcrest Park  `playground`
 
 - disposition: **pending**
@@ -1902,6 +1889,14 @@ Internet Archive book scans matching a park on a surname. Reject by default.
 - file page: https://commons.wikimedia.org/wiki/File:Documents_about_Martin_Luther_King,_Jr.,_Executive_Order_14176,_44-mm-1854_v5-part_2_of_9.pdf
 - licence: Public domain
 - credit line: Federal Government of the United States (Q48525) / Public domain
+
+### Woodland Park  `playground`
+
+- disposition: **pending**
+- image: https://upload.wikimedia.org/wikipedia/commons/1/1d/Woodland_Park%2C_Colorado_%281887%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled
+- file page: https://commons.wikimedia.org/wiki/File:Woodland_Park,_Colorado_(1887).jpg
+- licence: Public domain
+- credit line: Unknown author Unknown author / Public domain
 
 ## No image found (22) — these keep the illustration
 

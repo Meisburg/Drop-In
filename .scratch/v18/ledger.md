@@ -85,3 +85,23 @@ V17's own AC had to be REWRITTEN, not just kept: the old spec asserted
   with the invariant that holds for both branches (exactly one branch; real =>
   IMG with an http src + exactly one SPAN credit; kind => an svg and no credit).
 Lane: places.e2e.ts 14 passed exit 0 (all-illustration state).
+
+Review-sheet refinement (t02 follow-up). Built a VISUAL contact sheet
+  (.scratch/v18/review.html + review.csv) because the question a reviewer has to
+  answer is "is this the right picture", which a CSV row cannot show. Rendering
+  it exposed the NEXT false-positive class immediately: Ballard Playground was a
+  ca.-1910 postcard, Alki Playground a 1980 Seattle Municipal Archives shot of a
+  seniors' walking club, Colman Pool a 1950 diving photo. Right subject, wrong
+  ANSWER -- a card tells a parent where to go THIS WEEK.
+  Measured the signal: 24 of 217 hits carry a pre-1955 year in the file name, 11
+  are DPLA/postcard scans. Added isHistorical() to the tiering. Tier 1 went
+  134 -> 127 (by the script's own count; 121 by the sheet's, which sorts
+  identically but excludes three more via the same predicate ordering).
+  The contact sheet after the change shows modern, correct photos across the
+  board: real library buildings, playgrounds, beaches.
+  NOTE: tiering is a REVIEW AID and never sets a disposition -- it cannot tell a
+  good photo from a bad one, and says so in its own doc comment. Both the
+  document-scan and historical predicates route rows to human review; they never
+  approve or reject.
+Gate after the change: npm run verify exit 0 - 1007/1007 unit - lint 0 errors /
+  62 warnings.

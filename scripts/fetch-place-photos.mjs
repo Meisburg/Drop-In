@@ -238,6 +238,33 @@ function isDocumentScan(candidate) {
   )
 }
 
+/**
+ * True when the image is HISTORICAL rather than a picture of the place today.
+ *
+ * Found by looking at the rendered contact sheet, not by reasoning about the
+ * API. Cards are for "where should we go this afternoon", so a 1910 postcard of
+ * a playground or a 1950 archival diving shot is the wrong ANSWER even when it
+ * is the right SUBJECT — it shows a place that no longer looks like that.
+ *
+ * The signal is in the file name: Wikimedia's archival imports carry a year
+ * (`ca. 1910 - DPLA - …`, `Hiawatha Playfield in 1913.png`) and the DPLA /
+ * Municipal Archives collections are historical by construction. 24 of the 217
+ * hits carry a pre-1955 year and 11 are DPLA scans.
+ *
+ * Deliberately conservative: it flags clearly-old material and does not try to
+ * judge "recent enough". A borderline 1998 photo passes, which is the right
+ * error to make — this only routes a row to human review, it never approves or
+ * rejects anything itself.
+ */
+function isHistorical(candidate) {
+  const title = decodeURIComponent(candidate.image.filePageUrl.split('/wiki/').pop() ?? '')
+  const years = [...title.matchAll(/\b(1[89]\d\d|19[0-5]\d)\b/g)].map((m) => Number(m[1]))
+  // `ca. 1910`, `in 1913`, or a bare archival year in the name.
+  if (years.some((y) => y < 1955)) return true
+  if (/DPLA|post\s?card/i.test(title)) return true
+  return false
+}
+
 /** The human sheet. Grouped so 239 rows can be reviewed in one sitting. */
 
 /** Words too common in this corpus to count as agreement. */
@@ -318,8 +345,8 @@ function nameAgreement(candidate) {
    * measured reality (V17 §4.1.2) is that a large share of top hits are
    * unrelated scans whose names share no word with the place.
    */
-  const confident = hits.filter((c) => nameAgreement(c) > 0 && !isDocumentScan(c))
-  const doubtful = hits.filter((c) => nameAgreement(c) === 0 || isDocumentScan(c))
+  const confident = hits.filter((c) => nameAgreement(c) > 0 && !isDocumentScan(c) && !isHistorical(c))
+  const doubtful = hits.filter((c) => !(nameAgreement(c) > 0 && !isDocumentScan(c) && !isHistorical(c)))
 
   lines.push(`## Tier 1 — file name shares a word with the place (${confident.length})`)
   lines.push('')
@@ -337,11 +364,13 @@ function nameAgreement(candidate) {
     lines.push('')
   }
 
-  lines.push(`## Tier 2 — DOUBTFUL: no name agreement, or a scanned document (${doubtful.length})`)
+  lines.push(`## Tier 2 — DOUBTFUL: no name agreement, a scanned document, or a historical image (${doubtful.length})`)
   lines.push('')
   lines.push('Expected to be mostly wrong — this tier is where the V17 probe found a')
   lines.push("congressman's portrait and a 1919 seed catalogue, and where this run found")
-  lines.push('Internet Archive book scans matching a park on a surname. Reject by default.')
+  lines.push('Internet Archive book scans matching a park on a surname, plus archival')
+  lines.push('photos of places as they looked a century ago. Reject by default; a card')
+  lines.push('should show somewhere a parent can go THIS WEEK.')
   lines.push('')
   for (const c of doubtful) {
     lines.push(`### ${c.placeName}  \`${c.kind}\``)
