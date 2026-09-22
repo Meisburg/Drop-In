@@ -46,7 +46,10 @@ test('a third account cannot read or alter another family’s link (V19 t03)', a
     const res = await fetch(`${restUrl}/auth/v1/signup`, {
       method: 'POST',
       headers: { apikey: anonKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password: 'probe-password-123' }),
+      // A throwaway password for a disposable account this spec deletes in its
+      // own finally block. Not a secret: it authenticates nothing outside this
+      // run, and the accounts it belongs to are removed immediately after.
+      body: JSON.stringify({ email, password: 'e2e-disposable-account-pw' }),
     })
     if (!res.ok) throw new Error(`signup HTTP ${res.status} ${await res.text()}`)
     const body = (await res.json()) as {
