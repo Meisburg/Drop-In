@@ -9,6 +9,7 @@ import {
   framingCircle,
   groupPlacesByKind,
   MIN_FOCUS_RADIUS_MILES,
+  MAP_FOCUS_RADIUS_MILES,
   matchPlaces,
   placeAgeFitLabel,
   placeDistanceMiles,
@@ -35,7 +36,7 @@ import {
   zipFromAddress,
 } from './places'
 import type { PlaceListRow } from './places'
-import { neighborhoodIdField } from './feed'
+import { DEFAULT_RADIUS_MILES, neighborhoodIdField, RADIUS_MILES_OPTIONS } from './feed'
 import type { Place, PlaceKind } from './types'
 import type { ZipCoords } from './feed'
 
@@ -941,11 +942,19 @@ describe('framingCircle', () => {
   })
 
   it('a single match (or many at one coordinate) never yields a zero-extent circle', () => {
+    // V19 t01 AMENDED THIS TEST'S PREMISE. It originally asserted that a search
+    // match 8 miles from home pulled the frame to that match at the 0.5-mile
+    // floor. Founder ruling D1 (V19) supersedes that: the map ALWAYS frames the
+    // neighbourhood around home, so a match outside the focus radius no longer
+    // drags the frame to itself. The real invariant this test exists for — that
+    // the frame is never a zero-extent circle — is preserved and asserted below
+    // with a NEARBY match, which is the case where tightening still applies.
     const one = framingCircle({
       geocodeCenter: null,
       homePin: HOME,
       radiusMiles: 5,
-      focusPoints: [{ lat: HOME.lat + 0.1, lng: HOME.lng + 0.1 }],
+      // ~200m from home: INSIDE any neighbourhood frame, so the search tightens.
+      focusPoints: [{ lat: HOME.lat + 0.002, lng: HOME.lng + 0.002 }],
     })
     expect(one).not.toBeNull()
     expect(one?.radiusMiles).toBeGreaterThan(0)
@@ -955,7 +964,8 @@ describe('framingCircle', () => {
       geocodeCenter: null,
       homePin: HOME,
       radiusMiles: 5,
-      focusPoints: Array.from({ length: 12 }, () => ({ lat: 47.61, lng: -122.33 })),
+      // Many results at one nearby coordinate — still zero extent, still floored.
+      focusPoints: Array.from({ length: 12 }, () => ({ lat: HOME.lat + 0.002, lng: HOME.lng + 0.002 })),
     })
     expect(sameSpot?.radiusMiles).toBe(MIN_FOCUS_RADIUS_MILES)
     // The floor is still bounded by the ceiling: a viewer on a tiny radius is
@@ -965,9 +975,28 @@ describe('framingCircle', () => {
         geocodeCenter: null,
         homePin: HOME,
         radiusMiles: 0.25,
-        focusPoints: [{ lat: 47.61, lng: -122.33 }],
+        focusPoints: [{ lat: HOME.lat + 0.002, lng: HOME.lng + 0.002 }],
       })?.radiusMiles,
     ).toBe(0.25)
+  })
+
+  it('V19 t01: a match OUTSIDE the focus radius keeps the frame on home (D1)', () => {
+    // The defect this rule fixes, measured: the founder's home is 98103, and a
+    // search can easily match a place in another part of the city. Before V19,
+    // `focusCenter` returned that far place, the extent around a single point
+    // floored to 0.5 miles, and the result was a half-mile circle centred ~8
+    // MILES from home — the home pin off the canvas entirely, which is exactly
+    // what D1 forbids.
+    const faraway = { lat: 47.61, lng: -122.33 } // ~7 miles from HOME
+    const framed = framingCircle({
+      geocodeCenter: null,
+      homePin: HOME,
+      radiusMiles: MAP_FOCUS_RADIUS_MILES,
+      focusPoints: [faraway],
+    })
+    // The frame stays where home is, at the focus radius — not on the match.
+    expect(framed?.center).toEqual(HOME)
+    expect(framed?.radiusMiles).toBe(MAP_FOCUS_RADIUS_MILES)
   })
 
   it('falls back to the radius frame when no focus point carries usable coordinates', () => {
@@ -1161,5 +1190,92 @@ describe('photoCreditLine (V18 — the licence-compliance line)', () => {
     expect(
       photoCreditLine(place({ photo_url: 'https://x/y.jpg', photo_attribution: '  Someone / CC0  ' })),
     ).toBe('Someone / CC0')
+  })
+})
+
+/**
+ * V19 t01 — THE MAP FOCUS RADIUS (founder ruling D1).
+ *
+ * The policy is one constant plus one call site, and these tests pin BOTH halves
+ * of the claim the founder cares about:
+ *
+ *   1. the map's frame radius is the FOCUS radius, always;
+ *   2. that radius is NOT the picked list radius — the two are deliberately
+ *      different values, and re-merging them is the regression this slice
+ *      exists to prevent.
+ *
+ * Point 2 is why `MAP_FOCUS_RADIUS_MILES` is asserted to be strictly smaller
+ * than every entry in `RADIUS_MILES_OPTIONS` except the smallest. If someone
+ * later "simplifies" by making the map use the picked radius, these fail.
+ */
+describe('MAP_FOCUS_RADIUS_MILES (V19 t01 — D1: the map frames the neighbourhood)', () => {
+  // The same home pin the `framingCircle` block uses, declared locally because
+  // that block's constants are scoped to it.
+  const HOME = { lat: 47.7, lng: -122.4 }
+
+  it('is one mile — the founder asked for the "less than 1 mile view"', () => {
+    expect(MAP_FOCUS_RADIUS_MILES).toBe(1)
+  })
+
+  it('is strictly tighter than the DEFAULT radius, so the map opens nearer than the list', () => {
+    // The founder's own stored radius is 35 and the default is 5; the map must
+    // frame tighter than both. This is the whole observable change.
+    expect(MAP_FOCUS_RADIUS_MILES).toBeLessThan(DEFAULT_RADIUS_MILES)
+  })
+
+  it('is never wider than any radius the user can PICK for the list', () => {
+    // Every selectable radius is >= 1 (RADIUS_MIN_MILES), so the map frame is
+    // always at least as tight as the widest thing the user could have chosen —
+    // which is what "always frames near home" means in practice.
+    for (const miles of RADIUS_MILES_OPTIONS) {
+      expect(MAP_FOCUS_RADIUS_MILES).toBeLessThanOrEqual(miles)
+    }
+  })
+
+  it('is NOT the same value as the search floor — they are different jobs', () => {
+    // MIN_FOCUS_RADIUS_MILES (0.5) is how tight a SEARCH may be framed;
+    // MAP_FOCUS_RADIUS_MILES (1) is how wide the DEFAULT frame may be. Collapsing
+    // them would either make the default frame too tight to read as "near me" or
+    // stop a single-result search from tightening.
+    expect(MAP_FOCUS_RADIUS_MILES).not.toBe(MIN_FOCUS_RADIUS_MILES)
+    expect(MAP_FOCUS_RADIUS_MILES).toBeGreaterThan(MIN_FOCUS_RADIUS_MILES)
+  })
+
+  it('produces a frame the home pin sits at the centre of', () => {
+    // The observable consequence of feeding the map the focus radius instead of
+    // a 35-mile one: the frame is `radiusMiles: 1` about the home pin.
+    const framed = framingCircle({
+      geocodeCenter: null,
+      homePin: HOME,
+      radiusMiles: MAP_FOCUS_RADIUS_MILES,
+    })
+    expect(framed).toEqual({ center: HOME, radiusMiles: 1 })
+  })
+
+  it('cannot be widened by a search — a query only ever TIGHTENS the frame', () => {
+    // V17 t04's cap, now measured against the focus radius: a focus point far
+    // away must NOT push the frame wider than the neighbourhood view.
+    const faraway = { lat: 48.9, lng: -122.4 } // ~85 miles north
+    const framed = framingCircle({
+      geocodeCenter: null,
+      homePin: HOME,
+      radiusMiles: MAP_FOCUS_RADIUS_MILES,
+      focusPoints: [faraway],
+    })
+    expect(framed?.radiusMiles).toBe(MAP_FOCUS_RADIUS_MILES)
+    expect(framed?.radiusMiles).toBeLessThan(5)
+  })
+
+  it('STILL tightens below the focus radius when the search matches nearby', () => {
+    // The other direction: a nearby match frames tighter than 1 mile, floored at
+    // MIN_FOCUS_RADIUS_MILES rather than collapsing to zero extent.
+    const near = { lat: 47.7005, lng: -122.4005 } // a few dozen metres away
+    const framed = framingCircle({
+      geocodeCenter: null,
+      homePin: HOME,
+      radiusMiles: MAP_FOCUS_RADIUS_MILES,
+      focusPoints: [near],
+    })
+    expect(framed?.radiusMiles).toBe(MIN_FOCUS_RADIUS_MILES)
   })
 })

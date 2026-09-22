@@ -826,6 +826,34 @@ export function framingCircle(input: {
   const center = focusCenter(focusPoints)
   if (center === null) return base
 
+  /**
+   * V19 t01 — THE SEARCH MAY TIGHTEN THE FRAME, NEVER MOVE IT OFF HOME.
+   *
+   * Found by this slice's own test, and it is a real defect the founder would
+   * have seen. `focusCenter` returns the MIDPOINT of the matched points, so a
+   * search matching one place 85 miles away returns that place as the centre;
+   * the extent around a single point is zero, which floors to
+   * `MIN_FOCUS_RADIUS_MILES` (0.5). The old result was therefore a half-mile
+   * circle centred on a place 85 miles from home — the home pin vanished off
+   * the canvas entirely, which is precisely what D1 forbids ("the map ALWAYS
+   * frames tight around home").
+   *
+   * The rule that fixes it: a search result OUTSIDE the neighbourhood view must
+   * not drag the frame to itself. When the matched centre lies beyond the focus
+   * radius from the frame's own centre, the search has found something that is
+   * not "near me", so the caller keeps the neighbourhood frame and the UI
+   * announces the matches instead. Tightening still happens for near matches,
+   * which is the behaviour V17 t04 actually wanted.
+   *
+   * `base.center` is the home pin (or a geocoded centre) — the anchor D1 pins.
+   */
+  const centerDistance = distanceMiles(base.center, center)
+  if (centerDistance > base.radiusMiles) {
+    // The matches are outside the neighbourhood view: keep the frame anchored
+    // where it was instead of following them.
+    return base
+  }
+
   // The tightest circle about `center` that still covers every focus point. The
   // radius can only shrink: `base.radiusMiles` is the ceiling.
   //
@@ -847,6 +875,12 @@ export function framingCircle(input: {
     if (miles > span) span = miles
   }
   const fitted = Math.max(span, MIN_FOCUS_RADIUS_MILES)
+  // V19 t01: the cap that keeps D1 true. `base.radiusMiles` is now the caller's
+  // MAP FOCUS radius (`MAP_FOCUS_RADIUS_MILES`), not the picked list radius, so
+  // a search can tighten the frame toward its own results but can NEVER widen it
+  // past the neighbourhood view. The `Math.min` is unchanged — what changed is
+  // the value the caller puts into `base`, which is precisely the point of
+  // splitting the two radii.
   return { center, radiusMiles: Math.min(base.radiusMiles, fitted) }
 }
 
@@ -888,6 +922,38 @@ function focusCenter(
  * place actually wants to see around it.
  */
 export const MIN_FOCUS_RADIUS_MILES = 0.5
+
+/**
+ * V19 t01 — HOW FAR THE MAP FRAMES, ALWAYS.
+ *
+ * The founder's ask, in their words: *"I want the map to be zoomed in as close
+ * as possible by default, showing the less-than-1-mile view… this is the value
+ * added to make this feel like a neighbourhood feel."*
+ *
+ * This constant is the whole of D1, so it is worth being precise about what it
+ * does and does not control:
+ *
+ *   - It controls THE MAP'S FRAME — the circle the map fits on open.
+ *   - It does NOT control the LIST. The picked radius (`radius_miles`, the
+ *     1/5/20/35 ladder) still runs `filterPlacesByRadius`, unchanged. Choosing
+ *     35 miles shows far more rows; the map still opens on your own blocks.
+ *
+ * Those two values were THE SAME VALUE before this slice, which is exactly why
+ * the map opened on all of Seattle for a parent whose stored radius is 35 (the
+ * founder's own, measured). Splitting them is the fix. **Do not re-merge them**
+ * — a diff that feeds the picked radius back into the map frame has reverted
+ * this slice, and the map would silently widen again.
+ *
+ * Why 1 mile and not `MIN_FOCUS_RADIUS_MILES` (0.5): half a mile is the floor
+ * for a SEARCH-tightened frame — the tightest a single result may be framed at.
+ * The default frame is deliberately a little wider than that, because "what is
+ * near me" should show a few streets of context, not one block. The two
+ * constants have different jobs and must not be collapsed.
+ *
+ * A search that narrows results still tightens BELOW this (V17 t04's behaviour,
+ * via `framingCircle`'s `focusPoints`); this is the ceiling it can never exceed.
+ */
+export const MAP_FOCUS_RADIUS_MILES = 1
 
 /**
  * V17 t02: which PLACES the caller follows, as a plain id set — what a browse

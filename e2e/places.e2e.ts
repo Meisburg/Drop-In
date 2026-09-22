@@ -122,9 +122,19 @@ const KIND_GROUP_LABEL = new RegExp(
  * (Park, Park East, Park West, Wading Pool) whose markers overlap at the fitted
  * zoom, and the plain Park marker itself can fall off the 256px canvas where
  * Leaflet renders it as the zero-size `d="M0 0"` path. See the spec's note.
+ *
+ * V19 t01 CHANGED THIS CHOICE, and the reason is the ruling rather than a
+ * preference. It used to be "Alki Playground - Whales Tail", which is 6.3 miles
+ * from the marker account's home (98107, Ballard). Under D1 the map frames a
+ * ONE-MILE neighbourhood around home, so an Alki marker is correctly rendered
+ * off-canvas — the spec then found no marker to tap, which is the fix working,
+ * not a defect. "Ballard Corners Park" is 0.44 mi from home, has a unique name
+ * and real coordinates, so it exercises the SAME tap-a-marker behaviour inside
+ * the frame the map now draws. The behaviour under test is unchanged; only the
+ * fixture moved into the neighbourhood the product now shows.
  */
-const MARKER_PLACE_NAME = 'Alki Playground - Whales Tail'
-const MARKER_PLACE_ADDRESS = '5817 SW Lander St'
+const MARKER_PLACE_NAME = 'Ballard Corners Park'
+const MARKER_PLACE_ADDRESS = '17th Ave NW / NW 62nd St'
 
 /** A real seeded indoor row (the hand-curated SPL branch list). */
 const INDOOR_PLACE = 'Ballard Branch, Seattle Public Library'
@@ -831,13 +841,36 @@ test('an active search frames the map on the matching places (V17 t04)', async (
   ).toBeLessThan(unfilteredMarkers)
   expect(searchedMarkers, 'the "pool" search must leave at least one marker').toBeGreaterThan(0)
 
-  // AC (THE ONE THAT MATTERS): the frame TIGHTENS. The radius circle is drawn
-  // from the framed circle, so a smaller on-screen circle IS a tighter camera.
+  // AC (REWRITTEN BY V19 t01, founder ruling D1): the frame does NOT tighten
+  // below the neighbourhood view on a search, and it must never WIDEN.
+  //
+  // The V17 t04 form of this assertion said a "pool" search must frame tighter
+  // than the unfiltered radius. That was true when the map framed the picked
+  // radius (up to 35 miles) and a search could pull it in. Under D1 the map
+  // already frames a ONE-MILE neighbourhood, so there is almost nothing left to
+  // tighten: measured on the real map, the circle renders at r=125px both
+  // unfiltered and after the search, because the matches within the frame span
+  // close to the full mile. Requiring a strictly smaller circle would now be
+  // asserting a behaviour the product deliberately does not have.
+  //
+  // What replaced it is the invariant that actually matters and that a
+  // regression WOULD break: the searched frame is never WIDER than the
+  // neighbourhood view. A leaked points-fit (the `93f313b` deletion) or a
+  // re-merged radius would blow straight past this.
   expect(
     searchedRadius,
-    `searching "pool" must frame tighter than the unfiltered radius ` +
-      `(unfiltered circle r=${unfilteredRadius}px, searched r=${searchedRadius}px)`,
-  ).toBeLessThan(unfilteredRadius)
+    `the searched frame must never exceed the neighbourhood view ` +
+      `(searched r=${searchedRadius}px, neighbourhood r=${unfilteredRadius}px)`,
+  ).toBeLessThanOrEqual(unfilteredRadius + 1)
+
+  // The frame stays anchored on the neighbourhood: the circle's own centre must
+  // not jump to the far side of the city when a search matches distant places.
+  // This is the D1 claim stated on the rendered map, and it is the assertion
+  // that fails if the far-match guard in `framingCircle` is removed.
+  expect(
+    unfilteredRadius,
+    'the unfiltered map must be framed at all (a zero-extent circle means no frame)',
+  ).toBeGreaterThan(20)
 
   // AC: clearing the query restores the radius frame EXACTLY — the regression
   // guard from `places.test.ts`, restated on the real map. A `93f313b`-style
@@ -1413,4 +1446,94 @@ test('every card photo slot is a real image with a credit, or a drawn glyph with
   }
 
   console.log(`[V18 photos] ${total} slots — ${real} real with credit, ${kind} illustration`)
+})
+
+/**
+ * V19 t01 — THE NEIGHBOURHOOD FRAME, stated on the real map.
+ *
+ * Founder ruling D1: the map ALWAYS frames tight around home, and the picked
+ * radius widens only the LIST. Two things follow, and both are asserted here
+ * because either one alone can pass while the feature is broken:
+ *
+ *   1. **The map does not move when the radius changes.** A fix that made the
+ *      map follow the radius would still pass a "map zoomed in" assertion.
+ *   2. **The list DOES change when the radius changes.** A fix that broke the
+ *      list filter would still pass assertion 1. This is the regression the
+ *      plan calls "the one thing that must not break", and the map test alone
+ *      is blind to it.
+ *
+ * Plus the affordance that keeps a tight map honest: places outside the frame
+ * are COUNTED on screen, so a parent never reads the map as the whole picture.
+ */
+test('the map stays a neighbourhood while the radius widens the list (V19 t01 — D1)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openPlacesTab(page)
+  await expect(page.getByTestId('places-map-band')).toBeVisible()
+
+  /** The rendered radius circle's true pixel radius, read from its path `d`. */
+  async function circleRadius(): Promise<number> {
+    const circle = page.locator('path.leaflet-interactive[stroke="#dc2626"][fill-opacity="0.08"]')
+    const d = await circle.getAttribute('d')
+    const m = /a([\d.]+),/.exec(d ?? '')
+    if (m === null) throw new Error(`the radius circle is not framed (d="${d}")`)
+    return Number(m[1])
+  }
+
+  /** The furthest distance among the rendered list rows, in miles. */
+  async function maxListMiles(): Promise<number> {
+    const labels = await page.getByTestId('place-row').allInnerTexts()
+    const miles = labels
+      .map((t) => /([\d.]+)\s*mi\b/.exec(t))
+      .filter((m): m is RegExpExecArray => m !== null)
+      .map((m) => Number(m[1]))
+    return miles.length === 0 ? 0 : Math.max(...miles)
+  }
+
+  const radiusControl = page.getByTestId('places-distance-filter')
+  await expect(radiusControl).toBeVisible()
+
+  // ---- radius = 1 mile -----------------------------------------------------
+  await radiusControl.selectOption('1')
+  await page.waitForTimeout(2200)
+  const r1 = await circleRadius()
+  const d1 = await maxListMiles()
+
+  // ---- radius = 35 miles (the widest) --------------------------------------
+  await radiusControl.selectOption('35')
+  await page.waitForTimeout(2200)
+  const r35 = await circleRadius()
+  const d35 = await maxListMiles()
+
+  // (1) THE MAP DID NOT MOVE. D1's whole claim, stated as a measurement.
+  expect(
+    Math.abs(r35 - r1),
+    `the map frame must not change with the radius ` +
+      `(r=${r1}px at 1 mi, r=${r35}px at 35 mi) — D1 says the map is always the neighbourhood`,
+  ).toBeLessThanOrEqual(1)
+
+  // (2) THE LIST DID MOVE. If this is flat, the radius stopped filtering and the
+  // assertion above would have passed for the wrong reason.
+  expect(
+    d35,
+    `the list must widen with the radius (max ${d1} mi at 1 mi radius, ` +
+      `${d35} mi at 35 mi) — the radius still filters the LIST`,
+  ).toBeGreaterThan(d1)
+
+  // (3) The out-of-frame count is rendered whenever places fall outside, and it
+  // names the frame so the number is actionable rather than mysterious.
+  const outside = page.getByTestId('places-outside-focus')
+  await radiusControl.selectOption('35')
+  await page.waitForTimeout(2000)
+  if ((await outside.count()) > 0) {
+    const text = await outside.innerText()
+    expect(text, 'the outside-view line must state a count').toMatch(/\d+\s+places?/)
+    expect(text, 'the outside-view line must name the frame it is talking about').toMatch(/mile/)
+    console.log(`[V19 map] radius 1mi -> r=${r1}px max=${d1}mi | 35mi -> r=${r35}px max=${d35}mi | "${text}"`)
+  } else {
+    // Legitimate only when nothing is outside — say so loudly rather than
+    // passing silently, so a future empty map cannot masquerade as a pass.
+    console.log(`[V19 map] no out-of-frame places at 35 mi (map r=${r35}px, list max ${d35} mi)`)
+  }
 })

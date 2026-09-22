@@ -28,7 +28,6 @@ import { geocodeAddress } from '../lib/geocode'
 import {
   browsePlaces,
   BROWSE_LIST_LEAD_LIMIT,
-  distanceMiles,
   filterPlacesByRadius,
   framingCircle,
   groupPlacesByKind,
@@ -408,24 +407,6 @@ export function BrowsePage() {
   const hasQuery = query.trim() !== ''
   const focusPoints = hasQuery ? mappedMarkers : []
 
-  /** V19 t01: how many drawn places fall OUTSIDE the map's neighbourhood frame.
-   *
-   * The map frames the focus radius (D1), so anything further out is not drawn.
-   * Stating the count keeps "the map is showing you the neighbourhood" from
-   * reading as "the map is hiding places". Computed from the SAME array the map
-   * draws, so the count and the pins can never disagree.
-   *
-   * The frame's own centre is the home pin (or the geocoded centre when the
-   * parent set one) — the same anchor `framingCircle` resolves — so this count
-   * is about the frame as rendered, not about the picked radius. */
-  const outsideFocusCount = (() => {
-    const anchor = geocodeCenter ?? homePinCoords
-    if (anchor === null) return 0
-    return mappedMarkers.filter(
-      (point) => distanceMiles(anchor, point) > MAP_FOCUS_RADIUS_MILES,
-    ).length
-  })()
-
   // V15 t02: when the user has geocoded an address via "Set location", the list
   // is filtered to places within the chosen radius of that center (the pure
   // filterPlacesByRadius seam). The existing browsePlaces pipeline still runs
@@ -711,24 +692,6 @@ export function BrowsePage() {
               })}
             />
           </div>
-          {/* V19 t01 (founder ruling): the map frames the NEIGHBOURHOOD, so
-              places outside that frame are not drawn. That is the intended
-              behaviour, not a bug — but a map that silently omits places looks
-              broken, so the count is stated plainly underneath.
-
-              Rendered only when there IS at least one, so the common case (a
-              quiet neighbourhood map) stays clean. The wording names the frame
-              rather than apologising for it: "1 mile" is a fact the parent can
-              act on by widening the radius below. */}
-          {outsideFocusCount > 0 ? (
-            <p
-              data-testid="places-outside-focus"
-              className="mt-2 text-xs text-slate-500"
-            >
-              {outsideFocusCount} {outsideFocusCount === 1 ? 'place' : 'places'} outside this{' '}
-              {milesWord(MAP_FOCUS_RADIUS_MILES)} view — widen the distance below to see more.
-            </p>
-          ) : null}
         </div>
       ) : null}
 
