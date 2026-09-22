@@ -232,3 +232,11 @@ PROBE BUG, RECORDED (it cost three re-runs): my own verification script kept
   (1) when a probe shows nothing, prove WHICH layer is empty before doubting the
   product — a REST read settled it in one call; (2) match the origin the test
   harness uses, or the harness's own auth silently does not apply.
+
+*** V18 COMPLETE — THE GATE ABOVE WAS PASSED THE SAME DAY ***
+The "HALTED AT THE CURATION GATE" entry above is superseded (the ledger is
+append-only, so it stays as the record of what was true when written). The
+founder ruled "keep all for now"; all 121 Tier 1 photos are applied and live.
+FINAL STATE: places = 239 rows / 121 with photo / 0 incomplete.
+No human action outstanding. The 96 doubtful + 22 no-image places keep the
+illustration permanently unless the founder later wants to hand-pick any.
