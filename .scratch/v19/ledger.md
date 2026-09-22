@@ -60,3 +60,41 @@ TWO EXISTING TESTS ENCODED THE SUPERSEDED POLICY AND WERE AMENDED, not deleted:
   (search does not zoom the map; the map does not follow a far search).
 Slice t01 gate: npm run verify exit 0 · 1015/1015 unit (28 files) · lint 0
   errors / 62 warnings · places.e2e.ts 14 passed + the new D1 spec 2 passed.
+
+Slice t02: dispatched (base 82c549b)
+Slice t02: complete — THE FEED MAP (D2). / now renders a map band above the day
+  sections; the day sections themselves are untouched (the map is ADDITIVE).
+  Reused PlacesMap (the plan's pinned requirement — the V15.2 map regressions
+  were fixed in the shared component, so a parallel one would re-earn them).
+  New pure seam `feedMapPins` (lib/places.ts, +8 unit tests): drops posts with
+  no resolvable coordinate and COLLAPSES posts sharing an exact coordinate, so
+  two sessions at one park are one dot rather than an unclickable pile.
+  The frame reuses framingCircle with MAP_FOCUS_RADIUS_MILES, so both maps open
+  on the same V19 t01 neighbourhood view.
+  The posts' own coordinates were ALREADY on the feed (`place_coords`, stitched
+  by listRadiusFeed), so the pins needed NO new read; only the home pin needed
+  the zip gazetteer, loaded best-effort (a failure drops the home pin, never the
+  map).
+  E2E (new spec, 2 tests) seeds its OWN data because the map correctly renders
+  NOTHING for a feed of free-text posts — a spec against ambient data would
+  prove nothing. It creates a PLACED post and a FREE-TEXT post, asserts the band
+  appears with a numeric "N places with drop-ins" label, asserts the free-text
+  post is in the FEED (so its absence from the map is a decision, not a missing
+  row), then DELETES the placed post and asserts pins drop:
+    "[V19 feed map] pins with a placed post: 3; after deleting it: 0;
+     label '1 place with drop-ins'"
+  That delete-and-observe is the strongest available proof the pins belong to
+  the drop-in rather than to the basemap or the home pin. Both posts are
+  deleted in a finally block, so the live DB is left as found.
+TWO SELF-INFLICTED SPEC BUGS, both caught by running it, both recorded:
+  (1) `duration_minutes` is not a column — the schema stores `starts_at` +
+      `ends_at` (V13 t03 writes the difference into that pair). PGRST204 named
+      it exactly.
+  (2) The pin count used `.leaflet-marker-icon`, which counts IMAGE/DOM markers.
+      This map uses circleMarkers, which render as SVG <path>. The screenshot
+      taken at the failure shows the pin PLAINLY PRESENT on the map with the
+      1-mile circle and home pin — the product was right and the assertion was
+      wrong. Switched to `path.leaflet-interactive`, the same convention the V13
+      A6 marker spec already uses.
+Slice t02 gate: npm run verify exit 0 · 1023/1023 unit (28 files) · lint 0
+  errors / 62 warnings · places.e2e.ts 16 passed · mobile audit PASS 18/18.

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { DropInCard } from '../components/DropInCard'
 import { NAV_ICONS } from '../components/icons'
+import { PlacesMap } from '../components/PlaceMap'
 import { RadiusEmptyState } from '../components/RadiusEmptyState'
 import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
@@ -18,6 +19,7 @@ import {
   listMyPingedPosts,
   listMyPingPostIds,
   listMyPostRefs,
+  loadZipCodes,
   listPingProfileIdsForPosts,
   listPingsForPosts,
   listRadiusFeed,
@@ -50,6 +52,12 @@ import {
   WHILE_AWAY_ITEM_LIMIT,
   type WhileAwayInbox,
 } from '../lib/feed'
+import {
+  feedMapPins,
+  framingCircle,
+  MAP_FOCUS_RADIUS_MILES,
+} from '../lib/places'
+import type { ZipCoords } from '../lib/feed'
 import type { PlaydateWithNeighborhood } from '../lib/types'
 
 /**
@@ -190,6 +198,20 @@ export function FeedPage() {
   const navigate = useNavigate()
   const [posts, setPosts] = useState<PlaydateWithNeighborhood[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  /**
+   * V19 t02 — the feed map's gazetteer, for resolving the HOME PIN.
+   *
+   * The posts' own place coordinates arrive WITH the feed (`place_coords`,
+   * stitched by `listRadiusFeed`), so the map's PINS need no extra read. The
+   * home pin does: it is the stored `home_zip` resolved through the zip
+   * gazetteer, exactly as `/browse` resolves it.
+   *
+   * A failed load leaves this null, which drops only the home pin — every
+   * drop-in pin still draws. Degrading to "no home pin" is strictly better than
+   * degrading to "no map", and it matches the browse page's posture (a failed
+   * gazetteer is never an error state, and never an empty page).
+   */
+  const [zipCoords, setZipCoords] = useState<ReadonlyMap<string, ZipCoords> | null>(null)
   // V3 slice 2 (ticket 02): the Today-section cards' "Rain likely" labels
   // (post id → label; null = no badge). Best-effort — the wrapper never
   // rejects, so a failed fetch just leaves the label null (silently
@@ -292,6 +314,62 @@ export function FeedPage() {
    * the load effect's isRefresh (V8 ticket 02 review round).
    */
   const loadedContextRef = useRef<string | null>(null)
+
+  /**
+   * V19 t02: load the zip gazetteer once, for the map's home pin. Best-effort —
+   * a failure leaves it null and the map simply has no home pin (see the state
+   * declaration). No cancellation ceremony beyond the flag, because a late
+   * resolve of the gazetteer is harmless: it only ever ADDS a pin.
+   */
+  useEffect(() => {
+    let cancelled = false
+    loadZipCodes()
+      .then((coords) => {
+        if (!cancelled) setZipCoords(coords)
+      })
+      .catch(() => {
+        if (!cancelled) setZipCoords(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  /**
+   * V19 t02: the home pin's coordinates — the stored `home_zip` resolved through
+   * the gazetteer, the same derivation `/browse` uses (`BrowsePage`'s
+   * `homePinCoords`). Null when there is no zip, no gazetteer yet, or an unknown
+   * zip: in every one of those cases the map draws its drop-in pins without a
+   * home pin rather than guessing a location.
+   */
+  const homePinCoords = (() => {
+    if (profile?.home_zip === null || profile?.home_zip === undefined) return null
+    if (zipCoords === null) return null
+    const found = zipCoords.get(profile.home_zip)
+    return found === undefined ? null : { lat: found.lat, lng: found.lng }
+  })()
+
+  /**
+   * V19 t02: the feed map's pins and its frame.
+   *
+   * `feedMapPins` is the pure seam: it drops posts with no resolvable
+   * coordinate (a free-text place names no location — the map must not invent
+   * one) and collapses posts sharing an exact coordinate into a single pin, so
+   * two sessions at one park do not stack two dots on one pixel.
+   *
+   * The frame reuses `framingCircle` with `MAP_FOCUS_RADIUS_MILES`, exactly as
+   * `/browse` does after V19 t01, so both maps open on the same neighbourhood
+   * view. `geocodeCenter` is absent here (the feed has no "Set location" modal),
+   * so the frame anchors on the home pin; with no home pin the circle is null
+   * and the map keeps its own mount view rather than framing on nothing.
+   */
+  const feedPins = feedMapPins(posts ?? [], zipCoords)
+  const feedMapFrame = framingCircle({
+    geocodeCenter: null,
+    homePin: homePinCoords,
+    radiusMiles: MAP_FOCUS_RADIUS_MILES,
+    focusPoints: feedPins,
+  })
 
   // The viewer side of the radius filter: the profile's home zip + radius.
   // The shell's onboarding gate keys on home_zip, so a settled signed-in
@@ -1029,6 +1107,57 @@ export function FeedPage() {
         />
       ) : (
         <div className="flex flex-col gap-4">
+          {/* V19 t02 (founder ruling D2): THE FEED MAP.
+              The founder asked to see, on the posts screen too, where the
+              drop-ins actually are: "it's automatically showing you drop-ins
+              CLOSEST to you… that's the value added to make this feel like a
+              neighbourhood feel."
+
+              It renders ONLY when at least one drop-in has a real location, so
+              a feed of free-text posts ("Somewhere else") shows no empty map —
+              the same "no empty card" rule the browse map follows. The pins are
+              de-duplicated by coordinate (`feedMapPins`), so two sessions at one
+              park are one dot rather than an unclickable pile, and the frame is
+              the V19 t01 neighbourhood view: tight on home, whatever the radius.
+
+              The map is ADDITIVE. Every day section below is untouched, so the
+              feed's own structure — the thing parents already read — is
+              unchanged; the map is a new glance above it, not a replacement. */}
+          {feedPins.length > 0 ? (
+            <div
+              data-testid="feed-map-band"
+              className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+            >
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-medium text-slate-500">
+                  {feedPins.length === 1
+                    ? '1 place with drop-ins'
+                    : `${feedPins.length} places with drop-ins`}
+                </span>
+              </div>
+              <PlacesMap
+                className="h-[45dvh] min-h-[240px]"
+                places={feedPins.map((coords, index) => ({
+                  id: `feed-pin-${index}`,
+                  name: 'Drop-in location',
+                  kind: 'other' as const,
+                  address: '',
+                  lat: coords.lat,
+                  lng: coords.lng,
+                  indoor: false,
+                  age_min: null,
+                  age_max: null,
+                  notes: null,
+                  photo_url: null,
+                  neighborhood_id: null,
+                  source: 'feed',
+                }))}
+                zipCoords={zipCoords}
+                homePin={homePinCoords}
+                radiusCircle={feedMapFrame}
+              />
+            </div>
+          ) : null}
           {dayGroups.map((group) => {
             const isToday = group.key === todayKey
             const soonest = group.posts[0]

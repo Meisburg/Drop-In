@@ -137,6 +137,56 @@ export function placeIdField(placeId?: string | null): { place_id?: string } {
 }
 
 /**
+ * V19 t02 — the FEED's map pins: one per drop-in that resolves to a coordinate.
+ *
+ * The founder's ask was a map on the posts screen showing "drop-ins CLOSEST to
+ * you". This is the pure half of that: given the feed's posts, return the points
+ * the map should draw.
+ *
+ * THREE THINGS THIS DELIBERATELY DOES, each of them a decision rather than an
+ * implementation detail:
+ *
+ * 1. **A post with no `place_id` gets NO pin.** Free-text posts ("Somewhere
+ *    else") carry `place_coords: null` — they name a place, not a location — and
+ *    the map must not invent one. This is the same `unplaced` distinction
+ *    `/browse` already draws, and it matters more here: a map pin is a spatial
+ *    claim, and a made-up one sends a parent to the wrong park.
+ *
+ * 2. **Duplicate coordinates collapse to ONE pin.** The feed can hold several
+ *    drop-ins at the same place (a morning and an afternoon session at Green
+ *    Lake). Drawing two pins on the identical pixel makes an unclickable pile
+ *    and reads as clutter, so they collapse. The LIST still shows both — this
+ *    only de-duplicates the map's dots.
+ *
+ * 3. **Order is preserved from the input.** The caller passes posts in its own
+ *    display order, so the pins come back in that order; nothing here re-sorts,
+ *    because a map's draw order is not a ranking.
+ *
+ * The count returned is therefore "places with drop-ins", not "drop-ins" —
+ * which is what a pin means and what the caller's label should say.
+ */
+export function feedMapPins(
+  posts: ReadonlyArray<{
+    place_coords?: { lat?: number | string | null; lng?: number | string | null } | null
+  }>,
+  zipCoords: ReadonlyMap<string, ZipCoords> | null = null,
+): Array<{ lat: number; lng: number }> {
+  const seen = new Set<string>()
+  const pins: Array<{ lat: number; lng: number }> = []
+  for (const post of posts) {
+    const coords = resolveMapCoords(post.place_coords ?? {}, zipCoords)
+    if (coords === null) continue
+    // Key on the exact coordinate pair, so two posts at the same place collapse
+    // and two posts at genuinely different spots both survive.
+    const key = `${coords.lat},${coords.lng}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    pins.push(coords)
+  }
+  return pins
+}
+
+/**
  * The place a piece of FREE TEXT names, by EXACT name (case- and
  * whitespace-insensitive) — or null.
  *

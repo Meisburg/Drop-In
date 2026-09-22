@@ -6,6 +6,7 @@ import {
   coordNumber,
   distanceMiles,
   filterPlacesByRadius,
+  feedMapPins,
   framingCircle,
   groupPlacesByKind,
   MIN_FOCUS_RADIUS_MILES,
@@ -1277,5 +1278,89 @@ describe('MAP_FOCUS_RADIUS_MILES (V19 t01 — D1: the map frames the neighbourho
       focusPoints: [near],
     })
     expect(framed?.radiusMiles).toBe(MIN_FOCUS_RADIUS_MILES)
+  })
+})
+
+/**
+ * V19 t02 — the feed map's pins.
+ *
+ * Two rules carry real product weight here, and both are about NOT lying with a
+ * map pin: a post with no location gets no pin (a pin is a spatial claim), and
+ * posts at the same place collapse to one dot (two dots on one pixel is an
+ * unclickable pile).
+ */
+describe('feedMapPins (V19 t02 — the feed map)', () => {
+  const zipCoords = new Map<string, ZipCoords>([
+    ['98107', { lat: 47.6687, lng: -122.3836 }],
+  ])
+
+  it('returns a pin for every post that has real coordinates', () => {
+    const pins = feedMapPins([
+      { place_coords: { lat: 47.67, lng: -122.38 } },
+      { place_coords: { lat: 47.68, lng: -122.39 } },
+    ])
+    expect(pins).toEqual([
+      { lat: 47.67, lng: -122.38 },
+      { lat: 47.68, lng: -122.39 },
+    ])
+  })
+
+  it('gives NO pin to a free-text post — a place name is not a location', () => {
+    // The "Somewhere else" case: `place_coords` is null because the post names
+    // a place rather than linking one. Inventing a pin would send a parent to
+    // the wrong park, so the honest answer is no pin at all.
+    expect(feedMapPins([{ place_coords: null }])).toEqual([])
+    expect(feedMapPins([{}])).toEqual([])
+    expect(feedMapPins([{ place_coords: { lat: null, lng: null } }])).toEqual([])
+  })
+
+  it('collapses several drop-ins at ONE place into a single pin', () => {
+    // A morning and an afternoon session at the same park: the LIST shows both
+    // (they are separate drop-ins), but the map draws one dot, because two dots
+    // on the identical pixel cannot be told apart or clicked separately.
+    const pins = feedMapPins([
+      { place_coords: { lat: 47.67, lng: -122.38 } },
+      { place_coords: { lat: 47.67, lng: -122.38 } },
+      { place_coords: { lat: 47.67, lng: -122.38 } },
+    ])
+    expect(pins).toHaveLength(1)
+  })
+
+  it('keeps pins that differ by a hair — they are genuinely different spots', () => {
+    const pins = feedMapPins([
+      { place_coords: { lat: 47.67, lng: -122.38 } },
+      { place_coords: { lat: 47.6701, lng: -122.38 } },
+    ])
+    expect(pins).toHaveLength(2)
+  })
+
+  it('resolves a zip-only post through the gazetteer (the address fallback)', () => {
+    const pins = feedMapPins(
+      [{ place_coords: { lat: null, lng: null, address: 'Seattle, WA 98107' } as never }],
+      zipCoords,
+    )
+    // A post whose place carries no coords but whose address names a known zip
+    // still gets a pin — the same fallback `resolveMapCoords` gives /browse.
+    expect(pins).toEqual([{ lat: 47.6687, lng: -122.3836 }])
+  })
+
+  it('never invents a pin from an unknown zip', () => {
+    expect(
+      feedMapPins([{ place_coords: { lat: null, lng: null, address: 'Nowhere, XX 00000' } as never }], zipCoords),
+    ).toEqual([])
+  })
+
+  it('preserves input order rather than re-sorting', () => {
+    // A map draws in the order it is given; the caller's order is a display
+    // decision (soonest first), not something this seat should re-rank.
+    const pins = feedMapPins([
+      { place_coords: { lat: 47.9, lng: -122.1 } },
+      { place_coords: { lat: 47.1, lng: -122.9 } },
+    ])
+    expect(pins[0]).toEqual({ lat: 47.9, lng: -122.1 })
+  })
+
+  it('accepts an empty feed', () => {
+    expect(feedMapPins([])).toEqual([])
   })
 })

@@ -135,6 +135,13 @@ const KIND_GROUP_LABEL = new RegExp(
  */
 const MARKER_PLACE_NAME = 'Ballard Corners Park'
 const MARKER_PLACE_ADDRESS = '17th Ave NW / NW 62nd St'
+/**
+ * The same place's seeded id, for specs that must LINK a post to a real place
+ * (V19 t02's feed map). Pinned literally rather than looked up by name at run
+ * time: the seed is deterministic, and a spec that resolved the id dynamically
+ * would silently start testing a DIFFERENT place if the seed ever shifted.
+ */
+const MARKER_PLACE_ID = '26a77f22-7f99-4bd5-88df-4169b91ae7c7'
 
 /** A real seeded indoor row (the hand-curated SPL branch list). */
 const INDOOR_PLACE = 'Ballard Branch, Seattle Public Library'
@@ -1535,5 +1542,140 @@ test('the map stays a neighbourhood while the radius widens the list (V19 t01 �
     // Legitimate only when nothing is outside — say so loudly rather than
     // passing silently, so a future empty map cannot masquerade as a pass.
     console.log(`[V19 map] no out-of-frame places at 35 mi (map r=${r35}px, list max ${d35} mi)`)
+  }
+})
+
+/**
+ * V19 t02 — THE FEED MAP (founder ruling D2).
+ *
+ * The founder's ask: see, on the posts screen too, *where* the drop-ins are —
+ * "automatically showing you drop-ins CLOSEST to you… that's the value added to
+ * make this feel like a neighbourhood feel."
+ *
+ * WHY THIS SPEC CREATES ITS OWN POSTS. The map renders one pin per drop-in that
+ * resolves to a real coordinate, and it renders NOTHING when none do — which is
+ * the correct behaviour for a feed of free-text posts, and also means a spec
+ * against whatever data happens to exist would prove nothing. So this spec
+ * seeds the two cases it must tell apart: a PLACED post (must pin) and a
+ * FREE-TEXT post (must NOT pin). That contrast is the whole claim.
+ *
+ * Both posts are written with the marker's own JWT through PostgREST — the same
+ * path the other specs use — and both are deleted at the end, so the live DB is
+ * left as it was found.
+ */
+test('the feed maps its placed drop-ins and ignores free-text ones (V19 t02)', async ({
+  page,
+}) => {
+  const { url: restUrl, anonKey } = readSupabaseEnv()
+  const { accessToken, userId } = readMarkerSession()
+  const restHeaders: Record<string, string> = {
+    apikey: anonKey,
+    Authorization: `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+    Prefer: 'return=representation',
+  }
+
+  // A real seeded place WITH coordinates, inside the marker's neighbourhood.
+  const placedPost = {
+    title: `V19 map placed ${Date.now()}`,
+    place: MARKER_PLACE_NAME,
+    place_id: MARKER_PLACE_ID,
+    // Starts in an hour — comfortably future, so `listRadiusFeed` returns it.
+    // `ends_at` is the storage column (the schema keeps an END instant, not a
+    // duration — V13 t03's end-stepper writes the difference into this pair),
+    // and it is NOT NULL, so it must be sent.
+    starts_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    ends_at: new Date(Date.now() + 120 * 60 * 1000).toISOString(),
+    host_profile_id: userId,
+  }
+  // The free-text case: a name, NO place_id, therefore NO coordinates.
+  const freeTextPost = {
+    title: `V19 map text ${Date.now()}`,
+    place: 'Somewhere else entirely',
+    place_id: null,
+    starts_at: new Date(Date.now() + 90 * 60 * 1000).toISOString(),
+    ends_at: new Date(Date.now() + 150 * 60 * 1000).toISOString(),
+    host_profile_id: userId,
+  }
+
+  const created: string[] = []
+  try {
+    for (const post of [placedPost, freeTextPost]) {
+      const res = await fetch(`${restUrl}/rest/v1/playdates`, {
+        method: 'POST',
+        headers: restHeaders,
+        body: JSON.stringify(post),
+      })
+      if (!res.ok) throw new Error(`playdates insert HTTP ${res.status} ${await res.text()}`)
+      const rows = (await res.json()) as Array<{ id: string }>
+      created.push(rows[0].id)
+    }
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/')
+    await expect(page.getByTestId('feed-map-band')).toBeVisible({ timeout: 15000 })
+
+    // AC: the map drew AT LEAST one pin, and it is a real Leaflet canvas — not
+    // an empty card standing in for a map.
+    await expect(page.locator('.leaflet-container').first()).toBeVisible()
+    // The drop-in pins are LEAFLET CIRCLE MARKERS, which render as SVG <path>
+    // elements in the overlay pane — NOT as `.leaflet-marker-icon` (that class
+    // is for image/DOM markers, which this map does not use). Counting the
+    // wrong selector was this spec's first failure, and the screenshot showed
+    // the pin plainly present the whole time: the map was right, the assertion
+    // was wrong.
+    //
+    // The pin is told apart from the home pin and the radius circle by its own
+    // fill — the same #4f46e5/#dc2626 convention `PlacesMap` uses and the V13
+    // A6 spec already relies on.
+    const pins = await page.locator('path.leaflet-interactive').count()
+    expect(pins, 'the placed drop-in must produce at least one map pin').toBeGreaterThan(0)
+
+    // AC: the band states how many PLACES carry drop-ins — the count is of
+    // places, not posts, because that is what a pin means (two sessions at one
+    // park are one dot). Asserted as a number rather than a fixed value, so the
+    // spec does not depend on what else is in the feed.
+    const label = await page.getByTestId('feed-map-band').locator('span').first().innerText()
+    expect(label, 'the band must state how many places carry drop-ins').toMatch(
+      /^\d+ places? with drop-ins$/,
+    )
+
+    // AC: the free-text post is genuinely in the feed (so its absence from the
+    // map is a decision, not a missing row) and it is NOT on the map. We assert
+    // its presence as a CARD first — otherwise this would pass trivially if the
+    // insert had failed.
+    await expect(page.getByText(freeTextPost.title, { exact: false })).toBeVisible()
+    const pinCountWithBoth = await page.locator('path.leaflet-interactive').count()
+
+    // Deleting the placed post must REMOVE a pin — the strongest available proof
+    // that the pin belongs to the placed post rather than to the basemap, the
+    // home marker, or something else already on the page.
+    const del = await fetch(`${restUrl}/rest/v1/playdates?id=eq.${created[0]}`, {
+      method: 'DELETE',
+      headers: restHeaders,
+    })
+    if (!del.ok) throw new Error(`playdates delete HTTP ${del.status}`)
+    created.shift()
+
+    await page.reload()
+    await page.waitForTimeout(2500)
+    const pinCountAfter = await page.locator('path.leaflet-interactive').count()
+
+    console.log(
+      `[V19 feed map] pins with a placed post: ${pinCountWithBoth}; ` +
+        `after deleting it: ${pinCountAfter}; label "${label}"`,
+    )
+    expect(
+      pinCountAfter,
+      'removing the only placed drop-in must remove its pin from the map',
+    ).toBeLessThan(pinCountWithBoth)
+  } finally {
+    // Best-effort cleanup: a leftover row would skew every later feed spec.
+    for (const id of created) {
+      await fetch(`${restUrl}/rest/v1/playdates?id=eq.${id}`, {
+        method: 'DELETE',
+        headers: restHeaders,
+      }).catch(() => {})
+    }
   }
 })
