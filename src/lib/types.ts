@@ -304,8 +304,33 @@ export interface Place {
   age_min: number | null
   age_max: number | null
   notes: string | null
-  /** NULL for every seeded row: third-party photos are never scraped. */
+  /**
+   * The place's photograph. V18 (0046) fills this from Wikimedia Commons for
+   * the places the founder approved; every other row keeps it NULL and renders
+   * the per-kind illustration instead, which is a supported end state, not a
+   * gap to be closed. The URL is hotlinked from Wikimedia's CDN.
+   */
   photo_url: string | null
+  /**
+   * V18 (0046): the Commons FILE PAGE this photo came from — the canonical
+   * provenance. Kept beside the image URL because a licence you cannot trace
+   * back to its source is a licence you cannot honour.
+   */
+  photo_source_url?: string | null
+  /** V18 (0046): the licence as Commons states it, e.g. "CC BY-SA 3.0". */
+  photo_license?: string | null
+  /**
+   * V18 (0046): the author, as PLAIN TEXT. Commons returns HTML here
+   * (`extmetadata.Artist` is an anchor); the backfill strips it before the
+   * write, so what this holds is what a human reads, never markup to render.
+   */
+  photo_author?: string | null
+  /**
+   * V18 (0046): the ready-to-render credit line, built by the tested
+   * `buildAttribution` seam (skip an empty part, join what remains) rather
+   * than re-derived at each render site.
+   */
+  photo_attribution?: string | null
   /** Null for every seeded row — no source field carries a neighborhood. */
   neighborhood_id: string | null
   /** 'seattle-parks' (the city's open data) or 'hand' (the curated indoor list). */
