@@ -1,0 +1,3225 @@
+{
+  "generatedAt": "2026-09-22T04:19:17.543Z",
+  "meta": {
+    "hits": 217,
+    "none": 22,
+    "failed": 0,
+    "total": 239
+  },
+  "candidates": [
+    {
+      "placeId": "55bc933f-22c1-4b30-acda-de32fb1a3b96",
+      "placeName": "12th Ave Square Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/dc/Seattle_%28October_23%2C_2022%29_-_92.jpg/960px-Seattle_%28October_23%2C_2022%29_-_92.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_(October_23,_2022)_-_92.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Another Believer",
+        "attribution": "Another Believer / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "722a6c5c-0d25-4329-bb9a-7becafe39b62",
+      "placeName": "12th West / West Howe Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/65/Filial_tribute_to_the_memory_of_Rev._John_Moffat_Howe%2C_M.D_%28IA_filialtributetom00reid_0%29.pdf/page1-500px-Filial_tribute_to_the_memory_of_Rev._John_Moffat_Howe%2C_M.D_%28IA_filialtributetom00reid_0%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Filial_tribute_to_the_memory_of_Rev._John_Moffat_Howe,_M.D_(IA_filialtributetom00reid_0).pdf",
+        "license": "Public domain",
+        "author": "Reid, J. M. (John Morrison), 1820-1896 Howe, George Rowland, 1847-1917",
+        "attribution": "Reid, J. M. (John Morrison), 1820-1896 Howe, George Rowland, 1847-1917 / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "75855831-ec48-4273-8662-e1b2b9b5c412",
+      "placeName": "6th Ave NW Pocket Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/ee/Guide_book_and_complete_pocket_map_of_St._Louis-_giving_early_history._statistics%2C_etc.%2C_being_the_only_complete_pocket_map_of_the_city_%28IA_guidebookcomplet00cook%29.pdf/page1-500px-thumbnail.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Guide_book_and_complete_pocket_map_of_St._Louis-_giving_early_history._statistics,_etc.,_being_the_only_complete_pocket_map_of_the_city_(IA_guidebookcomplet00cook).pdf",
+        "license": "Public domain",
+        "author": "Cook, J. H., pub. [from old catalog]",
+        "attribution": "Cook, J. H., pub. [from old catalog] / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "c8665278-0aac-44d1-8a21-5ebf38f5e4ea",
+      "placeName": "Albert Davis Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d1/Olympic_Hills_neighborhood_with_new_construction%2C_Seattle%2C_2016-10-29.jpg/960px-Olympic_Hills_neighborhood_with_new_construction%2C_Seattle%2C_2016-10-29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Olympic_Hills_neighborhood_with_new_construction,_Seattle,_2016-10-29.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Sage Ross",
+        "attribution": "Sage Ross / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "6bfcf69a-b8e0-423e-9ecc-7df3a3a01482",
+      "placeName": "Alki Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5b/Visit_of_Maria_Damanaki%2C_Member_of_the_EC%2C_to_Greece_%28P-018025-00-05%29.jpg/960px-Visit_of_Maria_Damanaki%2C_Member_of_the_EC%2C_to_Greece_%28P-018025-00-05%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Visit_of_Maria_Damanaki,_Member_of_the_EC,_to_Greece_(P-018025-00-05).jpg",
+        "license": "CC BY 4.0",
+        "author": "Europäische Kommission - Audiovisueller Dienst, Agence France-Presse (AFP), CE - Service audiovisuel, EC - Audiovisual Service, Alkis Konstantinidis",
+        "attribution": "Europäische Kommission - Audiovisueller Dienst, Agence France-Presse (AFP), CE - Service audiovisuel, EC - Audiovisual Service, Alkis Konstantinidis / CC BY 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "8dc41df5-18e4-4404-80bf-408100f12768",
+      "placeName": "Alki Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/df/Seattle_-_Senior_Citizen_Walking_Club_at_Alki_Playground%2C_1980_%2851353894704%29.jpg/960px-Seattle_-_Senior_Citizen_Walking_Club_at_Alki_Playground%2C_1980_%2851353894704%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Senior_Citizen_Walking_Club_at_Alki_Playground,_1980_(51353894704).jpg",
+        "license": "CC BY 2.0",
+        "author": "Seattle Municipal Archives from Seattle, WA",
+        "attribution": "Seattle Municipal Archives from Seattle, WA / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "6bb551d1-e247-4938-9fa0-68cded23b6f9",
+      "placeName": "Alki Playground - Whales Tail",
+      "kind": "playground",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "26713d32-ad1b-480a-9696-f06db1af528c",
+      "placeName": "Atlantic Street Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/75/Seattle_-_People_using_exercise_equipment_at_Atlantic_Street_Park%2C_2009.jpg/960px-Seattle_-_People_using_exercise_equipment_at_Atlantic_Street_Park%2C_2009.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_People_using_exercise_equipment_at_Atlantic_Street_Park,_2009.jpg",
+        "license": "CC BY 4.0",
+        "author": "Seattle Municipal Archives from Seattle, WA",
+        "attribution": "Seattle Municipal Archives from Seattle, WA / CC BY 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "d781e405-1447-4723-918c-ff22c0a9d49e",
+      "placeName": "B.F. Day Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4d/The_public_playground%2C_an_interesting_development_in_education_.._%28IA_publicplayground00cali%29.pdf/page1-500px-The_public_playground%2C_an_interesting_development_in_education_.._%28IA_publicplayground00cali%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:The_public_playground,_an_interesting_development_in_education_.._(IA_publicplayground00cali).pdf",
+        "license": "Public domain",
+        "author": "California. Dept. of public instruction Woman's Christian Temperance Union",
+        "attribution": "California. Dept. of public instruction Woman's Christian Temperance Union / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "f2445602-aedf-45f6-a75f-96699499dfe3",
+      "placeName": "Baker Park on Crown Hill",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/21/Price_list._Fall_1919_-_Baker_Bros._Co._%28IA_CAT31301958%29.pdf/page1-500px-Price_list._Fall_1919_-_Baker_Bros._Co._%28IA_CAT31301958%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Price_list._Fall_1919_-_Baker_Bros._Co._(IA_CAT31301958).pdf",
+        "license": "Public domain",
+        "author": "Baker Bros. Nursery Henry G. Gilbert Nursery and Seed Trade Catalog Collection",
+        "attribution": "Baker Bros. Nursery Henry G. Gilbert Nursery and Seed Trade Catalog Collection / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "4a887a45-c49b-4754-ac72-8093d4260861",
+      "placeName": "Ballard Branch, Seattle Public Library",
+      "kind": "library",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a2/Seattle_Public_Library%2C_Ballard_Branch_5.jpg/960px-Seattle_Public_Library%2C_Ballard_Branch_5.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_Public_Library,_Ballard_Branch_5.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Dennis Bratland",
+        "attribution": "Dennis Bratland / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "3cb3ede2-4a77-4d8a-be05-048c0fce6e7c",
+      "placeName": "Ballard Commons Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f3/Ballard_Commons_reopening_13-IMG_1991_%2852745349271%29.jpg/960px-Ballard_Commons_reopening_13-IMG_1991_%2852745349271%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Ballard_Commons_reopening_13-IMG_1991_(52745349271).jpg",
+        "license": "CC BY 2.0",
+        "author": "Seattle City Council from Seattle",
+        "attribution": "Seattle City Council from Seattle / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "3b3027aa-3cb0-4f74-8dfb-773e2039aa66",
+      "placeName": "Ballard Commons Park Water Spray",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6c/Ballards_of_bravery_%28IA_ballardsofbraver00bakerich%29.pdf/page1-960px-Ballards_of_bravery_%28IA_ballardsofbraver00bakerich%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Ballards_of_bravery_(IA_ballardsofbraver00bakerich).pdf",
+        "license": "Public domain",
+        "author": "Baker, George Melville, 1832-1890",
+        "attribution": "Baker, George Melville, 1832-1890 / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "73c5a5f8-9a44-4c4e-aaeb-3b512507e941",
+      "placeName": "Ballard Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4b/Ballard_Recreation_Center%2C_1970.jpg/960px-Ballard_Recreation_Center%2C_1970.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Ballard_Recreation_Center,_1970.jpg",
+        "license": "CC BY 2.0",
+        "author": "Seattle Municipal Archives from Seattle, WA",
+        "attribution": "Seattle Municipal Archives from Seattle, WA / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "26a77f22-7f99-4bd5-88df-4169b91ae7c7",
+      "placeName": "Ballard Corners Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://upload.wikimedia.org/wikipedia/commons/b/b6/An_empty_corner_at_the_Park_and_Ride_-_geograph.org.uk_-_767870.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:An_empty_corner_at_the_Park_and_Ride_-_geograph.org.uk_-_767870.jpg",
+        "license": "CC BY-SA 2.0",
+        "author": "Sebastian Ballard",
+        "attribution": "Sebastian Ballard / CC BY-SA 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "a8f77851-ef94-46fb-92b2-ad3d39e11d64",
+      "placeName": "Ballard Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f9/Ballard_playground_and_Adams_Elementary%2C_ca._1910_-_DPLA_-_83aca545ec1204211ef351b4310ae346_%28page_2%29.jpg/960px-Ballard_playground_and_Adams_Elementary%2C_ca._1910_-_DPLA_-_83aca545ec1204211ef351b4310ae346_%28page_2%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Ballard_playground_and_Adams_Elementary,_ca._1910_-_DPLA_-_83aca545ec1204211ef351b4310ae346_(page_2).jpg",
+        "license": "Public domain",
+        "author": "",
+        "attribution": "Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "c0d9c101-0338-409b-adae-2704556ad26a",
+      "placeName": "Ballard Pool",
+      "kind": "pool",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/81/Ballard_Pool_-_panoramio.jpg/960px-Ballard_Pool_-_panoramio.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Ballard_Pool_-_panoramio.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "dahusker",
+        "attribution": "dahusker / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "88bba89e-1067-48bd-ac5e-1f93052a961f",
+      "placeName": "Bayview Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/71/Bayview_Podium_Garden_Playground_2013.jpg/960px-Bayview_Podium_Garden_Playground_2013.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Bayview_Podium_Garden_Playground_2013.jpg",
+        "license": "CC BY 3.0",
+        "author": "Wing1990hk",
+        "attribution": "Wing1990hk / CC BY 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "c2baa3a0-e2a7-4d8f-8fa7-0b59a562a5fe",
+      "placeName": "Bayview-Kinnear Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://upload.wikimedia.org/wikipedia/commons/6/64/The_Queen_Anne_Hill_counterbalance_looking_north_from_Mercer_St_on_Queen_Anne_Ave%2C_Seattle_%28CURTIS_1477%29.jpeg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:The_Queen_Anne_Hill_counterbalance_looking_north_from_Mercer_St_on_Queen_Anne_Ave,_Seattle_(CURTIS_1477).jpeg",
+        "license": "Public domain",
+        "author": "Asahel Curtis",
+        "attribution": "Asahel Curtis / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "cead62be-5e45-420a-b6f6-2c8c57ed5388",
+      "placeName": "Beacon Hill Branch, Seattle Public Library",
+      "kind": "library",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d9/Seattle_-_Beacon_Hill_branch_library_02.jpg/960px-Seattle_-_Beacon_Hill_branch_library_02.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Beacon_Hill_branch_library_02.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "95040cf2-c4aa-4451-bca3-7807fc5cacbe",
+      "placeName": "Beacon Hill Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/9b/Ede_Road_Playground.jpg/960px-Ede_Road_Playground.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Ede_Road_Playground.jpg",
+        "license": "CC BY 4.0",
+        "author": "AromaticWaffle",
+        "attribution": "AromaticWaffle / CC BY 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "616bf6cc-3239-445e-98bb-553982db9b1c",
+      "placeName": "Beacon Hill Playground Wading Pool",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/68/General_plan_of_a_park_and_playground_system_for_New_London%2C_Conn._%28IA_generalplanofpar00nolerich%29.pdf/page1-500px-General_plan_of_a_park_and_playground_system_for_New_London%2C_Conn._%28IA_generalplanofpar00nolerich%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:General_plan_of_a_park_and_playground_system_for_New_London,_Conn._(IA_generalplanofpar00nolerich).pdf",
+        "license": "Public domain",
+        "author": "Nolen, John, 1869-1937",
+        "attribution": "Nolen, John, 1869-1937 / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "de1cfa55-bee1-484f-9dcd-637f3fff39b6",
+      "placeName": "Beacon Mountain Water Spray",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c7/Song_spray_%28IA_songspray00coll%29.pdf/page1-500px-Song_spray_%28IA_songspray00coll%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Song_spray_(IA_songspray00coll).pdf",
+        "license": "Public domain",
+        "author": "Collier, Thomas S. (Thomas Stephens), 1842-1893",
+        "attribution": "Collier, Thomas S. (Thomas Stephens), 1842-1893 / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "21b6ce08-18af-4b73-a67a-09f9aebc49ea",
+      "placeName": "Beer Sheva Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/3/3a/Beer_Sheva_Park%2C_Seattle%2C_March_2013.jpg/960px-Beer_Sheva_Park%2C_Seattle%2C_March_2013.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Beer_Sheva_Park,_Seattle,_March_2013.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Orange Suede Sofa",
+        "attribution": "Orange Suede Sofa / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "285c597c-fab7-42d0-a87f-039408e93722",
+      "placeName": "Benefit Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b4/Harry_Chapin_Playground_plaque.jpg/960px-Harry_Chapin_Playground_plaque.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Harry_Chapin_Playground_plaque.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Spudgun67",
+        "attribution": "Spudgun67 / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "4d0e16bb-6569-4f1d-ba50-b19afcebfa39",
+      "placeName": "Bhy Kracke Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/60/Bhy_Kracke_Park_-_Sep_24_2011_%286180066958%29.jpg/960px-Bhy_Kracke_Park_-_Sep_24_2011_%286180066958%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Bhy_Kracke_Park_-_Sep_24_2011_(6180066958).jpg",
+        "license": "CC BY-SA 2.0",
+        "author": "Atomic Taco from Seattle, WA, USA",
+        "attribution": "Atomic Taco from Seattle, WA, USA / CC BY-SA 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "3b5a3eae-8940-44c9-8d5b-e1b894e00243",
+      "placeName": "Bitter Lake Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c5/Bitter_Creek_Wilderness_environmental_impact_statement_%28IA_bittercreekwilde28unit%29.pdf/page1-960px-Bitter_Creek_Wilderness_environmental_impact_statement_%28IA_bittercreekwilde28unit%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Bitter_Creek_Wilderness_environmental_impact_statement_(IA_bittercreekwilde28unit).pdf",
+        "license": "Public domain",
+        "author": "United States. Bureau of Land Management. Lewistown District United States. Bureau of Land Management. Montana State Office",
+        "attribution": "United States. Bureau of Land Management. Lewistown District United States. Bureau of Land Management. Montana State Office / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "da77a360-e784-4880-9307-ccee1450df33",
+      "placeName": "Bitter Lake Open Space Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a2/The_lay_of_the_last_minstrel%2C_Marmion%2C_The_Lake_of_the_lake_%28IA_layoflastminstre043scot%29.pdf/page1-500px-The_lay_of_the_last_minstrel%2C_Marmion%2C_The_Lake_of_the_lake_%28IA_layoflastminstre043scot%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:The_lay_of_the_last_minstrel,_Marmion,_The_Lake_of_the_lake_(IA_layoflastminstre043scot).pdf",
+        "license": "Public domain",
+        "author": "Scott, Walter, Sir, 1771-1832",
+        "attribution": "Scott, Walter, Sir, 1771-1832 / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "a563a08e-cf42-4564-9c47-ae39959a9bd7",
+      "placeName": "Bitter Lake Playfield Wading Pool",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e6/Trolley_exploring_-_an_electric_railroad_guide_to_historic_%26_picturesque_places_about_New_York%2C_New_Jersey%2C_and_New_England_%28IA_trolleyexploring00chil%29.pdf/page1-960px-Trolley_exploring_-_an_electric_railroad_guide_to_historic_%26_picturesque_places_about_New_York%2C_New_Jersey%2C_and_New_England_%28IA_trolleyexploring00chil%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Trolley_exploring_-_an_electric_railroad_guide_to_historic_&_picturesque_places_about_New_York,_New_Jersey,_and_New_England_(IA_trolleyexploring00chil).pdf",
+        "license": "Public domain",
+        "author": "Childe, Cromwell",
+        "attribution": "Childe, Cromwell / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "328bd986-95e0-49f1-8ef6-c0b306e4ca0c",
+      "placeName": "Bitterlake Playfield",
+      "kind": "playground",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "a915efdf-53ca-47c1-98b2-b95ae7ec8f3e",
+      "placeName": "Bradner Gardens Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/73/Bradner_Gardens_Park_04.jpg/960px-Bradner_Gardens_Park_04.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Bradner_Gardens_Park_04.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "867f5131-2a7a-4da7-8ef8-f702543a2aac",
+      "placeName": "Brighton Playfield",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/05/Indianapolis_recreation_survey_%28IA_indianapolisrecr00nati%29.pdf/page1-500px-Indianapolis_recreation_survey_%28IA_indianapolisrecr00nati%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Indianapolis_recreation_survey_(IA_indianapolisrecr00nati).pdf",
+        "license": "Public domain",
+        "author": "National Recreation Association North, Francis Reid, 1876- Indianapolis Chamber of Commerce",
+        "attribution": "National Recreation Association North, Francis Reid, 1876- Indianapolis Chamber of Commerce / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "760063ee-4ebd-4529-8b62-885e401add83",
+      "placeName": "Bryant Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/48/Bryant_neighborhood%2C_Seattle%2C_2017-01-15_%E2%80%94_01.jpg/960px-Bryant_neighborhood%2C_Seattle%2C_2017-01-15_%E2%80%94_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Bryant_neighborhood,_Seattle,_2017-01-15_—_01.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Sage Ross",
+        "attribution": "Sage Ross / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "93b81290-a6d3-447f-9eb4-398bb77e30ce",
+      "placeName": "Cal Anderson Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e0/Cal_Anderson_Park.jpg/960px-Cal_Anderson_Park.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Cal_Anderson_Park.jpg",
+        "license": "CC BY 2.5",
+        "author": "Douglas J. McLaughlin, Greenmnm69 , Jeff G.",
+        "attribution": "Douglas J. McLaughlin, Greenmnm69 , Jeff G. / CC BY 2.5"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "7633161e-264d-48ad-99e6-3ab66be93d93",
+      "placeName": "Carkeek Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://upload.wikimedia.org/wikipedia/commons/7/77/Carkeek_Park-1.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Carkeek_Park-1.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Shakespeare at English Wikipedia",
+        "attribution": "Shakespeare at English Wikipedia / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "3c54dc7f-ee75-4b67-bc73-7b6fe40fa9a6",
+      "placeName": "Cascade Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/9a/Seattle_-_Cascade_Playground_01.jpg/960px-Seattle_-_Cascade_Playground_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Cascade_Playground_01.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "328eb833-1591-4931-820b-d58e0c7258f2",
+      "placeName": "Cedar Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7d/Cedar_Park%2C_Philadelphia.jpg/960px-Cedar_Park%2C_Philadelphia.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Cedar_Park,_Philadelphia.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Bruce Andersen",
+        "attribution": "Bruce Andersen / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "776a2660-2966-4050-b745-c73ed6682634",
+      "placeName": "Central Library, Seattle Public Library",
+      "kind": "library",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b3/Central_Library%2C_Seattle_%282014%29_-_03.JPG/960px-Central_Library%2C_Seattle_%282014%29_-_03.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Central_Library,_Seattle_(2014)_-_03.JPG",
+        "license": "CC BY-SA 3.0",
+        "author": "Another Believer",
+        "attribution": "Another Believer / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "8fd878a4-2eb9-4d47-a2cb-66c7d4b3bef5",
+      "placeName": "Cheryl Chow Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/8a/Gros%2C_gras_et_Constitutionnel_-_DPLA_-_244c3d38cf72f89f0fd3faba31e41d80.jpg/960px-Gros%2C_gras_et_Constitutionnel_-_DPLA_-_244c3d38cf72f89f0fd3faba31e41d80.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Gros,_gras_et_Constitutionnel_-_DPLA_-_244c3d38cf72f89f0fd3faba31e41d80.jpg",
+        "license": "Public domain",
+        "author": "Daumier, Honoré, 1808-1879",
+        "attribution": "Daumier, Honoré, 1808-1879 / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "7b5650cc-74bc-4a16-a272-9d7a28f79a3a",
+      "placeName": "Colman Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7c/Children%27s_playground_in_Volunteer_Park%2C_ca._1910_-_DPLA_-_45ff0e123691cee0ed3685a4b0406002_%28page_1%29.jpg/960px-Children%27s_playground_in_Volunteer_Park%2C_ca._1910_-_DPLA_-_45ff0e123691cee0ed3685a4b0406002_%28page_1%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Children's_playground_in_Volunteer_Park,_ca._1910_-_DPLA_-_45ff0e123691cee0ed3685a4b0406002_(page_1).jpg",
+        "license": "Public domain",
+        "author": "Toles, F.L",
+        "attribution": "Toles, F.L / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "e283c01b-8772-4090-9e28-21db4a1ab2dc",
+      "placeName": "Colman Pool",
+      "kind": "pool",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/85/Diver_at_Colman_Pool%2C_1950_%2841869625464%29.jpg/960px-Diver_at_Colman_Pool%2C_1950_%2841869625464%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Diver_at_Colman_Pool,_1950_(41869625464).jpg",
+        "license": "CC BY 2.0",
+        "author": "Seattle Municipal Archives from Seattle, WA",
+        "attribution": "Seattle Municipal Archives from Seattle, WA / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "f58e711c-e084-4127-98d7-c4f3381b34ad",
+      "placeName": "Columbia Branch, Seattle Public Library",
+      "kind": "library",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/68/Columbia_City_Library.jpg/960px-Columbia_City_Library.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Columbia_City_Library.jpg",
+        "license": "Public domain",
+        "author": "Seattledude at English Wikipedia",
+        "attribution": "Seattledude at English Wikipedia / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "141ebfde-3e13-4767-b4f7-071a7e8f51b9",
+      "placeName": "Cottage Grove Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7a/Cottage_Grove_Park_-_05_-_Playground_01.png/960px-Cottage_Grove_Park_-_05_-_Playground_01.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Cottage_Grove_Park_-_05_-_Playground_01.png",
+        "license": "CC0",
+        "author": "0x0077BE",
+        "attribution": "0x0077BE / CC0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "79ee8474-6f8c-427f-ab61-012dff7442b1",
+      "placeName": "Cowen Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2c/Cowen_Park_01.jpg/960px-Cowen_Park_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Cowen_Park_01.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "fb6a8af2-7bf7-4bac-8b55-e37524723d63",
+      "placeName": "Dahl Playfield",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c8/Dahl_Playfield_2.jpg/960px-Dahl_Playfield_2.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Dahl_Playfield_2.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "9b302cd6-8c59-4b32-9fed-778688b12ce5",
+      "placeName": "David Rodgers Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d7/Rodger%27s_Park%2C_adjoining_Spring_Lake%2C_Monmouth_Co.%2C_N.J._by_Wm._H._Shafto%2C_surveyor_%26_conveyancer._%28Philadelphia%2C_Woolman_%26_Rose_%28IA_dr_rodgers-park-adjoining-spring-lake-monmouth-co-nj-by-wm-h-shafto-00804099%29.jpg/960px-thumbnail.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Rodger's_Park,_adjoining_Spring_Lake,_Monmouth_Co.,_N.J._by_Wm._H._Shafto,_surveyor_&_conveyancer._(Philadelphia,_Woolman_&_Rose_(IA_dr_rodgers-park-adjoining-spring-lake-monmouth-co-nj-by-wm-h-shafto-00804099).jpg",
+        "license": "Public domain",
+        "author": "Shafto, William H. Price, T. T. Rose, Theodore F. Woolman, H. C.",
+        "attribution": "Shafto, William H. Price, T. T. Rose, Theodore F. Woolman, H. C. / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "83c94020-623d-4628-a8df-83aef6ebbfea",
+      "placeName": "Dearborn Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/63/Dearborn_Park_Front_Sign.jpg/960px-Dearborn_Park_Front_Sign.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Dearborn_Park_Front_Sign.jpg",
+        "license": "CC0",
+        "author": "Donutboy102",
+        "attribution": "Donutboy102 / CC0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "cc5e299d-5068-4eed-810f-903488b8b1e8",
+      "placeName": "Delridge Community Center",
+      "kind": "other",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "c08e6c24-8959-439a-a4af-c47eff97316e",
+      "placeName": "Delridge Playfield",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a3/Delridge_Playfields_Celebration%2C_2011_%288902439811%29.jpg/960px-Delridge_Playfields_Celebration%2C_2011_%288902439811%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Delridge_Playfields_Celebration,_2011_(8902439811).jpg",
+        "license": "CC0",
+        "author": "Seattle City Council from Seattle",
+        "attribution": "Seattle City Council from Seattle / CC0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "93196944-6101-4723-90c7-026f216a45fd",
+      "placeName": "Delridge Playfield Wading Pool",
+      "kind": "splash_pad",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "21c44369-08fe-4113-9029-a811080a582e",
+      "placeName": "Denny Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/20/Denny_Park%2C_Seattle%2C_2024.jpg/960px-Denny_Park%2C_Seattle%2C_2024.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Denny_Park,_Seattle,_2024.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Another Believer",
+        "attribution": "Another Believer / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "36d1b022-a35a-44aa-9c30-0a3a0a5d73c7",
+      "placeName": "Discovery Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/ea/Discovery_Park%2C_Liverpool_26.jpg/960px-Discovery_Park%2C_Liverpool_26.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Discovery_Park,_Liverpool_26.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Chris.sherlock2",
+        "attribution": "Chris.sherlock2 / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "f19006d8-f3c9-4d8a-8bd6-bff061633474",
+      "placeName": "Dr. Blanche Lavizzo Park",
+      "kind": "playground",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "8ec45a8c-3190-4ed3-8522-305178eb36a1",
+      "placeName": "Dr. Jose Rizal Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/85/2023-06-23%2C_Dr._Jose_Rizal_Park%2C_Seattle%2C_Washington%2C_012.jpg/960px-2023-06-23%2C_Dr._Jose_Rizal_Park%2C_Seattle%2C_Washington%2C_012.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:2023-06-23,_Dr._Jose_Rizal_Park,_Seattle,_Washington,_012.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Steven Pavlov",
+        "attribution": "Steven Pavlov / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "d8d4bb4e-d97a-49db-af63-c523db571844",
+      "placeName": "Duwamish Waterway Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a1/Duwamish_Waterway_at_South_Park.jpg/960px-Duwamish_Waterway_at_South_Park.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Duwamish_Waterway_at_South_Park.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "a5915990-b963-4748-94ae-cce21cbb9deb",
+      "placeName": "E Queen Anne Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c8/Sweet_Anne_Page_%28IA_sweetannepage03coll%29.pdf/page1-500px-Sweet_Anne_Page_%28IA_sweetannepage03coll%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Sweet_Anne_Page_(IA_sweetannepage03coll).pdf",
+        "license": "Public domain",
+        "author": "Collins, Mortimer, 1827-1876",
+        "attribution": "Collins, Mortimer, 1827-1876 / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "dc4e339d-d9be-495d-aeaf-98d5e786b5d8",
+      "placeName": "E.C. Hughes Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2e/The_Playground_%28IA_playground07playrich%29.pdf/page1-500px-The_Playground_%28IA_playground07playrich%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:The_Playground_(IA_playground07playrich).pdf",
+        "license": "Public domain",
+        "author": "Playground Association of America Playground and Recreation Association of America",
+        "attribution": "Playground Association of America Playground and Recreation Association of America / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "f87a3712-a504-4248-882e-ed82e2d730a4",
+      "placeName": "E.C. Hughes Playground Wading Pool",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2e/The_Playground_%28IA_playground07playrich%29.pdf/page1-500px-The_Playground_%28IA_playground07playrich%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:The_Playground_(IA_playground07playrich).pdf",
+        "license": "Public domain",
+        "author": "Playground Association of America Playground and Recreation Association of America",
+        "attribution": "Playground Association of America Playground and Recreation Association of America / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "5cd01b8f-450b-4db7-8935-923b25e5772a",
+      "placeName": "East Queen Anne Playground Wading Pool",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/60/July_1960_-_DPLA_-_803ca93ee619dbf4b0d153cfb8e10caa_%28page_1%29.pdf/page1-960px-July_1960_-_DPLA_-_803ca93ee619dbf4b0d153cfb8e10caa_%28page_1%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:July_1960_-_DPLA_-_803ca93ee619dbf4b0d153cfb8e10caa_(page_1).pdf",
+        "license": "Public domain",
+        "author": "Department of State. International Cooperation Administration. Executive Secretariat. 6/30/1955-11/1961",
+        "attribution": "Department of State. International Cooperation Administration. Executive Secretariat. 6/30/1955-11/1961 / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "b2501358-6c4c-4b8b-92a3-8f80168fea03",
+      "placeName": "Edwin T. Pratt Park Water Spray",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1d/Report_of_the_Board_of_Metropolitan_Park_Commissioners_%28IA_reportofboardofm1904mass%29.pdf/page1-500px-Report_of_the_Board_of_Metropolitan_Park_Commissioners_%28IA_reportofboardofm1904mass%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Report_of_the_Board_of_Metropolitan_Park_Commissioners_(IA_reportofboardofm1904mass).pdf",
+        "license": "Public domain",
+        "author": "Massachusetts. Metropolitan Park Commission Adams, Charles Francis, 1835-1915 Casas, William Beltras de las, 1857-",
+        "attribution": "Massachusetts. Metropolitan Park Commission Adams, Charles Francis, 1835-1915 Casas, William Beltras de las, 1857- / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "041f8215-6678-418a-a52f-9c9185fee06e",
+      "placeName": "Ella Bailey Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f1/Ella_Bailey_Park_%2815954919197%29.jpg/960px-Ella_Bailey_Park_%2815954919197%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Ella_Bailey_Park_(15954919197).jpg",
+        "license": "CC BY 2.0",
+        "author": "Seattle Parks and Recreation",
+        "attribution": "Seattle Parks and Recreation / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "db6942ec-9591-4b79-9e54-f51021ffcaaf",
+      "placeName": "Ercolini Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://upload.wikimedia.org/wikipedia/commons/b/b9/Ercolini_Park_Opening_%288894247697%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Ercolini_Park_Opening_(8894247697).jpg",
+        "license": "CC0",
+        "author": "Seattle City Council from Seattle",
+        "attribution": "Seattle City Council from Seattle / CC0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "52df841f-b7ab-4d89-af1a-e5ef57bbfe23",
+      "placeName": "Evans Pool",
+      "kind": "pool",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/43/Janet_Evans_takes_the_Pool_Safely_Pledge.jpg/960px-Janet_Evans_takes_the_Pool_Safely_Pledge.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Janet_Evans_takes_the_Pool_Safely_Pledge.jpg",
+        "license": "CC BY 2.0",
+        "author": "PoolSafely",
+        "attribution": "PoolSafely / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "d8add0e1-d637-461b-afc0-2b9e56d845b6",
+      "placeName": "Fairmount Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c1/Fairmount_park_13_carousel_playground.jpg/960px-Fairmount_park_13_carousel_playground.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Fairmount_park_13_carousel_playground.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Seauton",
+        "attribution": "Seauton / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "d4c26f20-a24e-411c-9d25-3308f3ae02e2",
+      "placeName": "Fairmount Playground - School",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6b/The_Playground_%28IA_playground09playrich%29.pdf/page1-500px-The_Playground_%28IA_playground09playrich%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:The_Playground_(IA_playground09playrich).pdf",
+        "license": "Public domain",
+        "author": "Playground Association of America Playground and Recreation Association of America",
+        "attribution": "Playground Association of America Playground and Recreation Association of America / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "509a6d99-746f-4375-94b5-dbc2acd2f425",
+      "placeName": "Firehouse Mini Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6f/CAMP_Firehouse_07.jpg/960px-CAMP_Firehouse_07.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:CAMP_Firehouse_07.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "b4cf06f6-1e87-4de8-b3c5-bc17d1501ce2",
+      "placeName": "Flo Ware Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a5/Seattle%2C_WA_%28August_2024%29_-_63.jpg/960px-Seattle%2C_WA_%28August_2024%29_-_63.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle,_WA_(August_2024)_-_63.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Another Believer",
+        "attribution": "Another Believer / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "ca84af5e-1038-472b-a6de-88a50873ba07",
+      "placeName": "Froula Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/11/National_conference_on_secondary_education_and_its_problems%2C_held_at_Northwestern_university%2C_October_30_and_31%2C_1903._Stenographic_report_of_the_proceedings_%28IA_nationalconferen00natirich%29.pdf/page1-500px-thumbnail.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:National_conference_on_secondary_education_and_its_problems,_held_at_Northwestern_university,_October_30_and_31,_1903._Stenographic_report_of_the_proceedings_(IA_nationalconferen00natirich).pdf",
+        "license": "Public domain",
+        "author": "National Conference on Secondary Education and its Problems (1903 : Evanston) Northwestern University (Evanston, Ill.) Fuller, Roy E. Froula, Vaclav Karel, 1873-",
+        "attribution": "National Conference on Secondary Education and its Problems (1903 : Evanston) Northwestern University (Evanston, Ill.) Fuller, Roy E. Froula, Vaclav Karel, 1873- / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "ca9546b8-5f90-4cca-90d0-d0e8ab9ee03e",
+      "placeName": "Garfield Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/cd/Seattle_-_Garfield_Community_Center.jpg/960px-Seattle_-_Garfield_Community_Center.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Garfield_Community_Center.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "41c5f9fa-6dd8-4967-96fd-f93dbe79c580",
+      "placeName": "Garfield Playfield",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/05/Indianapolis_recreation_survey_%28IA_indianapolisrecr00nati%29.pdf/page1-500px-Indianapolis_recreation_survey_%28IA_indianapolisrecr00nati%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Indianapolis_recreation_survey_(IA_indianapolisrecr00nati).pdf",
+        "license": "Public domain",
+        "author": "National Recreation Association North, Francis Reid, 1876- Indianapolis Chamber of Commerce",
+        "attribution": "National Recreation Association North, Francis Reid, 1876- Indianapolis Chamber of Commerce / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "e23c42fc-3ffd-46d9-80a2-d62f4a4de1ec",
+      "placeName": "Gas Works Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/63/Seattle_from_Gas_Works_Park2013.jpg/960px-Seattle_from_Gas_Works_Park2013.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_from_Gas_Works_Park2013.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "WikiPedant",
+        "attribution": "WikiPedant / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "06c71239-b6d8-4c5b-84c3-e8d4ba6eff38",
+      "placeName": "Genesee Park and Playfield",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e6/Lake_Washington_and_Mount_Rainier%2C_ca._1910_-_DPLA_-_18e28817b6e06f5efa2a7222ecebde37.jpg/960px-Lake_Washington_and_Mount_Rainier%2C_ca._1910_-_DPLA_-_18e28817b6e06f5efa2a7222ecebde37.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Lake_Washington_and_Mount_Rainier,_ca._1910_-_DPLA_-_18e28817b6e06f5efa2a7222ecebde37.jpg",
+        "license": "Public domain",
+        "author": "Piper, Walter F",
+        "attribution": "Piper, Walter F / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "6cb65391-8a15-4048-842b-43753871c124",
+      "placeName": "Genesee Park and Playfield",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e6/Lake_Washington_and_Mount_Rainier%2C_ca._1910_-_DPLA_-_18e28817b6e06f5efa2a7222ecebde37.jpg/960px-Lake_Washington_and_Mount_Rainier%2C_ca._1910_-_DPLA_-_18e28817b6e06f5efa2a7222ecebde37.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Lake_Washington_and_Mount_Rainier,_ca._1910_-_DPLA_-_18e28817b6e06f5efa2a7222ecebde37.jpg",
+        "license": "Public domain",
+        "author": "Piper, Walter F",
+        "attribution": "Piper, Walter F / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "27bcc659-e8ef-4448-a3d7-e71aa6f39d08",
+      "placeName": "Georgetown Playfield",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://upload.wikimedia.org/wikipedia/commons/3/3c/Catholic_Church%2C_Georgetown_district%2C_first_communion_group%2C_Seattle%2C_1909_%28CURTIS_1260%29.jpeg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Catholic_Church,_Georgetown_district,_first_communion_group,_Seattle,_1909_(CURTIS_1260).jpeg",
+        "license": "Public domain",
+        "author": "Asahel Curtis",
+        "attribution": "Asahel Curtis / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "d83d4e10-25c6-438e-a2bf-dde6ea8bb3ad",
+      "placeName": "Georgetown Playfield Water Spray",
+      "kind": "splash_pad",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "6d4b202d-5a84-49bf-8a07-768c7685800a",
+      "placeName": "Gilman Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5d/Playground_Toni_%28IA_playgroundtoni00raya%29.pdf/page1-960px-Playground_Toni_%28IA_playgroundtoni00raya%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Playground_Toni_(IA_playgroundtoni00raya).pdf",
+        "license": "Public domain",
+        "author": "Ray, Anna Chapin, 1865-1945",
+        "attribution": "Ray, Anna Chapin, 1865-1945 / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "2c821b4b-021e-40bd-8441-33c0e66254ac",
+      "placeName": "Gilman Playground Wading Pool",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/68/General_plan_of_a_park_and_playground_system_for_New_London%2C_Conn._%28IA_generalplanofpar00nolerich%29.pdf/page1-500px-General_plan_of_a_park_and_playground_system_for_New_London%2C_Conn._%28IA_generalplanofpar00nolerich%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:General_plan_of_a_park_and_playground_system_for_New_London,_Conn._(IA_generalplanofpar00nolerich).pdf",
+        "license": "Public domain",
+        "author": "Nolen, John, 1869-1937",
+        "attribution": "Nolen, John, 1869-1937 / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "02763d9f-4439-41fe-936f-fedbd1151ae8",
+      "placeName": "Golden Gardens Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/3/36/Golden_Gardens_06.jpg/960px-Golden_Gardens_06.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Golden_Gardens_06.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "f8c7fecd-ed5b-41f2-9f9d-a9622b67c76b",
+      "placeName": "Green Lake Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/3/33/Seattle_-_Green_Lake_Community_Center_01.jpg/960px-Seattle_-_Green_Lake_Community_Center_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Green_Lake_Community_Center_01.jpg",
+        "license": "CC BY 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "52e8e1ca-4cca-43ea-ba4a-902cfe9ed761",
+      "placeName": "Green Lake Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b1/Southwest_part_of_Cuihu_Park%2C_Kunming_%2820240214121712%29.jpg/960px-Southwest_part_of_Cuihu_Park%2C_Kunming_%2820240214121712%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Southwest_part_of_Cuihu_Park,_Kunming_(20240214121712).jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "N509FZ",
+        "attribution": "N509FZ / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "7b6ada36-b925-4a13-8850-f29593e2dc2f",
+      "placeName": "Green Lake Park (East)",
+      "kind": "beach",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/48/Walkway_over_the_lake%2C_Green_Park_-_geograph.org.uk_-_7805615.jpg/960px-Walkway_over_the_lake%2C_Green_Park_-_geograph.org.uk_-_7805615.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Walkway_over_the_lake,_Green_Park_-_geograph.org.uk_-_7805615.jpg",
+        "license": "CC BY-SA 2.0",
+        "author": "Des Blenkinsopp",
+        "attribution": "Des Blenkinsopp / CC BY-SA 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "c0d21bea-8808-4187-8216-66a7336bd237",
+      "placeName": "Green Lake Park (West)",
+      "kind": "beach",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/75/The_Lake%2C_West_Green_House_-_geograph.org.uk_-_4511744.jpg/960px-The_Lake%2C_West_Green_House_-_geograph.org.uk_-_4511744.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:The_Lake,_West_Green_House_-_geograph.org.uk_-_4511744.jpg",
+        "license": "CC BY-SA 2.0",
+        "author": "Len Williams",
+        "attribution": "Len Williams / CC BY-SA 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "186db378-6086-49d6-8a6b-275b7bb35f73",
+      "placeName": "Green Lake Park Wading Pool",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1c/The_Negro_Travelers%27_Green_Book_1954.pdf/page1-960px-The_Negro_Travelers%27_Green_Book_1954.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:The_Negro_Travelers'_Green_Book_1954.pdf",
+        "license": "CC0",
+        "author": "Victor Hugo Green",
+        "attribution": "Victor Hugo Green / CC0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "dd1b1960-0c39-43a7-927d-82ddee6b9e6b",
+      "placeName": "Greenwood Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/03/Greenwood_Park_Mall.jpg/960px-Greenwood_Park_Mall.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Greenwood_Park_Mall.jpg",
+        "license": "CC0",
+        "author": "Jon.yb093",
+        "attribution": "Jon.yb093 / CC0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "b03f40d9-e90d-4d79-af35-e07af53620f5",
+      "placeName": "Hiawatha Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f6/Seattle_-_Hiawatha_Community_Center.jpg/960px-Seattle_-_Hiawatha_Community_Center.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Hiawatha_Community_Center.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "82fa512a-1cb3-483c-9de4-3f4f2c704353",
+      "placeName": "Hiawatha Playfield",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://upload.wikimedia.org/wikipedia/commons/e/e1/Hiawatha_Playfield_in_1913.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Hiawatha_Playfield_in_1913.png",
+        "license": "Public domain",
+        "author": "Unknown Unknown",
+        "attribution": "Unknown Unknown / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "5bd7f96e-295c-4c89-a975-b93669097aa6",
+      "placeName": "Hiawatha Playfield Wading Pool",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/ca/Hiawatha_Playfield_wading_pool%2C_Seattle%2C_1912.jpg/960px-Hiawatha_Playfield_wading_pool%2C_Seattle%2C_1912.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Hiawatha_Playfield_wading_pool,_Seattle,_1912.jpg",
+        "license": "CC BY 2.0",
+        "author": "Seattle Municipal Archives",
+        "attribution": "Seattle Municipal Archives / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "dca081fc-9b8f-4ce8-8059-4add7d399bf9",
+      "placeName": "High Point Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/73/Seattle_High_Point_Community_Center_01.jpg/960px-Seattle_High_Point_Community_Center_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_High_Point_Community_Center_01.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Architectsea",
+        "attribution": "Architectsea / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "3fec49d3-727d-4008-8e8f-4f41b81a8ac2",
+      "placeName": "Highland Park Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ad/Highland_Park_td_%282022-05-17%29_096_-_Lower_Highland_Playground_Comfort_Station%2C_Performance_Area.jpg/960px-Highland_Park_td_%282022-05-17%29_096_-_Lower_Highland_Playground_Comfort_Station%2C_Performance_Area.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Highland_Park_td_(2022-05-17)_096_-_Lower_Highland_Playground_Comfort_Station,_Performance_Area.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Tdorante10",
+        "attribution": "Tdorante10 / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "4ced2010-873f-470d-8fc2-07dfeeb62174",
+      "placeName": "Highland Park Playground Water Spray",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1f/Park_and_cemetery_%28IA_parkcemeteryland1314unse%29.pdf/page1-960px-Park_and_cemetery_%28IA_parkcemeteryland1314unse%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Park_and_cemetery_(IA_parkcemeteryland1314unse).pdf",
+        "license": "Public domain",
+        "author": "Haight, R. J. (Rufus J.) Massachusetts Horticultural Society, former owner",
+        "attribution": "Haight, R. J. (Rufus J.) Massachusetts Horticultural Society, former owner / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "102eed2a-d8a4-49e9-9eab-533ba7bb8d1f",
+      "placeName": "Hoa Mai Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4c/Seattle%2C_WA_-_July_2024_-_47.jpg/960px-Seattle%2C_WA_-_July_2024_-_47.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle,_WA_-_July_2024_-_47.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Another Believer",
+        "attribution": "Another Believer / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "b12ed1df-89dc-48a9-9eaf-5fc9bd6a03fd",
+      "placeName": "Homer Harris Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://upload.wikimedia.org/wikipedia/commons/3/37/Homer_Harris_Park_Dedication_%288891746623%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Homer_Harris_Park_Dedication_(8891746623).jpg",
+        "license": "CC0",
+        "author": "Seattle City Council from Seattle",
+        "attribution": "Seattle City Council from Seattle / CC0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "e4a2ebec-3807-4e35-b5b6-03d6b929b224",
+      "placeName": "Hutchinson Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/60/Hutchinson_Community_College_-_Kansas_Cosmosphere_Hutchinson_Kansas_9-14-2014.JPG/960px-Hutchinson_Community_College_-_Kansas_Cosmosphere_Hutchinson_Kansas_9-14-2014.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Hutchinson_Community_College_-_Kansas_Cosmosphere_Hutchinson_Kansas_9-14-2014.JPG",
+        "license": "CC BY-SA 4.0",
+        "author": "Ichabod",
+        "attribution": "Ichabod / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "cec2692b-fe73-43f5-a81a-3278e92fccca",
+      "placeName": "Hutchinson Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://upload.wikimedia.org/wikipedia/commons/e/e9/Playground_-_North_Boundary_Road_-_geograph.org.uk_-_1099311.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Playground_-_North_Boundary_Road_-_geograph.org.uk_-_1099311.jpg",
+        "license": "CC BY-SA 2.0",
+        "author": "Paul Hutchinson",
+        "attribution": "Paul Hutchinson / CC BY-SA 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "8691b1cd-751e-463f-8896-f7475f6c0b37",
+      "placeName": "International Childrens Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4a/Children%27s_playground_in_the_sanatorium_park_in_Shklo.jpg/960px-Children%27s_playground_in_the_sanatorium_park_in_Shklo.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Children's_playground_in_the_sanatorium_park_in_Shklo.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Rbrechko",
+        "attribution": "Rbrechko / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "ef5442fa-3e03-460e-8e38-b94f2c3732c2",
+      "placeName": "International District Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2e/Seattle_-_Nihon_Go_Gakko_01.jpg/960px-Seattle_-_Nihon_Go_Gakko_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Nihon_Go_Gakko_01.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "7d76c89a-5ea9-4c37-a6f1-804b4d654574",
+      "placeName": "Jefferson Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c9/Jefferson_Park_Bus_Hub.jpg/960px-Jefferson_Park_Bus_Hub.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Jefferson_Park_Bus_Hub.jpg",
+        "license": "CC BY 3.0",
+        "author": "Zol87 ( talk )",
+        "attribution": "Zol87 ( talk ) / CC BY 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "837ab54a-1653-4e6e-9924-3a8e23e70d8e",
+      "placeName": "Jefferson Park Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/13/Jefferson_Park_Community_Center_%2816020025216%29.jpg/960px-Jefferson_Park_Community_Center_%2816020025216%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Jefferson_Park_Community_Center_(16020025216).jpg",
+        "license": "CC BY 2.0",
+        "author": "Seattle Parks",
+        "attribution": "Seattle Parks / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "b5336fa5-f91a-429e-b5dd-87f7c7d64774",
+      "placeName": "John C. Little, Sr. Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/bc/Sr._Martin_Mar-all%2C_..._1697_%28IA_bim_early-english-books-1641-1700_sr-martin-mar-all-_dryden-john_1697%29.pdf/page1-500px-Sr._Martin_Mar-all%2C_..._1697_%28IA_bim_early-english-books-1641-1700_sr-martin-mar-all-_dryden-john_1697%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Sr._Martin_Mar-all,_..._1697_(IA_bim_early-english-books-1641-1700_sr-martin-mar-all-_dryden-john_1697).pdf",
+        "license": "Public domain",
+        "author": "Dryden, John.",
+        "attribution": "Dryden, John. / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "c409b34e-b1f0-40f3-8ebd-8dfecc1bc249",
+      "placeName": "John C. Little, Sr. Park Water Spray",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/3/37/The_works_of_John_Ruskin_%28IA_worksofjohnruski24rusk%29.pdf/page1-500px-The_works_of_John_Ruskin_%28IA_worksofjohnruski24rusk%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:The_works_of_John_Ruskin_(IA_worksofjohnruski24rusk).pdf",
+        "license": "Public domain",
+        "author": "Ruskin, John, 1819-1900 Cook, Edward Tyas, Sir, 1857-1919 Wedderburn, Alexander Dundas Ogilvy, 1854-1931",
+        "attribution": "Ruskin, John, 1819-1900 Cook, Edward Tyas, Sir, 1857-1919 Wedderburn, Alexander Dundas Ogilvy, 1854-1931 / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "02a11b9e-3d2c-4a62-8f19-eb226a17513f",
+      "placeName": "Judkins Park and Playfield",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/0f/Playground_at_Judkins_Park%2C_Seattle%2C_WA%2C_2021-09-19.jpg/960px-Playground_at_Judkins_Park%2C_Seattle%2C_WA%2C_2021-09-19.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Playground_at_Judkins_Park,_Seattle,_WA,_2021-09-19.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Sage Ross",
+        "attribution": "Sage Ross / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "aabe4677-f376-42bb-9852-f1b0391cc1e7",
+      "placeName": "Judkins Park and Playfield Water Spray",
+      "kind": "splash_pad",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "be04fd50-8640-4d6c-8b46-76a6d5c90779",
+      "placeName": "Kinnear Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/61/Seattle_-_Smith_Cove_from_Kinnear_Park_01A.jpg/960px-Seattle_-_Smith_Cove_from_Kinnear_Park_01A.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Smith_Cove_from_Kinnear_Park_01A.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "54b03961-66df-449c-8f29-c3254b24560b",
+      "placeName": "Kirke Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/68/Kirkeparken_Sandefjord_sett_fra_Stockfleths_gate_foran_kirken.jpg/960px-Kirkeparken_Sandefjord_sett_fra_Stockfleths_gate_foran_kirken.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Kirkeparken_Sandefjord_sett_fra_Stockfleths_gate_foran_kirken.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Helge Høifødt",
+        "attribution": "Helge Høifødt / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "29ce8629-9182-42fa-840d-92410e9094db",
+      "placeName": "Lake City HUB",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d5/Salt_Lake_City_Intermodal_Hub_-_February_2011.jpg/960px-Salt_Lake_City_Intermodal_Hub_-_February_2011.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Salt_Lake_City_Intermodal_Hub_-_February_2011.jpg",
+        "license": "CC BY 2.0",
+        "author": "vxla from Chicago, US",
+        "attribution": "vxla from Chicago, US / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "17730cab-d5f2-43a8-b58a-714a3f4baf03",
+      "placeName": "Lake Union Park Water Spray",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a5/Spray_irrigation_%28IA_sprayirrigation495will%29.pdf/page1-960px-Spray_irrigation_%28IA_sprayirrigation495will%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Spray_irrigation_(IA_sprayirrigation495will).pdf",
+        "license": "Public domain",
+        "author": "Williams, Milo Beyer, 1882-",
+        "attribution": "Williams, Milo Beyer, 1882- / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "8fef7d5f-7178-4c79-a11b-b60bf13281ed",
+      "placeName": "Lakeridge Park and Playground",
+      "kind": "playground",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "f74ddfd8-ee4b-4bd7-93e4-72a5682e6a0a",
+      "placeName": "Lakewood Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1e/Country_School_and_yard%2C_Lakewood_Heritage_Center.jpg/960px-Country_School_and_yard%2C_Lakewood_Heritage_Center.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Country_School_and_yard,_Lakewood_Heritage_Center.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Xnatedawgx",
+        "attribution": "Xnatedawgx / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "3ab228fd-0f04-4752-9744-0212003ea5a5",
+      "placeName": "Langston Hughes Cultural Arts Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d8/Langston_Hughes_Cultural_Center_interior_02.jpg/960px-Langston_Hughes_Cultural_Center_interior_02.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Langston_Hughes_Cultural_Center_interior_02.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "5beeb7e0-d62c-449b-aa03-5a55adbde155",
+      "placeName": "Laurelhurst Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1f/Seattle_-_Laurelhurst_Community_Center_05.jpg/960px-Seattle_-_Laurelhurst_Community_Center_05.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Laurelhurst_Community_Center_05.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "bcf96bc5-cb36-4678-89fb-506cd4a40bcf",
+      "placeName": "Laurelhurst Playfield",
+      "kind": "playground",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "2273f4ae-b7f2-45d3-b87b-04fdb61e99bc",
+      "placeName": "Lawton Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/21/Hartsville_-_Pavillion%2C_Lawton_Park.jpg/960px-Hartsville_-_Pavillion%2C_Lawton_Park.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Hartsville_-_Pavillion,_Lawton_Park.jpg",
+        "license": "Public domain",
+        "author": "Published for Rose's 5, 10 & 25 cent store, Hartsville by Curt Teich & Co., Chicago",
+        "attribution": "Published for Rose's 5, 10 & 25 cent store, Hartsville by Curt Teich & Co., Chicago / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "c2f188a1-dad3-4aea-9945-d957b3c925cb",
+      "placeName": "Leschi Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/78/Leschi_Park_01.jpg/960px-Leschi_Park_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Leschi_Park_01.jpg",
+        "license": "CC BY 2.5",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY 2.5"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "66a7f02f-6e5d-4788-a969-320e3482a74e",
+      "placeName": "Licton Springs Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/48/Walkway_through_Licton_Springs_Park%2C_2021-09-21.jpg/960px-Walkway_through_Licton_Springs_Park%2C_2021-09-21.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Walkway_through_Licton_Springs_Park,_2021-09-21.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Sage Ross",
+        "attribution": "Sage Ross / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "0d04d0e2-cbdc-4440-9b5c-c533ca26a706",
+      "placeName": "Lincoln Park - Beach",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://upload.wikimedia.org/wikipedia/commons/5/52/Beach_at_Lincoln_Park..jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Beach_at_Lincoln_Park..jpg",
+        "license": "CC BY 2.0",
+        "author": "Steve Greer from Edinburgh",
+        "attribution": "Steve Greer from Edinburgh / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "7cf05738-9b3e-44d9-88c0-91f82b598d9f",
+      "placeName": "Lincoln Park - North",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/27/Meijer_%28Lincoln_Park%2C_Michigan%29_1.jpg/960px-Meijer_%28Lincoln_Park%2C_Michigan%29_1.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Meijer_(Lincoln_Park,_Michigan)_1.jpg",
+        "license": "CC BY-SA 2.0",
+        "author": "Mike Kalasnik",
+        "attribution": "Mike Kalasnik / CC BY-SA 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "1d1e29f4-1eef-4e0a-a6db-de7debde0a99",
+      "placeName": "Lincoln Park - South",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/08/Seaside_Garden_-_Curtar_Rocks_Port_Lincoln_National_Park_-_South_Australia.jpg/960px-Seaside_Garden_-_Curtar_Rocks_Port_Lincoln_National_Park_-_South_Australia.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seaside_Garden_-_Curtar_Rocks_Port_Lincoln_National_Park_-_South_Australia.jpg",
+        "license": "CC BY 2.0",
+        "author": "Jacqui Barker",
+        "attribution": "Jacqui Barker / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "43c00d47-2749-4101-9005-4f5cc376d3fa",
+      "placeName": "Lincoln Park Wading Pool",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://upload.wikimedia.org/wikipedia/commons/3/39/Children_in_wading_pool_at_Lincoln_Park%2C_Seattle%2C_ca_1911_%28MOHAI_2253%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Children_in_wading_pool_at_Lincoln_Park,_Seattle,_ca_1911_(MOHAI_2253).jpg",
+        "license": "Public domain",
+        "author": "Webster & Stevens",
+        "attribution": "Webster & Stevens / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "82eaebaf-9b88-4f47-9f48-a65f4fb42a8d",
+      "placeName": "Little Brook Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ac/Little_Free_Library_in_Brook_Park%2C_Northwoods_GA.jpg/960px-Little_Free_Library_in_Brook_Park%2C_Northwoods_GA.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Little_Free_Library_in_Brook_Park,_Northwoods_GA.jpg",
+        "license": "CC BY 4.0",
+        "author": "John Phelan",
+        "attribution": "John Phelan / CC BY 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "8f0c5029-9d15-4512-bb04-5e64ec376d3d",
+      "placeName": "Lowman Beach Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/98/2024-06-14%2C_Lowman_Beach_Park_%28Seattle%29%2C_110623AM.jpg/960px-2024-06-14%2C_Lowman_Beach_Park_%28Seattle%29%2C_110623AM.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:2024-06-14,_Lowman_Beach_Park_(Seattle),_110623AM.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Steven Pavlov",
+        "attribution": "Steven Pavlov / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "7f441eb4-1d23-408a-a185-5f008912b453",
+      "placeName": "Loyal Heights Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c7/Old_and_great_and_loyal_%28IA_oldgreatloyal00eves%29.pdf/page1-960px-Old_and_great_and_loyal_%28IA_oldgreatloyal00eves%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Old_and_great_and_loyal_(IA_oldgreatloyal00eves).pdf",
+        "license": "Public domain",
+        "author": "[Eves, Edward Holt], 1861- [from old catalog]",
+        "attribution": "[Eves, Edward Holt], 1861- [from old catalog] / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "65407fc0-8db5-454b-8aec-3e6db76204f6",
+      "placeName": "Loyal Heights Playfield",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/28/Mountaineering_%28IA_mountaineering00dentiala%29.pdf/page1-500px-Mountaineering_%28IA_mountaineering00dentiala%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Mountaineering_(IA_mountaineering00dentiala).pdf",
+        "license": "Public domain",
+        "author": "Dent, C. T. (Clinton Thomas), 1850-1912",
+        "attribution": "Dent, C. T. (Clinton Thomas), 1850-1912 / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "ac8106ff-a357-4d59-ab0d-cec9c1155149",
+      "placeName": "Madison Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a7/Madison_Park%2C_Seattle_-_April_2019_-_03.jpg/960px-Madison_Park%2C_Seattle_-_April_2019_-_03.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Madison_Park,_Seattle_-_April_2019_-_03.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "ff26246a-ef9c-49c3-935c-40394094a90e",
+      "placeName": "Madison Park",
+      "kind": "beach",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a7/Madison_Park%2C_Seattle_-_April_2019_-_03.jpg/960px-Madison_Park%2C_Seattle_-_April_2019_-_03.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Madison_Park,_Seattle_-_April_2019_-_03.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "9e349996-e20d-4981-8fda-7ee640562de1",
+      "placeName": "Madison Park - North Beach",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/51/Seattle_-_Madison_Park_North_Beach_01.jpg/960px-Seattle_-_Madison_Park_North_Beach_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Madison_Park_North_Beach_01.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "b77deafe-abe6-4914-ba1b-0d5f8b234745",
+      "placeName": "Madison Pool",
+      "kind": "pool",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://upload.wikimedia.org/wikipedia/commons/b/b4/Louisa_Pool_Belcher_%281849-1931%29_and_Wesley_Madison_Shuford_%281848-1914%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Louisa_Pool_Belcher_(1849-1931)_and_Wesley_Madison_Shuford_(1848-1914).jpg",
+        "license": "Public domain",
+        "author": "Anonymous Unknown author",
+        "attribution": "Anonymous Unknown author / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "5b18e73d-e376-4c1e-ace3-02e700c057fa",
+      "placeName": "Madrona Park",
+      "kind": "beach",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/cf/Seattle_-_Madrona_Park_01.jpg/960px-Seattle_-_Madrona_Park_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Madrona_Park_01.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "dc77c32c-484c-4d45-9fa1-8b9fe94400ca",
+      "placeName": "Madrona Park -Beach",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/cf/Seattle_-_Madrona_Park_01.jpg/960px-Seattle_-_Madrona_Park_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Madrona_Park_01.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "d8bcf345-7ba7-46bd-a22c-b3fdd865215b",
+      "placeName": "Madrona Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6f/Madrona_Playground.jpg/960px-Madrona_Playground.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Madrona_Playground.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Visitor7",
+        "attribution": "Visitor7 / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "245c5c78-9b76-4c1f-815e-ecdca5426c29",
+      "placeName": "Magnolia Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ae/Magnolia_Library_and_Performing_Arts_Pavilion_and_Bienvenue_Student_Center_in_Quad%2C_BRCC.jpg/960px-Magnolia_Library_and_Performing_Arts_Pavilion_and_Bienvenue_Student_Center_in_Quad%2C_BRCC.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Magnolia_Library_and_Performing_Arts_Pavilion_and_Bienvenue_Student_Center_in_Quad,_BRCC.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Spatms",
+        "attribution": "Spatms / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "88f7b056-8a6e-4612-9076-a6b37037adf3",
+      "placeName": "Magnolia Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/70/Magnolia_Park_entrance.JPG/960px-Magnolia_Park_entrance.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Magnolia_Park_entrance.JPG",
+        "license": "CC BY-SA 3.0",
+        "author": "M.O. Stevens",
+        "attribution": "M.O. Stevens / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "2c301331-d37b-4bc4-b9fb-9d1a821a3e8a",
+      "placeName": "Magnuson Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ae/Warren_Grant_Magnuson_Clinical_Center_%28IA_warrengrantmagnu00nati_0%29.pdf/page1-960px-Warren_Grant_Magnuson_Clinical_Center_%28IA_warrengrantmagnu00nati_0%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Warren_Grant_Magnuson_Clinical_Center_(IA_warrengrantmagnu00nati_0).pdf",
+        "license": "Public domain",
+        "author": "National Institutes of Health (U.S.)",
+        "attribution": "National Institutes of Health (U.S.) / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "c903ecf3-9d65-4069-9c5b-060ecd1d4890",
+      "placeName": "Maple Leaf Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/52/Maple_Leaf_Playground_on_an_autumn_day.jpg/960px-Maple_Leaf_Playground_on_an_autumn_day.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Maple_Leaf_Playground_on_an_autumn_day.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "ragesoss",
+        "attribution": "ragesoss / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "2d25fc08-62a4-4101-bc8f-6e55ff63ef62",
+      "placeName": "Maplewood Playfield",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e6/Trolley_exploring_-_an_electric_railroad_guide_to_historic_%26_picturesque_places_about_New_York%2C_New_Jersey%2C_and_New_England_%28IA_trolleyexploring00chil%29.pdf/page1-960px-Trolley_exploring_-_an_electric_railroad_guide_to_historic_%26_picturesque_places_about_New_York%2C_New_Jersey%2C_and_New_England_%28IA_trolleyexploring00chil%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Trolley_exploring_-_an_electric_railroad_guide_to_historic_&_picturesque_places_about_New_York,_New_Jersey,_and_New_England_(IA_trolleyexploring00chil).pdf",
+        "license": "Public domain",
+        "author": "Childe, Cromwell",
+        "attribution": "Childe, Cromwell / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "ae556d87-0675-4bdc-b021-f26ca7478c6f",
+      "placeName": "Matthews Beach",
+      "kind": "beach",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/68/Matthews_Beach_neighborhood_2%2C_Seattle.jpg/960px-Matthews_Beach_neighborhood_2%2C_Seattle.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Matthews_Beach_neighborhood_2,_Seattle.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "ragesoss",
+        "attribution": "ragesoss / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "cc0c1e58-bba8-4c9e-80fc-8851e66912e1",
+      "placeName": "Matthews Beach Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/9f/Seattle_-_Matthews_Beach_Park_01.jpg/960px-Seattle_-_Matthews_Beach_Park_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Matthews_Beach_Park_01.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "a1d5dc7c-520e-4006-b5c0-ac9f9707292e",
+      "placeName": "Mayfair Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/dc/Mayfair_Park%2C_Chicago%2C_IL.jpg/960px-Mayfair_Park%2C_Chicago%2C_IL.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Mayfair_Park,_Chicago,_IL.jpg",
+        "license": "CC BY 4.0",
+        "author": "Nick Number",
+        "attribution": "Nick Number / CC BY 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "f228cc89-3330-4f35-9c05-c2a569720264",
+      "placeName": "Meadowbrook Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/bc/Rock_Creek_Community_Center.jpg/960px-Rock_Creek_Community_Center.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Rock_Creek_Community_Center.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "JohnInDC",
+        "attribution": "JohnInDC / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "a3afe23c-efae-4029-8787-fe2b7aea970a",
+      "placeName": "Meadowbrook Playfield",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/50/Meadowbrook_Park_playground.jpg/960px-Meadowbrook_Park_playground.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Meadowbrook_Park_playground.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Ragesoss",
+        "attribution": "Ragesoss / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "bc20fec3-7509-4bf3-8d0f-8182f6af7b57",
+      "placeName": "Meadowbrook Pool",
+      "kind": "pool",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f6/Meadowbrook%2C_Seattle%2C_Washington_-_park_behind_Meadowbrook_Pool_01.jpg/960px-Meadowbrook%2C_Seattle%2C_Washington_-_park_behind_Meadowbrook_Pool_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Meadowbrook,_Seattle,_Washington_-_park_behind_Meadowbrook_Pool_01.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "f14a2913-e7ca-411c-ab1b-7d31b0191d42",
+      "placeName": "Medgar Evers Pool",
+      "kind": "pool",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/93/Medgar_Evers_Pool%2C_2015_%2852241061735%29.jpg/960px-Medgar_Evers_Pool%2C_2015_%2852241061735%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Medgar_Evers_Pool,_2015_(52241061735).jpg",
+        "license": "CC BY 2.0",
+        "author": "Seattle Municipal Archives from Seattle, WA",
+        "attribution": "Seattle Municipal Archives from Seattle, WA / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "7a0e508b-84e6-45c2-a0e8-4dd521aa253f",
+      "placeName": "Meridian Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/08/Seattle_-_Good_Shepherd_02.jpg/960px-Seattle_-_Good_Shepherd_02.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Good_Shepherd_02.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "825f5235-7c69-4d2a-82e8-0385b3aebf9f",
+      "placeName": "Miller Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4e/Orange_Park_FL_Negro_Elem_School01.jpg/960px-Orange_Park_FL_Negro_Elem_School01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Orange_Park_FL_Negro_Elem_School01.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Ebyabe",
+        "attribution": "Ebyabe / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "edc82618-03ba-49c1-a492-cc143502ee34",
+      "placeName": "Miller Playfield",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5a/Lincoln_Park_and_Bonney_Watson_Funeral_Home%2C_ca._1915_-_DPLA_-_7e6f8fea418b8c1e60cf02e1bd8d36fc.jpg/960px-Lincoln_Park_and_Bonney_Watson_Funeral_Home%2C_ca._1915_-_DPLA_-_7e6f8fea418b8c1e60cf02e1bd8d36fc.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Lincoln_Park_and_Bonney_Watson_Funeral_Home,_ca._1915_-_DPLA_-_7e6f8fea418b8c1e60cf02e1bd8d36fc.jpg",
+        "license": "Public domain",
+        "author": "Curtis & Miller",
+        "attribution": "Curtis & Miller / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "6478627f-22c0-4b71-b787-bf25e8fcb3d0",
+      "placeName": "Montlake Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/9c/Seattle_-_Montlake_Community_Center_08.jpg/960px-Seattle_-_Montlake_Community_Center_08.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Montlake_Community_Center_08.jpg",
+        "license": "CC BY 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "9890cb96-7797-4f01-aa67-2c50941d60a7",
+      "placeName": "Montlake Playfield",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7e/Seattle_-_Montlake_Playfield_02.jpg/960px-Seattle_-_Montlake_Playfield_02.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Montlake_Playfield_02.jpg",
+        "license": "CC BY 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "b0103186-ad5d-424d-86e2-81f766c9f659",
+      "placeName": "Montlake Totlot",
+      "kind": "playground",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "6b21ae02-2b82-4c38-bce2-0564b9dc091d",
+      "placeName": "Mounger Pool",
+      "kind": "pool",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/9f/Presidential_Daily_Diary%2C_compiled_11-1969.pdf/page1-960px-Presidential_Daily_Diary%2C_compiled_11-1969.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Presidential_Daily_Diary,_compiled_11-1969.pdf",
+        "license": "Public domain",
+        "author": "Unknown author Unknown author or not provided",
+        "attribution": "Unknown author Unknown author or not provided / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "2663dc02-2b85-43ed-8bb3-5b6792f93d5c",
+      "placeName": "Mrytle Reservoir Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/01/Durham%2C_N.C._Directory_%281911-1912%29_-_DPLA_-_df2a4ae458df56b20a9e93951f3ddeb2.pdf/page1-500px-Durham%2C_N.C._Directory_%281911-1912%29_-_DPLA_-_df2a4ae458df56b20a9e93951f3ddeb2.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Durham,_N.C._Directory_(1911-1912)_-_DPLA_-_df2a4ae458df56b20a9e93951f3ddeb2.pdf",
+        "license": "Public domain",
+        "author": "Hill Directory Company",
+        "attribution": "Hill Directory Company / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "c44945a2-870e-4319-a90e-e260f4ea9b77",
+      "placeName": "Mt Baker Park",
+      "kind": "beach",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2c/Seattle_-_Mt._Baker_Park_01.jpg/960px-Seattle_-_Mt._Baker_Park_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Mt._Baker_Park_01.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "b6bab478-eedc-4832-a36c-882edffec680",
+      "placeName": "Mt. Baker Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2c/Seattle_-_Mt._Baker_Park_01.jpg/960px-Seattle_-_Mt._Baker_Park_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Mt._Baker_Park_01.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "30ee1cc0-e127-40a1-8e87-ebef1948b07f",
+      "placeName": "Northacres Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e1/Soccer_teams_prepare_for_practice_at_Northacres_Park.jpg/960px-Soccer_teams_prepare_for_practice_at_Northacres_Park.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Soccer_teams_prepare_for_practice_at_Northacres_Park.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "ragesoss",
+        "attribution": "ragesoss / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "bb72c444-86f4-4ab1-af86-389ab6d93889",
+      "placeName": "Northacres Park Water Spray",
+      "kind": "splash_pad",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "2a79f1a0-9f7f-4802-9e33-7f416ff042ca",
+      "placeName": "Northeast Branch, Seattle Public Library",
+      "kind": "library",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f9/Seattle_-_Northeast_Library_04.jpg/960px-Seattle_-_Northeast_Library_04.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Northeast_Library_04.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "3245c0fd-6722-4c30-adbd-69973c3f9d93",
+      "placeName": "Northgate Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/17/Seattle_-_Northgate_Community_Center_01.jpg/960px-Seattle_-_Northgate_Community_Center_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Northgate_Community_Center_01.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "2490c5d1-9385-49a4-a834-3e8afac29f6b",
+      "placeName": "Northgate Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d5/Northgate_Park_sign.JPG/960px-Northgate_Park_sign.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Northgate_Park_sign.JPG",
+        "license": "CC BY-SA 3.0",
+        "author": "Another Believer",
+        "attribution": "Another Believer / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "b9296aa7-c421-4900-9297-8c102a64e398",
+      "placeName": "Occidental Square",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b3/Seattle_-_Occidental_Park_02.jpg/960px-Seattle_-_Occidental_Park_02.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Occidental_Park_02.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "cffda05d-747d-4bd6-888a-4a7d9d2106c9",
+      "placeName": "Othello Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ab/Seattle_-_Kids_playing_basketball_at_Othello_Playground%2C_circa_1970s_%2851987818145%29.jpg/960px-Seattle_-_Kids_playing_basketball_at_Othello_Playground%2C_circa_1970s_%2851987818145%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Kids_playing_basketball_at_Othello_Playground,_circa_1970s_(51987818145).jpg",
+        "license": "CC BY 2.0",
+        "author": "Seattle Municipal Archives from Seattle, WA",
+        "attribution": "Seattle Municipal Archives from Seattle, WA / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "d58a4fe9-28f9-471f-b54a-8f2aa3811177",
+      "placeName": "Overlook Walk (Alaskan Way Boulevard)",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/3/3a/Lewis_and_Clark_Centennial_Exposition_%281905%29.djvu/page1-960px-Lewis_and_Clark_Centennial_Exposition_%281905%29.djvu.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Lewis_and_Clark_Centennial_Exposition_(1905).djvu",
+        "license": "Public domain",
+        "author": "Olin Dunbar Wheeler",
+        "attribution": "Olin Dunbar Wheeler / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "ae7e3497-cc28-4dc7-84f9-64f9e3465c6f",
+      "placeName": "Oxbow Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6b/Oxbow_Bend_outlook_in_the_Grand_Teton_National_Park.jpg/960px-Oxbow_Bend_outlook_in_the_Grand_Teton_National_Park.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Oxbow_Bend_outlook_in_the_Grand_Teton_National_Park.jpg",
+        "license": "CC BY 3.0",
+        "author": "Michael Gäbler",
+        "attribution": "Michael Gäbler / CC BY 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "3d451756-fbba-46e0-9cfe-aa2fc29f3536",
+      "placeName": "Pathways Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f6/New_Farm_Park_pathways_New_Farm_P1020467.jpg/960px-New_Farm_Park_pathways_New_Farm_P1020467.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:New_Farm_Park_pathways_New_Farm_P1020467.jpg",
+        "license": "CC0",
+        "author": "John Robert McPherson",
+        "attribution": "John Robert McPherson / CC0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "4cb6f7c4-a4b0-4c36-9700-96c4da53a3da",
+      "placeName": "Peppi Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/fb/Pan-Aruban_%28June_22%2C_1929%29_%28IA_BNA-DIG-PANARUBAN-1929-01%29.pdf/page1-330px-Pan-Aruban_%28June_22%2C_1929%29_%28IA_BNA-DIG-PANARUBAN-1929-01%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Pan-Aruban_(June_22,_1929)_(IA_BNA-DIG-PANARUBAN-1929-01).pdf",
+        "license": "Public domain",
+        "author": "Lago Oil and Transport Co. Ltd.",
+        "attribution": "Lago Oil and Transport Co. Ltd. / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "16275c10-8171-42b8-b127-048a28c17b90",
+      "placeName": "Peppi's Playground Wading Pool",
+      "kind": "splash_pad",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "41174937-91c4-4e34-abca-d3d79089a1f5",
+      "placeName": "Pinehurst Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d3/Pinehurst_Playground.jpg/960px-Pinehurst_Playground.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Pinehurst_Playground.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Ragesoss",
+        "attribution": "Ragesoss / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "d7f90340-8501-489c-af93-2bc996ffe95d",
+      "placeName": "PlayDate SEA",
+      "kind": "indoor_play",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/63/Sediment_plume_at_sea.jpg/960px-Sediment_plume_at_sea.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Sediment_plume_at_sea.jpg",
+        "license": "CC BY-SA 3.0 igo",
+        "author": "European Space Agency",
+        "attribution": "European Space Agency / CC BY-SA 3.0 igo"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "baa84b09-8b3d-412f-88b7-31a9d3fe9b3f",
+      "placeName": "Plum Tree Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/55/Blossoming_plum_tree_in_Arisugawa-no-miya_Memorial_Park.jpg/960px-Blossoming_plum_tree_in_Arisugawa-no-miya_Memorial_Park.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Blossoming_plum_tree_in_Arisugawa-no-miya_Memorial_Park.jpg",
+        "license": "CC0",
+        "author": "Syced",
+        "attribution": "Syced / CC0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "b23a17d4-7973-4601-aa45-3bb8447f5198",
+      "placeName": "Powell Barnett Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d1/Powell_Barnett_and_others_looking_plans_for_Powell_Barnett_Park%2C_1970.jpg/960px-Powell_Barnett_and_others_looking_plans_for_Powell_Barnett_Park%2C_1970.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Powell_Barnett_and_others_looking_plans_for_Powell_Barnett_Park,_1970.jpg",
+        "license": "CC BY 2.0",
+        "author": "Seattle Municipal Archives",
+        "attribution": "Seattle Municipal Archives / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "4b3a88e2-577a-4b9e-8d06-42c1e87473d5",
+      "placeName": "Powell Barnett Park Wading Pool",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/48/Surnames%2C_their_origin_and_nationality_-_%28IA_surnamestheirori00mcke%29.pdf/page1-500px-Surnames%2C_their_origin_and_nationality_-_%28IA_surnamestheirori00mcke%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Surnames,_their_origin_and_nationality_-_(IA_surnamestheirori00mcke).pdf",
+        "license": "Public domain",
+        "author": "McKenna, Llewellyn B",
+        "attribution": "McKenna, Llewellyn B / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "ddc72eff-24a2-43a6-86dd-3ca6bcf18573",
+      "placeName": "Pratt Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c6/Seattle%2C_WA_%28August_2024%29_-_76.jpg/960px-Seattle%2C_WA_%28August_2024%29_-_76.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle,_WA_(August_2024)_-_76.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Another Believer",
+        "attribution": "Another Believer / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "4ceb601c-ef42-45a4-8e49-1640529722c2",
+      "placeName": "Prentis Frazier Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/bb/Course_Catalog_%28IA_coursecatalog18651866illi%29.pdf/page1-500px-Course_Catalog_%28IA_coursecatalog18651866illi%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Course_Catalog_(IA_coursecatalog18651866illi).pdf",
+        "license": "Public domain",
+        "author": "Illinois State Normal University",
+        "attribution": "Illinois State Normal University / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "d13fcd31-dd79-4a59-9655-49b90bd99949",
+      "placeName": "Pritchard Beach",
+      "kind": "beach",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://upload.wikimedia.org/wikipedia/commons/1/1d/Edward_Francis_Drew_Pritchard_%281809-1905%29_-_A_Wreck_on_a_Beach_%28possibly_either_the_%27Edwin_and_Sarah%27_or_the_%27Result%27%29_-_1998-PM-16_-_Portland_Museum.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Edward_Francis_Drew_Pritchard_(1809-1905)_-_A_Wreck_on_a_Beach_(possibly_either_the_'Edwin_and_Sarah'_or_the_'Result')_-_1998-PM-16_-_Portland_Museum.jpg",
+        "license": "Public domain",
+        "author": "Edward Francis Drew Pritchard",
+        "attribution": "Edward Francis Drew Pritchard / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "38efad30-783d-42ee-9ef5-2e68f9ff0a6d",
+      "placeName": "Puget Ridge Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/03/Echoes_from_Dreamland_%28IA_echoesfromdreaml00stin%29.pdf/page1-500px-Echoes_from_Dreamland_%28IA_echoesfromdreaml00stin%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Echoes_from_Dreamland_(IA_echoesfromdreaml00stin).pdf",
+        "license": "Public domain",
+        "author": "Stine, Thomas Ostenson",
+        "attribution": "Stine, Thomas Ostenson / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "44a373eb-73ca-4346-a2c0-06af2da7d657",
+      "placeName": "Queen Anne Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://upload.wikimedia.org/wikipedia/commons/6/64/The_Queen_Anne_Hill_counterbalance_looking_north_from_Mercer_St_on_Queen_Anne_Ave%2C_Seattle_%28CURTIS_1477%29.jpeg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:The_Queen_Anne_Hill_counterbalance_looking_north_from_Mercer_St_on_Queen_Anne_Ave,_Seattle_(CURTIS_1477).jpeg",
+        "license": "Public domain",
+        "author": "Asahel Curtis",
+        "attribution": "Asahel Curtis / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "38e7fdd0-57e0-41b8-854a-697f5b22a59d",
+      "placeName": "Queen Anne Pool",
+      "kind": "pool",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/90/Swimmers_at_Queen_Anne_Aquatic_Center%2C_2013_%2853108937306%29.jpg/960px-Swimmers_at_Queen_Anne_Aquatic_Center%2C_2013_%2853108937306%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Swimmers_at_Queen_Anne_Aquatic_Center,_2013_(53108937306).jpg",
+        "license": "CC BY 2.0",
+        "author": "Seattle Municipal Archives from Seattle, WA",
+        "attribution": "Seattle Municipal Archives from Seattle, WA / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "c52532a2-8bb7-442c-8db1-cc190d8b8c37",
+      "placeName": "Rainier Beach Community Center",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/96/Rainier_of_the_last_frontier_%28IA_cu31924023420924%29.pdf/page1-500px-Rainier_of_the_last_frontier_%28IA_cu31924023420924%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Rainier_of_the_last_frontier_(IA_cu31924023420924).pdf",
+        "license": "Public domain",
+        "author": "Dean, John Marvin, 1875-1935",
+        "attribution": "Dean, John Marvin, 1875-1935 / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "c43fbedf-37da-4eeb-b81b-750176aa59eb",
+      "placeName": "Rainier Beach Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/96/Rainier_of_the_last_frontier_%28IA_cu31924023420924%29.pdf/page1-500px-Rainier_of_the_last_frontier_%28IA_cu31924023420924%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Rainier_of_the_last_frontier_(IA_cu31924023420924).pdf",
+        "license": "Public domain",
+        "author": "Dean, John Marvin, 1875-1935",
+        "attribution": "Dean, John Marvin, 1875-1935 / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "dcdfbb99-791b-45fa-a219-9f97d6c3f617",
+      "placeName": "Rainier Beach Playfield",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/77/Urban_Park_and_Recreation_Recovery_Program..._FY_1992_Annual_Report_to_Congress..._United_States_Department_of_the_Interior..._December_31%2C_1992_%28IA_doi-report_i-292ur-1-992%29.pdf/page1-960px-thumbnail.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Urban_Park_and_Recreation_Recovery_Program..._FY_1992_Annual_Report_to_Congress..._United_States_Department_of_the_Interior..._December_31,_1992_(IA_doi-report_i-292ur-1-992).pdf",
+        "license": "Public domain",
+        "author": "Department of the Interior",
+        "attribution": "Department of the Interior / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "c175a0e5-3cc6-432d-9ee0-63c22e79132e",
+      "placeName": "Rainier Beach Pool",
+      "kind": "pool",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d3/The_starry_pool%2C_and_other_tales_%28IA_starrypoolandoth00talliala%29.pdf/page1-500px-The_starry_pool%2C_and_other_tales_%28IA_starrypoolandoth00talliala%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:The_starry_pool,_and_other_tales_(IA_starrypoolandoth00talliala).pdf",
+        "license": "Public domain",
+        "author": "Tallents, Stephen G",
+        "attribution": "Tallents, Stephen G / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "d691bad9-f1bb-4f2c-9d96-abe6de90a371",
+      "placeName": "Rainier Community Center",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c7/Community_Center_at_Longmire_%2814413346359%29.jpg/960px-Community_Center_at_Longmire_%2814413346359%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Community_Center_at_Longmire_(14413346359).jpg",
+        "license": "Public domain",
+        "author": "Mount Rainier National Park from Ashford, WA, United States",
+        "attribution": "Mount Rainier National Park from Ashford, WA, United States / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "efa2d235-bc90-4b52-b5e3-df9ad73d04b9",
+      "placeName": "Rainier Playfield",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e6/Lake_Washington_and_Mount_Rainier%2C_ca._1910_-_DPLA_-_18e28817b6e06f5efa2a7222ecebde37.jpg/960px-Lake_Washington_and_Mount_Rainier%2C_ca._1910_-_DPLA_-_18e28817b6e06f5efa2a7222ecebde37.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Lake_Washington_and_Mount_Rainier,_ca._1910_-_DPLA_-_18e28817b6e06f5efa2a7222ecebde37.jpg",
+        "license": "Public domain",
+        "author": "Piper, Walter F",
+        "attribution": "Piper, Walter F / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "271783bc-9af9-4ede-a847-467c5aaa3f57",
+      "placeName": "Ravenna Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/03/20th_Avenue_NE_Bridge_underside_Seattle_2026.jpg/960px-20th_Avenue_NE_Bridge_underside_Seattle_2026.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:20th_Avenue_NE_Bridge_underside_Seattle_2026.jpg",
+        "license": "CC BY 4.0",
+        "author": "Guywelch2000",
+        "attribution": "Guywelch2000 / CC BY 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "ef9a68a9-876b-4250-a18e-095be6eaaf5f",
+      "placeName": "Ravenna Park Wading Pool",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/92/Yackety_yack_%28serial%29_%28IA_yacketyyackseria1953univ%29.pdf/page1-500px-Yackety_yack_%28serial%29_%28IA_yacketyyackseria1953univ%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Yackety_yack_(serial)_(IA_yacketyyackseria1953univ).pdf",
+        "license": "Public domain",
+        "author": "University of North Carolina at Chapel Hill",
+        "attribution": "University of North Carolina at Chapel Hill / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "fca3bdb4-93f8-4328-abdf-e5be82c33920",
+      "placeName": "Ravenna-Eckstein CC Grounds",
+      "kind": "playground",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "cb3f3135-3cb5-4cc5-b8b7-9b37f1228b86",
+      "placeName": "Ravenna-Eckstein Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7d/Seattle_-_Ravenna-Eckstein_09.jpg/960px-Seattle_-_Ravenna-Eckstein_09.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Ravenna-Eckstein_09.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "714163c2-22a4-4f49-ba06-8f48d96a6700",
+      "placeName": "Riverview Playfield",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/db/Revised_draft_environmental_statement-_Review_report_on_the_Santa_Ana_River_Main_Stem_-_including_Santiago_Creek_and_Oak_Street_Drain_for_flood_control_and_allied_purposes_-_USACE-p16021coll7-18356.pdf/page1-960px-thumbnail.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Revised_draft_environmental_statement-_Review_report_on_the_Santa_Ana_River_Main_Stem_-_including_Santiago_Creek_and_Oak_Street_Drain_for_flood_control_and_allied_purposes_-_USACE-p16021coll7-18356.pdf",
+        "license": "Public domain",
+        "author": "United States. Army. Corps of Engineers. Los Angeles District; United States. Army. Office of the Chief of Engineers",
+        "attribution": "United States. Army. Corps of Engineers. Los Angeles District; United States. Army. Office of the Chief of Engineers / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "a06409e4-4e3e-49ac-bef4-9cc19ce7b765",
+      "placeName": "Roanoke Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e5/Seattle_-_Roanoke_Park_Ulmis_laevis_03.jpg/960px-Seattle_-_Roanoke_Park_Ulmis_laevis_03.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Roanoke_Park_Ulmis_laevis_03.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "f444f1a5-2ebf-427a-bd16-23ac4bc75758",
+      "placeName": "Rogers Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://upload.wikimedia.org/wikipedia/commons/7/72/Park_Hill_Playground_-_geograph.org.uk_-_1559055.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Park_Hill_Playground_-_geograph.org.uk_-_1559055.jpg",
+        "license": "CC BY-SA 2.0",
+        "author": "David Rogers",
+        "attribution": "David Rogers / CC BY-SA 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "2dfda592-c5b9-49a3-a6e6-d7521bd9c4e5",
+      "placeName": "Ron K. Bills Memorial Fountain",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/8c/A_memorial_humbly_presented_to_the_right_honorable_the_Lord_Chief_Justice_..._1690_%28IA_bim_early-english-books-1641-1700_a-memorial-humbly-presen_turner-john-hospitalle_1690%29.pdf/page1-500px-thumbnail.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:A_memorial_humbly_presented_to_the_right_honorable_the_Lord_Chief_Justice_..._1690_(IA_bim_early-english-books-1641-1700_a-memorial-humbly-presen_turner-john-hospitalle_1690).pdf",
+        "license": "Public domain",
+        "author": "Turner, John, hospitaller.",
+        "attribution": "Turner, John, hospitaller. / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "017f6e4b-4827-46ae-bc8f-7d0acd3a99ff",
+      "placeName": "Ross Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/8a/DianaRossPlayground_NYC.jpg/960px-DianaRossPlayground_NYC.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:DianaRossPlayground_NYC.jpg",
+        "license": "FAL",
+        "author": "Daryl Vocat ( MisterSpike",
+        "attribution": "Daryl Vocat ( MisterSpike / FAL"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "7b9c563b-4666-4dc1-871c-2b6f0e01fdd4",
+      "placeName": "Roxhill Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/00/Roxhill_Park%2C_Seattle%2C_March_2013.jpg/960px-Roxhill_Park%2C_Seattle%2C_March_2013.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Roxhill_Park,_Seattle,_March_2013.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Orange Suede Sofa",
+        "attribution": "Orange Suede Sofa / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "408dda66-550c-49a7-82f9-2e8137ab3c4b",
+      "placeName": "Salmon Bay Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/05/Keel_Park_Plaque_at_Salmon_Harbor_Marina_in_Winchester_Bay%2C_Oregon.jpg/960px-Keel_Park_Plaque_at_Salmon_Harbor_Marina_in_Winchester_Bay%2C_Oregon.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Keel_Park_Plaque_at_Salmon_Harbor_Marina_in_Winchester_Bay,_Oregon.jpg",
+        "license": "CC BY 2.0",
+        "author": "Rick Obst",
+        "attribution": "Rick Obst / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "6d4aa662-789e-4396-ac9d-d075a1d64035",
+      "placeName": "Sam Smith Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e3/I-90_bike_tunnel%2C_Seattle_%2810508441764%29.jpg/960px-I-90_bike_tunnel%2C_Seattle_%2810508441764%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:I-90_bike_tunnel,_Seattle_(10508441764).jpg",
+        "license": "CC BY 2.0",
+        "author": "Robert Ashworth from Bellingham, WA., USA",
+        "attribution": "Robert Ashworth from Bellingham, WA., USA / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "57aa4841-d4ca-4adf-b043-e29da98c03f0",
+      "placeName": "Sandel Playground",
+      "kind": "playground",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "a49d6f5e-d03c-42f1-a00b-8acef0c34ded",
+      "placeName": "Sandel Playground Wading Pool",
+      "kind": "splash_pad",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "9f716419-b7f5-48d8-8001-a3bb18a38612",
+      "placeName": "Seattle Children's Museum",
+      "kind": "museum",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e6/Children%E2%80%99s_Museum_%282891578446%29.jpg/960px-Children%E2%80%99s_Museum_%282891578446%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Children’s_Museum_(2891578446).jpg",
+        "license": "CC BY 2.0",
+        "author": "Cliff from Arlington, Virginia, USA",
+        "attribution": "Cliff from Arlington, Virginia, USA / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "10f3bee3-e055-467e-b06f-0a40db4bba4e",
+      "placeName": "Seward Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4e/Aerial_view_of_Seward_Park%2C_Seattle.jpg/960px-Aerial_view_of_Seward_Park%2C_Seattle.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Aerial_view_of_Seward_Park,_Seattle.jpg",
+        "license": "Public domain",
+        "author": "Dcoetzee",
+        "attribution": "Dcoetzee / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "074ff3f3-f574-4c73-aeb5-2a77666ce739",
+      "placeName": "Seward Park",
+      "kind": "beach",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4e/Aerial_view_of_Seward_Park%2C_Seattle.jpg/960px-Aerial_view_of_Seward_Park%2C_Seattle.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Aerial_view_of_Seward_Park,_Seattle.jpg",
+        "license": "Public domain",
+        "author": "Dcoetzee",
+        "attribution": "Dcoetzee / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "ab8e17d0-403e-44c9-9803-466a028e1e3f",
+      "placeName": "Soundview Playfield",
+      "kind": "playground",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "806c5fdd-b93e-4de3-8694-443693348547",
+      "placeName": "Soundview Playfield Wading Pool",
+      "kind": "splash_pad",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "a805d360-b5e2-48a2-a3d2-c01840a9f86a",
+      "placeName": "Soundview Terrace Play Area",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/47/01-14-1982_%28case_file_056753%29_%281%29_-_DPLA_-_20b50e4b7709e254c96f43e6e8ead789.pdf/page1-960px-01-14-1982_%28case_file_056753%29_%281%29_-_DPLA_-_20b50e4b7709e254c96f43e6e8ead789.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:01-14-1982_(case_file_056753)_(1)_-_DPLA_-_20b50e4b7709e254c96f43e6e8ead789.pdf",
+        "license": "Public domain",
+        "author": "President (1981-1989 : Reagan). White House Office of Records Management. 1/20/1981-1/20/1989",
+        "attribution": "President (1981-1989 : Reagan). White House Office of Records Management. 1/20/1981-1/20/1989 / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "0eb73f34-69a3-455e-bb70-8fdb65051609",
+      "placeName": "South Park Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f1/Wescott_Park_Community_Center_%2814775041169%29.jpg/960px-Wescott_Park_Community_Center_%2814775041169%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Wescott_Park_Community_Center_(14775041169).jpg",
+        "license": "CC BY-SA 2.0",
+        "author": "North Charleston from North Charleston, SC, United States",
+        "attribution": "North Charleston from North Charleston, SC, United States / CC BY-SA 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "a52a2341-b9aa-4ce7-ab35-4e51fe55bffb",
+      "placeName": "South Park Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/da/Angle_Park_playground_01.jpg/960px-Angle_Park_playground_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Angle_Park_playground_01.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Chris.sherlock2",
+        "attribution": "Chris.sherlock2 / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "ad402493-7017-4643-b956-d829d0c8f289",
+      "placeName": "South Park Playground Water Spray",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/00/Canada%27s_national_playground%2C_a_guide_and_souvenir_of_the_mountain_resorts_%28IA_canadasnationalp00gode%29.pdf/page1-500px-Canada%27s_national_playground%2C_a_guide_and_souvenir_of_the_mountain_resorts_%28IA_canadasnationalp00gode%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Canada's_national_playground,_a_guide_and_souvenir_of_the_mountain_resorts_(IA_canadasnationalp00gode).pdf",
+        "license": "Public domain",
+        "author": "Godenrath, Percy F. (Percy Francis), 1875-1944",
+        "attribution": "Godenrath, Percy F. (Percy Francis), 1875-1944 / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "dac75e0e-4ea6-4086-ad45-7fd59bca9a37",
+      "placeName": "Southwest Branch, Seattle Public Library",
+      "kind": "library",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/03/Southwest_Branch%2C_Seattle_Public_Library%2C_1961_-_DPLA_-_524aa4a71de66d7349b123036072024f.jpg/960px-Southwest_Branch%2C_Seattle_Public_Library%2C_1961_-_DPLA_-_524aa4a71de66d7349b123036072024f.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Southwest_Branch,_Seattle_Public_Library,_1961_-_DPLA_-_524aa4a71de66d7349b123036072024f.jpg",
+        "license": "No restrictions",
+        "author": "Hupy, Arthur (Art) E., 1925-2003",
+        "attribution": "Hupy, Arthur (Art) E., 1925-2003 / No restrictions"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "de009da9-e331-4c1c-bb0b-ee7ac14994b6",
+      "placeName": "Southwest Community Center",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b2/French_Hill_visits_the_Southwest_Community_Center%2C_Little_Rock%2C_Arkansas_04.jpg/960px-French_Hill_visits_the_Southwest_Community_Center%2C_Little_Rock%2C_Arkansas_04.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:French_Hill_visits_the_Southwest_Community_Center,_Little_Rock,_Arkansas_04.jpg",
+        "license": "Public domain",
+        "author": "Office of French Hill, United States Congress",
+        "attribution": "Office of French Hill, United States Congress / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "c380e948-4163-48e1-85f4-8bdf476a81ce",
+      "placeName": "Southwest Pool",
+      "kind": "pool",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/ed/Cmglee_London_Embassy_Gardens_pool.jpg/960px-Cmglee_London_Embassy_Gardens_pool.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Cmglee_London_Embassy_Gardens_pool.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Cmglee",
+        "attribution": "Cmglee / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "ed353fef-2f10-46b0-9a5a-ffabd12365df",
+      "placeName": "Spring Street Mini Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/71/Mini_roundabouts_on_Shirley_Way%2C_Spring_Park_-_geograph.org.uk_-_2665427.jpg/960px-Mini_roundabouts_on_Shirley_Way%2C_Spring_Park_-_geograph.org.uk_-_2665427.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Mini_roundabouts_on_Shirley_Way,_Spring_Park_-_geograph.org.uk_-_2665427.jpg",
+        "license": "CC BY-SA 2.0",
+        "author": "David Anstiss",
+        "attribution": "David Anstiss / CC BY-SA 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "8ace3295-dcaa-4eec-9268-292a44509208",
+      "placeName": "Spruce Street Mini Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c0/Seattle_-_Children_playing_at_Spruce_Street_Mini_Park%2C_circa_1970.jpg/960px-Seattle_-_Children_playing_at_Spruce_Street_Mini_Park%2C_circa_1970.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Children_playing_at_Spruce_Street_Mini_Park,_circa_1970.jpg",
+        "license": "CC BY 2.0",
+        "author": "Seattle Municipal Archives",
+        "attribution": "Seattle Municipal Archives / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "5e7b50ff-3386-4610-bfba-2b45cffb804e",
+      "placeName": "Trolley Hill Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/17/Car_and_trolley_park_at_Bar_Hill_-_geograph.org.uk_-_5680060.jpg/960px-Car_and_trolley_park_at_Bar_Hill_-_geograph.org.uk_-_5680060.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Car_and_trolley_park_at_Bar_Hill_-_geograph.org.uk_-_5680060.jpg",
+        "license": "CC BY-SA 2.0",
+        "author": "M J Richardson",
+        "attribution": "M J Richardson / CC BY-SA 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "8365d018-9704-40ff-877e-5c3b18c293ac",
+      "placeName": "TT Minor Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5d/Playground_Toni_%28IA_playgroundtoni00raya%29.pdf/page1-960px-Playground_Toni_%28IA_playgroundtoni00raya%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Playground_Toni_(IA_playgroundtoni00raya).pdf",
+        "license": "Public domain",
+        "author": "Ray, Anna Chapin, 1865-1945",
+        "attribution": "Ray, Anna Chapin, 1865-1945 / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "b16d5050-d1c7-459f-a288-d375900c6b4c",
+      "placeName": "University Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f7/West_University_Place_Recreation_Center_Playground_%2876144%29.jpg/960px-West_University_Place_Recreation_Center_Playground_%2876144%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:West_University_Place_Recreation_Center_Playground_(76144).jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "EvanCarroll",
+        "attribution": "EvanCarroll / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "82baa036-c4a3-4c09-ac77-516f90116a26",
+      "placeName": "Urban Triangle Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1d/Ayala_Triangle_Gardens.jpg/960px-Ayala_Triangle_Gardens.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Ayala_Triangle_Gardens.jpg",
+        "license": "CC BY 3.0",
+        "author": "RioHondo ( talk ) ( Uploads )",
+        "attribution": "RioHondo ( talk ) ( Uploads ) / CC BY 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "d697b5d4-6a51-40d4-b3b7-0bd3e015b39a",
+      "placeName": "Van Asselt Community Center",
+      "kind": "other",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "be33f238-055e-4113-9c14-f689a56c071b",
+      "placeName": "Van Asselt Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e9/Othello_Station_%284829531739%29_-_colors_adjusted.jpg/960px-Othello_Station_%284829531739%29_-_colors_adjusted.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Othello_Station_(4829531739)_-_colors_adjusted.jpg",
+        "license": "CC BY-SA 2.0",
+        "author": "Atomic Taco from Seattle, WA, USA",
+        "attribution": "Atomic Taco from Seattle, WA, USA / CC BY-SA 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "dd7adbf0-5259-42e5-8771-f8acd88397d7",
+      "placeName": "Van Asselt Playground Wading Pool",
+      "kind": "splash_pad",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "03d45ce4-a350-493a-a514-c7a983456497",
+      "placeName": "Victory Heights Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7b/A_Publisher%27s_playground_%28IA_publishersplaygr00lond%29.pdf/page1-500px-A_Publisher%27s_playground_%28IA_publishersplaygr00lond%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:A_Publisher's_playground_(IA_publishersplaygr00lond).pdf",
+        "license": "Public domain",
+        "author": "",
+        "attribution": "Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "26873da7-14b2-400c-98d2-99b8b1e46316",
+      "placeName": "View Ridge Playfield Wading Pool",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7e/Trolley_exploring_-_an_electric_railroad_guide_to_historic_and_picturesque_places_about_New_York%2C_New_Jersey%2C_and_New_England_%281904%29_%2814758513594%29.jpg/960px-Trolley_exploring_-_an_electric_railroad_guide_to_historic_and_picturesque_places_about_New_York%2C_New_Jersey%2C_and_New_England_%281904%29_%2814758513594%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Trolley_exploring_-_an_electric_railroad_guide_to_historic_and_picturesque_places_about_New_York,_New_Jersey,_and_New_England_(1904)_(14758513594).jpg",
+        "license": "No restrictions",
+        "author": "Internet Archive Book Images",
+        "attribution": "Internet Archive Book Images / No restrictions"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "ed6c735c-6a3b-4624-a744-7142605bc227",
+      "placeName": "Viewridge Playfield",
+      "kind": "playground",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "c8fd928e-cd96-4a1a-ae53-fba45762632e",
+      "placeName": "Virgil Flaim Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d3/Seattle_-_Virgil_Flaim_Park_01.jpg/960px-Seattle_-_Virgil_Flaim_Park_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Virgil_Flaim_Park_01.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "cd0dfba9-bb92-4eab-95d8-b451cb9e9507",
+      "placeName": "Volunteer Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/96/Volunteer_Park_Conservatory_02.jpg/960px-Volunteer_Park_Conservatory_02.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Volunteer_Park_Conservatory_02.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "2930d58d-51d8-4a9b-b7bf-ebd21a1ef7d2",
+      "placeName": "Volunteer Park Wading Pool",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/18/Volunteer_Park_wading_pool_01.jpg/960px-Volunteer_Park_wading_pool_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Volunteer_Park_wading_pool_01.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "95f08bb2-d823-4398-932b-6de9356434f9",
+      "placeName": "W. Magnolia Playfield",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://upload.wikimedia.org/wikipedia/commons/d/db/Magnolia_Playfield_Tennis_Courts_%285149012626%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Magnolia_Playfield_Tennis_Courts_(5149012626).jpg",
+        "license": "No restrictions",
+        "author": "UW Digital Collections",
+        "attribution": "UW Digital Collections / No restrictions"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "01d86175-b0b4-4890-8f48-6ad8265a922c",
+      "placeName": "W. Queen Anne Playfield",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/10/Queen_Anne_Playfield_%2817895359842%29.jpg/960px-Queen_Anne_Playfield_%2817895359842%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Queen_Anne_Playfield_(17895359842).jpg",
+        "license": "CC BY 2.0",
+        "author": "Tony Webster from Portland, Oregon",
+        "attribution": "Tony Webster from Portland, Oregon / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "bd2dce1a-d043-4767-835d-cbd8a51f7132",
+      "placeName": "Waldo J. Dahl Playfield Wading Pool",
+      "kind": "splash_pad",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "daf28f34-7b04-440a-b380-29687dab579f",
+      "placeName": "Wallingford Playfield",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/59/Wading_pool_at_Wallingford_Playfield%2C_1971_%2851614740631%29.jpg/960px-Wading_pool_at_Wallingford_Playfield%2C_1971_%2851614740631%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Wading_pool_at_Wallingford_Playfield,_1971_(51614740631).jpg",
+        "license": "CC BY 2.0",
+        "author": "Seattle Municipal Archives from Seattle, WA",
+        "attribution": "Seattle Municipal Archives from Seattle, WA / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "bed43207-8881-4d7a-8e62-27b6a1bed402",
+      "placeName": "Wallingford Playfield Wading Pool",
+      "kind": "splash_pad",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/59/Wading_pool_at_Wallingford_Playfield%2C_1971_%2851614740631%29.jpg/960px-Wading_pool_at_Wallingford_Playfield%2C_1971_%2851614740631%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Wading_pool_at_Wallingford_Playfield,_1971_(51614740631).jpg",
+        "license": "CC BY 2.0",
+        "author": "Seattle Municipal Archives from Seattle, WA",
+        "attribution": "Seattle Municipal Archives from Seattle, WA / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "1f7400df-74f9-49c2-97c5-20bb7785c0fe",
+      "placeName": "Walt Hundley Playfield",
+      "kind": "playground",
+      "image": null,
+      "miss": "none",
+      "disposition": "pending"
+    },
+    {
+      "placeId": "693b98ad-9c57-497b-9c51-56ded7fa0428",
+      "placeName": "Ward Springs Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/3/37/Gateway_Spring_Creek_Park_03_-_26th_Ward_Plant.jpg/960px-Gateway_Spring_Creek_Park_03_-_26th_Ward_Plant.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Gateway_Spring_Creek_Park_03_-_26th_Ward_Plant.jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Tdorante10",
+        "attribution": "Tdorante10 / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "37a4bb7f-03d3-4c11-ae33-e9f8b1e73f92",
+      "placeName": "Warren G Magnuson",
+      "kind": "beach",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/63/WarrenGMagnuson.jpg/960px-WarrenGMagnuson.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:WarrenGMagnuson.jpg",
+        "license": "Public domain",
+        "author": "Believed to be official senatorial portrait",
+        "attribution": "Believed to be official senatorial portrait / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "ea6f9ae8-5d7f-4365-9386-a2140ef43fb8",
+      "placeName": "Warren G. Magnuson Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/3/3b/Warren_G._Magnuson_Park_%2816569175777%29.jpg/960px-Warren_G._Magnuson_Park_%2816569175777%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Warren_G._Magnuson_Park_(16569175777).jpg",
+        "license": "CC BY 2.0",
+        "author": "Seattle Parks",
+        "attribution": "Seattle Parks / CC BY 2.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "34adcc73-9bf2-4bc4-bfde-22ef343c3533",
+      "placeName": "Washington Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/10/Rock_face%2C_Ruby_Beach%2C_Olympic_National_Park%2C_Washington_State%2C_1992.JPG/960px-Rock_face%2C_Ruby_Beach%2C_Olympic_National_Park%2C_Washington_State%2C_1992.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Rock_face,_Ruby_Beach,_Olympic_National_Park,_Washington_State,_1992.JPG",
+        "license": "CC BY 3.0",
+        "author": "Michael Gäbler",
+        "attribution": "Michael Gäbler / CC BY 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "948f5a68-260d-4ce7-8b1a-60435fdbac25",
+      "placeName": "Waterfront Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e6/Sunset_Park_waterfront_%2885311p%29.jpg/960px-Sunset_Park_waterfront_%2885311p%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Sunset_Park_waterfront_(85311p).jpg",
+        "license": "CC BY-SA 4.0",
+        "author": "Rhododendrites",
+        "attribution": "Rhododendrites / CC BY-SA 4.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "daf3c446-015d-43eb-934f-f5fdea750ac3",
+      "placeName": "Webster Playground",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f1/Thomas_George_Webster_%281800-1886%29_-_The_Playground_-_744_-_Guildhall_Art_Gallery.jpg/960px-Thomas_George_Webster_%281800-1886%29_-_The_Playground_-_744_-_Guildhall_Art_Gallery.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Thomas_George_Webster_(1800-1886)_-_The_Playground_-_744_-_Guildhall_Art_Gallery.jpg",
+        "license": "Public domain",
+        "author": "Thomas Webster",
+        "attribution": "Thomas Webster / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "40e836b6-187c-4c10-9bf1-32eae8fe32c2",
+      "placeName": "Westcrest Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/65/Documents_about_Martin_Luther_King%2C_Jr.%2C_Executive_Order_14176%2C_44-mm-1854_v5-part_2_of_9.pdf/page1-960px-Documents_about_Martin_Luther_King%2C_Jr.%2C_Executive_Order_14176%2C_44-mm-1854_v5-part_2_of_9.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Documents_about_Martin_Luther_King,_Jr.,_Executive_Order_14176,_44-mm-1854_v5-part_2_of_9.pdf",
+        "license": "Public domain",
+        "author": "Federal Government of the United States (Q48525)",
+        "attribution": "Federal Government of the United States (Q48525) / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "c03fd03a-cd8a-46b6-9379-e63d1e319063",
+      "placeName": "Westlake Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/46/Westlake_Park.JPG/960px-Westlake_Park.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Westlake_Park.JPG",
+        "license": "CC BY-SA 3.0",
+        "author": "User:Jon Stockton",
+        "attribution": "User:Jon Stockton / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "28652f38-b658-4eb7-983f-97c1bce5fcf0",
+      "placeName": "Woodland Park",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://upload.wikimedia.org/wikipedia/commons/1/1d/Woodland_Park%2C_Colorado_%281887%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Woodland_Park,_Colorado_(1887).jpg",
+        "license": "Public domain",
+        "author": "Unknown author Unknown author",
+        "attribution": "Unknown author Unknown author / Public domain"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "3130badc-57bd-42da-93a7-e38019b3d82c",
+      "placeName": "Wunderkind",
+      "kind": "indoor_play",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/16/Thomas_Mann_Das_Wunderkind_1914.jpg/960px-Thomas_Mann_Das_Wunderkind_1914.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Thomas_Mann_Das_Wunderkind_1914.jpg",
+        "license": "CC BY 3.0",
+        "author": "H.-P.Haack",
+        "attribution": "H.-P.Haack / CC BY 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "c0c7acec-af1e-4018-836b-e2d2ab203d14",
+      "placeName": "Yesler Community Center",
+      "kind": "other",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e1/Seattle_-_Neighborhood_House_Yesler_Terrace_Family_and_Social_Services_Center_02.jpg/960px-Seattle_-_Neighborhood_House_Yesler_Terrace_Family_and_Social_Services_Center_02.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Neighborhood_House_Yesler_Terrace_Family_and_Social_Services_Center_02.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    },
+    {
+      "placeId": "d69d6050-8e11-4d6b-ac0e-44e440a61f61",
+      "placeName": "Yesler Community Center",
+      "kind": "playground",
+      "miss": null,
+      "image": {
+        "thumbUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e1/Seattle_-_Neighborhood_House_Yesler_Terrace_Family_and_Social_Services_Center_02.jpg/960px-Seattle_-_Neighborhood_House_Yesler_Terrace_Family_and_Social_Services_Center_02.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+        "filePageUrl": "https://commons.wikimedia.org/wiki/File:Seattle_-_Neighborhood_House_Yesler_Terrace_Family_and_Social_Services_Center_02.jpg",
+        "license": "CC BY-SA 3.0",
+        "author": "Joe Mabel",
+        "attribution": "Joe Mabel / CC BY-SA 3.0"
+      },
+      "disposition": "pending"
+    }
+  ]
+}

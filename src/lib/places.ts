@@ -322,6 +322,40 @@ export function placeExternalUrl(place: Pick<Place, 'name'>): string | null {
 }
 
 /**
+ * V18 t04: the credit line to render over a place photo, or null when there is
+ * nothing to credit.
+ *
+ * THIS IS A LICENCE-COMPLIANCE FUNCTION, not decoration. The photos V18 sources
+ * from Wikimedia Commons are CC BY / CC BY-SA / CC0 / public domain, and the
+ * first two REQUIRE attribution as a condition of use. So the credit is not
+ * optional polish that can be dropped when the card looks cramped.
+ *
+ * It is a seam rather than an inline expression because the render must decide
+ * NOTHING (the build law) and because three separate facts have to agree:
+ *
+ *   1. **No photo ⇒ no credit.** The illustration fallback is the app's own
+ *      drawing; crediting its author to Commons would be a lie.
+ *   2. **A photo with no stored attribution ⇒ null**, NOT an empty string and
+ *      not a placeholder. The backfill writes the attribution line itself
+ *      (`buildAttribution`, `commons.ts`), so a missing one means a row was
+ *      written outside the pipeline — the render should show nothing rather
+ *      than invent a credit.
+ *   3. **Whitespace-only counts as missing**, because a card pinned to a corner
+ *      label should not reserve space for a string that renders as blank.
+ *
+ * The `photo_url` check mirrors `PlacePhotoSlot`'s own branch condition
+ * exactly (`!== null && !== ''`), so the credit can never appear on a slot that
+ * took the illustration branch. Those two conditions are pinned together by a
+ * unit test rather than by hope.
+ */
+export function photoCreditLine(place: Place): string | null {
+  const hasPhoto = place.photo_url !== null && place.photo_url !== ''
+  if (!hasPhoto) return null
+  const credit = (place.photo_attribution ?? '').trim()
+  return credit === '' ? null : credit
+}
+
+/**
  * The directory, A→Z, capped — the BROWSE list. Deterministic (name, then id,
  * the matchPlaces tiebreak) so the same directory never reshuffles between
  * renders, and NOT a ranking: browsing shows the alphabet, not a guess at
