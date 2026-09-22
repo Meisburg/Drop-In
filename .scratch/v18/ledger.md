@@ -184,3 +184,25 @@ Slice t05: `ocr` third lane RUN (after fixing a sandbox blocker: it writes its
   Gate after the fixes: npm run verify exit 0 - 1007/1007 unit (28 files) -
   lint 0 errors / 62 warnings. Probe photo reverted; DB confirmed 0 photos /
   239 rows; sheet back to all-pending.
+
+*** V18 CODE COMPLETE — HALTED AT THE CURATION GATE (needs the founder) ***
+Final tree: 8f3530f. Gate re-run on the final tree:
+  npm run verify exit 0 · 1007/1007 unit (28 files) · lint 0 errors / 62 warnings
+  (the pre-batch baseline, zero new warnings) · places.e2e.ts 14 passed exit 0 ·
+  playtest lane PASS 8 routes / 0 JS errors · mobile audit PASS 18/18 ·
+  clean-range check PASS (24 files).
+Migration 0046 APPLIED LIVE and applied twice (idempotent). No new route.
+DB STATE: public.places = 239 rows, 0 with photo_url — verified by read-back
+  after EVERY probe. Nothing is half-applied and no wrong photo can reach a
+  card: the apply step writes only `keep` rows, and it is inert on the
+  unreviewed sheet (proven, 0 written).
+THE BATCH IS NOT BLOCKED — it is waiting on a decision only the founder can
+  make. The app is fully functional as it stands: every card renders the
+  per-kind illustration, which is a supported end state.
+NEXT ACTION (human): open .scratch/v18/review.html (visual contact sheet --
+  121 likely / 96 doubtful / 22 no-image), mark the good ones, then the approved
+  rows are applied with scripts/apply-place-photos.mjs.
+Remaining non-blocking, recorded not stranded: the fetch script duplicates
+  commons.ts's parsing helpers (a .mjs cannot import TS) — accepted in the ocr
+  adjudication; and 96 doubtful candidates are reject-by-default unless the
+  founder wants to hand-pick any.
