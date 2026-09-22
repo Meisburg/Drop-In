@@ -371,6 +371,75 @@ export interface MembershipWithNeighborhood extends Membership {
  * still reachable if the decision is ever reversed. An `<img src={kid.avatar_url}>`
  * is therefore both a re-opened privacy decision and a broken image.
  */
+/**
+ * V19 t03/t05 (migration 0047): one PARENT on a family's profile.
+ *
+ * Up to two per account (`position` 1 or 2, enforced by a CHECK and a unique
+ * index). This is deliberately NOT more columns on `profiles`: a parent is a
+ * PERSON with a photo and some words, while `profiles` is an ACCOUNT. Keeping
+ * them separate is what lets a parent leave a linked relationship without
+ * losing the words they wrote about themselves.
+ *
+ * `photo_url` is a PRIVATE-BUCKET object path (the 0038 kid-photo pattern),
+ * never a public URL — the same invariant `Kid.avatar_url` carries.
+ */
+export interface ParentCard {
+  id: string
+  /** The account this card belongs to — never another account. */
+  profile_id: string
+  name: string
+  /** A private-bucket path, not a public URL. Null when there is no picture. */
+  photo_url: string | null
+  about: string | null
+  /** 1 or 2: the render order, and the hard cap on "up to two parents". */
+  position: number
+  created_at?: string
+}
+
+/**
+ * V19 t03 (migration 0047): the invite → accept handshake between two parents
+ * who each have their own account.
+ *
+ * `pending` is an invitation the addressee has not answered; `accepted` is a
+ * live relationship (at most ONE per parent, enforced by a trigger on the
+ * person rather than on either column); `declined` is a refusal, kept as a row
+ * rather than deleted because the invitation really happened.
+ *
+ * The table is readable ONLY by its two parties — a third account reads zero
+ * rows. That is asserted live against the real database, not assumed.
+ */
+export interface AccountLink {
+  id: string
+  requester_id: string
+  addressee_id: string
+  status: AccountLinkStatus
+  created_at?: string
+  responded_at?: string | null
+}
+
+/** The closed set `account_links_status_chk` allows. */
+export type AccountLinkStatus = 'pending' | 'accepted' | 'declined'
+
+/**
+ * Resolve each account to its accepted partner: `accountLinks` → a map of
+ * `profileId -> partnerProfileId`, symmetric in both directions.
+ *
+ * Pure, so the profile page can render "linked to @handle" without deciding
+ * anything itself. Only `accepted` links count — a pending invitation is not a
+ * relationship, and a declined one certainly is not.
+ */
+export function partnerByProfileId(
+  links: ReadonlyArray<Pick<AccountLink, 'requester_id' | 'addressee_id' | 'status'>>,
+  viewerId: string,
+): string | null {
+  for (const link of links) {
+    if (link.status !== 'accepted') continue
+    if (link.requester_id === viewerId) return link.addressee_id
+    if (link.addressee_id === viewerId) return link.requester_id
+  }
+  return null
+}
+
 export interface Kid {
   id: string
   profile_id: string

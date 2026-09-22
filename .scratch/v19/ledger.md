@@ -98,3 +98,49 @@ TWO SELF-INFLICTED SPEC BUGS, both caught by running it, both recorded:
       A6 marker spec already uses.
 Slice t02 gate: npm run verify exit 0 · 1023/1023 unit (28 files) · lint 0
   errors / 62 warnings · places.e2e.ts 16 passed · mobile audit PASS 18/18.
+
+Slice t03: dispatched (base 514fa27)
+Slice t03: complete — migration 0047 (parent_cards + account_links), APPLIED
+  LIVE and applied twice (idempotent, both 201).
+  Schema decisions worth keeping: a CHILD TABLE for parent cards rather than
+  parent2_* columns, because "up to two" is a count, a parent is a PERSON while
+  profiles is an ACCOUNT, and unlinking must not delete anyone's words.
+  `profiles.bio` KEEPS its job (account-level text, still on /u/:handle) and is
+  explicitly NOT replaced — the migration header states this so a later reader
+  does not assume one superseded the other.
+  "Up to two" is enforced in the DB (CHECK position 1..2 + unique
+  (profile_id, position)), not just the UI.
+A REAL BUG WAS FOUND BY PROBING, NOT BY READING THE SQL — the batch's most
+  important finding, and the reason the probe exists at all.
+  My first draft enforced "one partner per parent" with TWO partial unique
+  indexes, one on requester_id and one on addressee_id, both where
+  status='accepted'. A live probe with three real accounts showed the hole
+  immediately: account A accepted a link as REQUESTER with B and, separately,
+  accepted one as ADDRESSEE from C. Both were accepted. A ended up with TWO
+  partners — which on a "up to two parents" profile renders THREE parents.
+  Each index guarded one COLUMN; nothing guarded the PERSON who appears in both.
+  FIX: a BEFORE INSERT OR UPDATE trigger that counts accepted links involving
+  EITHER of the row's two people. A partial unique index genuinely cannot
+  express this ("the other party" depends on which column you are in), so the
+  rule moved to where it can see the whole row. The trigger fires on UPDATE too
+  — the probe's exact sequence was pending→accepted, which an INSERT-only
+  trigger would have missed.
+  CONVERGENCE: the bad indexes are dropped and the surplus accepted rows are
+  DEMOTED to 'declined' rather than deleted — the invitation really happened,
+  and erasing it would rewrite history to make the schema look like it never
+  had the bug. The oldest accepted link per person survives.
+  RE-PROBED AFTER THE FIX: every person has <=1 accepted link (was 2), and a
+  second accepted link is refused with HTTP 409 "a parent may have only one
+  linked partner". PROVEN, not assumed.
+PRIVACY PROBED LIVE with three real accounts + real JWTs (not read off the SQL):
+  * third party C reads account_links: 0 ROWS. parties A and B: 1 row each.
+  * anon reads account_links: 0 rows.
+  * C tries to alter A&B's link: 0 rows touched, status still 'accepted'.
+  * C tries to create a parent_card FOR A: HTTP 403 / 42501 (RLS refusal).
+  * anon reads parent_cards: 0 rows (not public).
+  * position 3 on parent_cards: HTTP 400 / 23514 (the "up to two" CHECK).
+  * self-link: HTTP 400 / 23514. duplicate pending invite: HTTP 409.
+  All probe rows and probe auth users deleted afterwards; parent_cards and
+  account_links verified back to 0 rows.
+  Evidence: evidence/t03-apply.log, t03-apply2.log, t03-rls-probe.log.
+Slice t03 gate: npm run verify exit 0 · 1023/1023 unit · lint 0 errors / 62.
