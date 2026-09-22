@@ -165,3 +165,28 @@ Slice t04 (part 1): the pure seams + DB writers.
   setParentCardPhoto, deleteParentCard).
   Writers deliberately do NOT use .select().single() — the 42501 discipline.
   Gate: npm run verify exit 0 · 1041/1041 unit (29 files) · lint 0 errors / 62.
+
+Slice t04 (part 2) + t05: THE PROFILE UI — parent cards and the link section.
+  `/profile` gains "The parents" (up to two cards, each name + about + save +
+  remove) and "Linked parent" (the five linkView states rendered).
+  `ParentCardEditor` serves BOTH the filled card and the empty slot, so the
+  parent sees where the second card goes before filling it. It uses an explicit
+  SAVE rather than autosave (unlike the bio): a card can be created and deleted,
+  and a half-typed new card autosaving would insert a row nobody finished.
+  New pure seam `parentCards.ts` + tests (10): parentCardList sorts by SLOT and
+  caps at two (belt-and-braces beside the 0047 constraint — a profile rendering
+  three parents on a two-parent layout is the failure it prevents), and
+  nextParentPosition returns NULL at the cap so the page HIDES the add control
+  rather than offering a button whose write the database would refuse.
+  DRIVEN END-TO-END THROUGH THE REAL UI (not just unit-tested):
+    add parent 1 -> slot 2 appears; add parent 2 -> "Two parents is the limit";
+    DB read-back shows both rows at position 1 and 2 with their text.
+  DISTINCT MESSAGES PROVEN, which is the point of links.ts:
+    self-link    -> "That is your own handle."
+    unknown      -> "No parent has the handle \"...\"."
+    The two differ (asserted). A single generic failure would have hidden the
+    difference between "you typed yourself" and "there is no such parent".
+  Test cards deleted afterwards; parent_cards verified back to 0 rows.
+  Note on lint: +2 warnings (62 -> 64), both `react(set-state-in-effect)` on the
+  two new load effects — the SAME pattern the file's two existing loads use at
+  lines 169/179. House pattern, not a defect; recorded rather than hidden.

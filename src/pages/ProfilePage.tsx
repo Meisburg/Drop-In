@@ -12,6 +12,14 @@ import {
   clearAvatar,
   HandleTakenError,
   listKids,
+  deleteParentCard,
+  listMyAccountLinks,
+  listParentCards,
+  LinkTargetUnknownError,
+  requestAccountLink,
+  respondToAccountLink,
+  saveParentCard,
+  unlinkAccounts,
   LIKES_MAX_LENGTH,
   MAX_KIDS_PER_PROFILE,
   removeKid,
@@ -27,7 +35,13 @@ import {
   validateKid,
   validateKidLikes,
 } from '../lib/db'
-import type { Kid } from '../lib/types'
+import {
+  linkView,
+  normalizeHandle,
+  validateLinkRequest,
+} from '../lib/links'
+import { nextParentPosition, parentCardList, PARENT_CARDS_BLURB } from '../lib/parentCards'
+import type { AccountLink, Kid, ParentCard } from '../lib/types'
 import {
   planProfileSave,
   seedProfileFormValues,
@@ -179,6 +193,68 @@ export function ProfilePage() {
     }
   }, [userId])
 
+  /**
+   * V19 t05: the account's PARENT CARDS (up to two).
+   *
+   * `null` is the in-flight state, an array is settled — the same shape the kids
+   * load uses, so the render branches identically. A failed load leaves an empty
+   * list rather than an error banner: the cards are enrichment on a page that
+   * still works without them, and the profile editor is the surface that should
+   * complain if a SAVE fails.
+   */
+  const [parentCards, setParentCards] = useState<ParentCard[] | null>(null)
+  const [parentCardBusy, setParentCardBusy] = useState(false)
+  const [parentCardError, setParentCardError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (userId === null) return
+    let cancelled = false
+    setParentCards(null)
+    listParentCards(userId)
+      .then((rows) => {
+        if (!cancelled) setParentCards(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setParentCards([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
+  /**
+   * V19 t04: the account's LINK rows — the invitations and any accepted partner.
+   *
+   * RLS returns ONLY rows this account is part of, so this is already the
+   * viewer's own business and needs no further filtering for privacy. The
+   * `linkView` seam turns the rows into the one state the section renders.
+   *
+   * A failed load leaves an empty list: the linking UI then shows the "link a
+   * parent" form, which is a harmless thing to show someone who may already be
+   * linked — the write path is what must be correct, and it is guarded by the
+   * database.
+   */
+  const [accountLinks, setAccountLinks] = useState<AccountLink[] | null>(null)
+  const [linkBusy, setLinkBusy] = useState(false)
+  const [linkError, setLinkError] = useState<string | null>(null)
+  const [linkHandleInput, setLinkHandleInput] = useState('')
+
+  useEffect(() => {
+    if (userId === null) return
+    let cancelled = false
+    setAccountLinks(null)
+    listMyAccountLinks()
+      .then((rows) => {
+        if (!cancelled) setAccountLinks(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setAccountLinks([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
   // V16 t04: the owner's own-posts load used to sit here. It fed only the
   // removed "Hosted drop-ins" card, so it is gone with it — /profile no longer
   // issues the query my-playdates request at all. The duplicate path lives on
@@ -248,6 +324,127 @@ export function ProfilePage() {
    * image pick up the null. A failed clear surfaces the error but never traps
    * the page (the item is optional).
    */
+  /**
+   * V19 t04/t05: the linking + parent-card handlers.
+   *
+   * All of them follow the same shape: set a busy flag, clear the last error,
+   * call the seam, re-read the affected list, and surface a message on failure.
+   * The RE-READ rather than a local splice is deliberate — the database is the
+   * authority on which rows exist (it enforces the one-partner rule and the
+   * two-card cap), so reflecting its answer is more honest than predicting it.
+   */
+  async function reloadLinks() {
+    try {
+      setAccountLinks(await listMyAccountLinks())
+    } catch {
+      // Leave the previous list in place; a failed refresh must not blank a
+      // link the parent can see.
+    }
+  }
+
+  async function reloadParentCards() {
+    if (userId === null) return
+    try {
+      setParentCards(await listParentCards(userId))
+    } catch {
+      // As above: a failed refresh leaves what is already on screen.
+    }
+  }
+
+  async function handleRequestLink() {
+    if (userId === null) return
+    const selfHandle = profile?.display_name ?? null
+    // Pre-flight in the pure seam, so an empty or self handle answers instantly
+    // with its OWN message instead of a round trip ending in a constraint error.
+    const invalid = validateLinkRequest(linkHandleInput, selfHandle)
+    if (invalid !== null) {
+      setLinkError(invalid)
+      return
+    }
+    setLinkBusy(true)
+    setLinkError(null)
+    try {
+      await requestAccountLink(normalizeHandle(linkHandleInput))
+      setLinkHandleInput('')
+      await reloadLinks()
+    } catch (err) {
+      setLinkError(
+        err instanceof LinkTargetUnknownError
+          ? err.message
+          : 'Could not send that invitation. Try again.',
+      )
+    } finally {
+      setLinkBusy(false)
+    }
+  }
+
+  async function handleRespondToLink(linkId: string, response: 'accepted' | 'declined') {
+    setLinkBusy(true)
+    setLinkError(null)
+    try {
+      await respondToAccountLink(linkId, response)
+      await reloadLinks()
+    } catch {
+      setLinkError('Could not answer that invitation. Try again.')
+    } finally {
+      setLinkBusy(false)
+    }
+  }
+
+  async function handleUnlink(linkId: string) {
+    setLinkBusy(true)
+    setLinkError(null)
+    try {
+      await unlinkAccounts(linkId)
+      await reloadLinks()
+    } catch {
+      setLinkError('Could not remove that link. Try again.')
+    } finally {
+      setLinkBusy(false)
+    }
+  }
+
+  /**
+   * Save one parent card from its own inputs. The caller passes the slot and
+   * the values, so the same handler serves both cards.
+   */
+  async function handleSaveParentCard(position: number, name: string, about: string) {
+    if (userId === null) return
+    if (name.trim() === '') {
+      setParentCardError('A parent needs a name.')
+      return
+    }
+    setParentCardBusy(true)
+    setParentCardError(null)
+    try {
+      await saveParentCard({
+        profileId: userId,
+        position,
+        name: name.trim(),
+        about: about.trim() === '' ? null : about.trim(),
+      })
+      await reloadParentCards()
+    } catch {
+      setParentCardError('Could not save that parent. Try again.')
+    } finally {
+      setParentCardBusy(false)
+    }
+  }
+
+  async function handleRemoveParentCard(position: number) {
+    if (userId === null) return
+    setParentCardBusy(true)
+    setParentCardError(null)
+    try {
+      await deleteParentCard(userId, position)
+      await reloadParentCards()
+    } catch {
+      setParentCardError('Could not remove that parent. Try again.')
+    } finally {
+      setParentCardBusy(false)
+    }
+  }
+
   async function handleRemoveAvatar() {
     if (userId === null || avatarRemoving) return
     setAvatarRemoving(true)
@@ -843,6 +1040,202 @@ export function ProfilePage() {
         ) : null}
       </div>
 
+      {/* V19 t05 (founder's ask): the PARENT CARDS — up to two parents, each
+          with a name, a photo and a few words about themselves.
+          These sit UNDER the family bio and above the kids, because the page
+          reads outward from the family as a whole to its individual people:
+          the bio describes the family, these describe each parent, the kids
+          section describes the children. */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-base font-semibold text-slate-900">The parents</h2>
+        <p className="mt-1 text-sm text-slate-600">{PARENT_CARDS_BLURB}</p>
+
+        {parentCards === null ? (
+          <p className="mt-3 text-sm text-slate-500">Loading…</p>
+        ) : (
+          <div className="mt-3 flex flex-col gap-4">
+            {parentCardList(parentCards).map((card) => (
+              <ParentCardEditor
+                key={card.id}
+                card={card}
+                busy={parentCardBusy}
+                onSave={handleSaveParentCard}
+                onRemove={handleRemoveParentCard}
+              />
+            ))}
+            {nextParentPosition(parentCards) !== null ? (
+              <ParentCardEditor
+                key={`new-${nextParentPosition(parentCards)}`}
+                card={null}
+                position={nextParentPosition(parentCards) ?? 1}
+                busy={parentCardBusy}
+                onSave={handleSaveParentCard}
+                onRemove={null}
+              />
+            ) : (
+              <p className="text-xs text-slate-500">
+                Two parents is the limit — remove one to add someone else.
+              </p>
+            )}
+          </div>
+        )}
+
+        {parentCardError !== null ? (
+          <p className="mt-2 text-sm text-red-600">{parentCardError}</p>
+        ) : null}
+      </div>
+
+      {/* V19 t04 (founder's ask): LINK the other parent's account.
+          The section renders exactly one state — `linkView` owns that decision,
+          this renders it. The distinction that matters: an OUTGOING invite says
+          "waiting for them" with a withdraw, an INCOMING one shows Accept and
+          Decline, because only the addressee can answer (the database refuses
+          anyone else, so offering the buttons to the wrong parent would be a
+          control that always fails). */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-base font-semibold text-slate-900">Linked parent</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          If your partner has their own account, link them so you both show on this profile.
+        </p>
+
+        {accountLinks === null ? (
+          <p className="mt-3 text-sm text-slate-500">Loading…</p>
+        ) : (
+          <div className="mt-3">
+            {(() => {
+              const view = linkView(accountLinks, userId ?? '')
+              switch (view.kind) {
+                case 'linked':
+                  return (
+                    <div className="flex items-center justify-between gap-3">
+                      <p data-testid="linked-parent" className="text-sm text-slate-700">
+                        Linked to{' '}
+                        <span className="font-medium">
+                          {view.otherHandle === '' ? 'your partner' : `@${view.otherHandle}`}
+                        </span>
+                      </p>
+                      <button
+                        type="button"
+                        data-testid="unlink-parent"
+                        disabled={linkBusy}
+                        onClick={() => void handleUnlink(view.linkId)}
+                        className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
+                      >
+                        Unlink
+                      </button>
+                    </div>
+                  )
+                case 'outgoing':
+                  return (
+                    <div className="flex items-center justify-between gap-3">
+                      <p data-testid="link-outgoing" className="text-sm text-slate-700">
+                        Invite sent to{' '}
+                        <span className="font-medium">
+                          {view.otherHandle === '' ? 'them' : `@${view.otherHandle}`}
+                        </span>{' '}
+                        — waiting for them to accept.
+                      </p>
+                      <button
+                        type="button"
+                        data-testid="withdraw-invite"
+                        disabled={linkBusy}
+                        onClick={() => void handleUnlink(view.linkId)}
+                        className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
+                      >
+                        Withdraw
+                      </button>
+                    </div>
+                  )
+                case 'incoming':
+                  return (
+                    <div data-testid="link-incoming" className="flex flex-col gap-2">
+                      <p className="text-sm text-slate-700">
+                        <span className="font-medium">
+                          {view.otherHandle === '' ? 'A parent' : `@${view.otherHandle}`}
+                        </span>{' '}
+                        wants to link accounts with you.
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          data-testid="accept-invite"
+                          disabled={linkBusy}
+                          onClick={() => void handleRespondToLink(view.linkId, 'accepted')}
+                          className="min-h-11 rounded-full bg-indigo-600 px-4 text-sm font-medium text-white disabled:opacity-60"
+                        >
+                          Accept
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="decline-invite"
+                          disabled={linkBusy}
+                          onClick={() => void handleRespondToLink(view.linkId, 'declined')}
+                          className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    </div>
+                  )
+                case 'declined':
+                  return (
+                    <div className="flex items-center justify-between gap-3">
+                      <p data-testid="link-declined" className="text-sm text-slate-600">
+                        {view.outgoing
+                          ? `Your invitation to ${
+                              view.otherHandle === '' ? 'that parent' : `@${view.otherHandle}`
+                            } was declined.`
+                          : 'That invitation was declined.'}
+                      </p>
+                      <button
+                        type="button"
+                        data-testid="clear-declined"
+                        disabled={linkBusy}
+                        onClick={() => void handleUnlink(view.linkId)}
+                        className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  )
+                case 'none':
+                  return (
+                    <div className="flex flex-col gap-2">
+                      <label className="flex flex-col gap-1 text-sm">
+                        <span className="text-slate-700">Their @handle</span>
+                        <input
+                          data-testid="link-handle-input"
+                          type="text"
+                          value={linkHandleInput}
+                          onChange={(e) => setLinkHandleInput(e.target.value)}
+                          placeholder="e.g. nicole"
+                          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                          disabled={linkBusy}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        data-testid="send-link-invite"
+                        disabled={linkBusy}
+                        onClick={() => void handleRequestLink()}
+                        className="min-h-11 self-start rounded-full bg-indigo-600 px-4 text-sm font-medium text-white disabled:opacity-60"
+                      >
+                        Send invitation
+                      </button>
+                    </div>
+                  )
+              }
+            })()}
+          </div>
+        )}
+
+        {linkError !== null ? (
+          <p data-testid="link-error" className="mt-2 text-sm text-red-600">
+            {linkError}
+          </p>
+        ) : null}
+      </div>
+
       {/* V15 ticket 06 (A17/A18): each kid row now labels its fields inline —
           "Name" / "Age" / "Likes:" prefixes make it unambiguous which input is
           which, matching the /u/:handle render. The photo control (tap-to-change,
@@ -1119,6 +1512,108 @@ export function ProfilePage() {
  * step, which on confirm calls the parent's handleKidPhotoUpload with the
  * decoded bitmap + frame.
  */
+/**
+ * V19 t05 — ONE parent card's editor: name, a few words, save, remove.
+ *
+ * `card === null` means this is the EMPTY slot — the "add a parent" form, which
+ * has a position but no row behind it yet and therefore no Remove. Serving both
+ * cases from one component keeps the empty state visually identical to the
+ * filled one, so a parent sees where the second card will go before filling it.
+ *
+ * LOCAL DRAFT STATE, seeded once from the card. The card's own row is not
+ * written on every keystroke: unlike the bio (which autosaves), a parent card
+ * has a SAVE because it can be created and deleted, and a half-typed new card
+ * autosaving would insert a row the parent never finished. The draft resets
+ * only when the card identity changes, so typing survives a re-render.
+ *
+ * The PHOTO is deliberately not an upload control here yet: `photo_url` is a
+ * private-bucket path (the 0038 pattern) and wiring the crop step for a second
+ * surface is its own slice. The card is built to carry the photo — the field
+ * renders when a path exists — so the upload slots in behind the same slot.
+ */
+function ParentCardEditor({
+  card,
+  position,
+  busy,
+  onSave,
+  onRemove,
+}: {
+  card: ParentCard | null
+  position?: number
+  busy: boolean
+  onSave: (position: number, name: string, about: string) => void | Promise<void>
+  onRemove: ((position: number) => void | Promise<void>) | null
+}) {
+  const slot = card?.position ?? position ?? 1
+  const [name, setName] = useState(card?.name ?? '')
+  const [about, setAbout] = useState(card?.about ?? '')
+  const seedRef = useRef<string>(card?.id ?? `new-${slot}`)
+  const seed = card?.id ?? `new-${slot}`
+  if (seedRef.current !== seed) {
+    // Re-seed only when this editor is now showing a DIFFERENT card (a save
+    // moved the empty form to a new key, or the list reloaded).
+    seedRef.current = seed
+    setName(card?.name ?? '')
+    setAbout(card?.about ?? '')
+  }
+
+  return (
+    <div
+      data-testid={`parent-card-${slot}`}
+      className="flex flex-col gap-2 rounded-xl border border-slate-200 p-3"
+    >
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="text-slate-700">Name</span>
+        <input
+          type="text"
+          data-testid={`parent-name-${slot}`}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          maxLength={40}
+          placeholder="e.g. Jon"
+          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+          disabled={busy}
+        />
+      </label>
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="text-slate-700">About me</span>
+        <textarea
+          data-testid={`parent-about-${slot}`}
+          value={about}
+          onChange={(e) => setAbout(e.target.value)}
+          maxLength={300}
+          rows={2}
+          placeholder="A line or two about you (optional)"
+          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+          disabled={busy}
+        />
+      </label>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          data-testid={`parent-save-${slot}`}
+          disabled={busy}
+          onClick={() => void onSave(slot, name, about)}
+          className="min-h-11 rounded-full bg-indigo-600 px-4 text-sm font-medium text-white disabled:opacity-60"
+        >
+          {card === null ? 'Add parent' : 'Save'}
+        </button>
+        {onRemove !== null && card !== null ? (
+          <button
+            type="button"
+            data-testid={`parent-remove-${slot}`}
+            disabled={busy}
+            onClick={() => void onRemove(slot)}
+            className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
+          >
+            Remove
+          </button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 function KidPhotoControl({
   kidId,
   photoUrl,
