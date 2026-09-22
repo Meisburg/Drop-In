@@ -105,3 +105,29 @@ Review-sheet refinement (t02 follow-up). Built a VISUAL contact sheet
   approve or reject.
 Gate after the change: npm run verify exit 0 - 1007/1007 unit - lint 0 errors /
   62 warnings.
+
+Slice t05 (lanes):
+  places.e2e.ts 14 passed exit 0 (all-illustration state).
+  playtest lane PASS — 8 routes, 0 uncaught JS errors, exit 0.
+    evidence/t05-playtest.log. Both lane processes released (9444 + 4173 down).
+  TWO SANDBOX/BINDING TRAPS hit and solved, recorded so the next run is not
+  slowed by them:
+   (1) `npx serve` is NOT cached and npm's cache is read-only here -> use
+       `npx vite preview` instead (already a dependency). Do not escalate.
+   (2) `vite preview` binds IPv6-ONLY by default (`[::1]:4173`), so the lane's
+       `--base http://127.0.0.1:4173` gets ERR_CONNECTION_REFUSED while
+       `localhost` answers 200. Fix: `--host 127.0.0.1`. This is why the first
+       attempt looked like a dead server when it was up.
+   (3) Chrome cannot write `~/.hermes/playtest-hl` or `~/.config/google-chrome`
+       under this sandbox (SingletonLock EROFS, crashpad settings.dat EROFS).
+       Fix: an in-workspace profile + XDG_CONFIG_HOME/XDG_CACHE_HOME redirected
+       into .scratch/v18/. The lane then runs normally.
+   (4) `uv run` fails with "Could not acquire lock / Read-only file system" on
+       ~/.cache/uv -> set UV_CACHE_DIR into the workspace. (task-state already
+       documented this class for the Jev lane; it applies to the playtest lane
+       too.)
+  mobile audit PASS 18/18 (6 viewports x 3 routes incl. /browse), exit 0.
+    evidence/t05-mobile-audit.log. V18 adds no control under 44px and no text
+    under 16px: the credit line is a purely visual 10px overlay inside the
+    photo, not an interactive element, so the tap-target floor does not apply
+    to it.

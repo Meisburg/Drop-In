@@ -41,6 +41,22 @@ playwright-report/
 # Throwaway commit-message files written by the agent loop
 .scratch/**/*.txt
 
+# Throwaway probe/scratch scripts and generated review pages. These are the
+# V18 lesson: the clean-range check (.scratch/check-push-range.sh) FAILED on
+# them, because a probe script written to answer one question during a slice is
+# not source and must never ride a push. The durable scripts that ARE source
+# live in scripts/ and are tracked deliberately.
+.scratch/**/*.cjs
+.scratch/**/*.mjs
+.scratch/**/*.html
+
+# The Chrome profile / uv cache the sandbox forces into the workspace (the
+# home-directory equivalents are read-only under workspace-write).
+.scratch/**/chrome-profile/
+.scratch/**/chrome-config/
+.scratch/**/chrome-cache/
+.scratch/**/uv-cache/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
