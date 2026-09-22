@@ -95,3 +95,4 @@ supabase/.temp/
 # pulled browser binaries into every lint scan. Never a source file.
 ~/
 
+.scratch/**/ocr-*.json
