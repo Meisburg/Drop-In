@@ -271,6 +271,26 @@ export async function settleOnRoute(page: Page, routePath: string): Promise<void
 }
 
 /**
+ * V20 t01: SETTLE ON /profile AND OPEN ITS EDITOR.
+ *
+ * /profile opens on the READ view (the same face a @handle link shows); the
+ * editing controls this app has always had sit behind the "Edit profile"
+ * button at the top. Specs that drive an editing control (the name input, the
+ * bio textarea, the kid rows, the avatar/family-photo pickers) need that one
+ * extra tap, and they all need it for the same reason — so it is one helper
+ * rather than the same two lines copied through the suite.
+ *
+ * The click is asserted by waiting for a control that only exists in edit mode
+ * (`done-editing-profile`), so a spec that calls this and then drives a field
+ * can never race the mode switch.
+ */
+export async function openProfileEditor(page: Page): Promise<void> {
+  await settleOnRoute(page, '/profile')
+  await page.getByTestId('edit-profile').click()
+  await page.getByTestId('done-editing-profile').waitFor({ state: 'visible' })
+}
+
+/**
  * Run ONE statement through the repo's documented live SQL path
  * (scripts/apply-migration.mjs → the Supabase dashboard SQL API, the token
  * read out of the CDP Chrome profile on :9222). Used by the one spec that

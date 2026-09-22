@@ -118,12 +118,8 @@ import { expect, test, type Page } from '@playwright/test'
 // only import is `import type`).
 import { localDayKey, PAST_DROP_INS_LABEL } from '../src/lib/feed'
 import {
-  editTitle,
-  localDatePlusDays,
-  readMarkerMeta,
-  readMarkerSession,
-  readSupabaseEnv,
-  settleOnRoute,
+  editTitle, localDatePlusDays, openProfileEditor, readMarkerMeta,
+  readMarkerSession, readSupabaseEnv, settleOnRoute, signUpViewer,
   stepStartTimeOnce,
 } from './fixtures'
 
@@ -443,16 +439,19 @@ test('an ended drop-in leaves the feed, a live one stays, and the archive still 
   await expect(page.getByRole('link', { name: PAST_DROP_INS_LABEL })).toBeVisible()
   await page.getByRole('link', { name: PAST_DROP_INS_LABEL }).click()
   // V16 t04 moved the door's DESTINATION. It used to land on /profile, whose
-  // "Hosted drop-ins" card held the Past list; that card is gone, so /profile
-  // became a dead end for this link and the door now opens the viewer's own
-  // public page, which is the surface that really lists their past drop-ins.
+  // "Hosted drop-ins" card held the Past list; that card is gone, so the door
+  // now opens the viewer's own public page, which is the surface that really
+  // lists their past drop-ins.
   await settleOnRoute(page, `/u/${encodeURIComponent(marker.displayName)}`)
   // The archive list genuinely IS here (the door is honest now)...
   await expect(section(page, 'Past').getByText(endedTitle, { exact: true })).toBeVisible()
-  // ...and /profile no longer claims to hold it. Asserted explicitly rather
-  // than deleted, so the day this is reconsidered the spec says why.
+  // ...and /profile's EDITOR no longer claims to hold it (V20 t01: /profile
+  // opens on the read view, which legitimately lists the host's own posts — the
+  // same render as /u/:handle — so the "no Hosted drop-ins list here" claim now
+  // belongs to the EDITOR, where V16 t04 removed the card). Asserted explicitly
+  // rather than deleted, so the day this is reconsidered the spec says why.
   await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await openProfileEditor(page)
   await expect(page.getByRole('heading', { name: 'Hosted drop-ins' })).toHaveCount(0)
   await expect(page.getByText(endedTitle, { exact: true })).toHaveCount(0)
 
@@ -507,25 +506,25 @@ test('an ended drop-in leaves the feed, a live one stays, and the archive still 
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()
-  await viewerPage.goto('/login')
-  await viewerPage.getByRole('button', { name: 'New here? Create an account' }).click()
-  await viewerPage.locator('input[autocomplete="nickname"]').fill(viewerName)
-  await viewerPage.locator('input[type="email"]').fill(viewerEmail)
-  await viewerPage.locator('input[type="password"]').fill(viewerPassword)
-  await viewerPage.getByRole('button', { name: 'Create account' }).click()
+  // V20 t06: signup is first + last name + address now — one shared helper
+  // (`signUpViewer`) so the form's field list lives in one place.
+  await signUpViewer(viewerPage, {
+    name: viewerName,
+    email: viewerEmail,
+    password: viewerPassword,
+  })
   await viewerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
   await viewerPage.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
   await viewerPage.getByRole('button', { name: /^Continue/ }).click()
   await viewerPage.getByRole('heading', { name: 'Near you' }).waitFor()
 
-  // Their archive: V16 t04 removed it from /profile, so the viewer's own
-  // archive is no longer on this page at all — asserted on the removed card
-  // rather than on its empty state. The point this block exists to make still
-  // holds and is asserted below: the marker's ended drop-in is NOT offered to a
-  // parent who merely attended it, because /u/<handle> lists the HOST's posts.
+  // Their own profile page, which V20 t01 now opens on the READ view. The
+  // assertion is unchanged and still the point: this page lists the VIEWER's
+  // own posts (their read view has a Hosted drop-ins section), and it must not
+  // contain the marker's — the ended drop-in is not offered to a parent who
+  // merely attended it, because only /u/<marker> lists the HOST's posts.
   await viewerPage.goto('/profile')
   await settleOnRoute(viewerPage, '/profile')
-  await expect(viewerPage.getByRole('heading', { name: 'Hosted drop-ins' })).toHaveCount(0)
   await expect(viewerPage.getByText(endedTitle, { exact: true })).toHaveCount(0)
   // …and the ended drop-in IS reachable by URL for that viewer (the detail page
   // is the surface that holds their relationship to it: V8/09's affordance is

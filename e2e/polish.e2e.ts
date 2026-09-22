@@ -48,8 +48,7 @@ import {
   readMarkerSession,
   readSupabaseEnv,
   runLiveSql,
-  settleOnRoute,
-} from './fixtures'
+  openProfileEditor } from './fixtures'
 
 /** The kid's edited values — the round-trip's whole point. */
 const KID_AGE_BEFORE = 6
@@ -172,9 +171,9 @@ test('(a) a kid row edited in place (name + age) autosaves and shows on /u/:hand
   const kidId = await createMarkerKid(before, KID_AGE_BEFORE)
 
   await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await openProfileEditor(page)
 
-  const row = page.getByTestId('kid-row').first()
+  const row = page.getByTestId('kid-row-editor').first()
   await expect(row.getByTestId('kid-name')).toHaveValue(before)
   await expect(row.getByTestId('kid-age')).toHaveValue(String(KID_AGE_BEFORE))
 
@@ -296,7 +295,7 @@ test('(b) a moderator unhides a hidden comment (the mod flag flipped by the live
 
 test('(c) typing on /profile saves itself — leaving the page loses nothing', async ({ page }) => {
   await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await openProfileEditor(page)
 
   // V12 t01: the unsaved-changes guard is gone. The typed text autosaves on
   // its own (the debounce settles, the always-on indicator says so), and the
@@ -319,7 +318,7 @@ test('(c) typing on /profile saves itself — leaving the page loses nothing', a
   // profile, so the typed text is still there (nothing was lost by the
   // mid-edit navigation).
   await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await openProfileEditor(page)
   await expect(
     page.getByPlaceholder('Who’s in your family, and what are you into? (optional)'),
   ).toHaveValue(typed)
@@ -381,7 +380,7 @@ test('(e) the 5-kid cap says why the add fields went dead', async ({ page }) => 
   }
 
   await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await openProfileEditor(page)
 
   const cap = page.getByTestId('kids-cap')
   await expect(cap).toBeVisible()

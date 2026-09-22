@@ -142,9 +142,16 @@ test('the host’s real posts: Upcoming + Past on /u/:handle and /profile, with 
   // spec's two posts only guarantee that the line renders at all).
   await expect(page.getByText(/^Hosted \d+ drop-ins?$/)).toBeVisible()
 
-  // --- /profile — V16 t04: the "Hosted drop-ins" card is REMOVED. ---
+  // --- /profile — V16 t04: the "Hosted drop-ins" EDITOR card is REMOVED. ---
   await page.goto('/profile')
   await settleOnRoute(page, '/profile')
+  // V20 t01: /profile now opens on the READ view, whose own "Hosted drop-ins"
+  // section is the real list (the same render /u/:handle uses) — so this
+  // spec's posts are legitimately listed here. The assertions below are about
+  // the EDITOR, which is where the V16 t04 removal landed, so the spec taps
+  // into edit mode before checking that the card, its copy and its controls
+  // are gone.
+  await page.getByTestId('edit-profile').click()
   // (4) The card, its heading and its copy are gone…
   await expect(page.getByRole('heading', { name: 'Hosted drop-ins' })).toHaveCount(0)
   await expect(
@@ -152,14 +159,14 @@ test('the host’s real posts: Upcoming + Past on /u/:handle and /profile, with 
       exact: true,
     }),
   ).toHaveCount(0)
-  // …and neither of this spec's posts is listed here any more (the whole list
+  // …and neither of this spec's posts is listed in the editor (the whole list
   // went with the card, not just its heading).
   await expect(page.getByText(upcomingTitle, { exact: true })).toHaveCount(0)
   await expect(page.getByText(pastTitle, { exact: true })).toHaveCount(0)
   await expect(page.getByTestId('duplicate-previous')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Duplicate' })).toHaveCount(0)
-  // (5) The page is otherwise intact — the identity card (photo + name) and
-  // the kids card still render, so "removed a card" did not blank the editor.
+  // (5) The editor is otherwise intact — the identity card (photo + name) and
+  // the kids card still render, so "removed a card" did not blank it.
   await expect(page.getByTestId('display-name-input')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'About the kids' })).toBeVisible()
 })

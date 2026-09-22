@@ -92,8 +92,7 @@ import {
   readMarkerSession,
   readSupabaseEnv,
   settleOnRoute,
-  stepStartTimeOnce,
-} from './fixtures'
+  stepStartTimeOnce, openProfileEditor } from './fixtures'
 
 /**
  * The free-text place every post in this spec uses.
@@ -441,11 +440,11 @@ test('a kid can be saved with NO first name — the optional name, end to end', 
   // (1) /profile: age only, the name field left BLANK. (V13 ticket 01 moved the
   // kid controls from /settings to /profile.)
   await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await openProfileEditor(page)
   await page.getByPlaceholder('Age').fill(String(age))
   await page.getByRole('button', { name: 'Add kid', exact: true }).click()
 
-  const row = page.getByTestId('kid-row').first()
+  const row = page.getByTestId('kid-row-editor').first()
   await expect(row.getByTestId('kid-name')).toHaveValue('')
   await expect(row.getByTestId('kid-age')).toHaveValue(String(age))
 
@@ -459,11 +458,14 @@ test('a kid can be saved with NO first name — the optional name, end to end', 
 
   // (3) It survives a reload: the page re-reads the row and shows an EMPTY name
   //     field — the normalisation of NULL, never the word "null".
+  //     V20 t01: a reload lands on the READ view, so the editor is reopened —
+  //     which is also the stronger check (the row survived a remount).
   await page.reload()
-  const reloaded = page.getByTestId('kid-row').first()
+  await openProfileEditor(page)
+  const reloaded = page.getByTestId('kid-row-editor').first()
   await expect(reloaded.getByTestId('kid-name')).toHaveValue('')
   await expect(reloaded.getByTestId('kid-age')).toHaveValue(String(age))
-  await expect(page.getByTestId('kid-row').first()).not.toContainText('null')
+  await expect(page.getByTestId('kid-row-editor').first()).not.toContainText('null')
 
   // (4) The Remove dialog (review cycle 1, F1): a nameless kid is named by the
   //     noun fallback — "Remove this kid?" / "This kid comes off your family

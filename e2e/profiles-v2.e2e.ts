@@ -13,7 +13,7 @@
  */
 import { expect, test } from '@playwright/test'
 import { kidLabel } from '../src/lib/feed'
-import { readMarkerMeta, readMarkerSession, readSupabaseEnv, settleOnRoute } from './fixtures'
+import { readMarkerMeta, readMarkerSession, readSupabaseEnv, settleOnRoute, openProfileEditor } from './fixtures'
 
 const KID_AGE = 7
 
@@ -28,7 +28,7 @@ test('marker saves a bio + kid row, sees them on /u/<handle>', async ({ page }) 
   // so the typed bio lands on its own after the debounce settles and the
   // always-on indicator says "Saved."
   await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await openProfileEditor(page)
 
   // Bio: the /profile "About the parents" field (app-capped at 500 chars, the
   // 0011 CHECK is the DB backstop). Located by its placeholder (the house
@@ -45,7 +45,7 @@ test('marker saves a bio + kid row, sees them on /u/<handle>', async ({ page }) 
   // same fact — the kid stands on /profile with that name and that age — read
   // off those fields. The /u/<handle> render below is still the static text
   // line.
-  const kidRow = page.getByTestId('kid-row').first()
+  const kidRow = page.getByTestId('kid-row-editor').first()
   await expect(kidRow.getByTestId('kid-name')).toHaveValue(kidName)
   await expect(kidRow.getByTestId('kid-age')).toHaveValue(String(KID_AGE))
   // The row's write rides the same autosave engine — wait for it to land so

@@ -114,10 +114,8 @@ import {
   kidPhotoVisibility,
 } from '../src/lib/photoStorage'
 import {
-  readMarkerMeta,
-  readMarkerSession,
-  readSupabaseEnv,
-  settleOnRoute,
+  openProfileEditor, readMarkerMeta, readMarkerSession, readSupabaseEnv,
+  settleOnRoute, signUpViewer,
 } from './fixtures'
 
 const AVATARS_BUCKET = 'avatars'
@@ -274,12 +272,13 @@ async function signUpStranger(browser: Browser, e: Env, name: string): Promise<S
     storageState: { cookies: [], origins: [] },
   })
   const page = await context.newPage()
-  await page.goto('/login')
-  await page.getByRole('button', { name: 'New here? Create an account' }).click()
-  await page.locator('input[autocomplete="nickname"]').fill(name)
-  await page.locator('input[type="email"]').fill(`${name}@gmail.com`)
-  await page.locator('input[type="password"]').fill('e2e-watch-1')
-  await page.getByRole('button', { name: 'Create account' }).click()
+  // V20 t06: signup is first + last name + address now — one shared helper
+  // (`signUpViewer`) so the form's field list lives in one place.
+  await signUpViewer(page, {
+    name: name,
+    email: `${name}@gmail.com`,
+    password: 'e2e-watch-1',
+  })
   await page.getByRole('heading', { name: 'Set your location' }).waitFor()
   await page.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
   await page.locator('select').first().selectOption({ label: `${marker.radiusMiles} miles` })
@@ -654,7 +653,7 @@ test('a kid row with only a legacy avatar_url renders no photo on /u/:handle; th
   // column gates the render — not that the data is missing. The control is a
   // <label> wrapping a hidden file input (not a <button>), so match by text.
   await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await openProfileEditor(page)
   // The kid name lives in an <input data-testid="kid-name"> (the editor), not as
   // plain text on the <li>, so hasText won't match it. This test creates exactly
   // one kid, so .first() is safe.
@@ -677,7 +676,7 @@ test('a kid row with only a legacy avatar_url renders no photo on /u/:handle; th
   // proves the owner-side render with a REAL upload. Asserted here is the honest
   // corollary for a kid whose only photo data is the retired public column: no
   // photo control, but the row is still editable (the name input is present).
-  const ownerRow = page.getByTestId('kid-row').first()
+  const ownerRow = page.getByTestId('kid-row-editor').first()
   await expect(ownerRow).toBeVisible()
   await expect(ownerRow.getByTestId('kid-name')).toBeVisible()
   await expect(
@@ -701,8 +700,12 @@ test('the family photo uploads through the crop dialog and renders on /profile a
   // V13 ticket 01: the family-photo control MOVED from /settings to /profile
   // (the now-editable "what other families see" view). The crop step + the
   // signed-URL render live here now.
+  // V20 t01: the crop control lives in the EDITOR (behind Edit profile); the
+  // read view renders the uploaded photo itself, which is what (a) below
+  // asserts — so the spec opens the editor, uploads, then taps Done to prove
+  // the photo shows on the read view the founder asked for.
   await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await openProfileEditor(page)
 
   await page.getByTestId('family-photo-input').setInputFiles({
     name: 'family.png',
@@ -719,6 +722,11 @@ test('the family photo uploads through the crop dialog and renders on /profile a
       'designed error line instead of a confirmation',
   ).toBeVisible()
   created.familyPhotoUploaded = true
+
+  // V20 t01: Done returns to the read view, which is where the founder wants an
+  // uploaded photo to show — so the render assertion below is about the surface
+  // other families see, not just the editor.
+  await page.getByTestId('done-editing-profile').click()
 
   // (a) It renders, from a SIGNED url in the PRIVATE bucket — never a public one.
   const img = page.getByTestId('family-photo')
@@ -782,8 +790,11 @@ test('“About the parents” saves and renders; a profile with none of the bloc
   // "About the parents" card). The autosave machine is the same V12 t01 engine
   // — no Save button anywhere on /profile either, so the typed bio lands on its
   // own once the debounce settles and the indicator says so.
+  // V20 t01: /profile opens on the READ view; the bio textarea lives behind
+  // the Edit profile toggle, so this spec taps in first.
   await page.goto('/profile')
   await settleOnRoute(page, '/profile')
+  await page.getByTestId('edit-profile').click()
   await expect(page.getByRole('heading', { name: 'About the parents', exact: true })).toBeVisible()
   await page.getByPlaceholder('Who’s in your family, and what are you into? (optional)').fill(about)
   await expect(page.getByTestId('profile-save-note')).toHaveText('Saved.')
@@ -801,14 +812,25 @@ test('“About the parents” saves and renders; a profile with none of the bloc
     created.familyPhotoUploaded = false
   }
 
+  // V20 t01: the READ view is now what /profile opens on, so it is the surface
+  // that must look finished with nothing on it — which is the stronger form of
+  // this ticket's AC, and the same render /u/:handle shows.
   await page.goto('/profile')
   await settleOnRoute(page, '/profile')
-  // `exact` matters here: the page's own h1 is "Your family" and the family-photo
-  // card's heading is "A photo of your family", so a non-exact name match finds
-  // two headings. The editable /profile shows the empty kids line and carries
-  // the photo control (V13 ticket 01 re-homed it here from /settings).
-  await expect(page.getByRole('heading', { name: 'Your family', exact: true })).toBeVisible()
+  // `exact` matters here: the read view's own h1 is "Profile" and the identity
+  // card's heading is the @handle, so a non-exact name match could find more
+  // than one heading.
+  await expect(page.getByRole('heading', { name: 'Profile', exact: true })).toBeVisible()
   await expect(page.getByTestId('family-photo')).toHaveCount(0)
+  await expect(page.getByText('No kids yet.')).toHaveCount(0)
+  // The kids card is absent entirely in the read view (no kids loaded) — the
+  // "looks finished with none of them" render, same as the /u/:handle check
+  // below.
+  await expect(page.getByRole('heading', { name: 'About the kids' })).toHaveCount(0)
+
+  // The EDITOR still shows its own empty kids line and carries the photo
+  // control (V13 ticket 01 re-homed it here from /settings).
+  await page.getByTestId('edit-profile').click()
   await expect(page.getByText('No kids yet.')).toBeVisible()
   await expect(page.getByText('Add a family photo', { exact: true })).toBeVisible()
 

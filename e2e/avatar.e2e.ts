@@ -32,8 +32,7 @@ import {
   readMarkerSession,
   readSupabaseEnv,
   settleOnRoute,
-  stepStartTimeOnce,
-} from './fixtures'
+  stepStartTimeOnce, openProfileEditor } from './fixtures'
 
 // --- The dependency-free PNG (solid RGB, 8-bit, non-interlaced). ---
 
@@ -92,7 +91,7 @@ test('marker uploads an avatar, sees the 40px round avatar on the feed card + /u
   const png = makePng(400, 300, 79, 70, 229)
 
   await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await openProfileEditor(page)
 
   // Upload (the /profile "Your photo" card — V13 ticket 01 moved the avatar
   // editor off /settings; onboarding is only reachable for users without a

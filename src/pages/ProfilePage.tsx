@@ -6,6 +6,7 @@ import { useSessionContext } from '../components/SessionProvider'
 import { useFamilyPhotoUrl } from '../components/useFamilyPhotoUrl'
 import { useKidPhotoUrls } from '../components/useKidPhotoUrls'
 import { useCropStep } from '../components/useCropStep'
+import { ProfileView } from '../components/ProfileView'
 import {
   addKid,
   BIO_MAX_LENGTH,
@@ -41,7 +42,7 @@ import {
   validateLinkRequest,
 } from '../lib/links'
 import { nextParentPosition, parentCardList, PARENT_CARDS_BLURB } from '../lib/parentCards'
-import type { AccountLink, Kid, ParentCard } from '../lib/types'
+import type { AccountLink, Kid, ParentCard, ProfileWithKids } from '../lib/types'
 import {
   planProfileSave,
   seedProfileFormValues,
@@ -63,24 +64,32 @@ import type { CropRect } from '../lib/photoCrop'
 const AUTOSAVE_DEBOUNCE_MS = 400
 
 /**
- * /profile — the family's EDITABLE "what other families see" view (V13 ticket
- * 01 re-homed the editor here; before this ticket it was read-only and every
- * control lived on /settings).
+ * /profile — the family's OWN profile: the founder-asked READ view first, with
+ * the editor one tap behind it.
  *
- * The page owns the profile's PUBLIC FACE: the display name (the public handle)
- * at the bottom, the family photo, "About the parents" (the bio), and "About
- * the kids" (each kid's first name + age + likes, with an optional per-kid
- * photo that renders ONLY here — the owner self-view; the visitor /u/:handle
- * surface stays photo-free, the V9 t11 / V12 t04 invariant). Editing happens
- * INLINE on this page — there is no separate edit route and no link to
- * /settings — and everything autosaves (the V12 t01 debounced machine): the
- * bio field, the kid rows, and the add/remove controls all settle through one
- * pure planner (planProfileSave, lib/profileSave.ts) that writes only what
- * changed. The family photo and each kid's photo go through the crop step
- * (useCropStep) and write their OBJECT PATHS (uploadFamilyPhoto /
- * uploadKidPhoto) — never URLs, which expire.
+ * V20 t01 RESTRUCTURED THIS PAGE, and the shape is the point:
  *
- * The read set, in the pinned block order (V16 t04 dropped the last one):
+ *  - READ MODE (the default) renders `ProfileView` — the SAME component
+ *    `/u/:handle` renders. Tapping the Profile tab now shows exactly what
+ *    tapping a `@handle` link shows, because it is the same code, not a second
+ *    render kept in step by hand. The only thing this surface adds is the
+ *    "Edit profile" button, passed to `ProfileView` as its `header` slot so it
+ *    sits at the very top of the page.
+ *
+ *  - EDIT MODE (behind that button) is everything this page used to render
+ *    unconditionally: the identity card, the family photo, "About the parents"
+ *    (the bio), "The parents" (parent cards), "Linked parent", and "About the
+ *    kids". Nothing about that machinery changed in the move — the same
+ *    debounced autosave machine (V12 t01), the same pure planner
+ *    (planProfileSave, lib/profileSave.ts) writing only what changed, the same
+ *    crop steps writing OBJECT PATHS rather than URLs.
+ *
+ *  - A MODE, NOT A ROUTE. There is no /profile/edit, so a refresh or a back
+ *    gesture lands on the read view instead of deep-linking a half-typed form,
+ *    and no URL-entered state can reach the editor without the loaded data it
+ *    needs.
+ *
+ * The editor's blocks, in the pinned order (V16 t04 dropped the last one):
  *  - "Your photo & name" (the identity card: the tap-the-circle photo control
  *    AND the inline display-name field in ONE card — the name editor moved out
  *    of its own identity block in V16 t04, with its save/validation wiring
@@ -109,6 +118,24 @@ const AUTOSAVE_DEBOUNCE_MS = 400
 export function ProfilePage() {
   const { session, loading, profile, refresh } = useSessionContext()
   const userId = session?.user?.id ?? null
+
+  /**
+   * V20 t01 (the founder's ask): THE PAGE HAS TWO MODES, AND READ IS THE
+   * DEFAULT.
+   *
+   * Tapping the Profile tab must show the SAME view a `@handle` link opens —
+   * that is `ProfileView`, the one component both surfaces render. The
+   * editing controls this page has always carried are still here, but they sit
+   * BEHIND the Edit profile button in the header slot, because a page that
+   * opens with nine inputs is not the view other families see.
+   *
+   * The mode is local state on purpose: it is a viewing preference, not a
+   * destination. There is no /profile/edit route, so a refresh or a back
+   * gesture lands on the read view rather than deep-linking a half-typed form,
+   * and the "edit" mode never needs a guard against being URL-entered without
+   * the data the editor needs.
+   */
+  const [editing, setEditing] = useState(false)
 
   // The whole-form values (one object, so "is anything dirty?" is one
   // comparison) + the last-saved baseline they are compared against. The
@@ -849,15 +876,73 @@ export function ProfilePage() {
   const kidsAtCap = (kids ?? []).length >= MAX_KIDS_PER_PROFILE
   const liveBioError = writeErrors.bio ?? savePlan?.blockedSections.find((item) => item.section === 'bio')?.error ?? null
 
+  /**
+   * V20 t01: THE READ MODE — the SAME view a `@handle` link opens.
+   *
+   * `profile` from the session is a bare `Profile` (no kid rows); `ProfileView`
+   * wants the `ProfileWithKids` shape the /u/:handle fetch returns. The kids
+   * this page already loads for its editor are exactly those rows, so the
+   * composition is local rather than a second fetch: one page, one kids read.
+   *
+   * While the kids load is in flight `kids === null`, and the view is told
+   * `[]` — the same thing a family with no kids renders, which for the OWNER
+   * means the kids card is simply absent for a beat and then appears. That is
+   * the honest transient (nothing claims "no kids"), and it costs the visitor
+   * path nothing: /u/:handle does its own single fetch and is never partial.
+   */
+  const ownedProfile: ProfileWithKids | null =
+    profile === null ? null : { ...profile, kids: kids ?? [] }
+
+  if (editing === false && ownedProfile !== null) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div>
+          <SectionHeader
+            icon={NAV_ICONS.profile}
+            title="Profile"
+            tagline="This is what other families see."
+          />
+        </div>
+        {/* The header slot: the ONE control this surface adds to the shared
+            view, at the very top of the page — the founder's placement. */}
+        <ProfileView
+          profile={ownedProfile}
+          header={
+            <button
+              type="button"
+              data-testid="edit-profile"
+              onClick={() => setEditing(true)}
+              className="min-h-11 self-start rounded-full bg-indigo-600 px-4 text-sm font-medium text-white"
+            >
+              Edit profile
+            </button>
+          }
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div>
         <SectionHeader
           icon={NAV_ICONS.profile}
-          title="Your family"
-          tagline="Your photo, name, and family"
+          title="Profile"
+          tagline="Let families get to know you!"
         />
       </div>
+
+      {/* V20 t01: the way BACK to the read view. Editing is a mode, and a mode
+          needs an exit that is not the browser's back button — this sits where
+          the Edit profile button was, so the control does not move. */}
+      <button
+        type="button"
+        data-testid="done-editing-profile"
+        onClick={() => setEditing(false)}
+        className="min-h-11 self-start rounded-full border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700"
+      >
+        Done
+      </button>
 
       {/* V16 t04: THE IDENTITY CARD AND THE "Your photo" CARD ARE ONE. The
           separate identity block that used to sit above this card is GONE — the
@@ -1273,10 +1358,18 @@ export function ProfilePage() {
                     validateKid(values.firstName, rowAge) ??
                     validateKidLikes(values.likes)
                   const kidPhoto = kidPhotoUrls[kid.id]
+                  // V20 t01: the EDITOR's row is `kid-row-editor`. The read
+                  // view (ProfileView) also renders one row per kid and keeps
+                  // the `kid-row` testid it has always had — the two live on
+                  // different routes now, but a spec that opens the editor must
+                  // still be able to name the row it means. Sharing one testid
+                  // across an editable row and a static text line made
+                  // `.first()` ambiguous the moment both surfaces existed (two
+                  // specs caught it).
                   return (
                     <li
                       key={kid.id}
-                      data-testid="kid-row"
+                      data-testid="kid-row-editor"
                       className="flex flex-wrap items-center gap-2 rounded-xl px-2 py-1.5"
                     >
                       {kidPhoto !== undefined && !kidPhotoErrors[kid.id] ? (

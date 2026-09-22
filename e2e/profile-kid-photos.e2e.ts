@@ -61,7 +61,7 @@
 import { expect, test } from '@playwright/test'
 import { deflateSync } from 'node:zlib'
 import { PHOTO_BUCKET, kidPhotoPath } from '../src/lib/photoStorage'
-import { readMarkerMeta, readMarkerSession, readSupabaseEnv, settleOnRoute } from './fixtures'
+import { readMarkerMeta, readMarkerSession, readSupabaseEnv, openProfileEditor } from './fixtures'
 
 /** The legacy public shape every stored kid `avatar_url` used to hold. */
 const LEGACY_PUBLIC_MARKER = '/storage/v1/object/public/avatars/'
@@ -240,12 +240,12 @@ test('the owner’s /profile shows a kid’s photo as a signed URL — and so do
   created.kidPhotoA = objectPath
 
   await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await openProfileEditor(page)
 
   // V13 ticket 01: /profile is now the EDITOR (name lives in <input kid-name>,
   // not plain text), so hasText won't match the row. This test creates exactly
   // one kid, so .first() identifies it.
-  const row = page.getByTestId('kid-row').first()
+  const row = page.getByTestId('kid-row-editor').first()
   await expect(row).toBeVisible()
   const img = row.getByTestId('kid-photo')
   await expect(img, 'the owner’s /profile kid row must show its photo').toBeVisible()
@@ -309,12 +309,12 @@ test('a kid with no avatar_url renders name + age on /profile even when its obje
   ).toBeNull()
 
   await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
+  await openProfileEditor(page)
 
   // V13 ticket 01: /profile is now the EDITOR (name lives in <input kid-name>,
   // not plain text), so hasText won't match the row. This test creates exactly
   // one kid, so .first() identifies it.
-  const row = page.getByTestId('kid-row').first()
+  const row = page.getByTestId('kid-row-editor').first()
   await expect(row).toBeVisible()
   await expect(
     row.getByTestId('kid-photo'),
