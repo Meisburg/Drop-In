@@ -206,3 +206,29 @@ Remaining non-blocking, recorded not stranded: the fetch script duplicates
   commons.ts's parsing helpers (a .mjs cannot import TS) — accepted in the ocr
   adjudication; and 96 doubtful candidates are reject-by-default unless the
   founder wants to hand-pick any.
+
+FOUNDER RULING (2026-09-21): "keep all for now" -> ALL 121 Tier 1 approved.
+  Applied: `keep 121 / pending 118`. The apply script now asserts its own
+  read-back, and it PASSED: "VERIFIED: 121 row(s) written, all with complete
+  attribution", read-back with_photo=121 / incomplete=0 / total=239, exit 0.
+  (The 22 Commons-had-nothing places and the 96 doubtful ones stay pending and
+  keep the illustration — that is the intended end state, not a gap.)
+  VISUAL VERIFICATION on the built bundle at 390px, authenticated:
+  120 rendered slots = 65 real + 55 illustration, 65 credits, 65/65 images
+  DECODED (naturalWidth > 0), 0 page errors. Screenshot
+  evidence/browse-with-photos-cards.png shows a real Ballard Commons photo with
+  its "Seattle City Council from Seattle / CC BY 2.0" credit directly above
+  Baker Park's illustration fallback — the two branches side by side on the
+  live page.
+  places.e2e.ts 14 passed exit 0 with photos applied: the spec reported
+  "120 slots - 65 real with credit, 55 illustration".
+  npm run verify exit 0 · 1007/1007 unit · lint 0 errors / 62 warnings.
+PROBE BUG, RECORDED (it cost three re-runs): my own verification script kept
+  seeing 0 slots and I nearly read that as a product failure. Cause: the marker
+  storageState is written for origin **http://localhost:4173** while I was
+  navigating to **http://127.0.0.1:4173** — a DIFFERENT ORIGIN, so localStorage
+  (and the Supabase session) is not shared and the app correctly redirected to
+  /login. The data was live and correct via REST the whole time. Two lessons:
+  (1) when a probe shows nothing, prove WHICH layer is empty before doubting the
+  product — a REST read settled it in one call; (2) match the origin the test
+  harness uses, or the harness's own auth silently does not apply.
