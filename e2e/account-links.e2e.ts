@@ -28,7 +28,21 @@ test('a third account cannot read or alter another family’s link (V19 t03)', a
 
   /** Sign up one throwaway parent and return its id + access token. */
   async function signUp(tag: string): Promise<{ id: string; token: string }> {
-    const email = `e2e-rls-${tag}-${Date.now()}@gmail.com`
+    /**
+     * A UNIQUE STAMP ON **BOTH** THE EMAIL AND THE HANDLE.
+     *
+     * The first version stamped only the email and used a fixed
+     * `e2e-rls-${tag}` display_name — which is UNIQUE in `profiles`
+     * (`profiles_display_name_key`, migration 0004). It passed in isolation and
+     * failed in the full suite, because an earlier run had left a row behind:
+     * the second insert died 23505 on the handle. That is a bug in this spec,
+     * not in the product, and the fix is to make the handle unique too. The
+     * finally-block cleanup below is the net, not a guarantee — a hard crash can
+     * still leave a row, and this spec must survive that.
+     */
+    const stamp = Date.now()
+    const email = `e2e-rls-${tag}-${stamp}@gmail.com`
+    const handle = `e2e-rls-${tag}-${stamp}`
     const res = await fetch(`${restUrl}/auth/v1/signup`, {
       method: 'POST',
       headers: { apikey: anonKey, 'Content-Type': 'application/json' },
@@ -57,7 +71,7 @@ test('a third account cannot read or alter another family’s link (V19 t03)', a
         'Content-Type': 'application/json',
         Prefer: 'return=representation',
       },
-      body: JSON.stringify({ id, display_name: `e2e-rls-${tag}`, home_zip: '98107', radius_miles: 5 }),
+      body: JSON.stringify({ id, display_name: handle, home_zip: '98107', radius_miles: 5 }),
     })
     if (!prof.ok) throw new Error(`profile insert HTTP ${prof.status} ${await prof.text()}`)
     return { id, token }

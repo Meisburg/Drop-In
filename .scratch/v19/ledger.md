@@ -255,3 +255,14 @@ ocr ADJUDICATION — 17 findings, 16 fixed, 1 kept as documentation.
   All fixes re-verified: npm run verify exit 0 · 1053/1053 unit (30 files) ·
   lint 0 errors / 64 warnings · places e2e (feed map) 2 passed · account-links
   e2e 2 passed · clean-range PASS.
+
+SPEC BUG, caught by the FULL suite after passing in isolation (recorded because
+  it is the failure mode "it passed when I ran it" hides):
+  e2e/account-links.e2e.ts stamped a unique value into the email but used a
+  FIXED display_name (`e2e-rls-a`), which is UNIQUE in profiles
+  (profiles_display_name_key). It passed alone and failed in the full run on a
+  leftover row from an earlier attempt: HTTP 409 / 23505 on the handle. That is
+  a bug in MY spec, not the product. Fixed by stamping the handle too, and
+  PROVEN by `--repeat-each=2` (3 passed), which is exactly the condition that
+  exposed it. Leftover e2e rows swept afterwards; the founder's 2 profiles and
+  10 playdates verified intact with the moderator flag held.
