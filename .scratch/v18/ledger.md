@@ -240,3 +240,26 @@ founder ruled "keep all for now"; all 121 Tier 1 photos are applied and live.
 FINAL STATE: places = 239 rows / 121 with photo / 0 incomplete.
 No human action outstanding. The 96 doubtful + 22 no-image places keep the
 illustration permanently unless the founder later wants to hand-pick any.
+
+SHIPPED (2026-09-21). Push `5dd63ee..d4fd2ed` -> origin/master, fast-forward,
+  17 commits (V17's 6 unpushed commits + V18's 11). All three auto-push
+  conditions verified BEFORE the push, mechanically:
+   1. gate green — npm run verify exit 0, 1007/1007 unit, lint 0/62;
+   2. clean range — .scratch/check-push-range.sh PASS (25 files);
+   3. fast-forward — 0 commits behind, and a secret scan over the whole range
+      found NO tokens/keys and no secret-bearing file tracked.
+  The repo's own pre-push hook independently re-ran the gate and passed
+  ("pre-push: PASS — gated push to origin/master is clean and green").
+  origin/master verified == local HEAD (d4fd2ed) by re-fetch.
+PRODUCTION VERIFIED, and the initial reading was WRONG in a way worth keeping:
+  polling for the LOCAL bundle hash never matched, and I nearly reported the
+  deploy as pending. The live site was ALREADY serving V18 — Vercel rebuilt the
+  bundle, so the hash legitimately differs from my dist/. The real check is
+  whether the live bundle contains the batch's CODE MARKERS, and it does, all
+  four of them, identically to local: "Wikimedia Commons", "photo_source_url",
+  "place-card-photo-credit", "place-photo-credit".
+  Live confirmation: /browse answers 200 and redirects a signed-out visitor to
+  /login with 0 uncaught JS errors (correct — the route is auth-gated), and the
+  live DB returns 121 places with a photo to the anon key the deployed app uses.
+  LESSON: a bundle HASH is a build artifact, not an identity. Compare behaviour
+  or code markers, never a filename, when asking "is my code deployed?".
