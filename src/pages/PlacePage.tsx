@@ -16,6 +16,7 @@ import { cardAgeRangeLabel, formatDistanceLabel, mapsHref } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
 import { placeFollowerLine } from '../lib/follows'
 import {
+  photoCreditLine,
   placeAgeFitLabel,
   placeDistanceMiles,
   placeIndoorLabel,
@@ -291,6 +292,12 @@ export function PlacePage() {
 
   const maps = mapsHref(place.name, place.address)
   const ageFit = placeAgeFitLabel(place)
+  // V18 t04: the photo credit and its source link. Both come from seams, so
+  // this component renders them and decides nothing (the build law). The
+  // source URL is only linked when it exists — a dead `href=""` would be worse
+  // than no link.
+  const credit = photoCreditLine(place)
+  const sourceUrl = (place.photo_source_url ?? '').trim() === '' ? null : place.photo_source_url
   const distance =
     zipCoords === null
       ? null
@@ -327,12 +334,47 @@ export function PlacePage() {
         </p>
       </div>
 
+      {/* V18 t04: the place photo, WITH ITS ATTRIBUTION.
+          The photos are sourced from Wikimedia Commons under CC BY / CC BY-SA /
+          CC0, and the first two require attribution as a condition of use — so
+          this block is licence compliance, not decoration.
+
+          UNLIKE the browse card (where the slot sits inside the card's own
+          <Link> and the credit must therefore be plain text), this page has no
+          wrapping anchor, so the credit can be a REAL LINK to the Commons file
+          page. That is the stronger form of attribution: it makes the source
+          reachable rather than merely naming it.
+
+          A photo with no stored attribution renders NO credit line rather than
+          an empty one — `photoCreditLine` owns that decision. (`ocr` found the
+          original comment here claiming this attribution lived on the detail
+          page when it did not exist anywhere; the claim was false, and the fix
+          is to make it true rather than to delete it.) */}
       {place.photo_url !== null ? (
-        <img
-          src={place.photo_url}
-          alt=""
-          className="w-full rounded-xl border border-slate-200 object-cover"
-        />
+        <figure className="overflow-hidden rounded-xl border border-slate-200">
+          <img src={place.photo_url} alt="" className="w-full object-cover" />
+          {credit !== null ? (
+            <figcaption
+              data-testid="place-photo-credit"
+              className="bg-slate-50 px-3 py-2 text-xs text-slate-600"
+            >
+              Photo: {credit}
+              {sourceUrl !== null ? (
+                <>
+                  {' · '}
+                  <a
+                    href={sourceUrl}
+                    target="_blank"
+                    rel="noopener"
+                    className="font-medium text-indigo-600 hover:underline"
+                  >
+                    Wikimedia Commons
+                  </a>
+                </>
+              ) : null}
+            </figcaption>
+          ) : null}
+        </figure>
       ) : null}
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">

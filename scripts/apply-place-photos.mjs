@@ -107,14 +107,42 @@ async function main() {
 
   // Refuse to write any row missing its licence or source: that is not a
   // partial success, it is a licence violation.
+  //
+  // `ocr` (finding 4, medium) pointed out this check was INCOMPLETE: it did not
+  // require `placeId`, and a hand-edited sheet row with `disposition: 'keep'`
+  // and no `placeId` compiles to `where id = null`, which matches ZERO rows — a
+  // silent no-op that only a human reading the log would catch. `placeId` is
+  // the one field without which the write is meaningless, so it is checked
+  // here with the rest.
   const incomplete = approved.filter(
-    (c) => !c.image || !c.image.license || !c.image.filePageUrl || !c.image.thumbUrl,
+    (c) =>
+      typeof c.placeId !== 'string' ||
+      c.placeId.trim() === '' ||
+      !c.image ||
+      !c.image.license ||
+      !c.image.filePageUrl ||
+      !c.image.thumbUrl,
   )
   if (incomplete.length > 0) {
-    say(`FATAL: ${incomplete.length} approved row(s) lack licence/source/image. Refusing to write.`)
-    for (const c of incomplete) say(`  - ${c.placeName}`)
+    say(`FATAL: ${incomplete.length} approved row(s) lack placeId/licence/source/image. Refusing to write.`)
+    for (const c of incomplete) say(`  - ${c.placeName ?? '(unnamed)'} (placeId: ${c.placeId ?? 'MISSING'})`)
     writeFileSync(EVIDENCE, log.join('\n') + '\n')
     process.exit(1)
+  }
+
+  // THE THREE BUCKETS MUST PARTITION THE SHEET. `ocr` (finding 11, low) noted a
+  // row whose `disposition` is a typo or different case ("kept", "KEEP",
+  // "keep ") fell into none of the three and was silently skipped. Reporting
+  // the unaccounted-for count makes that visible instead of invisible.
+  const unaccounted = all.filter(
+    (c) => !['keep', 'reject', 'pending'].includes(c.disposition ?? 'pending'),
+  )
+  if (unaccounted.length > 0) {
+    say(`WARNING: ${unaccounted.length} row(s) have an unrecognised disposition and will be SKIPPED:`)
+    for (const c of unaccounted.slice(0, 10)) {
+      say(`  - ${c.placeName} -> ${JSON.stringify(c.disposition)}`)
+    }
+    if (unaccounted.length > 10) say(`  … and ${unaccounted.length - 10} more`)
   }
 
   // One UPDATE per row, all five columns together, scoped by id.
@@ -148,6 +176,14 @@ async function main() {
 
   // READ-BACK. The write result is not evidence (the 2025-09-04 lesson: the
   // dashboard reports 0 rows for all DML); the counts are.
+  //
+  // `ocr` finding 3 (medium) is the sharpest criticism of this file and it was
+  // RIGHT: the read-back was printed but never PARSED or ASSERTED, so a write
+  // that reported 2xx while touching zero rows — the exact silent failure the
+  // 2025-09-04 lesson is about — would have left this script exiting 0 with a
+  // reassuring log. Printing a number and checking it are different acts, and
+  // only the second one is a gate. The expected count is now compared, and a
+  // mismatch exits non-zero.
   say('')
   say('READ-BACK (the counts are the evidence, not the write result):')
   const counts = await query(
@@ -160,8 +196,36 @@ async function main() {
   say(`EXPECTED with_photo = ${approved.length}`)
   say(`read-back: ${counts.text}`)
 
+  let actual = null
+  try {
+    const parsed = JSON.parse(counts.text.replace(/^readback: HTTP \d+ /, ''))
+    actual = Array.isArray(parsed) ? parsed[0] : parsed
+  } catch {
+    actual = null
+  }
+
   writeFileSync(EVIDENCE, log.join('\n') + '\n')
-  say('')
+
+  if (actual === null || typeof actual.with_photo !== 'number') {
+    say('FATAL: could not parse the read-back, so the write is UNVERIFIED.')
+    say(`wrote ${EVIDENCE}`)
+    process.exit(1)
+  }
+  if (actual.with_photo !== approved.length) {
+    say(
+      `FATAL: read-back shows ${actual.with_photo} photo(s) but ${approved.length} were approved — ` +
+        'the write did NOT land as expected. Investigate before trusting this apply.',
+    )
+    say(`wrote ${EVIDENCE}`)
+    process.exit(1)
+  }
+  if (actual.incomplete > 0) {
+    say(`FATAL: ${actual.incomplete} row(s) have a photo without full attribution — a licence violation.`)
+    say(`wrote ${EVIDENCE}`)
+    process.exit(1)
+  }
+
+  say(`VERIFIED: ${actual.with_photo} row(s) written, all with complete attribution.`)
   say(`wrote ${EVIDENCE}`)
 }
 

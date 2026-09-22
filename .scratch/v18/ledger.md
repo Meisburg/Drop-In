@@ -131,3 +131,56 @@ Slice t05 (lanes):
     under 16px: the credit line is a purely visual 10px overlay inside the
     photo, not an interactive element, so the tap-target floor does not apply
     to it.
+
+Slice t05: `ocr` third lane RUN (after fixing a sandbox blocker: it writes its
+  session jsonl under ~/.opencodereview/sessions/, which workspace-write denies;
+  the first run completed the ENTIRE review and then crashed at finalize with
+  "read-only file system", losing its findings. Re-run with the sandbox widened
+  for that path -> exit 0, 12 findings). Reviewed 17 of 23 changed files (it
+  skips .md/.test.ts by rule).
+  FINDINGS ADJUDICATED — 11 fixed, 1 recorded as intentional:
+  * HIGH (fixed) — THE REAL ONE. The fetch merge inherited a prior `disposition`
+    unconditionally, so a RE-FETCH that returned a DIFFERENT top hit for an
+    already-approved place carried the stale `keep` onto a new, UNREVIEWED
+    image — and the apply step writes every `keep` row. That silently defeats
+    the human gate the whole batch is built on. Fixed: the disposition is
+    inherited only when the thumbnail URL is unchanged; a changed image returns
+    to `pending`. This is the strongest evidence yet for keeping ocr as a
+    separate lane — the agent reviewer and I both missed it.
+  * MEDIUM (fixed) — the read-back was PRINTED but never PARSED or ASSERTED, so
+    a 2xx write that touched zero rows would have exited 0 with a reassuring
+    log. That is precisely the 2025-09-04 lesson the file's own header cites.
+    Now asserted, and PROVEN: injected a `keep` row with a nonexistent placeId
+    -> "FATAL: read-back shows 0 photo(s) but 1 were approved", real exit code
+    1. A passing assertion on a real write then printed "VERIFIED: 1 row(s)
+    written, all with complete attribution".
+  * MEDIUM (fixed) — the fatal completeness check omitted `placeId`, so a
+    hand-edited `keep` row without one compiled to `where id = null` (zero rows,
+    silent no-op). Added.
+  * LOW (fixed) — inline `#` comments were captured into .env values (token
+    "abc # note" -> opaque 401); a bare `limit=1000` was a SILENT coverage cap
+    (now throws loudly rather than omitting the tail); the entry-point guard
+    built `file://${argv[1]}` by hand (now `pathToFileURL`, since BOTH failure
+    directions are bad — a false negative crawls 239 times on import); the
+    disposition buckets did not partition the sheet (a typo'd disposition was
+    silently skipped — now counted and reported); generated JSON lacked a
+    trailing newline.
+  * LOW (FIXED, and it was a REAL product gap, not just a stale comment) — the
+    comment claimed the photo's attribution was available on the place detail
+    page. It was not: PlacePage rendered only `<img src={place.photo_url}>` and
+    NOTHING consumed photo_attribution or photo_source_url outside BrowsePage.
+    So CC BY attribution was reachable NOWHERE — a licence-compliance defect,
+    not a documentation nit. Fixed by making the claim true: PlacePage now
+    renders a <figure>/<figcaption> credit with a REAL LINK to the Commons file
+    page (no nesting problem there, unlike the browse card). VERIFIED in the DOM
+    at 390px: "Photo: Joe Mabel / CC BY 3.0 · Wikimedia Commons" with href to
+    the exact file. Screenshot evidence/place-detail-credit.png.
+  * LOW (recorded, NOT fixed) — the fetch script duplicates commons.ts's
+    parsing helpers because a .mjs cannot import TypeScript. Accepted: the
+    tested lib is the source of truth and the script is one-shot tooling; the
+    duplication is documented in both headers. A shared-JSON build step would be
+    a larger change than the risk warrants, and the sheet's output is the
+    evidence for the script's side.
+  Gate after the fixes: npm run verify exit 0 - 1007/1007 unit (28 files) -
+  lint 0 errors / 62 warnings. Probe photo reverted; DB confirmed 0 photos /
+  239 rows; sheet back to all-pending.

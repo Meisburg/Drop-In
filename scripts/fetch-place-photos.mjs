@@ -39,6 +39,7 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const ROOT = process.cwd()
 const OUT_JSON = join(ROOT, '.scratch/v18/candidates.json')
@@ -196,13 +197,37 @@ async function fetchPlace(place) {
   return failed(place, 'exhausted attempts')
 }
 
-/** Read the seeded places straight from the live DB via PostgREST (anon read). */
-async function loadPlaces() {
+/**
+ * Read `.env` into a map.
+ *
+ * Strips an inline ` # comment`, which `ocr` (finding 5, low) flagged: the
+ * previous form captured the ENTIRE rest of the line into the value, so
+ * `SUPABASE_ACCESS_TOKEN=abc # note` yielded a token of `abc # note` and sent a
+ * malformed bearer to the management API — surfacing as an opaque 401 rather
+ * than as the parsing bug it is. A `#` inside a quoted value is preserved.
+ */
+function readEnvFile() {
   const env = {}
   for (const line of readFileSync(join(ROOT, '.env'), 'utf8').split('\n')) {
+    if (line.trim().startsWith('#')) continue
     const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(line)
-    if (m && !line.trim().startsWith('#')) env[m[1]] = m[2].replace(/^["']|["']$/g, '')
+    if (!m) continue
+    let value = m[2].trim()
+    const quoted = /^(["'])(.*)\1$/.exec(value)
+    if (quoted) {
+      value = quoted[2]
+    } else {
+      const hash = value.indexOf(' #')
+      if (hash >= 0) value = value.slice(0, hash)
+    }
+    env[m[1]] = value.trim()
   }
+  return env
+}
+
+/** Read the seeded places straight from the live DB via PostgREST (anon read). */
+async function loadPlaces() {
+  const env = readEnvFile()
   const base = env.VITE_SUPABASE_URL
   const key = env.VITE_SUPABASE_ANON_KEY
   if (!base || !key) throw new Error('.env is missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY')
@@ -210,7 +235,22 @@ async function loadPlaces() {
     headers: { apikey: key, Authorization: `Bearer ${key}` },
   })
   if (!res.ok) throw new Error(`places read failed: HTTP ${res.status} ${await res.text()}`)
-  return res.json()
+  const places = await res.json()
+  /**
+   * `ocr` (finding 6, low) is right that a bare `limit=1000` is a SILENT
+   * coverage cap: past 1000 rows the tail would vanish from the sheet, and
+   * because the apply step only ever writes sheet rows, those places would sit
+   * on the illustration fallback forever with nothing saying so. PostgREST
+   * caps a single response, so the fix is not a bigger limit — it is to NOTICE.
+   * One extra probe row makes an overflow loud.
+   */
+  if (Array.isArray(places) && places.length >= 1000) {
+    throw new Error(
+      `places returned ${places.length} rows (the request limit). The sheet would SILENTLY omit the rest — ` +
+        'raise the limit or paginate before trusting this run.',
+    )
+  }
+  return places
 }
 
 /**
@@ -454,7 +494,30 @@ async function main() {
   const byId = new Map(previous.map((c) => [c.placeId, c]))
   for (const c of fetched) {
     const prior = byId.get(c.placeId)
-    byId.set(c.placeId, { ...c, disposition: prior?.disposition ?? 'pending' })
+    /**
+     * INHERIT A DISPOSITION ONLY WHEN THE IMAGE IS UNCHANGED.
+     *
+     * Found by the `ocr` review lane, severity high, and it is a real hole in
+     * the human gate this whole batch is built around. A re-fetch is not
+     * guaranteed to return the same top hit: Commons' index moves, a file is
+     * renamed, or `--retry-failed` lands weeks later. The old code carried
+     * `prior.disposition` forward unconditionally, so a place the founder
+     * approved could come back with a DIFFERENT, UNREVIEWED image still marked
+     * `keep` — and `apply-place-photos.mjs` writes every `keep` row. The
+     * approval was for a specific file page; it does not transfer to whatever
+     * the search returns next.
+     *
+     * So the identity of the approved image is what carries the approval. If
+     * the thumbnail URL changed, the row goes back to `pending` and returns to
+     * the review queue. A row that had no image and now has one is likewise
+     * `pending`: nobody has ever looked at that picture.
+     */
+    const sameImage =
+      prior !== undefined &&
+      prior.miss === null &&
+      c.miss === null &&
+      prior.image.thumbUrl === c.image.thumbUrl
+    byId.set(c.placeId, { ...c, disposition: sameImage ? prior.disposition : 'pending' })
   }
   const candidates = [...byId.values()].sort((a, b) => a.placeName.localeCompare(b.placeName))
 
@@ -483,8 +546,16 @@ async function main() {
  * exactly what happened during V18 t02 when a driver script imported this file
  * to regenerate the sheet. The guard is not style; it prevents a network
  * side effect on import.
+ *
+ * `pathToFileURL` rather than string-building `file://${argv[1]}`: `ocr`
+ * (finding 7, low) noted the hand-built form mis-detects a relative or
+ * Windows-style path (`file://C:\…` is not a valid URL), and BOTH failure
+ * directions are bad — a false negative starts the 239-request crawl on
+ * import, and a false positive makes a genuine direct run silently do nothing.
+ * The stdlib helper normalizes separators, drive letters and percent-encoding.
  */
-const isDirectRun = process.argv[1] && import.meta.url === `file://${process.argv[1]}`
+const isDirectRun =
+  typeof process.argv[1] === 'string' && import.meta.url === pathToFileURL(process.argv[1]).href
 
 if (isDirectRun) {
   main().catch((err) => {
