@@ -5,8 +5,11 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- V22 slice 14: appearance is a USER CHOICE (light default; dark opt-in
+         via the /settings switch), so the OS media-query pair is gone. ONE
+         static theme-color ships the light value (#e8552f); ThemeToggle.tsx
+         updates this tag at runtime to #181412 when the user picks dark. -->
     <meta name="theme-color" content="#e8552f" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#181412" />
     <meta
       name="description"
       content="Drop In — drop-in playdates for Seattle families. Post a time and place; come by if you like."
@@ -60,6 +63,27 @@
       media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2)"
     />
     <title>Drop In</title>
+    <!-- V22 slice 14: NO FLASH OF WRONG THEME. The app no longer follows the OS;
+         a stored dark choice must paint dark on every cold load, so this runs
+         BEFORE the module script and sets <html data-theme="dark"> synchronously
+         (index.css keys its dark tokens off that attribute). try/catch is
+         required: localStorage throws in some privacy modes, and a throw here
+         would blank the whole page. Absent/garbage key = light default. -->
+    <script>
+      try {
+        if (localStorage.getItem('dropin-theme') === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark')
+          // Also point the browser-chrome meta at the dark neutral, in the SAME
+          // pre-paint pass. The app ships one static (light) meta because it no
+          // longer consults prefers-color-scheme, so without this a returning
+          // dark user saw terracotta chrome on every route until they happened
+          // to open /settings (where ThemeToggle reconciles it). Found by
+          // scripts/theme-contract-check.mjs case 6.
+          var m = document.querySelector('meta[name="theme-color"]')
+          if (m) m.setAttribute('content', '#181412')
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root">
@@ -69,7 +93,13 @@
            same wordmark, same sizes, same 16px gap (see SplashScreen.tsx — the
            mark is 112px, the wordmark 32px/40px, the field is the brand hue
            indigo-500 in index.css, #e8552f). The face falls back to the system
-           stack for the few frames before the self-hosted woff2 lands. -->
+           stack for the few frames before the self-hosted woff2 lands.
+
+           V22 slice 14: the inline background is the LIGHT fallback; when the
+           pre-paint script above set data-theme="dark", index.css re-points
+           this very element's background to the dark page neutral (#181412) so
+           a stored-dark user does not flash a terracotta frame on every cold
+           load. -->
       <div
         id="boot-splash"
         style="position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: #e8552f"

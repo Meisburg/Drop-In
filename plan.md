@@ -68,6 +68,52 @@ controls, different arrangement.
 
 ## Slices
 
+### Slice 14: Appearance becomes a user choice, not a system follow
+- **Objective:** The app is LIGHT by default for everyone, with an opt-in Dark
+  switch on `/settings`. It no longer auto-follows the OS.
+- **Why this overrides Apple:** `dark-mode.md › Best practices` says "Avoid
+  offering an app-specific appearance setting." The human made the opposite call
+  on 2026-09-23 after seeing the app auto-darken on their own machine (their
+  desktop is `prefer-dark`, so the app followed it): *"i think it should always
+  be light but the user has an option to turn it on in the settings menu."*
+  Recorded as a deliberate deviation, not a guideline oversight. The cost is
+  real and named: a user who sets their OS to dark gets a light app until they
+  find the switch.
+- **Files in scope:** `index.html`, `src/index.css`, `src/lib/theme.ts` (new),
+  `src/lib/theme.test.ts` (new), `src/pages/SettingsPage.tsx`,
+  `src/components/ThemeToggle.tsx` (new), `vite.config.ts`,
+  `scripts/dark-mode-check.mjs`.
+- **Approach:**
+  1. `src/lib/theme.ts` — PURE, tested (build law): `THEME_KEY`, `readTheme()`,
+     `applyTheme(theme)`, `nextTheme(current)`. Reads/writes localStorage,
+     sets `document.documentElement.dataset.theme`, and updates the
+     `<meta name="theme-color">` so the browser chrome matches.
+  2. **An explicit `data-theme` attribute replaces the media query as the
+     trigger.** `src/index.css` changes `@media (prefers-color-scheme: dark)` to
+     `:root[data-theme='dark']`. This is the whole point: the OS stops deciding.
+  3. **No flash of wrong theme.** `index.html` runs a tiny inline script BEFORE
+     the app bundle that reads localStorage and sets `data-theme` on `<html>`.
+     Without it a user who chose Dark sees a light frame on every cold load.
+     The boot splash's background must also stop being hard-coded terracotta if
+     that would flash against the chosen theme.
+  4. `ThemeToggle.tsx` — a real switch on `/settings`, in the existing section
+     style, with an accessible name and a 44px target.
+  5. `dark-mode-check.mjs` updated: it must drive the TOGGLE now, not
+     `colorScheme`, and assert light is the default with no stored preference.
+- **Acceptance criteria:**
+  - Fresh visitor with NO stored preference renders LIGHT even when the OS is
+    dark (this is the regression the slice exists to fix)
+  - Flipping the switch in /settings switches the app and PERSISTS across reload
+  - A cold load with `theme=dark` stored paints dark with no light flash
+  - The toggle has an accessible name and a >=44px target
+  - `src/lib/theme.test.ts` covers read/apply/next, including the absent-key case
+  - `npm run verify` passes (1147+ tests, 0 lint errors)
+- **Verification command:** `npm run verify`, then
+  `node scripts/dark-mode-check.mjs` (updated to drive the toggle).
+- **Budget:** one local builder context.
+- **Depends on:** Slice 8 (rewrites its trigger), Slice 13 (do last in the batch).
+
+
 ### Slice 1: Announce every error and status change
 - **Objective:** All error/status text nodes are announced to assistive tech.
 - **Files in scope:** `src/lib/a11y.ts` (new), `src/lib/a11y.test.ts` (new),

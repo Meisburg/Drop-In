@@ -8,6 +8,8 @@ import { listMyFollowing, unfollowById, type MyFollowing } from '../lib/db'
 // V8 ticket 09: the Following list's family rows reuse the card's 40px avatar
 // (the HostAvatar shape) rather than growing a second one.
 import { HostAvatar } from '../components/DropInCard'
+// V22 slice 14: the appearance switch — light default, dark opt-in.
+import { ThemeToggle } from '../components/ThemeToggle'
 
 /**
  * /settings — the signed-in family's app-wide settings page (V15 T07 slimmed it
@@ -104,13 +106,19 @@ export function SettingsPage() {
     )
   }
 
-  const tagline = 'Notifications and following'
+  const tagline = 'Appearance, notifications and following'
 
   return (
     <div className="flex flex-col gap-4">
       <div>
         <SectionHeader icon={NAV_ICONS.gear} title="Settings" tagline={tagline} />
       </div>
+
+      {/* V22 slice 14: appearance is a user choice — light default, dark opt-in.
+          The switch owns its own persistence (localStorage) and applies the
+          theme attribute; it renders before the data-loading sections so a
+          settings visit never waits on the network to change the look. */}
+      <ThemeToggle />
 
       {/* V8 ticket 08: the notification surface — opt-in/off, per-kind mutes,
           the install affordance and the recent-alerts fallback. It loads its

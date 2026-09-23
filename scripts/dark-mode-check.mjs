@@ -1,16 +1,18 @@
 /**
- * Dark-mode visual check (V22 slice 8) — verifies the RENDERED dark appearance,
- * not the token declarations.
+ * Appearance check (V22 slice 14) — verifies the RENDERED appearance under the
+ * NEW contract: light is the default for everyone, dark is a stored user
+ * choice. The OS colour scheme no longer decides anything.
  *
- * WHY: slice 8's evidence was a hand-computed contrast table plus a passing
- * mobile audit. A contrast table proves the NUMBERS are right; it does not prove
- * the numbers are APPLIED. The failure modes it cannot see:
- *   - a surface that never got re-pointed, so a white card sits on a dark page;
- *   - the `.bg-white` override losing to Tailwind's own utility;
- *   - text inheriting a light-mode colour because its token was missed.
+ * WHY: slice 8's script emulated `colorScheme: 'dark'` and asserted the page
+ * went dark — that mechanism was the bug. A prefer-dark desktop auto-darkened
+ * the app, which the human did not want. The regression this script now pins:
+ *   - default (no stored preference) paints LIGHT even when the browser
+ *     emulates colorScheme 'dark' — THE key regression test;
+ *   - with localStorage['dropin-theme'] = 'dark' set before load, the page
+ *     paints DARK (the pre-paint script in index.html applies it).
  *
- * This samples actual painted background/text colours in a dark-scheme browser
- * context and asserts the page is dark, surfaces are dark, and body text is light.
+ * It keeps slice 8's painted-pixel approach: read getComputedStyle backgrounds
+ * of the actual shell and assert on the measured rgb values.
  *
  * Usage: node scripts/dark-mode-check.mjs [baseURL]
  *   Needs a running server on :4173 (`npm run build && npm run preview`).
@@ -19,6 +21,10 @@ import { chromium } from '@playwright/test'
 
 const BASE = process.argv[2] ?? 'http://localhost:4173'
 const failures = []
+
+// The pinned painted values (src/index.css token declarations):
+const LIGHT_PAGE = 'rgb(251, 247, 244)' // --color-slate-50 light
+const DARK_PAGE = 'rgb(24, 20, 18)' // --color-slate-50 dark (#181412)
 
 function check(label, ok, detail) {
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}${detail ? ` — ${detail}` : ''}`)
@@ -44,24 +50,17 @@ const parseRgb = (s) => {
   return m[1].split(',').slice(0, 3).map((n) => parseFloat(n))
 }
 
-const browser = await chromium.launch()
-
-for (const scheme of ['dark', 'light']) {
-  const context = await browser.newContext({
-    viewport: { width: 390, height: 844 },
-    colorScheme: scheme,
-  })
-  const page = await context.newPage()
-  await page.goto(BASE + '/login', { waitUntil: 'networkidle' })
-  // The boot splash is a fixed inset-0 z-50 overlay that unmounts a beat after
-  // mount (SplashScreen.tsx). Measuring before it leaves samples the terracotta
-  // splash, not the page — which is what the first version of this script did.
+/** Sample the painted page: shell background, card surfaces, text colours. */
+async function samplePage(page) {
+  // The boot splash is a fixed inset-0 overlay that unmounts a beat after
+  // mount (SplashScreen.tsx). Measuring before it leaves samples the splash,
+  // not the page — which is what the first version of this script did.
   await page
     .waitForFunction(() => document.getElementById('boot-splash') === null, { timeout: 5000 })
     .catch(() => {})
   await page.waitForTimeout(900)
 
-  const report = await page.evaluate(() => {
+  return page.evaluate(() => {
     // body is transparent here — the shell paints the page. Walk the tree and
     // collect every OPAQUE background, skipping fixed overlays (splash, lightbox,
     // dialogs) since those are transient layers, not the page surface.
@@ -90,60 +89,105 @@ for (const scheme of ['dark', 'light']) {
       .slice(0, 40)
       .map((el) => getComputedStyle(el).color)
     return {
+      dataTheme: document.documentElement.dataset.theme ?? null,
       pageBg: pageShell ? pageShell.c : null,
       cards,
       texts: [...new Set(texts)],
     }
   })
+}
 
-  console.log(`\n--- ${scheme.toUpperCase()} (colorScheme: '${scheme}') ---`)
+const browser = await chromium.launch()
+
+// --- Case 1 (THE KEY REGRESSION TEST): no stored preference, OS emulated DARK.
+// The app must paint LIGHT — the OS no longer decides.
+{
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    colorScheme: 'dark',
+  })
+  const page = await context.newPage()
+  await page.goto(BASE + '/login', { waitUntil: 'networkidle' })
+  const report = await samplePage(page)
+
+  console.log(`\n--- NO STORED PREFERENCE, OS EMULATED DARK ---`)
+  console.log(`  data-theme attr: ${report.dataTheme}`)
   console.log(`  page bg: ${report.pageBg}`)
   console.log(`  cards:   ${report.cards.join('  ')}`)
 
-  const pageRgb = parseRgb(report.pageBg ?? '') ?? null
-  check('a page background is painted', pageRgb !== null, String(report.pageBg))
-  if (pageRgb === null) {
-    await context.close()
-    continue
-  }
-  const isDark = pageRgb[0] + pageRgb[1] + pageRgb[2] < 250
+  check(
+    'no stored pref + OS dark renders LIGHT (the regression this slice fixes)',
+    report.pageBg === LIGHT_PAGE,
+    report.pageBg,
+  )
+  check(
+    'data-theme attribute is not "dark" without a stored choice',
+    report.dataTheme !== 'dark',
+    String(report.dataTheme),
+  )
+  const brightCards = report.cards.filter((c) => {
+    const rgb = parseRgb(c)
+    return rgb && rgb[0] + rgb[1] + rgb[2] > 400
+  })
+  check('card surfaces stay light (white cards on the light page)', brightCards.length > 0, brightCards.join('  '))
+  await context.close()
+}
 
-  if (scheme === 'dark') {
-    check('page background is dark in dark mode', isDark, report.pageBg)
-    const brightCards = report.cards.filter((c) => {
-      const rgb = parseRgb(c)
-      return rgb && rgb[0] + rgb[1] + rgb[2] > 400
-    })
-    check('no bright card surface on the dark page', brightCards.length === 0, brightCards.join('  '))
-    // Body text must be light. Ignore text that sits on the terracotta brand fill
-    // (that is intentionally dark-on-terracotta via the .bg-indigo-600 override).
-    const darkTexts = report.texts.filter((c) => {
-      const rgb = parseRgb(c)
-      return rgb && rgb[0] + rgb[1] + rgb[2] < 200
-    })
+// --- Case 2: stored dark preference, OS emulated LIGHT. Must paint DARK.
+{
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    colorScheme: 'light',
+  })
+  const page = await context.newPage()
+  // Seed the stored choice BEFORE the document loads so the pre-paint script
+  // in index.html sees it and sets data-theme="dark" synchronously.
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('dropin-theme', 'dark')
+    } catch (e) {}
+  })
+  await page.goto(BASE + '/login', { waitUntil: 'networkidle' })
+  const report = await samplePage(page)
+
+  console.log(`\n--- STORED DARK PREFERENCE, OS EMULATED LIGHT ---`)
+  console.log(`  data-theme attr: ${report.dataTheme}`)
+  console.log(`  page bg: ${report.pageBg}`)
+  console.log(`  cards:   ${report.cards.join('  ')}`)
+
+  check('stored dark + reload renders DARK', report.pageBg === DARK_PAGE, report.pageBg)
+  check('data-theme attribute is "dark"', report.dataTheme === 'dark', String(report.dataTheme))
+  const brightCards = report.cards.filter((c) => {
+    const rgb = parseRgb(c)
+    return rgb && rgb[0] + rgb[1] + rgb[2] > 400
+  })
+  check('no bright card surface on the dark page', brightCards.length === 0, brightCards.join('  '))
+  // Body text must be light. Ignore text that sits on the terracotta brand fill
+  // (that is intentionally dark-on-terracotta via the .bg-indigo-600 override).
+  const darkTexts = report.texts.filter((c) => {
+    const rgb = parseRgb(c)
+    return rgb && rgb[0] + rgb[1] + rgb[2] < 200
+  })
+  check(
+    'text tokens resolve light in dark mode (dark = brand fill only)',
+    darkTexts.length <= 1,
+    darkTexts.join('  ') || 'none',
+  )
+  // Contrast of the most common text colour against the page.
+  const pageRgb = parseRgb(report.pageBg ?? '')
+  const bodyText = report.texts.find((c) => {
+    const rgb = parseRgb(c)
+    return rgb && rgb[0] + rgb[1] + rgb[2] > 400
+  })
+  if (bodyText && pageRgb) {
+    const t = parseRgb(bodyText)
+    const ratio = contrast(t, pageRgb)
     check(
-      'text tokens resolve light in dark mode (dark = brand fill only)',
-      darkTexts.length <= 1,
-      darkTexts.join('  ') || 'none',
+      'sampled body text clears 4.5:1 on the dark page background',
+      ratio >= 4.5,
+      `${ratio.toFixed(2)}:1 (${bodyText} on ${report.pageBg})`,
     )
-    // Contrast of the most common text colour against the page.
-    const bodyText = report.texts.find((c) => {
-      const rgb = parseRgb(c)
-      return rgb && rgb[0] + rgb[1] + rgb[2] > 400
-    })
-    if (bodyText) {
-      const t = parseRgb(bodyText)
-      const ratio = contrast(t, pageRgb)
-      check(
-        'sampled body text clears 4.5:1 on the page background',
-        ratio >= 4.5,
-        `${ratio.toFixed(2)}:1 (${bodyText} on ${report.pageBg})`,
-      )
-    }
-  } else {
-    check('page background is light in light mode', !isDark, report.pageBg)
   }
-
   await context.close()
 }
 
@@ -153,4 +197,4 @@ if (failures.length > 0) {
   console.log(`\nFAIL — ${failures.length} check(s) failed`)
   process.exit(1)
 }
-console.log('\nPASS — dark appearance is applied and legible; light appearance unchanged')
+console.log('\nPASS — light is the default even under an emulated dark OS; a stored dark choice paints dark')

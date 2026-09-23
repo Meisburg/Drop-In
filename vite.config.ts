@@ -38,12 +38,12 @@ export default defineConfig({
         description:
           'Drop-in playdates for Seattle families — post a time and place, come by if you like.',
         theme_color: '#e8552f',
-        // Dark warm neutral matching the dark-mode page background (#181412 in
-        // src/index.css). The manifest carries ONE value; a dark colour is chosen
-        // so Android's generated splash is not blindingly bright in dark mode.
-        // Light-mode users still see the terracotta boot-splash frame from
-        // index.html before the PWA shell takes over.
-        background_color: '#181412',
+        // V22 slice 14: appearance is a USER CHOICE (light default; dark opt-in
+        // via /settings), so the manifest ships the LIGHT chrome colour. The
+        // dark page neutral (#181412 in src/index.css) is swapped into the
+        // theme-color meta at runtime by ThemeToggle when the user picks dark —
+        // the manifest carries one value, and light is what everyone gets.
+        background_color: '#e8552f',
         display: 'standalone',
         start_url: '/',
         icons: [

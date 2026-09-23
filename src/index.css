@@ -176,10 +176,22 @@ h3 {
 }
 
 /*
- * V8 — DARK MODE. Re-points every existing token name to dark values under
- * prefers-color-scheme: dark. No call-site edits, no renames. The lightness
- * ramp inverts: slate-50 (page bg) becomes the darkest surface, slate-900
- * (headings) becomes the brightest text. Monotonic order is preserved.
+ * V8 — DARK MODE (V22 slice 14: re-triggered from a user choice). Re-points
+ * every existing token name to dark values. No call-site edits, no renames.
+ * The lightness ramp inverts: slate-50 (page bg) becomes the darkest surface,
+ * slate-900 (headings) becomes the brightest text. Monotonic order is
+ * preserved.
+ *
+ * SLICE 14 CHANGED THE TRIGGER, NOT THE VALUES: this block used to key off an
+ * OS colour-scheme media query — the app FOLLOWED THE OS. That was a
+ * product bug for a prefer-dark desktop (the human's own machine auto-darkened
+ * the app), so appearance is now a USER CHOICE: light is the default for
+ * everyone, and dark applies only when <html data-theme="dark"> is set by the
+ * pre-paint script in index.html (reading localStorage['dropin-theme']) or by
+ * the /settings switch at runtime. This knowingly overrides Apple's
+ * "avoid an app-specific appearance setting" guidance — decided 2026-09-23,
+ * recorded in plan.md Slice 14. The OS media query no longer decides anything;
+ * there is deliberately no "follow system" state.
  *
  * Apple dark-mode guidance applied: no pure #000000 page background (warm
  * neutral #181412), softened whites for body copy (not #ffffff), and card
@@ -198,63 +210,65 @@ h3 {
  * against the dark page background (#181412) and dark card surface (#241f1c).
  */
 :root {
-  color-scheme: light dark;
+  /* color-scheme follows the CHOSEN theme, not the OS: form controls and
+     scrollbars render light unless the user has opted into dark. */
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* Surfaces (lightest → darkest role inverted) */
-    --color-slate-50: #181412;   /* page background — very dark warm neutral */
-    --color-slate-100: #3a312b;  /* inert chips/fills */
-    --color-slate-200: #4a4038;  /* default border */
-    --color-slate-300: #5c5047;  /* stronger border (inputs, secondary buttons) */
+:root[data-theme='dark'] {
+  color-scheme: dark;
 
-    /* Text ramp (softened warm whites, monotonic: s400 lowest-emphasis → s900 headings) */
-    --color-slate-400: #9d8f86;  /* lowest-emphasis text/icon — 5.84:1 page / 5.21:1 card */
-    --color-slate-500: #b0a69d;  /* meta text — 7.66:1 page / 6.82:1 card */
-    --color-slate-600: #c6bdb4;  /* most-used text tone — 9.88:1 page / 8.81:1 card */
-    --color-slate-700: #dbd2c9;  /* body copy — 12.26:1 page / 10.93:1 card */
-    --color-slate-800: #ebe3da;  /* 14.41:1 page / 12.84:1 card */
-    --color-slate-900: #f7f2ec;  /* headings + bright surfaces — 16.44:1 page / 14.65:1 card */
+  /* Surfaces (lightest → darkest role inverted) */
+  --color-slate-50: #181412;   /* page background — very dark warm neutral */
+  --color-slate-100: #3a312b;  /* inert chips/fills */
+  --color-slate-200: #4a4038;  /* default border */
+  --color-slate-300: #5c5047;  /* stronger border (inputs, secondary buttons) */
 
-    /*
-     * Terracotta dark ramp. The brand hue (500) stays #e8552f — it is the logo,
-     * icon, and splash colour. The ACTION tone (600) is LIGHTER than the light
-     * mode's #c8411c because its primary role in dark mode is TEXT/LINKS on
-     * dark surfaces: #f07a52 clears 4.5:1 on both the page bg (6.63:1) and the
-     * card surface (5.91:1). Tradeoff: white text on a bg-indigo-600 fill drops
-     * to 2.76:1 (below AA for small text). This is documented; the filled
-     * button role is secondary to the link/text role in this app.
-     * Higher tones (700–900) are lighter still for emphasis.
-     * Tints (50–400) become dark warm neutrals with a terracotta cast.
-     */
-    --color-indigo-50: #2b1d15;
-    --color-indigo-100: #3a261c;
-    --color-indigo-200: #4a3226; /* focus rings */
-    --color-indigo-300: #6b4630;
-    --color-indigo-400: #8a5a3a;
-    --color-indigo-500: #e8552f; /* brand hue — unchanged */
-    --color-indigo-600: #f07a52; /* actions + links — 6.63:1 page / 5.91:1 card */
-    --color-indigo-700: #f28b64; /* 7.54:1 page / 6.72:1 card */
-    --color-indigo-800: #f5a07a; /* 8.88:1 page / 7.91:1 card */
-    --color-indigo-900: #f8b695; /* 10.56:1 page / 9.41:1 card */
+  /* Text ramp (softened warm whites, monotonic: s400 lowest-emphasis → s900 headings) */
+  --color-slate-400: #9d8f86;  /* lowest-emphasis text/icon — 5.84:1 page / 5.21:1 card */
+  --color-slate-500: #b0a69d;  /* meta text — 7.66:1 page / 6.82:1 card */
+  --color-slate-600: #c6bdb4;  /* most-used text tone — 9.88:1 page / 8.81:1 card */
+  --color-slate-700: #dbd2c9;  /* body copy — 12.26:1 page / 10.93:1 card */
+  --color-slate-800: #ebe3da;  /* 14.41:1 page / 12.84:1 card */
+  --color-slate-900: #f7f2ec;  /* headings + bright surfaces — 16.44:1 page / 14.65:1 card */
 
-    /* Park green — dark tint bg + readable text */
-    --color-emerald-100: #26331e;
-    --color-emerald-700: #9fd07e; /* 7.49:1 on its own tint / 9.16:1 on card */
-    --color-green-700: #47802e;   /* "I'm going"/"Going" pill — white on green: 4.78:1 */
+  /*
+   * Terracotta dark ramp. The brand hue (500) stays #e8552f — it is the logo,
+   * icon, and splash colour. The ACTION tone (600) is LIGHTER than the light
+   * mode's #c8411c because its primary role in dark mode is TEXT/LINKS on
+   * dark surfaces: #f07a52 clears 4.5:1 on both the page bg (6.63:1) and the
+   * card surface (5.91:1). Tradeoff: white text on a bg-indigo-600 fill drops
+   * to 2.76:1 (below AA for small text). This is documented; the filled
+   * button role is secondary to the link/text role in this app.
+   * Higher tones (700–900) are lighter still for emphasis.
+   * Tints (50–400) become dark warm neutrals with a terracotta cast.
+   */
+  --color-indigo-50: #2b1d15;
+  --color-indigo-100: #3a261c;
+  --color-indigo-200: #4a3226; /* focus rings */
+  --color-indigo-300: #6b4630;
+  --color-indigo-400: #8a5a3a;
+  --color-indigo-500: #e8552f; /* brand hue — unchanged */
+  --color-indigo-600: #f07a52; /* actions + links — 6.63:1 page / 5.91:1 card */
+  --color-indigo-700: #f28b64; /* 7.54:1 page / 6.72:1 card */
+  --color-indigo-800: #f5a07a; /* 8.88:1 page / 7.91:1 card */
+  --color-indigo-900: #f8b695; /* 10.56:1 page / 9.41:1 card */
 
-    /* Gold — dark tint bgs + readable text */
-    --color-amber-50: #2a2415;
-    --color-amber-100: #332c1a;
-    --color-amber-200: #4a3f26;
-    --color-amber-700: #e0bd6a;   /* 7.69:1 on amber-100 / 9.05:1 on card */
-    --color-amber-800: #d4ad52;   /* 7.27:1 on amber-50 */
+  /* Park green — dark tint bg + readable text */
+  --color-emerald-100: #26331e;
+  --color-emerald-700: #9fd07e; /* 7.49:1 on its own tint / 9.16:1 on card */
+  --color-green-700: #47802e;   /* "I'm going"/"Going" pill — white on green: 4.78:1 */
 
-    /* Sky — dark tint bg + readable text */
-    --color-sky-100: #1c2a33;
-    --color-sky-700: #7cc4e8;     /* 7.64:1 on its own tint / 8.48:1 on card */
-  }
+  /* Gold — dark tint bgs + readable text */
+  --color-amber-50: #2a2415;
+  --color-amber-100: #332c1a;
+  --color-amber-200: #4a3f26;
+  --color-amber-700: #e0bd6a;   /* 7.69:1 on amber-100 / 9.05:1 on card */
+  --color-amber-800: #d4ad52;   /* 7.27:1 on amber-50 */
+
+  /* Sky — dark tint bg + readable text */
+  --color-sky-100: #1c2a33;
+  --color-sky-700: #7cc4e8;     /* 7.64:1 on its own tint / 8.48:1 on card */
 
   /*
    * Cards use bg-white (Tailwind's --color-white, kept as #ffffff so that
@@ -276,6 +290,17 @@ h3 {
    */
   .bg-indigo-600.text-white {
     color: #181412 !important;
+  }
+
+  /*
+   * The static boot splash in index.html carries an inline light background
+   * (#e8552f — the first painted frame, before any CSS). A stored-dark user
+   * would otherwise flash that terracotta frame on every cold load, so when
+   * the pre-paint script has set data-theme="dark" this re-points it to the
+   * dark page neutral. Inline styles beat normal rules, hence !important.
+   */
+  #boot-splash {
+    background-color: #181412 !important;
   }
 }
 
