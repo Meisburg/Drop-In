@@ -7,5 +7,7 @@
   { "path": "/browse", "must_contain": ["Sign in"] },
   { "path": "/inbox", "must_contain": ["Sign in"] },
   { "path": "/profile", "must_contain": ["Sign in"] },
-  { "path": "/settings", "must_contain": ["Sign in"] }
+  { "path": "/settings", "must_contain": ["Sign in"] },
+
+  { "path": "/place/:id/details", "must_contain": ["Sign in"] }
 ]

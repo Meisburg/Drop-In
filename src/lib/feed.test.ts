@@ -81,6 +81,7 @@ import {
   RADIUS_MILES_OPTIONS,
   radiusEscapes,
   homeZipControlLabel,
+  feedLocationSummary,
   radiusChoices,
   coordNumber,
   placeDistanceMiles,
@@ -3814,6 +3815,30 @@ describe('homeZipControlLabel (V16 t06 item 2: the feed says where "near you" is
     // know.
     expect(homeZipControlLabel(null)).not.toMatch(/\d/)
     expect(homeZipControlLabel(null).toLowerCase()).not.toContain('seattle')
+  })
+})
+
+/**
+ * V23 slice 1: the feed's single secondary location control. It replaces the
+ * two permanent controls (the radius select + the zip form) with ONE button
+ * that opens the shared LocationModal, so its copy must carry BOTH halves of
+ * the filter — where AND how far — in one line.
+ */
+describe('feedLocationSummary (V23 slice 1: one control says where AND how far)', () => {
+  it('names the stored zip and the current radius together', () => {
+    expect(feedLocationSummary('98107', 5)).toBe('Near 98107 · within 5 miles')
+  })
+
+  it('renders the zip as stored (no reformatting) and the radius through milesWord', () => {
+    expect(feedLocationSummary(' 98107 ', 5)).toBe('Near 98107 · within 5 miles')
+    expect(feedLocationSummary('98107', 1)).toBe('Near 98107 · within 1 mile')
+    expect(feedLocationSummary('98007', 20)).toBe('Near 98007 · within 20 miles')
+  })
+
+  it('says "Set your location" when no zip is saved — never a fake "Near …"', () => {
+    for (const missing of [null, undefined, '', '   ']) {
+      expect(feedLocationSummary(missing, 5)).toBe('Set your location')
+    }
   })
 })
 

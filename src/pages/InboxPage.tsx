@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { NAV_ICONS, REACTION_GLYPHS } from '../components/icons'
 import { SectionHeader } from '../components/SectionHeader'
@@ -30,6 +30,8 @@ import type {
   ReactionState,
 } from '../lib/db'
 import { REACTION_KINDS } from '../lib/db'
+import { mergeConversations } from '../lib/inbox'
+import type { MergedConversation } from '../lib/inbox'
 
 /**
  * /inbox — parent↔parent messaging (V14 ticket 01, migration 0042).
@@ -80,37 +82,70 @@ type ThreadState =
  * a relative time, and an unread pill badge (only when > 0). Tap → the
  * thread view. Presentational: it renders exactly what it is given.
  */
+/**
+ * One row of the MERGED conversation list: the other party's name (bold), the
+ * latest message preview (~60 chars, muted), a relative time, and — for
+ * playdate-scoped rows only — an unread dot + count badge when unreadCount > 0.
+ * Tap → opens the thread (the destination is decided by the row's `kind`).
+ * Presentational: it renders exactly what it is given.
+ *
+ * The unread marker is scoped to PLAYDATE conversations: the read cursor
+ * (`conversation_reads`) has a NOT NULL FK to `playdates(id)` (migration
+ * 0042), so it cannot represent a free-form DM (identified by
+ * `messages.playdate_id IS NULL`). A DM row therefore never shows a dot —
+ * that gap is reported as an open question, not silently shipped.
+ */
 function ConversationCard({
   conversation,
   onOpen,
 }: {
-  conversation: ConversationSummary
+  conversation: MergedConversation
   onOpen: () => void
 }) {
+  // The unread dot is meaningful only for playdate rows (DMs have no read
+  // cursor — see the comment above). The dot is a decoration; the ACCESSIBLE
+  // state lives on the button itself via aria-label, so a screen reader still
+  // knows the row is unread even though the dot is aria-hidden.
+  const showUnread = conversation.kind === 'playdate' && conversation.unreadCount > 0
+  const accessibleLabel = showUnread
+    ? `${conversation.otherPartyName || 'Unknown'} — ${conversation.unreadCount} unread message${
+        conversation.unreadCount === 1 ? '' : 's'
+      }`
+    : (conversation.otherPartyName || 'Unknown')
   return (
     <button
       type="button"
       onClick={onOpen}
+      aria-label={accessibleLabel}
+      data-testid={`inbox-row-${conversation.otherPartyId}`}
       className="w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-50"
     >
       <div className="flex items-center justify-between gap-2">
         <p className="truncate text-sm font-semibold text-slate-900">
-          {conversation.otherPartyDisplayName || 'Unknown'}
+          {conversation.otherPartyName || 'Unknown'}
         </p>
-        {conversation.unreadCount > 0 ? (
-          <span
-            data-testid={`unread-badge-${conversation.playdateId}`}
-            className="shrink-0 rounded-full bg-indigo-600 px-2 py-0.5 text-xs font-semibold text-white"
-          >
-            {conversation.unreadCount}
+        {showUnread ? (
+          <span className="flex shrink-0 items-center gap-1.5">
+            {/* The colour dot: a pure decoration (aria-hidden); the button's
+                aria-label carries the accessible "N unread" state. */}
+            <span
+              data-testid={`unread-dot-${conversation.otherPartyId}`}
+              aria-hidden="true"
+              className="h-2.5 w-2.5 rounded-full bg-indigo-600"
+            />
+            <span
+              data-testid={`unread-badge-${conversation.otherPartyId}`}
+              className="rounded-full bg-indigo-600 px-2 py-0.5 text-xs font-semibold text-white"
+            >
+              {conversation.unreadCount}
+            </span>
           </span>
         ) : null}
       </div>
-      <p className="mt-0.5 truncate text-xs text-slate-500">{conversation.playdateTitle}</p>
       <div className="mt-2 flex items-baseline justify-between gap-2">
-        <p className="truncate text-sm text-slate-600">{conversation.latestMessagePreview}</p>
+        <p className="truncate text-sm text-slate-600">{conversation.preview}</p>
         <p className="shrink-0 text-xs text-slate-500">
-          {relativeTimeLabel(conversation.latestMessageAt, new Date().toISOString())}
+          {relativeTimeLabel(conversation.latestAt, new Date().toISOString())}
         </p>
       </div>
     </button>
@@ -725,6 +760,24 @@ export function InboxPage() {
     setSearchParams({})
   }
 
+  // V23 s7: collapse the two lists (free-form DMs + playdate-scoped) into ONE,
+  // keyed on the counterpart's profile id — never the display name. The merge
+  // is a pure lib function (src/lib/inbox.ts); this page only decides which
+  // thread a row opens based on the winner's `kind`.
+  const mergedConversations = useMemo(
+    () => mergeConversations(directConvs, list.status === 'ready' ? list.conversations : []),
+    [directConvs, list],
+  )
+
+  /** Open whichever thread a merged row points at: a playdate row → ?thread=, a DM row → ?dm=. */
+  const openMergedRow = (row: MergedConversation) => {
+    if (row.kind === 'playdate' && row.playdateId !== undefined) {
+      openThread(row.playdateId)
+    } else {
+      openDmThread(row.otherPartyId)
+    }
+  }
+
   const threadHeaderName =
     thread !== null && thread.status === 'ready'
       ? thread.otherPartyName || ''
@@ -811,41 +864,11 @@ export function InboxPage() {
             </div>
           ) : (
             <>
-              {/* Free-form DM conversations (V15 T01). */}
-              {directConvs.length > 0 ? (
-                <ul className="mt-4 flex flex-col gap-2">
-                  {directConvs.map((conv) => (
-                    <li key={conv.otherPartyName || conv.otherPartyId}>
-                      <button
-                        type="button"
-                        data-testid={`dm-conversation-${conv.otherPartyId || conv.otherPartyName}`}
-                        onClick={() => openDmThread(conv.otherPartyId)}
-                        className="w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-50"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="truncate text-sm font-semibold text-slate-900">
-                            {conv.otherPartyName || 'Unknown'}
-                          </p>
-                          {conv.unreadCount > 0 ? (
-                            <span className="shrink-0 rounded-full bg-indigo-600 px-2 py-0.5 text-xs font-semibold text-white">
-                              {conv.unreadCount}
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="mt-2 flex items-baseline justify-between gap-2">
-                          <p className="truncate text-sm text-slate-600">{conv.preview}</p>
-                          <p className="shrink-0 text-xs text-slate-500">
-                            {relativeTimeLabel(conv.latestAt, new Date().toISOString())}
-                          </p>
-                        </div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-
-              {/* Playdate-scoped conversations (V14 T01). */}
-              {list.conversations.length === 0 && directConvs.length === 0 ? (
+              {/* V23 s7: ONE merged list — free-form DMs + playdate-scoped,
+                  collapsed on the counterpart's profile id (never the name).
+                  The empty state keys on the MERGED list, so it cannot show
+                  "No conversations yet" over a non-empty one. */}
+              {mergedConversations.length === 0 ? (
                 <div className="mt-6 rounded-xl border border-slate-200 bg-white p-6 text-center">
                   <p className="text-sm font-semibold text-slate-900">No conversations yet.</p>
                   <p className="mt-1 text-sm text-slate-600">
@@ -861,12 +884,9 @@ export function InboxPage() {
                 </div>
               ) : (
                 <ul className="mt-4 flex flex-col gap-2">
-                  {list.conversations.map((conversation) => (
-                    <li key={conversation.playdateId}>
-                      <ConversationCard
-                        conversation={conversation}
-                        onOpen={() => openThread(conversation.playdateId)}
-                      />
+                  {mergedConversations.map((row) => (
+                    <li key={row.otherPartyId || row.kind}>
+                      <ConversationCard conversation={row} onOpen={() => openMergedRow(row)} />
                     </li>
                   ))}
                 </ul>

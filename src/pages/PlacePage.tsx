@@ -20,6 +20,7 @@ import {
   placeDistanceMiles,
   placeIndoorLabel,
   placeKindLabel,
+  placeDetailsPath,
   placeLearnMoreLink,
   sortPlaceUpcoming,
 } from '../lib/places'
@@ -491,6 +492,26 @@ export function PlacePage() {
         <p className="mt-2 text-xs text-indigo-700">
           Fills this place in on the post form — you pick the time.
         </p>
+        {/* V23 slice 4/5: the forward door to the RESEARCH page. The founder
+            asked for a "Details" action beside "Start a drop-in", and this is
+            the place page's own instance of it. It is a real <Link> (not a
+            button) because it navigates, and the path comes from
+            `placeDetailsPath` so this surface, the map popup and the picker's
+            selection panel cannot drift to different destinations.
+
+            It sits INSIDE this card rather than as a peer full-width button:
+            "Start a drop-in" is the one action this page exists to offer, and an
+            equal-weight button beside it would split that choice. The label says
+            what the page HOLDS rather than "Details" — a bare "Details" on a
+            page that is itself a place's detail page reads as a link to nowhere.
+            min-h-11 keeps it at the 44px tap floor even though it is a link. */}
+        <Link
+          to={placeDetailsPath(place.id)}
+          data-testid="place-more-details"
+          className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-indigo-700 underline-offset-2 hover:underline"
+        >
+          What parents say about this place →
+        </Link>
       </div>
 
       <section className="flex flex-col gap-2">

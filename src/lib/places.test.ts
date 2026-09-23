@@ -18,6 +18,9 @@ import {
   placeIndoorLabel,
   placeKindLabel,
   placePath,
+  placeDetailsPath,
+  placeWebSearchHref,
+  PLACE_WEB_SEARCH_LABEL,
   placePickerMatches,
   placePickPatch,
   placeUpcomingLabel,
@@ -1605,5 +1608,70 @@ describe('feedMapPins (V19 t02 — the feed map)', () => {
     expect(pins[0].name).toBe('Green Lake')
     const noName = feedMapPins([{ place_coords: { lat: 47.67, lng: -122.38 } }])
     expect(noName[0].name).toBe('')
+  })
+})
+
+/**
+ * V23 slice 4/5: the two new link seams. Both are pure string builders, and
+ * both exist so a path/URL is spelled in exactly ONE place — the tests below
+ * pin the properties the callers depend on (encoding, the address's
+ * disambiguating role, and the honest null).
+ */
+describe('placeDetailsPath (V23 slice 4)', () => {
+  it('builds the details path beside placePath', () => {
+    expect(placeDetailsPath('abc-123')).toBe('/place/abc-123/details')
+  })
+
+  it('encodes an id that would otherwise break the segment', () => {
+    expect(placeDetailsPath('a/b')).toBe('/place/a%2Fb/details')
+  })
+
+  it('is a strict extension of placePath — same prefix, one more segment', () => {
+    const id = '3130badc-57bd-42da-93a7-e38019b3d82c'
+    expect(placeDetailsPath(id).startsWith(placePath(id))).toBe(true)
+    expect(placeDetailsPath(id).slice(placePath(id).length)).toBe('/details')
+  })
+})
+
+describe('placeWebSearchHref (V23 slice 5)', () => {
+  it('searches the name alone when there is no address', () => {
+    expect(placeWebSearchHref({ name: 'Green Lake Park' })).toBe(
+      'https://www.google.com/search?q=Green%20Lake%20Park',
+    )
+  })
+
+  it('adds the address when present, because it is what disambiguates', () => {
+    const href = placeWebSearchHref({
+      name: 'Green Lake Park',
+      address: '7201 East Green Lake Dr N',
+    })
+    expect(href).toBe(
+      'https://www.google.com/search?q=' +
+        encodeURIComponent('Green Lake Park, 7201 East Green Lake Dr N'),
+    )
+  })
+
+  it('does not leave a stray comma for a blank or null address', () => {
+    expect(placeWebSearchHref({ name: 'Baker Park', address: '   ' })).toBe(
+      'https://www.google.com/search?q=Baker%20Park',
+    )
+    expect(placeWebSearchHref({ name: 'Baker Park', address: null })).toBe(
+      'https://www.google.com/search?q=Baker%20Park',
+    )
+  })
+
+  it('trims the name rather than searching its whitespace', () => {
+    expect(placeWebSearchHref({ name: '  Baker Park  ' })).toBe(
+      'https://www.google.com/search?q=Baker%20Park',
+    )
+  })
+
+  it('returns null for a nameless place — the caller hides the link', () => {
+    expect(placeWebSearchHref({ name: '' })).toBeNull()
+    expect(placeWebSearchHref({ name: '   ' })).toBeNull()
+  })
+
+  it('ships the one label the callers render', () => {
+    expect(PLACE_WEB_SEARCH_LABEL).toBe('Search the web for this place')
   })
 })

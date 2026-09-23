@@ -224,7 +224,7 @@ describe('listConversationsWithClient (V14 ticket 01)', () => {
             id: 'pd-a',
             host_profile_id: 'other',
             host: { display_name: 'Alex' },
-            pings: [{ profile: { display_name: 'Mia' } }],
+            pings: [{ profile: { id: 'pinger-mia', display_name: 'Mia' } }],
           },
           // pd-b: the caller IS the host → the counterpart is the most recent
           // pinger's name (Sam), resolved from this embed.
@@ -232,7 +232,7 @@ describe('listConversationsWithClient (V14 ticket 01)', () => {
             id: 'pd-b',
             host_profile_id: 'me',
             host: { display_name: 'Me' },
-            pings: [{ profile: { display_name: 'Sam' } }],
+            pings: [{ profile: { id: 'pinger-sam', display_name: 'Sam' } }],
           },
         ],
         error: null,
@@ -248,12 +248,18 @@ describe('listConversationsWithClient (V14 ticket 01)', () => {
 
     // pd-a: the latest message is from Mia → she is the named counterpart.
     expect(summaries[0].otherPartyDisplayName).toBe('Mia')
+    // V23 s7: the merge key — when the latest sender is the OTHER party, their
+    // profile id comes straight off request 1's sender embed (sender_id).
+    expect(summaries[0].otherPartyId).toBe('other')
     expect(summaries[0].playdateTitle).toBe('Soccer practice')
     expect(summaries[0].latestMessageAt).toBe('2026-09-12T11:00:00Z')
     expect(summaries[0].unreadCount).toBe(1)
 
     // pd-b: my latest message → the counterpart is the most recent pinger.
     expect(summaries[1].otherPartyDisplayName).toBe('Sam')
+    // The caller hosts, so the counterpart is the pinger — we need that
+    // pinger's PROFILE id (not just their name) as the merge key.
+    expect(summaries[1].otherPartyId).toBe('pinger-sam')
     expect(summaries[1].playdateTitle).toBe('Pool day')
     expect(summaries[1].unreadCount).toBe(1)
   })

@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
+import { LocationModal } from './LocationModal'
 import { NAV_ICONS } from './icons'
 import { PlacesMap } from './PlaceMap'
 import { RadiusEmptyState } from './RadiusEmptyState'
@@ -15,7 +16,6 @@ import {
 } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
 import { geocodeAddress } from '../lib/geocode'
-import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
 import {
   browsePlaces,
   BROWSE_LIST_LEAD_LIMIT,
@@ -35,6 +35,7 @@ import {
 } from '../lib/places'
 import type { PlaceListRow, SortMode } from '../lib/places'
 import type { Place, PlacePrefill } from '../lib/types'
+import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
 
 /** V22 slice 10: default export for the lazy wrapper (see above). */
 export { PlaceDirectory as default }
@@ -95,6 +96,7 @@ export function PlaceDirectory({
   viewerRadius,
   homeZip,
   selectable = false,
+  stickyControls = false,
   onSelect,
 }: {
   /** The loaded directory rows. `null` while the host's read is in flight. */
@@ -117,6 +119,8 @@ export function PlaceDirectory({
   homeZip: string | null
   /** When true, taps select into the host instead of navigating away. */
   selectable?: boolean
+  /** V23 slice 3: when true, the search + filter card pins to the top of the scroll area. */
+  stickyControls?: boolean
   /** Called with the tapped place in selectable mode. */
   onSelect?: (place: Place) => void
 }) {
@@ -140,13 +144,13 @@ export function PlaceDirectory({
   const [radiusFilter, setRadiusFilter] = useState<number | null>(null)
 
   // The address + radius modal ("Set location"). The geocoded center + radius
-  // drive both the map overlay and the filtered list.
+  // drive both the map overlay and the filtered list. V23 slice 1: the modal is
+  // now the SHARED LocationModal (also opened from the feed's one location
+  // control); this component keeps its own open state + geocode result, which
+  // are what the map preview and the filtered list consume.
   const [locationModalOpen, setLocationModalOpen] = useState(false)
-  const [locationAddress, setLocationAddress] = useState('')
   const [geocodeCenter, setGeocodeCenter] = useState<{ lat: number; lng: number } | null>(null)
   const [radiusMiles, setRadiusMiles] = useState<number>(DEFAULT_RADIUS_MILES)
-  const [geocodeError, setGeocodeError] = useState<string | null>(null)
-  const [geocoding, setGeocoding] = useState(false)
 
   // --- Floating "Map" button (V17 t03) --------------------------------------
   // Is the map band scrolled out of view? Drives the floating button that
@@ -303,29 +307,26 @@ export function PlaceDirectory({
   const seeAllLabel = showAll ? 'Hide' : `See all ${listRows.length} places`
 
   async function handleGeocode(address: string) {
-    setGeocoding(true)
-    setGeocodeError(null)
     const result = await geocodeAddress(address)
     if (result === null) {
-      setGeocodeError('Could not find that address. Try a more specific one.')
+      // The shared modal renders its own "could not find" line; the caller only
+      // needs to know whether a center landed, which it reads via onGeocode's
+      // return value (null = no center, keep the previous one).
+      setGeocodeCenter(null)
     } else {
       setGeocodeCenter(result)
     }
-    setGeocoding(false)
+    return result
   }
 
   function openLocationModal() {
     setRadiusMiles(viewerRadius)
-    setLocationAddress('')
-    setGeocodeError(null)
     setLocationModalOpen(true)
   }
 
   function closeLocationModal() {
     setLocationModalOpen(false)
     setGeocodeCenter(null)
-    setGeocodeError(null)
-    setLocationAddress('')
   }
 
   // --- Render ----------------------------------------------------------------
@@ -379,8 +380,9 @@ export function PlaceDirectory({
         </div>
       ) : null}
 
-      {/* Search + filter chips + distance control. V22 slice 9: column 2 at md+. */}
-      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm md:col-start-2">
+      {/* Search + filter chips + distance control. V22 slice 9: column 2 at md+.
+           V23 slice 3: stickyControls pins this card to the top of the scroll area. */}
+      <div className={`flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm md:col-start-2 ${stickyControls ? 'sticky top-0 z-10' : ''}`}>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-slate-700">Search</span>
           <input
@@ -678,87 +680,14 @@ export function PlaceDirectory({
       ) : null}
 
       {/* The Set location modal — address input + radius slider + "See places". */}
-      {locationModalOpen ? (
-        <div
-          data-testid="location-modal"
-          className={`fixed inset-0 ${MODAL_OVER_LEAFLET_Z_CLASS} flex items-end justify-center bg-black/40 sm:items-center`}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) closeLocationModal()
-          }}
-        >
-          <div className="w-full max-w-md rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-900">Set location</h3>
-              <button
-                type="button"
-                data-testid="location-modal-close"
-                onClick={closeLocationModal}
-                className="rounded-full p-1 text-slate-400 hover:bg-slate-100"
-                aria-label="Close"
-              >
-                ✕
-              </button>
-            </div>
-
-            <label className="mb-3 flex flex-col gap-1 text-sm">
-              <span className="text-slate-700">Address</span>
-              <input
-                type="text"
-                data-testid="location-address-input"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                placeholder="e.g. Green Lake Park, Seattle"
-                autoComplete="off"
-                value={locationAddress}
-                onChange={(e) => setLocationAddress(e.target.value)}
-              />
-            </label>
-
-            <label className="mb-4 flex flex-col gap-1 text-sm">
-              <span className="text-slate-700">
-                Radius: {radiusMiles} {milesWord(radiusMiles)}
-              </span>
-              <input
-                type="range"
-                data-testid="location-radius-slider"
-                min={1}
-                max={30}
-                step={1}
-                value={radiusMiles}
-                onChange={(e) => setRadiusMiles(Number(e.target.value))}
-                className="w-full accent-indigo-600"
-              />
-            </label>
-
-            {geocodeError !== null ? (
-              <p data-testid="location-geocode-error" className="mb-3 text-xs text-red-600">
-                {geocodeError}
-              </p>
-            ) : null}
-
-            <div className="flex gap-2">
-              <button
-                type="button"
-                data-testid="location-cancel-btn"
-                onClick={closeLocationModal}
-                className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                data-testid="location-see-places-btn"
-                disabled={geocoding || locationAddress.trim() === ''}
-                onClick={() => {
-                  void handleGeocode(locationAddress)
-                }}
-                className="flex-1 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700 disabled:opacity-50"
-              >
-                {geocoding ? 'Finding…' : 'See places'}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <LocationModal
+        open={locationModalOpen}
+        onClose={closeLocationModal}
+        radiusMiles={radiusMiles}
+        homeZip={null}
+        onGeocode={handleGeocode}
+        onApplyRadius={(miles) => setRadiusMiles(miles)}
+      />
     </div>
   )
 }

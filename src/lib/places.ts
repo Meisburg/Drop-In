@@ -120,6 +120,58 @@ export function placePath(placeId: string): string {
 }
 
 /**
+ * V23 slice 4 — `/place/:id/details`, the ONE details-path builder.
+ *
+ * The founder asked for a "Details" action on a place, next to "Start a
+ * drop-in", reachable from the map popup, the picker's selection panel, and the
+ * place page itself. Three call sites spelling `/place/${id}/details` by hand is
+ * exactly how a destination drifts — one of them eventually omits the segment,
+ * or encodes the id differently, and the control leads somewhere else. So the
+ * path is built here, beside `placePath`, and every caller uses this.
+ */
+export function placeDetailsPath(placeId: string): string {
+  return `/place/${encodeURIComponent(placeId)}/details`
+}
+
+/**
+ * V23 slice 5 — "search the web for this place", the founder's own suggestion
+ * for the details page:
+ *
+ *   *"you could click a link there that does a Google search in your browser for
+ *    that location and then it can just like look up more information. That'd
+ *    probably be like the easiest way to not have to maintain a database on all
+ *    this but then still like get them to a place where they could learn more
+ *    about the place."*
+ *
+ * That is the whole point of this seam: it buys the parent a route to
+ * everything the wider web knows about a park without us curating a row of
+ * facts we cannot maintain — the same reasoning that removed the 239 hand-kept
+ * photos (V20 t01), and the same fallback family as `placeExternalUrl`, which
+ * searches OpenStreetMap.
+ *
+ * WHAT GOES IN THE QUERY, and why the address earns its place: the directory
+ * holds many similarly-named parks ("Baker Park" vs "Baker Park on Crown Hill"),
+ * and a name-only search lands a parent on the wrong one. The address is added
+ * when present because it is what disambiguates, and omitted cleanly when the
+ * row has none (a null/blank address must not leave a stray comma in the URL,
+ * which would search for a literal one). `null` for a nameless place — a search
+ * for "" is a search for nothing, and the page hides the link rather than
+ * offering a control that cannot help.
+ */
+export function placeWebSearchHref(
+  place: Pick<Place, 'name'> & { address?: string | null },
+): string | null {
+  const name = place.name.trim()
+  if (name === '') return null
+  const address = (place.address ?? '').trim()
+  const query = address === '' ? name : `${name}, ${address}`
+  return `https://www.google.com/search?q=${encodeURIComponent(query)}`
+}
+
+/** The one label for the `placeWebSearchHref` link — callers never spell it. */
+export const PLACE_WEB_SEARCH_LABEL = 'Search the web for this place'
+
+/**
  * The `place_id` insert key — present ONLY when the parent actually picked a
  * place (the `seriesIdField` pattern, V8 ticket 06; the 0021 address lesson
  * before it).

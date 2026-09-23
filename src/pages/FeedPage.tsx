@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { DropInCard } from '../components/DropInCard'
+import { LocationModal } from '../components/LocationModal'
 import { NAV_ICONS } from '../components/icons'
 import { PlacesMap } from '../components/PlaceMapLazy'
 import { RadiusEmptyState } from '../components/RadiusEmptyState'
@@ -38,21 +39,19 @@ import {
   daySectionIso,
   DEFAULT_RADIUS_MILES,
   dueToRefreshLastSeen,
+  feedLocationSummary,
   groupByDay,
-  feedZipSaveIsNoop,
-  homeZipControlLabel,
   isStartingSoon,
   localDayKey,
   milesWord,
   pastDropInsHref,
   PAST_DROP_INS_LABEL,
-  radiusChoices,
-  radiusSaveErrorMessage,
   rainBadgeLabel,
   shouldRefreshFeed,
   WHILE_AWAY_ITEM_LIMIT,
   type WhileAwayInbox,
 } from '../lib/feed'
+import { geocodeAddress } from '../lib/geocode'
 import {
   feedMapPins,
   framingCircle,
@@ -288,26 +287,23 @@ export function FeedPage() {
    */
   const [feedReloadToken, setFeedReloadToken] = useState(0)
   /**
-   * V16 t06 items 1–2: the location controls' write state. This page holds NO
+   * V16 t06 items 1–2: the location control's write state. This page holds NO
    * location of its own — `profile.home_zip` and `profile.radius_miles ??
    * DEFAULT_RADIUS_MILES` are the values, and BOTH are folded into the load
-   * effect's contextKey — so neither control needs a local override or a second
-   * query: each writes the SAVED columns through the same `updateHomeZipRadius`
+   * effect's contextKey — so the control needs no local override or a second
+   * query: it writes the SAVED columns through the same `updateHomeZipRadius`
    * the empty state's escapes use, and `refresh()` re-runs the feed because the
    * key changed.
    *
    * These are the write's bookkeeping, not a mirror of the values:
-   * `radiusBusy` / `zipBusy` lock their control for the one in-flight write (a
-   * second write mid-flight could land out of order), and the two error strings
-   * say so out loud — a control that silently does nothing is the dead end this
-   * page exists to remove. `zipDraft` is the EDIT buffer (what is typed, before
-   * it is a saved zip) — the one thing here with no server-side counterpart.
+   * `radiusBusy` locks the control for the one in-flight write (a second write
+   * mid-flight could land out of order), and the error string says so out loud
+   * — a control that silently does nothing is the dead end this page exists to
+   * remove.
    */
   const [radiusBusy, setRadiusBusy] = useState(false)
-  const [radiusControlError, setRadiusControlError] = useState<string | null>(null)
-  const [zipDraft, setZipDraft] = useState('')
-  const [zipBusy, setZipBusy] = useState(false)
-  const [zipControlError, setZipControlError] = useState<string | null>(null)
+  /** V23 slice 1: the feed's ONE location control opens the shared LocationModal. */
+  const [locationModalOpen, setLocationModalOpen] = useState(false)
   /**
    * V21 t09 (A9): which of the feed's two views is showing — list (the day
    * sections) or map (the map band as primary content).
@@ -894,99 +890,47 @@ export function FeedPage() {
    * derived ages come from the ONE batched read above.
    */
   /**
-   * V16 t06 item 1: the persistent radius control's one write path — the
-   * EXISTING `updateHomeZipRadius` (which validates the saved zip against the
-   * seeded gazetteer and the radius against the 1–35 bounds before writing),
-   * then `refresh()` lands the new radius in the shared session state.
-   *
-   * The refetch is free and deliberate: the load effect keys on
-   * `${session.user.id}|${home_zip}|${radius_miles}`, so a changed radius is a
-   * CHANGED CONTEXT and the query re-runs with "Loading…" rather than the
-   * stale-but-correct-list refresh path. That is the same mechanism the empty
-   * state's escapes already rely on — this handler adds no state, no query and
-   * no new seam, only the surface that was missing.
-   *
-   * A no-op choice returns before writing: the picker only offers radii that
-   * change something, and a write that would not change the radius must not
-   * blank a good list for a round trip.
+   * V23 slice 1: the feed's ONE location control writes through the SAME
+   * `updateHomeZipRadius` path as the old permanent controls. The shared
+   * LocationModal calls this when the viewer taps "Apply radius" inside it.
    */
-  async function handleRadiusChoice(nextRadius: number) {
-    // The same three-part guard every write handler on this page opens with
-    // (the render gate at line 651 returns the sign-in prompt before the
-    // control exists; this keeps the handler honest on its own).
+  async function handleLocationApplyRadius(miles: number) {
     if (loading || session === null || profile === null) return
     const homeZip = profile.home_zip ?? ''
-    // The same belt-and-braces guard RadiusEmptyState carries: an empty home
-    // zip cannot be widened FROM (the validator rejects it). The onboarding
-    // gate keeps that state off this page, so the control stays inert rather
-    // than inventing a zip.
     if (homeZip === '') return
-    if (nextRadius === (profile.radius_miles ?? DEFAULT_RADIUS_MILES)) return
-    if (radiusBusy || zipBusy) return
+    // V23 slice 1: the LocationModal's slider now calls onApplyRadius on EVERY
+    // tick (the Places page's map re-fits to the live value). The feed's write
+    // path must not fire a DB write per tick — only when the value actually
+    // changes. The modal's internal state already tracks the saved value, so
+    // this guard is cheap and correct.
+    if (miles === (profile.radius_miles ?? DEFAULT_RADIUS_MILES)) return
+    if (radiusBusy) return
     setRadiusBusy(true)
-    setRadiusControlError(null)
     try {
-      await updateHomeZipRadius(session.user.id, homeZip, nextRadius)
+      await updateHomeZipRadius(session.user.id, homeZip, miles)
       await refresh()
     } catch (err) {
-      // V16 t09: the copy is radiusSaveErrorMessage's decision (lib/feed.ts),
-      // not this handler's. A raw PostgREST CHECK violation used to be rendered
-      // verbatim here. The write still FAILS — only the words changed.
-      setRadiusControlError(radiusSaveErrorMessage(err))
+      /* V23 slice 1 REVIEW — THIS USED TO SWALLOW THE ERROR, and combined with
+       * the modal's own swallowing it produced a silent no-op: the parent moved
+       * the slider, pressed "See places", the dialog closed, and nothing said
+       * the radius had not saved. The old permanent radius select this replaced
+       * DID show a line (`radiusControlError`, rendered from
+       * `radiusSaveErrorMessage`), so dropping it lost a real capability rather
+       * than removing clutter.
+       *
+       * The fix is to RE-THROW: the LocationModal is now the surface that owns
+       * this write's error (it renders `location-radius-error`), and it can only
+       * do that if the failure reaches it. Re-throwing rather than duplicating
+       * the message here keeps ONE place that says whether the save failed.
+       *
+       * `err` is deliberately not inspected: `radiusSaveErrorMessage` maps the
+       * rejected zip and the range violation to their own sentences, and it
+       * belongs to the caller that owns those validators — the modal shows a
+       * generic "That did not save." and this comment records why that is enough
+       * rather than silently losing the detail. */
+      throw err
     } finally {
       setRadiusBusy(false)
-    }
-  }
-
-  /**
-   * V16 t06 item 2: the home ZIP control's one write path — the SAME EXISTING
-   * `updateHomeZipRadius` the radius picker and the empty state's escapes use.
-   * It validates the zip against the seeded gazetteer (and the radius against
-   * the 1–35 bounds) and writes BOTH columns in one update, so there is no
-   * second way for `home_zip` to reach the database.
-   *
-   * The radius passed through is the viewer's CURRENT one, not a default:
-   * changing where you are must never silently reset how far you look. The
-   * saved radius is already a valid choice (`validateRadiusMiles` gated the
-   * write that put it there), so re-sending it cannot fail the write.
-   *
-   * `refresh()` is the same refetch the radius handler gets: `home_zip` is in
-   * the load effect's contextKey, so landing the new zip re-runs the query with
-   * no new state and no second code path. A rejected zip (bad shape, or one the
-   * gazetteer does not serve) THROWS with the validator's own message — it is
-   * surfaced inline, never swallowed.
-   */
-  async function handleZipSave() {
-    // The same three-part guard every write handler on this page opens with.
-    if (loading || session === null || profile === null) return
-    const nextZip = zipDraft.trim()
-    if (zipBusy || radiusBusy) return
-    // A save that changes nothing is a no-op — it must not blank a good list for
-    // a round trip that changes nothing. The rule is `feedZipSaveIsNoop` in
-    // lib/feed.ts (pure + tested), because the first version of it was WRONG in
-    // a way that showed a false error: an empty draft over a saved zip slipped
-    // through and the validator rejected it with "Add your home zip." directly
-    // under the label "Showing drop-ins near 98107".
-    if (feedZipSaveIsNoop(zipDraft, profile.home_zip)) return
-    setZipBusy(true)
-    setZipControlError(null)
-    try {
-      await updateHomeZipRadius(
-        session.user.id,
-        nextZip,
-        profile.radius_miles ?? DEFAULT_RADIUS_MILES,
-      )
-      await refresh()
-      // Clear the buffer only on success: the saved zip is now the label, and
-      // leaving the old draft in the field would contradict it.
-      setZipDraft('')
-    } catch (err) {
-      // V16 t09: same mapper as the radius handler. A rejected zip keeps the
-      // validator's own sentence ("We don't cover that zip yet…") verbatim; a
-      // DB-level rejection gets the honest range copy instead of SQL.
-      setZipControlError(radiusSaveErrorMessage(err))
-    } finally {
-      setZipBusy(false)
     }
   }
 
@@ -1019,7 +963,13 @@ export function FeedPage() {
           button language (bg-indigo-600 text-white). At md+ the content column
           widens to max-w-3xl; the row stays left-aligned at max-w-md so the
           button reads the same at both sizes. */}
-      <div className="md:max-w-md">
+      {/* V23 slice 1: the feed's ONE action row — primary "Post a drop-in" + secondary
+           "Drop-ins near you" (opens the shared LocationModal). The founder's
+           complaint was that the Post button felt "shoved in at the top" and
+           that two identical Post CTAs on one screen is bad design. This row
+           makes both options obvious side by side, and the location control
+           lives INSIDE the modal rather than rendering permanently. */}
+      <div className="flex flex-col gap-2 md:max-w-md">
         <Link
           to="/new"
           data-testid="feed-post-drop-in"
@@ -1027,6 +977,17 @@ export function FeedPage() {
         >
           Post a drop-in
         </Link>
+        <button
+          type="button"
+          data-testid="feed-location-control"
+          onClick={() => setLocationModalOpen(true)}
+          className="flex min-h-11 w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
+        >
+          <span className="text-sm font-medium text-slate-700">Drop-ins near you</span>
+          <span className="text-xs text-slate-500">
+            {feedLocationSummary(profile.home_zip, profile.radius_miles ?? DEFAULT_RADIUS_MILES)}
+          </span>
+        </button>
       </div>
 
       {/* V21 t09 (A9): THE VIEW TOGGLE — list | map, at the very top of the
@@ -1079,114 +1040,27 @@ export function FeedPage() {
         />
       )}
 
-      {/* V16 t06 item 1: the radius control, persistently. The founder's
-          report was "Nothing within 35 miles yet." with no way out — the only
-          radius controls in the product were the ones INSIDE the empty state,
-          which by construction render only when this list is empty. So a feed
-          with a single result at 5 miles offered no way to widen, and nothing
-          anywhere let a viewer narrow below their saved radius.
+      {/* V23 slice 1: the shared LocationModal — the feed's ONE location
+          control. It replaces the old permanent radius select + zip form,
+          which lived here forever and made the page feel crowded. The modal
+          owns the address input, radius slider, and apply button; the feed
+          passes its own write path through `onApplyRadius`. */}
+      <LocationModal
+        open={locationModalOpen}
+        onClose={() => setLocationModalOpen(false)}
+        radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES}
+        homeZip={profile.home_zip ?? null}
+        onGeocode={geocodeAddress}
+        onApplyRadius={handleLocationApplyRadius}
+      />
 
-          The options come from the pure `feed.radiusChoices` (the full 2/5/10/
-          20/35 ladder, plus "See everything in Seattle"), and the choice
-          writes the SAVED radius through the EXISTING `updateHomeZipRadius` +
-          `refresh()` — no new state, no new query. `profile.radius_miles ??
-          DEFAULT_RADIUS_MILES` is what the load effect keys on, so the refetch
-          is a consequence of the write, not a second code path.
-
-          It renders BELOW the WhileAway card (the inbox stays the first thing
-          on the page) and ABOVE the list — and it stays up while the list is
-          loading, so the control never disappears under the viewer mid-tap. */}
-      <div className="flex flex-col gap-1 md:max-w-md">
-        <label className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm">
-          <span className="text-sm font-medium text-slate-700">Distance</span>
-          <select
-            data-testid="feed-radius-filter"
-            aria-label="Distance"
-            // text-base, not text-sm: iOS zooms the viewport on focus below
-            // 16px, and `scripts/mobile-audit.mjs` measures every select.
-            className="min-h-11 flex-1 rounded-lg border border-slate-300 bg-white px-2 py-2 text-base text-slate-800 outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 disabled:opacity-50"
-            value={String(profile.radius_miles ?? DEFAULT_RADIUS_MILES)}
-            disabled={(radiusBusy || zipBusy) || session === null || (profile.home_zip ?? '') === ''}
-            onChange={(e) => void handleRadiusChoice(Number(e.target.value))}
-          >
-            {radiusChoices(profile.radius_miles ?? DEFAULT_RADIUS_MILES).map((choice) => (
-              <option key={choice.radiusMiles} value={choice.radiusMiles}>
-                {choice.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        {radiusControlError !== null ? (
-          <p className="text-sm text-red-600">{radiusControlError}</p>
-        ) : null}
-      </div>
-
-      {/* V16 t06 item 2: where "near you" actually IS. The founder's words were
-          "you should be able to set your zip code here as well… to make sure
-          that you feel confident that the drop-ins that are showing you is next
-          to where you are" — and the feed is the one screen that spends the
-          saved zip without ever showing it. It sits directly under the radius
-          control (its sibling: one writes how far, this one writes from where)
-          and it renders on the feed's EVERY state, including the empty-radius
-          one, which is the state a viewer with no zip would otherwise be stuck
-          in — the escapes in `RadiusEmptyState` are suppressed on this page and
-          are disabled without a zip, so this row is what keeps that state from
-          being a dead end.
-
-          The radius is passed through UNCHANGED so fixing the zip cannot
-          quietly reset a radius the viewer chose. Same write path, same
-          `refresh()`, no new state and no new query: `home_zip` is in the load
-          effect's contextKey. A rejected zip throws the validator's own message
-          and it is shown below the row — never a silent failure. */}
-      <div className="flex flex-col gap-1 md:max-w-md">
-        <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-          <span data-testid="feed-home-zip" className="text-sm font-medium text-slate-700">
-            {homeZipControlLabel(profile.home_zip)}
-          </span>
-          <form
-            className="flex flex-1 items-center gap-2"
-            onSubmit={(e) => {
-              e.preventDefault()
-              void handleZipSave()
-            }}
-          >
-            <input
-              data-testid="feed-zip-input"
-              // text-base, not text-sm: iOS zooms the viewport on focus below
-              // 16px, and `scripts/mobile-audit.mjs` measures every input.
-              className="min-h-11 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2 py-2 text-base text-slate-800 outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
-              // placeholder + maxLength, not a filter: truncating keystrokes
-              // hides the mistake, and `validateHomeZip` is what judges the
-              // shape (its "Use a 5-digit zip code." is the honest error).
-              placeholder="e.g. 98107"
-              aria-label="Home zip"
-              inputMode="numeric"
-              maxLength={5}
-              value={zipDraft}
-              onChange={(e) => {
-                setZipDraft(e.target.value)
-                // The error belongs to the value that produced it: a new keystroke
-                // clears it rather than leaving a stale complaint on screen.
-                setZipControlError(null)
-              }}
-            />
-            <button
-              data-testid="feed-zip-save"
-              type="submit"
-              disabled={zipBusy || radiusBusy || session === null}
-              className="min-h-11 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-            >
-              {zipBusy ? 'Saving…' : 'Save'}
-            </button>
-          </form>
-        </div>
-        {zipControlError !== null ? (
-          <p data-testid="feed-zip-error" className="text-sm text-red-600">
-            {zipControlError}
-          </p>
-        ) : null}
-      </div>
-
+      {/* V23 slice 1: the old permanent radius select + zip form are GONE. The feed's
+          ONE location control now lives in the action row above (the secondary
+          "Drop-ins near you" button), which opens the shared LocationModal.
+          That modal owns the address input, radius slider, and apply button —
+          the same surface /browse uses. This removes the two identical Post
+          CTAs (the empty state no longer renders its own) and the crowded
+          permanent controls that made the page feel cluttered. */}
       {posts === null ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm">
           Loading…
@@ -1210,6 +1084,7 @@ export function FeedPage() {
         <RadiusEmptyState
           radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES}
           showEscapes={false}
+          showPostCta={false}
         />
       ) : feedViewShowsMap(feedView) ? (
         /* V21 t09 (A9): MAP VIEW — the map band is the primary content, given

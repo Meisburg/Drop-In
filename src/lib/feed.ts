@@ -2199,6 +2199,33 @@ export function feedZipSaveIsNoop(
 }
 
 /**
+ * The feed's ONE location control (V23 slice 1, pure + unit-tested).
+ *
+ * V16 t06 left the feed with TWO permanent controls — a radius `<select>` and a
+ * home-zip form — plus the empty state's own "Post a drop-in" link, so the top
+ * of the page read as three near-identical rows shoved above the list (the
+ * founder's words: "this button is shoved in at the top of a page… two post a
+ * drop-in buttons on this page"). This slice collapses all of it into ONE row:
+ * a primary Post link and a single secondary control that opens the shared
+ * LocationModal (the same one the Places page lightboxes).
+ *
+ * The secondary control's copy must say BOTH halves of the current filter —
+ * where AND how far — because the modal is the only place either half can be
+ * changed now. The decision worth isolating is the ABSENT-zip case, which is
+ * the one a blank render gets wrong: no zip must say so in words ("Set your
+ * location"), never "Near · within 5 miles", which would name a location the
+ * viewer does not have (the same honesty pin `homeZipControlLabel` carries).
+ * With a zip, the line reads "Near 98107 · within 5 miles": the zip rendered
+ * as stored (never reformatted) and the radius through `milesWord`, so the
+ * label and the query cannot disagree about either half.
+ */
+export function feedLocationSummary(homeZip: string | null | undefined, radiusMiles: number): string {
+  const zip = (homeZip ?? '').trim()
+  if (zip === '') return 'Set your location'
+  return `Near ${zip} · within ${radiusMiles} ${milesWord(radiusMiles)}`
+}
+
+/**
  * Whether the feed is due for a visibility-triggered refetch (V8 ticket 02):
  * no load yet (null — the first load establishes the clock) or the last load
  * is at least `windowMs` old. `windowMs` is owned by the call site

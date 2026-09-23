@@ -109,7 +109,7 @@ test('new message: search a parent, open DM thread, send a message', async ({
   // Navigate back to /inbox → the free-form conversation card appears.
   await page.goto('/inbox')
   await settleOnRoute(page, '/inbox')
-  const dmCard = page.getByTestId(`dm-conversation-${viewerProfileId}`)
+  const dmCard = page.getByTestId(`inbox-row-${viewerProfileId}`)
   await expect(dmCard).toBeVisible()
   await expect(dmCard).toContainText(viewerName)
 

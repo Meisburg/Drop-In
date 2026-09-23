@@ -282,17 +282,38 @@ test('/new leads with the place picker and never asks for a neighbourhood', asyn
   await expect(page.getByText('Neighborhood', { exact: true })).toHaveCount(0)
   await expect(page.getByText('Pick a neighborhood…')).toHaveCount(0)
 
-  // (4) The Browse button really browses: it opens the directory A→Z (the
-  //     seeded rows plus the always-last "Somewhere else"), and closes again.
+  // (4) The Browse button really browses — V23 slice 3 CHANGED WHERE IT BROWSES.
+  //
+  // WHAT CHANGED AND WHY THE OLD ASSERTION WAS WRONG (not merely inconvenient).
+  // This block used to click the button and expect the INLINE suggestion list
+  // (`place-suggestions`) to open with `PLACE_BROWSE_LIMIT + 1` rows. The
+  // founder's feedback asked for exactly the opposite:
+  //
+  //   "browse places (Clicking this doesn't actually allow you to see the whole
+  //    list. And even if you could populate it all here, it would be out of
+  //    control. So maybe what you want to do instead is lightbox a list that you
+  //    could scroll through.)"
+  //
+  // So the button now opens the scrollable `place-directory-sheet` — the SAME
+  // component /browse renders — and the inline list is reachable only by TYPING
+  // (the fast path, guarded by the spec below and by
+  // `place-directory-in-new.e2e.ts`'s regression test). Asserting the old
+  // inline behaviour here would pin the bug the founder reported.
+  //
+  // What is still asserted is the thing this test is actually about: the button
+  // browses something real, announces its state, and closes again.
   await browse.click()
   await expect(browse).toHaveAttribute('aria-expanded', 'true')
-  const suggestionRows = page.getByTestId('place-suggestions').locator('button')
-  // PLACE_BROWSE_LIMIT directory rows + the "Somewhere else" escape hatch.
-  await expect(suggestionRows).toHaveCount(PLACE_BROWSE_LIMIT + 1)
-  await expect(page.getByTestId('place-somewhere-else')).toBeVisible()
-  await browse.click()
+  const sheet = page.getByTestId('place-directory-sheet')
+  await expect(sheet).toBeVisible()
+  // The directory really is in there: the search field and at least one row.
+  await expect(page.getByTestId('places-search')).toBeVisible()
+  expect(await page.getByTestId('place-row').count()).toBeGreaterThan(0)
+  // Escape is the sheet's own dismissal (V23 slice 3); the button's
+  // aria-expanded must follow it back to false.
+  await page.keyboard.press('Escape')
+  await expect(sheet).toHaveCount(0)
   await expect(browse).toHaveAttribute('aria-expanded', 'false')
-  await expect(page.getByTestId('place-suggestions')).toHaveCount(0)
 })
 
 test('typing @ opens the picker, and picking a place fills place + address in one tap', async ({

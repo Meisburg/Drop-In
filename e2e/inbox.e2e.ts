@@ -181,24 +181,37 @@ test('two-account conversation: pinger messages the host, host reads + badge cle
   // server confirms).
   await expect(viewerPage.getByTestId('own-message')).toContainText('Can we do Saturday?')
 
+  // V23 s7: the testid is now keyed on the counterpart's profile id (the merge
+  // key), not the playdate id. Look up the viewer's profile id via REST.
+  const { url, anonKey } = readSupabaseEnv()
+  const { accessToken } = readMarkerSession()
+  const searchRes = await fetch(
+    `${url}/rest/v1/profiles?display_name=ilike.${encodeURIComponent(viewerName)}&select=id`,
+    { headers: { apikey: anonKey, Authorization: `Bearer ${accessToken}` } },
+  )
+  expect(searchRes.ok).toBe(true)
+  const viewerProfiles = (await searchRes.json()) as Array<{ id: string }>
+  expect(viewerProfiles.length).toBe(1)
+  const viewerProfileId = viewerProfiles[0].id
+
   // --- The host: navigate to /inbox → see the conversation row with an
-  // unread badge (count 1) → tap it → the thread shows the message → the
-  // badge clears (markConversationRead fired). ---
+  // unread dot + badge (count 1) → tap it → the thread shows the message → the
+  // dot clears (markConversationRead fired). ---
   await page.goto('/inbox')
   await settleOnRoute(page, '/inbox')
   const conversationRow = page.getByRole('button').filter({ hasText: viewerName })
   await expect(conversationRow).toBeVisible()
-  // The unread badge (count 1) is visible.
-  await expect(page.getByTestId(`unread-badge-${playdateId}`)).toBeVisible()
-  await expect(page.getByTestId(`unread-badge-${playdateId}`)).toHaveText('1')
+  // The unread dot + badge (count 1) are visible.
+  await expect(page.getByTestId(`unread-dot-${viewerProfileId}`)).toBeVisible()
+  await expect(page.getByTestId(`unread-badge-${viewerProfileId}`)).toHaveText('1')
 
   // Tap the conversation → the thread view shows the message.
   await conversationRow.click()
-  await expect(page).toHaveURL(new RegExp(`/inbox\\?thread=${playdateId}$`))
+  await expect(page).toHaveURL(/\/inbox\?thread=/)
   await expect(page.getByTestId('other-message')).toContainText('Can we do Saturday?')
 
-  // The badge cleared (markConversationRead fired on thread open).
-  await expect(page.getByTestId(`unread-badge-${playdateId}`)).toHaveCount(0)
+  // The dot cleared (markConversationRead fired on thread open).
+  await expect(page.getByTestId(`unread-dot-${viewerProfileId}`)).toHaveCount(0)
 
   // Close the viewer's context (its ping row cascades with the post cleanup).
   await viewer.context.close()

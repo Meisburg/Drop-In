@@ -31,6 +31,7 @@ import { Link, useNavigate } from 'react-router'
 import type { ZipCoords } from '../lib/feed'
 import {
   DETAIL_ZOOM_FALLBACK,
+  placeDetailsPath,
   placeKindLabel,
   placeLearnMoreLink,
   placePath,
@@ -655,6 +656,17 @@ export function PlacesMap({
      * starts sensibly on screen, and every later change of the slider only
      * redraws. Without that, opening the dialog on a 30-mile stored radius would
      * start with a circle far larger than the pane.
+     *
+     * V23 slice 1 — the pin now tracks the LATEST radius, not just the first:
+     * the shared LocationModal (also opened from the feed) updates its caller's
+     * radius state on every slider tick, which flows back down as a new
+     * `radiusCircle.radiusMiles`. The old inline modal did the same (its slider's
+     * onChange called setRadiusMiles directly), so the Places spec's "dragging
+     * the radius slider shows a bigger area on the map" assertion — which
+     * expects the camera to zoom OUT as the radius grows — still holds. The
+     * comment above ("every later change of the slider only redraws") describes
+     * the pre-extraction behaviour; the extraction made the slider's live value
+     * the source of truth, which is what the spec measures.
      */
     map.setZoom(zoomForRadius(miles))
   }, [circleKey])
@@ -699,8 +711,30 @@ export function PlacesMap({
    * parent who clicks "Learn more" expecting the park's own page lands on a map
    * search. Now a stored site says "Visit website" and the fallback says "Find
    * it on the map".
+   *
+   * V23 slice 4 — **THE MAP-SEARCH FALLBACK IS GONE FROM THIS PANEL**, on the
+   * founder's instruction: *"I would remove the find it on the map button. We
+   * don't need that button."*
+   *
+   * The refusal is kept here rather than in a commit message because the next
+   * reader will otherwise "restore the missing fallback" as a bug fix. The
+   * reasoning: this panel floats OVER a map. A button labelled "Find it on the
+   * map" that opens an OpenStreetMap SEARCH is offering to do something the
+   * parent is already looking at — the pin they just tapped is the location.
+   * The fallback was never wrong on the place page (where there is no map in
+   * view and `placeExternalUrl` is the only way to locate it), so
+   * `placeLearnMoreLink` KEEPS its two-kind behaviour and the place page KEEPS
+   * its "Find it on the map" label. What is dropped is only this PANEL's use of
+   * the map-search kind, where it duplicates the surface behind it.
+   *
+   * So: a place with a VERIFIED site still shows "Visit website" here; a place
+   * with none simply has no outbound link on this panel, and the parent reaches
+   * the wider web through the place's Details page, which carries the Google
+   * search the founder asked for (V23 slice 5, `placeWebSearchHref`).
    */
   const learnMore = selected !== null ? placeLearnMoreLink(selected) : null
+  /** Only a REAL operator site belongs on this panel — never the map search. */
+  const websiteLink = learnMore !== null && learnMore.kind === 'website' ? learnMore : null
 
   /**
    * WHICH ACTION BUTTONS THIS PANEL SHOWS — the two flags the JSX above reads.
@@ -818,7 +852,7 @@ export function PlacesMap({
                   place's own page) drops the controls that surface cannot
                   honour. See the prop's doc comment for the two cases and the
                   `ocr` finding behind the first of them. */}
-              {showHostHere || showDetails || learnMore !== null ? (
+              {showHostHere || showDetails || websiteLink !== null ? (
                 <div className="flex flex-wrap items-center gap-2">
                   {showHostHere ? (
                     <button
@@ -830,16 +864,19 @@ export function PlacesMap({
                       Start a drop-in
                     </button>
                   ) : null}
-                  {learnMore !== null ? (
+                  {/* V23 slice 4: ONLY a verified operator site, never the map
+                      search — see `websiteLink`'s doc comment for why this
+                      panel drops that fallback while the place page keeps it. */}
+                  {websiteLink !== null ? (
                     <a
-                      href={learnMore.url}
+                      href={websiteLink.url}
                       target="_blank"
                       rel="noopener"
                       data-testid="learn-more"
-                      data-link-kind={learnMore.kind}
+                      data-link-kind="website"
                       className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
                     >
-                      {learnMore.kind === 'website' ? 'Visit website' : 'Find it on the map'}
+                      Visit website
                     </a>
                   ) : null}
                   {showDetails ? (
@@ -853,12 +890,12 @@ export function PlacesMap({
                   ) : null}
                 </div>
               ) : null}
-              {/* No external URL AND no actions to offer (a nameless place with
-                  `placeActions` off): show the place's own details inline rather
-                  than an empty row — V15 ticket 04 AC5. Gated on the same
-                  conditions as the row above so the two can never both appear
-                  or both vanish. */}
-              {learnMore === null && !showHostHere && !showDetails ? (
+              {/* No website AND no actions to offer (a nameless place with
+                  `placeActions` off, or a place with no verified site):
+                  show the place's own details inline rather than an empty row —
+                  V15 ticket 04 AC5. Gated on the same conditions as the row
+                  above so the two can never both appear or both vanish. */}
+              {websiteLink === null && !showHostHere && !showDetails ? (
                 <span data-testid="learn-more-inline" className="text-xs text-slate-600">
                   {placeKindLabel(selected.kind)}
                   {selected.notes !== null && selected.notes !== '' ? ` · ${selected.notes}` : ''}
@@ -1081,14 +1118,41 @@ export function PlacePickerMap({
             <span className="truncate text-sm font-semibold text-slate-900">{selected.name}</span>
             <span className="truncate text-xs text-slate-600">{selected.address}</span>
           </div>
-          <button
-            type="button"
-            data-testid="place-picker-select"
-            onClick={() => onPick(selected)}
-            className="min-h-11 shrink-0 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700"
-          >
-            Select this place
-          </button>
+          {/* V23 slice 4 — THE TWO ACTIONS THE FOUNDER NAMED, side by side:
+              "for each places, I think the two options should be start dropping
+              and details."
+
+              "Select this place" is the WRITE (it fills the form), and
+              "Details" is the READ (it opens the place's research page — what
+              parents have said, who follows it, a web-search link). They are
+              deliberately different weights: a filled primary button for the
+              action that changes the form, a quiet outlined link for the one
+              that leaves the page. A parent comparing parks can open Details,
+              come back, and still select — which is exactly why Details must
+              NOT be the thing that fills the field.
+
+              The destination comes from `placeDetailsPath` (lib/places.ts), the
+              one builder, so this panel, the map popup and the place page cannot
+              drift to different URLs. It is a real <Link> (a new tab is the
+              browser's business) rather than a button, matching the popup's own
+              "Details" link. */}
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              data-testid="place-picker-select"
+              onClick={() => onPick(selected)}
+              className="min-h-11 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700"
+            >
+              Select this place
+            </button>
+            <Link
+              to={placeDetailsPath(selected.id)}
+              data-testid="place-picker-details"
+              className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
+            >
+              Details
+            </Link>
+          </div>
         </div>
       ) : null}
     </div>

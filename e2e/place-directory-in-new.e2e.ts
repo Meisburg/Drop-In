@@ -1,5 +1,5 @@
 /**
- * Spec (V21 t02, A2; V22 slice 12): THE PLACES DIRECTORY LIVES INSIDE THE POST FLOW.
+ * Spec (V21 t02, A2; V22 slice 12; V23 slice 3): THE PLACES DIRECTORY LIVES INSIDE THE POST FLOW.
  *
  * THE FOUNDER'S ASK, verbatim: "I'm beginning to think we don't need this
  * section anymore... in the post section when you select like where the place
@@ -14,9 +14,10 @@
  *     Places (/browse). Removing the action tab is what makes step 2
  *     load-bearing: the directory has to be reachable from the feed's own
  *     "Post a drop-in" action.
- *  2. /new OFFERS THE DIRECTORY: a "Browse all N places" door renders on the
- *     post form, and opening it shows the SAME `PlaceDirectory` component
- *     /browse renders — the map band AND the list, not a second copy.
+ *  2. /new OFFERS THE DIRECTORY: the field's own "Browse places" button opens
+ *     the SAME `PlaceDirectory` component /browse renders — the map band AND
+ *     the list, not a second copy. V23 slice 3: the bottom "Browse all N
+ *     places" door is GONE; the field's button is the only door.
  *  3. THE DIRECTORY IS THE REAL ONE: the search field and the filter control
  *     exist inside the sheet, which is the difference between "the full
  *     directory with its filters" and the V9 8-row shortcut that predated this
@@ -24,6 +25,9 @@
  *  4. THE MAP IS THERE: a Leaflet canvas with at least one real pin.
  *  5. SELECTING Writes the form: tapping a place name in the sheet closes it
  *     and fills the form's place field — the one `pickPlace` write path.
+ *  6. V23 slice 3: the sheet is a real dialog — focus is trapped while open,
+ *     Escape closes, the scroll container actually scrolls, and the bottom
+ *     "browse-all-places" testid does not exist anywhere on /new.
  *
  * WHY THE ASSERTIONS ARE SHAPED THIS WAY: the earlier, WEAKER version of this
  * slice shipped the nav removal plus a map tweak and called itself done, while
@@ -56,11 +60,12 @@ test('the place directory is reachable from /new, with its map and list (V21 t02
   await settleOnRoute(page, '/new')
   await expect(page.getByRole('heading', { name: 'Post a drop-in' })).toBeVisible()
 
-  const door = page.getByTestId('browse-all-places')
+  // V23 slice 3: the bottom "browse-all-places" door is GONE. The field's own
+  // "Browse places" button is the only door to the directory sheet.
+  await expect(page.getByTestId('browse-all-places')).toHaveCount(0)
+
+  const door = page.getByTestId('browse-places')
   await expect(door).toBeVisible({ timeout: 15_000 })
-  // The label counts the loaded directory, so it proves the read landed and
-  // that this is the DIRECTORY (239ish places), not a fixed-size shortcut.
-  await expect(door).toContainText('Browse all')
   await door.click()
 
   // --- 3. THE SHEET IS THE DIRECTORY: search + filters + list + map. ---
@@ -101,7 +106,9 @@ test('the directory sheet can be dismissed without picking (V21 t02)', async ({ 
   await page.getByTestId('feed-post-drop-in').click()
   await expect(page.getByRole('heading', { name: 'Post a drop-in' })).toBeVisible()
 
-  const door = page.getByTestId('browse-all-places')
+  // V23 slice 3: the field's button is the door (the bottom door is gone).
+  await expect(page.getByTestId('browse-all-places')).toHaveCount(0)
+  const door = page.getByTestId('browse-places')
   await expect(door).toBeVisible({ timeout: 15_000 })
   await door.click()
   await expect(page.getByTestId('place-directory-sheet')).toBeVisible()
@@ -112,4 +119,86 @@ test('the directory sheet can be dismissed without picking (V21 t02)', async ({ 
   await expect(page.getByTestId('place-directory-sheet')).toHaveCount(0)
   const placeInput = page.getByPlaceholder('e.g. Green Lake playground, near the boathouse')
   await expect(placeInput).toHaveValue('')
+})
+
+test('the directory sheet traps focus, closes on Escape, and scrolls (V23 slice 3)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await settleOnRoute(page, '/')
+  await page.getByTestId('feed-post-drop-in').click()
+  await expect(page.getByRole('heading', { name: 'Post a drop-in' })).toBeVisible()
+
+  // Open the sheet through the field's button.
+  const door = page.getByTestId('browse-places')
+  await expect(door).toBeVisible({ timeout: 15_000 })
+  await door.click()
+  const sheet = page.getByTestId('place-directory-sheet')
+  await expect(sheet).toBeVisible()
+
+  // --- FOCUS TRAP: Tab cycles within the sheet. The trap intercepts Tab at
+  //         the boundary; mid-list Tab moves are native (the trap only wraps).
+  //         Verify focus starts inside the sheet, then press Tab repeatedly and
+  //         confirm focus never escapes the sheet boundary. ---
+  const sheetEl = await sheet.elementHandle()
+  expect(sheetEl).not.toBeNull()
+
+  // Give the trap a moment to settle (useFocusTrap records the previously-
+  // focused element; the first Tab press will land on the first focusable).
+  await page.waitForTimeout(100)
+
+  // Focus the Close button explicitly so we have a known starting point inside
+  // the sheet, then verify Tab keeps us inside.
+  await page.getByTestId('place-directory-close').focus()
+  let activeInSheet = await page.evaluate(() => {
+    const sheet = document.querySelector('[data-testid="place-directory-sheet"]')
+    return sheet ? sheet.contains(document.activeElement) : false
+  })
+  expect(activeInSheet).toBe(true)
+
+  // Press Tab 5 times; focus must stay inside the sheet every time.
+  for (let i = 0; i < 5; i++) {
+    await page.keyboard.press('Tab')
+    activeInSheet = await page.evaluate(() => {
+      const sheet = document.querySelector('[data-testid="place-directory-sheet"]')
+      return sheet ? sheet.contains(document.activeElement) : false
+    })
+    expect(activeInSheet).toBe(true)
+  }
+
+  // --- ESCAPE CLOSES: pressing Escape dismisses the sheet. ---
+  await page.keyboard.press('Escape')
+  await expect(sheet).toHaveCount(0)
+
+  // Re-open to measure scrollability.
+  await door.click()
+  await expect(sheet).toBeVisible()
+
+  // --- SCROLLABILITY: the scroll container's scrollHeight exceeds its
+  //         clientHeight (the 239-row list overflows the viewport). ---
+  const scrollMetrics = await page.evaluate(() => {
+    const scroller = document.querySelector('[data-testid="place-directory-scroll"]')
+    if (!scroller) return null
+    return { scrollHeight: scroller.scrollHeight, clientHeight: scroller.clientHeight }
+  })
+  expect(scrollMetrics).not.toBeNull()
+  expect(scrollMetrics!.scrollHeight).toBeGreaterThan(scrollMetrics!.clientHeight)
+
+  // Clean up: close the sheet.
+  await page.keyboard.press('Escape')
+  await expect(sheet).toHaveCount(0)
+})
+
+test('typing in the place field still opens inline suggestions (V23 slice 3 regression guard)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await settleOnRoute(page, '/')
+  await page.getByTestId('feed-post-drop-in').click()
+  await expect(page.getByRole('heading', { name: 'Post a drop-in' })).toBeVisible()
+
+  // Type a partial place name; the inline suggestion list should appear.
+  const placeInput = page.getByPlaceholder('e.g. Green Lake playground, near the boathouse')
+  await placeInput.fill('Green')
+  await expect(page.getByTestId('place-suggestions')).toBeVisible()
 })

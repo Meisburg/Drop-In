@@ -26,6 +26,7 @@ import { ModPage } from './pages/ModPage'
 import { NewPlaydatePage } from './pages/NewPlaydatePage'
 import { OnboardingPage } from './pages/OnboardingPage'
 import { PlacePage } from './pages/PlacePage'
+import { PlaceDetailsPage } from './pages/PlaceDetailsPage'
 import { PlaydateDetailPage } from './pages/PlaydateDetailPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
@@ -498,6 +499,15 @@ export default function App() {
                 like any other protected path, and the anon `places` SELECT is
                 what makes the place readable the moment they are in. */}
             <Route path="/place/:id" element={<PlacePage />} />
+            {/* V23 slice 5: the place's RESEARCH page — what parents have said,
+                who follows it, a web-search link, what is on there. A separate
+                route from /place/:id rather than more blocks on it, because the
+                decision page ("is this good for my kid, where is it, start a
+                drop-in") must stay short. Both read the same `Place` row through
+                the same seam, and `placeDetailsPath` is the ONE builder for the
+                link between them. Inside the shell: the wall renders other
+                parents' names and 0050 grants no anon SELECT. */}
+            <Route path="/place/:id/details" element={<PlaceDetailsPage />} />
             <Route path="/playdate/:id" element={<PlaydateDetailPage />} />
             {/* V8 ticket 05: the host-only edit route — the detail page's own
                 row, edited in place. Host-only at two levels: the shell guard

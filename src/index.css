@@ -401,6 +401,75 @@ h3 {
   line-height: 1.35;
 }
 
+/* V23 slice 6: THE BUBBLE MUST NOT BLANKET THE MAP IT SITS ON.
+ *
+ * The founder's report, with a screenshot: tapping a blue circle on /browse left
+ * the popup covering essentially the whole map band — "this actually breaks the
+ * map in the background. You can't even see it anymore and it disappears."
+ *
+ * WHY THE `L.popup({ maxHeight })` OPTION DID NOT FIX IT, and why this rule
+ * exists instead. The component passes `maxWidth: 210, maxHeight: 170` to
+ * Leaflet, and those options DO NOT REACH THE DOM here: Leaflet 1.9 applies
+ * `maxWidth` by writing an inline width onto `.leaflet-popup-content` at OPEN
+ * time, from the content that existed THEN. Our content is a React PORTAL that
+ * mounts into the popup a moment later and renders at its own natural size, so
+ * the bubble is already sized by the time the real content arrives. MEASURED on
+ * the built bundle: `.leaflet-popup` came back `max-height: none` with a real
+ * height of 350px inside a 405px band — ratio 0.86, i.e. the complaint exactly.
+ * (The inline width Leaflet wrote DID land, which is why the defect is
+ * height-only and why the first reading of "maxHeight is set" looked plausible.)
+ *
+ * So the cap is applied HERE, where it actually constrains the box, and it is
+ * expressed against the VIEWPORT rather than in fixed pixels: the popup lives
+ * inside a `45dvh` band, so a `28vh` ceiling makes the bubble at most ~62% of
+ * the band's own height and leaves the rest as visible map. MEASURED on the
+ * built bundle at 390x900 after this rule: the info block went 284px -> 178px
+ * (ratio 0.70 -> 0.44 of the 405px band), which is the visible map the founder
+ * was missing. `overflow-y: auto` means a taller bubble SCROLLS instead of being
+ * clipped — content is never lost, which is the failure mode a bare
+ * `max-height` would introduce.
+ *
+ * The doubled class is the same load-bearing trick the ✕ rule below documents:
+ * leaflet.css is bundled after this file, so a single-class rule loses on source
+ * order. `.place-popup.leaflet-popup` is two classes on one element and outranks
+ * Leaflet's own `.leaflet-popup-content-wrapper` without `!important`.
+ *
+ * `max-width` is pinned here too, in `min()` form: Leaflet's inline width is a
+ * NUMBER (210px) that ignores the sheet it is rendered in on a narrow phone. */
+.place-popup.leaflet-popup .leaflet-popup-content-wrapper {
+  max-width: min(260px, 78vw);
+}
+
+/* THE CEILING HAS TO BIND ON THE POPUP, NOT ON ONE OF ITS CHILDREN.
+ *
+ * MEASURED, twice, and the first attempt was wrong in an instructive way.
+ * Capping `.leaflet-popup-content` alone left the POPUP ELEMENT at 318px inside
+ * a 405px band — ratio 0.79 at 390x900, 0.83 at 375x700 — because the content
+ * wrapper's padding and the popup's tip add ~66px on top of whatever the content
+ * is allowed. The founder's complaint is about the POPUP, so the cap must bind
+ * where the box actually grows.
+ *
+ * The metric matters as much as the fix: my FIRST reading of this defect
+ * measured `[data-testid="place-marker-info"]`'s bounding box, which is a SCROLLED
+ * CHILD and therefore reports its natural height even while its scroller has
+ * visibly clipped it. That reading said "284px, unchanged" while the CSS was in
+ * fact working. A check that cannot fail is not evidence — the same lesson this
+ * batch already recorded twice.
+ *
+ * Both ceilings are in `vh` because the band is `45dvh`: a fixed px cap would be
+ * wrong on a tall phone and worse on a short one. `overflow-y: auto` keeps every
+ * control reachable by scrolling rather than clipped — "Start a drop-in", "Visit
+ * website" and "Details" stay tappable on the shortest phone, which is the
+ * property the reachability discipline exists to protect. */
+.place-popup.leaflet-popup {
+  max-height: 24vh;
+}
+
+.place-popup.leaflet-popup .leaflet-popup-content {
+  max-height: 17vh;
+  overflow-y: auto;
+}
+
 /* The ✕ is a real tap target on a phone, not a 12px glyph.
  *
  * THE DOUBLED CLASS IS LOAD-BEARING, and it was measured rather than assumed.

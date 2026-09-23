@@ -49,13 +49,23 @@ import { useSessionContext } from './SessionProvider'
  * defaults (it is the escape's only remaining home, and its caller is
  * untouched); the copy and the post CTA render either way, so suppressing the
  * escapes never turns this state into a dead end.
+ *
+ * V23 slice 1 adds a SECOND opt-out, `showPostCta` (default true): the feed
+ * now has its own primary "Post a drop-in" button in the action row at the top
+ * of the page, so rendering it again inside the empty state would put TWO
+ * identical CTAs on the same screen — the exact "two post a drop-in buttons"
+ * complaint this slice removes. The feed passes `showPostCta={false}`; Browse
+ * keeps the default (the CTA is still the only way to post from /browse).
  */
 export function RadiusEmptyState({
   radiusMiles,
   showEscapes = true,
+  showPostCta = true,
 }: {
   radiusMiles: number
   showEscapes?: boolean
+  /** Render the "Post a drop-in" link (default true; the feed opts out). */
+  showPostCta?: boolean
 }) {
   const { session, profile, refresh } = useSessionContext()
   const [busyRadius, setBusyRadius] = useState<number | null>(null)
@@ -114,12 +124,14 @@ export function RadiusEmptyState({
         </div>
       ) : null}
       {escapeError !== null ? <p className="text-sm text-red-600">{escapeError}</p> : null}
-      <Link
-        to="/new"
-        className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white"
-      >
-        Post a drop-in
-      </Link>
+      {showPostCta ? (
+        <Link
+          to="/new"
+          className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white"
+        >
+          Post a drop-in
+        </Link>
+      ) : null}
     </div>
   )
 }

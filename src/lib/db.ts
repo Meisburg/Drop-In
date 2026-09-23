@@ -4131,6 +4131,13 @@ export interface ConversationSummary {
   playdateTitle: string
   /** The other participant's display name (the bold line). */
   otherPartyDisplayName: string
+  /**
+   * The other participant's PROFILE id (V23 s7). This is the merge key that lets
+   * the inbox collapse a DM row and a playdate row for the same parent into one
+   * row — never the display name (two parents can share a name; collapsing on
+   * it would merge two real people, which is worse than the duplicate).
+   */
+  otherPartyId: string
   /** The latest message's body, truncated to 60 chars. */
   latestMessagePreview: string
   /** The latest message's created_at (ISO). */
@@ -4214,12 +4221,18 @@ export async function listConversationsWithClient(
     ),
   )
   let counterpartNames: Record<string, string> = {}
+  // V23 s7: the counterpart's PROFILE id per playdate — the merge key the inbox
+  // uses to collapse a DM row + a playdate row for the same parent. Built from
+  // the SAME request 3 (no extra wire call): the host's id is host_profile_id;
+  // when the caller hosts, the counterpart is the most recent pinger, so we need
+  // that pinger's profile id (not just their name).
+  let counterpartIds: Record<string, string> = {}
   if (playdateIds.length > 0) {
     const { data: postData, error: postError } = await client
       .from('playdates')
       .select(
         'id, host_profile_id, host:profiles!playdates_host_profile_id_fkey ( display_name ), ' +
-          'pings:going_pings ( profile:profiles!going_pings_profile_id_fkey ( display_name ) )',
+          'pings:going_pings ( profile:profiles!going_pings_profile_id_fkey ( id, display_name ) )',
       )
       .in('id', playdateIds)
     if (postError) throw postError
@@ -4227,18 +4240,21 @@ export async function listConversationsWithClient(
       id: string
       host_profile_id: string
       host: { display_name: string } | null
-      pings: Array<{ profile: { display_name: string } | null }>
+      pings: Array<{ profile: { id: string; display_name: string } | null }>
     }>) {
       // The counterpart of THIS caller: the host when the caller is a pinger
       // (host_profile_id !== userId); otherwise the most recent pinger's name
       // (the pings array arrives in ping order — the embed's natural key).
-      const pingerNames = post.pings
-        .map((ping) => ping.profile?.display_name ?? '')
-        .filter((name) => name !== '')
+      const pingerEntries = post.pings.filter((ping) => ping.profile !== null)
       if (post.host_profile_id !== userId) {
+        // Caller is a pinger → counterpart is the host.
         counterpartNames[post.id] = post.host?.display_name ?? ''
+        counterpartIds[post.id] = post.host_profile_id
       } else {
-        counterpartNames[post.id] = pingerNames[pingerNames.length - 1] ?? ''
+        // Caller is the host → counterpart is the most recent pinger.
+        const lastPinger = pingerEntries[pingerEntries.length - 1]?.profile ?? null
+        counterpartNames[post.id] = lastPinger?.display_name ?? ''
+        counterpartIds[post.id] = lastPinger?.id ?? ''
       }
     }
   }
@@ -4307,10 +4323,19 @@ export async function listConversationsWithClient(
       entry.latest.sender_id === userId
         ? (counterpartNames[playdateId] ?? '')
         : (entry.latest.senderName || counterpartNames[playdateId] || '')
+    // The merge key: the counterpart's profile id. When the latest sender is the
+    // caller, the counterpart is resolved from request 3 (host or pinger); when
+    // the latest sender is someone else, that sender IS the counterpart and we
+    // already have their profile id from request 1's embed.
+    const otherPartyId =
+      entry.latest.sender_id === userId
+        ? (counterpartIds[playdateId] ?? '')
+        : entry.latest.sender_id
     summaries.push({
       playdateId,
       playdateTitle: entry.playdateTitle,
       otherPartyDisplayName: counterpart,
+      otherPartyId,
       latestMessagePreview: truncateMessagePreview(entry.latest.body),
       latestMessageAt: entry.latest.created_at,
       unreadCount,
@@ -5472,4 +5497,133 @@ export async function searchProfilesByName(
   limit: number = PARENT_NAME_SEARCH_MAX_RESULTS,
 ): Promise<ParentNameMatch[]> {
   return searchProfilesByNameWithClient(supabase, query, limit)
+}
+
+// ---------------------------------------------------------------------------
+// V23 slice 5: PLACE COMMENTS (migration 0050).
+//
+// A place comment is what a parent says about a PARK, as opposed to `comments`
+// (0013), which is playdate-scoped — see 0050's header for why those are
+// different tables. These are the app's read/write paths on top of it; the RLS
+// policies in 0050 are the enforcement (any signed-in parent reads the visible
+// wall, writes only as themselves, moderators hide). Pre-0050-apply every call
+// here 404s (PGRST205, missing table) and the caller catches it: the details
+// page shows an honest "not available yet" line rather than a crash — the house
+// DB-not-applied discipline.
+// ---------------------------------------------------------------------------
+
+/** One row of `public.place_comments`, as the details page renders it. */
+export interface PlaceCommentRow {
+  id: string
+  place_id: string
+  author_profile_id: string
+  /** The author's display name, embedded for the wall's attribution line. */
+  author_display_name: string
+  body: string
+  created_at: string
+}
+
+/**
+ * The visible wall for one place, NEWEST FIRST (the order `sortPlaceComments`
+ * pins — a park's wall is a bulletin read from its top, not a conversation read
+ * from its beginning).
+ *
+ * The `hidden_at is null` filter is enforced by 0050's SELECT policy; it is
+ * repeated here only so the intent is legible at the call site, NOT as the
+ * security boundary — a client-side filter is never the boundary. The author
+ * name comes from the embedded FK join (the messages pattern), so the wall needs
+ * ONE request rather than one per comment.
+ */
+export async function listPlaceCommentsWithClient(
+  client: SupabaseClient,
+  placeId: string,
+): Promise<PlaceCommentRow[]> {
+  const { data, error } = await client
+    .from('place_comments')
+    .select(
+      'id, place_id, author_profile_id, body, created_at, ' +
+        'author:profiles!place_comments_author_profile_id_fkey ( display_name )',
+    )
+    .eq('place_id', placeId)
+    .is('hidden_at', null)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return ((data ?? []) as unknown as Array<{
+    id: string
+    place_id: string
+    author_profile_id: string
+    body: string
+    created_at: string
+    author: { display_name: string } | null
+  }>).map((row) => ({
+    id: row.id,
+    place_id: row.place_id,
+    author_profile_id: row.author_profile_id,
+    author_display_name: row.author?.display_name ?? '',
+    body: row.body,
+    created_at: row.created_at,
+  }))
+}
+
+/** The default-client wrapper (the details page's wall read). */
+export async function listPlaceComments(placeId: string): Promise<PlaceCommentRow[]> {
+  return listPlaceCommentsWithClient(supabase, placeId)
+}
+
+/**
+ * Post one comment on a place as the signed-in user.
+ *
+ * The body is TRIMMED before the insert (the DB CHECK measures the trimmed
+ * length, so sending untrimmed padding would make the client's own count
+ * disagree with the wall). `author_profile_id` is set from the session rather
+ * than accepted from a caller — 0050's INSERT policy requires
+ * `author_profile_id = auth.uid()`, so a caller-supplied id could only ever be
+ * rejected.
+ */
+export async function createPlaceCommentWithClient(
+  client: SupabaseClient,
+  userId: string,
+  placeId: string,
+  body: string,
+): Promise<PlaceCommentRow> {
+  const { data, error } = await client
+    .from('place_comments')
+    .insert({
+      place_id: placeId,
+      author_profile_id: userId,
+      body: body.trim(),
+    })
+    .select(
+      'id, place_id, author_profile_id, body, created_at, ' +
+        'author:profiles!place_comments_author_profile_id_fkey ( display_name )',
+    )
+    .single()
+  if (error) throw error
+  const row = data as unknown as {
+    id: string
+    place_id: string
+    author_profile_id: string
+    body: string
+    created_at: string
+    author: { display_name: string } | null
+  }
+  return {
+    id: row.id,
+    place_id: row.place_id,
+    author_profile_id: row.author_profile_id,
+    author_display_name: row.author?.display_name ?? '',
+    body: row.body,
+    created_at: row.created_at,
+  }
+}
+
+/** The default-client wrapper (the details page's composer). */
+export async function createPlaceComment(
+  placeId: string,
+  body: string,
+): Promise<PlaceCommentRow> {
+  const { data } = await supabase.auth.getUser()
+  const user = data.user
+  if (!user) throw new Error('No authenticated user — cannot post a comment.')
+  return createPlaceCommentWithClient(supabase, user.id, placeId, body)
 }

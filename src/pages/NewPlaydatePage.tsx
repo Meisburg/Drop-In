@@ -9,6 +9,7 @@ import { PlaceDirectory } from '../components/PlaceDirectoryLazy'
 import { PlacePickerMap } from '../components/PlaceMapLazy'
 import { NAV_ICONS } from '../components/icons'
 import { SectionHeader } from '../components/SectionHeader'
+import { useFocusTrap } from '../components/FocusTrap'
 import { useSessionContext } from '../components/SessionProvider'
 import {
   createPlaydate,
@@ -367,6 +368,8 @@ export function NewPlaydatePage({
    * against.
    */
   const [directoryOpen, setDirectoryOpen] = useState(false)
+  const directorySheetRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(directorySheetRef, directoryOpen)
   const [errors, setErrors] = useState<PlaydateFormErrors>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -774,15 +777,32 @@ export function NewPlaydatePage({
   }
 
   /**
-   * V9 ticket 01: the "Browse places" button — a toggle. It opens the same
-   * inline list the field's typing opens, in browse mode (the directory,
-   * A→Z); tapping it again closes the list, so the affordance that showed the
-   * directory is also the one that puts it away.
+   * V23 slice 3: the field's "Browse places" button now opens the DIRECTORY
+   * SHEET (the full-screen `PlaceDirectory` overlay) instead of the inline
+   * 8-row list. The inline list stays reachable through typing and the `@`
+   * alias (the fast path); the button is the door to the whole directory with
+   * its map, search and filters. Closing the inline picker first keeps the two
+   * surfaces from rendering at once — the sheet is the only thing open.
    */
-  function toggleBrowsePlaces() {
-    setPicker((prev) => (prev === 'browse' ? 'closed' : 'browse'))
+  function openDirectorySheet() {
+    setPicker('closed')
+    setDirectoryOpen(true)
     setSubmitError(null)
   }
+
+  /**
+   * V23 slice 3: Escape closes the directory sheet — the same pattern as
+   * LocationModal's Escape-to-close. The window keydown listener is added only
+   * while the sheet is open, so it never intercepts Escape on the form itself.
+   */
+  useEffect(() => {
+    if (!directoryOpen) return
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setDirectoryOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [directoryOpen])
 
   /**
    * V21 t02 Phase B: the picker map's home pin — the viewer's stored home_zip
@@ -1147,8 +1167,8 @@ export function NewPlaydatePage({
            the directory actually loaded. A button that cannot browse (or one
            that opens an empty list) is worse than no button, and /new must
            stay usable with no places table at all. */
-        onBrowsePlaces={places !== null && places.length > 0 ? toggleBrowsePlaces : undefined}
-        browsePlacesOpen={picker === 'browse'}
+        onBrowsePlaces={places !== null && places.length > 0 ? openDirectorySheet : undefined}
+        browsePlacesOpen={directoryOpen}
          /* V13 ticket 02: the interactive place-picker map — markers per
             directory place (DB coords only), tap pre-fills the place field
             through the same pick path as the suggestion list. /edit passes
@@ -1194,30 +1214,24 @@ export function NewPlaydatePage({
         onSubmit={handleSubmit}
       />
 
-      {/* V21 t02: the "Browse all places" door — the founder's ask made
-          reachable from the post flow. It sits directly under the form (which
-          is where the Where? field is), and it opens the SAME directory
-          component /browse renders, in `selectable` mode. Rendered only when
-          the directory actually loaded: a button that opens an empty sheet is
-          worse than no button (the V9 t01 rule the picker already follows). */}
-      {places !== null && places.length > 0 ? (
-        <button
-          type="button"
-          data-testid="browse-all-places"
-          onClick={() => setDirectoryOpen(true)}
-          className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700"
-        >
-          Browse all {places.length} places
-        </button>
-      ) : null}
+            /* V23 slice 3: the bottom "Browse all N places" door is GONE. The field's own
+           "Browse places" button (above) opens this same sheet — a door at the
+           very bottom of the form, after the parent has already finished the
+           post, was a dead end (the founder's ask). One door, next to the
+           question it answers. */
 
-      {/* THE DIRECTORY SHEET (V21 t02). A full-screen overlay rather than an
-          inline panel: the directory is a map band plus a 239-row list, and
-          rendering it inside the form would bury the fields the parent still
-          has to fill. Selecting a row or a marker calls pickPlace (the ONE
-          write path) and pickPlace closes this sheet. */}
+      {/* THE DIRECTORY SHEET (V21 t02; V23 slice 3 hardened). A full-screen
+          overlay rather than an inline panel: the directory is a map band plus
+          a long list, and rendering it inside the form would bury the fields
+          the parent still has to fill. Selecting a row or a marker calls
+          pickPlace (the ONE write path) and pickPlace closes this sheet.
+          V23 slice 3 adds the dialog behavior: focus is trapped while open
+          (useFocusTrap on the sheet root), Escape closes, and the search +
+          filter controls pin to the top of the scroll area (stickyControls) so
+          scrolling a long list never loses them. */}
       {directoryOpen ? (
         <div
+          ref={directorySheetRef}
           className="fixed inset-0 z-[1100] flex flex-col bg-slate-50"
           data-testid="place-directory-sheet"
           role="dialog"
@@ -1237,7 +1251,7 @@ export function NewPlaydatePage({
               </button>
             </div>
           </div>
-          <div className="mx-auto w-full max-w-md flex-1 overflow-y-auto px-4 py-4">
+          <div className="mx-auto w-full max-w-md flex-1 overflow-y-auto px-4 py-4" data-testid="place-directory-scroll">
             <PlaceDirectory
               places={places}
               zipCoords={zipCoords}
@@ -1249,6 +1263,7 @@ export function NewPlaydatePage({
               viewerRadius={profile?.radius_miles ?? DEFAULT_RADIUS_MILES}
               homeZip={profile?.home_zip ?? null}
               selectable
+              stickyControls
               onSelect={pickPlace}
             />
           </div>

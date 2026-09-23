@@ -43,6 +43,8 @@ interface DirectoryProps {
   homeZip: string | null
   /** When true, taps select into the host instead of navigating away. */
   selectable?: boolean
+  /** V23 slice 3: when true, the search + filter card pins to the top of the scroll area. */
+  stickyControls?: boolean
   /** Called with the tapped place in selectable mode. */
   onSelect?: (place: Place) => void
 }

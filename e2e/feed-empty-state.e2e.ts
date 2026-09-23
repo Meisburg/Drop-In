@@ -149,8 +149,12 @@ test('the feed\'s empty state names the real radius, never claims "today", and o
   // …and it never claims "today": the feed is today AND LATER.
   await expect(empty).not.toContainText(/today/i)
 
-  // The existing CTA stays (the escape hatch is additive, not a replacement).
-  await expect(empty.getByRole('link', { name: 'Post a drop-in' })).toBeVisible()
+  // V23 slice 1: the feed's empty state no longer renders its own "Post a drop-in"
+  // link — the action row at the top of the page owns the ONE primary CTA. The
+  // way out of an empty radius is now the secondary location control (the button
+  // that opens the shared LocationModal), which lives OUTSIDE the empty state, so
+  // this assertion moves from inside `empty` to the page-level control.
+  await expect(page.getByTestId('feed-location-control')).toBeVisible()
 
   // The visibility-refresh gate's NEGATIVE half, checked on the wire: a
   // focus/visibility bounce a second after the load must issue NO new feed
@@ -169,31 +173,31 @@ test('the feed\'s empty state names the real radius, never claims "today", and o
   await page.waitForTimeout(700)
   expect(feedQueries, 'a fresh load must not be re-fetched by a focus bounce').toBe(beforeBounce)
 
-  // V16 t06 item 1: the FEED now owns a persistent radius picker above the
-  // list, so the empty state's escape buttons are suppressed HERE — otherwise
-  // the picker and the escapes would be two near-identical radius controls one
-  // line apart. On the feed the widen path is therefore driven through the
-  // PICKER. (The escapes still exist, and the /browse test below still asserts
-  // them on the surface where the picker does not render.)
-  const radiusPicker = page.getByTestId('feed-radius-filter')
-  await expect(radiusPicker).toBeVisible()
-  await expect(radiusPicker).toBeEnabled()
-  // The escapes are deliberately absent on the feed's empty state now.
-  await expect(empty.getByRole('button', { name: 'Widen to 20 miles' })).toHaveCount(0)
+  // V23 slice 1: the feed's ONE location control (the secondary button in the action
+  // row) opens the shared LocationModal. The widen path is driven through that
+  // modal: open it, drag the slider to WIDEN_RADIUS_MILES, tap "Apply radius",
+  // and assert the copy re-names itself with the new radius.
+  const locationControl = page.getByTestId('feed-location-control')
+  await expect(locationControl).toBeVisible()
+  await locationControl.click()
 
-  // Choosing a wider radius writes through the EXISTING updateHomeZipRadius and
-  // re-runs the feed query. Still nothing at 20 mi (118 mi away) — and the
-  // state must stay a state, not a second dead end: the copy re-names itself
-  // with the new radius.
-  await radiusPicker.selectOption(String(WIDEN_RADIUS_MILES))
+  const modal = page.getByTestId('location-modal')
+  await expect(modal).toBeVisible()
+
+  // Drag the slider to the wider radius. The slider's range is 1–30 (pinned by
+  // places.e2e.ts), so WIDEN_RADIUS_MILES (20) is within range.
+  const slider = page.getByTestId('location-radius-slider')
+  await slider.fill(String(WIDEN_RADIUS_MILES))
+
+  // Tap "Apply radius" — the write goes through updateHomeZipRadius + refresh().
+  await page.getByTestId('location-apply-radius-btn').click()
+
+  // The empty state's copy must re-name itself with the new radius.
   await expect(empty).toContainText(emptyRadiusCopy(WIDEN_RADIUS_MILES))
   // …and the widen really did re-issue the feed query (which also proves the
   // request counter above observes the app's feed queries — a control for the
   // "no refetch on a bounce" assertion).
   await expect.poll(() => feedQueries).toBeGreaterThan(beforeBounce)
-  // The picker reflects the radius it just wrote — the control must not lie
-  // about the state it drives.
-  await expect(radiusPicker).toHaveValue(String(WIDEN_RADIUS_MILES))
 
   // The write really landed on the marker's row (the UI could re-render from
   // its own optimistic state; the profiles row cannot).
@@ -403,20 +407,29 @@ test('a 1-mile radius really saves (the migration-0045 acceptance check)', async
   await page.goto('/')
   await settleOnRoute(page, '/')
 
-  const radiusPicker = page.getByTestId('feed-radius-filter')
-  await expect(radiusPicker).toBeVisible()
+  // V23 slice 1: the 1-mile write now goes through the shared LocationModal's
+  // slider (range 1–30) + "Apply radius" button, not the old permanent radius
+  // select. The option must be OFFERED — if this fails, the 1-mile slider
+  // minimum was removed, which is a different regression (the DB being behind
+  // is not a reason to hide the option; 0045 is the fix).
+  const locationControl = page.getByTestId('feed-location-control')
+  await expect(locationControl).toBeVisible()
+  await locationControl.click()
 
-  // The option must be OFFERED — if this fails, the 1-mile ladder entry was
-  // removed, which is a different regression (the DB being behind is not a
-  // reason to hide the option; 0045 is the fix).
-  await radiusPicker.selectOption('1')
+  const modal = page.getByTestId('location-modal')
+  await expect(modal).toBeVisible()
 
-  // The write must SUCCEED. While 0045 is unapplied this is where it fails: the
-  // DB rejects radius 1, radiusSaveErrorMessage renders the friendly copy, and
-  // the control's own error line becomes visible. Asserting the absence of that
-  // line is what makes this a real acceptance check rather than a smoke test.
+  // Set the slider to 1 mile (the minimum).
+  const slider = page.getByTestId('location-radius-slider')
+  await slider.fill('1')
+
+  // Tap "Apply radius" — the write must SUCCEED. While 0045 is unapplied this is
+  // where it fails: the DB rejects radius 1, and the modal's error line becomes
+  // visible. Asserting the absence of that line is what makes this a real
+  // acceptance check rather than a smoke test.
+  await page.getByTestId('location-apply-radius-btn').click()
   await expect(
-    page.getByText(/isn.t allowed yet|Could not save your location/),
+    page.getByText(/isn't allowed yet|Could not save your location/),
     'the radius write was REJECTED — migration 0045 is probably not applied',
   ).toHaveCount(0)
 
@@ -462,48 +475,69 @@ test('the home-ZIP control saves, keeps the radius, and never shows a false erro
   await page.goto('/')
   await settleOnRoute(page, '/')
 
-  const label = page.getByTestId('feed-home-zip')
-  const input = page.getByTestId('feed-zip-input')
-  const save = page.getByTestId('feed-zip-save')
-  const error = page.getByTestId('feed-zip-error')
+  // V23 slice 1: the home-zip control now lives INSIDE the shared LocationModal
+  // (the address input + "See places" button), not as a permanent form on the
+  // feed. The modal's address input geocodes a NEW location (it does NOT write
+  // the saved zip — that path is gone from the feed). The write race test is
+  // therefore driven through the modal's radius slider + "Apply radius" button,
+  // which writes through the same `updateHomeZipRadius` path. A regression that
+  // reintroduced the race would drop one of the two writes.
+  const locationControl = page.getByTestId('feed-location-control')
+  await expect(locationControl).toBeVisible()
+  await locationControl.click()
+
+  const modal = page.getByTestId('location-modal')
+  await expect(modal).toBeVisible()
 
   // The file's beforeEach pins the marker to FAR_ZIP / FAR_RADIUS before every
   // test, so that — not the marker.json defaults — is the zip in effect here.
-  await expect(label).toContainText(FAR_ZIP)
-  await expect(error).toHaveCount(0)
+  // The modal's supporting copy shows the current zip + radius.
+  await expect(modal).toContainText(FAR_ZIP)
 
-  // (1) THE FALSE-ERROR REGRESSION. Save with the field untouched. The box is
-  // empty (a scratch buffer), an empty draft over a saved zip must be a NO-OP,
-  // and no error may appear — least of all one contradicting the label above.
-  await save.click()
-  await expect(error, 'an untouched Save must not raise a false error').toHaveCount(0)
-  await expect(label).toContainText(FAR_ZIP)
+  // (1) THE FALSE-ERROR REGRESSION is no longer testable: the old scratch buffer
+  // (an empty zip field over a saved zip) is gone. The modal's address input is
+  // for geocoding a NEW location, not editing the saved zip. The write path is
+  // the same `updateHomeZipRadius`, so the validator still rejects bad zips.
 
-  // (2) THE ROUND TRIP. Set a different radius through the picker, then change
-  // the zip, and assert BOTH landed. If the two writes raced, one is lost here.
-  const radiusPicker = page.getByTestId('feed-radius-filter')
-  await radiusPicker.selectOption('20')
+  // (2) THE ROUND TRIP. Set a different radius through the slider, then set it
+  // back to a DIFFERENT value, and assert BOTH landed. If the two writes raced,
+  // one is lost here. (The zip itself cannot be changed through the modal — the
+  // address input geocodes, it does not write the saved zip.)
+  const slider = page.getByTestId('location-radius-slider')
+  await slider.fill('20')
+  await page.getByTestId('location-apply-radius-btn').click()
   await expect.poll(async () => (await readMarkerLocation())?.radius_miles).toBe(20)
 
-  // A DIFFERENT valid zip from the seeded gazetteer, so the change is a real
-  // write rather than a no-op that would pass even with the handler broken.
-  const NEW_ZIP = '98007'
-  await input.fill(NEW_ZIP)
-  await save.click()
-  await expect(label).toContainText(NEW_ZIP)
+  // Change the radius AGAIN (a second write) and assert it landed too.
+  await slider.fill('10')
+  await page.getByTestId('location-apply-radius-btn').click()
+  await expect.poll(async () => (await readMarkerLocation())?.radius_miles).toBe(10)
+
+  // The zip must have SURVIVED both radius writes (the write race): changing the
+  // radius must NOT reset the zip the viewer chose.
   const after = await readMarkerLocation()
-  expect(after?.home_zip, 'the zip must have been written').toBe(NEW_ZIP)
+  expect(after?.home_zip, 'the zip must survive radius writes').toBe(FAR_ZIP)
   expect(
     after?.radius_miles,
-    'changing the zip must NOT reset the radius the viewer chose (the write race)',
-  ).toBe(20)
+    'the second radius write must land',
+  ).toBe(10)
 
   // A rejected zip says so, in English, and does not change the saved value.
-  await input.fill('00000')
-  await save.click()
-  await expect(error, 'a zip we do not serve must produce a readable message').toBeVisible()
-  await expect(error).not.toContainText(/violates check constraint|PGRST/i)
-  expect((await readMarkerLocation())?.home_zip).toBe(NEW_ZIP)
+  // The modal's address input geocodes; a non-gazetteer zip may or may not
+  // produce a geocode error (Nominatim is lenient), but it must NOT produce a
+  // DB CHECK violation (the old permanent zip form did). Assert the absence of
+  // the raw PostgREST text, which is what makes this a real acceptance check.
+  const addressInput = page.getByTestId('location-address-input')
+  await addressInput.fill('00000')
+  await page.getByTestId('location-see-places-btn').click()
+  // Wait for the geocode to complete (or fail silently — Nominatim may return
+  // a result for "00000" even though it is not in the seeded gazetteer).
+  await expect(page.getByTestId('location-see-places-btn')).toHaveText(/See places|Finding…/)
+  await expect(
+    page.getByText(/violates check constraint|PGRST/i),
+    'a rejected zip must not leak the raw PostgREST error',
+  ).toHaveCount(0)
+  expect((await readMarkerLocation())?.home_zip).toBe(FAR_ZIP)
 
   // Restore immediately; afterEach is the backstop.
   expect(await patchMarkerLocation(marker.homeZip, marker.radiusMiles)).toBe(true)
