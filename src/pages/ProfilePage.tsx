@@ -94,9 +94,9 @@ const AUTOSAVE_DEBOUNCE_MS = 400
  *    sits at the very top of the page.
  *
  *  - EDIT MODE (behind that button) is everything this page used to render
- *    unconditionally: the identity card, the family photo, "About the parents"
- *    (the bio), "The parents" (parent cards), "Linked parent", and "About the
- *    kids". Nothing about that machinery changed in the move — the same
+  *    unconditionally: the identity card, the family photo, "About the kids",
+  *    "About the parents" (the bio), "The parents" (parent cards), and "Linked
+  *    parent". Nothing about that machinery changed in the move — the same
  *    debounced autosave machine (V12 t01), the same pure planner
  *    (planProfileSave, lib/profileSave.ts) writing only what changed, the same
  *    crop steps writing OBJECT PATHS rather than URLs.
@@ -1197,36 +1197,6 @@ export function ProfilePage() {
         ) : null}
       </div>
 
-      {/* "About the parents" — the bio (editable, autosaving). The display name
-          (the public handle) is NOT here: it renders as its OWN text node at
-          the BOTTOM of the page (the identity block), so a spec can match it
-          exactly while the app-shell header shows the @-prefixed form. */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900">About the parents</h2>
-        <label className="mt-2 flex flex-col gap-1 text-sm">
-          <span className="text-slate-700">Tell other families about yourselves</span>
-          <textarea
-            data-testid="about-family-input"
-            className={
-              'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
-              (liveBioError !== null ? 'border-red-400' : 'border-slate-300')
-            }
-            value={draft?.bio ?? ''}
-            onChange={(e) => editDraft({ bio: e.target.value }, 'bio')}
-            placeholder="Who’s in your family, and what are you into? (optional)"
-            maxLength={BIO_MAX_LENGTH}
-            rows={3}
-            disabled={draft === null}
-          />
-        </label>
-        <span className="mt-1 block text-xs text-slate-500">
-          {(draft?.bio ?? '').length}/{BIO_MAX_LENGTH}
-        </span>
-        {liveBioError !== null ? (
-          <p className="mt-1 text-sm text-red-600">{liveBioError}</p>
-        ) : null}
-      </div>
-
       {/* V21 t08: THE KIDS CARD MOVED HERE — before the parents group — so the
           edit surface's section order matches the read view's pinned sequence
           (user → kids → parents → drop-ins; the edit surface omits drop-ins).
@@ -1431,6 +1401,36 @@ export function ProfilePage() {
             ) : null}
           </>
         )}
+      </div>
+
+      {/* "About the parents" — the bio (editable, autosaving). The display name
+          (the public handle) is NOT here: it renders as its OWN text node at
+          the BOTTOM of the page (the identity block), so a spec can match it
+          exactly while the app-shell header shows the @-prefixed form. */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-base font-semibold text-slate-900">About the parents</h2>
+        <label className="mt-2 flex flex-col gap-1 text-sm">
+          <span className="text-slate-700">Tell other families about yourselves</span>
+          <textarea
+            data-testid="about-family-input"
+            className={
+              'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+              (liveBioError !== null ? 'border-red-400' : 'border-slate-300')
+            }
+            value={draft?.bio ?? ''}
+            onChange={(e) => editDraft({ bio: e.target.value }, 'bio')}
+            placeholder="Who’s in your family, and what are you into? (optional)"
+            maxLength={BIO_MAX_LENGTH}
+            rows={3}
+            disabled={draft === null}
+          />
+        </label>
+        <span className="mt-1 block text-xs text-slate-500">
+          {(draft?.bio ?? '').length}/{BIO_MAX_LENGTH}
+        </span>
+        {liveBioError !== null ? (
+          <p className="mt-1 text-sm text-red-600">{liveBioError}</p>
+        ) : null}
       </div>
 
       {/* V19 t05 (founder's ask): the PARENT CARDS — up to two parents, each
@@ -1668,11 +1668,13 @@ export function ProfilePage() {
         ) : null}
       </div>
 
-      {/* V21 t08: the "About the kids" card moved UP — it now sits before the
-          parents group (bio + parent cards + linked parent), matching the read
-          view's pinned section order. See the comment above that card for the
-          full rationale. This is where it used to live (last, after Linked
-          parent); the move is what kills the drift between the two surfaces. */}
+      {/* V21 t08: the "About the kids" card sits BEFORE the parents group (bio +
+          parent cards + linked parent) — this is now TRUE in the JSX, not just
+          in a comment. It used to live here (last, after Linked parent); that
+          was the drift between the edit surface and the read view's pinned order
+          (user → kids → parents). The move lives above, beside the card itself;
+          scripts/profile-order-check.mjs asserts the rendered DOM order so it
+          cannot silently drift back. */}
 
       {/* V16 t04: the "Hosted drop-ins" card is REMOVED from /profile (the
           founder's ask). It was the ONLY consumer of this page's own-posts

@@ -1,14 +1,24 @@
 /**
  * Unit tests for V21 t08's profile-section-order seam (src/lib/profileSections.ts).
  *
- * THE POINT OF THIS FILE: the founder pinned the profile's section order as
- * "user, kid, parents, drop-ins". Both surfaces — the read view (ProfileView)
- * and the edit surface (ProfilePage edit mode) — must lay their sections out in
- * that relative order. Each surface declares the section keys it renders, in
- * the order its JSX emits them; this file asserts every such declaration is a
- * legal subsequence of the pinned sequence. Reorder a card on either surface
- * and the corresponding assertion below fails — that is the anti-drift
- * mechanism the ticket asks for ("a comment alone is not enough").
+ * WHAT THIS FILE ACTUALLY DOES: it pins the DECLARED constants and the predicate.
+ * It asserts that PROFILE_SECTIONS is the founder-pinned sequence, that each
+ * surface's DECLARED section list (PROFILE_VIEW_SECTIONS from ProfileView,
+ * PROFILE_EDIT_SECTIONS from ProfilePage) is a legal subsequence of it, and that
+ * isInPinnedOrder / sectionsInPinnedOrder behave correctly on known inputs.
+ *
+ * WHAT IT CANNOT DO — and why this slice adds a second mechanism: those declared
+ * lists are hand-maintained literals that MIRROR the JSX. The mirror can drift:
+ * V21 t08 shipped exactly that drift (the constant said ['user','kids','parents']
+ * while the edit-mode DOM rendered parents before kids), and this test stayed
+ * green because it only ever saw the constant. A comment is not a check, and a
+ * constant that mirrors nothing is not a check either. The mechanism that catches
+ * JSX drift is scripts/profile-order-check.mjs: it launches the built app with the
+ * signed-in marker session, enters edit mode on /profile, reads the RENDERED
+ * section headings in DOM order, maps them to pinned keys, and exits non-zero when
+ * the sequence is not a legal subsequence of the pinned order. Run it after any
+ * reorder of a profile card; this file keeps the declared data honest, the script
+ * keeps the JSX honest.
  */
 import { describe, expect, it } from 'vitest'
 import {
@@ -27,9 +37,10 @@ import { PROFILE_EDIT_SECTIONS } from '../pages/ProfilePage'
 //
 // Each surface exports its own list (the data above) mirroring the order its
 // JSX lays cards out in. This file asserts every such declaration is a legal
-// subsequence of the pinned sequence. Reorder a card on either surface and the
-// corresponding assertion below fails — that is the anti-drift mechanism the
-// ticket asks for ("a comment alone is not enough").
+// subsequence of the pinned sequence — it pins the DECLARED constants, not the
+// rendered DOM. The rendered-DOM direction is scripts/profile-order-check.mjs
+// (see the file header above): reorder a card and that script fails, even if
+// the constant below was forgotten to move with it.
 // ---------------------------------------------------------------------------
 
 describe('the pinned profile section order (V21 t08)', () => {

@@ -360,6 +360,61 @@ controls, different arrangement.
 - **Budget:** one context.
 - **Depends on:** Slice 12 (it renames the Post action — do copy last)
 
+### Slice 15: Edit profile must be the read page, in the read order
+- **Objective:** Tapping "Edit profile" keeps you on the SAME page in the SAME
+  order. Today the edit surface renders its sections in a different sequence
+  than the read view, so it feels like a different page.
+- **THE HUMAN'S REPORT (verbatim):** *"in profile page, it goes @user, about the
+  kids, about the parents... hosted drop-ins. but when i click edit profile page,
+  it goes @user, A photo of your family, About the parents, about the kids, The
+  parents, Linked parent. What I hate about this is, as a user, when I click edit
+  profile, I don't want to feel like a different page. I just want it to feel
+  like the page where I'm editing this profile. And a BIG part of what will make
+  it feel like it's the same page is to keep the same sequential order."*
+- **MEASURED (a real bug, reproduced in the DOM):**
+  ```
+  EDIT MODE, actual:  Your photo & name -> A photo of your family ->
+                      About the parents -> About the kids ->
+                      The parents -> Linked parent
+  PINNED order:       user -> kids -> parents -> dropins
+  ```
+  **Parents renders BEFORE kids.** The read view is correct; the edit surface is not.
+- **WHY THE EXISTING GUARD MISSED IT, and the fix for that:** V21 t08 built a real
+  seam (`src/lib/profileSections.ts`, `isInPinnedOrder`) plus a unit test — but the
+  test asserts a **hand-maintained literal** (`PROFILE_EDIT_SECTIONS`,
+  `ProfilePage.tsx:70`, which says `['user','kids','parents']`). The JSX emits a
+  different order, so constant and JSX drifted and the test stayed green. Worse,
+  `ProfilePage.tsx:1671` carries a comment claiming the kids card "moved UP ...
+  before the parents group" — the comment moved, the card did not. **A comment is
+  not a check; neither is a constant that mirrors nothing.**
+- **Files in scope:** `src/pages/ProfilePage.tsx`, `src/lib/profileSections.test.ts`
+  (comment only), and a NEW `scripts/profile-order-check.mjs`.
+- **Approach:**
+  1. **Move the JSX, not the constant.** Relocate the "About the kids" card so it
+     renders BEFORE "About the parents" and "The parents", matching the read view.
+     Nothing else moves; no restyle, no renumber. Correct the stale comment at
+     line 1671 to describe what the code now does.
+  2. **Make the guard able to fail.** Add `scripts/profile-order-check.mjs`: render
+     the profile, enter edit mode, read section headings in DOM order, assert they
+     are a legal subsequence of `PROFILE_SECTIONS`. Prove it FAILS on the pre-fix
+     order and PASSES on the fixed one — red-green, both directions reported.
+  3. The unit test stays (pinning the constant is still worth doing) but its doc
+     comment must stop claiming it is the anti-drift mechanism for the JSX. The DOM
+     check is.
+- **Acceptance criteria:**
+  - Edit-mode DOM order of section headings is a legal subsequence of
+    `['user','kids','parents','dropins']`, reported from a real render
+  - Read-view order UNCHANGED (it was already correct)
+  - `scripts/profile-order-check.mjs` FAILS against the old order and PASSES
+    against the new one (report both runs)
+  - No styling, copy, or behavior change beyond the block move
+  - `npm run verify` passes (1156+ tests, 0 lint errors)
+- **Verification command:** `npm run verify`, then `node scripts/profile-order-check.mjs`
+  (needs a server + the marker session).
+- **Budget:** one local builder context.
+- **Depends on:** nothing.
+
+
 ## Risks / open questions
 
 - **R1 — Dark palette quality is a design judgment, not a mechanical one.**
