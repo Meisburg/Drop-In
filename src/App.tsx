@@ -199,18 +199,9 @@ function ProtectedShell() {
             Drop In
           </Link>
           <div className="flex min-w-0 items-center gap-3">
-            {profile ? (
-              <Link
-                to={`/u/${encodeURIComponent(profile.display_name)}`}
-                className="flex min-h-11 min-w-0 max-w-32 items-center truncate text-sm font-medium text-slate-700"
-              >
-                @{profile.display_name}
-              </Link>
-            ) : null}
             {/* V11 ticket 06: the settings entry point — a gear to the
                 family's editor. Signed-in only (the route is gated by the
-                shell's auth + home-zip redirect), and it lives next to the
-                display name / sign-out controls it belongs to. */}
+                shell's auth + home-zip redirect), next to the sign-out control. */}
             {session !== null ? (
               <Link
                 to="/settings"
@@ -261,14 +252,15 @@ function ProtectedShell() {
       {session !== null ? (
         <nav className="pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white">
           <div className="mx-auto flex max-w-md">
-            <NavTab to="/" label="Nearby" icon={<NavIcon path={NAV_ICONS.nearby} />} />
+            <NavTab to="/" label="Drop Ins" icon={<NavIcon path={NAV_ICONS.nearby} />} />
             {/* V14 ticket 01: the inbox — parent↔parent messaging, scoped to
                 the drop-ins both parties are going to (host ↔ pinger). */}
             <NavTab to="/inbox" label="Inbox" icon={<NavIcon path={NAV_ICONS.inbox} />} />
-            {/* V8 ticket 07: /browse is the PLACES directory now (the tab label
-                follows the screen — a "Browse" tab over a places list would be
-                the same drift the ticket removed). */}
-            <NavTab to="/browse" label="Places" icon={<NavIcon path={NAV_ICONS.browse} />} />
+            {/* V21 t02: the Places tab is GONE — the directory moved into the
+                post form's "Where?" block (the browse surface, one shared
+                implementation). /browse KEEPS its route (deep links, e2e specs,
+                and .scratch/playtest/routes.json all point at it); it is simply
+                no longer a nav destination. */}
             <NavTab to="/new" label="Post" icon={<NavIcon path={NAV_ICONS.post} />} />
             <NavTab to="/profile" label="Profile" icon={<NavIcon path={NAV_ICONS.profile} />} />
           </div>

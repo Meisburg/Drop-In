@@ -59,3 +59,25 @@ export const PLACE_KIND_ICONS = {
   // A map pin with a dot — the honest "we know the kind is 'other'".
   other: 'M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11Z M12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z',
 } as const
+
+/**
+ * V21 t03: REACTION-KIND glyphs — the emoji each message reaction renders as.
+ *
+ * Deliberately EMOJI (not stroked SVG paths like NAV_ICONS / PLACE_KIND_ICONS):
+ * reactions are expressive colour, and the six faces + heart + thumb read at a
+ * glance in a way line-art would not. The key is the reaction's `kind`, verbatim
+ * from `REACTION_KINDS` (`lib/db.ts`, migration 0049's CHECK mirror) — the six
+ * kinds the DB allows, so every row renders SOMETHING and an unknown kind falls
+ * back to `like` at the call site rather than rendering an empty box.
+ *
+ * The glyph map lives here (components/) exactly where PLACE_KIND_ICONS lives;
+ * the KINDS list lives in lib/ (db.ts) exactly where PLACE_KINDS lives (places.ts).
+ */
+export const REACTION_GLYPHS = {
+  like: '👍',
+  love: '❤️',
+  laugh: '😂',
+  wow: '😮',
+  sad: '😢',
+  angry: '😠',
+} as const

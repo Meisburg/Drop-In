@@ -307,9 +307,9 @@ test('(c) typing on /profile saves itself — leaving the page loses nothing', a
   await bio.fill(typed)
   await expect(page.getByTestId('profile-save-note')).toHaveText('Saved.')
 
-  // The in-app link goes through: no dialog at all, straight to / (Nearby).
-  const nearby = page.getByRole('link', { name: 'Nearby', exact: true })
-  await nearby.click()
+  // The in-app link goes through: no dialog at all, straight to / (Drop Ins).
+  const dropIns = page.getByRole('link', { name: 'Drop Ins', exact: true })
+  await dropIns.click()
   await expect(page.getByTestId('unsaved-changes-dialog')).toHaveCount(0)
   await page.waitForURL('/')
   await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible()

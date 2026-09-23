@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
+  applyReactionSet,
   applyReactionToggle,
   listConversationsWithClient,
   markConversationReadWithClient,
@@ -13,8 +14,10 @@ import {
   sendMessageWithClient,
   truncateMessagePreview,
   validateMessageBody,
+  REACTION_KINDS,
 } from './db'
-import type { MessageRow } from './db'
+import type { MessageRow, ReactionState } from './db'
+import { REACTION_GLYPHS } from '../components/icons'
 
 /**
  * V14 ticket 01 (migration 0042): the inbox's db.ts seams against a recording
@@ -402,47 +405,142 @@ describe('markConversationReadWithClient (the read-cursor upsert)', () => {
 })
 describe('applyReactionToggle (V15 ticket 08 — the optimistic count math)', () => {
   it('increments when the viewer reacts to an unreacted message', () => {
-    const next = applyReactionToggle({ m1: { count: 2, mine: false } }, 'm1', true)
-    expect(next.m1).toEqual({ count: 3, mine: true })
+    const next = applyReactionToggle({ m1: { count: 2, mine: false, myKind: null } }, 'm1', true)
+    expect(next.m1).toEqual({ count: 3, mine: true, myKind: 'like' })
   })
 
   it('decrements when the viewer removes their own reaction', () => {
-    const next = applyReactionToggle({ m1: { count: 3, mine: true } }, 'm1', false)
-    expect(next.m1).toEqual({ count: 2, mine: false })
+    const next = applyReactionToggle({ m1: { count: 3, mine: true, myKind: 'like' } }, 'm1', false)
+    expect(next.m1).toEqual({ count: 2, mine: false, myKind: null })
   })
 
   it('floors the decrement at 0 (a stale count never renders -1)', () => {
     // The realtime stream already removed the last other reaction: the local
     // count is 0 but `mine` is still true. Un-reacting must clamp, not go
     // negative — a "-1" pill is a visible lie.
-    const next = applyReactionToggle({ m1: { count: 0, mine: true } }, 'm1', false)
-    expect(next.m1).toEqual({ count: 0, mine: false })
+    const next = applyReactionToggle({ m1: { count: 0, mine: true, myKind: 'like' } }, 'm1', false)
+    expect(next.m1).toEqual({ count: 0, mine: false, myKind: null })
   })
 
   it('starts from 0/false for a message it has never seen', () => {
     const next = applyReactionToggle({}, 'm9', true)
-    expect(next.m9).toEqual({ count: 1, mine: true })
+    expect(next.m9).toEqual({ count: 1, mine: true, myKind: 'like' })
   })
 
   it('leaves every other message untouched (a per-message toggle)', () => {
-    const before = { m1: { count: 1, mine: true }, m2: { count: 4, mine: false } }
+    const before: Record<string, ReactionState> = { m1: { count: 1, mine: true, myKind: 'like' }, m2: { count: 4, mine: false, myKind: null } }
     const next = applyReactionToggle(before, 'm2', true)
-    expect(next.m1).toEqual({ count: 1, mine: true })
-    expect(next.m2).toEqual({ count: 5, mine: true })
+    expect(next.m1).toEqual({ count: 1, mine: true, myKind: 'like' })
+    expect(next.m2).toEqual({ count: 5, mine: true, myKind: 'like' })
   })
 
   it('does not mutate the map it is given (React state discipline)', () => {
-    const before = { m1: { count: 1, mine: false } }
+    const before: Record<string, ReactionState> = { m1: { count: 1, mine: false, myKind: null } }
     const snapshot = JSON.stringify(before)
     applyReactionToggle(before, 'm1', true)
     expect(JSON.stringify(before)).toBe(snapshot)
   })
 
   it('is its own inverse: toggle on then off returns to the start', () => {
-    const start = { m1: { count: 2, mine: false } }
+    const start = { m1: { count: 2, mine: false, myKind: null } }
     const on = applyReactionToggle(start, 'm1', true)
     const off = applyReactionToggle(on, 'm1', false)
     expect(off.m1).toEqual(start.m1)
+  })
+})
+
+/**
+ * V21 t03: the generalised SET seam — one reaction per person per message, kind
+ * is a mutable attribute. Set adds (count +1), replace-in-place holds the count,
+ * remove decrements (floored at 0), and an unknown/absent state starts from
+ * zero. The existing applyReactionToggle tests above are the proof that the
+ * single-kind "like" behaviour is provably intact through the alias.
+ */
+describe('applyReactionSet (V21 t03 — set / replace / remove)', () => {
+  it('sets a new reaction on an unreacted message (count + 1, mine, myKind)', () => {
+    const next = applyReactionSet({ m1: { count: 2, mine: false, myKind: null } }, 'm1', 'love')
+    expect(next.m1).toEqual({ count: 3, mine: true, myKind: 'love' })
+  })
+
+  it('replacing a DIFFERENT kind does NOT increment the count (in place)', () => {
+    // The viewer already has 👍; switching to ❤️ must keep the count at 1.
+    const next = applyReactionSet({ m1: { count: 1, mine: true, myKind: 'like' } }, 'm1', 'love')
+    expect(next.m1).toEqual({ count: 1, mine: true, myKind: 'love' })
+  })
+
+  it('setting the SAME kind you already have is a no-op (count unchanged)', () => {
+    const before: Record<string, ReactionState> = { m1: { count: 4, mine: true, myKind: 'laugh' } }
+    const next = applyReactionSet(before, 'm1', 'laugh')
+    expect(next.m1).toEqual({ count: 4, mine: true, myKind: 'laugh' })
+  })
+
+  it('removes the reaction (null) and decrements the count', () => {
+    const next = applyReactionSet({ m1: { count: 3, mine: true, myKind: 'sad' } }, 'm1', null)
+    expect(next.m1).toEqual({ count: 2, mine: false, myKind: null })
+  })
+
+  it('floors the removal at 0 (a stale count never renders -1)', () => {
+    const next = applyReactionSet({ m1: { count: 0, mine: true, myKind: 'angry' } }, 'm1', null)
+    expect(next.m1).toEqual({ count: 0, mine: false, myKind: null })
+  })
+
+  it('starts from 0/false/null for a message it has never seen', () => {
+    const next = applyReactionSet({}, 'm9', 'wow')
+    expect(next.m9).toEqual({ count: 1, mine: true, myKind: 'wow' })
+  })
+
+  it('leaves every other message untouched (a per-message set)', () => {
+    const before: Record<string, ReactionState> = { m1: { count: 1, mine: true, myKind: 'like' }, m2: { count: 4, mine: false, myKind: null } }
+    const next = applyReactionSet(before, 'm2', 'love')
+    expect(next.m1).toEqual({ count: 1, mine: true, myKind: 'like' })
+    expect(next.m2).toEqual({ count: 5, mine: true, myKind: 'love' })
+  })
+
+  it('does not mutate the map it is given (React state discipline)', () => {
+    const before: Record<string, ReactionState> = { m1: { count: 1, mine: false, myKind: null } }
+    const snapshot = JSON.stringify(before)
+    applyReactionSet(before, 'm1', 'like')
+    expect(JSON.stringify(before)).toBe(snapshot)
+  })
+
+  it('set then remove returns to the start (the picker round trip)', () => {
+    const start: Record<string, ReactionState> = { m1: { count: 2, mine: false, myKind: null } }
+    const set = applyReactionSet(start, 'm1', 'love')
+    const removed = applyReactionSet(set, 'm1', null)
+    expect(removed.m1).toEqual({ count: 2, mine: false, myKind: null })
+  })
+})
+
+/**
+ * V21 t03: the six kinds + their glyphs are complete and match migration 0049's
+ * CHECK constraint value list. This is the drift guard between SQL and TS — if
+ * the SQL list ever changes, this assertion fails loudly rather than rendering
+ * an unknown kind as nothing.
+ */
+describe('REACTION_KINDS + REACTION_GLYPHS (V21 t03 — completeness vs the 0049 CHECK)', () => {
+  // The exact value list in 0049_message_reaction_kinds.sql's CHECK constraint.
+  const SQL_CHECK_VALUES = ['like', 'love', 'laugh', 'wow', 'sad', 'angry']
+
+  it('exports exactly the six pinned kinds, in order', () => {
+    expect([...REACTION_KINDS]).toEqual(SQL_CHECK_VALUES)
+  })
+
+  it('has a glyph for every kind (no missing key)', () => {
+    for (const kind of REACTION_KINDS) {
+      expect(REACTION_GLYPHS[kind]).toBeTruthy()
+    }
+  })
+
+  it('has no glyph keys beyond the six kinds (no orphan glyph)', () => {
+    const glyphKeys = Object.keys(REACTION_GLYPHS)
+    expect(glyphKeys.sort()).toEqual([...SQL_CHECK_VALUES].sort())
+  })
+
+  it('every glyph is a non-empty string (an empty box would render as nothing)', () => {
+    for (const kind of REACTION_KINDS) {
+      expect(typeof REACTION_GLYPHS[kind]).toBe('string')
+      expect((REACTION_GLYPHS[kind] as string).length).toBeGreaterThan(0)
+    }
   })
 })
 
@@ -520,17 +618,30 @@ describe('reactionStatesForMessagesWithClient (the thread\'s initial batch read)
     })
     const states = await reactionStatesForMessagesWithClient(client, ['m1', 'm2', 'm3'], 'me')
     expect(calls).toContain('from(message_reactions)')
-    expect(states.m1).toEqual({ count: 2, mine: true })
-    expect(states.m2).toEqual({ count: 1, mine: false })
+    // V21 t03: the wire now carries kind too. The mock rows have no `kind`
+    // field (pre-0049 shape), so the viewer's own row defaults to 'like'.
+    expect(states.m1).toEqual({ count: 2, mine: true, myKind: 'like' })
+    expect(states.m2).toEqual({ count: 1, mine: false, myKind: null })
     // A message with no reactions is present and zeroed, never absent — the
     // UI reads `states[id]` directly and must not have to null-check.
-    expect(states.m3).toEqual({ count: 0, mine: false })
+    expect(states.m3).toEqual({ count: 0, mine: false, myKind: null })
   })
 
-  it('reads the message_id + profile_id columns only (the minimal wire)', async () => {
+  it('records the viewer\'s own kind when their row carries one', async () => {
+    const { client } = makeMessageMockClient({
+      messageReactions: {
+        data: [{ message_id: 'm1', profile_id: 'me', kind: 'love' }],
+        error: null,
+      },
+    })
+    const states = await reactionStatesForMessagesWithClient(client, ['m1'], 'me')
+    expect(states.m1).toEqual({ count: 1, mine: true, myKind: 'love' })
+  })
+
+  it('reads the message_id + profile_id + kind columns only (the minimal wire)', async () => {
     const { client, calls } = makeMessageMockClient({ messageReactions: { data: [], error: null } })
     await reactionStatesForMessagesWithClient(client, ['m1'], 'me')
-    expect(calls).toContain('select(message_id, profile_id)')
+    expect(calls).toContain('select(message_id, profile_id, kind)')
     expect(calls).toContain('in(message_id, m1)')
   })
 

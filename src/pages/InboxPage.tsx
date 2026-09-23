@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { NAV_ICONS } from '../components/icons'
+import { NAV_ICONS, REACTION_GLYPHS } from '../components/icons'
 import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
 import {
-  applyReactionToggle,
+  applyReactionSet,
   listConversations,
   listDirectConversations,
   markConversationRead,
@@ -19,14 +19,17 @@ import {
   sendMessage,
   supabase,
   toggleReaction,
+  toggleReactionRemove,
   validateMessageBody,
 } from '../lib/db'
 import type {
   ConversationSummary,
   MessageRow,
   ProfileSearchResult,
+  ReactionKind,
   ReactionState,
 } from '../lib/db'
+import { REACTION_KINDS } from '../lib/db'
 
 /**
  * /inbox — parent↔parent messaging (V14 ticket 01, migration 0042).
@@ -119,33 +122,43 @@ function ConversationCard({
  * the bubble) + the body in a rounded bubble. Own messages are right-aligned
  * + tinted; the other party's are left-aligned + white.
  *
- * V15 ticket 08 (A26): a compact reaction row sits under each bubble — a 👍
- * button plus the participant count. The count is hidden at 0 so a quiet
- * thread is not littered with "👍 0", but the button always renders (there
- * must be something to tap). Your own reaction fills the button indigo; a
- * stranger's reaction is a plain slate outline. The button is presentational
- * — the page owns the toggle + the optimistic math (applyReactionToggle).
+ * V15 ticket 08 (A26) + V21 t03: a compact reaction row sits under each bubble —
+ * a SUMMARY PILL (the viewer's own glyph + the participant count) that opens a
+ * six-option PICKER. The count is hidden at 0 so a quiet thread is not littered
+ * with "👍 0", but the pill always renders (there must be something to tap).
+ * Your own reaction fills the pill indigo; no reaction is a plain slate outline.
+ * The pill is presentational — the page owns the set/replace/remove + the
+ * optimistic math (applyReactionSet).
  *
- * V16 ticket 02: the glyph is an inline stroked SVG thumb, NOT the 👍 emoji.
- * A colour-emoji glyph paints its own yellow and ignores `color`, so the rest
- * state stayed fully saturated and read as "already selected". The SVG honours
- * `currentColor`, so both the fill and the glyph go neutral at rest and white
- * on the indigo fill. The class decision is `reactionButtonClasses` in lib/.
+ * WHY A PILL + PICKER RATHER THAN SIX INLINE BUTTONS: on a phone the row of six
+ * would either blow out the bubble's width at 390px or shrink each target below
+ * the 44px floor. The pill is one ≥44px tap target; the picker it opens is an
+ * overlay of six 44×44 buttons (h-11 w-11) that never widens the bubble.
  */
 function MessageBubble({
   message,
   isOwn,
   senderName,
   reaction,
-  onToggleReaction,
+  onReact,
 }: {
   message: MessageRow
   isOwn: boolean
   senderName: string
   reaction: ReactionState
-  onToggleReaction: (messageId: string) => void
+  onReact: (messageId: string, kind: ReactionKind | null) => void
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false)
   const countLabel = reactionCountLabel(reaction.count)
+  // The pill shows the viewer's own glyph (a neutral thumb when they have not
+  // reacted yet) plus the running count.
+  const myGlyph = reaction.myKind !== null ? REACTION_GLYPHS[reaction.myKind] : REACTION_GLYPHS.like
+  const chooseKind = (kind: ReactionKind) => {
+    // Tapping the kind you already have REMOVES the reaction (null); any other
+    // kind SETS it (replacing in place when different, so the count holds).
+    onReact(message.id, reaction.mine && reaction.myKind === kind ? null : kind)
+    setPickerOpen(false)
+  }
   return (
     <div className={isOwn ? 'flex justify-end' : 'flex justify-start'}>
       <div className={`max-w-[80%] ${isOwn ? 'text-right' : ''}`}>
@@ -158,51 +171,55 @@ function MessageBubble({
         >
           {message.body}
         </p>
-        <div className={`mt-1 flex items-center gap-1.5 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+        <div className={`relative mt-1 flex items-center gap-1.5 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+          {/* The summary pill: the viewer's glyph + count; opens the picker. */}
           <button
             type="button"
             data-testid={`react-${message.id}`}
-            aria-pressed={reaction.mine}
-            aria-label={reaction.mine ? 'Remove your thumbs-up' : 'Thumbs-up this message'}
-            onClick={() => onToggleReaction(message.id)}
+            aria-expanded={pickerOpen}
+            aria-label={
+              reaction.mine ? `Your reaction: ${reaction.myKind ?? 'like'}. Open reactions` : 'Add a reaction'
+            }
+            onClick={() => setPickerOpen((o) => !o)}
             className={reactionButtonClasses(reaction.mine)}
           >
-            <ThumbIcon />
-            {/* The count rides INSIDE the button (the "👍 3" pill shape the
-                ticket asks for); at 0 only the thumb shows. Hoisted to a const
-                (V16 t02 review): the guard and the rendered text must come from
-                the SAME evaluation, so they cannot drift apart if the label
-                ever becomes locale-aware. */}
+            <span aria-hidden>{myGlyph}</span>
             {countLabel !== null ? (
               <span data-testid={`react-count-${message.id}`}>{countLabel}</span>
             ) : null}
           </button>
+          {pickerOpen ? (
+            <div
+              data-testid={`react-picker-${message.id}`}
+              role="menu"
+              className={`absolute bottom-full z-10 mb-1 flex gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-lg ${
+                isOwn ? 'right-0' : 'left-0'
+              }`}
+            >
+              {REACTION_KINDS.map((kind) => {
+                const active = reaction.mine && reaction.myKind === kind
+                return (
+                  <button
+                    key={kind}
+                    type="button"
+                    role="menuitem"
+                    data-testid={`react-option-${kind}`}
+                    aria-label={kind}
+                    aria-pressed={active}
+                    onClick={() => chooseKind(kind)}
+                    className={`flex h-11 w-11 items-center justify-center rounded-lg text-xl transition-colors ${
+                      active ? 'bg-indigo-600' : 'hover:bg-slate-100'
+                    }`}
+                  >
+                    <span aria-hidden>{REACTION_GLYPHS[kind]}</span>
+                  </button>
+                )
+              })}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
-  )
-}
-
-/**
- * The thumbs-up glyph (V16 ticket 02) — same 24px stroked currentColor family
- * as NAV_ICONS/SectionHeader, drawn inline because the emoji could not be
- * tinted. Sized h-3.5/w-3.5 to sit inside the h-7 pill; `aria-hidden` because
- * the button carries the accessible name.
- */
-function ThumbIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-3.5 w-3.5 shrink-0"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M7 10v10 M7 20H5a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2h2Z M7 10l4-7a2 2 0 0 1 2 2v5h5.4a2 2 0 0 1 2 2.4l-1 6A2 2 0 0 1 17.4 20H7" />
-    </svg>
   )
 }
 
@@ -489,19 +506,26 @@ export function InboxPage() {
      */
     const applyReactionEvent = (
       eventType: 'INSERT' | 'DELETE',
-      row: { message_id?: string; profile_id?: string },
+      row: { message_id?: string; profile_id?: string; kind?: string },
     ) => {
       const messageId = row.message_id
       if (messageId === undefined) return
       const delta = eventType === 'INSERT' ? 1 : -1
       const mine = row.profile_id !== undefined && row.profile_id === (session?.user.id ?? '')
       setReactions((prev) => {
-        const current = prev[messageId] ?? { count: 0, mine: false }
-        // Our OWN write already moved this map optimistically in
-        // handleToggleReaction; the echo must not move the count a second
-        // time. It is still useful for `mine` (a reaction made in another tab
-        // reconciles the button here), so apply that half and skip the delta.
-        if (mine) return { ...prev, [messageId]: { count: current.count, mine: eventType === 'INSERT' } }
+        const current = prev[messageId] ?? { count: 0, mine: false, myKind: null }
+        // Our OWN write already moved this map optimistically in handleReact;
+        // the echo must not move the count a second time. It is still useful for
+        // `mine` + `myKind` (a reaction made in another tab reconciles here), so
+        // apply that half and skip the delta. On INSERT the event's kind is the
+        // new one; on DELETE our own reaction is gone, so myKind clears.
+        if (mine) {
+          const myKind =
+            eventType === 'INSERT'
+              ? ((row.kind as ReactionKind | undefined) ?? 'like')
+              : null
+          return { ...prev, [messageId]: { count: current.count, mine: eventType === 'INSERT', myKind } }
+        }
         return {
           ...prev,
           [messageId]: {
@@ -509,6 +533,7 @@ export function InboxPage() {
             // Someone else's reaction moves the count and leaves our button's
             // fill alone.
             mine: current.mine,
+            myKind: current.myKind,
           },
         }
       })
@@ -519,7 +544,7 @@ export function InboxPage() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'message_reactions' },
         (payload) => {
-          applyReactionEvent('INSERT', payload.new as { message_id?: string; profile_id?: string })
+          applyReactionEvent('INSERT', payload.new as { message_id?: string; profile_id?: string; kind?: string })
         },
       )
       .on(
@@ -529,9 +554,13 @@ export function InboxPage() {
           // DELETE payloads carry the removed row under `old`. 0043 sets no
           // REPLICA IDENTITY FULL, so `old` holds the PK only — and for this
           // table the PK is (message_id, profile_id), exactly the two fields
-          // this handler reads. Confirmed live by the reactions e2e spec, which
-          // un-reacts and asserts the other side's count falls back to 0.
-          applyReactionEvent('DELETE', payload.old as { message_id?: string; profile_id?: string })
+          // this handler needs to reconcile the counter. Adding the `kind`
+          // column (0049) does NOT change the PK, so the default replica
+          // identity still carries both ids into the DELETE payload — no
+          // REPLICA IDENTITY change is required. Confirmed live by the
+          // reactions e2e spec, which un-reacts and asserts the other side's
+          // count falls back to 0.
+          applyReactionEvent('DELETE', payload.old as { message_id?: string; profile_id?: string; kind?: string })
         },
       )
 
@@ -579,6 +608,7 @@ export function InboxPage() {
           console.log(`[InboxPage] Realtime channel ${channelName} status: ${status}`)
         })
     }
+
     return () => {
       void supabase.removeChannel(channel)
     }
@@ -592,28 +622,29 @@ export function InboxPage() {
   const userId = session?.user.id ?? null
 
   /**
-   * Toggle the viewer's 👍 on one message (V15 ticket 08, A26).
+   * Set (or remove) the viewer's reaction KIND on one message (V21 t03).
    *
-   * Optimistic, exactly like handleSend: the local map flips IMMEDIATELY via
-   * the pure applyReactionToggle (so the button fills and the count moves on
-   * the same frame as the tap), then the write goes out. On failure the flip
-   * is rolled back to the value it had before the tap — the same
-   * optimistic-then-reconcile discipline the composer uses.
+   * Optimistic, exactly like handleSend: the local map moves IMMEDIATELY via
+   * the pure applyReactionSet (so the pill fills and the count moves on the same
+   * frame as the tap), then the write goes out. On failure the move is rolled
+   * back to the value it had before the tap — the same optimistic-then-reconcile
+   * discipline the composer uses. `kind` null means "remove" (the picker's
+   * tap-your-current-kind case); a kind means "set", replacing in place when the
+   * viewer already has a different one (the count holds, so no double-count).
    *
-   * Our own write also echoes back through the realtime subscription. That
-   * echo must NOT move the count (handleToggleReaction already did), so
-   * applyReactionEvent skips the delta when the row is ours and only uses it to
-   * reconcile `mine` — which is what makes a reaction made in ANOTHER tab show
-   * up correctly here.
+   * Our own write also echoes back through the realtime subscription. That echo
+   * must NOT move the count (this handler already did), so applyReactionEvent
+   * skips the delta when the row is ours and only uses it to reconcile `mine` +
+   * `myKind` — which is what makes a reaction made in ANOTHER tab show up here.
    */
-  async function handleToggleReaction(messageId: string): Promise<void> {
-    const before = reactions[messageId] ?? { count: 0, mine: false }
-    const nextMine = !before.mine
-    setReactions((prev) => applyReactionToggle(prev, messageId, nextMine))
+  async function handleReact(messageId: string, kind: ReactionKind | null): Promise<void> {
+    const before = reactions[messageId] ?? { count: 0, mine: false, myKind: null }
+    setReactions((prev) => applyReactionSet(prev, messageId, kind))
     try {
-      await toggleReaction(messageId)
+      if (kind !== null) await toggleReaction(messageId, kind)
+      else await toggleReactionRemove(messageId)
     } catch {
-      // Roll the optimistic flip back (the write never landed).
+      // Roll the optimistic move back (the write never landed).
       setReactions((prev) => ({ ...prev, [messageId]: before }))
     }
   }
@@ -898,8 +929,8 @@ export function InboxPage() {
                           ? (profile?.display_name ?? 'You')
                           : threadHeaderName || 'Unknown'
                       }
-                      reaction={reactions[message.id] ?? { count: 0, mine: false }}
-                      onToggleReaction={(messageId) => void handleToggleReaction(messageId)}
+                      reaction={reactions[message.id] ?? { count: 0, mine: false, myKind: null }}
+                      onReact={(messageId, kind) => void handleReact(messageId, kind)}
                     />
                   ))
                 )}

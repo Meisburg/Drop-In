@@ -26,12 +26,12 @@ test('signed in as the marker, /profile renders the marker display name', async 
     page.getByRole('heading', { name: `@${marker.displayName}`, exact: true }),
   ).toBeVisible()
 
-  // The app-shell header shows the marker's public handle. Scoped to the banner:
-  // the identity card renders its own "@handle" heading too, so an unscoped
-  // locator is a strict-mode violation.
+  // V21 t10: the header's duplicate profile link is removed — the banner no
+// longer renders the @handle. The identity card's own "@handle" heading
+// (asserted above) is the single source of truth for the loaded row.
   await expect(
     page.getByRole('banner').getByText(`@${marker.displayName}`, { exact: true }),
-  ).toBeVisible()
+  ).toHaveCount(0)
 
   // The founder's Edit profile button is the only way into the editor, and it
   // sits at the very top of the read view.

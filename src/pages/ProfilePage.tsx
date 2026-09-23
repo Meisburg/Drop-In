@@ -20,6 +20,7 @@ import {
   requestAccountLink,
   respondToAccountLink,
   saveParentCard,
+  searchProfilesByName,
   unlinkAccounts,
   LIKES_MAX_LENGTH,
   MAX_KIDS_PER_PROFILE,
@@ -55,6 +56,22 @@ import {
 } from '../lib/profileSave'
 import { autosaveEmptyPass } from '../lib/autosave'
 import type { CropRect } from '../lib/photoCrop'
+import type { ProfileSectionKey } from '../lib/profileSections'
+
+/**
+ * V21 t08: THE EDIT SURFACE'S SECTION ORDER, declared as data for the
+ * anti-drift test (src/lib/profileSections.test.ts). It mirrors the JSX below
+ * exactly: identity card → kids editor → the parents group (bio card + parent
+ * cards + linked parent). The edit surface intentionally has NO drop-ins
+ * section (V16 t04 removed the "Hosted drop-ins" card from /profile; posts are
+ * managed from /new), so 'dropins' is omitted. Reorder any of those cards and
+ * this list must move with it, or the pinned-order assertion in the test fails.
+ */
+export const PROFILE_EDIT_SECTIONS: readonly ProfileSectionKey[] = [
+  'user',
+  'kids',
+  'parents',
+]
 
 /**
  * V12 t01: the autosave debounce — well past the ticket's 300ms floor, so a
@@ -265,6 +282,83 @@ export function ProfilePage() {
   const [linkBusy, setLinkBusy] = useState(false)
   const [linkError, setLinkError] = useState<string | null>(null)
   const [linkHandleInput, setLinkHandleInput] = useState('')
+
+  /**
+   * V21 t07: the NAME search beside the @handle field. The founder's ask —
+   * parents know names, not handles — so typing 2+ characters suggests
+   * matching parents (name + handle per row); selecting one starts the SAME
+   * invite flow `handleRequestLink` uses (validate → requestAccountLink →
+   * re-read), never a second write path.
+   *
+   * The debounce is the pinned ~250ms: a burst of keystrokes is ONE request,
+   * never one per key. The seam itself refuses queries under 2 chars, so the
+   * effect only fires on input that can match anything.
+   */
+  const [linkNameQuery, setLinkNameQuery] = useState('')
+  const [linkNameMatches, setLinkNameMatches] = useState<
+    Array<{ display_name: string; handle: string }>
+  >([])
+  const [linkNameSearching, setLinkNameSearching] = useState(false)
+
+  useEffect(() => {
+    if (userId === null) return
+    if (linkNameQuery.trim().length < 2) {
+      setLinkNameMatches([])
+      return
+    }
+    let cancelled = false
+    setLinkNameSearching(true)
+    const timer = setTimeout(async () => {
+      try {
+        const matches = await searchProfilesByName(linkNameQuery)
+        if (!cancelled) setLinkNameMatches(matches)
+      } catch {
+        // A failed search leaves the previous list in place; the parent can
+        // keep typing or fall back to the @handle field.
+        if (!cancelled) setLinkNameMatches([])
+      } finally {
+        if (!cancelled) setLinkNameSearching(false)
+      }
+    }, 250)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [linkNameQuery, userId])
+
+  /**
+   * V21 t07: selecting a suggested parent. Fills the handle field (so the
+   * section's own state stays honest) and sends through the EXISTING invite
+   * flow — same validation, same `requestAccountLink`, same re-read. The send
+   * uses the CHOSEN handle directly rather than `linkHandleInput` from this
+   * render's closure, because the state update above has not landed yet.
+   */
+  async function handleSelectNameMatch(match: { display_name: string; handle: string }) {
+    setLinkNameQuery('')
+    setLinkNameMatches([])
+    setLinkHandleInput(match.handle)
+    const selfHandle = profile?.display_name ?? null
+    const invalid = validateLinkRequest(match.handle, selfHandle)
+    if (invalid !== null) {
+      setLinkError(invalid)
+      return
+    }
+    setLinkBusy(true)
+    setLinkError(null)
+    try {
+      await requestAccountLink(normalizeHandle(match.handle))
+      setLinkHandleInput('')
+      await reloadLinks()
+    } catch (err) {
+      setLinkError(
+        err instanceof LinkTargetUnknownError
+          ? err.message
+          : 'Could not send that invitation. Try again.',
+      )
+    } finally {
+      setLinkBusy(false)
+    }
+  }
 
   useEffect(() => {
     if (userId === null) return
@@ -995,7 +1089,7 @@ export function ProfilePage() {
                   data-testid="avatar-photo"
                   src={profile.avatar_url}
                   alt="Your avatar"
-                  className="h-20 w-20 rounded-full object-cover"
+                  className="aspect-square h-20 w-20 rounded-full object-cover"
                 />
               </label>
               <button
@@ -1129,206 +1223,12 @@ export function ProfilePage() {
         ) : null}
       </div>
 
-      {/* V19 t05 (founder's ask): the PARENT CARDS — up to two parents, each
-          with a name, a photo and a few words about themselves.
-          These sit UNDER the family bio and above the kids, because the page
-          reads outward from the family as a whole to its individual people:
-          the bio describes the family, these describe each parent, the kids
-          section describes the children. */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900">The parents</h2>
-        <p className="mt-1 text-sm text-slate-600">{PARENT_CARDS_BLURB}</p>
-
-        {parentCards === null ? (
-          <p className="mt-3 text-sm text-slate-500">Loading…</p>
-        ) : (
-          <div className="mt-3 flex flex-col gap-4">
-            {parentCardList(parentCards).map((card) => (
-              <ParentCardEditor
-                key={card.id}
-                card={card}
-                busy={parentCardBusy}
-                onSave={handleSaveParentCard}
-                onRemove={handleRemoveParentCard}
-              />
-            ))}
-            {nextParentPosition(parentCards) !== null ? (
-              <ParentCardEditor
-                key={`new-${nextParentPosition(parentCards)}`}
-                card={null}
-                position={nextParentPosition(parentCards) ?? 1}
-                busy={parentCardBusy}
-                onSave={handleSaveParentCard}
-                onRemove={null}
-              />
-            ) : (
-              <p className="text-xs text-slate-500">
-                Two parents is the limit — remove one to add someone else.
-              </p>
-            )}
-          </div>
-        )}
-
-        {parentCardError !== null ? (
-          <p className="mt-2 text-sm text-red-600">{parentCardError}</p>
-        ) : null}
-      </div>
-
-      {/* V19 t04 (founder's ask): LINK the other parent's account.
-          The section renders exactly one state — `linkView` owns that decision,
-          this renders it. The distinction that matters: an OUTGOING invite says
-          "waiting for them" with a withdraw, an INCOMING one shows Accept and
-          Decline, because only the addressee can answer (the database refuses
-          anyone else, so offering the buttons to the wrong parent would be a
-          control that always fails). */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900">Linked parent</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          If your partner has their own account, link them so you both show on this profile.
-        </p>
-
-        {accountLinks === null ? (
-          <p className="mt-3 text-sm text-slate-500">Loading…</p>
-        ) : (
-          <div className="mt-3">
-            {(() => {
-              const view = linkView(accountLinks, userId ?? '')
-              switch (view.kind) {
-                case 'linked':
-                  return (
-                    <div className="flex items-center justify-between gap-3">
-                      <p data-testid="linked-parent" className="text-sm text-slate-700">
-                        Linked to{' '}
-                        <span className="font-medium">
-                          {view.otherHandle === '' ? 'your partner' : `@${view.otherHandle}`}
-                        </span>
-                      </p>
-                      <button
-                        type="button"
-                        data-testid="unlink-parent"
-                        disabled={linkBusy}
-                        onClick={() => void handleUnlink(view.linkId)}
-                        className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
-                      >
-                        Unlink
-                      </button>
-                    </div>
-                  )
-                case 'outgoing':
-                  return (
-                    <div className="flex items-center justify-between gap-3">
-                      <p data-testid="link-outgoing" className="text-sm text-slate-700">
-                        Invite sent to{' '}
-                        <span className="font-medium">
-                          {view.otherHandle === '' ? 'them' : `@${view.otherHandle}`}
-                        </span>{' '}
-                        — waiting for them to accept.
-                      </p>
-                      <button
-                        type="button"
-                        data-testid="withdraw-invite"
-                        disabled={linkBusy}
-                        onClick={() => void handleUnlink(view.linkId)}
-                        className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
-                      >
-                        Withdraw
-                      </button>
-                    </div>
-                  )
-                case 'incoming':
-                  return (
-                    <div data-testid="link-incoming" className="flex flex-col gap-2">
-                      <p className="text-sm text-slate-700">
-                        <span className="font-medium">
-                          {view.otherHandle === '' ? 'A parent' : `@${view.otherHandle}`}
-                        </span>{' '}
-                        wants to link accounts with you.
-                      </p>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          data-testid="accept-invite"
-                          disabled={linkBusy}
-                          onClick={() => void handleRespondToLink(view.linkId, 'accepted')}
-                          className="min-h-11 rounded-full bg-indigo-600 px-4 text-sm font-medium text-white disabled:opacity-60"
-                        >
-                          Accept
-                        </button>
-                        <button
-                          type="button"
-                          data-testid="decline-invite"
-                          disabled={linkBusy}
-                          onClick={() => void handleRespondToLink(view.linkId, 'declined')}
-                          className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
-                        >
-                          Decline
-                        </button>
-                      </div>
-                    </div>
-                  )
-                case 'declined':
-                  return (
-                    <div className="flex items-center justify-between gap-3">
-                      <p data-testid="link-declined" className="text-sm text-slate-600">
-                        {view.outgoing
-                          ? `Your invitation to ${
-                              view.otherHandle === '' ? 'that parent' : `@${view.otherHandle}`
-                            } was declined.`
-                          : 'That invitation was declined.'}
-                      </p>
-                      <button
-                        type="button"
-                        data-testid="clear-declined"
-                        disabled={linkBusy}
-                        onClick={() => void handleUnlink(view.linkId)}
-                        className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                  )
-                case 'none':
-                  return (
-                    <div className="flex flex-col gap-2">
-                      <label className="flex flex-col gap-1 text-sm">
-                        <span className="text-slate-700">Their @handle</span>
-                        <input
-                          data-testid="link-handle-input"
-                          type="text"
-                          value={linkHandleInput}
-                          onChange={(e) => setLinkHandleInput(e.target.value)}
-                          placeholder="e.g. nicole"
-                          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                          disabled={linkBusy}
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        data-testid="send-link-invite"
-                        disabled={linkBusy}
-                        onClick={() => void handleRequestLink()}
-                        className="min-h-11 self-start rounded-full bg-indigo-600 px-4 text-sm font-medium text-white disabled:opacity-60"
-                      >
-                        Send invitation
-                      </button>
-                    </div>
-                  )
-              }
-            })()}
-          </div>
-        )}
-
-        {linkError !== null ? (
-          <p data-testid="link-error" className="mt-2 text-sm text-red-600">
-            {linkError}
-          </p>
-        ) : null}
-      </div>
-
-      {/* V15 ticket 06 (A17/A18): each kid row now labels its fields inline —
-          "Name" / "Age" / "Likes:" prefixes make it unambiguous which input is
-          which, matching the /u/:handle render. The photo control (tap-to-change,
-          × to remove) sits beside the inputs; Remove stays at the end. */}
+      {/* V21 t08: THE KIDS CARD MOVED HERE — before the parents group — so the
+          edit surface's section order matches the read view's pinned sequence
+          (user → kids → parents → drop-ins; the edit surface omits drop-ins).
+          It used to sit LAST, after the parents group, which was the drift this
+          ticket kills. The card's contents are unchanged; only its position
+          moved. */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">About the kids</h2>
         <p className="mt-1 text-sm text-slate-600">
@@ -1528,6 +1428,247 @@ export function ProfilePage() {
           </>
         )}
       </div>
+
+      {/* V19 t05 (founder's ask): the PARENT CARDS — up to two parents, each
+          with a name, a photo and a few words about themselves.
+          V21 t08: these now sit AFTER the kids card (the page reads
+          user → kids → parents), matching the read view's pinned order. */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-base font-semibold text-slate-900">The parents</h2>
+        <p className="mt-1 text-sm text-slate-600">{PARENT_CARDS_BLURB}</p>
+
+        {parentCards === null ? (
+          <p className="mt-3 text-sm text-slate-500">Loading…</p>
+        ) : (
+          <div className="mt-3 flex flex-col gap-4">
+            {parentCardList(parentCards).map((card) => (
+              <ParentCardEditor
+                key={card.id}
+                card={card}
+                busy={parentCardBusy}
+                onSave={handleSaveParentCard}
+                onRemove={handleRemoveParentCard}
+              />
+            ))}
+            {nextParentPosition(parentCards) !== null ? (
+              <ParentCardEditor
+                key={`new-${nextParentPosition(parentCards)}`}
+                card={null}
+                position={nextParentPosition(parentCards) ?? 1}
+                busy={parentCardBusy}
+                onSave={handleSaveParentCard}
+                onRemove={null}
+              />
+            ) : (
+              <p className="text-xs text-slate-500">
+                Two parents is the limit — remove one to add someone else.
+              </p>
+            )}
+          </div>
+        )}
+
+        {parentCardError !== null ? (
+          <p className="mt-2 text-sm text-red-600">{parentCardError}</p>
+        ) : null}
+      </div>
+
+      {/* V19 t04 (founder's ask): LINK the other parent's account.
+          The section renders exactly one state — `linkView` owns that decision,
+          this renders it. The distinction that matters: an OUTGOING invite says
+          "waiting for them" with a withdraw, an INCOMING one shows Accept and
+          Decline, because only the addressee can answer (the database refuses
+          anyone else, so offering the buttons to the wrong parent would be a
+          control that always fails). */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-base font-semibold text-slate-900">Linked parent</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          If your partner has their own account, link them so you both show on this profile.
+        </p>
+
+        {accountLinks === null ? (
+          <p className="mt-3 text-sm text-slate-500">Loading…</p>
+        ) : (
+          <div className="mt-3">
+            {(() => {
+              const view = linkView(accountLinks, userId ?? '')
+              switch (view.kind) {
+                case 'linked':
+                  return (
+                    <div className="flex items-center justify-between gap-3">
+                      <p data-testid="linked-parent" className="text-sm text-slate-700">
+                        Linked to{' '}
+                        <span className="font-medium">
+                          {view.otherHandle === '' ? 'your partner' : `@${view.otherHandle}`}
+                        </span>
+                      </p>
+                      <button
+                        type="button"
+                        data-testid="unlink-parent"
+                        disabled={linkBusy}
+                        onClick={() => void handleUnlink(view.linkId)}
+                        className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
+                      >
+                        Unlink
+                      </button>
+                    </div>
+                  )
+                case 'outgoing':
+                  return (
+                    <div className="flex items-center justify-between gap-3">
+                      <p data-testid="link-outgoing" className="text-sm text-slate-700">
+                        Invite sent to{' '}
+                        <span className="font-medium">
+                          {view.otherHandle === '' ? 'them' : `@${view.otherHandle}`}
+                        </span>{' '}
+                        — waiting for them to accept.
+                      </p>
+                      <button
+                        type="button"
+                        data-testid="withdraw-invite"
+                        disabled={linkBusy}
+                        onClick={() => void handleUnlink(view.linkId)}
+                        className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
+                      >
+                        Withdraw
+                      </button>
+                    </div>
+                  )
+                case 'incoming':
+                  return (
+                    <div data-testid="link-incoming" className="flex flex-col gap-2">
+                      <p className="text-sm text-slate-700">
+                        <span className="font-medium">
+                          {view.otherHandle === '' ? 'A parent' : `@${view.otherHandle}`}
+                        </span>{' '}
+                        wants to link accounts with you.
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          data-testid="accept-invite"
+                          disabled={linkBusy}
+                          onClick={() => void handleRespondToLink(view.linkId, 'accepted')}
+                          className="min-h-11 rounded-full bg-indigo-600 px-4 text-sm font-medium text-white disabled:opacity-60"
+                        >
+                          Accept
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="decline-invite"
+                          disabled={linkBusy}
+                          onClick={() => void handleRespondToLink(view.linkId, 'declined')}
+                          className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    </div>
+                  )
+                case 'declined':
+                  return (
+                    <div className="flex items-center justify-between gap-3">
+                      <p data-testid="link-declined" className="text-sm text-slate-600">
+                        {view.outgoing
+                          ? `Your invitation to ${
+                              view.otherHandle === '' ? 'that parent' : `@${view.otherHandle}`
+                            } was declined.`
+                          : 'That invitation was declined.'}
+                      </p>
+                      <button
+                        type="button"
+                        data-testid="clear-declined"
+                        disabled={linkBusy}
+                        onClick={() => void handleUnlink(view.linkId)}
+                        className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  )
+                case 'none':
+                  return (
+                    <div className="flex flex-col gap-2">
+                      {/* V21 t07: the NAME search — primary entry point. Type a
+                          name, pick a parent; selecting fills the handle field
+                          below and sends through the existing invite flow. */}
+                      <label className="flex flex-col gap-1 text-sm">
+                        <span className="text-slate-700">Their name</span>
+                        <input
+                          data-testid="link-name-input"
+                          type="text"
+                          value={linkNameQuery}
+                          onChange={(e) => setLinkNameQuery(e.target.value)}
+                          placeholder="e.g. Sam Rivera"
+                          autoComplete="off"
+                          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                          disabled={linkBusy}
+                        />
+                      </label>
+                      {linkNameMatches.length > 0 ? (
+                        <ul
+                          data-testid="link-name-matches"
+                          className="max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white"
+                        >
+                          {linkNameMatches.map((match) => (
+                            <li key={match.handle}>
+                              <button
+                                type="button"
+                                data-testid="link-name-match"
+                                onClick={() => void handleSelectNameMatch(match)}
+                                disabled={linkBusy}
+                                className="flex min-h-11 w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-slate-50 disabled:opacity-60"
+                              >
+                                <span className="min-w-0 truncate font-medium text-slate-900">
+                                  {match.display_name}
+                                </span>
+                                <span className="shrink-0 text-slate-500">@{match.handle}</span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : linkNameSearching ? (
+                        <p className="text-sm text-slate-500">Searching…</p>
+                      ) : null}
+                      <label className="flex flex-col gap-1 text-sm">
+                        <span className="text-slate-700">Or their @handle</span>
+                        <input
+                          data-testid="link-handle-input"
+                          type="text"
+                          value={linkHandleInput}
+                          onChange={(e) => setLinkHandleInput(e.target.value)}
+                          placeholder="e.g. nicole"
+                          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                          disabled={linkBusy}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        data-testid="send-link-invite"
+                        disabled={linkBusy}
+                        onClick={() => void handleRequestLink()}
+                        className="min-h-11 self-start rounded-full bg-indigo-600 px-4 text-sm font-medium text-white disabled:opacity-60"
+                      >
+                        Send invitation
+                      </button>
+                    </div>
+                  )
+              }
+            })()}
+          </div>
+        )}
+
+        {linkError !== null ? (
+          <p data-testid="link-error" className="mt-2 text-sm text-red-600">
+            {linkError}
+          </p>
+        ) : null}
+      </div>
+
+      {/* V21 t08: the "About the kids" card moved UP — it now sits before the
+          parents group (bio + parent cards + linked parent), matching the read
+          view's pinned section order. See the comment above that card for the
+          full rationale. This is where it used to live (last, after Linked
+          parent); the move is what kills the drift between the two surfaces. */}
 
       {/* V16 t04: the "Hosted drop-ins" card is REMOVED from /profile (the
           founder's ask). It was the ONLY consumer of this page's own-posts
@@ -1769,7 +1910,7 @@ function KidPhotoControl({
               data-testid="kid-photo"
               src={photoUrl}
               alt=""
-              className="h-10 w-10 rounded-full object-cover"
+              className="aspect-square h-10 w-10 rounded-full object-cover"
               onError={onError}
             />
           </label>

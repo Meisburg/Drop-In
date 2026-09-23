@@ -344,7 +344,7 @@ test('a cold load never asks for permission', async ({ page }) => {
   await settleOnRoute(page, '/')
 
   // The app is genuinely up (this is the feed, not an error view) …
-  await expect(page.getByRole('link', { name: 'Nearby', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Drop Ins', exact: true })).toBeVisible()
   // … and it never asked. The counter is the strong assertion: a prompt that
   // rendered and unmounted would still have called requestPermission.
   await expect(page.getByTestId('push-optin-prompt')).toHaveCount(0)

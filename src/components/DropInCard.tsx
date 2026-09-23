@@ -443,13 +443,24 @@ export function HostAvatar({
 }) {
   const box = size === 'sm' ? 'h-6 w-6' : size === 'lg' ? 'h-20 w-20' : 'h-10 w-10'
   const initialClass = size === 'sm' ? 'text-xs' : size === 'lg' ? 'text-2xl' : 'text-sm'
+  // V21 t05: the expandable wrapper must own the SAME box as its child img —
+  // a fixed h-11 w-11 (44px) around an 80px `lg` photo drew an ellipse. The
+  // 44px tap floor is preserved for the default `md` size (the only caller that
+  // relied on it); larger photos carry their own tap area, smaller ones keep
+  // the floor via the same rule.
+  const buttonBox =
+    size === 'lg'
+      ? 'flex h-20 w-20 shrink-0 items-center justify-center rounded-full'
+      : size === 'sm'
+        ? 'flex h-6 w-6 shrink-0 items-center justify-center rounded-full'
+        : 'flex h-11 w-11 shrink-0 items-center justify-center rounded-full'
   const photoUrl = host.avatar_url ?? ''
   if (photoUrl !== '') {
     const photo = (
       <img src={photoUrl} alt="" className={`${box} shrink-0 rounded-full object-cover`} />
     )
     return expandable ? (
-      <PhotoButton src={photoUrl} alt={`${host.display_name}’s photo`}>
+      <PhotoButton src={photoUrl} alt={`${host.display_name}’s photo`} className={buttonBox}>
         {photo}
       </PhotoButton>
     ) : (

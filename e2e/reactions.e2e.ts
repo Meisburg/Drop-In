@@ -130,22 +130,106 @@ test('reaction toggle: tapping 👍 fills the button, counts 1, and toggles back
   const ownBubble = viewerPage.getByTestId('own-message').filter({ hasText: 'Reaction target' })
   await expect(ownBubble).toContainText('Reaction target')
 
-  // The bubble's reaction button starts unreacted + uncounted (the count pill
-  // is hidden at 0, the button itself is present).
-  const reactButton = viewerPage.getByRole('button', { name: 'Thumbs-up this message' })
-  await expect(reactButton).toBeVisible()
-  await expect(reactButton).toHaveAttribute('aria-pressed', 'false')
+  // The bubble's reaction PILL starts unreacted + uncounted (the count pill is
+  // hidden at 0, the pill itself is present). V21 t03: the control is now a
+  // summary pill that opens a six-option picker, not a single 👍 toggle.
+  const reactPill = viewerPage.locator('button[data-testid^="react-"]:not([data-testid^="react-pending-"])').first()
+  await expect(reactPill).toBeVisible()
 
-  // Tap 👍 → filled + count 1, on the same frame (optimistic).
-  await reactButton.click()
-  const reactedButton = viewerPage.getByRole('button', { name: 'Remove your thumbs-up' })
-  await expect(reactedButton).toHaveAttribute('aria-pressed', 'true')
-  await expect(reactedButton).toContainText('1')
+  // Open the picker → it offers all six kinds.
+  await reactPill.click()
+  const picker = viewerPage.locator('[data-testid^="react-picker"]').first()
+  await expect(picker).toBeVisible()
+  for (const kind of ['like', 'love', 'laugh', 'wow', 'sad', 'angry']) {
+    await expect(picker.getByTestId(`react-option-${kind}`)).toBeVisible()
+  }
 
-  // Tap again → back to unreacted + the count pill gone (0 is hidden).
-  await reactedButton.click()
-  await expect(reactButton).toHaveAttribute('aria-pressed', 'false')
-  await expect(reactButton).not.toContainText('1')
+  // Pick "love" → the pill fills (aria-pressed via the option) + count 1.
+  await picker.getByTestId('react-option-love').click()
+  await expect(reactPill).toContainText('1')
+
+  // Reopen the picker; the current kind ("love") is marked active.
+  await reactPill.click()
+  await expect(viewerPage.getByTestId('react-option-love')).toHaveAttribute('aria-pressed', 'true')
+
+  // Tap your CURRENT kind again → REMOVES the reaction (count back to 0, pill
+  // gone). This is the Facebook model: tapping what you already have clears it.
+  await viewerPage.getByTestId('react-option-love').click()
+  await expect(reactPill).not.toContainText('1')
+
+  await viewer.context.close()
+})
+
+/**
+ * V21 t03: the KIND round trip — set a kind, CHANGE it (asserting the count
+ * holds at 1, i.e. replace-in-place rather than add-a-second-row), then remove.
+ *
+ * RED-BY-DESIGN NOTE: this spec exercises the `kind` column added by migration
+ * 0049_message_reaction_kinds.sql. Until that migration is applied to the live
+ * database, the UPDATE path (`toggleReaction` with a different kind) will fail
+ * with a Postgres "column kind does not exist" error and this test will FAIL
+ * at the "change kind" step. That failure is expected and correct — it proves
+ * the new UI is wired end-to-end and only the schema is missing. The other two
+ * specs in this file (the single-kind toggle + the realtime one) still pass on
+ * the pre-0049 schema because they only ever use the default 'like' kind.
+ */
+test('reaction kind round trip: set → change kind (count unchanged) → remove', async ({
+  page,
+  browser,
+}) => {
+  const marker = readMarkerMeta()
+  const epoch = Math.floor(Date.now() / 1000)
+  const title = `e2e ${marker.displayName} react kinds`
+  const viewerName = `e2e-v-${epoch}-reactkinds`
+  const viewerEmail = `e2e-v-${epoch}-reactkinds@gmail.com`
+  const viewerPassword = `e2e-v-pw-${epoch}-reactkinds`
+
+  await seedPostViaUi(page, title)
+  const playdateId = await latestMarkerPlaydateIdByTitle(title)
+
+  const viewer = await createPingingViewerWithThread(
+    browser,
+    playdateId,
+    viewerName,
+    viewerEmail,
+    viewerPassword,
+    marker.homeZip,
+    marker.radiusMiles,
+  )
+  const viewerPage = viewer.page
+
+  // Send a message so there is a bubble to react to.
+  await viewerPage.getByPlaceholder('Write a message…').fill('Kind target')
+  await viewerPage.getByRole('button', { name: 'Send' }).click()
+  const ownBubble = viewerPage.getByTestId('own-message').filter({ hasText: 'Kind target' })
+  await expect(ownBubble).toContainText('Kind target')
+
+  const reactPill = viewerPage.locator('button[data-testid^="react-"]:not([data-testid^="react-pending-"])').first()
+  const picker = () => viewerPage.locator('[data-testid^="react-picker"]').first()
+
+  // STEP 1 — SET "love": open the picker, pick love. Count goes 0 → 1.
+  await reactPill.click()
+  await picker().getByTestId('react-option-love').click()
+  await expect(reactPill).toContainText('1')
+
+  // STEP 2 — CHANGE kind to "angry": the pill now shows the angry glyph, and
+  // the count MUST stay at 1 (replace-in-place; NOT 2). This is the assertion
+  // that distinguishes "one reaction per person, mutable kind" from "a row per
+  // kind". On the pre-0049 schema this write throws (no `kind` column) and the
+  // optimistic move rolls back — the count stays at 1 but the glyph never
+  // changes, which is the legible red signal.
+  await reactPill.click()
+  await picker().getByTestId('react-option-angry').click()
+  await expect(reactPill).toContainText('1')
+  // The pill's active option flips to angry; love is no longer pressed.
+  await reactPill.click()
+  await expect(picker().getByTestId('react-option-angry')).toHaveAttribute('aria-pressed', 'true')
+  await expect(picker().getByTestId('react-option-love')).toHaveAttribute('aria-pressed', 'false')
+
+  // STEP 3 — REMOVE: tap the current kind ("angry") again. Count 1 → 0, pill
+  // hidden.
+  await picker().getByTestId('react-option-angry').click()
+  await expect(reactPill).not.toContainText('1')
 
   await viewer.context.close()
 })
@@ -201,22 +285,27 @@ test('reactions update live: the host sees the pinger\'s 👍 without a reload',
   // the realtime-confirmed one, so a bare role query is ambiguous (a
   // pre-existing optimistic-send artifact, not a reaction bug). This spec only
   // needs the host's single confirmed bubble.
-  const confirmedReactButton = (p: Page) =>
+  const confirmedReactPill = (p: Page) =>
     p.locator('button[data-testid^="react-"]:not([data-testid^="react-pending-"])').first()
-  const hostReactButton = confirmedReactButton(hostPage)
-  await expect(hostReactButton).toHaveAttribute('aria-pressed', 'false')
+  const hostReactPill = confirmedReactPill(hostPage)
+  await expect(hostReactPill).toBeVisible()
 
-  // The pinger reacts → the host's OPEN thread shows the count within ~15 s,
-  // no reload (the message_reactions Realtime subscription).
-  await confirmedReactButton(viewerPage).click()
-  await expect(hostReactButton, { timeout: 15_000 }).toContainText('1')
+  // The pinger reacts (opens the picker, picks "like") → the host's OPEN thread
+  // shows the count within ~15 s, no reload (the message_reactions Realtime
+  // subscription).
+  await confirmedReactPill(viewerPage).click()
+  await viewerPage.getByTestId('react-option-like').click()
+  await expect(hostReactPill, { timeout: 15_000 }).toContainText('1')
 
-  // Un-react → the host's count falls back to 0 and the pill disappears. This
-  // is the DELETE half of the subscription, which reads payload.old — the
-  // assertion that the default REPLICA IDENTITY (the (message_id, profile_id)
-  // PK) really does carry the message id the handler needs.
-  await viewerPage.getByRole('button', { name: 'Remove your thumbs-up' }).first().click()
-  await expect(hostReactButton, { timeout: 15_000 }).not.toContainText('1')
+  // Un-react (tap the current kind in the picker → remove) → the host's count
+  // falls back to 0 and the pill disappears. This is the DELETE half of the
+  // subscription, which reads payload.old — the assertion that the default
+  // REPLICA IDENTITY (the (message_id, profile_id) PK) really does carry the
+  // message id the handler needs. Adding the `kind` column (0049) does NOT
+  // change the PK, so the DELETE payload still carries both ids.
+  await confirmedReactPill(viewerPage).click()
+  await viewerPage.getByTestId('react-option-like').click()
+  await expect(hostReactPill, { timeout: 15_000 }).not.toContainText('1')
 
   await hostContext.close()
   await viewer.context.close()

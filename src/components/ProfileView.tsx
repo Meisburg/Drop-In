@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { DropInCard, HostAvatar } from './DropInCard'
 import { PhotoButton } from './ImageLightbox'
@@ -18,6 +18,23 @@ import {
 import { cardAgeRangeLabel, kidLabel, partitionPostsByTime } from '../lib/feed'
 import { profileBlurbOrder } from '../lib/photoStorage'
 import type { PlaydateWithNeighborhood, ProfileWithKids } from '../lib/types'
+import type { ProfileSectionKey } from '../lib/profileSections'
+
+/**
+ * V21 t08: THE READ VIEW'S SECTION ORDER, declared as data for the anti-drift
+ * test (src/lib/profileSections.test.ts). It mirrors the JSX below exactly:
+ * identity block → kids card → about/interests/family-photo card → hosted
+ * drop-ins lists. Reorder any of those cards and this list must move with it,
+ * or the pinned-order assertion in the test fails. The visitor-only action row
+ * (Follow/Message/Block/Report) is an action row, not a content section, so it
+ * does not appear here.
+ */
+export const PROFILE_VIEW_SECTIONS: readonly ProfileSectionKey[] = [
+  'user',
+  'kids',
+  'parents',
+  'dropins',
+]
 
 /**
  * THE PUBLIC FACE OF A PROFILE — the one render of "what other families see".
@@ -93,6 +110,17 @@ export function ProfileView({
   const [kidAgesByPostId, setKidAgesByPostId] = useState<Record<string, number[]>>({})
   const [olderCount, setOlderCount] = useState(0)
   const [postsError, setPostsError] = useState<string | null>(null)
+  // V21 t06: whether the "Hosted N drop-ins" line has been tapped to reveal
+  // the past events list below. Starts false (collapsed); tapping the line
+  // sets it true and scrolls the user to the Past section. The control is
+  // only rendered when hostedCount > 0, so a parent with zero hosted
+  // drop-ins never sees an empty expandable list.
+  const [pastRevealed, setPastRevealed] = useState(false)
+  // V21 t06: ref to the Past section so tapping "Hosted N drop-ins" can
+  // scroll the user there. TAP (not hover) — this is a phone app; the
+  // founder's "hover over and see the past events" becomes a tap that
+  // reveals + scrolls to the bounded past list (most recent first).
+  const pastSectionRef = useRef<HTMLDivElement>(null)
 
   const profileId = profile.id
   const isOwnProfile = session !== null && profileId === session.user.id
@@ -310,12 +338,44 @@ export function ProfileView({
             <h2 className="text-lg font-semibold text-slate-900">@{profile.display_name}</h2>
             <p className="mt-1 text-sm text-slate-600">Here since {joined}.</p>
             {/* V3 slice 9 (ticket 04): the "Hosted N drop-ins" line — hidden
-                when 0 or unsettled; singular "Hosted 1 drop-in" when N = 1. */}
-            {hostedCount !== null && hostedCount > 0 ? (
-              <p className="text-sm text-slate-600">
-                Hosted {hostedCount} {hostedCount === 1 ? 'drop-in' : 'drop-ins'}
-              </p>
-            ) : null}
+                when 0 or unsettled; singular "Hosted 1 drop-in" when N = 1.
+                V21 t06: now TAPABLE — tapping reveals + scrolls to the Past
+                section below (the bounded list of past events, most recent
+                first). This is a phone app, so the founder's "hover over and
+                see the past events" becomes a tap. The control only appears
+                when hostedCount > 0, so a parent with zero hosted drop-ins
+                never sees an empty expandable list. min-h-11 = 44px floor. */}
+              {hostedCount !== null && hostedCount > 0 ? (
+                <button
+                  type="button"
+                  data-testid="hosted-dropins-toggle"
+                  onClick={() => {
+                    setPastRevealed(true)
+                    // Scroll to the Past section after state settles.
+                    requestAnimationFrame(() => {
+                      pastSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                    })
+                  }}
+                  className="flex min-h-11 flex-col text-left text-sm text-indigo-700 underline decoration-dotted underline-offset-2 hover:text-indigo-800"
+                >
+                  {/* The COUNT is its own text node, unpolluted by any hint.
+                      Two existing specs (host-retention, profile-posts) match
+                      this line EXACTLY (`'Hosted 1 drop-in'` and
+                      `/^Hosted \d+ drop-ins?$/`), and folding the "tap" hint
+                      into the same text node silently broke both — a real
+                      regression caught by the full e2e suite, not by the unit
+                      gate. The hint is a sibling span instead, so the label
+                      stays matchable and the affordance stays visible. */}
+                  <span>
+                    Hosted {hostedCount} {hostedCount === 1 ? 'drop-in' : 'drop-ins'}
+                  </span>
+                  {pastRevealed ? null : (
+                    <span className="text-xs font-normal no-underline">
+                      tap to see past events
+                    </span>
+                  )}
+                </button>
+              ) : null}
           </div>
         </div>
       </div>
@@ -636,24 +696,26 @@ export function ProfileView({
               </section>
             )}
             {past.length > 0 ? (
-              <section className="flex flex-col gap-2">
-                <h3 className="text-sm font-semibold text-slate-700">Past</h3>
-                <div className="flex flex-col gap-3">
-                  {past.map((post) => (
-                    <DropInCard
-                      key={post.id}
-                      playdate={post}
-                      nowIso={nowIso}
-                      ageRangeLabel={buildCardAgeRangeLabel(post)}
-                    />
-                  ))}
-                </div>
-                {/* The cap's honest tail (never pagination at this volume):
-                    a plain count of the past rows the 50-row fetch left out. */}
-                {olderCount > 0 ? (
-                  <p className="text-xs text-slate-500">+{olderCount} older</p>
-                ) : null}
-              </section>
+              <div ref={pastSectionRef}>
+                <section className="flex flex-col gap-2">
+                  <h3 className="text-sm font-semibold text-slate-700">Past</h3>
+                  <div className="flex flex-col gap-3">
+                    {past.map((post) => (
+                      <DropInCard
+                        key={post.id}
+                        playdate={post}
+                        nowIso={nowIso}
+                        ageRangeLabel={buildCardAgeRangeLabel(post)}
+                      />
+                    ))}
+                  </div>
+                  {/* The cap's honest tail (never pagination at this volume):
+                      a plain count of the past rows the 50-row fetch left out. */}
+                  {olderCount > 0 ? (
+                    <p className="text-xs text-slate-500">+{olderCount} older</p>
+                  ) : null}
+                </section>
+              </div>
             ) : null}
           </>
         )}

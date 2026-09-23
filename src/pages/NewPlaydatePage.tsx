@@ -5,6 +5,7 @@ import {
   ADDRESS_MAX_LENGTH,
   PlaydateFormFields,
 } from '../components/PlaydateFormFields'
+import { PlaceDirectory } from '../components/PlaceDirectory'
 import { PlacePickerMap } from '../components/PlaceMap'
 import { NAV_ICONS } from '../components/icons'
 import { SectionHeader } from '../components/SectionHeader'
@@ -15,8 +16,10 @@ import {
   listPastOwnPlaydates,
   listPlaces,
   linkKidsToPlaydate,
+  loadZipCodes,
 } from '../lib/db'
 import {
+  DEFAULT_RADIUS_MILES,
   ageBoundsFromSelectedKids,
   cloneLastPost,
   clonedStart,
@@ -32,18 +35,16 @@ import {
   suggestedDurationMinutes,
   validatePlaydateForm,
 } from '../lib/feed'
-import type {
-  LastOwnPlaydate,
-  PlaydateFormErrors,
-  PlaydateFormValues,
-} from '../lib/feed'
+import type { LastOwnPlaydate, PlaydateFormErrors, PlaydateFormValues, ZipCoords } from '../lib/feed'
 import type { PlaydateStatus } from '../lib/types'
 import { addressAfterPlaceTextEdit, generatedTitle } from '../lib/postSummary'
 import {
+  MAP_FOCUS_RADIUS_MILES,
   PLACE_BROWSE_LIMIT,
   PLACE_SUGGESTION_LIMIT,
   placePickerMatches,
   placePickPatch,
+  radiusPreviewCircle,
   resolvePlaceByName,
   stripPlaceAlias,
   usesPlaceAlias,
@@ -308,7 +309,7 @@ export function NewPlaydatePage({
   placePrefill?: PlacePrefill | null
 }) {
   const navigate = useNavigate()
-  const { loading, session } = useSessionContext()
+  const { loading, session, profile } = useSessionContext()
   // V8 ticket 01: ONE mount-time `now` feeds both the form's default start
   // (today + the next 30-minute slot) and the quick-fill preset (its label
   // and the values it writes) — so the preset can never promise one time and
@@ -327,6 +328,13 @@ export function NewPlaydatePage({
   // /new must never depend on the places table.
   const [places, setPlaces] = useState<Place[] | null>(null)
   /**
+   * V21 t02 Phase B: the gazetteer (zip → coords), for the picker map's home
+   * pin + radius circle. A failed load (0012 not applied yet) leaves it null —
+   * the map then renders its markers with no pin and no circle (the BrowsePage
+   * precedent: never an error state, never a blank page).
+   */
+  const [zipCoords, setZipCoords] = useState<ReadonlyMap<string, ZipCoords> | null>(null)
+  /**
    * V9 ticket 01: the picker's ONE state — what the inline list is doing.
    *
    * - 'closed': nothing is showing (a pick, "Somewhere else", or an emptied
@@ -344,6 +352,21 @@ export function NewPlaydatePage({
    * difference between browsing and typing.
    */
   const [picker, setPicker] = useState<'closed' | 'typing' | 'browse'>('closed')
+  /**
+   * V21 t02 (the founder's ask, 2026-09-23): "we move the map and the list of
+   * places to the where section inside of the post section."
+   *
+   * The "Where?" block's own 8-row shortcut (V9, PLACE_BROWSE_LIMIT) is NOT the
+   * directory — its comment says so outright ("the full directory with its
+   * filters is /browse"). With the Places tab gone (t02), the only way to reach
+   * a FILTERED, searchable, mapped directory from the post flow is here: a
+   * full-screen sheet that renders the SAME `PlaceDirectory` component /browse
+   * renders, in `selectable` mode, so a tap writes the pick through the one
+   * existing `pickPlace` path. One implementation, two consumers — a second
+   * copy of the directory is the duplication this repo's map history warns
+   * against.
+   */
+  const [directoryOpen, setDirectoryOpen] = useState(false)
   const [errors, setErrors] = useState<PlaydateFormErrors>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -507,6 +530,23 @@ export function NewPlaydatePage({
       })
       .catch(() => {
         if (!cancelled) setPlaces(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // V21 t02 Phase B: the gazetteer, once on mount (the BrowsePage pattern — a
+  // failed load leaves `zipCoords` null and the picker map simply has no home
+  // pin or radius circle; it never errors and never blanks the page).
+  useEffect(() => {
+    let cancelled = false
+    loadZipCodes()
+      .then((coords) => {
+        if (!cancelled) setZipCoords(coords)
+      })
+      .catch(() => {
+        if (!cancelled) setZipCoords(null)
       })
     return () => {
       cancelled = true
@@ -705,6 +745,10 @@ export function NewPlaydatePage({
     setAddressTouched(false)
     setPlaceId(place.id)
     setPicker('closed')
+    // V21 t02: a pick made in the directory sheet closes it too — the parent
+    // lands back on the form with the pick already written, which is the
+    // "select a place and post" flow the founder described.
+    setDirectoryOpen(false)
     setErrors((prev) => ({ ...prev, place: undefined, neighborhoodId: undefined }))
     setSubmitError(null)
   }
@@ -740,6 +784,36 @@ export function NewPlaydatePage({
     setSubmitError(null)
   }
 
+  /**
+   * V21 t02 Phase B: the picker map's home pin — the viewer's stored home_zip
+   * resolved through the gazetteer, exactly as BrowsePage derives it. Null in
+   * any of: home_zip unset, the gazetteer load failed (zipCoords null), or the
+   * zip is missing from the seeded extract. The map then renders its markers
+   * with no pin and no circle (the pre-Phase-B view), never an error state.
+   */
+  const pickerHomePin = (() => {
+    if (profile === null) return null
+    if (profile.home_zip === null || profile.home_zip === undefined) return null
+    if (zipCoords === null) return null
+    const found = zipCoords.get(profile.home_zip)
+    return found === undefined ? null : { lat: found.lat, lng: found.lng }
+  })()
+  /**
+   * V21 t02 Phase B: the picker map's radius circle — the same framing seam the
+   * browse directory uses (`radiusPreviewCircle`): no preview center here, so
+   * it falls back to `framingCircle` on the home pin at the MAP FOCUS radius
+   * (the pinned neighbourhood frame, never the picked list radius). The viewer
+   * radius itself follows the established `?? DEFAULT_RADIUS_MILES` fallback
+   * for a DB-not-applied `radius_miles`.
+   */
+  const pickerRadiusCircle = radiusPreviewCircle({
+    previewCenter: null,
+    previewMiles: profile?.radius_miles ?? DEFAULT_RADIUS_MILES,
+    geocodeCenter: null,
+    homePin: pickerHomePin,
+    committedMiles: MAP_FOCUS_RADIUS_MILES,
+  })
+
 
   // V15 T05 (A10): the "Post again" picker's row labels — each row states the
   // plan it will write (the title + the day the clone will land on), computed
@@ -774,8 +848,14 @@ export function NewPlaydatePage({
   // not a fixed height, so the pill GROWS to fit the wrapped lines and the
   // rounded shape always contains its text. `max-w-full` is now implied by
   // `w-full`, so it goes too. The 44px tap floor is untouched.
+  // V21 t04: `min-w-0` on the row — a flex child refuses to shrink below its
+  // content width without it, so a long unwrappable title (no spaces) pushed
+  // the button wider than the container and spilled out of the rounded box.
+  // The text wraps at word boundaries (the label always carries a space); the
+  // floor is the one case that cannot wrap, and min-w-0 lets it clip rather
+  // than overflow. The 44px tap floor (`min-h-11`) is untouched.
   const lastPostClassName =
-    'min-h-11 w-full rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-left text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100'
+    'min-h-11 min-w-0 w-full rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-left text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100'
 
   // V15 T05 (A10): the top-of-page duplicate picker state.
   const [dupPickerOpen, setDupPickerOpen] = useState(false)
@@ -986,7 +1066,7 @@ export function NewPlaydatePage({
                   applyLastPost(row.post)
                   setDupPickerOpen(false)
                 }}
-                className={lastPostClassName}
+                className={`min-w-0 ${lastPostClassName}`}
               >
                 {row.label}
                 {row.statusLabel !== null ? ` · ${row.statusLabel}` : ''}
@@ -1073,9 +1153,22 @@ export function NewPlaydatePage({
             directory place (DB coords only), tap pre-fills the place field
             through the same pick path as the suggestion list. /edit passes
             nothing here. */
-         mapSlot={
+          /* V21 t02 Phase B: the picker is framed on the viewer's own home —
+             the stored home_zip resolved through the gazetteer (the BrowsePage
+             pattern) plus their radius circle, so the parent sees the
+             neighbourhood they actually live in, not a points-fit over every
+             directory marker. A missing zip, an unset home_zip, or a failed
+             gazetteer load degrades to the old points-fit view: no pin, no
+             circle, markers unchanged. */
+          mapSlot={
            places !== null && places.length > 0 ? (
-             <PlacePickerMap places={places} zipCoords={null} onPick={pickPlace} />
+             <PlacePickerMap
+               places={places}
+               zipCoords={zipCoords}
+               onPick={pickPlace}
+               homePin={pickerHomePin}
+               radiusCircle={pickerRadiusCircle}
+             />
            ) : null
          }
         /* V16 t03 item 1 (option ii): the "Ages (optional)" chips are GONE from
@@ -1100,6 +1193,67 @@ export function NewPlaydatePage({
         submitError={submitError}
         onSubmit={handleSubmit}
       />
+
+      {/* V21 t02: the "Browse all places" door — the founder's ask made
+          reachable from the post flow. It sits directly under the form (which
+          is where the Where? field is), and it opens the SAME directory
+          component /browse renders, in `selectable` mode. Rendered only when
+          the directory actually loaded: a button that opens an empty sheet is
+          worse than no button (the V9 t01 rule the picker already follows). */}
+      {places !== null && places.length > 0 ? (
+        <button
+          type="button"
+          data-testid="browse-all-places"
+          onClick={() => setDirectoryOpen(true)}
+          className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700"
+        >
+          Browse all {places.length} places
+        </button>
+      ) : null}
+
+      {/* THE DIRECTORY SHEET (V21 t02). A full-screen overlay rather than an
+          inline panel: the directory is a map band plus a 239-row list, and
+          rendering it inside the form would bury the fields the parent still
+          has to fill. Selecting a row or a marker calls pickPlace (the ONE
+          write path) and pickPlace closes this sheet. */}
+      {directoryOpen ? (
+        <div
+          className="fixed inset-0 z-[1100] flex flex-col bg-slate-50"
+          data-testid="place-directory-sheet"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Browse places"
+        >
+          <div className="pt-safe sticky top-0 z-10 border-b border-slate-200 bg-white">
+            <div className="mx-auto flex max-w-md items-center justify-between px-4 py-1">
+              <span className="font-display text-lg font-bold text-slate-900">Pick a place</span>
+              <button
+                type="button"
+                data-testid="place-directory-close"
+                onClick={() => setDirectoryOpen(false)}
+                className="flex min-h-11 items-center px-2 text-sm font-medium text-indigo-600"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+          <div className="mx-auto w-full max-w-md flex-1 overflow-y-auto px-4 py-4">
+            <PlaceDirectory
+              places={places}
+              zipCoords={zipCoords}
+              upcoming={null}
+              followedPlaceIds={new Set<string>()}
+              canFollow={false}
+              onToggleFollow={() => undefined}
+              homePin={pickerHomePin}
+              viewerRadius={profile?.radius_miles ?? DEFAULT_RADIUS_MILES}
+              homeZip={profile?.home_zip ?? null}
+              selectable
+              onSelect={pickPlace}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

@@ -59,6 +59,10 @@ import {
   MAP_FOCUS_RADIUS_MILES,
   distanceMiles,
 } from '../lib/places'
+// V21 t09 (A9): the feed view toggle's pure rules — default list, labels, and
+// which view makes the map band the primary content. The page holds the state;
+// this module owns the decisions around it.
+import { FEED_VIEW_DEFAULT, FEED_VIEW_LABELS, feedViewShowsMap, type FeedView } from '../lib/feedView'
 import type { ZipCoords } from '../lib/feed'
 import type { PlaydateWithNeighborhood } from '../lib/types'
 
@@ -304,6 +308,19 @@ export function FeedPage() {
   const [zipDraft, setZipDraft] = useState('')
   const [zipBusy, setZipBusy] = useState(false)
   const [zipControlError, setZipControlError] = useState<string | null>(null)
+  /**
+   * V21 t09 (A9): which of the feed's two views is showing — list (the day
+   * sections) or map (the map band as primary content).
+   *
+   * PERSISTENCE: NONE, deliberately. This page persists no UI state anywhere,
+   * and the ticket requires list to be the default on every first load, so the
+   * choice resets on reload rather than being remembered in localStorage or
+   * sessionStorage (the repo has no house pattern for persisting a page-local
+   * view choice — its persistence keys are cross-page intents and push prefs).
+   * The pure seam (feedView.ts) owns the default and the branch rule; this is
+   * just the one piece of state the toggle flips.
+   */
+  const [feedView, setFeedView] = useState<FeedView>(FEED_VIEW_DEFAULT)
   /**
    * When the feed query was last ISSUED (the visibility gate's clock; the
    * pure shouldRefreshFeed compares against it). A ref, not state: reading it
@@ -995,6 +1012,43 @@ export function FeedPage() {
     <div className="flex flex-col gap-4">
       <SectionHeader icon={NAV_ICONS.nearby} title="Near you" tagline="Drop-ins around your area" />
 
+      {/* V21 t09 (A9): THE VIEW TOGGLE — list | map, at the very top of the
+          feed, above every other control. The founder's ask: "At the very top
+          there should be a toggle between list view and map view."
+
+          List is the default on every load (FEED_VIEW_DEFAULT — no persistence;
+          see the state declaration). In list view the day sections below are
+          the content and the map band does not render; in map view the map
+          band IS the primary content (given room) and the day sections do not
+          render. The branch rule lives in the pure seam (feedViewShowsMap);
+          this row just flips the state.
+
+          Both buttons carry min-h-11 (the 44px tap-target floor the mobile
+          audit measures), and aria-pressed mirrors the current view so the
+          active choice is announced, not only styled. */}
+      <div className="flex gap-2" role="group" aria-label="Feed view">
+        {(Object.keys(FEED_VIEW_LABELS) as FeedView[]).map((view) => {
+          const active = feedView === view
+          return (
+            <button
+              key={view}
+              type="button"
+              data-testid={`feed-view-toggle-${view}`}
+              aria-pressed={active}
+              onClick={() => setFeedView(view)}
+              className={
+                'min-h-11 flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ' +
+                (active
+                  ? 'border-indigo-600 bg-indigo-600 text-white'
+                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
+              }
+            >
+              {FEED_VIEW_LABELS[view]}
+            </button>
+          )
+        })}
+      </div>
+
       {/* V8 ticket 03: the "While you were away" inbox — the retention
           banner's replacement and the ONLY "you have news" surface (the
           amber nudge-banner pattern). Renders nothing while the inbox is
@@ -1140,24 +1194,15 @@ export function FeedPage() {
           radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES}
           showEscapes={false}
         />
-      ) : (
+      ) : feedViewShowsMap(feedView) ? (
+        /* V21 t09 (A9): MAP VIEW — the map band is the primary content, given
+           room. The day sections do NOT render here: a parent who switched to
+           the map wants the map, not the list under it (the branch rule lives
+           in the pure seam). The band keeps its "renders only when at least one
+           drop-in has a real location" rule — with zero pins there is nothing to
+           show on a map, so this state renders the honest line instead of an
+           empty canvas (the same "no empty card" rule the browse map follows). */
         <div className="flex flex-col gap-4">
-          {/* V19 t02 (founder ruling D2): THE FEED MAP.
-              The founder asked to see, on the posts screen too, where the
-              drop-ins actually are: "it's automatically showing you drop-ins
-              CLOSEST to you… that's the value added to make this feel like a
-              neighbourhood feel."
-
-              It renders ONLY when at least one drop-in has a real location, so
-              a feed of free-text posts ("Somewhere else") shows no empty map —
-              the same "no empty card" rule the browse map follows. The pins are
-              de-duplicated by coordinate (`feedMapPins`), so two sessions at one
-              park are one dot rather than an unclickable pile, and the frame is
-              the V19 t01 neighbourhood view: tight on home, whatever the radius.
-
-              The map is ADDITIVE. Every day section below is untouched, so the
-              feed's own structure — the thing parents already read — is
-              unchanged; the map is a new glance above it, not a replacement. */}
           {feedPins.length > 0 ? (
             <div
               data-testid="feed-map-band"
@@ -1171,7 +1216,7 @@ export function FeedPage() {
                 </span>
               </div>
               <PlacesMap
-                className="h-[45dvh] min-h-[240px]"
+                className="h-[60dvh] min-h-[320px]"
                 /* V19 t02, CORRECTED after the `ocr` review lane caught a real
                    bug: a feed pin now carries the drop-in's REAL place identity
                    where it has one, instead of a synthesised
@@ -1221,11 +1266,21 @@ export function FeedPage() {
                 <p data-testid="feed-map-outside" className="mt-2 text-xs text-slate-500">
                   {feedPinsOutsideFrame}{' '}
                   {feedPinsOutsideFrame === 1 ? 'place is' : 'places are'} outside this{' '}
-                  {milesWord(MAP_FOCUS_RADIUS_MILES)} view — the list below shows them all.
+                  {milesWord(MAP_FOCUS_RADIUS_MILES)} view — switch to List to see them all.
                 </p>
               ) : null}
             </div>
-          ) : null}
+          ) : (
+            <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm">
+              No drop-ins have a location yet — switch to List to see them all.
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {/* V21 t09 (A9): LIST VIEW — the existing day sections, soonest-first,
+              unchanged. The map band does not render here (the founder's ruling:
+              "the feed defaults to a LIST"). */}
           {dayGroups.map((group) => {
             const isToday = group.key === todayKey
             const soonest = group.posts[0]

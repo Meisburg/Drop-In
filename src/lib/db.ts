@@ -4743,48 +4743,91 @@ export async function listDirectConversations(userId: string): Promise<
 
 // ---------------------------------------------------------------------------
 // V15 ticket 08: message reactions (thumbs-up).
+// V21 t03: six reaction kinds — one row per person per message, kind is a
+// mutable attribute (the Facebook model). The DB stores the STRING kind, never
+// the emoji; the glyph map lives in components/icons.ts (REACTION_GLYPHS),
+// mirroring the PLACE_KINDS / PLACE_KIND_ICONS house pattern.
 // ---------------------------------------------------------------------------
 
-/** Toggle a thumbs-up reaction on a message (INSERT or DELETE). */
+/**
+ * The reaction kinds the schema allows (migration 0049's CHECK constraint,
+ * verbatim — the DB is the backstop, this is the app's mirror). One reaction
+ * per person per message; changing kind replaces it in place, so these are the
+ * only values a row may carry. A unit test asserts this list equals the SQL
+ * value list so drift between the two is caught as a divergence, not rendered
+ * as nothing.
+ */
+export const REACTION_KINDS = ['like', 'love', 'laugh', 'wow', 'sad', 'angry'] as const
+export type ReactionKind = (typeof REACTION_KINDS)[number]
+
+/** Toggle a reaction on a message by KIND (upsert-in-place or DELETE). */
 export async function toggleReactionWithClient(
   client: SupabaseClient,
   messageId: string,
   profileId: string,
+  kind: ReactionKind,
 ): Promise<boolean> {
-  // Check if the reaction exists.
+  // Check if the reaction exists (one row per person per message).
   const { data: existing } = await client
     .from('message_reactions')
-    .select('message_id')
+    .select('kind')
     .eq('message_id', messageId)
     .eq('profile_id', profileId)
     .maybeSingle()
   if (existing !== null && existing !== undefined) {
-    // Remove it.
+    // Same kind → remove it (tapping your current reaction clears it).
+    if ((existing as { kind?: string }).kind === kind) {
+      const { error } = await client
+        .from('message_reactions')
+        .delete()
+        .eq('message_id', messageId)
+        .eq('profile_id', profileId)
+      if (error) throw error
+      return false
+    }
+    // Different kind → replace in place (UPDATE, not INSERT: the count must
+    // not increment when you change your reaction from 👍 to ❤️).
     const { error } = await client
       .from('message_reactions')
-      .delete()
+      .update({ kind })
       .eq('message_id', messageId)
       .eq('profile_id', profileId)
     if (error) throw error
-    return false
+    return true
   }
-  // Add it.
+  // No row yet → add it.
   const { error } = await client
     .from('message_reactions')
-    .insert({ message_id: messageId, profile_id: profileId })
+    .insert({ message_id: messageId, profile_id: profileId, kind })
   if (error) throw error
   return true
 }
 
 /** The default-client wrapper. */
-export async function toggleReaction(messageId: string): Promise<boolean> {
+export async function toggleReaction(messageId: string, kind: ReactionKind): Promise<boolean> {
   const {
     data: { user },
     error: userError,
   } = await supabase.auth.getUser()
   if (userError) throw userError
   if (user === null) throw new Error('No authenticated user — cannot react.')
-  return toggleReactionWithClient(supabase, messageId, user.id)
+  return toggleReactionWithClient(supabase, messageId, user.id, kind)
+}
+
+/** Remove the viewer's reaction on a message (the picker's "tap your current kind" case). */
+export async function toggleReactionRemove(messageId: string): Promise<void> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (user === null) throw new Error('No authenticated user — cannot react.')
+  const { error } = await supabase
+    .from('message_reactions')
+    .delete()
+    .eq('message_id', messageId)
+    .eq('profile_id', user.id)
+  if (error) throw error
 }
 
 /** Count reactions on a message (for the counter display). */
@@ -4808,12 +4851,14 @@ export async function countReactions(messageId: string): Promise<number> {
 /**
  * The reaction state for one message, as the thread view holds it. `count` is
  * the number of participants who reacted; `mine` is whether the viewer is one
- * of them. The two travel together because the UI needs both (the filled-vs-
- * outline button reads `mine`, the "👍 3" pill reads `count`).
+ * of them; `myKind` is the viewer's own kind (null when they have not reacted).
+ * The three travel together because the UI needs all three (the filled-vs-
+ * outline button reads `mine`, the "❤️ 3" pill reads `count` + `myKind`).
  */
 export interface ReactionState {
   count: number
   mine: boolean
+  myKind: ReactionKind | null
 }
 
 /**
@@ -4838,20 +4883,25 @@ export async function reactionStatesForMessagesWithClient(
   viewerId: string,
 ): Promise<Record<string, ReactionState>> {
   const states: Record<string, ReactionState> = {}
-  for (const id of messageIds) states[id] = { count: 0, mine: false }
+  for (const id of messageIds) states[id] = { count: 0, mine: false, myKind: null }
   if (messageIds.length === 0) return states
   for (let i = 0; i < messageIds.length; i += REACTION_ID_CHUNK) {
     const chunk = messageIds.slice(i, i + REACTION_ID_CHUNK)
     const { data, error } = await client
       .from('message_reactions')
-      .select('message_id, profile_id')
+      .select('message_id, profile_id, kind')
       .in('message_id', chunk)
     if (error) throw error
-    for (const row of (data ?? []) as Array<{ message_id: string; profile_id: string }>) {
-      const prev = states[row.message_id] ?? { count: 0, mine: false }
+    for (const row of (data ?? []) as Array<{ message_id: string; profile_id: string; kind?: string }>) {
+      const prev = states[row.message_id] ?? { count: 0, mine: false, myKind: null }
+      const isMine = row.profile_id === viewerId
+      // The viewer's own kind is the one they currently have (one row per
+      // person per message, so at most one row matches the viewer).
+      const myKind = isMine ? ((row.kind as ReactionKind | undefined) ?? 'like') : prev.myKind
       states[row.message_id] = {
         count: prev.count + 1,
-        mine: prev.mine || row.profile_id === viewerId,
+        mine: prev.mine || isMine,
+        myKind,
       }
     }
   }
@@ -4902,29 +4952,68 @@ export function reconcileOptimisticMessage(
 }
 
 /**
- * The optimistic toggle (V15 ticket 08) — a PURE function, so the count math
- * is unit-testable without a wire.
+ * The optimistic SET (V21 t03, generalising V15's toggle) — a PURE function, so
+ * the count math is unit-testable without a wire.
  *
- * Tapping 👍 is a toggle: the viewer's own reaction flips. That makes the
- * count move by exactly one, in the direction of the new `mine`:
- *   - not mine → mine:  count + 1
- *   - mine → not mine:  count - 1
+ * One reaction per person per message: `kind` is a mutable attribute, never
+ * part of the key. So setting a kind either ADDS the viewer's reaction (count +
+ * 1), REPLACES it in place when they already have a DIFFERENT kind (count
+ * unchanged — changing 👍 to ❤️ must not bump the counter), or REMOVES it when
+ * `kind` is null (count - 1). Tapping your CURRENT kind is the remove case: the
+ * caller passes `null` for the kind that matches `myKind`.
+ *
+ *   - no reaction → set kind:      count + 1, mine true, myKind = kind
+ *   - different kind → set kind:   count UNCHANGED, mine true, myKind = kind
+ *   - any state → remove (null):   count - 1 (floored at 0), mine false, myKind null
+ *
  * The decrement is floored at 0: a stale `count` (e.g. a realtime event that
- * already removed someone else's reaction) must never render "-1". The floor
- * is the one place this helper is opinionated, and it is deliberate — a
- * negative counter is a visible lie, a clamped one is merely brief.
+ * already removed someone else's reaction) must never render "-1". The floor is
+ * the one place this helper is opinionated, and it is deliberate — a negative
+ * counter is a visible lie, a clamped one is merely brief.
  *
- * Unknown messages start from `{ count: 0, mine: false }`, so the first tap on
- * a message whose count never loaded still increments honestly from zero.
+ * Unknown messages start from `{ count: 0, mine: false, myKind: null }`, so the
+ * first tap on a message whose count never loaded still increments honestly from
+ * zero.
+ */
+export function applyReactionSet(
+  states: Readonly<Record<string, ReactionState>>,
+  messageId: string,
+  kind: ReactionKind | null,
+): Record<string, ReactionState> {
+  const current = states[messageId] ?? { count: 0, mine: false, myKind: null }
+  if (kind === null) {
+    // Remove: the viewer's reaction goes away (or was already gone — the floor
+    // keeps a stale count honest).
+    return {
+      ...states,
+      [messageId]: { count: Math.max(0, current.count - 1), mine: false, myKind: null },
+    }
+  }
+  if (current.mine && current.myKind === kind) {
+    // Already exactly this kind: a no-op (the caller would have passed null to
+    // remove, so reaching here means the state already reflects the tap).
+    return { ...states, [messageId]: { ...current } }
+  }
+  if (current.mine) {
+    // Replacing a different kind in place: the count does NOT move.
+    return { ...states, [messageId]: { count: current.count, mine: true, myKind: kind } }
+  }
+  // New reaction: the count moves up by one.
+  return { ...states, [messageId]: { count: current.count + 1, mine: true, myKind: kind } }
+}
+
+/**
+ * Backward-compatible alias for the pre-V21 toggle shape (a boolean flip of a
+ * single "like" reaction). Kept so existing tests and any straggler call site
+ * keep passing; new code calls {@link applyReactionSet}.
  */
 export function applyReactionToggle(
   states: Readonly<Record<string, ReactionState>>,
   messageId: string,
   mine: boolean,
 ): Record<string, ReactionState> {
-  const current = states[messageId] ?? { count: 0, mine: false }
-  const count = Math.max(0, current.count + (mine ? 1 : -1))
-  return { ...states, [messageId]: { count, mine } }
+  if (mine) return applyReactionSet(states, messageId, 'like')
+  return applyReactionSet(states, messageId, null)
 }
 
 /**
@@ -5277,4 +5366,110 @@ export async function deleteParentCard(profileId: string, position: number): Pro
     .eq('profile_id', profileId)
     .eq('position', position)
   if (error) throw error
+}
+
+/* ===========================================================================
+ * V21 t07 — INVITE A PARENT BY NAME (name-prefix autocomplete)
+ * ===========================================================================
+ *
+ * The founder's ask: parents do not know each other's @handles, they know
+ * names — "as they're typing in the name it should populate whatever users
+ * are in the database so it gets close and they can select one." So the
+ * Linked-parent section on /profile gains a NAME search beside the existing
+ * @handle field; selecting a row starts the EXISTING invite flow
+ * (`requestAccountLink`), never a second write path.
+ *
+ * PRIVACY POSTURE (pinned rails, documented here because this is a new
+ * enumeration surface):
+ *   - SIGNED-IN ONLY. The read rides `profiles_select_authenticated`
+ *     (migration 0001: SELECT to `authenticated`, using (true)) — profiles are
+ *     visible to signed-in parents by design, so a bounded client-side query
+ *     widens nothing. There is NO anon policy on `profiles` (0015 states it
+ *     explicitly), so a signed-out caller reads zero rows: the RLS posture
+ *     already refuses anon, no new policy is needed and none was added.
+ *   - PREFIX MATCH, not substring. "As they're typing the name" means the
+ *     typed text is the START of the name; `ilike 'prefix%'` narrows exposure
+ *     versus the inbox DM search's `%term%` (searchProfilesWithClient above).
+ *   - CAPPED at 8 results, enforced CLIENT-SIDE (the `.limit()` below) even
+ *     when the caller asks for more: the cap is a product rail, not a hint.
+ *   - RETURNED SHAPE IS `{ display_name, handle }` ONLY. No id, no email, no
+ *     zip, no bio. `display_name` here IS the composed real name ("Sam
+ *     Rivera", V20 signup composes first + last into the handle column), so
+ *     one field carries both the name and the handle the invite flow needs.
+ *     Nothing else crosses the wire.
+ */
+
+/** One autocomplete row: the parent's name (their display_name) + handle. */
+export interface ParentNameMatch {
+  /** The parent's display_name — since V20 this is their real name, composed. */
+  display_name: string
+  /** The same value as the public handle the invite flow addresses. */
+  handle: string
+}
+
+/** The hard cap on autocomplete results (the pinned privacy rail). */
+export const PARENT_NAME_SEARCH_MAX_RESULTS = 8
+
+/** Queries shorter than this never reach the database. */
+export const PARENT_NAME_SEARCH_MIN_QUERY_LENGTH = 2
+
+/** Escape ILIKE pattern characters so a typed `%` or `_` is literal. */
+function escapeIlikePattern(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+}
+
+/**
+ * Decide whether a name-search query may hit the database, and what its
+ * effective length cap is. Pure, so the rails are unit-testable without a
+ * socket: short or blank queries return null (NO request fires), valid ones
+ * return the capped limit.
+ */
+export function planParentNameSearch(
+  query: string,
+  requestedLimit: number,
+): { prefix: string; limit: number } | null {
+  const trimmed = query.trim()
+  if (trimmed.length < PARENT_NAME_SEARCH_MIN_QUERY_LENGTH) return null
+  // Cap the caller's requested limit at the pinned rail: asking for 50 still
+  // returns at most 8. A non-positive/nonsense requested limit falls back to
+  // the cap rather than querying with no limit at all.
+  const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? requestedLimit : Infinity
+  return { prefix: trimmed, limit: Math.min(limit, PARENT_NAME_SEARCH_MAX_RESULTS) }
+}
+
+/**
+ * Search parents by name prefix, against an injected client (mockable in unit
+ * tests). Returns AT MOST `PARENT_NAME_SEARCH_MAX_RESULTS` rows, each carrying
+ * ONLY `display_name` + `handle`.
+ *
+ * A query under two characters (or empty/whitespace-only) returns `[]` WITHOUT
+ * issuing any request — the rails live in `planParentNameSearch`, asserted in
+ * the sibling test.
+ */
+export async function searchProfilesByNameWithClient(
+  client: SupabaseClient,
+  query: string,
+  limit: number = PARENT_NAME_SEARCH_MAX_RESULTS,
+): Promise<ParentNameMatch[]> {
+  const plan = planParentNameSearch(query, limit)
+  if (plan === null) return []
+  const { data, error } = await client
+    .from('profiles')
+    .select('display_name')
+    .ilike('display_name', `${escapeIlikePattern(plan.prefix)}%`)
+    .order('display_name', { ascending: true })
+    .limit(plan.limit)
+  if (error) throw error
+  return ((data ?? []) as unknown as Array<{ display_name: string }>).map((row) => ({
+    display_name: row.display_name,
+    handle: row.display_name,
+  }))
+}
+
+/** The default-client wrapper (the /profile Linked-parent name search). */
+export async function searchProfilesByName(
+  query: string,
+  limit: number = PARENT_NAME_SEARCH_MAX_RESULTS,
+): Promise<ParentNameMatch[]> {
+  return searchProfilesByNameWithClient(supabase, query, limit)
 }

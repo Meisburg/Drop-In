@@ -202,3 +202,110 @@ test('a third account cannot read or alter another family’s link (V19 t03)', a
     }
   }
 })
+
+/**
+ * V21 t07 — the UI flow: typing a name in the Linked-parent section surfaces
+ * matching parents (name + handle per row), and selecting one starts the
+ * EXISTING invite flow (the @handle field fills and the invitation sends).
+ *
+ * Runs through the app's own /profile editor against the live project, using
+ * the marker account from the setup spec (signed-in state reused by the
+ * chromium project). Two throwaway parents are created via REST so the
+ * search has something to find, then deleted in a finally block.
+ */
+test('typing a name suggests parents; selecting one sends the invite (V21 t07)', async ({ page }) => {
+  test.setTimeout(300_000) // 2 signups + UI flow; live-DB timing is slow
+  const { url: restUrl, anonKey } = readSupabaseEnv()
+
+  /** fetch with a hard 15s cap — a hung live-DB call must fail fast. */
+  async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 15_000)
+    try {
+      return await fetch(url, { ...init, signal: controller.signal })
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  /** Create one throwaway parent with a unique display_name; returns its handle. */
+  async function createParent(tag: string, displayName: string): Promise<{ handle: string; id: string; token: string }> {
+    const stamp = Date.now()
+    const email = `e2e-nsearch-ui-${tag}-${stamp}@gmail.com`
+    let res = await fetchWithTimeout(`${restUrl}/auth/v1/signup`, {
+      method: 'POST',
+      headers: { apikey: anonKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: 'e2e-disposable-account-pw' }),
+    })
+    // The live project rate-limits signups (429 over_request_rate_limit). Back
+    // off and retry rather than fail the whole spec on a transient limit.
+    for (let attempt = 0; res.status === 429 && attempt < 5; attempt++) {
+      await new Promise((r) => setTimeout(r, 3_000 * (attempt + 1)))
+      res = await fetchWithTimeout(`${restUrl}/auth/v1/signup`, {
+        method: 'POST',
+        headers: { apikey: anonKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: 'e2e-disposable-account-pw' }),
+      })
+    }
+    if (!res.ok) throw new Error(`signup HTTP ${res.status} ${await res.text()}`)
+    const body = (await res.json()) as {
+      id?: string
+      access_token?: string
+      user?: { id?: string }
+      session?: { access_token?: string }
+    }
+    const id = body.id ?? body.user?.id
+    const token = body.access_token ?? body.session?.access_token
+    if (id === undefined || token === undefined) {
+      throw new Error(`signup returned no id/token`)
+    }
+    const prof = await fetchWithTimeout(`${restUrl}/rest/v1/profiles`, {
+      method: 'POST',
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ id, display_name: displayName, home_zip: '98107', radius_miles: 5 }),
+    })
+    if (!prof.ok) throw new Error(`profile insert HTTP ${prof.status} ${await prof.text()}`)
+    return { handle: displayName, id, token }
+  }
+
+  const madeReal = [
+    await createParent('m1', `Quinn E2E ${Date.now()}`),
+    await createParent('m2', `Quinn Other ${Date.now()}`),
+  ]
+
+  try {
+    await page.goto('/profile')
+    await page.getByRole('button', { name: 'Edit profile' }).click()
+
+    // The Linked-parent section is in its "none" state (the marker has no link).
+    const nameInput = page.getByTestId('link-name-input')
+    await nameInput.fill('Quinn E2E')
+
+    // Debounce (~250ms) + the request: the suggestions list appears.
+    const matches = page.getByTestId('link-name-matches')
+    await matches.waitFor({ timeout: 15_000 })
+    const rows = page.getByTestId('link-name-match')
+    await expect(rows.first()).toContainText('Quinn E2E')
+    // Each row shows name + handle only.
+    await expect(rows.first()).toHaveText(/Quinn E2E \d+/)
+
+    // Selecting the row fills the @handle field and sends the invite.
+    await rows.first().click()
+    await expect(page.getByTestId('link-handle-input')).toHaveValue(
+      new RegExp(`^Quinn E2E \\d+$`),
+    )
+    await expect(page.getByTestId('link-outgoing')).toBeVisible()
+  } finally {
+    // Clean up both throwaway parents (best-effort, as every other spec here).
+    for (const p of madeReal) {
+      await fetch(`${restUrl}/rest/v1/profiles?id=eq.${p.id}`, {
+        method: 'DELETE',
+        headers: { apikey: anonKey, Authorization: `Bearer ${p.token}` },
+      }).catch(() => {})
+    }
+  }
+})

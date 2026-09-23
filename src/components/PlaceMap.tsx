@@ -167,6 +167,7 @@ export function PlacesMap({
   radiusCircle,
   placeActions = true,
   testId = 'places-map',
+  onSelect,
 }: {
   places: readonly Place[]
   zipCoords: ReadonlyMap<string, ZipCoords> | null
@@ -217,6 +218,14 @@ export function PlacesMap({
    * both.
    */
   placeActions?: boolean
+  /**
+   * V21 t02: when set, the panel's "Start a drop-in" button calls this with the
+   * tapped place instead of navigating to /new (the `hostHere` default). This is
+   * how the directory surface embedded in /new selects a place into its form —
+   * the SAME pick path the suggestion list uses, never a second write. When
+   * absent, the existing navigate-to-/new behaviour stands unchanged.
+   */
+  onSelect?: (place: Place) => void
 }) {
   const navigate = useNavigate()
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -661,6 +670,12 @@ export function PlacesMap({
    */
   function hostHere() {
     if (selected === null) return
+    // V21 t02: a host-embedded directory selects into its own form instead of
+    // navigating away — the SAME pick path, never a second write.
+    if (onSelect !== undefined) {
+      onSelect(selected)
+      return
+    }
     const prefill: PlacePrefill = {
       placeId: selected.id,
       place: selected.name,
@@ -872,12 +887,20 @@ export function PlacesMap({
  * The canvas is interactive (scrollWheelZoom on, drag pan on) unlike the
  * read-only detail/browse surfaces — this is a picker, not a display. The
  * container keeps the `place-map` testid family so e2e specs can target it.
+ *
+ * V21 t02 Phase B: optional `homePin` + `radiusCircle` overlays (the same two
+ * props `PlacesMap` carries): the viewer's home pin and their radius circle,
+ * drawn as reading aids around the directory markers. When a radius circle is
+ * present the mount view frames it at `zoomForRadius` (the browse map's own
+ * framing rule); without one the existing points-fit stands unchanged.
  */
 export function PlacePickerMap({
   places,
   zipCoords,
   onPick,
   className,
+  homePin,
+  radiusCircle,
 }: {
   /** The directory rows to plot (the page passes whatever it loaded). */
   places: readonly Place[]
@@ -886,6 +909,10 @@ export function PlacePickerMap({
   /** Called with the tapped Place; the page routes it through its pick seam. */
   onPick: (place: Place) => void
   className?: string
+  /** The viewer's home location (from the stored home_zip gazetteer), if any. */
+  homePin?: { lat: number; lng: number } | null
+  /** A radius overlay (center + miles) to frame the picker view on. */
+  radiusCircle?: { center: { lat: number; lng: number }; radiusMiles: number } | null
 }) {
   // Resolve each place's coords; keep the (place, coords) pairs so a tap can
   // hand back the full row, not just the coordinate. Hooks must be called
@@ -919,7 +946,11 @@ export function PlacePickerMap({
   const markers = entries.map((e) => e.coords)
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
-  const initialMarkerRef = useRef(markers[0])
+  // V21 t02 Phase B: the mount anchor is the home pin when provided (the same
+  // rule `PlacesMap` uses), else the first marker (the pre-existing behaviour).
+  // Read through a ref so the mount effect's dependency list stays empty.
+  const initialAnchorRef = useRef<MapMarker | undefined>(homePin ?? markers[0])
+  const hasHomePinRef = useRef(homePin !== undefined && homePin !== null)
   const markersKey = markers.map((m) => `${m.lat}:${m.lng}`).join('|')
   const selected =
     selectedId === null ? null : (entries.find((e) => e.place.id === selectedId)?.place ?? null)
@@ -927,10 +958,21 @@ export function PlacePickerMap({
   useEffect(() => {
     const el = containerRef.current
     if (el === null || markers.length === 0) return
-    const first = initialMarkerRef.current
+    const anchor = initialAnchorRef.current
+    // V21 t02 Phase B: a radius circle frames the mount view at its own zoom
+    // (the browse map's `zoomForRadius` rule); without one, the home pin opens
+    // at the detail fallback and a bare points-fit keeps the old behaviour.
+    const frameZoom =
+      radiusCircle !== undefined && radiusCircle !== null
+        ? zoomForRadius(radiusCircle.radiusMiles)
+        : hasHomePinRef.current
+          ? HOME_PIN_ZOOM
+          : anchor === undefined
+            ? 11
+            : DETAIL_ZOOM
     const map = L.map(el, { scrollWheelZoom: true }).setView(
-      first === undefined ? SEATTLE_CENTER : [first.lat, first.lng],
-      first === undefined ? 11 : DETAIL_ZOOM,
+      anchor === undefined ? SEATTLE_CENTER : [anchor.lat, anchor.lng],
+      frameZoom,
     )
     L.tileLayer(OSM_TILE_URL, { attribution: OSM_ATTRIBUTION, maxZoom: 19 }).addTo(map)
     mapRef.current = map
@@ -939,6 +981,49 @@ export function PlacePickerMap({
       mapRef.current = null
     }
   }, [])
+
+  // V21 t02 Phase B: the home pin + radius circle overlay — the same layer as
+  // `PlacesMap`'s (a separate group so it never mixes with the marker group).
+  // The circle is a reading aid only: pointer events off, exactly as there.
+  const pickerOverlayKey = `${homePin?.lat ?? ''}:${homePin?.lng ?? ''}|${radiusCircle?.center.lat ?? ''}:${radiusCircle?.center.lng ?? ''}:${radiusCircle?.radiusMiles ?? ''}`
+  useEffect(() => {
+    const map = mapRef.current
+    if (map === null) return
+    const layers: L.Layer[] = []
+    if (homePin !== undefined && homePin !== null) {
+      const pin = L.circleMarker([homePin.lat, homePin.lng], {
+        radius: 10,
+        color: '#dc2626',
+        weight: 3,
+        fillColor: '#dc2626',
+        fillOpacity: 0.85,
+      })
+      pin.bindTooltip('Home', { direction: 'top', offset: [0, -10] })
+      layers.push(pin.addTo(map))
+    }
+    if (radiusCircle !== undefined && radiusCircle !== null) {
+      const meters = radiusCircle.radiusMiles * 1609.344
+      const circle = L.circle([radiusCircle.center.lat, radiusCircle.center.lng], {
+        radius: meters,
+        color: '#dc2626',
+        weight: 2,
+        fillColor: '#dc2626',
+        fillOpacity: 0.08,
+      })
+      // Pointer events off: the disc must never swallow taps aimed at the
+      // directory markers inside it (the same rule `PlacesMap` pins).
+      // `addTo` first, then style — `getElement()` is null until the layer is
+      // on the map (a pre-add call throws on undefined.style; `PlacesMap`'s
+      // site adds before styling for exactly this reason).
+      const added = circle.addTo(map)
+      layers.push(added)
+      const path = added.getElement() as SVGElement | null
+      if (path !== null) path.style.pointerEvents = 'none'
+    }
+    return () => {
+      for (const layer of layers) layer.remove()
+    }
+  }, [pickerOverlayKey])
 
   useEffect(() => {
     const map = mapRef.current
@@ -957,7 +1042,10 @@ export function PlacePickerMap({
         return marker
       }),
     ).addTo(map)
-    if (entries.length > 0) {
+    // V21 t02 Phase B: a radius circle owns the framing (its zoom was set on
+    // mount) — fitting the points would blow the frame back out to every
+    // marker. Without one, the pre-existing points-fit stands.
+    if (entries.length > 0 && (radiusCircle === undefined || radiusCircle === null)) {
       map.fitBounds(L.latLngBounds(entries.map((e) => [e.coords.lat, e.coords.lng])), {
         padding: [28, 28],
       })

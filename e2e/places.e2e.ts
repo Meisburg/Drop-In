@@ -154,12 +154,15 @@ const MAPS_HREF = `https://www.google.com/maps?q=${encodeURIComponent(
   `${PLACE_NAME}, ${PLACE_ADDRESS}`,
 )}`
 
-/** Open /browse through the Places nav tab (which also pins the label change). */
+/**
+ * Open /browse directly. V21 t02 removed the Places nav tab (the directory now
+ * lives inside /new's "Where?" block), so /browse is reached by URL — it keeps
+ * its route for deep links and this spec. The heading assertion below still
+ * pins that the screen IS the directory.
+ */
 async function openPlacesTab(page: Page): Promise<void> {
-  await page.goto('/')
-  await settleOnRoute(page, '/')
-  await page.getByRole('link', { name: 'Places', exact: true }).click()
-  await page.waitForURL('/browse')
+  await page.goto('/browse')
+  await settleOnRoute(page, '/browse')
 }
 
 /**
@@ -250,7 +253,7 @@ test('the Places tab is the seeded directory, and anon can read it (RED pre-0029
       `(pre-0029-apply: HTTP ${probe.status} — ${probeBody.slice(0, 200)})`,
   ).toBe(true)
 
-  // (2) The tab is labelled Places and its screen is the directory.
+  // (2) The screen is the directory (V21 t02: reached by URL, not a nav tab).
   await openPlacesTab(page)
   await expect(page.getByRole('heading', { name: 'Places', exact: true })).toBeVisible()
 
@@ -2364,6 +2367,11 @@ test('the feed maps its placed drop-ins and ignores free-text ones (V19 t02)', a
 
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/')
+    // V21 t09 (A9): the feed now DEFAULTS to list view — the map band only
+    // renders after switching to the Map toggle. This spec's assertions are all
+    // about the MAP, so flip the view first (the toggle is at the top of the
+    // feed; the default is pinned by e2e/feed-view-toggle.e2e.ts).
+    await page.getByRole('button', { name: 'Map' }).click()
     await expect(page.getByTestId('feed-map-band')).toBeVisible({ timeout: 15000 })
 
     // AC: the map drew AT LEAST one pin, and it is a real Leaflet canvas — not
@@ -2394,7 +2402,10 @@ test('the feed maps its placed drop-ins and ignores free-text ones (V19 t02)', a
     // AC: the free-text post is genuinely in the feed (so its absence from the
     // map is a decision, not a missing row) and it is NOT on the map. We assert
     // its presence as a CARD first — otherwise this would pass trivially if the
-    // insert had failed.
+    // insert had failed. V21 t09 (A9): the card renders in LIST view, so flip
+    // back to List for this half of the assertion; the pin count above already
+    // proved the map side while in Map view.
+    await page.getByRole('button', { name: 'List' }).click()
     await expect(page.getByText(freeTextPost.title, { exact: false })).toBeVisible()
 
     /**
@@ -2440,6 +2451,10 @@ test('the feed maps its placed drop-ins and ignores free-text ones (V19 t02)', a
      * and because that place IS a directory row, the actions are offered and
      * "Details" links a genuine uuid.
      */
+    // V21 t09 (A9): the panel lives on the MAP, so flip back to Map view before
+    // opening it (the free-text-card assertion above needed List view).
+    await page.getByRole('button', { name: 'Map' }).click()
+    await expect(page.getByTestId('feed-map-band')).toBeVisible()
     const indigoMarker = page
       .locator('path.leaflet-interactive[fill="#4f46e5"]:not([d="M0 0"])')
       .first()
@@ -2458,7 +2473,10 @@ test('the feed maps its placed drop-ins and ignores free-text ones (V19 t02)', a
         'Details must link to a REAL place id, never a synthesised feed-pin-N',
       ).not.toContain('feed-pin-')
     }
+    // The comparison baseline is read IN MAP VIEW (where the pins render); the
+    // earlier `pins` assertion already proved >=1 while the map was up.
     const pinCountWithBoth = await page.locator('path.leaflet-interactive').count()
+    expect(pinCountWithBoth, 'the placed drop-in must still produce a pin in map view').toBeGreaterThan(0)
 
     // Deleting the placed post must REMOVE a pin — the strongest available proof
     // that the pin belongs to the placed post rather than to the basemap, the
@@ -2470,8 +2488,17 @@ test('the feed maps its placed drop-ins and ignores free-text ones (V19 t02)', a
     if (!del.ok) throw new Error(`playdates delete HTTP ${del.status}`)
     created.shift()
 
+    // V21 t09 (A9): the reload resets to the DEFAULT list view, so flip back to
+    // Map before reading the post-delete count. With the placed post gone there
+    // are ZERO pins, so the band itself does not render (the "renders only when
+    // at least one drop-in has a real location" rule) — the honest fallback line
+    // renders instead, and the pin count reads 0. That IS the proof: removing
+    // the only placed drop-in leaves no pin on the map.
     await page.reload()
-    await page.waitForTimeout(2500)
+    await page.getByRole('button', { name: 'Map' }).click()
+    await expect(
+      page.getByText('No drop-ins have a location yet'),
+    ).toBeVisible({ timeout: 15000 })
     const pinCountAfter = await page.locator('path.leaflet-interactive').count()
 
     console.log(

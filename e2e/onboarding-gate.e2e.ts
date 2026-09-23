@@ -28,15 +28,12 @@ test('a cold full-page /profile load lands on /profile (no onboarding-gate bounc
     page.getByRole('heading', { name: `@${marker.displayName}`, exact: true }),
   ).toBeVisible()
 
-  // Settled on the requested route, and the app-shell header shows the
-  // marker's handle (the profile round-trip worked).
-  //
-  // The handle renders TWICE on /profile — the app-shell header link and the
-  // identity card's own "@handle" heading — so a bare getByText hits a
-  // strict-mode violation. The BANNER is what this assertion is about (the app
-  // shell's handle), so it is scoped there.
+  // Settled on the requested route. V21 t10 removed the header's duplicate
+  // profile link, so the banner no longer renders the @handle — assert its
+  // absence (the identity card's own "@handle" heading above is the loaded-row
+  // proof).
   expect(new URL(page.url()).pathname).toBe('/profile')
   await expect(
     page.getByRole('banner').getByText(`@${marker.displayName}`, { exact: true }),
-  ).toBeVisible()
+  ).toHaveCount(0)
 })

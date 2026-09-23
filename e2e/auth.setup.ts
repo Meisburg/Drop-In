@@ -74,10 +74,19 @@ setup('sign up the marker, onboard it (zip + radius), save the signed-in state',
   await page.locator('select').first().selectOption({ label: `${MARKER_RADIUS_MILES} miles` })
   await page.getByRole('button', { name: /^Continue/ }).click()
 
-  // Back on the feed — signed in, onboarded (home zip set). The header
-  // handle proves the session + profile round-trip worked.
+  // Back on the feed — signed in, onboarded (home zip set).
   await page.getByRole('heading', { name: 'Near you' }).waitFor()
-  await expect(page.getByText(`@${displayName}`, { exact: true })).toBeVisible()
+  // The handle round-trip is still proven, but NOT from the header: V21 t10
+  // removed the header's duplicate `@handle` link (founder: "it bothers me to
+  // have a profile section in two different areas"), so the header renders it
+  // nowhere. /profile's identity card carries the same `@handle` as its own
+  // heading — the same assertion `profile.e2e.ts` uses to prove the row loaded
+  // (a failed profile load has no name to render).
+  await page.goto('/profile')
+  await expect(
+    page.getByRole('heading', { name: `@${displayName}`, exact: true }),
+  ).toBeVisible()
+  await page.goto('/')
 
   // Set + verify the marker's location via REST (the marker's own JWT, read
   // out of the session blob localStorage): the UI's Continue already wrote
