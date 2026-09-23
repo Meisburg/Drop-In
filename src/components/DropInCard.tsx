@@ -118,6 +118,7 @@ export function DropInCard({
   kidsGoingCount = 0,
   metBeforeLabel = null,
   ageRangeLabel = null,
+  eagerAvatar = false,
 }: {
   playdate: PlaydateWithNeighborhood
   nowIso: string
@@ -174,6 +175,11 @@ export function DropInCard({
    * Names are never part of it — the whole string is a range.
    */
   ageRangeLabel?: string | null
+  /**
+   * Slice 11: keep the card's host avatar eager (no `loading="lazy"`). Only the
+   * first feed card sets this; every other list/row card lazy-loads its avatar.
+   */
+  eagerAvatar?: boolean
 }) {
   const live = isHappeningNow(playdate, nowIso)
   const ended = isEnded(playdate, nowIso)
@@ -206,7 +212,11 @@ export function DropInCard({
     kidsGoingCount,
   )
   const cardClasses = [
-    'block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-indigo-300',
+    // V22 slice 9: the feed's list column widens to max-w-3xl (768px) at md+,
+    // but a single-card column reads best at the phone measure — so cards cap
+    // at max-w-md (448px) there. Below md the shell is already 448px, so this
+    // class changes nothing on a phone.
+    'block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors motion-reduce:transition-none hover:border-indigo-300 md:max-w-md',
     muted ? 'opacity-60' : '',
   ]
     .filter((c) => c !== '')
@@ -283,7 +293,7 @@ export function DropInCard({
           {distanceLabel !== null ? ` · ${distanceLabel}` : ''}
         </p>
         <div className="flex items-center gap-2">
-          <HostAvatar host={playdate.host} />
+          <HostAvatar host={playdate.host} eager={eagerAvatar} />
           <p className="text-sm text-slate-500">@{playdate.host.display_name}</p>
         </div>
         {/* V6 (first phone feedback): the going toggle used to be a bare
@@ -305,6 +315,8 @@ export function DropInCard({
                           key={index}
                           src={circle.avatarUrl}
                           alt=""
+                          loading="lazy"
+                          decoding="async"
                           className={`h-6 w-6 rounded-full border-2 border-white object-cover${index > 0 ? ' -ml-2' : ''}`}
                         />
                       ) : (
@@ -359,7 +371,7 @@ export function DropInCard({
                 event.stopPropagation()
                 if (!pingToggle.busy) pingToggle.onToggle()
               }}
-              className={`flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors disabled:opacity-60 ${
+              className={`flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors motion-reduce:transition-none disabled:opacity-60 ${
                 pingToggle.active
                   ? 'border-green-700 bg-green-700 text-white'
                   : 'border-slate-300 bg-white text-slate-700'
@@ -429,6 +441,7 @@ export function HostAvatar({
   host,
   size = 'md',
   expandable = false,
+  eager = false,
 }: {
   host: PlaydateHost
   size?: 'md' | 'sm' | 'lg'
@@ -440,9 +453,17 @@ export function HostAvatar({
    * circle has nothing to enlarge, so it stays inert.
    */
   expandable?: boolean
+  /**
+   * Slice 11: keep this avatar's image eager (no `loading="lazy"`). The first
+   * feed card's host avatar is the LCP hero; every other list/row avatar lazy-loads.
+   */
+  eager?: boolean
 }) {
   const box = size === 'sm' ? 'h-6 w-6' : size === 'lg' ? 'h-20 w-20' : 'h-10 w-10'
   const initialClass = size === 'sm' ? 'text-xs' : size === 'lg' ? 'text-2xl' : 'text-sm'
+  // Slice 11: list imagery lazy-loads; the first feed card's host avatar is
+  // the LCP hero and stays eager (FeedPage passes `eager` for its first card).
+  const photoUrl = host.avatar_url ?? ''
   // V21 t05: the expandable wrapper must own the SAME box as its child img —
   // a fixed h-11 w-11 (44px) around an 80px `lg` photo drew an ellipse. The
   // 44px tap floor is preserved for the default `md` size (the only caller that
@@ -454,10 +475,11 @@ export function HostAvatar({
       : size === 'sm'
         ? 'flex h-6 w-6 shrink-0 items-center justify-center rounded-full'
         : 'flex h-11 w-11 shrink-0 items-center justify-center rounded-full'
-  const photoUrl = host.avatar_url ?? ''
   if (photoUrl !== '') {
-    const photo = (
+    const photo = eager ? (
       <img src={photoUrl} alt="" className={`${box} shrink-0 rounded-full object-cover`} />
+    ) : (
+      <img src={photoUrl} alt="" loading="lazy" decoding="async" className={`${box} shrink-0 rounded-full object-cover`} />
     )
     return expandable ? (
       <PhotoButton src={photoUrl} alt={`${host.display_name}’s photo`} className={buttonBox}>

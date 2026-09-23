@@ -1070,7 +1070,7 @@ export function ProfilePage() {
             <div className="group relative shrink-0">
               <label
                 data-testid="avatar-photo-trigger"
-                className="flex h-20 w-20 cursor-pointer items-center justify-center rounded-full transition-transform active:scale-95"
+                className="flex h-20 w-20 cursor-pointer items-center justify-center rounded-full transition-transform active:scale-95 motion-reduce:transition-none"
               >
                 <input
                   data-testid="avatar-photo-input"
@@ -1089,6 +1089,8 @@ export function ProfilePage() {
                   data-testid="avatar-photo"
                   src={profile.avatar_url}
                   alt="Your avatar"
+                  loading="lazy"
+                  decoding="async"
                   className="aspect-square h-20 w-20 rounded-full object-cover"
                 />
               </label>
@@ -1098,13 +1100,13 @@ export function ProfilePage() {
                 aria-label="Remove photo"
                 onClick={() => void handleRemoveAvatar()}
                 disabled={avatarRemoving}
-                className="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white text-sm font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-100 disabled:opacity-50 sm:opacity-0 sm:focus-within:opacity-100 sm:group-hover:opacity-100"
+                className="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white text-sm font-medium text-slate-600 shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-100 disabled:opacity-50 sm:opacity-0 sm:focus-within:opacity-100 sm:group-hover:opacity-100"
               >
                 ×
               </button>
             </div>
           ) : (
-            <label className="flex shrink-0 cursor-pointer items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-slate-50">
+            <label className="flex shrink-0 cursor-pointer items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50">
               <input
                 data-testid="avatar-photo-input"
                 type="file"
@@ -1128,7 +1130,7 @@ export function ProfilePage() {
                 data-testid="display-name-input"
                 aria-label="Display name"
                 className={
-                  'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                  'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
                   (writeErrors.name !== undefined ? 'border-red-400' : 'border-slate-300')
                 }
                 value={draft?.name ?? ''}
@@ -1168,10 +1170,12 @@ export function ProfilePage() {
             data-testid="family-photo"
             src={familyPhotoUrl}
             alt="Your family photo"
+            loading="lazy"
+            decoding="async"
             className="mt-3 max-h-72 w-full rounded-xl object-cover"
           />
         ) : null}
-        <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-slate-50">
+        <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50">
           <input
             data-testid="family-photo-input"
             type="file"
@@ -1204,7 +1208,7 @@ export function ProfilePage() {
           <textarea
             data-testid="about-family-input"
             className={
-              'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+              'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
               (liveBioError !== null ? 'border-red-400' : 'border-slate-300')
             }
             value={draft?.bio ?? ''}
@@ -1291,7 +1295,7 @@ export function ProfilePage() {
                             data-testid="kid-name"
                             aria-label="Kid first name"
                             className={
-                              'w-28 min-w-0 rounded-xl border px-2 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                              'w-28 min-w-0 rounded-xl border px-2 py-1.5 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
                               (rowError !== null ? 'border-red-400' : 'border-slate-300')
                             }
                             value={values.firstName}
@@ -1309,7 +1313,7 @@ export function ProfilePage() {
                             min={0}
                             max={17}
                             className={
-                              'w-16 shrink-0 rounded-xl border px-2 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                              'w-16 shrink-0 rounded-xl border px-2 py-1.5 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
                               (rowError !== null ? 'border-red-400' : 'border-slate-300')
                             }
                             value={values.age}
@@ -1334,7 +1338,7 @@ export function ProfilePage() {
                             aria-label="Kid likes"
                             rows={3}
                             className={
-                              'w-full min-w-0 rounded-xl border px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                              'w-full min-w-0 rounded-xl border px-3 py-1.5 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
                               (rowError !== null ? 'border-red-400' : 'border-slate-300')
                             }
                             value={values.likes}
@@ -1363,7 +1367,7 @@ export function ProfilePage() {
                         onClick={() => setRemovingKidId(kid.id)}
                         disabled={kidsBusyId !== null}
                         className={
-                          'shrink-0 rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200 ' +
+                          'shrink-0 rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-200 ' +
                           (kidsBusyId === kid.id ? 'opacity-50' : '')
                         }
                       >
@@ -1381,7 +1385,7 @@ export function ProfilePage() {
             <div className="mt-3 flex items-center gap-2">
               <input
                 className={
-                  'min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                  'min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
                   (kidsError !== null ? 'border-red-400' : 'border-slate-300')
                 }
                 value={newKidName}
@@ -1398,7 +1402,7 @@ export function ProfilePage() {
                 min={0}
                 max={17}
                 className={
-                  'w-20 shrink-0 rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                  'w-20 shrink-0 rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
                   (kidsError !== null ? 'border-red-400' : 'border-slate-300')
                 }
                 value={newKidAge}
@@ -1600,7 +1604,7 @@ export function ProfilePage() {
                           onChange={(e) => setLinkNameQuery(e.target.value)}
                           placeholder="e.g. Sam Rivera"
                           autoComplete="off"
-                          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
                           disabled={linkBusy}
                         />
                       </label>
@@ -1637,7 +1641,7 @@ export function ProfilePage() {
                           value={linkHandleInput}
                           onChange={(e) => setLinkHandleInput(e.target.value)}
                           placeholder="e.g. nicole"
-                          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
                           disabled={linkBusy}
                         />
                       </label>
@@ -1809,7 +1813,7 @@ function ParentCardEditor({
           onChange={(e) => setName(e.target.value)}
           maxLength={40}
           placeholder="e.g. Jon"
-          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
           disabled={busy}
         />
       </label>
@@ -1822,7 +1826,7 @@ function ParentCardEditor({
           maxLength={300}
           rows={2}
           placeholder="A line or two about you (optional)"
-          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
           disabled={busy}
         />
       </label>
@@ -1904,12 +1908,14 @@ function KidPhotoControl({
               )
               input?.click()
             }}
-            className="relative block h-10 w-10 cursor-pointer overflow-hidden rounded-full transition-transform active:scale-95"
+            className="relative block h-10 w-10 cursor-pointer overflow-hidden rounded-full transition-transform active:scale-95 motion-reduce:transition-none"
           >
             <img
               data-testid="kid-photo"
               src={photoUrl}
               alt=""
+              loading="lazy"
+              decoding="async"
               className="aspect-square h-10 w-10 rounded-full object-cover"
               onError={onError}
             />
@@ -1920,7 +1926,7 @@ function KidPhotoControl({
             aria-label="Remove photo"
             onClick={onRemove}
             disabled={busy}
-            className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-xs font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-100 disabled:opacity-50 sm:opacity-0 sm:focus-within:opacity-100 sm:group-hover:opacity-100"
+            className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-xs font-medium text-slate-600 shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-100 disabled:opacity-50 sm:opacity-0 sm:focus-within:opacity-100 sm:group-hover:opacity-100"
           >
             ×
           </button>
@@ -1928,7 +1934,7 @@ function KidPhotoControl({
       ) : (
         <label
           className={
-            'flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200 ' +
+            'flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-200 ' +
             (busy ? 'opacity-50' : '')
           }
         >

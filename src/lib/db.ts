@@ -5038,7 +5038,7 @@ export function applyReactionToggle(
  */
 export function reactionButtonClasses(mine: boolean): string {
   const base =
-    'flex h-7 items-center gap-1 rounded-full border px-2 text-xs transition-colors'
+    'flex h-7 items-center gap-1 rounded-full border px-2 text-xs transition-colors motion-reduce:transition-none '
   return mine
     ? `${base} border-indigo-600 bg-indigo-600 text-white`
     : `${base} border-slate-300 bg-white text-slate-500 hover:border-slate-400`

@@ -25,6 +25,7 @@ import {
   resetRequestErrorMessage,
 } from '../lib/passwordReset'
 import { oauthErrorMessage, resolveOAuthProviders, type OAuthProvider } from '../lib/oauth'
+import { errorId, fieldA11y } from '../lib/a11y'
 
 /** Which social buttons this deployment shows (VITE_OAUTH_PROVIDERS; Google by default). */
 const OAUTH_PROVIDERS = resolveOAuthProviders(import.meta.env.VITE_OAUTH_PROVIDERS)
@@ -237,7 +238,7 @@ export function LoginPage() {
   }
 
   const inputClasses =
-    'w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200'
+    'w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200'
 
   return (
     <div className="pt-safe pb-safe mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-4 bg-slate-50 px-4">
@@ -326,6 +327,7 @@ export function LoginPage() {
                   required
                   maxLength={40}
                   autoComplete="given-name"
+                  {...fieldA11y('name', nameError)}
                 />
               </label>
               <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
@@ -342,13 +344,14 @@ export function LoginPage() {
                   placeholder="Rivera"
                   maxLength={40}
                   autoComplete="family-name"
+                  {...fieldA11y('name', nameError)}
                 />
               </label>
             </div>
           ) : null}
 
           {mode === 'signup' && nameError !== null ? (
-            <span className="text-sm text-red-600">{nameError}</span>
+            <span role="alert" id={errorId('name')} className="text-sm text-red-600">{nameError}</span>
           ) : null}
 
           {mode === 'signup' ? (
@@ -366,9 +369,10 @@ export function LoginPage() {
                 placeholder="e.g. 7200 4th Ave NE, Seattle"
                 required
                 autoComplete="street-address"
+                {...fieldA11y('address', addressError)}
               />
               {addressError !== null ? (
-                <span className="text-sm text-red-600">{addressError}</span>
+                <span role="alert" id={errorId('address')} className="text-sm text-red-600">{addressError}</span>
               ) : null}
               {/* Says what the address is FOR, because "why does a playdate app
                   want my address" is the reasonable question at this exact
@@ -396,6 +400,7 @@ export function LoginPage() {
               placeholder="you@example.com"
               required
               autoComplete="email"
+              {...fieldA11y('submit', error)}
             />
           </label>
 
@@ -411,11 +416,12 @@ export function LoginPage() {
                 required
                 minLength={6}
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                {...fieldA11y('submit', error)}
               />
             </label>
           ) : null}
 
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          {error ? <p role="alert" id={errorId('submit')} className="text-sm text-red-600">{error}</p> : null}
           {notice ? <p className="text-sm text-emerald-700">{notice}</p> : null}
 
           <button

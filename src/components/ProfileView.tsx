@@ -333,7 +333,13 @@ export function ProfileView({
           and the detail page's host line keep their 40px circle. */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-center gap-3">
-          <HostAvatar host={profile} size="lg" expandable />
+          {/* Slice 11 follow-up: this avatar sits ABOVE the fold at the top of a
+              profile page, so it is eager. The slice's `eager` default is false
+              (correct for list rows), but the /u/:handle identity photo is not a
+              list row — lazy-loading it can flash an empty circle on arrival.
+              NOTE: restored by the orchestrator after V22 slice 9's builder
+              reverted this file to HEAD to keep its own build green. */}
+          <HostAvatar host={profile} size="lg" expandable eager />
           <div className="min-w-0">
             <h2 className="text-lg font-semibold text-slate-900">@{profile.display_name}</h2>
             <p className="mt-1 text-sm text-slate-600">Here since {joined}.</p>

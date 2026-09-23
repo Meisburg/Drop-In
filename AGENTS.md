@@ -112,6 +112,19 @@ ocr review --from <base-sha> --to HEAD --format json --output .scratch/ocr-<slic
   deliberately traded for precision, so it is a complement to the agent
   reviewer, never a replacement.
 
+## Deterministic guards (the fourth lane, and the only one that guarantees)
+
+The three lanes above **judge**; none can *guarantee*. A reviewer misses files,
+`ocr` skips config and prose, the verifier runs only what it was handed. Some
+rules must not depend on attention, so `npm run guards` (inside `verify`) runs
+shell scripts that either find a violation or do not — no model, no tokens.
+Three rules: a `lib/` module needs its sibling test; a check-config change
+needs `ALLOW_CONFIG_CHANGE="<why>"`; the tracked git hooks stay wired.
+
+Borrowed from `affaan-m/ECC` (MIT) and reimplemented for this harness —
+**what was taken, what was refused, and the four tests a new guard must pass:
+`docs/agents/borrowed-guards.md`.**
+
 ## The escalating fix loop (why it escalates by model)
 
 Builders, reviewers, and verifiers all run the same local model
@@ -178,6 +191,7 @@ situation arrives — the pointer text tells you when.
 | Acting as the DSH coordinator | `docs/agents/coordinator.md` — dispatch, the per-slice loop, phase-boundary decisions, fleet roles |
 | Changing agent models or debugging a lane's cost | `docs/agents/model-routing.md` — cloud/local split, NInfer specifics, the steering-payload script |
 | Writing or reviewing a diff | `docs/agents/code-structure.md` — the build law |
+| Adding a deterministic guard, or evaluating an external agent framework | `docs/agents/borrowed-guards.md` — provenance, refusals, the four tests a new guard must pass |
 | Running the playtest lane | `docs/agents/playtest-lane.md` — routes, verdict, evidence |
 | Filing or triaging a ticket | `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md` |
 | Naming a domain concept | `docs/agents/domain.md` — `CONTEXT.md` + `docs/adr/`, created lazily |

@@ -1,5 +1,5 @@
 /**
- * Spec (V21 t02, A2): THE PLACES DIRECTORY LIVES INSIDE THE POST FLOW.
+ * Spec (V21 t02, A2; V22 slice 12): THE PLACES DIRECTORY LIVES INSIDE THE POST FLOW.
  *
  * THE FOUNDER'S ASK, verbatim: "I'm beginning to think we don't need this
  * section anymore... in the post section when you select like where the place
@@ -8,9 +8,12 @@
  * where section inside of the post section."
  *
  * WHAT THIS PROVES, in the order a parent would meet it:
- *  1. THE PLACES TAB IS GONE from the bottom nav, and the nav's remaining tabs
- *     are exactly Drop Ins / Inbox / Post / Profile. Removing the tab is what
- *     makes step 2 load-bearing: the directory has to be reachable from /new.
+ *  1. THE NAV IS NAVIGATION ONLY (V22 slice 12): its four tabs are exactly
+ *     Drop Ins / Inbox / Places / Profile. The Post tab was an ACTION sitting
+ *     in a nav bar (Apple HIG forbids it) and is gone; the freed slot went to
+ *     Places (/browse). Removing the action tab is what makes step 2
+ *     load-bearing: the directory has to be reachable from the feed's own
+ *     "Post a drop-in" action.
  *  2. /new OFFERS THE DIRECTORY: a "Browse all N places" door renders on the
  *     post form, and opening it shows the SAME `PlaceDirectory` component
  *     /browse renders — the map band AND the list, not a second copy.
@@ -24,10 +27,10 @@
  *
  * WHY THE ASSERTIONS ARE SHAPED THIS WAY: the earlier, WEAKER version of this
  * slice shipped the nav removal plus a map tweak and called itself done, while
- * /new still offered only the 8-row list. A test that only asserted "the Places
+ * /new still offered only the 8-row list. A test that only asserted "the Post
  * tab is gone" would have passed on that broken tree. Steps 2-5 exist because
- * "the tab is gone" and "the directory is reachable" are different claims, and
- * only the second one is the founder's ask.
+ * "the action left the nav" and "the directory is reachable" are different
+ * claims, and only the second one is the founder's ask.
  */
 import { expect, test } from '@playwright/test'
 import { settleOnRoute } from './fixtures'
@@ -37,16 +40,19 @@ test('the place directory is reachable from /new, with its map and list (V21 t02
 }) => {
   await page.setViewportSize({ width: 390, height: 844 })
 
-  // --- 1. THE NAV: the Places tab is gone; the four surviving tabs remain. ---
+  // --- 1. THE NAV: navigation only. The Post tab is GONE (it was an action,
+  //         not a destination); the four surviving tabs are Drop Ins / Inbox /
+  //         Places / Profile. ---
   await settleOnRoute(page, '/')
   const nav = page.locator('nav').last()
-  await expect(nav.getByRole('link', { name: 'Places', exact: true })).toHaveCount(0)
-  for (const label of ['Drop Ins', 'Inbox', 'Post', 'Profile']) {
+  await expect(nav.getByRole('link', { name: 'Post', exact: true })).toHaveCount(0)
+  for (const label of ['Drop Ins', 'Inbox', 'Places', 'Profile']) {
     await expect(nav.getByRole('link', { name: label, exact: true })).toBeVisible()
   }
 
-  // --- 2. THE DOOR ON /new. ---
-  await page.getByRole('link', { name: 'Post', exact: true }).click()
+  // --- 2. THE DOOR ON /new — reached via the feed's OWN action (one tap),
+  //         now that the Post tab no longer exists. ---
+  await page.getByTestId('feed-post-drop-in').click()
   await settleOnRoute(page, '/new')
   await expect(page.getByRole('heading', { name: 'Post a drop-in' })).toBeVisible()
 
@@ -87,11 +93,12 @@ test('the place directory is reachable from /new, with its map and list (V21 t02
 
 test('the directory sheet can be dismissed without picking (V21 t02)', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  // Navigate from `/` so `settleOnRoute` has the Post tab to hop through —
+  // Navigate from `/` so `settleOnRoute` has a stable route to settle on —
   // calling it while already on /new would look for a nav link to click with
   // nothing to click, and fail on the helper rather than on this spec's claim.
   await settleOnRoute(page, '/')
-  await page.getByRole('link', { name: 'Post', exact: true }).click()
+  // The feed's own action reaches /new in one tap (the Post tab is gone).
+  await page.getByTestId('feed-post-drop-in').click()
   await expect(page.getByRole('heading', { name: 'Post a drop-in' })).toBeVisible()
 
   const door = page.getByTestId('browse-all-places')

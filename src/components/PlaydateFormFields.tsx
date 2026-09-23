@@ -18,6 +18,7 @@ import {
   SOMEWHERE_ELSE_LABEL,
 } from '../lib/places'
 import type { Kid, Neighborhood, Place } from '../lib/types'
+import { errorId, fieldA11y } from '../lib/a11y'
 
 /**
  * The drop-in form's FIELD SET (V8 ticket 05), extracted from /new so there
@@ -283,13 +284,14 @@ export function PlaydateFormFields({
       <span className="text-slate-700">{locationFirst ? PLACE_PICKER_LABEL : 'Place'}</span>
       <input
         className={touch(
-          'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+          'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
             (errors.place ? 'border-red-400' : 'border-slate-300'),
         )}
         value={values.place}
         onChange={(e) => onFieldChange('place', e.target.value)}
         placeholder="e.g. Green Lake playground, near the boathouse"
         autoComplete="off"
+        {...fieldA11y('place', errors.place ?? null)}
       />
     </label>
   )
@@ -308,7 +310,7 @@ export function PlaydateFormFields({
             data-testid="browse-places"
             aria-expanded={browsePlacesOpen}
             onClick={onBrowsePlaces}
-            className="min-h-11 shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors"
+            className="min-h-11 shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none "
           >
             {BROWSE_PLACES_LABEL}
           </button>
@@ -316,7 +318,7 @@ export function PlaydateFormFields({
       ) : (
         placeLabel
       )}
-      {errors.place ? <p className="text-sm text-red-600">{errors.place}</p> : null}
+      {errors.place ? <p role="alert" id={errorId('place')} className="text-sm text-red-600">{errors.place}</p> : null}
       {/* V9 ticket 01: the one-line instruction the old field never gave —
           only on /new (the picker's page). */}
       {locationFirst && onPickPlace !== undefined ? (
@@ -343,7 +345,7 @@ export function PlaydateFormFields({
               key={place.id}
               type="button"
               onClick={() => onPickPlace(place)}
-              className="flex min-h-11 flex-col items-start gap-0.5 border-b border-slate-100 px-3 py-2 text-left text-sm transition-colors hover:bg-slate-50"
+              className="flex min-h-11 flex-col items-start gap-0.5 border-b border-slate-100 px-3 py-2 text-left text-sm transition-colors motion-reduce:transition-none hover:bg-slate-50"
             >
               <span className="font-medium text-slate-900">{place.name}</span>
               <span className="text-xs text-slate-500">
@@ -355,7 +357,7 @@ export function PlaydateFormFields({
             type="button"
             data-testid="place-somewhere-else"
             onClick={onSomewhereElse}
-            className="flex min-h-11 flex-col items-start gap-0.5 px-3 py-2 text-left text-sm transition-colors hover:bg-slate-50"
+            className="flex min-h-11 flex-col items-start gap-0.5 px-3 py-2 text-left text-sm transition-colors motion-reduce:transition-none hover:bg-slate-50"
           >
             <span className="font-medium text-slate-900">{SOMEWHERE_ELSE_LABEL}</span>
             <span className="text-xs text-slate-500">
@@ -399,16 +401,17 @@ export function PlaydateFormFields({
         </span>
         <input
           className={touch(
-            'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+            'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
               (addressError !== null ? 'border-red-400' : 'border-slate-300'),
           )}
           value={address}
           onChange={(e) => onAddressChange(e.target.value)}
           placeholder="e.g. 7200 4th Ave NE, near the boathouse"
           autoComplete="off"
+          {...fieldA11y('address', addressError)}
         />
       </label>
-      {addressError !== null ? <p className="text-sm text-red-600">{addressError}</p> : null}
+      {addressError !== null ? <p role="alert" id={errorId('address')} className="text-sm text-red-600">{addressError}</p> : null}
       {locationFirst ? (
         <p className="-mt-3 text-xs text-slate-500">
           Comes with the place you pick — type one instead if it is not quite right.
@@ -427,12 +430,13 @@ export function PlaydateFormFields({
         <span className="text-slate-700">Neighborhood</span>
         <select
           className={
-            'w-full rounded-xl border bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+            'w-full rounded-xl border bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
             (errors.neighborhoodId ? 'border-red-400' : 'border-slate-300')
           }
           value={values.neighborhoodId}
           onChange={(e) => onFieldChange('neighborhoodId', e.target.value)}
           disabled={neighborhoods === null}
+          {...fieldA11y('neighborhood', errors.neighborhoodId ?? null)}
         >
           <option value="">Pick a neighborhood…</option>
           {(neighborhoods ?? []).map((n) => (
@@ -443,7 +447,7 @@ export function PlaydateFormFields({
         </select>
       </label>
       {errors.neighborhoodId ? (
-        <p className="text-sm text-red-600">{errors.neighborhoodId}</p>
+        <p role="alert" id={errorId('neighborhood')} className="text-sm text-red-600">{errors.neighborhoodId}</p>
       ) : null}
     </>
   ) : null
@@ -461,13 +465,14 @@ export function PlaydateFormFields({
       <input
         type="date"
         className={touch(
-          'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+          'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
             (errors.startDate ? 'border-red-400' : 'border-slate-300'),
         )}
         value={values.startDate}
         onChange={(e) => onFieldChange('startDate', e.target.value)}
+        {...fieldA11y('start-date', errors.startDate ?? null)}
       />
-      {errors.startDate ? <p className="text-sm text-red-600">{errors.startDate}</p> : null}
+      {errors.startDate ? <p role="alert" id={errorId('start-date')} className="text-sm text-red-600">{errors.startDate}</p> : null}
       <TimeStepper
         minutes={values.startMinutes}
         onStep={(delta) =>
@@ -475,7 +480,7 @@ export function PlaydateFormFields({
         }
       />
       {errors.startMinutes ? (
-        <p className="text-sm text-red-600">{errors.startMinutes}</p>
+        <p role="alert" id={errorId('start-time')} className="text-sm text-red-600">{errors.startMinutes}</p>
       ) : null}
     </div>
   )
@@ -509,7 +514,7 @@ export function PlaydateFormFields({
             aria-pressed={selected}
             onClick={() => onFieldChange('durationMinutes', minutes)}
             className={touch(
-              'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ' +
+              'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors motion-reduce:transition-none ' +
                 (selected
                   ? 'border-indigo-600 bg-indigo-600 text-white'
                   : 'border-slate-300 bg-white text-slate-700'),
@@ -533,7 +538,7 @@ export function PlaydateFormFields({
       <span className="text-slate-700">How long</span>
       {durationChipsRow}
       {errors.durationMinutes ? (
-        <p className="text-sm text-red-600">{errors.durationMinutes}</p>
+        <p role="alert" id={errorId('duration')} className="text-sm text-red-600">{errors.durationMinutes}</p>
       ) : null}
       {values.durationMinutes > 0 ? (
         <p className="text-sm text-slate-600">
@@ -568,7 +573,7 @@ export function PlaydateFormFields({
         testId="end-time-label"
       />
       {errors.durationMinutes ? (
-        <p className="text-sm text-red-600">{errors.durationMinutes}</p>
+        <p role="alert" id={errorId('duration')} className="text-sm text-red-600">{errors.durationMinutes}</p>
       ) : null}
     </div>
   )
@@ -617,7 +622,7 @@ line. No kids yet → the designed empty state + the /settings link (the
                 aria-pressed={selected}
                 onClick={() => onToggleKid(kid.id)}
                 className={touch(
-                  'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ' +
+                  'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors motion-reduce:transition-none ' +
                     (selected
                       ? 'border-indigo-600 bg-indigo-600 text-white'
                       : 'border-slate-300 bg-white text-slate-700'),
@@ -642,7 +647,7 @@ line. No kids yet → the designed empty state + the /settings link (the
         Details <span className="text-slate-500">(optional)</span>
       </span>
       <textarea
-        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
         rows={3}
         value={values.details}
         onChange={(e) => onFieldChange('details', e.target.value)}
@@ -684,7 +689,7 @@ line. No kids yet → the designed empty state + the /settings link (the
                 data-testid={TITLE_LINE_TESTID}
                 onClick={onEditTitle}
                 className={touch(
-                  'w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-sm font-medium text-slate-900 transition-colors',
+                  'w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-sm font-medium text-slate-900 transition-colors motion-reduce:transition-none ',
                 )}
               >
                 {values.title}
@@ -780,6 +785,7 @@ line. No kids yet → the designed empty state + the /settings link (the
           className={touch(
             'rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50',
           )}
+          {...fieldA11y('submit', submitError)}
         >
           {submitBusy ? submittingLabel : submitLabel}
         </button>
@@ -788,7 +794,7 @@ line. No kids yet → the designed empty state + the /settings link (the
             failure (PGRST205 on the missing table) instead of racing the
             error text. */}
         {submitError ? (
-          <p data-testid="submit-error" className="text-sm text-red-600">
+          <p role="alert" id={errorId('submit')} data-testid="submit-error" className="text-sm text-red-600">
             {submitError}
           </p>
         ) : null}
@@ -841,7 +847,7 @@ export function PlaydateTitleField({
         </span>
         <input
           className={
-            'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+            'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
             (error ? 'border-red-400' : 'border-slate-300') +
             (minTouchTargets ? ' min-h-11' : '')
           }
@@ -849,9 +855,10 @@ export function PlaydateTitleField({
           onChange={(e) => onChange(e.target.value)}
           placeholder="e.g. Playground time at Green Lake"
           autoComplete="off"
+          {...fieldA11y('title', error ?? null)}
         />
       </label>
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p role="alert" id={errorId('title')} className="text-sm text-red-600">{error}</p> : null}
     </>
   )
 }
@@ -879,7 +886,7 @@ function TimeStepper({
         type="button"
         aria-label={`Earlier ${label} time`}
         onClick={() => onStep(-TIME_STEP_MINUTES)}
-        className="h-11 w-11 rounded-md text-lg text-slate-600 transition-colors hover:bg-slate-100"
+        className="h-11 w-11 rounded-md text-lg text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-100"
       >
         −
       </button>
@@ -890,7 +897,7 @@ function TimeStepper({
         type="button"
         aria-label={`Later ${label} time`}
         onClick={() => onStep(TIME_STEP_MINUTES)}
-        className="h-11 w-11 rounded-md text-lg text-slate-600 transition-colors hover:bg-slate-100"
+        className="h-11 w-11 rounded-md text-lg text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-100"
       >
         +
       </button>

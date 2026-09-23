@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { DropInCard } from '../components/DropInCard'
-import { PlaceMap } from '../components/PlaceMap'
+import { PlaceMap } from '../components/PlaceMapLazy'
 import { useSessionContext } from '../components/SessionProvider'
 import {
   countPlaceFollowers,
@@ -410,7 +410,7 @@ export function PlacePage() {
             rel="noopener"
             data-testid="place-learn-more"
             data-link-kind={learnMore.kind}
-            className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-indigo-300 bg-white px-4 py-3 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-50"
+            className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-indigo-300 bg-white px-4 py-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-50"
           >
             <svg
               viewBox="0 0 24 24"
@@ -484,7 +484,7 @@ export function PlacePage() {
           type="button"
           data-testid="start-here"
           onClick={startHere}
-          className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+          className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-500"
         >
           Start a drop-in here
         </button>

@@ -18,7 +18,12 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "steering-lint": "bash scripts/steering-lint.sh",
-    "verify": "npm run build && npm run test && npm run lint && npm run steering-lint"
+    "a11y:focus": "node scripts/focus-indicator-check.mjs",
+    "guards": "bash scripts/guards/run-all.sh",
+    "guards:lib": "bash scripts/guards/lib-sibling-guard.sh",
+    "guards:config": "bash scripts/guards/config-guard.sh",
+    "guards:nobypass": "bash scripts/guards/no-bypass-guard.sh",
+    "verify": "npm run build && npm run test && npm run lint && npm run a11y:focus && npm run steering-lint && npm run guards"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.115.0",

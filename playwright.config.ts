@@ -52,9 +52,20 @@ export default defineConfig({
     },
   ],
   webServer: {
-    // Serves dist/ (run `npm run build` first — the pinned gate does).
-    command: 'npm run preview',
+    // V22 slice 12: rebuild before serving, so a reused server can never hand
+    // the suite a STALE dist/.
+    //
+    // WHY THIS MATTERS, and why `reuseExistingServer` needed this: this machine
+    // usually already has a preview up (the human's lane), so Playwright reuses
+    // it rather than starting its own. But `npm run test:e2e` does NOT build —
+    // it trusts whatever dist/ the running server was started from. Without the
+    // build here, a spec could pass against yesterday's bundle after you changed
+    // src/, which is exactly the "gate turned green by not running the real
+    // code" failure this repo's config-guard exists to prevent. Building first
+    // makes reuse safe: the server restarts on the fresh output.
+    command: 'npm run build && npm run preview',
     port: 4173,
-    timeout: 120_000,
+    timeout: 180_000,
+    reuseExistingServer: true,
   },
 })

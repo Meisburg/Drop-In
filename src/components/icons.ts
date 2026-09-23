@@ -18,6 +18,32 @@ export const NAV_ICONS = {
 } as const
 
 /**
+ * V22 slice 12: FILLED variants of the four nav destinations — the platform's
+ * preferred active state (Apple HIG: filled icons in the tab bar; the active
+ * tab is also marked by font weight, so the channel is not color-only).
+ *
+ * Same 24px viewBox and currentColor as NAV_ICONS above, but `fill` instead of
+ * stroke: the shapes are the SAME silhouettes (pin, envelope, plus, person),
+ * just solid, so a tab reads as "here" at a glance without a hue shift. The
+ * stroked family stays for in-content glyphs (SectionHeader etc.) — this map
+ * exists ONLY for the nav.
+ */
+export const NAV_ICONS_FILLED = {
+  // A solid map pin with a punched-out dot (the even-odd rule makes the inner
+  // circle a hole, keeping the pin's center readable against any background).
+  nearby: 'M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11Z M12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z',
+  // A solid envelope with a white flap line cut through it.
+  inbox: 'M4 6h16v12H4Z M4 6l8 6 8-6',
+  // A solid plus — the post action's shape (it lives on the feed now, not the nav).
+  post: 'M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6Z',
+  // A solid head + shoulders silhouette.
+  profile: 'M12 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z M5 20a7 7 0 0 1 14 0Z',
+  // A solid "list" glyph for the Places tab (three bars, the same silhouette as
+  // the stroked browse icon above, just filled).
+  browse: 'M4 5h16v3H4Z M4 10.5h16v3H4Z M4 16h16v3H4Z',
+} as const
+
+/**
  * V17 t01: PLACE-KIND glyphs — the illustration a place card's photo slot
  * falls back to while `places.photo_url` is NULL for every seeded row
  * (`types.ts:307`; real photos are t05, a separate batch).

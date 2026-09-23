@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import { fieldA11y } from '../lib/a11y'
+import { useFocusTrap } from './FocusTrap'
 
 /**
  * The one in-page confirmation dialog (V8 ticket 10) — the DeletePlaydateDialog
@@ -45,11 +47,15 @@ export function ConfirmDialog({
   onCancel: () => void
 }) {
   const cancelRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
 
   // Focus lands on the safe choice when the dialog opens.
   useEffect(() => {
     cancelRef.current?.focus()
   }, [])
+
+  // Trap Tab inside the dialog; restore focus to the trigger on close.
+  useFocusTrap(dialogRef, true)
 
   // Esc closes (same as a backdrop click), unless the write is in flight.
   useEffect(() => {
@@ -69,6 +75,7 @@ export function ConfirmDialog({
       }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
@@ -98,6 +105,7 @@ export function ConfirmDialog({
               'rounded-xl px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ' +
               (destructive ? 'bg-red-600' : 'bg-indigo-600')
             }
+            {...fieldA11y('submit', null)}
           >
             {busy ? (busyLabel ?? confirmLabel) : confirmLabel}
           </button>

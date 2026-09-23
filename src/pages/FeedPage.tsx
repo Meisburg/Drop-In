@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { DropInCard } from '../components/DropInCard'
 import { NAV_ICONS } from '../components/icons'
-import { PlacesMap } from '../components/PlaceMap'
+import { PlacesMap } from '../components/PlaceMapLazy'
 import { RadiusEmptyState } from '../components/RadiusEmptyState'
 import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
@@ -1012,6 +1012,23 @@ export function FeedPage() {
     <div className="flex flex-col gap-4">
       <SectionHeader icon={NAV_ICONS.nearby} title="Near you" tagline="Drop-ins around your area" />
 
+      {/* V22 slice 12: the Post tab left the nav (Apple HIG: a tab bar is for
+          navigation, not actions) — /new now lives HERE, on the feed, as its
+          own prominent action. It sits directly under the header so it is one
+          tap from anywhere on the feed, and it uses the app's existing filled
+          button language (bg-indigo-600 text-white). At md+ the content column
+          widens to max-w-3xl; the row stays left-aligned at max-w-md so the
+          button reads the same at both sizes. */}
+      <div className="md:max-w-md">
+        <Link
+          to="/new"
+          data-testid="feed-post-drop-in"
+          className="flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700"
+        >
+          Post a drop-in
+        </Link>
+      </div>
+
       {/* V21 t09 (A9): THE VIEW TOGGLE — list | map, at the very top of the
           feed, above every other control. The founder's ask: "At the very top
           there should be a toggle between list view and map view."
@@ -1026,7 +1043,7 @@ export function FeedPage() {
           Both buttons carry min-h-11 (the 44px tap-target floor the mobile
           audit measures), and aria-pressed mirrors the current view so the
           active choice is announced, not only styled. */}
-      <div className="flex gap-2" role="group" aria-label="Feed view">
+      <div className="flex gap-2 md:max-w-md" role="group" aria-label="Feed view">
         {(Object.keys(FEED_VIEW_LABELS) as FeedView[]).map((view) => {
           const active = feedView === view
           return (
@@ -1037,7 +1054,7 @@ export function FeedPage() {
               aria-pressed={active}
               onClick={() => setFeedView(view)}
               className={
-                'min-h-11 flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ' +
+                'min-h-11 flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition-colors motion-reduce:transition-none ' +
                 (active
                   ? 'border-indigo-600 bg-indigo-600 text-white'
                   : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
@@ -1079,7 +1096,7 @@ export function FeedPage() {
           It renders BELOW the WhileAway card (the inbox stays the first thing
           on the page) and ABOVE the list — and it stays up while the list is
           loading, so the control never disappears under the viewer mid-tap. */}
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1 md:max-w-md">
         <label className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm">
           <span className="text-sm font-medium text-slate-700">Distance</span>
           <select
@@ -1087,7 +1104,7 @@ export function FeedPage() {
             aria-label="Distance"
             // text-base, not text-sm: iOS zooms the viewport on focus below
             // 16px, and `scripts/mobile-audit.mjs` measures every select.
-            className="min-h-11 flex-1 rounded-lg border border-slate-300 bg-white px-2 py-2 text-base text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 disabled:opacity-50"
+            className="min-h-11 flex-1 rounded-lg border border-slate-300 bg-white px-2 py-2 text-base text-slate-800 outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 disabled:opacity-50"
             value={String(profile.radius_miles ?? DEFAULT_RADIUS_MILES)}
             disabled={(radiusBusy || zipBusy) || session === null || (profile.home_zip ?? '') === ''}
             onChange={(e) => void handleRadiusChoice(Number(e.target.value))}
@@ -1121,7 +1138,7 @@ export function FeedPage() {
           `refresh()`, no new state and no new query: `home_zip` is in the load
           effect's contextKey. A rejected zip throws the validator's own message
           and it is shown below the row — never a silent failure. */}
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1 md:max-w-md">
         <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
           <span data-testid="feed-home-zip" className="text-sm font-medium text-slate-700">
             {homeZipControlLabel(profile.home_zip)}
@@ -1137,7 +1154,7 @@ export function FeedPage() {
               data-testid="feed-zip-input"
               // text-base, not text-sm: iOS zooms the viewport on focus below
               // 16px, and `scripts/mobile-audit.mjs` measures every input.
-              className="min-h-11 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2 py-2 text-base text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              className="min-h-11 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2 py-2 text-base text-slate-800 outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
               // placeholder + maxLength, not a filter: truncating keystrokes
               // hides the mistake, and `validateHomeZip` is what judges the
               // shape (its "Use a 5-digit zip code." is the honest error).
@@ -1202,7 +1219,7 @@ export function FeedPage() {
            drop-in has a real location" rule — with zero pins there is nothing to
            show on a map, so this state renders the honest line instead of an
            empty canvas (the same "no empty card" rule the browse map follows). */
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 md:max-w-md">
           {feedPins.length > 0 ? (
             <div
               data-testid="feed-map-band"
@@ -1277,11 +1294,11 @@ export function FeedPage() {
           )}
         </div>
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 md:max-w-md">
           {/* V21 t09 (A9): LIST VIEW — the existing day sections, soonest-first,
               unchanged. The map band does not render here (the founder's ruling:
               "the feed defaults to a LIST"). */}
-          {dayGroups.map((group) => {
+          {dayGroups.map((group, groupIndex) => {
             const isToday = group.key === todayKey
             const soonest = group.posts[0]
             const startsSoonId =
@@ -1294,7 +1311,7 @@ export function FeedPage() {
                   {group.label}
                 </p>
                 <div className="flex flex-col gap-3">
-                  {group.posts.map((post) => (
+                  {group.posts.map((post, postIndex) => (
                     <DropInCard
                       key={post.id}
                       playdate={post}
@@ -1306,6 +1323,7 @@ export function FeedPage() {
                       kidsGoingCount={buildCardKidsCount(post)}
                       metBeforeLabel={buildCardMetBeforeLabel(post)}
                       ageRangeLabel={buildCardAgeRangeLabel(post)}
+                      eagerAvatar={groupIndex === 0 && postIndex === 0}
                     />
                   ))}
                 </div>

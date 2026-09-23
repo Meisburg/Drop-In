@@ -1,236 +1,368 @@
-# Implementation Plan: Playdate — drop-in meetups for Seattle parents
+# Implementation Plan: V22 — the design-quality batch (18 items, both lenses)
 
-> Executor-grade plan. Every slice is executable without interpretation.
-> Product soul (from the human's brief): recreate the moms' group chat at
-> city scale — open invitations, zero pressure. Someone posts "we'll be at
-> the park 3–5, come by if you like." Showing up is welcome; not showing up
-> is nobody's business. The app must never reintroduce the pressure the
-> group chat avoids.
+> Owned by the orchestrator. Written BEFORE any builder dispatch.
+> Source: `MASTER-IMPROVEMENTS.md` (synthesis), `AUDIT.md` (impeccable, 10/20),
+> `DESIGN-REVIEW.md` (Apple HIG), `PRODUCT.md` (product truth).
+> Prior plan preserved at `plan-v21-backup.md`.
+>
+> The default slice gate is `npm run verify` (build + test + lint +
+> steering-lint). Slices that touch rendered behavior ALSO pin
+> `node scripts/mobile-audit.mjs` (needs `npm run build && npm run preview`).
 
 ## Goal
 
-A mobile-first web app (installable PWA) where Seattle parents post drop-in
-playdates ("at this playground, 3–5, come by") and browse what's happening
-today in their neighborhoods. V1 "done" = a parent can sign up, join
-neighborhoods, post a drop-in, see today's drop-ins near them, and ping
-"we're going" — all verified by passing checks and working UI on a phone
-viewport.
+Drop In keeps its design system and gains the two axes it does not yet reach —
+dark appearance and regular-width layout — plus full accessibility of dynamic
+state, and platform-conformant navigation. We know it is done when:
+`npm run verify` passes, the mobile audit passes at every phone viewport in both
+appearances, dialogs trap focus, and the tab bar contains no action.
 
-## Non-goals (V1)
+Baseline before any work (measured 2026-09-23, commit `790dca7`):
+**1134 tests passing**, `git status` clean apart from untracked `.scratch/`.
 
-- No RSVP/commitment tracking — the drop-in model *replaces* it (a lightweight
-  optional "we're going" ping exists, but no one ever waits on a reply)
-- No messaging/DMs, no comments (V2 candidates)
-- No maps or GPS — neighborhoods are user-chosen tags (V2: map view)
-- No notifications in V1 (PWA push is the V2 candidate)
-- No photos (V2)
-- No app-store apps — PWA install is the mobile path (DECIDED)
-- No deployment — local for now (DECISION 3 stands, V1.5)
+## Non-goals
+
+- **No rebrand.** The terracotta palette, the raised role-based type scale, and
+  the Bricolage Grotesque / system-stack split are binding product decisions
+  (`PRODUCT.md › Brand Commitments`). Slices extend them; none replace them.
+- **No app-level appearance toggle.** `dark-mode.md` explicitly warns against one.
+- **No test-first rewrite of existing suites.** New pure logic gets sibling
+  tests per the build law; existing behavior is verified by the existing 1134.
+- **No swipe-to-go-back** (item 12 in the master list is dropped, not deferred:
+  the browser owns the gesture in a web PWA, and `accessibility.md` requires a
+  tap alternative that already exists).
+- **No new dependencies.** React 18, Tailwind v4, `react-router`, Leaflet,
+  Supabase only. Focus trapping is ~20 lines; it does not need a library.
 
 ## Interfaces
 
-Pinned contracts every builder must respect (reviewers enforce these):
+Pinned here so builders do not re-decide them.
 
-- **Stack:** Vite + React 18 + TypeScript + Tailwind CSS v4, npm
-- **Mobile-first:** every screen designed at 375px first; installable PWA
-  (manifest + service worker via `vite-plugin-pwa`)
-- **Backend:** Supabase (Postgres + Auth + `@supabase/supabase-js`);
-  credentials already in `.env` (verified live)
-- **Data model (Supabase tables):**
-  - `profiles`: id (= auth user id), display_name (persistent public handle),
-    created_at
-  - `neighborhoods`: id, name (seeded list of ~20 Seattle neighborhoods,
-    read-only in V1)
-  - `memberships`: profile_id, neighborhood_id, unique pair
-  - `playdates`: id, host_profile_id, title (short, e.g. "Playground time
-    at Green Lake"), place (text), neighborhood_id, starts_at (timestamptz),
-    ends_at (timestamptz), age_hint (text, nullable — e.g. "best for 2-5",
-    advisory only), details (text, nullable)
-  - `going_pings`: playdate_id, profile_id, unique pair — optional "we're
-    going"; counts shown only, no per-person list required by default
-  - `reports`: id, reporter_profile_id, playdate_id (nullable),
-    reported_profile_id (nullable), reason (text)
-  - `blocks`: blocker_profile_id, blocked_profile_id, unique pair
-- **Privacy & trust rules (RLS in Supabase, mirrored in UI):**
-  - Everything requires an authenticated session
-  - Posts show the host's persistent `display_name` (real-name handle
-    chosen at signup) — no anonymous posting in V1
-  - Blocked users' posts are filtered out of the viewer's feed
-  - `reports` are visible to moderators only
-- **Moderation (V1-minimum, open sign-up):**
-  - Report button on every post and profile
-  - Block: blocked users never see each other's posts (DB-level filter)
-  - `moderators` boolean flag on `profiles`; the human founder account gets
-    it via a one-time SQL statement (documented, executed by human)
-  - Moderator screen: list reports, hide a post (`hidden_at` timestamp on
-    playdates), ban a profile (`banned_at` on profiles)
-- **Layout:** `src/pages/`, `src/components/`, `src/lib/` — Supabase client
-  + all data access in `src/lib/db.ts`, types in `src/lib/types.ts`
-- **Routes:** `/` (today's drop-ins), `/browse` (all neighborhoods/days),
-  `/playdate/:id`, `/new`, `/profile` (own family), `/u/:handle` (others),
-  `/login`, `/mod` (moderators only)
-- **Checks (must pass on every slice):** `npm run build && npm run test`
+**New pure module — `src/lib/a11y.ts`** (build law: pure function + sibling test):
+```ts
+/** Stable ids so aria-describedby can reference an error node. */
+export function errorId(field: string): string        // `err-${field}`
+/** Props for a control with a possibly-failing validation message. */
+export function fieldA11y(field: string, message: string | null): {
+  'aria-invalid': boolean
+  'aria-describedby': string | undefined
+}
+```
+
+**New component — `src/components/FocusTrap.tsx`**: a hook
+`useFocusTrap(ref, active)` that (a) records `document.activeElement` on
+activate, (b) wraps Tab/Shift+Tab inside `ref`, (c) restores the recorded element
+on deactivate. Used by all three dialogs. No dependency.
+
+**Token contract (dark mode).** `src/index.css` keeps every existing token NAME
+and adds dark values under `@media (prefers-color-scheme: dark)`. Contrast floor
+for every text token against its own surface: **4.5:1** (AA). The existing
+light-mode token comments must remain accurate; add dark figures beside them.
+
+**Layout contract (regular width).** Breakpoint is **`@media (min-width: 768px)`**
+expressed with Tailwind's `md:` prefix. At `md`: the shell becomes a two-column
+grid (nav rail + content) and content max-width rises from `max-w-md` (448px) to
+`max-w-3xl` (768px) for list surfaces. The bottom nav becomes a left rail.
+**Functionality must not change between sizes** (`layout.md`): same routes, same
+controls, different arrangement.
 
 ## Slices
 
-### Slice 1: tracer bullet — scaffold + auth + PWA skeleton
-
-- **Objective:** app scaffolds; Tailwind + router + Supabase client + PWA
-  plugin wired; login/signup works against the real project; signup collects
-  `display_name` (the persistent handle); one protected route redirects to
-  `/login` when signed out.
-- **Files in scope:** everything `npm create vite@latest` generates,
-  `vite-plugin-pwa` setup (manifest: name "Playdate", theme color,
-  192/512 icons from placeholder assets), `src/lib/db.ts`, `src/lib/types.ts`,
-  `src/pages/LoginPage.tsx` (login + signup + display_name), `src/pages/`
-  placeholders for the routes above, router, `.gitignore` (add `.env` before
-  first commit)
-- **Approach:** official Vite scaffolder; add deps (tailwind, react-router,
-  supabase-js, vite-plugin-pwa); auth state via supabase session listener
+### Slice 1: Announce every error and status change
+- **Objective:** All error/status text nodes are announced to assistive tech.
+- **Files in scope:** `src/lib/a11y.ts` (new), `src/lib/a11y.test.ts` (new),
+  `src/pages/LoginPage.tsx`, `src/pages/OnboardingPage.tsx`,
+  `src/pages/ResetPasswordPage.tsx`, `src/components/PlaydateFormFields.tsx`,
+  `src/components/ReportDialog.tsx`, `src/components/ConfirmDialog.tsx`,
+  `src/components/DeletePlaydateDialog.tsx`
+- **Approach:** Add `lib/a11y.ts` (pure, tested). For each error node add
+  `role="alert"` and an `id={errorId(field)}`; on its control add
+  `aria-invalid` + `aria-describedby` via `fieldA11y()`. On failed submit, move
+  focus to the first invalid control. Do NOT restructure the JSX beyond these
+  attributes.
 - **Acceptance criteria:**
-  - `npm run build` exits 0; dist contains manifest.webmanifest
-  - visiting `/` signed out redirects to `/login`; signup (email + password +
-    display_name) → redirect to `/` authenticated; profile row created
-  - one test covers the auth-redirect logic with a mocked supabase client
-- **Verification command:** `npm run build && npm run test`
-- **Depends on:** nothing (credentials verified live 2026-09-04)
+  - `grep -ro 'role="alert"' src/ | wc -l` >= 20
+  - `fieldA11y(` is spread on every control whose error node carries
+    `role="alert"` — **measured on the RENDERED DOM**, not by grepping for the
+    literal attribute string. A spread produces `aria-describedby` at runtime and
+    is invisible to a source grep, so the original `>= 15` literal-grep criterion
+    was a plan defect (corrected 2026-09-23 after Slice 1 flagged it).
+    The check is `.scratch/a11y-dom-check.mjs`: trigger a real validation failure
+    and assert every `role="alert"` id is referenced by a control's
+    `aria-describedby` and that the reference resolves.
+  - No error node has `role="alert"` without a matching `aria-describedby` on a
+    control in the same file
+  - No duplicated element `id` in the rendered DOM (an `errorId` collision would
+    make `aria-describedby` resolve to the wrong node)
+  - `src/lib/a11y.test.ts` covers `errorId` and `fieldA11y` (null and non-null)
+- **Verification command:** `npm run verify`
+- **Budget:** one local builder context. 8 files, additive attributes only.
+- **Depends on:** nothing
 
-### Slice 2: neighborhoods + profiles
-
-- **Objective:** after signup, onboarding asks "pick your neighborhoods"
-  (multi-select from seeded list, ≥1 required); `/profile` edits display_name
-  and memberships; `/u/:handle` shows a profile's posts count only (minimal
-  public face).
-- **Files in scope:** `src/pages/OnboardingPage.tsx`, `src/pages/ProfilePage.tsx`,
-  `src/pages/UserPage.tsx`, `src/lib/db.ts` (memberships/profile CRUD),
-  migration for `neighborhoods` (seed ~20 Seattle names) + `memberships` +
-  `profiles` RLS
+### Slice 2: Fix the low-contrast body text
+- **Objective:** No body text below 4.5:1 remains.
+- **Files in scope:** `src/pages/InboxPage.tsx` (lines ~112, ~165, ~837)
+- **Approach:** `text-slate-400` -> `text-slate-500` on the three text nodes
+  only. Leave every icon-only `text-slate-400` alone
+  (`PlaceDirectory.tsx:593,685,905`) — glyphs are not text and keep a
+  lower-emphasis tone.
 - **Acceptance criteria:**
-  - signup → onboarding → feed flow works; memberships persist
-  - display_name is unique (DB constraint); profile edits reflect in header
-  - build + tests pass (onboarding gating logic unit-tested)
-- **Verification command:** `npm run build && npm run test`
-- **Depends on:** slice 1
+  - `grep -c 'text-slate-400' src/pages/InboxPage.tsx` returns 0
+  - `text-slate-500` (#66737a) on the page background (#fbf7f4) = 4.59:1 — quote
+    the computed figure in the report
+- **Verification command:** `npm run verify`
+- **Budget:** trivial, one context with room to spare.
+- **Depends on:** nothing
 
-### Slice 3: drop-in feed + posting
-
-- **Objective:** `/` shows today's drop-ins in the user's neighborhoods
-  (time-ordered, "happening now" badge for live ones, then upcoming);
-  `/browse` = all days filtered by neighborhood chips; `/new` posts a drop-in
-  (title, place, neighborhood, start/end time, optional age_hint + details).
-  Validation: end after start; title ≤ 80 chars.
-- **Files in scope:** `src/pages/FeedPage.tsx`, `src/pages/BrowsePage.tsx`,
-  `src/pages/NewPlaydatePage.tsx`, `src/components/DropInCard.tsx`,
-  `src/lib/db.ts` (playdate CRUD + feed query), migration for `playdates` + RLS
+### Slice 3: Stop shipping dev scaffolding
+- **Objective:** The two mockup HTML files are no longer in the production build.
+- **Files in scope:** `public/logo-mockup.html`, `public/color-compare.html`,
+  `.gitignore` (if needed)
+- **Approach:** `git mv` both into `.scratch/design-mockups/`. Confirm nothing in
+  `src/`, `index.html`, `vite.config.ts`, or `scripts/` references them (already
+  verified: no references exist).
 - **Acceptance criteria:**
-  - feed shows only user's neighborhoods' posts, filtered to starts_at >=
-    today 00:00, ordered by starts_at; happening-now badge correct
-  - created post appears in feed immediately; invalid form shows inline
-    errors, nothing saved
-  - feed respects blocks (host-blocked-by-viewer posts never returned)
-  - build + tests pass (feed filter + form validation unit-tested)
-- **Verification command:** `npm run build && npm run test`
-- **Depends on:** slice 2
+  - `ls dist/logo-mockup.html dist/color-compare.html` fails after a fresh build
+  - `grep -rn 'logo-mockup\|color-compare' src/ index.html vite.config.ts` is empty
+- **Verification command:** `npm run build && ls dist/ && ! ls dist/logo-mockup.html`
+- **Budget:** trivial.
+- **Depends on:** nothing
 
-### Slice 4: detail page + going-pings + trust basics
-
-- **Objective:** `/playdate/:id` shows full details + host handle linking to
-  `/u/:handle`; "We're going" toggle writes/removes a `going_pings` row;
-  pings render as a friendly count ("3 families going — come say hi"); every
-  post and profile gets a Report flow; block/unblock on user pages; blocked
-  content filtering enforced.
-- **Files in scope:** `src/pages/PlaydateDetailPage.tsx`, `src/pages/UserPage.tsx`
-  (block control), `src/components/ReportDialog.tsx`, `src/lib/db.ts` (pings,
-  reports, blocks), migrations for `going_pings` + `reports` + `blocks` + RLS
+### Slice 4: Make the design gate honest about its false positives
+- **Objective:** `design-detect.mjs` no longer reports the 3 verified false
+  positives, and still fails on real findings.
+- **Files in scope:** `scripts/design-detect.mjs`
+- **Approach:** Add three ACCEPTED entries, each with a REASON in the existing
+  style (the file's own convention: every entry explains why). The reasons must
+  state the *evidence*, not the preference: the token resolves to a terracotta,
+  and the gray-on-color pair computes to 7.75:1.
 - **Acceptance criteria:**
-  - ping toggles persist; count updates; no per-person attendee list shown
-  - report captures reason and is invisible to non-moderators
-  - after blocking, blocked user's posts never appear in viewer's feed/detail
-  - host cannot ping own post
-  - build + tests pass (ping toggle + block filter unit-tested)
-- **Verification command:** `npm run build && npm run test`
-- **Depends on:** slice 3
+  - `node scripts/design-detect.mjs` no longer reports `ai-color-palette` for
+    `LoginPage.tsx:248` / `ResetPasswordPage.tsx:61` or `gray-on-color` for
+    `InboxPage.tsx:169`
+  - It still reports the `low-contrast` class of rule (do not blanket-disable)
+  - Each new entry has a `reason` string of >= 2 sentences
+- **Verification command:** `node scripts/design-detect.mjs; npm run verify`
+- **Budget:** trivial.
+- **Depends on:** Slice 3 (the low-contrast hits it reports live in those files)
 
-### Slice 5: moderator tools + mobile polish
-
-- **Objective:** `/mod` for moderator-flagged accounts: report list, hide
-  post, ban profile; human founder account flagged via documented one-time
-  SQL. Then phone polish: all routes usable at 375px, empty states designed
-  ("Nothing happening in Wallingford today — post the first one"), loading
-  states.
-- **Files in scope:** `src/pages/ModPage.tsx`, `src/components/*` styling
-  passes, migration adding `hidden_at`/`banned_at` + moderator RLS
+### Slice 5: Trap and restore focus in dialogs
+- **Objective:** Keyboard focus cannot escape an open dialog, and returns to the
+  trigger on close.
+- **Files in scope:** `src/components/FocusTrap.tsx` (new),
+  `src/components/ConfirmDialog.tsx`, `src/components/DeletePlaydateDialog.tsx`,
+  `src/components/ReportDialog.tsx`
+- **Approach:** `useFocusTrap` records `document.activeElement` on activate,
+  intercepts Tab/Shift+Tab at the dialog boundary, and restores focus on cleanup.
+  Wire into the three existing dialogs; they already focus the safe action and
+  handle Escape — do not change that.
 - **Acceptance criteria:**
-  - hidden posts vanish from feed/detail for everyone; banned profiles
-    cannot sign in (session rejected)
-  - non-moderator cannot reach `/mod` (route guard + RLS)
-  - no horizontal scroll at 375px on any route; empty states present
-  - build + tests pass (mod gating unit-tested)
-- **Verification command:** `npm run build && npm run test`
-- **Depends on:** slice 4
+  - `grep -rn 'activeElement' src/` is non-empty
+  - Tab from the last focusable element in a dialog moves to the first (and
+    Shift+Tab reverses)
+  - Closing any dialog returns focus to the element that opened it
+- **Verification command:** `npm run verify`
+- **Budget:** one context. 4 files, one new small component.
+- **Depends on:** nothing (independent of Slice 1, but both touch the dialogs —
+  see R4)
+
+### Slice 6: Respect reduced motion
+- **Objective:** Every meaningful transition has a reduced-motion answer.
+- **Files in scope:** `src/index.css`, plus the components carrying the 79
+  `transition-`/`animate-` usages (audit lists them)
+- **Approach:** Prefer per-transition `motion-reduce:` (Tailwind) over a global
+  `0.01ms` kill — `AUDIT.md` cites `impeccable audit.md` warning that a blanket
+  kill destroys useful state feedback. Apply `motion-reduce:transition-none` to
+  decorative/hover transitions and leave state-change transitions legible
+  (reduced duration, not zero).
+- **Acceptance criteria:**
+  - `grep -ro 'motion-reduce:' src/ | wc -l` >= 10 (from 1)
+  - No global `*{transition-duration:.01ms}` rule added
+  - Splash behavior unchanged (it already had `motion-reduce`)
+- **Verification command:** `npm run verify`
+- **Budget:** one context.
+- **Depends on:** nothing
+
+### Slice 7: Focus rings only for keyboard users
+- **Objective:** `focus:` -> `focus-visible:` on inputs and buttons.
+- **Files in scope:** ~37 sites, concentrated in
+  `src/components/PlaydateFormFields.tsx`, `src/components/PlaceDirectory.tsx`,
+  `src/components/ReportDialog.tsx`, `src/pages/LoginPage.tsx`,
+  `src/pages/OnboardingPage.tsx`
+- **Approach:** Mechanical rename of the focus variant on interactive controls
+  that carry a visible ring. Verify no control is left with NO focus indication.
+- **Acceptance criteria:**
+  - `grep -ro 'focus-visible:' src/ | wc -l` >= 30
+  - Every element that previously had `focus:ring` has a `focus-visible:`
+    equivalent (report the before/after counts)
+  - No element ends up with zero focus indication
+- **Verification command:** `npm run verify`
+- **Budget:** one context; it is a sweep, so report the count rather than the diff.
+- **Depends on:** nothing
+
+### Slice 8: Dark mode over the existing tokens
+- **Objective:** The app renders correctly in dark appearance with no app toggle.
+- **Files in scope:** `src/index.css`, `index.html`, `vite.config.ts`,
+  `scripts/mobile-audit.mjs` (a dark pass, per the gates decision)
+- **Approach:** Add `@media (prefers-color-scheme: dark)` re-pointing the SAME
+  token names (slate ramp, terracotta ramp, emerald/amber/sky tints). Add
+  `color-scheme: light dark` on `:root`. Add a second `theme-color` meta with
+  `media="(prefers-color-scheme: dark)"`. Design the dark palette *for* the
+  terracotta — do not invert. The dark surface must not be pure black; soften
+  whites per `dark-mode.md`.
+- **Acceptance criteria:**
+  - `grep -c 'prefers-color-scheme: dark' src/index.css` >= 1
+  - `grep -c 'color-scheme' src/index.css` >= 1 and `<meta name="theme-color">`
+    appears twice in `index.html` with light/dark media queries
+  - Every text token against its own dark surface computes >= 4.5:1 (list the
+    figures in the report — the same standard the light palette already meets)
+  - No app-level appearance toggle exists
+- **Verification command:** `npm run verify && node scripts/mobile-audit.mjs`
+- **Budget:** one context, but the largest reasoning load in the batch. If the
+  contrast table cannot be produced cleanly, return BLOCKED rather than shipping
+  an unmeasured palette.
+- **Depends on:** Slice 2 (contrast work in the same token file)
+
+### Slice 9: A real regular-width layout
+- **Objective:** At >=768px the app uses the width instead of showing a phone
+  column with empty gutters.
+- **Files in scope:** `src/App.tsx`, `src/index.css`, and the pages whose
+  `max-w-md` blocks are in scope (`src/components/DropInCard.tsx`,
+  `src/components/PlaceDirectory.tsx`, `src/pages/FeedPage.tsx`)
+- **Approach:** At `md`: shell becomes a two-column grid — a left nav rail
+  replacing the bottom bar, and a content column at `max-w-3xl`. Keep the same
+  routes and controls (`layout.md`: functionality must not change with size).
+  Below `md`, nothing changes.
+- **Acceptance criteria:**
+  - At 390px the layout is pixel-equivalent to today (bottom nav, `max-w-md`)
+  - At 1024px there is no bottom bar; a rail is visible and content uses the width
+  - No horizontal overflow at 320/375/390/430/768/1024/1440
+  - All nav destinations remain reachable at both sizes
+- **Verification command:** `npm run build && npm run preview` then
+  `node scripts/mobile-audit.mjs` (extended with a 1024 width)
+- **Budget:** one context. Largest layout risk in the batch.
+- **Depends on:** Slice 8 (same shell region — serialize)
+
+### Slice 10: Code-split the map
+- **Objective:** `/login` and `/` do not load Leaflet.
+- **Files in scope:** `src/App.tsx`, `src/pages/FeedPage.tsx`,
+  `src/pages/NewPlaydatePage.tsx`, `src/pages/PlacePage.tsx`,
+  `src/pages/BrowsePage.tsx`
+- **Approach:** `React.lazy` + `Suspense` around the map-bearing components
+  (`PlaceMap.tsx`, `PlaceDirectory.tsx` consumers) and the `/browse` route.
+  A loading fallback must render something immediately (`loading.md`: "Show
+  something as soon as possible").
+- **Acceptance criteria:**
+  - `grep -rn 'lazy(' src/` is non-empty
+  - The initial JS chunk for `/login` no longer contains leaflet (report the
+    before/after chunk sizes and the gzip figures)
+  - The map still renders on `/browse`, `/new`, and `/place/:id`
+- **Verification command:** `npm run build` then inspect chunk sizes; `npm run verify`
+- **Budget:** one context.
+- **Depends on:** Slice 9 (same shell file — serialize)
+
+### Slice 11: Lazy-load list imagery
+- **Objective:** Off-screen images do not decode at load.
+- **Files in scope:** the 17 `<img>` sites; primarily
+  `src/components/DropInCard.tsx`, `src/components/ProfileView.tsx`,
+  `src/components/PlaceDirectory.tsx`
+- **Approach:** Add `loading="lazy"` + `decoding="async"` and intrinsic sizing
+  (explicit `width`/`height` or an `aspect-ratio` class) so lazy loading does not
+  cause layout shift. Hero/above-fold imagery stays eager.
+- **Acceptance criteria:**
+  - `grep -ro 'loading="lazy"' src/ | wc -l` >= 10
+  - No `<img>` in a list context has an unknown aspect ratio (report each)
+  - The first feed card's image is NOT lazy (it is above the fold)
+- **Verification command:** `npm run verify`
+- **Budget:** one context.
+- **Depends on:** nothing
+
+### Slice 12: The tab bar navigates; the action moves out
+- **Objective:** No action in the tab bar; active state no longer color-only.
+- **Files in scope:** `src/App.tsx`, `src/pages/FeedPage.tsx`,
+  `src/components/icons.ts`
+- **Approach:** Remove the `Post` NavTab. Put "Post a drop-in" as a prominent
+  action on the Feed. Free tab holds Search or Places (`/browse` already has a
+  route). Add a non-color active state (weight + a filled icon variant) and an
+  unread badge on Inbox if a count is already available client-side. Keep the
+  stroke family for in-content glyphs; add filled variants for nav only.
+- **Acceptance criteria:**
+  - The bottom nav contains only navigation destinations (no `/new` tab)
+  - `/new` is still reachable from the Feed in <=1 tap
+  - Active tab differs from inactive by more than color (report the class diff)
+  - `tab-bars.md` items satisfied: labels single-word, tabs never hidden/disabled
+- **Verification command:** `npm run verify` + the e2e specs that assert the tab bar
+- **Budget:** one context.
+- **Depends on:** Slice 9 (the nav rail and bar share markup — serialize)
+
+### Slice 13: Copy and image-alt consistency
+- **Objective:** One capitalization convention; identity avatars are named.
+- **Files in scope:** the label strings across `src/pages/` and
+  `src/components/`, plus `src/components/DropInCard.tsx`,
+  `src/components/ProfileView.tsx`
+- **Approach:** Adopt **sentence case** throughout (it matches the warm plain
+  voice in `PRODUCT.md`), and change `alt=""` -> the person's name where no
+  adjacent label already names them. `WhileAwayCard.tsx:104` is the in-repo
+  pattern to follow.
+- **Acceptance criteria:**
+  - No button label mixes conventions with another in the same flow (report the
+    before/after strings for every changed label)
+  - Identity avatars carry a name in `alt`; decorative imagery keeps `alt=""`
+  - Action names stay consistent end-to-end (`writing.md`): a "Post drop-in"
+    button produces "Posted"
+- **Verification command:** `npm run verify`
+- **Budget:** one context.
+- **Depends on:** Slice 12 (it renames the Post action — do copy last)
 
 ## Risks / open questions
 
-- **Trust at scale is the #1 product risk** (open sign-up + real handles +
-  report/block + moderator tools is the V1 answer; invite-only pods are the
-  V2 lever if moderation proves too hot).
-- Seeded neighborhood list must be real Seattle neighborhoods (human
-  sanity-check the seed list at slice 2 review).
-- PWA install prompts vary by browser; V1 ships the manifest + minimal SW
-  and does not promise offline support.
-- DECISION 3 (deployment target) deferred to V1.5 — not blocking.
+- **R1 — Dark palette quality is a design judgment, not a mechanical one.**
+  RESOLVED 2026-09-23: built, measured in a browser, screenshots reviewed by the
+  human. Human's verdict: "I don't think many people are going to even want dark
+  mode, but if they want to use it, they can use it." Shipped as insurance, not
+  as a headline feature. No further work.
+- **R2 — Slice 9 (regular width) is the largest behavioral change.** It alters
+  every route's shell. CONFIRMED IN SCOPE 2026-09-23: the human explicitly chose
+  the full rail + wide content over the cheaper "just widen the content" option.
+  Mitigation: gated on the mobile audit at 7 widths and must be provably
+  equivalent below `md`.
+- **R3 — Slice 12 may break existing e2e specs** that assume a `/new` tab.
+  CONFIRMED IN SCOPE 2026-09-23: the human chose to move the Post action out of
+  the tab bar. Mitigation: the builder runs the e2e lane and reports every spec
+  it had to touch; a spec change is a signal to check, not a fix to apply
+  silently.
+- **R4 — Serialization.** Slices 8/9 both edit `src/App.tsx` or `index.css`;
+  9/10/12 all edit `src/App.tsx`. These MUST run serially, one builder at a time
+  (`AGENTS.md` invariant 1). Only read-only exploration parallelizes.
+  VIOLATED ONCE, HONESTLY RECORDED: slices 6 and 11 were dispatched together and
+  both edited DropInCard/FeedPage/etc. No conflict materialized (s6 touched class
+  strings, s11 touched img attributes) but that was luck, not design. Slices
+  9→10→12 are running strictly serially.
 
 ---
 
 ## Status log (orchestrator appends after every phase transition)
 
-- 2026-09-04 — Plan v1 (RSVP model) drafted.
-- 2026-09-04 — Plan REWRITTEN after human's product brief: drop-in model
-  replaces RSVPs; neighborhoods replace age-filtering as discovery; PWA +
-  mobile-first added; moderation (reports/blocks/hidden/banned) added to V1.
-  DECISION 1 resolved (Supabase live). Slice 1 unblocked.
-- 2026-09-09 — Slice 4 complete: detail page + going-pings + report/block UI
-  (f978858). Live check caught createReport 42501 (RETURNING under
-  moderators-only SELECT RLS) → fixed with plain insert (1c8e5f4);
-  0007/0008 applied live via CDP; 49/49 tests. Slice 5 unblocked;
-  profiles.moderators now exists via 0008.
-- 2026-09-09 — Slice 5 complete: /mod (report list, hide, ban) +
-  banned-session gate + 375px/empty/loading polish (2eacd47). 0009/0010
-  applied live via CDP; live check PASS (hide + ban enforced, host
-  self-ping rejected 400 P0001 per the human-decided trigger). 65/65
-  tests. **V1 DONE** — all five slices complete. Remaining human items:
-  founder-flag UPDATE (statement in 0009 header); optional 0011
-  (self-elevation guard) + display_name length cap parked as human calls.
-- 2026-09-09 — Founder flag attempt: UPDATE could not run — no founder
-  profile exists (live profiles = 9 marker rows only, verified via CDP
-  SELECT). Waiting on human sign-up, then orchestrator applies the flag.
-  Tooling: browser-use LLM loop unusable on NInfer (vision/JSON 400s);
-  LLM-free replacement committed at scripts/cdp-sql-runner.py (verified
-  live on a SELECT).
-- 2026-09-09 — Human signed up ("Jon Meisburg"); first real-user session
-  exposed PGRST201: 0007's going_pings FK gave PostgREST two playdates→
-  profiles paths, so every `host:profiles!inner` embed 400s (feed + detail).
-  Fixed by pinning the embed to the FK hint
-  (`profiles!playdates_host_profile_id_fkey`, feed.ts + db.ts:483; commit
-  80f9b07; verified live with a real auth token).   Lesson: mock-client tests
-  can't catch embed-ambiguity — real-DB smoke test required when a migration
-  adds an FK between two already-FK-linked tables. Founder flag applied +
-  verified via cdp-sql-runner (moderators=true); /mod is live.
-- 2026-09-09 — V2 FEEDBACK LOG (founder, first-user pass): (1) ping toggle
-  invisible on own post — host view needs explicit "this is your post"
-  framing; (2) kids on profile (names/gender/ages) populating attendee +
-  host views; (3) DM/messaging host↔attendee (V1 non-goal, now wanted);
-  (4) report icon reads as "like" — rework; (5) time entry UX — 30-min
-  increments instead of raw datetime pickers; (6) duplicate a past drop-in;
-  (7) share to Signal/Messenger (Web Share API); (8) public post view for
-  signed-out users + signup-gated "I'm coming" (privacy-posture change);
-  (9) onboarding: photo + bio; (10) profile photos; (11) discovery by
-  home-neighborhood + drive-mile radius instead of followed-neighborhood
-  tags. Existing-but-invisible to founder: ping toggle (host-hidden), host
-  link on cards.
-- 2026-09-09 — V2 DECISIONS RESOLVED (founder): kids = FIRST NAME + AGE
-  only, never full names or gender (privacy pin holds); messaging =
-  public per-event COMMENTS with host replies (no DMs, zero-pressure soul
-  preserved); discovery = home ZIP code + drive-radius miles (no GPS —
-  follows the OfferUp/Facebook-Marketplace pattern, founder's call after
-  weighing browser-geolocation tradeoffs).
+- 2026-09-23 — plan written; baseline `790dca7`, 1134 tests passing. Awaiting
+  dispatch of Slice 1.
+- 2026-09-23 — **Slice 1 complete** (local `qwen3.8-27b` builder). Evidence:
+  `npm run verify` → build OK, **1139 tests passing** (1134 + 5 new), 0 lint
+  errors, steering clean. `role="alert"` count 24 (target ≥20). Verified on the
+  RENDERED DOM, not by grep: `.scratch/a11y-dom-check.mjs` drove a real auth
+  failure and confirmed `aria-describedby` resolves, `aria-invalid="true"`, and
+  no duplicate ids.
+  - **Plan defect found and corrected:** the original criterion "`grep` for ≥15
+    literal `aria-describedby`" was wrong — the attribute is applied via a
+    `fieldA11y()` spread, so it exists only at runtime. The criterion would have
+    failed a correct implementation. Corrected in Slice 1 above; the builder
+    flagged it rather than gaming the grep.
+  - **Gate promoted:** `scripts/a11y-dom-check.mjs` (assertion-based, exits
+    non-zero). Proven to fail, not assumed: mutating `errorId` to produce a
+    dangling reference made it fail 2 checks and exit 1.
+  - Focus-move-on-failed-submit NOT implemented; the builder reported that no
+    file has a single unambiguous submit target (LoginPage branches by mode,
+    Onboarding has multiple forms, PlaydateFormFields is presentational). Accepted
+    as a park — see the ledger ruling below.
+  - Next: Slices 2, 5, 6, 7, 11 are independent and can dispatch; 3 → 4 is a
+    pair; 8 → 9 → 10 → 12 is a serial chain.
+

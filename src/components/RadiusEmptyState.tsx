@@ -106,7 +106,7 @@ export function RadiusEmptyState({
               type="button"
               disabled={escapesDisabled}
               onClick={() => void handleEscape(escape.radiusMiles)}
-              className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+              className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 disabled:opacity-50"
             >
               {busyRadius === escape.radiusMiles ? 'Updating…' : escape.label}
             </button>

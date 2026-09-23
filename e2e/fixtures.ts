@@ -249,13 +249,22 @@ export async function stepStartTimeOnce(page: Page): Promise<{
  * re-render beat (the 800 ms wait below).
  */
 export async function settleOnRoute(page: Page, routePath: string): Promise<void> {
-  const tabLabel =
-    routePath === '/new' ? 'Post' : routePath === '/profile' ? 'Profile' : null
+  // V22 slice 12: `/new` is no longer a nav destination. Apple's tab-bar
+  // guidance ("use a tab bar to support navigation, not to provide actions")
+  // moved the Post action onto the Feed, so the hop is now: land on the feed,
+  // then tap its "Post a drop-in" call to action. This helper is the ONE place
+  // that mapping lives, which is why the change is here rather than in the ~47
+  // call sites across the suite.
+  const tabLabel = routePath === '/profile' ? 'Profile' : null
   const here = () => new URL(page.url()).pathname === routePath
   for (let attempt = 0; attempt < 8; attempt++) {
     if (!here()) {
       // Client-side hop (no reload — a reload would re-run the race).
-      if (tabLabel !== null) {
+      if (routePath === '/new') {
+        // The Post CTA lives on the feed, so land there before tapping it.
+        if (new URL(page.url()).pathname !== '/') await page.goto('/')
+        await page.getByTestId('feed-post-drop-in').click()
+      } else if (tabLabel !== null) {
         await page.getByRole('link', { name: tabLabel, exact: true }).click()
       } else {
         await page.goto(routePath)

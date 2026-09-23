@@ -1648,7 +1648,7 @@ export function PlaydateDetailPage() {
                 type="button"
                 onClick={() => void handleShare()}
                 disabled={shareBusy}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 disabled:opacity-50"
               >
                 {shareCopied ? 'Copied' : 'Share'}
               </button>
@@ -1660,7 +1660,7 @@ export function PlaydateDetailPage() {
               <button
                 type="button"
                 onClick={handleDownloadIcs}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+                className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
               >
                 Add to calendar
               </button>
@@ -1675,7 +1675,7 @@ export function PlaydateDetailPage() {
           <button
             type="button"
             onClick={handleJoinIn}
-            className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+            className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-500"
           >
             I’m coming
           </button>
@@ -1761,7 +1761,7 @@ export function PlaydateDetailPage() {
                       replyCount,
                     )
                   }
-                  className="text-xs text-slate-500 transition-colors hover:text-red-600"
+                  className="text-xs text-slate-500 transition-colors motion-reduce:transition-none hover:text-red-600"
                 >
                   Delete
                 </button>
@@ -1771,7 +1771,7 @@ export function PlaydateDetailPage() {
                   type="button"
                   disabled={commentBusy}
                   onClick={() => void handleHideComment(comment.id)}
-                  className="text-xs text-slate-500 transition-colors hover:text-red-600"
+                  className="text-xs text-slate-500 transition-colors motion-reduce:transition-none hover:text-red-600"
                 >
                   Hide
                 </button>
@@ -1782,7 +1782,7 @@ export function PlaydateDetailPage() {
                   data-testid="unhide-comment"
                   disabled={commentBusy}
                   onClick={() => void handleUnhideComment(comment.id)}
-                  className="text-xs text-slate-500 transition-colors hover:text-indigo-600"
+                  className="text-xs text-slate-500 transition-colors motion-reduce:transition-none hover:text-indigo-600"
                 >
                   Unhide
                 </button>
@@ -1792,7 +1792,7 @@ export function PlaydateDetailPage() {
                   type="button"
                   disabled={commentBusy}
                   onClick={() => handleReplyTo(comment.id)}
-                  className="text-xs text-slate-500 transition-colors hover:text-indigo-600"
+                  className="text-xs text-slate-500 transition-colors motion-reduce:transition-none hover:text-indigo-600"
                 >
                   Reply
                 </button>
@@ -1839,7 +1839,7 @@ export function PlaydateDetailPage() {
               <Link
                 to={`/playdate/${detail.id}/edit`}
                 data-testid="edit-post"
-                className="rounded-xl border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
+                className="rounded-xl border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100"
               >
                 Edit
               </Link>
@@ -1854,14 +1854,14 @@ export function PlaydateDetailPage() {
                   setDeleteError(null)
                   setConfirmingDelete(true)
                 }}
-                className="rounded-xl border border-red-200 bg-white px-3 py-3 text-sm font-medium text-red-700 transition-colors hover:bg-red-50"
+                className="rounded-xl border border-red-200 bg-white px-3 py-3 text-sm font-medium text-red-700 transition-colors motion-reduce:transition-none hover:bg-red-50"
               >
                 Delete
               </button>
               <button
                 type="button"
                 onClick={() => void handleDuplicatePost()}
-                className="rounded-xl border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
+                className="rounded-xl border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100"
               >
                 Duplicate
               </button>
@@ -1884,7 +1884,7 @@ export function PlaydateDetailPage() {
                 type="button"
                 disabled={countRetryBusy}
                 onClick={() => void handleRetryGoingCount()}
-                className="flex min-h-11 items-center rounded-xl border border-indigo-300 bg-white px-3 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 disabled:opacity-50"
+                className="flex min-h-11 items-center rounded-xl border border-indigo-300 bg-white px-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100 disabled:opacity-50"
               >
                 {countRetryBusy ? 'Retrying…' : 'Retry'}
               </button>
@@ -1915,7 +1915,7 @@ export function PlaydateDetailPage() {
                     className={
                       active
                         ? 'rounded-xl bg-indigo-600 px-3 py-3 text-sm font-medium text-white disabled:opacity-50'
-                        : 'rounded-xl border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 disabled:opacity-50'
+                        : 'rounded-xl border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100 disabled:opacity-50'
                     }
                   >
                     {option.label}
@@ -1950,7 +1950,7 @@ export function PlaydateDetailPage() {
                       data-testid="stop-repeating"
                       disabled={seriesBusy}
                       onClick={() => void handleStopRepeating()}
-                      className="mt-2 rounded-xl border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 disabled:opacity-50"
+                      className="mt-2 rounded-xl border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100 disabled:opacity-50"
                     >
                       Stop repeating
                     </button>
@@ -2019,7 +2019,7 @@ export function PlaydateDetailPage() {
                 type="button"
                 disabled={countRetryBusy}
                 onClick={() => void handleRetryGoingCount()}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 disabled:opacity-50"
               >
                 {countRetryBusy ? 'Retrying…' : 'Retry'}
               </button>
@@ -2141,7 +2141,7 @@ export function PlaydateDetailPage() {
               type="button"
               onClick={() => void handleShare()}
               disabled={shareBusy}
-              className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 disabled:opacity-50"
+              className="text-sm font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:text-slate-900 disabled:opacity-50"
             >
               {shareCopied ? 'Copied' : 'Share'}
             </button>
@@ -2152,14 +2152,14 @@ export function PlaydateDetailPage() {
             <button
               type="button"
               onClick={handleDownloadIcs}
-              className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900"
+              className="text-sm font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:text-slate-900"
             >
               Add to calendar
             </button>
             <button
               type="button"
               onClick={() => setReporting(true)}
-              className="text-sm text-slate-500 transition-colors hover:text-slate-600"
+              className="text-sm text-slate-500 transition-colors motion-reduce:transition-none hover:text-slate-600"
             >
               Report
             </button>
@@ -2349,7 +2349,7 @@ export function PlaydateDetailPage() {
         <button
           type="button"
           onClick={openInboxThread}
-          className="mt-3 w-full rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-100"
+          className="mt-3 w-full rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100"
         >
           Message the host
         </button>
@@ -2361,7 +2361,7 @@ export function PlaydateDetailPage() {
               key={name}
               type="button"
               onClick={openInboxThread}
-              className="w-full rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-left text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-100"
+              className="w-full rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-left text-sm font-semibold text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100"
             >
               Message {name}
             </button>
@@ -2449,7 +2449,7 @@ export function PlaydateDetailPage() {
                 <button
                   type="button"
                   onClick={() => setReplyToId(null)}
-                  className="text-xs text-slate-500 transition-colors hover:text-slate-600"
+                  className="text-xs text-slate-500 transition-colors motion-reduce:transition-none hover:text-slate-600"
                 >
                   Cancel
                 </button>
@@ -2466,7 +2466,7 @@ export function PlaydateDetailPage() {
               maxLength={COMMENT_MAX_LENGTH}
               placeholder="Ask a question — e.g. “Is a stroller okay to bring?”"
               onChange={(e) => setCommentDraft(e.target.value)}
-              className="mt-1 w-full resize-none rounded-xl border border-slate-200 p-2 text-sm text-slate-700 focus:border-indigo-300 focus:outline-none"
+              className="mt-1 w-full resize-none rounded-xl border border-slate-200 p-2 text-sm text-slate-700 focus-visible:border-indigo-300 focus-visible:outline-none"
             />
             <div className="mt-2 flex items-center justify-between gap-2">
               <span className="text-xs text-slate-500">
@@ -2500,7 +2500,7 @@ export function PlaydateDetailPage() {
             type="button"
             disabled={commentsRetryBusy}
             onClick={() => void handleRetryComments()}
-            className="mt-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+            className="mt-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 disabled:opacity-50"
           >
             {commentsRetryBusy ? 'Retrying…' : 'Retry'}
           </button>
@@ -2611,7 +2611,7 @@ function PublicHostAvatar({ name, avatarUrl }: { name: string | null; avatarUrl:
     // V6: expandable here too — a signed-out visitor decides whether to
     // come partly on who is hosting, and this is the only photo they get.
     <PhotoButton src={avatarUrl} alt={`${name ?? 'the host'}’s photo`}>
-      <img src={avatarUrl} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
+      <img src={avatarUrl} alt="" loading="lazy" decoding="async" className="h-10 w-10 shrink-0 rounded-full object-cover" />
     </PhotoButton>
   ) : (
     <span

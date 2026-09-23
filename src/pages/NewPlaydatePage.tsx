@@ -5,8 +5,8 @@ import {
   ADDRESS_MAX_LENGTH,
   PlaydateFormFields,
 } from '../components/PlaydateFormFields'
-import { PlaceDirectory } from '../components/PlaceDirectory'
-import { PlacePickerMap } from '../components/PlaceMap'
+import { PlaceDirectory } from '../components/PlaceDirectoryLazy'
+import { PlacePickerMap } from '../components/PlaceMapLazy'
 import { NAV_ICONS } from '../components/icons'
 import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
@@ -855,7 +855,7 @@ export function NewPlaydatePage({
   // floor is the one case that cannot wrap, and min-w-0 lets it clip rather
   // than overflow. The 44px tap floor (`min-h-11`) is untouched.
   const lastPostClassName =
-    'min-h-11 min-w-0 w-full rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-left text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100'
+    'min-h-11 min-w-0 w-full rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-left text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100'
 
   // V15 T05 (A10): the top-of-page duplicate picker state.
   const [dupPickerOpen, setDupPickerOpen] = useState(false)
@@ -888,7 +888,7 @@ export function NewPlaydatePage({
                 aria-pressed={selected}
                 onClick={() => toggleKid(kid.id)}
                 className={
-                  'min-h-11 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ' +
+                  'min-h-11 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors motion-reduce:transition-none ' +
                   (selected
                     ? 'border-indigo-600 bg-indigo-600 text-white'
                     : 'border-slate-300 bg-white text-slate-700')
@@ -1032,7 +1032,7 @@ export function NewPlaydatePage({
             data-testid="dup-create"
             onClick={() => setDupPickerOpen(false)}
             className={
-              'min-h-11 flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ' +
+              'min-h-11 flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition-colors motion-reduce:transition-none ' +
               (!dupPickerOpen
                 ? 'border-indigo-600 bg-indigo-600 text-white'
                 : 'border-slate-300 bg-white text-slate-700')
@@ -1046,7 +1046,7 @@ export function NewPlaydatePage({
             onClick={() => setDupPickerOpen(true)}
             disabled={pastPosts.length === 0}
             className={
-              'min-h-11 flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition-colors disabled:opacity-40 ' +
+              'min-h-11 flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition-colors motion-reduce:transition-none disabled:opacity-40 ' +
               (dupPickerOpen
                 ? 'border-indigo-600 bg-indigo-600 text-white'
                 : 'border-slate-300 bg-white text-slate-700')

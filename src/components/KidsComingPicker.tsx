@@ -129,7 +129,7 @@ export function KidsComingPicker({
               disabled={busy}
               onClick={() => toggle(kid.id)}
               data-testid="kid-chip"
-              className={`flex min-h-11 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors disabled:opacity-60 ${
+              className={`flex min-h-11 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors motion-reduce:transition-none disabled:opacity-60 ${
                 active
                   ? 'border-green-700 bg-green-700 text-white'
                   : 'border-slate-300 bg-white text-slate-700'

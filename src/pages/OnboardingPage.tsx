@@ -25,6 +25,7 @@ import {
 } from '../lib/feed'
 import { splitSuggestedName, suggestedHandle } from '../lib/oauth'
 import { resolveOnboardingRedirect } from '../lib/onboarding'
+import { errorId, fieldA11y } from '../lib/a11y'
 
 /**
  * /onboarding — post-signup onboarding (slice 2; V2 slice 3).
@@ -312,7 +313,7 @@ export function OnboardingPage() {
               <span className="text-slate-700">First name</span>
               <input
                 className={
-                  'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                  'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
                   (handleError !== null ? 'border-red-400' : 'border-slate-300')
                 }
                 value={firstNameValue}
@@ -325,13 +326,14 @@ export function OnboardingPage() {
                 required
                 maxLength={40}
                 autoComplete="given-name"
+                {...fieldA11y('name', handleError)}
               />
             </label>
             <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
               <span className="text-slate-700">Last name</span>
               <input
                 className={
-                  'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                  'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
                   (handleError !== null ? 'border-red-400' : 'border-slate-300')
                 }
                 value={lastNameValue}
@@ -343,10 +345,11 @@ export function OnboardingPage() {
                 placeholder="Rivera"
                 maxLength={40}
                 autoComplete="family-name"
+                {...fieldA11y('name', handleError)}
               />
             </label>
           </div>
-          {handleError ? <p className="text-sm text-red-600">{handleError}</p> : null}
+          {handleError ? <p role="alert" id={errorId('name')} className="text-sm text-red-600">{handleError}</p> : null}
           <button
             type="submit"
             disabled={handleBusy}
@@ -390,7 +393,7 @@ export function OnboardingPage() {
             <span className="text-slate-700">Home zip</span>
             <input
               className={
-                'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
                 (zipError !== null ? 'border-red-400' : 'border-slate-300')
               }
               value={homeZip}
@@ -401,14 +404,15 @@ export function OnboardingPage() {
               placeholder="e.g. 98107"
               inputMode="numeric"
               maxLength={5}
+              {...fieldA11y('zip', zipError)}
             />
           </label>
-          {zipError !== null ? <p className="text-sm text-red-600">{zipError}</p> : null}
+          {zipError !== null ? <p role="alert" id={errorId('zip')} className="text-sm text-red-600">{zipError}</p> : null}
 
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-slate-700">Radius</span>
             <select
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
               value={radiusMiles}
               onChange={(e) => setRadiusMiles(Number(e.target.value))}
             >
@@ -441,9 +445,10 @@ export function OnboardingPage() {
                 className="sr-only"
                 disabled={photoUploading}
                 onChange={(e) => void handlePhotoChange(e)}
+                {...fieldA11y('photo', photoError)}
               />
             </label>
-            {photoError !== null ? <p className="text-sm text-red-600">{photoError}</p> : null}
+            {photoError !== null ? <p role="alert" id={errorId('photo')} className="text-sm text-red-600">{photoError}</p> : null}
             {photoCrop.dialog}
           </div>
 
@@ -451,7 +456,7 @@ export function OnboardingPage() {
             <span className="text-slate-700">Bio</span>
             <textarea
               className={
-                'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
                 (bioError !== null ? 'border-red-400' : 'border-slate-300')
               }
               value={bio}
@@ -462,8 +467,9 @@ export function OnboardingPage() {
               placeholder="A few words about your family (optional)"
               maxLength={BIO_MAX_LENGTH}
               rows={2}
+              {...fieldA11y('bio', bioError)}
             />
-            {bioError !== null ? <span className="text-sm text-red-600">{bioError}</span> : null}
+            {bioError !== null ? <span role="alert" id={errorId('bio')} className="text-sm text-red-600">{bioError}</span> : null}
           </label>
 
           <div className="flex flex-col gap-2 text-sm">
@@ -472,7 +478,7 @@ export function OnboardingPage() {
               <button
                 type="button"
                 onClick={() => addKidRow()}
-                className="self-start rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200"
+                className="self-start rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-200"
               >
                 Add a kid
               </button>
@@ -481,25 +487,27 @@ export function OnboardingPage() {
                 {kidRows.map((row, index) => (
                   <div key={index} className="flex items-center gap-2">
                     <input
-                      className="min-w-0 flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                      className="min-w-0 flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
                       value={row.name}
                       onChange={(e) => updateKidRow(index, { name: e.target.value })}
                       placeholder="First name"
                       maxLength={30}
+                      {...fieldA11y('kids', kidsError)}
                     />
                     <input
                       type="number"
                       min={0}
                       max={17}
-                      className="w-20 shrink-0 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                      className="w-20 shrink-0 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
                       value={row.age}
                       onChange={(e) => updateKidRow(index, { age: e.target.value })}
                       placeholder="Age"
+                      {...fieldA11y('kids', kidsError)}
                     />
                     <button
                       type="button"
                       onClick={() => removeKidRow(index)}
-                      className="shrink-0 rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200"
+                      className="shrink-0 rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-200"
                     >
                       Remove
                     </button>
@@ -509,14 +517,14 @@ export function OnboardingPage() {
                   <button
                     type="button"
                     onClick={() => addKidRow()}
-                    className="self-start rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200"
+                    className="self-start rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-200"
                   >
                     Add another kid
                   </button>
                 )}
               </div>
             )}
-            {kidsError !== null ? <p className="text-sm text-red-600">{kidsError}</p> : null}
+            {kidsError !== null ? <p role="alert" id={errorId('kids')} className="text-sm text-red-600">{kidsError}</p> : null}
           </div>
         </div>
       </div>
@@ -527,10 +535,11 @@ export function OnboardingPage() {
           disabled={saving || knownZips === null || homeZip.trim() === ''}
           onClick={() => void handleContinue()}
           className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          {...fieldA11y('submit', error)}
         >
           {saving ? 'Saving…' : 'Continue'}
         </button>
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {error ? <p role="alert" id={errorId('submit')} className="text-sm text-red-600">{error}</p> : null}
       </div>
     </div>
   )

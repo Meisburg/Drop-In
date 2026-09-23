@@ -91,7 +91,7 @@ function ConversationCard({
     <button
       type="button"
       onClick={onOpen}
-      className="w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-colors hover:bg-slate-50"
+      className="w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-50"
     >
       <div className="flex items-center justify-between gap-2">
         <p className="truncate text-sm font-semibold text-slate-900">
@@ -109,7 +109,7 @@ function ConversationCard({
       <p className="mt-0.5 truncate text-xs text-slate-500">{conversation.playdateTitle}</p>
       <div className="mt-2 flex items-baseline justify-between gap-2">
         <p className="truncate text-sm text-slate-600">{conversation.latestMessagePreview}</p>
-        <p className="shrink-0 text-xs text-slate-400">
+        <p className="shrink-0 text-xs text-slate-500">
           {relativeTimeLabel(conversation.latestMessageAt, new Date().toISOString())}
         </p>
       </div>
@@ -162,7 +162,7 @@ function MessageBubble({
   return (
     <div className={isOwn ? 'flex justify-end' : 'flex justify-start'}>
       <div className={`max-w-[80%] ${isOwn ? 'text-right' : ''}`}>
-        <p className="mb-0.5 text-xs text-slate-400">{senderName}</p>
+        <p className="mb-0.5 text-xs text-slate-500">{senderName}</p>
         <p
           data-testid={isOwn ? 'own-message' : 'other-message'}
           className={`whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm ${
@@ -207,7 +207,7 @@ function MessageBubble({
                     aria-label={kind}
                     aria-pressed={active}
                     onClick={() => chooseKind(kind)}
-                    className={`flex h-11 w-11 items-center justify-center rounded-lg text-xl transition-colors ${
+                    className={`flex h-11 w-11 items-center justify-center rounded-lg text-xl transition-colors motion-reduce:transition-none ${
                       active ? 'bg-indigo-600' : 'hover:bg-slate-100'
                     }`}
                   >
@@ -744,7 +744,7 @@ export function InboxPage() {
             type="button"
             data-testid="new-message-button"
             onClick={() => setShowNewMessage(true)}
-            className="mt-3 w-full rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-100"
+            className="mt-3 w-full rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100"
           >
             + New message
           </button>
@@ -759,7 +759,7 @@ export function InboxPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search by name…"
-                className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
+                className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus-visible:border-indigo-400 focus-visible:outline-none"
                 autoFocus
               />
               {searching ? (
@@ -772,7 +772,7 @@ export function InboxPage() {
                         type="button"
                         data-testid={`dm-result-${result.id}`}
                         onClick={() => openDmThread(result.id)}
-                        className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-800 transition-colors hover:bg-slate-50"
+                        className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-800 transition-colors motion-reduce:transition-none hover:bg-slate-50"
                       >
                         {result.display_name}
                       </button>
@@ -820,7 +820,7 @@ export function InboxPage() {
                         type="button"
                         data-testid={`dm-conversation-${conv.otherPartyId || conv.otherPartyName}`}
                         onClick={() => openDmThread(conv.otherPartyId)}
-                        className="w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-colors hover:bg-slate-50"
+                        className="w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-50"
                       >
                         <div className="flex items-center justify-between gap-2">
                           <p className="truncate text-sm font-semibold text-slate-900">
@@ -834,7 +834,7 @@ export function InboxPage() {
                         </div>
                         <div className="mt-2 flex items-baseline justify-between gap-2">
                           <p className="truncate text-sm text-slate-600">{conv.preview}</p>
-                          <p className="shrink-0 text-xs text-slate-400">
+                          <p className="shrink-0 text-xs text-slate-500">
                             {relativeTimeLabel(conv.latestAt, new Date().toISOString())}
                           </p>
                         </div>
@@ -946,7 +946,7 @@ export function InboxPage() {
                   onKeyDown={handleComposerKeyDown}
                   rows={1}
                   placeholder="Write a message…"
-                  className="w-full resize-none rounded-lg border-0 bg-transparent p-1 text-sm focus:outline-none"
+                  className="w-full resize-none rounded-lg border-0 bg-transparent p-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200"
                 />
                 {sendError !== null ? <p className="mt-1 text-xs text-red-600">{sendError}</p> : null}
                 <div className="mt-2 flex justify-end">

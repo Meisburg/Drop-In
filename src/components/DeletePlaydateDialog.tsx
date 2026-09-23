@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import { errorId, fieldA11y } from '../lib/a11y'
+import { useFocusTrap } from './FocusTrap'
 
 /**
  * The delete-a-post confirmation (V8 ticket 05) — the ReportDialog pattern:
@@ -37,11 +39,15 @@ export function DeletePlaydateDialog({
   onCancel: () => void
 }) {
   const cancelRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
 
   // Focus lands on the safe choice when the dialog opens.
   useEffect(() => {
     cancelRef.current?.focus()
   }, [])
+
+  // Trap Tab inside the dialog; restore focus to the trigger on close.
+  useFocusTrap(dialogRef, true)
 
   // Esc closes (same as a backdrop click), unless the write is in flight.
   useEffect(() => {
@@ -61,6 +67,7 @@ export function DeletePlaydateDialog({
       }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="delete-playdate-dialog-title"
@@ -74,7 +81,7 @@ export function DeletePlaydateDialog({
           “{title}” goes away for everyone, along with every family’s “I’m going” and all
           the comments on it. This can’t be undone.
         </p>
-        {error !== null ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+        {error !== null ? <p role="alert" id={errorId('submit')} className="mt-2 text-sm text-red-600">{error}</p> : null}
         <div className="mt-4 flex items-center justify-end gap-2">
           <button
             ref={cancelRef}
@@ -91,6 +98,7 @@ export function DeletePlaydateDialog({
             onClick={onConfirm}
             data-testid="confirm-delete-playdate"
             className="rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            {...fieldA11y('submit', error)}
           >
             {busy ? 'Deleting…' : 'Delete drop-in'}
           </button>

@@ -6,6 +6,7 @@ import { useSessionContext } from '../components/SessionProvider'
 import { LOGIN_PATH } from '../lib/auth'
 import { setNewPassword } from '../lib/db'
 import { validateNewPassword } from '../lib/passwordReset'
+import { errorId, fieldA11y } from '../lib/a11y'
 
 /**
  * /reset-password — the screen the emailed link lands on (V5 beta readiness).
@@ -52,7 +53,7 @@ export function ResetPasswordPage() {
   }
 
   const inputClasses =
-    'w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200'
+    'w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200'
 
   return (
     <div className="pt-safe pb-safe mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-4 bg-slate-50 px-4">
@@ -100,9 +101,10 @@ export function ResetPasswordPage() {
                   required
                   minLength={6}
                   autoComplete="new-password"
+                  {...fieldA11y('password', errors.password ?? null)}
                 />
                 {errors.password !== undefined ? (
-                  <span className="text-sm text-red-600">{errors.password}</span>
+                  <span role="alert" id={errorId('password')} className="text-sm text-red-600">{errors.password}</span>
                 ) : null}
               </label>
 
@@ -119,18 +121,20 @@ export function ResetPasswordPage() {
                   placeholder="Same password"
                   required
                   autoComplete="new-password"
+                  {...fieldA11y('confirm', errors.confirm ?? null)}
                 />
                 {errors.confirm !== undefined ? (
-                  <span className="text-sm text-red-600">{errors.confirm}</span>
+                  <span role="alert" id={errorId('confirm')} className="text-sm text-red-600">{errors.confirm}</span>
                 ) : null}
               </label>
 
-              {error ? <p className="text-sm text-red-600">{error}</p> : null}
+              {error ? <p role="alert" id={errorId('submit')} className="text-sm text-red-600">{error}</p> : null}
 
               <button
                 type="submit"
                 disabled={busy}
                 className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
+                {...fieldA11y('submit', error)}
               >
                 {busy ? 'Saving…' : 'Save and continue'}
               </button>

@@ -36,6 +36,9 @@ import {
 import type { PlaceListRow, SortMode } from '../lib/places'
 import type { Place, PlacePrefill } from '../lib/types'
 
+/** V22 slice 10: default export for the lazy wrapper (see above). */
+export { PlaceDirectory as default }
+
 /**
  * V21 t02: the PLACES DIRECTORY SURFACE — the map band, the search/filter/distance
  * controls, the grouped list with its overflow door, the "Not on the map yet"
@@ -75,6 +78,11 @@ import type { Place, PlacePrefill } from '../lib/types'
  * SAME `pickPlace` path the suggestion list uses (no second write path). The
  * "Start a drop-in" row action and the map panel's "Host here" button are
  * suppressed in selectable mode (they navigate to /new, which IS the host).
+ */
+/**
+ * V22 slice 10: this module is loaded through the dynamic import in
+ * PlaceDirectoryLazy.tsx (the code split). A default export lets that wrapper's
+ * `lazy()` factory resolve it; named consumers keep importing by name.
  */
 export function PlaceDirectory({
   places,
@@ -323,17 +331,20 @@ export function PlaceDirectory({
   // --- Render ----------------------------------------------------------------
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* The map leads the surface — the mental model for "what's nearby". */}
+    <div className="flex flex-col gap-4 md:grid md:grid-cols-2 md:items-start">
+      {/* The map leads the surface — the mental model for "what's nearby".
+          V22 slice 9: at md+ this is column 1 of a two-column grid, sticky
+          under the full-width header so the map stays in view while the list
+          scrolls. Below md it is the ordinary stacked band. */}
       {places !== null && mappedMarkers.length > 0 ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm md:sticky md:top-16">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs font-medium text-slate-500">Nearby places</span>
             <button
               type="button"
               data-testid="set-location-btn"
               onClick={openLocationModal}
-              className="rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
+              className="rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100"
             >
               Set location
             </button>
@@ -368,14 +379,14 @@ export function PlaceDirectory({
         </div>
       ) : null}
 
-      {/* Search + filter chips + distance control. */}
-      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+      {/* Search + filter chips + distance control. V22 slice 9: column 2 at md+. */}
+      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm md:col-start-2">
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-slate-700">Search</span>
           <input
             type="search"
             data-testid="places-search"
-            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value)
@@ -391,7 +402,7 @@ export function PlaceDirectory({
             type="button"
             data-testid="filter-sort-btn"
             onClick={openFilterModal}
-            className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-indigo-700 transition-colors hover:bg-slate-50"
+            className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
           >
             Filter &amp; sort
           </button>
@@ -404,7 +415,7 @@ export function PlaceDirectory({
               resetShowAll()
             }}
             className={
-              'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ' +
+              'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors motion-reduce:transition-none ' +
               (indoorFilter === true
                 ? 'border-indigo-600 bg-indigo-600 text-white'
                 : 'border-slate-300 bg-white text-slate-700')
@@ -421,7 +432,7 @@ export function PlaceDirectory({
               resetShowAll()
             }}
             className={
-              'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ' +
+              'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors motion-reduce:transition-none ' +
               (indoorFilter === false
                 ? 'border-indigo-600 bg-indigo-600 text-white'
                 : 'border-slate-300 bg-white text-slate-700')
@@ -436,7 +447,7 @@ export function PlaceDirectory({
             <span className="text-slate-500">Distance</span>
             <select
               data-testid="places-distance-filter"
-              className="min-h-11 max-w-full rounded-full border border-slate-300 bg-white px-3 text-base text-slate-600 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              className="min-h-11 max-w-full rounded-full border border-slate-300 bg-white px-3 text-base text-slate-600 outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
               value={distanceSelectValue(distanceChoice)}
               onChange={(e) => {
                 setDistanceChoice(distanceChoiceFromValue(e.target.value))
@@ -455,19 +466,19 @@ export function PlaceDirectory({
         </div>
       </div>
 
-      {/* The list (or its empty states). */}
+      {/* The list (or its empty states). V22 slice 9: column 2 at md+. */}
       {places === null ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm md:col-start-2">
           Loading…
         </div>
       ) : radiusIsTheReason ? (
-        <RadiusEmptyState radiusMiles={maxMiles} />
+        <div className="md:col-start-2"><RadiusEmptyState radiusMiles={maxMiles} /></div>
       ) : nothingMatches ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm md:col-start-2">
           No places match that.
         </div>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 md:col-start-2">
           {leadGroups.map((group) => (
             <section key={group.kind} className="flex flex-col gap-2">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
@@ -493,7 +504,7 @@ export function PlaceDirectory({
                 type="button"
                 data-testid="places-see-all"
                 onClick={() => setShowAll((prev) => !prev)}
-                className="self-start rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-indigo-700 transition-colors hover:bg-slate-50"
+                className="self-start rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
               >
                 {seeAllLabel}
               </button>
@@ -524,7 +535,7 @@ export function PlaceDirectory({
 
       {/* Places we could not measure. Never hidden, never given a fake distance. */}
       {filteredUnplaced.length > 0 ? (
-        <section className="flex flex-col gap-2">
+        <section className="flex flex-col gap-2 md:col-start-2">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
             Not on the map yet
           </h2>
@@ -556,7 +567,7 @@ export function PlaceDirectory({
           data-testid="scroll-to-map-btn"
           aria-label="Back to map"
           onClick={scrollBackToMap}
-          className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-1/2 flex min-h-11 min-w-11 -translate-x-1/2 items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 shadow-lg transition-colors hover:bg-slate-50"
+          className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-1/2 flex min-h-11 min-w-11 -translate-x-1/2 items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 shadow-lg transition-colors motion-reduce:transition-none hover:bg-slate-50 md:bottom-[calc(2rem+env(safe-area-inset-bottom))]"
         >
           <svg
             viewBox="0 0 24 24"
@@ -610,7 +621,7 @@ export function PlaceDirectory({
                       aria-pressed={selected}
                       onClick={() => toggleKind(kind)}
                       className={
-                        'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ' +
+                        'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors motion-reduce:transition-none ' +
                         (selected
                           ? 'border-indigo-600 bg-indigo-600 text-white'
                           : 'border-slate-300 bg-white text-slate-700')
@@ -628,7 +639,7 @@ export function PlaceDirectory({
               <span className="text-slate-700">Sort by</span>
               <select
                 data-testid="filter-sort-select"
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
                 value={sortMode}
                 onChange={(e) => setSortMode(e.target.value as SortMode)}
               >
@@ -644,7 +655,7 @@ export function PlaceDirectory({
                 type="number"
                 min={1}
                 data-testid="filter-radius-input"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
                 placeholder="e.g. 5"
                 value={radiusFilter ?? ''}
                 onChange={(e) => {
@@ -658,7 +669,7 @@ export function PlaceDirectory({
               type="button"
               data-testid="filter-apply-btn"
               onClick={closeFilterModal}
-              className="w-full rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700"
+              className="w-full rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700"
             >
               Apply
             </button>
@@ -694,7 +705,7 @@ export function PlaceDirectory({
               <input
                 type="text"
                 data-testid="location-address-input"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
                 placeholder="e.g. Green Lake Park, Seattle"
                 autoComplete="off"
                 value={locationAddress}
@@ -729,7 +740,7 @@ export function PlaceDirectory({
                 type="button"
                 data-testid="location-cancel-btn"
                 onClick={closeLocationModal}
-                className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+                className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
               >
                 Cancel
               </button>
@@ -740,7 +751,7 @@ export function PlaceDirectory({
                 onClick={() => {
                   void handleGeocode(locationAddress)
                 }}
-                className="flex-1 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
+                className="flex-1 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700 disabled:opacity-50"
               >
                 {geocoding ? 'Finding…' : 'See places'}
               </button>
@@ -810,7 +821,7 @@ function DirectoryRow({
         e.stopPropagation()
         select()
       } : undefined}
-      className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors hover:bg-slate-50"
+      className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-50"
     >
       <div className="flex flex-col gap-1 p-3">
         <div className="flex items-start justify-between gap-2">
@@ -836,7 +847,7 @@ function DirectoryRow({
                 event.stopPropagation()
                 onToggleFollow(row.place.id)
               }}
-              className="-mr-1 -mt-1 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-slate-100"
+              className="-mr-1 -mt-1 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full transition-colors motion-reduce:transition-none hover:bg-slate-100"
             >
               <HeartIcon filled={followed} />
             </button>
@@ -859,7 +870,7 @@ function DirectoryRow({
               type="button"
               data-testid={`row-start-dropin-${row.place.id}`}
               onClick={(e) => startDropIn(e)}
-              className="min-h-11 rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-indigo-700"
+              className="min-h-11 rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700"
             >
               Start a drop-in
             </button>
@@ -874,7 +885,7 @@ function DirectoryRow({
               onClick={(e) => {
                 e.stopPropagation()
               }}
-              className="flex min-h-11 items-center rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"
+              className="flex min-h-11 items-center rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
             >
               {learnMore.kind === 'website' ? 'Visit website' : 'Find it on the map'}
             </a>

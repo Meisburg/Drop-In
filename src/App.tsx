@@ -1,10 +1,11 @@
-import { useEffect } from 'react'
+import { Suspense, lazy, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router'
 import { DropInMark } from './components/DropInMark'
-import { NAV_ICONS } from './components/icons'
+import { NAV_ICONS, NAV_ICONS_FILLED } from './components/icons'
 import { LightboxProvider } from './components/ImageLightbox'
 import { PushOptInPrompt } from './components/PushOptInPrompt'
+import { SectionHeader } from './components/SectionHeader'
 import { SessionProvider, useSessionContext } from './components/SessionProvider'
 import { SplashScreen } from './components/SplashScreen'
 import { signOutUser } from './lib/db'
@@ -17,7 +18,6 @@ import {
   resolveOnboardingRedirect,
   resolveProtectedRedirect,
 } from './lib/onboarding'
-import { BrowsePage } from './pages/BrowsePage'
 import { EditPlaydatePage } from './pages/EditPlaydatePage'
 import { FeedPage } from './pages/FeedPage'
 import { InboxPage } from './pages/InboxPage'
@@ -33,6 +33,14 @@ import { SettingsPage } from './pages/SettingsPage'
 import { UserPage } from './pages/UserPage'
 import { PLAYDATE_RETURN_KEY, isPlaydateReturnTarget, playdateDetailPathFromEditPath } from './lib/trust'
 import type { DuplicatePrefill, PlacePrefill } from './lib/types'
+
+/**
+ * V22 slice 10: the /browse route is code-split. It is no longer a nav
+ * destination (V21 t02 moved the directory into /new's "Where?" block) — it is
+ * reachable by deep link only — so its page (and, through it, the places
+ * directory + map chunks) load on demand instead of shipping in the entry.
+ */
+const LazyBrowsePage = lazy(() => import('./pages/BrowsePage'))
 
 /** The /mod route path (moderator tools, slice 5). */
 const MOD_PATH = '/mod'
@@ -189,83 +197,115 @@ function ProtectedShell() {
 
   return (
     <div className="min-h-dvh bg-slate-50 text-slate-900">
-      <header className="pt-safe sticky top-0 z-10 border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-md items-center justify-between px-4 py-1">
-          <Link
-            to="/"
-            className="font-display flex min-h-11 items-center gap-2 text-lg font-bold text-indigo-600"
-          >
-            <DropInMark className="h-7 w-7" />
-            Drop In
-          </Link>
-          <div className="flex min-w-0 items-center gap-3">
-            {/* V11 ticket 06: the settings entry point — a gear to the
-                family's editor. Signed-in only (the route is gated by the
-                shell's auth + home-zip redirect), next to the sign-out control. */}
-            {session !== null ? (
-              <Link
-                to="/settings"
-                className="flex min-h-11 items-center justify-center text-slate-600"
-                aria-label="Settings"
-              >
-                <NavIcon path={NAV_ICONS.gear} />
-              </Link>
-            ) : null}
-            {session !== null ? (
-              <button
-                type="button"
-                className="flex min-h-11 items-center text-sm text-slate-600"
-                onClick={() => void signOutUser()}
-              >
-                Sign out
-              </button>
-            ) : (
-              // V2 slice 5: the only route a signed-out visitor renders is
-              // the public detail page — a "Sign in" entry point instead of
-              // a sign-out control.
-              <Link to="/login" className="flex min-h-11 items-center text-sm font-medium text-indigo-600">
-                Sign in
-              </Link>
-            )}
-          </div>
-        </div>
-      </header>
-
-      <main
-        className={`mx-auto max-w-md px-4 py-4 ${
-          session !== null
-            ? 'pb-[calc(6rem+env(safe-area-inset-bottom))]'
-            : 'pb-[calc(2rem+env(safe-area-inset-bottom))]'
+      {/* V22 slice 9: the shell is a single column below md (the phone layout,
+          pixel-equivalent to before) and a two-column grid at md+ — a left nav
+          rail beside the content. The header spans both columns; the rail is
+          sticky so it stays in view while the content scrolls. */}
+      {/* V22 slice 9 FIX: the two-column grid is only correct when there IS a
+          rail to put in column 1. The rail renders only for a signed-in session
+          (`session !== null`), so applying `md:grid-cols-[4.5rem_...]`
+          unconditionally left column 1 EMPTY on the public surfaces
+          (/playdate/:id, /login, /reset-password) — and `minmax(0,1fr)` then
+          gave the content a 1fr of the LEFTOVER width, collapsing <main> to
+          72px on a 1024px viewport. The public detail page is the app's share
+          surface, so that was the worst possible place to break.
+          The column definition is now conditional on the same `session` check
+          that renders the rail: signed-out pages keep a single full-width
+          column at every size, which is also what they had before this slice. */}
+      <div
+        className={`flex flex-col md:items-start ${
+          session !== null ? 'md:grid md:grid-cols-[4.5rem_minmax(0,1fr)]' : 'md:grid'
         }`}
       >
-        {/* V8 ticket 08: the notification opt-in, mounted once for the whole
-            authed shell. It renders nothing unless a meaningful action was
-            just recorded in this tab (a post created, or a ping saved) — see
-            src/components/PushOptInPrompt.tsx. Signed-out visitors never see
-            it, and /profile owns its own copy of the control. */}
-        {session !== null ? <PushOptInPrompt /> : null}
-        <Outlet />
-      </main>
-
-      {/* V2 slice 5: the bottom nav is app chrome — signed-out visitors
-        (public detail page only) see the sign-up CTAs in the page instead. */}
-      {session !== null ? (
-        <nav className="pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white">
-          <div className="mx-auto flex max-w-md">
-            <NavTab to="/" label="Drop Ins" icon={<NavIcon path={NAV_ICONS.nearby} />} />
-            {/* V14 ticket 01: the inbox — parent↔parent messaging, scoped to
-                the drop-ins both parties are going to (host ↔ pinger). */}
-            <NavTab to="/inbox" label="Inbox" icon={<NavIcon path={NAV_ICONS.inbox} />} />
-            {/* V21 t02: the Places tab is GONE — the directory moved into the
-                post form's "Where?" block (the browse surface, one shared
-                implementation). /browse KEEPS its route (deep links, e2e specs,
-                and .scratch/playtest/routes.json all point at it); it is simply
-                no longer a nav destination. */}
-            <NavTab to="/new" label="Post" icon={<NavIcon path={NAV_ICONS.post} />} />
-            <NavTab to="/profile" label="Profile" icon={<NavIcon path={NAV_ICONS.profile} />} />
+        <header className="pt-safe sticky top-0 z-10 border-b border-slate-200 bg-white md:col-span-2">
+          <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-1 md:max-w-none">
+            <Link
+              to="/"
+              className="font-display flex min-h-11 items-center gap-2 text-lg font-bold text-indigo-600"
+            >
+              <DropInMark className="h-7 w-7" />
+              Drop In
+            </Link>
+            <div className="flex min-w-0 items-center gap-3">
+              {/* V11 ticket 06: the settings entry point — a gear to the
+                  family's editor. Signed-in only (the route is gated by the
+                  shell's auth + home-zip redirect), next to the sign-out control. */}
+              {session !== null ? (
+                <Link
+                  to="/settings"
+                  className="flex min-h-11 items-center justify-center text-slate-600"
+                  aria-label="Settings"
+                >
+                  <NavIcon path={NAV_ICONS.gear} />
+                </Link>
+              ) : null}
+              {session !== null ? (
+                <button
+                  type="button"
+                  className="flex min-h-11 items-center text-sm text-slate-600"
+                  onClick={() => void signOutUser()}
+                >
+                  Sign out
+                </button>
+              ) : (
+                // V2 slice 5: the only route a signed-out visitor renders is
+                // the public detail page — a "Sign in" entry point instead of
+                // a sign-out control.
+                <Link to="/login" className="flex min-h-11 items-center text-sm font-medium text-indigo-600">
+                  Sign in
+                </Link>
+              )}
+            </div>
           </div>
-        </nav>
-      ) : null}
+        </header>
+
+        {/* V2 slice 5: the bottom nav is app chrome — signed-out visitors
+          (public detail page only) see the sign-up CTAs in the page instead.
+          At md+ the same four destinations move into a LEFT RAIL (a vertical
+          <nav>, sticky under the full-width header); below md it stays the
+          fixed bottom bar, byte for byte. */}
+        {session !== null ? (
+          <nav
+            aria-label="Primary"
+            className="pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white md:sticky md:top-16 md:z-0 md:h-[calc(100dvh-4rem)] md:border-r md:border-slate-200 md:border-t-0"
+          >
+            <div className="mx-auto flex max-w-md flex-row md:flex-col">
+              <NavTab to="/" label="Drop Ins" icon={<NavIcon path={NAV_ICONS.nearby} />} filledIcon={<NavIcon path={NAV_ICONS_FILLED.nearby} filled />} />
+              {/* V14 ticket 01: the inbox — parent↔parent messaging, scoped to
+                  the drop-ins both parties are going to (host ↔ pinger). */}
+              <NavTab to="/inbox" label="Inbox" icon={<NavIcon path={NAV_ICONS.inbox} />} filledIcon={<NavIcon path={NAV_ICONS_FILLED.inbox} filled />} />
+              {/* V22 slice 12: the Post tab is GONE from the nav (Apple HIG: a
+                  tab bar supports navigation, not actions) — /new now lives on
+                  the feed as its own prominent action. The freed slot goes to
+                  Places: the directory already has a route (/browse, deep-link
+                  only since V21 t02) and a page, so this re-exposes it without
+                  building anything new. Search was rejected: there is no
+                  search destination in the app yet, and a dead tab is worse
+                  than a missing one. */}
+              <NavTab to="/browse" label="Places" icon={<NavIcon path={NAV_ICONS.browse} />} filledIcon={<NavIcon path={NAV_ICONS_FILLED.browse} filled />} />
+              <NavTab to="/profile" label="Profile" icon={<NavIcon path={NAV_ICONS.profile} />} filledIcon={<NavIcon path={NAV_ICONS_FILLED.profile} filled />} />
+            </div>
+          </nav>
+        ) : null}
+
+        <main
+          className={`w-full px-4 py-4 ${
+            session !== null
+              ? 'pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-[calc(2rem+env(safe-area-inset-bottom))]'
+              : 'pb-[calc(2rem+env(safe-area-inset-bottom))]'
+          }`}
+        >
+          {/* V8 ticket 08: the notification opt-in, mounted once for the whole
+              authed shell. It renders nothing unless a meaningful action was
+              just recorded in this tab (a post created, or a ping saved) — see
+              src/components/PushOptInPrompt.tsx. Signed-out visitors never see
+              it, and /profile owns its own copy of the control. */}
+          {session !== null ? <PushOptInPrompt /> : null}
+          <div className="mx-auto max-w-md md:max-w-3xl">
+            <Outlet />
+          </div>
+        </main>
+      </div>
     </div>
   )
 }
@@ -342,43 +382,62 @@ function NewRoute() {
  *
  * Labels drop to text-xs: with an icon carrying the shape, a 16px tab label
  * would just make the bar tall.
+ *
+ * V22 slice 9: the SAME component renders in two arrangements. Below md it is
+ * the horizontal bottom-bar tab (flex-1 across the 448px column); at md+ the
+ * parent <nav> becomes a left rail and this tab stacks vertically (md:flex-col),
+ * filling the 72px rail width with its 56px min-height target intact. The active
+ * state logic is unchanged — only the arrangement changes.
  */
 function NavTab({
   to,
   label,
   icon,
+  filledIcon,
 }: {
   to: string
   label: string
   icon: ReactNode
+  /** V22 slice 12: the FILLED variant (NAV_ICONS_FILLED) — rendered when the tab
+      is active, so "where you are" is a shape change, not a color change. */
+  filledIcon?: ReactNode
 }) {
   return (
     <NavLink
       to={to}
       end={to === '/'}
       className={({ isActive }) =>
-        `flex min-h-14 flex-1 flex-col items-center justify-center gap-1 py-2 text-xs font-medium transition-colors ${
-          isActive ? 'text-indigo-600' : 'text-slate-600'
+        `flex min-h-14 flex-1 items-center justify-center gap-1 px-2 py-2 text-xs transition-colors motion-reduce:transition-none md:flex-col ${
+          isActive ? 'font-semibold text-indigo-600' : 'font-medium text-slate-600'
         }`
       }
     >
-      <span aria-hidden="true">{icon}</span>
-      {label}
+      {({ isActive }) => (
+        <>
+          <span aria-hidden="true">{isActive && filledIcon !== undefined ? filledIcon : icon}</span>
+          {label}
+        </>
+      )}
     </NavLink>
   )
 }
 
-/** Bottom-nav glyphs: 24px, stroked, currentColor — one visual family. */
-function NavIcon({ path }: { path: string }) {
+/** Bottom-nav glyphs: 24px, currentColor — one visual family. The nav's ACTIVE
+ *  state uses the FILLED variants (NAV_ICONS_FILLED); `filled` switches the svg
+ *  from stroke to fill rendering. In-content call sites (SectionHeader etc.)
+ *  keep the stroked family and never pass `filled`. */
+function NavIcon({ path, filled = false }: { path: string; filled?: boolean }) {
   return (
     <svg
       viewBox="0 0 24 24"
       className="h-6 w-6"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
+      fill={filled ? 'currentColor' : 'none'}
+      stroke={filled ? 'none' : 'currentColor'}
+      strokeWidth={filled ? 0 : 1.8}
       strokeLinecap="round"
       strokeLinejoin="round"
+      clipRule={filled ? 'evenodd' : undefined}
+      fillRule={filled ? 'evenodd' : undefined}
     >
       <path d={path} />
     </svg>
@@ -406,7 +465,32 @@ export default function App() {
             {/* V14 ticket 01: the inbox — conversation list + inline thread
                 view (?thread=<playdate_id>). Inside the shell (auth gate). */}
             <Route path="/inbox" element={<InboxPage />} />
-            <Route path="/browse" element={<BrowsePage />} />
+            <Route
+              path="/browse"
+              element={
+                /* V22 slice 10: the directory page is lazy (deep-link only);
+                   the fallback keeps the header + a fixed-height card so the
+                   shell paints immediately and nothing shifts layout. */
+                <Suspense
+                  fallback={
+                    <div className="flex flex-col gap-4">
+                      <div className="md:max-w-md">
+                        <SectionHeader icon={NAV_ICONS.browse} title="Places" tagline="Find a place to host Drop In" />
+                      </div>
+                      <div
+                        role="status"
+                        aria-label="Loading places…"
+                        className="flex h-64 items-center justify-center rounded-xl border border-slate-200 bg-white text-sm text-slate-500 shadow-sm"
+                      >
+                        Loading places…
+                      </div>
+                    </div>
+                  }
+                >
+                  <LazyBrowsePage />
+                </Suspense>
+              }
+            />
             {/* V8 ticket 07: the place page. Inside the shell (so it keeps the
                 app chrome and the onboarding gate) — the SIGNED-OUT entry point
                 to it is the place line on /playdate/:id, which is the one public

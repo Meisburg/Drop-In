@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { SectionHeader } from '../components/SectionHeader'
-import { PlaceDirectory } from '../components/PlaceDirectory'
+import { PlaceDirectory } from '../components/PlaceDirectoryLazy'
 import { useSessionContext } from '../components/SessionProvider'
 import { NAV_ICONS } from '../components/icons'
 import {
@@ -65,6 +65,12 @@ import type { Place } from '../lib/types'
  * failure (pre-0033-apply: PGRST205) leaves every heart unfilled and the
  * directory rendering normally. A heart is a card decoration; it is never
  * worth an error state, and it must never cost the page its places.
+ */
+/**
+ * V22 slice 10: this page is loaded through the dynamic import in App.tsx
+ * (the /browse route is deep-link only, so its chunk — and the places
+ * directory + map it pulls in — load on demand). A default export lets that
+ * `lazy()` factory resolve it.
  */
 export function BrowsePage() {
   const { session, loading, profile } = useSessionContext()
@@ -231,7 +237,9 @@ export function BrowsePage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
+      {/* V22 slice 9: the header band stays at the phone measure — a full-width
+          gradient band across the 768px content column would read as a hero. */}
+      <div className="md:max-w-md">
         <SectionHeader icon={NAV_ICONS.browse} title="Places" tagline="Find a place to host Drop In" />
       </div>
 
@@ -256,3 +264,5 @@ export function BrowsePage() {
     </div>
   )
 }
+/** V22 slice 10: default export for the lazy route (see above). */
+export { BrowsePage as default }

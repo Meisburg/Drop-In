@@ -93,6 +93,8 @@ function WhileAwayFaces({ item }: { item: WhileAwayItem }) {
               src={face.avatarUrl}
               alt={face.displayName}
               title={face.displayName}
+              loading="lazy"
+              decoding="async"
               className={`h-6 w-6 rounded-full border-2 border-white object-cover${overlap}`}
             />
           )

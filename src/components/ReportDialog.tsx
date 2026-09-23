@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 import type { FormEvent } from 'react'
 import { createReport } from '../lib/db'
 import { validateReportReason } from '../lib/trust'
+import { errorId, fieldA11y } from '../lib/a11y'
+import { useFocusTrap } from './FocusTrap'
 
 /**
  * The report flow (slice 4): a reason (required, inline-validated) + submit
@@ -37,11 +39,15 @@ export function ReportDialog({
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
 
   // Focus lands in the dialog when it opens.
   useEffect(() => {
     textareaRef.current?.focus()
   }, [])
+
+  // Trap Tab inside the dialog; restore focus to the trigger on close.
+  useFocusTrap(dialogRef, true)
 
   // Esc closes (same as a backdrop click).
   useEffect(() => {
@@ -80,6 +86,7 @@ export function ReportDialog({
       }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="report-dialog-title"
@@ -115,15 +122,15 @@ export function ReportDialog({
                   setReasonError(null)
                 }}
                 placeholder="e.g. The post shared a home address instead of a public meet-up."
-                aria-invalid={reasonError !== null}
+                {...fieldA11y('reason', reasonError)}
                 className={
-                  'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                  'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
                   (reasonError !== null ? 'border-red-400' : 'border-slate-300')
                 }
               />
             </label>
-            {reasonError !== null ? <p className="text-sm text-red-600">{reasonError}</p> : null}
-            {submitError !== null ? <p className="text-sm text-red-600">{submitError}</p> : null}
+            {reasonError !== null ? <p role="alert" id={errorId('reason')} className="text-sm text-red-600">{reasonError}</p> : null}
+            {submitError !== null ? <p role="alert" id={errorId('submit')} className="text-sm text-red-600">{submitError}</p> : null}
             <div className="flex items-center justify-end gap-2">
               <button
                 type="button"
@@ -136,6 +143,7 @@ export function ReportDialog({
                 type="submit"
                 disabled={submitting}
                 className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                {...fieldA11y('submit', submitError)}
               >
                 {submitting ? 'Sending…' : 'Send report'}
               </button>

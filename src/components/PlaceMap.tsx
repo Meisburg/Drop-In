@@ -825,7 +825,7 @@ export function PlacesMap({
                       type="button"
                       data-testid="host-here"
                       onClick={() => hostHere()}
-                      className="min-h-11 rounded-xl bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-700"
+                      className="min-h-11 rounded-xl bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700"
                     >
                       Start a drop-in
                     </button>
@@ -837,7 +837,7 @@ export function PlacesMap({
                       rel="noopener"
                       data-testid="learn-more"
                       data-link-kind={learnMore.kind}
-                      className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+                      className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
                     >
                       {learnMore.kind === 'website' ? 'Visit website' : 'Find it on the map'}
                     </a>
@@ -846,7 +846,7 @@ export function PlacesMap({
                     <Link
                       to={placePath(selected.id)}
                       data-testid="marker-details"
-                      className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+                      className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
                     >
                       Details
                     </Link>
@@ -1085,7 +1085,7 @@ export function PlacePickerMap({
             type="button"
             data-testid="place-picker-select"
             onClick={() => onPick(selected)}
-            className="min-h-11 shrink-0 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700"
+            className="min-h-11 shrink-0 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700"
           >
             Select this place
           </button>
@@ -1094,3 +1094,10 @@ export function PlacePickerMap({
     </div>
   )
 }
+
+/**
+ * V22 slice 10: default export for the lazy wrapper (see PlaceMapLazy.tsx).
+ * The wrapper's `lazy()` factory resolves the module through this default;
+ * named consumers keep importing by name.
+ */
+export { PlacePickerMap as default }

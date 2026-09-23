@@ -69,10 +69,14 @@ playwright-report/
 *.sw?
 
 # V7 design exploration — local-only mockups used to pick the palette and the
-# mark. They live under public/, so committing them would SHIP them to the
-# deployed site. Scratch, not product.
-public/logo-mockup.html
-public/color-compare.html
+# mark. Scratch, not product.
+#
+# V22 slice 3: the two HTML mockups USED to live under public/, where Vite
+# copied them into dist/ and they would have shipped in any deploy made by
+# uploading that directory. They now live in .scratch/design-mockups/, which the
+# `.scratch/**/*.html` rule below already covers, so their explicit public/ paths
+# are gone from this file — a stale ignore entry for a path that no longer exists
+# reads as a live safeguard and is worse than no entry at all.
 logo-mockup.png
 
 # NOTE: scripts/crop-*-harness.html are deliberately TRACKED, not ignored. They are
