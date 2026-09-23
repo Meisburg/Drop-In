@@ -16,11 +16,11 @@ import { cardAgeRangeLabel, formatDistanceLabel, mapsHref } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
 import { placeFollowerLine } from '../lib/follows'
 import {
-  photoCreditLine,
   placeAgeFitLabel,
   placeDistanceMiles,
   placeIndoorLabel,
   placeKindLabel,
+  placeLearnMoreLink,
   sortPlaceUpcoming,
 } from '../lib/places'
 import type { Place, PlacePrefill, PlaydateWithNeighborhood } from '../lib/types'
@@ -33,8 +33,20 @@ import type { Place, PlacePrefill, PlaydateWithNeighborhood } from '../lib/types
  * has no age data, rather than implying "all ages"; V11 t03), where is it
  * (address +
  * the SAME tappable Google Maps link the detail page uses, the pure mapsHref
- * seam), what should I know (notes), and what is happening there. Then the one
+ * seam), what should I know (notes), whether there is somewhere else to read
+ * about it ("Learn more" — V20 t01), and what is happening there. Then the one
  * action: "Start a drop-in here".
+ *
+ * V20 t01 — THE PHOTO IS GONE, THE WEBSITE LINK REPLACED IT. V18 sourced
+ * Wikimedia Commons photos for a curated subset of rows; the founder's ruling
+ * is that 239 hand-maintained images are not maintainable ("I can't police this
+ * and fix all the broken images"), so the page no longer renders one at all.
+ * `places.photo_url` and its attribution columns stay exactly as they are —
+ * nothing is migrated or dropped — and `photoCreditLine` keeps its tests;
+ * what was removed is this page's use of them. In its place, "Learn more"
+ * opens the place's own site when the reviewed backfill verified one, and the
+ * derived OSM map search when it did not — the seam decides which, and the
+ * button's label says which (V20 t01's `placeLearnMoreLink`).
  *
  * UPCOMING DROP-INS ARE RADIUS-INDEPENDENT (the pinned decision): the parent
  * asked about THIS place, so the viewer's discovery radius must not filter its
@@ -292,12 +304,12 @@ export function PlacePage() {
 
   const maps = mapsHref(place.name, place.address)
   const ageFit = placeAgeFitLabel(place)
-  // V18 t04: the photo credit and its source link. Both come from seams, so
-  // this component renders them and decides nothing (the build law). The
-  // source URL is only linked when it exists — a dead `href=""` would be worse
-  // than no link.
-  const credit = photoCreditLine(place)
-  const sourceUrl = (place.photo_source_url ?? '').trim() === '' ? null : place.photo_source_url
+  /**
+   * The place's own website, or the derived OSM search URL, or null. The
+   * button's LABEL comes from the same seam's `kind`, so a map search is never
+   * dressed up as the operator's site (V20 t01).
+   */
+  const learnMore = placeLearnMoreLink(place)
   const distance =
     zipCoords === null
       ? null
@@ -334,48 +346,19 @@ export function PlacePage() {
         </p>
       </div>
 
-      {/* V18 t04: the place photo, WITH ITS ATTRIBUTION.
-          The photos are sourced from Wikimedia Commons under CC BY / CC BY-SA /
-          CC0, and the first two require attribution as a condition of use — so
-          this block is licence compliance, not decoration.
-
-          UNLIKE the browse card (where the slot sits inside the card's own
-          <Link> and the credit must therefore be plain text), this page has no
-          wrapping anchor, so the credit can be a REAL LINK to the Commons file
-          page. That is the stronger form of attribution: it makes the source
-          reachable rather than merely naming it.
-
-          A photo with no stored attribution renders NO credit line rather than
-          an empty one — `photoCreditLine` owns that decision. (`ocr` found the
-          original comment here claiming this attribution lived on the detail
-          page when it did not exist anywhere; the claim was false, and the fix
-          is to make it true rather than to delete it.) */}
-      {place.photo_url !== null ? (
-        <figure className="overflow-hidden rounded-xl border border-slate-200">
-          <img src={place.photo_url} alt="" className="w-full object-cover" />
-          {credit !== null ? (
-            <figcaption
-              data-testid="place-photo-credit"
-              className="bg-slate-50 px-3 py-2 text-xs text-slate-600"
-            >
-              Photo: {credit}
-              {sourceUrl !== null ? (
-                <>
-                  {' · '}
-                  <a
-                    href={sourceUrl}
-                    target="_blank"
-                    rel="noopener"
-                    className="font-medium text-indigo-600 hover:underline"
-                  >
-                    Wikimedia Commons
-                  </a>
-                </>
-              ) : null}
-            </figcaption>
-          ) : null}
-        </figure>
-      ) : null}
+      {/* V20 t01: THE PHOTO IS GONE FROM THIS PAGE.
+          V18 put a Wikimedia Commons photo here with its licence credit, and
+          the machinery that produced it (0046, `buildAttribution`, the
+          `photoCreditLine` seam, the backfill script) is untouched — the data
+          and its attribution stay in the table for whatever future surface
+          wants them. What changed is the product decision above them, in the
+          founder's words: *"maybe we have to get rid of the image part of this
+          because I can't police this and fix all the broken images."*
+          239 hand-maintained images is a commitment nobody signed up for, and
+          a half-broken gallery reads worse than none. The affordance that
+          replaces it is the "Learn more" link in the card below — one link per
+          place, honest about whether it is the operator's own site or a map
+          search. */}
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <p className="text-sm text-slate-700">
@@ -406,6 +389,43 @@ export function PlacePage() {
         ) : null}
         {place.notes !== null ? (
           <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{place.notes}</p>
+        ) : null}
+        {/* V20 t01: LEARN MORE — the afforance that replaces the photo.
+            It is the ONLY control on this page that leaves the app, so it is
+            rendered as a real anchor (`target="_blank" rel="noopener"`) rather
+            than a button: a parent's browser can decide for itself whether a
+            new tab or a new window is right, and the link is shareable.
+
+            WHAT IT SAYS DEPENDS ON WHERE IT GOES, and that is a decision the
+            seam already made (`placeLearnMoreLink().kind`): a place with a
+            verified operator site says "Visit website"; a place without one
+            says "Find it on the map" and opens the derived OpenStreetMap
+            search. The distinction matters — a map search dressed up as the
+            operator's site is a small lie the parent discovers after the click.
+            A place with neither a name nor a URL renders nothing at all. */}
+        {learnMore !== null ? (
+          <a
+            href={learnMore.url}
+            target="_blank"
+            rel="noopener"
+            data-testid="place-learn-more"
+            data-link-kind={learnMore.kind}
+            className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-indigo-300 bg-white px-4 py-3 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-50"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M14 4h6v6M20 4l-8.5 8.5M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+            </svg>
+            {learnMore.kind === 'website' ? 'Visit website' : 'Find it on the map'}
+          </a>
         ) : null}
       </div>
 

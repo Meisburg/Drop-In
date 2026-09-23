@@ -58,13 +58,8 @@ import type { Browser, BrowserContext, Page } from '@playwright/test'
 import { nextOccurrencePlan, placeFollowerLine } from '../src/lib/follows'
 import { weekdayFromDateIso } from '../src/lib/series'
 import {
-  editTitle,
-  localDatePlusDays,
-  parseTimeLabel,
-  readMarkerMeta,
-  readMarkerSession,
-  readSupabaseEnv,
-  settleOnRoute,
+  editTitle, localDatePlusDays, parseTimeLabel, readMarkerMeta,
+  readMarkerSession, readSupabaseEnv, settleOnRoute, signUpViewer,
 } from './fixtures'
 
 const TITLE_PLACEHOLDER = 'e.g. Playground time at Green Lake'
@@ -189,12 +184,13 @@ async function createOnboardedViewer(
     storageState: { cookies: [], origins: [] },
   })
   const page = await context.newPage()
-  await page.goto('/login')
-  await page.getByRole('button', { name: 'New here? Create an account' }).click()
-  await page.locator('input[autocomplete="nickname"]').fill(name)
-  await page.locator('input[type="email"]').fill(email)
-  await page.locator('input[type="password"]').fill(password)
-  await page.getByRole('button', { name: 'Create account' }).click()
+  // V20 t06: signup is first + last name + address now — one shared helper
+  // (`signUpViewer`) so the form's field list lives in one place.
+  await signUpViewer(page, {
+    name: name,
+    email: email,
+    password: password,
+  })
   await page.getByRole('heading', { name: 'Set your location' }).waitFor()
   await page.getByPlaceholder('e.g. 98107').fill(zip)
   await page.locator('select').first().selectOption({ label: '5 miles' })

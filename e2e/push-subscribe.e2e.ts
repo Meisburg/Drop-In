@@ -51,13 +51,8 @@
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 import {
-  editTitle,
-  localDatePlusDays,
-  readMarkerMeta,
-  readMarkerSession,
-  readSupabaseEnv,
-  settleOnRoute,
-  stepStartTimeOnce,
+  editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
+  readSupabaseEnv, settleOnRoute, signUpViewer, stepStartTimeOnce,
 } from './fixtures'
 
 const TITLE_PLACEHOLDER = 'e.g. Playground time at Green Lake'
@@ -529,12 +524,13 @@ test('a saved ping arms the prompt, and denying it surfaces the inbox note', asy
   const viewer = await viewerContext.newPage()
   await installPushStub(viewer, { permission: 'denied', endpoint })
 
-  await viewer.goto('/login')
-  await viewer.getByRole('button', { name: 'New here? Create an account' }).click()
-  await viewer.locator('input[autocomplete="nickname"]').fill(viewerName)
-  await viewer.locator('input[type="email"]').fill(viewerEmail)
-  await viewer.locator('input[type="password"]').fill(viewerPassword)
-  await viewer.getByRole('button', { name: 'Create account' }).click()
+  // V20 t06: signup is first + last name + address now — one shared helper
+  // (`signUpViewer`) so the form's field list lives in one place.
+  await signUpViewer(viewer, {
+    name: viewerName,
+    email: viewerEmail,
+    password: viewerPassword,
+  })
 
   await viewer.getByRole('heading', { name: 'Set your location' }).waitFor()
   await viewer.getByPlaceholder('e.g. 98107').fill(marker.homeZip)

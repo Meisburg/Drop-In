@@ -31,13 +31,34 @@ const MARKER_RADIUS_MILES = 5
 setup('sign up the marker, onboard it (zip + radius), save the signed-in state', async ({ page, context }) => {
   const epoch = Math.floor(Date.now() / 1000)
   const email = `e2e-${epoch}@gmail.com` // gmail.com: the project rejects example.com (logged lesson)
-  const displayName = `e2e-${epoch}`
-  const password = `e2e-pw-${epoch}` // in-memory only — never written, never committed
 
   // --- Sign up through the real /login UI (signup mode). ---
+  //
+  // V20 t06: the signup form is now FIRST NAME + LAST NAME + HOME ADDRESS, not
+  // one "Display name" box. The marker's handle is consequently COMPOSED —
+  // "e2e-<epoch> Marker" — and that composed string is what every downstream
+  // `@handle` assertion must look for, which is why `displayName` below is
+  // built from the same two halves the form joins.
+  //
+  // The ADDRESS is the marker's own home zip written as a street address, so the
+  // signup path's geocode resolves to the SAME zip the location step would set
+  // by hand. If Nominatim does not resolve it (offline, rate-limited, a
+  // city-level match — any of which returns null by design), the account is
+  // still created and the onboarding gate sends us to the location step below,
+  // which sets the zip explicitly. So this spec passes either way, and the
+  // marker's final state is identical — the REST PATCH at the end is the
+  // backstop that makes that true.
+  const firstName = `e2e-${epoch}`
+  const lastName = 'Marker'
+  const displayName = `${firstName} ${lastName}`
+  const signupAddress = '7349 15th Ave NW, Seattle, WA 98107'
+  const password = `e2e-pw-${epoch}` // in-memory only — never written, never committed
+
   await page.goto('/login')
   await page.getByRole('button', { name: 'New here? Create an account' }).click()
-  await page.locator('input[autocomplete="nickname"]').fill(displayName)
+  await page.locator('input[autocomplete="given-name"]').fill(firstName)
+  await page.locator('input[autocomplete="family-name"]').fill(lastName)
+  await page.locator('input[autocomplete="street-address"]').fill(signupAddress)
   await page.locator('input[type="email"]').fill(email)
   await page.locator('input[type="password"]').fill(password)
   await page.getByRole('button', { name: 'Create account' }).click()

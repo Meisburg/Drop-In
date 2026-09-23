@@ -316,3 +316,50 @@ export function runLiveSql(sql: string): { ok: boolean; output: string } {
     output: `${result.stdout ?? ''}${result.stderr ?? ''}`.trim(),
   }
 }
+
+
+/**
+ * V20 t06 — fill the signup form and submit it.
+ *
+ * WHY THIS IS A SHARED HELPER AND NOT 20 INLINE COPIES. The form changed shape:
+ * it used to be `input[autocomplete="nickname"]` (one "Display name" box) and
+ * every spec that created a throwaway viewer drove that one selector. It is now
+ * FIRST NAME + LAST NAME + HOME ADDRESS, so all 20 call sites had to change at
+ * once — and the next change to this form would otherwise have to touch 20
+ * files again. One helper means the specs say "sign this viewer up" and the
+ * form's field list lives in exactly one place.
+ *
+ * `name` is the handle the caller expects the account to end up with — it is
+ * what other assertions in those specs look for as `@name` — so the helper
+ * splits it the way the form joins it (`composeDisplayName` puts a single space
+ * between the halves). A single-word name goes entirely into the first field,
+ * which composes back to the same string.
+ *
+ * The ADDRESS is a fixed real Seattle street address, not a per-caller value:
+ * signup uses it to derive a home zip, and these specs set their own location
+ * on the onboarding step immediately afterwards regardless (they all wait for
+ * "Set your location" and fill the zip), so a failed geocode changes nothing
+ * about what the spec goes on to assert. Making it a parameter would be a knob
+ * no caller needs.
+ *
+ * The password is whatever the caller already generated; it is only typed here.
+ */
+export async function signUpViewer(
+  page: Page,
+  options: { name: string; email: string; password: string },
+): Promise<void> {
+  const { name, email, password } = options
+  const space = name.indexOf(' ')
+  const first = space === -1 ? name : name.slice(0, space)
+  const last = space === -1 ? '' : name.slice(space + 1)
+
+  await page.goto('/login')
+  await page.getByRole('button', { name: 'New here? Create an account' }).click()
+  await page.locator('input[autocomplete="given-name"]').fill(first)
+  if (last !== '') await page.locator('input[autocomplete="family-name"]').fill(last)
+  // The same street address every time — see the doc above.
+  await page.locator('input[autocomplete="street-address"]').fill('7349 15th Ave NW, Seattle, WA 98107')
+  await page.locator('input[type="email"]').fill(email)
+  await page.locator('input[type="password"]').fill(password)
+  await page.getByRole('button', { name: 'Create account' }).click()
+}

@@ -43,13 +43,8 @@
  */
 import { expect, test } from '@playwright/test'
 import {
-  editTitle,
-  localDatePlusDays,
-  readMarkerMeta,
-  readMarkerSession,
-  readSupabaseEnv,
-  settleOnRoute,
-  stepStartTimeOnce,
+  editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
+  readSupabaseEnv, settleOnRoute, signUpViewer, stepStartTimeOnce,
 } from './fixtures'
 
 test('the host sees the named guest list on a post with 2 pings', async ({
@@ -136,12 +131,13 @@ test('the host sees the named guest list on a post with 2 pings', async ({
       storageState: { cookies: [], origins: [] },
     })
     const viewerPage = await viewerContext.newPage()
-    await viewerPage.goto('/login')
-    await viewerPage.getByRole('button', { name: 'New here? Create an account' }).click()
-    await viewerPage.locator('input[autocomplete="nickname"]').fill(viewer.name)
-    await viewerPage.locator('input[type="email"]').fill(viewer.email)
-    await viewerPage.locator('input[type="password"]').fill(viewer.password)
-    await viewerPage.getByRole('button', { name: 'Create account' }).click()
+    // V20 t06: signup is first + last name + address now — one shared helper
+    // (`signUpViewer`) so the form's field list lives in one place.
+    await signUpViewer(viewerPage, {
+      name: viewer.name,
+      email: viewer.email,
+      password: viewer.password,
+    })
 
     // The viewer's location step (the same REST write a real user gets).
     await viewerPage.getByRole('heading', { name: 'Set your location' }).waitFor()

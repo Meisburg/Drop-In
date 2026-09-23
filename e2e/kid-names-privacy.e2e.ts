@@ -95,13 +95,8 @@ import path from 'node:path'
 import { buildIcs } from '../src/lib/ics'
 import { NOTIFICATION_KINDS, buildNotificationPayload } from '../src/lib/push'
 import {
-  editTitle,
-  localDatePlusDays,
-  readMarkerMeta,
-  readMarkerSession,
-  readSupabaseEnv,
-  settleOnRoute,
-  stepStartTimeOnce,
+  editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
+  readSupabaseEnv, settleOnRoute, signUpViewer, stepStartTimeOnce,
 } from './fixtures'
 
 const PLACE = 'E2E Names lot'
@@ -148,12 +143,13 @@ async function signUpAndOnboard(
     storageState: { cookies: [], origins: [] },
   })
   const page = await context.newPage()
-  await page.goto('/login')
-  await page.getByRole('button', { name: 'New here? Create an account' }).click()
-  await page.locator('input[autocomplete="nickname"]').fill(input.name)
-  await page.locator('input[type="email"]').fill(input.email)
-  await page.locator('input[type="password"]').fill(input.password)
-  await page.getByRole('button', { name: 'Create account' }).click()
+  // V20 t06: signup is first + last name + address now — one shared helper
+  // (`signUpViewer`) so the form's field list lives in one place.
+  await signUpViewer(page, {
+    name: input.name,
+    email: input.email,
+    password: input.password,
+  })
 
   await page.getByRole('heading', { name: 'Set your location' }).waitFor()
   await page.getByPlaceholder('e.g. 98107').fill(input.homeZip)

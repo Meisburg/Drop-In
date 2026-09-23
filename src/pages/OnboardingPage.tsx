@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router'
 import { useSessionContext } from '../components/SessionProvider'
 import { useCropStep } from '../components/useCropStep'
+import { composeDisplayName, displayNameFieldError } from '../lib/account'
 import {
   addKid,
   BIO_MAX_LENGTH,
@@ -22,7 +23,7 @@ import {
   RADIUS_MILES_OPTIONS,
   validateHomeZip,
 } from '../lib/feed'
-import { suggestedHandle } from '../lib/oauth'
+import { splitSuggestedName, suggestedHandle } from '../lib/oauth'
 import { resolveOnboardingRedirect } from '../lib/onboarding'
 
 /**
@@ -46,18 +47,27 @@ export function OnboardingPage() {
   const { session, loading, profile, homeZipSet, refresh } = useSessionContext()
 
   // V4 slice 4 — the handle step (social sign-in only).
+  //
+  // V20 t06: TWO FIELDS, not one "Display name" box, matching /login's signup
+  // form exactly (the same `composeDisplayName` / `displayNameFieldError`
+  // seams). A social user's provider may hand us a full name, so the two halves
+  // are SPLIT for the fields rather than dropped into one — see
+  // `splitSuggestedName`.
   const suggested = suggestedHandle(
     session?.user.user_metadata ?? null,
     session?.user.email ?? null,
   )
-  const [handle, setHandle] = useState('')
-  const [handleTouched, setHandleTouched] = useState(false)
+  const suggestedParts = splitSuggestedName(suggested)
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [nameTouched, setNameTouched] = useState(false)
   const [handleError, setHandleError] = useState<string | null>(null)
   const [handleBusy, setHandleBusy] = useState(false)
   // The provider's name is a SUGGESTION, not a value: it stays until the user
   // types, and the profiles_display_name_key constraint is what decides
   // whether a handle is actually available.
-  const handleValue = handleTouched ? handle : suggested
+  const firstNameValue = nameTouched ? firstName : suggestedParts.first
+  const lastNameValue = nameTouched ? lastName : suggestedParts.last
 
   const [knownZips, setKnownZips] = useState<ReadonlySet<string> | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -257,11 +267,12 @@ export function OnboardingPage() {
    */
   async function handleCreateProfile(e: FormEvent) {
     e.preventDefault()
-    const name = handleValue.trim()
-    if (name.length === 0) {
-      setHandleError('Please enter a display name.')
+    const nameProblem = displayNameFieldError(firstNameValue, lastNameValue)
+    if (nameProblem !== null) {
+      setHandleError(nameProblem)
       return
     }
+    const name = composeDisplayName(firstNameValue, lastNameValue)
     setHandleBusy(true)
     setHandleError(null)
     try {
@@ -270,10 +281,10 @@ export function OnboardingPage() {
     } catch (err) {
       setHandleError(
         err instanceof HandleTakenError
-          ? `“${name}” is already taken — pick a different display name.`
+          ? `“${name}” is already taken — try adding a middle name or initial.`
           : err instanceof Error
             ? err.message
-            : 'Could not save your display name. Try again.',
+            : 'Could not save your name. Try again.',
       )
     } finally {
       setHandleBusy(false)
@@ -286,9 +297,9 @@ export function OnboardingPage() {
     return (
       <div className="flex flex-col gap-4">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Pick your display name</h1>
+          <h1 className="text-xl font-semibold text-slate-900">What’s your name?</h1>
           <p className="mt-1 text-sm text-slate-600">
-            This is your handle — how other parents see you. It isn’t your email, and you can
+            This is how other parents find you in their inbox. It isn’t your email, and you can
             change it later in your settings.
           </p>
         </div>
@@ -296,25 +307,45 @@ export function OnboardingPage() {
           className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
           onSubmit={(e) => void handleCreateProfile(e)}
         >
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-slate-700">Display name</span>
-            <input
-              className={
-                'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
-                (handleError !== null ? 'border-red-400' : 'border-slate-300')
-              }
-              value={handleValue}
-              onChange={(e) => {
-                setHandle(e.target.value)
-                setHandleTouched(true)
-                setHandleError(null)
-              }}
-              placeholder="e.g. Sam at Green Lake"
-              required
-              maxLength={40}
-              autoComplete="nickname"
-            />
-          </label>
+          <div className="flex gap-2">
+            <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
+              <span className="text-slate-700">First name</span>
+              <input
+                className={
+                  'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                  (handleError !== null ? 'border-red-400' : 'border-slate-300')
+                }
+                value={firstNameValue}
+                onChange={(e) => {
+                  setFirstName(e.target.value)
+                  setNameTouched(true)
+                  setHandleError(null)
+                }}
+                placeholder="Sam"
+                required
+                maxLength={40}
+                autoComplete="given-name"
+              />
+            </label>
+            <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
+              <span className="text-slate-700">Last name</span>
+              <input
+                className={
+                  'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ' +
+                  (handleError !== null ? 'border-red-400' : 'border-slate-300')
+                }
+                value={lastNameValue}
+                onChange={(e) => {
+                  setLastName(e.target.value)
+                  setNameTouched(true)
+                  setHandleError(null)
+                }}
+                placeholder="Rivera"
+                maxLength={40}
+                autoComplete="family-name"
+              />
+            </label>
+          </div>
           {handleError ? <p className="text-sm text-red-600">{handleError}</p> : null}
           <button
             type="submit"

@@ -6,6 +6,7 @@ import {
   providerLabel,
   resolveOAuthProviders,
   suggestedHandle,
+  splitSuggestedName,
 } from './oauth'
 
 describe('oauthRedirectTo', () => {
@@ -146,5 +147,58 @@ describe('probeOAuthProvider', () => {
   it('treats a 200 as fine', async () => {
     const fetchImpl = (async () => ({ type: 'basic', ok: true, status: 200 })) as unknown as typeof fetch
     expect(await probeOAuthProvider(url, fetchImpl)).toBeNull()
+  })
+})
+/**
+ * V20 t06: the two name fields on /onboarding's handle step are seeded from
+ * the provider's single full-name string, so the split is a rule that has to
+ * hold — and the failure mode it guards against is a form prefilled with
+ * something the parent never wrote.
+ */
+describe('splitSuggestedName (V20 t06: provider name -> the two fields)', () => {
+  it('splits a two-word name', () => {
+    expect(splitSuggestedName('Sam Rivera')).toEqual({ first: 'Sam', last: 'Rivera' })
+  })
+
+  it('keeps everything after the first word as the last name (middle names survive)', () => {
+    expect(splitSuggestedName('Mary Jo van der Berg')).toEqual({
+      first: 'Mary',
+      last: 'Jo van der Berg',
+    })
+  })
+
+  it('puts a single word in the first name and leaves the last name empty', () => {
+    expect(splitSuggestedName('Sam')).toEqual({ first: 'Sam', last: '' })
+  })
+
+  it('flips a surname-first "Last, First" listing', () => {
+    expect(splitSuggestedName('Rivera, Sam')).toEqual({ first: 'Sam', last: 'Rivera' })
+  })
+
+  it('returns two empty halves for no name at all', () => {
+    expect(splitSuggestedName('')).toEqual({ first: '', last: '' })
+    expect(splitSuggestedName('   ')).toEqual({ first: '', last: '' })
+  })
+
+  it('collapses whitespace and trims before splitting', () => {
+    expect(splitSuggestedName('  Sam   Rivera  ')).toEqual({ first: 'Sam', last: 'Rivera' })
+  })
+
+  it('caps each half at the field\'s own 40-character maxLength', () => {
+    const parts = splitSuggestedName(`${'A'.repeat(60)} ${'B'.repeat(60)}`)
+    expect(parts.first).toHaveLength(40)
+    expect(parts.last).toHaveLength(40)
+  })
+
+  it('round-trips through composeDisplayName for the ordinary shapes', () => {
+    // The two seams are used together on /onboarding (split to seed the fields,
+    // compose to write the handle), so the common cases must survive the trip.
+    for (const name of ['Sam Rivera', 'Mary Jo van der Berg', 'Sam', 'Rivera, Sam']) {
+      const parts = splitSuggestedName(name)
+      const roundTripped = `${parts.first} ${parts.last}`.trim()
+      expect(roundTripped.split(/\s+/).sort().join(' ')).toBe(
+        name.replace(',', '').split(/\s+/).sort().join(' '),
+      )
+    }
   })
 })

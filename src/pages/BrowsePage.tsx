@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { NAV_ICONS, PLACE_KIND_ICONS } from '../components/icons'
+import { NAV_ICONS } from '../components/icons'
 import { PlacesMap } from '../components/PlaceMap'
 import { RadiusEmptyState } from '../components/RadiusEmptyState'
 import { SectionHeader } from '../components/SectionHeader'
@@ -30,17 +30,16 @@ import {
   BROWSE_LIST_LEAD_LIMIT,
   distanceMiles,
   filterPlacesByRadius,
-  framingCircle,
   groupPlacesByKind,
   MAP_FOCUS_RADIUS_MILES,
+  radiusPreviewCircle,
   PLACE_KINDS,
-  placeExternalUrl,
   placeFollowIdSet,
+  placeLearnMoreLink,
   placeIndoorLabel,
   placeKindLabel,
   placePath,
   placeUpcomingLabel,
-  photoCreditLine,
   resolveMapCoords,
   sortPlaces,
 } from '../lib/places'
@@ -125,17 +124,21 @@ import type { Place, PlacePrefill } from '../lib/types'
  * `className` (the prop it already had — no new prop was needed), so the map
  * component itself stays layout-agnostic.
  *
- * V17 t01 (7a): each row is a CONTENT-FORWARD CARD, not a text line. The card
- * leads with a photo slot, the heart (t02) sits at that slot's top-right, and
- * the place's name / kind / distance / address / actions follow beneath it.
- * THERE ARE NO PHOTOS YET — `photo_url` is NULL for every seeded row
- * (`types.ts:307`; third-party photos are deliberately never scraped), and
- * sourcing real ones is t05. So the slot renders the place's KIND
- * ILLUSTRATION (the `PLACE_KIND_ICONS` glyph family in components/icons.ts,
- * the same 24px stroked `currentColor` vocabulary as the nav) and a real photo
- * is an `<img>` swap in the SAME slot when t05 lands. The slot is never a
- * broken image and never an empty box: every one of the ten `PLACE_KINDS`
- * draws a glyph, and an unknown kind falls back to `other`.
+ * V17 t01 (7a): each row is a CONTENT-FORWARD CARD, not a text line: the
+ * place's name and heart (t02) share a header row, and its kind / distance /
+ * address / actions follow beneath.
+ *
+ * V20 t01 RETIRED THE CARD'S PHOTO SLOT. V17 t01 led the card with one (the
+ * founder's Airbnb shape) and V18 filled a curated subset with Wikimedia
+ * Commons photos plus their licence line. The founder's ruling deletes the
+ * idea rather than the maintenance: *"maybe we have to get rid of the image
+ * part of this because I can't police this and fix all the broken images."*
+ * So the card leads with the place's NAME, the heart keeps its place at the
+ * card's top-right (now in the header row, at the same ≥44px size), and the
+ * "Learn more" action links out to the place's own site — or to the derived
+ * OSM map search, labelled as such — instead of showing a picture.
+ * `places.photo_url` and its attribution columns are untouched; only this
+ * file's use of them is gone.
  */
 export function BrowsePage() {
   const { session, loading, profile } = useSessionContext()
@@ -381,10 +384,29 @@ export function BrowsePage() {
     upcoming,
   )
 
-  // The two sections: places we could measure, and places we could not. A
-  // place with no coordinates is NEVER dropped (see the page doc).
+  /**
+   * The two sections: places we could measure, and places we could not. A place
+   * with no coordinates is NEVER dropped (see the page doc).
+   *
+   * `unplaced` IS DERIVED FROM THE SAME ROWS THE LIST RENDERS, not from the raw
+   * pipeline — and that distinction is a real duplicate-card bug this file has
+   * now fixed twice.
+   *
+   * `rows` is the UNFILTERED browse pipeline. `listRows` (below) is what
+   * actually renders — `effectiveRows` when the parent has set a location via
+   * the geocode dialog, `filteredRows` otherwise. When those two disagreed, a
+   * place could be in BOTH: rendered as a card in the lead AND listed again
+   * under "Not on the map yet". The first fix was to stop `effectiveRows`
+   * synthesising `distanceMiles: null` (which dumped every geocoded result into
+   * this bucket); this is the second half, which removes the CLASS of bug rather
+   * than its instance — whatever the list decides to render is also what decides
+   * what is unplaced, so the two can never overlap again.
+   *
+   * (Found by an e2e strict-mode violation: two `place-card-name` elements
+   * reading "Ballard Corners Park". A user sees the same park twice, once with a
+   * distance and once under "not on the map yet", which reads as two places.)
+   */
   const placed = rows.filter((row) => row.distanceMiles !== null)
-  const unplaced = rows.filter((row) => row.distanceMiles === null)
 
   // V12 t05: the overview map's null condition, computed once here so the
   // wrapper card renders only when at least one placed row resolves to a
@@ -395,18 +417,21 @@ export function BrowsePage() {
     .map((row) => resolveMapCoords(row.place, zipCoords))
     .filter((c): c is { lat: number; lng: number } => c !== null)
 
-  // V17 t04: when a search query is active, the map frames THOSE places instead
-  // of the viewer's whole radius. `placed` is already the filtered pipeline's
-  // output — the same array the map DRAWS — so the frame and the markers can
-  // never disagree. The tightening itself is the pure seam's decision
-  // (`framingCircle`), not this page's: an absent/empty list is the pre-t04
-  // radius frame, and no result set can widen the frame past the radius.
+  // V17 t04's `focusPoints` — "when a search query is active, the map frames
+  // THOSE places instead of the viewer's whole radius" — IS GONE, removed by
+  // V20 t05 along with the `framingCircle` call it fed.
   //
-  // The mapping goes through `resolveMapCoords`, exactly like `mappedMarkers`
-  // above, so a row with UNKNOWN coordinates simply contributes no focus point
-  // rather than a `null` the seam would have to defend against.
-  const hasQuery = query.trim() !== ''
-  const focusPoints = hasQuery ? mappedMarkers : []
+  // The founder's ruling for V20 is that the map is framed by the RADIUS the
+  // parent is looking at, and that nothing else moves the camera; the live
+  // preview (`radiusPreviewCircle`) is now the only caller-supplied frame. A
+  // search still narrows what is DRAWN — the query filters the list, and the
+  // markers come from that filtered list — it just no longer zooms the map in
+  // around the matches.
+  //
+  // Recorded rather than deleted silently, because V17 t04's e2e test asserts
+  // the old tightening: that assertion was rewritten in the same slice (see
+  // e2e/places.e2e.ts), and this note is what explains the change to whoever
+  // reads the removed assertion's replacement.
 
   /** V19 t01: how many drawn places fall OUTSIDE the map's neighbourhood frame.
    *
@@ -430,14 +455,39 @@ export function BrowsePage() {
   // is filtered to places within the chosen radius of that center (the pure
   // filterPlacesByRadius seam). The existing browsePlaces pipeline still runs
   // (it feeds the map + the un-geocoded path); this overrides the LIST only.
+  //
+  // V20 — THE DISTANCE IS MEASURED FROM THE GEOCODED CENTER, not nulled.
+  //
+  // This used to build rows with `distanceMiles: null` on the theory that the
+  // geocode path has no per-row distance. Two things were wrong with that, and
+  // the second is a VISIBLE DUPLICATE the founder would have hit:
+  //
+  //  1. `unplaced` below is `rows.filter((row) => row.distanceMiles === null)`
+  //     — "the places we could not measure". Rows synthesised with a null
+  //     distance therefore fall into it, so every geocoded result was rendered
+  //     TWICE: once as a normal card in the lead, and once under "Not on the map
+  //     yet". Found by this batch's e2e run, which failed with a strict-mode
+  //     violation: two `place-card-name` elements reading the same place.
+  //  2. "Distance unknown" on a card while the parent is looking at a map
+  //     centred on the address they just chose is a worse answer than the real
+  //     number, and `sortPlaces`'s 'distance' mode measures from a center for
+  //     exactly this path — so the machinery to compute it was already here.
+  //
+  // `distanceMiles` is now a real measurement from the geocoded center, which
+  // fixes both at once: the rows are no longer null-distance, so they leave the
+  // unplaced bucket, and every card shows a true distance from the pin the
+  // parent set.
   const effectiveRows: PlaceListRow[] = (() => {
     if (geocodeCenter === null) return rows
     const filtered = filterPlacesByRadius(places ?? [], geocodeCenter, radiusMiles, zipCoords)
-    return filtered.map((place) => ({
-      place,
-      distanceMiles: null as number | null,
-      upcomingCount: upcoming === null ? null : (upcoming.get(place.id) ?? 0),
-    }))
+    return filtered.map((place) => {
+      const coords = resolveMapCoords(place, zipCoords)
+      return {
+        place,
+        distanceMiles: coords === null ? null : distanceMiles(geocodeCenter, coords),
+        upcomingCount: upcoming === null ? null : (upcoming.get(place.id) ?? 0),
+      }
+    })
   })()
 
   // V15 ticket 03: the LIST is now alphabetical by default (the founder's A–Z).
@@ -470,6 +520,18 @@ export function BrowsePage() {
   // by radius); the MAP still shows the full placed set (the circle overlay
   // communicates the active filter visually).
   const listRows = geocodeCenter !== null ? effectiveRows : filteredRows
+  /**
+   * V20: the SAME rows the list renders, minus the ones it rendered. Deriving
+   * this from `listRows` rather than from `rows` is what makes the two sections
+   * disjoint BY CONSTRUCTION — see the note on `placed` above.
+   *
+   * It sits BELOW `listRows` for that reason: a declaration that must agree with
+   * a value should read that value, not a parallel expression of it. (The
+   * earlier version was `rows.filter(...)`, which is the unfiltered pipeline —
+   * so any future divergence between the list and `rows` would reopen the
+   * duplicate this fixes.)
+   */
+  const unplaced = listRows.filter((row) => row.distanceMiles === null)
   const leadRows = listRows.slice(0, BROWSE_LIST_LEAD_LIMIT)
   const overflowRows = listRows.slice(BROWSE_LIST_LEAD_LIMIT)
   const leadGroups = groupPlacesByKind(leadRows)
@@ -611,10 +673,7 @@ export function BrowsePage() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <SectionHeader icon={NAV_ICONS.browse} title="Places" tagline="Find a place to gather" />
-        <p className="mt-1 text-sm text-slate-600">
-          Playgrounds, pools, splash pads and indoor options around Seattle.
-        </p>
+        <SectionHeader icon={NAV_ICONS.browse} title="Places" tagline="Find a place to host Drop In" />
       </div>
 
       {placesFailed ? (
@@ -694,7 +753,15 @@ export function BrowsePage() {
               places={placed.map((row) => row.place)}
               zipCoords={zipCoords}
               homePin={homePinCoords}
-              radiusCircle={framingCircle({
+              radiusCircle={radiusPreviewCircle({
+                // V20 t05: the LIVE preview. While the "Set location" dialog is
+                // open the slider drives this, so the circle grows under the
+                // parent's thumb instead of only after "See places" (the
+                // founder's Marketplace comparison). `previewCenter` is the
+                // committed geocode when there is one — the preview then simply
+                // re-scales the circle the parent is already looking at.
+                previewCenter: locationModalOpen ? geocodeCenter : null,
+                previewMiles: radiusMiles,
                 geocodeCenter,
                 homePin: homePinCoords,
                 // V19 t01 (founder ruling D1): the map frames the FOCUS radius,
@@ -704,10 +771,11 @@ export function BrowsePage() {
                 // home pin lost in a blob of markers. The list below still
                 // honours the picked radius via `filterPlacesByRadius`; only the
                 // MAP's frame changed. Do not re-merge these two values.
-                radiusMiles: MAP_FOCUS_RADIUS_MILES,
-                // V17 t04: the searched subset, when a query is active. Empty
-                // (no query, or no matches) is the focus-radius frame.
-                focusPoints,
+                //
+                // V20 t05 keeps that split intact: `previewMiles` above is the
+                // DIALOG's radius and applies only while the dialog is open; the
+                // committed frame stays the neighbourhood view.
+                committedMiles: MAP_FOCUS_RADIUS_MILES,
               })}
             />
           </div>
@@ -1256,10 +1324,11 @@ function PlaceRow({
     navigate('/new', { state: { place: prefill } })
   }
 
-  // V15 ticket 04: the "Learn more" external URL (derived OSM search URL).
-  // Null only when the place has no name; then the row shows inline details
-  // instead of a broken link.
-  const learnMoreUrl = placeExternalUrl(row.place)
+  // V20 t01: "Learn more" — the place's own verified website when the backfill
+  // found one, else the derived OSM search, labelled honestly by `kind`. Null
+  // only when the place has no name AND no URL; then the row shows its details
+  // inline instead of a broken link.
+  const learnMore = placeLearnMoreLink(row.place)
 
   return (
     <Link
@@ -1267,63 +1336,50 @@ function PlaceRow({
       data-testid="place-row"
       className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors hover:bg-slate-50"
     >
-      {/* V17 t01: the PHOTO SLOT, with the heart (V17 t02) at its top-right.
-          The slot is the card's lead — the founder's Airbnb shape (item 7a) —
-          and it is `relative` so the heart can pin to it. `h-32` is the slot's
-          band height: big enough to read as a photo, small enough that six
-          lead cards still scan on a phone.
+      {/* V20 t01: THE PHOTO SLOT IS GONE. V17 t01 led the card with it (the
+          founder's Airbnb shape) and V18 filled a curated subset with Commons
+          photos. The founder's ruling retires the whole idea: *"I can't police
+          this and fix all the broken images."* The slot's second job — holding
+          the heart at a known position — moves to the header row below, which
+          is why the heart is still a ≥44px target in the same corner of the
+          card. The `place-card-photo` testid and `PlacePhotoSlot` no longer
+          exist; the specs that asserted them were updated with this slice. */}
 
-          A real photo is `<img src={row.place.photo_url}>` HERE, in this same
-          slot, when t05 lands. There is no broken image today because there is
-          no `<img>` at all yet: `photo_url` is NULL for every seeded row
-          (`types.ts:307`) and sourcing real photos is t05's job. Rendering an
-          `<img>` whose src is null would be the "broken image" the acceptance
-          criteria forbid, so the fallback is the branch taken, not an error
-          path. */}
-      <div className="relative h-32 w-full">
-        <PlacePhotoSlot place={row.place} />
-        {/* V17 t02, moved but UNCHANGED in behavior: the heart is the EXISTING
-            place follow, rendered ONLY for a signed-in parent — a signed-out
-            visitor sees the card without it (the /place/:id decision, where
-            signed-out gets a sign-in prompt instead of a Follow control).
-
-            `min-h-11 min-w-11` is the measured 44px tap-target floor (the V16
-            t07 control discipline), kept from the previous header. It is a
-            <button> INSIDE the card's <Link>, so the click is
-            preventDefault'd + stopPropagation'd — the card ping toggle's guard
-            — or tapping the heart would also navigate. The opaque background
-            is what keeps the glyph legible over the slot's tint, in both
-            themes the parent might be in; there is no `-m-1` here because the
-            heart now floats on the slot rather than sitting in the card's
-            text padding. */}
-        {canFollow ? (
-          <button
-            type="button"
-            data-testid={`place-heart-${row.place.id}`}
-            aria-pressed={followed}
-            aria-label={
-              followed
-                ? `Following ${row.place.name} — tap to unfollow`
-                : `Follow ${row.place.name}`
-            }
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              onToggleFollow(row.place.id)
-            }}
-            className="absolute right-2 top-2 flex min-h-11 min-w-11 items-center justify-center rounded-full bg-white/95 shadow-sm transition-colors hover:bg-white"
-          >
-            <HeartIcon filled={followed} />
-          </button>
-        ) : null}
-      </div>
-
-      {/* The card's content, below the slot. The padding lives here rather than
-          on the Link so the slot can run edge to edge. */}
+      {/* The card's content. The name + heart share a header row now that there
+          is no photo band for the heart to float over. */}
       <div className="flex flex-col gap-1 p-3">
-        <span data-testid="place-card-name" className="text-sm font-semibold text-slate-900">
-          {row.place.name}
-        </span>
+        <div className="flex items-start justify-between gap-2">
+          <span data-testid="place-card-name" className="text-sm font-semibold text-slate-900">
+            {row.place.name}
+          </span>
+          {/* V17 t02, behaviour unchanged by V20 t01's move: the heart is the
+              EXISTING place follow, rendered ONLY for a signed-in parent.
+
+              `min-h-11 min-w-11` is the measured 44px tap-target floor (the V16
+              t07 control discipline). It is a <button> INSIDE the card's
+              <Link>, so the click is preventDefault'd + stopPropagation'd — or
+              tapping the heart would also navigate. */}
+          {canFollow ? (
+            <button
+              type="button"
+              data-testid={`place-heart-${row.place.id}`}
+              aria-pressed={followed}
+              aria-label={
+                followed
+                  ? `Following ${row.place.name} — tap to unfollow`
+                  : `Follow ${row.place.name}`
+              }
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onToggleFollow(row.place.id)
+              }}
+              className="-mr-1 -mt-1 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-slate-100"
+            >
+              <HeartIcon filled={followed} />
+            </button>
+          ) : null}
+        </div>
         <span className="text-xs text-slate-600">
           {placeKindLabel(row.place.kind)} · {placeIndoorLabel(row.place)}
           {' · '}
@@ -1335,25 +1391,36 @@ function PlaceRow({
         {upcomingLabel !== null ? (
           <span className="text-xs font-medium text-indigo-700">{upcomingLabel}</span>
         ) : null}
-        {/* V15 ticket 04: the two row actions (AC4) — compact, below the meta. */}
+        {/* V15 ticket 04: the two row actions (AC4) — compact, below the meta.
+            V20 t01: "Learn more" is now the SEAM's answer rather than a bare
+            OSM search — `placeLearnMoreLink` returns the operator's own site
+            when the backfill verified one, and the derived map search when it
+            did not. The label follows the kind, so the row never claims a map
+            search is the place's website. */}
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <button
             type="button"
             data-testid={`row-start-dropin-${row.place.id}`}
             onClick={(e) => startDropIn(e)}
-            className="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-indigo-700"
+            className="min-h-11 rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-indigo-700"
           >
             Start a drop-in
           </button>
-          {learnMoreUrl !== null ? (
+          {learnMore !== null ? (
             <a
-              href={learnMoreUrl}
+              href={learnMore.url}
               target="_blank"
               rel="noopener"
               data-testid={`row-learn-more-${row.place.id}`}
-              className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"
+              data-link-kind={learnMore.kind}
+              onClick={(e) => {
+                // The card is itself a <Link>: without this the tap would open
+                // the external site AND navigate to /place/:id behind it.
+                e.stopPropagation()
+              }}
+              className="flex min-h-11 items-center rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"
             >
-              Learn more
+              {learnMore.kind === 'website' ? 'Visit website' : 'Find it on the map'}
             </a>
           ) : (
             <span className="text-xs text-slate-500">
@@ -1366,101 +1433,6 @@ function PlaceRow({
         </div>
       </div>
     </Link>
-  )
-}
-
-/**
- * V17 t01: the card's photo slot — the photo when there is one, the place's
- * KIND illustration when there is not.
- *
- * Today there never is one: `Place.photo_url` is NULL for all 239 seeded rows
- * (`types.ts:307`), and t05 is the separate batch that sources real photos.
- * So this renders the fallback branch, and it renders it DELIBERATELY — a
- * tinted panel plus the kind's glyph in the repo's own stroked 24px family
- * (`PLACE_KIND_ICONS`, `components/icons.ts`), never a broken image and never
- * an empty box.
- *
- * `data-testid="place-card-photo"` marks the slot itself, so the slot's
- * presence is assertable independently of which branch it took; `data-photo`
- * records which branch that was, which is how a spec (or t05) tells them
- * apart without reading private DOM structure.
- *
- * The glyph is wrapped in `aria-hidden` and labelled by the slot's
- * `aria-label`: a decorative drawing should not be announced, but the slot
- * still says what it is to a screen reader.
- *
- * V18 t04: the real branch also renders its CREDIT LINE. The photos come from
- * Wikimedia Commons under CC BY / CC BY-SA / CC0, and the first two require
- * attribution as a condition of use — so this is licence compliance, not
- * decoration. It is rendered as TEXT, deliberately, and NOT as a link to the
- * source page: the slot lives inside the card's own `<Link>`, and an `<a>`
- * inside an `<a>` is invalid HTML that browsers resolve unpredictably (and
- * which breaks keyboard navigation). The full source page is reachable from
- * the place detail page instead. The line itself is computed by the
- * `photoCreditLine` seam (`lib/places.ts`), so this component decides nothing.
- */
-function PlacePhotoSlot({ place }: { place: Place }) {
-  const label = `${placeKindLabel(place.kind)} illustration`
-  if (place.photo_url !== null && place.photo_url !== '') {
-    const credit = photoCreditLine(place)
-    return (
-      <>
-        <img
-          src={place.photo_url}
-          alt={place.name}
-          data-testid="place-card-photo"
-          data-photo="real"
-          loading="lazy"
-          className="h-full w-full object-cover"
-        />
-        {credit !== null ? (
-          // `aria-hidden` is honest here: the same attribution is available as
-          // real text on the place detail page, and this corner label is a
-          // visual credit on a decorative-ish photo whose `alt` already names
-          // the place. Announcing it would interrupt the card's own label with
-          // a photographer's handle on every row of a 239-row list.
-          <span
-            aria-hidden="true"
-            data-testid="place-card-photo-credit"
-            className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/70 to-transparent px-2 pb-1 pt-3 text-[10px] leading-tight text-white/90"
-          >
-            {credit}
-          </span>
-        ) : null}
-      </>
-    )
-  }
-  // The per-kind glyph. An unknown kind is not an empty box: it falls back to
-  // the `other` pin, which is exactly what `other` is for.
-  const glyph = PLACE_KIND_ICONS[place.kind as keyof typeof PLACE_KIND_ICONS]
-  const path = glyph ?? PLACE_KIND_ICONS.other
-  return (
-    <div
-      data-testid="place-card-photo"
-      data-photo="kind"
-      // `role="img"` is LOAD-BEARING, not decoration. ARIA-in-HTML ignores
-      // `aria-label` on a generic element with no role, so without this the
-      // label below is never announced — the comment's promise that "the slot
-      // still says what it is to a screen reader" was silently false. The role
-      // is honest here: the slot IS a drawn illustration, and it makes the
-      // label take effect. Found by the `ocr` review lane.
-      role="img"
-      aria-label={label}
-      className="flex h-full w-full items-center justify-center bg-gradient-to-br from-indigo-50 via-slate-50 to-emerald-50"
-    >
-      <svg
-        viewBox="0 0 24 24"
-        aria-hidden="true"
-        className="h-12 w-12 text-indigo-400"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d={path} />
-      </svg>
-    </div>
   )
 }
 

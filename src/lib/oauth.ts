@@ -130,3 +130,52 @@ export function suggestedHandle(
   }
   return ''
 }
+
+/**
+ * V20 t06 — split a SUGGESTED full name into the two name fields.
+ *
+ * `/onboarding`'s handle step used to be one "Display name" box seeded with
+ * `suggestedHandle`'s answer whole ("Sam Rivera"). V20 t06 turned that step
+ * into the same FIRST NAME + LAST NAME pair the signup form now uses, so the
+ * suggestion has to be taken apart to seed them — and the provider hands us one
+ * string, so the split has to be decided somewhere testable.
+ *
+ * The rules, in order, each a deliberate choice:
+ *
+ *  1. **No name at all → both empty.** The fields stay blank rather than
+ *     prefilled with the email's local part: "sam.rivera@gmail.com" is not a
+ *     name, and splitting it on the dot would put halves in a form the parent
+ *     never wrote.
+ *  2. **One word → the FIRST name only**, last name empty. The last name field
+ *     is optional (the composed handle is valid with either half), and guessing
+ *     that "Sam" is a surname would be inventing data.
+ *  3. **Two or more words → the first word, and EVERYTHING AFTER IT.** So
+ *     "Mary Jo van der Berg" becomes "Mary" + "Jo van der Berg" rather than
+ *     losing the middle names.
+ *  4. **A comma flips the order**: "Rivera, Sam" is a SURNAME-first listing, so
+ *     the part before the comma is the last name. This is the one shape where
+ *     taking word 1 as the first name would be reliably wrong.
+ *
+ * The 40-character cap on each half matches the inputs' own `maxLength` in the
+ * two forms; it is applied here so a 60-character provider name cannot arrive
+ * as a value the field would reject.
+ */
+export function splitSuggestedName(suggested: string): { first: string; last: string } {
+  const name = suggested.replace(/\s+/g, ' ').trim()
+  if (name === '') return { first: '', last: '' }
+
+  const comma = name.indexOf(',')
+  if (comma > 0) {
+    // "Rivera, Sam" — surname first, so the halves swap.
+    return {
+      first: name.slice(comma + 1).trim().slice(0, 40),
+      last: name.slice(0, comma).trim().slice(0, 40),
+    }
+  }
+
+  const parts = name.split(' ')
+  return {
+    first: (parts[0] ?? '').slice(0, 40),
+    last: parts.slice(1).join(' ').slice(0, 40),
+  }
+}

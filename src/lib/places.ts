@@ -419,6 +419,118 @@ export function placeExternalUrl(place: Pick<Place, 'name'>): string | null {
 }
 
 /**
+ * V20 t01 — WHERE "Learn more" ACTUALLY GOES.
+ *
+ * The founder's ruling, in their words: *"instead of using images, we just try
+ * to link to the website for that place so people can learn more about it…
+ * maybe we have to get rid of the image part of this because I can't police
+ * this and fix all the broken images."*
+ *
+ * The directory's 239 rows were scraped from the city's open data and NO
+ * source field carried an operator website, so `places.website_url` starts
+ * empty for nearly every row. This seam is what keeps that from being a dead
+ * button, and its precedence is the whole of the decision:
+ *
+ *   1. **A stored, fetchable `website_url` wins.** It is the place's own site —
+ *      the thing a parent actually wants — and it is only ever written by the
+ *      reviewed backfill, never by a user.
+ *   2. **Otherwise the OSM search link** (`placeExternalUrl`). It is not the
+ *      operator's site, so it is *labelled as a map search* by the caller
+ *      rather than dressed up as the official page. A generic-but-honest link
+ *      beats a broken one, and it beats a button that does nothing.
+ *   3. **No name and no URL → null.** A place we cannot search for anywhere has
+ *      no "learn more" to offer, and the caller renders nothing rather than an
+ *      `href=""` (the same rule the photo credit's source link follows).
+ *
+ * WHY `http`/`https` IS CHECKED AND NOT JUST "non-empty": the column is text
+ * with no CHECK constraint (the 0021 lesson — no DB-level shape for a value a
+ * human hand-corrects later), so a row could hold anything. A `javascript:`
+ * value rendered into an `href` is an injection vector, and the caller puts
+ * this straight into an anchor. Only a well-formed http(s) URL is accepted;
+ * anything else falls through to the search link exactly as a NULL would.
+ *
+ * The `kind` of link is returned ALONGSIDE the URL, because the button's label
+ * depends on it ("Visit website" vs "Find it on the map") and that is a
+ * decision, not a render detail — the build law's split, expressed as a return
+ * shape so a caller cannot pair the wrong label with the wrong href.
+ */
+export interface PlaceLearnMoreLink {
+  url: string
+  /** 'website' = the place's own site; 'map-search' = the derived OSM search. */
+  kind: 'website' | 'map-search'
+}
+
+export function placeLearnMoreLink(
+  place: Pick<Place, 'name'> & { website_url?: string | null },
+): PlaceLearnMoreLink | null {
+  const stored = (place.website_url ?? '').trim()
+  if (stored !== '' && /^https?:\/\/\S+$/i.test(stored)) {
+    return { url: stored, kind: 'website' }
+  }
+  const search = placeExternalUrl(place)
+  return search === null ? null : { url: search, kind: 'map-search' }
+}
+
+/**
+ * V20 t05 — how big the drawn radius circle is while the parent is still
+ * DRAGGING the slider in "Set location", in miles.
+ *
+ * The founder's ask: *"when you click on set location and you drag the radius,
+ * it should expand or grow the red circle in real time over the map. So you can
+ * see how much that takes up over the map. This is what Facebook Marketplace
+ * does."*
+ *
+ * BEFORE THIS: the circle was `framingCircle({ geocodeCenter, … })`, and
+ * `geocodeCenter` is only ever set by pressing "See places" — so dragging the
+ * slider changed a number in the dialog and moved nothing on the map behind it.
+ * The parent had to guess, commit, and look.
+ *
+ * THE PRECEDENCE, and why it is this way round:
+ *
+ *   1. **A live preview wins when there is one.** Dragging is the action the
+ *      parent is performing RIGHT NOW; the map must answer it.
+ *   2. **Otherwise the pinned centre**, unchanged — the pre-t05 behaviour, byte
+ *      for byte. Closing the dialog clears the preview and the map returns to
+ *      whatever the committed centre says.
+ *
+ * THE CENTRE IS `previewCenter` AND NOT THE COMMITTED ONE, deliberately. A
+ * preview exists before any geocode has succeeded *for this address*, so
+ * anchoring it on a previously committed centre would draw the new radius
+ * around the wrong part of the city — a circle that is precise and wrong, which
+ * is worse than no circle.
+ *
+ * A preview whose radius is not a usable positive number, or whose centre is
+ * not finite, is IGNORED (the caller's pinned centre is returned): this value
+ * comes off an `<input type="range">` and a NaN reaching `L.circle` blanks the
+ * layer. Returning null when there is neither is the existing contract — "no
+ * circle to frame", and the map keeps its mount view.
+ */
+export function radiusPreviewCircle(input: {
+  /** The centre the parent is previewing against, or null when there is none. */
+  previewCenter: { lat: number; lng: number } | null
+  /** The radius in miles currently selected in the dialog. */
+  previewMiles: number
+  /** The committed geocoded centre (set by "See places"), or null. */
+  geocodeCenter: { lat: number; lng: number } | null
+  /** The viewer's home pin, the fallback anchor. */
+  homePin: { lat: number; lng: number } | null
+  /** The radius for the committed/home frame — the map's focus radius. */
+  committedMiles: number
+}): FramingCircle | null {
+  const { previewCenter, previewMiles, geocodeCenter, homePin, committedMiles } = input
+  if (
+    previewCenter !== null &&
+    Number.isFinite(previewCenter.lat) &&
+    Number.isFinite(previewCenter.lng) &&
+    Number.isFinite(previewMiles) &&
+    previewMiles > 0
+  ) {
+    return { center: previewCenter, radiusMiles: previewMiles }
+  }
+  return framingCircle({ geocodeCenter, homePin, radiusMiles: committedMiles })
+}
+
+/**
  * V18 t04: the credit line to render over a place photo, or null when there is
  * nothing to credit.
  *
@@ -1051,6 +1163,61 @@ export const MIN_FOCUS_RADIUS_MILES = 0.5
  * via `framingCircle`'s `focusPoints`); this is the ceiling it can never exceed.
  */
 export const MAP_FOCUS_RADIUS_MILES = 1
+
+/**
+ * V20 t05 — the zoom that frames a given radius on a roughly 250px-tall map
+ * pane, so the live preview STARTS sensibly on screen.
+ *
+ * THE PROBLEM THIS SOLVES. With the camera no longer fitting the circle, a
+ * circle is drawn at its true geographic size — correct, and the whole point,
+ * but it means a 30-mile radius on a map left at neighbourhood zoom is a
+ * circle far larger than the pane, and a 1-mile radius is a dot. Opening the
+ * "Set location" dialog therefore has to place the camera SOMEWHERE sensible
+ * for the radius in hand.
+ *
+ * The arithmetic, stated so it can be checked rather than trusted:
+ *
+ *   - At zoom level `z`, a 256px Web-Mercator tile covers
+ *     `360 / 2^z` degrees of longitude, so one pixel covers
+ *     `360 / (2^z * 256)` degrees.
+ *   - At Seattle's latitude the north-south scale is the same as the east-west
+ *     one in Mercator (that is what conformal means), and one degree of
+ *     latitude is ~69 miles.
+ *   - So one pixel is `360 * 69 / (2^z * 256)` miles, and the miles that fit
+ *     across `panePx` pixels are `69 * panePx * 360 / (2^z * 256)`.
+ *
+ * Inverting that for a target radius gives the level below. The result is
+ * CLAMPED to [0, 19] — Leaflet's own `maxZoom` for the OSM tile layer is 19,
+ * and a negative zoom would ask for tiles that do not exist. A non-positive or
+ * non-finite radius falls back to the neighbourhood zoom rather than returning
+ * `NaN`, which would blank the layer.
+ *
+ * `panePx` defaults to 250 — the map's own `h-64` (256px) less a little for the
+ * attribution bar. It is a parameter rather than a hard-coded constant so the
+ * arithmetic is testable at other sizes without a browser.
+ *
+ * This value is a STARTING POINT ONLY: it is applied when the preview's radius
+ * changes, and the parent is then free to zoom the map themselves — the circle
+ * redraws at whatever zoom they chose, which is what makes it a measuring tool.
+ */
+export function zoomForRadius(radiusMiles: number, panePx = 250): number {
+  if (!Number.isFinite(radiusMiles) || radiusMiles <= 0 || !(panePx > 0)) {
+    return DETAIL_ZOOM_FALLBACK
+  }
+  // The zoom at which the radius exactly fills half the pane (the diameter of
+  // the circle spans the pane, so the whole circle is comfortably visible).
+  const milesPerPixelWanted = (2 * radiusMiles) / panePx
+  const zoom = Math.log2((360 * 69) / (256 * milesPerPixelWanted))
+  return Math.max(0, Math.min(19, zoom))
+}
+
+/**
+ * The zoom used when there is nothing sensible to frame — the same detail zoom
+ * the single-place map uses. Kept as a named constant here because
+ * `zoomForRadius` returns it and the component seeds its zoom state with it;
+ * two copies of "13" would drift.
+ */
+export const DETAIL_ZOOM_FALLBACK = 13
 
 /**
  * V17 t02: which PLACES the caller follows, as a plain id set — what a browse

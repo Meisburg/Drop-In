@@ -38,13 +38,8 @@
  */
 import { expect, test } from '@playwright/test'
 import {
-  editTitle,
-  localDatePlusDays,
-  readMarkerMeta,
-  readMarkerSession,
-  readSupabaseEnv,
-  settleOnRoute,
-  stepStartTimeOnce,
+  editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
+  readSupabaseEnv, settleOnRoute, signUpViewer, stepStartTimeOnce,
 } from './fixtures'
 
 test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no "+N")', async ({
@@ -96,12 +91,13 @@ test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no 
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()
-  await viewerPage.goto('/login')
-  await viewerPage.getByRole('button', { name: 'New here? Create an account' }).click()
-  await viewerPage.locator('input[autocomplete="nickname"]').fill(viewerName)
-  await viewerPage.locator('input[type="email"]').fill(viewerEmail)
-  await viewerPage.locator('input[type="password"]').fill(viewerPassword)
-  await viewerPage.getByRole('button', { name: 'Create account' }).click()
+  // V20 t06: signup is first + last name + address now — one shared helper
+  // (`signUpViewer`) so the form's field list lives in one place.
+  await signUpViewer(viewerPage, {
+    name: viewerName,
+    email: viewerEmail,
+    password: viewerPassword,
+  })
 
   // The viewer's location step (the same REST write a real user gets).
   await viewerPage.getByRole('heading', { name: 'Set your location' }).waitFor()

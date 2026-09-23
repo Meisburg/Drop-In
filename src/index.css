@@ -245,3 +245,57 @@ h3 {
     line-height: 44px;
   }
 }
+/* ---------------------------------------------------------------------------
+ * V20 t03: the MAP POPUP — the bubble that opens on a marker tap.
+ *
+ * Leaflet's own popup is styled for a desktop map: 12px padding, 13px type, and
+ * a 12px close button. All three are too small for this app's measured floors
+ * (44px tap targets, 16px inputs) and for the fact that the popup now carries
+ * the primary action — "Start a drop-in" — rather than a caption.
+ *
+ * Deliberately UNLAYERED, like the zoom-control rule above: this is Leaflet's
+ * own markup, so the app's `min-h-11` helper cannot reach the close button, and
+ * an unlayered declaration outranks leaflet.css without `!important`.
+ *
+ * `.place-popup` is the class the component passes to `L.popup({ className })`,
+ * so these rules apply ONLY to this app's popups and not to any Leaflet default
+ * one that might appear elsewhere.
+ * ------------------------------------------------------------------------- */
+.place-popup .leaflet-popup-content-wrapper {
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 16px rgb(15 23 42 / 0.18);
+}
+
+.place-popup .leaflet-popup-content {
+  /* Leaflet sets a fixed margin; the portaled content owns its own padding. */
+  margin: 10px 12px;
+  line-height: 1.35;
+}
+
+/* The ✕ is a real tap target on a phone, not a 12px glyph.
+ *
+ * THE DOUBLED CLASS IS LOAD-BEARING, and it was measured rather than assumed.
+ * Leaflet ships `.leaflet-popup a.leaflet-popup-close-button` — a class AND a
+ * type in one selector — and leaflet.css is bundled AFTER this file, so a
+ * single-class rule of ours loses on source order even though it reads as more
+ * specific. The first version of this rule did exactly that and the probe
+ * measured the button at 24px, not 44px. `.place-popup.leaflet-popup` is two
+ * classes on the SAME element (the component passes `className: 'place-popup'`
+ * to a popup that already carries `leaflet-popup`), which outranks Leaflet's
+ * class+type pair outright and needs no `!important`.
+ *
+ * `a.` is kept on the target for the same reason: matching the shape of the
+ * rule being overridden is what makes the comparison easy to re-derive. */
+.place-popup.leaflet-popup a.leaflet-popup-close-button {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  font-size: 22px;
+  line-height: 44px;
+  text-align: center;
+  color: #64748b;
+}
+
+.place-popup.leaflet-popup a.leaflet-popup-close-button:hover {
+  color: #0f172a;
+}

@@ -22,7 +22,11 @@ import {
   placePickPatch,
   placeUpcomingLabel,
   placeExternalUrl,
+  placeLearnMoreLink,
   photoCreditLine,
+  radiusPreviewCircle,
+  zoomForRadius,
+  DETAIL_ZOOM_FALLBACK,
   placeFollowIdSet,
   PLACE_BROWSE_LIMIT,
   PLACE_SUGGESTION_LIMIT,
@@ -682,6 +686,215 @@ describe('placeExternalUrl (V15 ticket 04: the "Learn more" link\'s derived OSM 
 
   it('returns null for a whitespace-only name', () => {
     expect(placeExternalUrl({ name: '   ' })).toBeNull()
+  })
+})
+
+/**
+ * V20 t01 — the "Learn more" destination, and the reason the place page no
+ * longer depends on a photo to say anything about a place.
+ *
+ * The precedence is the whole contract: a stored operator site wins, the
+ * derived map search is the honest fallback, and a place with neither a site
+ * nor a name gets nothing at all.
+ */
+describe('placeLearnMoreLink (V20 t01: the stored website, else the map search)', () => {
+  it('prefers the stored website_url and reports it as a website', () => {
+    expect(
+      placeLearnMoreLink({ name: 'Green Lake Park', website_url: 'https://www.seattle.gov/parks/greenlake' }),
+    ).toEqual({ url: 'https://www.seattle.gov/parks/greenlake', kind: 'website' })
+  })
+
+  it('falls back to the derived OSM search when website_url is null', () => {
+    expect(placeLearnMoreLink({ name: 'Green Lake Park', website_url: null })).toEqual({
+      url: placeExternalUrl({ name: 'Green Lake Park' }),
+      kind: 'map-search',
+    })
+  })
+
+  it('falls back when website_url is absent entirely (a pre-0048 row)', () => {
+    expect(placeLearnMoreLink({ name: 'Alki Playground' })?.kind).toBe('map-search')
+  })
+
+  it('treats a whitespace-only website_url as missing, not as a link', () => {
+    expect(placeLearnMoreLink({ name: 'Alki Playground', website_url: '   ' })?.kind).toBe(
+      'map-search',
+    )
+  })
+
+  it('rejects a non-http(s) value and falls back — the column has no DB CHECK, so it can hold anything', () => {
+    // The caller puts this straight into an <a href>. A `javascript:` value is
+    // an injection vector; it must never reach the anchor.
+    for (const bad of ['javascript:alert(1)', 'ftp://x/y', 'seattle.gov/parks', '//evil.example']) {
+      expect(
+        placeLearnMoreLink({ name: 'Green Lake Park', website_url: bad })?.kind,
+        `"${bad}" must not be treated as the place's website`,
+      ).toBe('map-search')
+    }
+  })
+
+  it('accepts http as well as https (an operator site that never got a certificate is still the site)', () => {
+    expect(
+      placeLearnMoreLink({ name: 'X', website_url: 'http://example.org/visit' }),
+    ).toEqual({ url: 'http://example.org/visit', kind: 'website' })
+  })
+
+  it('returns null when there is neither a usable URL nor a name to search', () => {
+    expect(placeLearnMoreLink({ name: '', website_url: null })).toBeNull()
+    expect(placeLearnMoreLink({ name: '   ', website_url: 'javascript:x' })).toBeNull()
+  })
+})
+
+/**
+ * V20 t05 — the live radius preview. The founder's Marketplace comparison: the
+ * circle must grow while the slider is being dragged, not only after "See
+ * places" is pressed.
+ */
+/**
+ * V20 t05 — the zoom that frames a radius. This exists because the circle can
+ * no longer be framed by `fitBounds`: fitting the bounds rescales the camera to
+ * the circle, so the circle renders at a near-constant pixel size and the
+ * parent cannot see the radius growing at all (measured: 1 mi and 30 mi both
+ * drew a 125px circle). The camera has to be placed by arithmetic instead.
+ */
+describe('zoomForRadius (V20 t05: where the camera starts for a radius)', () => {
+  it('zooms IN for a small radius and OUT for a large one', () => {
+    expect(zoomForRadius(1)).toBeGreaterThan(zoomForRadius(5))
+    expect(zoomForRadius(5)).toBeGreaterThan(zoomForRadius(30))
+  })
+
+  it('is monotonically decreasing across the app\'s whole radius ladder', () => {
+    const ladder = [1, 2, 5, 10, 20, 35]
+    const zooms = ladder.map((m) => zoomForRadius(m))
+    for (let i = 1; i < zooms.length; i += 1) {
+      expect(zooms[i], `zoom must fall as the radius grows (at ${ladder[i]} mi)`).toBeLessThan(
+        zooms[i - 1]!,
+      )
+    }
+  })
+
+  it('produces a usable zoom level for every radius the app offers', () => {
+    // Leaflet's tile layer is capped at maxZoom 19, and a negative zoom asks for
+    // tiles that do not exist — neither may escape this function.
+    for (const miles of [1, 2, 5, 10, 20, 35]) {
+      const z = zoomForRadius(miles)
+      expect(z, `${miles} mi must yield a real zoom`).toBeGreaterThanOrEqual(0)
+      expect(z, `${miles} mi must stay within the tile layer's maxZoom`).toBeLessThanOrEqual(19)
+    }
+  })
+
+  it('keeps the circle on screen: the radius spans about half the pane at the chosen zoom', () => {
+    // The arithmetic's own contract, checked against itself so a sign error or a
+    // dropped constant is caught rather than merely re-stated.
+    const panePx = 250
+    for (const miles of [1, 5, 30]) {
+      const z = zoomForRadius(miles, panePx)
+      const milesPerPixel = (360 * 69) / (Math.pow(2, z) * 256)
+      const radiusPx = miles / milesPerPixel
+      expect(
+        radiusPx,
+        `${miles} mi should render at roughly half the ${panePx}px pane (got ${Math.round(radiusPx)}px)`,
+      ).toBeGreaterThan(panePx * 0.25)
+      expect(radiusPx).toBeLessThan(panePx * 1.5)
+    }
+  })
+
+  it('falls back to the detail zoom for a radius that cannot be framed', () => {
+    for (const bad of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(zoomForRadius(bad)).toBe(DETAIL_ZOOM_FALLBACK)
+    }
+    expect(zoomForRadius(5, 0)).toBe(DETAIL_ZOOM_FALLBACK)
+  })
+
+  it('answers a larger radius with a larger geographic span at the same zoom', () => {
+    // The claim the e2e spec makes on the real map, as arithmetic: holding the
+    // zoom fixed, 30 miles of radius IS 30 times 1 mile of pixels.
+    const z = 12
+    const milesPerPixel = (360 * 69) / (Math.pow(2, z) * 256)
+    const oneMilePx = 1 / milesPerPixel
+    const thirtyMilePx = 30 / milesPerPixel
+    expect(thirtyMilePx / oneMilePx).toBeCloseTo(30, 6)
+  })
+})
+
+describe('radiusPreviewCircle (V20 t05: the circle follows the slider)', () => {
+  const HOME = { lat: 47.66757, lng: -122.37789 }
+  const PINNED = { lat: 47.6805, lng: -122.3267 }
+
+  it('uses the live preview centre + radius when one is present', () => {
+    expect(
+      radiusPreviewCircle({
+        previewCenter: PINNED,
+        previewMiles: 12,
+        geocodeCenter: null,
+        homePin: HOME,
+        committedMiles: MAP_FOCUS_RADIUS_MILES,
+      }),
+    ).toEqual({ center: PINNED, radiusMiles: 12 })
+  })
+
+  it('grows the returned radius as the miles grow — the whole point of the slice', () => {
+    const at = (miles: number) =>
+      radiusPreviewCircle({
+        previewCenter: PINNED,
+        previewMiles: miles,
+        geocodeCenter: null,
+        homePin: HOME,
+        committedMiles: MAP_FOCUS_RADIUS_MILES,
+      })?.radiusMiles ?? 0
+    expect(at(1)).toBeLessThan(at(5))
+    expect(at(5)).toBeLessThan(at(30))
+  })
+
+  it('falls back to the committed frame when there is no preview at all (the pre-t05 return)', () => {
+    expect(
+      radiusPreviewCircle({
+        previewCenter: null,
+        previewMiles: 12,
+        geocodeCenter: PINNED,
+        homePin: HOME,
+        committedMiles: MAP_FOCUS_RADIUS_MILES,
+      }),
+    ).toEqual(framingCircle({ geocodeCenter: PINNED, homePin: HOME, radiusMiles: MAP_FOCUS_RADIUS_MILES }))
+  })
+
+  it('ignores a non-finite or non-positive preview radius rather than blanking the layer', () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, 0, -3]) {
+      const result = radiusPreviewCircle({
+        previewCenter: PINNED,
+        previewMiles: bad,
+        geocodeCenter: null,
+        homePin: HOME,
+        committedMiles: MAP_FOCUS_RADIUS_MILES,
+      })
+      expect(result, `radius ${bad} must not be drawn`).toEqual({
+        center: HOME,
+        radiusMiles: MAP_FOCUS_RADIUS_MILES,
+      })
+    }
+  })
+
+  it('ignores a non-finite preview centre', () => {
+    expect(
+      radiusPreviewCircle({
+        previewCenter: { lat: Number.NaN, lng: -122 },
+        previewMiles: 5,
+        geocodeCenter: null,
+        homePin: HOME,
+        committedMiles: MAP_FOCUS_RADIUS_MILES,
+      }),
+    ).toEqual({ center: HOME, radiusMiles: MAP_FOCUS_RADIUS_MILES })
+  })
+
+  it('returns null when there is neither a preview nor any pinned anchor', () => {
+    expect(
+      radiusPreviewCircle({
+        previewCenter: null,
+        previewMiles: 5,
+        geocodeCenter: null,
+        homePin: null,
+        committedMiles: MAP_FOCUS_RADIUS_MILES,
+      }),
+    ).toBeNull()
   })
 })
 

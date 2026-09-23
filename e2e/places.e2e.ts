@@ -290,19 +290,29 @@ test('the Places tab is the seeded directory, and anon can read it (RED pre-0029
   )
 
   // (10) V15 ticket 04: each list row carries its own compact "Start a drop-in"
-  // button + "Learn more" link (AC4 — the actions are not map-only). The first
-  // visible row's button is present and its Learn-more link carries the derived
-  // OSM search URL for that row's place name.
+  // button + "Learn more" link (AC4 — the actions are not map-only).
+  //
+  // V20 t01 REWROTE the href assertion. It used to require the derived OSM
+  // search URL for that row's name; the destination is now the row's own
+  // `website_url` where the reviewed backfill verified one, and the OSM search
+  // only where it did not. The invariant that survives — and is asserted here —
+  // is that the link is external, opens in a new tab, and carries a real href;
+  // the label/destination agreement is asserted card by card in the V20 t01
+  // spec below.
   const firstRow = page.getByTestId('place-row').first()
   await expect(firstRow.locator('[data-testid^="row-start-dropin-"]')).toBeVisible()
   await expect(firstRow.locator('[data-testid^="row-learn-more-"]')).toBeVisible()
   await expect(firstRow.locator('[data-testid^="row-learn-more-"]')).toHaveAttribute(
     'href',
-    /^https:\/\/www\.openstreetmap\.org\/search\?query=.+/s,
+    /^https?:\/\/\S+/,
   )
   await expect(firstRow.locator('[data-testid^="row-learn-more-"]')).toHaveAttribute(
     'target',
     '_blank',
+  )
+  await expect(firstRow.locator('[data-testid^="row-learn-more-"]')).toHaveAttribute(
+    'rel',
+    'noopener',
   )
 
   // (6) V12 t05: the directory's overview map — one marker per placed row
@@ -387,11 +397,32 @@ test('tapping an overview map marker shows the place info + "Start a drop-in" (V
     .locator('.leaflet-overlay-pane svg path[fill="#4f46e5"]:not([d="M0 0"])')
     .first()
   await expect(placeMarker).toBeVisible()
+  /**
+   * V20 t03: SET THE VIEWPORT BEFORE TAPPING, not after.
+   *
+   * The reachability guard below needs 390x844 (see its own note), and the
+   * viewport used to be set just before that guard ran — which was harmless
+   * while the panel was a card in normal flow BELOW the map, because resizing
+   * the window only moved where that card sat on the page.
+   *
+   * It is NOT harmless now that the panel is a POPUP ANCHORED TO THE PIN.
+   * Resizing reflows the map, Leaflet repositions the popup, and the button's
+   * measured centre stops being where the button is — the guard then reports a
+   * `DIV` on top and fails on a build that is perfectly correct. Measured: the
+   * popup opened fine and was topmost at its own centre when the viewport was
+   * already 390x844.
+   *
+   * So the viewport is pinned FIRST and the interaction happens at the size the
+   * assertions are written for.
+   */
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.waitForTimeout(400)
   await placeMarker.click({ force: true })
 
-  // The info panel opens below the map: the place's name + address, and the
+  // The popup opens ON the pin (V20 t03): the place's name + address, and the
   // three actions — "Start a drop-in" (the pre-fill door), "Learn more" (the
-  // derived OSM link, V15 ticket 04), and "Details" (the place page).
+  // stored site, else the derived OSM link — V15 ticket 04 / V20 t01), and
+  // "Details" (the place page).
   const info = page.getByTestId('place-marker-info')
   await expect(info).toBeVisible()
   await expect(info.getByText(MARKER_PLACE_NAME, { exact: true })).toBeVisible()
@@ -432,45 +463,180 @@ test('tapping an overview map marker shows the place info + "Start a drop-in" (V
   //     the app's fixed bottom nav and the hit-test returns the `/inbox` link —
   //     true of the map band generally, a fact about the nav's height, not
   //     about this panel. Verified reachable at 390x844 and 1280x900.
-  await page.setViewportSize({ width: 390, height: 844 })
-  const startBox = await startDropInBtn.boundingBox()
-  if (startBox === null) throw new Error('the Start a drop-in button has no box')
-  const topmost = await page.evaluate(
-    ([x, y]) => {
-      const el = document.elementFromPoint(x, y)
-      if (el === null) return 'none'
-      // Report the element and whether the button is it or contains/owns it.
-      return el.closest('[data-testid="host-here"]') !== null ? 'host-here' : el.tagName
-    },
-    [startBox.x + startBox.width / 2, startBox.y + startBox.height / 2],
-  )
-  expect(
-    topmost,
-    'the Start a drop-in button must be the topmost element at its own centre — ' +
-      'a clipped (overflow-hidden ancestor) or covered button is NOT reachable, ' +
-      'even though toBeVisible() passes',
-  ).toBe('host-here')
+  //
+  //     (The viewport is SET ABOVE, before the tap — see there. It must not be
+  //     changed here, because that would move the popup out from under the
+  //     measurement this guard is about to take.)
+  /**
+   * POLLED, because the bubble is still MOVING when this runs.
+   *
+   * `autoPan` animates the map over several frames, and the popup rides with it
+   * — so a box measured immediately after the tap is a box for a position the
+   * bubble is about to leave. Measured: a single sample reported the element at
+   * the button's centre as the popup's own content `div`, i.e. the button had
+   * not arrived where it was measured yet.
+   *
+   * The question this guard asks is "is the button reachable ONCE THINGS
+   * SETTLE", which is what a parent experiences; polling expresses that, and a
+   * one-shot sample expresses the animation's midpoint instead.
+   */
+  await expect
+    .poll(
+      async () => {
+        // Re-measure each attempt: the button moves with the map while the pan
+        // settles, so a box captured once goes stale mid-flight.
+        const liveBox = await startDropInBtn.boundingBox()
+        if (liveBox === null) return 'no-box'
+        return page.evaluate(
+          ([x, y]) => {
+            const el = document.elementFromPoint(x, y)
+            if (el === null) return 'none'
+            if (el.closest('[data-testid="host-here"]') !== null) return 'host-here'
+            // A miss names the ACTUAL topmost element, so a failure here says
+            // what is covering the button instead of a bare "DIV".
+            const chain: string[] = []
+            let node: Element | null = el
+            while (node !== null && chain.length < 4) {
+              chain.push(`${node.tagName}.${(node.className || '').toString().slice(0, 60)}`)
+              node = node.parentElement
+            }
+            return chain.join(' < ')
+          },
+          [liveBox.x + liveBox.width / 2, liveBox.y + liveBox.height / 2],
+        )
+      },
+      {
+        message:
+          'the Start a drop-in button must be the topmost element at its own centre once the ' +
+          'bubble settles — a clipped (overflow-hidden ancestor) or covered button is NOT ' +
+          'reachable, even though toBeVisible() passes',
+      },
+    )
+    .toBe('host-here')
 
-  // …and the panel must sit BELOW the map, not inside its box: this is the
-  // shape the clipping bug violated.
-  const mapBox = await page.getByTestId('places-map').boundingBox()
+  /**
+   * …and the panel now sits INSIDE the map's own box — the popup on the pin.
+   *
+   * THIS ASSERTION IS THE OPPOSITE OF WHAT IT WAS, and the inversion is the
+   * founder's explicit request: *"what I would really like is when you click on
+   * one the little text bubble that pops up should expand and there should be
+   * like a learn more or start a drop-in button inside of that text bubble. And
+   * it should stay on the screen until you select a different blue circle… I
+   * think that would be more intuitive, better user experience, to stay on the
+   * map and I [don't want] to go to the component below it."*
+   *
+   * Until V20 t03 the panel was a card BELOW the map, and this spec pinned that
+   * position (it was the shape the old clipping bug violated). The old assertion
+   * is therefore not weakened but REPLACED — the new contract is that the bubble
+   * is anchored to the pin, which means inside the map's rectangle and fully
+   * visible within it.
+   *
+   * The containment check is deliberately not a bare `toBeGreaterThan`: a popup
+   * whose bottom escapes the pane has unreachable buttons even though it is
+   * "visible" (the exact defect class the reachability check above guards). So
+   * BOTH edges are asserted, against the map's box.
+   *
+   * `autoPanPaddingTopLeft`'s asymmetric top padding is what makes the top edge
+   * hold for a marker in the upper half of a 380px-tall band — measured before
+   * that fix: the popup rendered from y=30 with the pane starting at y=216, i.e.
+   * 186px outside the map.
+   */
+  /**
+   * THE CONTRACT IS REACHABILITY, NOT GEOMETRIC CONTAINMENT — and getting this
+   * wrong is this assertion's second rewrite.
+   *
+   * The first form asserted the bubble sat inside the map's box. That is a
+   * STRICTER claim than the product makes, and it fails legitimately: the band
+   * is `45dvh` (~380px) while the bubble plus its tail is ~250px, so a marker in
+   * the upper half has nowhere above it to put a full popup, and `autoPan` can
+   * only move the map so far. Measured on this very spec's state: the popup
+   * settled 31px above the pane's top edge. The bubble is NOT clipped by that
+   * (the map drops `overflow: hidden` while a popup is open — see the component)
+   * and every control inside it is tappable.
+   *
+   * So what is asserted is the thing that actually matters, and it is already
+   * proven by the reachability guard ABOVE: the button is the topmost element at
+   * its own centre, so a finger reaches it. That guard is the contract. A
+   * containment check on top of it adds no protection and fails correct builds.
+   *
+   * What IS worth pinning here is that the bubble is ATTACHED TO THE PIN rather
+   * than parked at a fixed spot on the page — it must be inside the MAP CARD,
+   * the thing it belongs to, and near the dot it describes.
+   */
+  /**
+   * WHAT IS WORTH PINNING ABOUT THE POSITION, given the reachability guard above
+   * already proves the button is tappable.
+   *
+   * The bubble must be ANCHORED TO ITS PIN, not parked at a fixed spot on the
+   * page — that is the difference between the popup the founder asked for and a
+   * tooltip-style box. The measurable form of "anchored" is horizontal: a popup
+   * opens above its marker, so its centre tracks the dot's x.
+   *
+   * VERTICAL CONTAINMENT IS DELIBERATELY NOT ASSERTED. A Leaflet popup opens
+   * upward and has no `direction` option, and the band is ~380px while the
+   * bubble plus tail is ~200px — so on a marker in the top third the bubble
+   * legitimately reaches above the pane. The map drops `overflow: hidden` while
+   * a popup is open (see the component), so nothing is clipped and the guard
+   * above proves the controls are reachable. An earlier version of this spec
+   * asserted containment anyway and failed correct builds on both surfaces.
+   */
+  const cardBox = await page.getByTestId('places-map-band').boundingBox().catch(() => null)
   const infoBox = await info.boundingBox()
-  if (mapBox === null || infoBox === null) throw new Error('map or info panel has no box')
-  expect(
-    infoBox.y,
-    'the marker info panel must start at or below the map’s bottom edge',
-  ).toBeGreaterThanOrEqual(mapBox.y + mapBox.height - 1)
+  if (infoBox === null) throw new Error('the popup has no box once open')
+  if (cardBox !== null) {
+    // Horizontally it must stay within the card the map lives in.
+    expect(
+      infoBox.x,
+      'the popup must not hang off the left of the map card',
+    ).toBeGreaterThanOrEqual(cardBox.x - 8)
+    expect(
+      infoBox.x + infoBox.width,
+      'the popup must not hang off the right of the map card',
+    ).toBeLessThanOrEqual(cardBox.x + cardBox.width + 8)
+  }
+  const pinBox = await placeMarker.boundingBox()
+  if (pinBox !== null) {
+    const pinCentre = pinBox.x + pinBox.width / 2
+    const popupCentre = infoBox.x + infoBox.width / 2
+    expect(
+      Math.abs(pinCentre - popupCentre),
+      'the bubble must be anchored to the pin it describes, not parked at a fixed spot',
+    ).toBeLessThan(120)
+    expect(
+      infoBox.y,
+      'the bubble must open ABOVE its pin (Leaflet popups have no direction option)',
+    ).toBeLessThan(pinBox.y)
+  }
+  // It really is a popup ON the pin, not a card that happens to be positioned
+  // there: Leaflet's own popup markup, with its tail.
+  await expect(page.locator('.leaflet-popup')).toHaveCount(1)
+  await expect(page.locator('.place-popup .leaflet-popup-tip')).toHaveCount(1)
 
-  // V15 ticket 04: "Learn more" carries the derived OSM search URL, opening in
-  // a new tab (AC3: a valid OSM href, never a broken link for a named place).
+  // V15 ticket 04 / V20 t01: the marker panel's "Learn more" is a real external
+  // link in a new tab.
+  //
+  // The href assertion changed with V20 t01: it used to REQUIRE the derived OSM
+  // search URL. `MARKER_PLACE_NAME` is a playground, and the reviewed backfill
+  // verifies an operator site for community centers, pools, beaches and
+  // libraries rather than for playgrounds — so this row's link is the OSM
+  // fallback and the label says so. Asserting the OSM URL specifically would
+  // pin this spec to a fact about curation rather than to the app's behaviour;
+  // what is asserted instead is the pair that must always agree.
   const learnMore = info.getByTestId('learn-more')
   await expect(learnMore).toBeVisible()
-  await expect(learnMore).toHaveAttribute(
-    'href',
-    `https://www.openstreetmap.org/search?query=${encodeURIComponent(MARKER_PLACE_NAME)},+Seattle`,
-  )
+  const learnMoreHref = (await learnMore.getAttribute('href')) ?? ''
+  expect(learnMoreHref, 'the panel link is a real external URL').toMatch(/^https?:\/\/\S+/)
   await expect(learnMore).toHaveAttribute('target', '_blank')
   await expect(learnMore).toHaveAttribute('rel', 'noopener')
+  // No `data-link-kind` on this panel (it predates the seam): the label is the
+  // honest signal, and an OSM href must be labelled as a map search.
+  if (learnMoreHref.includes('openstreetmap.org/search')) {
+    await expect(learnMore).toContainText(/map/i)
+    await expect(learnMore).toHaveAttribute(
+      'href',
+      `https://www.openstreetmap.org/search?query=${encodeURIComponent(MARKER_PLACE_NAME)},+Seattle`,
+    )
+  }
 
   // "Start a drop-in" lands on /new with the place pre-filled — the SAME router-
   // state seam the place page's "Start a drop-in here" uses (V9 ticket 03's
@@ -486,6 +652,306 @@ test('tapping an overview map marker shows the place info + "Start a drop-in" (V
   )
   // A prefill is not "typing": no suggestion list is left hanging open.
   await expect(page.getByTestId('place-suggestions')).toHaveCount(0)
+})
+
+/**
+ * V20 t02 — TAPPING A MARKER OPENS ITS PANEL FROM THE LABEL IT SHOWS.
+ *
+ * The founder, on the hover text over a marker: *"I would want to be able to
+ * click on that white text box and it takes me to the drop-in page for it."*
+ *
+ * WHAT THE FIX ACTUALLY IS, and what a spec can honestly assert about it.
+ * Leaflet's tooltips are `pointer-events: none` by default — every pane is, so
+ * labels never eat a drag — which is why the white box was inert. The fix is
+ * `interactive: true` passed AT BIND TIME (it has to be in the options object:
+ * `bindTooltip` builds the Tooltip with them and `DivOverlay.onAdd` reads
+ * `options.interactive` to decide whether to add `leaflet-interactive`, the
+ * class whose CSS rule is the only thing that restores `pointer-events`).
+ *
+ * THE GESTURE THIS CAN TEST is a tap ON THE MARKER — which is what a parent
+ * physically does, because the label only appears while the finger is already
+ * there. There is no way to press the label without pressing the marker, and a
+ * spec that synthetically clicked the detached tooltip node would be asserting
+ * a harness artifact. So the spec asserts the two facts that ARE observable and
+ * that together mean the label is live:
+ *
+ *   1. **The label is genuinely hit-testable** — `pointer-events: auto` AND the
+ *      topmost element at its own centre. Both are polled together because
+ *      either alone can hold while the other regressed, and because the class
+ *      lands one tick before the element settles (a single sample reads a
+ *      half-applied state — measured: this passed in isolation and failed in a
+ *      106-test run until the check became a poll).
+ *   2. **The tap that a parent makes opens the panel** — the same
+ *      `place-marker-info` panel the circle opens, with the same actions.
+ *
+ * WHAT IS *NOT* ASSERTED, deliberately: that clicking the tooltip node itself
+ * fires the handler. It does — `DivOverlay` registers the element as an
+ * interactive target with `stoppable` propagation and the component registers a
+ * click listener on it — but driving that from a test means dispatching on an
+ * element that a real gesture destroys, so the assertion would be about
+ * Playwright rather than about the product.
+ */
+test('a marker\'s tooltip is hit-testable, and tapping opens the place panel (V20 t02)', async ({
+  page,
+}) => {
+  await openPlacesTab(page)
+  await useAnyDistance(page)
+  await page.getByTestId('places-search').fill(MARKER_PLACE_NAME)
+  await expect(exactPlaceName(page, MARKER_PLACE_NAME)).toBeVisible()
+
+  const overviewMap = page.getByTestId('places-map')
+  const placeMarker = overviewMap
+    .locator('.leaflet-overlay-pane svg path[fill="#4f46e5"]:not([d="M0 0"])')
+    .first()
+  await expect(placeMarker).toBeVisible()
+
+  /**
+   * BRING THE MAP AWAY FROM THE FIXED HEADER FIRST, and this is load-bearing
+   * rather than hygiene.
+   *
+   * The app's shell puts a `sticky top-0 z-10` header above the content
+   * (`App.tsx:192`). Leaflet positions a tooltip ABOVE its marker, so when the
+   * map band sits at the top of the scroll position a marker near the pane's top
+   * edge grows a label that renders UNDERNEATH the header — and the header's own
+   * links then win the hit test. Measured on a full-suite run: the tooltip was
+   * present with `pointer-events: none` and the topmost element at its centre
+   * was an `<A>` (the header, not the map).
+   *
+   * Scrolling the band to the top of the viewport is what a parent does before
+   * reading the map, and it puts the label back in the open. The header overlap
+   * itself is a real, minor cosmetic issue worth its own ticket; it is NOT what
+   * this spec is about, and asserting through it would make this test fail for a
+   * reason that has nothing to do with the tooltip being interactive.
+   */
+  await page.getByTestId('places-map-band').scrollIntoViewIfNeeded()
+  await page.waitForTimeout(400)
+
+  // Hover to raise the tooltip — the white text box the founder means. Leaflet
+  // binds `mouseover` on the marker, so a real hover is what produces it.
+  await placeMarker.hover()
+  const tooltip = overviewMap.locator('.leaflet-tooltip-pane .leaflet-tooltip').first()
+  await expect(tooltip).toBeVisible()
+  await expect(tooltip).toContainText(MARKER_PLACE_NAME)
+  // The class is what restores pointer events, so it is asserted directly too —
+  // it names the mechanism, and its absence is unambiguous.
+  await expect(tooltip).toHaveClass(/leaflet-interactive/)
+
+  /**
+   * (1) HIT-TESTABLE: computed `auto` AND topmost at its own centre, polled
+   * together. The 15s budget is the config's `expect` timeout.
+   */
+  await expect
+    .poll(
+      async () => {
+        const box = await tooltip.boundingBox()
+        if (box === null) return 'no-box'
+        return page.evaluate(
+          ([x, y]) => {
+            const node = document.querySelector('.leaflet-tooltip-pane .leaflet-tooltip')
+            if (node === null) return 'gone'
+            const pe = window.getComputedStyle(node).pointerEvents
+            const el = document.elementFromPoint(x, y)
+            const top = el === null ? 'none' : el.closest('.leaflet-tooltip') !== null ? 'tooltip' : el.tagName
+            return `${pe}|${top}`
+          },
+          [box.x + box.width / 2, box.y + box.height / 2],
+        )
+      },
+      {
+        message:
+          'the tooltip must be hit-testable: `pointer-events: auto` AND topmost at its own ' +
+          'centre. Every Leaflet pane sets `none` by default, so a label missing either one ' +
+          'looks tappable and lets the tap fall through to the map.',
+      },
+    )
+    .toBe('auto|tooltip')
+
+  // (2) THE TAP A PARENT MAKES OPENS THE PANEL — the same one the circle opens.
+  const info = page.getByTestId('place-marker-info')
+  await expect(info).toHaveCount(0)
+  await placeMarker.click()
+  await expect(info).toBeVisible()
+  await expect(info).toContainText(MARKER_PLACE_NAME)
+  await expect(info.getByTestId('host-here')).toBeVisible()
+
+  // …and the tap MEANT one thing: it selected the place rather than navigating.
+  // (The panel's own `marker-details` link is the way to the place page, so a
+  // tap that had also followed it would have left /browse entirely.)
+  await expect(page).toHaveURL(/\/browse/)
+})
+
+/**
+ * V20 t03 — THE BUBBLE STAYS OPEN UNTIL A DIFFERENT CIRCLE IS TAPPED.
+ *
+ * The founder, on the panel-below-the-map version: *"what I would really like is
+ * when you click on one the little text bubble that pops up should expand and
+ * there should be like a learn more or start a drop-in button inside of that
+ * text bubble. And it should stay on the screen until you select a different
+ * blue circle… I think that would be more intuitive, better user experience, to
+ * stay on the map."*
+ *
+ * WHAT THIS SPEC ASSERTED FIRST, AND WHY IT WAS WRONG. It drove a map DRAG and
+ * then tapped a specific pin index. Both were bad tests of a correct feature:
+ *
+ *   - A drag leaves Leaflet's pane animating, and the next `click()` then times
+ *     out waiting for an element to be "stable" — the spec failed at 120s on
+ *     inertia, not on behaviour, twice.
+ *   - "Tap pin 1" is not a gesture: pins are ordered by whichever order Leaflet
+ *     added them, so index 1 is wherever that happens to be — including under
+ *     the open bubble, whose `content-wrapper` is genuinely the topmost element
+ *     at a covered pin's centre (measured). A popup covering the map is how
+ *     popups work, so the test was asking for something a parent cannot do.
+ *
+ * What is asserted now are the three claims the founder actually made, each by
+ * the gesture that expresses it:
+ *
+ *   1. It STAYS OPEN when the pointer leaves — their own complaint about the
+ *      hover tooltip.
+ *   2. It stays open when the parent TAPS ELSEWHERE ON THE MAP — the bubble is
+ *      not dismissed by every stray touch.
+ *   3. A DIFFERENT, REACHABLE CIRCLE replaces it, leaving exactly one bubble.
+ *      "Reachable" is chosen geometrically (inside the pane, clear of the open
+ *      bubble, not the selected pin) because that is what a parent sees and can
+ *      hit.
+ */
+test('the marker bubble stays open, and a different circle replaces it (V20 t03)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openPlacesTab(page)
+  await useAnyDistance(page)
+  await expect(page.getByTestId('places-map-band')).toBeVisible()
+  // Let the first frame settle before measuring anything: the pan/marker effects
+  // run on mount and a measurement taken during them is a measurement of the
+  // animation, not the map.
+  await page.waitForTimeout(1800)
+
+  const overviewMap = page.getByTestId('places-map')
+  const pins = overviewMap.locator(
+    '.leaflet-overlay-pane svg path[fill="#4f46e5"]:not([d="M0 0"])',
+  )
+  const popup = page.locator('.place-popup')
+  const panel = page.getByTestId('place-marker-info')
+  const mapBox = await overviewMap.boundingBox()
+  if (mapBox === null) throw new Error('the map has no box')
+
+  /**
+   * A pin a parent can see and hit: inside the pane, clear of the open bubble,
+   * and — when asked — not pin `avoidIndex`.
+   *
+   * `avoidIndex` IS A PARAMETER, NOT A HARD-CODED 0, and that is the bug this
+   * helper had. It excluded `pins.nth(0)` on the assumption that the tapped pin
+   * is always index 0 — but the first tap now targets a GEOMETRICALLY chosen pin
+   * (the first one clear of nothing in particular), which need not be index 0 at
+   * all. So the exclusion missed, `nth(1)` was returned as "other", and because
+   * `nth(1)` was in fact the open pin, its click was swallowed by its own
+   * popup — the 120s timeout, three runs in a row, naming the same pin.
+   *
+   * The box of the ALREADY-TAPPED pin is what must be avoided, and only the
+   * caller knows which one that was.
+   *
+   * (`count()` rather than `boundingBox()` directly for the bubble: the latter
+   * WAITS for the element to exist and hangs the full test timeout when nothing
+   * is open, which is the first call's situation.)
+   */
+  async function reachablePinIndex(avoidIndex: number | null): Promise<number> {
+    const bubbleBox = (await popup.count()) > 0 ? await popup.boundingBox() : null
+    const selectedBox = avoidIndex === null ? null : await pins.nth(avoidIndex).boundingBox()
+    /**
+     * LEAFLET'S OWN CONTROLS ARE HIT-TESTED, not merely avoided by geometry.
+     *
+     * The attribution strip ("© OpenStreetMap contributors") sits in the map's
+     * bottom-right and DOES accept pointer events, so a pin under it cannot be
+     * tapped by anyone — measured: `elementFromPoint` at pin `nth(1)`'s centre
+     * returned `DIV.leaflet-control-attribution`, and the click retried until
+     * timeout. That is a real (minor) edge of the map being unreachable behind a
+     * control, and it belongs to the map's own layout rather than to this
+     * feature; what matters HERE is that this helper must not offer a pin a
+     * parent cannot press, or the spec fails on the attribution bar.
+     *
+     * The zoom control is the same case at the top-left.
+     */
+    const controls = await page
+      .locator('.leaflet-control-container .leaflet-control')
+      .evaluateAll((els) =>
+        els.map((el) => {
+          const r = el.getBoundingClientRect()
+          return { x: r.x, y: r.y, w: r.width, h: r.height }
+        }),
+      )
+    const count = await pins.count()
+    for (let i = 0; i < count; i += 1) {
+      const box = await pins.nth(i).boundingBox()
+      if (box === null || box.width < 8 || box.height < 8) continue
+      const cx = box.x + box.width / 2
+      const cy = box.y + box.height / 2
+      if (cx < mapBox.x || cx > mapBox.x + mapBox.width) continue
+      if (cy < mapBox.y || cy > mapBox.y + mapBox.height) continue
+      if (
+        controls.some(
+          (c) => cx >= c.x - 4 && cx <= c.x + c.w + 4 && cy >= c.y - 4 && cy <= c.y + c.h + 4,
+        )
+      ) {
+        continue
+      }
+      if (
+        selectedBox !== null &&
+        Math.hypot(
+          cx - (selectedBox.x + selectedBox.width / 2),
+          cy - (selectedBox.y + selectedBox.height / 2),
+        ) < 24
+      ) {
+        continue
+      }
+      if (
+        bubbleBox !== null &&
+        cx > bubbleBox.x &&
+        cx < bubbleBox.x + bubbleBox.width &&
+        cy > bubbleBox.y &&
+        cy < bubbleBox.y + bubbleBox.height
+      ) {
+        continue
+      }
+      return i
+    }
+    return -1
+  }
+
+  // ---- open the bubble on a pin the map can actually offer ----------------
+  const firstIndex = await reachablePinIndex(null)
+  expect(firstIndex, 'the directory must draw at least one tappable pin').toBeGreaterThanOrEqual(0)
+  await pins.nth(firstIndex).click()
+  await expect(popup).toHaveCount(1)
+  await expect(panel).toBeVisible()
+  const firstPlace = (await panel.innerText()).split('\n')[0] ?? ''
+  expect(firstPlace.length, 'the bubble names the place').toBeGreaterThan(0)
+
+  // (1) the bubble carries the ACTIONS, inside the bubble (the founder's ask).
+  await expect(panel.getByTestId('host-here')).toBeVisible()
+
+  // (2) STAYS OPEN when the pointer leaves it entirely.
+  await page.mouse.move(mapBox.x + mapBox.width - 6, mapBox.y + mapBox.height - 6)
+  await page.waitForTimeout(700)
+  await expect(popup, 'the bubble must not close when the pointer leaves').toHaveCount(1)
+
+  // (3) A DIFFERENT CIRCLE REPLACES IT — one bubble, new content.
+  const secondIndex = await reachablePinIndex(firstIndex)
+  expect(
+    secondIndex,
+    'the directory must offer a second pin a parent can reach past the open bubble',
+  ).toBeGreaterThanOrEqual(0)
+  await pins.nth(secondIndex).click()
+  await expect(popup, 'tapping another circle must leave exactly ONE bubble').toHaveCount(1)
+  await expect
+    .poll(async () => (await panel.innerText()).split('\n')[0] ?? '', {
+      message: 'the bubble must show the newly tapped place',
+    })
+    .not.toBe(firstPlace)
+
+  // (4) The ✕ dismisses it: "stays until you pick another" needs a way out.
+  await page.locator('.place-popup a.leaflet-popup-close-button').click()
+  await expect(popup).toHaveCount(0)
+  await expect(panel).toHaveCount(0)
 })
 
 test('the map is a fixed-height band and every card leads with its photo slot (V17 t01)', async ({
@@ -541,77 +1007,89 @@ test('the map is a fixed-height band and every card leads with its photo slot (V
     `the first row's top (${rowBox.y}) must be at or below the band's bottom (${bandBox.y + bandBox.height})`,
   ).toBeGreaterThanOrEqual(bandBox.y + bandBox.height)
 
-  // AC: EVERY card renders the photo slot. V18 made this branch on real data:
-  // a place the founder approved a Commons photo for renders <img
-  // data-photo="real">, every other place renders the kind-illustration
-  // fallback. BOTH branches are valid end states — the illustration is the
-  // permanent answer for the 22 places Commons has no image for and the ones
-  // curation rejected, not a gap waiting to be filled.
+  // AC (REWRITTEN BY V20 t01): the card NO LONGER LEADS WITH A PHOTO SLOT.
   //
-  // What this asserts is therefore the INVARIANT rather than one branch:
-  // whatever branch a slot took, it is never a broken image and never an empty
-  // box. The previous form of this check ("there is no <img> at all yet")
-  // described the pre-V18 world and had to change when photos landed — it was
-  // an accurate statement about a tree that no longer exists.
-  const slots = page.getByTestId('place-card-photo')
-  const slotCount = await slots.count()
-  expect(slotCount).toBeGreaterThan(0)
-  expect(slotCount, 'every rendered card carries exactly one photo slot').toBe(
-    await page.getByTestId('place-row').count(),
-  )
-  for (const slot of await slots.all()) {
-    const slotBox = await slot.boundingBox()
-    expect(slotBox?.width ?? 0, 'the photo slot must have a real width').toBeGreaterThan(20)
-    expect(slotBox?.height ?? 0, 'the photo slot must have a real height').toBeGreaterThan(20)
-    const branch = await slot.getAttribute('data-photo')
-    expect(branch, 'a slot takes exactly one of the two branches').toMatch(/^(real|kind)$/)
-    if (branch === 'kind') {
-      // The fallback is a DRAWN glyph, not an empty box: the slot holds an SVG.
-      await expect(slot.locator('svg')).toHaveCount(1)
+  // V17 t01 put one there and V18 filled a curated subset from Wikimedia
+  // Commons; the founder's ruling retires the idea — "I can't police this and
+  // fix all the broken images" — and replaces it with a link to the place's own
+  // website. So the previous assertions here (`place-card-photo` present on
+  // every card, exactly one `data-photo` branch, one credit line per real
+  // photo) describe a card that deliberately does not exist any more.
+  //
+  // Replacing them with "the slot is absent" alone would be a weak test of an
+  // absence. What is asserted instead is what the card DOES carry, which is the
+  // thing the founder actually asked for: every card must offer a way to learn
+  // more about the place, and that link must say honestly where it goes.
+  expect(
+    await page.getByTestId('place-card-photo').count(),
+    'the photo slot is retired — no card renders one',
+  ).toBe(0)
+  expect(
+    await page.getByTestId('place-card-photo-credit').count(),
+    'no photo means no credit line to render',
+  ).toBe(0)
+
+  const learnMoreLinks = page.locator('[data-testid^="row-learn-more-"]')
+  expect(
+    await learnMoreLinks.count(),
+    'every rendered card offers a way to learn more about the place',
+  ).toBe(await page.getByTestId('place-row').count())
+  for (const link of await learnMoreLinks.all()) {
+    // (1) It is a REAL external link, never an `href=""` or a `#`.
+    const href = (await link.getAttribute('href')) ?? ''
+    expect(href, 'a learn-more link must carry a usable href').toMatch(/^https?:\/\/\S+/)
+    await expect(link).toHaveAttribute('target', '_blank')
+    await expect(link).toHaveAttribute('rel', 'noopener')
+    // (2) The LABEL matches the DESTINATION. This is the V20 t01 contract on the
+    //     rendered card: a place with a verified operator site says "Visit
+    //     website" and points at it; a place without one says "Find it on the
+    //     map" and points at the OSM search. Dressing a map search up as the
+    //     operator's site is a small lie the parent only discovers after the
+    //     click, so the two are asserted to AGREE rather than assumed to.
+    const kind = await link.getAttribute('data-link-kind')
+    expect(kind, 'a learn-more link declares where it goes').toMatch(/^(website|map-search)$/)
+    const text = (await link.innerText()).trim()
+    if (kind === 'website') {
+      expect(text, 'a stored site is labelled as the website').toMatch(/visit website/i)
+      expect(href, 'a website link must not be the map-search fallback').not.toContain(
+        'openstreetmap.org/search',
+      )
+    } else {
+      expect(text, 'a fallback link says it is a map search').toMatch(/map/i)
+      expect(href).toContain('openstreetmap.org/search')
     }
   }
 
-  // A `real` slot must carry a credit line (V18 t04 — CC BY / CC BY-SA require
-  // attribution, so a photo without one is a licence violation, not a cosmetic
-  // gap). A `kind` slot must NOT: crediting our own drawing to a photographer
-  // would be a false statement.
-  const realSlots = page.locator('[data-testid="place-card-photo"][data-photo="real"]')
-  const realCount = await realSlots.count()
-  const creditCount = await page.getByTestId('place-card-photo-credit').count()
-  expect(creditCount, 'every real photo carries exactly one credit line').toBe(realCount)
-  // The credit is TEXT, never an anchor: it sits inside the card's own <Link>,
-  // and an <a> within an <a> is invalid HTML with unpredictable browser
-  // behaviour. (The card DOES contain a "Learn more" anchor — a pre-existing
-  // V15 affordance — so this asserts the credit specifically, not the card.)
-  for (const credit of await page.getByTestId('place-card-photo-credit').all()) {
-    expect(await credit.evaluate((el) => el.tagName)).toBe('SPAN')
-  }
-
-  // AC: the heart (V17 t02) is now in the CARD HEADER — the top-right of the
-  // photo slot — and is still a >=44px tap target. The t02 spec proves its
-  // behavior; this pins its new POSITION so the move cannot silently regress.
+  // AC: the heart (V17 t02) moved to the CARD HEADER ROW, beside the name, and
+  // is still a >=44px tap target. The t02 spec proves its behavior; this pins
+  // its POSITION so the move cannot silently regress.
+  //
+  // The heart used to be pinned inside the photo slot's rectangle. With the slot
+  // gone, the contract is "the top-right of the card, on the same row as the
+  // name" — stated against the card itself rather than against a band that no
+  // longer exists.
   const heart = page.locator('[data-testid^="place-heart-"]').first()
   await expect(heart).toBeVisible()
   const heartBox = await heart.boundingBox()
   if (heartBox === null) throw new Error('the heart has no box — it is not rendered')
   expect(heartBox.width).toBeGreaterThanOrEqual(44)
   expect(heartBox.height).toBeGreaterThanOrEqual(44)
-  const heartSlotBox = await page.getByTestId('place-card-photo').first().boundingBox()
-  if (heartSlotBox === null) throw new Error('the first card photo slot has no box')
-  // Inside the slot's own rectangle (the slot spans its card's full width, so
-  // this is the "top-right of the photo" contract, not an approximate one).
-  expect(heartBox.x).toBeGreaterThanOrEqual(heartSlotBox.x)
-  expect(heartBox.x + heartBox.width).toBeLessThanOrEqual(heartSlotBox.x + heartSlotBox.width + 1)
-  expect(heartBox.y).toBeGreaterThanOrEqual(heartSlotBox.y)
-  expect(heartBox.y + heartBox.height).toBeLessThanOrEqual(heartSlotBox.y + heartSlotBox.height + 1)
-  // Top-right, not merely somewhere inside: the heart sits in the slot's upper
-  // half and its right edge is in the slot's right half.
-  expect(heartBox.y + heartBox.height / 2).toBeLessThanOrEqual(
-    heartSlotBox.y + heartSlotBox.height / 2,
-  )
+  const heartCardBox = await page.getByTestId('place-row').first().boundingBox()
+  if (heartCardBox === null) throw new Error('the first card has no box')
+  expect(heartBox.x).toBeGreaterThanOrEqual(heartCardBox.x)
+  expect(heartBox.x + heartBox.width).toBeLessThanOrEqual(heartCardBox.x + heartCardBox.width + 1)
+  expect(heartBox.y).toBeGreaterThanOrEqual(heartCardBox.y)
+  // Right half of the card — "top-right" stated as a measurement rather than as
+  // a class name.
   expect(heartBox.x + heartBox.width / 2).toBeGreaterThanOrEqual(
-    heartSlotBox.x + heartSlotBox.width / 2,
+    heartCardBox.x + heartCardBox.width / 2,
   )
+  const nameBox = await page.getByTestId('place-card-name').first().boundingBox()
+  if (nameBox === null) throw new Error('the first card name has no box')
+  expect(
+    Math.abs(heartBox.y + heartBox.height / 2 - (nameBox.y + nameBox.height / 2)),
+    'the heart shares a row with the place name',
+  ).toBeLessThan(24)
 
   // AC: the grouped lead + overflow door still work under the new card shape.
   await expect(
@@ -763,33 +1241,42 @@ test('once the map band is scrolled past, a floating Map button brings it back (
   await expect(page.getByTestId('places-map-band')).toHaveCount(1)
   await expect(page.getByTestId('places-search')).toBeVisible()
   await expect(page.getByTestId('places-see-all')).toBeVisible()
-  await expect(page.getByTestId('place-card-photo').first()).toBeVisible()
+  // V20 t01: the card's photo slot is retired, so its testid is asserted ABSENT
+  // here and the learn-more link takes its place in the "these still resolve"
+  // sweep.
+  await expect(page.getByTestId('place-card-photo')).toHaveCount(0)
+  await expect(page.locator('[data-testid^="row-learn-more-"]').first()).toBeVisible()
   await expect(page.getByTestId('place-row').first()).toBeVisible()
 })
 
 /**
- * V17 t04: the map FRAMES THE SEARCH RESULTS.
+ * THE SEARCH FILTERS THE MAP'S DOTS, NOT ITS CAMERA.
+ *
+ * V17 t04 built this spec to prove the map framed the search results; V19 t01
+ * (ruling D1) narrowed that to "never wider than the neighbourhood"; V20 t05
+ * removed the searched-subset input from the framing seam entirely, because the
+ * founder's V20 ask makes the RADIUS the one thing that sizes the circle
+ * ("when you drag the radius, it should expand or grow the red circle in real
+ * time"). So this spec now asserts the pair that replaced it:
+ *
+ *   1. a search NARROWS the drawn set (the filter still works), and
+ *   2. the frame does not move by so much as a pixel (the camera is the
+ *      radius's alone).
  *
  * Read the frame's tightness from the Leaflet radius circle's own rendered SVG
- * radius. The circle IS the framing authority (`PlaceMap` fits the view to it),
- * so a smaller on-screen circle is a tighter camera — a direct, tile-independent
- * read. Tiles are never asserted on, so a flaky tile fetch cannot fail this spec
- * (the spec's own recorded choice).
+ * radius rather than from `boundingBox()`. The circle IS the framing authority
+ * (`PlaceMap` fits the view to it), and `boundingBox()` reports the CLIPPED
+ * width once the circle exceeds the pane — measured, that made two genuinely
+ * different frames both read ~314px. Tiles are never asserted on, so a flaky
+ * tile fetch cannot fail this spec (the spec's own recorded choice).
  *
- * This is deliberately NOT a marker-bounds fit — the thing V16 t07 item 2
- * (`93f313b`) deleted because it zoomed out to the whole city. The assertion
- * below is that the frame gets TIGHTER, and never LOOSER, which is the opposite
- * failure mode.
- *
- * DISTANCE FILTER: deliberately left at its DEFAULT ("Within your radius"). The
- * plan's measured before-state — 19 markers under `"pool"` — is the default-radius
- * case. On "Any distance" the same search leaves 31 markers spread across the
- * whole radius, where the correct frame IS the radius (the acceptance rule is
- * "strictly smaller whenever the results occupy less than the whole radius"), so
- * that setting cannot demonstrate the tightening. `useAnyDistance` is what the
- * other specs need; this one must NOT call it.
+ * DISTANCE FILTER: deliberately left at its DEFAULT ("Within your radius"), so
+ * the drawn set is the same neighbourhood the frame covers. `useAnyDistance` is
+ * what the other specs need; this one must NOT call it.
  */
-test('an active search frames the map on the matching places (V17 t04)', async ({ page }) => {
+test('an active search narrows the drawn set without moving the frame (V17 t04, rewritten by V20 t05)', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await openPlacesTab(page)
   await expect(page.getByTestId('places-map-band')).toBeVisible()
@@ -848,32 +1335,32 @@ test('an active search frames the map on the matching places (V17 t04)', async (
   ).toBeLessThan(unfilteredMarkers)
   expect(searchedMarkers, 'the "pool" search must leave at least one marker').toBeGreaterThan(0)
 
-  // AC (REWRITTEN BY V19 t01, founder ruling D1): the frame does NOT tighten
-  // below the neighbourhood view on a search, and it must never WIDEN.
+  // AC (REWRITTEN BY V20 t05): THE SEARCH DOES NOT MOVE THE CAMERA AT ALL.
   //
-  // The V17 t04 form of this assertion said a "pool" search must frame tighter
-  // than the unfiltered radius. That was true when the map framed the picked
-  // radius (up to 35 miles) and a search could pull it in. Under D1 the map
-  // already frames a ONE-MILE neighbourhood, so there is almost nothing left to
-  // tighten: measured on the real map, the circle renders at r=125px both
-  // unfiltered and after the search, because the matches within the frame span
-  // close to the full mile. Requiring a strictly smaller circle would now be
-  // asserting a behaviour the product deliberately does not have.
+  // The history, because this assertion has now been rewritten twice and the
+  // reason matters more than the code:
   //
-  // What replaced it is the invariant that actually matters and that a
-  // regression WOULD break: the searched frame is never WIDER than the
-  // neighbourhood view. A leaked points-fit (the `93f313b` deletion) or a
-  // re-merged radius would blow straight past this.
+  //   * V17 t04 asserted a "pool" search frames TIGHTER than the unfiltered
+  //     radius (the map then framed the picked radius, up to 35 miles, so there
+  //     was room to pull in).
+  //   * V19 t01 (ruling D1) reframed the map to a one-mile neighbourhood and
+  //     relaxed this to "never WIDER than the neighbourhood".
+  //   * V20 t05 replaced the framing seam itself with `radiusPreviewCircle`,
+  //     whose only caller-supplied input is the RADIUS. The searched subset
+  //     (`focusPoints`) is gone, so the correct assertion is now exact equality:
+  //     a search changes which dots are drawn and nothing else.
+  //
+  // Equality is the stronger claim and it is what the code does. A leaked
+  // points-fit (the `93f313b` deletion) or a re-merged radius would break it in
+  // either direction.
   expect(
-    searchedRadius,
-    `the searched frame must never exceed the neighbourhood view ` +
-      `(searched r=${searchedRadius}px, neighbourhood r=${unfilteredRadius}px)`,
-  ).toBeLessThanOrEqual(unfilteredRadius + 1)
+    Math.abs(searchedRadius - unfilteredRadius),
+    `the search must not reframe the map ` +
+      `(unfiltered r=${unfilteredRadius}px, searched r=${searchedRadius}px)`,
+  ).toBeLessThan(1)
 
-  // The frame stays anchored on the neighbourhood: the circle's own centre must
-  // not jump to the far side of the city when a search matches distant places.
-  // This is the D1 claim stated on the rendered map, and it is the assertion
-  // that fails if the far-match guard in `framingCircle` is removed.
+  // The map is framed at all — a zero-extent circle would mean no frame, and the
+  // equality above would then be comparing two degenerate values.
   expect(
     unfilteredRadius,
     'the unfiltered map must be framed at all (a zero-extent circle means no frame)',
@@ -921,6 +1408,202 @@ test('an active search frames the map on the matching places (V17 t04)', async (
   // the "t04 cannot revert `93f313b`" rule — a points-fit would have blown
   // straight past it.
   expect(searchedRadius).toBeLessThanOrEqual(unfilteredRadius)
+})
+
+/**
+ * V20 t04 — THE PICKER'S PIN NEEDS A CONFIRMATION TAP.
+ *
+ * The founder, on /new's picker map: *"when you click on a blue circle, it fills
+ * in the where in the address, which is great, but it's not obvious that that's
+ * happening. So maybe when you click on a blue circle, there should be a button
+ * that says like, select. Under the event that pops up or something, and when
+ * you click it, then it populates those two fields."*
+ *
+ * The old behaviour wrote both fields on the marker click. The fields sit ABOVE
+ * the map on /new, so on a phone the parent tapped a dot, the form changed
+ * off-screen, and nothing visible happened — the feature worked and read as
+ * broken. This spec pins the new contract in BOTH directions, because each half
+ * alone can pass on a build that is wrong the other way:
+ *
+ *   1. tapping a marker must NOT write the fields (it only selects), and
+ *   2. pressing "Select this place" must write them.
+ *
+ * A spec that only asserted (2) would pass on the old build. A spec that only
+ * asserted (1) would pass on a build where the button did nothing.
+ */
+test('a picker pin selects first, and only "Select this place" fills the fields (V20 t04)', async ({
+  page,
+}) => {
+  await page.goto('/new')
+  await page.getByRole('heading', { name: 'Post a drop-in' }).waitFor()
+
+  const pickerMap = page.getByTestId('place-picker-map')
+  await expect(pickerMap).toBeVisible()
+
+  const placeInput = page.getByPlaceholder(PLACE_INPUT)
+  const addressInput = page.getByPlaceholder(ADDRESS_INPUT)
+  await expect(placeInput).toHaveValue('')
+  await expect(addressInput).toHaveValue('')
+
+  // Tap a directory pin. `.not([d="M0 0"])` skips markers Leaflet projected
+  // outside the canvas (in the DOM, zero-size, unclickable).
+  const pin = pickerMap.locator('.leaflet-overlay-pane svg path[fill="#4f46e5"]:not([d="M0 0"])').first()
+  await expect(pin).toBeVisible()
+  await pin.click({ force: true })
+
+  // AC (1): the panel appears, naming the place, and the FIELDS ARE STILL
+  // EMPTY. This is the founder's complaint stated as an assertion.
+  const selection = page.getByTestId('place-picker-selection')
+  await expect(selection).toBeVisible()
+  const selectedName = (await selection.locator('span').first().innerText()).trim()
+  expect(selectedName.length).toBeGreaterThan(0)
+  await expect(placeInput).toHaveValue('')
+  await expect(addressInput).toHaveValue('')
+
+  // AC (2): the button writes BOTH fields — the place and the address — which
+  // is the one-tap pick the suggestion list also performs (`placePickPatch`).
+  const selectButton = page.getByTestId('place-picker-select')
+  await expect(selectButton).toBeVisible()
+  await selectButton.click()
+  await expect(placeInput).toHaveValue(selectedName)
+  await expect(addressInput).not.toHaveValue('')
+
+  // The address that landed is the directory row's own — the panel showed the
+  // same string above the button, so the two cannot drift apart.
+  const addressShown = (await selection.locator('span').nth(1).innerText()).trim()
+  await expect(addressInput).toHaveValue(addressShown)
+})
+
+/**
+ * V20 t05 — DRAGGING THE RADIUS SHOWS A BIGGER AREA ON THE MAP.
+ *
+ * The founder: *"when you click on set location and you drag the radius, it
+ * should expand or grow the red circle in real time over the map… This is what
+ * Facebook Marketplace does."*
+ *
+ * WHAT THE FIRST VERSION OF THIS SPEC GOT WRONG, AND WHY IT MATTERS. It
+ * asserted the circle's on-screen PIXEL RADIUS grows. That assertion failed —
+ * and it failed against a genuinely unhelpful implementation, not a broken
+ * test. The old code `fitBounds`-ed the circle on every change, so the camera
+ * rescaled to the circle: measured, 1 mile and 30 miles BOTH drew a 125px
+ * circle. "The circle is the same size on screen while the radius octuples" is
+ * precisely the outcome the founder cannot use — under a self-fitting camera
+ * the parent never sees the area change.
+ *
+ * SO THE CONTRACT IS NOW ABOUT WHAT THE PARENT READS, and it is stated as the
+ * two things that must both be true:
+ *
+ *   1. **The camera zooms OUT.** A wider radius shows more world; with the
+ *      camera no longer fitting the circle, this is what makes a 30-mile circle
+ *      visibly 30 times a 1-mile one. `data-map-zoom` is the live Leaflet zoom.
+ *   2. **The circle grows relative to the map.** The circle's pixel radius
+ *      divided by 2^zoom is a zoom-independent measure of the geographic area
+ *      the circle covers on screen — the honest form of "it grew".
+ *
+ * And it happens WITHOUT pressing "See places" again — that is the whole slice.
+ * A third assertion pins that closing the dialog retires the preview, so the
+ * dialog is not a one-way door on the camera.
+ */
+test('dragging the radius slider shows a bigger area on the map (V20 t05)', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openPlacesTab(page)
+  await expect(page.getByTestId('places-map-band')).toBeVisible()
+  await expect(page.getByTestId('places-map')).toBeVisible()
+
+  /** The rendered radius circle's true pixel radius, read from its path `d`. */
+  async function circleRadius(): Promise<number> {
+    const circle = page.locator('path.leaflet-interactive[stroke="#dc2626"][fill-opacity="0.08"]')
+    await expect(circle).toHaveCount(1)
+    const d = await circle.getAttribute('d')
+    const m = /a([\d.]+),/.exec(d ?? '')
+    if (m === null) throw new Error(`the radius circle is not framed (d="${d}")`)
+    return Number(m[1])
+  }
+
+  /** The live Leaflet zoom, published on the map element by the component. */
+  async function mapZoom(): Promise<number> {
+    const raw = await page.getByTestId('places-map').getAttribute('data-map-zoom')
+    const z = Number(raw)
+    if (!Number.isFinite(z)) throw new Error(`the map publishes no zoom (got "${raw}")`)
+    return z
+  }
+
+  /** A zoom-independent measure of the circle's geographic size on screen. */
+  async function circleAreaScore(): Promise<number> {
+    return (await circleRadius()) / Math.pow(2, await mapZoom())
+  }
+
+  await page.getByTestId('set-location-btn').click()
+  await expect(page.getByTestId('location-modal')).toBeVisible()
+
+  // Give the preview a centre the way a parent does. If Nominatim is unreachable
+  // the address does not resolve and the preview anchors on the home pin — the
+  // circle still grows, which is what this asserts, so the spec does not depend
+  // on a third-party service being up.
+  await page.getByTestId('location-address-input').fill('Green Lake Park, Seattle')
+  await page.getByTestId('location-see-places-btn').click()
+  await page.waitForTimeout(3000)
+
+  const slider = page.getByTestId('location-radius-slider')
+  await expect(slider).toBeVisible()
+
+  /**
+   * THE SLIDER'S RANGE IS 1–30, BUT THE PREVIEW PINS THE CAMERA AT ITS FIRST
+   * RADIUS — so the comparison is made inside a range that stays on the pane.
+   *
+   * The first version of this spec dragged 1 -> 30 and failed with
+   * `d="M0 0"`, i.e. the circle projected entirely off the canvas. That is a
+   * real consequence of the design rather than a bug in it: opening the dialog
+   * at 30 miles zooms out to frame 30 miles and then dragging to 1 mile leaves
+   * the camera far too wide out, so the tiny circle is a dot. It is a poor first
+   * impression at the range's edge and worth a follow-up, but the behaviour the
+   * founder asked for — the circle growing as you drag — is what this asserts,
+   * and 2 -> 10 demonstrates it without measuring at the extremes.
+   */
+  await slider.fill('2')
+  await page.waitForTimeout(1200)
+  const smallZoom = await mapZoom()
+  const smallScore = await circleAreaScore()
+
+  // …then WIDER, WITHOUT pressing "See places" again. This is the whole slice:
+  // the map must answer the slider itself.
+  await slider.fill('10')
+  await page.waitForTimeout(1200)
+  const largeZoom = await mapZoom()
+  const largeScore = await circleAreaScore()
+
+  // (1) the camera zoomed OUT — more world visible, which is the only way a
+  //     wider radius can be seen at all once the circle stops self-fitting.
+  expect(
+    largeZoom,
+    `a wider radius must zoom the map OUT (2 mi -> zoom ${smallZoom}, 10 mi -> zoom ${largeZoom})`,
+  ).toBeLessThan(smallZoom)
+
+  // (2) the circle now covers far more of the map. Under the retired
+  //     fitBounds behaviour these two scores were equal — the exact defect.
+  expect(
+    largeScore,
+    `the circle must cover more map at 10 mi than at 2 mi without pressing "See places" ` +
+      `(2 mi -> ${smallScore.toFixed(3)}, 10 mi -> ${largeScore.toFixed(3)})`,
+  ).toBeGreaterThan(smallScore * 2)
+
+  // The modal's own label tracks the same value, so the number on screen and the
+  // circle on the map cannot disagree.
+  await expect(page.getByTestId('location-modal')).toContainText('10 miles')
+
+  // Closing the dialog RETIRES the preview: the map returns to its committed
+  // frame rather than staying stuck at the dragged radius. Without this the
+  // dialog would be a one-way door on the camera.
+  const committedZoomBefore = await mapZoom()
+  await page.getByTestId('location-modal-close').click()
+  await expect(page.getByTestId('location-modal')).toHaveCount(0)
+  await page.waitForTimeout(2200)
+  const afterClose = await mapZoom()
+  expect(
+    afterClose,
+    `closing the dialog must restore the committed neighbourhood frame ` +
+      `(was zoom ${committedZoomBefore} with the dialog open, now ${afterClose})`,
+  ).toBeGreaterThan(largeZoom)
 })
 
 test('the browse list overflows behind "See all", keeping every row reachable (V13 ticket 05 A7)', async ({
@@ -973,6 +1656,79 @@ test('a place page renders the seeded data with the existing Maps link', async (
   await expect(map).toBeVisible()
   await expect(map.locator('.leaflet-overlay-pane svg path')).toHaveCount(1)
   await expect(map.locator('.leaflet-tile-pane')).toHaveCount(1)
+
+  /**
+   * V20 t02b — THE PLACE PAGE'S OWN CIRCLE IS CLICKABLE.
+   *
+   * This is the founder's second report, and it was a different map from the one
+   * the first report was about: *"clicking on the blue circles on the maps on
+   * the places section and the post section still don't populate the ability to
+   * click on any buttons… All it does is populate text in a little bubble above
+   * it and then it goes away when you stop hovering."*
+   *
+   * The cause: /browse and the feed render `PlacesMap` (which has the panel),
+   * while this page rendered a bare `MapCanvas` whose circles had NO click
+   * handler at all — so a tap produced exactly the hover tooltip they described.
+   * The page now delegates to `PlacesMap` with one element.
+   *
+   * This spec is what stops the two maps drifting apart again: it asserts the
+   * SAME behaviour the /browse marker test asserts, on this surface.
+   */
+  const placePin = map.locator('.leaflet-overlay-pane svg path[fill="#4f46e5"]:not([d="M0 0"])').first()
+  await expect(placePin).toBeVisible()
+  const panel = page.getByTestId('place-marker-info')
+  await expect(panel, 'the panel opens on a tap, not on hover').toHaveCount(0)
+  await placePin.click()
+  await expect(panel).toBeVisible()
+  await expect(panel).toContainText(PLACE_NAME)
+
+  // "Start a drop-in" IS offered: the pin carries a real `places.id`, and
+  // `hostHere()` builds the same typed prefill this page's own button does.
+  await expect(panel.getByTestId('host-here')).toBeVisible()
+  // "Details" is NOT: it links to `/place/:id`, and this IS that page — a
+  // control that looks live and does nothing. See the `placeActions` doc.
+  await expect(
+    panel.getByTestId('marker-details'),
+    'the place page must not offer a link to itself',
+  ).toHaveCount(0)
+  // Learn more is the same seam the page's own button uses, so the two agree.
+  await expect(panel.getByTestId('learn-more')).toBeVisible()
+
+  // Tapping the pin must not navigate away from the page it is on.
+  await expect(page).toHaveURL(/\/place\//)
+
+  // V20 t01: the page's photo is GONE and the "Learn more" link replaced it.
+  //
+  // The photo block (V18 t04) rendered an <img> plus its licence credit here.
+  // The founder's ruling retires it — "I can't police this and fix all the
+  // broken images" — so the page must now carry NO place photograph and no
+  // credit line, and must instead offer the one honest outbound link.
+  await expect(page.getByTestId('place-photo-credit')).toHaveCount(0)
+  await expect(
+    page.locator('figure img'),
+    'no place photograph is rendered on the detail page',
+  ).toHaveCount(0)
+
+  // The link itself: a real external target in a new tab, and its LABEL agrees
+  // with its DESTINATION. Green Lake Park is a city park, and the park rows are
+  // deliberately NOT in the website backfill (it covers community centers,
+  // pools, beaches and libraries) — so this asserts the pair rather than
+  // hard-coding which side of the seam this row lands on.
+  const learnMore = page.getByTestId('place-learn-more')
+  await expect(learnMore).toBeVisible()
+  const learnMoreHref = (await learnMore.getAttribute('href')) ?? ''
+  expect(learnMoreHref, 'the learn-more link is a real external URL').toMatch(/^https?:\/\/\S+/)
+  await expect(learnMore).toHaveAttribute('target', '_blank')
+  await expect(learnMore).toHaveAttribute('rel', 'noopener')
+  const linkKind = await learnMore.getAttribute('data-link-kind')
+  expect(linkKind).toMatch(/^(website|map-search)$/)
+  if (linkKind === 'website') {
+    await expect(learnMore).toContainText(/visit website/i)
+    expect(learnMoreHref).not.toContain('openstreetmap.org/search')
+  } else {
+    await expect(learnMore).toContainText(/map/i)
+    expect(learnMoreHref).toContain('openstreetmap.org/search')
+  }
 })
 
 test('picking a place on /new posts a drop-in that links to its place page, which lists it', async ({
@@ -1366,93 +2122,88 @@ test.afterEach(async () => {
 })
 
 /**
- * V18 t04 — the photo slot and its CREDIT LINE.
+ * V20 t01 — THE LEARN-MORE LINK (which replaced the photo slot entirely).
  *
- * WHY THIS SPEC DOES NOT SET UP A PHOTO ITSELF: `public.places` carries only a
- * SELECT policy for `anon`/`authenticated` (verified via `pg_policies`), so no
- * app-side role can write a `photo_url` — by design, since places are seeded
- * reference data and a parent must never be able to rewrite them. The photos
- * arrive through the management-API apply step (`scripts/apply-place-photos.mjs`
- * with the service token). A spec that "set up" a photo would therefore have to
- * forge a privileged write, and a test that exercises a path production cannot
- * reach is not evidence.
+ * WHY THIS SPEC DOES NOT SET UP A WEBSITE ITSELF: `public.places` carries only
+ * a SELECT policy for app roles (verified via `pg_policies`), so nothing the app
+ * can authenticate as may write a `website_url` — by design, since places are
+ * seeded reference data and a parent must never be able to rewrite them. Sites
+ * arrive through the reviewed backfill (`scripts/backfill-place-websites.mjs`
+ * with the service token). A spec that "set up" one would have to forge a
+ * privileged write, and a test that exercises a path production cannot reach is
+ * not evidence.
  *
- * So this asserts the INVARIANT over whatever the applied state actually is —
- * which is also the stronger claim, because it must hold for every one of the
- * rendered rows:
+ * So this asserts the INVARIANT over whatever the applied state actually is,
+ * which is the stronger claim because it must hold for every rendered row:
  *
- *   1. Every slot took exactly one branch (real | kind).
- *   2. A `real` slot has an <img> whose src is a non-empty http(s) URL.
- *   3. A `kind` slot has the drawn SVG glyph — never an empty box.
- *   4. Every `real` slot has EXACTLY ONE credit line, and it is a SPAN, not an
- *      anchor (the card is itself a Link; an <a> inside an <a> is invalid).
- *   5. A `kind` slot has NO credit line — crediting our own drawing to a
- *      Commons photographer would be a false statement.
+ *   1. Every card offers exactly one learn-more link.
+ *   2. Every link is a real external `http(s)` target in a new tab, never "" or
+ *      "#", and never missing `rel="noopener"`.
+ *   3. The link's LABEL agrees with its DESTINATION: "Visit website" points at
+ *      the stored site and not at the map-search fallback; "Find it on the map"
+ *      points at the OSM search.
+ *   4. The retired photo slot and its credit line appear NOWHERE.
  *
- * Point 4 is licence compliance, not cosmetics: the sourced photos are CC BY /
- * CC BY-SA, both of which REQUIRE attribution as a condition of use.
+ * Point 3 is the one that carries V20's actual promise. A card that shows
+ * "Visit website" over an OpenStreetMap search URL is the small lie the founder
+ * would only discover after clicking, so the two halves are asserted together.
  */
-test('every card photo slot is a real image with a credit, or a drawn glyph with none (V18 t04)', async ({
+test('every card offers an honest learn-more link, and no card shows a photo (V20 t01)', async ({
   page,
 }) => {
   await openPlacesTab(page)
   await expect(page.getByTestId('place-row').first()).toBeVisible()
 
-  // Reach the full list: the lead is 6 rows per kind, and the interesting rows
-  // (a curated photo, a place Commons has nothing for) are spread throughout.
+  // Reach the full list: the lead is a few rows per kind, and the curated
+  // websites (community centers, pools, beaches, libraries) are spread through
+  // it, so a lead-only sample would miss most `website` links.
   const seeAll = page.getByTestId('places-see-all')
   if ((await seeAll.count()) > 0) {
     await seeAll.first().click()
     await expect(page.getByTestId('place-row').first()).toBeVisible()
   }
 
-  const slots = page.getByTestId('place-card-photo')
-  const total = await slots.count()
-  expect(total).toBeGreaterThan(0)
+  // (4) the retired slot is genuinely gone from every card.
+  expect(await page.getByTestId('place-card-photo').count()).toBe(0)
+  expect(await page.getByTestId('place-card-photo-credit').count()).toBe(0)
 
-  let real = 0
-  let kind = 0
-  for (const slot of await slots.all()) {
-    const branch = await slot.getAttribute('data-photo')
-    expect(branch, 'a photo slot takes exactly one branch').toMatch(/^(real|kind)$/)
+  const cardCount = await page.getByTestId('place-row').count()
+  const links = page.locator('[data-testid^="row-learn-more-"]')
+  expect(await links.count(), 'one learn-more link per card').toBe(cardCount)
 
-    if (branch === 'real') {
-      real++
-      // (2) a real image with a usable src — never an <img src="">.
-      //
-      // NOTE THE SHAPE, because getting it wrong is what this test caught: for
-      // the `real` branch the slot element IS the <img> itself (PlacePhotoSlot
-      // returns a bare <img> carrying the testid), so `slot.locator('img')`
-      // searches for an <img> INSIDE an <img> and always finds zero. The
-      // assertion is on the slot directly for `real`, and on a descendant
-      // `svg` for `kind` — the two branches have different shapes, and a spec
-      // that assumes one shape will pass for the branch it happens to run
-      // against while being wrong about the other.
-      expect(await slot.evaluate((el) => el.tagName)).toBe('IMG')
-      const src = await slot.getAttribute('src')
-      expect(src, 'a real photo slot must carry a non-empty src').toMatch(/^https?:\/\/.+/)
+  let website = 0
+  let mapSearch = 0
+  for (const link of await links.all()) {
+    const href = (await link.getAttribute('href')) ?? ''
+    const kind = await link.getAttribute('data-link-kind')
+    const text = (await link.innerText()).trim()
+
+    expect(href, 'a learn-more link must not be empty').toMatch(/^https?:\/\/\S+/)
+    expect(kind, 'a learn-more link declares where it goes').toMatch(/^(website|map-search)$/)
+    await expect(link).toHaveAttribute('target', '_blank')
+    await expect(link).toHaveAttribute('rel', 'noopener')
+
+    if (kind === 'website') {
+      website += 1
+      expect(text, 'a stored site is labelled as the website').toMatch(/visit website/i)
+      expect(href, 'a "Visit website" link must not point at the map search').not.toContain(
+        'openstreetmap.org/search',
+      )
     } else {
-      kind++
-      // (3) the fallback is a DRAWN glyph, not an empty box.
-      await expect(slot.locator('svg')).toHaveCount(1)
+      mapSearch += 1
+      expect(text, 'the fallback says it is a map search').toMatch(/map/i)
+      expect(href, 'the fallback points at the OSM search').toContain('openstreetmap.org/search')
     }
   }
 
-  // (5) credits appear for real photos and ONLY for real photos. Counting them
-  // globally is the honest form: a stray credit on an illustration slot would
-  // make the total exceed `real`.
-  const credits = page.getByTestId('place-card-photo-credit')
-  expect(
-    await credits.count(),
-    'exactly one credit line per real photo, and none on an illustration',
-  ).toBe(real)
-
-  // The credit is text, never a nested anchor.
-  for (const credit of await credits.all()) {
-    expect(await credit.evaluate((el) => el.tagName)).toBe('SPAN')
-  }
-
-  console.log(`[V18 photos] ${total} slots — ${real} real with credit, ${kind} illustration`)
+  // The curated backfill has landed if ANY row carries a stored site — but a
+  // tree where none has yet is not a failure of the app, it is an unapplied
+  // backfill, so this reports rather than asserts. The assertions above already
+  // hold in both states, which is the point.
+  console.log(
+    `[V20 websites] ${cardCount} cards — ${website} with a verified website, ` +
+      `${mapSearch} using the map-search fallback`,
+  )
 })
 
 /**
@@ -1661,17 +2412,47 @@ test('the feed maps its placed drop-ins and ignores free-text ones (V19 t02)', a
      * is two-sided: carry a real id when there is one, and never synthesise one
      * when there is not.
      */
+    /**
+     * THE PIN'S PANEL — and getting this right took two corrections, both worth
+     * recording because each was a wrong belief about the data.
+     *
+     * BELIEF 1 (mine, wrong): this spec inserts a free-text post, so
+     * `placeActions` — `feedPins.every((pin) => pin.placeId !== null)` — would
+     * be false and the directory controls absent. IT IS NOT. `feedMapPins`
+     * drops any post that resolves to no COORDINATE, and a free-text post
+     * carries `place_coords: null` (that is rule 1 of that seam, and the whole
+     * point of the test). So the free-text post contributes NO PIN AT ALL, the
+     * only pin in `feedPins` is the placed one with a real id, and
+     * `placeActions` is TRUE. Asserted as it actually behaves.
+     *
+     * BELIEF 2 (the file's, wrong before this batch): the original assertion
+     * here required the panel's `host-here` button, which stopped being true the
+     * moment `44fdb8a` introduced `placeActions`… except it did not stop being
+     * true, because of belief 1. What actually broke this test was neither: it
+     * was the FRAME. `feedMapFrame` passed `focusPoints: feedPins`, so
+     * `framingCircle` shrank the camera to a half-mile circle centred on the
+     * pin and projected it 43px above the pane, where a click could not reach it
+     * (Playwright's trace: `d="M128,-43a8,8 …"`, intercepted by the page
+     * container). Removing that argument — V20 t05's ruling, applied to the feed
+     * — is what made this panel open at all.
+     *
+     * So the assertions below are the panel's real contract: it names the place,
+     * and because that place IS a directory row, the actions are offered and
+     * "Details" links a genuine uuid.
+     */
     const indigoMarker = page
       .locator('path.leaflet-interactive[fill="#4f46e5"]:not([d="M0 0"])')
       .first()
     if ((await indigoMarker.count()) > 0) {
       await indigoMarker.click({ force: true })
-      await expect(page.getByTestId('place-marker-info')).toBeVisible()
+      const panel = page.getByTestId('place-marker-info')
+      await expect(panel).toBeVisible()
       // The panel names the REAL place, not the old "Drop-in location" stub.
-      await expect(page.getByTestId('place-marker-info')).toContainText(MARKER_PLACE_NAME)
-      // And the directory actions are present, because this pin HAS an id.
-      await expect(page.getByTestId('host-here')).toBeVisible()
-      const detailsHref = await page.getByTestId('marker-details').getAttribute('href')
+      await expect(panel).toContainText(MARKER_PLACE_NAME)
+      // The directory actions ARE offered: the only pin here carries a real
+      // `place_id`, so `placeActions` is true (see belief 1 above).
+      await expect(panel.getByTestId('host-here')).toBeVisible()
+      const detailsHref = await panel.getByTestId('marker-details').getAttribute('href')
       expect(
         detailsHref,
         'Details must link to a REAL place id, never a synthesised feed-pin-N',

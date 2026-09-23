@@ -3,6 +3,11 @@ import type { FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router'
 import { DropInMark } from '../components/DropInMark'
 import { useSessionContext } from '../components/SessionProvider'
+import {
+  addressFieldError,
+  composeDisplayName,
+  displayNameFieldError,
+} from '../lib/account'
 import { LOGIN_PATH, resolveAuthRedirect } from '../lib/auth'
 import {
   createProfile,
@@ -11,7 +16,10 @@ import {
   signInWithOAuthProvider,
   signOutUser,
   supabase,
+  updateHomeZipRadius,
 } from '../lib/db'
+import { DEFAULT_RADIUS_MILES } from '../lib/feed'
+import { zipFromAddressQuery } from '../lib/geocode'
 import {
   RESET_REQUEST_NOTICE,
   resetRequestErrorMessage,
@@ -22,11 +30,36 @@ import { oauthErrorMessage, resolveOAuthProviders, type OAuthProvider } from '..
 const OAUTH_PROVIDERS = resolveOAuthProviders(import.meta.env.VITE_OAUTH_PROVIDERS)
 
 /**
- * Login + signup. Signup collects display_name (the persistent public
- * handle) and creates the caller's profiles row after account creation.
- * A taken handle is surfaced inline on the display_name field: the user
- * stays on the page, fixes the name, and resubmits (the account and
- * session already exist, so the retry re-runs profile creation only).
+ * Login + signup.
+ *
+ * V20 t06 — SIGNUP ASKS FOR A PERSON, NOT A HANDLE. The form used to collect
+ * one field, `display_name`, labelled "Display name" and explained as "your
+ * persistent public handle". The founder's report on the live app:
+ *
+ *   *"when you create your account originally, it should ask not only for your
+ *   name, your email and your password, but also your address so that it can
+ *   automatically show you results close to you… and also on that Create an
+ *   Account page, it shouldn't be your display name. It should say your first
+ *   name and last name (2 fields) so that when people search for you in the
+ *   Inbox if they want to message you it's really easy to find you."*
+ *
+ * So: FIRST NAME + LAST NAME (two fields, composed into the public handle by
+ * `composeDisplayName`) and a required HOME ADDRESS. The address is what makes
+ * the first thing a new parent sees already local — it geocodes (Nominatim,
+ * the same seam the browse map's "Set location" uses) and writes `home_zip`,
+ * which is exactly the value /onboarding's location step collects by hand.
+ *
+ * WHAT HAPPENS WHEN THE ADDRESS DOES NOT RESOLVE is the interesting half, and
+ * it is deliberately non-blocking: the account IS created, and the parent is
+ * sent to /onboarding's zip step with the generic notice telling them to add
+ * their zip there. Blocking account creation on a third-party geocoder being
+ * reachable — or on Nominatim recognising "Apt 3, 123 Main St" — would fail
+ * closed on someone else's downtime, and the fallback path already exists and
+ * is already required by the onboarding gate.
+ *
+ * A taken handle is still surfaced inline: the parent stays on the page, fixes
+ * the name, and resubmits (the account and session already exist, so the retry
+ * re-runs profile creation only).
  */
 export function LoginPage() {
   const { session, loading, refresh } = useSessionContext()
@@ -35,8 +68,11 @@ export function LoginPage() {
   const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [displayName, setDisplayName] = useState('')
-  const [displayNameError, setDisplayNameError] = useState<string | null>(null)
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [signupAddress, setSignupAddress] = useState('')
+  const [nameError, setNameError] = useState<string | null>(null)
+  const [addressError, setAddressError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -58,7 +94,8 @@ export function LoginPage() {
     setBusy(true)
     setError(null)
     setNotice(null)
-    setDisplayNameError(null)
+    setNameError(null)
+    setAddressError(null)
     try {
       // V5: request a reset link. The notice is deliberately neutral — the
       // endpoint answers the same way whether or not the address exists.
@@ -86,8 +123,22 @@ export function LoginPage() {
         return
       }
 
-      const name = displayName.trim()
-      if (name.length === 0) throw new Error('Please enter a display name.')
+      // --- signup ---------------------------------------------------------
+      // Both validations run BEFORE the account is created, so a missing name
+      // or address never leaves a half-made account behind. (The handle's
+      // AVAILABILITY is the one thing that can only be judged after creation —
+      // that is the retry path below.)
+      const nameProblem = displayNameFieldError(firstName, lastName)
+      if (nameProblem !== null) {
+        setNameError(nameProblem)
+        return
+      }
+      const addressProblem = addressFieldError(signupAddress)
+      if (addressProblem !== null) {
+        setAddressError(addressProblem)
+        return
+      }
+      const name = composeDisplayName(firstName, lastName)
 
       // Set before the awaits below so the bounce-off guard above can't
       // unmount the page while a session appears mid-signup.
@@ -118,12 +169,35 @@ export function LoginPage() {
       } catch (err) {
         if (err instanceof HandleTakenError) {
           // Stay on the page: the user fixes the name and resubmits.
-          setDisplayNameError(`“${name}” is already taken — pick a different display name.`)
+          setNameError(`“${name}” is already taken — try adding a middle name or initial.`)
           return
         }
         setAwaitingProfile(false)
         throw err
       }
+
+      /**
+       * V20 t06: the ADDRESS becomes the home zip, so a brand-new parent lands
+       * on a feed that is already about their neighbourhood instead of on
+       * /onboarding's "set your location" wall.
+       *
+       * This runs AFTER the profile row exists — `updateHomeZipRadius` requires
+       * it. A geocode failure is NOT an error the parent sees here: it means
+       * the zip is still unset, the onboarding gate sends them to /onboarding,
+       * and its own copy ("You'll see drop-ins near your home zip…") asks for
+       * the zip by hand. That fallback is the whole reason this is allowed to
+       * fail quietly, and it is why nothing below can block the account.
+       */
+      const zip = await zipFromAddressQuery(signupAddress)
+      if (zip !== null) {
+        try {
+          await updateHomeZipRadius(session?.user.id ?? '', zip, DEFAULT_RADIUS_MILES)
+        } catch {
+          // 0045's CHECK or a pre-0012 project: the onboarding step remains the
+          // path that tells the parent what to do. Never fatal here.
+        }
+      }
+
       // The shared session state fetched this user's profile BEFORE the row
       // existed (a brand-new account settles as "no profile"), so re-read it
       // now — otherwise the onboarding gate, and V4's handle step for
@@ -188,7 +262,7 @@ export function LoginPage() {
           {mode === 'login'
             ? 'Welcome back. Sign in to see drop-ins near you.'
             : mode === 'signup'
-              ? 'Pick a display name — it’s your persistent public handle.'
+              ? 'Your name is how other parents find you, and your address is how we know what is nearby.'
               : 'Enter your email and we’ll send a link to set a new password.'}
         </p>
 
@@ -224,32 +298,91 @@ export function LoginPage() {
           className={`flex flex-col gap-3 ${mode === 'reset' ? 'mt-4' : ''}`}
           onSubmit={(e) => void handleSubmit(e)}
         >
+          {/* V20 t06: FIRST NAME + LAST NAME, not one "Display name" box.
+              The founder's reason is discoverability in the Inbox: parents
+              search for each other by the name they know, and nobody knows
+              which handle their friend chose. The two are composed into the
+              public handle (`composeDisplayName`), which is still what every
+              `@handle` in the app renders.
+
+              `autoComplete` is the browser's own vocabulary — `given-name` and
+              `family-name` are what let a phone autofill both halves from the
+              contact card in one tap, which is the difference between a form a
+              parent finishes and one they abandon. */}
+          {mode === 'signup' ? (
+            <div className="flex gap-2">
+              <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
+                <span className="text-slate-700">First name</span>
+                <input
+                  className={
+                    inputClasses + (nameError !== null ? ' border-red-400' : '')
+                  }
+                  value={firstName}
+                  onChange={(e) => {
+                    setFirstName(e.target.value)
+                    setNameError(null)
+                  }}
+                  placeholder="Sam"
+                  required
+                  maxLength={40}
+                  autoComplete="given-name"
+                />
+              </label>
+              <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
+                <span className="text-slate-700">Last name</span>
+                <input
+                  className={
+                    inputClasses + (nameError !== null ? ' border-red-400' : '')
+                  }
+                  value={lastName}
+                  onChange={(e) => {
+                    setLastName(e.target.value)
+                    setNameError(null)
+                  }}
+                  placeholder="Rivera"
+                  maxLength={40}
+                  autoComplete="family-name"
+                />
+              </label>
+            </div>
+          ) : null}
+
+          {mode === 'signup' && nameError !== null ? (
+            <span className="text-sm text-red-600">{nameError}</span>
+          ) : null}
+
           {mode === 'signup' ? (
             <label className="flex flex-col gap-1 text-sm">
-              <span className="text-slate-700">Display name</span>
+              <span className="text-slate-700">Home address</span>
               <input
                 className={
-                  inputClasses + (displayNameError !== null ? ' border-red-400' : '')
+                  inputClasses + (addressError !== null ? ' border-red-400' : '')
                 }
-                value={displayName}
+                value={signupAddress}
                 onChange={(e) => {
-                  setDisplayName(e.target.value)
-                  setDisplayNameError(null)
+                  setSignupAddress(e.target.value)
+                  setAddressError(null)
                 }}
-                placeholder="e.g. Sam at Green Lake"
+                placeholder="e.g. 7200 4th Ave NE, Seattle"
                 required
-                maxLength={40}
-                autoComplete="nickname"
+                autoComplete="street-address"
               />
-              {displayNameError ? (
-                <span className="text-sm text-red-600">{displayNameError}</span>
+              {addressError !== null ? (
+                <span className="text-sm text-red-600">{addressError}</span>
               ) : null}
+              {/* Says what the address is FOR, because "why does a playdate app
+                  want my address" is the reasonable question at this exact
+                  point in the form. It is never shown to anyone: it resolves to
+                  a zip and the zip is all that is stored. */}
+              <span className="text-xs text-slate-500">
+                Used to show drop-ins near you. Other parents never see it.
+              </span>
             </label>
           ) : null}
 
           {mode === 'signup' && session !== null ? (
             <p className="text-sm text-slate-600">
-              Your account is created — pick a different display name and continue.
+              Your account is created — pick a different name and continue.
             </p>
           ) : null}
 
@@ -309,7 +442,8 @@ export function LoginPage() {
                   setMode('reset')
                   setError(null)
                   setNotice(null)
-                  setDisplayNameError(null)
+                  setNameError(null)
+                  setAddressError(null)
                 }}
               >
                 Forgot password?
@@ -327,7 +461,8 @@ export function LoginPage() {
             setMode(mode === 'signup' ? 'login' : 'signup')
             setError(null)
             setNotice(null)
-            setDisplayNameError(null)
+            setNameError(null)
+            setAddressError(null)
           }}
         >
           {mode === 'login'

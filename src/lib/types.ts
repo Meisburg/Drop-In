@@ -331,6 +331,19 @@ export interface Place {
    * than re-derived at each render site.
    */
   photo_attribution?: string | null
+  /**
+   * V20 t01 (0048): the place's OWN website — what "Learn more" opens.
+   *
+   * NULL for most rows, and that is the designed state rather than a gap: no
+   * city feature service publishes an operator URL, so the column is filled
+   * only by the reviewed backfill for rows where an official page was verified
+   * reachable and about that place. `placeLearnMoreLink` (lib/places.ts) falls
+   * back to the derived OSM search and labels it as a map search.
+   *
+   * Only `http(s)` values are ever used — the column has no CHECK, and the
+   * seam refuses anything else rather than putting it in an `href`.
+   */
+  website_url?: string | null
   /** Null for every seeded row — no source field carries a neighborhood. */
   neighborhood_id: string | null
   /** 'seattle-parks' (the city's open data) or 'hand' (the curated indoor list). */

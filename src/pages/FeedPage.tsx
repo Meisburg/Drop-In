@@ -377,11 +377,33 @@ export function FeedPage() {
     ).length
   })()
 
+  /**
+   * THE FEED MAP'S FRAME — and V20 t05 removed `focusPoints` from it.
+   *
+   * It used to pass `focusPoints: feedPins`, which is V17 t04's "frame the
+   * searched subset": `framingCircle` takes the MIDPOINT of those points and
+   * shrinks the frame to a circle just covering them, floored at
+   * `MIN_FOCUS_RADIUS_MILES` (0.5).
+   *
+   * THAT IS WHAT MADE THE FEED'S OWN PINS UNREACHABLE, and it was found by this
+   * batch's e2e run rather than by reasoning. With one placed drop-in, the
+   * midpoint IS that pin, the extent around it is zero, and the frame becomes a
+   * half-mile circle centred on the PIN — so the camera leaves home entirely and
+   * the home pin is projected off the canvas. Playwright's trace showed the
+   * marker at SVG `y = -43`, i.e. 43px above the pane, where the app's own
+   * container intercepts every tap: a blue dot that looks tappable and is not.
+   *
+   * V20 t05's ruling is that the RADIUS frames the map and nothing else moves
+   * the camera (the same ruling that removed `focusPoints` from `/browse`), so
+   * this passes the home pin and the focus radius, exactly like /browse does.
+   * A feed pin outside that frame is still drawn — `feedPinsOutsideFrame` below
+   * counts them and the band says so — and the follow-up for making those dots
+   * themselves reachable is recorded there.
+   */
   const feedMapFrame = framingCircle({
     geocodeCenter: null,
     homePin: homePinCoords,
     radiusMiles: MAP_FOCUS_RADIUS_MILES,
-    focusPoints: feedPins,
   })
 
   // The viewer side of the radius filter: the profile's home zip + radius.

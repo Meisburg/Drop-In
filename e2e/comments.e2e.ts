@@ -24,12 +24,8 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import {
-  editTitle,
-  localDatePlusDays,
-  readMarkerSession,
-  readSupabaseEnv,
-  settleOnRoute,
-  stepStartTimeOnce,
+  editTitle, localDatePlusDays, readMarkerSession, readSupabaseEnv,
+  settleOnRoute, signUpViewer, stepStartTimeOnce,
 } from './fixtures'
 
 /** The viewer's location: the MARKER's own zip (the post is in-radius) + default radius. */
@@ -100,12 +96,13 @@ test('a comment is visible to a second viewer, then the author’s delete remove
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()
-  await viewerPage.goto('/login')
-  await viewerPage.getByRole('button', { name: 'New here? Create an account' }).click()
-  await viewerPage.locator('input[autocomplete="nickname"]').fill(viewerName)
-  await viewerPage.locator('input[type="email"]').fill(viewerEmail)
-  await viewerPage.locator('input[type="password"]').fill(viewerPassword)
-  await viewerPage.getByRole('button', { name: 'Create account' }).click()
+  // V20 t06: signup is first + last name + address now — one shared helper
+  // (`signUpViewer`) so the form's field list lives in one place.
+  await signUpViewer(viewerPage, {
+    name: viewerName,
+    email: viewerEmail,
+    password: viewerPassword,
+  })
   await viewerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
   await viewerPage.getByPlaceholder('e.g. 98107').fill(VIEWER_ZIP)
   await viewerPage.locator('select').first().selectOption({ label: '5 miles' })

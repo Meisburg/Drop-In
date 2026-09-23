@@ -23,10 +23,8 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import {
-  readMarkerMeta,
-  readMarkerSession,
-  readSupabaseEnv,
-  settleOnRoute,
+  readMarkerMeta, readMarkerSession, readSupabaseEnv, settleOnRoute,
+  signUpViewer,
 } from './fixtures'
 
 test('new message: search a parent, open DM thread, send a message', async ({
@@ -45,12 +43,13 @@ test('new message: search a parent, open DM thread, send a message', async ({
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()
-  await viewerPage.goto('/login')
-  await viewerPage.getByRole('button', { name: 'New here? Create an account' }).click()
-  await viewerPage.locator('input[autocomplete="nickname"]').fill(viewerName)
-  await viewerPage.locator('input[type="email"]').fill(viewerEmail)
-  await viewerPage.locator('input[type="password"]').fill(viewerPassword)
-  await viewerPage.getByRole('button', { name: 'Create account' }).click()
+  // V20 t06: signup is first + last name + address now — one shared helper
+  // (`signUpViewer`) so the form's field list lives in one place.
+  await signUpViewer(viewerPage, {
+    name: viewerName,
+    email: viewerEmail,
+    password: viewerPassword,
+  })
   await viewerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
   await viewerPage.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
   await viewerPage
@@ -153,12 +152,13 @@ test('the Message button on a family page opens the DM thread (and is absent on 
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()
-  await viewerPage.goto('/login')
-  await viewerPage.getByRole('button', { name: 'New here? Create an account' }).click()
-  await viewerPage.locator('input[autocomplete="nickname"]').fill(viewerName)
-  await viewerPage.locator('input[type="email"]').fill(viewerEmail)
-  await viewerPage.locator('input[type="password"]').fill(viewerPassword)
-  await viewerPage.getByRole('button', { name: 'Create account' }).click()
+  // V20 t06: signup is first + last name + address now — one shared helper
+  // (`signUpViewer`) so the form's field list lives in one place.
+  await signUpViewer(viewerPage, {
+    name: viewerName,
+    email: viewerEmail,
+    password: viewerPassword,
+  })
   await viewerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
   await viewerPage.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
   await viewerPage
@@ -220,12 +220,13 @@ test('RLS isolation: a stranger cannot read a free-form DM', async ({
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()
-  await viewerPage.goto('/login')
-  await viewerPage.getByRole('button', { name: 'New here? Create an account' }).click()
-  await viewerPage.locator('input[autocomplete="nickname"]').fill(viewerName)
-  await viewerPage.locator('input[type="email"]').fill(viewerEmail)
-  await viewerPage.locator('input[type="password"]').fill(viewerPassword)
-  await viewerPage.getByRole('button', { name: 'Create account' }).click()
+  // V20 t06: signup is first + last name + address now — one shared helper
+  // (`signUpViewer`) so the form's field list lives in one place.
+  await signUpViewer(viewerPage, {
+    name: viewerName,
+    email: viewerEmail,
+    password: viewerPassword,
+  })
   await viewerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
   await viewerPage.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
   await viewerPage
@@ -270,12 +271,13 @@ test('RLS isolation: a stranger cannot read a free-form DM', async ({
     storageState: { cookies: [], origins: [] },
   })
   const strangerPage = await strangerContext.newPage()
-  await strangerPage.goto('/login')
-  await strangerPage.getByRole('button', { name: 'New here? Create an account' }).click()
-  await strangerPage.locator('input[autocomplete="nickname"]').fill(strangerName)
-  await strangerPage.locator('input[type="email"]').fill(strangerEmail)
-  await strangerPage.locator('input[type="password"]').fill(strangerPassword)
-  await strangerPage.getByRole('button', { name: 'Create account' }).click()
+  // V20 t06: signup is first + last name + address now — one shared helper
+  // (`signUpViewer`) so the form's field list lives in one place.
+  await signUpViewer(strangerPage, {
+    name: strangerName,
+    email: strangerEmail,
+    password: strangerPassword,
+  })
   await strangerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
   await strangerPage.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
   await strangerPage

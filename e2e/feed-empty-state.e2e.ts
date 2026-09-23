@@ -29,12 +29,8 @@
 import { expect, test } from '@playwright/test'
 import { WIDEN_RADIUS_MILES, emptyRadiusCopy } from '../src/lib/feed'
 import {
-  editTitle,
-  localDatePlusDays,
-  readMarkerMeta,
-  readMarkerSession,
-  readSupabaseEnv,
-  settleOnRoute,
+  editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
+  readSupabaseEnv, settleOnRoute, signUpViewer,
 } from './fixtures'
 
 /**
@@ -275,12 +271,13 @@ test('the detail page\'s failed reads are honest states, and Retry recovers', as
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()
-  await viewerPage.goto('/login')
-  await viewerPage.getByRole('button', { name: 'New here? Create an account' }).click()
-  await viewerPage.locator('input[autocomplete="nickname"]').fill(viewerName)
-  await viewerPage.locator('input[type="email"]').fill(viewerEmail)
-  await viewerPage.locator('input[type="password"]').fill(viewerPassword)
-  await viewerPage.getByRole('button', { name: 'Create account' }).click()
+  // V20 t06: signup is first + last name + address now — one shared helper
+  // (`signUpViewer`) so the form's field list lives in one place.
+  await signUpViewer(viewerPage, {
+    name: viewerName,
+    email: viewerEmail,
+    password: viewerPassword,
+  })
   await viewerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
   await viewerPage.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
   await viewerPage.getByRole('button', { name: /^Continue/ }).click()

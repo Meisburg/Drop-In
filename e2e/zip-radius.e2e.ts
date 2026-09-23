@@ -22,13 +22,8 @@
  */
 import { expect, test } from '@playwright/test'
 import {
-  editTitle,
-  localDatePlusDays,
-  readMarkerMeta,
-  readMarkerSession,
-  readSupabaseEnv,
-  settleOnRoute,
-  stepStartTimeOnce,
+  editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
+  readSupabaseEnv, settleOnRoute, signUpViewer, stepStartTimeOnce,
 } from './fixtures'
 
 /** The viewer's location: a known WA zip ~11.5 mi from 98107 + a generous radius. */
@@ -65,12 +60,13 @@ test('a host marker\'s drop-in reaches a viewer\'s radius feed with an "N mi" la
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()
-  await viewerPage.goto('/login')
-  await viewerPage.getByRole('button', { name: 'New here? Create an account' }).click()
-  await viewerPage.locator('input[autocomplete="nickname"]').fill(viewerName)
-  await viewerPage.locator('input[type="email"]').fill(viewerEmail)
-  await viewerPage.locator('input[type="password"]').fill(viewerPassword)
-  await viewerPage.getByRole('button', { name: 'Create account' }).click()
+  // V20 t06: signup is first + last name + address now — one shared helper
+  // (`signUpViewer`) so the form's field list lives in one place.
+  await signUpViewer(viewerPage, {
+    name: viewerName,
+    email: viewerEmail,
+    password: viewerPassword,
+  })
 
   // The viewer's location step: a different known zip + a generous radius
   // (the host's post is ~11.5 mi away — inside 20, outside the default 5).
