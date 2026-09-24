@@ -37,8 +37,8 @@
  *     the SAME values the submit writes (bracketed around the mount, so neither
  *     a 30-minute boundary nor midnight can flake it) and is still checked
  *     against the card in the feed AND the row in the database.
- *  3. THE TITLE IS NO LONGER A QUESTION. It is generated ("Playdate at
- *     <place>"), shown as a read-back line on the summary that a tap turns into
+ *  3. THE TITLE IS NO LONGER A QUESTION. It is generated ("Drop-in at
+ *     <place>" — V23 renamed the prefix from "Playdate at …"), shown as a read-back line on the summary that a tap turns into
  *     the input in place (review cycle 1, F2 — so the place picker stays /new's
  *     FIRST field, ticket 01's AC), follows the place until the parent writes
  *     their own, comes back from empty, and never comes back blank.

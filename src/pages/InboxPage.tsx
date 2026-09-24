@@ -877,7 +877,7 @@ export function InboxPage() {
                   </p>
                   <Link
                     to="/browse"
-                    className="mt-3 inline-block rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"
+                    className="mt-3 inline-flex min-h-11 items-center rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white"
                   >
                     Browse places
                   </Link>

@@ -649,31 +649,26 @@ test('tapping an overview map marker shows the place info + "Start a drop-in" (V
     'loaded OSM tiles must stay visible after a tap (the white-map regression)',
   ).toBe('visible')
 
-  // V15 ticket 04 / V20 t01: the marker panel's "Learn more" is a real external
-  // link in a new tab.
+  // V23 slice 4 — THE PANEL'S MAP-SEARCH FALLBACK IS GONE, on the founder's
+  // instruction: *"I would remove the find it on the map button."*
   //
-  // The href assertion changed with V20 t01: it used to REQUIRE the derived OSM
-  // search URL. `MARKER_PLACE_NAME` is a playground, and the reviewed backfill
-  // verifies an operator site for community centers, pools, beaches and
-  // libraries rather than for playgrounds — so this row's link is the OSM
-  // fallback and the label says so. Asserting the OSM URL specifically would
-  // pin this spec to a fact about curation rather than to the app's behaviour;
-  // what is asserted instead is the pair that must always agree.
-  const learnMore = info.getByTestId('learn-more')
-  await expect(learnMore).toBeVisible()
-  const learnMoreHref = (await learnMore.getAttribute('href')) ?? ''
-  expect(learnMoreHref, 'the panel link is a real external URL').toMatch(/^https?:\/\/\S+/)
-  await expect(learnMore).toHaveAttribute('target', '_blank')
-  await expect(learnMore).toHaveAttribute('rel', 'noopener')
-  // No `data-link-kind` on this panel (it predates the seam): the label is the
-  // honest signal, and an OSM href must be labelled as a map search.
-  if (learnMoreHref.includes('openstreetmap.org/search')) {
-    await expect(learnMore).toContainText(/map/i)
-    await expect(learnMore).toHaveAttribute(
-      'href',
-      `https://www.openstreetmap.org/search?query=${encodeURIComponent(MARKER_PLACE_NAME)},+Seattle`,
-    )
-  }
+  // `MARKER_PLACE_NAME` is a playground, and the reviewed backfill verifies an
+  // operator site for community centers, pools, beaches and libraries rather
+  // than for playgrounds — so before this slice the only link this panel could
+  // show WAS the derived OSM search. It now shows none, and that is correct:
+  // the panel floats over a map, so a link offering a map search duplicates
+  // the surface behind it.
+  //
+  // What must still hold is that the removal is PANEL-SCOPED: the "Details"
+  // door is the panel's route to the wider web, and the place PAGE keeps its
+  // own `place-learn-more` (asserted further down this file).
+  await expect(
+    info.getByTestId('learn-more'),
+    'the map-search fallback must not return to this panel',
+  ).toHaveCount(0)
+  const panelDetails = info.getByTestId('marker-details')
+  await expect(panelDetails).toBeVisible()
+  await expect(panelDetails.getAttribute('href')).resolves.toMatch(/^\/place\//)
 
   // "Start a drop-in" lands on /new with the place pre-filled — the SAME router-
   // state seam the place page's "Start a drop-in here" uses (V9 ticket 03's
@@ -685,7 +680,9 @@ test('tapping an overview map marker shows the place info + "Start a drop-in" (V
   await expect(page.getByPlaceholder(ADDRESS_INPUT)).toHaveValue(MARKER_PLACE_ADDRESS)
   await editTitle(page)
   await expect(page.getByPlaceholder('e.g. Playground time at Green Lake')).toHaveValue(
-    `Playdate at ${MARKER_PLACE_NAME}`,
+    // V23 renamed the GENERATED prefix "Playdate at …" -> "Drop-in at …"
+    // (postSummary.GENERATED_TITLE_PREFIX); a freshly seeded title uses the new word.
+    `Drop-in at ${MARKER_PLACE_NAME}`,
   )
   // A prefill is not "typing": no suggestion list is left hanging open.
   await expect(page.getByTestId('place-suggestions')).toHaveCount(0)
@@ -1871,7 +1868,8 @@ test('"Start a drop-in here" prefills the post form with that place', async ({ p
   // tap it to edit (the input is what the specs drive).
   await editTitle(page)
   await expect(page.getByPlaceholder('e.g. Playground time at Green Lake')).toHaveValue(
-    `Playdate at ${PLACE_NAME}`,
+    // V23 rename: the generated prefix is "Drop-in at …" now.
+    `Drop-in at ${PLACE_NAME}`,
   )
   // A prefill is not "typing": no suggestion list is left hanging open.
   await expect(page.getByTestId('place-suggestions')).toHaveCount(0)

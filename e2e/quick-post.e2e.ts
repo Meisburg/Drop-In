@@ -152,7 +152,9 @@ test('/new re-mount renders the new layout and posts end-to-end', async ({
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
   await expect(
-    page.getByRole('heading', { name: `Playdate at ${place}`, exact: true }),
+    // V23 rename: the generated prefix is "Drop-in at …" now, matching what
+    // line 148 pins on the form — the heading is that same stored title.
+    page.getByRole('heading', { name: `Drop-in at ${place}`, exact: true }),
   ).toBeVisible()
 })
 

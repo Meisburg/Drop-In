@@ -360,7 +360,8 @@ test('typing @ opens the picker, and picking a place fills place + address in on
   // V9 ticket 03 (review cycle 1, F2): the summary's title is a read-back —
   // tap it to edit (the input is what the specs drive).
   await editTitle(page)
-  await expect(page.getByPlaceholder(TITLE_PLACEHOLDER)).toHaveValue(`Playdate at ${PLACE_NAME}`)
+  // V23 rename: the generated prefix is "Drop-in at …" now, not "Playdate at …".
+  await expect(page.getByPlaceholder(TITLE_PLACEHOLDER)).toHaveValue(`Drop-in at ${PLACE_NAME}`)
   await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
   // V13 ticket 02: the start date lives in the visible "When" section.
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
@@ -443,7 +444,8 @@ test('typing @ opens the picker, and picking a place fills place + address in on
   // V9 ticket 03 (review cycle 1, F2): the summary's title is a read-back —
   // tap it to edit (the input is what the specs drive).
   await editTitle(page)
-  await expect(page.getByPlaceholder(TITLE_PLACEHOLDER)).toHaveValue(`Playdate at ${PLACE_NAME}`)
+  // V23 rename: the generated prefix is "Drop-in at …" now, not "Playdate at …".
+  await expect(page.getByPlaceholder(TITLE_PLACEHOLDER)).toHaveValue(`Drop-in at ${PLACE_NAME}`)
 
   // THE SIGNED-OUT VIEW (T4 of the ticket, migration 0035's second half). The
   // anon path is NOT the embeds above — it is the SECURITY DEFINER

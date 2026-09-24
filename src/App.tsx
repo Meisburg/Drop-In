@@ -234,7 +234,7 @@ function ProtectedShell() {
               {session !== null ? (
                 <Link
                   to="/settings"
-                  className="flex min-h-11 items-center justify-center text-slate-600"
+                  className="flex min-h-11 min-w-11 items-center justify-center text-slate-600"
                   aria-label="Settings"
                 >
                   <NavIcon path={NAV_ICONS.gear} />
