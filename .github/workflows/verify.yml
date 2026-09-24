@@ -50,11 +50,10 @@
 # WHAT THIS WORKFLOW DELIBERATELY DOES NOT DO: the e2e lane. Playwright signs up
 # a real marker account against the LIVE Supabase project on every run
 # (`e2e/auth.setup.ts`), which would create throwaway rows in a production
-# database from a forge. That belongs behind an explicit decision — a dedicated
-# test project, or a scheduled run — not bolted onto the first CI file this repo
-# has ever had. `npm run a11y:profile-order` is in the same position: it needs a
-# browser, a preview server and a signed-in session, so it stays a manual lane.
-# Both are recorded in task-state.md as open work with their blockers named.
+# database from a forge. THAT DECISION IS MADE: the lane runs on a schedule, not
+# on a PR — `.github/workflows/e2e-scheduled.yml` (nightly + workflow_dispatch),
+# with the reasoning recorded in `docs/agents/ci.md`. `npm run a11y:profile-order`
+# runs in the same scheduled workflow. Neither is bolted onto this PR gate.
 # ============================================================================
 
 name: verify

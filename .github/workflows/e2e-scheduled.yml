@@ -1,0 +1,194 @@
+# ============================================================================
+# The live-account lane, on a schedule — Playwright e2e + `a11y:profile-order`
+# against the LIVE Supabase project, nightly, and NEVER on a pull request.
+# ============================================================================
+#
+# WHY THIS EXISTS, AND WHY IT IS A SCHEDULE RATHER THAN A SECOND PROJECT.
+# `npm run test:e2e` and `npm run a11y:profile-order` both sign up a REAL
+# marker account against the LIVE Supabase project, so running them on every PR
+# would write throwaway rows into a production database on every push. The two
+# ways out were a dedicated test Supabase project or an explicitly scheduled
+# run. THIS REPO CHOSE THE SCHEDULE:
+#
+#   * The suite ALREADY runs against the live project locally and in ad-hoc
+#     sweeps (the most recent full sweep went 110 / 115), so a schedule reuses
+#     a lane that exists instead of inventing a new one.
+#   * A second Supabase project would add a database to migrate, seed and keep
+#     in sync, its own credentials, and its own drift — for a lane whose only
+#     job is to catch test-versus-product drift. The live project is the one
+#     the product actually ships against, so it is the honest target for that
+#     drift.
+#   * The cost is real and named rather than hidden: nightly runs accumulate
+#     `e2e-*` marker auth users, which the manual
+#     `scripts/sweep-e2e-markers.mjs` sweep removes. A broken night is a
+#     visible cost; a second project silently drifting from production is a
+#     hidden one.
+#
+# The decision and its reasoning are also recorded for readers who never open
+# this file: `docs/agents/ci.md` ("The scheduled live-account lane").
+#
+# WHAT IT RUNS, AND WHY THE PR GATE IS UNCHANGED.
+# `verify.yml` stays exactly `npm run verify` on pushes and PRs. This workflow
+# is a SEPARATE schedule, so a live-database hiccup can never turn a PR red,
+# and it never blocks a merge. `npm run verify` still does not include e2e.
+#
+# ---------------------------------------------------------------------------
+# THE SECRETS QUESTION — SAME ANSWER AS `verify.yml`
+# ---------------------------------------------------------------------------
+# `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` come from repository
+# VARIABLES (`vars.*`), never secrets: the anon key is compiled into the
+# shipped bundle and RLS is what protects the data. See `verify.yml`'s header
+# for the full reasoning. The e2e specs read the repo `.env` FILE directly
+# (`e2e/fixtures.ts` `readEnvFile`), not the process environment, so this
+# workflow WRITES a gitignored `.env` from the same two variables before the
+# suite runs. If the variables are absent the lane SKIPS with a notice instead
+# of failing — an unconfigured variable is a setup step, not a broken night.
+#
+# ---------------------------------------------------------------------------
+# WHAT RUNS WHERE, AND HOW THE RUN CLEANS UP
+# ---------------------------------------------------------------------------
+#   * `npm run test:e2e` builds and serves the app through Playwright's own
+#     configured `webServer` (`npm run build && npm run preview` on :4173, see
+#     `playwright.config.ts`), signs up the marker via `e2e/auth.setup.ts`,
+#     runs the suite, then tears the server down.
+#   * `npm run a11y:profile-order` then runs against that SAME build, served by
+#     a `npm run preview` this workflow starts and stops itself. It is included
+#     because it genuinely runs here: the setup spec has written the signed-in
+#     marker session to `e2e/.auth/marker-state.json`, the check seeds the bio
+#     and family photo it needs and restores them, and it needs only a browser
+#     (installed below) and a server (started below).
+#   * Clean-up is the SUITE'S OWN marker cleanup: every spec's `afterEach` /
+#     `afterAll` REST deletes remove the rows the run created, including on a
+#     failed spec. The marker AUTH USERS persist by design and are removed by
+#     the manual `scripts/sweep-e2e-markers.mjs` sweep, which needs a Supabase
+#     dashboard/management token and is deliberately NOT wired into CI.
+#   * On failure, the job uploads LIMITED evidence: failure screenshots from
+#     `test-results/` plus `preview.log` only when the a11y step ran and
+#     created that step's server log (a failed e2e run skips the a11y step),
+#     at 1-day retention. Never the Playwright trace: it carries DOM
+#     snapshots, network request/response bodies and the marker session's
+#     storage record — live family data and an access token that do not
+#     belong in repository artifact storage.
+# ============================================================================
+
+name: e2e-scheduled
+
+on:
+  schedule:
+    # Nightly at 09:17 UTC (02:17 Pacific) — off the hour so it does not pile
+    # onto every other cron the runner fleet keeps.
+    - cron: '17 9 * * *'
+  # A manual run for the times a human wants the lane now. Still never a PR:
+  # `workflow_dispatch` is a person asking, not a merge gating.
+  workflow_dispatch:
+
+# Least privilege: the lane only reads the checkout.
+permissions:
+  contents: read
+
+# One live-account lane at a time: a second run would race the first over the
+# live project. Queue rather than cancel — a finished night is worth keeping.
+concurrency:
+  group: e2e-scheduled
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    name: live e2e + a11y:profile-order
+    runs-on: ubuntu-latest
+    # The full suite is ~8-10 minutes locally and slower on a cold runner; the
+    # browser download and the build add to that. 60 is generous, not tight.
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches package.json's `engines.node: >=22` and `verify.yml`.
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check the Supabase variables are configured
+        id: env
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "${VITE_SUPABASE_URL}" ] || [ -z "${VITE_SUPABASE_ANON_KEY}" ]; then
+            echo "::notice title=Live lane skipped::VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are not set as repository variables. This lane signs up real accounts against the live project, so it cannot run without them. See .github/workflows/e2e-scheduled.yml for why they are needed and why they are not secrets (Settings -> Secrets and variables -> Actions -> Variables)."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The e2e specs read the repo `.env` file directly (`e2e/fixtures.ts`),
+      # not the process environment — so the same two variables the build
+      # reads are written to the gitignored file the specs read. Never echoed.
+      - name: Write the repo .env from the repository variables
+        if: steps.env.outputs.configured == 'true'
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          printf 'VITE_SUPABASE_URL=%s\nVITE_SUPABASE_ANON_KEY=%s\n' \
+            "$VITE_SUPABASE_URL" "$VITE_SUPABASE_ANON_KEY" > .env
+
+      - name: Install the Playwright chromium browser
+        if: steps.env.outputs.configured == 'true'
+        run: npx playwright install --with-deps chromium
+
+      # The build and the preview server are Playwright's own configured
+      # `webServer` (`npm run build && npm run preview` on :4173) — one
+      # definition of how the suite is served, in `playwright.config.ts`.
+      - name: Run the live e2e suite
+        if: steps.env.outputs.configured == 'true'
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+        run: npm run test:e2e
+
+      # A browser + a preview server over the suite's own freshly-built dist.
+      # The trap is what makes the stop reliable on the failure path too: the
+      # listener goes away whether the check passes, fails, or errors.
+      - name: Run a11y:profile-order against the same build
+        if: steps.env.outputs.configured == 'true'
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          npm run preview -- --strictPort > preview.log 2>&1 &
+          PREVIEW_PID=$!
+          # Release the listener by PORT (never `pkill -f`, which matches the
+          # step's own shell) on every exit path, including a failed check.
+          trap 'kill "$PREVIEW_PID" 2>/dev/null || true; lsof -ti tcp:4173 2>/dev/null | xargs -r kill 2>/dev/null || true' EXIT
+          for _ in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:4173 && break
+            sleep 1
+          done
+          if ! curl -sf -o /dev/null http://localhost:4173; then
+            echo "::error title=Preview server never came up::npm run preview did not answer on :4173 within 60s"
+            exit 1
+          fi
+          npm run a11y:profile-order
+
+      # Upload the failure evidence, deliberately NARROW. Evidence from this
+      # live-account lane is limited to failure screenshots plus the a11y
+      # step's server log (`preview.log` belongs only to that step, which a
+      # failed e2e step skips), at 1-day retention. The Playwright trace is
+      # never uploaded: its DOM snapshots, network request/response bodies and
+      # storage record carry live family data and the marker session's token,
+      # none of which belong in repository artifact storage.
+      - name: Upload the failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-scheduled-evidence
+          path: |
+            test-results/**/*.png
+            preview.log
+          if-no-files-found: ignore
+          retention-days: 1

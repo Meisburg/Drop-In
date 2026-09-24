@@ -56,20 +56,15 @@
  *   signed-in marker session at e2e/.auth/marker-state.json (the Playwright
  *   setup project writes it; gitignored).
  *
- * WHERE THIS RUNS, AND WHY IT IS NOT IN `verify` (V23 review).
- * It is a MANUAL lane (`npm run a11y:profile-order`), alongside `mobile-audit`
- * and `dark-mode-check`, for the same reason those are: it drives a real browser
- * against a built bundle and a signed-in session, while every check inside
- * `npm run verify` is static (it reads source) or server-free. Putting a
- * browser-dependent check in `verify` would make the gate depend on a preview
- * server and a live account — precisely the fragility `verify` is arranged to
- * avoid.
- *
- * THE CONSEQUENCE, stated rather than glossed: the cross-surface drift this
- * script detects has NO permanent gate. It runs when a human or an agent runs
- * it. That is a real gap and it is the same one V22 recorded about its manual
- * `scripts/*-check.mjs` lanes — they wire into `verify` once a CI fixture
- * account exists. Until then, run this after touching either profile surface.
+ * WHERE THIS RUNS, AND WHY IT IS NOT IN `verify`.
+ * The lane runs in `.github/workflows/e2e-scheduled.yml` — nightly on its
+ * schedule and by manual dispatch — as `npm run a11y:profile-order` against the
+ * same build the e2e suite uses. The decision (a scheduled live-account lane
+ * instead of a dedicated test project) is recorded in `docs/agents/ci.md`.
+ * It stays out of `npm run verify` because verify is static and server-free:
+ * every check inside it reads source or runs without servers, while this one
+ * needs a built bundle, a preview server on :4173, and the signed-in marker
+ * session.
  */
 import { chromium } from '@playwright/test'
 
@@ -289,14 +284,45 @@ async function seedProfile(page, env, patch) {
   return prior
 }
 
-const browser = await chromium.launch()
-const context = await browser.newContext({
-  storageState: MARKER_STATE,
-  viewport: { width: 390, height: 844 },
-})
-const page = await context.newPage()
+/**
+ * PUT the marker's profile back to its prior values over plain REST, using the
+ * credentials captured BEFORE any browser work — so the restore survives the
+ * exact failure class the teardown exists for: a crashed renderer or closed
+ * context after seeding. Never touches the page. Throws on failure; the
+ * finally block catches and reports it separately from the original error.
+ */
+async function restoreProfile(env, jwt, userId, patch) {
+  const res = await fetch(`${env.url}/rest/v1/profiles?id=eq.${userId}`, {
+    method: 'PATCH',
+    headers: {
+      apikey: env.anonKey,
+      Authorization: `Bearer ${jwt}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(patch),
+  })
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} - ${(await res.text()).slice(0, 120)}`)
+  }
+}
 
-console.log(`profile-order-check against ${BASE}\n`)
+const browser = await chromium.launch()
+let seeded = false
+let prior = null
+let fixtureObjectPath = null
+let markerJwt = null
+let markerUserId = null
+let env
+let page
+
+try {
+  const context = await browser.newContext({
+    storageState: MARKER_STATE,
+    viewport: { width: 390, height: 844 },
+  })
+  page = await context.newPage()
+
+  console.log(`profile-order-check against ${BASE}\n`)
 
 await page.goto(BASE + '/profile', { waitUntil: 'networkidle' })
 // The boot splash is a fixed inset-0 overlay that unmounts a beat after mount;
@@ -306,16 +332,13 @@ await page
   .catch(() => {})
 
 // --- SEED the content whose ORDER this check is about (see the block above). ---
-const env = await readSupabaseEnv()
+env = await readSupabaseEnv()
 const SEED_BIO = 'Order-check fixture: we like parks and snacks.'
 const SEED_PHOTO = 'order-check-fixture/family.jpg'
-let seeded = false
-let prior = null
-let fixtureObjectPath = null
-let markerJwt = null
 if (env.url !== undefined && env.anonKey !== undefined) {
   const creds = await markerCredentials(page)
   markerJwt = creds?.jwt ?? null
+  markerUserId = creds?.userId ?? null
   // Upload the object BEFORE the column points at it, so the read view's
   // signed-URL mint has something real to sign (see uploadFixturePhoto).
   if (creds !== null && creds.jwt !== null && creds.userId !== null) {
@@ -516,29 +539,36 @@ check(
   `read index ${readPhotoIdx} (of ${readShared.length}), edit index ${editPhotoIdx} (of ${editShared.length})`,
 )
 
-// --- RESTORE what the seeding changed. This runs BEFORE the exit code, so a
-// FAILING check still cleans up after itself. This is a live family database: a
-// check must not edit it, and a fixture left behind on the failure path is
-// exactly how a test value ends up in a real person's profile.
-if (seeded && prior !== null) {
-  const restored = await seedProfile(page, env, {
-    bio: prior.bio ?? null,
-    // Usually null for the marker. The point is to put back whatever WAS there.
-    family_photo_url: prior.family_photo_url ?? null,
-  })
-  console.log(
-    restored === null
-      ? '\n  WARNING: fixture cleanup FAILED - the marker profile still carries the order-check seed.'
-      : '\nrestored: marker profile returned to its prior values',
-  )
-}
-if (markerJwt !== null) await deleteFixturePhoto(env, markerJwt, fixtureObjectPath)
-
-await browser.close()
-
 if (failures.length > 0) {
   console.log(`\nFAIL — ${failures.length} check(s) failed`)
   console.log(`offending edit-mode order: ${JSON.stringify(editHeadings)} -> ${JSON.stringify(editKeys)}`)
-  process.exit(1)
+  process.exitCode = 1
+} else {
+  console.log('\nPASS — both surfaces render the shared blocks in the same order (user → kids → parents → family photo)')
 }
-console.log('\nPASS — both surfaces render the shared blocks in the same order (user → kids → parents → family photo)')
+} finally {
+  try {
+    if (seeded && prior !== null && env !== undefined) {
+      try {
+        await restoreProfile(env, markerJwt, markerUserId, {
+          bio: prior.bio ?? null,
+          family_photo_url: prior.family_photo_url ?? null,
+        })
+        console.log('\nrestored: marker profile returned to its prior values')
+      } catch (restoreError) {
+        console.log(
+          '\n  WARNING: fixture cleanup FAILED - the marker profile still carries the order-check seed.',
+        )
+        console.log(`  restore error: ${restoreError}`)
+      }
+    }
+  } finally {
+    try {
+      if (markerJwt !== null && env !== undefined) {
+        await deleteFixturePhoto(env, markerJwt, fixtureObjectPath)
+      }
+    } finally {
+      await browser.close()
+    }
+  }
+}

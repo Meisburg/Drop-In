@@ -5,8 +5,8 @@ to know whether it is real.**
 
 ## What runs
 
-One workflow, `.github/workflows/verify.yml`, on every push and every PR to
-`master`. Its single substantive step is:
+The PR gate is one workflow, `.github/workflows/verify.yml`, on every push and
+every PR to `master`. Its single substantive step is:
 
 ```bash
 npm run verify
@@ -54,15 +54,63 @@ appears in a bundle.
 of failing.** A red X for "you have not configured this yet" teaches people to
 ignore red Xs; an unconfigured variable is a setup step, not a broken commit.
 
-## What CI deliberately does NOT run
+## What CI deliberately does NOT run on a pull request
 
-| Lane | Why not | Blocker to clear |
+`test:e2e` (Playwright) and `npm run a11y:profile-order` both sign up a REAL
+marker account against the LIVE Supabase project, so they write throwaway rows
+into a production database. They must never run on a PR: a red X caused by a
+live-database hiccup is a red X people learn to ignore, and a fork PR cannot see
+the repository variables anyway.
+
+| Lane | On a PR | Where it runs instead |
 |---|---|---|
-| `test:e2e` (Playwright) | `e2e/auth.setup.ts` signs up a REAL marker account against the LIVE Supabase project on every run, so CI would write throwaway rows into a production database | a dedicated test project, or an explicitly scheduled run — a decision, not a wiring task |
-| `npm run a11y:profile-order` | needs a browser + preview server + a signed-in session | same live-account blocker |
+| `test:e2e` (Playwright) | never | `.github/workflows/e2e-scheduled.yml`, nightly at 09:17 UTC — see "The scheduled live-account lane" below |
+| `npm run a11y:profile-order` | never | the same scheduled workflow, after the suite, against the same preview build |
 
-Both are recorded in `task-state.md` as open work. The `verify` gate itself needs
-neither.
+The `verify` gate itself needs neither, and no scheduled lane blocks a merge.
+
+## The scheduled live-account lane
+
+**The choice was a dedicated test Supabase project or a scheduled run against
+the live one; the schedule was chosen, and the reasoning is recorded here so it
+is not re-litigated every time someone notices e2e is absent from a PR.**
+
+- **Why the schedule.** The suite ALREADY runs against the live project locally
+  and in ad-hoc sweeps — the most recent full sweep went 110 / 115 — so a
+  schedule reuses a lane that exists. A second Supabase project would add a
+  database to migrate, seed and keep in sync, its own credentials, and its own
+  drift, for a lane whose only job is to catch test-versus-product drift. The
+  live project is the one the product actually ships against, so it is the
+  honest target for that drift.
+- **Why not on a PR.** See the table above. The scheduled lane is a separate
+  workflow (`on.schedule` + `workflow_dispatch`), so nothing it does can block a
+  merge, and `npm run verify` still does not include e2e.
+- **What it runs.** `npm run test:e2e` builds and serves the app through
+  Playwright's own configured `webServer` (`npm run build && npm run preview` on
+  :4173) and signs up the marker; `npm run a11y:profile-order` then runs against
+  that same build. The a11y lane IS included because it genuinely runs there:
+  the setup spec writes the signed-in marker session to the gitignored marker
+  storage-state file under `e2e/.auth/`, the check seeds and restores the bio +
+  family photo it needs, and it needs only a browser and a server.
+- **Variables and the skip.** It uses the same repository variables
+  (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, never secrets) and the same
+  skip-with-notice behaviour as `verify.yml`. It also writes them into the
+  gitignored `.env`, because the e2e specs read that file directly rather than
+  the process environment.
+- **Clean-up.** The suite's OWN marker cleanup (`afterEach` / `afterAll` REST
+  deletes) removes the rows each spec creates, on the failure path too. The
+  marker AUTH USERS persist by design and are removed by the manual
+  `scripts/sweep-e2e-markers.mjs` sweep, which needs a Supabase
+  dashboard/management token and is deliberately not wired into CI.
+- **Failures.** A failed night is a red job plus whatever evidence exists in
+  the Actions artifact: failure screenshots from `test-results/`, plus
+  `preview.log` only if the a11y step ran and created its server log (a failed
+  e2e run skips the a11y step, so it has no `preview.log` to upload), at 1-day
+  retention. Evidence from this lane is deliberately limited to screenshots
+  and the preview log — never the Playwright trace, whose DOM snapshots,
+  network request/response bodies and storage record carry live family data
+  and the marker session's access token, none of which belong in repository
+  artifact storage.
 
 ## When CI is red
 
