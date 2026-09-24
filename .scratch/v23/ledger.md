@@ -732,3 +732,64 @@ V23 WRAP-UP: THE MOBILE AUDIT'S REMAINING FINDINGS ARE PRE-EXISTING — PROVEN,
   chrome inside a feedback batch is how a batch's diff stops matching its plan.
   Recorded as open work with the exact selectors, so the next batch starts from a
   measurement rather than a rediscovery.
+
+V23 WRAP-UP: CI ADDED — and the push is BLOCKED on a credential scope only the
+  founder can grant. State recorded so this resumes in one command.
+  WHAT WAS BUILT (commit d7d846d, committed and clean, NOT yet pushed):
+  `.github/workflows/verify.yml` — one workflow whose single substantive step is
+  `npm run verify`, deliberately NOT re-listing the stages (a second list would
+  be a second definition of the gate that drifts from package.json). It also
+  installs the tracked git hooks, because the no-bypass guard asserts
+  `core.hooksPath` and a fresh checkout has none.
+  THE SECRETS DECISION, MEASURED RATHER THAN ASSUMED. The build needs
+  VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY (confirmed by moving .env aside and
+  watching `verify` fail with "Missing VITE_SUPABASE_URL…"). They are supplied as
+  repository VARIABLES, not secrets, because they are not confidential: the anon
+  key is compiled into the shipped bundle, and RLS is what protects the data —
+  probed with the anon key, `profiles`, `messages`, `place_comments` and
+  `parent_cards` each return ZERO rows while `places` returns the public
+  directory. If the variables are absent the job SKIPS with a notice rather than
+  failing, because a red X for "not configured yet" trains people to ignore red
+  Xs.
+  DELIBERATELY NOT RUN IN CI: `test:e2e` (it signs up a real marker against the
+  LIVE project every run, so CI would write throwaway rows into production) and
+  `a11y:profile-order` (needs a browser + signed-in session). Both stay manual
+  with their blockers named in docs/agents/ci.md.
+  TWO REAL CI BLOCKERS FOUND BY SIMULATING A FRESH CLONE, not by reading the
+  YAML — `git clone` with no .env, no node_modules, then `npm ci` and the gate:
+    1. steering-lint pointed at `supabase/.temp/linked-project.json`, which is
+       GITIGNORED machine-local CLI state that CANNOT exist in a clone. The first
+       CI run this repo ever had would have failed on a file CI cannot create.
+       Added to its ALLOW_ABSENT list (purely additive; verified afterwards the
+       lint still catches a genuinely stale pointer by injecting one).
+    2. A TEST-COUNT DIVERGENCE: local reported 40 files / 1197 tests, the clone
+       39 / 1191. Cause: `.scratch/` is gitignored but still ON DISK, and vitest
+       discovers tests by WALKING THE TREE rather than asking git — so a
+       preserved copy of `inbox.test.ts` from the concurrent-writer incident ran
+       as an extra file CI could never have. Deleted (the committed originals are
+       byte-identical) and the trap documented. **Local and CI now both report
+       39/1191**, which is the property that makes a CI number trustworthy.
+  VERIFIED: a clone of the COMMITTED tree, run exactly as CI runs it, exits 0
+  with 39/1191, 0 lint errors, steering PASS, guards PASS. Also confirmed the
+  config-guard does NOT fire on the pushed baseline (it uses
+  `merge-base origin/master HEAD`, so once this commit is on origin the
+  check-config change is in the baseline and needs no ALLOW_CONFIG_CHANGE in CI —
+  which is why CI has no such variable and does not need one).
+  BLOCKED, AND IT IS THE FOUNDER'S TO CLEAR — a CREDENTIAL SCOPE, not labour:
+    ! [remote rejected] master -> master (refusing to allow an OAuth App to
+      create or update workflow `.github/workflows/verify.yml` without
+      `workflow` scope)
+  `gh auth status` shows the active token's scopes as 'gist', 'read:org', 'repo'
+  — no `workflow`. GitHub requires that scope specifically to create or update
+  anything under `.github/workflows/`. THE PRE-PUSH GATE ITSELF PASSED; the
+  rejection is GitHub's, after the gate ("PASS — gated push to origin/master is
+  clean and green").
+  RESUME IN ONE COMMAND, after the founder runs:
+      gh auth refresh -s workflow
+  then:
+      cd /home/jmeisburg/Projects/playdate-app && ALLOW_CONFIG_CHANGE="<the
+      reason in d7d846d's body>" git push origin master
+  (The ALLOW_CONFIG_CHANGE export is needed because the commit is not yet on
+  origin: while it is unpushed, the config-guard sees the steering-lint edit
+  inside "everything this branch adds". It will not be needed for CI, and not for
+  any later push.)
