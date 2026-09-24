@@ -290,13 +290,21 @@ async function seedProfile(page, env, patch) {
 }
 
 const browser = await chromium.launch()
-const context = await browser.newContext({
-  storageState: MARKER_STATE,
-  viewport: { width: 390, height: 844 },
-})
-const page = await context.newPage()
+let seeded = false
+let prior = null
+let fixtureObjectPath = null
+let markerJwt = null
+let env
+let page
 
-console.log(`profile-order-check against ${BASE}\n`)
+try {
+  const context = await browser.newContext({
+    storageState: MARKER_STATE,
+    viewport: { width: 390, height: 844 },
+  })
+  page = await context.newPage()
+
+  console.log(`profile-order-check against ${BASE}\n`)
 
 await page.goto(BASE + '/profile', { waitUntil: 'networkidle' })
 // The boot splash is a fixed inset-0 overlay that unmounts a beat after mount;
@@ -306,13 +314,9 @@ await page
   .catch(() => {})
 
 // --- SEED the content whose ORDER this check is about (see the block above). ---
-const env = await readSupabaseEnv()
+env = await readSupabaseEnv()
 const SEED_BIO = 'Order-check fixture: we like parks and snacks.'
 const SEED_PHOTO = 'order-check-fixture/family.jpg'
-let seeded = false
-let prior = null
-let fixtureObjectPath = null
-let markerJwt = null
 if (env.url !== undefined && env.anonKey !== undefined) {
   const creds = await markerCredentials(page)
   markerJwt = creds?.jwt ?? null
@@ -516,29 +520,33 @@ check(
   `read index ${readPhotoIdx} (of ${readShared.length}), edit index ${editPhotoIdx} (of ${editShared.length})`,
 )
 
-// --- RESTORE what the seeding changed. This runs BEFORE the exit code, so a
-// FAILING check still cleans up after itself. This is a live family database: a
-// check must not edit it, and a fixture left behind on the failure path is
-// exactly how a test value ends up in a real person's profile.
-if (seeded && prior !== null) {
-  const restored = await seedProfile(page, env, {
-    bio: prior.bio ?? null,
-    // Usually null for the marker. The point is to put back whatever WAS there.
-    family_photo_url: prior.family_photo_url ?? null,
-  })
-  console.log(
-    restored === null
-      ? '\n  WARNING: fixture cleanup FAILED - the marker profile still carries the order-check seed.'
-      : '\nrestored: marker profile returned to its prior values',
-  )
-}
-if (markerJwt !== null) await deleteFixturePhoto(env, markerJwt, fixtureObjectPath)
-
-await browser.close()
-
 if (failures.length > 0) {
   console.log(`\nFAIL — ${failures.length} check(s) failed`)
   console.log(`offending edit-mode order: ${JSON.stringify(editHeadings)} -> ${JSON.stringify(editKeys)}`)
-  process.exit(1)
+  process.exitCode = 1
+} else {
+  console.log('\nPASS — both surfaces render the shared blocks in the same order (user → kids → parents → family photo)')
 }
-console.log('\nPASS — both surfaces render the shared blocks in the same order (user → kids → parents → family photo)')
+} finally {
+  try {
+    if (seeded && prior !== null && env !== undefined) {
+      const restored = await seedProfile(page, env, {
+        bio: prior.bio ?? null,
+        family_photo_url: prior.family_photo_url ?? null,
+      })
+      console.log(
+        restored === null
+          ? '\n  WARNING: fixture cleanup FAILED - the marker profile still carries the order-check seed.'
+          : '\nrestored: marker profile returned to its prior values',
+      )
+    }
+  } finally {
+    try {
+      if (markerJwt !== null && env !== undefined) {
+        await deleteFixturePhoto(env, markerJwt, fixtureObjectPath)
+      }
+    } finally {
+      await browser.close()
+    }
+  }
+}
