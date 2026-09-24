@@ -620,3 +620,115 @@ V23 follow-up #2 — THE PARALLEL SESSION'S PROFILE WORK: KEPT, VERIFIED, AND IT
   the first push because the hook runs `verify` in its own environment and could
   not see the reason — the hook was correct; the fix was to export the reason so
   it travelled, not to override with FAST_PUSH.
+
+V23 WRAP-UP: THE ORDER CHECK NOW SEEDS REAL CONTENT — AND FIXING THAT EXPOSED
+  TWO BUGS IN THE CHECK ITSELF. This is the batch's fifth instance of "a check
+  that could not fail", and the most instructive, because fixing the vacuity
+  revealed that the assertions had NEVER RUN.
+  WHAT WAS DONE. `scripts/profile-order-check.mjs` no longer depends on whatever
+  the marker happens to hold. It now, in order: uploads a REAL 1x1 PNG to
+  `<uid>/family/order-check-fixture.png` in the private bucket, PATCHes a bio and
+  that photo path onto the marker's profile, reloads, measures BOTH surfaces,
+  then RESTORES the prior values and DELETES the object. Self-seeding AND
+  self-cleaning, because this is a live database holding real family data.
+  VERIFIED CLEAN AFTERWARDS, from the DB rather than from the script's own log:
+  `bio=null, family_photo_url=null` on the marker, and
+  `storage.objects where name like '%order-check-fixture%'` returns `[]`.
+  THE READ SIDE IS NOW REAL: `read: ["parents","familyPhoto"]` against
+  `edit: ["user","kids","parents","familyPhoto","parents"]` — two genuine blocks
+  on each side, actually compared. Before, it was `[]` vs a populated list.
+  BUG 1 FOUND BY THE SEEDING — THE CHECK'S OWN PROBE HAD THE ORDER BACKWARDS.
+  It inserted `familyPhoto` BEFORE `parents` in the read projection:
+      [...readKeys.slice(0, lastIndexOf('parents')), 'familyPhoto', 'parents']
+  But `ProfileView.tsx:571` renders the photo AFTER the "About the parents"
+  heading ("THE FAMILY PHOTO IS THE CLOSER"), with no heading of its own. The bug
+  was INVISIBLE until now because the photo never rendered, so the branch never
+  ran — a latent bug hidden behind the very vacuity being fixed. Once seeding
+  made the photo render, the check FAILED AGAINST A CORRECT PAGE and accused the
+  editor. **The page was right; the probe was wrong.** This is why "the check now
+  fails" is only a finding if the check is trustworthy.
+  BUG 2 — THE ASSERTION COMPARED ABSOLUTE INDEXES ACROSS DIFFERENT LENGTHS. It
+  required `readPhotoIdx === editPhotoIdx`, i.e. the same ORDINAL on both
+  surfaces. But the projections are deliberately different lengths (the editor
+  always carries parent cards + linked-parent, so `edit` is longer), and the
+  property the fix establishes is RELATIVE: the photo comes after the parents
+  region on both. Asserting equal ordinals could only ever have "passed" on the
+  vacuous empty read side. Rewritten as the property, stated once per surface:
+  the photo exists on both AND sits after 'parents' on each.
+  PROVEN IN BOTH DIRECTIONS AFTERWARDS, which is the only reason to believe any
+  of it: with the corrected check the tree PASSES; with the editor's observed
+  order drifted to `['user','kids','familyPhoto','parents',…]` — the exact
+  pre-fix bug — it FAILS with "the family photo sits AFTER the parents region on
+  both surfaces — read index 1 (of 2), edit index 2 (of 4)". Probe reverted; the
+  committed check carries no probe.
+
+V23 WRAP-UP: THE MOBILE AUDIT FOUND A REAL, PRE-EXISTING, USER-FACING BUG THAT
+  NO EARLIER LANE HAD SEEN — THE PLACE PAGE RENDERED BLANK. Fixed.
+  HOW IT SURFACED. `mobile-audit.mjs` sweeps a hardcoded unauthenticated
+  `['/login','/playdate/:id','/browse']`, so it cannot reach this batch's
+  surfaces. I wrote `.scratch/v23/mobile-audit-v23.mjs` for `/`, `/new`,
+  `/inbox`, `/place/:id` and `/place/:id/details` at 4 phone widths x 2
+  appearances, and it reported on /place/:id:
+    "Cannot read properties of undefined (reading 'map')"
+  with an EMPTY BODY — the page rendered nothing at all.
+  ROOT CAUSE, and it is a subtle one. `PlaceMapLazy.tsx` had ONE lazy factory
+  resolving through the module's DEFAULT export and cast it to
+  `ComponentType<any>`:
+      const LazyPlaceMap = lazy(() => import('./PlaceMap') as unknown as
+        Promise<{ default: ComponentType<any> }>)
+  The default export is **PlacePickerMap**. So `PlaceMap` (which passes `place`)
+  rendered the PICKER (which reads `places.map(...)`) -> `undefined.map` ->
+  TypeError, and React tore the tree down. `PlacesMap` had the same mismatch in
+  another shape (it passes `places`, the picker needs `onPick`).
+  WHY IT SURVIVED: the `as unknown as ComponentType<any>` cast ERASED the prop
+  mismatch TypeScript would have reported on its own. A compile-time-safe lie.
+  The V22 note in that file records fixing an EARLIER crash (#306, "Element type
+  is invalid") by ADDING a default export — which fixed the `undefined`
+  COMPONENT while introducing the WRONG COMPONENT. One bug was traded for a
+  quieter one, and nothing asserted that the right component rendered with its
+  own props.
+  PROVEN PRE-EXISTING, not assumed: I built base `ff49d0c` in an ISOLATED git
+  worktree on its own port and hit `/place/<real-id>` directly. The identical
+  pageerror, the identical blank body and the same missing `place-map` testid all
+  reproduced there. NOT introduced by V23 — the audit simply looked at
+  /place/:id for the first time. (A first attempt to prove it via /browse in the
+  base worktree returned no place id because that context had no session; the
+  fix was to navigate straight to the id rather than conclude anything from an
+  empty result — the "verify a negative" lesson again.)
+  THE FIX: one lazy per NAMED export, each wrapper resolving its OWN component,
+  with casts that NAME the props type the caller actually passes instead of
+  `any`. Typecheck then has something real to check.
+  VERIFIED all three surfaces render their own component, 0 pageerrors:
+    /place/:id  -> place-map 1, leaflet canvas 1
+    /browse     -> places-map-band 1, canvas 1, 116 markers
+    /new        -> place-picker-map 1, canvas 1, 241 markers
+
+V23 WRAP-UP: THE MOBILE AUDIT'S REMAINING FINDINGS ARE PRE-EXISTING — PROVEN,
+  NOT ASSUMED, AND ONE APPARENT PROOF WAS WORTHLESS.
+  After the map fix, the audit's 40 remaining findings collapse to TWO distinct
+  elements, both chrome rather than this batch's surfaces:
+    * a 24x44 `A` with class `flex min-h-11 items-center justify-center
+      text-slate-600` — the header's Settings gear (App.tsx:237). 44px TALL but
+      24px WIDE, so it trips a width check. Present on EVERY route.
+    * a 151x42 `A` "Browse places" in /inbox's empty state (InboxPage.tsx:882),
+      which is 2px under the floor.
+  Both are UNCHANGED BY V23: `App.tsx` gained only the 10-line details route, and
+  `git diff ff49d0c..HEAD -- src/pages/InboxPage.tsx` shows NO change to the
+  Browse-places block. The 42px one also has no `min-h-11`, which is why it is
+  short.
+  PROVEN AT BASE, after a false start worth recording. I built ff49d0c in an
+  isolated worktree on port 4175 and measured — it returned EMPTY for all three
+  routes, which would have "proved" the base was clean. It was not: the saved
+  marker session is bound to ORIGIN `http://localhost:4173`, so every route
+  redirected to /login and there were no controls to measure. **An empty result
+  from a page that did not load is not evidence of absence** — the same lesson
+  as the `[]`-vs-populated comparison this batch has now hit three times.
+  Re-ran the setup spec INSIDE the worktree, then served the base on 4173 so the
+  origin matched, and got the identical findings: `/` and `/new` and `/inbox` all
+  show the 24x44 gear, and `/inbox` also the 151x42 link. Byte-identical to the
+  post-V23 measurement.
+  RULING: NOT fixed here. They are outside this batch's scope, they are 2px and
+  a width on a 44px-tall control respectively, and silently "fixing" pre-existing
+  chrome inside a feedback batch is how a batch's diff stops matching its plan.
+  Recorded as open work with the exact selectors, so the next batch starts from a
+  measurement rather than a rediscovery.

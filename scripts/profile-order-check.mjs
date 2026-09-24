@@ -145,6 +145,150 @@ function check(label, ok, detail) {
   if (!ok) failures.push(label)
 }
 
+// ---------------------------------------------------------------------------
+// V23 REVIEW — THE CHECK NOW SEEDS THE CONTENT IT NEEDS.
+//
+// WHY THIS EXISTS. The first version read whatever the marker account happened
+// to hold. The marker has no bio, kids, or family photo, so the READ view
+// rendered ZERO shared blocks and every cross-surface assertion compared `[]`
+// against the editor's list and passed for ANY editor order. That was proven by
+// injecting `readShared = []` and watching both checks print `ok`. A guard whose
+// subject is absent is not a guard.
+//
+// So the check now SETS a bio (which makes the read view render its "About the
+// parents" block and pushes `parents` into the projection) and a family photo
+// (which is the block whose POSITION the V23 s16 fix moves), measures, then
+// RESTORES the prior values. It is self-cleaning because this is a live database
+// holding real family data — a check that leaves a bio behind would be editing
+// someone's profile.
+//
+// WHAT IT DOES NOT SEED, and why: KIDS. The kids block is gated on
+// `isOwnProfile && kids.length > 0` and adding a kid row means inserting into
+// `kids` + `playdate_kids`-adjacent tables with their own policies, for a block
+// whose position this fix does not change. The read side therefore exercises
+// `user -> parents -> familyPhoto`, which is the part the drift was in. The
+// seeding is enough to make the comparison NON-VACUOUS, which is the property
+// that was missing; it is not a claim to cover every block.
+// ---------------------------------------------------------------------------
+
+/** The env the seeding needs, read from the same .env the app builds with. */
+async function readSupabaseEnv() {
+  const { readFileSync } = await import('node:fs')
+  const text = readFileSync(new URL('../.env', import.meta.url), 'utf8')
+  const env = {}
+  for (const line of text.split('\n')) {
+    if (!line.includes('=') || line.trimStart().startsWith('#')) continue
+    const i = line.indexOf('=')
+    env[line.slice(0, i).trim()] = line.slice(i + 1).trim().replace(/^["']|["']$/g, '')
+  }
+  return { url: env.VITE_SUPABASE_URL, anonKey: env.VITE_SUPABASE_ANON_KEY }
+}
+
+/** The marker's own JWT + id, pulled out of the saved storageState. */
+async function markerCredentials(page) {
+  return page.evaluate(() => {
+    const key = Object.keys(localStorage).find((k) => k.includes('auth-token'))
+    if (key === undefined) return null
+    const raw = JSON.parse(localStorage.getItem(key))
+    return {
+      jwt: raw.access_token ?? raw.session?.access_token ?? null,
+      userId: raw.user?.id ?? raw.session?.user?.id ?? null,
+    }
+  })
+}
+
+/**
+ * Upload a REAL object for the seeded family-photo path.
+ *
+ * WHY THIS IS NEEDED AND WHAT IT TAUGHT: seeding `family_photo_url` with a
+ * non-null path is NOT enough to make the read view render its photo block.
+ * `useFamilyPhotoUrl` mints a SIGNED URL and returns null when the object does
+ * not exist, and the read view gates the whole block on that URL — so a
+ * synthetic path renders NOTHING, and the order check's read side kept reporting
+ * `familyPhoto` absent (`read index -1`) even while the column was set. The
+ * EDITOR is different: its "A photo of your family" card is always present and
+ * the heading renders regardless (its empty state IS the card), which is exactly
+ * why the drift this check exists for was visible on one surface and not the
+ * other.
+ *
+ * A 1x1 PNG is the smallest real object that mints. Uploaded with the marker's
+ * own JWT, at `<uid>/family/<name>` — the path shape `familyPhotoObjectPath`
+ * accepts. Returns the object path, or null when the upload failed (reported,
+ * never thrown: an upload problem must not read as an ordering defect).
+ */
+async function uploadFixturePhoto(page, env, jwt, userId) {
+  const objectPath = `${userId}/family/order-check-fixture.png`
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64',
+  )
+  const res = await fetch(`${env.url}/storage/v1/object/kid-photos/${objectPath}`, {
+    method: 'POST',
+    headers: {
+      apikey: env.anonKey,
+      Authorization: `Bearer ${jwt}`,
+      'Content-Type': 'image/png',
+      'x-upsert': 'true',
+    },
+    body: png,
+  })
+  if (!res.ok) {
+    console.log(
+      `  NOTE: fixture photo upload failed HTTP ${res.status} - ${(await res.text()).slice(0, 140)}`,
+    )
+    return null
+  }
+  return objectPath
+}
+
+/** Remove the fixture object. Best-effort: a leftover 70-byte PNG is harmless
+ *  but it is still someone's storage, so it is deleted on the way out. */
+async function deleteFixturePhoto(env, jwt, objectPath) {
+  if (objectPath === null) return
+  await fetch(`${env.url}/storage/v1/object/kid-photos/${objectPath}`, {
+    method: 'DELETE',
+    headers: { apikey: env.anonKey, Authorization: `Bearer ${jwt}` },
+  }).catch(() => {})
+}
+
+/**
+ * PATCH the marker's profile and return the PRIOR values so they can be put
+ * back. `family_photo_url` is a private-bucket path, not a URL — the read view
+ * only needs it to be non-null for the photo block to render, and the signed-URL
+ * fetch failing is a separate concern from block ORDER (which is what is under
+ * test here). A failure is reported and skipped, never thrown: a seeding problem
+ * must not look like an ordering defect.
+ */
+async function seedProfile(page, env, patch) {
+  const creds = await markerCredentials(page)
+  if (creds === null || creds.jwt === null) {
+    console.log('  NOTE: no marker JWT in the saved state — seeding skipped.')
+    return null
+  }
+  const headers = {
+    apikey: env.anonKey,
+    Authorization: `Bearer ${creds.jwt}`,
+    'Content-Type': 'application/json',
+  }
+  const readRes = await fetch(
+    `${env.url}/rest/v1/profiles?id=eq.${creds.userId}&select=${Object.keys(patch).join(',')}`,
+    { headers },
+  )
+  const prior = readRes.ok ? (await readRes.json())[0] ?? {} : {}
+  const writeRes = await fetch(`${env.url}/rest/v1/profiles?id=eq.${creds.userId}`, {
+    method: 'PATCH',
+    headers: { ...headers, Prefer: 'return=representation' },
+    body: JSON.stringify(patch),
+  })
+  if (!writeRes.ok) {
+    console.log(
+      `  NOTE: seeding PATCH failed HTTP ${writeRes.status} — ${(await writeRes.text()).slice(0, 120)}`,
+    )
+    return null
+  }
+  return prior
+}
+
 const browser = await chromium.launch()
 const context = await browser.newContext({
   storageState: MARKER_STATE,
@@ -161,7 +305,43 @@ await page
   .waitForFunction(() => document.getElementById('boot-splash') === null, { timeout: 5000 })
   .catch(() => {})
 
-// --- Read view (must be UNCHANGED by this slice — reported, not asserted). ---
+// --- SEED the content whose ORDER this check is about (see the block above). ---
+const env = await readSupabaseEnv()
+const SEED_BIO = 'Order-check fixture: we like parks and snacks.'
+const SEED_PHOTO = 'order-check-fixture/family.jpg'
+let seeded = false
+let prior = null
+let fixtureObjectPath = null
+let markerJwt = null
+if (env.url !== undefined && env.anonKey !== undefined) {
+  const creds = await markerCredentials(page)
+  markerJwt = creds?.jwt ?? null
+  // Upload the object BEFORE the column points at it, so the read view's
+  // signed-URL mint has something real to sign (see uploadFixturePhoto).
+  if (creds !== null && creds.jwt !== null && creds.userId !== null) {
+    fixtureObjectPath = await uploadFixturePhoto(page, env, creds.jwt, creds.userId)
+  }
+  prior = await seedProfile(page, env, {
+    bio: SEED_BIO,
+    family_photo_url: fixtureObjectPath ?? SEED_PHOTO,
+  })
+  seeded = prior !== null
+  if (seeded) {
+    console.log(
+      `seeded: bio + family photo (object uploaded=${fixtureObjectPath !== null}, ` +
+        `prior bio=${JSON.stringify(prior.bio ?? null)})`,
+    )
+    // Reload so the read view renders the seeded blocks.
+    await page.reload({ waitUntil: 'networkidle' })
+    await page
+      .waitForFunction(() => document.getElementById('boot-splash') === null, { timeout: 5000 })
+      .catch(() => {})
+    await page.waitForTimeout(1200)
+  }
+}
+console.log('')
+
+// --- Read view. ---
 const readHeadings = await page.evaluate(() =>
   [...document.querySelectorAll('main h2')].map((h) => h.textContent?.trim() ?? ''),
 )
@@ -174,12 +354,26 @@ check(
   JSON.stringify(readKeys),
 )
 
-// The read view folds the family photo INTO its "About the parents" card (it has
-// no heading of its own there), so detect it by its image's testid and record
-// its position relative to the headings.
+// The read view folds the family photo INTO its "About the parents" card: the
+// image sits AFTER that heading, inside the same card (ProfileView.tsx:571,
+// "THE FAMILY PHOTO IS THE CLOSER"), and it has no heading of its own — so it is
+// detected by its image's testid and its position recorded RELATIVE to the
+// headings.
+//
+// V23 REVIEW — THIS LINE WAS WRONG AND IT MADE THE CHECK LIE. The first version
+// inserted 'familyPhoto' BEFORE 'parents':
+//     [...readKeys.slice(0, lastIndexOf('parents')), 'familyPhoto', 'parents']
+// which encodes the OPPOSITE of the DOM order. It went unnoticed because the
+// photo never rendered (no seeded object), so `readFamilyPhotoPresent` was
+// always false and the branch never ran — a latent bug hidden behind the
+// vacuity this check was being fixed for. Once seeding made the photo render,
+// the check FAILED against a correct page: it reported read=["familyPhoto",
+// "parents"] and accused the editor of disagreeing. The page was right; the
+// probe was wrong. Recorded because "the check now fails" is only a finding if
+// the check is trustworthy, and this one was not.
 const readFamilyPhotoPresent = await page.locator('[data-testid="family-photo"]').count() > 0
 const readObserved = readFamilyPhotoPresent
-  ? [...readKeys.slice(0, readKeys.lastIndexOf('parents')), 'familyPhoto', 'parents']
+  ? [...readKeys, 'familyPhoto']
   : readKeys
 console.log(`read view shared blocks:       ${JSON.stringify(sharedProjection(readObserved))}`)
 
@@ -294,19 +488,51 @@ check(
 // which of the two reasons applied.
 const readPhotoIdx = readShared.indexOf('familyPhoto')
 const editPhotoIdx = editShared.indexOf('familyPhoto')
+// V23 REVIEW — THE ASSERTION WAS COMPARING ABSOLUTE INDEXES ACROSS DIFFERENT
+// LENGTHS. It required `readPhotoIdx === editPhotoIdx`, i.e. the photo at the
+// SAME ORDINAL on both surfaces. But the two projections are deliberately
+// different lengths (the editor always carries its parent cards + linked-parent
+// control, so `edit` is longer than `read`), and the property the fix actually
+// establishes is RELATIVE: the photo comes AFTER the parents region on both.
+// Demanding equal ordinals made the check fail against a correct page — caught
+// the moment seeding let the photo render for the first time. The absolute-index
+// form would only ever have "passed" on the vacuous empty read side.
+//
+// So the assertion is now the PROPERTY, stated twice, once per surface: the
+// photo must exist on both and sit after 'parents' on each.
+const readPhotoAfterParents =
+  readPhotoIdx !== -1 && readShared.indexOf('parents') !== -1 && readPhotoIdx > readShared.indexOf('parents')
+const editPhotoAfterParents =
+  editPhotoIdx !== -1 && editShared.indexOf('parents') !== -1 && editPhotoIdx > editShared.indexOf('parents')
 check(
-  'the family photo sits in the same relative position on both surfaces',
+  'the family photo sits AFTER the parents region on both surfaces',
   readPhotoIdx === -1
-    ? // Absent on the read side is legal only when the profile has no photo —
-      // which is why the editor's own photo control is the thing that keeps the
-      // block reachable. `readPhotoIdx === -1` with a photo PRESENT would have
-      // been caught by the vacuity floor above.
+    ? // Absent on the read side is legal ONLY when the profile has no photo —
+      // which is why the editor's own photo control is what keeps the block
+      // reachable. A photo PRESENT but not rendering would be caught by the
+      // vacuity floor above, and the seeding now makes that case real.
       readShared.length === 0 || !readFamilyPhotoPresent
-    : readPhotoIdx === editPhotoIdx &&
-      readPhotoIdx > readShared.indexOf('parents') &&
-      editPhotoIdx > editShared.indexOf('parents'),
+    : readPhotoAfterParents && editPhotoAfterParents,
   `read index ${readPhotoIdx} (of ${readShared.length}), edit index ${editPhotoIdx} (of ${editShared.length})`,
 )
+
+// --- RESTORE what the seeding changed. This runs BEFORE the exit code, so a
+// FAILING check still cleans up after itself. This is a live family database: a
+// check must not edit it, and a fixture left behind on the failure path is
+// exactly how a test value ends up in a real person's profile.
+if (seeded && prior !== null) {
+  const restored = await seedProfile(page, env, {
+    bio: prior.bio ?? null,
+    // Usually null for the marker. The point is to put back whatever WAS there.
+    family_photo_url: prior.family_photo_url ?? null,
+  })
+  console.log(
+    restored === null
+      ? '\n  WARNING: fixture cleanup FAILED - the marker profile still carries the order-check seed.'
+      : '\nrestored: marker profile returned to its prior values',
+  )
+}
+if (markerJwt !== null) await deleteFixturePhoto(env, markerJwt, fixtureObjectPath)
 
 await browser.close()
 
