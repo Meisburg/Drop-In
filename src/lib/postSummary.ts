@@ -10,7 +10,7 @@
  * without React or a database:
  *
  * - `generatedTitle(place)`: the title is no longer a question. It is
- *   "Playdate at <place>" — trimmed, capped at the form's own 80, and NEVER
+ *   "Drop-in at <place>" — trimmed, capped at the form's own 80, and NEVER
  *   empty — and the summary shows it as an editable line. V8 ticket 01 already
  *   auto-filled a title when a place arrived; this ticket makes that the
  *   DEFAULT rather than a convenience.
@@ -42,19 +42,44 @@ import type { PlaydateFormValues } from './feed'
 import { stripPlaceAlias } from './places'
 import { everyWeekdayLabel, weekdayFromDateIso } from './series'
 
-/** What the generated title says when a place is known. */
-export const GENERATED_TITLE_PREFIX = 'Playdate at '
+/**
+ * What the generated title says when a place is known.
+ *
+ * "Drop-in at <place>" — NOT "Playdate at <place>", renamed in V23.
+ *
+ * WHY, in the founder's words: *"Playdate(change to 'Title')"*. Taken literally
+ * that points at the FIELD, and the field's label already read "Title" — what
+ * the parent actually sees is this generated VALUE sitting in it. The founder
+ * was saying the word should not be there, and the product's own vocabulary
+ * agrees: the nav tab is "Drop Ins", the button says "Post a drop-in", the page
+ * heading says "Post a drop-in". This constant was the one place the app called
+ * its own central noun something else.
+ *
+ * WHAT THIS DOES NOT DO: it does not rewrite existing posts. `title` is a
+ * stored column and a parent's own words are never silently replaced, so a
+ * drop-in posted before this change keeps what it was created with. Only NEWLY
+ * generated titles use the new prefix — correct behaviour, and it does mean old
+ * and new posts read differently for a while.
+ */
+export const GENERATED_TITLE_PREFIX = 'Drop-in at '
 
 /**
  * The generated title with no place to name — still a title ("never empty"
  * is the contract, and the field is required). A parent who picks nothing
  * sees this rather than a blank they have to fill in before they can post.
+ *
+ * Renamed with the prefix above so the two cannot disagree about the product's
+ * own noun: a parent who picked a place and one who did not should not read two
+ * different names for the same thing. The clone's restatement in `feed.ts`
+ * (`generatedTitleFromParts`) carries the same word, and the unit tests pin the
+ * pair together.
  */
-export const GENERATED_TITLE_FALLBACK = 'Playdate'
+export const GENERATED_TITLE_FALLBACK = 'Drop-in'
 
 /**
- * The title /new GENERATES from the place (V9 ticket 03): "Playdate at Green
- * Lake Park". Trimmed, capped at `TITLE_MAX_LENGTH` (a generated value must
+ * The title /new GENERATES from the place (V9 ticket 03): "Drop-in at Green
+ * Lake Park" (renamed from "Playdate at …" in V23 — see GENERATED_TITLE_PREFIX).
+ * Trimmed, capped at `TITLE_MAX_LENGTH` (a generated value must
  * never be one the form's own validator refuses), and never empty.
  *
  * The `@` alias is stripped by the same seam the picker matches with

@@ -169,7 +169,7 @@ function duplicateFormValues(
 
 /**
  * V9 ticket 03: the title is no longer a question with its own step. It is
- * GENERATED from the place (postSummary.generatedTitle — "Playdate at Green
+ * GENERATED from the place (postSummary.generatedTitle — "Drop-in at Green
  * Lake Park", trimmed, capped at 80, never empty) and the summary shows it as
  * an editable line. V8 ticket 01 already auto-filled a title when a place
  * arrived; this ticket makes that the DEFAULT rather than a convenience, so a
@@ -191,7 +191,7 @@ function withGeneratedTitle(values: PlaydateFormValues): PlaydateFormValues {
  * — and then never moves again. Both halves matter:
  *
  * - Following it is what makes the summary honest. The title is part of what
- *   gets posted, so "Playdate at Green Lake Park" on a post that has moved to
+ *   gets posted, so "Drop-in at Green Lake Park" on a post that has moved to
  *   Ballard Playground would be a hidden default changing what the parent is
  *   agreeing to (and the title line is right there on the summary, reading it
  *   back).

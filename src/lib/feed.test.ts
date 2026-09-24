@@ -3568,19 +3568,25 @@ describe('cloneLastPost (V10 ticket 01: the Post-again values, pure)', () => {
   })
 
   it('keeps the parent\u2019s own title when it fits the cap', () => {
+    // A STORED title is a parent's own words and is reproduced verbatim — it is
+    // NOT regenerated, so this asserts the fixture's literal value. V23 renamed
+    // the GENERATED prefix ("Playdate at" -> "Drop-in at") and deliberately did
+    // NOT rewrite stored posts, so this expectation staying on the old string is
+    // the behaviour, not a stale assertion. The two cases below are the ones
+    // that regenerate, and they carry the new word.
     expect(cloneLastPost(LAST, NOW_ISO).values.title).toBe('Playdate at Green Lake Park')
   })
 
   it('REGENERATES the title when the stored one would be refused (over the cap)', () => {
     const longTitle = 'x'.repeat(81)
     const out = cloneLastPost({ ...LAST, title: longTitle }, NOW_ISO)
-    expect(out.values.title).toBe('Playdate at Green Lake Park')
+    expect(out.values.title).toBe('Drop-in at Green Lake Park')
     expect(out.values.title.length).toBeLessThanOrEqual(TITLE_MAX_LENGTH)
   })
 
   it('regenerates from the place when the stored title is empty', () => {
     const out = cloneLastPost({ ...LAST, title: '' }, NOW_ISO)
-    expect(out.values.title).toBe('Playdate at Green Lake Park')
+    expect(out.values.title).toBe('Drop-in at Green Lake Park')
   })
 
   it('a title that names a DIFFERENT place is still kept (the parent\u2019s words win)', () => {
@@ -3625,7 +3631,7 @@ describe('cloneLastPost (V10 ticket 01: the Post-again values, pure)', () => {
     // lives — feed.ts cannot import it without closing the places cycle).
     const out = cloneLastPost({ ...LAST, title: '' }, NOW_ISO)
     expect(out.values.title).toBe(realGeneratedTitle('Green Lake Park'))
-    expect(realGeneratedTitle('')).toBe('Playdate')
+    expect(realGeneratedTitle('')).toBe('Drop-in')
   })
 })
 

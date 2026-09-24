@@ -143,11 +143,11 @@ test('/new re-mount renders the new layout and posts end-to-end', async ({
   // post carries by the card assertion below.
   await expect(page.locator('select')).toHaveCount(0)
   // …and the title was seeded from the place, only because it was EMPTY.
-  await expect(titleInput).toHaveValue(`Playdate at ${place}`)
+  await expect(titleInput).toHaveValue(`Drop-in at ${place}`)
 
   // V13 ticket 02: the preset card is gone — the When section's stepper
   // picks the duration ("until the next hour"). Just pick a duration chip.
-  await expect(titleInput).toHaveValue(`Playdate at ${place}`)
+  await expect(titleInput).toHaveValue(`Drop-in at ${place}`)
 
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')

@@ -36,12 +36,12 @@ const answered: PlaydateFormValues = {
 }
 
 describe('generatedTitle (the title /new writes when the parent does not)', () => {
-  it('is "Playdate at <place>"', () => {
-    expect(generatedTitle('Green Lake Park')).toBe('Playdate at Green Lake Park')
+  it('is "Drop-in at <place>" (renamed from "Playdate at …" in V23)', () => {
+    expect(generatedTitle('Green Lake Park')).toBe('Drop-in at Green Lake Park')
   })
 
   it('trims the place, and the prefix is exactly one space + the name', () => {
-    expect(generatedTitle('   Green Lake Park   ')).toBe('Playdate at Green Lake Park')
+    expect(generatedTitle('   Green Lake Park   ')).toBe('Drop-in at Green Lake Park')
     expect(generatedTitle('Green Lake Park')).toBe(GENERATED_TITLE_PREFIX + 'Green Lake Park')
   })
 
@@ -56,8 +56,8 @@ describe('generatedTitle (the title /new writes when the parent does not)', () =
     // seed "Playdate at @" (the V9 ticket 01 finding: a seed that is never
     // overwritten posted it).
     expect(generatedTitle('@')).toBe(GENERATED_TITLE_FALLBACK)
-    expect(generatedTitle('@Green Lake Park')).toBe('Playdate at Green Lake Park')
-    expect(generatedTitle('  @  Green Lake Park  ')).toBe('Playdate at Green Lake Park')
+    expect(generatedTitle('@Green Lake Park')).toBe('Drop-in at Green Lake Park')
+    expect(generatedTitle('  @  Green Lake Park  ')).toBe('Drop-in at Green Lake Park')
   })
 
   it('caps at TITLE_MAX_LENGTH, so the generated value is always valid', () => {

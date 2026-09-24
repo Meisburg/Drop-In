@@ -2805,9 +2805,14 @@ export function cloneLastPost(last: LastOwnPlaydate, nowIso: string): CloneLastP
  * (the exact cycle the module split exists to avoid). This restates the rule
  * for the ONE input the clone has: prefix + trimmed place, capped, never
  * empty, with the same fallback word. The unit tests pin the two together.
+ *
+ * V23: the two words below are `GENERATED_TITLE_PREFIX` / `_FALLBACK`'s values
+ * verbatim, so the clone and the generator cannot drift to two different
+ * product names — the "Drop-in at …" rename had to move BOTH sites, and the
+ * pinning test is what makes that requirement enforceable rather than a hope.
  */
 function generatedTitleFromParts(place: string): string {
   const name = place.trim()
-  if (name === '') return 'Playdate'
-  return `Playdate at ${name}`.slice(0, TITLE_MAX_LENGTH)
+  if (name === '') return 'Drop-in'
+  return `Drop-in at ${name}`.slice(0, TITLE_MAX_LENGTH)
 }
