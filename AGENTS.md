@@ -219,3 +219,10 @@ Two layers: agents define WHO does what; skills hold HOW.
   same reasoning rejects `superpowers:subagent-driven-development`: it is a
   second spine. Its *disciplines* (worktrees, ledgers, verification, the
   escalating fix loop) are already adopted above; the spine is ours.
+
+## Maintaining this file
+
+Keep this file for knowledge useful to almost every future agent session in this project.
+Do not repeat what the codebase already shows; point to the authoritative file or command instead.
+Prefer rewriting or pruning existing entries over appending new ones.
+When updating this file, preserve this bar for all agents and keep entries concise.
