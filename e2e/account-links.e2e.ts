@@ -343,6 +343,13 @@ test('typing a name suggests parents; selecting one sends the invite (V21 t07)',
     await expect(page.getByTestId('link-outgoing')).toBeVisible()
     inviteSent = true
   } finally {
+    // Clean up both throwaway parents (best-effort, as every other spec here).
+    for (const p of madeReal) {
+      await fetch(`${restUrl}/rest/v1/profiles?id=eq.${p.id}`, {
+        method: 'DELETE',
+        headers: { apikey: anonKey, Authorization: `Bearer ${p.token}` },
+      }).catch(() => {})
+    }
     // Withdraw the invite the flow just sent, so a re-run starts clean. A
     // failed cleanup must not mask the original failure, but residue must
     // never survive silently: a sent-but-not-withdrawn invite hangs the next
@@ -358,13 +365,6 @@ test('typing a name suggests parents; selecting one sends the invite (V21 t07)',
       throw new Error(
         `cleanup deleted ${withdrawn} pending invite(s), expected the one the flow sent — residue would hang the next run`,
       )
-    }
-    // Clean up both throwaway parents (best-effort, as every other spec here).
-    for (const p of madeReal) {
-      await fetch(`${restUrl}/rest/v1/profiles?id=eq.${p.id}`, {
-        method: 'DELETE',
-        headers: { apikey: anonKey, Authorization: `Bearer ${p.token}` },
-      }).catch(() => {})
     }
   }
 })
