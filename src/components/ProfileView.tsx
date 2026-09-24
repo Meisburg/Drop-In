@@ -54,9 +54,10 @@ export const PROFILE_VIEW_SECTIONS: readonly ProfileSectionKey[] = [
  * WHAT THE COMPONENT DECIDES, and what it is TOLD:
  *  - `isOwnProfile` is computed HERE from the session (one rule, so the two
  *    surfaces cannot disagree about who the owner is).
- *  - The OPTIONAL BLOCK ORDER is the pure `profileBlurbOrder` seam's
- *    (V16 t05 re-pinned it: kids → about → family photo). The JSX below lays
- *    the three blocks out in exactly the sequence that function emits them.
+ *  - The OPTIONAL BLOCK ORDER is the pure `profileBlurbOrder` seam's (V16 t05
+ *    re-pinned it: kids → about → family photo; V23 s16 extended the seam to
+ *    name every block both surfaces show). The JSX below lays the three
+ *    optional blocks out in exactly the sequence that function emits them.
  *
  * PRIVACY NOTE (carried from UserPage, unchanged by the extraction): the whole
  * kids block sits behind `isOwnProfile`, and the kid-photo mint is handed
@@ -298,16 +299,19 @@ export function ProfileView({
     month: 'long',
     year: 'numeric',
   })
-  // The pinned optional-block order (V16 t05 re-pinned it): the kids list →
-  // "About the parents" → the family photo. The pure `profileBlurbOrder`
-  // decides which of the three exist AND their order; all three are optional
-  // and independent, and `[]` for a family with none of them. `kidsVisible` is
-  // this page's own rule — the self view only — not something the pure seam
+  // The pinned block order, single-sourced in the pure `profileBlurbOrder`
+  // seam (src/lib/photoStorage.ts; V16 t05 re-pinned it, V23 s16 extended it to
+  // name EVERY block both surfaces show). This read surface consumes it with
+  // its default 'read' argument: identity → kids list → "About the parents" →
+  // family photo (the photo closes the about card), and the editor-only
+  // parent-cards / linked-parent blocks are omitted. All optional blocks are
+  // independent — an empty profile still shows the identity card. `kidsVisible`
+  // is this page's own rule — the self view only — not something the pure seam
   // could know.
   //
-  // NOTE the JSX below does consume this seam in order: the kids card is
-  // emitted first, then the about-the-parents card, then the family photo —
-  // the same three blocks the function names, laid out in the same sequence.
+  // NOTE the JSX below consumes this seam in order: the kids card is emitted
+  // first, then the about-the-parents card (with the family photo as its
+  // closer), laid out in exactly the sequence the function emits.
   const blurb = profileBlurbOrder(profile, isOwnProfile && profile.kids.length > 0)
   const showsAbout = blurb.includes('about')
   const showsKids = blurb.includes('kids')

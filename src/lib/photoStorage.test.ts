@@ -289,43 +289,69 @@ describe('signedKidPhotoUrlsWithClient (V12 t04: batched, best-effort, keyed by 
   })
 })
 
-describe('profileBlurbOrder (V9 ticket 11; V16 t05 re-pinned the order)', () => {
-  it('returns EVERY present block in the pinned order: kids, about, photo', () => {
+describe('profileBlurbOrder (V9 ticket 11; V16 t05 re-pinned the order; V23 s16 named every block)', () => {
+  it('returns EVERY present block in the pinned order: user, kids, about, photo', () => {
     expect(
       profileBlurbOrder({ family_photo_url: `${UID}/family/photo.jpg`, bio: 'Hi' }, true),
-    ).toEqual(['kids', 'about', 'familyPhoto'])
+    ).toEqual(['user', 'kids', 'about', 'familyPhoto'])
   })
 
-  it('drops each block independently', () => {
-    expect(profileBlurbOrder({ family_photo_url: null, bio: 'Hi' }, true)).toEqual(['kids', 'about'])
+  it('drops each optional block independently (the identity card is always there)', () => {
+    expect(profileBlurbOrder({ family_photo_url: null, bio: 'Hi' }, true)).toEqual([
+      'user',
+      'kids',
+      'about',
+    ])
     expect(profileBlurbOrder({ family_photo_url: `${UID}/family/photo.jpg` }, true)).toEqual([
+      'user',
       'kids',
       'familyPhoto',
     ])
-    expect(profileBlurbOrder({ bio: 'Hi' }, false)).toEqual(['about'])
+    expect(profileBlurbOrder({ bio: 'Hi' }, false)).toEqual(['user', 'about'])
   })
 
-  it('returns [] for an empty profile — "looks finished with none of them"', () => {
-    expect(profileBlurbOrder(null, false)).toEqual([])
-    expect(profileBlurbOrder({ family_photo_url: null, bio: null }, false)).toEqual([])
+  it('an empty profile still shows the identity card — "looks finished with none of them"', () => {
+    expect(profileBlurbOrder(null, false)).toEqual(['user'])
+    expect(profileBlurbOrder({ family_photo_url: null, bio: null }, false)).toEqual(['user'])
     // A whitespace-only bio is empty (the /u/:handle render's own rule).
-    expect(profileBlurbOrder({ bio: '   ' }, false)).toEqual([])
+    expect(profileBlurbOrder({ bio: '   ' }, false)).toEqual(['user'])
   })
 
-  it('V16 t05: the family photo is the CLOSER, never the opener', () => {
+  it('V16 t05: the family photo is the CLOSER of the optional blocks, never their opener', () => {
     // The founder's reorder ask — kids first, family photo last — pinned so a
     // later edit cannot quietly restore the old leading photo.
     const blocks = profileBlurbOrder(
       { family_photo_url: `${UID}/family/photo.jpg`, bio: 'Hi' },
       true,
     )
-    expect(blocks[0]).toBe('kids')
+    expect(blocks[blocks.indexOf('kids')]).toBe('kids')
     expect(blocks[blocks.length - 1]).toBe('familyPhoto')
   })
 
   it('counts a photo URL that is not mintable as NO photo (the render would show nothing)', () => {
-    expect(profileBlurbOrder({ family_photo_url: 'https://x/object/public/a/b.jpg' }, false)).toEqual([])
-    expect(profileBlurbOrder({ family_photo_url: kidPhotoPath(UID, KID) }, false)).toEqual([])
+    expect(profileBlurbOrder({ family_photo_url: 'https://x/object/public/a/b.jpg' }, false)).toEqual([
+      'user',
+    ])
+    expect(profileBlurbOrder({ family_photo_url: kidPhotoPath(UID, KID) }, false)).toEqual(['user'])
+  })
+
+  it('V23 s16: the read surface omits the editor-only parent cards + linked parent', () => {
+    expect(
+      profileBlurbOrder({ family_photo_url: `${UID}/family/photo.jpg`, bio: 'Hi' }, true, 'read'),
+    ).toEqual(['user', 'kids', 'about', 'familyPhoto'])
+  })
+
+  it('V23 s16: the edit surface appends the ALWAYS-present parent cards + linked parent AFTER the shared sequence', () => {
+    // Their empty states are still rendered cards, so unlike the optional blocks
+    // they are not gated on content — an empty profile still gets them.
+    expect(
+      profileBlurbOrder({ family_photo_url: `${UID}/family/photo.jpg`, bio: 'Hi' }, true, 'edit'),
+    ).toEqual(['user', 'kids', 'about', 'familyPhoto', 'parentCards', 'linkedParent'])
+    expect(profileBlurbOrder(null, false, 'edit')).toEqual([
+      'user',
+      'parentCards',
+      'linkedParent',
+    ])
   })
 })
 

@@ -61,11 +61,13 @@ import type { ProfileSectionKey } from '../lib/profileSections'
 /**
  * V21 t08: THE EDIT SURFACE'S SECTION ORDER, declared as data for the
  * anti-drift test (src/lib/profileSections.test.ts). It mirrors the JSX below
- * exactly: identity card → kids editor → the parents group (bio card + parent
- * cards + linked parent). The edit surface intentionally has NO drop-ins
- * section (V16 t04 removed the "Hosted drop-ins" card from /profile; posts are
- * managed from /new), so 'dropins' is omitted. Reorder any of those cards and
- * this list must move with it, or the pinned-order assertion in the test fails.
+ * exactly: identity card → kids editor → the parents group (bio card + family
+ * photo card + parent cards + linked parent — V23 s16 moved the family photo
+ * into this group, matching the read view's sequence). The edit surface
+ * intentionally has NO drop-ins section (V16 t04 removed the "Hosted
+ * drop-ins" card from /profile; posts are managed from /new), so 'dropins' is
+ * omitted. Reorder any of those cards and this list must move with it, or the
+ * pinned-order assertion in the test fails.
  */
 export const PROFILE_EDIT_SECTIONS: readonly ProfileSectionKey[] = [
   'user',
@@ -106,19 +108,22 @@ const AUTOSAVE_DEBOUNCE_MS = 400
  *    and no URL-entered state can reach the editor without the loaded data it
  *    needs.
  *
- * The editor's blocks, in the pinned order (V16 t04 dropped the last one):
+ * The editor's blocks, in the pinned order (V16 t04 dropped the last one;
+ * V23 s16 moved the family photo into the parents region):
  *  - "Your photo & name" (the identity card: the tap-the-circle photo control
  *    AND the inline display-name field in ONE card — the name editor moved out
  *    of its own identity block in V16 t04, with its save/validation wiring
  *    unchanged)
- *  - "A photo of your family" (always-present card: the signed-URL image when
- *    set, plus the Add/Change control either way)
- *  - "About the parents" (the bio, editable textarea; the display name renders
- *    as its OWN text node inside the photo card above, so a spec can match it
- *    exactly while the app-shell header shows the @-prefixed form)
  *  - "About the kids" (kid rows: first name + age + a full-width multi-line
  *    likes textarea, an optional per-kid photo (owner-only render via
  *    useKidPhotoUrls), and Remove; plus the add-a-kid row and the five-kid cap)
+ *  - "About the parents" (the bio, editable textarea; the display name renders
+ *    as its OWN text node inside the photo card above, so a spec can match it
+ *    exactly while the app-shell header shows the @-prefixed form)
+ *  - "A photo of your family" (always-present card: the signed-URL image when
+ *    set, plus the Add/Change control either way). V23 s16 placed it HERE, in
+ *    the parents region right after the bio, matching the read view's sequence
+ *    (it used to sit 2nd, before the kids — the drift this slice kills).
  *
  * V16 t04 REMOVED the "Hosted drop-ins" card (and with it this page's own-posts
  * load — see the removal note at its old position). Duplicating a past post
@@ -1157,45 +1162,15 @@ export function ProfilePage() {
         ) : null}
       </div>
 
-      {/* "A photo of your family" — always present (add OR change). The signed
-          URL arrives from the hook above; without one there is simply no image
-          yet, but the control is always there. */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900">A photo of your family</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Optional. One photo of your family — it shows here, to signed-in families.
-        </p>
-        {familyPhotoUrl !== null ? (
-          <img
-            data-testid="family-photo"
-            src={familyPhotoUrl}
-            alt="Your family photo"
-            loading="lazy"
-            decoding="async"
-            className="mt-3 max-h-72 w-full rounded-xl object-cover"
-          />
-        ) : null}
-        <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50">
-          <input
-            data-testid="family-photo-input"
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file !== undefined && file !== null) {
-                void familyPhotoCrop.beginCrop(file)
-              }
-              e.target.value = ''
-            }}
-          />
-          {familyPhotoUrl !== null ? 'Change family photo' : 'Add a family photo'}
-        </label>
-        {familyPhotoCrop.dialog}
-        {familyPhotoUpdated ? (
-          <p className="mt-2 text-sm text-emerald-700">Family photo updated.</p>
-        ) : null}
-      </div>
+      {/* V23 s16: THE FAMILY PHOTO MOVED HERE — into the parents region, AFTER
+          the bio card (see the card below "About the parents") — so the
+          editor's on-screen sequence matches the read view's (the read view
+          folds the family photo into its "About the parents" card as the
+          CLOSER; the single-sourced block order is the pure profileBlurbOrder
+          seam, src/lib/photoStorage.ts). It used to sit here, as the 2nd card
+          before the kids — the drift this slice kills. The card itself is
+          unchanged (still always present: Add/Change stays reachable and
+          obvious); only its position moved. */}
 
       {/* V21 t08: THE KIDS CARD MOVED HERE — before the parents group — so the
           edit surface's section order matches the read view's pinned sequence
@@ -1430,6 +1405,50 @@ export function ProfilePage() {
         </span>
         {liveBioError !== null ? (
           <p className="mt-1 text-sm text-red-600">{liveBioError}</p>
+        ) : null}
+      </div>
+
+      {/* "A photo of your family" — V23 s16 MOVED IT HERE, into the parents
+          region right after the bio card, so the editor's on-screen sequence
+          matches the read view's (the read view folds the family photo into its
+          "About the parents" card as the CLOSER). It used to sit as the 2nd
+          card, before the kids. The card is unchanged: always present (add OR
+          change), the signed URL arrives from the hook above, and without one
+          there is simply no image yet, but the control is always there. */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-base font-semibold text-slate-900">A photo of your family</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Optional. One photo of your family — it shows here, to signed-in families.
+        </p>
+        {familyPhotoUrl !== null ? (
+          <img
+            data-testid="family-photo"
+            src={familyPhotoUrl}
+            alt="Your family photo"
+            loading="lazy"
+            decoding="async"
+            className="mt-3 max-h-72 w-full rounded-xl object-cover"
+          />
+        ) : null}
+        <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50">
+          <input
+            data-testid="family-photo-input"
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file !== undefined && file !== null) {
+                void familyPhotoCrop.beginCrop(file)
+              }
+              e.target.value = ''
+            }}
+          />
+          {familyPhotoUrl !== null ? 'Change family photo' : 'Add a family photo'}
+        </label>
+        {familyPhotoCrop.dialog}
+        {familyPhotoUpdated ? (
+          <p className="mt-2 text-sm text-emerald-700">Family photo updated.</p>
         ) : null}
       </div>
 

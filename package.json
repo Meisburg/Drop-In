@@ -19,6 +19,7 @@
     "test:e2e": "playwright test",
     "steering-lint": "bash scripts/steering-lint.sh",
     "a11y:focus": "node scripts/focus-indicator-check.mjs",
+    "a11y:profile-order": "node scripts/profile-order-check.mjs",
     "guards": "bash scripts/guards/run-all.sh",
     "guards:lib": "bash scripts/guards/lib-sibling-guard.sh",
     "guards:config": "bash scripts/guards/config-guard.sh",

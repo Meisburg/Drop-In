@@ -274,25 +274,39 @@ export function familyPhotoMintPaths(
   return [...seen]
 }
 
-/** The optional blocks a profile page renders, in the pinned order (V16 t05). */
-export type ProfileBlurbBlock = 'familyPhoto' | 'about' | 'kids'
+/** The blocks a profile page renders, in the pinned order (V16 t05; V23 s16). */
+export type ProfileBlurbBlock =
+  | 'user'
+  | 'kids'
+  | 'about'
+  | 'familyPhoto'
+  | 'parentCards'
+  | 'linkedParent'
 
 /**
- * WHICH of the three optional profile blocks render, in the order the ticket
- * pins: the kids list → "About the parents" → the family photo.
+ * WHICH blocks a profile surface renders, in the order the ticket pins:
+ * identity → kids list → "About the parents" bio → family photo.
  *
- * V16 t05 RE-PINNED THIS ORDER. It used to be family photo → about → kids;
- * the founder's own reading of the page put the people first and the family
- * photo last, so the photo is now the CLOSER and the kids block leads. The
- * `ProfileBlurbBlock` union is unchanged (the same three blocks exist); only
- * the order this function emits them in moved, which is why the reorder is a
- * change here plus a test update rather than a JSX shuffle.
+ * V16 t05 RE-PINNED THIS ORDER for the optional blocks. It used to be family
+ * photo → about → kids; the founder's own reading of the page put the people
+ * first and the family photo last, so the photo is now the CLOSER and the kids
+ * block leads. The reorder was a change here plus a test update rather than a
+ * JSX shuffle, because this function is the single decision for all three
+ * blocks — the two render sites (`/u/:handle` and `/profile`) cannot drift
+ * apart on "is there a bio" or "does this file have a photo URL". Each block is
+ * optional and independent: an entirely empty profile returns `[]`, and the
+ * page must still look finished (the ticket's AC — no placeholder, no empty
+ * card, no "No family photo yet").
  *
- * This is the single decision for all three, so the two render sites
- * (`/u/:handle` and `/profile`) cannot drift apart on "is there a bio" or "does
- * this file have a photo URL". Each block is optional and independent: an
- * entirely empty profile returns `[]`, and the page must still look finished
- * (the ticket's AC — no placeholder, no empty card, no "No family photo yet").
+ * V23 SLICE 16 EXTENDED THE SEAM TO NAME EVERY BLOCK BOTH SURFACES SHOW, so the
+ * block order is single-sourced across the read view AND the edit surface. The
+ * read view shows user → kids → about → familyPhoto (the family photo closes the
+ * "About the parents" card); the edit surface shows the same sequence with its
+ * always-present parent cards + linked-parent control appended after it (their
+ * empty states are still cards, so they are NOT gated on content). The family
+ * photo sits AFTER the bio on both surfaces — that is the position this slice
+ * moves it to in the editor, killing the drift where the read view closed with
+ * the photo while the editor led with it.
  *
  * `kidsVisible` is the CALLER's decision, passed in rather than computed,
  * because the rule behind it is not about the profile at all: `/u/:handle`
@@ -309,10 +323,18 @@ export type ProfileBlurbBlock = 'familyPhoto' | 'about' | 'kids'
 export function profileBlurbOrder(
   profile: { family_photo_url?: string | null; bio?: string | null } | null,
   kidsVisible: boolean,
+  surface: 'read' | 'edit' = 'read',
 ): ProfileBlurbBlock[] {
-  const blocks: ProfileBlurbBlock[] = []
+  const blocks: ProfileBlurbBlock[] = ['user']
   if (kidsVisible) blocks.push('kids')
   if ((profile?.bio ?? '').trim() !== '') blocks.push('about')
   if (familyPhotoObjectPath(profile?.family_photo_url) !== null) blocks.push('familyPhoto')
+  if (surface === 'edit') {
+    // The edit surface ALWAYS carries these two — their empty states are still
+    // rendered cards (add-a-parent rows, the account-link control), so unlike
+    // the optional blocks above they are not gated on content.
+    blocks.push('parentCards')
+    blocks.push('linkedParent')
+  }
   return blocks
 }
