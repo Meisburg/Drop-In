@@ -202,6 +202,46 @@ describe('no-bypass guard: externally owned validation copies', () => {
     expect(r.stdout).toContain('NOTE: bypass-related history entries found')
     expect(r.stdout).not.toContain('recorded bypass history')
   }, TIME)
+
+  // git spells the subject-bearing reflog action differently depending on how
+  // the commit was created; every spelling carries prose, so none may fail the
+  // tree.
+  it.each([
+    ['commit (initial)', 'initial: mention core.hooksPath here'],
+    ['commit (amend)', 'docs: explain core.hooksPath acceptance'],
+    ['commit (merge)', 'merge: mention core.hooksPath'],
+    ['rebase (pick)', 'picked: mentions --no-verify'],
+    ['rebase (squash)', 'squashed: mentions --no-verify'],
+    ['cherry-pick', 'picked: mentions --no-verify'],
+    ['revert', 'Revert "feature: mentions --no-verify"'],
+    ['am', 'patch: mentions --no-verify'],
+  ])('does not treat a %s subject line as a bypass', (action, subject) => {
+    const { copy } = externalCopy()
+    appendFileSync(
+      gitPath(copy, 'logs/HEAD'),
+      `0000000000000000000000000000000000000000 0000000000000000000000000000000000000000 T <t@e> 1 +0000\t${action}: ${subject}\n`,
+    )
+    const r = runGuard(copy)
+    expect(r.status).toBe(0)
+    expect(r.stdout).toContain('PASS')
+    expect(r.stdout).not.toContain('recorded bypass history')
+    expect(r.stdout).toContain('NOTE: bypass-related history entries found')
+  }, TIME)
+
+  it('still fails when a command-like bypass rides a wrapper-recorded reflog action', () => {
+    const { copy } = externalCopy()
+    appendFileSync(
+      gitPath(copy, 'logs/HEAD'),
+      '0000000000000000000000000000000000000000 0000000000000000000000000000000000000000 T <t@e> 1 +0000\tpush --no-verify origin master: subject\n',
+    )
+    appendFileSync(
+      gitPath(copy, 'logs/HEAD'),
+      '0000000000000000000000000000000000000000 0000000000000000000000000000000000000000 T <t@e> 1 +0000\tcommit --no-verify -m subject\n',
+    )
+    const r = runGuard(copy)
+    expect(r.status).toBe(1)
+    expect(r.stdout).toContain('recorded bypass history')
+  }, TIME)
 })
 
 describe('no-bypass guard: ordinary checkouts are unchanged', () => {

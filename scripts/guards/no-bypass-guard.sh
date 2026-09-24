@@ -172,17 +172,19 @@ BYPASS_LOG="$(git rev-parse --git-path FAST_PUSH_LOG 2>/dev/null || true)"
 BYPASS_HITS=""
 
 if [ -n "$RELOG" ] && [ -f "$RELOG" ]; then
-  # A commit subject is recorded in the reflog but is only prose — a bypass flag
-  # there is not a bypass. Real flags can only ride a non-commit action (a
-  # wrapper or a logged command).
-  hits="$(grep -nE -- '--no-verify|core\.hooksPath' "$RELOG" 2>/dev/null | grep -v "${TAB}commit: " | tail -3 || true)"
+  # A commit subject is recorded in the reflog under several action spellings
+  # ('commit', 'commit (amend)', 'commit (merge)', 'commit (initial)',
+  # 'rebase (pick)', 'rebase (squash)', 'cherry-pick', 'revert', 'am') and is
+  # only prose — a bypass flag there is not a bypass. Real flags can only ride
+  # a non-commit action (a wrapper or a logged command).
+  hits="$(grep -nE -- '--no-verify|core\.hooksPath' "$RELOG" 2>/dev/null | grep -vE -- "${TAB}(commit|rebase|cherry-pick|revert|am)( \([^)]*\))?: " | tail -3 || true)"
   if [ -n "$hits" ]; then
     BYPASS_HITS="$BYPASS_HITS$hits
 "
   fi
   # The original guard also surfaced any mention, including commit subjects,
   # as information only.
-  note="$(grep -n "core.hooksPath" "$RELOG" 2>/dev/null | tail -3 || true)"
+  note="$(grep -nE -- '--no-verify|core\.hooksPath' "$RELOG" 2>/dev/null | tail -3 || true)"
   if [ -n "$note" ] && [ -z "$hits" ]; then
     echo
     echo "  NOTE: bypass-related history entries found:"
