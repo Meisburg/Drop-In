@@ -17,6 +17,7 @@ import type { DmConversationRow, PlaydateConversationRow } from './inbox'
  *      carries the SUM of both threads' unreadCounts (disjoint cursors);
  *   7. two playdate threads with the same counterpart — the newer winner
  *      keeps its own unreadCount.
+ *   8. a DM plus multiple playdate rows sums the newest row of each kind.
  */
 
 function dm(overrides: Partial<DmConversationRow> = {}): DmConversationRow {
@@ -146,5 +147,27 @@ describe('mergeConversations', () => {
     expect(result[0].kind).toBe('playdate')
     expect(result[0].playdateId).toBe('p2')
     expect(result[0].unreadCount).toBe(1)
+  })
+
+  it('DM plus two read playdate threads keeps the DM unreadCount', () => {
+    const dmRow = dm({ otherPartyId: 'same', latestAt: '2026-09-23T10:00:00Z', unreadCount: 2 })
+    const pdOne = pd({ otherPartyId: 'same', playdateId: 'p1', latestMessageAt: '2026-09-23T11:00:00Z', unreadCount: 0 })
+    const pdTwo = pd({ otherPartyId: 'same', playdateId: 'p2', latestMessageAt: '2026-09-23T12:00:00Z', unreadCount: 0 })
+    const result = mergeConversations([dmRow], [pdOne, pdTwo])
+    expect(result).toHaveLength(1)
+    expect(result[0].kind).toBe('playdate')
+    expect(result[0].playdateId).toBe('p2')
+    expect(result[0].unreadCount).toBe(2)
+  })
+
+  it('DM plus two playdate threads sums the newest row from each kind', () => {
+    const dmRow = dm({ otherPartyId: 'same', latestAt: '2026-09-23T10:00:00Z', unreadCount: 2 })
+    const pdOne = pd({ otherPartyId: 'same', playdateId: 'p1', latestMessageAt: '2026-09-23T11:00:00Z', unreadCount: 1 })
+    const pdTwo = pd({ otherPartyId: 'same', playdateId: 'p2', latestMessageAt: '2026-09-23T12:00:00Z', unreadCount: 4 })
+    const result = mergeConversations([dmRow], [pdOne, pdTwo])
+    expect(result).toHaveLength(1)
+    expect(result[0].kind).toBe('playdate')
+    expect(result[0].playdateId).toBe('p2')
+    expect(result[0].unreadCount).toBe(6)
   })
 })
