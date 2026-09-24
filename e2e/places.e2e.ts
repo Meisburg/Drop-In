@@ -1480,10 +1480,36 @@ test('a picker pin selects first, and only "Select this place" fills the fields 
   await expect(addressInput).toHaveValue('')
 
   // Tap a directory pin. `.not([d="M0 0"])` skips markers Leaflet projected
-  // outside the canvas (in the DOM, zero-size, unclickable).
-  const pin = pickerMap.locator('.leaflet-overlay-pane svg path[fill="#4f46e5"]:not([d="M0 0"])').first()
+  // fully outside the canvas (in the DOM, zero-size, unclickable).
+  //
+  // V23 DRIFT: `.first()` IS NOT ENOUGH — THE FIRST PROJECTED MARKER CAN SIT
+  // OUTSIDE THE MAP'S CLIPPED BAND. A marker just past the pane's top edge keeps
+  // a NON-zero `d` while its centre lies above the map and under the page behind
+  // it. `toBeVisible()` passes anyway (Playwright does not test an ancestor's
+  // `overflow: hidden` clipping), and `click({ force: true })` dispatches at a
+  // point the marker does not occupy, so the tap lands on the page and the panel
+  // never opens. The V23 follow-up's `zoomForRadius` change (the `FRAME_FILL`
+  // margin + latitude correction) moved the picker's initial frame just enough
+  // to push the first marker above the band. So pick the first pin that is
+  // ACTUALLY HIT-TESTABLE at its own centre — the pin a parent's finger reaches.
+  const pins = pickerMap.locator('.leaflet-overlay-pane svg path[fill="#4f46e5"]:not([d="M0 0"])')
+  const pinCount = await pins.count()
+  let pin = pins.first()
+  for (let i = 0; i < pinCount; i++) {
+    const candidate = pins.nth(i)
+    const reachable = await candidate.evaluate((el) => {
+      const rect = el.getBoundingClientRect()
+      return (
+        document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2) === el
+      )
+    })
+    if (reachable) {
+      pin = candidate
+      break
+    }
+  }
   await expect(pin).toBeVisible()
-  await pin.click({ force: true })
+  await pin.click()
 
   // AC (1): the panel appears, naming the place, and the FIELDS ARE STILL
   // EMPTY. This is the founder's complaint stated as an assertion.
@@ -1725,8 +1751,19 @@ test('a place page renders the seeded data with the existing Maps link', async (
     panel.getByTestId('marker-details'),
     'the place page must not offer a link to itself',
   ).toHaveCount(0)
-  // Learn more is the same seam the page's own button uses, so the two agree.
-  await expect(panel.getByTestId('learn-more')).toBeVisible()
+  // V23 slice 4 — THE PANEL'S MAP-SEARCH FALLBACK IS GONE HERE TOO, for the same
+  // reason it left the `/browse` panel: this place is a park, the reviewed
+  // website backfill does not cover parks, and the panel floats over a map — a
+  // "find it on the map" link there duplicates the surface behind it.
+  //
+  // The place PAGE keeps its own `place-learn-more` (asserted below), which is
+  // the wider-web door now. Mirroring the `/browse` panel assertion is what
+  // keeps the two panels from drifting apart the way they did when slice 4
+  // landed: the follow-up fixed the `/browse` instance and missed this one.
+  await expect(
+    panel.getByTestId('learn-more'),
+    'the map-search fallback must not be on this panel either',
+  ).toHaveCount(0)
 
   // Tapping the pin must not navigate away from the page it is on.
   await expect(page).toHaveURL(/\/place\//)

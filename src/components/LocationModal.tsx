@@ -34,6 +34,7 @@ export function LocationModal({
   radiusMiles,
   homeZip,
   onGeocode,
+  onRadiusChange,
   onApplyRadius,
 }: {
   /** Render the modal at all (the caller owns the open state). */
@@ -42,6 +43,14 @@ export function LocationModal({
   onClose: () => void
   /** The current radius the slider shows (the caller's saved value). */
   radiusMiles: number
+  /**
+   * LIVE radius as the slider moves, before "Apply radius" — the Places
+   * directory redraws its map circle and refilters on every tick through this.
+   * Deliberately SEPARATE from `onApplyRadius`: that prop is the caller's WRITE
+   * (the feed saves the radius to the DB), so a drag must not fire a write per
+   * tick. Callers that only persist pass `onApplyRadius` and omit this.
+   */
+  onRadiusChange?: (miles: number) => void
   /** The caller's saved home zip (null = none yet). Shown as supporting copy. */
   homeZip: string | null
   /** Geocode an address → coords, or null when it cannot be found. */
@@ -175,7 +184,11 @@ export function LocationModal({
             max={30}
             step={1}
             value={radius}
-            onChange={(e) => setRadius(Number(e.target.value))}
+            onChange={(e) => {
+              const next = Number(e.target.value)
+              setRadius(next)
+              onRadiusChange?.(next)
+            }}
             className="w-full accent-indigo-600"
           />
         </label>

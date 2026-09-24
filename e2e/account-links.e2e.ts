@@ -216,6 +216,27 @@ test('a third account cannot read or alter another family’s link (V19 t03)', a
 test('typing a name suggests parents; selecting one sends the invite (V21 t07)', async ({ page }) => {
   test.setTimeout(300_000) // 2 signups + UI flow; live-DB timing is slow
   const { url: restUrl, anonKey } = readSupabaseEnv()
+  const { accessToken: markerToken, userId: markerId } = readMarkerSession()
+
+  /**
+   * Withdraw the MARKER's own still-pending outgoing invite(s).
+   *
+   * WHY THIS EXISTS — a real residue bug this spec shipped with. The first
+   * version cleaned up only the throwaway profiles it created, never the
+   * `account_links` row the UI flow SENT. So a run left the marker with an
+   * outgoing invite, and the NEXT run found the Linked-parent section in its
+   * "waiting for them to accept" state, not the "none" state this spec assumes:
+   * `link-name-input` was gone and the test hung to its 300s timeout. It passed
+   * once and failed every time after. The requester may delete their own pending
+   * row (`account_links_delete_requester_pending`, migration 0047), so this is a
+   * self-scoped delete — no other account's data is touched.
+   */
+  async function withdrawMarkerPendingInvites(): Promise<void> {
+    await fetch(`${restUrl}/rest/v1/account_links?requester_id=eq.${markerId}&status=eq.pending`, {
+      method: 'DELETE',
+      headers: { apikey: anonKey, Authorization: `Bearer ${markerToken}` },
+    }).catch(() => {})
+  }
 
   /** fetch with a hard 15s cap — a hung live-DB call must fail fast. */
   async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
@@ -278,6 +299,8 @@ test('typing a name suggests parents; selecting one sends the invite (V21 t07)',
   ]
 
   try {
+    // Start from the state this spec assumes: the marker has no outgoing invite.
+    await withdrawMarkerPendingInvites()
     await page.goto('/profile')
     await page.getByRole('button', { name: 'Edit profile' }).click()
 
@@ -300,6 +323,8 @@ test('typing a name suggests parents; selecting one sends the invite (V21 t07)',
     )
     await expect(page.getByTestId('link-outgoing')).toBeVisible()
   } finally {
+    // Withdraw the invite the flow just sent, so a re-run starts clean.
+    await withdrawMarkerPendingInvites()
     // Clean up both throwaway parents (best-effort, as every other spec here).
     for (const p of madeReal) {
       await fetch(`${restUrl}/rest/v1/profiles?id=eq.${p.id}`, {
