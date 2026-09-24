@@ -86,8 +86,13 @@ import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
  * "+N" overflow chip. The circles are the pingers' avatars (the feed
  * page's listPingsForPosts group, in the 0020 created_at order), with a
  * display-name initial on a slate-200 circle as the fallback; names
- * never surface on cards (the guest list stays on the detail page per
- * ticket 05). count 0 → the line is hidden. The host's own posts keep
+ * never surface as VISIBLE TEXT on cards (the guest list stays on the detail
+ * page per ticket 05). frontend-design pass slice 2: the avatar's accessible
+ * name carries the pinger's display name (`alt` on the photo, `aria-label`
+ * on the initial fallback), because the circle is an identity avatar and
+ * nothing adjacent to it names the person — the same public display name the
+ * host already renders as `@handle` on cards, and the same treatment
+ * WhileAwayCard gives its faces. No visible name text is added. count 0 → the line is hidden. The host's own posts keep
  * the line (the host sees who's coming — unlike the ping toggle, which
  * is hidden there).
  *
@@ -317,12 +322,18 @@ export function DropInCard({
                 <>
                   <span className="text-xs text-slate-600">{goingLine.label}</span>
                   <div className="flex items-center">
-                    {goingLine.circles.map((circle, index) =>
-                      circle.avatarUrl !== null && circle.avatarUrl !== '' ? (
+                    {goingLine.circles.map((circle, index) => {
+                      // frontend-design pass slice 2: the circle is an identity
+                      // avatar and nothing adjacent to it names the pinger, so
+                      // the name rides the avatar for assistive tech. `circles`
+                      // is `goingPings.slice(0, limit)` (buildGoingLine), so the
+                      // index aligns with the raw pingers passed in.
+                      const pingerName = goingPings[index]?.displayName ?? ''
+                      return circle.avatarUrl !== null && circle.avatarUrl !== '' ? (
                         <img
                           key={index}
                           src={circle.avatarUrl}
-                          alt=""
+                          alt={pingerName}
                           loading="lazy"
                           decoding="async"
                           className={`h-6 w-6 rounded-full border-2 border-white object-cover${index > 0 ? ' -ml-2' : ''}`}
@@ -330,13 +341,15 @@ export function DropInCard({
                       ) : (
                         <span
                           key={index}
-                          aria-hidden="true"
+                          role={pingerName === '' ? undefined : 'img'}
+                          aria-label={pingerName === '' ? undefined : pingerName}
+                          aria-hidden={pingerName === '' ? true : undefined}
                           className={`flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-xs font-semibold text-slate-600${index > 0 ? ' -ml-2' : ''}`}
                         >
                           {circle.initial}
                         </span>
-                      ),
-                    )}
+                      )
+                    })}
                   </div>
                   {goingLine.overflow > 0 ? (
                     <span className="text-xs font-medium text-slate-600">+{goingLine.overflow}</span>
