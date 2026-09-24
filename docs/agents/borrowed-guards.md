@@ -27,7 +27,7 @@ So: take the enforcement idea, take three specific rules, refuse the rest.
 |---|---|---|
 | `scripts/guards/lib-sibling-guard.sh` | every non-exempt `src/lib/*.ts` ships a sibling `.test.ts` | `scripts/hooks/quality-gate.js` PostToolUse gate |
 | `scripts/guards/config-guard.sh` | no protected check-config changes without a recorded reason | `scripts/hooks/config-protection.js` PreToolUse block |
-| `scripts/guards/no-bypass-guard.sh` | `core.hooksPath` still points at the tracked dir; hooks executable | `scripts/hooks/block-no-verify.js` PreToolUse block |
+| `scripts/guards/no-bypass-guard.sh` | the repository's own `core.hooksPath` layer still points at the tracked dir; hooks executable | `scripts/hooks/block-no-verify.js` PreToolUse block |
 
 All three are reimplemented, not copied. ECC's versions are Node scripts
 speaking Claude Code's `PreToolUse`/`PostToolUse` stdin JSON. This repo's
