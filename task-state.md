@@ -3,7 +3,19 @@
 > The system of record. The orchestrator updates this after every phase
 > transition. Subagent chat contexts are ephemeral — this file is not.
 
-- **⏸️ V23 CI — BUILT, COMMITTED (`d7d846d`), AND BLOCKED ON A CREDENTIAL SCOPE THE FOUNDER MUST GRANT.** One command clears it: `gh auth refresh -s workflow`. Then `git push origin master` (details, including the `ALLOW_CONFIG_CHANGE` export that is needed only while the commit is unpushed, are in `.scratch/v23/ledger.md`).
+- **✅ V23 FOLLOW-UP — THE MAP FEEDBACK FIXES ARE IN THE TREE AND GREEN (2026-09-23).** Two founder reports on the places map: *"when i click on a blue circle … the map goes white"* and *"the red radius is going outside the map lol … the whole thing is not looking right."* Both fixed in `src/components/PlaceMap.tsx` + `src/index.css` + `src/lib/places.ts` (+4 unit tests, +1 e2e regression assertion).
+
+  **WHITE MAP — a DOM-ownership collision, not map logic.** The container's `className` prop changed when the popup opened (it dropped `overflow-hidden`), so React rewrote the attribute and DELETED every `leaflet-*` class Leaflet had appended; `.leaflet-tile-loaded`'s `visibility: inherit` then resolved to Leaflet's sheet default `hidden` — tiles gone, white box. Fixed by freezing the className string and keeping `overflow-hidden` always on; the popup is held inside by `autoPan` + the CSS ceiling.
+
+  **RADIUS OUTSIDE THE MAP — three causes, all required.** A stale 250px pane default (`zoomForRadius` was never told the 380px band), Leaflet flooring the fractional zoom (`zoomSnap` default 1), and latitude-blind Mercator arithmetic (1.48x too big at Seattle's 47.6°). Fixed by passing `map.getSize()`'s shorter axis, `zoomSnap: 0`, the `cos(lat)` correction + a fit margin, and `panTo` to centre. The popup ceilings were also too tight (the "Start a drop-in" button was scrolled out and its centre hit-tested the wrapper); raised to 34vh / 42vh.
+
+  **EVIDENCE, measured on the current tree at 390x844 `/browse`** (`.scratch/v23/verify-founder-map.mjs`): circle inside the band on both axes (0.85 w / 0.74 h); after a marker tap `.leaflet-container` retained, 6 tiles visible, container bg `#ddd`, 0 pageerrors; popup contained with the button's centre hit-testing the BUTTON. `npm run verify` exit 0 — 39 files / 1195 tests, lint clean, a11y/steering/guards PASS.
+
+  **NOT FIXED, RECORDED:** `places.e2e.ts`'s `learn-more` expectation is stale since V23 slice 4 removed the panel's map-search fallback; that spec is in the batch's pre-existing failure set.
+
+  **AND THE OLD CI BLOCKER IS RESOLVED:** `gh auth status` now shows the `workflow` scope and `origin/master` is level with the local CI commits (`c29f185`); the "⏸️ BLOCKED" note below is historical, kept for the record.
+
+- **⏸️ V23 CI — BUILT, COMMITTED (`d7d846d`), AND BLOCKED ON A CREDENTIAL SCOPE THE FOUNDER MUST GRANT (HISTORICAL — see the follow-up entry above).** One command clears it: `gh auth refresh -s workflow`. Then `git push origin master` (details, including the `ALLOW_CONFIG_CHANGE` export that is needed only while the commit is unpushed, are in `.scratch/v23/ledger.md`).
 
   **WHAT IT ADDS.** Until V23 this repo had **NO CI AT ALL** — no `.github/workflows`, no other pipeline. Every gate was real but lived on one machine. `.github/workflows/verify.yml` runs one command, `npm run verify`, deliberately NOT re-listing the stages (a second list would be a second definition of the gate drifting from `package.json`), plus the tracked-hook install the `no-bypass` guard asserts. Full operational doc: `docs/agents/ci.md`.
 

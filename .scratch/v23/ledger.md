@@ -793,3 +793,50 @@ V23 WRAP-UP: CI ADDED — and the push is BLOCKED on a credential scope only the
   origin: while it is unpushed, the config-guard sees the steering-lint edit
   inside "everything this branch adds". It will not be needed for CI, and not for
   any later push.)
+
+V23 FOLLOW-UP: THE MAP FEEDBACK FIXES (founder, with screenshots). Two reports on
+  the PLACES map: (A) *"when i click on a blue circle in the map in the places
+  section, the map goes white."* (B) *"the red radius is going outside the map
+  lol … the whole thing is not looking right."*
+  A — ROOT CAUSE IS A DOM-OWNERSHIP COLLISION on the container's `className`.
+    React owned that attribute because the component passed a string, and the
+    string CHANGED when the popup opened (it used to drop `overflow-hidden`), so
+    React rewrote the attribute and DELETED every `leaflet-*` class Leaflet had
+    appended. Without `.leaflet-container`, `.leaflet-tile-loaded`'s
+    `visibility: inherit` resolves against Leaflet's sheet default `hidden` — the
+    tiles vanish, leaving a white box with the markers still drawn. FIX: freeze
+    the className string so React's renders write the same value and Leaflet's
+    classes survive; drop the `overflow-hidden` toggle (always on); the popup is
+    kept inside by `autoPan` + the CSS ceiling, so nothing needs the border to
+    unclip.
+  B — ROOT CAUSE IS THREE CAUSES, each of which alone changes nothing visible:
+    1. STALE PANE SIZE — `zoomForRadius` defaulted to a 250px pane; the browse
+       band is 380px. Now passed `map.getSize()`'s shorter axis.
+    2. LEAFLET FLOORS THE FRACTIONAL ZOOM — `zoomSnap` defaults to 1, so the
+       computed level was rounded and the camera never moved (`target=13.97
+       before=13 after=13`, logged live). Fixed with `zoomSnap: 0` (+ a 0.5
+       `zoomDelta` for the +/- control).
+    3. LATITUDE-BLIND ARITHMETIC — 69 mi/degree is an equator fact; Mercator
+       inflates by 1/cos(lat), 1.48x at Seattle, and the drawn circle came out
+       1.48x too big. Corrected, plus a `FRAME_FILL` margin, plus `panTo` to
+       centre the circle.
+    The CSS ceilings were ALSO too tight (17vh content / 24vh popup): the "Start
+    a drop-in" button was scrolled out of the bubble and its centre hit-tested
+    the WRAPPER. Raised to 34vh / 42vh and measured contained.
+  EVIDENCE (browser, 390x844, /browse, current tree; `.scratch/v23/verify-founder-map.mjs`):
+    radius circle inside the band on BOTH axes — ratio 0.85 w / 0.74 h;
+    after tapping a blue marker: `.leaflet-container` retained, 6 tiles visible,
+    container bg #ddd (not white), 0 pageerrors;
+    popup contained in the band (0.81 h) and the button's centre hit-tests the
+    BUTTON.
+  GATE: `npm run verify` exit 0 — 39 files / 1195 tests (baseline 1191; +4 unit
+    tests for the latitude-corrected `zoomForRadius` at the bottom of
+    `places.test.ts`), lint clean, a11y PASS, steering PASS, guards PASS.
+  e2e: a REGRESSION ASSERTION added to `places.e2e.ts` — after a marker tap the
+    container keeps `leaflet-container` and a loaded tile stays `visibility:
+    visible`. It runs on the fixed tree (the parent test proceeds past it). That
+    spec is in the batch's PRE-EXISTING failure set: it later fails on
+    `learn-more`, because V23 slice 4 deliberately removed the map-search
+    fallback from the panel while the spec still expects the link.
+  NOT FIXED, RECORDED (out of this follow-up's scope): the stale `learn-more`
+    expectation in `places.e2e.ts`.
