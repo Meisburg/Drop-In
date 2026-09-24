@@ -203,9 +203,9 @@ describe('no-bypass guard: externally owned validation copies', () => {
     expect(r.stdout).not.toContain('recorded bypass history')
   }, TIME)
 
-  // git spells the subject-bearing reflog action differently depending on how
-  // the commit was created; every spelling carries prose, so none may fail the
-  // tree.
+  // git's own reflog action text is prose: commit subjects (spelled
+  // differently depending on how the commit was created) and branch names,
+  // refs, recorded pull arguments, and URLs. None of it may fail the tree.
   it.each([
     ['commit (initial)', 'initial: mention core.hooksPath here'],
     ['commit (amend)', 'docs: explain core.hooksPath acceptance'],
@@ -215,6 +215,11 @@ describe('no-bypass guard: externally owned validation copies', () => {
     ['cherry-pick', 'picked: mentions --no-verify'],
     ['revert', 'Revert "feature: mentions --no-verify"'],
     ['am', 'patch: mentions --no-verify'],
+    ['merge fix/core.hooksPath-guard', 'Fast-forward'],
+    ['checkout', 'moving from master to fix/core.hooksPath-guard'],
+    ['pull --ff-only . fix/core.hooksPath-guard', 'Fast-forward'],
+    ['reset', 'moving to fix/core.hooksPath-guard'],
+    ['clone', 'from https://example.invalid/core.hooksPath.git'],
   ])('does not treat a %s subject line as a bypass', (action, subject) => {
     const { copy } = externalCopy()
     appendFileSync(

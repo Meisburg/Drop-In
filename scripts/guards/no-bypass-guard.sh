@@ -172,12 +172,14 @@ BYPASS_LOG="$(git rev-parse --git-path FAST_PUSH_LOG 2>/dev/null || true)"
 BYPASS_HITS=""
 
 if [ -n "$RELOG" ] && [ -f "$RELOG" ]; then
-  # A commit subject is recorded in the reflog under several action spellings
-  # ('commit', 'commit (amend)', 'commit (merge)', 'commit (initial)',
-  # 'rebase (pick)', 'rebase (squash)', 'cherry-pick', 'revert', 'am') and is
-  # only prose — a bypass flag there is not a bypass. Real flags can only ride
-  # a non-commit action (a wrapper or a logged command).
-  hits="$(grep -nE -- '--no-verify|core\.hooksPath' "$RELOG" 2>/dev/null | grep -vE -- "${TAB}(commit|rebase|cherry-pick|revert|am)( \([^)]*\))?: " | tail -3 || true)"
+  # Reflog action text git itself writes is prose, not commands: commit
+  # subjects ('commit', 'commit (amend)', 'commit (merge)', 'commit (initial)',
+  # 'rebase (pick)', 'rebase (squash)', 'cherry-pick', 'revert', 'am'), branch
+  # names and refs ('checkout: moving from ...', 'reset: moving to ...',
+  # 'merge <name>: ...', 'pull <args>: ...'), and URLs ('clone: from ...').
+  # A bypass flag there is not a bypass; real flags can only ride a
+  # wrapper-recorded command, whose action text does not follow those shapes.
+  hits="$(grep -nE -- '--no-verify|core\.hooksPath' "$RELOG" 2>/dev/null | grep -vE -- "${TAB}((commit|rebase|cherry-pick|revert|am|checkout|reset|clone)( \([^)]*\))?|(merge|pull) [^:]*): " | tail -3 || true)"
   if [ -n "$hits" ]; then
     BYPASS_HITS="$BYPASS_HITS$hits
 "
