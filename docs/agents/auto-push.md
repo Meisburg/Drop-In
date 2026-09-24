@@ -127,6 +127,15 @@ git rev-parse --git-path hooks/pre-push   # expect: scripts/git-hooks/pre-push
 
 If that prints `.git/hooks/pre-push`, the gate is **not** armed in this clone.
 
+The `no-bypass` guard enforces the same statement mechanically, but it checks
+**this repository's own config layer** rather than only the effective value. A
+differing effective `core.hooksPath` is accepted only for an externally owned
+disposable copy — a linked worktree whose common git dir is outside the checkout
+and whose worktree config layer supplies a path inside that common dir — and the
+guard prints every acceptance. The repository's own layer above must still read
+`scripts/git-hooks`; a rewired repository layer, a non-worktree override, or a
+recorded bypass still fails. Details: `docs/agents/borrowed-guards.md`.
+
 ### Verified behaviour (2026-09-21)
 
 Each rule was observed firing, not assumed: a dirty range containing

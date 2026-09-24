@@ -19,8 +19,13 @@ gate" that can drift from the first — the "same fact, two spellings" defect th
 repo keeps recording. Change the gate in `package.json` and CI follows.
 
 Alongside it the workflow installs the tracked git hooks, because the
-`no-bypass` guard asserts `core.hooksPath` points at `scripts/git-hooks` and a
-fresh checkout has no hooks configured.
+`no-bypass` guard asserts this repository's own config layer (the shared local
+scope) still points at `scripts/git-hooks`, and a fresh checkout has no hooks
+configured. The guard accepts a differing *effective* `core.hooksPath` only for
+an externally owned disposable copy — a linked worktree whose common git dir is
+outside the checkout and whose worktree config layer supplies a path inside
+that common dir — and it prints every such acceptance. See
+`docs/agents/borrowed-guards.md`.
 
 ## Turning it on (two repository variables, no secrets)
 
