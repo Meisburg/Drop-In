@@ -1182,7 +1182,7 @@ export function FeedPage() {
                 : null
             return (
               <section key={group.key} className="flex flex-col gap-2">
-                <p className="text-sm font-semibold uppercase tracking-wide text-slate-600">
+                <p className="font-display text-lg font-semibold text-slate-900">
                   {group.label}
                 </p>
                 <div className="flex flex-col gap-3">
