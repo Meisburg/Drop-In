@@ -1,49 +1,42 @@
 /**
- * The restrained section header (V11 ticket 04) — a compact gradient band,
- * NOT a hero: a small stroked glyph in a soft tile, the page's single h1, and
- * a one-line tagline that says what THIS screen is for. No images; the
- * feed/cards stay above the fold. The component owns the h1, so a page that
- * renders it renders no other.
+ * The page masthead — a printed notice heading, not a card.
  *
- * The tagline is OPTIONAL: a screen whose purpose is already obvious from its
- * title (Inbox) renders title-only rather than an empty line. Omitting it
- * renders no <p> at all, so there is no blank gap in the band.
+ * V11 ticket 04 shipped this as a compact gradient "band": a rounded border, an
+ * `indigo-50 → white → slate-50` wash, and an icon in a tinted tile. Reviewed
+ * against the frontend-design lens (docs/design-review/frontend-design-pass.md)
+ * it was the single most-repeated device in the app — the identical card opened
+ * Feed, Places, Profile, Settings, and Inbox — so it read as template chrome
+ * rather than as each screen's own voice. It was also *broken* in dark mode:
+ * `via-white` is not re-pointed by the dark token block (that only overrides
+ * `.bg-white`), so the band painted a glaring white gradient on the dark page.
+ *
+ * This is the de-chromed replacement: no box, no gradient, no icon tile. The
+ * screen's name is set in the display face at the top of the page and the
+ * optional tagline sits under it, so the first thing a parent sees is the page
+ * itself rather than a component. The `icon` prop is accepted and ignored so the
+ * existing call sites keep compiling while the chrome is removed — a page title
+ * does not need a pictogram to be legible.
+ *
+ * The component still OWNS the page's single `h1`, so a page that renders it
+ * renders no other. The tagline is OPTIONAL: a screen whose purpose is obvious
+ * from its title (Inbox) renders title-only rather than an empty line.
  */
 export function SectionHeader({
-  icon,
   title,
   tagline,
 }: {
-  /** An SVG path from NAV_ICONS (the shared 24px stroked glyph family). */
-  icon: string
+  /** Kept for call-site compatibility; deliberately not rendered. */
+  icon?: string
   title: string
   /** Omit when the title alone says what the screen is for. */
   tagline?: string
 }) {
   return (
-    <div className="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-slate-50 px-4 py-3">
-      <div className="flex items-center gap-3">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600">
-          <svg
-            viewBox="0 0 24 24"
-            className="h-5 w-5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d={icon} />
-          </svg>
-        </div>
-        <div className="flex flex-col">
-          <h1 className="font-display text-lg font-semibold text-slate-900">{title}</h1>
-          {tagline === undefined || tagline === '' ? null : (
-            <p className="text-sm text-slate-600">{tagline}</p>
-          )}
-        </div>
-      </div>
-    </div>
+    <header className="flex flex-col gap-0.5 pt-0.5">
+      <h1 className="font-display text-xl font-semibold text-slate-900">{title}</h1>
+      {tagline === undefined || tagline === '' ? null : (
+        <p className="text-sm text-slate-600">{tagline}</p>
+      )}
+    </header>
   )
 }

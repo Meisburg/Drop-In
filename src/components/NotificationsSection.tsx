@@ -235,7 +235,7 @@ export function NotificationsSection() {
           className="mt-3 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2"
           data-testid="push-ios-card"
         >
-          <p className="text-xs font-medium text-indigo-900">Add Drop In to your Home Screen</p>
+          <p className="text-xs font-medium text-indigo-900">Add Drop In to your home screen</p>
           <p className="mt-1 text-xs text-indigo-800">
             On iPhone and iPad, notifications only arrive in the installed app. Tap the Share
             button, then <span className="font-medium">Add to Home Screen</span>, and turn
@@ -264,7 +264,7 @@ export function NotificationsSection() {
           data-testid="push-install-button"
           onClick={() => void handleInstall()}
         >
-          Add Drop In to your Home Screen
+          Add Drop In to your home screen
         </button>
       ) : null}
 

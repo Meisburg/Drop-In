@@ -408,7 +408,7 @@ function NavTab({
       to={to}
       end={to === '/'}
       className={({ isActive }) =>
-        `flex min-h-14 flex-1 items-center justify-center gap-1 px-2 py-2 text-xs transition-colors motion-reduce:transition-none md:flex-col ${
+        `flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 whitespace-nowrap px-1 py-1.5 text-xs transition-colors motion-reduce:transition-none ${
           isActive ? 'font-semibold text-indigo-600' : 'font-medium text-slate-600'
         }`
       }

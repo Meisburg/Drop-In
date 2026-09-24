@@ -216,7 +216,7 @@ export function DropInCard({
     // but a single-card column reads best at the phone measure — so cards cap
     // at max-w-md (448px) there. Below md the shell is already 448px, so this
     // class changes nothing on a phone.
-    'block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors motion-reduce:transition-none hover:border-indigo-300 md:max-w-md',
+    'block rounded-xl border border-slate-200 bg-white p-4 transition-colors motion-reduce:transition-none hover:border-indigo-300 md:max-w-md',
     muted ? 'opacity-60' : '',
   ]
     .filter((c) => c !== '')
@@ -281,10 +281,18 @@ export function DropInCard({
             is `neighborhood · window` — and with no neighbourhood it is the
             WINDOW alone. Never `{null} · …` (React would print nothing and
             leave a dangling separator) and never the word "null": the post is
-            normal, the parent just was not asked. */}
+            normal, the parent just was not asked.
+
+            frontend-design pass: the WINDOW is wrapped in its own span so the
+            perishable fact ("when") is the loud line in the card, while the
+            neighbourhood and distance stay quiet around it. The text content is
+            byte-identical — only the weight and tone of the window change — so
+            the specs that pin this meta line still read the same string. */}
         <p className="text-sm text-slate-600">
           {neighborhoodLabel !== null ? `${neighborhoodLabel} · ` : ''}
-          {formatTimeWindow(playdate.starts_at, playdate.ends_at)}
+          <span className="font-semibold text-slate-900">
+            {formatTimeWindow(playdate.starts_at, playdate.ends_at)}
+          </span>
           {/* V8 ticket 06: ` · weekly` (text, right after the time window) when
               this post is an occurrence of a weekly series — the pure
               weeklyMetaSuffix seam returns '' for a one-off, so nothing
