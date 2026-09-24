@@ -15,8 +15,8 @@ import type { DmConversationRow, PlaydateConversationRow } from './inbox'
  *      name must render TWO rows (the merge must not collapse on name);
  *   6. both threads — the winning row (DM newer, playdate newer, or tied)
  *      carries the SUM of both threads' unreadCounts (disjoint cursors);
- *   7. two playdate threads with the same counterpart — one row, counts
- *      summed (the per-playdate cursors are disjoint too).
+ *   7. two playdate threads with the same counterpart — the newer winner
+ *      keeps its own unreadCount.
  */
 
 function dm(overrides: Partial<DmConversationRow> = {}): DmConversationRow {
@@ -138,15 +138,13 @@ describe('mergeConversations', () => {
     expect(result[0].unreadCount).toBe(9)
   })
 
-  it('two playdate threads with the same counterpart: one row, counts summed', () => {
-    // A parent who hosts two playdates both messaged with the caller: the
-    // per-playdate cursors are disjoint, so the collapsed badge is the sum.
+  it('two playdate threads with the same counterpart: the newer winner keeps its unreadCount', () => {
     const pdOne = pd({ otherPartyId: 'same', playdateId: 'p1', latestMessageAt: '2026-09-23T10:00:00Z', unreadCount: 2 })
     const pdTwo = pd({ otherPartyId: 'same', playdateId: 'p2', latestMessageAt: '2026-09-23T11:00:00Z', unreadCount: 1 })
     const result = mergeConversations([], [pdOne, pdTwo])
     expect(result).toHaveLength(1)
     expect(result[0].kind).toBe('playdate')
     expect(result[0].playdateId).toBe('p2')
-    expect(result[0].unreadCount).toBe(3)
+    expect(result[0].unreadCount).toBe(1)
   })
 })
