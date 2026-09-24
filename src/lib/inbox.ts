@@ -9,6 +9,11 @@
  * name, and collapsing on it would merge two real people, which is worse than
  * the duplicate).
  *
+ * Collapsing keeps the winner's identity but SUMS the collapsed rows'
+ * unreadCounts into it: the threads' read cursors are disjoint (a DM cursor
+ * never covers a playdate thread, and each playdate thread has its own
+ * cursor), so discarding the losing row must not hide its dot.
+ *
  * House pattern: a PURE decision (mergeConversations) + a typed row shape. No
  * Supabase client, no React — trivially testable, mock-free.
  */
@@ -23,7 +28,7 @@ export interface MergedConversation {
   preview: string
   /** The latest message's created_at (ISO). */
   latestAt: string
-  /** Unread count for this row (playdate cursor or DM cursor; 0 when read). */
+  /** Unread messages across every thread this row collapsed: the SUM of the collapsed rows' unreadCounts (disjoint cursors; 0 when all read). */
   unreadCount: number
   /** Which kind of thread this row opens. */
   kind: 'dm' | 'playdate'
@@ -64,7 +69,9 @@ export interface PlaydateConversationRow {
  * `latestAt`; on a tie the PLAYDATE row wins (it carries the richer context:
  * the post title).
  * The losing row's identity is discarded — there is exactly ONE row per
- * counterpart id in the output.
+ * counterpart id in the output — but its unreadCount is not: the collapsed
+ * threads' read cursors are disjoint, so the survivor carries the SUM of
+ * every collapsed row's unreadCount.
  */
 export function mergeConversations(
   dmRows: DmConversationRow[],
@@ -112,12 +119,16 @@ export function mergeConversations(
       continue
     }
     // Same counterpart id → prefer the newer latestAt; on a tie the playdate
-    // row wins (richer context: the post title).
-    if (row.latestAt > existing.latestAt) {
-      byKey.set(key, row)
-    } else if (row.latestAt === existing.latestAt && row.kind === 'playdate') {
-      byKey.set(key, row)
-    }
+    // row wins (richer context: the post title). The collapsed threads' read
+    // cursors are disjoint, so the survivor carries the SUM of the collapsed
+    // rows' unreadCounts — discarding the losing row must not hide its dot.
+    const winner =
+      row.latestAt > existing.latestAt ||
+      (row.latestAt === existing.latestAt && row.kind === 'playdate')
+        ? row
+        : existing
+    const loser = winner === row ? existing : row
+    byKey.set(key, { ...winner, unreadCount: winner.unreadCount + loser.unreadCount })
   }
 
   const merged: MergedConversation[] = Array.from(byKey.values())
