@@ -219,7 +219,8 @@ test('typing a name suggests parents; selecting one sends the invite (V21 t07)',
   const { accessToken: markerToken, userId: markerId } = readMarkerSession()
 
   /**
-   * Withdraw the MARKER's own still-pending outgoing invite(s).
+   * Withdraw the MARKER's own still-pending outgoing invite(s); returns the
+   * number of rows actually deleted.
    *
    * WHY THIS EXISTS — a real residue bug this spec shipped with. The first
    * version cleaned up only the throwaway profiles it created, never the
@@ -230,12 +231,25 @@ test('typing a name suggests parents; selecting one sends the invite (V21 t07)',
    * once and failed every time after. The requester may delete their own pending
    * row (`account_links_delete_requester_pending`, migration 0047), so this is a
    * self-scoped delete — no other account's data is touched.
+   *
+   * A withdrawal that leaves residue is never silent: non-ok responses and
+   * network failures throw, and the caller checks the returned row count.
    */
-  async function withdrawMarkerPendingInvites(): Promise<void> {
-    await fetch(`${restUrl}/rest/v1/account_links?requester_id=eq.${markerId}&status=eq.pending`, {
-      method: 'DELETE',
-      headers: { apikey: anonKey, Authorization: `Bearer ${markerToken}` },
-    }).catch(() => {})
+  async function withdrawMarkerPendingInvites(): Promise<number> {
+    const res = await fetchWithTimeout(
+      `${restUrl}/rest/v1/account_links?requester_id=eq.${markerId}&status=eq.pending`,
+      {
+        method: 'DELETE',
+        headers: {
+          apikey: anonKey,
+          Authorization: `Bearer ${markerToken}`,
+          Prefer: 'return=representation',
+        },
+      },
+    )
+    if (!res.ok) throw new Error(`withdraw pending invites HTTP ${res.status}: ${await res.text()}`)
+    const deleted = (await res.json()) as unknown[]
+    return deleted.length
   }
 
   /** fetch with a hard 15s cap — a hung live-DB call must fail fast. */
@@ -298,9 +312,14 @@ test('typing a name suggests parents; selecting one sends the invite (V21 t07)',
     await createParent('m2', `Quinn Other ${Date.now()}`),
   ]
 
+  let inviteSent = false
   try {
-    // Start from the state this spec assumes: the marker has no outgoing invite.
-    await withdrawMarkerPendingInvites()
+    // Start from the state this spec assumes: the marker has no outgoing
+    // invite. A leftover count is residue from a previous run — say so; a
+    // failed withdrawal throws, since this spec cannot run on a state it
+    // could not establish.
+    const preExisting = await withdrawMarkerPendingInvites()
+    if (preExisting > 0) console.log(`withdrew ${preExisting} leftover pending invite(s) from a previous run`)
     await page.goto('/profile')
     await page.getByRole('button', { name: 'Edit profile' }).click()
 
@@ -322,9 +341,24 @@ test('typing a name suggests parents; selecting one sends the invite (V21 t07)',
       new RegExp(`^Quinn E2E \\d+$`),
     )
     await expect(page.getByTestId('link-outgoing')).toBeVisible()
+    inviteSent = true
   } finally {
-    // Withdraw the invite the flow just sent, so a re-run starts clean.
-    await withdrawMarkerPendingInvites()
+    // Withdraw the invite the flow just sent, so a re-run starts clean. A
+    // failed cleanup must not mask the original failure, but residue must
+    // never survive silently: a sent-but-not-withdrawn invite hangs the next
+    // run, so it fails this one too.
+    let withdrawn = 0
+    try {
+      withdrawn = await withdrawMarkerPendingInvites()
+    } catch (err) {
+      if (inviteSent) throw new Error(`cleanup could not withdraw the sent invite: ${String(err)}`)
+      console.warn(`pending-invite cleanup failed (no invite was sent this run): ${String(err)}`)
+    }
+    if (inviteSent && withdrawn < 1) {
+      throw new Error(
+        `cleanup deleted ${withdrawn} pending invite(s), expected the one the flow sent — residue would hang the next run`,
+      )
+    }
     // Clean up both throwaway parents (best-effort, as every other spec here).
     for (const p of madeReal) {
       await fetch(`${restUrl}/rest/v1/profiles?id=eq.${p.id}`, {

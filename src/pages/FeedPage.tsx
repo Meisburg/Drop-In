@@ -898,11 +898,10 @@ export function FeedPage() {
     if (loading || session === null || profile === null) return
     const homeZip = profile.home_zip ?? ''
     if (homeZip === '') return
-    // V23 slice 1: the LocationModal's slider now calls onApplyRadius on EVERY
-    // tick (the Places page's map re-fits to the live value). The feed's write
-    // path must not fire a DB write per tick — only when the value actually
-    // changes. The modal's internal state already tracks the saved value, so
-    // this guard is cheap and correct.
+    // The modal's per-tick path is `onRadiusChange` (preview only) — the feed
+    // deliberately omits it. `onApplyRadius` is the explicit write, fired once
+    // from "Apply radius", never per tick. The equal-value guard stays so
+    // applying the saved radius is a no-op, not a redundant write.
     if (miles === (profile.radius_miles ?? DEFAULT_RADIUS_MILES)) return
     if (radiusBusy) return
     setRadiusBusy(true)
