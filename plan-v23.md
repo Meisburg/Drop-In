@@ -306,8 +306,9 @@ MUST keep working — `e2e/places.e2e.ts:1539-1602` asserts them.
 - **RESOLVED — place comments.** The founder chose the real wall (0050).
 - **RESOLVED — Sleek.** Skipped; principles applied in code.
 - **OPEN — the "Playdate at …" title copy** (slice 2). Needs a founder call.
-- **OPEN — the DM unread gap** (slice 7). Needs a founder call on whether to add
-  a migration.
+- **RESOLVED — the DM unread gap** (slice 7). The founder authorized a separate
+  read-cursor table; shipped as migration `0051` (`direct_conversation_reads`)
+  with the dot + badge on DM rows (record: `task-state.md`, follow-up #3).
 - **The feed's empty state** must not become a dead end when its CTA is removed.
 - **`/place/:id/details` vs `/place/:id`** risks "same fact, two spellings";
   mitigated by the shared `placeDetailsPath` seam, but the reviewer should check
