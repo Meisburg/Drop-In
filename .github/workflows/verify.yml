@@ -1,0 +1,134 @@
+# ============================================================================
+# The gate, enforced by the forge — `npm run verify` on every PR and push.
+# ============================================================================
+#
+# WHY THIS EXISTS. Every check in this repo was, until now, something a human or
+# an agent had to REMEMBER to run: `npm run verify` was real, and so were the
+# pre-push hook and the three guards behind it, but all of them live on ONE
+# machine. A contributor, a second checkout, or a fresh clone had no gate at all,
+# and a red build could reach a branch without anything noticing. This workflow
+# is the same command the pre-push hook runs, on a machine nobody has to
+# remember.
+#
+# WHAT IT RUNS, AND WHY IT IS EXACTLY `npm run verify` AND NOTHING ELSE.
+# The command is the contract: build + test + lint + a11y:focus + steering-lint +
+# guards. Re-listing those stages here would create a SECOND definition of "the
+# gate" that could drift from the first — the "same fact, two spellings" defect
+# this repo keeps recording. CI calling the one command is the whole point; if
+# the gate changes, it changes in package.json and CI follows automatically.
+#
+# ---------------------------------------------------------------------------
+# THE SECRETS QUESTION, ANSWERED RATHER THAN ASSUMED
+# ---------------------------------------------------------------------------
+# The build NEEDS `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`:
+# `src/lib/db.ts` throws at module load without them, so `npm run build` and
+# `npm test` both fail. MEASURED, not guessed — running `npm run verify` with
+# `.env` moved aside fails with "Missing VITE_SUPABASE_URL or
+# VITE_SUPABASE_ANON_KEY".
+#
+# Those two values are NOT SECRETS, and calling them secrets would be worse than
+# not having CI:
+#   * The anon key is COMPILED INTO THE SHIPPED BUNDLE — it is in
+#     `dist/assets/index-*.js` by design, because the browser needs it. Anyone
+#     who loads the site already has it.
+#   * RLS is what protects the data, and it does: probed with the anon key,
+#     `profiles`, `messages`, `place_comments` and `parent_cards` each return
+#     ZERO rows, while `places` returns the public directory. The key grants
+#     nothing without a signed-in session.
+#
+# So they are supplied as repository VARIABLES, not secrets: `vars.*` is the
+# honest home for a value that is public by construction, and secrets would
+# imply a confidentiality this value does not have. (GitHub still withholds
+# `vars` from fork PRs by default, which is the conservative side of the same
+# coin.)
+#
+# IF THE VARIABLES ARE ABSENT the workflow SKIPS the gate with a loud notice
+# rather than failing — a red X for "you have not configured this yet" trains
+# people to ignore red Xs. An unconfigured variable is a setup step, not a
+# broken commit.
+#
+# WHAT THIS WORKFLOW DELIBERATELY DOES NOT DO: the e2e lane. Playwright signs up
+# a real marker account against the LIVE Supabase project on every run
+# (`e2e/auth.setup.ts`), which would create throwaway rows in a production
+# database from a forge. That belongs behind an explicit decision — a dedicated
+# test project, or a scheduled run — not bolted onto the first CI file this repo
+# has ever had. `npm run a11y:profile-order` is in the same position: it needs a
+# browser, a preview server and a signed-in session, so it stays a manual lane.
+# Both are recorded in task-state.md as open work with their blockers named.
+# ============================================================================
+
+name: verify
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [master]
+
+# Least privilege: the gate only reads the checkout.
+permissions:
+  contents: read
+
+# A new push to the same ref makes the previous run's answer irrelevant.
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: npm run verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The guards compare against a base commit (`config-guard` takes a sha),
+          # so a shallow clone would leave them unable to resolve it.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches package.json's `engines.node: >=22` and the version this repo
+          # is developed against. Pinned to a major so CI cannot silently jump.
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check the Supabase variables are configured
+        id: env
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "${VITE_SUPABASE_URL}" ] || [ -z "${VITE_SUPABASE_ANON_KEY}" ]; then
+            echo "::notice title=Gate skipped::VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are not set as repository variables. See .github/workflows/verify.yml for why they are needed and why they are not secrets (Settings -> Secrets and variables -> Actions -> Variables)."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The git-hook guard asserts `core.hooksPath` points at the tracked hooks.
+      # A fresh CI checkout has no hooks installed, and `npm ci` runs `prepare`
+      # (install-git-hooks.sh) which sets it — so this step is the guard's own
+      # precondition, stated rather than left to the install script's side effect.
+      - name: Install the tracked git hooks
+        run: bash scripts/install-git-hooks.sh
+
+      - name: Run the gate
+        if: steps.env.outputs.configured == 'true'
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+        run: npm run verify
+
+      - name: Upload the test report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7

@@ -36,9 +36,9 @@ mode" or "normal mode" — confirm in one line, then revert to default style.
   builder dispatch. Template: `plan.template.md`.
 - `task-state.md` — current phase, slice states, evidence, risks, escalations.
   The orchestrator updates it after every phase transition.
-- Subagents receive briefs pointing at files, never pasted chat history.
-- Each subagent returns its structured report; the orchestrator routes on the
-  report plus the files, not on vibes.
+- Subagents get briefs pointing at files, never pasted chat history.
+- Each returns a structured report; the orchestrator routes on the report plus
+  the files, not on vibes.
 
 ## Agents (defined in .opencode/agents/)
 
@@ -121,9 +121,8 @@ shell scripts that either find a violation or do not — no model, no tokens.
 Three rules: a `lib/` module needs its sibling test; a check-config change
 needs `ALLOW_CONFIG_CHANGE="<why>"`; the tracked git hooks stay wired.
 
-Borrowed from `affaan-m/ECC` (MIT) and reimplemented for this harness —
-**what was taken, what was refused, and the four tests a new guard must pass:
-`docs/agents/borrowed-guards.md`.**
+Borrowed from `affaan-m/ECC` (MIT), reimplemented here — what was taken,
+refused, and the four tests a new guard must pass: `docs/agents/borrowed-guards.md`.
 
 ## The escalating fix loop (why it escalates by model)
 
@@ -163,9 +162,9 @@ place and re-dispatched completed work:
     Slice N: fix round R/5 (<X> addressed, <Y> open)
     Slice N: parked — <finding> — Ruling: <why the code stands>
 
-After any compaction, read the ledger and `git log` before re-dispatching.
-Commits named in the ledger exist in git even when context no longer
-remembers creating them. Trust the ledger over recollection.
+After compaction, read the ledger and `git log` before re-dispatching.
+Ledger-named commits exist in git even when context forgets them. Trust the
+ledger over recollection.
 
 ## Slice budget
 
@@ -175,14 +174,13 @@ model, so budget slices accordingly. Record the observed tokens per slice in
 `task-state.md` beside the gate result, so sizing becomes empirical.
 
 At every phase boundary, decide **explicitly** whether to continue, clear, or
-compact, and write it in the ledger. The default is **clear**: the durable state
-(plan, ledger, commit, evidence) lives outside the context window. Full decision
+compact, and write it in the ledger. Default: **clear** — durable state
+(plan, ledger, commit, evidence) lives outside the window. Full decision
 table: `docs/agents/coordinator.md`.
 
 ## Where the rest lives (read on demand, do not push)
 
-Everything below applies only in a specific situation. Read the file when that
-situation arrives — the pointer text tells you when.
+Each applies only in a specific situation. Read the file when it arrives — the pointer says when.
 
 | Read before | File |
 |---|---|
@@ -195,6 +193,7 @@ situation arrives — the pointer text tells you when.
 | Running the playtest lane | `docs/agents/playtest-lane.md` — routes, verdict, evidence |
 | Filing or triaging a ticket | `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md` |
 | Naming a domain concept | `docs/agents/domain.md` — `CONTEXT.md` + `docs/adr/`, created lazily |
+| CI is red, or changing `.github/workflows/` | `docs/agents/ci.md` — what CI runs, the two repo variables, what it deliberately skips |
 
 The gate for a slice is **`npm run verify`** (build + test + lint). The
 always-on steering payload is measured by `bash .scratch/context-load.sh` —
@@ -202,7 +201,7 @@ keep it under ~5% of the 98k window.
 
 ## Skills (mattpocock/skills, discovered from ~/.claude/skills/)
 
-Two orthogonal layers: agents define WHO does what; skills hold HOW to do it.
+Two layers: agents define WHO does what; skills hold HOW.
 
 - Before orchestration (human-invoked): `/grill-me` or `/grill-with-docs`
   (alignment + CONTEXT.md/ADRs that feed plan.md Interfaces), `/to-spec`,

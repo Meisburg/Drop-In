@@ -51,6 +51,16 @@ ALLOW_ABSENT=(
   'routes.json'    # written by the playtest lane into .scratch/playtest/
   'verdict.md'     # written by the playtest lane
   'verdict.json'   # written by the playtest lane
+  # V23 CI: MACHINE-LOCAL STATE THAT CANNOT EXIST IN A FRESH CLONE.
+  # `supabase/.temp/linked-project.json` is written by `supabase link` and is
+  # GITIGNORED (.gitignore:94), so it exists on a developer machine and NEVER in
+  # CI. The steering layer legitimately MENTIONS it — auto-push.md:33 tells the
+  # story of a slice that committed it by accident — and that mention is a
+  # pointer by this lint's rule (a backticked path with a separator), so the
+  # first CI run this repo ever had failed on a file it could not possibly
+  # create. Found by running the gate in a simulated fresh clone rather than by
+  # reading the script.
+  'supabase/.temp/linked-project.json'
 )
 is_allowed_absent() {
   local p="$1" a
