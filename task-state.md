@@ -3,6 +3,18 @@
 > The system of record. The orchestrator updates this after every phase
 > transition. Subagent chat contexts are ephemeral — this file is not.
 
+- **✅ V23 FOLLOW-UP #2 — THE RECORDED OPEN NITS ARE CLEARED (2026-09-23).** Four items the wrap-up left open, all measured, none needing a founder decision.
+
+  **THE TWO TAP TARGETS.** The Settings gear was 24x44 (`App.tsx:237`, `min-h-11` but no width constraint) — added `min-w-11` → 44x44. The inbox empty-state "Browse places" link was 151x42 (`InboxPage.tsx:882`) — `inline-block ... py-2` → `inline-flex min-h-11 items-center` → 44 tall. **Measured after the fix with the same auditor that found them** (`.scratch/v23/find-small-tap.mjs`, 375x812, marker session): `/ [] · /new [] · /inbox []` — zero controls under 44px on any route.
+
+  **THE STALE `learn-more` EXPECTATION** (recorded as "not fixed" by the map follow-up): V23 slice 4 removed the map search from the marker panel, so the panel shows no outbound link for a playground with no verified site. The spec now asserts the removal (count 0) *and* that the removal is panel-scoped — `marker-details` is visible and points at `/place/…`, and the place page keeps its own `place-learn-more`.
+
+  **AND IT FOUND A SECOND CLASS OF STALENESS — THE TITLE RENAME.** Chasing the same spec past the fixed assertion landed on `Playdate at ${MARKER_PLACE_NAME}`. V23 renamed the generated prefix to "Drop-in at …" (`postSummary.GENERATED_TITLE_PREFIX`), and **`npm run verify` does not run e2e**, so five assertions across 4 specs were left asserting the old word: `places.e2e.ts` x2, `post-location.e2e.ts` x2, `quick-post.e2e.ts` x1, plus a prose comment in `post-fast.e2e.ts`. All corrected to "Drop-in at …"; the stale comments rewritten.
+
+  **EVIDENCE.** `npm run verify` exit 0 (39 files / 1195 tests, lint clean, a11y/steering/guards PASS — unchanged counts, no code beyond two class strings). The 7 affected e2e specs run green (`tapping an overview map marker`, `Start a drop-in here`, `/new leads with the place picker`, `typing @ opens the picker`, both `quick-post`, `opens on today`). Tap-target auditor output empty on all three routes (above).
+
+  **METHOD NOTE FOR THE NEXT SWEEP:** because e2e is a separate lane from the gate, a rename in `src/` can leave the whole e2e suite asserting a retired string with nothing to catch it. A full-suite e2e run is the only instrument that sees that class of drift.
+
 - **✅ V23 FOLLOW-UP — THE MAP FEEDBACK FIXES ARE IN THE TREE AND GREEN (2026-09-23).** Two founder reports on the places map: *"when i click on a blue circle … the map goes white"* and *"the red radius is going outside the map lol … the whole thing is not looking right."* Both fixed in `src/components/PlaceMap.tsx` + `src/index.css` + `src/lib/places.ts` (+4 unit tests, +1 e2e regression assertion).
 
   **WHITE MAP — a DOM-ownership collision, not map logic.** The container's `className` prop changed when the popup opened (it dropped `overflow-hidden`), so React rewrote the attribute and DELETED every `leaflet-*` class Leaflet had appended; `.leaflet-tile-loaded`'s `visibility: inherit` then resolved to Leaflet's sheet default `hidden` — tiles gone, white box. Fixed by freezing the className string and keeping `overflow-hidden` always on; the popup is held inside by `autoPan` + the CSS ceiling.

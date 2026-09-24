@@ -840,3 +840,30 @@ V23 FOLLOW-UP: THE MAP FEEDBACK FIXES (founder, with screenshots). Two reports o
     fallback from the panel while the spec still expects the link.
   NOT FIXED, RECORDED (out of this follow-up's scope): the stale `learn-more`
     expectation in `places.e2e.ts`.
+
+SLICE — V23 follow-up #2: the recorded open nits (2026-09-23).
+  BASE: 652554e (the map follow-up's record commit).
+  ITEMS (all from the wrap-up's open list, none a founder decision):
+   1. Settings gear tap target 24x44 (App.tsx:237) — `min-h-11` but no width
+      constraint; added `min-w-11` -> 44x44.
+   2. Inbox empty-state "Browse places" 151x42 (InboxPage.tsx:882) —
+      `inline-block py-2` -> `inline-flex min-h-11 items-center` -> 44 tall.
+   3. Stale `learn-more` expectation in places.e2e.ts (V23 slice 4 removed the
+      panel's map-search fallback). Rewritten to assert the ABSENCE (count 0)
+      plus the panel-scoped invariant: `marker-details` visible, href /place/…,
+      and the place page keeps its own `place-learn-more`.
+   4. NEW CLASS FOUND WHILE FIXING 3: the V23 title rename left five e2e
+      assertions asserting the retired string "Playdate at …". Corrected to
+      "Drop-in at …" in places x2, post-location x2, quick-post x1, and a prose
+      comment in post-fast.
+  EVIDENCE:
+   - tap-target auditor (.scratch/v23/find-small-tap.mjs, 375x812, marker):
+     `/ [] · /new [] · /inbox []` — zero controls under 44px.
+   - 7 affected e2e specs GREEN (places 364 + 1851; post-location 207 + 319;
+     quick-post 45 + 90; both setup+cleanup ok).
+   - `npm run verify` exit 0 — 39 files / 1195 tests, lint clean,
+     a11y/steering/guards PASS.
+  METHOD NOTE: e2e is NOT in `npm run verify`, so a rename in src/ can leave
+   the whole e2e suite asserting a retired string with nothing to catch it. A
+   full-suite e2e run is the only instrument that sees that drift; it is the
+   recommended next sweep.
