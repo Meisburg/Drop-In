@@ -225,3 +225,38 @@ nav-label assertions were checked against the rendered DOM by hand instead
 (text content is unchanged by the span/class edits). The `no-mistakes` pipeline
 run owns the full e2e gate.
 
+
+## 7. Second slice (directed): nav active state + avatar alt
+
+A bounded follow-up taken from the repo-ranked list. Each item was checked
+against the tree at this branch point before any edit.
+
+**(1) Active bottom-nav tab must not be signalled by colour alone — already
+implemented.** `App.tsx`'s `NavTab` renders the active tab with `font-semibold`
+(against `font-medium` inactive) AND a filled icon variant, and
+`src/components/icons.ts` ships the `NAV_ICONS_FILLED` family for exactly this
+(V22 slice 12). The HIG review's "identical weight/size, colour alone" finding
+predates that slice and is stale. **Evidence:** greyscale nav crops at
+`after/slice2-greyscale-nav-{feed,profile,inbox,browse}-{light,dark}-{390,320}.png`
+— the active tab's pin/envelope/list/person glyph is solid where the others are
+stroked, and its label is heavier, so the active tab is legible with hue removed.
+
+**(2) Filled icon variant family — already implemented.** `NAV_ICONS_FILLED`
+exists, is imported by `App.tsx`, and is wired into all four tabs; the stroked
+`NAV_ICONS` family stays for in-content glyphs. No re-fix.
+
+**(3) Named alt on identity avatars with no adjacent label — implemented.** The
+only such avatar left was the feed card's "going" circle. `DropInCard.tsx` now
+sets the photo's `alt` and the initial-fallback circle's `role="img"
+aria-label` to the pinger's display name (resolved from the same `goingPings`
+array `buildGoingLine` slices, so `circles[index]` aligns with `pingers[index]`).
+The host avatar keeps `alt=""` because the adjacent `@handle` names it, and the
+`ProfileView` kid photo keeps `alt=""` because the adjacent `kidLabel` names the
+kid; the parent/family photos and the identity avatar were already named.
+Visible name text is still not added to any card — only the accessible name.
+Evidence: `after/slice2-avatar-a11y.txt`.
+
+**Gates (re-run after this slice):** `npm run test` 1195 passing; `npm run lint`
+no errors (pre-existing `react(set-state-in-effect)` warnings only); `npm run
+build` green; the full `npm run verify` and `node scripts/mobile-audit.mjs` were
+run again before the commit and are recorded in the handoff.

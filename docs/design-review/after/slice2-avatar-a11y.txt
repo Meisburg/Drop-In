@@ -1,0 +1,32 @@
+Second slice — avatar accessible-name evidence
+==============================================
+
+Item 3: named alt on the identity avatars that no adjacent label names.
+
+The only such avatar left in the tree was the feed card's "going" circle
+(`DropInCard.tsx`). Verification, run against the built bundle on port 4191 with
+chrome-devtools-axi (`page.eval`, DOM read of the Northgate card's going line):
+
+BEFORE (fallback circle was aria-hidden, no name):
+
+    <span aria-hidden="true" class="... bg-slate-200 ...">E</span>
+
+AFTER (marker temporarily pinged the post so the circle rendered, then the ping
+was removed — no residue):
+
+    {"found":true,
+     "img":[{"alt":""}],
+     "roles":[{"label":"e2e-1790228964 Marker","text":"E"}],
+     "goingText":"1 going"}
+
+The named `role="img" aria-label` is the pinger's public display name; the host
+avatar (`img alt=""`) stays decorative because the adjacent `@Jon Meisburg`
+label already names it. Visible name text is still not added anywhere on a card.
+
+Other audited avatar sites, verified against the tree at this branch point:
+- `ProfileView.tsx` parent photo and family photo: already carry
+  `alt={"@<name>'s photo"}` / `alt={"@<name>'s family photo"}`.
+- `ProfileView.tsx` kid photo: `alt=""` is correct — the adjacent
+  `kidLabel(name, age)` line names the kid.
+- `ProfileView.tsx` identity avatar: rendered via `HostAvatar expandable`, which
+  wraps the photo in a `PhotoButton` named `"<name>'s photo"`.
