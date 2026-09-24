@@ -103,9 +103,14 @@ is not re-litigated every time someone notices e2e is absent from a PR.**
   `scripts/sweep-e2e-markers.mjs` sweep, which needs a Supabase
   dashboard/management token and is deliberately not wired into CI.
 - **Failures.** A failed night is a red job plus whatever evidence exists in
-  the Actions artifact: `test-results/` from the e2e run, plus `preview.log`
-  only if the a11y step ran and created its server log. A failed e2e run skips
-  the a11y step, so it has no `preview.log` to upload.
+  the Actions artifact: failure screenshots from `test-results/`, plus
+  `preview.log` only if the a11y step ran and created its server log (a failed
+  e2e run skips the a11y step, so it has no `preview.log` to upload), at 1-day
+  retention. Evidence from this lane is deliberately limited to screenshots
+  and the preview log — never the Playwright trace, whose DOM snapshots,
+  network request/response bodies and storage record carry live family data
+  and the marker session's access token, none of which belong in repository
+  artifact storage.
 
 ## When CI is red
 

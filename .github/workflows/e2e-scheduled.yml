@@ -62,9 +62,13 @@
 #     failed spec. The marker AUTH USERS persist by design and are removed by
 #     the manual `scripts/sweep-e2e-markers.mjs` sweep, which needs a Supabase
 #     dashboard/management token and is deliberately NOT wired into CI.
-#   * On failure, the job uploads whatever evidence exists: `test-results/`
-#     from the e2e run, plus `preview.log` only when the a11y step ran and
-#     created that step's server log. A failed e2e run skips the a11y step.
+#   * On failure, the job uploads LIMITED evidence: failure screenshots from
+#     `test-results/` plus `preview.log` only when the a11y step ran and
+#     created that step's server log (a failed e2e run skips the a11y step),
+#     at 1-day retention. Never the Playwright trace: it carries DOM
+#     snapshots, network request/response bodies and the marker session's
+#     storage record — live family data and an access token that do not
+#     belong in repository artifact storage.
 # ============================================================================
 
 name: e2e-scheduled
@@ -171,15 +175,20 @@ jobs:
           fi
           npm run a11y:profile-order
 
-      # Upload whatever the reached steps produced. `preview.log` belongs only
-      # to the a11y step, which a failed e2e step skips.
+      # Upload the failure evidence, deliberately NARROW. Evidence from this
+      # live-account lane is limited to failure screenshots plus the a11y
+      # step's server log (`preview.log` belongs only to that step, which a
+      # failed e2e step skips), at 1-day retention. The Playwright trace is
+      # never uploaded: its DOM snapshots, network request/response bodies and
+      # storage record carry live family data and the marker session's token,
+      # none of which belong in repository artifact storage.
       - name: Upload the failure evidence
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: e2e-scheduled-evidence
           path: |
-            test-results/
+            test-results/**/*.png
             preview.log
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
