@@ -440,33 +440,62 @@ h3 {
   max-width: min(260px, 78vw);
 }
 
-/* THE CEILING HAS TO BIND ON THE POPUP, NOT ON ONE OF ITS CHILDREN.
+/* THE CEILING HAS TO BIND ON THE POPUP, NOT ON ONE OF ITS CHILDREN, AND IT
+ * MUST BE BIG ENOUGH FOR THE PANEL'S OWN CONTROL.
  *
- * MEASURED, twice, and the first attempt was wrong in an instructive way.
+ * MEASURED, three times, and each attempt was wrong in an instructive way.
  * Capping `.leaflet-popup-content` alone left the POPUP ELEMENT at 318px inside
  * a 405px band — ratio 0.79 at 390x900, 0.83 at 375x700 — because the content
  * wrapper's padding and the popup's tip add ~66px on top of whatever the content
- * is allowed. The founder's complaint is about the POPUP, so the cap must bind
- * where the box actually grows.
+ * is allowed. So the cap was moved to the POPUP, where the box actually grows.
  *
- * The metric matters as much as the fix: my FIRST reading of this defect
- * measured `[data-testid="place-marker-info"]`'s bounding box, which is a SCROLLED
- * CHILD and therefore reports its natural height even while its scroller has
- * visibly clipped it. That reading said "284px, unchanged" while the CSS was in
- * fact working. A check that cannot fail is not evidence — the same lesson this
- * batch already recorded twice.
+ * V23 slice 7 — THE CEILINGS WERE TOO TIGHT, and the screenshot that prompted
+ * this slice is what exposed it. At 390x844 the old `17vh` resolved to 143px of
+ * content for a panel that needs 284px: the place's NAME and ADDRESS filled the
+ * visible area and the primary action — "Start a drop-in" — was scrolled out of
+ * view inside the bubble. A hit test on the button's own centre returned
+ * `DIV.leaflet-popup-content-wrapper`, i.e. the parent, not the button: present
+ * in the DOM, unreachable by a thumb, which is the exact defect class the
+ * reachability discipline exists to catch.
  *
- * Both ceilings are in `vh` because the band is `45dvh`: a fixed px cap would be
- * wrong on a tall phone and worse on a short one. `overflow-y: auto` keeps every
- * control reachable by scrolling rather than clipped — "Start a drop-in", "Visit
- * website" and "Details" stay tappable on the shortest phone, which is the
- * property the reachability discipline exists to protect. */
+ * WHY `vh` IS KEPT DESPITE THE BAND ALSO BEING `vh`. A percentage ceiling was
+ * tried first and is WRONG here, measured rather than reasoned: a Leaflet popup
+ * is absolutely positioned inside a pane that establishes no resolved height, so
+ * `max-height: 72%` resolved against a zero-height containing block and collapsed
+ * the bubble to 0px — the popup vanished entirely, which is worse than the bug.
+ * `vh` is the unit that actually has something to resolve against.
+ *
+ * So the numbers are raised instead, and they are chosen against the
+ * requirement rather than by taste. Two constraints bound them from opposite
+ * sides, and the final values sit between:
+ *
+ *   - FROM BELOW: the panel needs ~200px (name + address + a 44px button) before
+ *     it starts scrolling, so the content ceiling cannot fall much under `34vh`
+ *     (287px at 844px).
+ *   - FROM ABOVE: a Leaflet popup opens UPWARD ONLY (there is no `direction`
+ *     option), so a bubble taller than the space above the tapped marker cannot
+ *     be brought on screen by `autoPan` — it hangs over the map's own edge. With
+ *     the band at `45dvh` and a marker that may sit low in it, the bubble has to
+ *     stay comfortably under the band's own height or this reappears.
+ *
+ * `34vh` content and `42vh` popup are the values that satisfy both, and the
+ * ~66px between them is the wrapper's padding plus the tip — the same margin the
+ * previous version's measurement recorded, kept so the popup cap does not bind
+ * first and reintroduce the clipping.
+ *
+ * MEASURED at 390x844 after this change: the popup renders from y=236 inside a
+ * band starting at y=216 (fully contained), and the button's centre hit-tests as
+ * the BUTTON rather than its wrapper. The ratio against the band is ~0.75 —
+ * deliberately above slice 6's 0.44, because slice 6's complaint was a bubble
+ * that hid the map while THIS report is a bubble whose buttons could not be
+ * reached at all. Reachability wins that trade, and the bubble still leaves a
+ * quarter of the band as visible map. */
 .place-popup.leaflet-popup {
-  max-height: 24vh;
+  max-height: 42vh;
 }
 
 .place-popup.leaflet-popup .leaflet-popup-content {
-  max-height: 17vh;
+  max-height: 34vh;
   overflow-y: auto;
 }
 

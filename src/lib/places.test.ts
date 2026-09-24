@@ -67,6 +67,14 @@ const NEAR = { lat: 47.6805, lng: -122.3267 }
 /** ~53 mi from the viewer. */
 const FAR = { lat: 46.9, lng: -122.0 }
 
+/**
+ * V23 slice 7: the city this app serves, as one number — the latitude the map's
+ * Mercator correction is pinned against in the `zoomForRadius` tests. Taken from
+ * the seeded 98107 gazetteer entry above rather than typed fresh, so the two
+ * cannot drift apart.
+ */
+const SEATTLE_LAT = 47.66757
+
 function place(overrides: Partial<Place> & { name: string }): Place {
   return {
     id: overrides.name.toLowerCase().replace(/\s+/g, '-'),
@@ -806,6 +814,63 @@ describe('zoomForRadius (V20 t05: where the camera starts for a radius)', () => 
       expect(zoomForRadius(bad)).toBe(DETAIL_ZOOM_FALLBACK)
     }
     expect(zoomForRadius(5, 0)).toBe(DETAIL_ZOOM_FALLBACK)
+  })
+
+  /**
+   * V23 slice 7 — the radius circle was hanging outside the map card, and these
+   * are the two arithmetic facts that let it. Both are stated as the geometry
+   * the map actually draws rather than as re-statements of the constants: a
+   * circle of radius R occupies `R / milesPerPixel` pixels, and that has to be no
+   * more than half the pane on BOTH axes for the disc to be inside it.
+   */
+  describe('V23 slice 7: the circle fits inside the pane it is framing', () => {
+    /** Leaflet's own scale, at a latitude — the correction this slice added. */
+    function milesPerPixel(z: number, lat: number): number {
+      return (360 * 69 * Math.cos((lat * Math.PI) / 180)) / (Math.pow(2, z) * 256)
+    }
+
+    it('leaves margin: the drawn circle is smaller than the pane, never equal to it', () => {
+      const panePx = 332
+      for (const miles of [1, 2, 5, 10]) {
+        const z = zoomForRadius(miles, panePx, SEATTLE_LAT)
+        const radiusPx = miles / milesPerPixel(z, SEATTLE_LAT)
+        // The diameter, which is what has to fit across the pane.
+        expect(
+          radiusPx * 2,
+          `${miles} mi must draw inside the ${panePx}px pane (drew ${Math.round(radiusPx * 2)}px)`,
+        ).toBeLessThan(panePx)
+        // And still large enough to read as a radius rather than a dot.
+        expect(radiusPx * 2).toBeGreaterThan(panePx * 0.5)
+      }
+    })
+
+    it('corrects for latitude: Seattle needs a LOWER zoom than the equator for one radius', () => {
+      // Mercator inflates the map by 1/cos(lat), so at Seattle's latitude the
+      // same geographic radius covers MORE pixels — the zoom must come down to
+      // compensate. Getting this backwards is what hung the circle over the edge.
+      const seattle = zoomForRadius(1, 332, SEATTLE_LAT)
+      const equator = zoomForRadius(1, 332, 0)
+      expect(seattle).toBeLessThan(equator)
+      // The gap IS the 1/cos(47.6) factor, in octaves (log2).
+      expect(equator - seattle).toBeCloseTo(Math.log2(1 / Math.cos((SEATTLE_LAT * Math.PI) / 180)), 2)
+    })
+
+    it('keeps the equator default bit-for-bit, so existing callers are unchanged', () => {
+      for (const miles of [1, 5, 30]) {
+        expect(zoomForRadius(miles, 332, 0)).toBe(zoomForRadius(miles, 332))
+      }
+    })
+
+    it('survives a latitude that cannot be used, rather than blanking the layer', () => {
+      for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, -Number.POSITIVE_INFINITY]) {
+        const z = zoomForRadius(5, 332, bad)
+        expect(Number.isFinite(z), `lat=${bad} must not produce a non-finite zoom`).toBe(true)
+        expect(z).toBe(zoomForRadius(5, 332, 0))
+      }
+      // A pole would send cos to 0 and the ratio to infinity; the floor holds.
+      expect(Number.isFinite(zoomForRadius(5, 332, 90))).toBe(true)
+      expect(zoomForRadius(5, 332, 90)).toBeGreaterThanOrEqual(0)
+    })
   })
 
   it('answers a larger radius with a larger geographic span at the same zoom', () => {

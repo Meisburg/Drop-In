@@ -1217,6 +1217,54 @@ export const MIN_FOCUS_RADIUS_MILES = 0.5
 export const MAP_FOCUS_RADIUS_MILES = 1
 
 /**
+ * V23 slice 7 — the fraction of the pane a framed radius may occupy, and the
+ * correction that makes the circle actually FIT.
+ *
+ * The circle was hanging outside the map card. Two separate reasons, and the
+ * second is the one that survived fixing the first:
+ *
+ *  1. **Leaflet floors the zoom.** `zoomSnap` defaults to 1, so the fractional
+ *     level this function returns was rounded down and the circle rendered at
+ *     whatever the whole level drew — 250px of radius inside a 332px pane. That
+ *     fix belongs to the map's own options (`zoomSnap: 0`, set in `PlaceMap`),
+ *     not here.
+ *
+ *  2. **The arithmetic above is latitude-blind, and Seattle is far enough north
+ *     for that to matter.** It treats one degree of latitude as 69 miles, which
+ *     is true at the equator and at every latitude in Mercator, whose whole
+ *     point is that north-south and east-west scale are EQUAL. What it ignores is
+ *     that Mercator's scale factor is `1 / cos(latitude)` — the map is inflated
+ *     as you leave the equator. At Seattle's 47.6 degrees, `cos = 0.674`, so the
+ *     true miles per pixel are about a THIRD lower than the formula assumes, and
+ *     the drawn circle comes out correspondingly LARGER than requested.
+ *
+ *     MEASURED on the live dev server (390x844, /browse): asking for a 1-mile
+ *     radius on the 332px pane produced a 490px circle — 1.48x the pane, which is
+ *     the `1/cos(47.6) = 1.483` factor almost exactly. The circle was centred
+ *     correctly (the `panTo` in `PlaceMap`) and still hung over both edges.
+ *
+ * `FRAME_FILL` is the margin on top of that: even a perfectly sized circle
+ * touching both edges of the pane reads as broken, and it hides the stroke. At
+ * 0.85 the 1-mile frame leaves ~8% of the pane as visible map on each side,
+ * which is what makes the radius legible as a circle rather than a band.
+ */
+const FRAME_FILL = 0.85
+
+/**
+ * The cosine correction for a latitude, clamped to a sane range.
+ *
+ * `Math.cos` of a non-finite or absurd latitude would return `NaN` (blanking the
+ * zoom) or a value near zero (blowing the ratio up to infinity), so the result
+ * is floored at 0.1 and falls back to 1 — the pre-slice-7 behaviour — for
+ * anything unusable. A caller with no latitude to offer therefore keeps the old
+ * result rather than getting a broken one.
+ */
+function mercatorScale(lat: number): number {
+  if (!Number.isFinite(lat)) return 1
+  return Math.max(0.1, Math.cos((lat * Math.PI) / 180))
+}
+
+/**
  * V20 t05 — the zoom that frames a given radius on a roughly 250px-tall map
  * pane, so the live preview STARTS sensibly on screen.
  *
@@ -1232,11 +1280,11 @@ export const MAP_FOCUS_RADIUS_MILES = 1
  *   - At zoom level `z`, a 256px Web-Mercator tile covers
  *     `360 / 2^z` degrees of longitude, so one pixel covers
  *     `360 / (2^z * 256)` degrees.
- *   - At Seattle's latitude the north-south scale is the same as the east-west
- *     one in Mercator (that is what conformal means), and one degree of
- *     latitude is ~69 miles.
- *   - So one pixel is `360 * 69 / (2^z * 256)` miles, and the miles that fit
- *     across `panePx` pixels are `69 * panePx * 360 / (2^z * 256)`.
+ *   - One degree of latitude is ~69 miles, and Mercator's scale is uniform in
+ *     both axes, so one pixel is `360 * 69 / (2^z * 256)` miles AT THE EQUATOR.
+ *   - Moving to latitude `lat` inflates the map by `1 / cos(lat)`, so the true
+ *     miles per pixel are that value multiplied by `cos(lat)` — see
+ *     `mercatorScale` for the measurement that proved this mattered.
  *
  * Inverting that for a target radius gives the level below. The result is
  * CLAMPED to [0, 19] — Leaflet's own `maxZoom` for the OSM tile layer is 19,
@@ -1246,20 +1294,26 @@ export const MAP_FOCUS_RADIUS_MILES = 1
  *
  * `panePx` defaults to 250 — the map's own `h-64` (256px) less a little for the
  * attribution bar. It is a parameter rather than a hard-coded constant so the
- * arithmetic is testable at other sizes without a browser.
+ * arithmetic is testable at other sizes without a browser, and `PlaceMap` passes
+ * the map's own measured size so the three callers (a `45dvh` browse band, a
+ * fixed `h-64` detail map, the /new picker) each get arithmetic about themselves.
+ *
+ * `lat` is optional and defaults to 0, which is exactly the old equator-based
+ * result — so every existing caller and test keeps its behaviour until it opts
+ * in to the correction.
  *
  * This value is a STARTING POINT ONLY: it is applied when the preview's radius
  * changes, and the parent is then free to zoom the map themselves — the circle
  * redraws at whatever zoom they chose, which is what makes it a measuring tool.
  */
-export function zoomForRadius(radiusMiles: number, panePx = 250): number {
+export function zoomForRadius(radiusMiles: number, panePx = 250, lat = 0): number {
   if (!Number.isFinite(radiusMiles) || radiusMiles <= 0 || !(panePx > 0)) {
     return DETAIL_ZOOM_FALLBACK
   }
-  // The zoom at which the radius exactly fills half the pane (the diameter of
-  // the circle spans the pane, so the whole circle is comfortably visible).
-  const milesPerPixelWanted = (2 * radiusMiles) / panePx
-  const zoom = Math.log2((360 * 69) / (256 * milesPerPixelWanted))
+  // The zoom at which the circle's DIAMETER spans `FRAME_FILL` of the pane — a
+  // whole circle plus a margin, not a radius that reaches the edge.
+  const milesPerPixelWanted = (2 * radiusMiles) / (panePx * FRAME_FILL)
+  const zoom = Math.log2((360 * 69 * mercatorScale(lat)) / (256 * milesPerPixelWanted))
   return Math.max(0, Math.min(19, zoom))
 }
 

@@ -276,7 +276,33 @@ export function PlacesMap({
     if (el === null || markers.length === 0) return
     const anchor = initialAnchorRef.current
     const zoom = hasHomePinRef.current ? HOME_PIN_ZOOM : anchor === undefined ? 11 : DETAIL_ZOOM
-    const map = L.map(el, { scrollWheelZoom: false }).setView(
+    /**
+     * V23 slice 7 — `zoomSnap: 0` IS REQUIRED FOR THE RADIUS CIRCLE TO FIT, and
+     * without it the circle effect below is a silent no-op.
+     *
+     * Leaflet's `zoomSnap` defaults to 1, which means every `setZoom` is ROUNDED
+     * to a whole level. `zoomForRadius` returns a FRACTIONAL level — it inverts
+     * the tile arithmetic, so 1 mile on a 330px pane is 13.97 — and Leaflet was
+     * flooring that to 13. The circle is drawn to true geographic scale, so at
+     * the floored zoom it rendered 250px of radius inside a 330px-wide pane:
+     * the oversized disc the founder photographed hanging outside the map.
+     *
+     * MEASURED, with the value logged from inside the effect on the live dev
+     * server: `target=13.96669976735366 before=13` and `after=13` — the call
+     * ran, the map did not move. That is why passing the map's real size to
+     * `zoomForRadius` alone changed nothing on screen, and it is the reason this
+     * is a `zoomSnap` change rather than a better constant.
+     *
+     * `zoomSnap: 0` lets Leaflet hold the fractional zoom, so the circle is
+     * framed as the arithmetic intends. It is set on THIS map (the browse/detail
+     * surface, where the radius is the framing authority) and not on the /new
+     * picker, whose camera is the parent's to drive.
+     *
+     * `zoomDelta` is pinned to 0.5 so the +/- control still steps by a sensible
+     * amount rather than Leaflet's own fractional default, and the pinch/wheel
+     * gestures stay at whole steps where a parent expects them.
+     */
+    const map = L.map(el, { scrollWheelZoom: false, zoomSnap: 0, zoomDelta: 0.5 }).setView(
       anchor === undefined ? SEATTLE_CENTER : [anchor.lat, anchor.lng],
       zoom,
     )
@@ -502,21 +528,30 @@ export function PlacesMap({
            * the map instance is the one source that knows its own.
            */
           /**
-           * THE PADDING ASKS FOR THE POPUP'S OWN HEIGHT, CAPPED BY THE PANE.
+           * V23 slice 7 — THE PADDING NOW LEAVES ROOM FOR THE *WHOLE* BUBBLE,
+           * and the number is derived from the pane rather than a magic 260.
            *
-           * With panning alone this cannot be satisfied in a 380px band — a
-           * 234px popup above a pin near the top needs ~260px of clearance and
-           * the map, which is `overflow: hidden`, simply CLIPS what it cannot
-           * fit. Measured: the popup rendered from y=195 while the map began at
-           * y=216, so 21px of it (and the card's own boundary) sat over the
-           * page, and the button's hit test landed on the card behind it.
+           * The bubble grew in this slice (it now shows a 44px button plus the
+           * two links instead of scrolling them away), so the clearance above a
+           * marker has to grow with it. `_adjustPan` pans by the OVERFLOW against
+           * these paddings, so a top padding smaller than the bubble means
+           * Leaflet stops panning while the bubble's top edge is still outside
+           * the pane.
            *
-           * So the number here is a REQUEST, and `min-h` on the map below is
-           * what MAKES ROOM for it. Together: the map grows to at least the
-           * popup's height plus a margin while a popup is open, and the pan
-           * then has somewhere to move to.
+           * MEASURED before this change at 390x844: the popup rendered from y=194
+           * while the map began at y=216 — 22px of it, including the place's
+           * name, sat over the "Nearby places" header above the card.
+           *
+           * The value is `pane height * 0.8`, which is the fraction a Leaflet
+           * popup can actually occupy above a marker: popups open UPWARD only
+           * (there is no `direction` option), so the space available is the
+           * distance from the marker to the pane's top edge, and a marker in the
+           * lower fifth has ~80% of the pane above it. Asking for more than that
+           * is an unsatisfiable request — Leaflet pans to its limit and the rest
+           * hangs outside, which is the defect being fixed. 120px is the floor so
+           * a very short map still reserves something usable.
            */
-          autoPanPaddingTopLeft: [24, Math.min(260, Math.max(120, Math.round(map.getSize().y * 0.8)))],
+          autoPanPaddingTopLeft: [24, Math.max(120, Math.round(map.getSize().y * 0.8))],
           autoPanPaddingBottomRight: [24, 24],
           closeButton: true,
           offset: [0, -6],
@@ -631,9 +666,12 @@ export function PlacesMap({
 
   useEffect(() => {
     const map = mapRef.current
-    if (map === null || circleKey === '') return
-    const parts = circleKey.split(':')
-    const miles = Number(parts[2])
+    // `circleKey` is '' exactly when `radiusCircle` is null (see its own doc
+    // comment above), so this one guard narrows BOTH — and it is written as a
+    // check on the object rather than on the string so the narrowing is visible
+    // to the compiler and the center read below needs no non-null assertion.
+    if (map === null || radiusCircle === undefined || radiusCircle === null) return
+    const miles = radiusCircle.radiusMiles
     /**
      * V20 t05 — THE CIRCLE IS DRAWN TO SCALE AT THE CURRENT ZOOM, AND THE
      * CAMERA IS NOT MOVED.
@@ -667,8 +705,63 @@ export function PlacesMap({
      * comment above ("every later change of the slider only redraws") describes
      * the pre-extraction behaviour; the extraction made the slider's live value
      * the source of truth, which is what the spec measures.
+     *
+     * V23 slice 7 — THE CAMERA NOW CENTERS ON THE CIRCLE, AND `panePx` IS THE
+     * MAP'S OWN MEASURED SIZE. Both halves are the fix for the founder's second
+     * report on this screenshot: *"the red radius is going outside the map lol
+     * … the whole thing is not looking right."*
+     *
+     * MEASURED on the live dev server (390x844, /browse): the band is 332x380
+     * and the radius circle came back 502px across — 1.5x the pane's WIDTH —
+     * with the SVG path starting at x=-55, i.e. 85px of the stroke and the fill
+     * painted outside the map card and across the page behind it. The card's own
+     * border did not contain it, because the circle is a Leaflet overlay pane
+     * that the band clips with `overflow: hidden` — and the whole point of the
+     * V23 slice 7 class fix above is that this clipping is now ALWAYS on. So
+     * an oversized circle is no longer merely ugly; it is the top and right
+     * edges of the disc being cut off mid-arc.
+     *
+     * WHY IT WAS OVERSIZED — THREE causes, and fixing any one alone changes
+     * nothing visible. This is why the fix is spread across this component and
+     * `zoomForRadius` rather than being one line.
+     *
+     *   1. A STALE PANE SIZE. `zoomForRadius` sizes the circle to fill HALF the
+     *      pane it is told about, and it defaults to `panePx = 250` — the `h-64`
+     *      (256px) map the place page and /new's picker use. The browse band is
+     *      `h-[45dvh]`, which is 380px on this phone. The function was never
+     *      told, so it computed the zoom for a map a third smaller than the one
+     *      on screen and drew a circle a third too wide. Fixed by passing
+     *      `map.getSize()` below — the same correction the popup's
+     *      `autoPanPadding` above already makes, for the same reason: the map
+     *      instance is the one source that knows its own size.
+     *   2. LEAFLET WAS DISCARDING THE FRACTIONAL ZOOM. `zoomSnap` defaults to 1,
+     *      so the fractional level the arithmetic returns was ROUNDED to a whole
+     *      one. Logged from inside this effect on the live server:
+     *      `target=13.96669976735366 before=13` and `after=13` — the call ran and
+     *      the map did not move. That is why cause 1 alone changed nothing on
+     *      screen. Fixed by `zoomSnap: 0` on the map's own options.
+     *   3. THE ARITHMETIC WAS LATITUDE-BLIND. It treats a degree of latitude as
+     *      69 miles, which is an EQUATOR fact; Mercator inflates the map by
+     *      `1 / cos(lat)`, and at Seattle's 47.6 degrees that is 1.48x. MEASURED:
+     *      a 1-mile radius on the 332px pane drew 490px — 1.48x the pane, the
+     *      cosine factor almost exactly. Fixed by passing the circle's latitude
+     *      to `zoomForRadius`, which now applies the correction and a margin.
+     *
+     * The SHORTER axis is what is passed, not the width: a circle is drawn in
+     * the pane's smaller dimension, so fitting to the width alone still overflows
+     * the height on a tall narrow phone.
+     *
+     * `panTo` alongside the zoom is the second half. `setZoom` alone keeps the
+     * map's CURRENT center, which after the mount view has moved (a marker tap's
+     * `autoPan`, or the parent panning) is no longer the circle's center — so a
+     * correctly sized circle could still sit half off the pane. Centering on the
+     * circle is what makes "the radius frames the view" true rather than
+     * approximate. `panTo` is instant, never animated, so a slider drag does not
+     * stack a queue of easing animations.
      */
-    map.setZoom(zoomForRadius(miles))
+    const panePx = Math.min(map.getSize().x, map.getSize().y)
+    map.setZoom(zoomForRadius(miles, panePx, radiusCircle.center.lat))
+    map.panTo([radiusCircle.center.lat, radiusCircle.center.lng], { animate: false })
   }, [circleKey])
 
   if (entries.length === 0 && homePin === undefined && homePin === null) return null
@@ -794,31 +887,72 @@ export function PlacesMap({
         // grows is what "zoomed out to show more area" means, measured.
         data-map-zoom={zoom}
         /**
-         * V20 t03: `overflow-hidden` IS DROPPED WHILE A POPUP IS OPEN, and this
-         * is the fix that makes the bubble genuinely reachable rather than
-         * merely visible.
+         * V23 slice 7 — `className` IS FROZEN AT ITS FIRST VALUE, AND THAT IS
+         * THE FIX FOR THE WHITE MAP.
          *
-         * The map clips its own panes — that is what keeps OSM tiles inside the
-         * rounded border — and Leaflet's popup lives in one of those panes. A
-         * popup is ~234px tall and the band is ~380px, so a bubble on a marker
-         * near the top cannot fit above it: `autoPan` moves the map as far as it
-         * can and the rest is CLIPPED. Measured before this change: the popup
-         * began 21px ABOVE the map's top edge, and the button's centre
-         * hit-tested as the map card behind it — visible, and untappable, which
-         * is precisely the defect the A6 reachability guard was written for and
-         * exactly what it caught.
+         * THE DEFECT (the founder, with a screenshot): *"when i click on a blue
+         * circle in the map in the places section, the map goes white."*
          *
-         * Letting the pane escape the rounded border for the life of an open
-         * popup keeps the bubble whole. The border radius is restored with it,
-         * and `overflow: visible` is reverted the moment the popup closes, so
-         * the tile-clipping that the border exists for is only relaxed while
-         * there is a bubble to fit.
+         * ROOT CAUSE, and it is not in this component's logic — it is a
+         * DOM-OWNERSHIP COLLISION on this exact attribute. Leaflet adds its own
+         * classes to the container div it is handed (`leaflet-container`,
+         * `leaflet-touch`, `leaflet-grab`, `leaflet-fade-anim`, …). React
+         * believes it owns `className` here because this component passes one,
+         * so on the NEXT render React sets the attribute to its own string —
+         * DELETING every class Leaflet added. Nothing merges them.
+         *
+         * MEASURED on the live dev server (390x844, /browse), reading the
+         * container's own class list before and after a marker tap:
+         *
+         *   BEFORE: h-64 w-full rounded-xl border border-slate-200
+         *           overflow-hidden h-[45dvh] min-h-[240px]
+         *           leaflet-container leaflet-touch leaflet-fade-anim
+         *           leaflet-grab leaflet-touch-drag leaflet-touch-zoom
+         *   AFTER:  h-64 w-full rounded-xl border border-slate-200
+         *           h-[45dvh] min-h-[240px]
+         *
+         * Every `leaflet-*` class is gone. The previous version of this prop
+         * changed its value on exactly that event — `overflow-hidden` was
+         * dropped while a popup was open, so `popupHost` flipping from null was
+         * what re-rendered the attribute — which is why the map went white on a
+         * TAP and not at any other time.
+         *
+         * WHY THAT BLANKS THE MAP RATHER THAN JUST UNSTYLING IT. Leaflet's own
+         * sheet hides every tile by default and reveals the loaded ones by
+         * inheritance:
+         *
+         *   .leaflet-tile        { visibility: hidden }
+         *   .leaflet-tile-loaded { visibility: inherit }
+         *
+         * `inherit` resolves against the ANCESTOR chain, which is the container
+         * that just lost `.leaflet-container`. So the moment the class is
+         * stripped, the loaded tiles inherit `hidden` from a chain that no
+         * longer says otherwise — and `.leaflet-container { background: #ddd }`
+         * went with it. The result is a blank white rounded box with the
+         * markers still drawn on top, which is precisely what was photographed.
+         *
+         * THE FIX, and why it is a frozen constant rather than a merge. React
+         * will always own this attribute while a string is passed to it, and
+         * there is no supported way to tell it "leaflet owns part of this".
+         * Merging Leaflet's classes back on every render would mean this
+         * component re-deriving a list that Leaflet is free to change on any
+         * future version — a second source of truth for one fact, which is the
+         * mistake this file keeps recording. Instead the string is computed
+         * ONCE and never changes, so React's writes are idempotent and the
+         * classes Leaflet appended survive every subsequent render. `className`
+         * and the other props are fixed for the life of a mount by every caller
+         * in this repo, so freezing costs nothing real.
+         *
+         * THE `overflow-hidden` TOGGLE IS GONE WITH IT, deliberately. It
+         * existed to let the popup escape the rounded border it was being
+         * clipped by, and it was the trigger for this bug. The popup is now
+         * kept inside the pane by `autoPan` plus the `max-height` ceiling in
+         * `index.css` — the mechanism that already carries the V23 slice 6
+         * "must not blanket the map" fix — so nothing needs the border to
+         * unclip. `overflow-hidden` is therefore simply always on, which is
+         * also what keeps OSM tiles inside the rounded border.
          */
-        className={
-          'h-64 w-full rounded-xl border border-slate-200 ' +
-          (popupHost === null ? 'overflow-hidden ' : '') +
-          (className ?? '')
-        }
+        className={`h-64 w-full rounded-xl border border-slate-200 overflow-hidden ${className ?? ''}`}
       />
       {/* V20 t03: THE DETAIL IS PORTALED INTO THE PIN'S OWN POPUP.
           Not rendered here, below the map — that is the change the founder asked

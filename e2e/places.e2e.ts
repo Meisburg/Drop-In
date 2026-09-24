@@ -553,9 +553,10 @@ test('tapping an overview map marker shows the place info + "Start a drop-in" (V
    * is `45dvh` (~380px) while the bubble plus its tail is ~250px, so a marker in
    * the upper half has nowhere above it to put a full popup, and `autoPan` can
    * only move the map so far. Measured on this very spec's state: the popup
-   * settled 31px above the pane's top edge. The bubble is NOT clipped by that
-   * (the map drops `overflow: hidden` while a popup is open — see the component)
-   * and every control inside it is tappable.
+   * settled 31px above the pane's top edge. The bubble is kept reachable by the
+   * popup's pane-derived `autoPanPadding` and its `max-height` ceiling (V23
+   * slice 7; `overflow-hidden` is now always on for the container) and every
+   * control inside it is tappable, which the guard above proves.
    *
    * So what is asserted is the thing that actually matters, and it is already
    * proven by the reachability guard ABOVE: the button is the topmost element at
@@ -578,10 +579,13 @@ test('tapping an overview map marker shows the place info + "Start a drop-in" (V
    * VERTICAL CONTAINMENT IS DELIBERATELY NOT ASSERTED. A Leaflet popup opens
    * upward and has no `direction` option, and the band is ~380px while the
    * bubble plus tail is ~200px — so on a marker in the top third the bubble
-   * legitimately reaches above the pane. The map drops `overflow: hidden` while
-   * a popup is open (see the component), so nothing is clipped and the guard
-   * above proves the controls are reachable. An earlier version of this spec
-   * asserted containment anyway and failed correct builds on both surfaces.
+   * legitimately reaches above the pane. V23 slice 7 raised the popup's
+   * `max-height` ceiling and derives `autoPanPadding` from the pane so the bubble
+   * stays inside for the common case, and the container now clips
+   * (`overflow-hidden` is always on). The reachability guard above is what makes
+   * that safe: if the bubble ever were clipped, the button could not be topmost
+   * at its own centre. An earlier version of this spec asserted containment
+   * anyway and failed correct builds on both surfaces.
    */
   const cardBox = await page.getByTestId('places-map-band').boundingBox().catch(() => null)
   const infoBox = await info.boundingBox()
@@ -614,6 +618,36 @@ test('tapping an overview map marker shows the place info + "Start a drop-in" (V
   // there: Leaflet's own popup markup, with its tail.
   await expect(page.locator('.leaflet-popup')).toHaveCount(1)
   await expect(page.locator('.place-popup .leaflet-popup-tip')).toHaveCount(1)
+
+  /**
+   * V23 slice 7 REGRESSION GUARD — TAPPING A PIN MUST NOT BLANK THE MAP WHITE.
+   *
+   * The founder, with a screenshot: *"when i click on a blue circle in the map
+   * in the places section, the map goes white."* The cause was a DOM-ownership
+   * collision, not map logic: the container's `className` prop changed when the
+   * popup opened (it used to drop `overflow-hidden`), so React rewrote the whole
+   * attribute and DELETED every `leaflet-*` class Leaflet had appended. Without
+   * `.leaflet-container`, `.leaflet-tile-loaded`'s `visibility: inherit`
+   * resolves to Leaflet's sheet default `hidden` — the tiles vanish, leaving a
+   * white box with only the markers still drawn.
+   *
+   * The reachability guard above passes on that bug (the button stays on top),
+   * so it cannot stand in for this one. What has to be asserted is the
+   * container's own identity, immediately after the tap that used to break it.
+   */
+  const containerClass = await page.locator('.leaflet-container').first().getAttribute('class')
+  expect(
+    containerClass,
+    'the map container must keep Leaflet’s own class after a tap — losing it is the white-map bug',
+  ).toContain('leaflet-container')
+  const tileVisibility = await page
+    .locator('.leaflet-tile-loaded')
+    .first()
+    .evaluate((el) => getComputedStyle(el).visibility)
+  expect(
+    tileVisibility,
+    'loaded OSM tiles must stay visible after a tap (the white-map regression)',
+  ).toBe('visible')
 
   // V15 ticket 04 / V20 t01: the marker panel's "Learn more" is a real external
   // link in a new tab.
