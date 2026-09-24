@@ -124,7 +124,7 @@ npm run guards
 
 # The focused test, which builds temporary repositories rather than mocking git:
 npx vitest run scripts/guards/no-bypass-guard.test.mjs
-#   -> 24 passed: externally owned copy accepted with the printed line; rewired
+#   -> 26 passed: externally owned copy accepted with the printed line; rewired
 #      repository layer fails; non-worktree override fails; missing hook fails;
 #      non-executable hook fails; recorded bypass (push log, reflog, and
 #      wrapper-recorded commands) fails; git's own reflog prose (commit

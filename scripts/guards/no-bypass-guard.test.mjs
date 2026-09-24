@@ -156,6 +156,29 @@ describe('no-bypass guard: externally owned validation copies', () => {
     expect(r.stdout).not.toContain('ACCEPT:')
   }, TIME)
 
+  // git resolves a relative core.hooksPath against the checkout toplevel (the
+  // directory where hooks run), not the common git dir — the guard must
+  // resolve it the same way, in both directions.
+  it('fails when a relative worktree value resolves inside the checkout', () => {
+    const { copy } = externalCopy()
+    must('relative worktree hooks', git(copy, ['config', '--worktree', 'core.hooksPath', 'myhooks']))
+    const r = runGuard(copy)
+    expect(r.status).toBe(1)
+    expect(r.stdout).toContain('effective core.hooksPath')
+    expect(r.stdout).not.toContain('ACCEPT:')
+  }, TIME)
+
+  it('accepts a relative worktree value that resolves inside the common git dir', () => {
+    const { copy, bare } = externalCopy()
+    const rel = path.relative(copy, path.join(bare, 'hooks'))
+    must('relative worktree hooks', git(copy, ['config', '--worktree', 'core.hooksPath', rel]))
+    const r = runGuard(copy)
+    expect(r.status).toBe(0)
+    const acceptLines = r.stdout.split('\n').filter((line) => line.includes('ACCEPT:'))
+    expect(acceptLines).toHaveLength(1)
+    expect(acceptLines[0]).toContain(rel)
+  }, TIME)
+
   it('fails when the tracked pre-push hook is missing', () => {
     const { copy } = externalCopy()
     rmSync(path.join(copy, 'scripts', 'git-hooks', 'pre-push'))

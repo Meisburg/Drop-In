@@ -112,7 +112,7 @@ case "$COMMON" in
   ""|"$TOPLEVEL"|"$TOPLEVEL"/*) ;;
   *) COMMON_OUTSIDE=1 ;;
 esac
-EFF_RESOLVED="$(abs_path "$EFFECTIVE" "$COMMON")"
+EFF_RESOLVED="$(abs_path "$EFFECTIVE" "$TOPLEVEL")"
 EFF_INSIDE=0
 case "$EFF_RESOLVED" in
   "$COMMON"/*) EFF_INSIDE=1 ;;
