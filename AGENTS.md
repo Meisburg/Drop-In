@@ -1,3 +1,5 @@
+<!-- firstmate:maintained-by-project -->
+
 # Agentic Engineering — orchestrated local-agent workflow
 
 ## What this project is
@@ -180,14 +182,14 @@ table: `docs/agents/coordinator.md`.
 
 ## Where the rest lives (read on demand, do not push)
 
-Each applies only in a specific situation. Read the file when it arrives — the pointer says when.
+Read it when its situation arrives — the pointer says when. Keep this file lean: prefer pruning, or a pointer to the authoritative doc, over restating it.
 
 | Read before | File |
 |---|---|
-| Any `git push` to origin/master | `docs/agents/auto-push.md` — the three conditions, staging rules, and the hook that now enforces them |
-| Starting ANY browser lane (e2e, playtest, audits) | `docs/agents/browser-lanes.md` — the human works on this machine; load rules and the never-touch-their-Chrome rules |
+| Any `git push` to origin/master | `docs/agents/auto-push.md` — the three conditions, staging rules, and the enforcing hook |
+| Starting ANY browser lane (e2e, playtest, audits) | `docs/agents/browser-lanes.md` — the human works here; load rules and never-touch-their-Chrome rules |
 | Acting as the DSH coordinator | `docs/agents/coordinator.md` — dispatch, the per-slice loop, phase-boundary decisions, fleet roles |
-| Changing agent models or debugging a lane's cost | `docs/agents/model-routing.md` — cloud/local split, NInfer specifics, the steering-payload script |
+| Changing agent models or debugging a lane's cost | `docs/agents/model-routing.md` — cloud/local split, NInfer specifics |
 | Writing or reviewing a diff | `docs/agents/code-structure.md` — the build law |
 | Adding a deterministic guard, or evaluating an external agent framework | `docs/agents/borrowed-guards.md` — provenance, refusals, the four tests a new guard must pass |
 | Running the playtest lane | `docs/agents/playtest-lane.md` — routes, verdict, evidence |
@@ -196,7 +198,7 @@ Each applies only in a specific situation. Read the file when it arrives — the
 | CI is red, or changing `.github/workflows/` | `docs/agents/ci.md` — what CI runs, the two repo variables, what it deliberately skips |
 
 The gate for a slice is **`npm run verify`** (build + test + lint). The
-always-on steering payload is measured by `bash .scratch/context-load.sh` —
+steering payload is measured by `bash .scratch/context-load.sh` —
 keep it under ~5% of the 98k window.
 
 ## Skills (mattpocock/skills, discovered from ~/.claude/skills/)
@@ -219,10 +221,3 @@ Two layers: agents define WHO does what; skills hold HOW.
   same reasoning rejects `superpowers:subagent-driven-development`: it is a
   second spine. Its *disciplines* (worktrees, ledgers, verification, the
   escalating fix loop) are already adopted above; the spine is ours.
-
-## Maintaining this file
-
-Keep this file for knowledge useful to almost every future agent session in this project.
-Do not repeat what the codebase already shows; point to the authoritative file or command instead.
-Prefer rewriting or pruning existing entries over appending new ones.
-When updating this file, preserve this bar for all agents and keep entries concise.

@@ -89,9 +89,9 @@ is not re-litigated every time someone notices e2e is absent from a PR.**
   Playwright's own configured `webServer` (`npm run build && npm run preview` on
   :4173) and signs up the marker; `npm run a11y:profile-order` then runs against
   that same build. The a11y lane IS included because it genuinely runs there:
-  the setup spec writes the signed-in marker session to
-  `e2e/.auth/marker-state.json`, the check seeds and restores the bio + family
-  photo it needs, and it needs only a browser and a server.
+  the setup spec writes the signed-in marker session to the gitignored marker
+  storage-state file under `e2e/.auth/`, the check seeds and restores the bio +
+  family photo it needs, and it needs only a browser and a server.
 - **Variables and the skip.** It uses the same repository variables
   (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, never secrets) and the same
   skip-with-notice behaviour as `verify.yml`. It also writes them into the
