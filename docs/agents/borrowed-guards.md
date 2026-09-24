@@ -66,6 +66,73 @@ and had no mechanism to enforce:
    `verify` pass has an easier option than fixing the code. A hook an agent can
    bypass is a suggestion, not enforcement.
 
+## The no-bypass guard's accepted exception (externally owned validation copies)
+
+The guard's static job keeps **three** values apart instead of assuming one:
+the repository's own config layer (the shared local scope), the effective
+`core.hooksPath` after all layers, and the layer that supplies the effective
+value. The repository's own layer must point at `scripts/git-hooks` in every
+case — that is the original guarantee, and it is what makes the tracked hook
+travel with the repository. A missing or rewired repository layer still fails.
+
+A differing effective value is accepted only when **all** of these hold:
+
+- the checkout is a linked worktree (`--git-dir` differs from
+  `--git-common-dir`), and that common git dir resolves **outside** the
+  checkout's top level;
+- the effective value is supplied by the **worktree config layer**
+  (`config.worktree`), not by any other layer;
+- the effective value resolves to a path **inside that common git dir** (the
+  owning tool's own storage area) and is not the checkout's tracked
+  `scripts/git-hooks`; and
+- the repository's own layer still points at `scripts/git-hooks`.
+
+**Why this exception exists.** A pipeline that validates a slice makes a
+disposable copy and deliberately isolates the hooks path inside storage it
+owns, so the guard used to read the copy's own path and fail on every
+validation run. The repository's own layer is what must stay wired; a linked
+worktree whose common git dir is outside the checkout and whose worktree layer
+supplies the isolated path is accepted because the tool that owns that
+throwaway copy supplies that layer. Every acceptance prints one line naming the
+effective value, the supplying layer, and the external ownership, so the
+acceptance is visible in a log rather than silent.
+
+The HISTORY job is unchanged in strength: an accepted copy is never a licence
+to skip the gate. A bypass recorded in the reflog or the recorded push history
+still fails the guard, and when the copy is externally owned the history job
+resolves the tracked `scripts/git-hooks/pre-push` in the checkout (git's own
+resolution points into the owning tool's storage area, where no such hook
+exists).
+
+**Verified behaviour (commands run, results observed):**
+
+```bash
+# The guard's own worktree:
+npm run guards
+#   -> GUARDS: PASS — all deterministic rules hold.
+
+# A simulated externally owned validation copy:
+#   git init --bare <tmp>.git; git push <tmp>.git HEAD:refs/heads/master
+#   git -C <tmp>.git config core.hooksPath scripts/git-hooks
+#   git -C <tmp>.git config extensions.worktreeConfig true
+#   git -C <tmp>.git worktree add <tmp>/copy master
+#   git -C <tmp>/copy config --worktree core.hooksPath <tmp>.git/hooks
+#   (cd <tmp>/copy && bash scripts/guards/no-bypass-guard.sh)
+#   -> exit 0 and the single line:
+#      ACCEPT: effective core.hooksPath '<tmp>.git/hooks' is supplied by the
+#      worktree config layer ... this copy is externally owned.
+
+# The focused test, which builds temporary repositories rather than mocking git:
+npx vitest run scripts/guards/no-bypass-guard.test.mjs
+#   -> 10 passed: externally owned copy accepted with the printed line; rewired
+#      repository layer fails; non-worktree override fails; missing hook fails;
+#      non-executable hook fails; recorded bypass (push log and reflog) fails;
+#      ordinary checkout unchanged.
+```
+
+**A pipeline validation copy is expected to pass with the printed acceptance
+line.**
+
 ## What was refused, and why
 
 | ECC component | Refused because |
