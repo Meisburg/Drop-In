@@ -50,6 +50,16 @@ playwright-report/
 .scratch/**/*.mjs
 .scratch/**/*.html
 
+# `.agents/` is local-only agent workspace, named in `.scratch/check-push-range.sh`
+# as a forbidden pushed path (docs/agents/auto-push.md rule 2) — so it needs the
+# same ignore rule the check already assumes. It was missing, which is how
+# `product-marketing.md` got as far as a commit on 2026-09-23: the check caught
+# it, but only after `git add`. Ignoring it makes the commit impossible instead.
+.agents/
+
+# Vitest's own cache directory. Never source, never committed.
+.vitest/
+
 # The Chrome profile / uv cache the sandbox forces into the workspace (the
 # home-directory equivalents are read-only under workspace-write).
 .scratch/**/chrome-profile/
