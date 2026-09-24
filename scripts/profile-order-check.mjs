@@ -289,11 +289,34 @@ async function seedProfile(page, env, patch) {
   return prior
 }
 
+/**
+ * PUT the marker's profile back to its prior values over plain REST, using the
+ * credentials captured BEFORE any browser work — so the restore survives the
+ * exact failure class the teardown exists for: a crashed renderer or closed
+ * context after seeding. Never touches the page. Throws on failure; the
+ * finally block catches and reports it separately from the original error.
+ */
+async function restoreProfile(env, jwt, userId, patch) {
+  const res = await fetch(`${env.url}/rest/v1/profiles?id=eq.${userId}`, {
+    method: 'PATCH',
+    headers: {
+      apikey: env.anonKey,
+      Authorization: `Bearer ${jwt}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(patch),
+  })
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} - ${(await res.text()).slice(0, 120)}`)
+  }
+}
+
 const browser = await chromium.launch()
 let seeded = false
 let prior = null
 let fixtureObjectPath = null
 let markerJwt = null
+let markerUserId = null
 let env
 let page
 
@@ -320,6 +343,7 @@ const SEED_PHOTO = 'order-check-fixture/family.jpg'
 if (env.url !== undefined && env.anonKey !== undefined) {
   const creds = await markerCredentials(page)
   markerJwt = creds?.jwt ?? null
+  markerUserId = creds?.userId ?? null
   // Upload the object BEFORE the column points at it, so the read view's
   // signed-URL mint has something real to sign (see uploadFixturePhoto).
   if (creds !== null && creds.jwt !== null && creds.userId !== null) {
@@ -530,15 +554,18 @@ if (failures.length > 0) {
 } finally {
   try {
     if (seeded && prior !== null && env !== undefined) {
-      const restored = await seedProfile(page, env, {
-        bio: prior.bio ?? null,
-        family_photo_url: prior.family_photo_url ?? null,
-      })
-      console.log(
-        restored === null
-          ? '\n  WARNING: fixture cleanup FAILED - the marker profile still carries the order-check seed.'
-          : '\nrestored: marker profile returned to its prior values',
-      )
+      try {
+        await restoreProfile(env, markerJwt, markerUserId, {
+          bio: prior.bio ?? null,
+          family_photo_url: prior.family_photo_url ?? null,
+        })
+        console.log('\nrestored: marker profile returned to its prior values')
+      } catch (restoreError) {
+        console.log(
+          '\n  WARNING: fixture cleanup FAILED - the marker profile still carries the order-check seed.',
+        )
+        console.log(`  restore error: ${restoreError}`)
+      }
     }
   } finally {
     try {
