@@ -56,20 +56,15 @@
  *   signed-in marker session at e2e/.auth/marker-state.json (the Playwright
  *   setup project writes it; gitignored).
  *
- * WHERE THIS RUNS, AND WHY IT IS NOT IN `verify` (V23 review).
- * It is a MANUAL lane (`npm run a11y:profile-order`), alongside `mobile-audit`
- * and `dark-mode-check`, for the same reason those are: it drives a real browser
- * against a built bundle and a signed-in session, while every check inside
- * `npm run verify` is static (it reads source) or server-free. Putting a
- * browser-dependent check in `verify` would make the gate depend on a preview
- * server and a live account — precisely the fragility `verify` is arranged to
- * avoid.
- *
- * THE CONSEQUENCE, stated rather than glossed: the cross-surface drift this
- * script detects has NO permanent gate. It runs when a human or an agent runs
- * it. That is a real gap and it is the same one V22 recorded about its manual
- * `scripts/*-check.mjs` lanes — they wire into `verify` once a CI fixture
- * account exists. Until then, run this after touching either profile surface.
+ * WHERE THIS RUNS, AND WHY IT IS NOT IN `verify`.
+ * The lane runs in `.github/workflows/e2e-scheduled.yml` — nightly on its
+ * schedule and by manual dispatch — as `npm run a11y:profile-order` against the
+ * same build the e2e suite uses. The decision (a scheduled live-account lane
+ * instead of a dedicated test project) is recorded in `docs/agents/ci.md`.
+ * It stays out of `npm run verify` because verify is static and server-free:
+ * every check inside it reads source or runs without servers, while this one
+ * needs a built bundle, a preview server on :4173, and the signed-in marker
+ * session.
  */
 import { chromium } from '@playwright/test'
 
