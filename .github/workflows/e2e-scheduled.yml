@@ -62,8 +62,9 @@
 #     failed spec. The marker AUTH USERS persist by design and are removed by
 #     the manual `scripts/sweep-e2e-markers.mjs` sweep, which needs a Supabase
 #     dashboard/management token and is deliberately NOT wired into CI.
-#   * A failure is a red job plus uploaded `test-results/` and `preview.log`
-#     artifacts — visible in the Actions UI, not just in a log nobody opens.
+#   * On failure, the job uploads whatever evidence exists: `test-results/`
+#     from the e2e run, plus `preview.log` only when the a11y step ran and
+#     created that step's server log. A failed e2e run skips the a11y step.
 # ============================================================================
 
 name: e2e-scheduled
@@ -170,6 +171,8 @@ jobs:
           fi
           npm run a11y:profile-order
 
+      # Upload whatever the reached steps produced. `preview.log` belongs only
+      # to the a11y step, which a failed e2e step skips.
       - name: Upload the failure evidence
         if: failure()
         uses: actions/upload-artifact@v4

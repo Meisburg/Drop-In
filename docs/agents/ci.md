@@ -102,8 +102,10 @@ is not re-litigated every time someone notices e2e is absent from a PR.**
   marker AUTH USERS persist by design and are removed by the manual
   `scripts/sweep-e2e-markers.mjs` sweep, which needs a Supabase
   dashboard/management token and is deliberately not wired into CI.
-- **Failures.** A failed night is a red job plus uploaded `test-results/` and
-  `preview.log` artifacts, so it is visible in the Actions UI.
+- **Failures.** A failed night is a red job plus whatever evidence exists in
+  the Actions artifact: `test-results/` from the e2e run, plus `preview.log`
+  only if the a11y step ran and created its server log. A failed e2e run skips
+  the a11y step, so it has no `preview.log` to upload.
 
 ## When CI is red
 
