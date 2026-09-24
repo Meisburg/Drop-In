@@ -9,6 +9,10 @@
  * name, and collapsing on it would merge two real people, which is worse than
  * the duplicate).
  *
+ * Each counterpart keeps its newest DM and newest playdate row. A group with
+ * both kinds keeps the overall winner's identity and sums those two unread
+ * counts; a single-kind group keeps its newest row's count.
+ *
  * House pattern: a PURE decision (mergeConversations) + a typed row shape. No
  * Supabase client, no React — trivially testable, mock-free.
  */
@@ -23,7 +27,7 @@ export interface MergedConversation {
   preview: string
   /** The latest message's created_at (ISO). */
   latestAt: string
-  /** Unread count for this row (0 for DMs — see the DM unread gap note). */
+  /** Unread messages for this row, or the sum of a collapsed DM and playdate row. */
   unreadCount: number
   /** Which kind of thread this row opens. */
   kind: 'dm' | 'playdate'
@@ -60,11 +64,11 @@ export interface PlaydateConversationRow {
  * Pure: no mutation of the inputs, no I/O. Returns a new array sorted by
  * `latestAt` descending (newest first), matching the inbox's existing sort.
  *
- * When two rows share a counterpart id, the winner is whichever has the newer
- * `latestAt`; on a tie the PLAYDATE row wins (it carries the richer context:
- * the post title + the read cursor, so its unread dot is the meaningful one).
- * The losing row's identity is discarded — there is exactly ONE row per
- * counterpart id in the output.
+ * Within each kind, the newest row is retained. The overall winner is
+ * whichever retained row has the newer `latestAt`; on a tie the PLAYDATE row
+ * wins (it carries the richer context: the post title). A group with both
+ * kinds sums those retained rows' unreadCounts; a single-kind group keeps its
+ * winner's unreadCount.
  */
 export function mergeConversations(
   dmRows: DmConversationRow[],
@@ -100,27 +104,28 @@ export function mergeConversations(
     playdateId: row.playdateId,
   }))
 
-  // Key on the counterpart id. An empty id ('') is still a valid key: it means
-  // "unknown counterpart" and we keep such rows as-is (they cannot collide with
-  // a real id, and dropping them would hide conversations).
-  const byKey = new Map<string, Normalized>()
+  type CounterpartRows = Partial<Record<Normalized['kind'], Normalized>>
+  const byKey = new Map<string, CounterpartRows>()
   for (const row of [...dmNormalized, ...playdateNormalized]) {
     const key = row.otherPartyId
-    const existing = byKey.get(key)
-    if (existing === undefined) {
-      byKey.set(key, row)
-      continue
+    const counterpartRows = byKey.get(key) ?? {}
+    const existing = counterpartRows[row.kind]
+    if (
+      existing === undefined ||
+      row.latestAt > existing.latestAt ||
+      (row.latestAt === existing.latestAt && row.kind === 'playdate')
+    ) {
+      counterpartRows[row.kind] = row
     }
-    // Same counterpart id → prefer the newer latestAt; on a tie the playdate
-    // row wins (richer context + the read cursor that backs the unread dot).
-    if (row.latestAt > existing.latestAt) {
-      byKey.set(key, row)
-    } else if (row.latestAt === existing.latestAt && row.kind === 'playdate') {
-      byKey.set(key, row)
-    }
+    byKey.set(key, counterpartRows)
   }
 
-  const merged: MergedConversation[] = Array.from(byKey.values())
+  const merged: MergedConversation[] = Array.from(byKey.values(), ({ dm, playdate }) => {
+    if (dm === undefined) return playdate!
+    if (playdate === undefined) return dm
+    const winner = dm.latestAt > playdate.latestAt ? dm : playdate
+    return { ...winner, unreadCount: dm.unreadCount + playdate.unreadCount }
+  })
   // Newest first (matches the inbox's existing sort order).
   merged.sort((a, b) => (a.latestAt < b.latestAt ? 1 : -1))
   return merged

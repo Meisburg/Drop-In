@@ -113,7 +113,26 @@ test('new message: search a parent, open DM thread, send a message', async ({
   await expect(dmCard).toBeVisible()
   await expect(dmCard).toContainText(viewerName)
 
-  // Tap the card → re-opens the DM thread.
+  // --- V23 follow-up (migration 0051): the DM unread dot, on the VIEWER's side. ---
+  // The marker just messaged the viewer, so the viewer's /inbox must show the
+  // same unread dot + badge a playdate reply does. Before 0051 the direct list
+  // hardcoded `unreadCount: 0`, so this dot never appeared; opening the thread
+  // stamps the cursor, and a fresh /inbox load then shows it read.
+  const { userId: markerProfileId } = readMarkerSession()
+  await viewerPage.goto('/inbox')
+  await settleOnRoute(viewerPage, '/inbox')
+  await expect(viewerPage.getByTestId(`unread-dot-${markerProfileId}`)).toBeVisible()
+  await expect(viewerPage.getByTestId(`unread-badge-${markerProfileId}`)).toHaveText('1')
+  await viewerPage.getByTestId(`inbox-row-${markerProfileId}`).click()
+  await expect(viewerPage).toHaveURL(new RegExp(`/inbox\\?dm=${markerProfileId}$`))
+  await expect(viewerPage.getByTestId('other-message')).toContainText(
+    'Hey! Want to play this weekend?',
+  )
+  await viewerPage.goto('/inbox')
+  await settleOnRoute(viewerPage, '/inbox')
+  await expect(viewerPage.getByTestId(`unread-dot-${markerProfileId}`)).toHaveCount(0)
+
+  // Tap the card (marker's side) → re-opens the DM thread.
   await dmCard.click()
   await expect(page).toHaveURL(new RegExp(`/inbox\\?dm=${viewerProfileId}$`))
   await expect(page.getByTestId('own-message')).toContainText('Hey! Want to play this weekend?')

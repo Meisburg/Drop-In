@@ -8,6 +8,7 @@ import {
   listConversations,
   listDirectConversations,
   markConversationRead,
+  markDirectConversationRead,
   queryDirectMessages,
   queryMessagesForPlaydate,
   reactionButtonClasses,
@@ -84,16 +85,15 @@ type ThreadState =
  */
 /**
  * One row of the MERGED conversation list: the other party's name (bold), the
- * latest message preview (~60 chars, muted), a relative time, and — for
- * playdate-scoped rows only — an unread dot + count badge when unreadCount > 0.
- * Tap → opens the thread (the destination is decided by the row's `kind`).
- * Presentational: it renders exactly what it is given.
+ * latest message preview (~60 chars, muted), a relative time, and an unread
+ * dot + count badge when unreadCount > 0. Tap → opens the thread (the
+ * destination is decided by the row's `kind`). Presentational: it renders
+ * exactly what it is given.
  *
- * The unread marker is scoped to PLAYDATE conversations: the read cursor
- * (`conversation_reads`) has a NOT NULL FK to `playdates(id)` (migration
- * 0042), so it cannot represent a free-form DM (identified by
- * `messages.playdate_id IS NULL`). A DM row therefore never shows a dot —
- * that gap is reported as an open question, not silently shipped.
+ * The unread marker works for BOTH kinds: playdate conversations use the
+ * `conversation_reads` cursor (migration 0042) and free-form DMs use the
+ * `direct_conversation_reads` cursor (migration 0051), each keyed on its own
+ * conversation identity. Both are stamped when the thread is opened.
  */
 function ConversationCard({
   conversation,
@@ -102,11 +102,10 @@ function ConversationCard({
   conversation: MergedConversation
   onOpen: () => void
 }) {
-  // The unread dot is meaningful only for playdate rows (DMs have no read
-  // cursor — see the comment above). The dot is a decoration; the ACCESSIBLE
-  // state lives on the button itself via aria-label, so a screen reader still
-  // knows the row is unread even though the dot is aria-hidden.
-  const showUnread = conversation.kind === 'playdate' && conversation.unreadCount > 0
+  // The unread dot is a decoration; the ACCESSIBLE state lives on the button
+  // itself via aria-label, so a screen reader still knows the row is unread
+  // even though the dot is aria-hidden.
+  const showUnread = conversation.unreadCount > 0
   const accessibleLabel = showUnread
     ? `${conversation.otherPartyName || 'Unknown'} — ${conversation.unreadCount} unread message${
         conversation.unreadCount === 1 ? '' : 's'
@@ -393,6 +392,14 @@ export function InboxPage() {
       if (dmTargetId !== null) {
         // Free-form DM thread.
         const messages = await queryDirectMessages(dmTargetId)
+        if (cancelled) return
+        try {
+          // Stamp the DM read cursor so the unread dot clears (the DM mirror
+          // of markConversationRead below; migration 0051).
+          await markDirectConversationRead(dmTargetId)
+        } catch {
+          // A failed cursor write never blocks reading the thread itself.
+        }
         if (cancelled) return
         setThread({
           status: 'ready',

@@ -4467,6 +4467,44 @@ export async function markConversationRead(playdateId: string): Promise<void> {
   return markConversationReadWithClient(supabase, playdateId, user.id)
 }
 
+/**
+ * Stamp the caller's read cursor for a free-form direct conversation (V23 follow-up,
+ * migration 0051), against an injected client (mockable in unit tests). The
+ * DM counterpart of markConversationReadWithClient: a free-form thread has no
+ * playdate id (0043), so the cursor is keyed on the OTHER party's profile id —
+ * `direct_conversation_reads`'s composite PK (profile_id, other_profile_id).
+ * An upsert with onConflict mirrors the playdate cursor's shape: opening the
+ * thread again moves the cursor forward, never fails on the existing row.
+ */
+export async function markDirectConversationReadWithClient(
+  client: SupabaseClient,
+  otherProfileId: string,
+  profileId: string,
+): Promise<void> {
+  const { error } = await client
+    .from('direct_conversation_reads')
+    .upsert(
+      {
+        profile_id: profileId,
+        other_profile_id: otherProfileId,
+        last_read_at: new Date().toISOString(),
+      },
+      { onConflict: 'profile_id,other_profile_id' },
+    )
+  if (error) throw error
+}
+
+/** The default-client wrapper (resolves the auth user, then delegates). */
+export async function markDirectConversationRead(otherProfileId: string): Promise<void> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (user === null) throw new Error('No authenticated user — cannot mark a conversation read.')
+  return markDirectConversationReadWithClient(supabase, otherProfileId, user.id)
+}
+
 // ---------------------------------------------------------------------------
 // V15 ticket 01: free-form DMs (message any parent by name search).
 // ---------------------------------------------------------------------------
@@ -4571,7 +4609,6 @@ export async function queryDirectMessagesWithClient(
   otherPartyId: string,
   myId: string,
 ): Promise<MessageRow[]> {
-  void myId
   // V15 fix: a free-form thread is the pair {me, otherParty}, and the pair is
   // recorded in message_recipients — NOT inferable from sender_id alone.
   //
@@ -4580,13 +4617,19 @@ export async function queryDirectMessagesWithClient(
   // sent to a THIRD person. Those leaked into this thread (reproduced by the
   // dm e2e: a message to viewer A rendered inside the thread with viewer B).
   //
-  // The correct scoping: messages addressed to me from them, plus messages I
-  // addressed to them. message_recipients carries exactly that, and RLS
-  // already restricts the rows to conversations I participate in.
+  // V23 follow-up repair: the candidate set is the CALLER's own participation rows
+  // (`profile_id = myId`), NOT the other party's. The trigger records BOTH
+  // parties of a DM as recipients (0044), so `profile_id = myId` yields every
+  // message I am party to; the filter below then narrows to the pair. Asking
+  // for `profile_id = otherPartyId` is invisible to me under the SELECT policy
+  // (`profile_id = auth.uid() OR is_message_sender`), so a DM the other person
+  // STARTED opened as "No messages yet" on my side — it only happened to work
+  // for the SENDER, who satisfies `is_message_sender`. Pinned by the
+  // recipient-side dm e2e.
   const { data: sentIds, error: idsError } = await client
     .from('message_recipients')
     .select('message_id')
-    .eq('profile_id', otherPartyId)
+    .eq('profile_id', myId)
   if (idsError) throw idsError
   const candidates = ((sentIds ?? []) as unknown as Array<{ message_id: string }>).map(
     (r) => r.message_id,
@@ -4668,23 +4711,36 @@ export async function listDirectConversationsWithClient(
     sender: { display_name: string } | null
   }>
 
-  // Group by counterparty (the sender when it's not me; otherwise resolve
-  // from the recipient side — but we only have sender info here, so we use
-  // the message_recipients table for the other party).
-  const byCounterpart = new Map<
-    string,
-    { latest: { body: string; created_at: string }; count: number }
-  >()
+  // The caller's DM read cursors (own rows only by RLS), keyed by the OTHER
+  // party's profile id — a free-form thread has no playdate id, so the
+  // counterpart IS its identity (migration 0051).
+  const { data: readData, error: readError } = await client
+    .from('direct_conversation_reads')
+    .select('other_profile_id, last_read_at')
+    .eq('profile_id', userId)
+  if (readError) throw readError
+  const directReads = new Map<string, string>()
+  for (const read of (readData ?? []) as unknown as Array<{
+    other_profile_id: string
+    last_read_at: string
+  }>) {
+    directReads.set(read.other_profile_id, read.last_read_at)
+  }
+
+  // Unread counts: messages FROM the counterpart newer than the viewer's read
+  // cursor for them (all of them when no cursor exists). The viewer's OWN
+  // messages never count — you have already read what you wrote. (The playdate
+  // list counts every message after the cursor; for a DM the counterpart is
+  // explicit, so this can be precise without touching the playdate path.)
+  const unreadByCounterpart = new Map<string, number>()
   for (const row of rows) {
-    const counterpartId = row.sender_id === userId ? '__recipient__' : row.sender_id
-    const entry = byCounterpart.get(counterpartId)
-    if (entry === undefined) {
-      byCounterpart.set(counterpartId, {
-        latest: { body: row.body, created_at: row.created_at },
-        count: 1,
-      })
-    } else {
-      entry.count += 1
+    if (row.sender_id === userId) continue
+    const cursor = directReads.get(row.sender_id)
+    if (cursor === undefined || row.created_at > cursor) {
+      unreadByCounterpart.set(
+        row.sender_id,
+        (unreadByCounterpart.get(row.sender_id) ?? 0) + 1,
+      )
     }
   }
 
@@ -4721,40 +4777,46 @@ export async function listDirectConversationsWithClient(
     }
   }
 
-  // Build summaries: one per distinct counterparty.
-  const results: Array<{ otherPartyId: string; otherPartyName: string; latestAt: string; preview: string; unreadCount: number }> = []
-  const seen = new Set<string>()
+  // Build summaries: one per distinct counterparty, newest row wins (the wire
+  // is ordered created_at DESC, so the FIRST row seen for a counterpart is its
+  // latest). A Map — not an array scan — so a counterpart who both sent and
+  // received never produces two rows (the inbox card is keyed on the id, and
+  // the merge in src/lib/inbox.ts must find exactly one).
+  const byOtherParty = new Map<
+    string,
+    { otherPartyName: string; latestAt: string; preview: string }
+  >()
   for (const row of rows) {
     if (row.sender_id !== userId) {
       // They sent to me — counterparty is the sender.
-      const key = row.sender_id
-      if (seen.has(key)) continue
-      seen.add(key)
-      results.push({
-        otherPartyId: key,
+      if (byOtherParty.has(row.sender_id)) continue
+      byOtherParty.set(row.sender_id, {
         otherPartyName: row.sender?.display_name ?? '',
         latestAt: row.created_at,
         preview: truncateMessagePreview(row.body),
-        unreadCount: 0,
       })
     } else {
-      // I sent to them — counterparty is the recipient (resolved above).
+      // I sent to them — counterparty is the recipient (resolved above). The ID
+      // (not the name) is the card's identity: it keys the testid and the ?dm=
+      // navigation.
       const recipient = recipientByMessage[row.id]
       if (recipient === undefined) continue
-      // Find or create the entry for this recipient. The ID (not the name) is
-      // the card's identity: it keys the testid and the ?dm= navigation.
-      const existing = results.find((r) => r.otherPartyId === recipient.id)
-      if (existing === undefined) {
-        results.push({
-          otherPartyId: recipient.id,
-          otherPartyName: recipient.name,
-          latestAt: row.created_at,
-          preview: truncateMessagePreview(row.body),
-          unreadCount: 0,
-        })
-      }
+      if (byOtherParty.has(recipient.id)) continue
+      byOtherParty.set(recipient.id, {
+        otherPartyName: recipient.name,
+        latestAt: row.created_at,
+        preview: truncateMessagePreview(row.body),
+      })
     }
   }
+  const results: Array<{ otherPartyId: string; otherPartyName: string; latestAt: string; preview: string; unreadCount: number }> =
+    Array.from(byOtherParty.entries()).map(([otherPartyId, entry]) => ({
+      otherPartyId,
+      otherPartyName: entry.otherPartyName,
+      latestAt: entry.latestAt,
+      preview: entry.preview,
+      unreadCount: unreadByCounterpart.get(otherPartyId) ?? 0,
+    }))
   results.sort((a, b) => (a.latestAt < b.latestAt ? 1 : -1))
   return results
 }
