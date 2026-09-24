@@ -23,7 +23,7 @@ export interface MergedConversation {
   preview: string
   /** The latest message's created_at (ISO). */
   latestAt: string
-  /** Unread count for this row (0 for DMs — see the DM unread gap note). */
+  /** Unread count for this row (playdate cursor or DM cursor; 0 when read). */
   unreadCount: number
   /** Which kind of thread this row opens. */
   kind: 'dm' | 'playdate'
@@ -62,7 +62,7 @@ export interface PlaydateConversationRow {
  *
  * When two rows share a counterpart id, the winner is whichever has the newer
  * `latestAt`; on a tie the PLAYDATE row wins (it carries the richer context:
- * the post title + the read cursor, so its unread dot is the meaningful one).
+ * the post title).
  * The losing row's identity is discarded — there is exactly ONE row per
  * counterpart id in the output.
  */
@@ -112,7 +112,7 @@ export function mergeConversations(
       continue
     }
     // Same counterpart id → prefer the newer latestAt; on a tie the playdate
-    // row wins (richer context + the read cursor that backs the unread dot).
+    // row wins (richer context: the post title).
     if (row.latestAt > existing.latestAt) {
       byKey.set(key, row)
     } else if (row.latestAt === existing.latestAt && row.kind === 'playdate') {

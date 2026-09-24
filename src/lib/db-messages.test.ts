@@ -4,8 +4,11 @@ import {
   applyReactionSet,
   applyReactionToggle,
   listConversationsWithClient,
+  listDirectConversationsWithClient,
   markConversationReadWithClient,
+  markDirectConversationReadWithClient,
   MESSAGE_MAX_LENGTH,
+  queryDirectMessagesWithClient,
   queryMessagesForPlaydateWithClient,
   reactionButtonClasses,
   reactionCountLabel,
@@ -58,6 +61,8 @@ function makeMessageMockClient(overrides: {
   conversationReads?: { data: unknown; error: unknown }
   playdates?: { data: unknown; error: unknown }
   messageReactions?: { data: unknown; error: unknown }
+  directConversationReads?: { data: unknown; error: unknown }
+  messageRecipients?: { data: unknown; error: unknown }
   insertResult?: { data: unknown; error: unknown }
   upsertResult?: { data: unknown; error: unknown }
 } = {}): Recorded {
@@ -83,6 +88,18 @@ function makeMessageMockClient(overrides: {
       calls.push(`in(${col}, ${values.map(String).join('|')})`)
       return builder
     },
+    is: (col: string, value: unknown) => {
+      calls.push(`is(${col}, ${String(value)})`)
+      return builder
+    },
+    neq: (col: string, value: unknown) => {
+      calls.push(`neq(${col}, ${String(value)})`)
+      return builder
+    },
+    or: (filter: string) => {
+      calls.push(`or(${filter})`)
+      return builder
+    },
     insert: (payload: unknown) => {
       calls.push('insert')
       sawInsert = true
@@ -100,7 +117,10 @@ function makeMessageMockClient(overrides: {
       // write it performed (if any). The saw* flags are reset per from() call
       // so a later read never inherits an earlier write's result.
       let result: { data: unknown; error: unknown }
-      if (lastTable === 'conversation_reads' && sawUpsert) {
+      if (
+        (lastTable === 'conversation_reads' || lastTable === 'direct_conversation_reads') &&
+        sawUpsert
+      ) {
         result = overrides.upsertResult ?? { data: null, error: null }
       } else if (lastTable === 'messages' && sawInsert) {
         result = overrides.insertResult ?? { data: null, error: null }
@@ -108,6 +128,10 @@ function makeMessageMockClient(overrides: {
         result = overrides.messages ?? { data: null, error: null }
       } else if (lastTable === 'conversation_reads') {
         result = overrides.conversationReads ?? { data: null, error: null }
+      } else if (lastTable === 'direct_conversation_reads') {
+        result = overrides.directConversationReads ?? { data: null, error: null }
+      } else if (lastTable === 'message_recipients') {
+        result = overrides.messageRecipients ?? { data: null, error: null }
       } else if (lastTable === 'playdates') {
         result = overrides.playdates ?? { data: null, error: null }
       } else if (lastTable === 'message_reactions') {
@@ -740,5 +764,249 @@ describe('reconcileOptimisticMessage (V15 send fix — the duplicate-bubble guar
     const next = reconcileOptimisticMessage(messages, row({ id: 'real-1' }))
     expect(messages[0].id).toBe('pending-1')
     expect(next).not.toBe(messages)
+  })
+})
+
+/**
+ * V23 follow-up (migration 0051): the DM read cursor. `conversation_reads` is keyed by a
+ * NOT NULL `playdate_id` (0042), so free-form DMs had no read position and the
+ * inbox hardcoded `unreadCount: 0`. These pin the count logic and the cursor's
+ * wire shape against `direct_conversation_reads`.
+ */
+describe('listDirectConversationsWithClient (V23 follow-up — the DM unread count)', () => {
+  it('counts messages from the counterpart newer than the read cursor', async () => {
+    const { client } = makeMessageMockClient({
+      messages: {
+        data: [
+          {
+            id: 'm2',
+            sender_id: 'other',
+            body: 'newest',
+            created_at: '2026-09-12T12:00:00Z',
+            sender: { display_name: 'Pat' },
+          },
+          {
+            id: 'm1',
+            sender_id: 'other',
+            body: 'older',
+            created_at: '2026-09-12T09:00:00Z',
+            sender: { display_name: 'Pat' },
+          },
+        ],
+        error: null,
+      },
+      directConversationReads: {
+        data: [{ other_profile_id: 'other', last_read_at: '2026-09-12T10:00:00Z' }],
+        error: null,
+      },
+    })
+    const convs = await listDirectConversationsWithClient(client, 'me')
+    expect(convs).toHaveLength(1)
+    expect(convs[0].otherPartyId).toBe('other')
+    expect(convs[0].otherPartyName).toBe('Pat')
+    expect(convs[0].unreadCount).toBe(1)
+    expect(convs[0].preview).toBe('newest')
+  })
+
+  it('counts every received message as unread when no cursor exists', async () => {
+    const { client } = makeMessageMockClient({
+      messages: {
+        data: [
+          {
+            id: 'm2',
+            sender_id: 'other',
+            body: 'newest',
+            created_at: '2026-09-12T12:00:00Z',
+            sender: { display_name: 'Pat' },
+          },
+          {
+            id: 'm1',
+            sender_id: 'other',
+            body: 'older',
+            created_at: '2026-09-12T09:00:00Z',
+            sender: { display_name: 'Pat' },
+          },
+        ],
+        error: null,
+      },
+      directConversationReads: { data: [], error: null },
+    })
+    const convs = await listDirectConversationsWithClient(client, 'me')
+    expect(convs[0].unreadCount).toBe(2)
+  })
+
+  it('reports 0 when the cursor is at or after the latest received message', async () => {
+    const { client } = makeMessageMockClient({
+      messages: {
+        data: [
+          {
+            id: 'm1',
+            sender_id: 'other',
+            body: 'read',
+            created_at: '2026-09-12T12:00:00Z',
+            sender: { display_name: 'Pat' },
+          },
+        ],
+        error: null,
+      },
+      directConversationReads: {
+        data: [{ other_profile_id: 'other', last_read_at: '2026-09-12T13:00:00Z' }],
+        error: null,
+      },
+    })
+    const convs = await listDirectConversationsWithClient(client, 'me')
+    expect(convs[0].unreadCount).toBe(0)
+  })
+
+  it('never counts the viewer\'s own sent messages as unread', async () => {
+    const { client } = makeMessageMockClient({
+      messages: {
+        data: [
+          {
+            id: 'm1',
+            sender_id: 'me',
+            body: 'mine',
+            created_at: '2026-09-12T11:00:00Z',
+            sender: { display_name: 'Me' },
+          },
+        ],
+        error: null,
+      },
+      messageRecipients: {
+        data: [{ message_id: 'm1', profile_id: 'other', profile: { display_name: 'Pat' } }],
+        error: null,
+      },
+      directConversationReads: { data: [], error: null },
+    })
+    const convs = await listDirectConversationsWithClient(client, 'me')
+    expect(convs).toHaveLength(1)
+    expect(convs[0].otherPartyId).toBe('other')
+    expect(convs[0].otherPartyName).toBe('Pat')
+    expect(convs[0].unreadCount).toBe(0)
+  })
+
+  it('collapses a counterpart who both sent and received into one row', async () => {
+    const { client } = makeMessageMockClient({
+      messages: {
+        data: [
+          {
+            id: 'sent',
+            sender_id: 'me',
+            body: 'mine',
+            created_at: '2026-09-12T12:00:00Z',
+            sender: { display_name: 'Me' },
+          },
+          {
+            id: 'recv',
+            sender_id: 'other',
+            body: 'theirs',
+            created_at: '2026-09-12T11:00:00Z',
+            sender: { display_name: 'Pat' },
+          },
+        ],
+        error: null,
+      },
+      messageRecipients: {
+        data: [{ message_id: 'sent', profile_id: 'other', profile: { display_name: 'Pat' } }],
+        error: null,
+      },
+      directConversationReads: { data: [], error: null },
+    })
+    const convs = await listDirectConversationsWithClient(client, 'me')
+    expect(convs).toHaveLength(1)
+    expect(convs[0].otherPartyId).toBe('other')
+    expect(convs[0].unreadCount).toBe(1)
+    // The newest row (the one I sent) wins the preview.
+    expect(convs[0].preview).toBe('mine')
+  })
+
+  it('reads the caller\'s DM cursors (own rows, the 0051 wire shape)', async () => {
+    const { client, calls } = makeMessageMockClient({
+      messages: { data: [], error: null },
+      directConversationReads: { data: [], error: null },
+    })
+    await listDirectConversationsWithClient(client, 'me')
+    expect(calls).toContain('from(direct_conversation_reads)')
+    expect(calls).toContain('select(other_profile_id, last_read_at)')
+    expect(calls).toContain('eq(profile_id, me)')
+  })
+
+  it('propagates a failed cursor read (pre-0051-apply 42703 discipline)', async () => {
+    const { client } = makeMessageMockClient({
+      messages: { data: [], error: null },
+      directConversationReads: { data: null, error: new Error('42703: relation does not exist') },
+    })
+    await expect(listDirectConversationsWithClient(client, 'me')).rejects.toThrow('42703')
+  })
+})
+
+describe('markDirectConversationReadWithClient (the DM read-cursor upsert)', () => {
+  it('upserts the cursor with the composite-PK onConflict', async () => {
+    const { client, calls, payloads } = makeMessageMockClient()
+    await markDirectConversationReadWithClient(client, 'other', 'me')
+    expect(calls).toContain('from(direct_conversation_reads)')
+    expect(calls).toContain('upsert(onConflict=profile_id,other_profile_id)')
+    const payload = payloads[0] as Record<string, unknown>
+    expect(payload.profile_id).toBe('me')
+    expect(payload.other_profile_id).toBe('other')
+    expect(typeof payload.last_read_at).toBe('string')
+    expect(new Date(payload.last_read_at as string).getTime()).not.toBeNaN()
+  })
+
+  it('propagates a failed upsert', async () => {
+    const { client } = makeMessageMockClient({
+      upsertResult: { data: null, error: new Error('boom') },
+    })
+    await expect(markDirectConversationReadWithClient(client, 'other', 'me')).rejects.toThrow('boom')
+  })
+})
+
+/**
+ * V23 follow-up repair: the DM thread's read seam was SENDER-ONLY. It asked
+ * `message_recipients` for the OTHER party's rows, which the SELECT policy
+ * (`profile_id = auth.uid() OR is_message_sender`) hides from a recipient — so
+ * a DM the other person started opened as "No messages yet" on my side. These
+ * pin the caller's own-row scoping; the recipient-side dm e2e proves it live.
+ */
+describe('queryDirectMessagesWithClient (the DM thread — recipient side)', () => {
+  it("reads the caller's own participation rows, not the counterpart's", async () => {
+    const { client, calls } = makeMessageMockClient({
+      messageRecipients: { data: [{ message_id: 'm1' }], error: null },
+      messages: {
+        data: [
+          {
+            id: 'm1',
+            playdate_id: null,
+            sender_id: 'other',
+            body: 'theirs',
+            created_at: '2026-09-12T11:00:00Z',
+            recipient_hint: 'me',
+          },
+        ],
+        error: null,
+      },
+    })
+    const rows = await queryDirectMessagesWithClient(client, 'other', 'me')
+    expect(calls).toContain('eq(profile_id, me)')
+    expect(calls).not.toContain('eq(profile_id, other)')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].sender_id).toBe('other')
+    expect(rows[0].body).toBe('theirs')
+  })
+
+  it('returns [] before querying messages when the caller has no rows yet', async () => {
+    const { client, calls } = makeMessageMockClient({
+      messageRecipients: { data: [], error: null },
+    })
+    const rows = await queryDirectMessagesWithClient(client, 'other', 'me')
+    expect(rows).toEqual([])
+    expect(calls.some((c) => c.startsWith('from(messages)'))).toBe(false)
+  })
+
+  it('propagates a failed participation read', async () => {
+    const { client } = makeMessageMockClient({
+      messageRecipients: { data: null, error: new Error('42501: rls') },
+    })
+    await expect(queryDirectMessagesWithClient(client, 'other', 'me')).rejects.toThrow('42501')
   })
 })
