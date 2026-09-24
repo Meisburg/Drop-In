@@ -31,9 +31,73 @@ import type * as React from 'react'
 // (`export { PlacePickerMap as default }` in PlaceMap.tsx): all three wrappers
 // below are pick-mode surfaces that open on /new, so the picker component is
 // the one they hand back. Named consumers keep importing by name.
-const LazyPlaceMap = lazy(
-  () => import('./PlaceMap') as unknown as Promise<{ default: React.ComponentType<any> }>,
-)
+/**
+ * V23 FIX — ONE LAZY PER NAMED EXPORT, AND THE BUG THIS REPLACES WAS REAL.
+ *
+ * The previous version had a SINGLE factory resolving through the module's
+ * DEFAULT export, and cast the result to `ComponentType<any>`:
+ *
+ *     const LazyPlaceMap = lazy(
+ *       () => import('./PlaceMap') as unknown as Promise<{ default: ComponentType<any> }>,
+ *     )
+ *     // used by PlaceMap, PlacesMap AND PlacePickerMap alike
+ *
+ * The default export is `PlacePickerMap`. So `PlaceMap` — which passes `place`
+ * — rendered `PlacePickerMap`, which reads `places.map(...)` and found
+ * `undefined`: **TypeError: Cannot read properties of undefined (reading
+ * 'map')**, and the whole /place/:id page rendered BLANK (React tore the tree
+ * down; the body was empty). `PlacesMap` had the same mismatch in a different
+ * shape: it passes `places` and got the picker, which needs `onPick`.
+ *
+ * WHY IT SURVIVED A BATCH: the `as unknown as ComponentType<any>` cast erased
+ * the prop mismatch that TypeScript would otherwise have reported, so this was
+ * a compile-time-safe lie. The V22 note above records that the ORIGINAL crash
+ * (#306, "Element type is invalid") was fixed by ADDING a default export — which
+ * fixed the `undefined` COMPONENT while introducing a wrong COMPONENT. One bug
+ * was traded for a quieter one, and nothing asserted the right component
+ * rendered with its own props.
+ *
+ * PROVEN PRE-EXISTING before fixing: the identical pageerror, blank body and
+ * missing `place-map` testid all reproduce on base `ff49d0c` (built in an
+ * isolated git worktree), so this was not introduced by V23 — the audit merely
+ * looked at /place/:id for the first time.
+ *
+ * THE FIX: each wrapper resolves ITS OWN named export, so props and component
+ * cannot disagree. The casts are now honest — they name the props type the
+ * caller actually passes — and the default export is left in place for any
+ * external consumer.
+ */
+const LazyPlaceMap = lazy(() =>
+  import('./PlaceMap').then((m) => ({ default: m.PlaceMap })),
+) as unknown as React.ComponentType<{
+  place: import('../lib/types').Place
+  zipCoords: ReadonlyMap<string, import('../lib/feed').ZipCoords> | null
+  className?: string
+}>
+
+const LazyPlacesMap = lazy(() =>
+  import('./PlaceMap').then((m) => ({ default: m.PlacesMap })),
+) as unknown as React.ComponentType<{
+  places: readonly import('../lib/types').Place[]
+  zipCoords: ReadonlyMap<string, import('../lib/feed').ZipCoords> | null
+  className?: string
+  homePin?: { lat: number; lng: number } | null
+  radiusCircle?: { center: { lat: number; lng: number }; radiusMiles: number } | null
+  placeActions?: boolean
+  testId?: string
+  onSelect?: (place: import('../lib/types').Place) => void
+}>
+
+const LazyPlacePickerMap = lazy(() =>
+  import('./PlaceMap').then((m) => ({ default: m.PlacePickerMap })),
+) as unknown as React.ComponentType<{
+  places: readonly import('../lib/types').Place[]
+  zipCoords: ReadonlyMap<string, import('../lib/feed').ZipCoords> | null
+  onPick: (place: import('../lib/types').Place) => void
+  className?: string
+  homePin?: { lat: number; lng: number } | null
+  radiusCircle?: { center: { lat: number; lng: number }; radiusMiles: number } | null
+}>
 
 /**
  * The Suspense fallback for a map band: a fixed-height placeholder matching
@@ -62,7 +126,7 @@ export function PlaceMap(props: {
   zipCoords: ReadonlyMap<string, import('../lib/feed').ZipCoords> | null
   className?: string
 }) {
-  const Comp = LazyPlaceMap as unknown as React.ComponentType<typeof props>
+  const Comp = LazyPlaceMap
   return (
     <Suspense fallback={<MapBandFallback className={props.className} />}>
       <Comp {...props} />
@@ -86,7 +150,7 @@ export function PlacesMap(props: {
   testId?: string
   onSelect?: (place: import('../lib/types').Place) => void
 }) {
-  const Comp = LazyPlaceMap as unknown as React.ComponentType<typeof props>
+  const Comp = LazyPlacesMap
   return (
     <Suspense fallback={<MapBandFallback className={props.className} />}>
       <Comp {...props} />
@@ -105,7 +169,7 @@ export function PlacePickerMap(props: {
   homePin?: { lat: number; lng: number } | null
   radiusCircle?: { center: { lat: number; lng: number }; radiusMiles: number } | null
 }) {
-  const Comp = LazyPlaceMap as unknown as React.ComponentType<typeof props>
+  const Comp = LazyPlacePickerMap
   return (
     <Suspense fallback={<MapBandFallback className={props.className} />}>
       <Comp {...props} />
