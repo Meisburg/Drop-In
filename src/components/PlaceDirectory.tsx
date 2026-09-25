@@ -71,8 +71,8 @@ export { PlaceDirectory as default }
  *     (/browse discloses a failed read; /new silently keeps free text);
  *   - the viewer's home pin + stored radius (the profile's), for distances and
  *     the map frame;
- *   - whether hearts render at all (`canFollow`) and the caller's own follow
- *     set (`followedPlaceIds`), plus the toggle callback (`onToggleFollow`).
+ *   - whether the save control renders at all (`canFollow`) and the caller's own saved set
+ *     (`followedPlaceIds`), plus the toggle callback (`onToggleFollow`).
  *
  * Selection semantics are host-owned too: when `selectable` is true, tapping a
  * row's name or a map marker calls `onSelect(place)` instead of navigating to
@@ -114,11 +114,11 @@ export function PlaceDirectory({
    * Optional: hosts that do not load ratings omit it entirely (same effect).
    */
   ratings?: ReadonlyMap<string, ReviewSummary> | null
-  /** The caller's own followed place ids (the batched read; empty set default). */
+  /** The caller's own saved place ids (the batched read; empty set default). */
   followedPlaceIds: ReadonlySet<string>
-  /** Signed in? Signed out renders no heart at all (the /browse rule). */
+  /** Signed in? Signed out renders no save control at all (the /browse rule). */
   canFollow: boolean
-  /** Toggle one place's follow (the host owns the optimistic write). */
+  /** Toggle one place's save (the host owns the optimistic write). */
   onToggleFollow: (placeId: string) => void
   /** The viewer's home pin coords (null = no home pin). */
   homePin: { lat: number; lng: number } | null
@@ -735,6 +735,12 @@ export function PlaceDirectory({
  * place page (the /browse behaviour); in selectable mode the NAME selects into
  * the host instead (the /new behaviour) and the "Start a drop-in" action is
  * suppressed (it navigates to /new, which IS the host).
+ *
+ * The card's save control is the SAME Save / Saved bookmark the place pages
+ * render (annotation 5: a heart reads as "like", not "follow/save"). It keeps
+ * its pre-annotation-5 testid `place-heart-<id>` — the e2e specs locate it by
+ * that name and assert its >=44px box + aria-pressed; renaming would force
+ * spec churn this batch does not need. The stale name is deliberate.
  */
 function DirectoryRow({
   row,
@@ -814,17 +820,32 @@ function DirectoryRow({
               aria-pressed={followed}
               aria-label={
                 followed
-                  ? `Following ${row.place.name} — tap to unfollow`
-                  : `Follow ${row.place.name}`
+                  ? `Saved ${row.place.name} — tap to unsave`
+                  : `Save ${row.place.name}`
               }
               onClick={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
                 onToggleFollow(row.place.id)
               }}
-              className="-mr-1 -mt-1 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full transition-colors motion-reduce:transition-none hover:bg-slate-100"
+              className="-mr-1 -mt-1 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 outline-none hover:bg-slate-100"
             >
-              <HeartIcon filled={followed} />
+              {/* The pressed state is conveyed by MORE THAN colour: the bookmark
+                  glyph fills when saved (stroked otherwise) AND the accessible
+                  name flips Save → Saved. Same glyph + fill channel as the
+                  place pages' control; the glyph is decorative (aria-hidden). */}
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className={`h-6 w-6 ${followed ? 'text-indigo-600' : 'text-slate-400'}`}
+                fill={followed ? 'currentColor' : 'none'}
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d={NAV_ICONS.bookmark} />
+              </svg>
             </button>
           ) : null}
         </div>
@@ -883,24 +904,3 @@ function DirectoryRow({
   )
 }
 
-/**
- * The place heart. Filled (solid indigo) when followed, an indigo OUTLINE when
- * not. The fill is decided by the prop; `aria-hidden` keeps the glyph out of the
- * accessibility tree — the button around it carries the label + pressed state.
- */
-function HeartIcon({ filled }: { filled: boolean }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      className={`h-6 w-6 ${filled ? 'text-indigo-600' : 'text-slate-400'}`}
-      fill={filled ? 'currentColor' : 'none'}
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 20.5S4 15.3 4 9.9A4.6 4.6 0 0 1 12 6.4a4.6 4.6 0 0 1 8 3.5c0 5.4-8 10.6-8 10.6Z" />
-    </svg>
-  )
-}

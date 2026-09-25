@@ -14,6 +14,7 @@ import {
 import type { ReviewSummaryRow } from '../lib/db'
 import { DEFAULT_RADIUS_MILES, type ZipCoords } from '../lib/feed'
 import { placeFollowIdSet } from '../lib/places'
+import { planSaveToggle } from '../lib/follows'
 import type { ReviewSummary } from '../lib/reviews'
 import type { Place } from '../lib/types'
 
@@ -70,21 +71,17 @@ function toReviewSummaryMap(rows: ReadonlyMap<string, ReviewSummaryRow>): Map<st
  * not hide a place for missing data. That section is also why 0029's lat/lng
  * are nullable.
  *
- * V17 t02: THE HEART IS THE EXISTING FOLLOW, not a second save concept. A
- * signed-in parent sees one heart per card, filled when they already follow
- * that place, and tapping it toggles the SAME `follows` row the /place/:id
- * Follow control writes (0033's exactly-one-target table, owner-only RLS) —
- * there is no `saved_places` table and no per-card follower COUNT. A count
- * would be one `countPlaceFollowers` RPC PER CARD (239 cards = 239 round
- * trips, and a popularity score on a place), so the grid shows only the
- * caller's own state, read ONCE for the whole page via `listMyFollows` + the
- * pure `placeFollowIdSet` seam. Signed out
- * renders no heart at all, and issues no follows request — the /place/:id
- * decision (a control a visitor cannot press is decoration).
+ * V17 t02 (re-worded for annotation 5): THE SAVE CONTROL IS THE EXISTING FOLLOW, not a second save concept. A
+ * signed-in parent sees one Save / Saved bookmark per card — filled when they already save that place — and tapping it toggles the SAME `follows` row the /place/:id control writes (0033's exactly-one-target table, owner-only RLS) —
+  * there is no `saved_places` table and no per-card follower COUNT. A count would be one
+  * `countPlaceFollowers` RPC PER CARD (239 cards = 239 round trips, and a popularity score on a place), so the
+  * grid shows only the caller's OWN state, read ONCE for the whole page via `listMyFollows` + the pure
+  * `placeFollowIdSet` seam. Signed out renders no save control at all, and issues no follows request — the
+  * /place/:id decision (a control a visitor cannot press is decoration).
  *
  * THE FOLLOW READ IS BEST-EFFORT, exactly like the gazetteer read above it: a
- * failure (pre-0033-apply: PGRST205) leaves every heart unfilled and the
- * directory rendering normally. A heart is a card decoration; it is never
+ * failure (pre-0033-apply: PGRST205) leaves every bookmark unfilled and the
+ * directory rendering normally. The control is a card decoration; it is never
  * worth an error state, and it must never cost the page its places.
  */
 /**
@@ -102,15 +99,15 @@ export function BrowsePage() {
   // start times rendered at all, because "0 upcoming" is a claim we cannot make.
   const [upcomingStartTimes, setUpcomingStartTimes] = useState<Map<string, string[]> | null>(null)
   /**
-   * V17 t02: the PLACE ids the caller already follows (the pure
-   * placeFollowIdSet seam) — what each card's heart reads. ONE batched read for
+   * V17 t02 (re-worded for annotation 5): the PLACE ids the caller already saves (the pure
+   * placeFollowIdSet seam) — what each card's Save / Saved bookmark reads. ONE batched read for
    * the whole grid, never one call per card, and never `countPlaceFollowers` (a
-   * grid of 239 cards must not make 239 RPCs; the heart shows the caller's OWN
+   * grid of 239 cards must not make 239 RPCs; the control shows the caller's OWN
    * state, which is all this read returns).
    *
    * The empty set is the honest default twice over: a signed-out viewer (the
    * effect never runs) and a FAILED read (the catch below lands the empty set)
-   * both render every heart unfilled — identical to the page before this slice,
+   * both render every bookmark unfilled — identical to the page before this slice,
    * never an error state and never an empty page (the `zipCoords` precedent).
    */
   const [followedPlaceIds, setFollowedPlaceIds] = useState<ReadonlySet<string>>(
@@ -181,11 +178,11 @@ export function BrowsePage() {
     }
   }, [loading, session])
 
-  // V17 t02: the caller's own place follows, ONCE for the whole grid — the
-  // hearts' first paint comes from this read, never from a per-card call. The
+  // V17 t02 (re-worded for annotation 5): the caller's own place follows, ONCE for the whole grid — the
+  // bookmarks' first paint comes from this read, never from a per-card call. The
   // same signed-in-only shape as the counts effect above: signed out returns
   // before the call, so no follows request is ever issued, and a failure lands
-  // the EMPTY SET so every heart renders unfilled and the page is otherwise
+  // the EMPTY SET so every bookmark renders unfilled and the page is otherwise
   // untouched.
   //
   // The read is the DEFAULT-CLIENT wrapper (listMyFollows), the repo's
@@ -247,12 +244,16 @@ export function BrowsePage() {
   })()
 
   /**
-   * V17 t02: heart / un-heart ONE place — the EXISTING follow write, never a
-   * competing "save". The local set is flipped FIRST (the heart moves on tap,
-   * the ping toggle's optimistic discipline), then `toggleFollowPlace` — which
-   * is a read-then-write against the owner-only row (it resolves the follow row
-   * itself, which is why the heart never needs the row id) and already treats a
-   * concurrent 23505 as success — confirms it in the background.
+   * V17 t02 (re-worded for annotation 5): save / unsave ONE place — the EXISTING
+   * follow write, never a competing "save". The DECISION is the pure
+   * `planSaveToggle` seam (the same one the place pages call); execution goes
+   * through `toggleFollowPlace`, which is a read-then-write against the
+   * owner-only row (it resolves the follow row itself) and already treats a
+   * concurrent 23505 as success. Saving keeps a place on your shortlist so you
+   * can find it again; nothing here promises notifications.
+   *
+   * The local set is flipped FIRST (the control moves on tap, the ping toggle's
+   * optimistic discipline), then the write confirms it in the background.
    *
    * Both writes use the FUNCTIONAL updater, not a value captured from this
    * render's closure. The follows read is a concurrent effect: it can land a
@@ -267,6 +268,8 @@ export function BrowsePage() {
    */
   async function handleTogglePlaceFollow(placeId: string) {
     const wasFollowed = followedPlaceIds.has(placeId)
+    // The decision: save or unsave? The pure seam decides; execution below.
+    planSaveToggle(wasFollowed)
     setFollowedPlaceIds((prev) => {
       const next = new Set(prev)
       if (wasFollowed) next.delete(placeId)
