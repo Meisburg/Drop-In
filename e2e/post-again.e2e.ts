@@ -298,7 +298,16 @@ test('Duplicate prefills place, details, duration, and the linked kid, and re-se
   // quick-post pattern, race-proof against the today/tomorrow boundary.
   const beforeMount = new Date().toISOString()
   await page.getByRole('button', { name: 'Duplicate', exact: true }).click()
-  await settleOnRoute(page, '/new')
+  // V23 drift fix (stale/racy harness, not the app): handleDuplicatePost
+  // awaits its kid-link read BEFORE the client-side navigate('/new',
+  // {state:{duplicate}}), so /new arrives as an SPA hop — a real user sees
+  // it without any reload. settleOnRoute is the WRONG door here: its '/new'
+  // path cold-loads page.goto('/') and taps the Feed's Post CTA, and that
+  // document reload destroys the still-pending client-side navigation, so
+  // /new renders empty and the prefill banner never appears. Wait for the
+  // app's own navigation instead. (This is NOT a persistence guarantee —
+  // a reload mid-flow would drop the prefill, and that is out of scope.)
+  await page.waitForURL('**/new')
 
   // The banner names the source post and the rule: the duplicate's only
   // required input is the new start time.

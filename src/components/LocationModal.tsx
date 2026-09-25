@@ -34,6 +34,7 @@ export function LocationModal({
   radiusMiles,
   homeZip,
   onGeocode,
+  onRadiusChange,
   onApplyRadius,
 }: {
   /** Render the modal at all (the caller owns the open state). */
@@ -42,6 +43,14 @@ export function LocationModal({
   onClose: () => void
   /** The current radius the slider shows (the caller's saved value). */
   radiusMiles: number
+  /**
+   * LIVE radius as the slider moves, before "Apply radius" — the Places
+   * directory redraws its map circle and refilters on every tick through this.
+   * Deliberately SEPARATE from `onApplyRadius`: that prop is the caller's WRITE
+   * (the feed saves the radius to the DB), so a drag must not fire a write per
+   * tick. Callers that only persist pass `onApplyRadius` and omit this.
+   */
+  onRadiusChange?: (miles: number) => void
   /** The caller's saved home zip (null = none yet). Shown as supporting copy. */
   homeZip: string | null
   /** Geocode an address → coords, or null when it cannot be found. */
@@ -50,7 +59,14 @@ export function LocationModal({
   onApplyRadius: (miles: number) => Promise<void> | void
 }) {
   const [address, setAddress] = useState('')
-  const [radius, setRadius] = useState(radiusMiles)
+  /**
+   * The slider's in-session draft. `null` means the parent has not touched it
+   * yet, so the slider MIRRORS the caller's saved value — including a write
+   * that lands while the modal is open. Once they move it, the draft wins, so
+   * a landing write cannot silently undo their choice (see the effect below).
+   */
+  const [draftRadius, setDraftRadius] = useState<number | null>(null)
+  const radius = draftRadius ?? radiusMiles
   const [geocodeError, setGeocodeError] = useState<string | null>(null)
   /** V23 slice 1 review: a REJECTED `onApplyRadius` must say so — see the catch. */
   const [radiusError, setRadiusError] = useState<string | null>(null)
@@ -58,13 +74,20 @@ export function LocationModal({
   const [applying, setApplying] = useState(false)
   const dialogRef = useRef<HTMLDivElement>(null)
 
-  // Keep the slider honest when the caller's radius changes underneath an open
-  // modal (a write landing mid-open): the slider mirrors the SAVED value, not a
-  // stale snapshot taken at open time. The caller's state is the source of truth;
-  // this effect syncs the local copy so the slider never shows a stale number.
+  // The slider mirrors the caller's SAVED value on every open, and for as long
+  // as the parent has not moved it here. The old shape kept a local copy synced
+  // by `useEffect(..., [radiusMiles])`, which had a race the full-suite e2e
+  // sweep caught (`e2e/feed-empty-state.e2e.ts`, "the home-ZIP control saves,
+  // keeps the radius, and never shows a false error"): the first apply's
+  // `refresh()` landed WHILE the parent was dragging to the second value, the
+  // effect reset the slider to the value just saved, and the second "Apply
+  // radius" then wrote an equal value — a silent no-op. A write landing
+  // mid-edit is exactly the case where the parent's own input must win.
+  // Clearing the draft on open keeps the saved value authoritative again for
+  // the NEXT open, which is the part that mirroring was there to protect.
   useEffect(() => {
-    setRadius(radiusMiles)
-  }, [radiusMiles])
+    if (open) setDraftRadius(null)
+  }, [open])
 
   // Trap Tab inside the dialog; restore focus to the opener on close.
   useFocusTrap(dialogRef, open)
@@ -175,7 +198,11 @@ export function LocationModal({
             max={30}
             step={1}
             value={radius}
-            onChange={(e) => setRadius(Number(e.target.value))}
+            onChange={(e) => {
+              const next = Number(e.target.value)
+              setDraftRadius(next)
+              onRadiusChange?.(next)
+            }}
             className="w-full accent-indigo-600"
           />
         </label>

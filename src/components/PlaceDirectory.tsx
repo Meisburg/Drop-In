@@ -686,6 +686,11 @@ export function PlaceDirectory({
         radiusMiles={radiusMiles}
         homeZip={null}
         onGeocode={handleGeocode}
+        // V23 s1 extraction regression fix: the slider must drive the map LIVE
+        // (V20 t05), not only on the Apply button. `onApplyRadius` is this
+        // caller's write; `onRadiusChange` is the per-tick preview the old inline
+        // modal had and the extraction dropped.
+        onRadiusChange={(miles) => setRadiusMiles(miles)}
         onApplyRadius={(miles) => setRadiusMiles(miles)}
       />
     </div>

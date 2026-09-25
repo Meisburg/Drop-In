@@ -329,18 +329,38 @@ test('the Places tab is the seeded directory, and anon can read it (RED pre-0029
   // The tile pane exists whether or not the live tiles have loaded yet.
   await expect(overviewMap.locator('.leaflet-tile-pane')).toHaveCount(1)
 
-  // (7) V13 ticket 05 (A6): the map LEADS the page — it sits above the search
-  // filter card and the list. The filter card is the next sibling after the
-  // map card, so the map's DOM position precedes the search input's.
+  // (7) V13 ticket 05 (A6), re-cut for V22 slice 9: the map still LEADS the
+  // page, but the two-column desktop layout changed what "leads" means. At
+  // the md+ breakpoint PlaceDirectory is a two-column grid with the map as
+  // sticky column 1 (PlaceDirectory.tsx ~336: "at md+ this is column 1 of a
+  // two-column grid, sticky under the full-width header") — accepted product
+  // design (commit 67544b0), so the map's box sits to the LEFT of the
+  // search/filter card, and the old stacked "map's y above search's y" no
+  // longer holds at the default desktop viewport (the two tops differ by a
+  // few px of card padding). Below the md breakpoint the original stacked
+  // order still holds: the map sits ABOVE the search/filter card.
   const searchInput = page.getByTestId('places-search')
   const [mapBox, searchBox] = await Promise.all([
     overviewMap.boundingBox(),
     searchInput.boundingBox(),
   ])
-  expect(
-    mapBox !== null && searchBox !== null && mapBox.y < searchBox.y,
-    'the overview map must sit ABOVE the search/filter card',
-  ).toBe(true)
+  expect(mapBox !== null && searchBox !== null, 'the map and the search/filter card both render').toBe(true)
+  if (mapBox !== null && searchBox !== null) {
+    if (mapBox.x === 0) {
+      // Stacked mobile/narrow layout (< md): DOM order rules — map on top.
+      expect(
+        mapBox.y < searchBox.y,
+        'the overview map must sit ABOVE the search/filter card (narrow layout)',
+      ).toBe(true)
+    } else {
+      // Two-column desktop layout (md+): the map is column 1 — map first
+      // across the row.
+      expect(
+        mapBox.x < searchBox.x,
+        'the overview map must sit to the LEFT of the search/filter card (two-column desktop layout)',
+      ).toBe(true)
+    }
+  }
 
   // (8) V13 ticket 05 (A7): the raw unbroken long-list is gone — the list
   // leads with the first places (alphabetical by default, V15 t03) grouped by
@@ -1480,10 +1500,36 @@ test('a picker pin selects first, and only "Select this place" fills the fields 
   await expect(addressInput).toHaveValue('')
 
   // Tap a directory pin. `.not([d="M0 0"])` skips markers Leaflet projected
-  // outside the canvas (in the DOM, zero-size, unclickable).
-  const pin = pickerMap.locator('.leaflet-overlay-pane svg path[fill="#4f46e5"]:not([d="M0 0"])').first()
+  // fully outside the canvas (in the DOM, zero-size, unclickable).
+  //
+  // V23 DRIFT: `.first()` IS NOT ENOUGH — THE FIRST PROJECTED MARKER CAN SIT
+  // OUTSIDE THE MAP'S CLIPPED BAND. A marker just past the pane's top edge keeps
+  // a NON-zero `d` while its centre lies above the map and under the page behind
+  // it. `toBeVisible()` passes anyway (Playwright does not test an ancestor's
+  // `overflow: hidden` clipping), and `click({ force: true })` dispatches at a
+  // point the marker does not occupy, so the tap lands on the page and the panel
+  // never opens. The V23 follow-up's `zoomForRadius` change (the `FRAME_FILL`
+  // margin + latitude correction) moved the picker's initial frame just enough
+  // to push the first marker above the band. So pick the first pin that is
+  // ACTUALLY HIT-TESTABLE at its own centre — the pin a parent's finger reaches.
+  const pins = pickerMap.locator('.leaflet-overlay-pane svg path[fill="#4f46e5"]:not([d="M0 0"])')
+  const pinCount = await pins.count()
+  let pin = pins.first()
+  for (let i = 0; i < pinCount; i++) {
+    const candidate = pins.nth(i)
+    const reachable = await candidate.evaluate((el) => {
+      const rect = el.getBoundingClientRect()
+      return (
+        document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2) === el
+      )
+    })
+    if (reachable) {
+      pin = candidate
+      break
+    }
+  }
   await expect(pin).toBeVisible()
-  await pin.click({ force: true })
+  await pin.click()
 
   // AC (1): the panel appears, naming the place, and the FIELDS ARE STILL
   // EMPTY. This is the founder's complaint stated as an assertion.
@@ -1725,8 +1771,19 @@ test('a place page renders the seeded data with the existing Maps link', async (
     panel.getByTestId('marker-details'),
     'the place page must not offer a link to itself',
   ).toHaveCount(0)
-  // Learn more is the same seam the page's own button uses, so the two agree.
-  await expect(panel.getByTestId('learn-more')).toBeVisible()
+  // V23 slice 4 — THE PANEL'S MAP-SEARCH FALLBACK IS GONE HERE TOO, for the same
+  // reason it left the `/browse` panel: this place is a park, the reviewed
+  // website backfill does not cover parks, and the panel floats over a map — a
+  // "find it on the map" link there duplicates the surface behind it.
+  //
+  // The place PAGE keeps its own `place-learn-more` (asserted below), which is
+  // the wider-web door now. Mirroring the `/browse` panel assertion is what
+  // keeps the two panels from drifting apart the way they did when slice 4
+  // landed: the follow-up fixed the `/browse` instance and missed this one.
+  await expect(
+    panel.getByTestId('learn-more'),
+    'the map-search fallback must not be on this panel either',
+  ).toHaveCount(0)
 
   // Tapping the pin must not navigate away from the page it is on.
   await expect(page).toHaveURL(/\/place\//)
