@@ -284,7 +284,7 @@ export function PlaydateFormFields({
       <span className="text-slate-700">{locationFirst ? PLACE_PICKER_LABEL : 'Place'}</span>
       <input
         className={touch(
-          'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+          'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
             (errors.place ? 'border-red-400' : 'border-slate-300'),
         )}
         value={values.place}
@@ -310,7 +310,7 @@ export function PlaydateFormFields({
             data-testid="browse-places"
             aria-expanded={browsePlacesOpen}
             onClick={onBrowsePlaces}
-            className="min-h-11 shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none "
+            className="min-h-11 shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base font-medium text-indigo-700 transition-colors motion-reduce:transition-none "
           >
             {BROWSE_PLACES_LABEL}
           </button>
@@ -345,7 +345,7 @@ export function PlaydateFormFields({
               key={place.id}
               type="button"
               onClick={() => onPickPlace(place)}
-              className="flex min-h-11 flex-col items-start gap-0.5 border-b border-slate-100 px-3 py-2 text-left text-sm transition-colors motion-reduce:transition-none hover:bg-slate-50"
+              className="flex min-h-11 flex-col items-start gap-0.5 border-b border-slate-100 px-3 py-2.5 text-left text-base transition-colors motion-reduce:transition-none hover:bg-slate-50"
             >
               <span className="font-medium text-slate-900">{place.name}</span>
               <span className="text-xs text-slate-500">
@@ -357,7 +357,7 @@ export function PlaydateFormFields({
             type="button"
             data-testid="place-somewhere-else"
             onClick={onSomewhereElse}
-            className="flex min-h-11 flex-col items-start gap-0.5 px-3 py-2 text-left text-sm transition-colors motion-reduce:transition-none hover:bg-slate-50"
+            className="flex min-h-11 flex-col items-start gap-0.5 px-3 py-2.5 text-left text-base transition-colors motion-reduce:transition-none hover:bg-slate-50"
           >
             <span className="font-medium text-slate-900">{SOMEWHERE_ELSE_LABEL}</span>
             <span className="text-xs text-slate-500">
@@ -401,7 +401,7 @@ export function PlaydateFormFields({
         </span>
         <input
           className={touch(
-            'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+            'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
               (addressError !== null ? 'border-red-400' : 'border-slate-300'),
           )}
           value={address}
@@ -430,7 +430,7 @@ export function PlaydateFormFields({
         <span className="text-slate-700">Neighborhood</span>
         <select
           className={
-            'w-full rounded-xl border bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+            'w-full rounded-xl border bg-white px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
             (errors.neighborhoodId ? 'border-red-400' : 'border-slate-300')
           }
           value={values.neighborhoodId}
@@ -465,7 +465,7 @@ export function PlaydateFormFields({
       <input
         type="date"
         className={touch(
-          'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+          'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
             (errors.startDate ? 'border-red-400' : 'border-slate-300'),
         )}
         value={values.startDate}
@@ -514,7 +514,7 @@ export function PlaydateFormFields({
             aria-pressed={selected}
             onClick={() => onFieldChange('durationMinutes', minutes)}
             className={touch(
-              'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors motion-reduce:transition-none ' +
+              'inline-flex min-h-11 items-center rounded-full border px-3 text-base font-medium transition-colors motion-reduce:transition-none ' +
                 (selected
                   ? 'border-indigo-600 bg-indigo-600 text-white'
                   : 'border-slate-300 bg-white text-slate-700'),
@@ -622,7 +622,7 @@ line. No kids yet → the designed empty state + the /settings link (the
                 aria-pressed={selected}
                 onClick={() => onToggleKid(kid.id)}
                 className={touch(
-                  'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors motion-reduce:transition-none ' +
+                  'inline-flex min-h-11 items-center rounded-full border px-3 text-base font-medium transition-colors motion-reduce:transition-none ' +
                     (selected
                       ? 'border-indigo-600 bg-indigo-600 text-white'
                       : 'border-slate-300 bg-white text-slate-700'),
@@ -647,7 +647,7 @@ line. No kids yet → the designed empty state + the /settings link (the
         Details <span className="text-slate-500">(optional)</span>
       </span>
       <textarea
-        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
+        className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
         rows={3}
         value={values.details}
         onChange={(e) => onFieldChange('details', e.target.value)}
@@ -689,7 +689,7 @@ line. No kids yet → the designed empty state + the /settings link (the
                 data-testid={TITLE_LINE_TESTID}
                 onClick={onEditTitle}
                 className={touch(
-                  'w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-sm font-medium text-slate-900 transition-colors motion-reduce:transition-none ',
+                  'w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-left text-base font-medium text-slate-900 transition-colors motion-reduce:transition-none ',
                 )}
               >
                 {values.title}
@@ -847,7 +847,7 @@ export function PlaydateTitleField({
         </span>
         <input
           className={
-            'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+            'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
             (error ? 'border-red-400' : 'border-slate-300') +
             (minTouchTargets ? ' min-h-11' : '')
           }

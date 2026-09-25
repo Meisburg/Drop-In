@@ -199,7 +199,7 @@ function MessageBubble({
         <p className="mb-0.5 text-xs text-slate-500">{senderName}</p>
         <p
           data-testid={isOwn ? 'own-message' : 'other-message'}
-          className={`whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm ${
+          className={`whitespace-pre-wrap break-words rounded-2xl px-3 py-2.5 text-base ${
             isOwn ? 'bg-indigo-100 text-slate-900' : 'border border-slate-200 bg-white text-slate-900'
           }`}
         >
@@ -804,7 +804,7 @@ export function InboxPage() {
             type="button"
             data-testid="new-message-button"
             onClick={() => setShowNewMessage(true)}
-            className="mt-3 w-full rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100"
+            className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 px-4 text-base font-semibold text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100"
           >
             + New message
           </button>
@@ -819,7 +819,7 @@ export function InboxPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search by name…"
-                className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus-visible:border-indigo-400 focus-visible:outline-none"
+                className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-base focus-visible:border-indigo-400 focus-visible:outline-none"
                 autoFocus
               />
               {searching ? (
@@ -832,7 +832,7 @@ export function InboxPage() {
                         type="button"
                         data-testid={`dm-result-${result.id}`}
                         onClick={() => openDmThread(result.id)}
-                        className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-800 transition-colors motion-reduce:transition-none hover:bg-slate-50"
+                        className="w-full rounded-lg px-3 py-2.5 text-left text-base text-slate-800 transition-colors motion-reduce:transition-none hover:bg-slate-50"
                       >
                         {result.display_name}
                       </button>
@@ -864,7 +864,7 @@ export function InboxPage() {
               <button
                 type="button"
                 onClick={() => setReloadToken((token) => token + 1)}
-                className="mt-2 rounded-xl border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-700"
+                className="mt-2 inline-flex min-h-11 items-center rounded-xl border border-red-300 bg-white px-3 text-base font-medium text-red-700"
               >
                 Retry
               </button>
@@ -884,7 +884,7 @@ export function InboxPage() {
                   </p>
                   <Link
                     to="/browse"
-                    className="mt-3 inline-flex min-h-11 items-center rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white"
+                    className="mt-3 inline-flex min-h-11 items-center rounded-xl bg-indigo-600 px-4 text-base font-semibold text-white"
                   >
                     Browse places
                   </Link>
@@ -909,7 +909,7 @@ export function InboxPage() {
               type="button"
               onClick={closeThread}
               aria-label="Back to conversations"
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700"
+              className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700"
             >
               ←
             </button>
@@ -925,7 +925,7 @@ export function InboxPage() {
               <button
                 type="button"
                 onClick={() => setReloadToken((token) => token + 1)}
-                className="mt-2 rounded-xl border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-700"
+                className="mt-2 inline-flex min-h-11 items-center rounded-xl border border-red-300 bg-white px-3 text-base font-medium text-red-700"
               >
                 Retry
               </button>
@@ -973,7 +973,7 @@ export function InboxPage() {
                   onKeyDown={handleComposerKeyDown}
                   rows={1}
                   placeholder="Write a message…"
-                  className="w-full resize-none rounded-lg border-0 bg-transparent p-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200"
+                  className="w-full resize-none rounded-lg border-0 bg-transparent p-1 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200"
                 />
                 {sendError !== null ? <p className="mt-1 text-xs text-red-600">{sendError}</p> : null}
                 <div className="mt-2 flex justify-end">
@@ -981,7 +981,7 @@ export function InboxPage() {
                     type="button"
                     disabled={draft.trim().length === 0 || sending}
                     onClick={() => void handleSend()}
-                    className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                    className="inline-flex min-h-11 items-center rounded-xl bg-indigo-600 px-4 text-base font-semibold text-white disabled:opacity-50"
                   >
                     {sending ? 'Sending…' : 'Send'}
                   </button>
