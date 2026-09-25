@@ -1044,7 +1044,7 @@ export function NewPlaydatePage({
           ("Create new" | "Duplicate existing") that sits ABOVE the form.
           Selecting "Duplicate existing" opens a lightbox listing all past posts;
           selecting one calls applyLastPost(row.post). */}
-      <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-3">
+      <div className="flex flex-col gap-2">
         <span className="text-sm font-medium text-slate-700">Start from</span>
         <div className="flex gap-2">
           <button
@@ -1052,7 +1052,7 @@ export function NewPlaydatePage({
             data-testid="dup-create"
             onClick={() => setDupPickerOpen(false)}
             className={
-              'min-h-11 flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition-colors motion-reduce:transition-none ' +
+              'min-h-11 flex-1 rounded-xl border px-3 text-base font-medium transition-colors motion-reduce:transition-none ' +
               (!dupPickerOpen
                 ? 'border-indigo-600 bg-indigo-600 text-white'
                 : 'border-slate-300 bg-white text-slate-700')
@@ -1066,7 +1066,7 @@ export function NewPlaydatePage({
             onClick={() => setDupPickerOpen(true)}
             disabled={pastPosts.length === 0}
             className={
-              'min-h-11 flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition-colors motion-reduce:transition-none disabled:opacity-40 ' +
+              'min-h-11 flex-1 rounded-xl border px-3 text-base font-medium transition-colors motion-reduce:transition-none disabled:opacity-40 ' +
               (dupPickerOpen
                 ? 'border-indigo-600 bg-indigo-600 text-white'
                 : 'border-slate-300 bg-white text-slate-700')
