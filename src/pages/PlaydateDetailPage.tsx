@@ -1146,7 +1146,7 @@ export function PlaydateDetailPage() {
           value={url}
           onFocus={(event) => event.currentTarget.select()}
           onClick={(event) => event.currentTarget.select()}
-          className="mt-1 w-full select-all rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+          className="mt-1 w-full select-all rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-base text-slate-700"
         />
       </div>
     )
@@ -1623,7 +1623,7 @@ export function PlaydateDetailPage() {
           </p>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3">
           <p className="text-sm text-slate-700">
             {formatDay(d.starts_at)} · {formatTime(d.starts_at)}–{formatTime(d.ends_at)}
           </p>
@@ -1683,8 +1683,8 @@ export function PlaydateDetailPage() {
           <p className="mt-1 text-sm text-indigo-700">{goingCountLine(d.going_count)}</p>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="text-base font-semibold text-slate-900">Comments</h2>
+        <div className="flex flex-col gap-3">
+          <h2 className="font-display text-lg font-semibold text-slate-900">Comments</h2>
           {/* V6 (design jury, copy item): this used to end with a second
               "Sign up to join in" — the same CTA as the card above, eight lines
               away, and internally redundant ("sign up" + "join in"). One CTA
@@ -1970,7 +1970,7 @@ export function PlaydateDetailPage() {
           ) : null}
         </div>
       ) : (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3">
           <button
             type="button"
             aria-pressed={going}
@@ -2019,7 +2019,7 @@ export function PlaydateDetailPage() {
                 type="button"
                 disabled={countRetryBusy}
                 onClick={() => void handleRetryGoingCount()}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 disabled:opacity-50"
+                className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-base font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 disabled:opacity-50"
               >
                 {countRetryBusy ? 'Retrying…' : 'Retry'}
               </button>
@@ -2301,7 +2301,7 @@ export function PlaydateDetailPage() {
           the confirmed scope pins, never an initial, a count of kids or a
           blank. The block itself is unchanged: the ages line keeps it. */}
       {kidsLine !== null || kidsGoing.length > 0 ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3">
           {kidsLine !== null ? (
             <p className="text-sm text-slate-700">Kids coming: {kidsLine}</p>
           ) : null}
@@ -2337,7 +2337,7 @@ export function PlaydateDetailPage() {
           Signed-out (public) view: never rendered — the RPC is
           EXECUTE-to-authenticated-only (the signed-in surface). */}
       {guestLine !== null ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3">
           <p className="text-sm text-slate-700">{guestLine}</p>
         </div>
       ) : null}
@@ -2387,8 +2387,8 @@ export function PlaydateDetailPage() {
         and the error line surfaces, red-by-design until the live
         apply); a reply offers no Reply (the one-level pin). */}
       {state.comments !== null ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="text-base font-semibold text-slate-900">
+        <div className="flex flex-col gap-3">
+          <h2 className="font-display text-lg font-semibold text-slate-900">
             Comments{state.comments.length > 0 ? ` (${state.comments.length})` : ''}
           </h2>
           {state.comments.length === 0 ? (
@@ -2492,15 +2492,15 @@ export function PlaydateDetailPage() {
            failing retry keeps this block exactly as it is. */
         <div
           data-testid="comments-load-error"
-          className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+          className="flex flex-col gap-3"
         >
-          <h2 className="text-base font-semibold text-slate-900">Comments</h2>
+          <h2 className="font-display text-lg font-semibold text-slate-900">Comments</h2>
           <p className="mt-2 text-sm text-slate-600">Couldn’t load comments.</p>
           <button
             type="button"
             disabled={commentsRetryBusy}
             onClick={() => void handleRetryComments()}
-            className="mt-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 disabled:opacity-50"
+            className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-base font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 disabled:opacity-50"
           >
             {commentsRetryBusy ? 'Retrying…' : 'Retry'}
           </button>
