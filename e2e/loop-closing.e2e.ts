@@ -686,9 +686,9 @@ test('a follow is a bookmark: the card says who you met, and an ended post offer
   await expect(a.page.getByTestId('follow-place')).toBeVisible()
   await a.page.getByTestId('follow-place').click()
   await expect(a.page.getByTestId('place-followers')).toHaveText(
-    placeFollowerLine(countBefore + 1),
+    placeFollowerLine(countBefore + 1, place.name),
   )
-  await expect(a.page.getByTestId('follow-place')).toHaveText('Unfollow this place')
+  await expect(a.page.getByTestId('follow-place')).toHaveText(`Saved ${place.name}`)
   // One row per (follower, target) here too: exactly one place follow + the one
   // family follow from step (4).
   expect(await selectWithToken('follows?select=id', tokenA)).toHaveLength(2)
@@ -722,8 +722,8 @@ test('a follow is a bookmark: the card says who you met, and an ended post offer
   await anonPage.goto(`/place/${place.id}`)
   await expect(anonPage.getByRole('heading', { name: place.name, exact: true })).toBeVisible()
   await expect(anonPage.getByTestId('place-followers')).toHaveCount(0)
-  await expect(anonPage.getByText('Following a place is for signed-in parents.')).toBeVisible()
-  await expect(anonPage.getByRole('link', { name: 'Sign in to follow it' })).toBeVisible()
+  await expect(anonPage.getByText('Saving a place is for signed-in parents.')).toBeVisible()
+  await expect(anonPage.getByRole('link', { name: 'Sign in to save it' })).toBeVisible()
   // And it issues NO follows call at all — no anon surface exists to widen.
   // (A beat first: the assertion is about what the page DID NOT do.)
   await anonPage.waitForTimeout(1000)
