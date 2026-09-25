@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { BackControl } from '../components/BackControl'
 import { DropInCard } from '../components/DropInCard'
+import { ReviewForm } from '../components/ReviewForm'
 import { useSessionContext } from '../components/SessionProvider'
 import {
   countPlaceFollowers,
@@ -400,6 +401,15 @@ export function PlaceDetailsPage() {
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
           What parents say
         </h2>
+
+        {/* V24 ticket 06: the review form (stars + optional comment, one review
+            per parent) mounts ABOVE the wall — the founder's ask was "a total
+            star rating above what parents say". The existing wall below is
+            untouched; reconciling the two surfaces is explicitly deferred. */}
+        <div data-testid="review-form" className="mt-1">
+          <ReviewForm placeId={id ?? ''} />
+        </div>
+
         <p data-testid="place-comment-count" className="text-sm text-slate-600">
           {placeCommentCountLabel(commentCount, place.name)}
         </p>

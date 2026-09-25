@@ -5689,3 +5689,122 @@ export async function createPlaceComment(
   if (!user) throw new Error('No authenticated user — cannot post a comment.')
   return createPlaceCommentWithClient(supabase, user.id, placeId, body)
 }
+
+// ---------------------------------------------------------------------------
+// V24 ticket 06: REVIEWS (migration 0052).
+//
+// A review is ONE row per (place, parent) — the composite primary key makes a
+// second INSERT fail in the database. So the form LOADS the existing review
+// (if any) into the control and UPDATES on save rather than blind-INSERTing.
+// The write shape chosen here is an UPSERT with onConflict on the composite PK
+// (`place_id, author_profile_id`), mirroring the saveParentCard pattern: one
+// statement covers both the first write and every later edit, and two rapid
+// saves cannot race into a duplicate. The RLS policies in 0052 are the
+// enforcement (writes only as yourself); pre-0052-apply every call here 404s
+// and the caller catches it, the house DB-not-applied discipline.
+// ---------------------------------------------------------------------------
+
+/** One row of `public.reviews`, as the form loads/saves it. */
+export interface ReviewRow {
+  place_id: string
+  author_profile_id: string
+  score: number
+  /** Optional comment; null means a stars-only review. */
+  body: string | null
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * Load the signed-in parent's own review for one place (null when they have
+ * not reviewed it yet). The SELECT policy (0052 pin f) lets any signed-in
+ * parent read every review, so this reads ALL rows for the place and filters
+ * to the caller's own — the same "read then narrow" posture the wall uses.
+ *
+ * Returns null (not []) when there is no row: the form keys off a single
+ * existing review, and [] would make the caller write `rows[0] ?? null`.
+ */
+export async function getMyReviewWithClient(
+  client: SupabaseClient,
+  profileId: string,
+  placeId: string,
+): Promise<ReviewRow | null> {
+  const { data, error } = await client
+    .from('reviews')
+    .select('place_id, author_profile_id, score, body, created_at, updated_at')
+    .eq('place_id', placeId)
+    .eq('author_profile_id', profileId)
+    .limit(1)
+  if (error) throw error
+  const rows = (data ?? []) as unknown as Array<{
+    place_id: string
+    author_profile_id: string
+    score: number
+    body: string | null
+    created_at: string
+    updated_at: string
+  }>
+  if (rows.length === 0) return null
+  const row = rows[0]
+  return {
+    place_id: row.place_id,
+    author_profile_id: row.author_profile_id,
+    score: row.score,
+    body: row.body,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }
+}
+
+/** The default-client wrapper (resolves the auth user, then delegates). */
+export async function getMyReview(placeId: string): Promise<ReviewRow | null> {
+  const { data } = await supabase.auth.getUser()
+  const user = data.user
+  if (!user) throw new Error('No authenticated user — cannot load a review.')
+  return getMyReviewWithClient(supabase, user.id, placeId)
+}
+
+/**
+ * Create or replace the signed-in parent's review for one place.
+ *
+ * Upsert on the composite PK (the saveParentCard pattern): the unique key
+ * makes the conflict unambiguous, so one statement covers the first write AND
+ * every later edit. A blank body is stored as NULL (a stars-only review is
+ * legal — 0052 pin c), matching the client-side trim-then-measure discipline
+ * the validators use. `updated_at` is stamped client-side because 0052 ships
+ * no trigger (pin g records the lesson; a trigger is its own migration).
+ */
+export async function saveReviewWithClient(
+  client: SupabaseClient,
+  profileId: string,
+  placeId: string,
+  score: number,
+  body: string | null,
+): Promise<void> {
+  const trimmed = body === null ? null : body.trim()
+  const { error } = await client
+    .from('reviews')
+    .upsert(
+      {
+        place_id: placeId,
+        author_profile_id: profileId,
+        score,
+        body: trimmed === '' || trimmed === null ? null : trimmed,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'place_id,author_profile_id' },
+    )
+  if (error) throw error
+}
+
+/** The default-client wrapper (resolves the auth user, then delegates). */
+export async function saveReview(
+  placeId: string,
+  score: number,
+  body: string | null,
+): Promise<void> {
+  const { data } = await supabase.auth.getUser()
+  const user = data.user
+  if (!user) throw new Error('No authenticated user — cannot save a review.')
+  return saveReviewWithClient(supabase, user.id, placeId, score, body)
+}
