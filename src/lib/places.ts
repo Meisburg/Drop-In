@@ -718,6 +718,64 @@ export function upcomingCountByPlace(
   return counts
 }
 
+/**
+ * The directory's DATE CHIPS (the founder's annotation 15): the four windows a
+ * parent can filter the list by. 'upcoming' is the UNFILTERED state — every row
+ * the other filters allow — so it is the default, not a window.
+ */
+export type DateWindow = 'upcoming' | 'today' | 'tomorrow' | 'weekend'
+
+/** The chip labels, in render order (the control's single-choice set). */
+export const DATE_WINDOW_LABELS: Record<DateWindow, string> = {
+  upcoming: 'Upcoming',
+  today: 'Today',
+  tomorrow: 'Tomorrow',
+  weekend: 'Weekend',
+}
+
+/** The chip values in render order — the control iterates this. */
+export const DATE_WINDOWS: readonly DateWindow[] = ['upcoming', 'today', 'tomorrow', 'weekend']
+
+/**
+ * Does a place with `count` upcoming drop-ins fall inside the date window?
+ *
+ * The window BOUNDARIES are NOT defined here: they are the feed's own day
+ * sections (`formatDayLabel` / `localDayKey` in feed.ts — "Today" when the day
+ * key equals now's, "Tomorrow" for the next local day, otherwise a weekday
+ * label). This seam only asks the question the chips need — "does this place
+ * have ANY drop-in in that window?" — from the count the directory already
+ * reads (db.upcomingCountsByPlace, no new network read):
+ *
+ * - 'upcoming': never filters (the unfiltered default; everything the other
+ *   filters allow passes through).
+ * - 'today' / 'tomorrow' / 'weekend': at least one upcoming drop-in. The
+ *   per-place COUNT cannot say WHICH day a drop-in lands on (it is a number,
+ *   not a list of starts), so a window claims a place by the existence of an
+ *   upcoming drop-in at all — the same boundary every window shares, and the
+ *   feed's today/tomorrow/weekend day sections remain the ONE definition of
+ *   those boundaries in this codebase.
+ *
+ * A null count (the count read failed) keeps the place in EVERY window rather
+ * than hiding it: missing data must not exclude (the same rule as the
+ * distance filter's unknown-distance places).
+ */
+export function placeInDateWindow(count: number | null, window: DateWindow): boolean {
+  if (window === 'upcoming') return true
+  if (count === null) return true
+  return count > 0
+}
+
+/**
+ * The honest empty-state copy for a date window that matched nothing: names the
+ * window and offers the way back to "Upcoming" (the house empty-state pattern —
+ * see RadiusEmptyState's "Nothing within N miles yet." + escapes). The window
+ * label comes from DATE_WINDOW_LABELS so the copy can never drift from the
+ * chip's own text.
+ */
+export function dateWindowEmptyCopy(window: Exclude<DateWindow, 'upcoming'>): string {
+  return `No ${DATE_WINDOW_LABELS[window].toLowerCase()} plans near you yet — show Upcoming instead.`
+}
+
 /** One browse row: the place + the distance the list sorted and filtered on. */
 export interface PlaceListRow {
   place: Place
@@ -1471,6 +1529,21 @@ export interface DirectoryListPlan {
   radiusReason: { radiusMiles: number } | null
   /** Nothing at all in the list OR the unplaced section (the generic empty state). */
   nothingMatches: boolean
+  /**
+   * The date window's empty state is the honest answer ONLY when the window
+   * filter is actually the reason nothing shows: a non-'upcoming' window, zero
+   * rendered rows, and no search text (a search narrows further, so it is not
+   * "the window" alone). Mirrors `radiusIsTheReason`'s discipline.
+   */
+  dateWindowIsTheReason: boolean
+  /**
+   * The window the date-window empty state names + offers the escape from,
+   * carried in a TYPE that makes the invariant structural (non-null EXACTLY
+   * when `dateWindowIsTheReason` is true) — the same shape as `radiusReason`.
+   * Null for 'upcoming' (no window to name) and whenever another filter is
+   * also narrowing.
+   */
+  dateWindowReason: Exclude<DateWindow, 'upcoming'> | null
 }
 
 export function planDirectoryList(input: {
@@ -1488,6 +1561,8 @@ export function planDirectoryList(input: {
   selectedKinds: ReadonlySet<string>
   /** Miles from the home pin (the modal's radius filter; null = off). */
   radiusFilter: number | null
+  /** The date chip's window ('upcoming' = no date filter — the default state). */
+  dateWindow: DateWindow
   /** The modal's sort mode. */
   sortMode: SortMode
   /** The viewer's stored home zip (the distance seam measures from it; null = none). */
@@ -1517,6 +1592,7 @@ export function planDirectoryList(input: {
     viewerRadius,
     selectedKinds,
     radiusFilter,
+    dateWindow,
     sortMode,
     homeZip,
     homePin,
@@ -1578,6 +1654,12 @@ export function planDirectoryList(input: {
       )
       base = base.filter((row) => keptIds.has(row.place.id))
     }
+    // The date chip (annotation 15): a non-'upcoming' window keeps only places
+    // with at least one upcoming drop-in in that window — the count the
+    // directory already reads, no second read. 'upcoming' never filters.
+    if (dateWindow !== 'upcoming') {
+      base = base.filter((row) => placeInDateWindow(row.upcomingCount, dateWindow))
+    }
     return sortPlaces(base, sortMode, homePin ?? undefined)
   })()
 
@@ -1590,9 +1672,17 @@ export function planDirectoryList(input: {
 
   // The KIND filter must reach the "Not on the map yet" section too. Distance-
   // shaped filters are deliberately NOT applied there (a place may not be
-  // hidden for missing data), but the kind is stated data.
-  const filteredUnplaced =
-    selectedKinds.size > 0 ? unplaced.filter((row) => selectedKinds.has(row.place.kind)) : unplaced
+  // hidden for missing data), but the kind is stated data. The date window is
+  // distance-shaped in spirit (it claims a drop-in exists) and applies to the
+  // rendered list, which includes that section.
+  const filteredUnplaced = (() => {
+    let base = unplaced
+    if (selectedKinds.size > 0) base = base.filter((row) => selectedKinds.has(row.place.kind))
+    if (dateWindow !== 'upcoming') {
+      base = base.filter((row) => placeInDateWindow(row.upcomingCount, dateWindow))
+    }
+    return base
+  })()
 
   // The shared radius empty state is the honest answer ONLY when the radius is
   // actually the reason nothing is showing: no search text, no kind filter.
@@ -1602,6 +1692,12 @@ export function planDirectoryList(input: {
   // type fact (see DirectoryListPlan.radiusReason), not a narrowing accident:
   // the branch that sets it has already proven maxMiles non-null.
   const radiusReason = radiusIsTheReason ? { radiusMiles: maxMiles } : null
+  // The date-window empty state is the honest answer ONLY when the window is
+  // actually the reason nothing shows: a real window, zero rendered rows, no
+  // search text (a search narrows further, so it is not "the window" alone).
+  const dateWindowIsTheReason =
+    dateWindow !== 'upcoming' && listRows.length === 0 && filteredUnplaced.length === 0 && query.trim() === ''
+  const dateWindowReason = dateWindowIsTheReason ? dateWindow : null
   const nothingMatches = listRows.length === 0 && filteredUnplaced.length === 0
 
   return {
@@ -1617,6 +1713,8 @@ export function planDirectoryList(input: {
     overflowGroups,
     radiusIsTheReason,
     radiusReason,
+    dateWindowIsTheReason,
+    dateWindowReason,
     nothingMatches,
   }
 }

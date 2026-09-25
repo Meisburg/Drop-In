@@ -17,6 +17,9 @@ import {
 import type { ZipCoords } from '../lib/feed'
 import { geocodeAddress } from '../lib/geocode'
 import {
+  DATE_WINDOWS,
+  DATE_WINDOW_LABELS,
+  dateWindowEmptyCopy,
   distanceMiles,
   MAP_FOCUS_RADIUS_MILES,
   planDirectoryList,
@@ -29,7 +32,7 @@ import {
   placeUpcomingLabel,
   resolveMapCoords,
 } from '../lib/places'
-import type { PlaceListRow, SortMode } from '../lib/places'
+import type { DateWindow, PlaceListRow, SortMode } from '../lib/places'
 import { reviewRatingLine } from '../lib/reviews'
 import type { ReviewSummary } from '../lib/reviews'
 import type { Place, PlacePrefill } from '../lib/types'
@@ -149,6 +152,10 @@ export function PlaceDirectory({
   // Miles from the home pin; null = no radius constraint from the modal.
   const [radiusFilter, setRadiusFilter] = useState<number | null>(null)
 
+  // The date chips (annotation 15): a single-choice window filter. 'upcoming'
+  // is the unfiltered default — selecting it clears the date narrowing.
+  const [dateWindow, setDateWindow] = useState<DateWindow>('upcoming')
+
   // The address + radius modal ("Set location"). The geocoded center + radius
   // drive both the map overlay and the filtered list. V23 slice 1: the modal is
   // now the SHARED LocationModal (also opened from the feed's one location
@@ -204,6 +211,7 @@ export function PlaceDirectory({
     leadGroups,
     overflowGroups,
     radiusReason,
+    dateWindowReason,
     nothingMatches,
   } = planDirectoryList({
     places,
@@ -213,6 +221,7 @@ export function PlaceDirectory({
     viewerRadius,
     selectedKinds,
     radiusFilter,
+    dateWindow,
     sortMode,
     homeZip,
     homePin,
@@ -239,7 +248,8 @@ export function PlaceDirectory({
 
   // The KIND filter must reach the "Not on the map yet" section too. Distance-
   // shaped filters are deliberately NOT applied there (a place may not be
-  // hidden for missing data), but the kind is stated data.
+  // hidden for missing data), but the kind is stated data. The date window is
+  // applied to the rendered list by planDirectoryList, which owns this rule.
   const filteredUnplaced =
     selectedKinds.size > 0 ? unplaced.filter((row) => selectedKinds.has(row.place.kind)) : unplaced
 
@@ -412,6 +422,39 @@ export function PlaceDirectory({
           </button>
         </div>
 
+        {/* The date chips (annotation 15): Upcoming / Today / Tomorrow / Weekend.
+            Single-choice, rendered as a radiogroup so the selection is conveyed
+            by MORE THAN colour (the role + aria-checked, not just the fill).
+            Each chip keeps the house chip pattern — the same rounded-full border
+            + indigo fill when selected — with min-h/min-w-11 (44px) tap targets
+            and focus-visible rings. */}
+        <div role="radiogroup" aria-label="Upcoming drop-in window" className="flex flex-wrap items-center gap-2">
+          {DATE_WINDOWS.map((window) => {
+            const selected = dateWindow === window
+            return (
+              <button
+                key={window}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                data-testid={`date-chip-${window}`}
+                onClick={() => {
+                  setDateWindow(window)
+                  resetShowAll()
+                }}
+                className={
+                  'min-h-11 min-w-11 rounded-full border px-3 py-1.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+                  (selected
+                    ? 'border-indigo-600 bg-indigo-600 text-white'
+                    : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')
+                }
+              >
+                {DATE_WINDOW_LABELS[window]}
+              </button>
+            )
+          })}
+        </div>
+
         <div className="flex flex-wrap items-center gap-2">
           <label className="flex min-h-11 items-center gap-2 text-sm">
             <span className="text-slate-500">Distance</span>
@@ -443,6 +486,27 @@ export function PlaceDirectory({
         </div>
       ) : radiusReason !== null ? (
         <div className="md:col-start-2"><RadiusEmptyState radiusMiles={radiusReason.radiusMiles} /></div>
+      ) : dateWindowReason !== null ? (
+        // The honest window empty state (annotation 15): names the window that
+        // matched nothing and offers the way back to "Upcoming" — the house
+        // empty-state pattern (RadiusEmptyState's copy + escapes shape).
+        <div
+          data-testid="empty-date-window-state"
+          className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm md:col-start-2"
+        >
+          <p className="text-sm text-slate-600">{dateWindowEmptyCopy(dateWindowReason)}</p>
+          <button
+            type="button"
+            data-testid="date-window-escape-upcoming"
+            onClick={() => {
+              setDateWindow('upcoming')
+              resetShowAll()
+            }}
+            className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500 outline-none"
+          >
+            Show Upcoming
+          </button>
+        </div>
       ) : nothingMatches ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm md:col-start-2">
           No places match that.
