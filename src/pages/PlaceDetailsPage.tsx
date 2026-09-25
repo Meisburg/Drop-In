@@ -358,7 +358,7 @@ export function PlaceDetailsPage() {
       </button>
 
       {/* ---- Follow: how many families, and the heart ---- */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-2">
         <p data-testid="details-follower-line" className="text-sm text-slate-700">
           {followerCount === null ? 'Follow this place' : placeFollowerLine(followerCount)}
         </p>

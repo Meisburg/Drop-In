@@ -361,7 +361,7 @@ export function PlacePage() {
           place, honest about whether it is the operator's own site or a map
           search. */}
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-2">
         <p className="text-sm text-slate-700">
           {maps !== null ? (
             <a
@@ -435,7 +435,7 @@ export function PlacePage() {
           and the Follow / Unfollow control. Signed out: the same sign-in
           prompt the drop-ins section uses, and NO count (see the page doc for
           why the public route shows none). */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-2">
         {session === null ? (
           <>
             <p className="text-sm text-slate-600">Following a place is for signed-in parents.</p>
@@ -458,7 +458,7 @@ export function PlacePage() {
               disabled={followBusy}
               onClick={() => void handleToggleFollowPlace()}
               className={
-                'rounded-xl border px-3 py-2 text-sm font-medium disabled:opacity-50 ' +
+                'inline-flex min-h-11 items-center rounded-xl border px-3 text-base font-medium disabled:opacity-50 ' +
                 (following
                   ? 'border-indigo-600 bg-indigo-600 text-white'
                   : 'border-indigo-300 bg-white text-indigo-700')
@@ -519,14 +519,14 @@ export function PlacePage() {
           Upcoming drop-ins here
         </h2>
         {session === null ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-2">
             <p className="text-sm text-slate-600">Drop-ins are for signed-in parents.</p>
             <Link to="/login" className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-indigo-600">
               Sign in to see them
             </Link>
           </div>
         ) : postsError !== null ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-2">
             <p className="text-sm text-red-600">{postsError}</p>
           </div>
         ) : posts === null ? (
@@ -534,7 +534,7 @@ export function PlacePage() {
             Loading…
           </div>
         ) : posts.length === 0 ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-2">
             <p className="text-sm text-slate-600">
               Nothing planned here yet — start the first one.
             </p>
