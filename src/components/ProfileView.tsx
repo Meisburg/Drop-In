@@ -683,9 +683,7 @@ export function ProfileView({
         ) : posts === null ? (
           <p className="text-sm text-slate-600">Loading…</p>
         ) : posts.length === 0 ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-            <p className="text-sm text-slate-600">No posts yet.</p>
-          </div>
+          <p className="text-sm text-slate-500">No posts yet.</p>
         ) : (
           <>
             {upcoming.length === 0 ? (
