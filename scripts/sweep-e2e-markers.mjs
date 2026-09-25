@@ -3,11 +3,16 @@
  * creates in the LIVE Supabase project (the specs clean up their own rows, but
  * the auth users + profiles persist by design).
  *
- * Path (proved by the 2026-09-09 and 2026-09-11 sweeps): the Supabase
- * dashboard session token lives in the CDP Chrome profile's Local Storage
- * under 'supabase.dashboard.auth.token', and the dashboard SQL API accepts
- * queries at POST /v1/projects/<ref>/database/query. Start Chrome with
- * `bash scripts/cdp-migration-tooling.sh` first.
+ * Credentials, browserless first. The SQL API is
+ * POST /v1/projects/<ref>/database/query, and it accepts either:
+ *   1. `SUPABASE_ACCESS_TOKEN` (a personal access token in `.env`) — the same
+ *      credential `scripts/db-sql.sh` uses, and the path to prefer: no browser,
+ *      works headless, repeatable from a terminal or CI; or
+ *   2. a Supabase *dashboard* session token harvested from the CDP Chrome
+ *      profile's Local Storage under 'supabase.dashboard.auth.token' (the
+ *      2026-09-09/11 sweeps' original path, now the fallback). That path needs
+ *      `bash scripts/cdp-migration-tooling.sh` first, and reading the token
+ *      navigates that Chrome's window — see docs/agents/browser-lanes.md §7.
  *
  *   node scripts/sweep-e2e-markers.mjs list     # who would be deleted
  *   node scripts/sweep-e2e-markers.mjs select   # counts + the safety gate
@@ -43,6 +48,7 @@
  * Deliberately NOT deletable by this script: it removes rows scoped to
  * `e2e-%` accounts. It never widens to "looks like test data".
  */
+import { readFileSync } from 'node:fs'
 import { chromium } from '@playwright/test'
 import {
   countsQuery,
@@ -56,30 +62,68 @@ import {
 const REF = 'ayzvjwxbxyrcgyoeaxuk'
 const mode = process.argv[2] ?? 'select'
 
-const browser = await chromium.connectOverCDP('http://127.0.0.1:9222')
-const context = browser.contexts()[0]
-const page =
-  context.pages().find((p) => p.url().startsWith('https://supabase.com')) ??
-  (await context.newPage())
-if (page.url() === 'about:blank') {
-  await page.goto('https://supabase.com/dashboard', { waitUntil: 'domcontentloaded' })
+/**
+ * `SUPABASE_ACCESS_TOKEN` from the repo `.env`, without pulling in a dotenv
+ * dependency (`.env` is a flat KEY=value file, gitignored, and already the
+ * source `scripts/db-sql.sh` reads).
+ */
+function tokenFromEnvFile() {
+  try {
+    const text = readFileSync(new URL('../.env', import.meta.url), 'utf8')
+    const line = text.split('\n').find((l) => l.trim().startsWith('SUPABASE_ACCESS_TOKEN='))
+    if (!line) return null
+    return line.slice(line.indexOf('=') + 1).trim().replace(/^['"]|['"]$/g, '') || null
+  } catch {
+    return null
+  }
 }
-// The dashboard token has a 1-hour TTL and the page refreshes it on load, so a
-// token left over from an earlier run reads back as "JWT failed verification".
-// Reloading first makes the script work whenever Chrome is simply still open.
-await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {})
-await page.waitForTimeout(2500)
-const raw = await page.evaluate(() => window.localStorage.getItem('supabase.dashboard.auth.token'))
-await browser.close()
 
-if (!raw) {
-  console.error(
-    'No dashboard token in the CDP Chrome profile — the session is gone.\n' +
-      'Run: bash scripts/cdp-migration-tooling.sh  (launches the CDP Chrome), then retry.',
+/**
+ * The fallback: harvest the 1-hour dashboard session token from the CDP Chrome
+ * on :9222. The page is reloaded first because the dashboard refreshes the token
+ * on load, so a token left over from an earlier run reads back as "JWT failed
+ * verification"; reloading makes the script work whenever Chrome is simply open.
+ */
+async function tokenFromCdp() {
+  let browser
+  try {
+    browser = await chromium.connectOverCDP('http://127.0.0.1:9222')
+  } catch {
+    console.error(
+      'No SUPABASE_ACCESS_TOKEN in the environment or .env, and no CDP Chrome on :9222.\n' +
+        'Fix either way:\n' +
+        "  echo 'SUPABASE_ACCESS_TOKEN=sbp_...' >> .env   # no browser at all (preferred)\n" +
+        '  bash scripts/cdp-migration-tooling.sh          # or launch the CDP Chrome, then retry',
+    )
+    process.exit(2)
+  }
+  const context = browser.contexts()[0]
+  const page =
+    context.pages().find((p) => p.url().startsWith('https://supabase.com')) ??
+    (await context.newPage())
+  if (page.url() === 'about:blank') {
+    await page.goto('https://supabase.com/dashboard', { waitUntil: 'domcontentloaded' })
+  }
+  await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {})
+  await page.waitForTimeout(2500)
+  const raw = await page.evaluate(() =>
+    window.localStorage.getItem('supabase.dashboard.auth.token'),
   )
-  process.exit(2)
+  await browser.close()
+
+  if (!raw) {
+    console.error(
+      'No dashboard token in the CDP Chrome profile — the dashboard session is gone.\n' +
+        'Sign in at supabase.com/dashboard in that Chrome (or set SUPABASE_ACCESS_TOKEN in .env), then retry.',
+    )
+    process.exit(2)
+  }
+  return JSON.parse(raw).access_token
 }
-const token = JSON.parse(raw).access_token
+
+const envToken = process.env.SUPABASE_ACCESS_TOKEN?.trim() || tokenFromEnvFile()
+const token = envToken || (await tokenFromCdp())
+if (envToken) console.log('Token: SUPABASE_ACCESS_TOKEN from the environment/.env (no browser).')
 
 async function sql(query) {
   const res = await fetch(`https://api.supabase.com/v1/projects/${REF}/database/query`, {

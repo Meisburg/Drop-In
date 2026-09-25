@@ -66,11 +66,16 @@ in the same database real parents read. The first-use audit of 2026-09-25 found
 exactly that leaking into the discovery feed.
 
 ```bash
-bash scripts/cdp-migration-tooling.sh          # launches the CDP Chrome the sweep reads its token from
 node scripts/sweep-e2e-markers.mjs select      # read the counts AND the safety gate
 node scripts/sweep-e2e-markers.mjs delete      # refuses if a founder account is inside the marker set
 node scripts/sweep-e2e-markers.mjs verify      # exits non-zero if ANY marker row remains
 ```
+
+The sweep reads `SUPABASE_ACCESS_TOKEN` from `.env` (the same credential
+`scripts/db-sql.sh` uses) and needs **no browser**. If that token is missing it
+falls back to the dashboard session token in the CDP Chrome profile, which needs
+`bash scripts/cdp-migration-tooling.sh` first and navigates that Chrome's window
+— prefer the token.
 
 `delete` is not fire-and-forget. It prints the exact rows it removed per table,
 then **re-reads the database** and fails with exit code 4 if a marker row
