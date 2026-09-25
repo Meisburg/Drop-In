@@ -1409,8 +1409,18 @@ export interface DirectoryListPlan {
   overflowGroups: PlaceKindGroup[]
   /** The shared radius empty state is the honest answer ONLY when the radius is actually the reason nothing shows. */
   radiusIsTheReason: boolean
-  /** The radius the shared empty state renders (the ceiling browsePlaces used; null = 'any' — never shown, since radiusIsTheReason is false then). */
-  maxMiles: number | null
+  /**
+   * The radius the shared empty state renders, carried in a TYPE that makes the
+   * invariant structural rather than a narrowing accident: non-null EXACTLY
+   * when `radiusIsTheReason` is true, and then its `radiusMiles` is a plain
+   * `number`. A caller can therefore pass `radiusReason.radiusMiles` straight
+   * to RadiusEmptyState after a null check — no control-flow narrowing of a
+   * nullable property survives across this object boundary, so the number must
+   * live inside the discriminated field where the type itself guarantees it.
+   * Null whenever any of the four conditions fails (including `distanceChoice
+   * === 'any'`, where maxMiles is null and there is no radius to blame).
+   */
+  radiusReason: { radiusMiles: number } | null
   /** Nothing at all in the list OR the unplaced section (the generic empty state). */
   nothingMatches: boolean
 }
@@ -1531,6 +1541,10 @@ export function planDirectoryList(input: {
   // actually the reason nothing is showing: no search text, no kind filter.
   const radiusIsTheReason =
     maxMiles !== null && placed.length === 0 && query.trim() === '' && indoorFilter === null
+  // The radius travels inside the discriminated field so its NUMBER-ness is a
+  // type fact (see DirectoryListPlan.radiusReason), not a narrowing accident:
+  // the branch that sets it has already proven maxMiles non-null.
+  const radiusReason = radiusIsTheReason ? { radiusMiles: maxMiles } : null
   const nothingMatches = listRows.length === 0 && filteredUnplaced.length === 0
 
   return {
@@ -1545,7 +1559,7 @@ export function planDirectoryList(input: {
     leadGroups,
     overflowGroups,
     radiusIsTheReason,
-    maxMiles,
+    radiusReason,
     nothingMatches,
   }
 }

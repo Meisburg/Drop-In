@@ -1746,7 +1746,18 @@ describe('planDirectoryList (the directory list composition, moved out of PlaceD
   const HOME_PIN = { lat: 47.66757, lng: -122.37789 } // 98107, the viewer's home pin
   const GEO_CENTER = { lat: 47.68, lng: -122.32 } // a geocoded "Set location" center
   const PARK_A = place({ name: 'Alki Beach Park', kind: 'park' })
-  const PLAY_B = place({ name: 'Bellevue Playground', kind: 'playground', address: '1 X St, Bellevue, WA 98007' })
+  // ~9.4 mi from the viewer (the seeded 98007 gazetteer entry) — inside a 20-mile
+  // radius, outside a 5-mile one. The fixture's geography is what makes the
+  // radius assertions below mean something about the actual city. Its OWN lat/lng
+  // are deliberately null: resolveMapCoords falls back to the zip embedded in the
+  // address (the 0012 fallback), which is exactly the seam these tests exercise.
+  const PLAY_B = place({
+    name: 'Bellevue Playground',
+    kind: 'playground',
+    address: '1 X St, Bellevue, WA 98007',
+    lat: null,
+    lng: null,
+  })
   const DIR = [PARK_A, PLAY_B]
 
   function plan(overrides: Partial<Parameters<typeof planDirectoryList>[0]> = {}) {
@@ -1769,13 +1780,18 @@ describe('planDirectoryList (the directory list composition, moved out of PlaceD
     })
   }
 
-  it('plain case: no center, no filters — the full browse list in name order, all placed', () => {
+  it('plain case: no center, no filters — the full browse list in name order', () => {
     const p = plan()
     expect(p.listRows.map((r) => r.place.name)).toEqual(['Alki Beach Park', 'Bellevue Playground'])
-    expect(p.rows).toBe(p.listRows) // the unfiltered path IS the browse rows
-    expect(p.effectiveRows).toBe(p.rows) // no center → effectiveRows is the same rows
-    expect(p.placed.length).toBe(2)
-    expect(p.unplaced.length).toBe(0)
+    expect(p.rows).toStrictEqual(p.listRows) // the unfiltered path IS the browse rows
+    expect(p.effectiveRows).toStrictEqual(p.rows) // no center → effectiveRows is the same rows
+    // A place with no coordinates of its own is UNPLACED — its address does not
+    // place it (distanceMiles uses only the place's own lat/lng, never the zip
+    // gazetteer fallback that resolveMapCoords provides for map markers).
+    expect(p.placed.length).toBe(1)
+    expect(p.placed[0].place.name).toBe('Alki Beach Park')
+    expect(p.unplaced.length).toBe(1)
+    expect(p.unplaced[0].place.name).toBe('Bellevue Playground')
     expect(p.radiusIsTheReason).toBe(false)
     expect(p.nothingMatches).toBe(false)
   })
@@ -1784,12 +1800,15 @@ describe('planDirectoryList (the directory list composition, moved out of PlaceD
     const p = plan({ selectedKinds: new Set(['park']) })
     expect(p.listRows.map((r) => r.place.name)).toEqual(['Alki Beach Park'])
     // The map still shows the FULL placed set — the kind filter never hides a marker.
-    expect(p.placed.length).toBe(2)
+    // Placement depends on the place's own coordinates, not on kind, so `placed`
+    // here is the same single row as in the plain case.
+    expect(p.placed.length).toBe(1)
+    expect(p.placed[0].place.name).toBe('Alki Beach Park')
     expect(p.nothingMatches).toBe(false)
   })
 
   it('a radius filter keeps only places within the miles of the home pin', () => {
-    const wide = plan({ radiusFilter: 50 })
+    const wide = plan({ radiusFilter: 20 })
     expect(wide.listRows.length).toBe(2)
     const tight = plan({ radiusFilter: 5 })
     expect(tight.listRows.map((r) => r.place.name)).toEqual(['Alki Beach Park'])
@@ -1798,8 +1817,10 @@ describe('planDirectoryList (the directory list composition, moved out of PlaceD
   })
 
   it('a geocoded center switches the list to effectiveRows, re-measured from the pin', () => {
+    // GEO_CENTER sits on Green Lake (~2.5 mi from home): inside a 5-mile radius,
+    // far outside the ~9.4-mile Bellevue place.
     const p = plan({ geocodeCenter: GEO_CENTER, radiusMiles: 5 })
-    expect(p.listRows).toBe(p.effectiveRows)
+    expect(p.listRows).toStrictEqual(p.effectiveRows)
     expect(p.listRows.map((r) => r.place.name)).toEqual(['Alki Beach Park'])
     // Distances are measured FROM the geocoded center (not nulled), so the row
     // leaves the unplaced bucket and every card shows a true distance from the pin.
@@ -1809,6 +1830,8 @@ describe('planDirectoryList (the directory list composition, moved out of PlaceD
 
   it('radiusIsTheReason is true ONLY when the radius is actually why nothing shows', () => {
     // True: a non-null maxMiles ('profile'), zero placed rows, no search text, no indoor filter.
+    // PLAY_B alone: its zip resolves, but ~9.4 mi > the 5-mile profile radius,
+    // so browsePlaces drops it and `placed` is empty — the radius is the reason.
     expect(
       plan({ distanceChoice: 'profile', viewerRadius: 5, places: [PLAY_B] }).radiusIsTheReason,
     ).toBe(true)
@@ -1822,6 +1845,38 @@ describe('planDirectoryList (the directory list composition, moved out of PlaceD
     ).toBe(false)
     // False: maxMiles is null ('any' has no ceiling, so there is no radius reason).
     expect(plan({ places: [] }).radiusIsTheReason).toBe(false)
+  })
+
+  it('radiusReason carries the numeric radius exactly when radiusIsTheReason holds — and stays in sync with it', () => {
+    // All four conditions hold → the field is non-null and carries the number.
+    const hit = plan({ distanceChoice: 'profile', viewerRadius: 7, places: [PLAY_B] })
+    expect(hit.radiusReason).toEqual({ radiusMiles: 7 })
+    expect(hit.radiusIsTheReason).toBe(true)
+
+    // Each failing condition keeps the field null (and the flag false):
+    // a search text…
+    expect(
+      plan({ distanceChoice: 'profile', viewerRadius: 7, places: [PLAY_B], query: 'x' }).radiusReason,
+    ).toBeNull()
+    // …an indoor filter…
+    expect(
+      plan({ distanceChoice: 'profile', viewerRadius: 7, places: [PLAY_B], indoorFilter: true }).radiusReason,
+    ).toBeNull()
+    // …a non-empty placed set…
+    expect(plan({ distanceChoice: 'profile', viewerRadius: 20 }).radiusReason).toBeNull()
+    // …and 'any', where maxMiles is null by construction — there is no radius to blame.
+    expect(plan({ places: [] }).radiusReason).toBeNull()
+    expect(plan({ places: [] }).radiusIsTheReason).toBe(false)
+
+    // The two fields never disagree: the flag is exactly the null-check on the field.
+    for (const p of [
+      plan(),
+      plan({ distanceChoice: 'profile', viewerRadius: 7, places: [PLAY_B] }),
+      plan({ distanceChoice: 'profile', viewerRadius: 7, places: [PLAY_B], query: 'x' }),
+      plan({ places: [] }),
+    ]) {
+      expect(p.radiusIsTheReason).toBe(p.radiusReason !== null)
+    }
   })
 
   it('nothingMatches is true only when BOTH the list and the unplaced section are empty', () => {

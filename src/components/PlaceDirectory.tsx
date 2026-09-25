@@ -193,8 +193,7 @@ export function PlaceDirectory({
     overflowRows,
     leadGroups,
     overflowGroups,
-    radiusIsTheReason,
-    maxMiles,
+    radiusReason,
     nothingMatches,
   } = planDirectoryList({
     places,
@@ -431,8 +430,8 @@ export function PlaceDirectory({
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm md:col-start-2">
           Loading…
         </div>
-      ) : radiusIsTheReason ? (
-        <div className="md:col-start-2"><RadiusEmptyState radiusMiles={maxMiles} /></div>
+      ) : radiusReason !== null ? (
+        <div className="md:col-start-2"><RadiusEmptyState radiusMiles={radiusReason.radiusMiles} /></div>
       ) : nothingMatches ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm md:col-start-2">
           No places match that.
