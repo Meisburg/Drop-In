@@ -1059,8 +1059,8 @@ export function ProfilePage() {
           Test ids (display-name-input, avatar-photo-trigger, avatar-photo,
           avatar-remove, avatar-photo-input) are unchanged, so the specs that
           drive them keep working. */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900">Your photo &amp; name</h2>
+      <div className="flex flex-col gap-3">
+        <h2 className="font-display text-lg font-semibold text-slate-900">Your photo &amp; name</h2>
         <p className="mt-1 text-sm text-slate-600">
           Optional photo. It shows on your drop-in cards and your public page.
         </p>
@@ -1105,13 +1105,13 @@ export function ProfilePage() {
                 aria-label="Remove photo"
                 onClick={() => void handleRemoveAvatar()}
                 disabled={avatarRemoving}
-                className="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white text-sm font-medium text-slate-600 shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-100 disabled:opacity-50 sm:opacity-0 sm:focus-within:opacity-100 sm:group-hover:opacity-100"
+                className="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white text-sm font-medium text-slate-600 after:absolute after:-inset-2 after:content-[''] shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-100 disabled:opacity-50 sm:opacity-0 sm:focus-within:opacity-100 sm:group-hover:opacity-100"
               >
                 ×
               </button>
             </div>
           ) : (
-            <label className="flex shrink-0 cursor-pointer items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50">
+            <label className="flex shrink-0 cursor-pointer min-h-11 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50">
               <input
                 data-testid="avatar-photo-input"
                 type="file"
@@ -1135,7 +1135,7 @@ export function ProfilePage() {
                 data-testid="display-name-input"
                 aria-label="Display name"
                 className={
-                  'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+                  'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
                   (writeErrors.name !== undefined ? 'border-red-400' : 'border-slate-300')
                 }
                 value={draft?.name ?? ''}
@@ -1178,8 +1178,8 @@ export function ProfilePage() {
           It used to sit LAST, after the parents group, which was the drift this
           ticket kills. The card's contents are unchanged; only its position
           moved. */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900">About the kids</h2>
+      <div className="flex flex-col gap-3">
+        <h2 className="font-display text-lg font-semibold text-slate-900">About the kids</h2>
         <p className="mt-1 text-sm text-slate-600">
           First name, age, and a “likes” line (up to {MAX_KIDS_PER_PROFILE}). A row saves itself
           as you edit it — no button to press anywhere on this page.
@@ -1330,7 +1330,7 @@ export function ProfilePage() {
             <div className="mt-3 flex items-center gap-2">
               <input
                 className={
-                  'min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+                  'min-w-0 flex-1 rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
                   (kidsError !== null ? 'border-red-400' : 'border-slate-300')
                 }
                 value={newKidName}
@@ -1347,7 +1347,7 @@ export function ProfilePage() {
                 min={0}
                 max={17}
                 className={
-                  'w-20 shrink-0 rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+                  'w-20 shrink-0 rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
                   (kidsError !== null ? 'border-red-400' : 'border-slate-300')
                 }
                 value={newKidAge}
@@ -1382,14 +1382,14 @@ export function ProfilePage() {
           (the public handle) is NOT here: it renders as its OWN text node at
           the BOTTOM of the page (the identity block), so a spec can match it
           exactly while the app-shell header shows the @-prefixed form. */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900">About the parents</h2>
+      <div className="flex flex-col gap-3">
+        <h2 className="font-display text-lg font-semibold text-slate-900">About the parents</h2>
         <label className="mt-2 flex flex-col gap-1 text-sm">
           <span className="text-slate-700">Tell other families about yourselves</span>
           <textarea
             data-testid="about-family-input"
             className={
-              'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+              'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
               (liveBioError !== null ? 'border-red-400' : 'border-slate-300')
             }
             value={draft?.bio ?? ''}
@@ -1415,8 +1415,8 @@ export function ProfilePage() {
           card, before the kids. The card is unchanged: always present (add OR
           change), the signed URL arrives from the hook above, and without one
           there is simply no image yet, but the control is always there. */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900">A photo of your family</h2>
+      <div className="flex flex-col gap-3">
+        <h2 className="font-display text-lg font-semibold text-slate-900">A photo of your family</h2>
         <p className="mt-1 text-sm text-slate-600">
           Optional. One photo of your family — it shows here, to signed-in families.
         </p>
@@ -1430,7 +1430,7 @@ export function ProfilePage() {
             className="mt-3 max-h-72 w-full rounded-xl object-cover"
           />
         ) : null}
-        <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50">
+        <label className="mt-3 flex cursor-pointer min-h-11 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50">
           <input
             data-testid="family-photo-input"
             type="file"
@@ -1456,8 +1456,8 @@ export function ProfilePage() {
           with a name, a photo and a few words about themselves.
           V21 t08: these now sit AFTER the kids card (the page reads
           user → kids → parents), matching the read view's pinned order. */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900">The parents</h2>
+      <div className="flex flex-col gap-3">
+        <h2 className="font-display text-lg font-semibold text-slate-900">The parents</h2>
         <p className="mt-1 text-sm text-slate-600">{PARENT_CARDS_BLURB}</p>
 
         {parentCards === null ? (
@@ -1502,8 +1502,8 @@ export function ProfilePage() {
           Decline, because only the addressee can answer (the database refuses
           anyone else, so offering the buttons to the wrong parent would be a
           control that always fails). */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900">Linked parent</h2>
+      <div className="flex flex-col gap-3">
+        <h2 className="font-display text-lg font-semibold text-slate-900">Linked parent</h2>
         <p className="mt-1 text-sm text-slate-600">
           If your partner has their own account, link them so you both show on this profile.
         </p>
@@ -1716,7 +1716,7 @@ export function ProfilePage() {
           state of a pass that wrote at least one section + kid row; a failed
           pass names itself here, and the section/row that failed carries its
           own inline error beside its field. */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-3">
         <p
           data-testid="profile-save-note"
           className={
@@ -1947,7 +1947,7 @@ function KidPhotoControl({
             aria-label="Remove photo"
             onClick={onRemove}
             disabled={busy}
-            className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-xs font-medium text-slate-600 shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-100 disabled:opacity-50 sm:opacity-0 sm:focus-within:opacity-100 sm:group-hover:opacity-100"
+            className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-xs font-medium text-slate-600 after:absolute after:-inset-3 after:content-[''] shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-100 disabled:opacity-50 sm:opacity-0 sm:focus-within:opacity-100 sm:group-hover:opacity-100"
           >
             ×
           </button>
