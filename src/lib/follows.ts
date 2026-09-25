@@ -260,6 +260,31 @@ export function nextOccurrencePlan(
   return { kind: 'none', reason: series.active ? 'no-more' : 'stopped' }
 }
 
+// ---------------------------------------------------------------------------
+// The save toggle: the pure decision (the caller executes it)
+// ---------------------------------------------------------------------------
+
+/** What a place-save toggle should do, decided purely (the caller executes it). */
+export type SaveToggleDecision = 'save' | 'unsave'
+
+/**
+ * The pure decision for toggling a viewer's SAVE of a place (the shortlist
+ * bookmark — never a subscription, so no notification preference exists to
+ * decide over): already saved → remove the row ('unsave'), not saved → add
+ * the row ('save').
+ *
+ * Signature kept minimal on purpose: unlike `planPing` there is no host/no-op
+ * guard here — a place has no owner whose own toggle must be refused, and a
+ * malformed target is the validator's job (`validateFollowTarget`), never the
+ * decision's. So the only input that can change the decision is whether the
+ * viewer currently saves the place; the function is total over every boolean
+ * (no throw, no undefined). The caller reads its own follow rows
+ * (`followTargetsFrom`) and executes the decision through db.toggleFollowPlace.
+ */
+export function planSaveToggle(currentlySaved: boolean): SaveToggleDecision {
+  return currentlySaved ? 'unsave' : 'save'
+}
+
 /**
  * "Sat, Sep 19 · 10:00 AM" — one occurrence said back as a day and a time
  * (the confirmation line's and the button's hint). Built from the existing

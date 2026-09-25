@@ -24,6 +24,7 @@ import {
   metBeforeLine,
   nextOccurrencePlan,
   occurrenceWhenLabel,
+  planSaveToggle,
   placeFollowerLine,
   validateFollowTarget,
 } from './follows'
@@ -274,6 +275,29 @@ describe('nextOccurrencePlan (the series chooser)', () => {
     expect(nextOccurrencePlan(active, [{ id: 'week-2', starts_at: '2026-09-26T17:00:00.000Z' }], 'nope')).toEqual(
       { kind: 'none', reason: 'no-more' },
     )
+  })
+})
+
+describe('planSaveToggle (the place-save toggle decision)', () => {
+  it('decides save when not saved, unsave when already saved', () => {
+    const cases: Array<[boolean, 'save' | 'unsave']> = [
+      [false, 'save'],
+      [true, 'unsave'],
+    ]
+    for (const [currentlySaved, expected] of cases) {
+      expect(planSaveToggle(currentlySaved)).toBe(expected)
+    }
+  })
+
+  it('never throws for any boolean input (total over both values)', () => {
+    expect(() => planSaveToggle(false)).not.toThrow()
+    expect(() => planSaveToggle(true)).not.toThrow()
+  })
+
+  it('returns exactly a member of the declared union', () => {
+    const results: ReadonlyArray<'save' | 'unsave'> = [planSaveToggle(false), planSaveToggle(true)]
+    expect(results).toEqual(['save', 'unsave'])
+    expect(results.every((result) => result === 'save' || result === 'unsave')).toBe(true)
   })
 })
 
