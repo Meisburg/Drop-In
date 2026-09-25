@@ -15,6 +15,10 @@ export const NAV_ICONS = {
   inbox: 'M4 6h16v12H4Z M4 6l8 6 8-6',
   // V11 ticket 06: the header gear (top nav, signed-in only) — the door to /settings.
   gear: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H22a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z',
+  // V24 slice 02: the shared back-control glyph — a left chevron in the same
+  // stroked family (24px viewBox, stroke 1.8, currentColor). It replaces the
+  // ad-hoc "←" text arrows on the page-level back controls.
+  'chevron-left': 'M15 6l-6 6 6 6',
 } as const
 
 /**
@@ -34,7 +38,9 @@ export const NAV_ICONS_FILLED = {
   nearby: 'M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11Z M12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z',
   // A solid envelope with a white flap line cut through it.
   inbox: 'M4 6h16v12H4Z M4 6l8 6 8-6',
-  // A solid plus — the post action's shape (it lives on the feed now, not the nav).
+  // A solid plus — the post action's shape. V24 slice 05: it lives in the nav's
+  // CENTRE again (PostActionButton, a raised circular "+") after the founder
+  // overrode V22 slice 12 on 2026-09-25; the HIG deviation is deliberate.
   post: 'M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6Z',
   // A solid head + shoulders silhouette.
   profile: 'M12 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z M5 20a7 7 0 0 1 14 0Z',

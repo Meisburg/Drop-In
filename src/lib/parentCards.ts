@@ -57,3 +57,30 @@ export function nextParentPosition(cards: ReadonlyArray<ParentCard> | null): num
   }
   return null
 }
+
+/**
+ * V24 slice 02: the PARENT CARD'S SAVE-BUTTON LABEL — one save-state pattern
+ * app-wide, unified on the `'idle' | 'saving' | 'saved' | 'error'` machine the
+ * profile autosave already runs (`lib/autosave.ts` `AutosaveStatus`). The
+ * button's own label walks Save → Saving… → Saved and back to Save after a short
+ * dwell; an error surfaces its message beside the button rather than in it.
+ *
+ * Pure decision, unit-tested here (the build law: lib/ decides, components
+ * render). The caller owns the dwell timer that carries `saved` back to
+ * `idle`; this seam only names what the button says at each state.
+ */
+export function parentCardSaveLabel(
+  status: 'idle' | 'saving' | 'saved' | 'error',
+  isNew: boolean,
+  errorMessage?: string | null,
+): string {
+  if (status === 'saving') return 'Saving…'
+  if (status === 'saved') return 'Saved'
+  if (status === 'error') {
+    return errorMessage !== undefined && errorMessage !== null && errorMessage !== ''
+      ? `Error: ${errorMessage}`
+      : 'Try again'
+  }
+  // idle: the verb depends on whether this editor is adding or updating.
+  return isNew ? 'Add parent' : 'Save'
+}

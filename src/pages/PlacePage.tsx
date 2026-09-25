@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
+import { BackControl } from '../components/BackControl'
 import { DropInCard } from '../components/DropInCard'
 import { PlaceMap } from '../components/PlaceMapLazy'
 import { useSessionContext } from '../components/SessionProvider'
@@ -337,9 +338,9 @@ export function PlacePage() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <Link to="/browse" className="text-sm font-medium text-indigo-600">
-          ← Places
-        </Link>
+        {/* V24 slice 02: the shared back control (the ad-hoc "← Places" link became
+            BackControl); the destination lives in the h1 below. */}
+        <BackControl to="/browse" />
         <h1 className="mt-2 text-xl font-semibold text-slate-900">{place.name}</h1>
         <p className="mt-1 text-sm text-slate-600">
           {placeKindLabel(place.kind)} · {placeIndoorLabel(place)}

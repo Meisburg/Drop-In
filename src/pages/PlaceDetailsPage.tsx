@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
+import { BackControl } from '../components/BackControl'
 import { DropInCard } from '../components/DropInCard'
 import { useSessionContext } from '../components/SessionProvider'
 import {
@@ -316,13 +317,10 @@ export function PlaceDetailsPage() {
     <div className="flex flex-col gap-4">
       {/* ---- Header: the place's own facts, from the shared label seams ---- */}
       <div>
-        <Link
-          to={placePath(place.id)}
-          data-testid="details-back-to-place"
-          className="text-sm font-medium text-indigo-600"
-        >
-          ← {place.name}
-        </Link>
+        {/* V24 slice 02: the shared back control (the ad-hoc "← {place.name}" link
+            became BackControl); the destination lives in the h1 below. The spec id
+            stays on the control itself. */}
+        <BackControl to={placePath(place.id)} testId="details-back-to-place" />
         <h1 className="mt-2 text-xl font-semibold text-slate-900">{place.name}</h1>
         <p className="mt-1 text-sm text-slate-600">
           {placeKindLabel(place.kind)} · {placeIndoorLabel(place)}

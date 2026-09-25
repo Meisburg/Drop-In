@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
+import { BackControl } from '../components/BackControl'
 import { NAV_ICONS, REACTION_GLYPHS } from '../components/icons'
 import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
@@ -903,16 +904,12 @@ export function InboxPage() {
         </>
       ) : (
         <>
-          {/* Thread header: back button + the post's title + the other party. */}
+          {/* Thread header: the shared back control + the post's title + the other party.
+              V24 slice 02: the ad-hoc bordered "←" square became BackControl (one
+              circular control app-wide); the destination ("conversations") lives in
+              the heading below, not inside the control. */}
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={closeThread}
-              aria-label="Back to conversations"
-              className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700"
-            >
-              ←
-            </button>
+            <BackControl onClick={closeThread} testId="inbox-back-to-conversations" />
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-slate-900">{threadHeaderName}</p>
               <p className="truncate text-xs text-slate-500">{threadHeaderTitle}</p>

@@ -6,6 +6,7 @@ import { useSessionContext } from '../components/SessionProvider'
 import { useFamilyPhotoUrl } from '../components/useFamilyPhotoUrl'
 import { useKidPhotoUrls } from '../components/useKidPhotoUrls'
 import { useCropStep } from '../components/useCropStep'
+import { PhotoButton } from '../components/ImageLightbox'
 import { ProfileView } from '../components/ProfileView'
 import {
   addKid,
@@ -42,7 +43,7 @@ import {
   normalizeHandle,
   validateLinkRequest,
 } from '../lib/links'
-import { nextParentPosition, parentCardList, PARENT_CARDS_BLURB } from '../lib/parentCards'
+import { nextParentPosition, parentCardList, parentCardSaveLabel, PARENT_CARDS_BLURB } from '../lib/parentCards'
 import type { AccountLink, Kid, ParentCard, ProfileWithKids } from '../lib/types'
 import {
   planProfileSave,
@@ -254,6 +255,13 @@ export function ProfilePage() {
   const [parentCards, setParentCards] = useState<ParentCard[] | null>(null)
   const [parentCardBusy, setParentCardBusy] = useState(false)
   const [parentCardError, setParentCardError] = useState<string | null>(null)
+  // V24 slice 02: the parent card's save-state machine — unified on the same
+  // 'idle' | 'saving' | 'saved' | 'error' shape the profile autosave runs
+  // (lib/autosave.ts AutosaveStatus). The button's own label walks Save →
+  // Saving… → Saved via the pure seam below; a short dwell carries `saved` back
+  // to `idle` so the next edit starts from "Save" again.
+  const [parentCardStatus, setParentCardStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const parentCardDwellRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (userId === null) return
@@ -542,10 +550,18 @@ export function ProfilePage() {
     if (userId === null) return
     if (name.trim() === '') {
       setParentCardError('A parent needs a name.')
+      setParentCardStatus('error')
       return
+    }
+    // V24 slice 02: walk the save-state machine — clear any previous dwell so a
+    // re-save does not flicker back to "Saved" mid-flight.
+    if (parentCardDwellRef.current !== null) {
+      window.clearTimeout(parentCardDwellRef.current)
+      parentCardDwellRef.current = null
     }
     setParentCardBusy(true)
     setParentCardError(null)
+    setParentCardStatus('saving')
     try {
       await saveParentCard({
         profileId: userId,
@@ -554,8 +570,16 @@ export function ProfilePage() {
         about: about.trim() === '' ? null : about.trim(),
       })
       await reloadParentCards()
+      setParentCardStatus('saved')
+      // The short dwell: "Saved" is visible for a beat, then the button returns
+      // to its idle verb ("Save" / "Add parent") so the next edit starts clean.
+      parentCardDwellRef.current = window.setTimeout(() => {
+        setParentCardStatus('idle')
+        parentCardDwellRef.current = null
+      }, 1500)
     } catch {
       setParentCardError('Could not save that parent. Try again.')
+      setParentCardStatus('error')
     } finally {
       setParentCardBusy(false)
     }
@@ -563,13 +587,24 @@ export function ProfilePage() {
 
   async function handleRemoveParentCard(position: number) {
     if (userId === null) return
+    if (parentCardDwellRef.current !== null) {
+      window.clearTimeout(parentCardDwellRef.current)
+      parentCardDwellRef.current = null
+    }
     setParentCardBusy(true)
     setParentCardError(null)
+    setParentCardStatus('saving')
     try {
       await deleteParentCard(userId, position)
       await reloadParentCards()
+      setParentCardStatus('saved')
+      parentCardDwellRef.current = window.setTimeout(() => {
+        setParentCardStatus('idle')
+        parentCardDwellRef.current = null
+      }, 1500)
     } catch {
       setParentCardError('Could not remove that parent. Try again.')
+      setParentCardStatus('error')
     } finally {
       setParentCardBusy(false)
     }
@@ -1421,14 +1456,25 @@ export function ProfilePage() {
           Optional. One photo of your family — it shows here, to signed-in families.
         </p>
         {familyPhotoUrl !== null ? (
-          <img
-            data-testid="family-photo"
+          // V24 slice 02: lightbox parity — the family photo now enlarges through
+          // the shared PhotoButton (the same component /u/:handle's read view
+          // uses), so tapping it opens full-screen rather than doing nothing.
+          // The upload/crop flow is a SEPARATE control below; this button never
+          // triggers it and never navigates (PhotoButton preventDefaults).
+          <PhotoButton
             src={familyPhotoUrl}
             alt="Your family photo"
-            loading="lazy"
-            decoding="async"
-            className="mt-3 max-h-72 w-full rounded-xl object-cover"
-          />
+            className="block max-w-full overflow-hidden rounded-xl"
+          >
+            <img
+              data-testid="family-photo"
+              src={familyPhotoUrl}
+              alt="Your family photo"
+              loading="lazy"
+              decoding="async"
+              className="max-h-72 w-full rounded-xl object-cover"
+            />
+          </PhotoButton>
         ) : null}
         <label className="mt-3 flex cursor-pointer min-h-11 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50">
           <input
@@ -1469,6 +1515,8 @@ export function ProfilePage() {
                 key={card.id}
                 card={card}
                 busy={parentCardBusy}
+                status={parentCardStatus}
+                error={parentCardError}
                 onSave={handleSaveParentCard}
                 onRemove={handleRemoveParentCard}
               />
@@ -1479,6 +1527,8 @@ export function ProfilePage() {
                 card={null}
                 position={nextParentPosition(parentCards) ?? 1}
                 busy={parentCardBusy}
+                status={parentCardStatus}
+                error={parentCardError}
                 onSave={handleSaveParentCard}
                 onRemove={null}
               />
@@ -1798,12 +1848,18 @@ function ParentCardEditor({
   card,
   position,
   busy,
+  status,
+  error,
   onSave,
   onRemove,
 }: {
   card: ParentCard | null
   position?: number
   busy: boolean
+  /** V24 slice 02: the save-state machine ('idle' | 'saving' | 'saved' | 'error'). */
+  status: 'idle' | 'saving' | 'saved' | 'error'
+  /** The error message to surface beside the button (the label seam renders it). */
+  error: string | null
   onSave: (position: number, name: string, about: string) => void | Promise<void>
   onRemove: ((position: number) => void | Promise<void>) | null
 }) {
@@ -1859,7 +1915,7 @@ function ParentCardEditor({
           onClick={() => void onSave(slot, name, about)}
           className="min-h-11 rounded-full bg-indigo-600 px-4 text-sm font-medium text-white disabled:opacity-60"
         >
-          {card === null ? 'Add parent' : 'Save'}
+          {parentCardSaveLabel(status, card === null, error)}
         </button>
         {onRemove !== null && card !== null ? (
           <button

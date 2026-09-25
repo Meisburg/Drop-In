@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_PARENT_CARDS, nextParentPosition, parentCardList } from './parentCards'
+import { MAX_PARENT_CARDS, nextParentPosition, parentCardList, parentCardSaveLabel } from './parentCards'
 import type { ParentCard } from './types'
 
 /**
@@ -83,5 +83,38 @@ describe('nextParentPosition', () => {
 
   it('treats null as empty', () => {
     expect(nextParentPosition(null)).toBe(1)
+  })
+})
+
+describe('parentCardSaveLabel (V24 slice 02 — one save-state pattern)', () => {
+  // The label walks the same 'idle' | 'saving' | 'saved' | 'error' machine the
+  // profile autosave runs (lib/autosave.ts AutosaveStatus). These tests pin the
+  // button's own wording at each state, so a page cannot invent a second one.
+
+  it('says "Add parent" for a new card at idle and "Save" for an existing one', () => {
+    expect(parentCardSaveLabel('idle', true)).toBe('Add parent')
+    expect(parentCardSaveLabel('idle', false)).toBe('Save')
+  })
+
+  it('says "Saving…" while in flight', () => {
+    expect(parentCardSaveLabel('saving', true)).toBe('Saving…')
+    expect(parentCardSaveLabel('saving', false)).toBe('Saving…')
+  })
+
+  it('says "Saved" after a successful write (the dwell back to idle is the caller\'s)', () => {
+    expect(parentCardSaveLabel('saved', true)).toBe('Saved')
+    expect(parentCardSaveLabel('saved', false)).toBe('Saved')
+  })
+
+  it('surfaces the error message in the label when present', () => {
+    expect(parentCardSaveLabel('error', false, 'Could not save that parent. Try again.')).toBe(
+      'Error: Could not save that parent. Try again.',
+    )
+  })
+
+  it('falls back to "Try again" when the error carries no message', () => {
+    expect(parentCardSaveLabel('error', false, null)).toBe('Try again')
+    expect(parentCardSaveLabel('error', false, '')).toBe('Try again')
+    expect(parentCardSaveLabel('error', false)).toBe('Try again')
   })
 })
