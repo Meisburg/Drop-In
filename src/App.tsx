@@ -4,6 +4,7 @@ import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useLocat
 import { DropInMark } from './components/DropInMark'
 import { NAV_ICONS, NAV_ICONS_FILLED } from './components/icons'
 import { LightboxProvider } from './components/ImageLightbox'
+import { PostActionButton } from './components/PostActionButton'
 import { PushOptInPrompt } from './components/PushOptInPrompt'
 import { SectionHeader } from './components/SectionHeader'
 import { SessionProvider, useSessionContext } from './components/SessionProvider'
@@ -275,14 +276,18 @@ function ProtectedShell() {
               {/* V14 ticket 01: the inbox — parent↔parent messaging, scoped to
                   the drop-ins both parties are going to (host ↔ pinger). */}
               <NavTab to="/inbox" label="Inbox" icon={<NavIcon path={NAV_ICONS.inbox} />} filledIcon={<NavIcon path={NAV_ICONS_FILLED.inbox} filled />} />
-              {/* V22 slice 12: the Post tab is GONE from the nav (Apple HIG: a
-                  tab bar supports navigation, not actions) — /new now lives on
-                  the feed as its own prominent action. The freed slot goes to
-                  Places: the directory already has a route (/browse, deep-link
-                  only since V21 t02) and a page, so this re-exposes it without
-                  building anything new. Search was rejected: there is no
-                  search destination in the app yet, and a dead tab is worse
-                  than a missing one. */}
+              {/* V24 slice 05: the Post action returns to the nav's CENTRE as a
+                  raised circular "+" (PostActionButton) — an ACTION, not a fifth
+                  NavTab destination. This is a DELIBERATE REVERSAL of V22 slice
+                  12 (which removed the Post tab citing Apple HIG: "a tab bar
+                  supports navigation, not actions"). The founder overrode that
+                  ruling on 2026-09-25 after using the app on a phone ("maybe we
+                  put it dead center in the middle of the menu bar at the bottom
+                  again between inbox and places as this cool post button"), and
+                  agreed the HIG deviation is recorded here as a ruling. Do NOT
+                  "fix" the nav back to the V22 shape from the old rationale —
+                  the override stands. */}
+              <PostActionButton />
               <NavTab to="/browse" label="Places" icon={<NavIcon path={NAV_ICONS.browse} />} filledIcon={<NavIcon path={NAV_ICONS_FILLED.browse} filled />} />
               <NavTab to="/profile" label="Profile" icon={<NavIcon path={NAV_ICONS.profile} />} filledIcon={<NavIcon path={NAV_ICONS_FILLED.profile} filled />} />
             </div>

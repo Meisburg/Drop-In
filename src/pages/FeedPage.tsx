@@ -955,27 +955,15 @@ export function FeedPage() {
     <div className="flex flex-col gap-4">
       <SectionHeader icon={NAV_ICONS.nearby} title="Near you" tagline="Drop-ins around your area" />
 
-      {/* V22 slice 12: the Post tab left the nav (Apple HIG: a tab bar is for
-          navigation, not actions) — /new now lives HERE, on the feed, as its
-          own prominent action. It sits directly under the header so it is one
-          tap from anywhere on the feed, and it uses the app's existing filled
-          button language (bg-indigo-600 text-white). At md+ the content column
-          widens to max-w-3xl; the row stays left-aligned at max-w-md so the
-          button reads the same at both sizes. */}
-      {/* V23 slice 1: the feed's ONE action row — primary "Post a drop-in" + secondary
-           "Drop-ins near you" (opens the shared LocationModal). The founder's
-           complaint was that the Post button felt "shoved in at the top" and
-           that two identical Post CTAs on one screen is bad design. This row
-           makes both options obvious side by side, and the location control
-           lives INSIDE the modal rather than rendering permanently. */}
+      {/* V24 slice 05: the Post action moved OFF the feed into the nav's centre
+          (the raised circular "+" in App.tsx, PostActionButton) after the founder
+          overrode V22 slice 12 on 2026-09-25. The feed no longer leads with a
+          prominent Post CTA — the drop-ins are what a parent sees first. What
+          survives from the old "one action row" (V23 slice 1) is the secondary
+          "Drop-ins near you" control, which opens the shared LocationModal; the
+          location control lives INSIDE that modal rather than rendering
+          permanently. */}
       <div className="flex flex-col gap-2 md:max-w-md">
-        <Link
-          to="/new"
-          data-testid="feed-post-drop-in"
-          className="flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700"
-        >
-          Post a drop-in
-        </Link>
         <button
           type="button"
           data-testid="feed-location-control"
