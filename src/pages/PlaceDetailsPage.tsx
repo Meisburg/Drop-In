@@ -9,16 +9,19 @@ import {
   createPlaceComment,
   getPlaceById,
   getPlaceFollowState,
+  getReviewSummary,
   kidAgesByPostForPosts,
   listPlaceComments,
   listPlaceFeed,
   loadZipCodes,
   toggleFollowPlace,
   type PlaceCommentRow,
+  type ReviewSummaryRow,
 } from '../lib/db'
 import { cardAgeRangeLabel, formatDistanceLabel, mapsHref } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
 import { placeFollowerLine } from '../lib/follows'
+import { reviewRatingLine, REVIEW_SCORE_MAX } from '../lib/reviews'
 import {
   placeAgeFitLabel,
   placeIndoorLabel,
@@ -100,6 +103,13 @@ export function PlaceDetailsPage() {
   const [posting, setPosting] = useState(false)
   const [postError, setPostError] = useState<string | null>(null)
 
+  // --- The aggregate rating line (the 0052 review_summary RPC) -----------
+  // null = not read yet OR the read failed — both render as NO line at all.
+  // A failed read must never read as "this place is bad", so there is no
+  // error card here: the honest unrated invitation is what a zero count says,
+  // and an unknown count says nothing.
+  const [reviewSummary, setReviewSummary] = useState<ReviewSummaryRow | null>(null)
+
   // --- Follow + upcoming (the place page's own seams) -------------------
   const [following, setFollowing] = useState(false)
   const [followerCount, setFollowerCount] = useState<number | null>(null)
@@ -116,6 +126,7 @@ export function PlaceDetailsPage() {
     setLoadError(null)
     setComments(null)
     setCommentsError(null)
+    setReviewSummary(null)
     setPosts(null)
     ;(async () => {
       try {
@@ -150,6 +161,26 @@ export function PlaceDetailsPage() {
           setComments([])
           setCommentsError('Comments are not available yet.')
         }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [id])
+
+  // The aggregate rating line — its own effect so a 0052-not-applied failure is
+  // contained (the wall's discipline): the place still renders and the line is
+  // simply absent. A failed read must never render as a 0.0 or an error card.
+  useEffect(() => {
+    if (id === undefined) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const summary = await getReviewSummary(id)
+        if (!cancelled) setReviewSummary(summary)
+      } catch {
+        // Pre-0052-apply / transient: no line at all (never "0.0 out of 5").
+        if (!cancelled) setReviewSummary(null)
       }
     })()
     return () => {
@@ -402,6 +433,47 @@ export function PlaceDetailsPage() {
           What parents say
         </h2>
 
+        {/* V24 ticket 06: the AGGREGATE rating line, above everything else in
+            this section — the founder's "a total star rating above what
+            parents say". The numbers come from the DATABASE (the 0052
+            review_summary RPC), never averaged in markup; the sentence is the
+            pure reviews.reviewRatingLine rule. A null summary (not read yet or
+            a failed read) renders NO line at all — no 0.0, no error card. The
+            zero case names the place and invites the first review, in the same
+            tone as the wall's count line below (placeCommentCountLabel). */}
+        {reviewSummary !== null ? (
+          <div data-testid="place-rating-line" className="mt-1 flex items-center gap-2">
+            {reviewSummary.display_average !== null && reviewSummary.review_count > 0 ? (
+              <>
+                <span className="text-base font-semibold text-slate-900">
+                  {Number(reviewSummary.display_average).toFixed(1)}
+                </span>
+                <span aria-hidden="true" className="flex items-center gap-0.5 text-amber-700">
+                  {Array.from({ length: REVIEW_SCORE_MAX }, (_, i) => (
+                    <StarGlyph key={i} filled={i + 1 <= Math.round(Number(reviewSummary.display_average ?? 0))} />
+                  ))}
+                </span>
+                <span className="sr-only">
+                  {reviewRatingLine(
+                    reviewSummary.review_count,
+                    reviewSummary.display_average,
+                    place.name,
+                  )}
+                </span>
+                <span aria-hidden="true" className="text-sm text-slate-600">
+                  {reviewSummary.review_count === 1
+                    ? '1 review'
+                    : `${reviewSummary.review_count} reviews`}
+                </span>
+              </>
+            ) : (
+              <p className="text-sm text-slate-600">
+                {reviewRatingLine(reviewSummary.review_count, reviewSummary.display_average, place.name)}
+              </p>
+            )}
+          </div>
+        ) : null}
+
         {/* V24 ticket 06: the review form (stars + optional comment, one review
             per parent) mounts ABOVE the wall — the founder's ask was "a total
             star rating above what parents say". The existing wall below is
@@ -531,6 +603,29 @@ function relativeDay(iso: string): string {
   if (days === 1) return 'yesterday'
   if (days < 30) return `${days} days ago`
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+/**
+ * A 24px star glyph, stroked like the app's icon family (24px viewBox, stroke
+ * 1.8, currentColor). Filled when lit, outlined otherwise — a decorative
+ * companion to the rating line's text value (the screen reader reads the
+ * sr-only sentence, never five glyphs with no alternative).
+ */
+function StarGlyph({ filled }: { filled: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-5 w-5"
+      fill={filled ? 'currentColor' : 'none'}
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1L3.2 9.5l6.1-.9L12 3Z" />
+    </svg>
+  )
 }
 
 export default PlaceDetailsPage

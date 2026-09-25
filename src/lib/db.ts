@@ -5808,3 +5808,58 @@ export async function saveReview(
   if (!user) throw new Error('No authenticated user — cannot save a review.')
   return saveReviewWithClient(supabase, user.id, placeId, score, body)
 }
+
+// ---------------------------------------------------------------------------
+// V24 ticket 06: THE AGGREGATE RATING READ (the details page's rating line).
+//
+// The aggregate is computed IN THE DATABASE by 0052's `review_summary(uuid)`
+// SECURITY DEFINER function — count(*) plus round(avg(score)::numeric, 1),
+// NULL when unrated. It is granted to `authenticated` only, so this read runs
+// from inside the ProtectedShell like every other call on the page. The
+// client NEVER fetches all review rows and averages them in the browser: one
+// RPC returns the final numbers, and the display formatting lives in
+// reviews.reviewRatingLine (a pure rule with its sibling test).
+// ---------------------------------------------------------------------------
+
+/** What the `review_summary` RPC returns for one place. */
+export interface ReviewSummaryRow {
+  /** How many parents have reviewed this place. */
+  review_count: number
+  /**
+   * The average rounded to one decimal, or null when there are no reviews
+   * (the honest zero case — never a 0.0 that would read as "terrible").
+   * Postgres numeric arrives as a string over the wire; Number() recovers it.
+   */
+  display_average: number | null
+}
+
+/**
+ * One place's aggregate rating, against an injected client (the house
+ * pattern — mockable). A failed RPC THROWS: the caller swallows it into
+ * "no rating line" rather than rendering a 0.0 or an error card (a failed
+ * read must never read as "this place is bad").
+ */
+export async function getReviewSummaryWithClient(
+  client: SupabaseClient,
+  placeId: string,
+): Promise<ReviewSummaryRow> {
+  const { data, error } = await client.rpc('review_summary', { p_place_id: placeId })
+  if (error) throw error
+  const row = (data ?? {}) as unknown as {
+    review_count?: number | string | null
+    display_average?: number | string | null
+  }
+  const count = typeof row.review_count === 'number' ? row.review_count : Number(row.review_count ?? 0)
+  // The RPC's numeric-as-string ("4.3") or null; Number(null) is 0, so guard
+  // the null explicitly — a null average is the unrated signal, not a 0.
+  const average =
+    row.display_average === null || row.display_average === undefined
+      ? null
+      : Number(row.display_average)
+  return { review_count: count, display_average: average }
+}
+
+/** The default-client wrapper (the details page's rating line read). */
+export async function getReviewSummary(placeId: string): Promise<ReviewSummaryRow> {
+  return getReviewSummaryWithClient(supabase, placeId)
+}

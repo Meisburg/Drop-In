@@ -161,6 +161,44 @@ export function summarizeReviews(rows: readonly Review[]): ReviewSummary {
 }
 
 // ---------------------------------------------------------------------------
+// The aggregate rating line — the sentence a place page renders above the wall.
+// ---------------------------------------------------------------------------
+
+/**
+ * How the aggregate rating reads on a place page: the display average, the
+ * review count, and the honest zero case.
+ *
+ * The input is what the DATABASE computed (the 0052 `review_summary` RPC:
+ * `count(*)` plus `round(avg(score)::numeric, 1)`, NULL when unrated), so this
+ * function NEVER averages or rounds anything itself — it only formats numbers
+ * that are already final. The one-decimal formatting is a DISPLAY rule, not a
+ * rounding rule: the DB's numeric arrives as "4.3" (a string) or null, and
+ * `Number("4.3")` recovers the value without any arithmetic. A null average is
+ * the explicit unrated signal (the same shape `summarizeReviews` returns for an
+ * empty row set), and the zero case follows the house empty-state pattern from
+ * `placeCommentCountLabel`: it names the PLACE and invites the first review
+ * rather than reporting a shortfall — so the two lines on the details page
+ * ("say something" / "rate it") agree in tone instead of disagreeing.
+ */
+export function reviewRatingLine(
+  count: number,
+  displayAverage: number | null,
+  placeName: string,
+): string {
+  if (displayAverage === null || count <= 0) {
+    const name = placeName.trim()
+    return name === ''
+      ? 'Be the first to rate this place.'
+      : `Be the first to rate ${name}.`
+  }
+  // The average is already rounded to one decimal by the database; Number()
+  // recovers it from the RPC's numeric-as-string without re-rounding.
+  const avg = Number(displayAverage)
+  const countWord = count === 1 ? 'review' : 'reviews'
+  return `${avg.toFixed(1)} out of 5 · ${count} ${countWord}`
+}
+
+// ---------------------------------------------------------------------------
 // The top-rated ordering — including the unrated-place rule.
 // ---------------------------------------------------------------------------
 

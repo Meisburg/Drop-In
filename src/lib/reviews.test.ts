@@ -5,6 +5,7 @@ import {
   REVIEW_SCORE_MIN,
   isCommentedReview,
   rankTopRated,
+  reviewRatingLine,
   summarizeReviews,
   validateReviewBody,
   validateReviewScore,
@@ -182,6 +183,41 @@ describe('summarizeReviews', () => {
     expect(summarizeReviews([review('p', 5), review('p', 4), review('p', 4)]).displayAverage).toBe(4.3)
     // 5, 5, 4 -> 14/3 = 4.666... -> 4.7
     expect(summarizeReviews([review('p', 5), review('p', 5), review('p', 4)]).displayAverage).toBe(4.7)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The aggregate rating line — the sentence a place page renders above the wall.
+// ---------------------------------------------------------------------------
+
+describe('reviewRatingLine', () => {
+  it('rated: "4.3 out of 5 · 12 reviews" (the screen-reader value, not glyphs)', () => {
+    expect(reviewRatingLine(12, 4.3, 'Green Lake Park')).toBe('4.3 out of 5 · 12 reviews')
+  })
+
+  it('one review: singular "review", not "reviews"', () => {
+    expect(reviewRatingLine(1, 5, 'Corner Park')).toBe('5.0 out of 5 · 1 review')
+  })
+
+  it('formats the DB average to one decimal without re-rounding (a display rule, not arithmetic)', () => {
+    // The RPC returns round(avg::numeric, 1) — already final. Number() recovers
+    // it from the numeric-as-string; toFixed(1) only formats for display.
+    expect(reviewRatingLine(3, 4.7, 'P')).toBe('4.7 out of 5 · 3 reviews')
+    expect(reviewRatingLine(2, 4, 'P')).toBe('4.0 out of 5 · 2 reviews')
+  })
+
+  it('zero reviews: names the place and invites the first review (never "0.0")', () => {
+    expect(reviewRatingLine(0, null, 'New Corner Park')).toBe(
+      'Be the first to rate New Corner Park.',
+    )
+  })
+
+  it('a blank place name degrades to the invitation without a trailing space', () => {
+    expect(reviewRatingLine(0, null, '   ')).toBe('Be the first to rate this place.')
+  })
+
+  it('a null average with a positive count still reads as unrated (never 0.0)', () => {
+    expect(reviewRatingLine(0, null, 'P')).toBe('Be the first to rate P.')
   })
 })
 
