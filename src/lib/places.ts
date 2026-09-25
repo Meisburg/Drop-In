@@ -10,7 +10,7 @@
  * imported rather than reimplemented.
  */
 import { coordNumber, haversineMiles, placeDistanceMiles, statedAgeRangeLine } from './feed'
-import type { ZipCoords } from './feed'
+import type { DistanceChoice, ZipCoords } from './feed'
 import type { Place, PlaceKind } from './types'
 
 /**
@@ -1361,4 +1361,191 @@ export function placeFollowIdSet(
     followed.add(placeId)
   }
   return followed
+}
+
+/**
+ * The directory LIST's whole composition, as one pure decision (the build law:
+ * the component renders and does not decide). PlaceDirectory used to compute
+ * every one of these values inline; this is that block, moved here so a unit
+ * test holds it and the component is a thin call site.
+ *
+ * THE TWO LIST PATHS, and why they differ:
+ *
+ * - NO geocoded center (`geocodeCenter === null`): the list is `rows` — the
+ *   home-zip browse (browsePlaces), narrowed by the modal's kind chips + radius
+ *   filter, then ordered by sortPlaces. This is the default state.
+ * - A geocoded center ("Set location" → "See places"): the list is `effectiveRows`
+ *   instead — the SAME directory filtered to the picked radius about the pin,
+ *   with each row's distance re-measured FROM the pin (not nulled), so the rows
+ *   leave the unplaced bucket and every card shows a true distance from the pin.
+ *   The kind/radius/sort filters do NOT apply on this path: the parent chose an
+ *   explicit center + radius, which is its own complete answer.
+ *
+ * EVERYTHING ELSE IS SHARED: `placed` (the map's markers — always the full
+ * home-zip set, never the filtered list), the lead/overflow split at
+ * BROWSE_LIST_LEAD_LIMIT, the kind groups for both halves, and the two empty-
+ * state flags below.
+ */
+export interface DirectoryListPlan {
+  /** The home-zip browse rows (before the modal's kind/radius narrowing). */
+  rows: PlaceListRow[]
+  /** The geocode-center path's rows (re-measured from the pin); = rows when there is no center. */
+  effectiveRows: PlaceListRow[]
+  /** The kind-filtered, radius-filtered, sorted rows (the no-center path's list). */
+  filteredRows: PlaceListRow[]
+  /** The list the component actually renders: effectiveRows when a center is set, else filteredRows. */
+  listRows: PlaceListRow[]
+  /** Rows whose distance resolved (the map's markers; the full placed set, not the filtered list). */
+  placed: PlaceListRow[]
+  /** The rendered list's unknown-distance rows (the "Not on the map yet" section). */
+  unplaced: PlaceListRow[]
+  /** The first BROWSE_LIST_LEAD_LIMIT rows of the rendered list. */
+  leadRows: PlaceListRow[]
+  /** Everything after the lead (the overflow door's content). */
+  overflowRows: PlaceListRow[]
+  /** The lead's kind groups (groupPlacesByKind over leadRows). */
+  leadGroups: PlaceKindGroup[]
+  /** The overflow's kind groups (groupPlacesByKind over overflowRows). */
+  overflowGroups: PlaceKindGroup[]
+  /** The shared radius empty state is the honest answer ONLY when the radius is actually the reason nothing shows. */
+  radiusIsTheReason: boolean
+  /** The radius the shared empty state renders (the ceiling browsePlaces used; null = 'any' — never shown, since radiusIsTheReason is false then). */
+  maxMiles: number | null
+  /** Nothing at all in the list OR the unplaced section (the generic empty state). */
+  nothingMatches: boolean
+}
+
+export function planDirectoryList(input: {
+  /** The loaded directory rows (null while the host's read is in flight). */
+  places: readonly Place[] | null
+  /** The search box text ('' = no search). */
+  query: string
+  /** null = both kinds; true = indoor only; false = outdoor only. */
+  indoorFilter: boolean | null
+  /** 'profile' = the viewer's stored radius; 'any' = no ceiling; a number = picked. */
+  distanceChoice: DistanceChoice
+  /** The viewer's stored radius in miles (what 'profile' resolves to). */
+  viewerRadius: number
+  /** The modal's kind chips (empty set = all kinds). */
+  selectedKinds: ReadonlySet<string>
+  /** Miles from the home pin (the modal's radius filter; null = off). */
+  radiusFilter: number | null
+  /** The modal's sort mode. */
+  sortMode: SortMode
+  /** The viewer's stored home zip (the distance seam measures from it; null = none). */
+  homeZip: string | null
+  /** The viewer's home pin coords (null = no home pin). */
+  homePin: { lat: number; lng: number } | null
+  /** The geocoded "Set location" center (null = the default home-zip path). */
+  geocodeCenter: { lat: number; lng: number } | null
+  /** The radius picked in the "Set location" dialog, in miles. */
+  radiusMiles: number
+  /** The gazetteer zip→coords map (null while loading or on failure). */
+  zipCoords: ReadonlyMap<string, ZipCoords> | null
+  /** Per-place "N upcoming" counts (null = the count read failed). */
+  upcoming: Map<string, number> | null
+}): DirectoryListPlan {
+  const {
+    places,
+    query,
+    indoorFilter,
+    distanceChoice,
+    viewerRadius,
+    selectedKinds,
+    radiusFilter,
+    sortMode,
+    homeZip,
+    homePin,
+    geocodeCenter,
+    radiusMiles,
+    zipCoords,
+    upcoming,
+  } = input
+
+  const maxMiles =
+    distanceChoice === 'profile' ? viewerRadius : distanceChoice === 'any' ? null : distanceChoice
+
+  const coords: ReadonlyMap<string, ZipCoords> = zipCoords ?? new Map()
+  const rows = browsePlaces(
+    places ?? [],
+    { query, indoor: indoorFilter, maxMiles },
+    { homeZip },
+    coords,
+    upcoming,
+  )
+
+  // The two sections: places we could measure, and places we could not. A place
+  // with no coordinates is NEVER dropped (a filter may not hide a place for
+  // missing data). `unplaced` is derived from the SAME rows the list renders,
+  // so the two sections are disjoint by construction.
+  const placed = rows.filter((row) => row.distanceMiles !== null)
+
+  // When the user has geocoded an address via "Set location", the list is
+  // filtered to places within the chosen radius of that center. Distances are
+  // measured FROM the geocoded center (not nulled), so the rows leave the
+  // unplaced bucket and every card shows a true distance from the pin.
+  const effectiveRows: PlaceListRow[] = (() => {
+    if (geocodeCenter === null) return rows
+    const filtered = filterPlacesByRadius(places ?? [], geocodeCenter, radiusMiles, zipCoords)
+    return filtered.map((place) => {
+      const c = resolveMapCoords(place, zipCoords)
+      return {
+        place,
+        distanceMiles: c === null ? null : distanceMiles(geocodeCenter, c),
+        upcomingCount: upcoming === null ? null : (upcoming.get(place.id) ?? 0),
+      }
+    })
+  })()
+
+  // The LIST is alphabetical by default; the modal's kind chips + radius filter
+  // narrow the rows first, then sortPlaces orders them. The MAP still shows the
+  // full placed set (the circle overlay communicates the filter visually).
+  const filteredRows: PlaceListRow[] = (() => {
+    let base = rows
+    if (selectedKinds.size > 0) {
+      base = base.filter((row) => selectedKinds.has(row.place.kind))
+    }
+    if (radiusFilter !== null && homePin !== null) {
+      const keptIds = new Set(
+        filterPlacesByRadius(places ?? [], homePin, radiusFilter, zipCoords).map((p) => p.id),
+      )
+      base = base.filter((row) => keptIds.has(row.place.id))
+    }
+    return sortPlaces(base, sortMode, homePin ?? undefined)
+  })()
+
+  const listRows = geocodeCenter !== null ? effectiveRows : filteredRows
+  const unplaced = listRows.filter((row) => row.distanceMiles === null)
+  const leadRows = listRows.slice(0, BROWSE_LIST_LEAD_LIMIT)
+  const overflowRows = listRows.slice(BROWSE_LIST_LEAD_LIMIT)
+  const leadGroups = groupPlacesByKind(leadRows)
+  const overflowGroups = groupPlacesByKind(overflowRows)
+
+  // The KIND filter must reach the "Not on the map yet" section too. Distance-
+  // shaped filters are deliberately NOT applied there (a place may not be
+  // hidden for missing data), but the kind is stated data.
+  const filteredUnplaced =
+    selectedKinds.size > 0 ? unplaced.filter((row) => selectedKinds.has(row.place.kind)) : unplaced
+
+  // The shared radius empty state is the honest answer ONLY when the radius is
+  // actually the reason nothing is showing: no search text, no kind filter.
+  const radiusIsTheReason =
+    maxMiles !== null && placed.length === 0 && query.trim() === '' && indoorFilter === null
+  const nothingMatches = listRows.length === 0 && filteredUnplaced.length === 0
+
+  return {
+    rows,
+    effectiveRows,
+    filteredRows,
+    listRows,
+    placed,
+    unplaced,
+    leadRows,
+    overflowRows,
+    leadGroups,
+    overflowGroups,
+    radiusIsTheReason,
+    maxMiles,
+    nothingMatches,
+  }
 }

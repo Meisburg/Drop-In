@@ -17,12 +17,9 @@ import {
 import type { ZipCoords } from '../lib/feed'
 import { geocodeAddress } from '../lib/geocode'
 import {
-  browsePlaces,
-  BROWSE_LIST_LEAD_LIMIT,
   distanceMiles,
-  filterPlacesByRadius,
-  groupPlacesByKind,
   MAP_FOCUS_RADIUS_MILES,
+  planDirectoryList,
   radiusPreviewCircle,
   PLACE_KINDS,
   placeLearnMoreLink,
@@ -31,7 +28,6 @@ import {
   placePath,
   placeUpcomingLabel,
   resolveMapCoords,
-  sortPlaces,
 } from '../lib/places'
 import type { PlaceListRow, SortMode } from '../lib/places'
 import type { Place, PlacePrefill } from '../lib/types'
@@ -190,23 +186,32 @@ export function PlaceDirectory({
 
   // --- Derived rows ----------------------------------------------------------
 
-  const maxMiles =
-    distanceChoice === 'profile' ? viewerRadius : distanceChoice === 'any' ? null : distanceChoice
-
-  const coords: ReadonlyMap<string, ZipCoords> = zipCoords ?? new Map()
-  const rows = browsePlaces(
-    places ?? [],
-    { query, indoor: indoorFilter, maxMiles },
-    { homeZip },
-    coords,
+  const {
+    listRows,
+    placed,
+    unplaced,
+    overflowRows,
+    leadGroups,
+    overflowGroups,
+    radiusIsTheReason,
+    maxMiles,
+    nothingMatches,
+  } = planDirectoryList({
+    places,
+    query,
+    indoorFilter,
+    distanceChoice,
+    viewerRadius,
+    selectedKinds,
+    radiusFilter,
+    sortMode,
+    homeZip,
+    homePin,
+    geocodeCenter,
+    radiusMiles,
+    zipCoords,
     upcoming,
-  )
-
-  // The two sections: places we could measure, and places we could not. A place
-  // with no coordinates is NEVER dropped (a filter may not hide a place for
-  // missing data). `unplaced` is derived from the SAME rows the list renders,
-  // so the two sections are disjoint by construction.
-  const placed = rows.filter((row) => row.distanceMiles !== null)
+  })
 
   // The overview map's null condition: at least one placed row resolves to a
   // stored coordinate (same seam as PlacesMap).
@@ -222,58 +227,11 @@ export function PlaceDirectory({
       .length
   })()
 
-  // When the user has geocoded an address via "Set location", the list is
-  // filtered to places within the chosen radius of that center. Distances are
-  // measured FROM the geocoded center (not nulled), so the rows leave the
-  // unplaced bucket and every card shows a true distance from the pin.
-  const effectiveRows: PlaceListRow[] = (() => {
-    if (geocodeCenter === null) return rows
-    const filtered = filterPlacesByRadius(places ?? [], geocodeCenter, radiusMiles, zipCoords)
-    return filtered.map((place) => {
-      const c = resolveMapCoords(place, zipCoords)
-      return {
-        place,
-        distanceMiles: c === null ? null : distanceMiles(geocodeCenter, c),
-        upcomingCount: upcoming === null ? null : (upcoming.get(place.id) ?? 0),
-      }
-    })
-  })()
-
-  // The LIST is alphabetical by default; the modal's kind chips + radius filter
-  // narrow the rows first, then sortPlaces orders them. The MAP still shows the
-  // full placed set (the circle overlay communicates the filter visually).
-  const filteredRows: PlaceListRow[] = (() => {
-    let base = rows
-    if (selectedKinds.size > 0) {
-      base = base.filter((row) => selectedKinds.has(row.place.kind))
-    }
-    if (radiusFilter !== null && homePin !== null) {
-      const keptIds = new Set(
-        filterPlacesByRadius(places ?? [], homePin, radiusFilter, zipCoords).map((p) => p.id),
-      )
-      base = base.filter((row) => keptIds.has(row.place.id))
-    }
-    return sortPlaces(base, sortMode, homePin ?? undefined)
-  })()
-
-  const listRows = geocodeCenter !== null ? effectiveRows : filteredRows
-  const unplaced = listRows.filter((row) => row.distanceMiles === null)
-  const leadRows = listRows.slice(0, BROWSE_LIST_LEAD_LIMIT)
-  const overflowRows = listRows.slice(BROWSE_LIST_LEAD_LIMIT)
-  const leadGroups = groupPlacesByKind(leadRows)
-  const overflowGroups = groupPlacesByKind(overflowRows)
-
   // The KIND filter must reach the "Not on the map yet" section too. Distance-
   // shaped filters are deliberately NOT applied there (a place may not be
   // hidden for missing data), but the kind is stated data.
   const filteredUnplaced =
     selectedKinds.size > 0 ? unplaced.filter((row) => selectedKinds.has(row.place.kind)) : unplaced
-
-  // The shared radius empty state is the honest answer ONLY when the radius is
-  // actually the reason nothing is showing: no search text, no kind filter.
-  const radiusIsTheReason =
-    maxMiles !== null && placed.length === 0 && query.trim() === '' && indoorFilter === null
-  const nothingMatches = listRows.length === 0 && filteredUnplaced.length === 0
 
   // --- Handlers --------------------------------------------------------------
 

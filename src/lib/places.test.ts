@@ -31,6 +31,7 @@ import {
   zoomForRadius,
   DETAIL_ZOOM_FALLBACK,
   placeFollowIdSet,
+  planDirectoryList,
   PLACE_BROWSE_LIMIT,
   PLACE_SUGGESTION_LIMIT,
   resolveMapCoords,
@@ -1738,5 +1739,97 @@ describe('placeWebSearchHref (V23 slice 5)', () => {
 
   it('ships the one label the callers render', () => {
     expect(PLACE_WEB_SEARCH_LABEL).toBe('Search the web for this place')
+  })
+})
+
+describe('planDirectoryList (the directory list composition, moved out of PlaceDirectory)', () => {
+  const HOME_PIN = { lat: 47.66757, lng: -122.37789 } // 98107, the viewer's home pin
+  const GEO_CENTER = { lat: 47.68, lng: -122.32 } // a geocoded "Set location" center
+  const PARK_A = place({ name: 'Alki Beach Park', kind: 'park' })
+  const PLAY_B = place({ name: 'Bellevue Playground', kind: 'playground', address: '1 X St, Bellevue, WA 98007' })
+  const DIR = [PARK_A, PLAY_B]
+
+  function plan(overrides: Partial<Parameters<typeof planDirectoryList>[0]> = {}) {
+    return planDirectoryList({
+      places: DIR,
+      query: '',
+      indoorFilter: null,
+      distanceChoice: 'any',
+      viewerRadius: 5,
+      selectedKinds: new Set(),
+      radiusFilter: null,
+      sortMode: 'alpha',
+      homeZip: '98107',
+      homePin: HOME_PIN,
+      geocodeCenter: null,
+      radiusMiles: 5,
+      zipCoords: ZIP_COORDS,
+      upcoming: null,
+      ...overrides,
+    })
+  }
+
+  it('plain case: no center, no filters — the full browse list in name order, all placed', () => {
+    const p = plan()
+    expect(p.listRows.map((r) => r.place.name)).toEqual(['Alki Beach Park', 'Bellevue Playground'])
+    expect(p.rows).toBe(p.listRows) // the unfiltered path IS the browse rows
+    expect(p.effectiveRows).toBe(p.rows) // no center → effectiveRows is the same rows
+    expect(p.placed.length).toBe(2)
+    expect(p.unplaced.length).toBe(0)
+    expect(p.radiusIsTheReason).toBe(false)
+    expect(p.nothingMatches).toBe(false)
+  })
+
+  it('a kind filter narrows the list to that kind only', () => {
+    const p = plan({ selectedKinds: new Set(['park']) })
+    expect(p.listRows.map((r) => r.place.name)).toEqual(['Alki Beach Park'])
+    // The map still shows the FULL placed set — the kind filter never hides a marker.
+    expect(p.placed.length).toBe(2)
+    expect(p.nothingMatches).toBe(false)
+  })
+
+  it('a radius filter keeps only places within the miles of the home pin', () => {
+    const wide = plan({ radiusFilter: 50 })
+    expect(wide.listRows.length).toBe(2)
+    const tight = plan({ radiusFilter: 5 })
+    expect(tight.listRows.map((r) => r.place.name)).toEqual(['Alki Beach Park'])
+    // A radius filter with NO home pin is a no-op (nothing to measure from).
+    expect(plan({ radiusFilter: 5, homePin: null }).listRows.length).toBe(2)
+  })
+
+  it('a geocoded center switches the list to effectiveRows, re-measured from the pin', () => {
+    const p = plan({ geocodeCenter: GEO_CENTER, radiusMiles: 5 })
+    expect(p.listRows).toBe(p.effectiveRows)
+    expect(p.listRows.map((r) => r.place.name)).toEqual(['Alki Beach Park'])
+    // Distances are measured FROM the geocoded center (not nulled), so the row
+    // leaves the unplaced bucket and every card shows a true distance from the pin.
+    expect(p.listRows[0].distanceMiles).not.toBeNull()
+    expect(p.unplaced.length).toBe(0)
+  })
+
+  it('radiusIsTheReason is true ONLY when the radius is actually why nothing shows', () => {
+    // True: a non-null maxMiles ('profile'), zero placed rows, no search text, no indoor filter.
+    expect(
+      plan({ distanceChoice: 'profile', viewerRadius: 5, places: [PLAY_B] }).radiusIsTheReason,
+    ).toBe(true)
+    // False: a search text is present (the radius is not the whole story).
+    expect(
+      plan({ distanceChoice: 'profile', viewerRadius: 5, places: [PLAY_B], query: 'x' }).radiusIsTheReason,
+    ).toBe(false)
+    // False: an indoor filter is set.
+    expect(
+      plan({ distanceChoice: 'profile', viewerRadius: 5, places: [PLAY_B], indoorFilter: true }).radiusIsTheReason,
+    ).toBe(false)
+    // False: maxMiles is null ('any' has no ceiling, so there is no radius reason).
+    expect(plan({ places: [] }).radiusIsTheReason).toBe(false)
+  })
+
+  it('nothingMatches is true only when BOTH the list and the unplaced section are empty', () => {
+    // An empty directory empties both sections.
+    expect(plan({ places: [] }).nothingMatches).toBe(true)
+    // A kind filter that matches nothing empties the list AND its unplaced section.
+    expect(plan({ selectedKinds: new Set(['beach']) }).nothingMatches).toBe(true)
+    // But an UNFILTERED empty list still shows the unplaced section → false.
+    expect(plan().nothingMatches).toBe(false)
   })
 })
