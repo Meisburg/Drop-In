@@ -31,9 +31,11 @@ import {
   PUSH_DECISION_KEY,
   PUSH_PROMPT_REASON,
   PUSH_TRIGGER_KEY,
+  PUSH_TRIGGER_ORIGIN_KEY,
   UNSUPPORTED_POINTER,
   WHILE_AWAY_POINTER,
   armPushPrompt,
+  armPushPromptOrigin,
   browserPermissionOf,
   buildNotificationPayload,
   clearArmedTrigger,
@@ -47,12 +49,14 @@ import {
   isIosWebview,
   isKindMuted,
   isNotificationKind,
+  isPlaydateDetailPath,
   isStandalone,
   notificationDedupeKey,
   notificationUrl,
   parsePermissionDecision,
   parsePushPrefs,
   pushOptInGate,
+  readArmedOrigin,
   readArmedTrigger,
   readPermissionDecision,
   rememberPermissionDecision,
@@ -545,6 +549,64 @@ describe('the armed trigger', () => {
   })
 })
 
+// The origin of an armed action (first-use audit, ticket 03): a fact stored
+// BESIDE the trigger, so a storage that refuses this write still leaves the
+// prompt working — it just cannot defer.
+describe('the armed trigger origin', () => {
+  it('round-trips the route the action happened on', () => {
+    const storage = fakeStorage()
+    armPushPrompt(storage, 'ping_saved')
+    armPushPromptOrigin(storage, '/playdate/abc')
+    expect(readArmedOrigin(storage)).toBe('/playdate/abc')
+  })
+
+  it('clears the origin with the trigger, so no stale route survives a dismissal', () => {
+    const storage = fakeStorage()
+    armPushPrompt(storage, 'ping_saved')
+    armPushPromptOrigin(storage, '/playdate/abc')
+    clearArmedTrigger(storage)
+    expect(readArmedTrigger(storage)).toBe(null)
+    expect(readArmedOrigin(storage)).toBe(null)
+    expect(storage.dump()[PUSH_TRIGGER_ORIGIN_KEY]).toBeUndefined()
+  })
+
+  it('reads a missing, empty, or unreadable origin as unknown — today’s behavior', () => {
+    expect(readArmedOrigin(fakeStorage())).toBe(null)
+    expect(readArmedOrigin(fakeStorage({ [PUSH_TRIGGER_ORIGIN_KEY]: '' }))).toBe(null)
+    expect(readArmedOrigin(throwingStorage)).toBe(null)
+    expect(readArmedOrigin(null)).toBe(null)
+  })
+
+  it('never throws into the click handler that armed it', () => {
+    expect(() => armPushPromptOrigin(throwingStorage, '/playdate/abc')).not.toThrow()
+    expect(() => armPushPromptOrigin(null, '/playdate/abc')).not.toThrow()
+  })
+})
+
+describe('isPlaydateDetailPath', () => {
+  it('recognizes the detail route, with or without a trailing slash', () => {
+    expect(isPlaydateDetailPath('/playdate/abc')).toBe(true)
+    expect(isPlaydateDetailPath('/playdate/1111-2222')).toBe(true)
+    expect(isPlaydateDetailPath('/playdate/abc/')).toBe(true)
+  })
+
+  it('rejects every other route, including the host’s edit form', () => {
+    for (const path of [
+      '/',
+      '/new',
+      '/playdate',
+      '/playdates',
+      '/playdate/abc/edit',
+      '/place/abc',
+      '',
+    ]) {
+      expect(isPlaydateDetailPath(path)).toBe(false)
+    }
+    expect(isPlaydateDetailPath(null)).toBe(false)
+    expect(isPlaydateDetailPath(undefined)).toBe(false)
+  })
+})
+
 describe('browserPermissionOf', () => {
   it('maps the three real values and calls anything else unsupported', () => {
     expect(browserPermissionOf('granted')).toBe('granted')
@@ -661,6 +723,103 @@ describe('decidePermissionPrompt', () => {
     })
     expect(decision.ask).toBe(false)
     expect(decision.note).toBe(UNSUPPORTED_POINTER)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The RSVP-priority deferral (first-use audit, ticket 03)
+//
+// The action that arms the prompt happened on a drop-in's DETAIL page, whose
+// own confirmation is the moment the parent just earned. The prompt waits for
+// the next feed visit instead of competing with "✓ Going".
+// ---------------------------------------------------------------------------
+
+describe('decidePermissionPrompt — the RSVP-priority deferral', () => {
+  const DETAIL = '/playdate/11111111-2222-3333-4444-555555555555'
+
+  it('defers a ping saved on a drop-in detail page', () => {
+    const decision = decidePermissionPrompt({
+      decision: 'unknown',
+      permission: 'default',
+      trigger: 'ping_saved',
+      origin: DETAIL,
+      gate: OPEN_GATE,
+    })
+    expect(decision).toEqual({ ask: false, reason: null, note: null })
+  })
+
+  it('still asks for a ping saved on the feed, where the action did not navigate', () => {
+    expect(
+      decidePermissionPrompt({
+        decision: 'unknown',
+        permission: 'default',
+        trigger: 'ping_saved',
+        origin: '/',
+        gate: OPEN_GATE,
+      }).ask,
+    ).toBe(true)
+  })
+
+  it('still asks for a post created on /new', () => {
+    expect(
+      decidePermissionPrompt({
+        decision: 'unknown',
+        permission: 'default',
+        trigger: 'post_created',
+        origin: '/new',
+        gate: OPEN_GATE,
+      }).ask,
+    ).toBe(true)
+  })
+
+  it('treats a MISSING origin as today’s behavior — a legitimate prompt is never silently dropped', () => {
+    expect(
+      decidePermissionPrompt({
+        decision: 'unknown',
+        permission: 'default',
+        trigger: 'ping_saved',
+        gate: OPEN_GATE,
+      }).ask,
+    ).toBe(true)
+    expect(
+      decidePermissionPrompt({
+        decision: 'unknown',
+        permission: 'default',
+        trigger: 'ping_saved',
+        origin: null,
+        gate: OPEN_GATE,
+      }).ask,
+    ).toBe(true)
+  })
+
+  it('keeps the fallback notes on a detail page — only the ASK is deferred', () => {
+    // A parent who already denied gets the honest pointer, not silence: the
+    // deferral rule is about the prompt competing with the RSVP confirmation.
+    expect(
+      decidePermissionPrompt({
+        decision: 'denied',
+        permission: 'default',
+        trigger: 'ping_saved',
+        origin: DETAIL,
+        gate: OPEN_GATE,
+      }).note,
+    ).toBe(DENIED_POINTER)
+  })
+
+  it('defers only on the detail ROUTE — the edit form is not the RSVP surface', () => {
+    // `/playdate` with no id, `/playdates`, and the host's edit form are all
+    // somewhere else, and there the prompt is not competing with "✓ Going".
+    for (const origin of ['/playdate', '/playdates', '/playdate/x/edit']) {
+      expect(
+        decidePermissionPrompt({
+          decision: 'unknown',
+          permission: 'default',
+          trigger: 'ping_saved',
+          origin,
+          gate: OPEN_GATE,
+        }).ask,
+      ).toBe(true)
+    }
   })
 })
 

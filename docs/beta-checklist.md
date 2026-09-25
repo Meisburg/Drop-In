@@ -58,11 +58,37 @@ backstop for people who insist on email.
 4. Install it: iPhone Safari → Share → **Add to Home Screen**; Android Chrome →
    **Install app**. It should open full-screen with the splash and its own icon.
 
-## 4. Known and deliberate
+## 4. The release gate: sweep the test markers, and prove it worked
+
+**Required before any production validation or invitation.** The e2e suite
+drives the LIVE Supabase project, so a run leaves `e2e-` accounts and their rows
+in the same database real parents read. The first-use audit of 2026-09-25 found
+exactly that leaking into the discovery feed.
+
+```bash
+bash scripts/cdp-migration-tooling.sh          # launches the CDP Chrome the sweep reads its token from
+node scripts/sweep-e2e-markers.mjs select      # read the counts AND the safety gate
+node scripts/sweep-e2e-markers.mjs delete      # refuses if a founder account is inside the marker set
+node scripts/sweep-e2e-markers.mjs verify      # exits non-zero if ANY marker row remains
+```
+
+`delete` is not fire-and-forget. It prints the exact rows it removed per table,
+then **re-reads the database** and fails with exit code 4 if a marker row
+survived or a table's total did not drop by exactly the amount the report
+claimed. Treat a non-zero exit from either `delete` or `verify` as
+release-blocking: it means production still contains test content a parent can
+see.
+
+The repo-side half is automatic: `npm run verify` runs
+`scripts/guards/fixture-marker-guard.mjs`, which fails if a spec invents a
+fixture the sweep's scope does not cover. The convention both halves enforce is
+written down in `docs/agents/e2e-fixture-convention.md`.
+
+## 5. Known and deliberate
 
 - **No email confirmation** — anyone can sign up with any address. Fine for a
   friends beta; turn it on (and add a real sender) before any public launch.
 - **Kids' first names are in the database.** That was a product decision, but
   it is the reason to keep the beta to people you actually know.
-- **The e2e suite writes test accounts to the live database.** After a run,
-  `node scripts/sweep-e2e-markers.mjs select` then `... delete`.
+- **The e2e suite writes test accounts to the live database.** See section 4 —
+  sweep them, and do not skip the verification step.

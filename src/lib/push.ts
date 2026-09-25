@@ -245,6 +245,13 @@ export type PushPromptTrigger = 'post_created' | 'ping_saved'
 
 export const PUSH_DECISION_KEY = 'dropin.push.decision'
 export const PUSH_TRIGGER_KEY = 'dropin.push.trigger'
+/**
+ * WHERE the armed action happened (sessionStorage, this tab). A separate key
+ * from the trigger so the trigger's own contract — and every reader of it — is
+ * unchanged: this one only ever ADDS a fact (the RSVP-priority deferral), and a
+ * missing value reads as "unknown origin", which preserves the old behavior.
+ */
+export const PUSH_TRIGGER_ORIGIN_KEY = 'dropin.push.trigger.origin'
 export const PUSH_PREFS_KEY = 'dropin.push.muted'
 
 /** The minimum surface of localStorage/sessionStorage this module needs. */
@@ -306,10 +313,36 @@ export function readArmedTrigger(storage: StorageLike | null): PushPromptTrigger
   }
 }
 
+/**
+ * Record the route the meaningful action happened on. Kept SEPARATE from the
+ * trigger so a storage that refuses this write still leaves the prompt fully
+ * working (it simply cannot defer) — the deferral is an improvement, never a
+ * dependency.
+ */
+export function armPushPromptOrigin(storage: StorageLike | null, pathname: string): void {
+  if (storage === null) return
+  try {
+    storage.setItem(PUSH_TRIGGER_ORIGIN_KEY, pathname)
+  } catch {
+    // See rememberPermissionDecision.
+  }
+}
+
+export function readArmedOrigin(storage: StorageLike | null): string | null {
+  if (storage === null) return null
+  try {
+    const raw = storage.getItem(PUSH_TRIGGER_ORIGIN_KEY)
+    return raw === null || raw === '' ? null : raw
+  } catch {
+    return null
+  }
+}
+
 export function clearArmedTrigger(storage: StorageLike | null): void {
   if (storage === null) return
   try {
     storage.removeItem(PUSH_TRIGGER_KEY)
+    storage.removeItem(PUSH_TRIGGER_ORIGIN_KEY)
   } catch {
     // See rememberPermissionDecision.
   }
@@ -340,8 +373,27 @@ export interface PermissionPromptInput {
   permission: BrowserPermission
   /** The meaningful action that just happened, or null (a cold load). */
   trigger: PushPromptTrigger | null
+  /**
+   * The route the meaningful action happened ON, when it is known (the first-use
+   * audit's deferral, ticket 03). A ping saved on a drop-in's detail page must
+   * not have the prompt land on top of the RSVP confirmation the parent just
+   * earned; it waits for the next feed visit. Missing/unknown origin keeps
+   * today's behavior — never silently drop a legitimate prompt.
+   */
+  origin?: string | null
   /** Whether the app is running installed (see pushOptInGate). */
   gate: PushOptInGate
+}
+
+/**
+ * Whether a route is a drop-in's DETAIL page — the one surface whose immediate
+ * confirmation (`✓ Going`, the count, "You") a notification prompt must not
+ * compete with. `/playdate/:id/edit` is a different surface (the host's form)
+ * and is deliberately NOT included.
+ */
+export function isPlaydateDetailPath(pathname: string | null | undefined): boolean {
+  if (typeof pathname !== 'string') return false
+  return /^\/playdate\/[^/]+\/?$/.test(pathname)
 }
 
 export interface PermissionPromptDecision {
@@ -365,7 +417,9 @@ export interface PermissionPromptDecision {
  *  4. denied (browser or remembered) → never ask again; point at the inbox.
  *  5. dismissed            → never ask again; point at the profile control.
  *  6. no meaningful action → never ask: THE COLD-LOAD PIN.
- *  7. otherwise            → ask, with the one-line reason.
+ *  7. saved on a drop-in's DETAIL page → never ask HERE (the RSVP-priority
+ *                            deferral): the next feed visit asks instead.
+ *  8. otherwise            → ask, with the one-line reason.
  */
 export function decidePermissionPrompt(input: PermissionPromptInput): PermissionPromptDecision {
   const no = (note: string | null): PermissionPromptDecision => ({ ask: false, reason: null, note })
@@ -376,6 +430,10 @@ export function decidePermissionPrompt(input: PermissionPromptInput): Permission
   if (input.permission === 'denied' || input.decision === 'denied') return no(DENIED_POINTER)
   if (input.decision === 'dismissed') return no(DISMISSED_POINTER)
   if (input.trigger === null) return no(null)
+  // Step 7. Silence here, not a note: the note would be the interruption the
+  // deferral exists to remove. The trigger stays armed, so the next feed visit
+  // asks (or shows the pointer the parent's answer deserves).
+  if (isPlaydateDetailPath(input.origin)) return no(null)
 
   return { ask: true, reason: PUSH_PROMPT_REASON, note: null }
 }

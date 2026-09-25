@@ -15,9 +15,10 @@
 # gate every slice must pass.
 #
 # The rules, and the doc each enforces:
-#   lib-sibling   docs/agents/code-structure.md  — every lib module ships a test
-#   config        (build law, unwritten)         — checks cannot be weakened
-#   no-bypass     docs/agents/auto-push.md       — git hooks cannot be skipped
+#   lib-sibling     docs/agents/code-structure.md          — every lib module ships a test
+#   config          (build law, unwritten)                 — checks cannot be weakened
+#   no-bypass       docs/agents/auto-push.md               — git hooks cannot be skipped
+#   fixture-marker  docs/agents/e2e-fixture-convention.md  — fixtures cannot escape the sweep
 #
 # PROVENANCE: the first two are borrowed patterns from affaan-m/ECC's
 # PostToolUse / PreToolUse hook set, reimplemented as batch gates suited to
@@ -32,20 +33,68 @@ cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
 FAILED=()
 
-for guard in lib-sibling-guard config-guard no-bypass-guard; do
-  script="scripts/guards/${guard}.sh"
+# Each guard is either a shell script or a node script. Resolution is explicit so
+# a guard cannot silently stop running because its filename changed.
+guard_script() {
+  local name="$1"
+  if [ -f "scripts/guards/${name}.sh" ]; then
+    echo "scripts/guards/${name}.sh"
+  elif [ -f "scripts/guards/${name}.mjs" ]; then
+    echo "scripts/guards/${name}.mjs"
+  else
+    echo ""
+  fi
+}
+
+guard_run() {
+  local path="$1"
+  case "$path" in
+    *.mjs) node "$path" ;;
+    *) bash "$path" ;;
+  esac
+}
+
+for guard in lib-sibling-guard config-guard no-bypass-guard fixture-marker-guard; do
+  script="$(guard_script "$guard")"
   echo
-  if [ ! -f "$script" ]; then
-    echo "MISSING: $script — a guard that does not exist cannot guard."
+  if [ -z "$script" ]; then
+    echo "MISSING: scripts/guards/${guard}.{sh,mjs} — a guard that does not exist cannot guard."
     FAILED+=("$guard (missing)")
     continue
   fi
-  if bash "$script"; then
+  if guard_run "$script"; then
     :
   else
     FAILED+=("$guard")
   fi
 done
+
+# A rule whose own behavior is unchecked is a rule that can silently stop
+# holding — a checker that matches nothing looks exactly like a clean repo. So
+# the two checkers that carry real logic ship a standalone `.check.mjs` that
+# seeds each failure shape and requires a non-zero exit. They run as part of
+# this gate, because a check nobody runs is a comment.
+#
+# `.check.mjs`, NOT `.test.mjs`: these are standalone scripts, not vitest
+# suites. `npm test` discovers `*.test.mjs`, and a top-level `process.exit()`
+# inside the vitest runner kills the run — so the naming is load-bearing.
+run_check() {
+  local label="$1" script="$2"
+  echo
+  if [ ! -f "$script" ]; then
+    echo "MISSING: $script — $label is unproven."
+    FAILED+=("$label (checker missing)")
+    return
+  fi
+  if node "$script"; then
+    :
+  else
+    FAILED+=("$label")
+  fi
+}
+
+run_check "fixture-marker-guard (behavior)" scripts/guards/fixture-marker-guard.check.mjs
+run_check "sweep-e2e (decision logic)" scripts/lib/sweep-e2e.check.mjs
 
 echo
 echo "==========================================================="

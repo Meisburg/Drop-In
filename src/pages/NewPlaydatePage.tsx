@@ -1214,11 +1214,11 @@ export function NewPlaydatePage({
         onSubmit={handleSubmit}
       />
 
-            /* V23 slice 3: the bottom "Browse all N places" door is GONE. The field's own
-           "Browse places" button (above) opens this same sheet — a door at the
-           very bottom of the form, after the parent has already finished the
-           post, was a dead end (the founder's ask). One door, next to the
-           question it answers. */
+      {/* V23 slice 3: the bottom "Browse all N places" door is GONE. The field's own
+          "Browse places" button (above) opens this same sheet — a door at the
+          very bottom of the form, after the parent has already finished the
+          post, was a dead end (the founder's ask). One door, next to the
+          question it answers. */}
 
       {/* THE DIRECTORY SHEET (V21 t02; V23 slice 3 hardened). A full-screen
           overlay rather than an inline panel: the directory is a map band plus

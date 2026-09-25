@@ -94,6 +94,17 @@ test('the place directory is reachable from /new, with its map and list (V21 t02
   await expect(sheet).toHaveCount(0)
   const placeInput = page.getByPlaceholder('e.g. Green Lake playground, near the boathouse')
   await expect(placeInput).toHaveValue(new RegExp(firstName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+
+  // --- 5. THE PAGE RENDERS NO INTERNAL SOURCE PROSE. ---
+  // The first-use audit found a block comment that had lost its `{/* … */}`
+  // wrapper rendered as literal page text below the submit button. It sits as a
+  // SIBLING of the form element, not inside it, so this reads the rendered
+  // <main> region rather than the form — and it reads RENDERED text, not the
+  // source: the defect was invisible to any grep of src/ because the text was
+  // valid JSX either way.
+  const renderedMainText = await page.getByRole('main').innerText()
+  expect(renderedMainText).not.toContain('/*')
+  expect(renderedMainText).not.toContain('Browse all')
 })
 
 test('the directory sheet can be dismissed without picking (V21 t02)', async ({ page }) => {

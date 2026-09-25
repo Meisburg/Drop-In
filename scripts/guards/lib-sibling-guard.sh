@@ -46,10 +46,14 @@ fi
 #   db-*.test.ts   — (test files themselves, skipped by the loop)
 #   pushClient.ts  — browser-touching half of web push; its own header states
 #                    the rules live in push.ts and it only wires them up.
-#   geocode.ts     — thin Nominatim fetch wrapper with an explicit
-#                    "returns null on ANY failure" contract; no branching
-#                    policy to assert.
-EXEMPT="types.ts db.ts pushClient.ts geocode.ts"
+#
+# geocode.ts was exempt until the first-use audit (ticket 02) found that the
+# exemption hid a real policy: the ZIP derivation's "is this match precise
+# enough?" rule and its two outcomes — the exact path the audit's signup
+# fallback depends on. It now ships geocode.test.ts, so the exemption is gone.
+# Removing a stale exemption is the point of the reason requirement: an
+# allowlist entry that outlives its justification is how a guard stops guarding.
+EXEMPT="types.ts db.ts pushClient.ts"
 
 is_exempt() {
   local name="$1" e

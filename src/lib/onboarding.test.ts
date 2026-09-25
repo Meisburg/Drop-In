@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
+  consumeSignupZipUnresolved,
   HOME_PATH,
+  markSignupZipUnresolved,
   needsOnboarding,
   ONBOARDING_PATH,
   resolveOnboardingGate,
   resolveOnboardingRedirect,
   resolveProtectedRedirect,
+  SIGNUP_ZIP_FALLBACK_KEY,
+  type FlagStorage,
   type OnboardingGateState,
 } from './onboarding'
 
@@ -112,5 +116,62 @@ describe('resolveOnboardingGate (the shell gate, ticket 06 cold-load race)', () 
     expect(
       resolveOnboardingGate(gateState({ suspended: true, sessionLoading: true })),
     ).toBe('suspended')
+  })
+})
+// ---------------------------------------------------------------------------
+// The signup→onboarding handoff (first-use audit, ticket 02).
+//
+// The audit's finding was a silent transition: the address did not resolve, so
+// the parent met a ZIP screen with no explanation. These tests pin the two
+// things that make the fix trustworthy — it fires only for the failure case,
+// and it fires only ONCE.
+// ---------------------------------------------------------------------------
+
+/** A minimal in-memory storage, plus one that throws on every access. */
+function fakeStorage(seed: Record<string, string> = {}): FlagStorage & {
+  dump: () => Record<string, string>
+} {
+  const map = new Map(Object.entries(seed))
+  return {
+    getItem: (key) => map.get(key) ?? null,
+    setItem: (key, value) => void map.set(key, value),
+    removeItem: (key) => void map.delete(key),
+    dump: () => Object.fromEntries(map),
+  }
+}
+
+const throwingStorage: FlagStorage = {
+  getItem: () => {
+    throw new Error('SecurityError')
+  },
+  setItem: () => {
+    throw new Error('SecurityError')
+  },
+  removeItem: () => {
+    throw new Error('SecurityError')
+  },
+}
+
+describe('the signup ZIP fallback flag', () => {
+  it('reports the unresolved address exactly once', () => {
+    const storage = fakeStorage()
+    markSignupZipUnresolved(storage)
+    expect(consumeSignupZipUnresolved(storage)).toBe(true)
+    // The second read is a DIFFERENT visit: a stale cause must not be invented.
+    expect(consumeSignupZipUnresolved(storage)).toBe(false)
+    expect(storage.dump()[SIGNUP_ZIP_FALLBACK_KEY]).toBeUndefined()
+  })
+
+  it('says nothing when the signup address DID resolve', () => {
+    // The happy path writes nothing at all, which is what makes the note mean
+    // something when it does appear.
+    expect(consumeSignupZipUnresolved(fakeStorage())).toBe(false)
+  })
+
+  it('never throws into a signup or a render when storage is hostile', () => {
+    expect(() => markSignupZipUnresolved(throwingStorage)).not.toThrow()
+    expect(consumeSignupZipUnresolved(throwingStorage)).toBe(false)
+    expect(() => markSignupZipUnresolved(null)).not.toThrow()
+    expect(consumeSignupZipUnresolved(null)).toBe(false)
   })
 })

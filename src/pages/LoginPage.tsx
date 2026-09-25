@@ -9,6 +9,7 @@ import {
   displayNameFieldError,
 } from '../lib/account'
 import { LOGIN_PATH, resolveAuthRedirect } from '../lib/auth'
+import { markSignupZipUnresolved } from '../lib/onboarding'
 import {
   createProfile,
   HandleTakenError,
@@ -147,6 +148,11 @@ export function LoginPage() {
 
       // First submit only: create the account. Retries after a taken
       // handle skip this — the account (and session) already exist.
+      //
+      // The new session's user id is read from THIS response, not from the
+      // `session` this render closed over: a signup that just happened has not
+      // re-rendered yet, and the geocode write below needs a real uuid.
+      let justSignedUpUserId: string | null = session?.user.id ?? null
       if (session === null) {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
@@ -163,6 +169,7 @@ export function LoginPage() {
           setNotice('Account created. Check your email to confirm, then sign in.')
           return
         }
+        justSignedUpUserId = data.session.user.id
       }
 
       try {
@@ -185,18 +192,35 @@ export function LoginPage() {
        * This runs AFTER the profile row exists — `updateHomeZipRadius` requires
        * it. A geocode failure is NOT an error the parent sees here: it means
        * the zip is still unset, the onboarding gate sends them to /onboarding,
-       * and its own copy ("You'll see drop-ins near your home zip…") asks for
-       * the zip by hand. That fallback is the whole reason this is allowed to
-       * fail quietly, and it is why nothing below can block the account.
+       * and that step asks for the zip by hand. That fallback is the whole
+       * reason this is allowed to fail quietly, and it is why nothing below can
+       * block the account.
+       *
+       * FIRST-USE AUDIT (ticket 02): failing quietly is not the same as failing
+       * SILENTLY. The parent gave an address believing it was their location, so
+       * a ZIP screen with no explanation reads as "enter it again". The flag
+       * below carries the fact across one route change so /onboarding can say
+       * what happened; it is one-shot and says nothing about implementation.
        */
+      // The id the geocode write targets. `session` is the value this render
+      // closed over, and a brand-new signup has NOT re-rendered with its session
+      // yet — so `session?.user.id ?? ''` resolved to '' and PostgREST answered
+      // `profiles?id=eq.` with a 400 (an empty string is not a uuid). The effect
+      // was the audit's exact finding: the address looked accepted, and the
+      // parent was sent to a ZIP screen anyway. The id from the signUp response
+      // is the one that exists.
+      const ownerId = session?.user.id ?? justSignedUpUserId
       const zip = await zipFromAddressQuery(signupAddress)
-      if (zip !== null) {
+      if (zip !== null && ownerId !== null) {
         try {
-          await updateHomeZipRadius(session?.user.id ?? '', zip, DEFAULT_RADIUS_MILES)
+          await updateHomeZipRadius(ownerId, zip, DEFAULT_RADIUS_MILES)
         } catch {
           // 0045's CHECK or a pre-0012 project: the onboarding step remains the
-          // path that tells the parent what to do. Never fatal here.
+          // path that tells the parent what to do. Never fatal here — and the
+          // ZIP step still asks, so the flag below stays off.
         }
+      } else if (zip === null) {
+        markSignupZipUnresolved(window.sessionStorage)
       }
 
       // The shared session state fetched this user's profile BEFORE the row

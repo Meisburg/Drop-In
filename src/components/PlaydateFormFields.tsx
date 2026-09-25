@@ -715,6 +715,7 @@ line. No kids yet → the designed empty state + the /settings link (the
   return (
     <form
       className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+      data-testid="playdate-form"
       onSubmit={onSubmit}
       noValidate
     >

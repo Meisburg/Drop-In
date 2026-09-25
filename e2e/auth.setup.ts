@@ -63,16 +63,42 @@ setup('sign up the marker, onboard it (zip + radius), save the signed-in state',
   await page.locator('input[type="password"]').fill(password)
   await page.getByRole('button', { name: 'Create account' }).click()
 
-  // Signup lands on / and the onboarding gate (home zip unset, V2 slice 3)
-  // bounces the shell to /onboarding — wait for the location step.
-  await page.getByRole('heading', { name: 'Set your location' }).waitFor()
+  // Signup lands on /, and the shell's onboarding gate decides what happens
+  // next (V2 slice 3: the gate keys on the home zip being unset):
+  //   - the geocode RESOLVED the address → home_zip is already written, so the
+  //     gate passes and the feed renders immediately; or
+  //   - it did NOT resolve → the gate bounces to the location step, which asks
+  //     for the zip.
+  //
+  // FIRST-USE AUDIT (ticket 02) FIXED the first branch, which had silently
+  // never worked: the geocode write targeted `session?.user.id ?? ''` from the
+  // pre-signup render, so it 400'd against an empty uuid and the marker ALWAYS
+  // took the second branch. That is why this spec could previously assume the
+  // location step came next — and this spec is what caught the fix, by timing
+  // out while waiting for a screen the parent should never have seen.
+  //
+  // Both outcomes are now genuinely reachable, and both are valid. The REST
+  // PATCH at the end stays the backstop either way, which is what keeps the
+  // marker's final state identical.
+  const deadline = Date.now() + 30_000
+  let landedOnOnboarding = false
+  while (Date.now() < deadline) {
+    if (new URL(page.url()).pathname === '/onboarding') {
+      landedOnOnboarding = true
+      break
+    }
+    if (await page.getByRole('heading', { name: 'Near you' }).isVisible().catch(() => false)) break
+    await page.waitForTimeout(400)
+  }
 
   // The location step (V2 slice 3: replaces the neighborhood picker): home
   // zip from the seeded gazetteer + the radius select (5 mi is the
-  // default — the pinned options are 2/5/10/20/35).
-  await page.getByPlaceholder('e.g. 98107').fill(MARKER_HOME_ZIP)
-  await page.locator('select').first().selectOption({ label: `${MARKER_RADIUS_MILES} miles` })
-  await page.getByRole('button', { name: /^Continue/ }).click()
+  // default — the pinned options are 1/2/5/10/20/35).
+  if (landedOnOnboarding) {
+    await page.getByPlaceholder('e.g. 98107').fill(MARKER_HOME_ZIP)
+    await page.locator('select').first().selectOption({ label: `${MARKER_RADIUS_MILES} miles` })
+    await page.getByRole('button', { name: /^Continue/ }).click()
+  }
 
   // Back on the feed — signed in, onboarded (home zip set).
   await page.getByRole('heading', { name: 'Near you' }).waitFor()

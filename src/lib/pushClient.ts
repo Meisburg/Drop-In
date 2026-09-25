@@ -23,6 +23,7 @@ import {
   PUSH_PREFS_CACHE_URL,
   PUSH_PREFS_KEY,
   armPushPrompt,
+  armPushPromptOrigin,
   browserPermissionOf,
   base64UrlToBytes,
   clearArmedTrigger,
@@ -31,6 +32,7 @@ import {
   isStandalone,
   parsePushPrefs,
   pushOptInGate,
+  readArmedOrigin,
   readArmedTrigger,
   readPermissionDecision,
   rememberPermissionDecision,
@@ -324,13 +326,28 @@ function notifyArmed(): void {
   }
 }
 
-export function armPushPromptForAction(trigger: PushPromptTrigger): void {
+/**
+ * Arm the prompt for a meaningful action, recording WHERE it happened (first-use
+ * audit, ticket 03). `originPath` defaults to the live location so every arm site
+ * records the fact without each page having to pass it; `PushOptInPrompt` uses it
+ * to keep the prompt off a drop-in's detail page, where the RSVP confirmation is
+ * the moment the parent just earned.
+ */
+export function armPushPromptForAction(trigger: PushPromptTrigger, originPath?: string): void {
+  const origin =
+    originPath ?? (typeof window === 'undefined' ? null : window.location.pathname)
   armPushPrompt(sessionStore(), trigger)
+  if (origin !== null) armPushPromptOrigin(sessionStore(), origin)
   notifyArmed()
 }
 
 export function armedPushTrigger(): PushPromptTrigger | null {
   return readArmedTrigger(sessionStore())
+}
+
+/** The route the still-armed action happened on, or null when unknown. */
+export function armedPushOrigin(): string | null {
+  return readArmedOrigin(sessionStore())
 }
 
 /**

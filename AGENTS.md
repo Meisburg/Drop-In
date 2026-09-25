@@ -88,9 +88,8 @@ question the others cannot.
 | `orchestrator-verifier` (agent) | Do the DETERMINISTIC checks actually pass? | runs the real commands |
 
 `ocr` exists because the agent reviewer shares a model family with the builder.
-`ocr` is a *different agent structure* — its own prompt scaffolding, its own
-tool-use loop, its own rule resolution — so it is a genuinely independent
-instrument even on the same underlying model.
+`ocr` is a *different agent structure* — its own scaffolding, tool-use loop and
+rule resolution — so it is independent even on the same underlying model.
 
 ```bash
 # The third lane, at the end of a slice (base = the commit before the slice)
@@ -119,9 +118,11 @@ ocr review --from <base-sha> --to HEAD --format json --output .scratch/ocr-<slic
 The three lanes above **judge**; none can *guarantee*. A reviewer misses files,
 `ocr` skips config and prose, the verifier runs only what it was handed. Some
 rules must not depend on attention, so `npm run guards` (inside `verify`) runs
-shell scripts that either find a violation or do not — no model, no tokens.
-Three rules: a `lib/` module needs its sibling test; a check-config change
-needs `ALLOW_CONFIG_CHANGE="<why>"`; the tracked git hooks stay wired.
+scripts that either find a violation or do not — no model, no tokens. Four
+rules: a `lib/` module needs its sibling test; a check-config change needs
+`ALLOW_CONFIG_CHANGE="<why>"`; tracked git hooks stay wired; every e2e fixture
+stays inside the sweep's marker convention (`docs/agents/e2e-fixture-convention.md`).
+Rules that parse source ship a `.check.mjs` proving the checker fires.
 
 Borrowed from `affaan-m/ECC` (MIT), reimplemented here — what was taken,
 refused, and the four tests a new guard must pass: `docs/agents/borrowed-guards.md`.
@@ -217,7 +218,6 @@ Two layers: agents define WHO does what; skills hold HOW.
   denied — the reviewer stays skill-free and fresh, because a reviewer that
   loads a workflow skill stops being an independent judge.
 - Do NOT run `/implement` here — it is a competing orchestration spine. The
-  orchestrator pattern is the spine; skills are disciplines within it. The
-  same reasoning rejects `superpowers:subagent-driven-development`: it is a
-  second spine. Its *disciplines* (worktrees, ledgers, verification, the
-  escalating fix loop) are already adopted above; the spine is ours.
+  orchestrator pattern is the spine; skills are disciplines within it. The same
+  reasoning rejects `superpowers:subagent-driven-development`, a second spine:
+  we take its disciplines (worktrees, ledgers, verification, the fix loop).

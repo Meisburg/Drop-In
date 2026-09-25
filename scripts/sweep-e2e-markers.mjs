@@ -12,11 +12,46 @@
  *   node scripts/sweep-e2e-markers.mjs list     # who would be deleted
  *   node scripts/sweep-e2e-markers.mjs select   # counts + the safety gate
  *   node scripts/sweep-e2e-markers.mjs delete   # REFUSES unless the gate passes
- *   node scripts/sweep-e2e-markers.mjs verify   # post-sweep state
+ *   node scripts/sweep-e2e-markers.mjs verify   # post-sweep state (exit 1 if any remain)
  *
  * This deletes rows from production. Run `select` and read the gate first.
+ *
+ * FIRST-USE AUDIT (ticket 05) MADE IT PROVE ITSELF. The audit found a fixture
+ * drop-in sitting in the production discovery feed, which means the sweep had
+ * been trusted rather than checked: it printed nothing about what it removed,
+ * and nothing verified that the removal happened. Both halves matter — a sweep
+ * that silently removes nothing looks exactly like a sweep that worked, and the
+ * next release ships the leak again. So `delete` reports the exact rows it
+ * removed per table and then RE-READS the database, failing loudly if a marker
+ * row survived or a table's total did not drop by exactly the amount the report
+ * claimed. `verify` exits non-zero when a marker remains, so it can gate a
+ * release instead of being a log line nobody reads.
+ *
+ * THE DECISION LIVES IN scripts/lib/sweep-e2e.mjs, WITH ITS TESTS. This file is
+ * only the parts that cannot be unit-tested: the CDP token dance, the SQL
+ * transport, and the console output. The proof itself — the part that must not
+ * be wrong, because a verifier that always says "clean" is worse than none — is
+ * pure and covered by scripts/lib/sweep-e2e.test.mjs.
+ *
+ * WHAT IT STILL DOES NOT DO: it cannot see fixture content created by an
+ * account OUTSIDE the marker convention (a real account a spec posted from).
+ * That is the repo-side guard's job — scripts/guards/fixture-marker-guard.mjs,
+ * which fails the normal `npm run verify` gate when a spec invents a fixture the
+ * sweep's scope does not cover. The two halves are documented together in
+ * docs/agents/e2e-fixture-convention.md.
+ *
+ * Deliberately NOT deletable by this script: it removes rows scoped to
+ * `e2e-%` accounts. It never widens to "looks like test data".
  */
 import { chromium } from '@playwright/test'
+import {
+  countsQuery,
+  deleteStatements,
+  gateRefusal,
+  markerTotal,
+  parseCounts,
+  verificationProblems,
+} from './lib/sweep-e2e.mjs'
 
 const REF = 'ayzvjwxbxyrcgyoeaxuk'
 const mode = process.argv[2] ?? 'select'
@@ -57,33 +92,30 @@ async function sql(query) {
   return JSON.parse(text)
 }
 
-const VICTIMS = `(select id from auth.users where email like 'e2e-%')`
-
-const COUNTS = `
+/** The safety gate: a founder/moderator account inside the marker set. */
+const GATE = `
   select
     (select count(*) from auth.users where email like 'e2e-%') as e2e_users,
     (select count(*) from auth.users) as all_users,
     (select count(*) from profiles p join auth.users u on u.id = p.id
-      where u.email like 'e2e-%' and (p.moderators is true or p.display_name ilike '%meisburg%')) as founder_overlap,
-    (select count(*) from profiles p join auth.users u on u.id = p.id where u.email like 'e2e-%') as e2e_profiles,
-    (select count(*) from playdates where host_profile_id in ${VICTIMS}) as e2e_playdates,
-    (select count(*) from going_pings where profile_id in ${VICTIMS}) as e2e_pings,
-    (select count(*) from comments where author_profile_id in ${VICTIMS}) as e2e_comments,
-    (select count(*) from kids where profile_id in ${VICTIMS}) as e2e_kids,
-    (select count(*) from memberships where profile_id in ${VICTIMS}) as e2e_memberships,
-    (select count(*) from blocks where blocker_profile_id in ${VICTIMS} or blocked_profile_id in ${VICTIMS}) as e2e_blocks,
-    (select count(*) from reports where reporter_profile_id in ${VICTIMS}) as e2e_reports,
-    -- V8 ticket 09: without this line a marker's follows rows are deleted (they
-    -- cascade with the profile) but never REPORTED, so the gate silently proves
-    -- less than it looks like it does.
-    (select count(*) from follows where follower_profile_id in ${VICTIMS} or followee_profile_id in ${VICTIMS}) as e2e_follows,
-    -- V8 ticket 08: same reasoning for push subscriptions.
-    (select count(*) from push_subscriptions where profile_id in ${VICTIMS}) as e2e_push_subscriptions,
-    -- V8 ticket 06: a marker's series rows (occurrences cascade via playdates).
-    (select count(*) from playdate_series where host_profile_id in ${VICTIMS}) as e2e_series`
+      where u.email like 'e2e-%' and (p.moderators is true or p.display_name ilike '%meisburg%')) as founder_overlap`
+
+async function countMarkerRows() {
+  const [row] = await sql(countsQuery())
+  return parseCounts(row)
+}
+
+function printCounts(title, counts) {
+  console.log(title)
+  for (const c of counts) {
+    console.log(`  ${c.table.padEnd(20)} ${String(c.marker).padStart(5)} marker row(s)`)
+  }
+  console.log(`  ${'TOTAL'.padEnd(20)} ${String(markerTotal(counts)).padStart(5)}`)
+}
 
 if (mode === 'select') {
-  console.log(JSON.stringify(await sql(COUNTS), null, 1))
+  console.log(JSON.stringify(await sql(GATE), null, 1))
+  printCounts('\nMarker rows currently in production:', await countMarkerRows())
 } else if (mode === 'list') {
   console.log(
     JSON.stringify(
@@ -95,42 +127,59 @@ if (mode === 'select') {
     ),
   )
 } else if (mode === 'delete') {
-  const [gate] = await sql(COUNTS)
-  if (gate.founder_overlap > 0) {
-    console.error('REFUSING: a founder/moderator account is inside the e2e- set.', gate)
+  const gate = (await sql(GATE))[0]
+  const refusal = gateRefusal(gate)
+  if (refusal !== null) {
+    console.error(refusal, gate ?? '(no gate row)')
     process.exit(3)
   }
-  if (gate.e2e_users === 0) {
+  if (Number(gate.e2e_users) === 0) {
     console.log('Nothing to do — no e2e- accounts.')
     process.exit(0)
   }
-  console.log(`Gate passed (${gate.e2e_users} accounts, 0 founder overlap). Deleting…`)
-  // FK-safe order, scoped to the marker users only.
-  await sql(`
-    delete from playdate_kids where kid_id in (select id from kids where profile_id in ${VICTIMS});
-    delete from comments where author_profile_id in ${VICTIMS};
-    delete from going_pings where profile_id in ${VICTIMS};
-    delete from reports where reporter_profile_id in ${VICTIMS};
-    delete from blocks where blocker_profile_id in ${VICTIMS} or blocked_profile_id in ${VICTIMS};
-    delete from memberships where profile_id in ${VICTIMS};
-    delete from kids where profile_id in ${VICTIMS};
-    delete from playdates where host_profile_id in ${VICTIMS};
-    delete from profiles where id in ${VICTIMS};
-    delete from auth.users where email like 'e2e-%';`)
-  console.log('Deleted. Run `verify` to confirm.')
-} else if (mode === 'verify') {
+  console.log(`Gate passed (${gate.e2e_users} accounts, 0 founder overlap).`)
+
+  const before = await countMarkerRows()
+  printCounts('\nRemoving:', before)
+
+  // FK-safe order, scoped to the marker rows only.
+  await sql(deleteStatements().join('\n'))
+  console.log('\nDelete statements executed.')
+
+  // THE PROOF: re-read, and fail loudly if the database disagrees with the
+  // report. A sweep that removes nothing must not look like a sweep that worked.
+  const after = await countMarkerRows()
+  const problems = verificationProblems(before, after)
+
+  console.log(`\nRemoved ${markerTotal(before)} marker row(s) across ${before.length} table(s).`)
+  printCounts('\nMarker rows remaining:', after)
+
+  if (problems.length > 0) {
+    console.error('\nSWEEP FAILED VERIFICATION — do not treat this release as clean:')
+    for (const p of problems) console.error(`  - ${p}`)
+    process.exit(4)
+  }
   console.log(
-    JSON.stringify(
-      await sql(`select
-        (select count(*) from auth.users) as all_users,
-        (select count(*) from profiles) as all_profiles,
-        (select count(*) from playdates) as all_playdates,
-        (select count(*) from auth.users where email like 'e2e-%') as e2e_left,
-        (select count(*) from profiles where moderators is true) as moderators_left`),
-      null,
-      1,
-    ),
+    '\nVerified: zero marker rows remain, and every total moved by exactly the amount removed.',
   )
+} else if (mode === 'verify') {
+  const counts = await countMarkerRows()
+  const remaining = markerTotal(counts)
+  printCounts('Post-sweep state:', counts)
+  const [state] = await sql(`select
+    (select count(*) from auth.users) as all_users,
+    (select count(*) from profiles) as all_profiles,
+    (select count(*) from playdates) as all_playdates,
+    (select count(*) from profiles where moderators is true) as moderators_left`)
+  console.log(JSON.stringify(state, null, 1))
+  if (remaining > 0) {
+    console.error(
+      `\nVERIFY FAILED: ${remaining} marker row(s) are still in production — ` +
+        'the discovery feed can show them to real parents.',
+    )
+    process.exit(1)
+  }
+  console.log('\nVerified: no marker rows remain.')
 } else {
   console.error(`Unknown mode "${mode}" — use list | select | delete | verify.`)
   process.exit(1)

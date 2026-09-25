@@ -28,6 +28,7 @@ So: take the enforcement idea, take three specific rules, refuse the rest.
 | `scripts/guards/lib-sibling-guard.sh` | every non-exempt `src/lib/*.ts` ships a sibling `.test.ts` | `scripts/hooks/quality-gate.js` PostToolUse gate |
 | `scripts/guards/config-guard.sh` | no protected check-config changes without a recorded reason | `scripts/hooks/config-protection.js` PreToolUse block |
 | `scripts/guards/no-bypass-guard.sh` | the repository's own `core.hooksPath` layer still points at the tracked dir; hooks executable | `scripts/hooks/block-no-verify.js` PreToolUse block |
+| `scripts/guards/fixture-marker-guard.mjs` | every e2e fixture account/title stays inside the sweep's marker convention, and every test `DELETE` is owner-scoped | `scripts/hooks/quality-gate.js` PostToolUse gate (same pattern, different rule) |
 
 All three are reimplemented, not copied. ECC's versions are Node scripts
 speaking Claude Code's `PreToolUse`/`PostToolUse` stdin JSON. This repo's
@@ -41,11 +42,10 @@ slice. It gains portability and a much smaller surface: three shell scripts
 with no dependency graph, versus 53 Node scripts with a lib layer, a sidecar
 metadata file, fingerprints, and a schema validator for the metadata.
 
-## Why these three and not others
+## Why these four and not others
 
 Each was picked because it enforces a rule this repo **already wrote down**
 and had no mechanism to enforce:
-
 1. **lib-sibling** — `docs/agents/code-structure.md` says "A new `lib/` module
    without a sibling `.test.ts` is an incomplete slice." That sentence was
    enforced by reviewer attention alone. On a long diff a reviewer misses one
@@ -65,6 +65,22 @@ and had no mechanism to enforce:
    (`--no-verify`, `-c core.hooksPath=/dev/null`), and an agent that cannot make
    `verify` pass has an easier option than fixing the code. A hook an agent can
    bypass is a suggestion, not enforcement.
+
+4. **fixture-marker** — the first-use audit of 2026-09-25 found a pre-existing
+   drop-in labelled as automated-test data **in the production discovery feed**.
+   `playwright.config.ts` drives the live Supabase project, so every spec writes
+   rows real parents can see, and removal depends on one marker convention that
+   nothing enforced. A spec could create an account outside the sweep's
+   `e2e-%` scope, or title a fixture like a real post, and the only thing that
+   would ever notice is a parent reading the feed. This guard is the fourth
+   lane's answer to that: the repo proves the next run cannot leak, and the live
+   sweep handles what is already there.
+
+   This guard also **changes the shape rule** below (see "Adding a fourth
+   guard"): it is a Node script, not a shell script, and it ships its own
+   behavior test. Both changes were forced by the rule itself — the convention
+   spans TypeScript source, and a regex checker that silently stopped matching
+   would look exactly like a clean repo.
 
 ## The no-bypass guard's accepted exception (externally owned validation copies)
 
@@ -159,5 +175,25 @@ A guard earns its place only if all four are true:
 
 If it needs a model to decide, it is not a guard — it is the reviewer's job.
 Write the rule into `docs/agents/code-structure.md` first, then the guard.
+
+### Amendment (fixture-marker guard): rule 4, revised
+
+The fixture-marker guard breaks rule 4 on purpose, and the exception is narrow
+enough to state exactly. Rule 4's real content is **"small, dependency-free,
+and readable in one sitting"** — a line count was a proxy for that. When the
+rule being enforced spans TypeScript source (bindings, call sites, SQL filters),
+a shell script reimplements a parser badly, and a badly-implemented parser that
+over-flags gets deleted instead of fixed. So:
+
+- a Node script (`node:fs` + `node:path` only, no dependencies) is allowed when
+  the rule needs to read source; and
+- **such a guard must ship a behavior test** (`<guard>.test.mjs`) that seeds
+  each defect class into a throwaway copy and requires a non-zero exit. The test
+  runs inside `npm run guards`. A guard whose own behavior is untested can pass
+  by matching nothing, and a passing-by-nothing guard looks identical to a clean
+  repo — which is strictly worse than no guard, because it reads as coverage.
+
+Rule 3 was the one that mattered most here, and it is what the behavior test
+buys: the guard's findings are falsifiable, in the gate, with no model.
 
 Run the suite: `npm run guards` (also part of `npm run verify`).

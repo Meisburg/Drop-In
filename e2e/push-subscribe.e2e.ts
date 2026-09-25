@@ -568,6 +568,113 @@ test('a saved ping arms the prompt, and denying it surfaces the inbox note', asy
   await viewerContext.close()
 })
 
+/**
+ * FIRST-USE AUDIT (ticket 03): THE RSVP CONFIRMATION OWNS ITS MOMENT.
+ *
+ * The audit found the opt-in prompt landing in the same instant as the RSVP
+ * confirmation on a drop-in's detail page. The page had just done its job —
+ * "✓ Going", the count, "You" — and a notification card competed with it.
+ *
+ * TWO CLAIMS, and the second is why this cannot be a blanket delay:
+ *   1. nothing notification-shaped appears beside the confirmation; and
+ *   2. the trigger SURVIVES the deferral — the next feed visit still has it.
+ * A blanket "never prompt after a ping" passes (1) and silently swallows the
+ * action, which is the outcome the audit did not ask for.
+ *
+ * THE STUB'S PERMISSION IS 'granted' ON PURPOSE, and that makes claim (2)
+ * airtight rather than merely likely. The stub's `Notification.permission`
+ * reports 'denied' only AFTER a permission request (see `installPushStub`), so
+ * a note-path assertion here would be measuring the stub, not the deferral.
+ * With permission granted the decision needle is unambiguous: `ask` is false
+ * EVERYWHERE, including a cold load — so if the trigger were washed away on the
+ * detail page, step 5 would find nothing, and if the prompt were rendering on
+ * the detail page, step 4 would see it. The note path itself stays covered by
+ * `a saved ping arms the prompt, and denying it surfaces the inbox note`.
+ */
+test('a ping from a drop-in detail page defers the notification prompt off the RSVP confirmation', async ({
+  page,
+  browser,
+}) => {
+  const marker = readMarkerMeta()
+  const epoch = Math.floor(Date.now() / 1000)
+  const viewerName = `e2e-d-${epoch}`
+  const viewerEmail = `e2e-d-${epoch}@gmail.com` // gmail.com: the project rejects example.com
+  const viewerPassword = `e2e-d-pw-${epoch}` // in-memory only — never written, never committed
+  const title = `e2e ${marker.displayName} rsvp priority lot`
+
+  // --- 1. The marker hosts a drop-in; the viewer needs something to RSVP to. ---
+  await postDropIn(page, title, 'E2E rsvp priority lot')
+
+  // --- 2. The viewer, on the DETAIL page. ---
+  const viewerContext = await browser.newContext({
+    baseURL: 'http://localhost:4173',
+    storageState: { cookies: [], origins: [] },
+  })
+  const viewer = await viewerContext.newPage()
+  await installPushStub(viewer, {
+    permission: 'granted',
+    endpoint: `https://push.example.test/e2e-d-${epoch}`,
+  })
+  await signUpViewer(viewer, {
+    name: viewerName,
+    email: viewerEmail,
+    password: viewerPassword,
+  })
+  await viewer.getByRole('heading', { name: 'Set your location' }).waitFor()
+  await viewer.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
+  await viewer.locator('select').first().selectOption({ label: `${marker.radiusMiles} miles` })
+  await viewer.getByRole('button', { name: /^Continue/ }).click()
+  await viewer.getByRole('heading', { name: 'Near you' }).waitFor()
+  await expectPushSupported(viewer)
+
+  const href = await viewer
+    .locator('a')
+    .filter({ hasText: title })
+    .first()
+    .getAttribute('href')
+  expect(href).toMatch(/^\/playdate\//)
+  await viewer.goto(href ?? '/')
+  await expect(viewer.getByRole('heading', { name: title })).toBeVisible()
+
+  // The baseline: a cold load of the detail page never asks (the pin), so any
+  // prompt seen later in this test would be caused by the RSVP below.
+  await expect(viewer.getByTestId('push-optin-prompt')).toHaveCount(0)
+
+  // --- 3. THE ACTION: the detail page's own RSVP control. Its label is a
+  //         TOGGLE state ("I'm going" ⇄ "✓ Going"), so the stable hook is the
+  //         accessible name pattern plus aria-pressed, not an exact string. ---
+  const goingButton = viewer
+    .getByRole('button', { name: /(i’m going|✓ going|tap to confirm)/i })
+    .first()
+  await expect(goingButton).toBeVisible()
+  await goingButton.click()
+
+  // The confirmation landed: this is the moment the prompt must not touch. The
+  // pressed state IS the confirmation, and it is what the audit watched change.
+  await expect(goingButton).toHaveAttribute('aria-pressed', 'true')
+
+  // --- 4. THE CLAIM: nothing notification-shaped on this screen, and nothing
+  //         was registered behind the parent's back. ---
+  expect(new URL(viewer.url()).pathname).toMatch(/^\/playdate\//)
+  await expect(viewer.getByTestId('push-optin-prompt')).toHaveCount(0)
+  await expect(viewer.getByTestId('push-optin-note')).toHaveCount(0)
+  expect((await stubState(viewer)).subscribes).toBe(0)
+
+  // --- 5. THE TRIGGER SURVIVED: the next feed visit still carries it. ---
+  await settleOnRoute(viewer, '/')
+  expect(await viewer.evaluate(() => window.sessionStorage.getItem('dropin.push.trigger'))).toBe(
+    'ping_saved',
+  )
+  // The armed origin is the detail route this ping came from — the fact the
+  // deferral is decided on.
+  expect(
+    await viewer.evaluate(() => window.sessionStorage.getItem('dropin.push.trigger.origin')),
+  ).toMatch(/^\/playdate\//)
+  expect((await stubState(viewer)).subscribes).toBe(0)
+
+  await viewerContext.close()
+})
+
 test.afterEach(async () => {
   // Best-effort cleanup (the quick-post / golden-path pattern): delete the
   // marker's own rows via PostgREST with the marker's JWT.

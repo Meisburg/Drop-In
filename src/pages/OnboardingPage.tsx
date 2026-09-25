@@ -24,7 +24,7 @@ import {
   validateHomeZip,
 } from '../lib/feed'
 import { splitSuggestedName, suggestedHandle } from '../lib/oauth'
-import { resolveOnboardingRedirect } from '../lib/onboarding'
+import { consumeSignupZipUnresolved, resolveOnboardingRedirect } from '../lib/onboarding'
 import { errorId, fieldA11y } from '../lib/a11y'
 
 /**
@@ -77,6 +77,15 @@ export function OnboardingPage() {
   const [radiusMiles, setRadiusMiles] = useState<number>(DEFAULT_RADIUS_MILES)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /**
+   * Whether the signup address failed to resolve to a ZIP (first-use audit,
+   * ticket 02). Read lazily ONCE, in the initializer, because the read is
+   * destructive (one-shot): doing it in the render body would consume the flag
+   * on a throwaway render and then show nothing.
+   */
+  const [signupZipUnresolved] = useState(() =>
+    consumeSignupZipUnresolved(typeof window === 'undefined' ? null : window.sessionStorage),
+  )
 
   // The optional completion items (V2 ticket 02).
   //
@@ -387,6 +396,27 @@ export function OnboardingPage() {
           anytime in your settings.
         </p>
       </header>
+
+      {/* FIRST-USE AUDIT (ticket 02): the parent JUST gave an address and was
+          told it would set their location. If the lookup could not match it,
+          this screen otherwise reads as "enter your location again" for no
+          stated reason. The flag is one-shot (consumed on read), so this note
+          belongs to THIS signup and never to a later visit. The copy keeps the
+          existing privacy promise and uses no implementation words. */}
+      {signupZipUnresolved ? (
+        <div
+          className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+          data-testid="signup-zip-fallback-note"
+          role="status"
+        >
+          <p className="font-medium">Your account is ready — one thing left.</p>
+          <p className="mt-1">
+            We couldn’t match the address you entered to a ZIP code, so we need your ZIP to
+            show drop-ins near you. Your address is still private and never shown to other
+            parents.
+          </p>
+        </div>
+      ) : null}
 
       {knownZips === null ? (
         <p className="py-2 text-sm text-slate-600">

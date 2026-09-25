@@ -2,12 +2,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { useLocation } from 'react-router'
 import {
   decidePermissionPrompt,
+  isPlaydateDetailPath,
   type BrowserPermission,
   type PermissionDecision,
   type PushOptInGate,
   type PushPromptTrigger,
 } from '../lib/push'
 import {
+  armedPushOrigin,
   armedPushTrigger,
   clearArmedPushPrompt,
   currentDecision,
@@ -50,6 +52,7 @@ export function PushOptInPrompt() {
   const [decision, setDecision] = useState<PermissionDecision>('unknown')
   const [gate, setGate] = useState<PushOptInGate>({ allowed: true, reason: null })
   const [trigger, setTrigger] = useState<PushPromptTrigger | null>(null)
+  const [origin, setOrigin] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   /** The sentence said INSTEAD of the prompt, held until it is dismissed or a
@@ -61,6 +64,7 @@ export function PushOptInPrompt() {
     setDecision(currentDecision())
     setGate(currentOptInGate())
     setTrigger(armedPushTrigger())
+    setOrigin(armedPushOrigin())
   }, [])
 
   useEffect(() => {
@@ -78,7 +82,17 @@ export function PushOptInPrompt() {
   // the way there.
   const suppressed = pathname === '/settings'
 
-  const state = decidePermissionPrompt({ decision, permission, trigger, gate })
+  // First-use audit (ticket 03): a drop-in's DETAIL page is the one surface
+  // whose immediate confirmation — "✓ Going", the count, "You" — must not share
+  // the screen with a permission request OR a notification note. The RSVP the
+  // parent just made is the whole message. The pure decision seam already
+  // refuses to ASK here; this also stands down the fallback notes so the
+  // deferral is real visually and not just logically. Leaving the detail page
+  // re-reads the facts and the held `note`, so the next feed visit still
+  // surfaces whatever this parent's answer deserves.
+  const onDetailPage = isPlaydateDetailPath(pathname)
+
+  const state = decidePermissionPrompt({ decision, permission, trigger, origin, gate })
 
   /**
    * Say the fallback sentence ONCE, and stand the trigger down so it cannot
@@ -90,9 +104,15 @@ export function PushOptInPrompt() {
    * It does NOT clear on a cold load (trigger null) — an unsupported browser or
    * an un-installed iOS Safari tab already has its explanation in /settings, and
    * a cold load must stay silent.
+   *
+   * It does NOT clear on a drop-in's DETAIL page either (first-use audit, ticket
+   * 03): the screen suppresses the note as well as the ask, so clearing the
+   * trigger there would consume it without ever showing the parent anything —
+   * the deferral would silently become a dismissal. Leaving it armed lets the
+   * next feed visit surface whatever this parent's answer deserves.
    */
   useEffect(() => {
-    if (suppressed || trigger === null) return
+    if (suppressed || onDetailPage || trigger === null) return
     if (state.ask) {
       setNote(null)
       return
@@ -101,7 +121,7 @@ export function PushOptInPrompt() {
       setNote(state.note)
       clearArmedPushPrompt()
     }
-  }, [suppressed, trigger, state.ask, state.note])
+  }, [suppressed, onDetailPage, trigger, state.ask, state.note])
 
   if (suppressed) return null
 
@@ -142,8 +162,9 @@ export function PushOptInPrompt() {
 
   // The fallback card: no buttons that could not work, just the honest
   // sentence — an error from a failed turn-on, or the pointer at the inbox.
+  // Never on a detail page: the RSVP confirmation owns that screen (ticket 03).
   const message = error ?? note
-  if (message === null) return null
+  if (message === null || onDetailPage) return null
 
   return (
     <div
