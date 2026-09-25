@@ -237,29 +237,41 @@ export function LoginPage() {
     }
   }
 
+  // Frontend-design pass: text-base (17px) so iOS never zoom-jumps the form
+  // on focus; py-2.5 keeps the field height the controls already measured at.
   const inputClasses =
-    'w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200'
+    'w-full rounded-xl border border-slate-300 px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200'
 
   return (
-    <div className="pt-safe pb-safe mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-4 bg-slate-50 px-4">
+    <div className="pt-safe pb-safe mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 bg-slate-50 px-4">
       {/* Brand moment: /login sits outside the app shell (no header), so the
-          mark lives here — and it is the first thing a new parent sees. */}
-      <div className="flex flex-col items-center gap-2 pb-2">
-        <DropInMark className="h-14 w-14 text-indigo-600" />
-        <p className="font-display text-2xl font-bold text-indigo-600">Drop In</p>
-        <p className="text-center text-sm text-slate-600">
+          mark lives here — and it is the first thing a new parent sees.
+          Frontend-design pass: the centered logo card was the same template
+          chrome the feed pass de-carded, so the masthead is now a printed
+          notice heading — mark and wordmark in one terracotta lockup, left
+          aligned like every other masthead, with the promise as the quiet
+          line under it. Same elements, noticeboard arrangement. */}
+      <header className="flex flex-col gap-1">
+        <div className="flex items-center gap-2 text-indigo-600">
+          <DropInMark className="h-8 w-8" />
+          <span className="font-display text-2xl font-bold">Drop In</span>
+        </div>
+        <p className="text-sm text-slate-600">
           See what families are up to in your area!
         </p>
-      </div>
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h1 className="text-xl font-semibold text-slate-900">
+      </header>
+      {/* De-carded: the form stands on the page like every other masthead in
+          the app — display-face h1, quiet tagline, no box, no gradient, no
+          shadow (the uniform card shadow was kit, per the design pass). */}
+      <section className="flex flex-col gap-1">
+        <h1 className="font-display text-xl font-semibold text-slate-900">
           {mode === 'login'
             ? 'Sign in'
             : mode === 'signup'
               ? 'Create your account'
               : 'Reset your password'}
         </h1>
-        <p className="mt-1 text-sm text-slate-600">
+        <p className="text-sm text-slate-600">
           {mode === 'login'
             ? 'Welcome back. Sign in to see drop-ins near you.'
             : mode === 'signup'
@@ -280,14 +292,14 @@ export function LoginPage() {
                   type="button"
                   disabled={busy}
                   onClick={() => void handleOAuth(provider.id)}
-                  className="flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 disabled:opacity-50"
+                  className="flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-3 text-base font-medium text-slate-700 disabled:opacity-50"
                 >
                   {provider.label}
                 </button>
               ))}
             </div>
 
-            <div className="my-4 flex items-center gap-3 text-xs text-slate-500">
+            <div className="my-5 flex items-center gap-3 text-xs text-slate-500">
               <span className="h-px flex-1 bg-slate-200" />
               or
               <span className="h-px flex-1 bg-slate-200" />
@@ -427,7 +439,7 @@ export function LoginPage() {
           <button
             type="submit"
             disabled={busy}
-            className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
+            className="min-h-11 rounded-xl bg-indigo-600 px-4 py-3 text-base font-medium text-white disabled:opacity-50"
           >
             {busy
               ? 'Please wait…'
@@ -457,9 +469,9 @@ export function LoginPage() {
             </div>
           ) : null}
         </form>
-      </div>
+      </section>
 
-      <div className="flex items-center justify-between text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-base">
         <button
           type="button"
           className="py-3 text-indigo-600"
