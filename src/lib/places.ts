@@ -12,6 +12,7 @@
 import { coordNumber, haversineMiles, placeDistanceMiles, statedAgeRangeLine } from './feed'
 import type { DistanceChoice, ZipCoords } from './feed'
 import type { Place, PlaceKind } from './types'
+import type { ReviewSummary } from './reviews'
 
 /**
  * The distance seams live in feed.ts, next to the haversine math they use and
@@ -724,6 +725,13 @@ export interface PlaceListRow {
   distanceMiles: number | null
   /** Upcoming drop-ins here; null = the count could not be read. */
   upcomingCount: number | null
+  /**
+   * The place's aggregate rating (the DB-computed display average + review
+   * count), or null when it is unknown: the bulk read failed, or the place has
+   * no reviews at all. A null summary NEVER renders as a 0.0 — the card shows
+   * nothing instead (the honest zero case, the `upcomingCount` convention).
+   */
+  ratingSummary: ReviewSummary | null
 }
 
 /**
@@ -770,6 +778,13 @@ export function browsePlaces(
   viewer: { homeZip: string | null },
   zipCoords: ReadonlyMap<string, ZipCoords>,
   upcoming: Map<string, number> | null,
+  /**
+   * Per-place aggregate ratings (the DB-computed display average + count), or
+   * null when the bulk read failed — then every row's ratingSummary is null
+   * (nothing rendered, never a 0.0). The caller hydrates this map; the pure
+   * function only reads it (the injected-dependency rule, like `upcoming`).
+   */
+  ratings?: ReadonlyMap<string, ReviewSummary> | null,
 ): PlaceListRow[] {
   const rows: PlaceListRow[] = []
   for (const place of places) {
@@ -782,6 +797,7 @@ export function browsePlaces(
       place,
       distanceMiles,
       upcomingCount: upcoming === null ? null : (upcoming.get(place.id) ?? 0),
+      ratingSummary: ratings === null || ratings === undefined ? null : (ratings.get(place.id) ?? null),
     })
   }
 
@@ -884,9 +900,10 @@ export function groupPlacesByKind(rows: readonly PlaceListRow[]): PlaceKindGroup
 /**
  * V15 ticket 03: how the browse list orders its rows. 'alpha' is the default
  * (the founder's A–Z); 'distance' reorders by closeness; 'newest' by creation
- * date. Pure + unit-tested (no React, no DB).
+ * date; 'top-rated' by review average, best first (V24 — the unrated-place
+ * rule below). Pure + unit-tested (no React, no DB).
  */
-export type SortMode = 'alpha' | 'distance' | 'newest'
+export type SortMode = 'alpha' | 'distance' | 'newest' | 'top-rated'
 
 /**
  * V15 ticket 03: sort browse rows by the chosen mode. Returns a NEW array —
@@ -903,6 +920,13 @@ export type SortMode = 'alpha' | 'distance' | 'newest'
  *   distance-ordered list, never the top. Ties break alphabetically.
  * - 'newest': most recent created_at first (descending); missing dates last,
  *   then alphabetical within the unknown block.
+ * - 'top-rated': highest display average first. THE UNRATED-PLACE RULE: a row
+ *   whose ratingSummary is null (no reviews, or the read failed) NEVER ranks as
+ *   if it scored zero — it sorts AFTER every rated row, because a missing
+ *   average is the absence of an opinion, not a 0.0. Ties among rated rows
+ *   break on review COUNT (more reviews = stronger evidence), then name, then
+ *   id — a total deterministic order. The unrated block keeps a stable
+ *   alphabetical order (the same tiebreak discipline as the other modes).
  */
 export function sortPlaces(
   rows: readonly PlaceListRow[],
@@ -955,6 +979,30 @@ export function sortPlaces(
         if (ta === null && tb !== null) return 1
         if (ta !== null && tb === null) return -1
         if (ta !== null && tb !== null && ta !== tb) return tb - ta
+        const byName = a.place.name.localeCompare(b.place.name)
+        if (byName !== 0) return byName
+        return a.place.id < b.place.id ? -1 : a.place.id > b.place.id ? 1 : 0
+      })
+      return copy
+    }
+    case 'top-rated': {
+      // The unrated-place rule: a null summary is the absence of an opinion,
+      // not a zero — it sorts after every rated row. Among rated rows: higher
+      // display average first; on an equal average, MORE reviews rank first
+      // (stronger evidence); then name, then id (the total-order tiebreaks).
+      // The unrated block keeps the stable alphabetical order.
+      copy.sort((a, b) => {
+        const ra = a.ratingSummary
+        const rb = b.ratingSummary
+        if ((ra === null || !ra.hasReviews) !== (rb === null || !rb.hasReviews)) {
+          return ra === null || !ra.hasReviews ? 1 : -1
+        }
+        if (ra !== null && rb !== null && ra.hasReviews && rb.hasReviews) {
+          const avgA = ra.displayAverage ?? 0
+          const avgB = rb.displayAverage ?? 0
+          if (avgA !== avgB) return avgB - avgA
+          if (ra.count !== rb.count) return rb.count - ra.count
+        }
         const byName = a.place.name.localeCompare(b.place.name)
         if (byName !== 0) return byName
         return a.place.id < b.place.id ? -1 : a.place.id > b.place.id ? 1 : 0
@@ -1454,6 +1502,12 @@ export function planDirectoryList(input: {
   zipCoords: ReadonlyMap<string, ZipCoords> | null
   /** Per-place "N upcoming" counts (null = the count read failed). */
   upcoming: Map<string, number> | null
+  /**
+   * Per-place aggregate ratings (the DB-computed display average + count), or
+   * null when the bulk read failed — every row's ratingSummary is then null
+   * (the card shows nothing, never a 0.0). Hydrated by the caller.
+   */
+  ratings?: ReadonlyMap<string, ReviewSummary> | null
 }): DirectoryListPlan {
   const {
     places,
@@ -1470,6 +1524,7 @@ export function planDirectoryList(input: {
     radiusMiles,
     zipCoords,
     upcoming,
+    ratings,
   } = input
 
   const maxMiles =
@@ -1482,6 +1537,7 @@ export function planDirectoryList(input: {
     { homeZip },
     coords,
     upcoming,
+    ratings,
   )
 
   // The two sections: places we could measure, and places we could not. A place
@@ -1503,6 +1559,7 @@ export function planDirectoryList(input: {
         place,
         distanceMiles: c === null ? null : distanceMiles(geocodeCenter, c),
         upcomingCount: upcoming === null ? null : (upcoming.get(place.id) ?? 0),
+        ratingSummary: ratings === null || ratings === undefined ? null : (ratings.get(place.id) ?? null),
       }
     })
   })()

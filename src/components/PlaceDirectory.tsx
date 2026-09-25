@@ -30,6 +30,8 @@ import {
   resolveMapCoords,
 } from '../lib/places'
 import type { PlaceListRow, SortMode } from '../lib/places'
+import { reviewRatingLine } from '../lib/reviews'
+import type { ReviewSummary } from '../lib/reviews'
 import type { Place, PlacePrefill } from '../lib/types'
 import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
 
@@ -85,6 +87,7 @@ export function PlaceDirectory({
   places,
   zipCoords,
   upcoming,
+  ratings,
   followedPlaceIds,
   canFollow,
   onToggleFollow,
@@ -101,6 +104,13 @@ export function PlaceDirectory({
   zipCoords: ReadonlyMap<string, ZipCoords> | null
   /** Per-place "N upcoming" counts (null = the count read failed → none shown). */
   upcoming: Map<string, number> | null
+  /**
+   * V24: per-place aggregate ratings (the DB-computed display average + review
+   * count), keyed by place id. `null` while the bulk read is in flight OR when
+   * it failed — then every card shows no rating line at all (never a 0.0).
+   * Optional: hosts that do not load ratings omit it entirely (same effect).
+   */
+  ratings?: ReadonlyMap<string, ReviewSummary> | null
   /** The caller's own followed place ids (the batched read; empty set default). */
   followedPlaceIds: ReadonlySet<string>
   /** Signed in? Signed out renders no heart at all (the /browse rule). */
@@ -210,6 +220,7 @@ export function PlaceDirectory({
     radiusMiles,
     zipCoords,
     upcoming,
+    ratings,
   })
 
   // The overview map's null condition: at least one placed row resolves to a
@@ -605,6 +616,7 @@ export function PlaceDirectory({
                 <option value="alpha">A–Z</option>
                 <option value="distance">Closest to me</option>
                 <option value="newest">Newest</option>
+                <option value="top-rated">Top rated</option>
               </select>
             </label>
 
@@ -677,6 +689,14 @@ function DirectoryRow({
 }) {
   const navigate = useNavigate()
   const upcomingLabel = placeUpcomingLabel(row.upcomingCount)
+  // V24: the rating line — a real VALUE for screen readers ("4.3 out of 5, 12
+  // reviews"), never decorative glyphs alone. A null summary (unrated, or the
+  // bulk read failed) renders NOTHING — never a 0.0 (the `upcomingCount` rule).
+  const ratingSummary = row.ratingSummary
+  const ratingLine =
+    ratingSummary !== null && ratingSummary.hasReviews
+      ? reviewRatingLine(ratingSummary.count, ratingSummary.displayAverage, row.place.name)
+      : null
 
   /** Non-selectable: "Start a drop-in" — the existing PlacePrefill router-state
       seam (navigate('/new', { state: { place } })). stopPropagation keeps the
@@ -752,6 +772,11 @@ function DirectoryRow({
             : 'Distance unknown'}
         </span>
         <span className="text-xs text-slate-500">{row.place.address}</span>
+        {ratingLine !== null ? (
+          <span data-testid="place-rating-line" className="text-xs font-medium text-amber-700">
+            {ratingLine}
+          </span>
+        ) : null}
         {upcomingLabel !== null ? (
           <span className="text-xs font-medium text-indigo-700">{upcomingLabel}</span>
         ) : null}

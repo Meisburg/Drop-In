@@ -4,15 +4,36 @@ import { PlaceDirectory } from '../components/PlaceDirectoryLazy'
 import { useSessionContext } from '../components/SessionProvider'
 import { NAV_ICONS } from '../components/icons'
 import {
+  getReviewSummaries,
   listMyFollows,
   listPlaces,
   loadZipCodes,
   toggleFollowPlace,
   upcomingCountsByPlace,
 } from '../lib/db'
+import type { ReviewSummaryRow } from '../lib/db'
 import { DEFAULT_RADIUS_MILES, type ZipCoords } from '../lib/feed'
 import { placeFollowIdSet } from '../lib/places'
+import type { ReviewSummary } from '../lib/reviews'
 import type { Place } from '../lib/types'
+
+/**
+ * The bulk rating read's result into the directory's row shape: a Map of
+ * place id → `ReviewSummary` (the lib seam's shape). A null average is the
+ * unrated signal — it stays null all the way to the card, which renders
+ * nothing for it (never a 0.0).
+ */
+function toReviewSummaryMap(rows: ReadonlyMap<string, ReviewSummaryRow>): Map<string, ReviewSummary> {
+  const out = new Map<string, ReviewSummary>()
+  rows.forEach((row, placeId) => {
+    out.set(placeId, {
+      count: row.review_count,
+      displayAverage: row.display_average,
+      hasReviews: row.review_count > 0 && row.display_average !== null,
+    })
+  })
+  return out
+}
 
 /**
  * /browse — the PLACES directory (V8 ticket 07). The day-grouped list of
@@ -95,6 +116,15 @@ export function BrowsePage() {
   const [followedPlaceIds, setFollowedPlaceIds] = useState<ReadonlySet<string>>(
     () => new Set<string>(),
   )
+  /**
+   * V24: the per-place aggregate ratings (the DB-computed display average +
+   * review count), hydrated by ONE bulk read for the whole grid — never one RPC
+   * per card. `null` while the read is in flight OR when it failed → every
+   * card renders no rating line at all (never a 0.0). The empty map is the
+   * honest default twice over: places not yet loaded and a FAILED read both
+   * land here, exactly like the `upcoming` counts above.
+   */
+  const [ratings, setRatings] = useState<Map<string, ReviewSummary> | null>(null)
 
   // The directory. A failed read is disclosed (placesFailed) rather than
   // rendered as a wall — see the page doc.
@@ -177,6 +207,26 @@ export function BrowsePage() {
     }
   }, [loading, session])
 
+  // V24: the bulk rating read — ONE logical read step for every place in the
+  // grid (the helper loops the per-place RPC; see db.getReviewSummaries). Runs
+  // whenever the places list lands; a failure yields null → no rating line on
+  // any card (never a 0.0), exactly like the `upcoming` counts above.
+  useEffect(() => {
+    if (places === null || places.length === 0) return
+    let cancelled = false
+    const ids = places.map((p) => p.id)
+    getReviewSummaries(ids)
+      .then((rows) => {
+        if (!cancelled) setRatings(toReviewSummaryMap(rows))
+      })
+      .catch(() => {
+        if (!cancelled) setRatings(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [places])
+
   if (loading || profile === null) {
     return (
       <div className="flex min-h-64 items-center justify-center text-sm text-slate-600">
@@ -254,6 +304,7 @@ export function BrowsePage() {
         places={places}
         zipCoords={zipCoords}
         upcoming={upcoming}
+        ratings={ratings}
         followedPlaceIds={followedPlaceIds}
         canFollow={session !== null}
         onToggleFollow={(placeId) => void handleTogglePlaceFollow(placeId)}

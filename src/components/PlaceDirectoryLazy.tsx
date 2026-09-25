@@ -21,6 +21,7 @@ const LazyPlaceDirectory = lazy(() => import('./PlaceDirectory'))
 
 type Place = import('../lib/types').Place
 type ZipCoords = import('../lib/feed').ZipCoords
+type ReviewSummary = import('../lib/reviews').ReviewSummary
 
 interface DirectoryProps {
   /** The loaded directory rows. `null` while the host's read is in flight. */
@@ -29,6 +30,13 @@ interface DirectoryProps {
   zipCoords: ReadonlyMap<string, ZipCoords> | null
   /** Per-place "N upcoming" counts (null = the count read failed → none shown). */
   upcoming: Map<string, number> | null
+  /**
+   * V24: per-place aggregate ratings (the DB-computed display average + review
+   * count), keyed by place id. `null` while the bulk read is in flight OR when
+   * it failed — then every card shows no rating line at all (never a 0.0).
+   * Optional: hosts that do not load ratings omit it entirely (same effect).
+   */
+  ratings?: ReadonlyMap<string, ReviewSummary> | null
   /** The caller's own followed place ids (the batched read; empty set default). */
   followedPlaceIds: ReadonlySet<string>
   /** Signed in? Signed out renders no heart at all (the /browse rule). */

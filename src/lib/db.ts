@@ -5863,3 +5863,50 @@ export async function getReviewSummaryWithClient(
 export async function getReviewSummary(placeId: string): Promise<ReviewSummaryRow> {
   return getReviewSummaryWithClient(supabase, placeId)
 }
+
+// ---------------------------------------------------------------------------
+// V24 slice: THE BULK RATING READ (the browse directory's "Top rated" sort +
+// the per-card rating line).
+//
+// The directory lists a few hundred places; one RPC PER CARD would be the
+// expensive way to be wrong (the same rule that made upcomingCountsByPlace
+// ONE read of the whole upcoming set rather than a count per place). The
+// `review_summary` RPC is per-place (0052), so this helper loops it for every
+// id in ONE logical read step — the caller hydrates a Map and passes it into
+// the pure seams (browsePlaces / planDirectoryList), exactly like the
+// `upcoming` counts. A FAILED read THROWS: the caller swallows it into
+// "no ratings at all" (every card shows nothing, never a 0.0).
+// ---------------------------------------------------------------------------
+
+/**
+ * Aggregate ratings for EVERY place in `placeIds`, against an injected client
+ * (the house pattern — mockable). Returns a Map keyed by place id; ids whose
+ * individual RPC failed are ABSENT from the map (the caller treats absence as
+ * "unknown", rendering nothing — never a 0.0). An empty input yields an empty
+ * map without touching the wire.
+ */
+export async function getReviewSummariesWithClient(
+  client: SupabaseClient,
+  placeIds: readonly string[],
+): Promise<Map<string, ReviewSummaryRow>> {
+  const summaries = new Map<string, ReviewSummaryRow>()
+  if (placeIds.length === 0) return summaries
+  await Promise.all(
+    placeIds.map(async (placeId) => {
+      try {
+        summaries.set(placeId, await getReviewSummaryWithClient(client, placeId))
+      } catch {
+        // One place's failed RPC must not sink the whole list: absent from the
+        // map = unknown, rendered as nothing (never a 0.0).
+      }
+    }),
+  )
+  return summaries
+}
+
+/** The default-client wrapper (the browse directory's bulk rating read). */
+export async function getReviewSummaries(
+  placeIds: readonly string[],
+): Promise<Map<string, ReviewSummaryRow>> {
+  return getReviewSummariesWithClient(supabase, placeIds)
+}

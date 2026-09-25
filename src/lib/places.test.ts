@@ -45,6 +45,7 @@ import {
   zipFromAddress,
 } from './places'
 import type { PlaceListRow } from './places'
+import type { ReviewSummary } from './reviews'
 import { DEFAULT_RADIUS_MILES, neighborhoodIdField, RADIUS_MILES_OPTIONS } from './feed'
 import type { Place, PlaceKind } from './types'
 import type { ZipCoords } from './feed'
@@ -92,6 +93,11 @@ function place(overrides: Partial<Place> & { name: string }): Place {
     source: 'seattle-parks',
     ...overrides,
   }
+}
+
+/** A rated summary fixture (the DB-computed display average + count). */
+function rated(count: number, displayAverage: number): ReviewSummary {
+  return { count, displayAverage, hasReviews: true }
 }
 
 describe('matchPlaces (case-insensitive; prefixes rank above substrings; no fuzzy library)', () => {
@@ -311,6 +317,21 @@ describe('browsePlaces (the directory\'s filter + sort decision)', () => {
     const noZips = browsePlaces(directory, NO_FILTERS, VIEWER, new Map(), null)
     expect(noZips.every((row) => row.distanceMiles === null)).toBe(true)
   })
+
+  it('top-rated: hydrates ratingSummary from the injected ratings map (null when absent or failed)', () => {
+    const ratings = new Map<string, ReviewSummary>([
+      ['near-playground', rated(7, 4.5)],
+      ['far-playground', rated(2, 3.1)],
+    ])
+    const hydrated = browsePlaces(directory, NO_FILTERS, VIEWER, ZIP_COORDS, null, ratings)
+    expect(hydrated.find((row) => row.place.name === 'Near Playground')?.ratingSummary).toEqual(rated(7, 4.5))
+    expect(hydrated.find((row) => row.place.name === 'Far Playground')?.ratingSummary).toEqual(rated(2, 3.1))
+    // A place with no entry in the map stays null (unknown → nothing rendered).
+    expect(hydrated.find((row) => row.place.name === 'Indoor Library')?.ratingSummary).toBeNull()
+    // A FAILED bulk read (null) leaves every row's summary null — never a 0.0.
+    const failed = browsePlaces(directory, NO_FILTERS, VIEWER, ZIP_COORDS, null, null)
+    expect(failed.every((row) => row.ratingSummary === null)).toBe(true)
+  })
 })
 
 describe('sortPlaceUpcoming (soonest first — the place page asked about THIS place)', () => {
@@ -330,15 +351,17 @@ describe('sortPlaces (V15 ticket 03: the browse list\'s ordering decision)', () 
     name: string,
     overrides: Partial<{ kind: PlaceKind; lat: number | null; lng: number | null; created_at?: string }> & {
       distanceMiles?: number | null
+      ratingSummary?: ReviewSummary | null
     } = {},
   ): PlaceListRow {
-    const { distanceMiles: dist, ...placeOverrides } = overrides
+    const { distanceMiles: dist, ratingSummary, ...placeOverrides } = overrides
     return {
       place: place({ name, ...placeOverrides }),
       // `dist ?? 1` is the fixture default; an EXPLICIT null must stay null
       // (the "unknown distance" cases pin that).
       distanceMiles: dist === undefined ? 1 : dist,
       upcomingCount: null,
+      ratingSummary: ratingSummary === undefined ? null : ratingSummary,
     }
   }
 
@@ -421,6 +444,63 @@ describe('sortPlaces (V15 ticket 03: the browse list\'s ordering decision)', () 
     expect(names).toEqual(['Newest', 'Oldest', 'No Date'])
   })
 
+  it('top-rated: rated places order by display average, best first', () => {
+    const rows = [
+      row('Mid Rated', { ratingSummary: rated(5, 3.4) }),
+      row('Top Rated', { ratingSummary: rated(2, 4.8) }),
+      row('Low Rated', { ratingSummary: rated(9, 1.2) }),
+    ]
+    const names = sortPlaces(rows, 'top-rated').map((r) => r.place.name)
+    expect(names).toEqual(['Top Rated', 'Mid Rated', 'Low Rated'])
+  })
+
+  it('top-rated: an UNRATED place (null summary) sorts AFTER every rated place, including low-rated ones', () => {
+    // THE unrated-place rule: a missing average is the absence of an opinion,
+    // not a 0.0 — it must never rank as if it scored zero.
+    const rows = [
+      row('Unrated One', { ratingSummary: null }),
+      row('Low Rated', { ratingSummary: rated(1, 1.0) }),
+      row('Unrated Two', { ratingSummary: null }),
+      row('High Rated', { ratingSummary: rated(4, 4.9) }),
+    ]
+    const names = sortPlaces(rows, 'top-rated').map((r) => r.place.name)
+    expect(names).toEqual(['High Rated', 'Low Rated', 'Unrated One', 'Unrated Two'])
+  })
+
+  it('top-rated: equal displayed averages break on review COUNT (more reviews = stronger evidence), then name, then id', () => {
+    const rows = [
+      row('B Fewer Reviews', { ratingSummary: rated(1, 4.0) }),
+      row('A More Reviews', { ratingSummary: rated(12, 4.0) }),
+      row('C Same Count As B', { ratingSummary: rated(1, 4.0) }),
+    ]
+    const names = sortPlaces(rows, 'top-rated').map((r) => r.place.name)
+    // A (12 reviews) beats B and C (1 review each); the tie between B and C
+    // breaks alphabetically — a total deterministic order.
+    expect(names).toEqual(['A More Reviews', 'B Fewer Reviews', 'C Same Count As B'])
+  })
+
+  it('top-rated: an all-unrated list keeps a stable alphabetical order', () => {
+    const rows = [
+      row('Zed Park', { ratingSummary: null }),
+      row('Milo Pool', { ratingSummary: null }),
+      row('Aiden Playground', { ratingSummary: null }),
+    ]
+    const names = sortPlaces(rows, 'top-rated').map((r) => r.place.name)
+    expect(names).toEqual(['Aiden Playground', 'Milo Pool', 'Zed Park'])
+  })
+
+  it('top-rated: a summary with hasReviews=false (count 0) also sorts after every rated place', () => {
+    // The DB can return count 0 + null average for a place with no reviews;
+    // that shape must be treated exactly like a null summary (unrated).
+    const unratedShape: ReviewSummary = { count: 0, displayAverage: null, hasReviews: false }
+    const rows = [
+      row('Rated Low', { ratingSummary: rated(1, 2.0) }),
+      row('Unrated Shape', { ratingSummary: unratedShape }),
+    ]
+    const names = sortPlaces(rows, 'top-rated').map((r) => r.place.name)
+    expect(names).toEqual(['Rated Low', 'Unrated Shape'])
+  })
+
   it('returns a NEW array and never mutates the input', () => {
     const originalOrder = FIXTURE.map((r) => r.place.name)
     const result = sortPlaces(FIXTURE, 'alpha')
@@ -433,9 +513,10 @@ describe('sortPlaces (V15 ticket 03: the browse list\'s ordering decision)', () 
     expect(sortPlaces([], 'alpha')).toEqual([])
     expect(sortPlaces([], 'distance')).toEqual([])
     expect(sortPlaces([], 'newest')).toEqual([])
+    expect(sortPlaces([], 'top-rated')).toEqual([])
   })
 
-  it('the three modes produce different orders on the same fixture', () => {
+  it('the modes produce different orders on the same fixture', () => {
     const alpha = sortPlaces(FIXTURE, 'alpha').map((r) => r.place.name)
     const distance = sortPlaces(FIXTURE, 'distance').map((r) => r.place.name)
     const newest = sortPlaces(FIXTURE, 'newest').map((r) => r.place.name)
@@ -450,7 +531,7 @@ describe('sortPlaces (V15 ticket 03: the browse list\'s ordering decision)', () 
 
 describe('groupPlacesByKind (V13 ticket 05 A7: the browse list\'s grouped presentation)', () => {
   function row(name: string, kind: PlaceKind, distanceMiles: number | null = 1): PlaceListRow {
-    return { place: place({ name, kind }), distanceMiles, upcomingCount: null }
+    return { place: place({ name, kind }), distanceMiles, upcomingCount: null, ratingSummary: null }
   }
 
   it('groups rows by kind and orders groups in schema order (PLACE_KINDS)', () => {
