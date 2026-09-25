@@ -137,7 +137,7 @@ export function OnboardingPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-64 items-center justify-center text-sm text-slate-600">
+      <div className="flex min-h-64 items-center justify-center text-base text-slate-600">
         Loading…
       </div>
     )
@@ -297,15 +297,17 @@ export function OnboardingPage() {
   if (profile === null) {
     return (
       <div className="flex flex-col gap-4">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900">What’s your name?</h1>
-          <p className="mt-1 text-sm text-slate-600">
+        {/* Frontend-design pass: a printed notice heading, not a boxed card —
+            the same masthead the feed pass established. */}
+        <header className="flex flex-col gap-1">
+          <h1 className="font-display text-xl font-semibold text-slate-900">What’s your name?</h1>
+          <p className="text-sm text-slate-600">
             This is how other parents find you in their inbox. It isn’t your email, and you can
             change it later in your settings.
           </p>
-        </div>
+        </header>
         <form
-          className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+          className="flex flex-col gap-3"
           onSubmit={(e) => void handleCreateProfile(e)}
         >
           <div className="flex gap-2">
@@ -313,7 +315,7 @@ export function OnboardingPage() {
               <span className="text-slate-700">First name</span>
               <input
                 className={
-                  'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+                  'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
                   (handleError !== null ? 'border-red-400' : 'border-slate-300')
                 }
                 value={firstNameValue}
@@ -333,7 +335,7 @@ export function OnboardingPage() {
               <span className="text-slate-700">Last name</span>
               <input
                 className={
-                  'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+                  'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
                   (handleError !== null ? 'border-red-400' : 'border-slate-300')
                 }
                 value={lastNameValue}
@@ -353,7 +355,7 @@ export function OnboardingPage() {
           <button
             type="submit"
             disabled={handleBusy}
-            className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
+            className="min-h-11 rounded-xl bg-indigo-600 px-4 py-3 text-base font-medium text-white disabled:opacity-50"
           >
             {handleBusy ? 'Please wait…' : 'Continue'}
           </button>
@@ -364,8 +366,8 @@ export function OnboardingPage() {
 
   if (loadError !== null) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-        <h1 className="text-xl font-semibold text-slate-900">Set your location</h1>
+      <div className="flex flex-col items-start gap-1 pt-0.5">
+        <h1 className="font-display text-xl font-semibold text-slate-900">Set your location</h1>
         <p className="text-sm text-red-600">{loadError}</p>
       </div>
     )
@@ -375,25 +377,28 @@ export function OnboardingPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">Set your location</h1>
-        <p className="mt-1 text-sm text-slate-600">
+      {/* Frontend-design pass: the location masthead is a printed notice
+          heading (display-face h1, quiet tagline), and the zip + radius
+          fields stand on the page without their card kit. */}
+      <header className="flex flex-col gap-1">
+        <h1 className="font-display text-xl font-semibold text-slate-900">Set your location</h1>
+        <p className="text-sm text-slate-600">
           You’ll see drop-ins near your home zip, within your radius. You can change both
           anytime in your settings.
         </p>
-      </div>
+      </header>
 
       {knownZips === null ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm">
+        <p className="py-2 text-sm text-slate-600">
           Loading the zip list…
-        </div>
+        </p>
       ) : (
-        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3">
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-slate-700">Home zip</span>
             <input
               className={
-                'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+                'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
                 (zipError !== null ? 'border-red-400' : 'border-slate-300')
               }
               value={homeZip}
@@ -412,7 +417,7 @@ export function OnboardingPage() {
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-slate-700">Radius</span>
             <select
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
               value={radiusMiles}
               onChange={(e) => setRadiusMiles(Number(e.target.value))}
             >
@@ -428,16 +433,18 @@ export function OnboardingPage() {
 
       {/* V2 ticket 02: the optional completion step — photo + bio + kids
           (first name + age only, the privacy pin). Skipping is fine: the
-          /settings nudge banner keeps prompting until all three are there. */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900">
+          /settings nudge banner keeps prompting until all three are there.
+          Frontend-design pass: this block loses its card chrome and reads as
+          a titled section of the same notice. */}
+      <div className="flex flex-col gap-3">
+        <h2 className="font-display text-lg font-semibold text-slate-900">
           Tell parents about your family <span className="font-normal text-slate-500">(optional)</span>
         </h2>
 
         <div className="mt-3 flex flex-col gap-3">
           <div className="flex flex-col gap-1 text-sm">
             <span className="text-slate-700">Photo</span>
-            <label className="cursor-pointer self-start rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700">
+            <label className="inline-flex min-h-11 cursor-pointer items-center self-start rounded-xl border border-slate-300 bg-white px-3 text-base font-medium text-slate-700">
               {photoUploading ? 'Uploading…' : photoAdded ? 'Photo added' : 'Add a photo'}
               <input
                 type="file"
@@ -456,7 +463,7 @@ export function OnboardingPage() {
             <span className="text-slate-700">Bio</span>
             <textarea
               className={
-                'w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+                'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
                 (bioError !== null ? 'border-red-400' : 'border-slate-300')
               }
               value={bio}
@@ -478,7 +485,7 @@ export function OnboardingPage() {
               <button
                 type="button"
                 onClick={() => addKidRow()}
-                className="self-start rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-200"
+                className="self-start inline-flex min-h-11 items-center rounded-md bg-slate-100 px-3 text-sm font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-200"
               >
                 Add a kid
               </button>
@@ -487,7 +494,7 @@ export function OnboardingPage() {
                 {kidRows.map((row, index) => (
                   <div key={index} className="flex items-center gap-2">
                     <input
-                      className="min-w-0 flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                      className="min-w-0 flex-1 rounded-xl border border-slate-300 px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
                       value={row.name}
                       onChange={(e) => updateKidRow(index, { name: e.target.value })}
                       placeholder="First name"
@@ -498,7 +505,7 @@ export function OnboardingPage() {
                       type="number"
                       min={0}
                       max={17}
-                      className="w-20 shrink-0 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                      className="w-20 shrink-0 rounded-xl border border-slate-300 px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
                       value={row.age}
                       onChange={(e) => updateKidRow(index, { age: e.target.value })}
                       placeholder="Age"
@@ -507,7 +514,7 @@ export function OnboardingPage() {
                     <button
                       type="button"
                       onClick={() => removeKidRow(index)}
-                      className="shrink-0 rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-200"
+                      className="inline-flex min-h-11 shrink-0 items-center rounded-md bg-slate-100 px-3 text-sm font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-200"
                     >
                       Remove
                     </button>
@@ -517,7 +524,7 @@ export function OnboardingPage() {
                   <button
                     type="button"
                     onClick={() => addKidRow()}
-                    className="self-start rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-200"
+                    className="self-start inline-flex min-h-11 items-center rounded-md bg-slate-100 px-3 text-sm font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-200"
                   >
                     Add another kid
                   </button>
@@ -534,7 +541,7 @@ export function OnboardingPage() {
           type="button"
           disabled={saving || knownZips === null || homeZip.trim() === ''}
           onClick={() => void handleContinue()}
-          className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="min-h-11 rounded-xl bg-indigo-600 px-4 py-3 text-base font-medium text-white disabled:opacity-50"
           {...fieldA11y('submit', error)}
         >
           {saving ? 'Saving…' : 'Continue'}
