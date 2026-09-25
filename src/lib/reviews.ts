@@ -193,9 +193,11 @@ export interface RankedPlace {
  * NEVER rank as if it scored zero. It sorts after every rated place — last,
  * not first — because a missing average is not a 0.0; it is the absence of an
  * opinion, and presenting it as the worst place would punish the new park
- * that simply has not been visited yet. Ties among rated places keep their
- * incoming order (stable sort); ties among unrated places keep their incoming
- * order too.
+ * that simply has not been visited yet. Ties among rated places (equal
+ * display averages) break on COUNT: the place with more reviews ranks first —
+ * a 4.0 backed by twenty parents is stronger evidence than a 4.0 from one
+ * (spec "top-rated ordering"). Ties among unrated places keep their incoming
+ * order (stable sort).
  *
  * Does not mutate its input.
  */
@@ -210,9 +212,12 @@ export function rankTopRated(places: readonly PlaceRating[]): RankedPlace[] {
       if (a.summary.hasReviews !== b.summary.hasReviews) {
         return a.summary.hasReviews ? -1 : 1
       }
-      // Both rated: higher average first.
+      // Both rated: higher average first; on an equal display average, the
+      // place with MORE reviews ranks first (the spec's count tiebreak).
       if (a.summary.hasReviews && b.summary.hasReviews) {
-        return (b.summary.displayAverage ?? 0) - (a.summary.displayAverage ?? 0)
+        const byAverage = (b.summary.displayAverage ?? 0) - (a.summary.displayAverage ?? 0)
+        if (byAverage !== 0) return byAverage
+        return b.summary.count - a.summary.count
       }
       // Both unrated: stable (keep incoming order).
       return 0

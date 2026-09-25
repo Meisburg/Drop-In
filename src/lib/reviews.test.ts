@@ -165,7 +165,7 @@ describe('summarizeReviews', () => {
       summarizeReviews([review('p', 4), review('p', 4), review('p', 4), review('p', 5)]).displayAverage,
     ).toBe(4.3)
     // Just below a .x5 boundary: nineteen 4s and one 5 -> sum 81, 81/20 = 4.05
-    // -> rounds DOWN to 4.1 (a .05 never rounds up to the next tenth here).
+    // -> Math.round(4.05 * 10) / 10 = Math.round(40.5) / 10 = 41 / 10 = 4.1.
     const justUnder = [
       ...Array.from({ length: 19 }, () => review('p', 4)),
       review('p', 5),
@@ -215,7 +215,18 @@ describe('rankTopRated', () => {
     expect(rankTopRated([low, high, mid]).map((r) => r.placeId)).toEqual(['high', 'mid', 'low'])
   })
 
-  it('a tie keeps the incoming order (stable sort)', () => {
+  it('a tie on the display average breaks on COUNT — more reviews ranks first (the spec rule)', () => {
+    // Both places average 4.0, but A has TWO reviews and B has ONE: a 4.0
+    // backed by two parents is stronger evidence than a 4.0 from one, so A
+    // must rank first even though it comes SECOND in the incoming order. This
+    // test distinguishes the count tiebreak from a plain stable sort (which
+    // would keep B first).
+    const a = { placeId: 'a', placeName: 'A', reviews: [review('a', 5), review('a', 3)] }
+    const b = { placeId: 'b', placeName: 'B', reviews: [review('b', 4)] }
+    expect(rankTopRated([b, a]).map((r) => r.placeId)).toEqual(['a', 'b'])
+  })
+
+  it('a full tie (equal average AND equal count) keeps the incoming order (stable)', () => {
     const a = { placeId: 'a', placeName: 'A', reviews: [review('a', 4)] }
     const b = { placeId: 'b', placeName: 'B', reviews: [review('b', 4)] }
     const c = { placeId: 'c', placeName: 'C', reviews: [review('c', 4)] }
