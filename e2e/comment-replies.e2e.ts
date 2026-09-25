@@ -178,7 +178,7 @@ test('a comment → reply renders nested, with the one-level + delete-permission
   await expect(v1.locator('#comment-composer')).toBeVisible()
   await v1.locator('#comment-composer').fill(parentBody)
   await v1.getByRole('button', { name: 'Comment', exact: true }).click()
-  const v1Thread = v1.locator('div.rounded-xl', { hasText: 'Comments (' })
+  const v1Thread = v1.getByTestId('comments-section')
   await expect(v1Thread.getByRole('heading', { name: 'Comments (1)', exact: true })).toBeVisible()
   const v1ParentGroup = v1Thread.locator('ul.mt-3 > li').filter({ hasText: parentBody })
   await expect(v1ParentGroup).toBeVisible()
@@ -197,7 +197,7 @@ test('a comment → reply renders nested, with the one-level + delete-permission
   )
   await v2.goto(detailPath)
   await v2.getByRole('heading', { name: title, exact: true }).waitFor()
-  const v2Thread = v2.locator('div.rounded-xl', { hasText: 'Comments (' })
+  const v2Thread = v2.getByTestId('comments-section')
   await expect(v2Thread.getByText(parentBody)).toBeVisible()
   const v2ParentGroup = v2Thread.locator('ul.mt-3 > li').filter({ hasText: parentBody })
   await v2ParentGroup.getByRole('button', { name: 'Reply', exact: true }).click()
@@ -224,7 +224,7 @@ test('a comment → reply renders nested, with the one-level + delete-permission
   //     unchanged comments_delete_author_or_host, 0023 header (d)).
   await page.goto(detailPath)
   await page.getByRole('heading', { name: title, exact: true }).waitFor()
-  const hostThread = page.locator('div.rounded-xl', { hasText: 'Comments (' })
+  const hostThread = page.getByTestId('comments-section')
   const hostReplyRow = hostThread
     .locator('ul.mt-3 > li')
     .filter({ hasText: parentBody })
@@ -238,7 +238,7 @@ test('a comment → reply renders nested, with the one-level + delete-permission
   //     — the parent's author does NOT delete replies; the per-row plan
   //     keys on the row's own author).
   await v1.reload()
-  const v1bThread = v1.locator('div.rounded-xl', { hasText: 'Comments (' })
+  const v1bThread = v1.getByTestId('comments-section')
   const v1bParentGroup = v1bThread.locator('ul.mt-3 > li').filter({ hasText: parentBody })
   const v1bReplyRow = v1bParentGroup.locator('ul.ml-8 > li').filter({ hasText: replyBody })
   await expect(v1bReplyRow).toBeVisible()
@@ -251,7 +251,7 @@ test('a comment → reply renders nested, with the one-level + delete-permission
   // (6) The reply's author (viewer 2) deletes the reply — the nested row
   //     is gone (the parent stays; the count back to (1)).
   await v2.reload()
-  const v2bThread = v2.locator('div.rounded-xl', { hasText: 'Comments (' })
+  const v2bThread = v2.getByTestId('comments-section')
   const v2bParentGroup = v2bThread.locator('ul.mt-3 > li').filter({ hasText: parentBody })
   const v2bReplyRow = v2bParentGroup.locator('ul.ml-8 > li').filter({ hasText: replyBody })
   await expect(v2bReplyRow.getByRole('button', { name: 'Delete', exact: true })).toBeVisible()

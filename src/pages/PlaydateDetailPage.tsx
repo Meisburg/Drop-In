@@ -2301,7 +2301,7 @@ export function PlaydateDetailPage() {
           the confirmed scope pins, never an initial, a count of kids or a
           blank. The block itself is unchanged: the ages line keeps it. */}
       {kidsLine !== null || kidsGoing.length > 0 ? (
-        <div className="flex flex-col gap-3">
+        <div data-testid="kids-coming-line" className="flex flex-col gap-3">
           {kidsLine !== null ? (
             <p className="text-sm text-slate-700">Kids coming: {kidsLine}</p>
           ) : null}
@@ -2387,7 +2387,7 @@ export function PlaydateDetailPage() {
         and the error line surfaces, red-by-design until the live
         apply); a reply offers no Reply (the one-level pin). */}
       {state.comments !== null ? (
-        <div className="flex flex-col gap-3">
+        <div data-testid="comments-section" className="flex flex-col gap-3">
           <h2 className="font-display text-lg font-semibold text-slate-900">
             Comments{state.comments.length > 0 ? ` (${state.comments.length})` : ''}
           </h2>

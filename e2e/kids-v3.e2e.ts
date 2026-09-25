@@ -242,9 +242,10 @@ test('the /new kids picker lands a selection that shows as the "Kids coming" lin
 
   // The kid-photo pin: the line's card carries NO image element (a kid
   // photo renders only in the profile kids list, never on the event
-  // line — the no-photos pin, the 0022 header). The kids card is the
-  // only div.rounded-xl on the detail page containing the line text.
-  const card = page.locator('div.rounded-xl', { hasText: 'Kids coming:' })
+  // line — the no-photos pin, the 0022 header). Anchor on the block's own
+  // data-testid: the design pass de-carded this section, so the old
+  // div.rounded-xl anchor silently matched nothing (the V23 drift class).
+  const card = page.getByTestId('kids-coming-line')
   await expect(card).toHaveCount(1)
   await expect(card.locator('img, picture, [role="img"]')).toHaveCount(0)
 })
