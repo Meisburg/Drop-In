@@ -121,10 +121,13 @@ const AUTOSAVE_DEBOUNCE_MS = 400
  *  - "About the parents" (the bio, editable textarea; the display name renders
  *    as its OWN text node inside the photo card above, so a spec can match it
  *    exactly while the app-shell header shows the @-prefixed form)
- *  - "A photo of your family" (always-present card: the signed-URL image when
+ *  - "Family photos" (always-present card: the signed-URL image when
  *    set, plus the Add/Change control either way). V23 s16 placed it HERE, in
  *    the parents region right after the bio, matching the read view's sequence
- *    (it used to sit 2nd, before the kids — the drift this slice kills).
+ *    (it used to sit 2nd, before the kids — the drift this slice kills). The
+ *    heading is "Family photos" on BOTH surfaces (V24: the founder asked for a
+ *    dedicated section heading; the read view gained its own h2 in the same
+ *    change so the cross-surface order guard sees the same block on each side).
  *
  * V16 t04 REMOVED the "Hosted drop-ins" card (and with it this page's own-posts
  * load — see the removal note at its old position). Duplicating a past post
@@ -1443,15 +1446,19 @@ export function ProfilePage() {
         ) : null}
       </div>
 
-      {/* "A photo of your family" — V23 s16 MOVED IT HERE, into the parents
+      {/* "Family photos" — V23 s16 MOVED IT HERE, into the parents
           region right after the bio card, so the editor's on-screen sequence
           matches the read view's (the read view folds the family photo into its
           "About the parents" card as the CLOSER). It used to sit as the 2nd
           card, before the kids. The card is unchanged: always present (add OR
           change), the signed URL arrives from the hook above, and without one
-          there is simply no image yet, but the control is always there. */}
+          there is simply no image yet, but the control is always there.
+          V24: the heading is now "Family photos" on BOTH surfaces (the founder
+          asked for a dedicated section heading); the read view gained its own
+          h2 in the same change, so the cross-surface order guard sees the same
+          block on each side. */}
       <div className="flex flex-col gap-3">
-        <h2 className="font-display text-lg font-semibold text-slate-900">A photo of your family</h2>
+        <h2 className="font-display text-lg font-semibold text-slate-900">Family photos</h2>
         <p className="mt-1 text-sm text-slate-600">
           Optional. One photo of your family — it shows here, to signed-in families.
         </p>

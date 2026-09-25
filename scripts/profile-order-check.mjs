@@ -28,15 +28,12 @@
  * HEADING -> KEY MAPPING (documented so a future reorderer knows what each
  * heading means):
  *   /photo & name/i          -> 'user'    the identity card ("Your photo & name")
- *   /photo of your family/i  -> 'familyPhoto' "A photo of your family" — its OWN
- *                                         block (V23 s16): the cross-surface
- *                                         comparison needs to see WHERE it sits,
- *                                         not fold it into another key. In the
- *                                         read view it renders inside the
- *                                         "About the parents" card (no heading of
- *                                         its own), so the read probe detects it
- *                                         by its [data-testid="family-photo"]
- *                                         image instead.
+ *   /family photos|photo of your family/i -> 'familyPhoto' "Family photos" — its OWN
+ *                                         block (V23 s16; V24 gave it a dedicated
+ *                                         heading on BOTH surfaces, so the read
+ *                                         probe now sees the heading directly;
+ *                                         the legacy "A photo of your family"
+ *                                         form still maps for older builds).
  *   /about the kids/i        -> 'kids'
  *   /about the parents/i     -> 'parents' the bio card
  *   /^the parents$/i         -> 'parents' the parent-cards group
@@ -83,11 +80,15 @@ const SHARED_BLOCKS = ['user', 'kids', 'parents', 'familyPhoto', 'parentCards', 
 /** Map one rendered heading text to its block key, or null for unknown text.
  *  The family photo is its OWN key ('familyPhoto') — the cross-surface
  *  comparison (V23 s16) needs to see WHERE it sits on each surface, so it must
- *  not be folded into another key. */
+ *  not be folded into another key. V24 gave the block a dedicated "Family
+ *  photos" heading on BOTH surfaces (the founder's annotation 11), so the read
+ *  view now emits the heading itself and this mapping sees it directly; the
+ *  legacy "A photo of your family" form is kept in the pattern so an older
+ *  build still maps. */
 function keyForHeading(text) {
   const t = text.trim()
   if (/photo & name/i.test(t)) return 'user'
-  if (/photo of your family/i.test(t)) return 'familyPhoto'
+  if (/family photos|photo of your family/i.test(t)) return 'familyPhoto'
   if (/about the kids/i.test(t)) return 'kids'
   if (/about the parents/i.test(t)) return 'parents'
   if (/^the parents$/i.test(t)) return 'parents'
@@ -201,10 +202,10 @@ async function markerCredentials(page) {
  * not exist, and the read view gates the whole block on that URL — so a
  * synthetic path renders NOTHING, and the order check's read side kept reporting
  * `familyPhoto` absent (`read index -1`) even while the column was set. The
- * EDITOR is different: its "A photo of your family" card is always present and
- * the heading renders regardless (its empty state IS the card), which is exactly
- * why the drift this check exists for was visible on one surface and not the
- * other.
+ * EDITOR is different: its "Family photos" card (V24; formerly "A photo of your
+ * family") is always present and the heading renders regardless (its empty state
+ * IS the card), which is exactly why the drift this check exists for was visible
+ * on one surface and not the other.
  *
  * A 1x1 PNG is the smallest real object that mints. Uploaded with the marker's
  * own JWT, at `<uid>/family/<name>` — the path shape `familyPhotoObjectPath`
@@ -378,10 +379,12 @@ check(
 )
 
 // The read view folds the family photo INTO its "About the parents" card: the
-// image sits AFTER that heading, inside the same card (ProfileView.tsx:571,
-// "THE FAMILY PHOTO IS THE CLOSER"), and it has no heading of its own — so it is
-// detected by its image's testid and its position recorded RELATIVE to the
-// headings.
+// image sits AFTER that heading, inside the same card (ProfileView.tsx,
+// "THE FAMILY PHOTO IS THE CLOSER"). V24 gave the block its own "Family photos"
+// h2 on both surfaces, so when the photo renders the read probe now sees the
+// heading directly in `readKeys`; the testid fallback below only matters for a
+// build whose read view still lacks the heading (or a mint failure where the
+// column is set but no image renders).
 //
 // V23 REVIEW — THIS LINE WAS WRONG AND IT MADE THE CHECK LIE. The first version
 // inserted 'familyPhoto' BEFORE 'parents':
@@ -395,9 +398,15 @@ check(
 // probe was wrong. Recorded because "the check now fails" is only a finding if
 // the check is trustworthy, and this one was not.
 const readFamilyPhotoPresent = await page.locator('[data-testid="family-photo"]').count() > 0
-const readObserved = readFamilyPhotoPresent
-  ? [...readKeys, 'familyPhoto']
-  : readKeys
+// V24: the read view now emits its own "Family photos" heading, so when the
+// photo renders `readKeys` already carries 'familyPhoto' — appending it again
+// would double-count the block. The testid fallback (the pre-V24 shape) only
+// fires when the image is present but no heading was seen (an older build or a
+// mint failure with the column set).
+const readObserved =
+  readFamilyPhotoPresent && !readKeys.includes('familyPhoto')
+    ? [...readKeys, 'familyPhoto']
+    : readKeys
 console.log(`read view shared blocks:       ${JSON.stringify(sharedProjection(readObserved))}`)
 
 // --- Edit mode: click "Edit profile", then measure the section order. ---

@@ -311,7 +311,10 @@ export function ProfileView({
   //
   // NOTE the JSX below consumes this seam in order: the kids card is emitted
   // first, then the about-the-parents card (with the family photo as its
-  // closer), laid out in exactly the sequence the function emits.
+  // closer), laid out in exactly the sequence the function emits. The family
+  // photo block now carries its OWN "Family photos" h2 inside that card (V24);
+  // the heading does not move the block's position — the seam still emits it
+  // last, and the cross-surface order guard sees the same block on each side.
   const blurb = profileBlurbOrder(profile, isOwnProfile && profile.kids.length > 0)
   const showsAbout = blurb.includes('about')
   const showsKids = blurb.includes('kids')
@@ -567,9 +570,17 @@ export function ProfileView({
             "A PHOTO OF YOUR FAMILY" IS NOT PUBLIC — it is in the private bucket
             and only a signed-in family can mint for it (T4: the photo usually
             depicts the children). The signed URL arrives from the hook above;
-            without one there is simply no image. */}
+            without one there is simply no image.
+            V24: the block carries its OWN "Family photos" heading on BOTH
+            surfaces (the founder's annotation 11 — a dedicated section, not an
+            anonymous closer of the about card). The heading sits INSIDE this
+            card, after the bio/interests content, so the block's POSITION in
+            the page order is unchanged: `profileBlurbOrder` still emits
+            familyPhoto as the closer of the shared sequence, and the
+            cross-surface order guard sees the same block on each side. */}
         {familyPhotoUrl !== null ? (
           <div className="mt-3 first:mt-0">
+            <h2 className="text-base font-semibold text-slate-900">Family photos</h2>
             <PhotoButton
               src={familyPhotoUrl}
               alt={`@${profile.display_name}’s family photo`}
