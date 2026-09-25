@@ -335,7 +335,7 @@ export function ProfileView({
           40px `md` default, which read as an afterthought beside a name
           heading. The default is deliberately unchanged: every drop-in card
           and the detail page's host line keep their 40px circle. */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-3">
         <div className="flex items-center gap-3">
           {/* Slice 11 follow-up: this avatar sits ABOVE the fold at the top of a
               profile page, so it is eager. The slice's `eager` default is false
@@ -457,7 +457,7 @@ export function ProfileView({
           "No kids listed." line is gone. /profile's editor is where a parent
           adds kids, and that editor is always there. */}
       {showsKids ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3">
           <h2 className="text-base font-semibold text-slate-900">About the kids</h2>
           <ul className="mt-2 flex flex-col gap-2">
             {profile.kids.map((kid) => {
@@ -507,7 +507,7 @@ export function ProfileView({
           `showsInterests` is hoisted above rather than inlined below because the
           card's own existence now depends on it. */}
       {showsAbout || showsInterests || familyPhotoUrl !== null ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3">
           {/* V13 ticket 01: the identity row (avatar + @handle + "Here since" +
               "Hosted N drop-ins") is the page's identity block at the top (V15
               ticket 06, A20). This card carries the "About the parents" block
@@ -603,7 +603,7 @@ export function ProfileView({
               disabled={followBusy}
               onClick={() => void handleToggleFollow()}
               className={
-                'rounded-xl border px-3 py-2 text-sm font-medium disabled:opacity-50 ' +
+                'inline-flex min-h-11 items-center rounded-xl border px-3 py-2.5 text-base font-medium disabled:opacity-50 ' +
                 (following
                   ? 'border-indigo-600 bg-indigo-600 text-white'
                   : 'border-indigo-300 bg-white text-indigo-700')
@@ -619,7 +619,7 @@ export function ProfileView({
               type="button"
               data-testid="message-profile"
               onClick={() => navigate(`/inbox?dm=${profileId}`)}
-              className="rounded-xl border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700"
+              className="inline-flex min-h-11 items-center rounded-xl border border-indigo-300 bg-white px-3 py-2.5 text-base font-medium text-indigo-700"
             >
               Message
             </button>
@@ -629,7 +629,7 @@ export function ProfileView({
               disabled={blockingBusy}
               onClick={() => void handleToggleBlock()}
               className={
-                'rounded-xl border px-3 py-2 text-sm font-medium disabled:opacity-50 ' +
+                'inline-flex min-h-11 items-center rounded-xl border px-3 py-2.5 text-base font-medium disabled:opacity-50 ' +
                 (blocked
                   ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
                   : 'border-slate-300 bg-white text-slate-700')
@@ -644,7 +644,7 @@ export function ProfileView({
             <button
               type="button"
               onClick={() => setReporting(true)}
-              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600"
+              className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-600"
             >
               Report
             </button>
