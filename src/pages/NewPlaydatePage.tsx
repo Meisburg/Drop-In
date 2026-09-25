@@ -1255,7 +1255,7 @@ export function NewPlaydatePage({
             <PlaceDirectory
               places={places}
               zipCoords={zipCoords}
-              upcoming={null}
+              upcomingStartTimes={null}
               followedPlaceIds={new Set<string>()}
               canFollow={false}
               onToggleFollow={() => undefined}

@@ -63,7 +63,7 @@ import {
 // V8 ticket 07: the places directory's pure payload seam (the playdates /
 // playdate_series `place_id` key — omitted entirely for a free-text place, so
 // pre-0030-apply every existing insert stays byte-identical).
-import { placeIdField, upcomingCountByPlace } from './places'
+import { placeIdField, upcomingCountByPlace, groupUpcomingStartTimesByPlace } from './places'
 import {
   buildShareUrl,
   issueReportInsert,
@@ -748,6 +748,34 @@ export async function upcomingCountsByPlace(): Promise<Map<string, number> | nul
     .is('hidden_at', null)
   if (error) return null
   return upcomingCountByPlace((data ?? []) as Array<{ place_id: string | null }>)
+}
+
+/**
+ * Upcoming drop-in START TIMES per place, for the browse list's date chips
+ * (annotation 15). ONE read of the upcoming posts' (place_id, starts_at) — the
+ * same query shape as `upcomingCountsByPlace` but selecting the start time so a
+ * window can ask "does this place have ANY drop-in on THIS day?" rather than
+ * merely "does it have any at all?".
+ *
+ * Returns null when the read FAILS (pre-0030-apply: no place_id column), which
+ * the caller renders as NO start times at all — never as an empty list, which
+ * would be a claim we cannot make.
+ */
+export async function upcomingStartTimesByPlaceWithClient(
+  client: SupabaseClient,
+): Promise<Map<string, string[]> | null> {
+  const { data, error } = await client
+    .from('playdates')
+    .select('place_id, starts_at')
+    .gte('starts_at', startOfTodayIso())
+    .is('hidden_at', null)
+  if (error) return null
+  return groupUpcomingStartTimesByPlace((data ?? []) as Array<{ place_id: string | null; starts_at: string }>)
+}
+
+/** The default-client wrapper (the browse directory's date-chip read). */
+export async function upcomingStartTimesByPlace(): Promise<Map<string, string[]> | null> {
+  return upcomingStartTimesByPlaceWithClient(supabase)
 }
 
 /**

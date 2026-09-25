@@ -9,7 +9,7 @@ import {
   listPlaces,
   loadZipCodes,
   toggleFollowPlace,
-  upcomingCountsByPlace,
+  upcomingStartTimesByPlace,
 } from '../lib/db'
 import type { ReviewSummaryRow } from '../lib/db'
 import { DEFAULT_RADIUS_MILES, type ZipCoords } from '../lib/feed'
@@ -98,9 +98,9 @@ export function BrowsePage() {
   const [places, setPlaces] = useState<Place[] | null>(null)
   const [placesFailed, setPlacesFailed] = useState(false)
   const [zipCoords, setZipCoords] = useState<ReadonlyMap<string, ZipCoords> | null>(null)
-  // null = the count read failed (pre-0030-apply: no place_id column) → no
-  // count is rendered at all, because "0 upcoming" is a claim we cannot make.
-  const [upcoming, setUpcoming] = useState<Map<string, number> | null>(null)
+  // null = the start-time read failed (pre-0030-apply: no place_id column) → no
+  // start times rendered at all, because "0 upcoming" is a claim we cannot make.
+  const [upcomingStartTimes, setUpcomingStartTimes] = useState<Map<string, string[]> | null>(null)
   /**
    * V17 t02: the PLACE ids the caller already follows (the pure
    * placeFollowIdSet seam) — what each card's heart reads. ONE batched read for
@@ -164,17 +164,17 @@ export function BrowsePage() {
     }
   }, [])
 
-  // The "N upcoming" counts. Signed-in only (the read is RLS-scoped to the
-  // authenticated role anyway); a failure yields null → no counts rendered.
+  // The "N upcoming" start times. Signed-in only (the read is RLS-scoped to the
+  // authenticated role anyway); a failure yields null → no start times rendered.
   useEffect(() => {
     if (loading || session === null) return
     let cancelled = false
-    upcomingCountsByPlace()
-      .then((counts) => {
-        if (!cancelled) setUpcoming(counts)
+    upcomingStartTimesByPlace()
+      .then((times) => {
+        if (!cancelled) setUpcomingStartTimes(times)
       })
       .catch(() => {
-        if (!cancelled) setUpcoming(null)
+        if (!cancelled) setUpcomingStartTimes(null)
       })
     return () => {
       cancelled = true
@@ -303,7 +303,7 @@ export function BrowsePage() {
       <PlaceDirectory
         places={places}
         zipCoords={zipCoords}
-        upcoming={upcoming}
+        upcomingStartTimes={upcomingStartTimes}
         ratings={ratings}
         followedPlaceIds={followedPlaceIds}
         canFollow={session !== null}

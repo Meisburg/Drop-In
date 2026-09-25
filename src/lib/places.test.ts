@@ -45,10 +45,11 @@ import {
   sortPlaces,
   stripPlaceAlias,
   upcomingCountByPlace,
+  groupUpcomingStartTimesByPlace,
   usesPlaceAlias,
   zipFromAddress,
 } from './places'
-import type { DateWindow, PlaceListRow } from './places'
+import type { PlaceListRow } from './places'
 import type { ReviewSummary } from './reviews'
 import { DEFAULT_RADIUS_MILES, formatDayLabel, localDayKey, neighborhoodIdField, RADIUS_MILES_OPTIONS } from './feed'
 import type { Place, PlaceKind } from './types'
@@ -239,6 +240,36 @@ describe('placeUpcomingLabel / upcomingCountByPlace (the "N upcoming" chips)', (
   })
 })
 
+describe('groupUpcomingStartTimesByPlace (the date-chip start-time aggregator)', () => {
+  it('groups start times by place id, sorted ascending', () => {
+    const times = groupUpcomingStartTimesByPlace([
+      { place_id: 'a', starts_at: '2026-09-05T09:00:00Z' },
+      { place_id: 'a', starts_at: '2026-09-04T09:00:00Z' },
+      { place_id: 'b', starts_at: '2026-09-06T10:00:00Z' },
+      { place_id: null, starts_at: '2026-09-04T08:00:00Z' },
+      { starts_at: '2026-09-04T07:00:00Z' },
+      { place_id: '', starts_at: '2026-09-04T06:00:00Z' },
+    ])
+    expect(times.get('a')).toEqual(['2026-09-04T09:00:00Z', '2026-09-05T09:00:00Z'])
+    expect(times.get('b')).toEqual(['2026-09-06T10:00:00Z'])
+    expect(times.size).toBe(2)
+  })
+
+  it('returns an empty map when there are no posts', () => {
+    const times = groupUpcomingStartTimesByPlace([])
+    expect(times.size).toBe(0)
+  })
+
+  it('a place with no upcoming drop-ins gets an empty array (not missing)', () => {
+    // The db read returns only rows with starts_at >= today, so a place that
+    // appears in the map has at least one drop-in. A place NOT in the map has
+    // none — the caller derives count from array length (0 = none).
+    const times = groupUpcomingStartTimesByPlace([{ place_id: 'a', starts_at: '2026-09-04T09:00:00Z' }])
+    expect(times.has('b')).toBe(false)
+    expect(times.get('a')!.length).toBe(1)
+  })
+})
+
 describe('browsePlaces (the directory\'s filter + sort decision)', () => {
   const near = place({ name: 'Near Playground', lat: NEAR.lat, lng: NEAR.lng })
   const far = place({ name: 'Far Playground', lat: FAR.lat, lng: FAR.lng })
@@ -306,12 +337,18 @@ describe('browsePlaces (the directory\'s filter + sort decision)', () => {
     expect(rows.map((row) => row.place.name)).toEqual(['Far Playground'])
   })
 
-  it('shows "N upcoming" per place, and null for ALL when the counts read failed', () => {
-    const withCounts = browsePlaces(directory, NO_FILTERS, VIEWER, ZIP_COORDS, new Map([['near-playground', 3]]))
-    expect(withCounts.find((row) => row.place.name === 'Near Playground')?.upcomingCount).toBe(3)
-    expect(withCounts.find((row) => row.place.name === 'Far Playground')?.upcomingCount).toBe(0)
-    const noCounts = browsePlaces(directory, NO_FILTERS, VIEWER, ZIP_COORDS, null)
-    expect(noCounts.every((row) => row.upcomingCount === null)).toBe(true)
+  it('shows "N upcoming" per place (derived from start-time array length), and null for ALL when the read failed', () => {
+    const withTimes = browsePlaces(
+      directory,
+      NO_FILTERS,
+      VIEWER,
+      ZIP_COORDS,
+      new Map([['near-playground', ['2026-09-04T09:00:00Z', '2026-09-05T10:00:00Z', '2026-09-06T11:00:00Z']]]),
+    )
+    expect(withTimes.find((row) => row.place.name === 'Near Playground')?.upcomingCount).toBe(3)
+    expect(withTimes.find((row) => row.place.name === 'Far Playground')?.upcomingCount).toBe(0)
+    const noTimes = browsePlaces(directory, NO_FILTERS, VIEWER, ZIP_COORDS, null)
+    expect(noTimes.every((row) => row.upcomingCount === null)).toBe(true)
   })
 
   it('is empty for an empty directory, an unusable viewer, or an unreadable gazetteer', () => {
@@ -1844,6 +1881,8 @@ describe('planDirectoryList (the directory list composition, moved out of PlaceD
     lng: null,
   })
   const DIR = [PARK_A, PLAY_B]
+  // Fixed "now" for date-window tests: local Fri Sep 4 2026 12:00.
+  const NOW_ISO = new Date(2026, 8, 4, 12, 0).toISOString()
 
   function plan(overrides: Partial<Parameters<typeof planDirectoryList>[0]> = {}) {
     return planDirectoryList({
@@ -1861,7 +1900,8 @@ describe('planDirectoryList (the directory list composition, moved out of PlaceD
       geocodeCenter: null,
       radiusMiles: 5,
       zipCoords: ZIP_COORDS,
-      upcoming: null,
+      upcomingStartTimes: null,
+      nowIso: NOW_ISO,
       ...overrides,
     })
   }
@@ -1979,39 +2019,123 @@ describe('planDirectoryList (the directory list composition, moved out of PlaceD
     // PARK_A has drop-ins, PLAY_B does not. Both carry coordinates of their own
     // (the `place` fixture), so neither lands in the unplaced section — a window
     // that excludes one leaves the other, never an empty page.
-    const UPCOMING = new Map([
-      ['alki-beach-park', 3],
-      ['bellevue-playground', 0],
+    // Fixed "now": local Fri Sep 4 2026 12:00. The three windows are DIFFERENT:
+    //   today    → a drop-in starting on Fri Sep 4
+    //   tomorrow → a drop-in starting on Sat Sep 5
+    //   weekend  → a drop-in starting on Sat Sep 6 or Sun Sep 7 (upcoming weekend)
+    const TODAY_START = new Date(2026, 8, 4, 9, 0).toISOString() // Fri Sep 4 09:00
+    const TOMORROW_START = new Date(2026, 8, 5, 9, 0).toISOString() // Sat Sep 5 09:00
+    const WEEKEND_SAT_START = new Date(2026, 8, 6, 18, 0).toISOString() // Sat Sep 6 18:00
+    const WEEKEND_SUN_START = new Date(2026, 8, 7, 10, 0).toISOString() // Sun Sep 7 10:00
+    // Alki has a drop-in today; Bellevue has none.
+    const UPCOMING_TIMES = new Map([
+      ['alki-beach-park', [TODAY_START]],
+      ['bellevue-playground', []],
+    ])
+    // A place with a drop-in tomorrow (Sat Sep 5) but NOT today.
+    const TOMORROW_TIMES = new Map([
+      ['alki-beach-park', [TOMORROW_START]],
+      ['bellevue-playground', []],
+    ])
+    // A place with a drop-in on Saturday of the upcoming weekend.
+    const WEEKEND_TIMES = new Map([
+      ['alki-beach-park', [WEEKEND_SAT_START]],
+      ['bellevue-playground', []],
+    ])
+    // A place with a drop-in on Sunday of the upcoming weekend.
+    const WEEKEND_SUN_TIMES = new Map([
+      ['alki-beach-park', [WEEKEND_SUN_START]],
+      ['bellevue-playground', []],
     ])
 
-    it('each chip selects the right rows for its window', () => {
-      // 'today' keeps only places with at least one upcoming drop-in.
+    it('each chip selects the right rows for its window — the three windows DIFFER', () => {
+      // 'today' keeps only places with a drop-in starting on today's local day.
       expect(
-        plan({ upcoming: UPCOMING, dateWindow: 'today' }).listRows.map((r) => r.place.name),
+        plan({ upcomingStartTimes: UPCOMING_TIMES, dateWindow: 'today' }).listRows.map((r) => r.place.name),
       ).toEqual(['Alki Beach Park'])
-      // 'tomorrow' and 'weekend' share the same boundary (a count cannot say
-      // WHICH day a drop-in lands on), so they keep the same rows.
+      // 'tomorrow' keeps only places with a drop-in starting on tomorrow's local day.
+      // A drop-in starting TODAY does NOT satisfy 'tomorrow'.
       expect(
-        plan({ upcoming: UPCOMING, dateWindow: 'tomorrow' }).listRows.map((r) => r.place.name),
+        plan({ upcomingStartTimes: UPCOMING_TIMES, dateWindow: 'tomorrow' }).listRows.map((r) => r.place.name),
+      ).toEqual([])
+      // 'weekend' keeps only places with a drop-in on the upcoming Saturday or Sunday.
+      // A drop-in starting today (Fri) does NOT satisfy 'weekend'.
+      expect(
+        plan({ upcomingStartTimes: UPCOMING_TIMES, dateWindow: 'weekend' }).listRows.map((r) => r.place.name),
+      ).toEqual([])
+      // A drop-in starting tomorrow (Sat Sep 5) satisfies 'tomorrow' but NOT 'weekend'
+      // (the upcoming weekend is Sep 6–7, not Sep 5).
+      expect(
+        plan({ upcomingStartTimes: TOMORROW_TIMES, dateWindow: 'tomorrow' }).listRows.map((r) => r.place.name),
       ).toEqual(['Alki Beach Park'])
       expect(
-        plan({ upcoming: UPCOMING, dateWindow: 'weekend' }).listRows.map((r) => r.place.name),
+        plan({ upcomingStartTimes: TOMORROW_TIMES, dateWindow: 'weekend' }).listRows.map((r) => r.place.name),
+      ).toEqual([])
+      // But it does NOT satisfy 'today'.
+      expect(
+        plan({ upcomingStartTimes: TOMORROW_TIMES, dateWindow: 'today' }).listRows.map((r) => r.place.name),
+      ).toEqual([])
+      // A drop-in on Saturday of the upcoming weekend satisfies 'weekend' but not 'today'/'tomorrow'.
+      expect(
+        plan({ upcomingStartTimes: WEEKEND_TIMES, dateWindow: 'weekend' }).listRows.map((r) => r.place.name),
+      ).toEqual(['Alki Beach Park'])
+      expect(
+        plan({ upcomingStartTimes: WEEKEND_TIMES, dateWindow: 'today' }).listRows.map((r) => r.place.name),
+      ).toEqual([])
+      expect(
+        plan({ upcomingStartTimes: WEEKEND_TIMES, dateWindow: 'tomorrow' }).listRows.map((r) => r.place.name),
+      ).toEqual([])
+      // A drop-in on Sunday of the upcoming weekend also satisfies 'weekend'.
+      expect(
+        plan({ upcomingStartTimes: WEEKEND_SUN_TIMES, dateWindow: 'weekend' }).listRows.map((r) => r.place.name),
       ).toEqual(['Alki Beach Park'])
     })
 
-    it("'Upcoming' is the unfiltered default and returns everything the other filters allow", () => {
-      // With no date window, both places render regardless of their counts.
+    it("a place with a drop-in today is under Today, NOT Tomorrow", () => {
+      const p = plan({ upcomingStartTimes: UPCOMING_TIMES, dateWindow: 'today' })
+      expect(p.listRows.map((r) => r.place.name)).toEqual(['Alki Beach Park'])
+      const pTomorrow = plan({ upcomingStartTimes: UPCOMING_TIMES, dateWindow: 'tomorrow' })
+      expect(pTomorrow.listRows.map((r) => r.place.name)).toEqual([])
+    })
+
+    it('a place with a drop-in on Saturday is under Weekend', () => {
+      const p = plan({ upcomingStartTimes: WEEKEND_TIMES, dateWindow: 'weekend' })
+      expect(p.listRows.map((r) => r.place.name)).toEqual(['Alki Beach Park'])
+    })
+
+    it('a place with no drop-ins appears under Upcoming only', () => {
+      // Both places have zero drop-ins: 'upcoming' shows both, specific windows show none.
+      const EMPTY = new Map([['alki-beach-park', []], ['bellevue-playground', []]])
       expect(
-        plan({ upcoming: UPCOMING, dateWindow: 'upcoming' }).listRows.map((r) => r.place.name),
+        plan({ upcomingStartTimes: EMPTY, dateWindow: 'upcoming' }).listRows.map((r) => r.place.name),
+      ).toEqual(['Alki Beach Park', 'Bellevue Playground'])
+      expect(
+        plan({ upcomingStartTimes: EMPTY, dateWindow: 'today' }).listRows.length,
+      ).toBe(0)
+      expect(
+        plan({ upcomingStartTimes: EMPTY, dateWindow: 'tomorrow' }).listRows.length,
+      ).toBe(0)
+      expect(
+        plan({ upcomingStartTimes: EMPTY, dateWindow: 'weekend' }).listRows.length,
+      ).toBe(0)
+    })
+
+    it("'Upcoming' is the unfiltered default and returns everything the other filters allow", () => {
+      // With no date window, both places render regardless of their start times.
+      expect(
+        plan({ upcomingStartTimes: UPCOMING_TIMES, dateWindow: 'upcoming' }).listRows.map((r) => r.place.name),
       ).toEqual(['Alki Beach Park', 'Bellevue Playground'])
       // The default state (no override) agrees: the helper's dateWindow defaults
       // to 'upcoming', which never filters.
-      expect(plan({ upcoming: UPCOMING }).listRows.length).toBe(2)
+      expect(plan({ upcomingStartTimes: UPCOMING_TIMES }).listRows.length).toBe(2)
     })
 
     it('a window with no matching places produces the empty result AND the reason flag', () => {
       // Every place has zero upcoming drop-ins: 'today' excludes all of them.
-      const empty = plan({ upcoming: new Map([['alki-beach-park', 0], ['bellevue-playground', 0]]), dateWindow: 'today' })
+      const empty = plan({
+        upcomingStartTimes: new Map([['alki-beach-park', []], ['bellevue-playground', []]]),
+        dateWindow: 'today',
+      })
       expect(empty.listRows).toEqual([])
       expect(empty.dateWindowIsTheReason).toBe(true)
       expect(empty.dateWindowReason).toBe('today')
@@ -2024,20 +2148,24 @@ describe('planDirectoryList (the directory list composition, moved out of PlaceD
     it('the reason flag stays null whenever another filter also narrows (or the window is "upcoming")', () => {
       // A search text is present → the window is not the whole story.
       expect(
-        plan({ upcoming: new Map([['alki-beach-park', 0]]), dateWindow: 'today', query: 'x' }).dateWindowReason,
+        plan({ upcomingStartTimes: new Map([['alki-beach-park', []]]), dateWindow: 'today', query: 'x' }).dateWindowReason,
       ).toBeNull()
       // 'upcoming' never carries a reason (there is no window to name).
-      expect(plan({ upcoming: new Map([['alki-beach-park', 0]]) }).dateWindowReason).toBeNull()
+      expect(plan({ upcomingStartTimes: new Map([['alki-beach-park', []]]) }).dateWindowReason).toBeNull()
       // A non-empty list → nothing is empty, so no reason.
-      expect(plan({ upcoming: UPCOMING, dateWindow: 'today' }).dateWindowReason).toBeNull()
+      expect(plan({ upcomingStartTimes: UPCOMING_TIMES, dateWindow: 'today' }).dateWindowReason).toBeNull()
     })
 
-    it('an unknown count (null) keeps the place in every window — missing data must not exclude', () => {
-      // The count read failed: every row's upcomingCount is null, and a window
-      // must not hide a place because we cannot claim it has no drop-ins.
-      const p = plan({ upcoming: null, dateWindow: 'today' })
-      expect(p.listRows.length).toBe(2)
-      expect(p.dateWindowReason).toBeNull()
+    it('unknown start times (null) are NOT claimed by any specific window (radius rule)', () => {
+      // The start-time read failed: every row's starts are unknown, and a window
+      // must not claim a place it cannot measure against the filter.
+      const p = plan({ upcomingStartTimes: null, dateWindow: 'today' })
+      expect(p.listRows.length).toBe(0)
+      expect(p.dateWindowReason).toBe('today')
+      // But 'upcoming' still shows everything (never hidden).
+      const pUpcoming = plan({ upcomingStartTimes: null, dateWindow: 'upcoming' })
+      expect(pUpcoming.listRows.length).toBe(2)
+      expect(pUpcoming.dateWindowReason).toBeNull()
     })
 
     it('the date rule agrees with feed.ts day-section boundaries (ONE definition, tested through the same seam)', () => {
@@ -2054,19 +2182,21 @@ describe('planDirectoryList (the directory list composition, moved out of PlaceD
       // Saturday is neither today nor tomorrow: the feed gives it a weekday label.
       expect(formatDayLabel(saturdayStart, nowIso)).not.toBe('Today')
       expect(formatDayLabel(saturdayStart, nowIso)).not.toBe('Tomorrow')
-      // The chip predicate claims a place by the EXISTENCE of an upcoming
-      // drop-in (a count cannot resolve which day it lands on), so every window
-      // shares one boundary: count > 0. That is exactly the set of starts the
-      // feed's day sections cover (today ∪ tomorrow ∪ weekend ⊇ any future day),
-      // asserted here against the SAME exported functions:
-      for (const start of [todayStart, tomorrowStart, saturdayStart]) {
-        const label = formatDayLabel(start, nowIso)
-        const window: DateWindow =
-          label === 'Today' ? 'today' : label === 'Tomorrow' ? 'tomorrow' : 'weekend'
-        expect(placeInDateWindow(1, window)).toBe(true) // a drop-in exists → claimed
-        expect(placeInDateWindow(0, window)).toBe(false) // none → not claimed
-        expect(placeInDateWindow(null, window)).toBe(true) // unknown → kept
-      }
+      // The chip predicate claims a place by the EXISTENCE of a drop-in whose
+      // start falls in the window (start times, not counts):
+      expect(placeInDateWindow([todayStart], 'today', nowIso)).toBe(true)
+      expect(placeInDateWindow([todayStart], 'tomorrow', nowIso)).toBe(false)
+      expect(placeInDateWindow([todayStart], 'weekend', nowIso)).toBe(false)
+      expect(placeInDateWindow([tomorrowStart], 'today', nowIso)).toBe(false)
+      expect(placeInDateWindow([tomorrowStart], 'tomorrow', nowIso)).toBe(true)
+      // Saturday Sep 6 is the upcoming weekend (now is Fri Sep 4):
+      expect(placeInDateWindow([saturdayStart], 'weekend', nowIso)).toBe(true)
+      expect(placeInDateWindow([saturdayStart], 'today', nowIso)).toBe(false)
+      expect(placeInDateWindow([saturdayStart], 'tomorrow', nowIso)).toBe(false)
+      // Unknown (null) is NOT claimed by any specific window:
+      expect(placeInDateWindow(null, 'today', nowIso)).toBe(false)
+      expect(placeInDateWindow(null, 'tomorrow', nowIso)).toBe(false)
+      expect(placeInDateWindow(null, 'weekend', nowIso)).toBe(false)
       // And the local-day key the feed groups on is the same function the test
       // pins above (localDayKey), so "today" means the same calendar day in both.
       expect(localDayKey(nowIso)).toBe(localDayKey(todayStart))

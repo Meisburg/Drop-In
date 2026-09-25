@@ -9,7 +9,7 @@
  * thing they share is the distance math (feed.haversineMiles), which is
  * imported rather than reimplemented.
  */
-import { coordNumber, haversineMiles, placeDistanceMiles, statedAgeRangeLine } from './feed'
+import { coordNumber, haversineMiles, localDayKey, placeDistanceMiles, statedAgeRangeLine } from './feed'
 import type { DistanceChoice, ZipCoords } from './feed'
 import type { Place, PlaceKind } from './types'
 import type { ReviewSummary } from './reviews'
@@ -719,6 +719,30 @@ export function upcomingCountByPlace(
 }
 
 /**
+ * Upcoming drop-in START TIMES per place, for the browse list's date chips
+ * (annotation 15). Rows with no place_id are skipped (a free-text place is not
+ * in the directory, so it claims no window). Each value is a sorted array of
+ * ISO start times — the ONE datum that lets a window ask "does this place have
+ * ANY drop-in on THIS day?" rather than merely "does it have any at all?".
+ */
+export function groupUpcomingStartTimesByPlace(
+  posts: ReadonlyArray<{ place_id?: string | null; starts_at: string }>,
+): Map<string, string[]> {
+  const byPlace = new Map<string, string[]>()
+  for (const post of posts) {
+    const placeId = post.place_id
+    if (placeId === null || placeId === undefined || placeId === '') continue
+    const arr = byPlace.get(placeId) ?? []
+    arr.push(post.starts_at)
+    byPlace.set(placeId, arr)
+  }
+  // Sort each place's starts ascending (soonest first) — the same order the
+  // place page's "upcoming drop-ins here" list uses.
+  for (const arr of byPlace.values()) arr.sort()
+  return byPlace
+}
+
+/**
  * The directory's DATE CHIPS (the founder's annotation 15): the four windows a
  * parent can filter the list by. 'upcoming' is the UNFILTERED state — every row
  * the other filters allow — so it is the default, not a window.
@@ -737,32 +761,69 @@ export const DATE_WINDOW_LABELS: Record<DateWindow, string> = {
 export const DATE_WINDOWS: readonly DateWindow[] = ['upcoming', 'today', 'tomorrow', 'weekend']
 
 /**
- * Does a place with `count` upcoming drop-ins fall inside the date window?
+ * Does a place with the given upcoming drop-in START TIMES fall inside the date
+ * window?
  *
- * The window BOUNDARIES are NOT defined here: they are the feed's own day
- * sections (`formatDayLabel` / `localDayKey` in feed.ts — "Today" when the day
- * key equals now's, "Tomorrow" for the next local day, otherwise a weekday
- * label). This seam only asks the question the chips need — "does this place
- * have ANY drop-in in that window?" — from the count the directory already
- * reads (db.upcomingCountsByPlace, no new network read):
+ * The window BOUNDARIES are the feed's own day sections (`localDayKey` in
+ * feed.ts — "Today" when the local-day key equals now's, "Tomorrow" for the next
+ * local day, otherwise a weekday label). This seam asks the question the chips
+ * need — "does this place have ANY drop-in whose start falls in that window?" —
+ * from the per-place start-time list (db.upcomingStartTimesByPlace):
  *
  * - 'upcoming': never filters (the unfiltered default; everything the other
  *   filters allow passes through).
- * - 'today' / 'tomorrow' / 'weekend': at least one upcoming drop-in. The
- *   per-place COUNT cannot say WHICH day a drop-in lands on (it is a number,
- *   not a list of starts), so a window claims a place by the existence of an
- *   upcoming drop-in at all — the same boundary every window shares, and the
- *   feed's today/tomorrow/weekend day sections remain the ONE definition of
- *   those boundaries in this codebase.
+ * - 'today': at least one start whose local-day key equals now's.
+ * - 'tomorrow': at least one start whose local-day key equals tomorrow's
+ *   (now + 1 local day, the same arithmetic formatDayLabel uses for its
+ *   "Tomorrow" label).
+ * - 'weekend': at least one start on the UPCOMING Saturday or Sunday — the
+ *   first Saturday/Sunday strictly after today (if today IS Saturday or Sunday,
+ *   the weekend is the NEXT one, not the current one). A drop-in starting on a
+ *   weekday does NOT satisfy the weekend window.
  *
- * A null count (the count read failed) keeps the place in EVERY window rather
- * than hiding it: missing data must not exclude (the same rule as the
- * distance filter's unknown-distance places).
+ * UNKNOWN dates (null — the read failed, or the place has no recorded starts)
+ * are NOT claimed by any specific window: we cannot measure them against the
+ * filter, so they are excluded from today/tomorrow/weekend but still shown under
+ * 'upcoming'. This is the radius convention ("cannot be measured against the
+ * filter"), not the distance convention ("never hidden") — a date window is a
+ * claim about WHEN, and missing data cannot back that claim. The place is never
+ * hidden entirely: 'upcoming' always passes it through.
  */
-export function placeInDateWindow(count: number | null, window: DateWindow): boolean {
+export function placeInDateWindow(
+  startTimes: string[] | null,
+  window: DateWindow,
+  nowIso: string,
+): boolean {
   if (window === 'upcoming') return true
-  if (count === null) return true
-  return count > 0
+  // Unknown dates cannot be measured against a specific window (radius rule).
+  if (startTimes === null || startTimes.length === 0) return false
+
+  const nowDay = localDayKey(nowIso)
+  const tomorrowDate = new Date(nowIso)
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1)
+  const tomorrowDay = localDayKey(tomorrowDate.toISOString())
+
+  if (window === 'today') {
+    return startTimes.some((t) => localDayKey(t) === nowDay)
+  }
+  if (window === 'tomorrow') {
+    return startTimes.some((t) => localDayKey(t) === tomorrowDay)
+  }
+  // 'weekend': the upcoming Saturday + Sunday (strictly after today).
+  const nowDow = new Date(nowIso).getDay() // 0=Sun … 6=Sat
+  // Days until the next Saturday: if today is Sat (6), the next Sat is +7;
+  // if Sun (0), +6; Mon (1) → +5; … Fri (5) → +1.
+  const daysToSat = nowDow === 6 ? 7 : 7 - nowDow
+  const satDate = new Date(nowIso)
+  satDate.setDate(satDate.getDate() + daysToSat)
+  const satDay = localDayKey(satDate.toISOString())
+  const sunDate = new Date(satDate)
+  sunDate.setDate(sunDate.getDate() + 1)
+  const sunDay = localDayKey(sunDate.toISOString())
+  return startTimes.some((t) => {
+    const k = localDayKey(t)
+    return k === satDay || k === sunDay
+  })
 }
 
 /**
@@ -781,7 +842,7 @@ export interface PlaceListRow {
   place: Place
   /** Null = unknown (no coordinates, no home zip) — sorted last, never hidden. */
   distanceMiles: number | null
-  /** Upcoming drop-ins here; null = the count could not be read. */
+  /** Upcoming drop-ins here; null = the start-time read failed (unknown). */
   upcomingCount: number | null
   /**
    * The place's aggregate rating (the DB-computed display average + review
@@ -835,7 +896,7 @@ export function browsePlaces(
   filters: PlaceFilters,
   viewer: { homeZip: string | null },
   zipCoords: ReadonlyMap<string, ZipCoords>,
-  upcoming: Map<string, number> | null,
+  upcomingStartTimes: Map<string, string[]> | null,
   /**
    * Per-place aggregate ratings (the DB-computed display average + count), or
    * null when the bulk read failed — then every row's ratingSummary is null
@@ -851,10 +912,11 @@ export function browsePlaces(
       continue
     }
     if (filters.indoor !== null && place.indoor !== filters.indoor) continue
+    const starts = upcomingStartTimes === null ? null : (upcomingStartTimes.get(place.id) ?? [])
     rows.push({
       place,
       distanceMiles,
-      upcomingCount: upcoming === null ? null : (upcoming.get(place.id) ?? 0),
+      upcomingCount: starts === null ? null : starts.length,
       ratingSummary: ratings === null || ratings === undefined ? null : (ratings.get(place.id) ?? null),
     })
   }
@@ -1575,8 +1637,13 @@ export function planDirectoryList(input: {
   radiusMiles: number
   /** The gazetteer zip→coords map (null while loading or on failure). */
   zipCoords: ReadonlyMap<string, ZipCoords> | null
-  /** Per-place "N upcoming" counts (null = the count read failed). */
-  upcoming: Map<string, number> | null
+  /** Per-place upcoming drop-in start times (null = the read failed → unknown). */
+  upcomingStartTimes: Map<string, string[]> | null
+  /**
+   * The "now" for date-window classification (ISO string). Defaults to the real
+   * clock when omitted — injected in tests so fixtures use a fixed date.
+   */
+  nowIso?: string
   /**
    * Per-place aggregate ratings (the DB-computed display average + count), or
    * null when the bulk read failed — every row's ratingSummary is then null
@@ -1599,9 +1666,11 @@ export function planDirectoryList(input: {
     geocodeCenter,
     radiusMiles,
     zipCoords,
-    upcoming,
+    upcomingStartTimes,
+    nowIso: nowIsoOverride,
     ratings,
   } = input
+  const nowIso = nowIsoOverride ?? new Date().toISOString()
 
   const maxMiles =
     distanceChoice === 'profile' ? viewerRadius : distanceChoice === 'any' ? null : distanceChoice
@@ -1612,7 +1681,7 @@ export function planDirectoryList(input: {
     { query, indoor: indoorFilter, maxMiles },
     { homeZip },
     coords,
-    upcoming,
+    upcomingStartTimes,
     ratings,
   )
 
@@ -1631,10 +1700,11 @@ export function planDirectoryList(input: {
     const filtered = filterPlacesByRadius(places ?? [], geocodeCenter, radiusMiles, zipCoords)
     return filtered.map((place) => {
       const c = resolveMapCoords(place, zipCoords)
+      const starts = upcomingStartTimes === null ? null : (upcomingStartTimes.get(place.id) ?? [])
       return {
         place,
         distanceMiles: c === null ? null : distanceMiles(geocodeCenter, c),
-        upcomingCount: upcoming === null ? null : (upcoming.get(place.id) ?? 0),
+        upcomingCount: starts === null ? null : starts.length,
         ratingSummary: ratings === null || ratings === undefined ? null : (ratings.get(place.id) ?? null),
       }
     })
@@ -1655,10 +1725,13 @@ export function planDirectoryList(input: {
       base = base.filter((row) => keptIds.has(row.place.id))
     }
     // The date chip (annotation 15): a non-'upcoming' window keeps only places
-    // with at least one upcoming drop-in in that window — the count the
-    // directory already reads, no second read. 'upcoming' never filters.
+    // with at least one upcoming drop-in whose start falls in that window —
+    // measured from the per-place start-time list, not a count. 'upcoming' never filters.
     if (dateWindow !== 'upcoming') {
-      base = base.filter((row) => placeInDateWindow(row.upcomingCount, dateWindow))
+      base = base.filter((row) => {
+        const starts = upcomingStartTimes === null ? null : (upcomingStartTimes.get(row.place.id) ?? [])
+        return placeInDateWindow(starts, dateWindow, nowIso)
+      })
     }
     return sortPlaces(base, sortMode, homePin ?? undefined)
   })()
@@ -1679,7 +1752,10 @@ export function planDirectoryList(input: {
     let base = unplaced
     if (selectedKinds.size > 0) base = base.filter((row) => selectedKinds.has(row.place.kind))
     if (dateWindow !== 'upcoming') {
-      base = base.filter((row) => placeInDateWindow(row.upcomingCount, dateWindow))
+      base = base.filter((row) => {
+        const starts = upcomingStartTimes === null ? null : (upcomingStartTimes.get(row.place.id) ?? [])
+        return placeInDateWindow(starts, dateWindow, nowIso)
+      })
     }
     return base
   })()

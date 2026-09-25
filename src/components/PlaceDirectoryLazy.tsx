@@ -28,8 +28,8 @@ interface DirectoryProps {
   places: Place[] | null
   /** The gazetteer zip→coords map (null while loading or on failure). */
   zipCoords: ReadonlyMap<string, ZipCoords> | null
-  /** Per-place "N upcoming" counts (null = the count read failed → none shown). */
-  upcoming: Map<string, number> | null
+  /** Per-place upcoming drop-in start times (null = the read failed → unknown). */
+  upcomingStartTimes: Map<string, string[]> | null
   /**
    * V24: per-place aggregate ratings (the DB-computed display average + review
    * count), keyed by place id. `null` while the bulk read is in flight OR when
