@@ -8,11 +8,14 @@
  * `follows.test.ts` is the guarantee).
  *
  * What a follow IS (the pinned decision, enforced by absence): a bookmark on
- * a family or on a place — never a friend request, never a score. There is
- * no mutual-friend seam here, no reciprocal flag, no rating: the only things
- * this module can compute are "is this target well-formed", "how many
+ * a family or on a place — never a friend request, and never a score ON A
+ * FOLLOW. There is no mutual-friend seam here, no reciprocal flag: the only
+ * things this module can compute are "is this target well-formed", "how many
  * families you've bookmarked are going", and "when is that series' next
- * meetup". `validateFollowTarget` mirrors the DB's
+ * meetup". Ratings DO exist in the app — parents rate a place on its own
+ * reviews table (migration 0052) — but a rating is a separate object with its
+ * own rules; saving a place says nothing about how it rates, and this module
+ * never computes one. `validateFollowTarget` mirrors the DB's
  * `follows_one_target_check` exactly — the CHECK is the wall, this is the
  * client's copy of the same rule so a bad target never reaches the wire.
  */
@@ -154,14 +157,27 @@ export function metBeforeLine(
 }
 
 /**
- * The /place/:id follower line, through the 0033 SECDEF count (never a broad
- * read). 0 is a state worth saying out loud — "no one follows this yet" is
- * information, and it invites the first follow.
+ * The /place/:id save line, through the 0033 SECDEF count (never a broad
+ * read). Saving keeps a place on your shortlist so you can find it again —
+ * that is the benefit this line states, and nothing more: no notification
+ * promise. 0 is a state worth saying out loud, and the house empty-state
+ * pattern names the PLACE rather than reporting a shortfall ("no one saves
+ * this yet" invites the first save), in the same tone as `placeCommentCountLabel`
+ * and `reviewRatingLine`. A blank name degrades to the "here" form so a place
+ * row with no name cannot render "about ." — the caller still gets a usable
+ * line.
  */
-export function placeFollowerLine(count: number): string {
+export function placeFollowerLine(count: number, placeName: string): string {
   const n = Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0
-  if (n === 0) return 'No families follow this place yet'
-  return n === 1 ? '1 family follows this place' : `${n} families follow this place`
+  const name = placeName.trim()
+  if (n === 0) {
+    return name === ''
+      ? 'No families have saved this place yet'
+      : `No families have saved ${name} yet`
+  }
+  return n === 1
+    ? `1 family has saved ${name === '' ? 'this place' : name}`
+    : `${n} families have saved ${name === '' ? 'this place' : name}`
 }
 
 // ---------------------------------------------------------------------------

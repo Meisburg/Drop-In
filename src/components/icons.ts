@@ -19,6 +19,11 @@ export const NAV_ICONS = {
   // stroked family (24px viewBox, stroke 1.8, currentColor). It replaces the
   // ad-hoc "←" text arrows on the page-level back controls.
   'chevron-left': 'M15 6l-6 6 6 6',
+  // The place-save bookmark: a ribbon with a notched bottom, in the same stroked
+  // family (24px viewBox, stroke 1.8, currentColor). The place control's pressed
+  // state fills this silhouette instead of stroking it, so "saved" is never
+  // colour-only — the fill channel is paired with the label flip (Save → Saved).
+  bookmark: 'M6 4h12v17l-6-4-6 4Z',
 } as const
 
 /**

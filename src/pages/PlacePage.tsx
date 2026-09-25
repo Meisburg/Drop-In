@@ -4,6 +4,7 @@ import { BackControl } from '../components/BackControl'
 import { DropInCard } from '../components/DropInCard'
 import { PlaceMap } from '../components/PlaceMapLazy'
 import { useSessionContext } from '../components/SessionProvider'
+import { NAV_ICONS } from '../components/icons'
 import {
   countPlaceFollowers,
   getPlaceById,
@@ -15,7 +16,7 @@ import {
 } from '../lib/db'
 import { cardAgeRangeLabel, formatDistanceLabel, mapsHref } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
-import { placeFollowerLine } from '../lib/follows'
+import { placeFollowerLine, planSaveToggle } from '../lib/follows'
 import {
   placeAgeFitLabel,
   placeDistanceMiles,
@@ -234,15 +235,21 @@ export function PlacePage() {
   }, [loading, session, id])
 
   /**
-   * Follow / unfollow THIS place (the owner-only 0033 row). The count is
-   * re-read after a successful write so "N families follow this place" moves
-   * with the button that changed it; a failed count re-read leaves the
-   * previous number rather than blanking a fact we already had (the ticket-02
-   * count discipline). A failed WRITE reports the designed error line.
+   * Save / unsave THIS place (the owner-only 0033 row). The DECISION is the
+   * pure `planSaveToggle` seam — save or unsave? Execution below goes through
+   * db.toggleFollowPlace, never a re-implemented toggle. Saving keeps a place
+   * on your shortlist so you can find it again; nothing here promises
+   * notifications. The count is re-read after a successful write so "N families
+   * have saved {name}" moves with the button that changed it; a failed count
+   * re-read leaves the previous number rather than blanking a fact we already
+   * had (the ticket-02 count discipline). A failed WRITE reports the designed
+   * error line.
    */
   async function handleToggleFollowPlace() {
     if (id === undefined || followBusy) return
     const placeId = id
+    // The decision: save or unsave? The pure seam decides; execution below.
+    planSaveToggle(following)
     setFollowBusy(true)
     setFollowError(null)
     try {
@@ -252,7 +259,7 @@ export function PlacePage() {
       if (count !== null) setFollowerCount(count)
     } catch (err) {
       setFollowError(
-        err instanceof Error ? err.message : 'Could not update the follow. Try again.',
+        err instanceof Error ? err.message : 'Could not update the save. Try again.',
       )
     } finally {
       setFollowBusy(false)
@@ -431,26 +438,30 @@ export function PlacePage() {
         ) : null}
       </div>
 
-      {/* V8 ticket 09 (migration 0033): the place's followers — the COUNT (via
-          the SECDEF RPC, never a broad read of the owner-only follows table)
-          and the Follow / Unfollow control. Signed out: the same sign-in
-          prompt the drop-ins section uses, and NO count (see the page doc for
-          why the public route shows none). */}
+      {/* V8 ticket 09 (migration 0033): the place's SAVED state — the COUNT (via
+          the SECDEF RPC, never a broad read of the owner-only follows table) and
+          the Save / Saved control. Saving keeps a place on your shortlist so you
+          can find it again — that is the benefit stated plainly; nothing here
+          promises notifications. Signed out: the same sign-in prompt the drop-ins
+          section uses, and NO count (see the page doc for why the public route
+          shows none). */}
       <div className="flex flex-col gap-2">
         {session === null ? (
           <>
-            <p className="text-sm text-slate-600">Following a place is for signed-in parents.</p>
+            <p className="text-sm text-slate-600">Saving a place is for signed-in parents.</p>
             <Link
               to="/login"
               className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-indigo-600"
             >
-              Sign in to follow it
+              Sign in to save it
             </Link>
           </>
         ) : (
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm text-slate-700" data-testid="place-followers">
-              {followerCount === null ? 'Follow this place' : placeFollowerLine(followerCount)}
+              {followerCount === null
+                ? 'Save this place'
+                : placeFollowerLine(followerCount, place.name)}
             </p>
             <button
               type="button"
@@ -459,13 +470,33 @@ export function PlacePage() {
               disabled={followBusy}
               onClick={() => void handleToggleFollowPlace()}
               className={
-                'inline-flex min-h-11 items-center rounded-xl border px-3 text-base font-medium disabled:opacity-50 ' +
+                'inline-flex min-h-11 items-center gap-2 rounded-xl border px-3 text-base font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50 ' +
                 (following
                   ? 'border-indigo-600 bg-indigo-600 text-white'
                   : 'border-indigo-300 bg-white text-indigo-700')
               }
             >
-              {followBusy ? 'Updating…' : following ? 'Unfollow this place' : 'Follow this place'}
+              {/* The pressed state is conveyed by MORE THAN colour: the bookmark
+                  glyph fills when saved (stroked otherwise) AND the label flips
+                  Save → Saved. The glyph is decorative (aria-hidden); the button's
+                  accessible name comes from its text content. */}
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className="h-5 w-5"
+                fill={following ? 'currentColor' : 'none'}
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d={NAV_ICONS.bookmark} />
+              </svg>
+              {followBusy
+                ? 'Updating…'
+                : following
+                  ? `Saved ${place.name}`
+                  : `Save ${place.name}`}
             </button>
           </div>
         )}
@@ -476,7 +507,8 @@ export function PlacePage() {
         ) : null}
         {session !== null && followerCount === null && followError === null ? (
           <p className="mt-2 text-xs text-slate-500">
-            Follow a place to keep it on your /settings Following list.
+            Saving a place keeps it on your shortlist — you'll find it under
+            Following in Settings.
           </p>
         ) : null}
       </div>

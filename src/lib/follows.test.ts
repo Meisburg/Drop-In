@@ -155,20 +155,48 @@ describe('metBeforeLine (the card line)', () => {
   })
 })
 
-describe('placeFollowerLine (/place/:id, the SECDEF count’s copy)', () => {
-  it('says zero out loud (it is information, not a hidden line)', () => {
-    expect(placeFollowerLine(0)).toBe('No families follow this place yet')
+describe('placeFollowerLine (/place/:id, the SECDEF count’s save copy)', () => {
+  it('says zero out loud and names the place (the house empty-state pattern)', () => {
+    expect(placeFollowerLine(0, 'Green Lake Park')).toBe(
+      'No families have saved Green Lake Park yet',
+    )
   })
 
-  it('is singular at 1 and plural above it', () => {
-    expect(placeFollowerLine(1)).toBe('1 family follows this place')
-    expect(placeFollowerLine(2)).toBe('2 families follow this place')
-    expect(placeFollowerLine(37)).toBe('37 families follow this place')
+  it('degrades a blank name to the "this place" form (never "about .")', () => {
+    expect(placeFollowerLine(0, '')).toBe('No families have saved this place yet')
+    expect(placeFollowerLine(0, '   ')).toBe('No families have saved this place yet')
+  })
+
+  it('is singular at 1 and plural above it, naming the place', () => {
+    expect(placeFollowerLine(1, 'Green Lake Park')).toBe(
+      '1 family has saved Green Lake Park',
+    )
+    expect(placeFollowerLine(2, 'Green Lake Park')).toBe(
+      '2 families have saved Green Lake Park',
+    )
+    expect(placeFollowerLine(37, 'Green Lake Park')).toBe(
+      '37 families have saved Green Lake Park',
+    )
+  })
+
+  it('keeps the "this place" fallback for singular and plural counts with a blank name', () => {
+    expect(placeFollowerLine(1, '')).toBe('1 family has saved this place')
+    expect(placeFollowerLine(2, '')).toBe('2 families have saved this place')
+  })
+
+  it('trims a padded name rather than printing the padding', () => {
+    expect(placeFollowerLine(1, '  Green Lake Park  ')).toBe(
+      '1 family has saved Green Lake Park',
+    )
   })
 
   it('degrades a nonsense count to 0 rather than printing it', () => {
-    expect(placeFollowerLine(-4)).toBe('No families follow this place yet')
-    expect(placeFollowerLine(Number.NaN)).toBe('No families follow this place yet')
+    expect(placeFollowerLine(-4, 'Green Lake Park')).toBe(
+      'No families have saved Green Lake Park yet',
+    )
+    expect(placeFollowerLine(Number.NaN, 'Green Lake Park')).toBe(
+      'No families have saved Green Lake Park yet',
+    )
   })
 })
 

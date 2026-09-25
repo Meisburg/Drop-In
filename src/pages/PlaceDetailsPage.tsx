@@ -4,6 +4,7 @@ import { BackControl } from '../components/BackControl'
 import { DropInCard } from '../components/DropInCard'
 import { ReviewForm } from '../components/ReviewForm'
 import { useSessionContext } from '../components/SessionProvider'
+import { NAV_ICONS } from '../components/icons'
 import {
   countPlaceFollowers,
   createPlaceComment,
@@ -20,7 +21,7 @@ import {
 } from '../lib/db'
 import { cardAgeRangeLabel, formatDistanceLabel, mapsHref } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
-import { placeFollowerLine } from '../lib/follows'
+import { placeFollowerLine, planSaveToggle } from '../lib/follows'
 import { reviewRatingLine, REVIEW_SCORE_MAX } from '../lib/reviews'
 import {
   placeAgeFitLabel,
@@ -247,17 +248,26 @@ export function PlaceDetailsPage() {
     }
   }, [])
 
+  /**
+   * Save / unsave THIS place (the owner-only 0033 row). The DECISION is the
+   * pure `planSaveToggle` seam — save or unsave? Execution below goes through
+   * db.toggleFollowPlace, never a re-implemented toggle. Saving keeps a place
+   * on your shortlist so you can find it again; nothing here promises
+   * notifications. Re-read the count from the SECDEF RPC rather than
+   * incrementing locally: the count is other people's data too, and a local
+   * +/- would drift the moment someone else saves.
+   */
   async function handleToggleFollow() {
     if (id === undefined || followBusy) return
+    const placeId = id
+    // The decision: save or unsave? The pure seam decides; execution below.
+    planSaveToggle(following)
     setFollowBusy(true)
     setFollowError(null)
     try {
-      const nowFollowing = await toggleFollowPlace(id)
+      const nowFollowing = await toggleFollowPlace(placeId)
       setFollowing(nowFollowing)
-      // Re-read the count from the SECDEF RPC rather than incrementing locally:
-      // the count is other people's data too, and a local +/- would drift the
-      // moment someone else follows.
-      setFollowerCount(await countPlaceFollowers(id))
+      setFollowerCount(await countPlaceFollowers(placeId))
     } catch {
       setFollowError('That did not save. Try again.')
     } finally {
@@ -387,10 +397,16 @@ export function PlaceDetailsPage() {
         Start a drop-in here
       </button>
 
-      {/* ---- Follow: how many families, and the heart ---- */}
+      {/* ---- Save: how many families, and the bookmark. Saving keeps a place on
+          your shortlist so you can find it again — that is the benefit stated
+          plainly; nothing here promises notifications. The pressed state is
+          conveyed by MORE THAN colour: the bookmark glyph fills when saved
+          (stroked otherwise) AND the label flips Save → Saved. */}
       <div className="flex flex-col gap-2">
         <p data-testid="details-follower-line" className="text-sm text-slate-700">
-          {followerCount === null ? 'Follow this place' : placeFollowerLine(followerCount)}
+          {followerCount === null
+            ? 'Save this place'
+            : placeFollowerLine(followerCount, place.name)}
         </p>
         <button
           type="button"
@@ -399,13 +415,31 @@ export function PlaceDetailsPage() {
           disabled={followBusy || session === null}
           aria-pressed={following}
           className={
-            'mt-2 min-h-11 rounded-xl px-4 py-2 text-sm font-medium transition-colors motion-reduce:transition-none disabled:opacity-50 ' +
+            'mt-2 inline-flex min-h-11 items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50 ' +
             (following
               ? 'border border-indigo-300 bg-white text-indigo-700'
               : 'bg-indigo-600 text-white hover:bg-indigo-700')
           }
         >
-          {followBusy ? 'Updating…' : following ? 'Unfollow this place' : 'Follow this place'}
+          {/* The glyph is decorative (aria-hidden); the button's accessible name
+              comes from its text content. */}
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            className="h-5 w-5"
+            fill={following ? 'currentColor' : 'none'}
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d={NAV_ICONS.bookmark} />
+          </svg>
+          {followBusy
+            ? 'Updating…'
+            : following
+              ? `Saved ${place.name}`
+              : `Save ${place.name}`}
         </button>
         {followError !== null ? (
           <p role="alert" className="mt-2 text-sm text-red-600">
