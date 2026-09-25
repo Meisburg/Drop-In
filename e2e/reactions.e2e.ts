@@ -26,7 +26,8 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import {
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
-  readSupabaseEnv, settleOnRoute, signUpViewer, stepStartTimeOnce,
+  readSupabaseEnv, settleOnRoute, finishSignup,
+  signUpViewer, stepStartTimeOnce,
 } from './fixtures'
 
 const TITLE_PLACEHOLDER = 'e.g. Playground time at Green Lake'
@@ -85,11 +86,10 @@ async function createPingingViewerWithThread(
     email: viewerEmail,
     password: viewerPassword,
   })
-  await viewerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
-  await viewerPage.getByPlaceholder('e.g. 98107').fill(homeZip)
-  await viewerPage.locator('select').first().selectOption({ label: `${radiusMiles} miles` })
-  await viewerPage.getByRole('button', { name: /^Continue/ }).click()
-  await viewerPage.getByRole('heading', { name: 'Near you' }).waitFor()
+  await finishSignup(viewerPage, {
+    homeZip: homeZip,
+    radiusMiles: radiusMiles,
+  })
 
   await viewerPage.goto(`/playdate/${playdateId}`)
   await viewerPage.getByRole('button', { name: /^I’m going$/ }).click()

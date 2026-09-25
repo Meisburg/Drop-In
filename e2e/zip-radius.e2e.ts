@@ -23,7 +23,8 @@
 import { expect, test } from '@playwright/test'
 import {
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
-  readSupabaseEnv, settleOnRoute, signUpViewer, stepStartTimeOnce,
+  readSupabaseEnv, settleOnRoute, finishSignup,
+  signUpViewer, stepStartTimeOnce,
 } from './fixtures'
 
 /** The viewer's location: a known WA zip ~11.5 mi from 98107 + a generous radius. */
@@ -68,13 +69,10 @@ test('a host marker\'s drop-in reaches a viewer\'s radius feed with an "N mi" la
     password: viewerPassword,
   })
 
-  // The viewer's location step: a different known zip + a generous radius
-  // (the host's post is ~11.5 mi away — inside 20, outside the default 5).
-  await viewerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
-  await viewerPage.getByPlaceholder('e.g. 98107').fill(VIEWER_ZIP)
-  await viewerPage.locator('select').first().selectOption({ label: VIEWER_RADIUS_LABEL })
-  await viewerPage.getByRole('button', { name: /^Continue/ }).click()
-  await viewerPage.getByRole('heading', { name: 'Near you' }).waitFor()
+  await finishSignup(viewerPage, {
+    homeZip: VIEWER_ZIP,
+    radiusMiles: VIEWER_RADIUS_LABEL,
+  })
 
   // The host (the marker's signed-in context) posts a drop-in — the
   // golden-path pattern (steppers + chips; the neighborhood is a display

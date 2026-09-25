@@ -25,7 +25,8 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import {
   editTitle, localDatePlusDays, readMarkerSession, readSupabaseEnv,
-  settleOnRoute, signUpViewer, stepStartTimeOnce,
+  settleOnRoute, finishSignup,
+  signUpViewer, stepStartTimeOnce,
 } from './fixtures'
 
 /** The viewer's location: the MARKER's own zip (the post is in-radius) + default radius. */
@@ -103,11 +104,10 @@ test('a comment is visible to a second viewer, then the author’s delete remove
     email: viewerEmail,
     password: viewerPassword,
   })
-  await viewerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
-  await viewerPage.getByPlaceholder('e.g. 98107').fill(VIEWER_ZIP)
-  await viewerPage.locator('select').first().selectOption({ label: '5 miles' })
-  await viewerPage.getByRole('button', { name: /^Continue/ }).click()
-  await viewerPage.getByRole('heading', { name: 'Near you' }).waitFor()
+  await finishSignup(viewerPage, {
+    homeZip: VIEWER_ZIP,
+    radiusMiles: 5,
+  })
 
   // The viewer opens the same event (the detail path — a direct fetch,
   // authenticated-only) and sees the host's comment.

@@ -115,7 +115,8 @@ import {
 } from '../src/lib/photoStorage'
 import {
   openProfileEditor, readMarkerMeta, readMarkerSession, readSupabaseEnv,
-  settleOnRoute, signUpViewer,
+  settleOnRoute, finishSignup,
+  signUpViewer,
 } from './fixtures'
 
 const AVATARS_BUCKET = 'avatars'
@@ -279,11 +280,10 @@ async function signUpStranger(browser: Browser, e: Env, name: string): Promise<S
     email: `${name}@gmail.com`,
     password: 'e2e-watch-1',
   })
-  await page.getByRole('heading', { name: 'Set your location' }).waitFor()
-  await page.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
-  await page.locator('select').first().selectOption({ label: `${marker.radiusMiles} miles` })
-  await page.getByRole('button', { name: /^Continue/ }).click()
-  await page.getByRole('heading', { name: 'Near you' }).waitFor()
+  await finishSignup(page, {
+    homeZip: marker.homeZip,
+    radiusMiles: marker.radiusMiles,
+  })
   const statePath = path.join(os.tmpdir(), `dropin-e2e-${name}.json`)
   await context.storageState({ path: statePath })
   const session = readMarkerSession(statePath)

@@ -54,7 +54,8 @@ import { expect, test } from '@playwright/test'
 import type { Browser, Page } from '@playwright/test'
 import {
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
-  readSupabaseEnv, settleOnRoute, signUpViewer, stepStartTimeOnce,
+  readSupabaseEnv, settleOnRoute, finishSignup,
+  signUpViewer, stepStartTimeOnce,
 } from './fixtures'
 
 const PLACE = 'E2E replies lot'
@@ -121,11 +122,10 @@ async function createOnboardedViewer(
     email: email,
     password: password,
   })
-  await page.getByRole('heading', { name: 'Set your location' }).waitFor()
-  await page.getByPlaceholder('e.g. 98107').fill(zip)
-  await page.locator('select').first().selectOption({ label: '5 miles' })
-  await page.getByRole('button', { name: /^Continue/ }).click()
-  await page.getByRole('heading', { name: 'Near you' }).waitFor()
+  await finishSignup(page, {
+    homeZip: zip,
+    radiusMiles: 5,
+  })
   return page
 }
 

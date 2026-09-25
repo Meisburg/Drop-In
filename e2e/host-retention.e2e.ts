@@ -43,7 +43,8 @@
 import { expect, test } from '@playwright/test'
 import {
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
-  readSupabaseEnv, settleOnRoute, signUpViewer, stepStartTimeOnce,
+  readSupabaseEnv, settleOnRoute, finishSignup,
+  signUpViewer, stepStartTimeOnce,
 } from './fixtures'
 
 test('the host retention loop: banner + "Hosted 1 drop-in" line (red by design pre-0024-apply)', async ({
@@ -99,14 +100,10 @@ test('the host retention loop: banner + "Hosted 1 drop-in" line (red by design p
   })
 
   // The viewer's location step (the same REST write a real user gets).
-  await viewerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
-  await viewerPage.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
-  await viewerPage
-    .locator('select')
-    .first()
-    .selectOption({ label: `${marker.radiusMiles} miles` })
-  await viewerPage.getByRole('button', { name: /^Continue/ }).click()
-  await viewerPage.getByRole('heading', { name: 'Near you' }).waitFor()
+  await finishSignup(viewerPage, {
+    homeZip: marker.homeZip,
+    radiusMiles: marker.radiusMiles,
+  })
 
   const viewerCard = viewerPage.locator('a').filter({ hasText: title }).first()
   await expect(viewerCard).toBeVisible()

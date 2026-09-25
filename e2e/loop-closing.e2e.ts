@@ -59,7 +59,8 @@ import { nextOccurrencePlan, placeFollowerLine } from '../src/lib/follows'
 import { weekdayFromDateIso } from '../src/lib/series'
 import {
   editTitle, localDatePlusDays, parseTimeLabel, readMarkerMeta,
-  readMarkerSession, readSupabaseEnv, settleOnRoute, signUpViewer,
+  readMarkerSession, readSupabaseEnv, settleOnRoute, finishSignup,
+  signUpViewer,
 } from './fixtures'
 
 const TITLE_PLACEHOLDER = 'e.g. Playground time at Green Lake'
@@ -191,11 +192,10 @@ async function createOnboardedViewer(
     email: email,
     password: password,
   })
-  await page.getByRole('heading', { name: 'Set your location' }).waitFor()
-  await page.getByPlaceholder('e.g. 98107').fill(zip)
-  await page.locator('select').first().selectOption({ label: '5 miles' })
-  await page.getByRole('button', { name: /^Continue/ }).click()
-  await page.getByRole('heading', { name: 'Near you' }).waitFor()
+  await finishSignup(page, {
+    homeZip: zip,
+    radiusMiles: 5,
+  })
   return { context, page }
 }
 

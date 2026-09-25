@@ -52,7 +52,8 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 import {
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
-  readSupabaseEnv, settleOnRoute, signUpViewer, stepStartTimeOnce,
+  readSupabaseEnv, settleOnRoute, finishSignup,
+  signUpViewer, stepStartTimeOnce,
 } from './fixtures'
 
 const TITLE_PLACEHOLDER = 'e.g. Playground time at Green Lake'
@@ -532,11 +533,10 @@ test('a saved ping arms the prompt, and denying it surfaces the inbox note', asy
     password: viewerPassword,
   })
 
-  await viewer.getByRole('heading', { name: 'Set your location' }).waitFor()
-  await viewer.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
-  await viewer.locator('select').first().selectOption({ label: `${marker.radiusMiles} miles` })
-  await viewer.getByRole('button', { name: /^Continue/ }).click()
-  await viewer.getByRole('heading', { name: 'Near you' }).waitFor()
+  await finishSignup(viewer, {
+    homeZip: marker.homeZip,
+    radiusMiles: marker.radiusMiles,
+  })
   await expectPushSupported(viewer)
 
   const card = viewer.locator('a').filter({ hasText: title }).first()
@@ -620,11 +620,10 @@ test('a ping from a drop-in detail page defers the notification prompt off the R
     email: viewerEmail,
     password: viewerPassword,
   })
-  await viewer.getByRole('heading', { name: 'Set your location' }).waitFor()
-  await viewer.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
-  await viewer.locator('select').first().selectOption({ label: `${marker.radiusMiles} miles` })
-  await viewer.getByRole('button', { name: /^Continue/ }).click()
-  await viewer.getByRole('heading', { name: 'Near you' }).waitFor()
+  await finishSignup(viewer, {
+    homeZip: marker.homeZip,
+    radiusMiles: marker.radiusMiles,
+  })
   await expectPushSupported(viewer)
 
   const href = await viewer

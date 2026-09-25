@@ -24,6 +24,7 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import {
   readMarkerMeta, readMarkerSession, readSupabaseEnv, settleOnRoute,
+  finishSignup,
   signUpViewer,
 } from './fixtures'
 
@@ -50,14 +51,10 @@ test('new message: search a parent, open DM thread, send a message', async ({
     email: viewerEmail,
     password: viewerPassword,
   })
-  await viewerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
-  await viewerPage.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
-  await viewerPage
-    .locator('select')
-    .first()
-    .selectOption({ label: `${marker.radiusMiles} miles` })
-  await viewerPage.getByRole('button', { name: /^Continue/ }).click()
-  await viewerPage.getByRole('heading', { name: 'Near you' }).waitFor()
+  await finishSignup(viewerPage, {
+    homeZip: marker.homeZip,
+    radiusMiles: marker.radiusMiles,
+  })
 
   // Look up the viewer's profile id via REST (the marker's JWT can see all
   // profiles — the search seam uses ILIKE on display_name).
@@ -178,14 +175,10 @@ test('the Message button on a family page opens the DM thread (and is absent on 
     email: viewerEmail,
     password: viewerPassword,
   })
-  await viewerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
-  await viewerPage.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
-  await viewerPage
-    .locator('select')
-    .first()
-    .selectOption({ label: `${marker.radiusMiles} miles` })
-  await viewerPage.getByRole('button', { name: /^Continue/ }).click()
-  await viewerPage.getByRole('heading', { name: 'Near you' }).waitFor()
+  await finishSignup(viewerPage, {
+    homeZip: marker.homeZip,
+    radiusMiles: marker.radiusMiles,
+  })
 
   const { url, anonKey } = readSupabaseEnv()
   const { accessToken } = readMarkerSession()
@@ -246,14 +239,10 @@ test('RLS isolation: a stranger cannot read a free-form DM', async ({
     email: viewerEmail,
     password: viewerPassword,
   })
-  await viewerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
-  await viewerPage.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
-  await viewerPage
-    .locator('select')
-    .first()
-    .selectOption({ label: `${marker.radiusMiles} miles` })
-  await viewerPage.getByRole('button', { name: /^Continue/ }).click()
-  await viewerPage.getByRole('heading', { name: 'Near you' }).waitFor()
+  await finishSignup(viewerPage, {
+    homeZip: marker.homeZip,
+    radiusMiles: marker.radiusMiles,
+  })
 
   // Look up the viewer's profile id.
   const { url, anonKey } = readSupabaseEnv()
@@ -297,14 +286,10 @@ test('RLS isolation: a stranger cannot read a free-form DM', async ({
     email: strangerEmail,
     password: strangerPassword,
   })
-  await strangerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
-  await strangerPage.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
-  await strangerPage
-    .locator('select')
-    .first()
-    .selectOption({ label: `${marker.radiusMiles} miles` })
-  await strangerPage.getByRole('button', { name: /^Continue/ }).click()
-  await strangerPage.getByRole('heading', { name: 'Near you' }).waitFor()
+  await finishSignup(strangerPage, {
+    homeZip: marker.homeZip,
+    radiusMiles: marker.radiusMiles,
+  })
 
   // Extract the stranger's access token.
   const strangerToken = await (async () => {

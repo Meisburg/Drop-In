@@ -39,7 +39,8 @@
 import { expect, test } from '@playwright/test'
 import {
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
-  readSupabaseEnv, settleOnRoute, signUpViewer, stepStartTimeOnce,
+  readSupabaseEnv, settleOnRoute, finishSignup,
+  signUpViewer, stepStartTimeOnce,
 } from './fixtures'
 
 test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no "+N")', async ({
@@ -100,14 +101,10 @@ test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no 
   })
 
   // The viewer's location step (the same REST write a real user gets).
-  await viewerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
-  await viewerPage.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
-  await viewerPage
-    .locator('select')
-    .first()
-    .selectOption({ label: `${marker.radiusMiles} miles` })
-  await viewerPage.getByRole('button', { name: /^Continue/ }).click()
-  await viewerPage.getByRole('heading', { name: 'Near you' }).waitFor()
+  await finishSignup(viewerPage, {
+    homeZip: marker.homeZip,
+    radiusMiles: marker.radiusMiles,
+  })
 
   // The viewer pings the host's post via the card's "going" check toggle
   // (the active state = the write round-tripped; the optimistic flip is

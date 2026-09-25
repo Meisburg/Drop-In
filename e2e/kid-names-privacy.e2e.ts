@@ -96,7 +96,8 @@ import { buildIcs } from '../src/lib/ics'
 import { NOTIFICATION_KINDS, buildNotificationPayload } from '../src/lib/push'
 import {
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
-  readSupabaseEnv, settleOnRoute, signUpViewer, stepStartTimeOnce,
+  readSupabaseEnv, settleOnRoute, finishSignup,
+  signUpViewer, stepStartTimeOnce,
 } from './fixtures'
 
 const PLACE = 'E2E Names lot'
@@ -151,14 +152,10 @@ async function signUpAndOnboard(
     password: input.password,
   })
 
-  await page.getByRole('heading', { name: 'Set your location' }).waitFor()
-  await page.getByPlaceholder('e.g. 98107').fill(input.homeZip)
-  await page
-    .locator('select')
-    .first()
-    .selectOption({ label: `${input.radiusMiles} miles` })
-  await page.getByRole('button', { name: /^Continue/ }).click()
-  await page.getByRole('heading', { name: 'Near you' }).waitFor()
+  await finishSignup(page, {
+    homeZip: input.homeZip,
+    radiusMiles: input.radiusMiles,
+  })
 
   const statePath = path.join(os.tmpdir(), `dropin-e2e-${input.name}.json`)
   await context.storageState({ path: statePath })

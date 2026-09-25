@@ -119,7 +119,8 @@ import { expect, test, type Page } from '@playwright/test'
 import { localDayKey, PAST_DROP_INS_LABEL } from '../src/lib/feed'
 import {
   editTitle, localDatePlusDays, openProfileEditor, readMarkerMeta,
-  readMarkerSession, readSupabaseEnv, settleOnRoute, signUpViewer,
+  readMarkerSession, readSupabaseEnv, settleOnRoute, finishSignup,
+  signUpViewer,
   stepStartTimeOnce,
 } from './fixtures'
 
@@ -513,10 +514,9 @@ test('an ended drop-in leaves the feed, a live one stays, and the archive still 
     email: viewerEmail,
     password: viewerPassword,
   })
-  await viewerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
-  await viewerPage.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
-  await viewerPage.getByRole('button', { name: /^Continue/ }).click()
-  await viewerPage.getByRole('heading', { name: 'Near you' }).waitFor()
+  await finishSignup(viewerPage, {
+    homeZip: marker.homeZip,
+  })
 
   // Their own profile page, which V20 t01 now opens on the READ view. The
   // assertion is unchanged and still the point: this page lists the VIEWER's

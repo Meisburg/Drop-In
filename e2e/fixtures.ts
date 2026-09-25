@@ -372,3 +372,52 @@ export async function signUpViewer(
   await page.locator('input[type="password"]').fill(password)
   await page.getByRole('button', { name: 'Create account' }).click()
 }
+
+/**
+ * FINISH SIGNUP — however it actually ended. (First-use audit, ticket 02.)
+ *
+ * `signUpViewer` types a REAL Seattle street address, and the signup form
+ * derives the home ZIP from it. So there are two legitimate endings, and which
+ * one you get depends on whether the geocode resolved:
+ *
+ *   - RESOLVED → `home_zip` is written at signup, the onboarding gate passes,
+ *     and the new parent lands on the feed. No location step at all.
+ *   - UNRESOLVED → the gate bounces to /onboarding, which asks for the ZIP.
+ *
+ * Before ticket 02 the first branch never happened: the geocode write targeted
+ * an empty uuid and 400'd, so signup ALWAYS took the second branch and ~19
+ * specs could safely assume the location step came next. Fixing the write made
+ * the happy path real, and every one of those specs then hung for two minutes
+ * waiting for a screen the parent should never see. This helper is the fix once
+ * instead of nineteen times.
+ *
+ * It NEVER forces a reload: the branch we are already on is the branch we keep,
+ * so a spec that counts requests during the cold load still counts only the
+ * cold load's.
+ */
+export async function finishSignup(
+  page: Page,
+  options: { homeZip: string; radiusMiles?: number },
+): Promise<void> {
+  const feed = page.getByRole('heading', { name: 'Near you' })
+  const locationStep = page.getByRole('heading', { name: 'Set your location' })
+
+  // Whichever settles first wins. Awaiting them in sequence would burn a full
+  // `expect` timeout on the branch this signup did not take.
+  await expect(feed.or(locationStep)).toBeVisible({ timeout: 30_000 })
+
+  if (await locationStep.isVisible().catch(() => false)) {
+    await page.getByPlaceholder('e.g. 98107').fill(options.homeZip)
+    // The radius only matters to specs that assert on distance; anything else
+    // takes the app's own default (5 mi) rather than restating it.
+    const radius = options.radiusMiles ?? 5
+    await page
+      .locator('select')
+      .first()
+      .selectOption({ label: `${radius} miles` })
+    await page.getByRole('button', { name: /^Continue/ }).click()
+  }
+
+  // Either way, a signed-in, onboarded parent now stands on the feed.
+  await feed.waitFor({ timeout: 30_000 })
+}

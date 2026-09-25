@@ -30,7 +30,8 @@ import { expect, test } from '@playwright/test'
 import { WIDEN_RADIUS_MILES, emptyRadiusCopy } from '../src/lib/feed'
 import {
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
-  readSupabaseEnv, settleOnRoute, signUpViewer,
+  readSupabaseEnv, settleOnRoute, finishSignup,
+  signUpViewer,
 } from './fixtures'
 
 /**
@@ -282,10 +283,9 @@ test('the detail page\'s failed reads are honest states, and Retry recovers', as
     email: viewerEmail,
     password: viewerPassword,
   })
-  await viewerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
-  await viewerPage.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
-  await viewerPage.getByRole('button', { name: /^Continue/ }).click()
-  await viewerPage.getByRole('heading', { name: 'Near you' }).waitFor()
+  await finishSignup(viewerPage, {
+    homeZip: marker.homeZip,
+  })
 
   // --- Force both reads to fail, then open the post. ---
   // Every going_pings request this viewer issues is aborted — read and write

@@ -33,7 +33,8 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import {
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
-  readSupabaseEnv, settleOnRoute, signUpViewer, stepStartTimeOnce,
+  readSupabaseEnv, settleOnRoute, finishSignup,
+  signUpViewer, stepStartTimeOnce,
 } from './fixtures'
 
 const TITLE_PLACEHOLDER = 'e.g. Playground time at Green Lake'
@@ -101,14 +102,10 @@ async function createPingingViewer(
     email: viewerEmail,
     password: viewerPassword,
   })
-  await viewerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
-  await viewerPage.getByPlaceholder('e.g. 98107').fill(homeZip)
-  await viewerPage
-    .locator('select')
-    .first()
-    .selectOption({ label: `${radiusMiles} miles` })
-  await viewerPage.getByRole('button', { name: /^Continue/ }).click()
-  await viewerPage.getByRole('heading', { name: 'Near you' }).waitFor()
+  await finishSignup(viewerPage, {
+    homeZip: homeZip,
+    radiusMiles: radiusMiles,
+  })
 
   // Open the post's detail + ping it (the detail page's "I'm going" button).
   await viewerPage.goto(`/playdate/${playdateId}`)
@@ -266,14 +263,10 @@ test('RLS isolation: a stranger cannot read or write messages', async ({
     email: strangerEmail,
     password: strangerPassword,
   })
-  await strangerPage.getByRole('heading', { name: 'Set your location' }).waitFor()
-  await strangerPage.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
-  await strangerPage
-    .locator('select')
-    .first()
-    .selectOption({ label: `${marker.radiusMiles} miles` })
-  await strangerPage.getByRole('button', { name: /^Continue/ }).click()
-  await strangerPage.getByRole('heading', { name: 'Near you' }).waitFor()
+  await finishSignup(strangerPage, {
+    homeZip: marker.homeZip,
+    radiusMiles: marker.radiusMiles,
+  })
 
   await strangerPage.goto('/inbox')
   await settleOnRoute(strangerPage, '/inbox')
