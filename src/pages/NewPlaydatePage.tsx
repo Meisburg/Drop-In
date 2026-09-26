@@ -1245,7 +1245,15 @@ export function NewPlaydatePage({
           aria-modal="true"
           aria-label="Browse places"
         >
-          <div className="pt-safe sticky top-0 z-10 border-b border-slate-200 bg-white">
+          {/* V25 t12: the sticky header is `bg-white` on what is now a WHITE
+              sheet, so the tint step it used to rely on is gone and only the
+              hairline is left — a measured 1.26:1 (slate-200 against #ffffff).
+              `shadow-sm` is added on THIS header only, which is the app's own
+              idiom for a surface that has to read as lifted (the cards use it),
+              so the header stays separated from the rows scrolling under it —
+              and it keeps that separation in dark mode, where the same pair is
+              a 1.81:1 border on a #241f1c header over a #181412 sheet. */}
+          <div className="pt-safe sticky top-0 z-10 border-b border-slate-200 bg-white shadow-sm">
             <div className="mx-auto flex max-w-md items-center justify-between px-4 py-1">
               <span className="font-display text-lg font-bold text-slate-900">Pick a place</span>
               <button

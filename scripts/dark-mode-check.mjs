@@ -78,6 +78,39 @@ async function samplePage(page) {
     const pageShell = opaque
       .filter((x) => x.r.width >= vw * 0.9 && x.r.height >= vh * 0.5)
       .sort((a, b) => b.r.width * b.r.height - a.r.width * a.r.height)[0]
+    /*
+     * V25 t12 — WHAT THIS `cards` LIST ACTUALLY CONTAINS ON /login, MEASURED.
+     *
+     * The "card surfaces stay light" check below is RED on /login and always has
+     * been: it reproduces on the parent build at 09b19d4 as
+     * `page bg: rgb(251, 247, 244)` + `cards:` (empty) + the same FAIL, so the
+     * white page did not cause it and this slice only re-pointed LIGHT_PAGE.
+     *
+     * The cause is the check's own precondition, not the theme: `cards` comes
+     * back EMPTY, so `brightCards.length > 0` is false whatever the palette.
+     * WHY empty — measured on the painted page: `samplePage` collects opaque,
+     * non-overlay surfaces from a FIXED tag list (`body, div, header, nav, main,
+     * section`), and on /login that list returns exactly ONE element — the shell
+     * DIV itself (LoginPage.tsx:270, the element this slice re-pointed).
+     * /login was deliberately DE-CARDED by the frontend-design pass (see the
+     * "centered logo card was the same template… removed" note in LoginPage), so
+     * the page's remaining opaque surfaces are the provider BUTTON (bg-white) and
+     * the submit BUTTON (bg-indigo-600) — nothing this query can call a card.
+     * Widening the SAME filter to `*` yields three colours, two of them bright,
+     * i.e. the check would pass: the emptiness is a limitation of the query, and
+     * a probe that is supposed to be checking CARDS is asserting on a route that
+     * has none.
+     *
+     * The sibling assertion "no bright card surface on the dark page" is VACUOUS
+     * for the same reason — with zero cards it cannot fail, so #241f1c (the dark
+     * card surface, re-pointed at `.bg-white` below in src/index.css) has no
+     * deterministic coverage in this script at all.
+     *
+     * RULED (V25 t12 review, non-blocking): do NOT redesign these heuristics
+     * inside a visual slice. The real fix — assert the page element and a real
+     * card element explicitly, on a route that HAS cards (/browse) — is its own
+     * ticket, and it must not be "fixed" by re-pointing LIGHT_PAGE.
+     */
     // Card surfaces = opaque, but not the full-bleed shell.
     const cards = [...new Set(
       opaque
