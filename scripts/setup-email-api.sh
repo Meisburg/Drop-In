@@ -109,47 +109,82 @@ printf '\n  Apply this? [y/N] '
 read -r GO || true
 [[ "$GO" =~ ^[Yy] ]] || die "aborted — nothing changed" 0
 
-# ── build the body OFF the command line ────────────────────────────────────
-BODY="$(mktemp)"; chmod 600 "$BODY"
-cleanup() { rm -f "$BODY" /tmp/dsh_authcfg.json /tmp/dsh_authresp.json; }
+# ── send the PATCH, with automatic type correction ─────────────────────────
+# WHY THIS RETRIES: the Management API's schema is not documented field by
+# field. `smtp_port` is a STRING there even though it is obviously a port
+# number — the first real run failed with
+#   {"message":"smtp_port: Invalid input: expected string, received number"}
+# A 400 applies NOTHING, so retrying with the corrected TYPE is safe — and it
+# saves the human from re-typing their app password once per type mismatch.
+cleanup() { rm -f /tmp/dsh_authcfg.json; }
 trap cleanup EXIT
 
+printf '\n  sending PATCH...\n'
+
+SUPABASE_ACCESS_TOKEN="$SUPABASE_ACCESS_TOKEN" REF="$REF" \
 GMAIL_ADDR="$GMAIL_ADDR" APP_PASS="$APP_PASS" SMTP_HOST="$SMTP_HOST" \
-SMTP_PORT="$SMTP_PORT" RATE_LIMIT="$RATE_LIMIT" BODY="$BODY" python3 - <<'PY' \
-  || die "could not build the request body" 2
-import json, os
+SMTP_PORT="$SMTP_PORT" RATE_LIMIT="$RATE_LIMIT" python3 - <<'PY'
+import json, os, re, sys, urllib.error, urllib.request
+
+token = os.environ["SUPABASE_ACCESS_TOKEN"]
+ref = os.environ["REF"]
+addr = os.environ["GMAIL_ADDR"]
+
 body = {
     "smtp_host": os.environ["SMTP_HOST"],
-    "smtp_port": int(os.environ["SMTP_PORT"]),
-    "smtp_user": os.environ["GMAIL_ADDR"],
+    # str() on purpose: the API wants this one as a string, not a number.
+    "smtp_port": str(os.environ["SMTP_PORT"]),
+    "smtp_user": addr,
     "smtp_pass": os.environ["APP_PASS"],
-    "smtp_admin_email": os.environ["GMAIL_ADDR"],
+    "smtp_admin_email": addr,
     "smtp_sender_name": "Drop In",
     "rate_limit_email_sent": int(os.environ["RATE_LIMIT"]),
 }
-with open(os.environ["BODY"], "w") as fh:
-    json.dump(body, fh)
+
+url = "https://api.supabase.com/v1/projects/%s/config/auth" % ref
+headers = {"Authorization": "Bearer %s" % token, "Content-Type": "application/json"}
+
+for attempt in range(1, 5):
+    req = urllib.request.Request(
+        url, data=json.dumps(body).encode(), method="PATCH", headers=headers
+    )
+    try:
+        with urllib.request.urlopen(req) as resp:
+            print("  ok PATCH accepted (HTTP %d) on attempt %d" % (resp.status, attempt))
+            sys.exit(0)
+    except urllib.error.HTTPError as err:
+        raw = err.read().decode(errors="replace")
+        try:
+            msg = json.loads(raw).get("message", raw)
+        except Exception:
+            msg = raw
+        m = re.match(r"(\w+): Invalid input: expected (\w+), received (\w+)", msg)
+        if m and m.group(1) in body:
+            field, want = m.group(1), m.group(2)
+            if want == "string":
+                body[field] = str(body[field])
+            elif want == "number":
+                body[field] = int(str(body[field]))
+            else:
+                break
+            print("  .. %s must be a %s - retrying with %r" % (field, want, body[field]))
+            continue
+        print("\n  !! HTTP %d - the API rejected it. Its message, verbatim:\n" % err.code)
+        print("  " + msg + "\n")
+        if "Custom SMTP required" in msg:
+            print("  !! A required SMTP field was absent - a bug in THIS script,")
+            print("     not in what you typed. Send the message above along.")
+        elif err.code in (401, 403):
+            print("  !! Auth or scope problem - the token may be revoked or read-only.")
+        elif err.code == 400:
+            print("  !! A validation problem - the message above names the field.")
+        sys.exit(1)
+
+print("\n  !! Gave up after 4 attempts - the schema is not what this script assumes.")
+sys.exit(1)
 PY
-
-printf '\n  sending PATCH...\n'
-CODE=$(curl -s -o /tmp/dsh_authresp.json -w '%{http_code}' -X PATCH \
-  -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
-  -H "Content-Type: application/json" \
-  --data-binary "@${BODY}" \
-  "https://api.supabase.com/v1/projects/${REF}/config/auth" 2>/dev/null)
-
-if [ "$CODE" != "200" ]; then
-  printf '\n'
-  warn "HTTP $CODE — the API rejected it. Its message, verbatim:"
-  printf '\n'
-  head -c 600 /tmp/dsh_authresp.json 2>/dev/null; printf '\n\n'
-  case "$CODE" in
-    401|403) warn "This is an auth/scope problem: the token may have been revoked or is read-only." ;;
-    422|400) warn "This is a validation problem: re-read the message above — it names the missing field." ;;
-  esac
-  die "nothing was changed" 1
-fi
-ok "PATCH accepted (HTTP 200)"
+PATCH_RC=$?
+[ "$PATCH_RC" -eq 0 ] || die "nothing was changed" 1
 
 # ── verify by READING IT BACK — never trust the write's own success ────────
 printf '\n  re-reading the config to verify...\n'
