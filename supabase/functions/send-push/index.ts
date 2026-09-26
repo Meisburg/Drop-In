@@ -9,6 +9,15 @@
  * second function draining the same `sent_at is null` rows would race this one
  * for the same rows.
  *
+ * THE EMAIL TRANSPORT IS SELECTABLE, SMTP PREFERRED. Gmail SMTP
+ * (`SMTP_USER` + `SMTP_PASS` + `EMAIL_FROM`) is the PRIMARY path: the account
+ * already carries Drop In's auth email and is proven live, and it needs no
+ * sending domain. Resend HTTP stays available (`_shared/resend.ts`, untouched)
+ * for when a domain exists. When NEITHER is configured the branch is not
+ * silently skipped — the row is stamped with the NAME of the missing secret
+ * (`_shared/emailTransport.ts`), because that stamp is the only record of why
+ * nothing was delivered.
+ *
  *  1. CATCH-UP SCAN (`starting_soon` only). "Starts in an hour" is a property
  *     of the CLOCK, not of any write, so it is the one kind no trigger can
  *     produce. This function scans for posts that (a) start within the next 60
@@ -60,6 +69,9 @@ import {
 } from '../_shared/pushCopy.ts'
 import { FALLBACK_BASE_URL, buildEmailPayload, type EmailEnv } from '../_shared/emailCopy.ts'
 import { sendEmail } from '../_shared/resend.ts'
+import { sendEmailViaSmtp, smtpConfigFrom } from '../_shared/smtp.ts'
+import { smtpDeps } from '../_shared/smtpDeno.ts'
+import { chooseTransport } from '../_shared/emailTransport.ts'
 import { classifySendResult, decideEmailFallback } from '../_shared/emailFallback.ts'
 
 /**
@@ -67,15 +79,43 @@ import { classifySendResult, decideEmailFallback } from '../_shared/emailFallbac
  * not a reactive source in an Edge Function — the isolate is created per
  * invocation — so there is nothing to gain from re-reading it inside the loop.
  *
- * `emailEnabled` is both secrets being non-blank after trim; either one missing
- * means there is no transport to call, and the drain keeps its old behaviour
- * rather than failing every row on a request that could never be accepted.
+ * `TRANSPORT` is the PRECEDENCE decision (`_shared/emailTransport.ts`): SMTP
+ * when `SMTP_USER` + `SMTP_PASS` + `EMAIL_FROM` are all non-blank (Gmail is the
+ * primary path), else Resend when `RESEND_API_KEY` + `EMAIL_FROM` are non-blank,
+ * else `disabled` with the NAME of the missing secret in `reason`. Either way
+ * there is nothing to gain from re-deciding per row, and a missing secret means
+ * the drain keeps its old behaviour rather than failing every row on a request
+ * that could never be accepted.
  */
+const SMTP_USER = (Deno.env.get('SMTP_USER') ?? '').trim()
+const SMTP_PASS = (Deno.env.get('SMTP_PASS') ?? '').trim()
+const SMTP_HOST = (Deno.env.get('SMTP_HOST') ?? '').trim()
+const SMTP_PORT = (Deno.env.get('SMTP_PORT') ?? '').trim()
 const RESEND_API_KEY = (Deno.env.get('RESEND_API_KEY') ?? '').trim()
 const EMAIL_FROM = (Deno.env.get('EMAIL_FROM') ?? '').trim()
 const EMAIL_REPLY_TO = (Deno.env.get('EMAIL_REPLY_TO') ?? '').trim()
 const PUBLIC_BASE_URL = (Deno.env.get('PUBLIC_BASE_URL') ?? '').trim()
-const EMAIL_ENABLED = RESEND_API_KEY !== '' && EMAIL_FROM !== ''
+
+/** Which transport this deployment has, and (when disabled) what is missing. */
+const TRANSPORT = chooseTransport({
+  smtpUser: SMTP_USER,
+  smtpPass: SMTP_PASS,
+  resendApiKey: RESEND_API_KEY,
+  emailFrom: EMAIL_FROM,
+})
+
+/** There is a transport to call at all — the flag `decideEmailFallback` wants. */
+const EMAIL_ENABLED = TRANSPORT.kind !== 'disabled'
+
+/** The SMTP branch's config, from the same secrets. Unused when disabled. */
+const SMTP_CONFIG = smtpConfigFrom({
+  SMTP_USER,
+  SMTP_PASS,
+  EMAIL_FROM,
+  EMAIL_REPLY_TO,
+  SMTP_HOST,
+  SMTP_PORT,
+})
 
 /** Links are built against the configured origin, else the pinned deployment
  *  fallback — a relative link in an inbox is a dead link. */
@@ -297,7 +337,7 @@ async function drain(admin: SupabaseClient): Promise<{
     // list's content — and leaving it unsent would make every future tick
     // re-read it forever.
     //
-    // …UNLESS email is configured, in which case "no device" is no longer
+    // …UNLESS a transport is configured, in which case "no device" is no longer
     // "no way to reach them": an iPhone parent who never completed the push
     // opt-in (iOS web push needs the app installed to the home screen) still
     // gets told. The email branch below is a FALLBACK INSIDE this drain, on
@@ -306,13 +346,20 @@ async function drain(admin: SupabaseClient): Promise<{
     // `(profile_id, kind, playdate_id)` plus `sent_at is null` remains the only
     // anti-double-send wall; there is still no in-memory dedupe.
     if (subscriptions.length === 0) {
-      if (!EMAIL_ENABLED) {
-        // Not configured. Keep the EXISTING behaviour exactly, including the
-        // error string — other things read it, and the honest reading is "we
-        // had no way to reach them".
+      if (TRANSPORT.kind === 'disabled') {
+        // Not configured. Keep the EXISTING behaviour, including the LEADING
+        // part of the error string — other things read it, and the honest
+        // reading is "we had no way to reach them" — but APPEND the transport's
+        // own reason, the same way the decision branch below does. Without it
+        // the row says only that email is off; with it the row names the
+        // missing secret, and that row is the only record of why no parent was
+        // told.
         await admin
           .from('notification_log')
-          .update({ sent_at: new Date().toISOString(), error: 'no subscription' })
+          .update({
+            sent_at: new Date().toISOString(),
+            error: `no subscription (email disabled: ${TRANSPORT.reason})`.slice(0, 500),
+          })
           .eq('id', row.id)
         skipped += 1
         continue
@@ -371,11 +418,17 @@ async function drain(admin: SupabaseClient): Promise<{
       sends += 1
 
       const emailPayload = buildEmailPayload(row, EMAIL_ENV)
-      const result = await sendEmail(
-        { fetch },
-        { to: email ?? '', ...emailPayload },
-        { apiKey: RESEND_API_KEY, from: EMAIL_FROM, replyTo: EMAIL_REPLY_TO },
-      )
+      // SMTP first (the primary transport), Resend second — the same precedence
+      // `chooseTransport` decided above. Both branches resolve the SAME
+      // `SendResult`, so the stamping below cannot tell them apart.
+      const result =
+        TRANSPORT.kind === 'smtp'
+          ? await sendEmailViaSmtp(smtpDeps, { to: email ?? '', ...emailPayload }, SMTP_CONFIG)
+          : await sendEmail(
+              { fetch },
+              { to: email ?? '', ...emailPayload },
+              { apiKey: RESEND_API_KEY, from: EMAIL_FROM, replyTo: EMAIL_REPLY_TO },
+            )
       const verdict = classifySendResult(result)
 
       if (verdict === 'sent') {
@@ -388,9 +441,10 @@ async function drain(admin: SupabaseClient): Promise<{
       }
 
       if (verdict === 'retry') {
-        // DO NOT STAMP. The transport said "come back later" (a 429, a 5xx, or a
-        // fetch that never reached a status), so `sent_at` stays null and the
-        // next 5-minute tick picks the row up again. Stamping here would mark the
+        // DO NOT STAMP. The transport said "come back later" — SMTP 4xx (421/
+        // 450/451/452), a Resend 429/5xx, or a connection/TLS failure that
+        // never reached a status — so `sent_at` stays null and the next
+        // 5-minute tick picks the row up again. Stamping here would mark the
         // notification delivered and DROP it forever — the parent would never be
         // told about the playdate, which is the exact failure this slice exists
         // to remove.
@@ -398,10 +452,12 @@ async function drain(admin: SupabaseClient): Promise<{
         continue
       }
 
-      // Terminal (a 4xx that is not a rate limit, or a misconfiguration): the
-      // identical request will fail identically forever, so it IS stamped —
-      // leaving it unsent would make every future tick retry a bad address and
-      // starve every notice queued behind it (this drain is oldest-first).
+      // Terminal: the identical request will fail identically forever — an SMTP
+      // 5xx (550 is an ADDRESS REJECTION), a Resend 4xx that is not a rate
+      // limit, or a misconfiguration — so it IS stamped. Leaving it unsent
+      // would make every future tick retry a bad address and starve every
+      // notice queued behind it (this drain is oldest-first, and the cap is a
+      // send budget).
       const detail = result.ok ? 'unknown' : result.error
       await admin
         .from('notification_log')
