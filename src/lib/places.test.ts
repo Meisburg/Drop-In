@@ -33,6 +33,7 @@ import {
   placeUpcomingLabel,
   placeExternalUrl,
   placeLearnMoreLink,
+  placeOutboundLinks,
   photoCreditLine,
   radiusPreviewCircle,
   zoomForRadius,
@@ -54,7 +55,7 @@ import {
 } from './places'
 import type { FeedMapPin, FeedMapPinEvent, PlaceListRow } from './places'
 import type { ReviewSummary } from './reviews'
-import { DEFAULT_RADIUS_MILES, cardWhenLabel, formatDayLabel, localDayKey, neighborhoodIdField, RADIUS_MILES_OPTIONS } from './feed'
+import { DEFAULT_RADIUS_MILES, cardWhenLabel, formatDayLabel, localDayKey, mapsHref, neighborhoodIdField, RADIUS_MILES_OPTIONS } from './feed'
 import type { Place, PlaceKind } from './types'
 import type { ZipCoords } from './feed'
 
@@ -878,6 +879,64 @@ describe('placeLearnMoreLink (V20 t01: the stored website, else the map search)'
   it('returns null when there is neither a usable URL nor a name to search', () => {
     expect(placeLearnMoreLink({ name: '', website_url: null })).toBeNull()
     expect(placeLearnMoreLink({ name: '   ', website_url: 'javascript:x' })).toBeNull()
+  })
+})
+
+/**
+ * V25 t04 — the place page's two outbound actions ("Learn more" + "Get
+ * directions"), and above all the NULL contract the page renders from: no
+ * address means no Get-directions control, never a queryless Google Maps link.
+ *
+ * This is the only deterministic place that absence CAN be pinned — vitest runs
+ * in the node environment (no jsdom/RTL in this repo), and every one of the 239
+ * seeded places carries an address (measured: an anon REST read of
+ * `places?address=is.null` returns []), so a browser lane can never meet the
+ * no-address case either. The render's conditionals consume exactly the two
+ * booleans these tests pin.
+ */
+describe('placeOutboundLinks (V25 t04: the place page\'s two buttons)', () => {
+  it('offers both actions when the place has an address, keeping the site when there is one', () => {
+    expect(
+      placeOutboundLinks({
+        name: 'Green Lake Park',
+        address: '7201 East Green Lake Dr N',
+        website_url: 'https://www.seattle.gov/parks/greenlake',
+      }),
+    ).toEqual({
+      learnMore: { url: 'https://www.seattle.gov/parks/greenlake', kind: 'website' },
+      directions:
+        'https://www.google.com/maps?q=Green%20Lake%20Park%2C%207201%20East%20Green%20Lake%20Dr%20N',
+    })
+  })
+
+  it('reuses feed.mapsHref verbatim — no second URL builder, and the address link cannot drift', () => {
+    const place = { name: 'Zürich Spielplatz', address: 'Café str. 12' }
+    // Byte equality against the seam the address link and the feed card use.
+    expect(placeOutboundLinks(place).directions).toBe(mapsHref(place.name, place.address))
+    // …including its trimming, so "  123 Main  " and "123 Main" are one href.
+    expect(placeOutboundLinks({ name: 'X', address: '  123 Main  ' }).directions).toBe(
+      mapsHref('X', '123 Main'),
+    )
+  })
+
+  it('drops Get directions when there is no address — and still offers Learn more', () => {
+    for (const address of [null, undefined, '', '   '] as const) {
+      const links = placeOutboundLinks({ name: 'Green Lake Park', address })
+      expect(links.directions, `address ${JSON.stringify(address)} must yield no Maps link`).toBeNull()
+      // The other action is INDEPENDENT of the address: a park with no street
+      // still has its OSM search, so the row is one button, not none.
+      expect(links.learnMore).toEqual({
+        url: placeExternalUrl({ name: 'Green Lake Park' }),
+        kind: 'map-search',
+      })
+    }
+  })
+
+  it('keeps Get directions when Learn more is null (no name, no site) — the two are independent', () => {
+    expect(placeOutboundLinks({ name: '', address: '123 Main St' })).toEqual({
+      learnMore: null,
+      directions: 'https://www.google.com/maps?q=%2C%20123%20Main%20St',
+    })
   })
 })
 

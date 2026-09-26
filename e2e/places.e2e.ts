@@ -53,6 +53,12 @@
  *     flips between the two surfaces. It is a ≥44px tap target, it carries no
  *     z-index (or one strictly below Leaflet's 1000), it never covers a card's
  *     heart, and it never scrolls the page to a band — there is no band.
+ * (14) V25 t04 reordered the PLACE page to the founder's sequence — name →
+ *     description → the two actions ("Learn more" + "Get directions", one row,
+ *     wrapping at 320px rather than shrinking below the 44px floor) → the map —
+ *     and retired the "Find it on the map" label that sat under that map. The
+ *     page still carries NO photo (V20 t01), and the rating/comments stay on the
+ *     research page this page links to.
  *
  * RED BY DESIGN pre-0029-apply: `places` does not exist live yet, so PostgREST
  * answers the first read with PGRST205 (schema cache: table not found). The
@@ -1740,13 +1746,21 @@ test('a place page renders the seeded data with the existing Maps link', async (
     'no place photograph is rendered on the detail page',
   ).toHaveCount(0)
 
-  // The link itself: a real external target in a new tab, and its LABEL agrees
-  // with its DESTINATION. Green Lake Park is a city park, and the park rows are
-  // deliberately NOT in the website backfill (it covers community centers,
-  // pools, beaches and libraries) — so this asserts the pair rather than
-  // hard-coding which side of the seam this row lands on.
+  // The link itself: a real external target in a new tab, and its DESTINATION
+  // still declares which kind of link it is. Green Lake Park is a city park,
+  // and the park rows are deliberately NOT in the website backfill (it covers
+  // community centers, pools, beaches and libraries) — so this asserts the
+  // PAIR rather than hard-coding which side of the seam this row lands on.
+  //
+  // V25 t04 changed the LABEL, not the honesty channel: the page's two-button
+  // row reads "Learn more" for BOTH kinds (the old "Find it on the map" label
+  // sat under the page's own map and was the founder's complaint), and
+  // `data-link-kind` is what still tells the two destinations apart. So the
+  // per-kind assertions below are about the HREF (a map search may never be
+  // dressed up as the operator's site), and the label is pinned once, exactly.
   const learnMore = page.getByTestId('place-learn-more')
   await expect(learnMore).toBeVisible()
+  await expect(learnMore).toHaveText(/^\s*Learn more\s*$/)
   const learnMoreHref = (await learnMore.getAttribute('href')) ?? ''
   expect(learnMoreHref, 'the learn-more link is a real external URL').toMatch(/^https?:\/\/\S+/)
   await expect(learnMore).toHaveAttribute('target', '_blank')
@@ -1754,12 +1768,154 @@ test('a place page renders the seeded data with the existing Maps link', async (
   const linkKind = await learnMore.getAttribute('data-link-kind')
   expect(linkKind).toMatch(/^(website|map-search)$/)
   if (linkKind === 'website') {
-    await expect(learnMore).toContainText(/visit website/i)
-    expect(learnMoreHref).not.toContain('openstreetmap.org/search')
+    expect(learnMoreHref, 'a verified site must not point at the map search').not.toContain(
+      'openstreetmap.org/search',
+    )
   } else {
-    await expect(learnMore).toContainText(/map/i)
-    expect(learnMoreHref).toContain('openstreetmap.org/search')
+    // The V20 t01 lie this guards against: "Visit website" over a search URL.
+    await expect(learnMore).not.toContainText(/website/i)
+    expect(
+      learnMoreHref,
+      'the map-search kind points at the derived OSM search',
+    ).toContain('openstreetmap.org/search')
   }
+})
+
+/**
+ * V25 t04 — THE PLACE PAGE'S ORDER, AND ITS TWO ACTIONS.
+ *
+ * The founder's sequence for a place: name → picture → description → two
+ * buttons → map → "Start a drop-in" → the rating → the comments. This page owns
+ * all of that except the picture (V20 t01 removed it and ticket 16 rules on
+ * whether it returns — the specs above assert its ABSENCE) and the
+ * rating/comments (they live on the research page).
+ *
+ * TWO THINGS ARE PINNED HERE, and each fails on the OLD layout:
+ *   1. THE ORDER, on rendered geometry: name above description above the action
+ *      row above the map. Before this ticket the description and the action row
+ *      were BELOW the map, so the y comparisons are non-vacuous.
+ *   2. THE ROW: at a desktop width the two controls share one line, and at
+ *      320px they stay at or above the 44px tap floor with no horizontal
+ *      overflow (the ticket's "wrap, never shrink" rule).
+ *
+ * The no-address case ("Get directions must not render") CANNOT be browser-
+ * tested and is not faked here: every one of the 239 seeded places carries an
+ * address (an anon REST read of `places?address=is.null` returns []), so no
+ * place page can be loaded without one. That half of the acceptance criterion
+ * is pinned at the seam instead — `placeOutboundLinks`' sibling tests in
+ * `src/lib/places.test.ts` assert `directions: null` for null/empty/blank
+ * addresses, which is exactly the condition this page's `!== null` renders from.
+ */
+test('the place page reads name → description → the two actions → the map (V25 t04)', async ({
+  page,
+}) => {
+  await openPlacesTab(page)
+  await useAnyDistance(page)
+  await page.getByTestId('places-search').fill(PLACE_NAME)
+  await exactPlaceName(page, PLACE_NAME).click()
+  await page.waitForURL(/\/place\//)
+
+  const heading = page.getByRole('heading', { name: PLACE_NAME, exact: true })
+  const description = page.getByTestId('place-description')
+  const actions = page.getByTestId('place-actions')
+  const map = page.getByTestId('place-map')
+  const startHere = page.getByTestId('start-here')
+
+  // Every element in the founder's sequence is present. The description is
+  // READ, not assumed: the order assertion below needs a place that carries
+  // notes, and Green Lake Park's seeded row does ("Accessible (ADA).").
+  await expect(heading).toBeVisible()
+  await expect(description).toBeVisible()
+  await expect(actions).toBeVisible()
+  await expect(map).toBeVisible()
+  await expect(startHere).toBeVisible()
+  const notes = (await description.innerText()).trim()
+  expect(
+    notes.length,
+    'this spec pins the page ORDER, so the fixture place must carry notes — otherwise the position of the description cannot be asserted',
+  ).toBeGreaterThan(0)
+
+  // (1) THE ORDER, measured top to bottom. All five sit in one column, so their
+  // top edges must strictly descend. This is the whole ticket in one assertion:
+  // the old page put the description AND the "Learn more" control BELOW the
+  // map, which fails both the description<actions and the actions<map checks.
+  const box = async (locator: ReturnType<Page['getByTestId']>) => {
+    const measured = await locator.boundingBox()
+    if (measured === null) throw new Error('an ordered element did not render a measurable box')
+    return measured
+  }
+  const headingBox = await box(heading)
+  const descriptionBox = await box(description)
+  const actionsBox = await box(actions)
+  const mapBox = await box(map)
+  const startBox = await box(startHere)
+  expect(
+    descriptionBox.y,
+    'the description must sit below the name',
+  ).toBeGreaterThan(headingBox.y + headingBox.height - 1)
+  expect(
+    actionsBox.y,
+    'the two actions must sit below the description',
+  ).toBeGreaterThan(descriptionBox.y + descriptionBox.height - 1)
+  expect(
+    mapBox.y,
+    'the map must sit below the two actions',
+  ).toBeGreaterThan(actionsBox.y + actionsBox.height - 1)
+  expect(
+    startBox.y,
+    'the map must sit above "Start a drop-in here"',
+  ).toBeGreaterThan(mapBox.y)
+
+  // (2a) ONE ROW at the default (desktop) width, in the founder's order.
+  const learnMore = page.getByTestId('place-learn-more')
+  const directions = page.getByTestId('place-get-directions')
+  await expect(learnMore).toBeVisible()
+  await expect(directions).toBeVisible()
+  await expect(directions).toHaveText(/^\s*Get directions\s*$/)
+  const wideLearn = await box(learnMore)
+  const wideDirections = await box(directions)
+  expect(
+    Math.abs(
+      wideLearn.y + wideLearn.height / 2 - (wideDirections.y + wideDirections.height / 2),
+    ),
+    'the two actions share one line at desktop width',
+  ).toBeLessThan(4)
+  expect(wideLearn.x, 'Learn more leads, Get directions follows').toBeLessThan(wideDirections.x)
+
+  // (2b) THE LEDGER's no-drift rule, measured in the DOM rather than inferred:
+  // the address link and "Get directions" are the SAME href (both render from
+  // `placeOutboundLinks().directions`), and it is the app's own mapsHref.
+  const addressLink = page.getByRole('link', { name: PLACE_ADDRESS, exact: true })
+  await expect(addressLink).toHaveAttribute('href', MAPS_HREF)
+  await expect(directions).toHaveAttribute('href', MAPS_HREF)
+  expect(await directions.getAttribute('href')).toBe(await addressLink.getAttribute('href'))
+  await expect(directions).toHaveAttribute('target', '_blank')
+  await expect(directions).toHaveAttribute('rel', 'noopener')
+
+  // (2c) 320px: the two no longer fit on one line, and the row WRAPS instead of
+  // shrinking below the tap floor. Both controls keep a ≥44px box in BOTH
+  // dimensions and the page gains no horizontal overflow.
+  await page.setViewportSize({ width: 320, height: 800 })
+  await expect(learnMore).toBeVisible()
+  await expect(directions).toBeVisible()
+  const narrowLearn = await box(learnMore)
+  const narrowDirections = await box(directions)
+  for (const [name, measured] of [
+    ['Learn more', narrowLearn],
+    ['Get directions', narrowDirections],
+  ] as const) {
+    expect(measured.width, `${name} must not shrink below the 44px tap floor`).toBeGreaterThanOrEqual(44)
+    expect(measured.height, `${name} must keep the 44px tap floor at 320px`).toBeGreaterThanOrEqual(44)
+  }
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  )
+  expect(overflow, 'the wrapped row must not push the page sideways').toBeLessThanOrEqual(1)
+  console.log(
+    `[V25 t04 320px] learnMore=${Math.round(narrowLearn.width)}x${Math.round(narrowLearn.height)}@y${Math.round(narrowLearn.y)} ` +
+      `directions=${Math.round(narrowDirections.width)}x${Math.round(narrowDirections.height)}@y${Math.round(narrowDirections.y)} ` +
+      `overflow=${overflow}`,
+  )
 })
 
 test('picking a place on /new posts a drop-in that links to its place page, which lists it', async ({

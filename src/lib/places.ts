@@ -14,6 +14,7 @@ import {
   coordNumber,
   haversineMiles,
   localDayKey,
+  mapsHref,
   placeDistanceMiles,
   statedAgeRangeLine,
 } from './feed'
@@ -694,10 +695,14 @@ export function placeExternalUrl(place: Pick<Place, 'name'>): string | null {
  * this straight into an anchor. Only a well-formed http(s) URL is accepted;
  * anything else falls through to the search link exactly as a NULL would.
  *
- * The `kind` of link is returned ALONGSIDE the URL, because the button's label
- * depends on it ("Visit website" vs "Find it on the map") and that is a
- * decision, not a render detail — the build law's split, expressed as a return
- * shape so a caller cannot pair the wrong label with the wrong href.
+ * The `kind` of link is returned ALONGSIDE the URL, because a caller must never
+ * pair the wrong label with the wrong href — and that is a decision, not a
+ * render detail (the build law's split, expressed as a return shape). The
+ * DIRECTORY row (`PlaceDirectory.tsx`) and the map panel (`PlaceMap.tsx`) still
+ * read it for their labels ("Visit website" vs "Find it on the map"); the place
+ * PAGE stopped labelling from it in V25 t04 (both kinds now read "Learn more",
+ * because "Find it on the map" sat under a map and made no sense), and keeps
+ * `data-link-kind` on the anchor as the honesty channel instead.
  */
 export interface PlaceLearnMoreLink {
   url: string
@@ -714,6 +719,55 @@ export function placeLearnMoreLink(
   }
   const search = placeExternalUrl(place)
   return search === null ? null : { url: search, kind: 'map-search' }
+}
+
+/**
+ * V25 t04 — THE PLACE PAGE'S TWO OUTBOUND ACTIONS: "Learn more" and "Get
+ * directions".
+ *
+ * The founder, on the page: *"I think inside each place, the information should
+ * be sequenced differently… you've got a text description of the place, And
+ * then you have two buttons next to each other. Probably one that's like, learn
+ * more, that does the Google search on it, and the other one's like, get
+ * directions, just like, takes you to, like a map of it."* He said it while
+ * pointing at a control labelled "Find it on the map" that sat UNDER the page's
+ * map: *"This doesn't really make sense to me because I can see the map above
+ * this button."*
+ *
+ * BOTH DESTINATIONS ALREADY EXIST and this composes them without building a
+ * single URL of its own:
+ *   * `learnMore` — V20 t01's chain (the verified operator site, else the
+ *     derived OSM search, else nothing). Unchanged, still the wider-web door.
+ *   * `directions` — `feed.mapsHref`, the SAME href the address link above the
+ *     map and the feed card's address row already use. One builder, so the
+ *     address and the button cannot drift; `null` on a blank address, and the
+ *     page then renders NO "Get directions" control rather than a dead one
+ *     (the feed card's no-address convention).
+ *
+ * WHY THIS IS A SEAM AND NOT TWO INLINE CALLS IN THE PAGE. "Get directions is
+ * absent when the place has no address" is an acceptance criterion, and this
+ * repo has no component-test harness (vitest runs in the node environment —
+ * there is no jsdom, no RTL), so nothing can render-assert the absence. A pure
+ * seam can: the sibling tests state the exact pair of facts the page's
+ * `!== null` conditionals consume (no address → `directions: null` while
+ * `learnMore` survives; an address → `directions` is byte-equal to
+ * `mapsHref`). The render test of the PRESENT case lives in
+ * `e2e/places.e2e.ts` (V25 t04).
+ */
+export interface PlaceOutboundLinks {
+  /** The V20 t01 chain; null only when the place has neither a usable site nor a name. */
+  learnMore: PlaceLearnMoreLink | null
+  /** Google Maps for the place's address; null when there is no address to search for. */
+  directions: string | null
+}
+
+export function placeOutboundLinks(
+  place: Pick<Place, 'name'> & { address?: string | null; website_url?: string | null },
+): PlaceOutboundLinks {
+  return {
+    learnMore: placeLearnMoreLink(place),
+    directions: mapsHref(place.name, place.address),
+  }
 }
 
 /**

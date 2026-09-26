@@ -14,7 +14,7 @@ import {
   loadZipCodes,
   toggleFollowPlace,
 } from '../lib/db'
-import { cardAgeRangeLabel, formatDistanceLabel, mapsHref } from '../lib/feed'
+import { cardAgeRangeLabel, formatDistanceLabel } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
 import { placeFollowerLine, planSaveToggle } from '../lib/follows'
 import {
@@ -23,7 +23,7 @@ import {
   placeIndoorLabel,
   placeKindLabel,
   placeDetailsPath,
-  placeLearnMoreLink,
+  placeOutboundLinks,
   sortPlaceUpcoming,
 } from '../lib/places'
 import type { Place, PlacePrefill, PlaydateWithNeighborhood } from '../lib/types'
@@ -31,14 +31,26 @@ import type { Place, PlacePrefill, PlaydateWithNeighborhood } from '../lib/types
 /**
  * /place/:id — one place in the directory (V8 ticket 07, migration 0029).
  *
- * What the page answers, in order: what is this place (name, kind, indoor or
- * outdoor), is it good for MY kid (the age line — silent when the directory
- * has no age data, rather than implying "all ages"; V11 t03), where is it
- * (address +
- * the SAME tappable Google Maps link the detail page uses, the pure mapsHref
- * seam), what should I know (notes), whether there is somewhere else to read
- * about it ("Learn more" — V20 t01), and what is happening there. Then the one
- * action: "Start a drop-in here".
+ * What the page answers, in the order V25 ticket 04 put it in: what is this
+ * place (name, kind, indoor or outdoor) → what should I know (`places.notes`,
+ * the description) → where can I go next (the two actions: "Learn more" and
+ * "Get directions") → where is it (the SAME tappable Google Maps link the
+ * detail page uses, the pure `feed.mapsHref` seam, then the map it points at,
+ * then the age line — silent when the directory has no age data, rather than
+ * implying "all ages"; V11 t03). Then the one action: "Start a drop-in here".
+ *
+ * V25 t04 — THE SEQUENCE, AND THE BUTTON THAT STOPPED CONTRADICTING THE MAP.
+ * The founder, reading this page top to bottom, asked for name → picture →
+ * description → two buttons → map → "Start a drop-in" → the rating → comments;
+ * this page owns everything but the picture (ticket 16 rules on that — see the
+ * V20 note at the photo slot) and the rating/comments (they live on the
+ * research page, `PlaceDetailsPage.tsx`, reached from the link at the bottom of
+ * this page — deliberately NOT duplicated here). He also flagged the control
+ * that used to sit BELOW the map: *"This doesn't really make sense to me
+ * because I can see the map above this button. So I already have found it on a
+ * map. Really it should be like get directions."* The old "Find it on the map"
+ * label is gone; the row now offers "Learn more" and "Get directions", and both
+ * hrefs come from seams that already existed (`placeOutboundLinks`).
  *
  * V20 t01 — THE PHOTO IS GONE, THE WEBSITE LINK REPLACED IT. V18 sourced
  * Wikimedia Commons photos for a curated subset of rows; the founder's ruling
@@ -48,8 +60,10 @@ import type { Place, PlacePrefill, PlaydateWithNeighborhood } from '../lib/types
  * nothing is migrated or dropped — and `photoCreditLine` keeps its tests;
  * what was removed is this page's use of them. In its place, "Learn more"
  * opens the place's own site when the reviewed backfill verified one, and the
- * derived OSM map search when it did not — the seam decides which, and the
- * button's label says which (V20 t01's `placeLearnMoreLink`).
+ * derived OSM map search when it did not — the seam decides which, and V25 t04
+ * carries that decision on the anchor as `data-link-kind` rather than in the
+ * label (both kinds read "Learn more"; the action row's note records exactly
+ * what that keeps and what it gives up).
  *
  * UPCOMING DROP-INS ARE RADIUS-INDEPENDENT (the pinned decision): the parent
  * asked about THIS place, so the viewer's discovery radius must not filter its
@@ -311,14 +325,18 @@ export function PlacePage() {
     )
   }
 
-  const maps = mapsHref(place.name, place.address)
-  const ageFit = placeAgeFitLabel(place)
   /**
-   * The place's own website, or the derived OSM search URL, or null. The
-   * button's LABEL comes from the same seam's `kind`, so a map search is never
-   * dressed up as the operator's site (V20 t01).
+   * V25 t04 — the page's TWO outbound actions, from ONE seam.
+   *
+   * `learnMore` is V20 t01's chain (the verified operator site, else the
+   * derived OSM search, else nothing). `directions` is the SAME `feed.mapsHref`
+   * the address link renders — one builder, one binding, so the address and
+   * "Get directions" cannot drift. `directions` is null on a place with no
+   * address, and the button is then ABSENT rather than a dead link (the feed
+   * card's no-address convention).
    */
-  const learnMore = placeLearnMoreLink(place)
+  const links = placeOutboundLinks(place)
+  const ageFit = placeAgeFitLabel(place)
   const distance =
     zipCoords === null
       ? null
@@ -365,15 +383,136 @@ export function PlacePage() {
           because I can't police this and fix all the broken images."*
           239 hand-maintained images is a commitment nobody signed up for, and
           a half-broken gallery reads worse than none. The affordance that
-          replaces it is the "Learn more" link in the card below — one link per
-          place, honest about whether it is the operator's own site or a map
-          search. */}
+          replaces it is the "Learn more" action in the row below — one link per
+          place, and `data-link-kind` on the anchor still says whether it is the
+          operator's own site or a map search.
 
+          V25 t04 — THE FOUNDER'S SEQUENCE NAMES A PICTURE HERE, AND THIS SLICE
+          DELIBERATELY DOES NOT ADD ONE. His list is name → picture →
+          description; the picture is not this ticket's to restore. Ticket 16
+          ("place-photos-research") owns whether a photo returns at all, and
+          this slice keeps its diff free of photo code so the two cannot
+          conflict. The order below therefore reads correctly with NO photo —
+          name, then the description, then the two actions — and nothing
+          placeholder-shaped (no empty frame, no grey box, no kind
+          illustration) stands in the slot V20 t01 emptied. The specs assert
+          that absence (`e2e/places.e2e.ts`: `place-photo-credit` count 0 and
+          `figure img` count 0). */}
+
+      {/* V25 t04 — THE DESCRIPTION, directly under the name.
+          `places.notes` used to render BELOW the map, after the age line. The
+          founder's sequence puts the text about the place before its actions
+          and before the map, so it moves here. `whitespace-pre-line` is kept
+          from the old position: the column is hand-entered multi-line text. */}
+      {place.notes !== null ? (
+        <p data-testid="place-description" className="whitespace-pre-line text-sm text-slate-700">
+          {place.notes}
+        </p>
+      ) : null}
+
+      {/* V25 t04 — THE TWO ACTIONS, SIDE BY SIDE, ABOVE THE MAP.
+          The founder's own pair: *"one that's like, learn more, that does the
+          Google search on it, and the other one's like, get directions."* Both
+          hrefs come from `placeOutboundLinks` and neither builds a URL here:
+          `learnMore` is V20 t01's chain (the operator's verified site when
+          there is one, else the derived OSM search — the "Google search" he
+          means already existed, so no second search is added), and `directions`
+          is the same `feed.mapsHref` the address link below renders.
+
+          "FIND IT ON THE MAP" IS GONE. It sat under the map and told a parent
+          to go and find the place they were already looking at: *"This doesn't
+          really make sense to me because I can see the map above this button."*
+          Both controls stay real anchors (`target="_blank" rel="noopener"`)
+          because both leave the app.
+
+          WHAT THE LABEL STILL DECLARES, AND WHAT IT NO LONGER DOES. The
+          ticket's surviving honesty channel is the anchor's `data-link-kind`
+          (website | map-search), which `e2e/places.e2e.ts` asserts PER KIND
+          against the href — so the V20 t01 lie this repo records ("Visit
+          website" over a search URL, PlaceMap.tsx) cannot recur: the label no
+          longer varies with the kind at all, both read "Learn more". What is
+          NOT preserved is the human-facing half of that rule: a parent reading
+          "Learn more" cannot tell a verified site from a map search before
+          tapping, which the pre-t04 page did disclose in the label. That is the
+          ticket's own naming (its two-button criterion names the label
+          "Learn more" and names `data-link-kind` as the honesty rule that
+          survives the rename), and it is recorded for the orchestrator as an
+          open product question rather than quietly settled here: if the
+          map-search branch must disclose itself in the LABEL, the wording has
+          to include "search" or "map" — and "Find it on the map", the phrase
+          the founder rejected, cannot be the one that comes back.
+
+          WHY BOTH ARE OUTLINED AND NEITHER IS FILLED: this page's one primary
+          action is "Start a drop-in here" (see the card below), and a filled
+          button here would be an equal-weight peer competing with it.
+
+          THE ROW WRAPS RATHER THAN SHRINKS: `flex-wrap` with a `basis-36` floor
+          and `whitespace-nowrap` keeps each control at or above the 44px tap
+          floor (min-h-11) at 320px, where the two no longer fit on one line.
+          The V25 t04 spec measures both at 320px and pins the absence of
+          horizontal overflow. */}
+      <div data-testid="place-actions" className="flex flex-wrap gap-2">
+        {links.learnMore !== null ? (
+          <a
+            href={links.learnMore.url}
+            target="_blank"
+            rel="noopener"
+            data-testid="place-learn-more"
+            data-link-kind={links.learnMore.kind}
+            className="inline-flex min-h-11 flex-1 basis-36 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-indigo-300 bg-white px-4 py-3 text-sm font-medium text-indigo-700 outline-none transition-colors motion-reduce:transition-none hover:bg-indigo-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+          >
+            {/* The outbound arrow — decorative; the accessible name is the
+                label. Same stroked 24px family as the rest of the app. */}
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M14 4h6v6M20 4l-8.5 8.5M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+            </svg>
+            Learn more
+          </a>
+        ) : null}
+        {links.directions !== null ? (
+          <a
+            href={links.directions}
+            target="_blank"
+            rel="noopener"
+            data-testid="place-get-directions"
+            className="inline-flex min-h-11 flex-1 basis-36 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-indigo-300 bg-white px-4 py-3 text-sm font-medium text-indigo-700 outline-none transition-colors motion-reduce:transition-none hover:bg-indigo-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+          >
+            {/* The map pin (the shared NAV_ICONS family) — decorative. */}
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d={NAV_ICONS.nearby} />
+            </svg>
+            Get directions
+          </a>
+        ) : null}
+      </div>
+
+      {/* V25 t04 — THE LOCATION BLOCK, after the actions: the address (still the
+          tappable Google Maps link the detail page uses) and then the map it
+          points at. The address link renders from the SAME `links.directions`
+          binding as "Get directions", so the two cannot drift apart. */}
       <div className="flex flex-col gap-2">
         <p className="text-sm text-slate-700">
-          {maps !== null ? (
+          {links.directions !== null ? (
             <a
-              href={maps}
+              href={links.directions}
               target="_blank"
               rel="noopener"
               className="font-medium text-indigo-600 hover:underline"
@@ -395,46 +534,6 @@ export function PlacePage() {
             implying "all ages" — a claim the data would not support (V11 t03). */}
         {ageFit !== null ? (
           <p className="mt-2 text-sm text-slate-600">{ageFit}</p>
-        ) : null}
-        {place.notes !== null ? (
-          <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{place.notes}</p>
-        ) : null}
-        {/* V20 t01: LEARN MORE — the afforance that replaces the photo.
-            It is the ONLY control on this page that leaves the app, so it is
-            rendered as a real anchor (`target="_blank" rel="noopener"`) rather
-            than a button: a parent's browser can decide for itself whether a
-            new tab or a new window is right, and the link is shareable.
-
-            WHAT IT SAYS DEPENDS ON WHERE IT GOES, and that is a decision the
-            seam already made (`placeLearnMoreLink().kind`): a place with a
-            verified operator site says "Visit website"; a place without one
-            says "Find it on the map" and opens the derived OpenStreetMap
-            search. The distinction matters — a map search dressed up as the
-            operator's site is a small lie the parent discovers after the click.
-            A place with neither a name nor a URL renders nothing at all. */}
-        {learnMore !== null ? (
-          <a
-            href={learnMore.url}
-            target="_blank"
-            rel="noopener"
-            data-testid="place-learn-more"
-            data-link-kind={learnMore.kind}
-            className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-indigo-300 bg-white px-4 py-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-50"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-              className="h-5 w-5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M14 4h6v6M20 4l-8.5 8.5M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
-            </svg>
-            {learnMore.kind === 'website' ? 'Visit website' : 'Find it on the map'}
-          </a>
         ) : null}
       </div>
 

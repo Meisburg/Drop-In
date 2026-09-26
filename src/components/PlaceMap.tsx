@@ -1139,11 +1139,20 @@ export function PlacesMap({
    * reasoning: this panel floats OVER a map. A button labelled "Find it on the
    * map" that opens an OpenStreetMap SEARCH is offering to do something the
    * parent is already looking at — the pin they just tapped is the location.
-   * The fallback was never wrong on the place page (where there is no map in
-   * view and `placeExternalUrl` is the only way to locate it), so
-   * `placeLearnMoreLink` KEEPS its two-kind behaviour and the place page KEEPS
-   * its "Find it on the map" label. What is dropped is only this PANEL's use of
-   * the map-search kind, where it duplicates the surface behind it.
+   * `placeLearnMoreLink` KEEPS its two-kind behaviour; what is dropped is only
+   * this PANEL's use of the map-search kind, where it duplicates the surface
+   * behind it.
+   *
+   * V25 t04 CHANGED THE PLACE PAGE'S LABEL, NOT THIS PANEL'S. That page's
+   * "Find it on the map" control sat under the page's OWN map and was replaced
+   * by the founder's two-button row ("Learn more" + "Get directions"), so the
+   * place page no longer labels from `kind` at all: BOTH of its kinds read
+   * "Learn more", and the anchor carries `data-link-kind` (website | map-search)
+   * as the machine-readable honesty channel, asserted per kind by
+   * `e2e/places.e2e.ts`. This PANEL's rule is unchanged and comes from a
+   * different fact (it floats over a map), so it still says nothing at all for
+   * a place with no verified site; the DIRECTORY row still labels from `kind`
+   * ("Visit website" / "Find it on the map").
    *
    * So: a place with a VERIFIED site still shows "Visit website" here; a place
    * with none simply has no outbound link on this panel, and the parent reaches
