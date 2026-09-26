@@ -86,6 +86,30 @@ export function openMeteoDailyUrl(lat: number, lng: number, dateYmd: string): st
   return url.toString()
 }
 
+/**
+ * Does a `daily_units` label describe the unit this app requested? The request
+ * pins `temperature_unit=fahrenheit` / `wind_speed_unit=mph`, but if the API
+ * ever ignored those parameters the reply's VALUES would be °C and km/h and the
+ * panel would print them as °F/mph — the exact silent failure the parameters
+ * exist to prevent, and a wrong number is worse than no chip.
+ *
+ * So the units are VERIFIED, and the check FAILS CLOSED: an unrecognised or
+ * absent label resolves the forecast to null (the wrapper retries, then the chip
+ * is simply inert — the app's designed absence, no error state). The accepted
+ * spellings are the ones the live API is measured to send (°F, and the wind
+ * label `mp/h` — see research/open-meteo-daily.md) plus the plain `mph` variant
+ * so a label tidy-up does not take the chip down for no reason.
+ */
+function isFahrenheitLabel(label: unknown): boolean {
+  return typeof label === 'string' && label.includes('F')
+}
+
+function isMphLabel(label: unknown): boolean {
+  if (typeof label !== 'string') return false
+  const lower = label.toLowerCase()
+  return lower.includes('mph') || lower.includes('mp/h')
+}
+
 /** One daily array as the wire returns it (a null entry = no value for that day). */
 function firstFinite(values: unknown): number | null {
   if (!Array.isArray(values)) return null
@@ -105,6 +129,13 @@ function firstFinite(values: unknown): number | null {
  */
 export function parseDailyForecast(payload: unknown): DailyForecast | null {
   if (payload === null || typeof payload !== 'object') return null
+  const units = (payload as { daily_units?: unknown }).daily_units
+  if (units === null || typeof units !== 'object') return null
+  const unitBlock = units as Record<string, unknown>
+  // Fail closed: a reply whose temperature or wind unit is not the one asked
+  // for is NOT a forecast we may render (see the helpers above).
+  if (!isFahrenheitLabel(unitBlock.temperature_2m_max)) return null
+  if (!isMphLabel(unitBlock.wind_speed_10m_max)) return null
   const daily = (payload as { daily?: unknown }).daily
   if (daily === null || typeof daily !== 'object') return null
   const block = daily as Record<string, unknown>
@@ -135,11 +166,22 @@ export const WEATHER_PANEL_TITLE = 'Forecast'
 
 /**
  * What the chip's panel shows for one forecast, or null when the chip must stay
- * NON-INTERACTIVE (a null forecast, or a forecast with no usable fact in it — a
- * panel whose only line is the window the page already shows is not worth a
- * tap). The window label is the CALLER's formatting ("3:00 PM–5:00 PM"), so the
- * two surfaces that render the chip cannot drift in how they say "when"; the
- * rule here only decides what a panel contains and whether there is one.
+ * NON-INTERACTIVE (a null forecast, or a forecast with fewer than two usable
+ * facts — a panel whose only line is the window the page already shows is not
+ * worth a tap).
+ *
+ * REACHABILITY, stated honestly: the full-null case is NOT produced by either
+ * call site today (a chip only mounts when `rainBadgeLabel` fires on a
+ * probability of at least 50). The case production DOES hit is the SPARSE
+ * forecast — a reply carrying the probability but no temperature or wind — and
+ * the null branch is part of this rule's contract for the next caller rather
+ * than a state the feed can currently reach. Both are pinned by the test.
+ *
+ * The window label is the CALLER's formatting, and the two surfaces deliberately
+ * differ: the card passes `feed.formatTimeWindow` ("3:00 PM–5:00 PM"), the detail
+ * page its own `formatDay` + `formatTime` line ("Today · 3:00 PM–5:00 PM", which
+ * the panel sits under). This rule owns WHAT the panel contains, never how
+ * "when" is worded, so those two spellings are expected to differ.
  */
 export function weatherPanelFor(
   forecast: DailyForecast | null,
@@ -216,35 +258,55 @@ export function createDailyForecastLoader(
     const pending = cache.get(key)
     if (pending !== undefined) return pending
 
-    const inFlight = (async () => {
+    // The attempt answers with a DISCRIMINATED result rather than deleting the
+    // cache entry from inside its own body. That matters for ordering: a
+    // `loadCoords` that throws SYNCHRONOUSLY (before the body's first await)
+    // used to run its `cache.delete(key)` BEFORE the `cache.set(key, …)` a line
+    // later — which re-pinned the very failure it had just removed. Here the
+    // body only reports `ok: false`, and the delete happens in a settled
+    // callback registered BEFORE the write, so a microtask guarantees it runs
+    // AFTER the write for synchronous and asynchronous failures alike.
+    type Attempt = { ok: true; forecast: DailyForecast | null } | { ok: false }
+
+    const attempt = (async (): Promise<Attempt> => {
       let coordsMap: ReadonlyMap<string, ForecastCoords>
       try {
         coordsMap = await deps.loadCoords()
       } catch {
-        // The gazetteer fetch failed — uncacheable: delete the in-flight entry
-        // so the NEXT call re-issues the fetch (never cache a rejection).
-        cache.delete(key)
-        return null
+        // The gazetteer fetch failed — never cacheable.
+        return { ok: false }
       }
       const coords = coordsMap.get(zip)
       if (coords === undefined) {
         // Not in the seeded gazetteer — stable for the SPA session, cacheable.
-        return null
+        return { ok: true, forecast: null }
       }
       try {
-        return await deps.fetchForecast(coords.lat, coords.lng, dateYmd)
+        return { ok: true, forecast: await deps.fetchForecast(coords.lat, coords.lng, dateYmd) }
       } catch {
         // One retry on failure (the plan pin).
         try {
-          return await deps.fetchForecast(coords.lat, coords.lng, dateYmd)
+          return {
+            ok: true,
+            forecast: await deps.fetchForecast(coords.lat, coords.lng, dateYmd),
+          }
         } catch {
-          // Double failure / out-of-range date → null, uncacheable.
-          cache.delete(key)
-          return null
+          // Double failure / out-of-range date — never cacheable.
+          return { ok: false }
         }
       }
     })()
-    cache.set(key, inFlight)
-    return inFlight
+
+    const settled = attempt.then((result) => {
+      if (!result.ok) {
+        // Runs strictly AFTER the cache write below (see the note above), so
+        // the next call re-issues the fetch. A failed attempt is never pinned.
+        cache.delete(key)
+        return null
+      }
+      return result.forecast
+    })
+    cache.set(key, settled)
+    return settled
   }
 }

@@ -137,7 +137,14 @@ function ConversationCard({
             avatar_url: conversation.otherPartyAvatarUrl,
           }}
         />
-        <div className="min-w-0 flex-1">
+        {/* `flex-1 overflow-hidden` — NOT `min-w-0` — on purpose: the thread
+            header (this file, below) is also a `div.min-w-0`, and the pre-existing
+            diagnostic selector in e2e/inbox.e2e.ts:447 is `div.min-w-0 > p`.
+            `overflow-hidden` constrains the flex child for the truncating lines
+            exactly as `min-w-0` does (both let a flex item shrink below its
+            content size), so the layout is unchanged while the diagnostic can no
+            longer resolve to a ROW paragraph instead of the header's. */}
+        <div className="flex-1 overflow-hidden">
           <div className="flex items-center justify-between gap-2">
             <p className="truncate text-sm font-semibold text-slate-900">
               {conversation.otherPartyName || 'Unknown'}

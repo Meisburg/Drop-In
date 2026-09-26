@@ -194,7 +194,13 @@ describe('activeTodayLabel (V24 slice 04 — the honest, non-presence activity l
     expect(activeTodayLabel('', nowIso)).toBeNull()
   })
 
-  it('never says "now" or "online" — this is not presence', () => {
+  it('says "Active today" even for a cursor one second old — the label never varies with recency', () => {
+    // WHAT THIS PROVES: the label is one string for the whole local day, so the
+    // row cannot say "now" or "online" however fresh the cursor is — that is the
+    // anti-presence rule. It does NOT prove anything about the row's OTHER text:
+    // `relativeTimeLabel` (InboxPage.tsx:66) legitimately says "just now" for the
+    // latest MESSAGE's age, and that honest message-age copy is not the activity
+    // line. This test is about `activeTodayLabel` only.
     const label = activeTodayLabel('2026-09-25T20:59:59.000Z', nowIso)
     expect(label).toBe('Active today')
     expect(label ?? '').not.toMatch(/now|online/i)

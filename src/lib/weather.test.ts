@@ -93,6 +93,7 @@ describe('parseDailyForecast (the response shape, pinned from a fixture)', () =>
 
   it('leaves a missing or null variable null, and keeps the others', () => {
     const partial = parseDailyForecast({
+      daily_units: { temperature_2m_max: '°F', wind_speed_10m_max: 'mp/h' },
       daily: {
         time: ['2026-09-25'],
         temperature_2m_max: [60.9],
@@ -109,17 +110,71 @@ describe('parseDailyForecast (the response shape, pinned from a fixture)', () =>
   })
 
   it('is null when there is nothing usable to show (never an empty panel)', () => {
-    expect(parseDailyForecast({ daily: { time: ['2026-09-25'] } })).toBeNull()
-    expect(parseDailyForecast({ daily: { temperature_2m_max: [null] } })).toBeNull()
+    const units = { temperature_2m_max: '°F', wind_speed_10m_max: 'mp/h' }
+    expect(parseDailyForecast({ daily_units: units, daily: { time: ['2026-09-25'] } })).toBeNull()
+    expect(
+      parseDailyForecast({ daily_units: units, daily: { temperature_2m_max: [null] } }),
+    ).toBeNull()
     expect(parseDailyForecast({})).toBeNull()
     expect(parseDailyForecast({ daily: null })).toBeNull()
     expect(parseDailyForecast(null)).toBeNull()
     expect(parseDailyForecast('nope')).toBeNull()
   })
 
+  it('REFUSES a metric reply — a °C / km-h value must never print as °F / mph', () => {
+    // The request pins fahrenheit + mph. If the API ignored those parameters the
+    // values would be metric and the panel would label them imperial: a wrong
+    // number shown to a parent, which is worse than the chip being absent.
+    expect(
+      parseDailyForecast({
+        daily_units: { temperature_2m_max: '°C', wind_speed_10m_max: 'km/h' },
+        daily: {
+          time: ['2026-09-25'],
+          temperature_2m_max: [16],
+          temperature_2m_min: [9.5],
+          wind_speed_10m_max: [25.3],
+          precipitation_probability_max: [92],
+        },
+      }),
+    ).toBeNull()
+  })
+
+  it('fails CLOSED when the units are absent or unrecognised', () => {
+    expect(parseDailyForecast({ daily: { temperature_2m_max: [60.9] } })).toBeNull()
+    expect(
+      parseDailyForecast({
+        daily_units: { temperature_2m_max: '°F' },
+        daily: { temperature_2m_max: [60.9], precipitation_probability_max: [92] },
+      }),
+    ).toBeNull()
+    expect(
+      parseDailyForecast({
+        daily_units: { temperature_2m_max: 'kelvin', wind_speed_10m_max: 'knots' },
+        daily: { temperature_2m_max: [60.9], precipitation_probability_max: [92] },
+      }),
+    ).toBeNull()
+  })
+
+  it('accepts the plain "mph" spelling too, so a label tidy-up does not take the chip down', () => {
+    expect(
+      parseDailyForecast({
+        daily_units: { temperature_2m_max: '°F', wind_speed_10m_max: 'mph' },
+        daily: { temperature_2m_max: [60.9], precipitation_probability_max: [92] },
+      }),
+    ).toEqual({
+      temperatureMaxF: 60.9,
+      temperatureMinF: null,
+      windSpeedMaxMph: null,
+      precipitationProbability: 92,
+    })
+  })
+
   it('does not treat the legacy wind spelling as a value', () => {
     expect(
-      parseDailyForecast({ daily: { windspeed_10m_max: [25.3], temperature_2m_max: [60.9] } }),
+      parseDailyForecast({
+        daily_units: { temperature_2m_max: '°F', wind_speed_10m_max: 'mp/h' },
+        daily: { windspeed_10m_max: [25.3], temperature_2m_max: [60.9] },
+      }),
     ).toEqual({
       temperatureMaxF: 60.9,
       temperatureMinF: null,
@@ -138,6 +193,10 @@ describe('weatherPanelFor (the chip’s interactivity rule — the null case is 
   }
 
   it('is null for a null forecast — the chip stays non-interactive, never an empty panel', () => {
+    // NOTE ON REACHABILITY: neither call site can hand the chip a fully null
+    // forecast today (a chip only mounts when the ≥50% badge fires). This case
+    // is the rule's contract for the next caller; the case production DOES hit
+    // is the sparse forecast below, and it is pinned for the same reason.
     expect(weatherPanelFor(null, '3:00 PM–5:00 PM')).toBeNull()
   })
 
@@ -260,6 +319,26 @@ describe('createDailyForecastLoader (the wrapper’s four invariants)', () => {
     // (A cached rejection is the bug this repo already fixed once, e0d3756.)
     expect(await load('98101', '2026-09-25T15:00:00Z')).toBeNull()
     expect(fetchForecast).toHaveBeenCalledTimes(4)
+  })
+
+  it('does not cache a SYNCHRONOUS gazetteer throw either (the ordering hole)', async () => {
+    // A `loadCoords` that throws before its first await used to delete the
+    // in-flight entry INSIDE the attempt body — i.e. BEFORE the cache write a
+    // line later re-pinned it — so the failure stuck and the next call never
+    // retried. The delete is now ordered after the write, which this asserts by
+    // COUNTING the load attempts: 2, not 1.
+    let loadCalls = 0
+    const load = createDailyForecastLoader({
+      loadCoords: () => {
+        loadCalls += 1
+        throw new Error('0012 not applied (synchronous)')
+      },
+      fetchForecast: async () => FORECAST,
+      localDayKey: (iso: string) => iso.slice(0, 10),
+    })
+    expect(await load('98101', '2026-09-25T15:00:00Z')).toBeNull()
+    expect(await load('98101', '2026-09-25T15:00:00Z')).toBeNull()
+    expect(loadCalls).toBe(2)
   })
 
   it('never throws when the gazetteer itself rejects, and does not cache that either', async () => {

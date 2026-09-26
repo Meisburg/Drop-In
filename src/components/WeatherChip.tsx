@@ -7,8 +7,11 @@ import { weatherPanelFor, type DailyForecast } from '../lib/weather'
  * It renders in TWO places — the feed card's badge slot (`DropInCard`) and the
  * playdate detail page's time line — and both work from THIS one seam: the
  * decision of what the panel shows and whether the chip is interactive at all is
- * `weather.weatherPanelFor` (pure, in `src/lib/`, unit-tested), so the two
- * surfaces cannot drift.
+ * `weather.weatherPanelFor` (pure, in `src/lib/`, unit-tested), so the panel's
+ * CONTENT and its interactivity cannot drift. The window's WORDING is
+ * deliberately the caller's (the card says "3:00 PM–5:00 PM", the detail page's
+ * line says "Today · 3:00 PM–5:00 PM"), and `weatherPanelFor`'s header records
+ * that the two spellings are expected to differ.
  *
  * The null rule is the load-bearing one: a NULL (or fact-less) forecast renders
  * the plain badge the app already shipped — NOT a disabled-looking button, NOT a
@@ -40,6 +43,14 @@ export function WeatherChip({
 }) {
   const [open, setOpen] = useState(false)
   const panel = weatherPanelFor(forecast, whenLabel)
+  // THEME CONTRACT: every colour here is a token `index.css` maps in BOTH
+  // blocks (the light `:root` and `:root[data-theme='dark']`) or a theme-neutral
+  // one: `sky-100`/`sky-700` (the "Rain likely" tint the badge has always used),
+  // and, for the interactive states, the app's control convention copied from
+  // `BackControl.tsx:37` — `slate-50` hover + an `indigo-200` focus ring. A sky
+  // step the theme block does NOT re-point (`sky-50/200/500/800/900` are
+  // Tailwind defaults in the built sheet) would be a near-white box and a
+  // ~1.45:1 hover in dark mode; none is used.
   const pill =
     'inline-flex min-h-11 items-center rounded-full bg-sky-100 px-2.5 text-xs font-medium text-sky-700'
 
@@ -61,17 +72,17 @@ export function WeatherChip({
           event.stopPropagation()
           setOpen((wasOpen) => !wasOpen)
         }}
-        className={`${pill} outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-sky-500 hover:bg-sky-200`}
+        className={`${pill} outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-200`}
       >
         ☔ {label}
       </button>
       {open ? (
         <span
           data-testid="weather-panel"
-          className="mt-1 block w-full basis-full rounded-xl border border-sky-200 bg-sky-50 p-3 text-left"
+          className="mt-1 block w-full basis-full rounded-xl border border-slate-200 bg-white p-3 text-left"
         >
-          <span className="block text-xs font-semibold text-sky-900">{panel.title}</span>
-          <span className="mt-1 block text-xs text-sky-800">
+          <span className="block text-xs font-semibold text-slate-900">{panel.title}</span>
+          <span className="mt-1 block text-xs text-slate-700">
             {panel.lines.map((line) => (
               <span key={line} className="block">
                 {line}

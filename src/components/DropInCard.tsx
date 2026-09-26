@@ -481,6 +481,11 @@ export interface DropInCardPingToggle {
  * to the initial circle it already draws for a missing URL — so "no photo" and
  * "dead photo" render identically, and the inbox's row faces inherit the fix
  * rather than carrying a second avatar implementation.
+ *
+ * The state is the FAILED URL, not a boolean: a boolean would stay true after
+ * the next, working URL arrived (re-uploading over a dead avatar on the user's
+ * own surface would keep painting the initial circle until a remount). A URL
+ * that is not the one that failed renders normally, so the recovery is instant.
  */
 export function HostAvatar({
   host,
@@ -505,14 +510,16 @@ export function HostAvatar({
   eager?: boolean
 }) {
   // Hooks run before every return (the early returns below are on the photo).
-  const [photoFailed, setPhotoFailed] = useState(false)
+  const [failedUrl, setFailedUrl] = useState<string | null>(null)
   const box = size === 'sm' ? 'h-6 w-6' : size === 'lg' ? 'h-20 w-20' : 'h-10 w-10'
   const initialClass = size === 'sm' ? 'text-xs' : size === 'lg' ? 'text-2xl' : 'text-sm'
   // Slice 11: list imagery lazy-loads; the first feed card's host avatar is
   // the LCP hero and stays eager (FeedPage passes `eager` for its first card).
   // A URL whose object is gone is treated as no URL at all (see the header):
-  // `photoFailed` is set by the image's own onError below.
-  const photoUrl = photoFailed ? '' : (host.avatar_url ?? '')
+  // `failedUrl` is set by the image's own onError below, and only the URL that
+  // failed is suppressed — a later, different URL renders immediately.
+  const storedUrl = host.avatar_url ?? ''
+  const photoUrl = storedUrl !== '' && storedUrl !== failedUrl ? storedUrl : ''
   // V21 t05: the expandable wrapper must own the SAME box as its child img —
   // a fixed h-11 w-11 (44px) around an 80px `lg` photo drew an ellipse. The
   // 44px tap floor is preserved for the default `md` size (the only caller that
@@ -529,7 +536,7 @@ export function HostAvatar({
       <img
         src={photoUrl}
         alt=""
-        onError={() => setPhotoFailed(true)}
+        onError={() => setFailedUrl(storedUrl)}
         className={`${box} shrink-0 rounded-full object-cover`}
       />
     ) : (
@@ -538,7 +545,7 @@ export function HostAvatar({
         alt=""
         loading="lazy"
         decoding="async"
-        onError={() => setPhotoFailed(true)}
+        onError={() => setFailedUrl(storedUrl)}
         className={`${box} shrink-0 rounded-full object-cover`}
       />
     )
