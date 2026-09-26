@@ -171,6 +171,99 @@ export function linkView(
 }
 
 /**
+ * V24 slice 11B: WHAT ONE PARENT CARD'S LINK CONTROL SHOWS.
+ *
+ * The edit surface used to render the whole account-link state machine in its
+ * own "Linked parent" section. That section is gone: the action now lives with
+ * the PERSON, inside the card that renders their name. This type is the pure
+ * decision of what a single card carries, so the card JSX renders a case rather
+ * than deciding one.
+ *
+ *   - `linked`   — this card IS the accepted partner: show "Linked to @handle"
+ *                  and the Unlink that ends the relationship.
+ *   - `outgoing` — the invitation this account sent concerns this card.
+ *   - `incoming` — the invitation awaiting this account's answer concerns this
+ *                  card.
+ *   - `declined` — the declined link concerns this card.
+ *   - `invite`   — no link exists, so this card offers the account-link form.
+ *   - `hidden`   — the account-level state belongs to ANOTHER card. Rendered as
+ *                  nothing, so the same "Invite sent" / Unlink control is never
+ *                  printed twice on one page.
+ */
+export type ParentCardLinkState =
+  | 'linked'
+  | 'outgoing'
+  | 'incoming'
+  | 'declined'
+  | 'invite'
+  | 'hidden'
+
+/**
+ * Which card carries the account-level link state, and what it shows.
+ *
+ * THE ASSOCIATION IS THE SAME NAME MATCH THE READ SURFACE USES
+ * (`parentNameRows`, src/lib/parentCards.ts): a card is the linked partner when
+ * its name equals the other account's handle, case- and @-insensitively. There
+ * is no stored card↔account identity in 0047 to read, so this is the only
+ * honest association available — and it is deliberately the SAME one, so the
+ * editor and the read view cannot disagree about who the link belongs to.
+ *
+ * WHEN NO CARD MATCHES, THE FIRST CARD CARRIES IT. A link whose handle matches
+ * no card name (the N5 residual: a card can say anything) is still a live
+ * relationship the parent must be able to end or answer, and the first card is
+ * the only stable place for it. `isFirstCard` is passed rather than the card
+ * list so this stays a pure decision over one card.
+ *
+ * The `invite` case belongs to EVERY card with no link: linking is per-person —
+ * "an option to click on something to link an account to that person's name" —
+ * so each card offers it. Only one card renders the FORM at a time (the page
+ * owns which), which is a presentation choice, not part of this rule.
+ */
+export function parentCardLinkState(
+  view: LinkView,
+  cardName: string,
+  isFirstCard: boolean,
+): ParentCardLinkState {
+  if (view.kind === 'none') return 'invite'
+  const name = normalizeHandle(cardName)
+  const matches = name !== '' && name === normalizeHandle(view.otherHandle)
+  if (!matches && !isFirstCard) return 'hidden'
+  switch (view.kind) {
+    case 'linked':
+      return 'linked'
+    case 'outgoing':
+      return 'outgoing'
+    case 'incoming':
+      return 'incoming'
+    case 'declined':
+      return 'declined'
+  }
+}
+
+/**
+ * V24 slice 11B (finding N4): the counterparty a NAME LINK may point at, from
+ * the READER's own point of view — null when the counterparty IS the reader.
+ *
+ * The read surface asks "who is this profile's accepted partner?" and renders
+ * that person's NAME as a `/u/<handle>` link. When a PARTY opens the profile
+ * (the partner viewing their partner's page), the answer is the VIEWER: the
+ * link would point at the reader's own profile, from a page that is not theirs.
+ * It leaks nothing and it navigates somewhere real, which is why the review
+ * called it harmless — but "click my own name to go to my own profile" is a
+ * control that does nothing the reader needs, so it is suppressed here.
+ *
+ * A null `viewerHandle` (the session profile has not settled) suppresses
+ * NOTHING: the honest link is rendered rather than hidden by a transient.
+ */
+export function linkedNameTargetForViewer<T extends { handle: string }>(
+  linked: T | null,
+  viewerHandle: string | null,
+): T | null {
+  if (linked === null || viewerHandle === null) return linked
+  return normalizeHandle(linked.handle) === normalizeHandle(viewerHandle) ? null : linked
+}
+
+/**
  * V24 slice 11A: THE OTHER PARENT OF A PROFILE'S ACCEPTED LINK, or null.
  *
  * `linkView` answers "what is MY link state" — it is anchored on the VIEWER.

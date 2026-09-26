@@ -5,7 +5,9 @@ import {
   acceptedCounterpartyForProfile,
   linkStatusLabel,
   linkView,
+  linkedNameTargetForViewer,
   normalizeHandle,
+  parentCardLinkState,
   validateLinkRequest,
   type LinkRowForView,
 } from './links'
@@ -161,6 +163,86 @@ describe('linkView — which state the profile is in', () => {
   it('tolerates a missing handle rather than rendering "undefined"', () => {
     const view = linkView([row({ addressee_handle: null })], 'me')
     expect(view.kind === 'outgoing' && view.otherHandle).toBe('')
+  })
+})
+
+describe('parentCardLinkState — where the link action lives (V24 11B)', () => {
+  const linked = {
+    kind: 'linked',
+    linkId: 'l1',
+    otherProfileId: 'them',
+    otherHandle: 'Nicole',
+  } as const
+  const outgoing = { kind: 'outgoing', linkId: 'l1', otherHandle: 'Nicole' } as const
+  const incoming = { kind: 'incoming', linkId: 'l1', otherHandle: 'Nicole' } as const
+  const declined = {
+    kind: 'declined',
+    linkId: 'l1',
+    otherHandle: 'Nicole',
+    outgoing: true,
+  } as const
+
+  it('puts the accepted link on the card whose NAME is the linked account', () => {
+    // The same name match the read surface renders the link with, so the two
+    // surfaces cannot disagree about whose card carries the relationship.
+    expect(parentCardLinkState(linked, 'nicole', false)).toBe('linked')
+    expect(parentCardLinkState(linked, '@Nicole', false)).toBe('linked')
+  })
+
+  it('hides the account-level state on a card it does not concern', () => {
+    expect(parentCardLinkState(linked, 'Jon', false)).toBe('hidden')
+    expect(parentCardLinkState(outgoing, 'Jon', false)).toBe('hidden')
+  })
+
+  it('falls back to the FIRST card when no card name matches the handle', () => {
+    // The N5 residual: the card is free text and may not match the handle. The
+    // relationship still has to be endable/answerable from somewhere, and the
+    // first card is the only stable place for it.
+    expect(parentCardLinkState(linked, 'Jon', true)).toBe('linked')
+    expect(parentCardLinkState(incoming, 'Jon', true)).toBe('incoming')
+  })
+
+  it('keeps the pending and declined states distinct so the right controls render', () => {
+    expect(parentCardLinkState(outgoing, 'Nicole', false)).toBe('outgoing')
+    expect(parentCardLinkState(incoming, 'Nicole', false)).toBe('incoming')
+    expect(parentCardLinkState(declined, 'Nicole', false)).toBe('declined')
+  })
+
+  it('offers the invite on EVERY card while no link exists', () => {
+    expect(parentCardLinkState({ kind: 'none' }, 'Jon', true)).toBe('invite')
+    expect(parentCardLinkState({ kind: 'none' }, 'Nicole', false)).toBe('invite')
+    // A nameless (not-yet-saved) slot offers it too — the control lives with
+    // the person, and a family with no saved card must still be able to link.
+    expect(parentCardLinkState({ kind: 'none' }, '', false)).toBe('invite')
+  })
+
+  it('does not match an empty card name to a missing handle', () => {
+    // The handle can be '' when the embed failed; an empty name must not be
+    // treated as "this nameless card is the partner".
+    const handleless = { kind: 'outgoing', linkId: 'l1', otherHandle: '' } as const
+    expect(parentCardLinkState(handleless, '', false)).toBe('hidden')
+    expect(parentCardLinkState(handleless, '', true)).toBe('outgoing')
+  })
+})
+
+describe('linkedNameTargetForViewer — the reader’s own card is not a link (V24 11B, N4)', () => {
+  it('keeps the counterparty when it is somebody else', () => {
+    expect(linkedNameTargetForViewer({ handle: 'Nicole' }, 'Jon')).toEqual({ handle: 'Nicole' })
+  })
+
+  it('suppresses the link when the counterparty IS the reader', () => {
+    // A party viewing the profile is the other parent of the link; linking
+    // their own name to their own profile is a control that does nothing.
+    expect(linkedNameTargetForViewer({ handle: 'Nicole' }, 'nicole')).toBeNull()
+    expect(linkedNameTargetForViewer({ handle: 'Nicole' }, '@Nicole')).toBeNull()
+  })
+
+  it('suppresses nothing while the viewer handle has not settled', () => {
+    expect(linkedNameTargetForViewer({ handle: 'Nicole' }, null)).toEqual({ handle: 'Nicole' })
+  })
+
+  it('is null with no link', () => {
+    expect(linkedNameTargetForViewer(null, 'Jon')).toBeNull()
   })
 })
 

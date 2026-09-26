@@ -5439,16 +5439,40 @@ export async function getProfileSummaryByIdWithClient(
  *
  * Never throws on the caller's side of a missing row: a profile with no readable
  * link returns null, which the read surface renders as plain text.
+ *
+ * V24 slice 11B (finding N2): the work lives in the `*WithClient` variant below,
+ * so this seam is unit-testable like every other function in this section. It
+ * was the one function here that hard-coded `supabase` — the exact pattern this
+ * file fixed a few lines above for `getProfileSummaryByIdWithClient`.
+ *
+ * V24 slice 11B (finding N3): the returned row carries the HANDLE alone. The
+ * counterparty's `profileId` used to ride along and nothing ever read it (the
+ * read surface renders the name and links by handle), so it was dead data in a
+ * privacy-shaped seam — naming it implied a consumer that did not exist.
  */
 export async function getLinkedPartnerForProfile(
   profileId: string,
-): Promise<{ profileId: string; handle: string } | null> {
-  const links = await listMyAccountLinksWithClient(supabase, profileId)
+): Promise<{ handle: string } | null> {
+  return getLinkedPartnerForProfileWithClient(supabase, profileId)
+}
+
+/**
+ * The injectable half of the seam above: same question, caller's own client.
+ *
+ * The client is a PARAMETER (the build law), which is what lets its sibling test
+ * drive it with a mock and assert the flags it depends on — zero rows, pending
+ * only, an accepted row in either direction — without a database.
+ */
+export async function getLinkedPartnerForProfileWithClient(
+  client: SupabaseClient,
+  profileId: string,
+): Promise<{ handle: string } | null> {
+  const links = await listMyAccountLinksWithClient(client, profileId)
   const counterpartyId = acceptedCounterpartyForProfile(links, profileId)
   if (counterpartyId === null) return null
-  const summary = await getProfileSummaryByIdWithClient(supabase, counterpartyId)
+  const summary = await getProfileSummaryByIdWithClient(client, counterpartyId)
   if (summary === null) return null
-  return { profileId: summary.id, handle: summary.display_name }
+  return { handle: summary.display_name }
 }
 
 /**

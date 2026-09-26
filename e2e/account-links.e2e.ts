@@ -630,3 +630,155 @@ test('the read surface shows both parents, and a linked name reaches that profil
     }
   }
 })
+
+/**
+ * V24 slice 11B — THE LINK ACTION LIVES ON THE PARENT CARD.
+ *
+ * The edit surface used to render partner linking in its own "Linked parent"
+ * section below the parent cards. 11B moved that action INSIDE each card (the
+ * founder's annotation 9: "an option to click on something to link an account to
+ * that person's name") and deleted the standalone section, heading, blurb and
+ * all. This spec is the browser proof of both halves, on the RENDERED DOM:
+ *
+ *   (a) the invite control resolves to a `[data-testid="parent-card-N"]`
+ *       ancestor AND sits under the "The parents" heading — "the action lives
+ *       with the person", asserted by walking ancestors rather than by reading
+ *       the source;
+ *   (b) a second parent's card offers its OWN affordance, and tapping it MOVES
+ *       the form to that card (one form at a time, on the card you chose);
+ *   (c) the standalone section is GONE — no "Linked parent" heading and none of
+ *       its copy survives anywhere on the page (the drift this repo fixed once
+ *       already: a second entry point to the same action).
+ *
+ * WHY IT SEEDS ITS OWN STATE. It establishes the "no link" state first (the
+ * marker's own link rows are deleted — the marker is a throwaway account created
+ * by `auth.setup.ts`, so every row it owns is fixture) and then writes the two
+ * parent cards it asserts on. Nothing here depends on a previous spec's residue.
+ * Every row it creates is removed in the `finally`.
+ *
+ * FAILS FOR THE RIGHT REASON: render the control outside the card and (a) fails;
+ * render one shared form for both cards and (b) fails; leave any of the old
+ * section behind and (c) fails.
+ */
+test('the link action lives on the parent card, and the standalone section is gone (V24 11B)', async ({
+  page,
+}) => {
+  test.setTimeout(180_000) // live-DB reads + a card write; no signups needed
+  const { url: restUrl, anonKey } = readSupabaseEnv()
+  const { accessToken: markerToken, userId: markerId } = readMarkerSession()
+  const { displayName: markerHandle } = readMarkerMeta()
+
+  function authed(token: string): Record<string, string> {
+    return { apikey: anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+  }
+
+  const cardTwoName = `e2e-plink Card Two ${Date.now()}`
+
+  /**
+   * Remove the marker's own link rows, ONE ROW AT A TIME by id.
+   *
+   * The reads are owner-scoped (`requester_id` / `addressee_id` are the marker
+   * itself) and the DELETE names `id`, a row this spec just proved it owns. A
+   * literal `DELETE ... or=(requester_id.eq.X,addressee_id.eq.X)` would be
+   * equally safe, but the fixture-marker guard judges a DELETE by its filter KEY
+   * and cannot see inside `or` — so it is written this way rather than argued
+   * with.
+   */
+  async function clearMarkerLinks(): Promise<void> {
+    const asRequester = await fetch(
+      `${restUrl}/rest/v1/account_links?select=id&requester_id=eq.${markerId}`,
+      { headers: authed(markerToken) },
+    )
+    const asAddressee = await fetch(
+      `${restUrl}/rest/v1/account_links?select=id&addressee_id=eq.${markerId}`,
+      { headers: authed(markerToken) },
+    )
+    const rows = [
+      ...(asRequester.ok ? ((await asRequester.json()) as Array<{ id: string }>) : []),
+      ...(asAddressee.ok ? ((await asAddressee.json()) as Array<{ id: string }>) : []),
+    ]
+    for (const row of rows) {
+      await fetch(`${restUrl}/rest/v1/account_links?id=eq.${row.id}`, {
+        method: 'DELETE',
+        headers: authed(markerToken),
+      }).catch(() => {})
+    }
+  }
+
+  try {
+    // A deterministic starting point: no link state, no leftover cards.
+    await clearMarkerLinks()
+    await fetch(`${restUrl}/rest/v1/parent_cards?profile_id=eq.${markerId}`, {
+      method: 'DELETE',
+      headers: authed(markerToken),
+    }).catch(() => {})
+
+    for (const [position, name] of [
+      [1, markerHandle],
+      [2, cardTwoName],
+    ] as const) {
+      const res = await fetch(`${restUrl}/rest/v1/parent_cards`, {
+        method: 'POST',
+        headers: { ...authed(markerToken), Prefer: 'return=representation' },
+        body: JSON.stringify({ profile_id: markerId, name, position }),
+      })
+      if (!res.ok) {
+        throw new Error(`parent_cards insert (slot ${position}) HTTP ${res.status} ${await res.text()}`)
+      }
+    }
+
+    await page.goto('/profile')
+    await page.getByTestId('edit-profile').click()
+
+    // ---- (a) the control is INSIDE the first parent's card -----------------
+    const cardOne = page.getByTestId('parent-card-1')
+    const form = cardOne.getByTestId('send-link-invite')
+    await expect(form).toBeVisible({ timeout: 20_000 })
+    await expect(cardOne.getByTestId('link-name-input')).toBeVisible()
+
+    // ...and the card group is the one that owns the "The parents" heading:
+    // walked on the DOM, so the action rendering anywhere else on the page
+    // (the removed section's old spot included) fails.
+    const underParentsHeading = await form.evaluate((el) => {
+      const heading = [...document.querySelectorAll('main h2')].find(
+        (h) => h.textContent?.trim() === 'The parents',
+      )
+      const section = heading?.parentElement ?? null
+      if (section === null) return false
+      let node: HTMLElement | null = el as HTMLElement
+      while (node !== null) {
+        if (node === section) return true
+        node = node.parentElement
+      }
+      return false
+    })
+    expect(
+      underParentsHeading,
+      'the link action must sit inside the "The parents" card group',
+    ).toBe(true)
+
+    // ---- (b) the second parent's card offers its own, and it MOVES the form --
+    const openTwo = page.getByTestId('link-parent-open-2')
+    await expect(openTwo).toBeVisible()
+    await openTwo.click()
+    const cardTwo = page.getByTestId('parent-card-2')
+    await expect(cardTwo.getByTestId('link-name-input')).toBeVisible()
+    await expect(cardTwo.getByTestId('send-link-invite')).toBeVisible()
+    // One form at a time: the first card now offers the action instead.
+    await expect(page.getByTestId('link-parent-open-1')).toBeVisible()
+    await expect(page.getByTestId('link-name-input')).toHaveCount(1)
+
+    // ---- (c) the standalone "Linked parent" section is GONE ----------------
+    await expect(page.locator('main h2', { hasText: /linked parent/i })).toHaveCount(0)
+    await expect(page.getByText(/If your partner has their own account/i)).toHaveCount(0)
+  } finally {
+    // Best-effort, each query scoped to the marker's own columns. The `e2e-`
+    // name on card two and the marker account itself are the sweep's net if a
+    // hard crash lands here.
+    await fetch(`${restUrl}/rest/v1/parent_cards?profile_id=eq.${markerId}`, {
+      method: 'DELETE',
+      headers: authed(markerToken),
+    }).catch(() => {})
+    await clearMarkerLinks().catch(() => {})
+  }
+})

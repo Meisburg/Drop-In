@@ -281,11 +281,21 @@ export type ProfileBlurbBlock =
   | 'about'
   | 'familyPhoto'
   | 'parentCards'
-  | 'linkedParent'
+
+/**
+ * True when this profile carries a bio worth rendering — the ONE test behind the
+ * 'about' block's text half. Exported because the read surface has to ask the
+ * same question to gate the bio paragraph alone: the block renders for a bio OR
+ * for parent names (V24 11B), and the paragraph must not follow the names.
+ */
+export function profileHasBio(profile: { bio?: string | null } | null): boolean {
+  return (profile?.bio ?? '').trim() !== ''
+}
 
 /**
  * WHICH blocks a profile surface renders, in the order the ticket pins:
- * identity → kids list → "About the parents" bio → family photo.
+ * identity → kids list → "About the parents" (the bio and/or the parent names)
+ * → family photo.
  *
  * V16 t05 RE-PINNED THIS ORDER for the optional blocks. It used to be family
  * photo → about → kids; the founder's own reading of the page put the people
@@ -302,11 +312,30 @@ export type ProfileBlurbBlock =
  * block order is single-sourced across the read view AND the edit surface. The
  * read view shows user → kids → about → familyPhoto (the family photo closes the
  * "About the parents" card); the edit surface shows the same sequence with its
- * always-present parent cards + linked-parent control appended after it (their
- * empty states are still cards, so they are NOT gated on content). The family
- * photo sits AFTER the bio on both surfaces — that is the position this slice
- * moves it to in the editor, killing the drift where the read view closed with
- * the photo while the editor led with it.
+ * always-present parent cards appended after it (their empty states are still
+ * cards, so they are NOT gated on content). The family photo sits AFTER the bio
+ * on both surfaces — that is the position this slice moves it to in the editor,
+ * killing the drift where the read view closed with the photo while the editor
+ * led with it.
+ *
+ * V24 SLICE 11B: THE 'linkedParent' BLOCK IS GONE, AND 'about' IS NOW
+ * NAME-AWARE.
+ *
+ *   - 'linkedParent' was the standalone "Linked parent" section — the edit
+ *     surface's second entry point to the account-link handshake. 11B moved that
+ *     action INTO each parent card, so there is no such block any more: the
+ *     linking AFFORDANCE is edit-only and lives inside `parentCards`, and the
+ *     linked NAME is read+edit and renders inside the 'about' block (the "About
+ *     the parents" card), where 11A put it. Nothing rendered on the read surface
+ *     was ever gated on this key.
+ *   - 'about' is pushed when the bio is non-empty OR (V24 11B) the caller says
+ *     the family's parent NAMES are visible. 11A made the read view render its
+ *     "About the parents" heading for a family whose only content there is the
+ *     parent names, while this seam pushed 'about' only for a bio — so the seam
+ *     told the next reader that block did not exist while the DOM showed it
+ *     (finding N1). `parentNamesVisible` closes that gap instead of documenting
+ *     it: the seam stays the single source of truth the order guard's header
+ *     claims it is.
  *
  * `kidsVisible` is the CALLER's decision, passed in rather than computed,
  * because the rule behind it is not about the profile at all: `/u/:handle`
@@ -314,7 +343,8 @@ export type ProfileBlurbBlock =
  * RLS returns a stranger an empty array, and an empty list must never be shown
  * as if it were the whole family). Keeping that decision at the call site keeps
  * this function pure and keeps the two pages' differing reasons visible where
- * they are decided.
+ * they are decided. `parentNamesVisible` follows the same discipline for the
+ * same reason: only the caller knows what its own card grid rendered.
  *
  * The ORDER here is the contract; the JSX at each site lays the blocks out in
  * the same order and says so. The "rest" of each page (the handle header, the
@@ -324,17 +354,18 @@ export function profileBlurbOrder(
   profile: { family_photo_url?: string | null; bio?: string | null } | null,
   kidsVisible: boolean,
   surface: 'read' | 'edit' = 'read',
+  parentNamesVisible = false,
 ): ProfileBlurbBlock[] {
   const blocks: ProfileBlurbBlock[] = ['user']
   if (kidsVisible) blocks.push('kids')
-  if ((profile?.bio ?? '').trim() !== '') blocks.push('about')
+  if (profileHasBio(profile) || parentNamesVisible) blocks.push('about')
   if (familyPhotoObjectPath(profile?.family_photo_url) !== null) blocks.push('familyPhoto')
   if (surface === 'edit') {
-    // The edit surface ALWAYS carries these two — their empty states are still
-    // rendered cards (add-a-parent rows, the account-link control), so unlike
-    // the optional blocks above they are not gated on content.
+    // The edit surface ALWAYS carries the parent cards — their empty states are
+    // still rendered cards — and each card carries its own link control (the
+    // retired 'linkedParent' section became part of this block in V24 11B), so
+    // unlike the optional blocks above it is not gated on content.
     blocks.push('parentCards')
-    blocks.push('linkedParent')
   }
   return blocks
 }

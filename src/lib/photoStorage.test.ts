@@ -33,6 +33,7 @@ import {
   kidPhotoVisibility,
   normalizePhotoExt,
   profileBlurbOrder,
+  profileHasBio,
 } from './photoStorage'
 
 const UID = '11111111-2222-4333-8444-555555555555'
@@ -335,23 +336,59 @@ describe('profileBlurbOrder (V9 ticket 11; V16 t05 re-pinned the order; V23 s16 
     expect(profileBlurbOrder({ family_photo_url: kidPhotoPath(UID, KID) }, false)).toEqual(['user'])
   })
 
-  it('V23 s16: the read surface omits the editor-only parent cards + linked parent', () => {
+  it('V23 s16: the read surface omits the editor-only parent cards', () => {
     expect(
       profileBlurbOrder({ family_photo_url: `${UID}/family/photo.jpg`, bio: 'Hi' }, true, 'read'),
     ).toEqual(['user', 'kids', 'about', 'familyPhoto'])
   })
 
-  it('V23 s16: the edit surface appends the ALWAYS-present parent cards + linked parent AFTER the shared sequence', () => {
+  it('V23 s16: the edit surface appends the ALWAYS-present parent cards AFTER the shared sequence', () => {
     // Their empty states are still rendered cards, so unlike the optional blocks
     // they are not gated on content — an empty profile still gets them.
     expect(
       profileBlurbOrder({ family_photo_url: `${UID}/family/photo.jpg`, bio: 'Hi' }, true, 'edit'),
-    ).toEqual(['user', 'kids', 'about', 'familyPhoto', 'parentCards', 'linkedParent'])
-    expect(profileBlurbOrder(null, false, 'edit')).toEqual([
-      'user',
-      'parentCards',
-      'linkedParent',
-    ])
+    ).toEqual(['user', 'kids', 'about', 'familyPhoto', 'parentCards'])
+    expect(profileBlurbOrder(null, false, 'edit')).toEqual(['user', 'parentCards'])
+  })
+
+  it('V24 11B: the "About the parents" block renders for parent NAMES alone (finding N1)', () => {
+    // 11A made the read surface render its heading for a family whose only
+    // content there is the parent names, while this seam pushed 'about' only for
+    // a bio — the seam said a block did not exist that the DOM showed. The
+    // fourth argument closes that gap: the read surface's heading gate is now
+    // this function's output, not a second condition beside it.
+    expect(profileBlurbOrder({ bio: null }, false, 'read', true)).toEqual(['user', 'about'])
+    expect(profileBlurbOrder(null, false, 'read', true)).toEqual(['user', 'about'])
+    // ...and it changes nothing when no names are visible (the default).
+    expect(profileBlurbOrder({ bio: null }, false, 'read')).toEqual(['user'])
+    // The photo still closes the block the names opened.
+    expect(
+      profileBlurbOrder({ bio: null, family_photo_url: `${UID}/family/photo.jpg` }, false, 'read', true),
+    ).toEqual(['user', 'about', 'familyPhoto'])
+  })
+
+  it('V24 11B: the retired linked-parent block is not part of any surface', () => {
+    // The linking AFFORDANCE moved inside the parent cards and the linked NAME
+    // renders inside 'about'; naming a block that renders nowhere is the
+    // falsehood finding N1 was about.
+    const everyBlock = [
+      ...profileBlurbOrder({ bio: 'Hi', family_photo_url: `${UID}/family/photo.jpg` }, true, 'edit', true),
+      ...profileBlurbOrder({ bio: 'Hi' }, true, 'read', true),
+    ]
+    expect(everyBlock).not.toContain('linkedParent')
+  })
+})
+
+describe('profileHasBio (V24 11B: the one bio test the seam and the view share)', () => {
+  it('is false for null, absent, and whitespace-only bios', () => {
+    expect(profileHasBio(null)).toBe(false)
+    expect(profileHasBio({})).toBe(false)
+    expect(profileHasBio({ bio: null })).toBe(false)
+    expect(profileHasBio({ bio: '   ' })).toBe(false)
+  })
+
+  it('is true for any real text', () => {
+    expect(profileHasBio({ bio: 'We like parks.' })).toBe(true)
   })
 })
 

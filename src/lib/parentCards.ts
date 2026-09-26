@@ -106,6 +106,15 @@ export function parentCardSaveLabel(
  *     miss ("Nicole" against a handle "Nicole Rivera") renders plain text
  *     rather than guessing a person's identity from a prefix.
  *
+ * THE MATCH FAILS OPEN ON A NAME COLLISION, and that is the residual this rule
+ * accepts deliberately: a card's name is FREE TEXT the parent typed, so if a
+ * card names a DIFFERENT person who happens to share the linked partner's
+ * handle, that card renders as the link to the partner. The handle itself is
+ * unique among accounts (`profiles_display_name_key`), so only the card↔account
+ * association can collide — and 0047 stores no identity to disambiguate it with.
+ * The alternative (matching more loosely, or not at all) would either guess an
+ * identity or drop the one association the schema can express.
+ *
  * The `handle` on the returned row is the value a caller uses for `/u/<handle>`
  * — not a display string, so the caller must URL-encode it.
  *

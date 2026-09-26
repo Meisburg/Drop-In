@@ -18,8 +18,9 @@ import {
   toggleFollowProfile,
 } from '../lib/db'
 import { cardAgeRangeLabel, kidLabel, partitionPostsByTime } from '../lib/feed'
+import { linkedNameTargetForViewer } from '../lib/links'
 import { parentNameRows } from '../lib/parentCards'
-import { profileBlurbOrder } from '../lib/photoStorage'
+import { profileBlurbOrder, profileHasBio } from '../lib/photoStorage'
 import type { ParentCard, PlaydateWithNeighborhood, ProfileWithKids } from '../lib/types'
 import type { ProfileSectionKey } from '../lib/profileSections'
 
@@ -81,7 +82,11 @@ export function ProfileView({
   header?: React.ReactNode
 }) {
   const navigate = useNavigate()
-  const { session } = useSessionContext()
+  // `profile` is this page's prop (the family being VIEWED); the session
+  // context's own profile is the READER, so it is aliased. The reader's handle
+  // is what tells the name-link rule that the link's counterparty is the person
+  // looking at the page (V24 11B, finding N4).
+  const { session, profile: viewerProfile } = useSessionContext()
   const [blocked, setBlocked] = useState(false)
   const [blockingBusy, setBlockingBusy] = useState(false)
   const [blockError, setBlockError] = useState<string | null>(null)
@@ -132,7 +137,6 @@ export function ProfileView({
    * do not know.
    */
   const [linkedParent, setLinkedParent] = useState<{
-    profileId: string
     handle: string
   } | null>(null)
   // V21 t06: whether the "Hosted N drop-ins" line has been tapped to reveal
@@ -368,15 +372,28 @@ export function ProfileView({
     month: 'long',
     year: 'numeric',
   })
+  // V24 slice 11A: the names the "About the parents" card renders — each card's
+  // name, paired with the handle of the accepted account link it IS (or null).
+  // The rule is pure (`parentNameRows`, src/lib/parentCards.ts): a card alone is
+  // never a link, and a name that does not match the linked account renders as
+  // plain text.
+  //
+  // V24 slice 11B (finding N4): the counterparty is suppressed when it is the
+  // READER — a partner opening this page is the profile's accepted partner, and
+  // linking their own name to their own profile is a control that does nothing
+  // for them (`linkedNameTargetForViewer`, src/lib/links.ts).
+  const parentNames = parentNameRows(
+    parentCards,
+    linkedNameTargetForViewer(linkedParent, viewerProfile?.display_name ?? null),
+  )
   // The pinned block order, single-sourced in the pure `profileBlurbOrder`
   // seam (src/lib/photoStorage.ts; V16 t05 re-pinned it, V23 s16 extended it to
   // name EVERY block both surfaces show). This read surface consumes it with
   // its default 'read' argument: identity → kids list → "About the parents" →
   // family photo (the photo closes the about card), and the editor-only
-  // parent-cards / linked-parent blocks are omitted. All optional blocks are
-  // independent — an empty profile still shows the identity card. `kidsVisible`
-  // is this page's own rule — the self view only — not something the pure seam
-  // could know.
+  // parent-cards block is omitted. All optional blocks are independent — an
+  // empty profile still shows the identity card. `kidsVisible` is this page's
+  // own rule — the self view only — not something the pure seam could know.
   //
   // NOTE the JSX below consumes this seam in order: the kids card is emitted
   // first, then the about-the-parents card (with the family photo as its
@@ -385,24 +402,24 @@ export function ProfileView({
   // the heading does not move the block's position — the seam still emits it
   // last, and the cross-surface order guard sees the same block on each side.
   //
-  // V24 slice 11A: the seam is UNCHANGED by the parent names. Its 'about' block
-  // is the BIO, and this slice adds no block: the names render INSIDE that same
-  // card (below the bio), so no block moves and no block is added. A family with
-  // cards but no bio now reaches the same "About the parents" heading — same
-  // text, same position — which is why the guard, which compares heading text
-  // and order, sees nothing new.
-  const blurb = profileBlurbOrder(profile, isOwnProfile && profile.kids.length > 0)
+  // V24 slice 11B (finding N1): the seam IS told about the parent names now.
+  // 11A left its 'about' block gated on the bio while the heading above it also
+  // rendered for names alone, so the seam named a block the page did not show.
+  // The ordering gate and the heading gate are now the same call.
+  const blurb = profileBlurbOrder(
+    profile,
+    isOwnProfile && profile.kids.length > 0,
+    'read',
+    parentNames.length > 0,
+  )
+  /** The "About the parents" block renders (bio and/or parent names). */
   const showsAbout = blurb.includes('about')
+  /** ...but the bio paragraph and avatar follow the BIO alone. */
+  const showsBio = profileHasBio(profile)
   const showsKids = blurb.includes('kids')
   // V20 t01: hoisted out of the JSX because the wrapper card's own existence is
-  // the union of its three contents (see the card's gate below).
+  // the union of its contents (see the card's gate below).
   const showsInterests = profile.interests != null && profile.interests.trim() !== ''
-  // V24 slice 11A: the names the "About the parents" card renders — each card's
-  // name, paired with the handle of the accepted account link it IS (or null).
-  // The rule is pure (`parentNameRows`, src/lib/parentCards.ts): a card alone is
-  // never a link, and a name that does not match the linked account renders as
-  // plain text.
-  const parentNames = parentNameRows(parentCards, linkedParent)
   // V8 ticket 04: nowIso is read ONCE per render (the BrowsePage pattern) and
   // drives BOTH the Upcoming/Past split and each card's ended/muted styling,
   // so a card can never sit in a section its own styling contradicts.
@@ -593,8 +610,11 @@ export function ProfileView({
           card's own existence now depends on it.
           V24 slice 11A adds the fourth child, `parentNames`: a family with two
           parent cards and no bio still shows its parents, under the same
-          "About the parents" heading — the names are the card's content. */}
-      {showsAbout || showsInterests || familyPhotoUrl !== null || parentNames.length > 0 ? (
+          "About the parents" heading — the names are the card's content.
+          V24 slice 11B: `showsAbout` now comes from `profileBlurbOrder` and IS
+          the union of those two reasons, so this gate and the heading's below
+          are the same decision rather than two conditions that could drift. */}
+      {showsAbout || showsInterests || familyPhotoUrl !== null ? (
         <div className="flex flex-col gap-3">
           {/* V13 ticket 01: the identity row (avatar + @handle + "Here since" +
               "Hosted N drop-ins") is the page's identity block at the top (V15
@@ -612,11 +632,11 @@ export function ProfileView({
               V24 slice 11A: the heading's condition gained `parentNames.length`
               — the SAME heading, in the SAME place, for a family whose only
               "about" content is its parents. It stays inside the card and moves
-              no block: `profileBlurbOrder` is unchanged (its 'about' block is
-              the BIO), and the cross-surface order guard reads heading TEXT and
-              POSITION, both of which are untouched. A parent name never renders
-              without this heading above it. */}
-          {showsAbout || parentNames.length > 0 ? (
+              no block. V24 slice 11B moved that condition INTO the seam
+              (`profileBlurbOrder(..., parentNamesVisible)`, finding N1), so the
+              seam's 'about' block is exactly the heading's own gate. A parent
+              name never renders without this heading above it. */}
+          {showsAbout ? (
           <div className="mt-3 first:mt-0">
             <h2 className="text-base font-semibold text-slate-900">About the parents</h2>
             {/* V16 t05: the parent photo (the founder's item 3 — the one part of
@@ -626,7 +646,7 @@ export function ProfileView({
                 in the public `avatars` bucket (0011), the same value every
                 drop-in card renders — so this is not a signed-URL mint and
                 needs no hook; a family with no avatar simply gets no image. */}
-            {showsAbout ? (
+            {showsBio ? (
             <div className="mt-2 flex items-start gap-3">
               {profile.avatar_url != null && profile.avatar_url !== '' ? (
                 <PhotoButton
@@ -660,7 +680,14 @@ export function ProfileView({
                 relationship is not theirs to see. The link is a real
                 react-router Link to `/u/<handle>`: a real href, the parent's
                 name as its accessible name, and `min-h-11` (44px) as its
-                target. No heading, no new block. */}
+                target. No heading, no new block.
+
+                V24 slice 11B (finding N4): when the READER is a party to the
+                link, the counterparty the database returns IS the reader, so
+                the name that would link is the reader's own — suppressed above
+                (`linkedNameTargetForViewer`), and this page then shows both
+                parents as plain text. Nothing is lost: the reader is already
+                looking at the family they are linked to. */}
             {parentNames.length > 0 ? (
               <ul
                 data-testid="parent-names"
