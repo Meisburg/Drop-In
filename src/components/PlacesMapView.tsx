@@ -54,25 +54,27 @@ import { reviewRatingLine } from '../lib/reviews'
  * cannot disagree with the list it replaced.
  */
 export function PlacesMapView({
+  pins,
   rows,
-  allRows,
   zipCoords,
   homePin,
   focusBehavior,
   onBackToList,
 }: {
   /**
-   * The rows the STRIP shows, in the list's own order — only those the map can
-   * place. Passed pre-filtered by the caller so this component never re-derives
-   * the result set.
+   * EVERY row the map can plot — the map's pins, and the source of the strip's
+   * cards. NOT capped: the strip's `MAP_STRIP_CARD_LIMIT` governs cards only, and
+   * a cap that reached here would draw fewer pins than the directory matched.
+   * (This slice's second review caught exactly that regression.) This is the same
+   * set the directory's own band pins.
+   */
+  pins: readonly PlaceListRow[]
+  /**
+   * The full matched row set, in the list's own order — `pins` plus the rows the
+   * map cannot place. Here so the strip and its linear list can be derived in one
+   * place, from one array, rather than by the caller slicing twice.
    */
   rows: readonly PlaceListRow[]
-  /**
-   * The directory's FULL rendered row set, including rows the map cannot place.
-   * They get no card (there is no pin to recentre on) but they must not vanish:
-   * the list below the strip keeps every one of them reachable.
-   */
-  allRows: readonly PlaceListRow[]
   /** The gazetteer zip→coords map, handed straight to the map. */
   zipCoords: ReadonlyMap<string, ZipCoords> | null
   /** The viewer's home pin (the map's frame when there is one). */
@@ -110,11 +112,22 @@ export function PlacesMapView({
 
   /**
    * WHERE THE STRIP STOPS, as a tested rule rather than a slice in this file.
-   * `stripRows` is what the strip renders; `restRows` is everything else — the
-   * rows past the cap and the rows the map cannot place — and it is rendered as
-   * the linear list below, so no row is in two places and none is nowhere.
+   *
+   * The predicate is "this row is one of the map's pins", so the split cannot
+   * assume an order — the caller's rows are KIND-GROUPED, and an unplaceable row
+   * can sit between two placeable ones. `stripRows` is what the strip renders
+   * (placeable, capped); the linear list below renders the rest — the placeable
+   * overflow past the cap AND every unplaceable row — so no row is in two places
+   * and none is nowhere.
+   *
+   * MEASURED, and why it matters: the unfiltered directory has 239 placeable
+   * rows, so without the cap the strip mounted 239 card links in one scroller.
+   * The cap makes the strip 40 cards; `pins` still carries all 239 to the map.
    */
-  const { cards: stripRows, rest: restRows } = splitStripRows(allRows, rows.length)
+  const pinnedIds = new Set(pins.map((row) => row.place.id))
+  const { cards: stripRows, rest: restRows } = splitStripRows(rows, (row) =>
+    pinnedIds.has(row.place.id),
+  )
 
   /**
    * A NEW RESULT SET RESTARTS THE STRIP, and this is a correctness rule rather
@@ -135,6 +148,7 @@ export function PlacesMapView({
     if (strip !== null) strip.scrollTo({ left: 0, behavior: behaviorRef.current })
   }, [rowsKey])
 
+  const pinCount = pins.length
   const count = stripRows.length
   /**
    * The index is normalised through `clampCardIndex` (lib, with its own test)
@@ -219,8 +233,13 @@ export function PlacesMapView({
           together have to fit one phone screen. */}
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
+          {/* THE PIN COUNT, not the card count. The strip may show fewer cards
+              than the map draws pins (the cap), and a header that reported the
+              cards would under-report the surface — which is exactly what this
+              slice's second review caught: "40 places on the map" over a
+              directory of 239. */}
           <span className="text-xs font-medium text-slate-500">
-            {count === 1 ? '1 place on the map' : `${count} places on the map`}
+            {pinCount === 1 ? '1 place on the map' : `${pinCount} places on the map`}
           </span>
           <button
             type="button"
@@ -233,7 +252,7 @@ export function PlacesMapView({
         </div>
         <PlacesMap
           className="h-[38dvh] min-h-[200px]"
-          places={stripRows.map((row) => row.place)}
+          places={pins.map((row) => row.place)}
           zipCoords={zipCoords}
           homePin={homePin}
           focusPlaceId={focusedPlaceId}

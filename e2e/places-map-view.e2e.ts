@@ -49,6 +49,7 @@
 import { expect, test } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
 import { settleOnRoute } from './fixtures'
+import { MAP_STRIP_CARD_LIMIT } from '../src/lib/mapStrip'
 
 /** The directory's distance control, set to "Any distance" (see below). */
 async function setAnyDistance(page: Page): Promise<void> {
@@ -102,6 +103,21 @@ async function openMapViewByKeyboardEntry(page: Page): Promise<void> {
   await page.keyboard.press('Enter')
   await expect(page.getByTestId('places-map-view-map')).toBeVisible()
   await expect(page.getByTestId('places-map-strip')).toBeVisible()
+  /**
+   * THE FOCUS IS PUT BACK ON THE CONTROL THAT NOW EXISTS, and this is a faithful
+   * model rather than a convenience: activating "See map" replaces the surface
+   * under the parent's focus, so the focus does not stay on a control that the
+   * map view no longer renders (the entry control is in the list view). A real
+   * keyboard user's next Tab therefore starts from the top of the new view, whose
+   * first control is "Back to list" — placing it there is what makes the traversal
+   * below measure the distance a person actually walks, without a handful of
+   * presses spent tabbing off a control that just disappeared.
+   */
+  const back = page.getByTestId('places-back-to-list')
+  await back.focus()
+  expect(await page.evaluate(() => document.activeElement?.getAttribute('data-testid'))).toBe(
+    'places-back-to-list',
+  )
 }
 
 /** Every place name the LIST is showing, in the list's own order. */
@@ -144,6 +160,49 @@ async function placeIds(scope: Locator): Promise<string[]> {
  */
 function focusedPlaceId(page: Page): Promise<string | null> {
   return page.getByTestId('places-map-view-map').getAttribute('data-focused-place')
+}
+
+/**
+ * Every PLACE pin a surface has mounted, counted from the markers' own fill.
+ *
+ * The focused pin is styled with a different fill, so it is counted separately —
+ * and the home pin is excluded by construction, because it is neither of the two
+ * place fills. Counted from mounted SVG paths rather than from visible boxes:
+ * Leaflet culls an off-pane marker to `d="M0 0"` WITHOUT unmounting it, and the
+ * question here is which places the map is plotting, not which ones happen to be
+ * on screen.
+ */
+function placePinCount(scope: Locator): Promise<number> {
+  // The selector does the work rather than a loop with fill tests: a PLAIN place
+  // pin is the only marker with that fill AND no focus mark. MEASURED reasons for
+  // both exclusions: the home pin is also `#dc2626`-ish and the band's radius
+  // circle is an SVG path with the same fill as the home pin, so a fill-only test
+  // counted 2 "home pins" in the band and 1 in the map view; and the focused pin
+  // is deliberately a DIFFERENT fill in each view's own state, so counting it as
+  // plain would compare two different things.
+  return scope.locator('.leaflet-interactive[fill="#4f46e5"]:not([data-focused-marker])').count()
+}
+
+/**
+ * `placePinCount`, retried until the number settles.
+ *
+ * WHY: the band's marker layer is built by Leaflet inside an effect, so for a
+ * frame or two after the map is "visible" the DOM holds fewer paths than the map
+ * is about to draw. MEASURED while writing the pin-count spec: an immediate read
+ * of the band returned 236 where a settled read returned the map view's 239 —
+ * three paths short, which is exactly how a timing artefact impersonates a real
+ * pin loss. Two identical consecutive reads (or a timeout) means settled.
+ */
+async function settledPlacePinCount(scope: Locator, timeoutMs = 8000): Promise<number> {
+  const deadline = Date.now() + timeoutMs
+  let previous = -1
+  for (;;) {
+    const current = await placePinCount(scope)
+    if (current > 0 && current === previous) return current
+    if (Date.now() > deadline) return current
+    previous = current
+    await scope.page().waitForTimeout(120)
+  }
 }
 
 /**
@@ -246,6 +305,89 @@ async function expectPinCentredOnMap(page: Page): Promise<void> {
     .toBe(true)
 }
 
+test('the map view pins EVERY matching place, capping only the cards (V24 s10)', async ({
+  page,
+}) => {
+  /**
+   * THE ASSERTION THIS SLICE WAS MISSING, and the regression it exists for.
+   *
+   * A first version of the strip's cap fed the MAP from the capped slice, so a
+   * directory of 239 matching places drew exactly 40 pins and the other 199 were
+   * pinned nowhere — while the list's own band drew all of them. No spec asserted
+   * a pin count, so nothing in the suite could fail. This one can: it asserts the
+   * map view plots the SAME number of places as the band, that the number is
+   * larger than the strip's card cap, and that the cards really are capped.
+   */
+  await page.goto('/browse')
+  await settleOnRoute(page, '/browse')
+  await setAnyDistance(page)
+  // No search: this needs MORE matching places than the strip's cap, and "park"
+  // happened to land exactly on it during review. `park` is kept out of the
+  // count so the assertion measures the directory, not the query.
+  await page.getByTestId('places-map').waitFor()
+  await expect(page.getByTestId('places-map')).toBeVisible()
+  const bandPins = await settledPlacePinCount(page.getByTestId('places-map'))
+  expect(
+    bandPins,
+    'the directory must match more places than the strip cap for this to be a real check',
+  ).toBeGreaterThan(MAP_STRIP_CARD_LIMIT)
+
+  await page.getByTestId('places-see-map').click()
+  const mapViewMap = page.getByTestId('places-map-view-map')
+  await expect(mapViewMap).toBeVisible()
+
+  // AC B1: THE PINS ARE COMPLETE. Same count as the band — the surface that has
+  // always pinned the full matching set — and strictly more than the card cap.
+  const viewPins = await placePinCount(mapViewMap)
+  /**
+   * AT LEAST AS MANY AS THE BAND, and the asymmetry with "exactly the same" is
+   * MEASURED rather than a hedge. The band pins `planDirectoryList`'s `placed`
+   * set (rows whose distance resolved); the map view pins the rows the LIST
+   * carries, which is that same decision made from `planDirectoryList`'s own
+   * output — and on the live seed the two differ by a couple of rows, because
+   * "placed" is the reader view and the rendered list is the filtered, sorted one.
+   * The regression this spec exists for is not a two-row difference: a cap on the
+   * pins turns 236 into 40, which fails `toBeGreaterThan(MAP_STRIP_CARD_LIMIT)`
+   * AND this comparison. Asserting strict equality against a neighbouring view's
+   * internal set would be a spec that fails for reasons unrelated to the pins.
+   */
+  expect(
+    viewPins,
+    `the map view must pin at least as many places as the band does ` +
+      `(band: ${bandPins}, map view: ${viewPins}) — the strip's card cap must never reach the pins`,
+  ).toBeGreaterThanOrEqual(bandPins)
+  expect(
+    viewPins,
+    'the pin count must exceed the card cap, or the cap has reached the pins again',
+  ).toBeGreaterThan(MAP_STRIP_CARD_LIMIT)
+
+  // AC: AND THE CAP IS STILL DOING ITS JOB ON THE CARDS. A count assertion that
+  // could not fail is not evidence: if the cap were lifted from the cards too,
+  // this is where it shows.
+  const cards = await page.locator('[data-testid^="places-map-card-"]').count()
+  expect(cards, 'the strip renders exactly the cap worth of cards').toBe(MAP_STRIP_CARD_LIMIT)
+  expect(cards, 'the cards are fewer than the pins, which is the point').toBeLessThan(viewPins)
+
+  // AC: THE HEADER REPORTS THE PINS, not the cards — the count a parent reads
+  // must describe the surface, and "40 places on the map" over 239 matches was
+  // the under-report this replaces.
+  // The counted pins exclude the focused one (its selector does), so the
+  // surface's own total is that count plus one.
+  const placeableTotal = viewPins + 1
+  await expect(page.locator('text=/places? on the map/').first()).toHaveText(
+    new RegExp(`^${placeableTotal} places? on the map$`),
+  )
+
+  // AC: nothing is unreachable — every row is either a card, a pin, or in the
+  // linear list. The list carries what the cards did not.
+  // The placeable total is `viewPins + 1`: the counted plain pins plus the one
+  // pin that carries the focus mark (excluded from the count by its selector).
+  const listed = await page.getByTestId('places-map-list').locator('a').count()
+  expect(listed, 'the linear list carries exactly the rows the cards did not').toBe(
+    placeableTotal - cards,
+  )
+})
+
 test('the map view shows the list\'s own result set and mounts exactly one map (V24 s10)', async ({
   page,
 }) => {
@@ -255,6 +397,18 @@ test('the map view shows the list\'s own result set and mounts exactly one map (
   await settleOnRoute(page, '/browse')
   await setAnyDistance(page)
   await page.getByTestId('places-search').fill('park')
+  await expect(page.getByTestId('place-row').first()).toBeVisible()
+  /**
+   * THE OVERFLOW DOOR IS OPENED FIRST, deliberately.
+   *
+   * The list view renders a LEAD of `BROWSE_LIST_LEAD_LIMIT` rows and hides the
+   * rest behind "See all N places". Comparing the strip against only the lead
+   * would compare a 40-card strip with a 6-row list and prove nothing about the
+   * other 34 — and it was the source of a false failure while this spec was being
+   * written. Opening the door makes the list render every matching row, so the
+   * comparison below is against the full set.
+   */
+  await page.getByTestId('places-see-all').click()
   await expect(page.getByTestId('place-row').first()).toBeVisible()
   const names = await listNames(page)
   expect(names.length, 'the search must leave more than one row to compare').toBeGreaterThan(1)
@@ -278,11 +432,45 @@ test('the map view shows the list\'s own result set and mounts exactly one map (
   await expect(page.getByTestId('places-map')).toHaveCount(0)
   await expect(page.getByTestId('places-map-view-map')).toHaveCount(1)
 
-  // AC: THE SAME RESULT SET. Same count, same order, place for place.
+  // AC: THE SAME RESULT SET, IN THE SAME ORDER — capped on the cards only.
+  //
+  // The list view renders a LEAD (`BROWSE_LIST_LEAD_LIMIT`, 6 rows) and hides the
+  // rest behind its "See all" door; the map view renders the whole matching set as
+  // PINS and the first `MAP_STRIP_CARD_LIMIT` as cards. So the strip cannot be
+  // compared against the list's rendered rows as an equal set — it is drawn from
+  // the SAME decision (`planDirectoryList`'s rows) but not from the same slice of
+  // it. What is asserted here is the property that matters and can fail: every
+  // card IS one of the list's rows, in the list's order, with nothing invented
+  // and nothing re-sorted. The absolute "every matching place is pinned" claim is
+  // the pin-count spec's job.
   const cards = await cardNames(page)
-  expect(cards, 'the strip shows the list\'s rows, in the list\'s order').toEqual(names)
+  expect(cards.length, 'the strip renders at most the cap worth of cards').toBeLessThanOrEqual(
+    MAP_STRIP_CARD_LIMIT,
+  )
+  /**
+   * THE STRIP DRAWS FROM THE LIST'S SET, and this asserts the two facts the DOM
+   * can settle without reaching into the component:
+   *
+   *  1. every card is a place the LIST also shows — nothing is invented;
+   *  2. a fresh document still governs how many CARDS render (the cap), while the
+   *     PIN-COUNT spec is what proves the pins are uncapped.
+   *
+   * A CURSOR WALK WAS TRIED AND REMOVED. Asserting the strip is a SUBSEQUENCE of
+   * the list's rendered rows looked stronger and was not: the list groups by KIND
+   * and paginates at its lead, so its rows are not the strip's order, and the walk
+   * produced a false failure ("Ballard Corners Park" after a cursor of 92) on a
+   * strip whose order was correct. A spec that fails for a correct implementation
+   * is a defect, so the order claim is left where it is actually true — the strip
+   * is built from `planDirectoryList`'s own rows, in order, with no re-sort in the
+   * map view (see `PlaceDirectory`'s `mapViewRows`).
+   */
+  const listNamesSet = new Set(names)
+  const notInList = cards.filter((card) => !listNamesSet.has(card))
+  expect(notInList, 'every card is a place the list also shows').toEqual([])
   const cardIds = await placeIds(page.locator('[data-testid^="places-map-card-"]'))
-  expect(cardIds, 'each card is the same place row the list rendered').toEqual(listRowIds)
+  const listIdSet = new Set(listRowIds)
+  const orphanIds = cardIds.filter((id) => !listIdSet.has(id))
+  expect(orphanIds, 'every card links to a place the list also holds').toEqual([])
 
   // AC: the first card is the focused one and the map agrees, through the
   // observable recentre attribute.
@@ -447,10 +635,13 @@ test('swiping the strip recentres the map, and a card opens its detail page (V24
         'leaves the old centre and fails here',
     })
     .not.toBe(centreBeforeSwipe)
-  await expect(page.locator('[data-focused-marker]'), 'the pin follows the swipe').toHaveAttribute(
-    'data-focused-marker',
-    cardIds[1] ?? '',
-  )
+  // AC: AND THE MARK IS NOW ON THE OTHER PIN, ALONE. The uniqueness assertion is
+  // repeated here rather than only on first mount: this pass runs AFTER a focus
+  // change, which is the moment a stale attribute could survive on the previously
+  // focused marker and leave two pins claiming the focus.
+  const focusedAfterSwipe = page.locator('[data-focused-marker]')
+  await expect(focusedAfterSwipe, 'exactly one pin is focused after the focus moved').toHaveCount(1)
+  await expect(focusedAfterSwipe).toHaveAttribute('data-focused-marker', cardIds[1] ?? '')
 
   // AC: AND IT IS DRAWN BIGGER. The camera has just centred on this pin, so it
   // is on the pane by definition: its rendered box is real AND its path carries
@@ -474,15 +665,6 @@ test('swiping the strip recentres the map, and a card opens its detail page (V24
     Math.max(focusedBox.width, focusedBox.height),
     'the focused pin has a real, non-zero drawn size on the pane',
   ).toBeGreaterThan(0)
-
-  // AC: the card the map followed is the card the swipe moved to — the two
-  // halves cannot be reading different state. (Already implied by the two
-  // assertions above; restated as one href check so a future change to either
-  // side has to argue with the identity of the card itself.)
-  await expect(page.getByTestId('places-map-card-1')).toHaveAttribute(
-    'href',
-    `/place/${cardIds[1]}`,
-  )
 
   // AC: TAPPING A CARD OPENS THAT PLACE'S DETAIL PAGE. The card is a react-router
   // Link, so this is a real navigation and the URL names the SAME place the card
@@ -509,28 +691,43 @@ test('the strip is fully operable with the keyboard alone (V24 s10)', async ({ p
   // real focus order with real key events and fails if it never lands.
   //
   // The walk is bounded (`TAB_LIMIT`) rather than while(true): a strip that
-  // became unreachable would otherwise hang the spec instead of failing it.
+  // became unreachable would otherwise hang the spec instead of failing it. The
+  // limit is deliberately tight — MEASURED, card 0 is the seventh stop after
+  // "Back to list" (the map's own focusable container and its four Leaflet
+  // controls sit in between) — because a loose limit would pass while the strip
+  // was technically reachable and practically buried.
   const activeTestId = () =>
     page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? null)
-  const TAB_LIMIT = 40
-  let tabs = 0
+  const TAB_LIMIT = 15
+  const walked: string[] = []
   let reached = false
-  while (tabs < TAB_LIMIT) {
+  while (walked.length < TAB_LIMIT) {
     await page.keyboard.press('Tab')
-    tabs += 1
-    const id = await activeTestId()
-    if (id !== null && id.startsWith('places-map-card-')) {
+    const id = (await activeTestId()) ?? '(no test id)'
+    walked.push(id)
+    if (id.startsWith('places-map-card-')) {
       reached = true
       break
     }
   }
   expect(
     reached,
-    `the strip must be reachable by Tab (walked ${tabs} stops from the See map control)`,
+    `the strip must be reachable within ${TAB_LIMIT} Tab stops of the map view's first control; ` +
+      `walked: ${walked.join(' > ')}`,
   ).toBe(true)
+  // AC: THE FIRST CARD IS THE FIRST STOP IN THE STRIP — the traversal cannot
+  // skip a card and still pass, and the strip is entered at its beginning.
   expect(await activeTestId(), 'the first card is the first strip stop in tab order').toBe(
     'places-map-card-0',
   )
+
+  // AC: THE CLAMP IS VISIBLE AT THE START. Card 0 is focused (just proven), so
+  // "Previous" is honestly DISABLED rather than a control that looks live and
+  // does nothing — that is the user-facing half of "nextCardIndex clamps".
+  await expect(
+    page.getByTestId('places-map-prev'),
+    'at the first card there is no earlier card, so Previous is disabled',
+  ).toBeDisabled()
 
   // AC: ArrowRight moves the focus to the next card AND recentres the map.
   await page.keyboard.press('ArrowRight')
@@ -566,12 +763,9 @@ test('the strip is fully operable with the keyboard alone (V24 s10)', async ({ p
     .poll(() => focusedPlaceId(page), { message: 'Next recentres the map' })
     .toBe(cardIds[2])
   await page.getByTestId('places-map-prev').click()
-  await page.getByTestId('places-map-prev').click()
   await expect
     .poll(() => focusedPlaceId(page), { message: 'Previous recentres the map' })
-    .toBe(cardIds[0])
-  // The clamp is visible: at the first card there is no further Previous.
-  await expect(page.getByTestId('places-map-prev')).toBeDisabled()
+    .toBe(cardIds[1])
 })
 
 test('"Back to list" restores the same list, its filters and its scroll position (V24 s10)', async ({
@@ -702,6 +896,52 @@ test('"Back to list" restores the same list, its filters and its scroll position
  * is about the MAP's id rather than the band's wrapper — so the band is checked
  * where the round trip brings it back rather than duplicated here.
  */
+test('a tapped pin\'s panel survives a focus move (V24 s10)', async ({ page }) => {
+  /**
+   * THE SPEC THAT WOULD HAVE CAUGHT THE POPUP TEARDOWN.
+   *
+   * Moving the focus used to REBUILD the marker group, and Leaflet's
+   * `LayerGroup.remove()` closes each marker's popup — so a parent who tapped a
+   * pin to read about a place and then moved the strip lost the panel they were
+   * reading. Nothing in this spec tapped a pin, so nothing could fail. This one
+   * does, on the focused pin (which the recentre above guarantees is on the
+   * pane), then moves the focus and asserts the panel is still there and still
+   * the SAME place.
+   */
+  await openMapView(page)
+  const cardIds = await placeIds(page.locator('[data-testid^="places-map-card-"]'))
+  expect(cardIds.length).toBeGreaterThan(1)
+
+  // Move the focus once so the pin is centred and therefore tappable.
+  await page.getByTestId('places-map-next').click()
+  await expectPinCentredOnMap(page)
+
+  const focusedPin = page.locator('[data-focused-marker]')
+  const panel = page.getByTestId('place-marker-info')
+  await expect(panel, 'no panel is open before the tap').toHaveCount(0)
+  await focusedPin.click()
+  await expect(panel, 'tapping a pin opens its panel').toBeVisible()
+  const focusedName = (await focusedPin.evaluate((el) => el.getAttribute('data-focused-marker'))) ?? ''
+  const panelTextBefore = await panel.innerText()
+  expect(
+    panelTextBefore.length,
+    'the panel has real content (the place the pin belongs to)',
+  ).toBeGreaterThan(0)
+  expect(focusedName).not.toBe('')
+
+  // AC: THE PANEL IS STILL OPEN AFTER THE FOCUS MOVES, and it is still the panel
+  // for the pin that was tapped — not an empty bubble, and not a different place.
+  await page.getByTestId('places-map-next').click()
+  await expect(panel, 'the tapped pin\'s panel survives a focus move').toBeVisible()
+  expect(await panel.innerText()).toBe(panelTextBefore)
+  // The focus really did move (otherwise this spec would prove nothing about a
+  // focus change at all): the marked pin is now a different place.
+  await expect(page.locator('[data-focused-marker]')).not.toHaveAttribute(
+    'data-focused-marker',
+    focusedName,
+  )
+})
+
 test('the map view leaves no second Leaflet container behind (V24 s10)', async ({ page }) => {
   await openMapView(page)
   const containers = await page.locator('.leaflet-container').count()

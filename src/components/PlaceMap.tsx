@@ -56,6 +56,59 @@ interface MapMarker {
   lat: number
   lng: number
 }
+
+/**
+ * V24 slice 10: the pins' two appearances, as module constants so the FOCUSED
+ * style and the PLAIN style are one definition each instead of literals repeated
+ * at a construction site and a style-update site.
+ *
+ * The focused pin is a visibly larger dot in a darker indigo with a heavier
+ * stroke — bigger AND heavier AND a different colour, so the distinction does not
+ * rest on colour alone. MEASURED for the spec: Leaflet writes `r`-equivalents
+ * into the path's `d` arc, so the drawn radius (12 vs 8) is readable as geometry
+ * rather than only as colour.
+ */
+const PLACE_MARKER_STYLE: L.CircleMarkerOptions = {
+  radius: 8,
+  color: '#4f46e5',
+  weight: 2,
+  fillColor: '#4f46e5',
+  fillOpacity: 0.35,
+}
+const PLACE_MARKER_FOCUSED_STYLE: L.CircleMarkerOptions = {
+  radius: 12,
+  color: '#312e81',
+  weight: 3,
+  fillColor: '#312e81',
+  fillOpacity: 0.85,
+}
+
+/**
+ * V24 slice 10 — KEEP THE PINS OUT OF THE TAB ORDER.
+ *
+ * MEASURED, and it is a keyboard-a11y fix rather than tidiness: Leaflet emits a
+ * `circleMarker` as an SVG `<path>`, and Chromium puts those in the TAB ORDER.
+ * With a full directory that is 236 tab stops of marker paths — a keyboard user
+ * had to press Tab more than 100 times to reach the card strip this slice exists
+ * to make reachable (measured: past 50 presses and still inside the marker list).
+ *
+ * BOTH ATTRIBUTES ARE NEEDED, and that was measured too: `focusable="false"` is
+ * the SVG-document answer (and the one Safari honours) but Chromium IGNORED it
+ * here — the probe still tabbed into path after path. `tabindex="-1"` is what
+ * removes an element from the tab order in Chromium. Together they cover both
+ * engines; neither is redundant enough to drop.
+ *
+ * Nothing is lost: a marker is a POINTER affordance that opens a popup. The same
+ * places are keyboard-reachable as cards (real links), as list rows, and through
+ * the popup's own buttons.
+ */
+function keepMarkerOutOfTabOrder(marker: L.CircleMarker): void {
+  const el = marker.getElement() as SVGElement | null
+  if (el === null) return
+  el.setAttribute('focusable', 'false')
+  el.setAttribute('tabindex', '-1')
+}
+
 /**
  * ONE place's map (the /place/:id detail surface).
  *
@@ -296,16 +349,11 @@ export function PlacesMap({
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
   /**
-   * V24 slice 10: the markers this effect BUILT, in `entries` order, so the
-   * focused one can be marked once the group is actually on the map.
-   *
-   * WHY AFTER `addTo` AND NOT AT CONSTRUCTION, MEASURED: `L.circleMarker(...)`
-   * creates an SVG path, but Leaflet does not attach it to the pane until the
-   * layer is added — `marker.getElement()` at construction time yields nothing,
-   * so the focused pin's attribute was never written and no element carried it.
-   * After `addTo`, `getElement()` is the live `<path>`.
+   * V24 slice 10: the markers actually on the map, paired with the place each
+   * one belongs to. The focus effect paints the focused one from this list, so it
+   * needs no rebuild — and therefore no popup teardown (see the marker effect).
    */
-  const markerElsRef = useRef<Array<SVGElement | null>>([])
+  const markerRefs = useRef<Array<{ id: string; marker: L.CircleMarker }>>([])
   // V15 t02: anchor on the home pin when provided (the ticket's AC1), else the
   // first place marker (existing behavior). Read through a ref so the mount
   // effect's dependency list stays empty.
@@ -446,36 +494,25 @@ export function PlacesMap({
   useEffect(() => {
     const map = mapRef.current
     if (map === null || markers.length === 0) return
-    markerElsRef.current = []
     /**
-     * V24 slice 10 — ONE PLACE TO STYLE A PIN, and the focus flag is part of the
-     * marker's construction rather than a second pass over it.
+     * EVERY MARKER IS BUILT PLAIN, and the FOCUS IS PAINTED ON AFTERWARDS by the
+     * effect below. That split is deliberate and it replaced a construction-time
+     * focus flag, because the earlier shape had a real defect:
      *
-     * WHY IT IS INLINED HERE RATHER THAN A SEPARATE EFFECT: a separate effect
-     * that re-styled a marker afterwards would be a SECOND writer of the same SVG
-     * path, and Leaflet repaints paths on its own schedule (a zoom, an opacity
-     * change). Two writers for one element is the defect class this file keeps
-     * recording, so the focus style is applied where the marker is built and the
-     * layer is rebuilt when the focus changes.
+     *   REBUILDING THIS GROUP TO CHANGE THE FOCUS CLOSES AN OPEN POPUP. Leaflet's
+     *   `LayerGroup.remove()` removes each marker, and `remove()` closes that
+     *   marker's popup — so a parent who tapped a pin to read about a place and
+     *   then moved the card strip lost the panel they were reading. MEASURED,
+     *   and asserted by `e2e/places-map-view.e2e.ts`'s "a pin's panel survives a
+     *   focus move" spec.
      *
-     * WHAT THE FOCUSED PIN LOOKS LIKE: a visibly larger dot in a darker indigo
-     * (radius 12 vs 8, fill opacity 0.85 vs 0.35) with a heavier stroke — bigger
-     * AND heavier AND a different colour, so the distinction does not rest on
-     * colour alone. It is still an ordinary `circleMarker`: it keeps the tooltip,
-     * the click → popup handler and every other behaviour the plain pins have,
-     * because the focused card must not become the only way to reach the place it
-     * names.
+     * The group is therefore built ONCE per marker set (its dependency list is
+     * `markersKey` alone) and never rebuilt for a focus change; the focus keys
+     * the separate style effect further down.
      */
     const group = L.layerGroup(
       entries.map(({ place, coords }) => {
-        const focused = place.id === focusPlaceId
-        const marker = L.circleMarker([coords.lat, coords.lng], {
-          radius: focused ? 12 : 8,
-          color: focused ? '#312e81' : '#4f46e5',
-          weight: focused ? 3 : 2,
-          fillColor: focused ? '#312e81' : '#4f46e5',
-          fillOpacity: focused ? 0.85 : 0.35,
-        })
+        const marker = L.circleMarker([coords.lat, coords.lng], PLACE_MARKER_STYLE)
         /**
          * V20 t03 — THE BUBBLE ITSELF EXPANDS, AND STAYS.
          *
@@ -673,37 +710,14 @@ export function PlacesMap({
       }),
     ).addTo(map)
     /**
-     * V24 slice 10 — THE FOCUSED PIN IS MARKED HERE, on the element Leaflet has
-     * actually attached. This is the second half of the AC that the focused
-     * card's pin is VISUALLY DISTINGUISHED among many pins.
-     *
-     * The visual distinction itself is set at construction, through Leaflet's own
-     * path options (radius 12 vs 8, darker indigo, heavier stroke, higher fill
-     * opacity), so it is what the pane draws and it survives a redraw. What is
-     * set here is the OBSERVABLE — `data-focused-marker` naming the place, plus a
-     * class — because both need the element that exists in the DOM.
-     *
-     * MEASURED before relying on it: Leaflet keeps the classes it is given, and a
-     * `setStyle` does not strip an attribute off the path, so both are durable
-     * facts about this marker rather than values that evaporate on the next
-     * repaint.
-     *
-     * EXACTLY ONE MARKER CAN CARRY THE ATTRIBUTE: this effect rebuilds the group
-     * when the focus changes (see its dependency list), so the previously marked
-     * element leaves with the old group.
-     *
-     * `getLayers()` preserves insertion order, so layer N is `entries[N]` — the
-     * pairing is positional rather than a second lookup by coordinate.
+     * Keep the built markers, so the focus effect can paint one of them without
+     * rebuilding anything. `getLayers()` preserves insertion order, so marker N
+     * belongs to `entries[N]` — the pairing is positional rather than a second
+     * lookup by coordinate.
      */
-    const layers = group.getLayers() as L.CircleMarker[]
-    layers.forEach((layer, index) => {
-      const el = layer.getElement() as SVGElement | null
-      markerElsRef.current[index] = el
-      if (el === null) return
-      const entry = entries[index]
-      if (entry === undefined || entry.place.id !== focusPlaceId) return
-      el.setAttribute('data-focused-marker', entry.place.id)
-      el.classList.add('place-marker-focused')
+    markerRefs.current = (group.getLayers() as L.CircleMarker[]).map((layer, index) => {
+      keepMarkerOutOfTabOrder(layer)
+      return { id: entries[index]?.place.id ?? '', marker: layer }
     })
     // V16 t07 item 2 — THE CAMERA IS NOT MOVED HERE ANY MORE.
     //
@@ -736,12 +750,11 @@ export function PlacesMap({
     return () => {
       group.remove()
     }
-    // V24 slice 10: `focusPlaceId` IS a dependency, because the focus flag is
-    // read at marker-construction time (see the block at the top of this
-    // effect). The group is torn down and rebuilt on a focus change, which is
-    // also what clears the previous `data-focused-marker` attribute: the old
-    // element leaves with the group, so at most one marker ever carries it.
-  }, [markersKey, focusPlaceId])
+    // V24 slice 10: `focusPlaceId` is deliberately NOT a dependency any more.
+    // The group is keyed by the marker set alone, so a focus change never tears
+    // it down — which is what keeps an open popup open (see the top of this
+    // effect). The focus is painted by the separate effect below.
+  }, [markersKey])
 
   // V15 t02 / V16 t07 item 2: THE framing authority. When the caller sets a
   // radiusCircle — geocoded center, else the home pin at the viewer's radius —
@@ -941,6 +954,38 @@ export function PlacesMap({
     ? null
     : (entries.find((e) => e.place.id === focusPlaceId) ?? null)
   const focusKey = focusedEntry === null ? '' : focusedEntry.place.id
+
+  /**
+   * V24 slice 10 — THE FOCUS IS PAINTED HERE, on markers that already exist.
+   *
+   * WHY IT IS NOT DONE AT CONSTRUCTION any more: a focus change used to rebuild
+   * the marker group, and a rebuild removes every marker — which closes an open
+   * popup (Leaflet's `remove()` calls `closePopup`). A parent reading a pin's
+   * panel and then moving the strip lost it. MEASURED; the map-view spec now
+   * asserts the panel survives.
+   *
+   * `setStyle` is Leaflet's own path update, so there is still exactly ONE writer
+   * of this element's appearance — the concern that put the focus into the
+   * construction path in the first place. The `data-focused-marker` attribute and
+   * the class are re-applied on every pass, so a `setStyle` that rewrote the
+   * element's attributes cannot leave the observable behind. MEASURED: the
+   * attribute and the class survive a pan, a zoom and a marker tap.
+   *
+   * Every marker is restyled on every pass (not only the two that changed), which
+   * is what REMOVES the attribute from the previously focused pin: the loop is
+   * the single place that decides, so at most one marker can carry it.
+   */
+  useEffect(() => {
+    for (const { id, marker } of markerRefs.current) {
+      const focused = id !== '' && id === focusKey
+      marker.setStyle(focused ? PLACE_MARKER_FOCUSED_STYLE : PLACE_MARKER_STYLE)
+      const el = marker.getElement() as SVGElement | null
+      if (el === null) continue
+      if (focused) el.setAttribute('data-focused-marker', id)
+      else el.removeAttribute('data-focused-marker')
+    }
+  }, [focusKey, markersKey])
+
   const lastFocusKeyRef = useRef<string | null>(null)
   const ranOnceRef = useRef(false)
   useEffect(() => {

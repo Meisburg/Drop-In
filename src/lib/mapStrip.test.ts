@@ -131,43 +131,89 @@ describe('clampCardIndex — a stored index against a shrunken set', () => {
 })
 
 describe('splitStripRows — the strip and the list partition the rows', () => {
-  it('caps the strip at the documented limit', () => {
-    const rows = Array.from({ length: MAP_STRIP_CARD_LIMIT + 5 }, (_, i) => i)
-    expect(splitStripRows(rows, rows.length).cards).toHaveLength(MAP_STRIP_CARD_LIMIT)
+  /** A row is placeable when its `placeable` flag says so. */
+  const row = (id: string, placeable: boolean) => ({ id, placeable })
+  const isPlaceable = (r: { placeable: boolean }) => r.placeable
+
+  it('caps the strip at the documented limit while leaving every other row to the list', () => {
+    const rows = Array.from({ length: MAP_STRIP_CARD_LIMIT + 5 }, (_, i) => row(`p${i}`, true))
+    const { cards, rest } = splitStripRows(rows, isPlaceable)
+    expect(cards).toHaveLength(MAP_STRIP_CARD_LIMIT)
+    expect(rest).toHaveLength(5)
+    // The property the map depends on: NOTHING is dropped by the cap.
+    expect([...cards, ...rest]).toEqual(rows)
   })
 
   it('leaves an under-cap set whole, with nothing in the rest list', () => {
     // The map view for any ordinary filtered set: every row is on the map, so
     // the linear list is empty and a screen reader hears each name ONCE.
-    const rows = ['a', 'b', 'c']
-    expect(splitStripRows(rows, 3)).toEqual({ cards: ['a', 'b', 'c'], rest: [] })
+    const rows = [row('a', true), row('b', true), row('c', true)]
+    expect(splitStripRows(rows, isPlaceable)).toEqual({ cards: rows, rest: [] })
   })
 
-  it('pairs the overflow with the unplaceable rows, losing none of either', () => {
-    // Four rows, the last one unplaceable, cap of two (simulated by a tiny
-    // placeable count would not exercise the cap, so this asserts the SHAPE the
-    // callers depend on instead).
-    const rows = ['near', 'far', 'further', 'unknown']
-    const split = splitStripRows(rows, 3)
-    expect(split.cards).toEqual(['near', 'far', 'further'])
-    expect(split.rest).toEqual(['unknown'])
+  it('partitions an INTERLEAVED set on placeability, not on position', () => {
+    // The shape the caller actually hands over: KIND-GROUPED rows, where the
+    // placeable and unplaceable ones alternate. A rule that assumed the
+    // placeable rows came first would put an unplaceable row in the strip here —
+    // and, in the version this replaced, would feed the MAP a truncated slice.
+    const rows = [
+      row('unknown-1', false),
+      row('near', true),
+      row('unknown-2', false),
+      row('far', true),
+    ]
+    const { cards, rest } = splitStripRows(rows, isPlaceable)
+    expect(cards).toEqual([row('near', true), row('far', true)])
+    expect(rest).toEqual([row('unknown-1', false), row('unknown-2', false)])
   })
 
-  it('partitions exactly: cards + rest is the input, with no repeats', () => {
-    const rows = ['a', 'b', 'c', 'd', 'e']
-    const { cards, rest } = splitStripRows(rows, 3)
-    expect([...cards, ...rest].sort()).toEqual([...rows].sort())
-    expect(new Set([...cards, ...rest]).size).toBe(rows.length)
+  it('keeps the caller\'s order inside each part', () => {
+    const rows = [row('b', true), row('a', true), row('z', false)]
+    expect(splitStripRows(rows, isPlaceable).cards).toEqual([row('b', true), row('a', true)])
+    expect(splitStripRows(rows, isPlaceable).rest).toEqual([row('z', false)])
   })
 
-  it('clamps a placeable count larger than the array instead of losing rows', () => {
-    // A caller bug (or a set that shrank between two reads) must not empty the
-    // map: every row still lands somewhere.
-    const rows = ['a', 'b']
-    expect(splitStripRows(rows, 9)).toEqual({ cards: ['a', 'b'], rest: [] })
+  it('caps the placeable part when the placeable count itself exceeds the limit', () => {
+    // The interaction the reviewer noted had no test: `placeableCount > limit`.
+    // 45 placeable rows and 3 unplaceable ones: 40 cards, and the rest is the 5
+    // placeable overflow plus the 3 unplaceable rows — in that order.
+    const placeable = Array.from({ length: MAP_STRIP_CARD_LIMIT + 5 }, (_, i) => row(`p${i}`, true))
+    const unknown = Array.from({ length: 3 }, (_, i) => row(`u${i}`, false))
+    const { cards, rest } = splitStripRows([...placeable, ...unknown], isPlaceable)
+    expect(cards).toHaveLength(MAP_STRIP_CARD_LIMIT)
+    expect(rest).toEqual([...placeable.slice(MAP_STRIP_CARD_LIMIT), ...unknown])
+  })
+
+  it('puts every row in exactly one part, for a mixed set over the cap', () => {
+    // 47 placeable and 13 unplaceable, interleaved on a non-divisor stride so the
+    // grouping cannot accidentally line up with the cap.
+    const rows = Array.from({ length: MAP_STRIP_CARD_LIMIT + 28 }, (_, i) =>
+      row(`r${i}`, i % 3 !== 0),
+    )
+    const placeableRows = rows.filter((r) => r.placeable)
+    expect(placeableRows.length, 'this case must actually exceed the cap').toBeGreaterThan(
+      MAP_STRIP_CARD_LIMIT,
+    )
+    const { cards, rest } = splitStripRows(rows, isPlaceable)
+    // Sizes add up: no row lost, none counted twice.
+    expect(cards.length + rest.length).toBe(rows.length)
+    expect(new Set([...cards, ...rest].map((r) => r.id)).size).toBe(rows.length)
+    // The strip is filled with PLACEABLE rows up to the cap, and no further.
+    expect(cards).toHaveLength(MAP_STRIP_CARD_LIMIT)
+    expect(cards.every((r) => r.placeable)).toBe(true)
+    // Everything the strip did not take is in `rest`, placeable or not.
+    expect(new Set([...cards, ...rest].map((r) => r.id))).toEqual(new Set(rows.map((r) => r.id)))
+    expect(rest.filter((r) => r.placeable)).toHaveLength(
+      placeableRows.length - MAP_STRIP_CARD_LIMIT,
+    )
   })
 
   it('survives an empty set', () => {
-    expect(splitStripRows([], 0)).toEqual({ cards: [], rest: [] })
+    expect(splitStripRows([], isPlaceable)).toEqual({ cards: [], rest: [] })
+  })
+
+  it('handles a set with no placeable rows at all', () => {
+    const rows = [row('u1', false), row('u2', false)]
+    expect(splitStripRows(rows, isPlaceable)).toEqual({ cards: [], rest: rows })
   })
 })

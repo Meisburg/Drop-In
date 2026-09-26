@@ -302,25 +302,30 @@ export function PlaceDirectory({
     selectedKinds.size > 0 ? unplaced.filter((row) => selectedKinds.has(row.place.kind)) : unplaced
 
   /**
-   * V24 slice 10: the rows the MAP VIEW carries, in the list's own order.
+   * V24 slice 10: the rows the MAP VIEW carries.
    *
-   * It is `listRows` — the directory's already-filtered, already-sorted,
-   * date-windowed output — so the map view cannot disagree with the list it
-   * replaced: nothing here re-filters, re-sorts, re-queries or re-windows.
+   * TWO SETS, AND THE DISTINCTION IS LOAD-BEARING — this slice's second review
+   * caught both halves of it:
    *
-   * THE SAME SET THE LIST IS SHOWING — the lead rows, plus the overflow once the
-   * "See all" door is open. The map view opens "over the same result set the
-   * list is showing", so entering the map must not silently widen or narrow it:
-   * if the door is open, the map carries the opened list; if it is not, the map
-   * carries the six the parent was just looking at. `PlacesMapView` caps what it
-   * renders as cards and keeps the remainder reachable in its own list.
+   *  1. `mapViewRows` is EVERY row the directory's filter produces
+   *     (`filteredUnplaced` aside, it is `listRows`), NOT the list view's lead.
+   *     The list's "See all N places" door governs how the LIST renders; it must
+   *     not narrow what the MAP draws, because the band above already pins the
+   *     full set (`placed`, the line that renders `<PlacesMap>`). A parent who
+   *     searched for "park" and tapped "See map" was shown six pins and told
+   *     nothing about the other 233 — a matching place with no pin on the map is
+   *     the defect, not a feature of the door.
    *
-   * Only rows the map can actually PLACE take a card: a row whose coordinates do
-   * not resolve has no marker to recentre on, so a card for it would drive the
-   * map at a place that is not there. Those rows are not dropped — the map view's
-   * linear list carries every row that did not become a card.
+   *  2. `placeableMapRows` is that set minus the rows the map cannot plot (no
+   *     coordinates means no pin, never a fake one). The map view gets BOTH: the
+   *     placeable rows are its PINS (all of them) and the source of its strip's
+   *     cards (the first `MAP_STRIP_CARD_LIMIT` of them); the unplaceable rows go
+   *     with the card overflow into its linear list, so no row is unreachable.
+   *
+   * The map view re-filters nothing: every row here is `planDirectoryList`'s own
+   * output, so the map cannot disagree with the list it replaced.
    */
-  const mapViewRows = showAll ? listRows : leadGroups.flatMap((group) => group.rows)
+  const mapViewRows = listRows
   const placeableMapRows = mapViewRows.filter(
     (row) => resolveMapCoords(row.place, zipCoords) !== null,
   )
@@ -620,8 +625,8 @@ export function PlaceDirectory({
       {view === 'map' && places !== null ? (
         <div className="md:col-span-2">
           <PlacesMapView
-            rows={placeableMapRows}
-            allRows={mapViewRows}
+            pins={placeableMapRows}
+            rows={mapViewRows}
             zipCoords={zipCoords}
             homePin={homePin}
             focusBehavior={focusBehavior}

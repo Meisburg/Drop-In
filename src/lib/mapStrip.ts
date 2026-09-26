@@ -159,29 +159,36 @@ export const MAP_STRIP_CARD_LIMIT = 40
  * Split the map view's rows into the cards the strip renders and the rows it
  * must not lose.
  *
- * `placeable` — the rows the map can plot — is capped. `rest` is EVERYTHING else:
- * the placeable rows past the cap, and every unplaceable row. The caller renders
- * `rest` as a linear list under the strip, so a place is either on the map or in
- * that list and is never silently dropped. This is the ONE place the split is
- * decided, which is why it is a tested rule rather than a slice in a `.tsx`.
+ * THE CAP GOVERNS CARDS ONLY, NEVER PINS, and that distinction is the whole
+ * reason this function takes a PREDICATE rather than a count. A first version
+ * took `placeableCount` and assumed the placeable rows were the first N of the
+ * array — which (a) assumed an ordering the caller does not guarantee, since it
+ * hands over a kind-grouped array, and (b) let the cap silently truncate the
+ * array the MAP was fed from, so a directory of 239 places drew 40 pins. Both
+ * were caught in review. `isPlaceable` asks the question directly, per row, so
+ * neither the order nor the caller's grouping can change the answer.
  *
- * `count` is the number of placeable rows in the caller's own order, and the
- * caller has already filtered for placeability — this function does not need to
- * know how a row's coordinates resolve.
+ * `cards` — the first `MAP_STRIP_CARD_LIMIT` placeable rows, in the caller's
+ * order. `rest` — EVERY other row: the placeable rows past the cap, and every
+ * unplaceable row, again in the caller's order. The caller renders `rest` as a
+ * linear list under the strip and pins ALL of the placeable rows, so a place is
+ * either pinned on the map or in that list, and is never silently dropped.
  */
-export function splitStripRows<T>(rows: readonly T[], placeableCount: number): {
+export function splitStripRows<T>(
+  rows: readonly T[],
+  isPlaceable: (row: T) => boolean,
+): {
   cards: readonly T[]
   rest: readonly T[]
 } {
-  // A count outside the array (a caller bug, or a set that shrank between the
-  // two reads) is clamped rather than trusted: `slice` would happily produce an
-  // empty `cards` and an all-in-`rest` split, which renders as an empty map view
-  // with everything hidden in the sr-only list.
-  const usable = Math.max(0, Math.min(placeableCount, rows.length))
-  const cards = rows.slice(0, Math.min(usable, MAP_STRIP_CARD_LIMIT))
-  // The remaining placeable rows, then the unplaceable ones. The two slices are
-  // disjoint and their union with `cards` is the whole array, so no row can be
-  // lost or shown twice — which is the property the callers rely on.
-  const rest = [...rows.slice(cards.length, usable), ...rows.slice(usable)]
+  const cards: T[] = []
+  const rest: T[] = []
+  for (const row of rows) {
+    // Placeable rows fill the strip until the cap; everything after that — and
+    // everything unplaceable — goes to `rest`. One pass, so the caller's order is
+    // preserved in both parts and the two are disjoint by construction.
+    if (isPlaceable(row) && cards.length < MAP_STRIP_CARD_LIMIT) cards.push(row)
+    else rest.push(row)
+  }
   return { cards, rest }
 }
