@@ -3,6 +3,11 @@
 > The system of record. The orchestrator updates this after every phase
 > transition. Subagent chat contexts are ephemeral — this file is not.
 
+- **✅ THE BATCH-END GATE: FULL E2E SUITE GREEN — 134 passed / 1 skipped / 0 failed / 0 flaky, 10.1 min, exit 0 (2026-09-26, round 15).** This is the first full e2e run since the email-fallback batch landed, and it is the lane `docs/agents/browser-lanes.md` §2 reserves for a batch boundary. It exercises the parts targeted runs cannot: **`NotificationsSection` and the shell are reached by specs this batch never named**, so a regression in the `/settings` email block or the `db.ts` / `types.ts` changes would only have surfaced here.
+  Run with the **`:4173` false-green hazard checked first** (the port was free, so the `webServer` block built and served THIS worktree — not another lane's stale bundle). `nice -n 19`, backgrounded per browser-lanes §4, while a human may have been on the box.
+  The 85 `[e2e cleanup]` lines are the specs' own teardown; no marker rows were left behind by the run itself.
+  Together with `npm run verify` (53 files / 1582 unit tests / guards) and the two Deno lanes, the batch is now green on **every** lane the repo has: unit, targeted e2e, full e2e, deno check, deno test, mobile audit, PWA, splash, theme contract.
+
 - **📱 FOUR MOBILE/APPEARANCE LANES RUN AGAINST THE DEPLOYED BUILD — TWO PASS, TWO FALSE-FAIL, AND THE FALSE ONES ARE NOT MINE (2026-09-26, round 12).** All four were pointed at `https://drop-in-mu.vercel.app` rather than a local preview, because **`:4173` was serving the `v25` worktree** — the false-green hazard, live again. (It freed up later; the other lane's run simply ended.)
   **PASS — `verify-pwa.mjs`:** service worker takes control, manifest `Drop In` / `display: standalone`, all three icons 200 (192, 512, maskable-512), `apple-mobile-web-app-capable: yes`, **8 Apple startup images**, and a cold **offline** load still paints the app shell. This is the iOS *install* surface — the closest thing to objective item 3 that is testable without the founder's iPad.
   **PASS — `verify-splash.mjs`:** splash at 180 ms, gone by 1531 ms, `withinCap`, app usable after, and it does not replay on nav.
