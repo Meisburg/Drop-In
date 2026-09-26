@@ -3,6 +3,21 @@
 > The system of record. The orchestrator updates this after every phase
 > transition. Subagent chat contexts are ephemeral — this file is not.
 
+- **🚀 WHY `git push` STOPPED DEPLOYING — THE DELETED GITHUB ACCOUNT BROKE VERCEL'S COMMIT-AUTHOR CHECK, AND THE FIX IS THE AUTHOR EMAIL (2026-09-26, diagnosed and fixed).** `drop-in-mu.vercel.app` kept serving the old bundle after two pushes. Vercel's own `vercel inspect` gave the reason verbatim:
+  **`The deployment was blocked because Vercel couldn't find a Git account for the commit author.`**
+  The deployment list proves it — same author *email* throughout, but only the pre-deletion commits resolve to a GitHub login:
+  | Time | State | SHA | Author Vercel resolved |
+  |---|---|---|---|
+  | 10:29 | **BLOCKED** | `557ce76` | `Jon Meisburg` (a display name — nothing to map to) |
+  | 09:44 | **BLOCKED** | `74b12fd` | `Jon Meisburg` |
+  | 00:28 | READY | `7921429` | **`Meisburg`** |
+  | 23:33 | READY | `1508e53` | **`Meisburg`** |
+  **Cause:** `user.email` was `jonmeisburg+github@gmail.com`, an address belonging to the **deleted** GitHub account. It resolved to `Meisburg` while that account existed; after the deletion Vercel can no longer map it and **blocks the build rather than shipping an unattributable commit.**
+  **Fix:** commit as the live account's GitHub *noreply* address —
+  `git config user.email "331023862+Meisburg@users.noreply.github.com"`
+  (331023862 is `Meisburg`'s id; `gh api user --jq '{id,login}'` gives both). Set repo-locally. **Every future commit must carry a mappable author or it will be silently blocked.**
+  **⚠️ CORRECTIONS TO EARLIER NOTES IN THIS FILE:** the deploy gap was **not** a wrong-project problem. `prj_9vFt3EYmZTTFzWiUpUCwb5cMHzGd` / `team_Q0jg76B4cOO3Divzr8zNL3Hk` in `.vercel/project.json` is stale, but the real project is **`drop-in`** under `jonmeisburgs-projects` and it **is** correctly wired to GitHub — pushes do trigger builds. Also, the Vercel CLI token that read as `invalidToken: true` was simply **expired** (`expiresAt` 2026-09-25 21:34 UTC); the CLI refreshed it and `whoami` returns **`jonmeisburg`**. **The founder is not locked out of Vercel** — only of the Supabase dashboard.
+
 - **🔐 SUPABASE DASHBOARD IS LOCKED OUT — `SUPABASE_ACCESS_TOKEN` IS NOW THE ONLY WORKING CREDENTIAL (2026-09-26).** The founder deleted an **older** GitHub account (`jonmeisburg@gmail.com`) which was the OAuth identity behind the Supabase login. **The dashboard now answers "You do not have access to this project" for `ayzvjwxbxyrcgyoeaxuk`.** GitHub itself is **fine** — `gh auth status` shows the live account is **`Meisburg`**, `git push` works, and `Meisburg/Drop-In` is intact and reachable; the deleted account was a *different, older* one.
   **WHAT STILL WORKS (measured, not assumed):** the project is `ACTIVE_HEALTHY`; the token **reads AND writes** the Management API (`GET` and `PATCH /v1/projects/<ref>/config/auth` both return 200 — the 401 seen first was a *validation* error, not auth: *"Custom SMTP required to configure SMTP_SENDER_NAME or RATE_LIMIT_EMAIL_SENT. Missing SMTP_ADMIN_EMAIL, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS fields."* — i.e. the rate limit cannot be set without the SMTP fields in the SAME request); project secrets are readable; **SQL still runs**, which is how migration 0053 was applied. Production served HTTP 200 throughout, and the live DB is at **475 profiles**.
   **SO THE DASHBOARD IS NOT REQUIRED FOR THE EMAIL WORK.** `scripts/setup-email-api.sh` sets Gmail SMTP + the 30/hr rate limit through the Management API with no dashboard at all. It prompts for the app password **hidden**, writes the request body to a mode-0600 temp file and passes it to curl as `@file` so the secret never reaches `ps`, shell history, or chat. `bash -n` clean, and a dry run was verified to change nothing. **⚠️ DO NOT LOSE OR ROTATE `SUPABASE_ACCESS_TOKEN` — it is currently the only way to administer this project.** Treat this machine's `.env` as load-bearing.
