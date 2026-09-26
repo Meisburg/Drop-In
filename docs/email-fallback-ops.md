@@ -165,6 +165,22 @@ log-based diagnosis of a missing email**; the only proof is the message arriving
    ~/hermes/scripts/set-email-credential.sh` supplies them — and because the
    precedence is read from env at module scope, **no redeploy is needed**; the
    next tick picks them up.
+   **✅ THE DISABLED PATH IS PROVEN END TO END IN PRODUCTION (2026-09-26).** The
+   deployed v4 had processed **zero** rows (`unsent 0`, `disabled_stamps 0`,
+   `sent_email 0`), so the new transport-selection code was unexercised. One
+   probe row was inserted into the real outbox for a marker profile with no push
+   subscription, and the 19:50:00 tick (`succeeded`, HTTP **200**,
+   `created 19:50:00.186`) transitioned it at **19:50:01.41** to:
+   `no subscription (email disabled: no email transport configured (missing
+   SMTP_PASS, SMTP_USER, EMAIL_FROM))`.
+   So transport selection, the honest disabled reason, and the outbox→sent
+   stamping all work in production. **This is the brief's step-4 transition in
+   its `disabled` variant**; with the credential set, the same row shape yields
+   `sent:email` instead. The probe row was deleted afterwards
+   (`probe_rows_left 0`, `total_rows 234`).
+   **When the credential lands, note the tick-timing trap:** compare the tick's
+   `start_time` against the deploy/secret-change time, or you will read a
+   previous tick's work as your evidence.
 3. **The Resend path and a sending domain are NO LONGER THE BLOCKER** (founder
    decision, 2026-09-26). `_shared/resend.ts` is retained and stays selectable
    for a future bulk-copy path, but nothing waits on it.
