@@ -206,6 +206,34 @@ commit-author fix, so "pushed" and "live" had diverged for a while.
    **When the credential lands, note the tick-timing trap:** compare the tick's
    `start_time` against the deploy/secret-change time, or you will read a
    previous tick's work as your evidence.
+   **✅✅ LIVE DELIVERY PROVEN — `sent:email`, 2026-09-26 22:10.** After
+   `bash ~/hermes/scripts/set-email-credential.sh` set `SMTP_USER` / `SMTP_PASS` /
+   `EMAIL_FROM` (HTTP 201), a probe row was inserted into the real outbox for a
+   profile with **zero push subscriptions**, and the **22:10:00** tick
+   (`succeeded`) transitioned it at **22:10:09.803** to **`error = 'sent:email'`**.
+   That is the success path: transport selected SMTP, `sendEmailViaSmtp`
+   connected to `smtp.gmail.com`, Gmail accepted the message, and the drain
+   stamped it. **No redeploy was needed** — the precedence is read from env at
+   module scope, so a warm isolate did not serve a stale env and the very next
+   tick used the new secrets. Probe row deleted afterwards
+   (`probe_left 0`, `unsent 0`, `total 400`).
+   **⚠️ FINDING 1 — `net._http_response` NOW REPORTS `timed_out: true`, AND THAT
+   IS EXPECTED.** The tick's row shows `status_code: null, timed_out: true`
+   because the SMTP send took **~9.8 s**, past pg_net's 5-second wait. The
+   function still finished its work — the stamp at 22:10:09.803 is the proof.
+   This is the wrinkle `docs/push-setup.md` already documents, and it is now
+   **mandatory** to monitor delivery through `notification_log` (`sent_at` +
+   `error`) rather than through `net._http_response`; a timeout there is NOT a
+   failure signal for this function any more.
+   **⚠️ FINDING 2 — ONE FRESH SMTP CONNECTION PER MESSAGE, SO ~10 s PER EMAIL.**
+   `smtpDeno.ts` calls `createTransport` inside `connect()`, i.e. a new TLS +
+   SMTP AUTH handshake for every message. Against `MAX_SENDS_PER_RUN = 400` a
+   full backlog would take roughly an hour, far beyond any Edge Function
+   timeout. **Fine at beta volume (a handful per tick); a real ceiling at
+   growth.** The fix is connection reuse across the drain loop, which needs a
+   `SmtpDeps` seam change (connect once, send many) — deliberately NOT done now,
+   because it is a behaviour change on a path that just started working.
+
 3. **The Resend path and a sending domain are NO LONGER THE BLOCKER** (founder
    decision, 2026-09-26). `_shared/resend.ts` is retained and stays selectable
    for a future bulk-copy path, but nothing waits on it.
