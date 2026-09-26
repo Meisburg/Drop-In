@@ -697,12 +697,16 @@ export function placeExternalUrl(place: Pick<Place, 'name'>): string | null {
  *
  * The `kind` of link is returned ALONGSIDE the URL, because a caller must never
  * pair the wrong label with the wrong href — and that is a decision, not a
- * render detail (the build law's split, expressed as a return shape). The
- * DIRECTORY row (`PlaceDirectory.tsx`) and the map panel (`PlaceMap.tsx`) still
- * read it for their labels ("Visit website" vs "Find it on the map"); the place
- * PAGE stopped labelling from it in V25 t04 (both kinds now read "Learn more",
- * because "Find it on the map" sat under a map and made no sense), and keeps
- * `data-link-kind` on the anchor as the honesty channel instead.
+ * render detail (the build law's split, expressed as a return shape). Exactly
+ * ONE surface labels from it: the DIRECTORY row, `PlaceDirectory.tsx:1046`
+ * ("Visit website" vs "Find it on the map"). The map PANEL uses `kind` as a
+ * GUARD, not a label — `PlaceMap.tsx` keeps only the `website` kind
+ * (`websiteLink`) and its anchor hard-codes "Visit website", because V23 slice 4
+ * deliberately removed the map-search fallback from that panel (it floats over
+ * a map); do not "restore" it as a bug fix. The place PAGE stopped labelling
+ * from it in V25 t04 (both kinds now read "Learn more", because "Find it on the
+ * map" sat under a map and made no sense) and keeps `data-link-kind` on the
+ * anchor as the honesty channel instead.
  */
 export interface PlaceLearnMoreLink {
   url: string

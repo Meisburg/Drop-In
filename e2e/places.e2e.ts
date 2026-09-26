@@ -1786,14 +1786,20 @@ test('a place page renders the seeded data with the existing Maps link', async (
  *
  * The founder's sequence for a place: name → picture → description → two
  * buttons → map → "Start a drop-in" → the rating → the comments. This page owns
- * all of that except the picture (V20 t01 removed it and ticket 16 rules on
- * whether it returns — the specs above assert its ABSENCE) and the
- * rating/comments (they live on the research page).
+ * all of that except the picture (V20 t01 removed it on purpose and the specs
+ * above assert its ABSENCE — no planned ticket restores one: ticket 16 is
+ * RESEARCH-only) and the rating/comments (they live on the research page).
  *
- * TWO THINGS ARE PINNED HERE, and each fails on the OLD layout:
+ * TWO THINGS ARE PINNED HERE, and neither existed on the OLD page:
  *   1. THE ORDER, on rendered geometry: name above description above the action
- *      row above the map. Before this ticket the description and the action row
- *      were BELOW the map, so the y comparisons are non-vacuous.
+ *      row above the map. Before this ticket the page had NO `place-description`
+ *      and NO `place-actions` element at all (the notes were a bare `<p>` BELOW
+ *      the map and the only outbound control sat under it), so a run of this
+ *      spec against the pre-t04 build fails at the `toBeVisible()` calls below
+ *      — the absent testids — and never reaches the y comparisons. The y
+ *      comparisons are what pin the new order from here on (they are what would
+ *      catch a later regression that moved the blocks while keeping the ids),
+ *      and they are what a reordering of the present markup fails.
  *   2. THE ROW: at a desktop width the two controls share one line, and at
  *      320px they stay at or above the 44px tap floor with no horizontal
  *      overflow (the ticket's "wrap, never shrink" rule).
@@ -1836,9 +1842,13 @@ test('the place page reads name → description → the two actions → the map 
   ).toBeGreaterThan(0)
 
   // (1) THE ORDER, measured top to bottom. All five sit in one column, so their
-  // top edges must strictly descend. This is the whole ticket in one assertion:
-  // the old page put the description AND the "Learn more" control BELOW the
-  // map, which fails both the description<actions and the actions<map checks.
+  // top edges must strictly descend. NOTE what this does and does not prove:
+  // the pre-t04 page cannot reach these lines (its markup had neither
+  // `place-description` nor `place-actions`, so the `toBeVisible()` calls above
+  // fail first — see this spec's doc comment); what these comparisons pin is
+  // the order of the blocks NOW, i.e. they are what a future reorder of this
+  // markup fails, and they are the reason the ticket's clause is checkable at
+  // all rather than trusted.
   const box = async (locator: ReturnType<Page['getByTestId']>) => {
     const measured = await locator.boundingBox()
     if (measured === null) throw new Error('an ordered element did not render a measurable box')

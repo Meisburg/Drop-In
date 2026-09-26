@@ -42,13 +42,16 @@ import type { Place, PlacePrefill, PlaydateWithNeighborhood } from '../lib/types
  * V25 t04 — THE SEQUENCE, AND THE BUTTON THAT STOPPED CONTRADICTING THE MAP.
  * The founder, reading this page top to bottom, asked for name → picture →
  * description → two buttons → map → "Start a drop-in" → the rating → comments;
- * this page owns everything but the picture (ticket 16 rules on that — see the
- * V20 note at the photo slot) and the rating/comments (they live on the
- * research page, `PlaceDetailsPage.tsx`, reached from the link at the bottom of
- * this page — deliberately NOT duplicated here). He also flagged the control
- * that used to sit BELOW the map: *"This doesn't really make sense to me
- * because I can see the map above this button. So I already have found it on a
- * map. Really it should be like get directions."* The old "Find it on the map"
+ * this page owns everything but the picture (V20 t01 removed it on purpose and
+ * NO planned ticket restores one — ticket 16 is research-only, "no product code,
+ * no migration, no schema change, no DB write" — so a photo's return is
+ * currently unowned; see the V20 note at the photo slot) and the rating/comments
+ * (they live on the research page, `PlaceDetailsPage.tsx`, reached from the link
+ * at the bottom of this page — deliberately NOT duplicated here). He also
+ * flagged the control that used to sit BELOW the map: *"This doesn't really make
+ * sense to me because I can see the map above this button. So I already have
+ * found it on a map. Really it should be like get directions … I guess if you
+ * wanted to have a button here."* The old "Find it on the map"
  * label is gone; the row now offers "Learn more" and "Get directions", and both
  * hrefs come from seams that already existed (`placeOutboundLinks`).
  *
@@ -389,15 +392,17 @@ export function PlacePage() {
 
           V25 t04 — THE FOUNDER'S SEQUENCE NAMES A PICTURE HERE, AND THIS SLICE
           DELIBERATELY DOES NOT ADD ONE. His list is name → picture →
-          description; the picture is not this ticket's to restore. Ticket 16
-          ("place-photos-research") owns whether a photo returns at all, and
-          this slice keeps its diff free of photo code so the two cannot
-          conflict. The order below therefore reads correctly with NO photo —
-          name, then the description, then the two actions — and nothing
-          placeholder-shaped (no empty frame, no grey box, no kind
-          illustration) stands in the slot V20 t01 emptied. The specs assert
-          that absence (`e2e/places.e2e.ts`: `place-photo-credit` count 0 and
-          `figure img` count 0). */}
+          description; the picture is not this ticket's to restore, and NO
+          planned ticket restores one either: ticket 16 ("place-photos-research")
+          is research-only — "No product code, no migration, no schema change, no
+          DB write" — so a photo's return is currently UNOWNED, not merely
+          deferred to it. This slice keeps its diff free of photo code so no
+          future ruling has to unpick it. The order below therefore reads
+          correctly with NO photo — name, then the description, then the two
+          actions — and nothing placeholder-shaped (no empty frame, no grey box,
+          no kind illustration) stands in the slot V20 t01 emptied. The specs
+          assert that absence (`e2e/places.e2e.ts`: `place-photo-credit` count 0
+          and `figure img` count 0). */}
 
       {/* V25 t04 — THE DESCRIPTION, directly under the name.
           `places.notes` used to render BELOW the map, after the age line. The
