@@ -64,6 +64,17 @@ import {
 // playdate_series `place_id` key — omitted entirely for a free-text place, so
 // pre-0030-apply every existing insert stays byte-identical).
 import { placeIdField, upcomingCountByPlace, groupUpcomingStartTimesByPlace } from './places'
+// V24 slice 04 (ticket 04): the Open-Meteo daily forecast seam. The request
+// shape (grounded variable names + the Fahrenheit/mph unit parameters), the
+// parsed response shape, the presentation rule and the fetch's four invariants
+// all live in ./weather, where they are unit-tested without a browser or a
+// database; this file only binds the factory to the Supabase gazetteer + fetch.
+import {
+  createDailyForecastLoader,
+  openMeteoDailyUrl,
+  parseDailyForecast,
+  type DailyForecast,
+} from './weather'
 import {
   buildShareUrl,
   issueReportInsert,
@@ -1171,104 +1182,74 @@ export async function setPlaydateStatus(
 }
 
 /**
- * The Open-Meteo daily rain-probability cache (V3 slice 2, ticket 02),
- * keyed per (zip, local event date). Holds settled promises (never
- * rejects — a failed attempt resolves to null AND is removed from the
- * cache below, the zip-cache lesson e0d3756: a pinned rejection would
- * need a page reload to clear).
- */
-const rainProbabilityCache = new Map<string, Promise<number | null>>()
-
-/**
- * One Open-Meteo daily fetch (no key, no location sensing — the plan pin):
+ * ONE Open-Meteo daily fetch (no key, no location sensing — the plan pin):
  * the event's LOCAL date (YYYY-MM-DD, the device timezone — V1's only
- * timezone story) as a one-day range, timezone=auto. Throws on any
- * HTTP/parse problem (the caller retries once, then settles null).
+ * timezone story) as a one-day range, timezone=auto, and the event's
+ * coordinates. Throws on any HTTP/parse problem (the loader retries once, then
+ * settles null).
+ *
+ * The URL comes from `weather.openMeteoDailyUrl` and the payload from
+ * `weather.parseDailyForecast`, so the grounded request/response shapes are
+ * asserted in `weather.test.ts` — a rejected variable name here is an HTTP 400
+ * that the null contract would otherwise hide as a permanently inert chip.
  */
-async function openMeteoDailyMaxProbability(
+async function openMeteoDailyForecast(
   lat: number,
   lng: number,
   dateYmd: string,
-): Promise<number> {
-  const url = new URL('https://api.open-meteo.com/v1/forecast')
-  url.searchParams.set('latitude', String(lat))
-  url.searchParams.set('longitude', String(lng))
-  url.searchParams.set('daily', 'precipitation_probability_max')
-  url.searchParams.set('timezone', 'auto')
-  url.searchParams.set('start_date', dateYmd)
-  url.searchParams.set('end_date', dateYmd)
-  const res = await fetch(url.toString())
+): Promise<DailyForecast> {
+  const res = await fetch(openMeteoDailyUrl(lat, lng, dateYmd))
   if (!res.ok) throw new Error(`Open-Meteo HTTP ${res.status}`)
-  const payload = (await res.json()) as {
-    daily?: { precipitation_probability_max?: Array<number | null> }
-  }
-  const value = payload.daily?.precipitation_probability_max?.[0]
-  if (value === null || value === undefined || !Number.isFinite(value)) {
-    throw new Error('Open-Meteo returned no precipitation probability')
-  }
-  return value
+  const forecast = parseDailyForecast(await res.json())
+  if (forecast === null) throw new Error('Open-Meteo returned no usable daily forecast')
+  return forecast
 }
 
 /**
- * The daily precipitation-probability max for a zip's event date
- * (V3 slice 2, ticket 02): lat/lng from the 0012 client-side zip map
- * (a zip missing from the gazetteer → null — coordinates are never
- * invented, the radius feed's pinned rule). Best-effort per the plan
- * pin:
+ * The Open-Meteo DAILY FORECAST for a zip's event date (V3 slice 2, ticket 02;
+ * widened from a bare probability to a forecast OBJECT by V24 slice 04,
+ * ticket 04 — the tappable weather chip needs temperature, precipitation
+ * probability and wind from the SAME single request).
+ *
+ * lat/lng come from the 0012 client-side zip map (a zip missing from the
+ * gazetteer → null — coordinates are never invented, the radius feed's pinned
+ * rule). Best-effort per the plan pin, and the four invariants below are
+ * LOAD-BEARING (each is unit-tested in `weather.test.ts` against counting
+ * fakes, because a cached rejection is a bug this repo already fixed once):
  * - ONE fetch per distinct (zip, event-date) — the module cache + the
  *   in-flight dedupe (concurrent callers share the cached promise);
- * - RETRY once on a failed fetch; a double failure (or an out-of-range
- *   date Open-Meteo rejects) resolves null and is NOT cached, so the
- *   next call retries — the zip-cache lesson (e0d3756);
- * - null, NEVER throws, on any error (the "Rain likely" badge is
- *   silently absent — no error state, the zero-pressure soul).
+ * - RETRY once on a failed fetch; a double failure (or an out-of-range date
+ *   Open-Meteo rejects) resolves null and is NOT cached, so the next call
+ *   retries — the zip-cache lesson (e0d3756);
+ * - null, NEVER throws, on any error (the chip is silently absent — no error
+ *   state, the zero-pressure soul).
+ */
+const fetchDailyForecast = createDailyForecastLoader({
+  loadCoords: loadZipCodes,
+  localDayKey,
+  fetchForecast: openMeteoDailyForecast,
+})
+
+/** The wrapper (the default-client binding of the loader above). */
+export async function fetchDailyForecastForZip(
+  zip: string,
+  eventDateIso: string,
+): Promise<DailyForecast | null> {
+  return fetchDailyForecast(zip, eventDateIso)
+}
+
+/**
+ * The daily precipitation-probability max for a zip's event date (V3 slice 2,
+ * ticket 02): a thin DERIVATION over the same single forecast fetch, so the
+ * badge and the chip share one cached request per (zip, event-date). The badge
+ * rule itself (`feed.rainBadgeLabel`) and its threshold are unchanged.
  */
 export async function fetchRainProbabilityForZip(
   zip: string,
   eventDateIso: string,
 ): Promise<number | null> {
-  const dateYmd = localDayKey(eventDateIso)
-  const key = `${zip}:${dateYmd}`
-  const pending = rainProbabilityCache.get(key)
-  if (pending !== undefined) return pending
-
-  // The in-flight promise (settled below, never rejects) is cached
-  // SYNCHRONOUSLY so a concurrent caller dedupes onto this fetch.
-  const inFlight = (async () => {
-    let coordsMap: ReadonlyMap<string, ZipCoords>
-    try {
-      coordsMap = await loadZipCodes()
-    } catch {
-      // The gazetteer fetch failed (0012 not applied / transient) —
-      // uncacheable: delete the in-flight entry so the NEXT call
-      // re-issues the fetch (the zip-cache lesson — never cache a
-      // rejection).
-      rainProbabilityCache.delete(key)
-      return null
-    }
-    const coords = coordsMap.get(zip)
-    if (coords === undefined) {
-      // Not in the seeded gazetteer — stable for the SPA session,
-      // cacheable (no invented coordinates).
-      return null
-    }
-    try {
-      return await openMeteoDailyMaxProbability(coords.lat, coords.lng, dateYmd)
-    } catch {
-      // One retry on failure (the plan pin).
-      try {
-        return await openMeteoDailyMaxProbability(coords.lat, coords.lng, dateYmd)
-      } catch {
-        // Double failure / out-of-range date → null, uncacheable: delete
-        // the in-flight entry so the NEXT call re-issues the fetch (the
-        // zip-cache lesson — never cache a rejection).
-        rainProbabilityCache.delete(key)
-        return null
-      }
-    }
-  })()
-  rainProbabilityCache.set(key, inFlight)
-  return inFlight
+  const forecast = await fetchDailyForecastForZip(zip, eventDateIso)
+  return forecast?.precipitationProbability ?? null
 }
 
 // ---------------------------------------------------------------------------
@@ -4166,6 +4147,19 @@ export interface ConversationSummary {
    * it would merge two real people, which is worse than the duplicate).
    */
   otherPartyId: string
+  /**
+   * V24 slice 04: the other participant's PUBLIC parent avatar
+   * (`profiles.avatar_url`) — the inbox row's face, falling back to the initial
+   * placeholder when null. Never a kid/family photo: those live in the PRIVATE
+   * bucket and are not another family's row to show.
+   */
+  otherPartyAvatarUrl: string | null
+  /**
+   * V24 slice 04: the other participant's retention cursor
+   * (`profiles.last_seen_at`, migration 0024) — the inbox row's honest
+   * "Active today" line (`inbox.activeTodayLabel`). Not presence.
+   */
+  otherPartyLastSeenAt: string | null
   /** The latest message's body, truncated to 60 chars. */
   latestMessagePreview: string
   /** The latest message's created_at (ISO). */
@@ -4225,7 +4219,9 @@ export async function listConversationsWithClient(
     .select(
       'id, playdate_id, sender_id, body, created_at, ' +
         'playdate:playdates!messages_playdate_id_fkey ( title ), ' +
-        'sender:profiles!messages_sender_id_fkey ( display_name )',
+        // V24 slice 04: the sender embed also carries the face + retention
+        // cursor, so the counterpart's row data needs no extra wire call.
+        'sender:profiles!messages_sender_id_fkey ( display_name, avatar_url, last_seen_at )',
     )
     .order('created_at', { ascending: false })
   if (msgError) throw msgError
@@ -4255,20 +4251,32 @@ export async function listConversationsWithClient(
   // when the caller hosts, the counterpart is the most recent pinger, so we need
   // that pinger's profile id (not just their name).
   let counterpartIds: Record<string, string> = {}
+  // V24 slice 04: the same request 3 fills the counterpart's face + retention
+  // cursor (no new query — the profiles embed is already there).
+  const counterpartAvatars: Record<string, string | null> = {}
+  const counterpartLastSeen: Record<string, string | null> = {}
   if (playdateIds.length > 0) {
     const { data: postData, error: postError } = await client
       .from('playdates')
       .select(
-        'id, host_profile_id, host:profiles!playdates_host_profile_id_fkey ( display_name ), ' +
-          'pings:going_pings ( profile:profiles!going_pings_profile_id_fkey ( id, display_name ) )',
+        'id, host_profile_id, ' +
+          'host:profiles!playdates_host_profile_id_fkey ( display_name, avatar_url, last_seen_at ), ' +
+          'pings:going_pings ( profile:profiles!going_pings_profile_id_fkey ( id, display_name, avatar_url, last_seen_at ) )',
       )
       .in('id', playdateIds)
     if (postError) throw postError
     for (const post of (postData ?? []) as unknown as Array<{
       id: string
       host_profile_id: string
-      host: { display_name: string } | null
-      pings: Array<{ profile: { id: string; display_name: string } | null }>
+      host: { display_name: string; avatar_url: string | null; last_seen_at: string | null } | null
+      pings: Array<{
+        profile: {
+          id: string
+          display_name: string
+          avatar_url: string | null
+          last_seen_at: string | null
+        } | null
+      }>
     }>) {
       // The counterpart of THIS caller: the host when the caller is a pinger
       // (host_profile_id !== userId); otherwise the most recent pinger's name
@@ -4278,11 +4286,15 @@ export async function listConversationsWithClient(
         // Caller is a pinger → counterpart is the host.
         counterpartNames[post.id] = post.host?.display_name ?? ''
         counterpartIds[post.id] = post.host_profile_id
+        counterpartAvatars[post.id] = post.host?.avatar_url ?? null
+        counterpartLastSeen[post.id] = post.host?.last_seen_at ?? null
       } else {
         // Caller is the host → counterpart is the most recent pinger.
         const lastPinger = pingerEntries[pingerEntries.length - 1]?.profile ?? null
         counterpartNames[post.id] = lastPinger?.display_name ?? ''
         counterpartIds[post.id] = lastPinger?.id ?? ''
+        counterpartAvatars[post.id] = lastPinger?.avatar_url ?? null
+        counterpartLastSeen[post.id] = lastPinger?.last_seen_at ?? null
       }
     }
   }
@@ -4309,6 +4321,8 @@ export async function listConversationsWithClient(
         created_at: string
         sender_id: string
         senderName: string
+        senderAvatarUrl: string | null
+        senderLastSeenAt: string | null
       }
       all: Array<{ created_at: string }>
     }
@@ -4320,7 +4334,7 @@ export async function listConversationsWithClient(
     body: string
     created_at: string
     playdate: { title: string } | null
-    sender: { display_name: string } | null
+    sender: { display_name: string; avatar_url: string | null; last_seen_at: string | null } | null
   }>) {
     if (row.playdate_id === undefined || row.playdate_id === null) continue
     const entry = byPlaydate.get(row.playdate_id)
@@ -4332,6 +4346,8 @@ export async function listConversationsWithClient(
           created_at: row.created_at,
           sender_id: row.sender_id,
           senderName: row.sender?.display_name ?? '',
+          senderAvatarUrl: row.sender?.avatar_url ?? null,
+          senderLastSeenAt: row.sender?.last_seen_at ?? null,
         },
         all: [{ created_at: row.created_at }],
       })
@@ -4359,11 +4375,21 @@ export async function listConversationsWithClient(
       entry.latest.sender_id === userId
         ? (counterpartIds[playdateId] ?? '')
         : entry.latest.sender_id
+    // The face + retention cursor follow the SAME counterpart branch as the
+    // name/id above: the latest sender when it is someone else (request 1's
+    // embed), otherwise the request-3 host/pinger resolution.
+    const senderIsCounterpart = entry.latest.sender_id !== userId
     summaries.push({
       playdateId,
       playdateTitle: entry.playdateTitle,
       otherPartyDisplayName: counterpart,
       otherPartyId,
+      otherPartyAvatarUrl: senderIsCounterpart
+        ? entry.latest.senderAvatarUrl
+        : (counterpartAvatars[playdateId] ?? null),
+      otherPartyLastSeenAt: senderIsCounterpart
+        ? entry.latest.senderLastSeenAt
+        : (counterpartLastSeen[playdateId] ?? null),
       latestMessagePreview: truncateMessagePreview(entry.latest.body),
       latestMessageAt: entry.latest.created_at,
       unreadCount,
@@ -4710,7 +4736,19 @@ export async function queryDirectMessages(otherPartyId: string): Promise<Message
 export async function listDirectConversationsWithClient(
   client: SupabaseClient,
   userId: string,
-): Promise<Array<{ otherPartyId: string; otherPartyName: string; latestAt: string; preview: string; unreadCount: number }>> {
+): Promise<
+  Array<{
+    otherPartyId: string
+    otherPartyName: string
+    /** V24 slice 04: the counterpart's public parent avatar (profiles.avatar_url). */
+    otherPartyAvatarUrl: string | null
+    /** V24 slice 04: the counterpart's retention cursor (profiles.last_seen_at). */
+    otherPartyLastSeenAt: string | null
+    latestAt: string
+    preview: string
+    unreadCount: number
+  }>
+> {
   // All free-form messages the caller can see. RLS
   // (messages_select_participants) already scopes this to the caller's own
   // conversations — both the ones they SENT and the ones they RECEIVED — so
@@ -4724,8 +4762,10 @@ export async function listDirectConversationsWithClient(
   const { data, error } = await client
     .from('messages')
     .select(
+      // V24 slice 04: the sender's face + retention cursor ride the SAME embed
+      // (no extra wire call) for the inbox row's avatar and "Active today" line.
       'id, sender_id, body, created_at, ' +
-        'sender:profiles!messages_sender_id_fkey ( display_name )',
+        'sender:profiles!messages_sender_id_fkey ( display_name, avatar_url, last_seen_at )',
     )
     .is('playdate_id', null)
     .order('created_at', { ascending: false })
@@ -4736,7 +4776,7 @@ export async function listDirectConversationsWithClient(
     sender_id: string
     body: string
     created_at: string
-    sender: { display_name: string } | null
+    sender: { display_name: string; avatar_url: string | null; last_seen_at: string | null } | null
   }>
 
   // The caller's DM read cursors (own rows only by RLS), keyed by the OTHER
@@ -4780,12 +4820,16 @@ export async function listDirectConversationsWithClient(
   // navigates to /inbox?dm=<profileId>, so a name-only entry rendered a card
   // that could not be opened.
   const mySentIds = rows.filter((r) => r.sender_id === userId).map((r) => r.id)
-  const recipientByMessage: Record<string, { id: string; name: string }> = {}
+  const recipientByMessage: Record<
+    string,
+    { id: string; name: string; avatarUrl: string | null; lastSeenAt: string | null }
+  > = {}
   if (mySentIds.length > 0) {
     const { data: recData, error: recErr } = await client
       .from('message_recipients')
       .select(
-        'message_id, profile_id, profile:profiles!message_recipients_profile_id_fkey ( display_name )',
+        'message_id, profile_id, ' +
+          'profile:profiles!message_recipients_profile_id_fkey ( display_name, avatar_url, last_seen_at )',
       )
       .in('message_id', mySentIds)
       .neq('profile_id', userId)
@@ -4793,12 +4837,14 @@ export async function listDirectConversationsWithClient(
       for (const rec of recData as unknown as Array<{
         message_id: string
         profile_id: string
-        profile: { display_name: string } | null
+        profile: { display_name: string; avatar_url: string | null; last_seen_at: string | null } | null
       }>) {
         if (rec.profile !== null && rec.profile.display_name !== '') {
           recipientByMessage[rec.message_id] = {
             id: rec.profile_id,
             name: rec.profile.display_name,
+            avatarUrl: rec.profile.avatar_url ?? null,
+            lastSeenAt: rec.profile.last_seen_at ?? null,
           }
         }
       }
@@ -4812,7 +4858,13 @@ export async function listDirectConversationsWithClient(
   // the merge in src/lib/inbox.ts must find exactly one).
   const byOtherParty = new Map<
     string,
-    { otherPartyName: string; latestAt: string; preview: string }
+    {
+      otherPartyName: string
+      otherPartyAvatarUrl: string | null
+      otherPartyLastSeenAt: string | null
+      latestAt: string
+      preview: string
+    }
   >()
   for (const row of rows) {
     if (row.sender_id !== userId) {
@@ -4820,6 +4872,8 @@ export async function listDirectConversationsWithClient(
       if (byOtherParty.has(row.sender_id)) continue
       byOtherParty.set(row.sender_id, {
         otherPartyName: row.sender?.display_name ?? '',
+        otherPartyAvatarUrl: row.sender?.avatar_url ?? null,
+        otherPartyLastSeenAt: row.sender?.last_seen_at ?? null,
         latestAt: row.created_at,
         preview: truncateMessagePreview(row.body),
       })
@@ -4832,26 +4886,37 @@ export async function listDirectConversationsWithClient(
       if (byOtherParty.has(recipient.id)) continue
       byOtherParty.set(recipient.id, {
         otherPartyName: recipient.name,
+        otherPartyAvatarUrl: recipient.avatarUrl,
+        otherPartyLastSeenAt: recipient.lastSeenAt,
         latestAt: row.created_at,
         preview: truncateMessagePreview(row.body),
       })
     }
   }
-  const results: Array<{ otherPartyId: string; otherPartyName: string; latestAt: string; preview: string; unreadCount: number }> =
-    Array.from(byOtherParty.entries()).map(([otherPartyId, entry]) => ({
-      otherPartyId,
-      otherPartyName: entry.otherPartyName,
-      latestAt: entry.latestAt,
-      preview: entry.preview,
-      unreadCount: unreadByCounterpart.get(otherPartyId) ?? 0,
-    }))
+  const results: Array<{
+    otherPartyId: string
+    otherPartyName: string
+    otherPartyAvatarUrl: string | null
+    otherPartyLastSeenAt: string | null
+    latestAt: string
+    preview: string
+    unreadCount: number
+  }> = Array.from(byOtherParty.entries()).map(([otherPartyId, entry]) => ({
+    otherPartyId,
+    otherPartyName: entry.otherPartyName,
+    otherPartyAvatarUrl: entry.otherPartyAvatarUrl,
+    otherPartyLastSeenAt: entry.otherPartyLastSeenAt,
+    latestAt: entry.latestAt,
+    preview: entry.preview,
+    unreadCount: unreadByCounterpart.get(otherPartyId) ?? 0,
+  }))
   results.sort((a, b) => (a.latestAt < b.latestAt ? 1 : -1))
   return results
 }
 
 /** The default-client wrapper (the inbox's free-form conversation list). */
 export async function listDirectConversations(userId: string): Promise<
-  Array<{ otherPartyId: string; otherPartyName: string; latestAt: string; preview: string; unreadCount: number }>
+  Awaited<ReturnType<typeof listDirectConversationsWithClient>>
 > {
   return listDirectConversationsWithClient(supabase, userId)
 }

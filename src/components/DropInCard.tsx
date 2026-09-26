@@ -1,5 +1,6 @@
 import { Link } from 'react-router'
 import { PhotoButton } from './ImageLightbox'
+import { WeatherChip } from './WeatherChip'
 // V9 ticket 01 (review cycle 1, F3): `formatTimeWindow` used to live at the
 // bottom of this file. It moved to feed.ts so e2e/post-location can assert the
 // meta line against the SAME rule the card renders, instead of a copy of it.
@@ -13,6 +14,7 @@ import {
   type GoingPinger,
 } from '../lib/feed'
 import { weeklyMetaSuffix } from '../lib/series'
+import type { DailyForecast } from '../lib/weather'
 import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
 
 /**
@@ -118,6 +120,7 @@ export function DropInCard({
   nowIso,
   startsSoon = false,
   rainLabel = null,
+  rainForecast = null,
   pingToggle,
   goingPings = [],
   kidsGoingCount = 0,
@@ -131,6 +134,13 @@ export function DropInCard({
   startsSoon?: boolean
   /** V3 slice 2: the Today-section "Rain likely" badge (see above). */
   rainLabel?: string | null
+  /**
+   * V24 slice 04: the same request's full daily forecast — what the tappable
+   * weather chip's panel shows (temperature / rain / wind / the window). null
+   * (or a forecast with no usable fact) leaves the chip the non-interactive
+   * badge it was. The PAGE owns the fetch; this component only renders it.
+   */
+  rainForecast?: DailyForecast | null
   /**
    * V3 slice 3 (ticket 06): the card's "going" check toggle (see above).
    * Omitted = no toggle (BrowsePage; the host's own posts; the signed-out
@@ -261,9 +271,15 @@ export function DropInCard({
               </span>
             ) : null}
             {rainLabel !== null && rainLabel !== '' ? (
-              <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700">
-                ☔ {rainLabel}
-              </span>
+              /* V24 slice 04: the badge became the tappable weather chip (the
+                 forecast panel the ticket asks for). With no forecast it
+                 renders the same non-interactive badge as before — see
+                 WeatherChip. */
+              <WeatherChip
+                label={rainLabel}
+                forecast={rainForecast ?? null}
+                whenLabel={formatTimeWindow(playdate.starts_at, playdate.ends_at)}
+              />
             ) : null}
 
           </div>

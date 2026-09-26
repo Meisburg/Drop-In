@@ -24,6 +24,10 @@ export const NAV_ICONS = {
   // state fills this silhouette instead of stroking it, so "saved" is never
   // colour-only — the fill channel is paired with the label flip (Save → Saved).
   bookmark: 'M6 4h12v17l-6-4-6 4Z',
+  // V24 slice 04: the search field's magnifying glass (the inbox's "Message a
+  // parent" picker) — a lens circle + handle in the same stroked family, so it
+  // matches the rest of the icon set rather than being a pasted-in glyph.
+  search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14Z M16.2 16.2 21 21',
 } as const
 
 /**

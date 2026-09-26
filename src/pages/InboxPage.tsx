@@ -32,8 +32,8 @@ import type {
   ReactionState,
 } from '../lib/db'
 import { REACTION_KINDS } from '../lib/db'
-import { mergeConversations } from '../lib/inbox'
-import type { MergedConversation } from '../lib/inbox'
+import { activeTodayLabel, mergeConversations } from '../lib/inbox'
+import type { DmConversationRow, MergedConversation } from '../lib/inbox'
 
 /**
  * /inbox — parent↔parent messaging (V14 ticket 01, migration 0042).
@@ -112,6 +112,11 @@ function ConversationCard({
         conversation.unreadCount === 1 ? '' : 's'
       }`
     : (conversation.otherPartyName || 'Unknown')
+  // V24 slice 04: the honest activity line — "Active today" from the
+  // counterpart's own last_seen_at cursor (the pure inbox.activeTodayLabel),
+  // and NOTHING when that cursor is older or absent. This is deliberately not
+  // presence: no subscription, and never the words "now" or "online".
+  const activity = activeTodayLabel(conversation.otherPartyLastSeenAt, new Date().toISOString())
   return (
     <button
       type="button"
@@ -120,35 +125,106 @@ function ConversationCard({
       data-testid={`inbox-row-${conversation.otherPartyId}`}
       className="w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-50"
     >
-      <div className="flex items-center justify-between gap-2">
-        <p className="truncate text-sm font-semibold text-slate-900">
-          {conversation.otherPartyName || 'Unknown'}
-        </p>
-        {showUnread ? (
-          <span className="flex shrink-0 items-center gap-1.5">
-            {/* The colour dot: a pure decoration (aria-hidden); the button's
-                aria-label carries the accessible "N unread" state. */}
-            <span
-              data-testid={`unread-dot-${conversation.otherPartyId}`}
-              aria-hidden="true"
-              className="h-2.5 w-2.5 rounded-full bg-indigo-600"
-            />
-            <span
-              data-testid={`unread-badge-${conversation.otherPartyId}`}
-              className="rounded-full bg-indigo-600 px-2 py-0.5 text-xs font-semibold text-white"
+      <div className="flex items-start gap-3">
+        <ConversationFace
+          name={conversation.otherPartyName}
+          avatarUrl={conversation.otherPartyAvatarUrl}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-sm font-semibold text-slate-900">
+              {conversation.otherPartyName || 'Unknown'}
+            </p>
+            {showUnread ? (
+              <span className="flex shrink-0 items-center gap-1.5">
+                {/* The colour dot: a pure decoration (aria-hidden); the button's
+                    aria-label carries the accessible "N unread" state. */}
+                <span
+                  data-testid={`unread-dot-${conversation.otherPartyId}`}
+                  aria-hidden="true"
+                  className="h-2.5 w-2.5 rounded-full bg-indigo-600"
+                />
+                <span
+                  data-testid={`unread-badge-${conversation.otherPartyId}`}
+                  className="rounded-full bg-indigo-600 px-2 py-0.5 text-xs font-semibold text-white"
+                >
+                  {conversation.unreadCount}
+                </span>
+              </span>
+            ) : null}
+          </div>
+          <div className="mt-2 flex items-baseline justify-between gap-2">
+            <p className="truncate text-sm text-slate-600">{conversation.preview}</p>
+            <p className="shrink-0 text-xs text-slate-500">
+              {relativeTimeLabel(conversation.latestAt, new Date().toISOString())}
+            </p>
+          </div>
+          {activity !== null ? (
+            <p
+              data-testid={`inbox-activity-${conversation.otherPartyId}`}
+              className="mt-1 text-xs text-slate-500"
             >
-              {conversation.unreadCount}
-            </span>
-          </span>
-        ) : null}
-      </div>
-      <div className="mt-2 flex items-baseline justify-between gap-2">
-        <p className="truncate text-sm text-slate-600">{conversation.preview}</p>
-        <p className="shrink-0 text-xs text-slate-500">
-          {relativeTimeLabel(conversation.latestAt, new Date().toISOString())}
-        </p>
+              {activity}
+            </p>
+          ) : null}
+        </div>
       </div>
     </button>
+  )
+}
+
+/** V24 slice 04: the search field's leading magnifying glass (icons.NAV_ICONS.search). */
+function SearchGlyph() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={NAV_ICONS.search} />
+    </svg>
+  )
+}
+
+/**
+ * V24 slice 04 (ticket 04): the row's FACE — the counterpart's profile photo
+ * (`profiles.avatar_url`, the PUBLIC parent avatar the going circles and the
+ * card's host avatar already use), falling back to the display-name initial on
+ * the same slate circle when there is no photo OR the image fails to load, so a
+ * row can never render a broken image.
+ *
+ * The image is DECORATIVE (`alt=""`): the row button's aria-label already names
+ * the counterpart, and a second "Pat" would be read twice. The initial is
+ * `aria-hidden` for the same reason.
+ */
+function ConversationFace({ name, avatarUrl }: { name: string; avatarUrl: string | null }) {
+  const [failed, setFailed] = useState(false)
+  const initial = (name.trim().charAt(0) || '?').toUpperCase()
+  if (avatarUrl !== null && avatarUrl !== '' && !failed) {
+    return (
+      <img
+        src={avatarUrl}
+        alt=""
+        aria-hidden="true"
+        loading="lazy"
+        decoding="async"
+        onError={() => setFailed(true)}
+        className="h-10 w-10 shrink-0 rounded-full bg-slate-200 object-cover"
+      />
+    )
+  }
+  return (
+    <span
+      aria-hidden="true"
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-semibold text-slate-600"
+    >
+      {initial}
+    </span>
   )
 }
 
@@ -269,9 +345,7 @@ export function InboxPage() {
   const [reloadToken, setReloadToken] = useState(0)
 
   // --- Free-form DM state --------------------------------------------------
-  const [directConvs, setDirectConvs] = useState<
-    Array<{ otherPartyId: string; otherPartyName: string; latestAt: string; preview: string; unreadCount: number }>
-  >([])
+  const [directConvs, setDirectConvs] = useState<DmConversationRow[]>([])
   const [showNewMessage, setShowNewMessage] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<ProfileSearchResult[]>([])
@@ -814,15 +888,27 @@ export function InboxPage() {
           {showNewMessage ? (
             <div className="mt-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-sm font-semibold text-slate-900">Message a parent</p>
-              <input
-                type="text"
-                data-testid="dm-search-input"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by name…"
-                className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-base focus-visible:border-indigo-400 focus-visible:outline-none"
-                autoFocus
-              />
+              {/* V24 slice 04 (ticket 04): the field's leading magnifying-glass
+                  glyph. Decorative (aria-hidden) — the placeholder is still the
+                  input's accessible name, the testid and the ≥16px text are
+                  unchanged, and only the left padding moves for the icon. */}
+              <div className="relative mt-2">
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-3 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-slate-400"
+                >
+                  <SearchGlyph />
+                </span>
+                <input
+                  type="text"
+                  data-testid="dm-search-input"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by name…"
+                  className="w-full rounded-lg border border-slate-200 py-2.5 pl-9 pr-3 text-base focus-visible:border-indigo-400 focus-visible:outline-none"
+                  autoFocus
+                />
+              </div>
               {searching ? (
                 <p className="mt-2 text-xs text-slate-500">Searching…</p>
               ) : searchResults.length > 0 ? (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mergeConversations } from './inbox'
+import { activeTodayLabel, mergeConversations } from './inbox'
 import type { DmConversationRow, PlaydateConversationRow } from './inbox'
 
 /**
@@ -24,6 +24,8 @@ function dm(overrides: Partial<DmConversationRow> = {}): DmConversationRow {
   return {
     otherPartyId: 'dm-parent',
     otherPartyName: 'Parent A',
+    otherPartyAvatarUrl: null,
+    otherPartyLastSeenAt: null,
     latestAt: '2026-09-23T10:00:00Z',
     preview: 'DM preview',
     unreadCount: 0,
@@ -37,6 +39,8 @@ function pd(overrides: Partial<PlaydateConversationRow> = {}): PlaydateConversat
     playdateTitle: 'Playground time',
     otherPartyDisplayName: 'Parent A',
     otherPartyId: 'pd-parent',
+    otherPartyAvatarUrl: null,
+    otherPartyLastSeenAt: null,
     latestMessagePreview: 'PD preview',
     latestMessageAt: '2026-09-23T10:00:00Z',
     unreadCount: 0,
@@ -169,5 +173,30 @@ describe('mergeConversations', () => {
     expect(result[0].kind).toBe('playdate')
     expect(result[0].playdateId).toBe('p2')
     expect(result[0].unreadCount).toBe(6)
+  })
+})
+
+describe('activeTodayLabel (V24 slice 04 — the honest, non-presence activity line)', () => {
+  const nowIso = '2026-09-25T21:00:00.000Z'
+
+  it('says "Active today" for a cursor written earlier the same local day', () => {
+    expect(activeTodayLabel('2026-09-25T16:02:00.000Z', nowIso)).toBe('Active today')
+  })
+
+  it('is absent for an older cursor — never a claim the data cannot support', () => {
+    expect(activeTodayLabel('2026-09-24T16:02:00.000Z', nowIso)).toBeNull()
+    expect(activeTodayLabel('2026-08-01T16:02:00.000Z', nowIso)).toBeNull()
+  })
+
+  it('is absent when the counterpart has no cursor at all (migration 0024 not applied)', () => {
+    expect(activeTodayLabel(null, nowIso)).toBeNull()
+    expect(activeTodayLabel(undefined, nowIso)).toBeNull()
+    expect(activeTodayLabel('', nowIso)).toBeNull()
+  })
+
+  it('never says "now" or "online" — this is not presence', () => {
+    const label = activeTodayLabel('2026-09-25T20:59:59.000Z', nowIso)
+    expect(label).toBe('Active today')
+    expect(label ?? '').not.toMatch(/now|online/i)
   })
 })

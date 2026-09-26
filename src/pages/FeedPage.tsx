@@ -13,7 +13,7 @@ import { WhileAwayCard } from '../components/WhileAwayCard'
 import { armPushPromptForAction } from '../lib/pushClient'
 import {
   countKidsGoingForPosts,
-  fetchRainProbabilityForZip,
+  fetchDailyForecastForZip,
   kidAgesByPostForPosts,
   listCommentsOnPosts,
   listMyFollows,
@@ -52,6 +52,7 @@ import {
   type WhileAwayInbox,
 } from '../lib/feed'
 import { geocodeAddress } from '../lib/geocode'
+import type { DailyForecast } from '../lib/weather'
 import {
   feedMapPins,
   framingCircle,
@@ -218,10 +219,10 @@ export function FeedPage() {
    */
   const [zipCoords, setZipCoords] = useState<ReadonlyMap<string, ZipCoords> | null>(null)
   // V3 slice 2 (ticket 02): the Today-section cards' "Rain likely" labels
-  // (post id → label; null = no badge). Best-effort — the wrapper never
-  // rejects, so a failed fetch just leaves the label null (silently
-  // absent, the zero-pressure soul).
-  const [rainLabels, setRainLabels] = useState<Record<string, string | null>>({})
+  // (post id → forecast; null = no badge and no chip panel). Best-effort —
+  // the wrapper never rejects, so a failed fetch just leaves the entry null
+  // (silently absent, the zero-pressure soul).
+  const [rainForecasts, setRainForecasts] = useState<Record<string, DailyForecast | null>>({})
   // V3 slice 3 (ticket 06): the viewer's own "going" pings (one query —
   // every card's toggle state). null = not settled (a failed load
   // degrades to an empty set: the toggles render inactive, never a
@@ -745,8 +746,12 @@ export function FeedPage() {
   // event date) (the wrapper's module cache + in-flight dedupe; the
   // marker's own post + any co-hosted events share a fetch). A host with
   // no home zip (or a zip outside the 0012 gazetteer) gets no label —
-  // never an invented coordinate. Labels merge into the map by post id
+  // never an invented coordinate. Forecasts merge into the map by post id
   // (a stale id from a previous load is harmless — it renders no card).
+  //
+  // V24 slice 04: the map holds the whole FORECAST object now, not just the
+  // badge string — the same single request feeds the badge (via the unchanged
+  // rainBadgeLabel at the render site) and the tappable chip's panel.
   //
   // V9 ticket 04: "today" and "the event date" are the SECTION's rule
   // (feed.daySectionIso), not the raw start day — the same seam the section
@@ -766,14 +771,14 @@ export function FeedPage() {
       todays.map(async (post) => {
         const zip = post.host?.home_zip
         if (typeof zip !== 'string' || zip === '') return [post.id, null] as const
-        const probability = await fetchRainProbabilityForZip(zip, daySectionIso(post, nowIso))
-        return [post.id, rainBadgeLabel(probability)] as const
+        const forecast = await fetchDailyForecastForZip(zip, daySectionIso(post, nowIso))
+        return [post.id, forecast] as const
       }),
     ).then((entries) => {
       if (cancelled) return
-      setRainLabels((prev) => {
-        const next: Record<string, string | null> = { ...prev }
-        for (const [id, label] of entries) next[id] = label
+      setRainForecasts((prev) => {
+        const next: Record<string, DailyForecast | null> = { ...prev }
+        for (const [id, forecast] of entries) next[id] = forecast
         return next
       })
     })
@@ -1179,7 +1184,14 @@ export function FeedPage() {
                       playdate={post}
                       nowIso={nowIso}
                       startsSoon={post.id === startsSoonId}
-                      rainLabel={isToday ? (rainLabels[post.id] ?? null) : undefined}
+                      rainLabel={
+                        isToday
+                          ? rainBadgeLabel(
+                              rainForecasts[post.id]?.precipitationProbability ?? null,
+                            )
+                          : undefined
+                      }
+                      rainForecast={isToday ? (rainForecasts[post.id] ?? null) : undefined}
                       pingToggle={buildCardPingToggle(post)}
                       goingPings={buildCardGoingPings(post)}
                       kidsGoingCount={buildCardKidsCount(post)}

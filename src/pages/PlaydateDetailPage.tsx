@@ -7,6 +7,7 @@ import { PhotoButton } from '../components/ImageLightbox'
 import { KidsComingPicker } from '../components/KidsComingPicker'
 import { ReportDialog } from '../components/ReportDialog'
 import { useSessionContext } from '../components/SessionProvider'
+import { WeatherChip } from '../components/WeatherChip'
 import { LOGIN_PATH } from '../lib/auth'
 import {
   INITIAL_COMMENT_ACTION_STATE,
@@ -23,7 +24,7 @@ import {
   deletePlaydate,
   ensureSeriesOccurrences,
   fetchGuestList,
-  fetchRainProbabilityForZip,
+  fetchDailyForecastForZip,
   getBlockState,
   getGoingCount,
   getPlaydateDetail,
@@ -58,6 +59,7 @@ import {
   toDuplicatePrefill,
 } from '../lib/feed'
 import { buildIcs } from '../lib/ics'
+import type { DailyForecast } from '../lib/weather'
 import { canModerate } from '../lib/moderation'
 // V8 ticket 07: the signed-in AND signed-out place lines link to /place/:id
 // (the 13th public field is a bare id; the place page reads the directory
@@ -464,7 +466,10 @@ export function PlaydateDetailPage() {
   // badge; null = silently absent — the fetch never rejects).
   const [statusBusy, setStatusBusy] = useState(false)
   const [statusError, setStatusError] = useState<string | null>(null)
-  const [rainProbability, setRainProbability] = useState<number | null>(null)
+  // V24 slice 04: the whole daily FORECAST object (the badge derives from its
+  // precipitation probability at the render site; the chip's panel shows the
+  // rest). null = silently absent — the fetch never rejects.
+  const [rainForecast, setRainForecast] = useState<DailyForecast | null>(null)
   // V8 ticket 05: the host's Delete — the in-page confirmation (never
   // window.confirm), its in-flight flag and its error line. All three live
   // up here with the other hooks (the V6 lesson below): the component
@@ -795,9 +800,9 @@ export function PlaydateDetailPage() {
       return
     }
     let cancelled = false
-    setRainProbability(null)
-    void fetchRainProbabilityForZip(rainHostZip, rainEventDateIso).then((probability) => {
-      if (!cancelled) setRainProbability(probability)
+    setRainForecast(null)
+    void fetchDailyForecastForZip(rainHostZip, rainEventDateIso).then((forecast) => {
+      if (!cancelled) setRainForecast(forecast)
     })
     return () => {
       cancelled = true
@@ -1475,7 +1480,9 @@ export function PlaydateDetailPage() {
   const statusChip =
     postStatus === 'ended' ? 'Ended' : postStatus === 'cancelled' ? 'Cancelled' : null
   const statusMuted = statusChip !== null
-  const rainLabel = rainBadgeLabel(rainProbability)
+  // The badge label is still the pure UNCHANGED rainBadgeLabel threshold, fed
+  // from the forecast object (V24 slice 04); the chip below renders the panel.
+  const rainLabel = rainBadgeLabel(rainForecast?.precipitationProbability ?? null)
   // V3 slice 5 (ticket 08): the place line's tappable Google Maps link
   // (the pure mapsHref seam, feed.ts) — null when the post has no address
   // (or pre-0021-apply, when the row lacks the column): plain text.
@@ -2109,8 +2116,12 @@ export function PlaydateDetailPage() {
               (Open-Meteo, host's home zip, >= 50%) — silently absent when
               the fetch fails or the probability is below the threshold. */}
           {rainLabel !== null ? (
-            <span className="ml-2 inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 align-middle text-xs font-medium text-sky-700">
-              ☔ {rainLabel}
+            <span className="ml-2 align-middle">
+              <WeatherChip
+                label={rainLabel}
+                forecast={rainForecast}
+                whenLabel={`${formatDay(detail.starts_at)} · ${formatTime(detail.starts_at)}–${formatTime(detail.ends_at)}`}
+              />
             </span>
           ) : null}
         </p>
