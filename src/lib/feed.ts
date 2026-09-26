@@ -1603,6 +1603,49 @@ export function kidLabel(
   return ''
 }
 
+/** One kid row's name and age, split for the profile card's typographic row. */
+export interface KidHeading {
+  /** The first name, trimmed — '' when the kid has none (the age-only fallback). */
+  name: string
+  /** "Age 6", or null when this kid has no age — never a bare number. */
+  age: string | null
+  /** `kidLabel`'s whole label, for the age-only row that has no name to lead with. */
+  fallback: string
+}
+
+/**
+ * V25 t09 (the founder's annotation 3): ONE KID'S HEADING, SPLIT FOR RENDERING.
+ *
+ * The kids list on the read surface used to be one run-on line — "Sam · Age 6 ·
+ * Likes: soccer" — and the founder's note was that it "just looks like there's
+ * just like a name … it should be formatting here. It makes it more legible."
+ * Making the NAME the row's lead and the AGE its own secondary mark means the
+ * two halves have to be separable, and this is the seam that separates them
+ * while keeping `kidLabel` the one rule that decides WHICH words appear:
+ *
+ *   - name + age → `{ name: 'Sam', age: 'Age 6', fallback: 'Sam · Age 6' }`
+ *   - name only  → `{ name: 'Sam', age: null,    fallback: 'Sam' }`
+ *   - age only   → `{ name: '',    age: null,    fallback: 'Age 6' }`
+ *   - neither    → all empty; the caller renders nothing.
+ *
+ * A name with a trailing space is trimmed HERE, so the renderer never has to.
+ * The age-only case deliberately sets `age: null` and carries "Age 6" in
+ * `fallback` instead: there is no lead for a secondary mark to sit beside, so
+ * the row renders the label as one piece (which is what it always did).
+ */
+export function kidHeading(kid: {
+  first_name?: string | null
+  age?: number | null
+}): KidHeading {
+  const name = (kid.first_name ?? '').trim()
+  const hasAge = typeof kid.age === 'number' && Number.isFinite(kid.age)
+  return {
+    name,
+    age: name !== '' && hasAge ? `Age ${kid.age}` : null,
+    fallback: kidLabel(kid.first_name, kid.age),
+  }
+}
+
 /** Upper-case the first character (the detail line heads its own sentence). */
 function capitalizeFirst(line: string): string {
   return line.charAt(0).toUpperCase() + line.slice(1)

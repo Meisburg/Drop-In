@@ -67,6 +67,14 @@ test('marker saves a bio + kid row, sees them on /u/<handle>', async ({ page }) 
   // V15.2 fix: V15 ticket 05 (A13) made `kidLabel` emit "Name · Age 7" — the
   // bare "Name · 7" this asserted is the OLD format, so it could never match.
   // The expectation is built from the app's own seam so it tracks the rule.
+  //
+  // V25 t09 (the founder's annotation 3) restructured the row's TYPE, not its
+  // TEXT: the name and the age are now separate elements with separate styling,
+  // but adjacent, and the split concatenates to exactly this string (the
+  // round-trip is pinned in src/lib/feed.test.ts). So this assertion stays
+  // EXACTLY as it was and still passes — which is the point: the privacy fact
+  // it pins ("first name · Age 7", never "Name · 7") cannot drift with a styling
+  // change.
   await expect(page.getByText(kidLabel(kidName, KID_AGE), { exact: true })).toBeVisible()
 })
 

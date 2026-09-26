@@ -14,10 +14,12 @@ import { useSessionContext } from '../components/SessionProvider'
 import {
   createPlaydate,
   listKids,
+  listMyFollows,
   listPastOwnPlaydates,
   listPlaces,
   linkKidsToPlaydate,
   loadZipCodes,
+  toggleFollowPlace,
 } from '../lib/db'
 import {
   DEFAULT_RADIUS_MILES,
@@ -43,6 +45,7 @@ import {
   MAP_FOCUS_RADIUS_MILES,
   PLACE_BROWSE_LIMIT,
   PLACE_SUGGESTION_LIMIT,
+  placeFollowIdSet,
   placePickerMatches,
   placePickPatch,
   radiusPreviewCircle,
@@ -53,6 +56,11 @@ import {
 // V8 ticket 08: recording the meaningful action that may precede the
 // notification opt-in (this page arms it; the shell's PushOptInPrompt decides).
 import { armPushPromptForAction } from '../lib/pushClient'
+// V25 t08: the SAME pure seam /browse uses for the saved-id read shape
+// (`placeFollowIdSet`) plus the confirmed-toggle set rule
+// (`savedPlaceIdSetAfterToggle`), so the picker's collection cannot drift from
+// the directory's.
+import { savedPlaceIdSetAfterToggle } from '../lib/follows'
 import type { DuplicatePrefill, Kid, Place, PlacePrefill } from '../lib/types'
 
 /**
@@ -370,6 +378,24 @@ export function NewPlaydatePage({
   const [directoryOpen, setDirectoryOpen] = useState(false)
   const directorySheetRef = useRef<HTMLDivElement>(null)
   useFocusTrap(directorySheetRef, directoryOpen)
+  /**
+   * V25 t08 — THE PARENT'S SAVED PLACES (the founder's "collection of all of
+   * your favorite places that you can select from"), as the ids the directory
+   * sheet's Saved filter narrows by and its bookmarks render from.
+   *
+   * THE SAME SEAM /BROWSE READS: one batched `listMyFollows` call, reduced by
+   * the pure `placeFollowIdSet` — never a second store, never a per-row query.
+   * A failed read leaves the EMPTY SET, which is the honest default twice over
+   * (the /browse rule): the sheet then shows no Saved chip rather than a chip
+   * that opens onto nothing, and the form is untouched.
+   *
+   * Declared here rather than inside the sheet so the set survives a close and
+   * reopen within the same visit (the sheet's own filters already behave that
+   * way).
+   */
+  const [followedPlaceIds, setFollowedPlaceIds] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  )
   const [errors, setErrors] = useState<PlaydateFormErrors>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -518,6 +544,53 @@ export function NewPlaydatePage({
       cancelled = true
     }
   }, [userId])
+
+  // V25 t08: the parent's saved places, ONCE per signed-in mount — the same
+  // batched read /browse issues for its own bookmarks (`listMyFollows` wrapped
+  // by the page, the repo's established pattern: no page imports the Supabase
+  // client directly). Signed out returns before the call, so no follows request
+  // is issued. A failure lands the empty set: no Saved chip, no error state, and
+  // the picker is otherwise exactly what it was.
+  useEffect(() => {
+    if (userId === null) return
+    let cancelled = false
+    listMyFollows()
+      .then((rows) => {
+        if (!cancelled) setFollowedPlaceIds(placeFollowIdSet(rows))
+      })
+      .catch(() => {
+        if (!cancelled) setFollowedPlaceIds(new Set<string>())
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
+  /**
+   * V25 t08 — save / un-save ONE place from inside the picker sheet. The write
+   * is the EXISTING single path (`db.toggleFollowPlace`, a read-then-write that
+   * resolves the follow row itself and treats a concurrent 23505 as success) —
+   * this slice adds no insert/delete of its own. The decision is
+   * `savedPlaceIdSetAfterToggle` against what the DATABASE returned, so the
+   * local set can never drift from the row it represents.
+   *
+   * The set is refreshed rather than optimistically pre-flipped, because the
+   * sheet's whole Saved list is derived from it: flipping before the answer
+   * would add and then remove a row on a rejected write, which reads as a
+   * flicker rather than as a failure. A rejected write leaves the set as it was
+   * and changes nothing the parent can see.
+   */
+  async function handleTogglePickerSave(placeId: string) {
+    try {
+      const nowSaved = await toggleFollowPlace(placeId)
+      setFollowedPlaceIds((prev) =>
+        savedPlaceIdSetAfterToggle(prev, placeId, nowSaved ? 'save' : 'unsave'),
+      )
+    } catch {
+      // The bookmark is a decoration of the picker, never worth an error wall
+      // (the /browse follow-read discipline): the set simply does not move.
+    }
+  }
 
   // V8 ticket 07: the places directory for the autocomplete, fetched once on
   // mount. A failed load (0029 not applied yet) leaves `places` null and the
@@ -1271,9 +1344,22 @@ export function NewPlaydatePage({
               places={places}
               zipCoords={zipCoords}
               upcomingStartTimes={null}
-              followedPlaceIds={new Set<string>()}
-              canFollow={false}
-              onToggleFollow={() => undefined}
+              /* V25 t08: the parent's REAL saved set (the `listMyFollows` read
+                 above), where this call site used to pass `new Set<string>()`.
+                 That empty set was the defect the ticket names — the picker
+                 could not show the founder's collection because it was told the
+                 parent had saved nothing. The filter in PlaceDirectory narrows
+                 this SAME set, and selecting a row still writes through
+                 `pickPlace` below: no second selection mechanism, no new write. */
+              followedPlaceIds={followedPlaceIds}
+              /* V25 t08: the heart now works in the sheet. It was `false` (the
+                 bookmark was decoration), so a parent looking at their
+                 collection could not remove anything from it — the ticket's
+                 "un-saving works from that list". The tap path above the row
+                 pick is unchanged: the heart stops propagation like every other
+                 in-row control and never selects or navigates. */
+              canFollow={userId !== null}
+              onToggleFollow={(placeId) => void handleTogglePickerSave(placeId)}
               homePin={pickerHomePin}
               viewerRadius={profile?.radius_miles ?? DEFAULT_RADIUS_MILES}
               homeZip={profile?.home_zip ?? null}

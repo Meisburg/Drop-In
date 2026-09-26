@@ -6,8 +6,9 @@ import { useSessionContext } from '../components/SessionProvider'
 import { useFamilyPhotoUrl } from '../components/useFamilyPhotoUrl'
 import { useKidPhotoUrls } from '../components/useKidPhotoUrls'
 import { useCropStep } from '../components/useCropStep'
-import { PhotoButton } from '../components/ImageLightbox'
+import { FamilyPhotoBlock } from '../components/ImageLightbox'
 import { ProfileView } from '../components/ProfileView'
+import { galleryPhotosFrom } from '../lib/photoGallery'
 import {
   addKid,
   BIO_MAX_LENGTH,
@@ -122,8 +123,10 @@ const AUTOSAVE_DEBOUNCE_MS = 400
  *    of its own identity block in V16 t04, with its save/validation wiring
  *    unchanged)
  *  - "About the kids" (kid rows: first name + age + a full-width multi-line
- *    likes textarea, an optional per-kid photo (owner-only render via
- *    useKidPhotoUrls), and Remove; plus the add-a-kid row and the five-kid cap)
+ *    likes textarea, an optional per-kid photo (a signed-URL render via
+ *    useKidPhotoUrls — the EDITOR is the owner's own surface, so the render it
+ *    drives here is the owner's; V25 t14 widened who may mint, not who edits),
+ *    and Remove; plus the add-a-kid row and the five-kid cap)
  *  - "About the parents" (the bio, editable textarea; the display name renders
  *    as its OWN text node inside the photo card above, so a spec can match it
  *    exactly while the app-shell header shows the @-prefixed form)
@@ -665,8 +668,8 @@ export function ProfilePage() {
    * KidPhotoControl) decodes + frames the bitmap, then this writes the object
    * (uploadKidPhoto → the canonical <uid>/kids/<kidId> path + the row's
    * avatar_url marker) and re-lists the kids so the signed-URL map (the
-   * owner-only useKidPhotoUrls render) picks up the new object. The busy flag
-   * is shared (one kid at a time) so two rows' controls never race.
+   * useKidPhotoUrls render) picks up the new object. The busy flag is shared
+   * (one kid at a time) so two rows' controls never race.
    */
   async function handleKidPhotoUpload(kidId: string, source: ImageBitmap, rect: CropRect) {
     if (userId === null || kidPhotoBusyId !== null) return
@@ -708,9 +711,11 @@ export function ProfilePage() {
   // a hook after an early return is the V6 regression that blanked the detail
   // page.
   const familyPhotoUrl = useFamilyPhotoUrl(profile?.family_photo_url)
-  // The owner's kid photos' signed URLs (V12 t04) — the ONE kid-photo render
-  // site, owner-only, batched + best-effort. Called above the early return for
-  // the same reason as the family-photo hook.
+  // This editor's kid photos' signed URLs (V12 t04) — batched + best-effort.
+  // The profile id passed here is the EDITOR's own (the owner), which is the
+  // surface that writes them; V25 t14 widened who may READ the class, not who
+  // may upload. Called above the early return for the same reason as the
+  // family-photo hook.
   const kidPhotoUrls = useKidPhotoUrls(userId, kids)
 
   /**
@@ -1552,20 +1557,22 @@ export function ProfilePage() {
           // uses), so tapping it opens full-screen rather than doing nothing.
           // The upload/crop flow is a SEPARATE control below; this button never
           // triggers it and never navigates (PhotoButton preventDefaults).
-          <PhotoButton
-            src={familyPhotoUrl}
-            alt="Your family photo"
-            className="block max-w-full overflow-hidden rounded-xl"
-          >
-            <img
-              data-testid="family-photo"
-              src={familyPhotoUrl}
-              alt="Your family photo"
-              loading="lazy"
-              decoding="async"
-              className="max-h-72 w-full rounded-xl object-cover"
-            />
-          </PhotoButton>
+          //
+          // V25 t10: the height cap `max-h-72` is GONE here too. The editor
+          // shows the SAME photo the read view shows, so the letterbox the
+          // founder circled must not survive on one surface and not the other —
+          // and the width proof below is measured on the read view, which is the
+          // surface the annotation was about. The block is the shared
+          // `FamilyPhotoBlock` (one full-width photo, or the tiled grid when a
+          // second photo source exists — see src/lib/photoGallery.ts for why it
+          // cannot today, and why this ships no migration).
+          <FamilyPhotoBlock
+            photos={galleryPhotosFrom(familyPhotoUrl, 'Your family photo')}
+            label="Your family photo"
+            loading="lazy"
+            decoding="async"
+            roundedClassName="rounded-xl"
+          />
         ) : null}
         <label className="mt-3 flex cursor-pointer min-h-11 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50">
           <input

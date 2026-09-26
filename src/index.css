@@ -82,7 +82,27 @@ h3 {
   letter-spacing: -0.012em;
 }
 
+/*
+ * V25 ticket 13: the modal panel's arrival, registered as a Tailwind v4 theme
+ * token so a component can say `animate-modal-pop` rather than carry the whole
+ * `animation:` shorthand. The reduced-motion half is deliberately NOT here: it
+ * belongs at the call site (`motion-reduce:animate-none`), because that is the
+ * utility the ticket asks for and it keeps the decision visible in the diff of
+ * the component that owns the dialog.
+ */
+@keyframes modal-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 @theme {
+  --animate-modal-pop: modal-pop 140ms ease-out;
   --font-display: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
   --text-xs: 0.875rem;
   --text-xs--line-height: 1.25rem;

@@ -20,7 +20,8 @@
  *      would have blanked this line in silence (no error, no warning, nothing).
  *   5. A direct REST read as the stranger returns NOTHING for that family's
  *      `kids` and for the post's `playdate_kids` rows (names, ages AND the
- *      kid-photo `avatar_url` — the same row, so the same gate), while the
+ *      kid-photo `avatar_url` — the same row, so the same gate; V25 t14 widens
+ *      who may read the photo OBJECT, not who may read this row), while the
  *      OWNER's own read still returns their rows (the positive control that
  *      makes the empty answers evidence rather than a broken table).
  *   6. Push payloads, the ICS export and the signed-out surface carry no kid
@@ -441,11 +442,17 @@ test('a kid’s name reaches the host and a pinger — and never a signed-in str
     await expect(strangerCard).not.toContainText(name)
   }
 
-  // 3b. /u/:handle — the accepted cost, in the UI. The kids section renders in
-  //     the SELF view alone (the policy is per KID, so a viewer who pinged one
-  //     drop-in would otherwise be handed a partial list of children, which
-  //     reads as the whole family). Green before AND after 0040: the client
-  //     gate is this ticket's half, the policy is the other.
+  // 3b. /u/:handle — the ROW gate, in the UI, for a viewer with no relationship
+  //     to this family at all. This stranger is neither family nor host/pinger/
+  //     moderator, so 0040 returns them NO kid rows and the page renders no kids
+  //     section. Green before AND after 0040, and still green after V25 t14:
+  //     that slice widened who may READ the kid-photo OBJECT and changed the
+  //     render gate from "the self view only" to "the database returned you
+  //     rows", which for THIS viewer is the same empty answer. (The cost T14
+  //     accepts — a host/pinger viewer now sees the subset of this family's kids
+  //     attached to the shared drop-in, photos included — is asserted with a
+  //     real pinger in e2e/kid-photo-exposure.e2e.ts test 2; the NAME gate here
+  //     is untouched by it.)
   await stranger.page.goto(`/u/${encodeURIComponent(marker.displayName)}`)
   await expect(stranger.page.getByRole('heading', { name: `@${marker.displayName}` })).toBeVisible()
   await expect(stranger.page.getByRole('heading', { name: 'Kids', exact: true })).toHaveCount(0)

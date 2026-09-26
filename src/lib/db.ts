@@ -2747,16 +2747,21 @@ export async function signedFamilyPhotoUrls(
 }
 
 /**
- * Mint signed URLs for the owner's OWN kid photos (V12 t04), ONE batched call
- * for the whole list (T6), against an injected client (the house *WithClient
+ * Mint signed URLs for a profile's kid photos (V12 t04), ONE batched call for
+ * the whole list (T6), against an injected client (the house *WithClient
  * pattern).
  *
  * The paths are BUILT from `profileId` + each kid id (`kidPhotoMintPaths`),
  * never read from `kids.avatar_url` — the stored column is a bucket-qualified
- * path (or a legacy public URL) and the read path is owner-only by
- * construction, so the canonical `<uid>/kids/<kidId>` shape is what the policy
- * mints for. The result is keyed by KID ID (not path) so the render site maps
- * its own kids straight through.
+ * path (or a legacy public URL), so the canonical `<uid>/kids/<kidId>` shape is
+ * what the policy mints for. The result is keyed by KID ID (not path) so the
+ * render site maps its own kids straight through.
+ *
+ * WHO MAY CALL IT (V25 t14, migration 0054): any signed-in parent. The
+ * kid-class storage SELECT policy dropped its owner check and kept the
+ * `[2] = 'kids'` class guard, so `profileId` is the profile whose kids these
+ * are — not the caller — and the caller must pass only the kid ids the database
+ * actually returned to that viewer (0040 filters `kids` row by row).
  *
  * BEST-EFFORT BY CONTRACT, exactly like the family-photo sibling: it never
  * throws. A failure — the bucket not applied, an outage, a policy refusal, or a
@@ -2795,7 +2800,7 @@ export async function signedKidPhotoUrlsWithClient(
   return minted
 }
 
-/** The default-client wrapper (the one kid-photo render site: the owner's /profile). */
+/** The default-client wrapper (the kid-photo render sites: /profile's editor and the profile kids card, including a signed-in non-owner's). */
 export async function signedKidPhotoUrls(
   profileId: string,
   kidIds: string[],
@@ -4125,6 +4130,16 @@ export interface MessageRow {
   sender_id: string
   body: string
   created_at: string
+  /**
+   * V25 ticket 11: the SENDER's own display name, embedded by the thread read
+   * (`sender:profiles!messages_sender_id_fkey ( display_name )`) so each bubble
+   * can be labelled by its own sender rather than by the thread's counterpart.
+   * Optional because NOT every producer of a MessageRow carries the embed: the
+   * optimistic row and the Realtime INSERT payload have no join available
+   * (`null` there is honest — the label falls back to the counterpart only when
+   * the sender id matches it, else it is omitted).
+   */
+  sender_display_name?: string | null
 }
 
 /** One row of the inbox's conversation list (one per participating playdate with ≥1 message). */
@@ -4447,7 +4462,10 @@ export async function sendMessage(playdateId: string, body: string): Promise<voi
 /**
  * All messages for one playdate, oldest first (the thread view's read),
  * against an injected client (mockable in unit tests). The RLS SELECT
- * policy scopes the rows to participants.
+ * policy scopes the rows to participants. The `sender` embed (V25 ticket 11)
+ * carries each message's OWN sender display name in the same request, so the
+ * thread view never has to guess a bubble's label from the thread-level
+ * counterpart.
  */
 export async function queryMessagesForPlaydateWithClient(
   client: SupabaseClient,
@@ -4455,7 +4473,10 @@ export async function queryMessagesForPlaydateWithClient(
 ): Promise<MessageRow[]> {
   const { data, error } = await client
     .from('messages')
-    .select('id, playdate_id, sender_id, body, created_at')
+    .select(
+      'id, playdate_id, sender_id, body, created_at, ' +
+        'sender:profiles!messages_sender_id_fkey ( display_name )',
+    )
     .eq('playdate_id', playdateId)
     .order('created_at', { ascending: true })
   if (error) throw error
@@ -4465,6 +4486,7 @@ export async function queryMessagesForPlaydateWithClient(
     sender_id: string
     body: string
     created_at: string
+    sender: { display_name: string } | null
   }>
   return rows.map((row) => ({
     id: row.id,
@@ -4472,6 +4494,7 @@ export async function queryMessagesForPlaydateWithClient(
     sender_id: row.sender_id,
     body: row.body,
     created_at: row.created_at,
+    sender_display_name: row.sender?.display_name ?? null,
   }))
 }
 

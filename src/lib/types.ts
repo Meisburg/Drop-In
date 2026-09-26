@@ -457,9 +457,15 @@ export interface Kid {
    * bucket at `<uid>/kids/<kidId>` as a public URL — which V9 ticket 10's
    * review proved was anonymously listable and fetchable, the exposure V9
    * ticket 11 closes. The class now lives in the private `kid-photos` bucket
-   * (owner-only read) and this value is the object path written by
+   * and this value is the object path written by
    * `scripts/migrate-kid-photos.mjs`; READ IT FOR NOTHING (the AC: no code path
    * reaches a kid's `avatar_url` for display).
+   *
+   * READ VISIBILITY (V25 t14, migration 0054): the OBJECT is readable by any
+   * signed-in parent — the founder reversed V9 ticket 11's owner-only rule on
+   * 2026-09-26. The ROW this column sits on stays gated by 0040, so who may see
+   * a kid at all (and therefore whose photo renders) is still the family, the
+   * host/pinger on a shared drop-in, and moderators.
    */
   avatar_url?: string | null
   /**
@@ -480,10 +486,17 @@ export interface Kid {
  * V9 ticket 10 (migration 0040): this embed is RLS-FILTERED per kid — the
  * caller receives only the kids they may see (their own family's, the ones
  * attached to a drop-in they host or pinged, any of them if they moderate).
- * For a signed-in stranger it is an EMPTY ARRAY, and `UserPage` accordingly
- * renders the kids section in the self view alone (the confirmed, accepted
- * cost). There is no error to handle and no flag to set: an empty list IS the
- * database's answer.
+ * For a signed-in stranger it is an EMPTY ARRAY. There is no error to handle
+ * and no flag to set: an empty list IS the database's answer.
+ *
+ * V25 t14: `ProfileView` renders the kids card whenever this list is NON-EMPTY,
+ * for the owner and for a host/pinger viewer alike, because the list it holds
+ * is already the database's answer to "may this viewer see these children" —
+ * the earlier self-view-only render was a second, client-side gate on top of
+ * 0040, and the founder's 2026-09-26 decision ("other people should be able to
+ * see them") retired it. The accepted cost is that a host/pinger viewer sees
+ * the SUBSET of a family's kids attached to the shared drop-in; see the note in
+ * `ProfileView.tsx`.
  */
 export interface ProfileWithKids extends Profile {
   kids: Kid[]

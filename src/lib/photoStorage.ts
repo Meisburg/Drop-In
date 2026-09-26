@@ -13,13 +13,15 @@
  *     deliberately public (T5: separation, not lockdown — putting avatars behind
  *     signed URLs would be a large regression for no privacy gain).
  *   * `kid-photos` (PRIVATE, new) ............ TWO path classes, TWO policies:
- *       - `<uid>/kids/<kidId>`  → the OWNER alone, forever. Nobody else — not
- *         even another signed-in parent — may list it or mint a signed URL for
- *         it. (V12 t04 re-surfaces these on the OWNER's `/profile` self-view
- *         only, via a batched best-effort signed-URL read; every other surface
- *         — `/u/:handle`, `/settings`, the feed, the place pages — stays
- *         photo-free, so the images the human asked to KEEP remain reachable by
- *         their owner without re-opening the exposure.)
+ *       - `<uid>/kids/<kidId>`  → ANY SIGNED-IN PARENT (V25 ticket 14,
+ *         migration 0054). V9 ticket 11 had made it the OWNER alone; the
+ *         founder reversed that on 2026-09-26 — "it's optional if you want to
+ *         upload photos and if someone chooses to upload photos, other people
+ *         should be able to see them" — with "people" scoped to signed-in
+ *         parents. The bucket stays private and the role stays `authenticated`,
+ *         so an anonymous caller still can neither list, fetch nor mint. The
+ *         CLASS check (`[2] = 'kids'`) is the remaining gate and keeps this rule
+ *         from swallowing the family class below.
  *       - `<uid>/family/photo.<ext>` → any signed-in family
  *         (`familyPhotoVisibility`). A "photo of your family" will USUALLY
  *         DEPICT THE CHILDREN, so it cannot be anonymous (T4): it is not in a
@@ -38,7 +40,7 @@
  *   - `db.ts` (the family-photo upload + the batched signed-URL mints, family
  *     AND kid),
  *   - `ProfilePage` / `UserPage` (the family-photo render sites; `ProfilePage`
- *     also renders the owner-only kid-photo list),
+ *     also renders the kid-photo list),
  *   - `e2e/kid-photo-exposure.e2e.ts` (which asserts these INTENTIONS and then
  *     proves the live storage policies enforce them — the seam is the intent,
  *     the policy is the wall),
@@ -123,10 +125,16 @@ export function kidPhotoStoredRef(profileId: string, kidId: string): string {
  *
  * The paths are BUILT from the ids, never read from `kids.avatar_url`: the
  * stored column is a bucket-qualified object path (or a legacy public URL) and
- * the read path is owner-only by construction, so the canonical
- * `<uid>/kids/<kidId>` shape is what the storage policy mints for. One batched
- * mint per page (the sibling `familyPhotoMintPaths`), so the dedupe lives here:
- * a list that names the same kid twice mints once. An empty id is skipped.
+ * the canonical `<uid>/kids/<kidId>` shape is what the storage policy mints
+ * for. One batched mint per page (the sibling `familyPhotoMintPaths`), so the
+ * dedupe lives here: a list that names the same kid twice mints once. An empty
+ * id is skipped.
+ *
+ * `profileId` is the profile WHOSE KIDS these are — not the viewer. Since V25
+ * ticket 14 any signed-in parent may mint for the kid class, so the caller is
+ * responsible for passing only the kids the database actually returned to that
+ * viewer (0040 filters the `kids` embed row by row) and for passing `null`
+ * instead of a profile id when there is no session at all.
  */
 export function kidPhotoMintPaths(profileId: string, kidIds: string[]): string[] {
   const seen = new Set<string>()
@@ -159,23 +167,35 @@ export function isKidPhotoPath(objectPath: string): boolean {
 }
 
 /**
- * THE KID-PHOTO VISIBILITY DECISION, stated once and pinned by a unit test: a
- * kid photo is fetchable by its OWNER alone. `'denied'` covers a signed-in
- * stranger (the case ticket 10's gate is about — a signed-URL path must never
- * let one parent fetch another family's kid photos) and an anonymous caller.
+ * THE KID-PHOTO VISIBILITY DECISION, stated once and pinned by a unit test:
+ * any SIGNED-IN parent may fetch a kid photo; an anonymous caller may not.
+ * `'owner'` and `'authenticated'` differ only in WHY the viewer qualifies —
+ * naming the owner is what lets the seam state the family's own relationship —
+ * while both mean "the storage policy will mint for this object". The client
+ * does not branch on the difference: it passes the profile id whenever a
+ * session exists and lets the RLS-filtered kid rows decide what is on screen.
  *
- * The client mints a kid-photo URL in exactly ONE place — the owner's
- * `/profile` self-view (V12 t04) — and only for the logged-in owner's own kids,
- * so this decision is the rule the storage policies implement and the e2e
- * asserts; it is not a gate the client could be trusted to apply, and no other
- * surface ever calls the mint.
+ * V25 TICKET 14 REVERSED THIS RULE, and the reversal is the founder's
+ * (2026-09-26, recorded in .scratch/v25/issues/14-kids-photos-visible.md):
+ * uploading a child's photo is OPTIONAL, and if a parent uploads one, other
+ * people may see it. "People" is scoped to signed-in parents — the app's
+ * privacy-first posture is "parents authenticate before seeing anything"
+ * (AGENTS.md) — so the answer for an anon caller is still `'denied'`, the
+ * bucket stays `public = false`, and the policy is `to authenticated`. Before
+ * this, V9 ticket 11 answered `'denied'` for every non-owner, which is what
+ * migration 0054 changes: the policy keeps the CLASS check
+ * (`(storage.foldername(name))[2] = 'kids'`) and drops the owner check.
+ *
+ * This function is the INTENT the policy implements, not a gate the client is
+ * trusted to apply: the storage policy is the wall (the note on
+ * `kidPhotoMintPaths` above is the caller's half of the contract).
  */
 export function kidPhotoVisibility(
   viewerProfileId: string | null,
   ownerProfileId: string,
-): 'owner' | 'denied' {
+): 'owner' | 'authenticated' | 'denied' {
   if (viewerProfileId === null || viewerProfileId === '') return 'denied'
-  return viewerProfileId === ownerProfileId ? 'owner' : 'denied'
+  return viewerProfileId === ownerProfileId ? 'owner' : 'authenticated'
 }
 
 /**
@@ -244,12 +264,16 @@ export function familyPhotoObjectPath(storedValue: string | null | undefined): s
  * THE FAMILY-PHOTO VISIBILITY DECISION (T4): readable by any SIGNED-IN family,
  * never by an anonymous caller.
  *
- * Why it is not owner-only like the kid class: the photo is shown on
- * `/u/:handle` — a surface whose entire audience is signed-in families — and
- * `/profile` is the owner's own copy of the same image. Why it is not public
- * like an avatar: a "photo of your family" will usually DEPICT THE CHILDREN,
- * and a public bucket is exactly the exposure this ticket closes. The line is
- * therefore "signed in", and the storage policy is the wall.
+ * Why it is not public like an avatar: a "photo of your family" will usually
+ * DEPICT THE CHILDREN, and a public bucket is exactly the exposure this ticket
+ * closes. The line is therefore "signed in", and the storage policy is the
+ * wall.
+ *
+ * V25 ticket 14 put the KID class on the same line (`kidPhotoVisibility` now
+ * answers `'authenticated'` for a signed-in non-owner too), so the two classes
+ * share one read audience and differ in what the audience can DO with it: a
+ * family photo is one fixed object per family, while kid photos are per kid and
+ * are only ever rendered for the kid rows 0040 already returned to that viewer.
  */
 export function familyPhotoVisibility(
   viewerProfileId: string | null,
@@ -338,13 +362,15 @@ export function profileHasBio(profile: { bio?: string | null } | null): boolean 
  *     claims it is.
  *
  * `kidsVisible` is the CALLER's decision, passed in rather than computed,
- * because the rule behind it is not about the profile at all: `/u/:handle`
- * renders the kids card in the SELF VIEW only (V9 ticket 10's accepted cost —
- * RLS returns a stranger an empty array, and an empty list must never be shown
- * as if it were the whole family). Keeping that decision at the call site keeps
- * this function pure and keeps the two pages' differing reasons visible where
- * they are decided. `parentNamesVisible` follows the same discipline for the
- * same reason: only the caller knows what its own card grid rendered.
+ * because the rule behind it is not about the profile at all: the `kids` embed
+ * is RLS-FILTERED per kid (0040), so what arrives in `profile.kids` is exactly
+ * "the kids this viewer may see" — the family's own, the ones attached to a
+ * drop-in they host or pinged, and any of them for a moderator. The caller
+ * renders the card when that list is non-empty, and the database has already
+ * answered who that is. Keeping the decision at the call site keeps this
+ * function pure and keeps the two pages' differing reasons visible where they
+ * are decided. `parentNamesVisible` follows the same discipline for the same
+ * reason: only the caller knows what its own card grid rendered.
  *
  * The ORDER here is the contract; the JSX at each site lays the blocks out in
  * the same order and says so. The "rest" of each page (the handle header, the

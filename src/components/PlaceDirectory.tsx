@@ -34,6 +34,7 @@ import {
   placeUpcomingLabel,
   radiusPreviewCircle,
   resolveMapCoords,
+  savedPlacesEmptyCopy,
 } from '../lib/places'
 import type { DateWindow, PlaceListRow, SortMode } from '../lib/places'
 import { reviewRatingLine } from '../lib/reviews'
@@ -151,6 +152,17 @@ export function PlaceDirectory({
   const [filterModalOpen, setFilterModalOpen] = useState(false)
   // Empty set = all kinds (no kind filter active).
   const [selectedKinds, setSelectedKinds] = useState<Set<string>>(new Set())
+  /**
+   * V25 t08 — THE SAVED GATE. True = the directory shows ONLY the viewer's own
+   * saved places (the founder's "collection of all of your favorite places").
+   * It is a filter over the SAME `followedPlaceIds` set the bookmark controls
+   * read — the follows table through `listMyFollows`, never a second store —
+   * and the pure seam (`planDirectoryList`) owns what it does, exactly like
+   * `selectedKinds` above. Component state (not a route): the ticket chose a
+   * filter on the surfaces that already exist, and a new route would have to
+   * join the playtest `routes.json`.
+   */
+  const [savedOnly, setSavedOnly] = useState(false)
   // Miles from the home pin; null = no radius constraint from the modal.
   const [radiusFilter, setRadiusFilter] = useState<number | null>(null)
 
@@ -222,6 +234,7 @@ export function PlaceDirectory({
     radiusReason,
     dateWindowReason,
     kindReason,
+    savedReason,
     nothingMatches,
   } = planDirectoryList({
     places,
@@ -230,6 +243,8 @@ export function PlaceDirectory({
     distanceChoice,
     viewerRadius,
     selectedKinds,
+    savedOnly,
+    followedPlaceIds,
     radiusFilter,
     dateWindow,
     sortMode,
@@ -315,6 +330,27 @@ export function PlaceDirectory({
    */
   const toggleAvailable =
     places !== null && (listRows.length > 0 || placeableMapRows.length > 0)
+
+  /**
+   * V25 t08 — DOES THE SAVED CHIP RENDER?
+   *
+   * YES when this viewer has saved at least one place (the collection exists to
+   * be opened) OR when the gate is already on (so the control that clears a
+   * filter is never the thing the filter removed). NO when the read is in
+   * flight, and NO for a viewer with no saves: `setSavedOnly(true)` exists only
+   * in this chip's own onClick, so a zero-save viewer has no way to turn the gate
+   * on, and a chip there really would be a door to nowhere — the same "a control
+   * that promises and delivers nothing" defect `toggleAvailable` above exists to
+   * prevent.
+   *
+   * SO THE hasSaves=false SENTENCE IS NOT REACHED BY TURNING THE GATE ON. It is
+   * reached FROM INSIDE an already-open collection: a viewer who HAS saves opens
+   * the Saved list and un-saves their last one — the gate is still on, so the
+   * chip stays (the `savedOnly` half of the rule above) and the first-run copy is
+   * what they see. That is the path e2e/hearts-collection.e2e.ts step (d) drives.
+   */
+  const savedToggleAvailable =
+    places !== null && (followedPlaceIds.size > 0 || savedOnly)
 
   // --- Handlers --------------------------------------------------------------
 
@@ -508,6 +544,59 @@ export function PlaceDirectory({
           >
             Outdoor
           </button>
+          {/* V25 t08 — THE SAVED (hearts) FILTER. The founder: "you have a
+              collection of all of your favorite places that you can select
+              from." This is that collection, on the surface that already holds
+              the directory's other narrowing controls, so BOTH consumers get it:
+              /browse (read the list, un-save from it) and /new's picker sheet
+              (tap a saved place → the existing `pickPlace` write; its heart
+              un-saves there too).
+
+              IT IS A FILTER, NOT A SECOND LIST: `planDirectoryList` narrows the
+              SAME rows it already produces, from the SAME `followedPlaceIds` set
+              the bookmarks render — there is no `saved_places` store, and this
+              component issues no read of its own (the host passes the set).
+              Un-saving from this list drops the row on the spot because the host
+              updates that one set — optimistically on /browse, from the write's
+              own answer in the sheet; `follows.savedPlaceIdSetAfterToggle` names
+              both paths at the seam.
+
+              IT RENDERS ONLY WHEN IT IS NOT A DOOR TO NOWHERE
+              (`savedToggleAvailable`): a viewer with saves, or the gate already
+              on. Every chip keeps the house pattern — min-h-11 (44px),
+              focus-visible ring, `motion-reduce`, a real accessible name and
+              `aria-pressed` for the state, so the pressed state is never colour
+              alone. */}
+          {savedToggleAvailable ? (
+            <button
+              type="button"
+              data-testid="places-saved-filter"
+              aria-pressed={savedOnly}
+              onClick={() => {
+                setSavedOnly((prev) => !prev)
+              }}
+              className={
+                'flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+                (savedOnly
+                  ? 'border-indigo-600 bg-indigo-600 text-white'
+                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')
+              }
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className="h-5 w-5 shrink-0"
+                fill={savedOnly ? 'currentColor' : 'none'}
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d={NAV_ICONS.bookmark} />
+              </svg>
+              Saved
+            </button>
+          ) : null}
         </div>
 
         {/* V25 t03 — THE CATEGORY CHIP ROW (annotation 3).
@@ -774,16 +863,52 @@ export function PlaceDirectory({
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm md:col-start-2">
           Loading…
         </div>
+      ) : savedReason !== null ? (
+        /* V25 t08 — THE SAVED GATE'S EMPTY STATE, and it leads the chain for the
+           same reason the kind state does: the parent asked for their own
+           collection, so "your collection is empty" is the true answer, and
+           "Nothing within N miles yet" (the radius branch below) would blame a
+           control they never touched. Two honest messages plus their escapes:
+
+             * `hasSaves === false` — no saves at all. A sentence, no bordered
+               empty list, and the escape is to the whole directory so the
+               bookmark they need is one tap away.
+             * `hasSaves === true` — saves exist but the current narrowing
+               excluded them all. The copy says exactly that; the escape clears
+               the gate.
+
+           Both escapes write the SAME `savedOnly` state the chip does, so there
+           is one filter and one way to clear it. */
+        <div
+          data-testid="empty-saved-state"
+          className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm md:col-start-2"
+        >
+          <p className="text-sm text-slate-600">{savedPlacesEmptyCopy(savedReason.hasSaves)}</p>
+          <button
+            type="button"
+            data-testid="saved-empty-escape-all"
+            onClick={() => {
+              setSavedOnly(false)
+            }}
+            className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+          >
+            {savedReason.hasSaves ? 'Show all places' : 'Browse all places'}
+          </button>
+        </div>
       ) : kindReason !== null ? (
-        /* V25 t03: THE HONEST ZERO-ROW KIND STATE, and it leads the empty chain
-           deliberately. `kindReason` is non-null only when EVERY selected kind has
-           zero rows in the whole loaded directory (`park` and `trail` today), and
-           that is the one emptiness no other control can explain or fix: widening
-           the radius, choosing another date window, or clearing the search cannot
-           conjure a place whose kind does not exist. Naming the chip's own label is
-           therefore the true answer, and the escape returns the parent to the full
-           directory. Every other cause (a radius, a window, a search) still falls
-           through to its own message below, exactly as before. */
+        /* V25 t03: THE HONEST ZERO-ROW KIND STATE, and it still outranks the
+           radius and date-window branches. `kindReason` is non-null only when
+           EVERY selected kind has zero rows in the whole loaded directory
+           (`park` and `trail` today), and that is the one emptiness no other
+           control can explain or fix: widening the radius, choosing another date
+           window, or clearing the search cannot conjure a place whose kind does
+           not exist. Naming the chip's own label is therefore the true answer,
+           and the escape returns the parent to the full directory. Every other
+           cause (a radius, a window, a search) still falls through to its own
+           message below, exactly as before.
+           V25 t08: the SAVED branch now sits ahead of it, because when the
+           parent has asked for their own collection, "your collection is empty"
+           is the more specific truth; the kind state still leads the others. */
         <div
           data-testid="empty-kind-state"
           className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm md:col-start-2"

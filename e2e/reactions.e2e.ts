@@ -25,6 +25,7 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import {
+  dismissRsvpConfirmationIfOpen,
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
   readSupabaseEnv, settleOnRoute, finishSignup,
   signUpViewer, stepStartTimeOnce,
@@ -94,6 +95,12 @@ async function createPingingViewerWithThread(
   await viewerPage.goto(`/playdate/${playdateId}`)
   await viewerPage.getByRole('button', { name: /^I’m going$/ }).click()
   await expect(viewerPage.getByRole('button', { name: /^✓ Going$/ })).toBeVisible()
+  // V25 ticket 13: a ping raise the RSVP confirmation lightbox, whose backdrop
+  // covers the page — the next tap ("Message the host") would land on the
+  // backdrop instead of the button. The dialog is dismissed exactly as a parent
+  // does (the "Got it" control), because this helper is meant to leave the page
+  // in the state the rest of the spec drives, not to reach around it.
+  await dismissRsvpConfirmationIfOpen(viewerPage)
   await viewerPage.getByRole('button', { name: 'Message the host' }).click()
   await expect(viewerPage).toHaveURL(new RegExp(`/inbox\\?thread=${playdateId}$`))
   return { context: viewerContext, page: viewerPage }

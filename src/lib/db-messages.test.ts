@@ -345,6 +345,7 @@ describe('queryMessagesForPlaydateWithClient (the thread view\'s read)', () => {
             sender_id: 'me',
             body: 'first',
             created_at: '2026-09-12T10:00:00Z',
+            sender: { display_name: 'Jon Meisburg' },
           },
           {
             id: 'm2',
@@ -352,6 +353,7 @@ describe('queryMessagesForPlaydateWithClient (the thread view\'s read)', () => {
             sender_id: 'other',
             body: 'second',
             created_at: '2026-09-12T11:00:00Z',
+            sender: { display_name: 'Nicole Meisburg' },
           },
         ],
         error: null,
@@ -361,10 +363,39 @@ describe('queryMessagesForPlaydateWithClient (the thread view\'s read)', () => {
     expect(rows).toHaveLength(2)
     expect(rows[0].body).toBe('first')
     expect(rows[1].body).toBe('second')
-    // The wire pins: the right table, the right filter, the right order.
+    // V25 ticket 11: each row carries the SENDER's OWN display name in the same
+    // request (the embed), which is what labels every bubble by its sender
+    // instead of by the thread-level counterpart.
+    expect(rows[0].sender_display_name).toBe('Jon Meisburg')
+    expect(rows[1].sender_display_name).toBe('Nicole Meisburg')
+    // The wire pins: the right table, the right filter, the right order, and the
+    // sender embed (so a "convenience" refactor that drops it fails loudly).
     expect(calls).toContain('from(messages)')
+    expect(calls).toContain(
+      'select(id, playdate_id, sender_id, body, created_at, sender:profiles!messages_sender_id_fkey ( display_name ))',
+    )
     expect(calls).toContain('eq(playdate_id, pd-1)')
     expect(calls).toContain('order(created_at, asc)')
+  })
+
+  it('carries a null sender_display_name when the embed is absent (no name invented)', async () => {
+    const { client } = makeMessageMockClient({
+      messages: {
+        data: [
+          {
+            id: 'm1',
+            playdate_id: 'pd-1',
+            sender_id: 'other',
+            body: 'first',
+            created_at: '2026-09-12T10:00:00Z',
+            sender: null,
+          },
+        ],
+        error: null,
+      },
+    })
+    const rows = await queryMessagesForPlaydateWithClient(client, 'pd-1')
+    expect(rows[0].sender_display_name).toBeNull()
   })
 
   it('returns an empty array when the read yields no rows', async () => {

@@ -46,7 +46,10 @@ export function DeletePlaydateDialog({
     cancelRef.current?.focus()
   }, [])
 
-  // Trap Tab inside the dialog; restore focus to the trigger on close.
+  // Trap Tab inside the dialog. Focus is NOT restored to the trigger on close:
+  // the effect above focuses Cancel BEFORE `useFocusTrap` runs, so the trap
+  // captures Cancel as "previously focused" and skips the restore when it
+  // unmounts. See `FocusTrap.tsx`'s header.
   useFocusTrap(dialogRef, true)
 
   // Esc closes (same as a backdrop click), unless the write is in flight.

@@ -38,12 +38,51 @@ export function nextTrapTarget(
 }
 
 /**
- * True when the browser's own Tab from `currentIndex` would leave the dialog,
- * so the caller must intervene. A move that stays inside needs no handling —
- * letting the browser do it preserves normal tab order and any `tabindex`
- * subtleties we did not model.
+ * True when the caller must intercept the Tab (or Shift+Tab) the browser is
+ * about to perform, because the browser's own move would leave the dialog.
+ *
+ * THE BUG THIS CORRECTS (V25 ticket 13, measured in the RSVP confirmation
+ * lightbox). The first version of this predicate answered only "is focus outside
+ * the dialog?" — `currentIndex < 0 || currentIndex >= count` — on the theory
+ * that an in-dialog move needed no handling because the browser would keep it
+ * inside. That theory is false at the EDGES, and the edges are the whole point
+ * of a trap:
+ *
+ *  - on the LAST control, Tab's next focusable is the page behind the modal, so
+ *    the trap must wrap forward. Measured in the throwaway experiment against
+ *    the pre-fix predicate: `[EXP] active on open:
+ *    BUTTON#rsvp-confirmation-got-it` → `[EXP] A: after Tab #1 immediately:
+ *    BODY#` — one Tab from an edge landed on the document body;
+ *  - on the FIRST control, Shift+Tab's previous focusable is likewise behind the
+ *    modal. The instrumented run that caught the escape in the dialog's own
+ *    event log was a Shift+Tab from the FIRST control, which walked focus into
+ *    the composer behind the modal: `focusout
+ *    BUTTON#rsvp-confirmation-dismiss` → `focusin TEXTAREA#comment-composer`.
+ *    (The earlier note here attributed that composer landing to Tab from the
+ *    LAST control; the escape direction was wrong even though the fix — claim
+ *    both edges — is the same.)
+ *
+ * Instrumented live in the dialog (the page's own `getFocusable()` query and
+ * focusin/focusout events, run headless): `getFocusable()` returned the dialog's
+ * TWO buttons on every keystroke, and yet the browser's own move walked focus
+ * out of the `aria-modal` and into the composer behind it. The trap's own index
+ * arithmetic was right; this predicate let the browser do the escaping move. It
+ * also explains the old unit test below, which pinned a Shift+Tab-from-the-first
+ * escape as correct ("leaves normal in-dialog moves to the browser").
+ *
+ * So the question is not "is focus inside?" but "would the next move END UP
+ * outside?" — and without the shift direction that means either edge. The
+ * interior still needs no handling: a move that genuinely stays inside is left
+ * to the browser, preserving normal tab order and any `tabindex` subtleties we
+ * did not model.
  */
 export function shouldInterceptTab(count: number, currentIndex: number): boolean {
+  // Nothing focusable: the caller must keep focus from leaving entirely.
   if (count <= 0) return true
-  return currentIndex < 0 || currentIndex >= count
+  // Focus is outside the dialog (or on <body>): pull it back to an edge.
+  if (currentIndex < 0 || currentIndex >= count) return true
+  // At an edge, one of Tab/Shift+Tab escapes. The caller knows which one it is
+  // and uses `nextTrapTarget` for the destination, so both edges are claimed
+  // here; a single-control dialog is both edges at once and always wraps.
+  return currentIndex === 0 || currentIndex === count - 1
 }

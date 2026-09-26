@@ -280,6 +280,34 @@ export function kindEmptyCopy(label: string): string {
   return `No “${label}” places in the directory yet.`
 }
 
+/**
+ * V25 t08 — THE SAVED (hearts) FILTER'S TWO EMPTY STATES, as pure copy.
+ *
+ * THE VOCABULARY: the app says **Saved** for the place bookmark the founder
+ * called a **heart** ("a collection of all of your favorite places that you can
+ * select from"). "Saved" is the word already on the controls this slice does not
+ * rename (the card's `Save X` / `Saved X — tap to unsave` accessible name, the
+ * place page's `Save` / `Saved` button, the `follow-place`/`place-heart` ids it
+ * keeps), so the new surface adopts the existing word instead of inventing a
+ * fourth one between follow / save / heart / favourite.
+ *
+ * TWO MESSAGES, because there are two different truths and the ticket forbids
+ * one of them reading as a broken filter:
+ *
+ *   * `hasSaves === false` — this parent has saved NOTHING, so the empty list is
+ *     not a filter failure at all; the copy says what the list is FOR and how a
+ *     place gets in it. Never an empty bordered list.
+ *   * `hasSaves === true` — saves exist but the CURRENT narrowing (search, kind,
+ *     radius, date window) excludes them all. Saying "you haven't saved
+ *     anything" there would be a lie about the parent's own data, so the copy
+ *     names the cause and the caller offers the escape.
+ */
+export function savedPlacesEmptyCopy(hasSaves: boolean): string {
+  return hasSaves
+    ? 'None of your saved places match these filters.'
+    : 'You haven’t saved any places yet. Tap the bookmark on a place to keep it here.'
+}
+
 /** `/place/:id` — the one place path builder (links never hand-roll it). */
 export function placePath(placeId: string): string {
   return `/place/${encodeURIComponent(placeId)}`
@@ -1939,6 +1967,13 @@ export function placeFollowIdSet(
 }
 
 /**
+ * The shared "saved nothing" set for `planDirectoryList`'s default. One frozen
+ * instance rather than a fresh `new Set()` in the parameter list, so the default
+ * is a value the plan can compare by identity if it ever needs to.
+ */
+const EMPTY_PLACE_IDS: ReadonlySet<string> = new Set<string>()
+
+/**
  * The directory LIST's whole composition, as one pure decision (the build law:
  * the component renders and does not decide). PlaceDirectory used to compute
  * every one of these values inline; this is that block, moved here so a unit
@@ -2004,6 +2039,15 @@ export interface DirectoryListPlan {
    * === 'any'`, where maxMiles is null and there is no radius to blame).
    */
   radiusReason: { radiusMiles: number } | null
+  /**
+   * V25 t08: the SAVED gate's empty state — non-null exactly when
+   * `savedOnly` is on, the directory has loaded, and NOTHING survived the gate
+   * (neither the list nor the "Not on the map yet" section). The carried
+   * `hasSaves` says which copy is honest (see `savedPlacesEmptyCopy`): false =
+   * this viewer has saved no places, true = their saves are all excluded by the
+   * other filters. Null for every caller that does not pass `savedOnly`.
+   */
+  savedReason: { hasSaves: boolean } | null
   /** Nothing at all in the list OR the unplaced section (the generic empty state). */
   nothingMatches: boolean
   /**
@@ -2052,6 +2096,21 @@ export function planDirectoryList(input: {
   viewerRadius: number
   /** The modal's kind chips (empty set = all kinds). */
   selectedKinds: ReadonlySet<string>
+  /**
+   * V25 t08: the SAVED gate — true renders ONLY the viewer's own saved places
+   * (the hearts collection). It is the same set of ids the save controls read
+   * (`followedPlaceIds`), never a second store: filtering the directory to the
+   * viewer's follows is the whole feature, and there is no `saved_places` table
+   * anywhere. Defaults to false so every existing caller is unchanged.
+   */
+  savedOnly?: boolean
+  /**
+   * The viewer's own saved place ids (the batched `listMyFollows` read, the same
+   * set the bookmark controls read). Read ONLY when `savedOnly` is true; the
+   * default empty set + `savedOnly: true` therefore means "you saved nothing",
+   * which is a true statement about a signed-in viewer who has.
+   */
+  followedPlaceIds?: ReadonlySet<string>
   /** Miles from the home pin (the modal's radius filter; null = off). */
   radiusFilter: number | null
   /** The date chip's window ('upcoming' = no date filter — the default state). */
@@ -2089,6 +2148,8 @@ export function planDirectoryList(input: {
     distanceChoice,
     viewerRadius,
     selectedKinds,
+    savedOnly = false,
+    followedPlaceIds = EMPTY_PLACE_IDS,
     radiusFilter,
     dateWindow,
     sortMode,
@@ -2129,7 +2190,9 @@ export function planDirectoryList(input: {
   const effectiveRows: PlaceListRow[] = (() => {
     if (geocodeCenter === null) return rows
     const filtered = filterPlacesByRadius(places ?? [], geocodeCenter, radiusMiles, zipCoords)
-    return filtered.map((place) => {
+    return filtered
+      .filter((place) => !savedOnly || followedPlaceIds.has(place.id))
+      .map((place) => {
       const c = resolveMapCoords(place, zipCoords)
       const starts = upcomingStartTimes === null ? null : (upcomingStartTimes.get(place.id) ?? [])
       return {
@@ -2146,6 +2209,12 @@ export function planDirectoryList(input: {
   // full placed set (the circle overlay communicates the filter visually).
   const filteredRows: PlaceListRow[] = (() => {
     let base = rows
+    // V25 t08 — THE SAVED GATE, applied here so BOTH list paths (the geocoded
+    // center path above and this one) honour it: this is the same filter the
+    // kind chips below are, over the viewer's own follow ids.
+    if (savedOnly) {
+      base = base.filter((row) => followedPlaceIds.has(row.place.id))
+    }
     if (selectedKinds.size > 0) {
       base = base.filter((row) => selectedKinds.has(row.place.kind))
     }
@@ -2249,6 +2318,29 @@ export function planDirectoryList(input: {
     return named === undefined ? null : { kind: named, label: placeKindLabel(named) }
   })()
 
+  /**
+   * V25 t08 — IS THE SAVED GATE THE REASON NOTHING IS SHOWING?
+   *
+   * Non-null exactly when `savedOnly` is on and the gate emptied the list
+   * (nothing in the rendered list AND nothing in the "Not on the map yet"
+   * section). `hasSaves` distinguishes the TWO truths the copy must not
+   * conflate: false = this viewer has saved nothing at all (the empty list is
+   * the honest first-run state, not a filter failure); true = saves exist but
+   * the current search/kind/radius/date narrowing excludes them all.
+   *
+   * The component puts this branch BEFORE the radius and date-window branches,
+   * for the same reason the kind branch leads: when the viewer asked for their
+   * own collection, "your collection is empty" is the answer — "Nothing within
+   * N miles yet" would blame a filter they never touched and hide the fact that
+   * the gate itself is why there is nothing to see.
+   */
+  const savedReason = (() => {
+    if (!savedOnly) return null
+    if (places === null) return null
+    if (listRows.length > 0 || filteredUnplaced.length > 0) return null
+    return { hasSaves: followedPlaceIds.size > 0 }
+  })()
+
   return {
     rows,
     effectiveRows,
@@ -2262,6 +2354,7 @@ export function planDirectoryList(input: {
     dateWindowIsTheReason,
     dateWindowReason,
     kindReason,
+    savedReason,
     nothingMatches,
   }
 }

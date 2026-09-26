@@ -12,6 +12,12 @@
  *    registers NOTHING and points at the in-app fallback instead, that a saved
  *    ping arms the prompt (which never appears on a cold load), and that a
  *    denial after that action surfaces the note the AC pins.
+ *  * ALSO IN SCOPE since V25 ticket 15: the THREE trigger points — the account
+ *    just created, the drop-in just posted, the RSVP just given — each offered
+ *    at most once, a "Not now" at one of them NOT cancelling the others, the
+ *    going-to-an-event reason naming comments and cancellations, and the
+ *    detail-page deferral ending on the next non-detail visit instead of
+ *    swallowing the point.
  *  * OUT OF SCOPE, and not testable from here: THE SERVER-SIDE SEND. A real
  *    push needs VAPID keys, the deployed `send-push` function and a real push
  *    service, all of which are human-owned console steps (docs/push-setup.md).
@@ -51,6 +57,7 @@
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 import {
+  dismissRsvpConfirmationIfOpen,
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
   readSupabaseEnv, settleOnRoute, finishSignup,
   signUpViewer, stepStartTimeOnce,
@@ -64,6 +71,14 @@ interface PushStubState {
   requests: number
   subscribes: number
   unsubscribes: number
+  /**
+   * The document's `navigator.userActivation.isActive` AT THE MOMENT
+   * `requestPermission()` was called (V25 ticket 15). The ticket's hard
+   * constraint is that a browser grants push only on a user gesture, so this is
+   * the fact that proves every request this app makes came from one. `null` when
+   * the browser exposes no `navigator.userActivation` at all.
+   */
+  requestActivation: boolean | null
   /** Did the stub's own install complete? (finding I: it must be asserted.) */
   installed: boolean
   /** Set when an install step threw — the honest reason `installed` is false. */
@@ -111,6 +126,7 @@ async function installPushStub(
         requests: restored.requests ?? 0,
         subscribes: restored.subscribes ?? 0,
         unsubscribes: restored.unsubscribes ?? 0,
+        requestActivation: restored.requestActivation ?? null,
         installed: false,
       }
       ;(window as unknown as { __pushStub: PushStubState }).__pushStub = state
@@ -124,6 +140,7 @@ async function installPushStub(
               requests: state.requests,
               subscribes: state.subscribes,
               unsubscribes: state.unsubscribes,
+              requestActivation: state.requestActivation,
               installed: state.installed,
             }),
           )
@@ -206,6 +223,11 @@ async function installPushStub(
         })
         FakeNotification.requestPermission = async () => {
           state.requests += 1
+          // V25 ticket 15: what the browser sees at the instant the app asks.
+          state.requestActivation =
+            typeof navigator !== 'undefined' && 'userActivation' in navigator
+              ? navigator.userActivation.isActive
+              : null
           persist()
           return state.permission
         }
@@ -350,6 +372,87 @@ test('a cold load never asks for permission', async ({ page }) => {
   // rendered and unmounted would still have called requestPermission.
   await expect(page.getByTestId('push-optin-prompt')).toHaveCount(0)
   expect((await stubState(page)).requests).toBe(0)
+})
+
+/**
+ * V25 ticket 15, TRIGGER POINT 1 — the Create-account tap.
+ *
+ * The founder: "notifications should just automatically be on no matter what
+ * when you create an account. If somebody wants to turn them off they can go
+ * into the settings and turn them off themselves." A browser grants push only
+ * on a user gesture, so "automatically on" is delivered as a PROMPT at the
+ * moment the account exists — and the permission request itself belongs to the
+ * CARD's own button (`enablePush`), never to the signup handler. That is why
+ * `requests` is asserted to be 0 with the card on screen: the tap that grants is
+ * a real gesture of its own, and nothing depends on the transient activation of
+ * the Create-account tap surviving the signup awaits.
+ *
+ * WHAT "ONCE" MEANS HERE: the point is recorded as OFFERED the moment the card
+ * is drawn (localStorage, so it outlives the document). A reload — the state a
+ * parent actually returns in — is silent, and /settings → Notifications is the
+ * only door back.
+ */
+test('the signup prompt is offered once, on the first surface after Create account, and never on a reload', async ({
+  browser,
+}) => {
+  const marker = readMarkerMeta()
+  const epoch = Math.floor(Date.now() / 1000)
+  const viewerName = `e2e-s-${epoch}`
+  const viewerEmail = `e2e-s-${epoch}@gmail.com` // gmail.com: the project rejects example.com
+  const viewerPassword = `e2e-s-pw-${epoch}` // in-memory only — never written, never committed
+
+  const viewerContext = await browser.newContext({
+    baseURL: 'http://localhost:4173',
+    storageState: { cookies: [], origins: [] },
+  })
+  const viewer = await viewerContext.newPage()
+  // 'denied' so that if one of the assertions below ever stops holding, the
+  // failure cannot ALSO leave a subscription row behind for a viewer account no
+  // cleanup can reach (the afterEach sweeps with the MARKER's owner-scoped JWT).
+  await installPushStub(viewer, {
+    permission: 'denied',
+    endpoint: `https://push.example.test/e2e-signup-${Date.now()}`,
+  })
+
+  await signUpViewer(viewer, { name: viewerName, email: viewerEmail, password: viewerPassword })
+  // The card is suppressed on /onboarding (see isPromptSuppressedPath), so the
+  // app's own "Continue" cannot spend the point before the parent can answer it:
+  // it is drawn on the first surface behind the setup step.
+  await finishSignup(viewer, { homeZip: marker.homeZip, radiusMiles: marker.radiusMiles })
+
+  const prompt = viewer.getByTestId('push-optin-prompt')
+  await expect(prompt).toBeVisible()
+  await expect(prompt).toContainText('heads-up')
+  // Nothing has asked the browser yet.
+  expect((await stubState(viewer)).requests).toBe(0)
+  // The point is on the record as offered.
+  expect(await viewer.evaluate(() => window.localStorage.getItem('dropin.push.offered'))).toBe(
+    'signup',
+  )
+
+  // "Not now" spends THIS point — and it is NOT the global 'dismissed' decision
+  // ("Turn off notifications" in /settings), which is what leaves the after-post
+  // and going-to-an-event asks still legal.
+  await viewer.getByTestId('push-optin-not-now').click()
+  await expect(prompt).toHaveCount(0)
+  const note = viewer.getByTestId('push-optin-note')
+  await expect(note).toBeVisible()
+  await expect(note).toContainText('While you were away')
+  await expect(note).toContainText('settings')
+  await viewer.getByTestId('push-optin-note-dismiss').click()
+  await expect(note).toHaveCount(0)
+  expect(
+    await viewer.evaluate(() => window.localStorage.getItem('dropin.push.decision')),
+  ).toBe(null)
+
+  // THE RELOAD: no card, no note, and still no permission request.
+  await viewer.reload()
+  await settleOnRoute(viewer, '/')
+  await expect(viewer.getByTestId('push-optin-prompt')).toHaveCount(0)
+  await expect(viewer.getByTestId('push-optin-note')).toHaveCount(0)
+  expect((await stubState(viewer)).requests).toBe(0)
+
+  await viewerContext.close()
 })
 
 test('granting permission registers a push subscription row, and turning off is reversible', async ({
@@ -499,6 +602,20 @@ test('the prompt follows a real action, and "Not now" is answered with the inbox
   await settleOnRoute(page, '/')
   await expect(page.getByTestId('push-optin-prompt')).toHaveCount(0)
   expect((await stubState(page)).requests).toBe(0)
+
+  // AND A SECOND POST IS SILENT TOO (V25 ticket 15): the point is "after a first
+  // post", offered at most once. The "Not now" above deliberately did NOT write
+  // the global 'dismissed' decision, so this silence is the per-point rule doing
+  // the work rather than a global stop that would also kill the going ask.
+  await page.goto('/new')
+  await settleOnRoute(page, '/new')
+  await editTitle(page)
+  await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(`${title} again`)
+  await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(place)
+  await page.getByRole('button', { name: 'Post drop-in' }).click()
+  await page.waitForURL('/')
+  await expect(page.getByTestId('push-optin-prompt')).toHaveCount(0)
+  expect((await stubState(page)).requests).toBe(0)
 })
 
 test('a saved ping arms the prompt, and denying it surfaces the inbox note', async ({
@@ -539,10 +656,22 @@ test('a saved ping arms the prompt, and denying it surfaces the inbox note', asy
   })
   await expectPushSupported(viewer)
 
+  // V25 ticket 15, TRIGGER POINT 1: this account was created a moment ago, so
+  // the signup point is the card that is up. Answering it "Not now" spends that
+  // point only — which is exactly what makes the going ask below legal.
+  const signupPrompt = viewer.getByTestId('push-optin-prompt')
+  await expect(signupPrompt).toBeVisible()
+  await expect(signupPrompt).toContainText('heads-up')
+  await viewer.getByTestId('push-optin-not-now').click()
+  await expect(signupPrompt).toHaveCount(0)
+  await expect(viewer.getByTestId('push-optin-note')).toContainText('While you were away')
+  await viewer.getByTestId('push-optin-note-dismiss').click()
+  // With the one point answered the feed is silent again: the cold-load pin is
+  // about having no armed action, and there is none.
+  await expect(viewer.getByTestId('push-optin-prompt')).toHaveCount(0)
+
   const card = viewer.locator('a').filter({ hasText: title }).first()
   await expect(card).toBeVisible()
-  // A cold load of the feed never asks (the pin), even with a post on screen.
-  await expect(viewer.getByTestId('push-optin-prompt')).toHaveCount(0)
 
   // --- 3. THE ACTION: a ping saved from the card. It DOES NOT NAVIGATE, which
   // is why the prompt used to appear only after a created post (finding B). ---
@@ -552,6 +681,11 @@ test('a saved ping arms the prompt, and denying it surfaces the inbox note', asy
   const prompt = viewer.getByTestId('push-optin-prompt')
   await expect(prompt).toBeVisible()
   await expect(prompt).toContainText('heads-up')
+  // V25 ticket 15, TRIGGER POINT 3: saying you are going is its own moment, and
+  // the reason names what they get for it — the founder's "updates on the event,
+  // like comments or if it gets cancelled or whatever".
+  await expect(prompt).toContainText('comments')
+  await expect(prompt).toContainText('cancelled')
 
   // --- 4. Denying it is answered with the note, not silence (finding F), and
   // registers NOTHING on this device. ---
@@ -561,6 +695,12 @@ test('a saved ping arms the prompt, and denying it surfaces the inbox note', asy
   await expect(note).toBeVisible()
   await expect(note).toContainText('While you were away')
   expect((await stubState(viewer)).subscribes).toBe(0)
+  // THE GESTURE (V25 ticket 15): the one permission request this card makes
+  // happened while the document was ACTIVATED. A browser only honours a push
+  // prompt then, and this is the fact that pins it — the card's own button is
+  // the gesture, so nothing here depends on the Create-account tap's activation
+  // surviving the signup awaits.
+  expect((await stubState(viewer)).requestActivation).toBe(true)
   expect(await viewer.evaluate(() => window.localStorage.getItem('dropin.push.decision'))).toBe(
     'denied',
   )
@@ -577,19 +717,22 @@ test('a saved ping arms the prompt, and denying it surfaces the inbox note', asy
  *
  * TWO CLAIMS, and the second is why this cannot be a blanket delay:
  *   1. nothing notification-shaped appears beside the confirmation; and
- *   2. the trigger SURVIVES the deferral — the next feed visit still has it.
+ *   2. the trigger SURVIVES the deferral — the next NON-DETAIL visit offers it.
  * A blanket "never prompt after a ping" passes (1) and silently swallows the
- * action, which is the outcome the audit did not ask for.
+ * action, which is the outcome the audit did not ask for (and, until V25 ticket
+ * 15, was what the code actually did: the route the action happened on decided
+ * the deferral on its own, so the point was deferred on every route forever).
  *
- * THE STUB'S PERMISSION IS 'granted' ON PURPOSE, and that makes claim (2)
- * airtight rather than merely likely. The stub's `Notification.permission`
- * reports 'denied' only AFTER a permission request (see `installPushStub`), so
- * a note-path assertion here would be measuring the stub, not the deferral.
- * With permission granted the decision needle is unambiguous: `ask` is false
- * EVERYWHERE, including a cold load — so if the trigger were washed away on the
- * detail page, step 5 would find nothing, and if the prompt were rendering on
- * the detail page, step 4 would see it. The note path itself stays covered by
- * `a saved ping arms the prompt, and denying it surfaces the inbox note`.
+ * THE STUB'S PERMISSION IS 'granted' BUT NO REQUEST IS EVER MADE — and that is
+ * what makes both claims measurable. The stub reports `default` until
+ * `requestPermission()` is called (see `installPushStub`), so the decision seam
+ * is live rather than short-circuited by "already granted": if the trigger were
+ * washed away on the detail page, step 6 would find nothing, and if the prompt
+ * were rendering on the detail page, step 4 would see it. Never tapping "Turn on
+ * notifications" also means no subscription row is written for a viewer account
+ * the marker's owner-scoped cleanup cannot reach. The note path itself stays
+ * covered by `a saved ping arms the prompt, and denying it surfaces the inbox
+ * note`.
  */
 test('a ping from a drop-in detail page defers the notification prompt off the RSVP confirmation', async ({
   page,
@@ -626,6 +769,17 @@ test('a ping from a drop-in detail page defers the notification prompt off the R
   })
   await expectPushSupported(viewer)
 
+  // V25 ticket 15, TRIGGER POINT 1: the signup card is up (this account was
+  // created in this tab a moment ago), and answering it is what makes the
+  // baseline below mean what it says — with the signup point spent, anything
+  // that appears later in this tab came from the RSVP.
+  const signupPrompt = viewer.getByTestId('push-optin-prompt')
+  await expect(signupPrompt).toBeVisible()
+  await viewer.getByTestId('push-optin-not-now').click()
+  await expect(signupPrompt).toHaveCount(0)
+  await expect(viewer.getByTestId('push-optin-note')).toBeVisible()
+  await viewer.getByTestId('push-optin-note-dismiss').click()
+
   const href = await viewer
     .locator('a')
     .filter({ hasText: title })
@@ -635,7 +789,8 @@ test('a ping from a drop-in detail page defers the notification prompt off the R
   await viewer.goto(href ?? '/')
   await expect(viewer.getByRole('heading', { name: title })).toBeVisible()
 
-  // The baseline: a cold load of the detail page never asks (the pin), so any
+  // The baseline: a full load of the detail page never asks (the cold-load pin),
+  // the signup point was answered above, and nothing has RSVP'd yet — so any
   // prompt seen later in this test would be caused by the RSVP below.
   await expect(viewer.getByTestId('push-optin-prompt')).toHaveCount(0)
 
@@ -653,13 +808,23 @@ test('a ping from a drop-in detail page defers the notification prompt off the R
   await expect(goingButton).toHaveAttribute('aria-pressed', 'true')
 
   // --- 4. THE CLAIM: nothing notification-shaped on this screen, and nothing
-  //         was registered behind the parent's back. ---
+  //         was registered behind the parent's back.
+  //
+  //         V25 ticket 13 put the RSVP confirmation LIGHTBOX on this same
+  //         moment, and it makes this claim stronger rather than weaker: the
+  //         assertions below run with that dialog OPEN, so "no prompt" is now
+  //         also "no prompt on top of a real modal". It is dismissed with the
+  //         same control a parent uses before step 5 navigates on. ---
   expect(new URL(viewer.url()).pathname).toMatch(/^\/playdate\//)
   await expect(viewer.getByTestId('push-optin-prompt')).toHaveCount(0)
   await expect(viewer.getByTestId('push-optin-note')).toHaveCount(0)
   expect((await stubState(viewer)).subscribes).toBe(0)
+  // The lightbox really IS up at this point (otherwise the two lines above
+  // would be asserting against a page that had nothing on it at all).
+  await expect(viewer.getByTestId('rsvp-confirmation')).toHaveCount(1)
+  await dismissRsvpConfirmationIfOpen(viewer)
 
-  // --- 5. THE TRIGGER SURVIVED: the next feed visit still carries it. ---
+  // --- 5. THE TRIGGER SURVIVED: the next non-detail visit still carries it. ---
   await settleOnRoute(viewer, '/')
   expect(await viewer.evaluate(() => window.sessionStorage.getItem('dropin.push.trigger'))).toBe(
     'ping_saved',
@@ -670,6 +835,26 @@ test('a ping from a drop-in detail page defers the notification prompt off the R
     await viewer.evaluate(() => window.sessionStorage.getItem('dropin.push.trigger.origin')),
   ).toMatch(/^\/playdate\//)
   expect((await stubState(viewer)).subscribes).toBe(0)
+
+  // --- 6. THE DEFERRAL IS A WAIT, NOT A SWALLOW (V25 ticket 15). At HEAD the
+  //         route the action happened on decided this on its own, so a ping from
+  //         a detail page was deferred on EVERY route and the going-to-an-event
+  //         offer never happened at all. Here it is: offered on the first
+  //         non-detail surface, with the founder's reason. ---
+  const deferred = viewer.getByTestId('push-optin-prompt')
+  await expect(deferred).toBeVisible()
+  await expect(deferred).toContainText('comments')
+  await expect(deferred).toContainText('cancelled')
+  // Nothing was registered behind the parent's back: the card is an offer, and
+  // this spec never accepts it.
+  expect((await stubState(viewer)).subscribes).toBe(0)
+  expect((await stubState(viewer)).requests).toBe(0)
+
+  // Offered once: a reload of the feed is silent.
+  await viewer.reload()
+  await settleOnRoute(viewer, '/')
+  await expect(viewer.getByTestId('push-optin-prompt')).toHaveCount(0)
+  expect((await stubState(viewer)).requests).toBe(0)
 
   await viewerContext.close()
 })

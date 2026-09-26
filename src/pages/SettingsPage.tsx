@@ -135,8 +135,20 @@ export function SettingsPage() {
           untouched. */}
       <section className="flex flex-col gap-3">
         <h2 className="font-display text-lg font-semibold text-slate-900">Following</h2>
+        {/* V25 t08 — THE VOCABULARY, RECONCILED IN ONE DIRECTION. The app calls
+            a place bookmark a SAVE (the founder's "heart"): the card's
+            `Save`/`Saved` accessible name, the place page's button, and now the
+            Places directory's Saved filter. This section keeps its heading and
+            its test ids, and the two anchors that pin them are precise:
+            e2e/loop-closing.e2e.ts:697 asserts the HEADING ("Following") and
+            :704 clicks `unfollow-place` — neither of those may move in this
+            ticket. `following-empty` (:158) has no spec anchor today; it is kept
+            anyway, because renaming an id is churn a copy change does not
+            justify. Only the copy below moved to the save word, so a parent who
+            saves a place and comes looking for it is not told they "followed"
+            it. */}
         <p className="text-sm text-slate-600">
-          Families and places you’ve bookmarked — you’ll see when they’re going to something.
+          The families and places you’ve saved — you’ll see when they’re going to something.
         </p>
 
         {followingError !== null ? (
@@ -147,7 +159,7 @@ export function SettingsPage() {
           <p className="text-sm text-slate-600">Loading…</p>
         ) : following.families.length === 0 && following.places.length === 0 ? (
           <p data-testid="following-empty" className="text-sm text-slate-600">
-            No families or places yet. Follow a family on their profile, or a place on its page.
+            No saved families or places yet. Save a family on their profile, or a place on its page.
           </p>
         ) : (
           <div className="flex flex-col gap-3">

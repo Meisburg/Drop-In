@@ -38,6 +38,7 @@ import {
   placeOutboundLinks,
   photoCreditLine,
   radiusPreviewCircle,
+  savedPlacesEmptyCopy,
   zoomForRadius,
   DETAIL_ZOOM_FALLBACK,
   placeFollowIdSet,
@@ -2648,5 +2649,96 @@ describe('planDirectoryList (the directory list composition, moved out of PlaceD
       dateWindow: 'today',
     })
     expect(absentOnly.kindReason).toEqual({ kind: 'park', label: 'Park' })
+  })
+
+  /**
+   * V25 t08 — THE SAVED GATE (the hearts collection). The gate is a filter over
+   * the SAME saved-id set the bookmark controls read, so these cases pin what it
+   * does to the plan and, just as importantly, that it is INERT for every caller
+   * that does not pass it.
+   */
+  describe('the saved gate (V25 t08)', () => {
+    it('is INERT by default — an unfiltered plan is byte-for-byte what it was', () => {
+      const plain = plan()
+      const explicitOff = plan({ savedOnly: false, followedPlaceIds: new Set(['alki-beach-park']) })
+      expect(explicitOff.listRows).toStrictEqual(plain.listRows)
+      expect(explicitOff.savedReason).toBeNull()
+    })
+
+    it('shows ONLY the viewer’s saved places, whatever else is in the directory', () => {
+      const p = plan({ savedOnly: true, followedPlaceIds: new Set([PLAY_B.id]) })
+      expect(p.listRows.map((r) => r.place.name)).toEqual(['Bellevue Playground'])
+      expect(p.savedReason).toBeNull()
+    })
+
+    it('reads the set by id, not by index or name — an id that is not in the directory shows nothing', () => {
+      const p = plan({ savedOnly: true, followedPlaceIds: new Set(['no-such-place-id']) })
+      expect(p.listRows).toHaveLength(0)
+      expect(p.savedReason).toEqual({ hasSaves: true })
+    })
+
+    it('honours the gate on the GEOCODED path too (both list paths narrow)', () => {
+      const p = plan({
+        savedOnly: true,
+        followedPlaceIds: new Set([PLAY_B.id]),
+        geocodeCenter: GEO_CENTER,
+        radiusMiles: 50,
+      })
+      expect(p.listRows.map((r) => r.place.name)).toEqual(['Bellevue Playground'])
+    })
+
+    it('reports the saved gate as the reason, with hasSaves FALSE for a viewer who saved nothing', () => {
+      const p = plan({ savedOnly: true, followedPlaceIds: new Set() })
+      expect(p.savedReason).toEqual({ hasSaves: false })
+      expect(p.nothingMatches).toBe(true)
+      // The radius/date branches must NOT claim this emptiness: the gate is why
+      // there is nothing to see, and the component renders `savedReason` first.
+      expect(p.radiusIsTheReason).toBe(false)
+      expect(p.dateWindowIsTheReason).toBe(false)
+    })
+
+    it('reports hasSaves TRUE when saves exist but the search excludes them all', () => {
+      const p = plan({
+        savedOnly: true,
+        followedPlaceIds: new Set([PLAY_B.id]),
+        query: 'zzzz-nothing-matches',
+      })
+      expect(p.listRows).toHaveLength(0)
+      expect(p.savedReason).toEqual({ hasSaves: true })
+    })
+
+    it('is null while a genuinely-matching saved row renders (never a false empty state)', () => {
+      const p = plan({ savedOnly: true, followedPlaceIds: new Set([PARK_A.id, PLAY_B.id]) })
+      expect(p.savedReason).toBeNull()
+      expect(p.listRows).toHaveLength(2)
+    })
+
+    it('is null while the read is in flight (an unanswered read is UNKNOWN, never "none saved")', () => {
+      const p = plan({ savedOnly: true, followedPlaceIds: new Set(), places: null })
+      expect(p.savedReason).toBeNull()
+    })
+
+    it('keeps the unplaced saved row reachable (a coordinate-less save is not hidden by the gate)', () => {
+      const p = plan({ savedOnly: true, followedPlaceIds: new Set([PLAY_B.id]) })
+      expect(p.unplaced.map((r) => r.place.name)).toEqual(['Bellevue Playground'])
+    })
+  })
+})
+
+describe('savedPlacesEmptyCopy (V25 t08, the two honest empty messages)', () => {
+  it('tells a viewer who saved nothing what the list is for — and never blames a filter', () => {
+    const copy = savedPlacesEmptyCopy(false)
+    expect(copy).toContain('haven’t saved any places yet')
+    expect(copy.toLowerCase()).not.toContain('filter')
+  })
+
+  it('tells a viewer whose saves are all filtered out the truth about their own data', () => {
+    const copy = savedPlacesEmptyCopy(true)
+    expect(copy).toBe('None of your saved places match these filters.')
+    expect(copy).not.toContain('haven’t saved')
+  })
+
+  it('is two DIFFERENT sentences (the branches cannot collapse to one)', () => {
+    expect(savedPlacesEmptyCopy(true)).not.toBe(savedPlacesEmptyCopy(false))
   })
 })

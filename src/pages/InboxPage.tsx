@@ -36,8 +36,14 @@ import type {
   ReactionState,
 } from '../lib/db'
 import { REACTION_KINDS } from '../lib/db'
-import { activeTodayLabel, mergeConversations } from '../lib/inbox'
-import type { DmConversationRow, MergedConversation } from '../lib/inbox'
+import {
+  activeTodayLabel,
+  firstNamedCounterpart,
+  mergeConversations,
+  messageSenderLabel,
+  singleSenderCounterpart,
+} from '../lib/inbox'
+import type { Counterpart, DmConversationRow, MergedConversation } from '../lib/inbox'
 
 /**
  * /inbox — parent↔parent messaging (V14 ticket 01, migration 0042).
@@ -77,10 +83,13 @@ type ListState =
   | { status: 'error'; message: string }
   | { status: 'ready'; conversations: ConversationSummary[] }
 
+/** A stable empty list, so a "no messages yet" memo dep never changes identity. */
+const NO_MESSAGES: readonly MessageRow[] = []
+
 type ThreadState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
-  | { status: 'ready'; messages: MessageRow[]; otherPartyName: string; playdateTitle: string }
+  | { status: 'ready'; messages: MessageRow[] }
 
 /**
  * One row of the conversation list: the other party's name (bold), the
@@ -232,7 +241,12 @@ function MessageBubble({
 }: {
   message: MessageRow
   isOwn: boolean
-  senderName: string
+  /**
+   * V25 ticket 11: the SENDER's own name, or `null` for no label. A message
+   * whose sender the thread cannot name renders NO name line — never the word
+   * "Unknown" (which reads as a broken person, the founder's report).
+   */
+  senderName: string | null
   reaction: ReactionState
   onReact: (messageId: string, kind: ReactionKind | null) => void
 }) {
@@ -250,7 +264,9 @@ function MessageBubble({
   return (
     <div className={isOwn ? 'flex justify-end' : 'flex justify-start'}>
       <div className={`max-w-[80%] ${isOwn ? 'text-right' : ''}`}>
-        <p className="mb-0.5 text-xs text-slate-500">{senderName}</p>
+        {senderName !== null ? (
+          <p className="mb-0.5 text-xs text-slate-500">{senderName}</p>
+        ) : null}
         <p
           data-testid={isOwn ? 'own-message' : 'other-message'}
           className={`whitespace-pre-wrap break-words rounded-2xl px-3 py-2.5 text-base ${
@@ -330,6 +346,14 @@ export function InboxPage() {
 
   // --- Thread state --------------------------------------------------------
   const [thread, setThread] = useState<ThreadState | null>(null)
+  // V25 ticket 11: the counterpart resolved by the playdates-table fallback
+  // read. It lives in its OWN state — NOT inside `thread` — because the thread
+  // loader's final write (`setThread({status:'ready', …})`, below) always ran
+  // after the resolver and WIPED the name, and the resolver's own write was
+  // discarded by its readiness guard. A derived header (see the useMemos
+  // below) reads this state, so it cannot be clobbered by load ordering.
+  const [fallbackCounterpart, setFallbackCounterpart] = useState<Counterpart>({ id: '', name: '' })
+  const [fallbackTitle, setFallbackTitle] = useState('')
   const [draft, setDraft] = useState('')
   const [sendError, setSendError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
@@ -415,6 +439,9 @@ export function InboxPage() {
     setDraft('')
     setSendError(null)
     setReactions({})
+    // A counterpart resolved for the PREVIOUS thread must never name this one.
+    setFallbackCounterpart({ id: '', name: '' })
+    setFallbackTitle('')
 
     /**
      * The thread's starting reaction state, in ONE bounded request for all of
@@ -456,8 +483,6 @@ export function InboxPage() {
         setThread({
           status: 'ready',
           messages,
-          otherPartyName: '',
-          playdateTitle: '',
         })
         await loadReactionStates(messages)
       } else if (threadId !== null) {
@@ -473,8 +498,6 @@ export function InboxPage() {
         setThread({
           status: 'ready',
           messages,
-          otherPartyName: '',
-          playdateTitle: '',
         })
         await loadReactionStates(messages)
       }
@@ -494,35 +517,29 @@ export function InboxPage() {
     }
   }, [threadId, dmTargetId, session])
 
-  // Resolve the thread header's other-party name + post title from the loaded
-  // list (cheap: the list is always loaded before a thread opens) — the
-  // thread read itself carries no embeds (the ticket keeps the wire minimal).
-  // This effect runs whenever the list settles or the thread changes, so the
-  // header fills in even when the list load finishes after the thread load.
-  useEffect(() => {
-    if (threadId === null || list.status !== 'ready') return
-    const conv = list.conversations.find((c) => c.playdateId === threadId)
-    if (conv === undefined) return
-    setThread((prev) => {
-      if (prev === null || prev.status !== 'ready') return prev
-      return { ...prev, otherPartyName: conv.otherPartyDisplayName, playdateTitle: conv.playdateTitle }
-    })
-  }, [list, threadId])
-
-  // For free-form DMs: resolve the other party's name from directConvs.
-  useEffect(() => {
-    if (dmTargetId === null || directConvs.length === 0) return
-    const conv = directConvs.find((c) => c.otherPartyId === dmTargetId)
-    if (conv === undefined) return
-    setThread((prev) => {
-      if (prev === null || prev.status !== 'ready') return prev
-      return { ...prev, otherPartyName: conv.otherPartyName }
-    })
-  }, [directConvs, dmTargetId])
-
-  // Fallback: when the conversation list has no row for this playdate (e.g.
-  // the host opened the thread directly via ?thread=<id> before any message
-  // existed), resolve the other party's name from the playdates table.
+  // V25 ticket 11 — the header's counterpart, DERIVED (see the useMemos further
+  // down) instead of written into `thread` by readiness-guarded effects.
+  //
+  // WHY THE EFFECTS WENT AWAY. The old shape had two name setters, both of the
+  // form `setThread(prev => prev.status !== 'ready' ? prev : {...})`:
+  //   - the list resolver fired while the thread was still 'loading' (the
+  //     loader awaits `markConversationRead` first), so it returned `prev`
+  //     unchanged, and its deps (`[list, threadId]`) never re-fired;
+  //   - the loader's own final write then SET the fields to '' and always ran;
+  //   - the playdates fallback carried the same guard, so the host name it
+  //     fetched was dropped too.
+  // Measured live (evidence `.scratch/v25/evidence/t11b-unknown.json`): 2 of 5
+  // loads rendered an EMPTY header + "Unknown" bubbles while the network
+  // payloads carried the counterpart's name — a purely client-side ordering
+  // loss, intermittent, so a one-shot reorder would not hold. Deriving the name
+  // from data at render time cannot lose that race: there is no writer left to
+  // wipe it.
+  //
+  // Fallback read: when the conversation list has no named row for this
+  // playdate (e.g. the thread was opened directly via ?thread=<id>, or the row
+  // is not free-form-visible), resolve the counterpart from the playdates
+  // table. Its result lands in its OWN state and is never guarded on the
+  // thread's readiness.
   useEffect(() => {
     if (threadId === null || list.status !== 'ready') return
     const conv = list.conversations.find((c) => c.playdateId === threadId)
@@ -535,33 +552,33 @@ export function InboxPage() {
         const { data, error } = await supabase
           .from('playdates')
           .select(
-            'host_profile_id, host:profiles!playdates_host_profile_id_fkey ( display_name ), ' +
-              'pings:going_pings ( profile:profiles!going_pings_profile_id_fkey ( display_name ) )',
+            'title, host_profile_id, host:profiles!playdates_host_profile_id_fkey ( id, display_name ), ' +
+              'pings:going_pings ( profile:profiles!going_pings_profile_id_fkey ( id, display_name ) )',
           )
           .eq('id', threadId)
           .limit(1)
         if (error || cancelled || data === null || data.length === 0) return
         const row = data[0] as unknown as {
+          title: string | null
           host_profile_id: string
-          host: { display_name: string } | null
-          pings: Array<{ profile: { display_name: string } | null }>
+          host: { id: string; display_name: string } | null
+          pings: Array<{ profile: { id: string; display_name: string } | null }>
         }
+        setFallbackTitle(row.title ?? '')
         if (row.host_profile_id !== userId) {
           // The caller is a pinger; the other party is the host.
-          setThread((prev) => {
-            if (prev === null || prev.status !== 'ready') return prev
-            return { ...prev, otherPartyName: row.host?.display_name ?? '' }
+          setFallbackCounterpart({
+            id: row.host_profile_id,
+            name: row.host?.display_name ?? '',
           })
         } else {
-          // The caller is the host; the other party is the most recent pinger.
-          const pingerNames = row.pings
-            .map((ping) => ping.profile?.display_name ?? '')
-            .filter((name) => name !== '')
-          const counterpart = pingerNames[pingerNames.length - 1] ?? ''
-          setThread((prev) => {
-            if (prev === null || prev.status !== 'ready') return prev
-            return { ...prev, otherPartyName: counterpart }
-          })
+          // The caller is the host; the other party is the most recent pinger
+          // that actually has a display name (the pre-t11 semantics).
+          const namedPingers = row.pings.filter(
+            (ping) => (ping.profile?.display_name ?? '') !== '',
+          )
+          const latest = namedPingers[namedPingers.length - 1]?.profile ?? null
+          setFallbackCounterpart({ id: latest?.id ?? '', name: latest?.display_name ?? '' })
         }
       } catch {
         // A failed fallback never blocks the thread view.
@@ -837,14 +854,52 @@ export function InboxPage() {
     }
   }
 
-  const threadHeaderName =
-    thread !== null && thread.status === 'ready'
-      ? thread.otherPartyName || ''
-      : ''
-  const threadHeaderTitle =
-    thread !== null && thread.status === 'ready'
-      ? thread.playdateTitle || ''
-      : ''
+  // --- V25 ticket 11: the thread's identity, DERIVED at render --------------
+  //
+  // The counterpart used to be written into `thread` by effects; it is now a
+  // useMemo over the data the page already has, so no load ordering can empty
+  // it (see the comment above the playdates fallback effect). Priority:
+  //   1. the conversation-list / DM row (the richest source, and what the
+  //      merged LIST row itself renders);
+  //   2. the playdates fallback read, when there is no named list row;
+  //   3. the thread's OWN single non-own sender, from the sender embed the
+  //      thread read now carries — this is the founder's case: one message
+  //      from one parent, whose name the header could not previously keep.
+  const listCounterpart = useMemo<Counterpart>(() => {
+    if (dmTargetId !== null) {
+      const conv = directConvs.find((c) => c.otherPartyId === dmTargetId)
+      // The DM target's id is known even before its row loads (we opened the
+      // thread with it) — only the NAME depends on the row.
+      return { id: dmTargetId, name: conv?.otherPartyName ?? '' }
+    }
+    if (threadId === null || list.status !== 'ready') return { id: '', name: '' }
+    const conv = list.conversations.find((c) => c.playdateId === threadId)
+    if (conv === undefined) return { id: '', name: '' }
+    return { id: conv.otherPartyId, name: conv.otherPartyDisplayName }
+  }, [dmTargetId, threadId, directConvs, list])
+
+  const counterpart = useMemo<Counterpart>(
+    () =>
+      firstNamedCounterpart([
+        listCounterpart,
+        fallbackCounterpart,
+        singleSenderCounterpart(
+          thread !== null && thread.status === 'ready' ? thread.messages : NO_MESSAGES,
+          userId,
+        ),
+      ]),
+    [listCounterpart, fallbackCounterpart, thread, userId],
+  )
+
+  /** The counterpart is written down once, in the header — never over a bubble. */
+  const threadHeaderName = counterpart.name
+  const threadHeaderTitle = useMemo(() => {
+    if (threadId !== null && list.status === 'ready') {
+      const conv = list.conversations.find((c) => c.playdateId === threadId)
+      if (conv !== undefined) return conv.playdateTitle
+    }
+    return fallbackTitle
+  }, [threadId, list, fallbackTitle])
 
   return (
     <div className="mx-auto max-w-md">
@@ -1011,11 +1066,14 @@ export function InboxPage() {
                       key={message.id}
                       message={message}
                       isOwn={userId !== null && message.sender_id === userId}
-                      senderName={
-                        userId !== null && message.sender_id === userId
-                          ? (profile?.display_name ?? 'You')
-                          : threadHeaderName || 'Unknown'
-                      }
+                      senderName={messageSenderLabel(message, {
+                        viewerId: userId,
+                        viewerDisplayName: profile?.display_name ?? null,
+                        // The thread-level name is a LAST resort, and only when
+                        // the ids match — a group thread can never attribute
+                        // one participant's message to another.
+                        counterpart,
+                      })}
                       reaction={reactions[message.id] ?? { count: 0, mine: false, myKind: null }}
                       onReact={(messageId, kind) => void handleReact(messageId, kind)}
                     />

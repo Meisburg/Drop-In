@@ -611,8 +611,8 @@ export function PlacePage() {
         ) : null}
         {session !== null && followerCount === null && followError === null ? (
           <p className="mt-2 text-xs text-slate-500">
-            Saving a place keeps it on your shortlist — you'll find it under
-            Following in Settings.
+            Saving a place keeps it on your shortlist — you'll find it with your
+            saved places on the Places page.
           </p>
         ) : null}
       </div>

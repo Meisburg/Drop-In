@@ -58,16 +58,30 @@ describe('the kid-photo path and visibility decision (V9 ticket 11)', () => {
     expect(isKidPhotoPath('')).toBe(false)
   })
 
-  it('allows the OWNER alone, and denies a signed-in stranger and an anon caller', () => {
+  it('allows any SIGNED-IN parent and denies an anon caller (V25 t14 rehearsal of V9 t11)', () => {
+    // The owner is a special case of "signed in", named so render sites can
+    // tell the family from a visitor without re-deriving it.
     expect(kidPhotoVisibility(UID, UID)).toBe('owner')
-    // THE CASE THIS TICKET EXISTS FOR: another signed-in parent.
-    expect(kidPhotoVisibility(OTHER_UID, UID)).toBe('denied')
+    // V25 TICKET 14 REVERSED the V9 ticket-11 answer here: this used to be
+    // `'denied'`, and the founder's 2026-09-26 ruling ("if someone chooses to
+    // upload photos, other people should be able to see them", scoped to
+    // signed-in parents) makes it `'authenticated'` — the same audience the
+    // family class has had since the same migration 0038.
+    expect(kidPhotoVisibility(OTHER_UID, UID)).toBe('authenticated')
+    // NOT the open internet: an empty session is still a refusal, and that is
+    // the property migration 0054's `to authenticated` policy and the private
+    // bucket jointly enforce.
     expect(kidPhotoVisibility(null, UID)).toBe('denied')
     expect(kidPhotoVisibility('', UID)).toBe('denied')
+    // The owner check is gone, so the signed-in answer no longer depends on
+    // WHICH signed-in id arrives; and anon is refused for a different owner too
+    // — the refusal is the role, not the relationship.
+    expect(kidPhotoVisibility(null, OTHER_UID)).toBe('denied')
+    expect(kidPhotoVisibility('', OTHER_UID)).toBe('denied')
   })
 })
 
-describe('kidPhotoMintPaths (V12 t04: the owner\'s batched kid-photo mint list)', () => {
+describe('kidPhotoMintPaths (V12 t04: the profile\'s batched kid-photo mint list)', () => {
   it('builds the canonical path for each kid id, in the caller\'s order', () => {
     expect(kidPhotoMintPaths(UID, [KID])).toEqual([kidPhotoPath(UID, KID)])
     expect(kidPhotoMintPaths(UID, [KID, OTHER_UID])).toEqual([
