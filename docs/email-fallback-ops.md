@@ -151,16 +151,38 @@ log-based diagnosis of a missing email**; the only proof is the message arriving
    hour, project-wide" wall is gone.** Note that `uri_allow_list` deliberately
    still carries the localhost and `192.168.1.61` entries — that is the
    documented intent, not drift.
-2. **`RESEND_API_KEY` / `EMAIL_FROM` function secrets** — **STILL NOT SET**, so
-   the *notification* email fallback built in slices 1–4 still delivers nothing.
-   That path speaks Resend's HTTP API and would need a sending domain.
-3. **Sending domain (SPF + DKIM)** — still does not exist. This is the blocker
-   for the notification half, not the auth half.
-4. **Real-device verification** — not done.
-5. **Recover the Supabase dashboard** — create a GitHub account on the same
+2. **Notification email — the SMTP transport is DEPLOYED; live delivery pends
+   ONE credential.** The transport is now selectable
+   (`_shared/emailTransport.ts`): **SMTP** when `SMTP_USER` + `SMTP_PASS` +
+   `EMAIL_FROM` are all non-blank, else **Resend** when `RESEND_API_KEY` +
+   `EMAIL_FROM` are, else **disabled** with a reason that NAMES the missing
+   secret. `send-push` is deployed as **v4** (`sha 8d25f1f8`, `verify_jwt`
+   preserved, the anon probe still 401), and **the first cron tick after the
+   deploy returned 200** — so the bundle loads and runs. **The three secrets are
+   NOT set**, so the transport is currently `disabled` and the drain records
+   `no subscription (email disabled: no email transport configured (missing
+   SMTP_PASS, SMTP_USER, EMAIL_FROM))`. `bash
+   ~/hermes/scripts/set-email-credential.sh` supplies them — and because the
+   precedence is read from env at module scope, **no redeploy is needed**; the
+   next tick picks them up.
+3. **The Resend path and a sending domain are NO LONGER THE BLOCKER** (founder
+   decision, 2026-09-26). `_shared/resend.ts` is retained and stays selectable
+   for a future bulk-copy path, but nothing waits on it.
+4. **The SMTP retry classification is INVERTED from HTTP, deliberately:** 4xx
+   (421/450/451/452) is transient → retryable; 5xx (550/551/553/554/535) is
+   permanent → **terminal**, because an address rejection would be refused
+   identically forever and would starve the oldest-first outbox; no reply code
+   (connection/TLS failure) → retryable, because nothing was rejected. Contrast
+   Resend: 429 and 5xx retryable, other 4xx terminal.
+5. **Real-device verification** — not done.
+6. **Recover the Supabase dashboard** — create a GitHub account on the same
    email, or mail `support@supabase.com` from a different address. Needed for
    billing, logs, and settings even though email no longer depends on it.
-6. **`git push` does not deploy** — the frontend half of the email feature is
-   pushed but not live. See the deploy note in `task-state.md`.
+7. **Commit-author rule (this replaced "`git push` does not deploy")** —
+   **RESOLVED 2026-09-26.** Vercel was *blocking* the builds, because it could
+   not map the commit author to a GitHub account — the author address belonged
+   to the deleted account. Every commit must be authored as
+   `331023862+Meisburg@users.noreply.github.com`. See `task-state.md`.
+
 
 
