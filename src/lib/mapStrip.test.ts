@@ -4,7 +4,10 @@ import {
   MAP_STRIP_CARD_LIMIT,
   nearestCardIndex,
   nextCardIndex,
+  PLACE_MARKER_FOCUSED_STYLE,
+  PLACE_MARKER_STYLE,
   scrollBehaviorFor,
+  shouldRenderPlacesMap,
   splitStripRows,
 } from './mapStrip'
 
@@ -215,5 +218,54 @@ describe('splitStripRows — the strip and the list partition the rows', () => {
   it('handles a set with no placeable rows at all', () => {
     const rows = [row('u1', false), row('u2', false)]
     expect(splitStripRows(rows, isPlaceable)).toEqual({ cards: [], rest: rows })
+  })
+})
+
+describe('the pin styles — the plain style fully resets the focused one', () => {
+  it('sets every property the focused style sets', () => {
+    // THE INVARIANT THE NARROWED REPAINT DEPENDS ON. Leaflet's `setStyle` writes
+    // only the properties it is given, so a property the FOCUSED style sets and
+    // the PLAIN style omits would survive on a pin after it stopped being
+    // focused — a stale bigger radius, or a stale darker fill, on the pin the
+    // focus just left. Asserting the key sets match is what stops a future
+    // "just add a glow to the focused pin" from leaking that glow onto others.
+    const plainKeys = Object.keys(PLACE_MARKER_STYLE).sort()
+    const focusedKeys = Object.keys(PLACE_MARKER_FOCUSED_STYLE).sort()
+    expect(plainKeys).toEqual(focusedKeys)
+  })
+
+  it('actually differs on size, colour, stroke and fill, not just on one channel', () => {
+    // The distinction must not rest on colour alone (a colour-blind reader, a
+    // monochrome screen) — so every channel this app controls is checked.
+    expect(PLACE_MARKER_FOCUSED_STYLE.radius).toBeGreaterThan(PLACE_MARKER_STYLE.radius)
+    expect(PLACE_MARKER_FOCUSED_STYLE.weight).toBeGreaterThan(PLACE_MARKER_STYLE.weight)
+    expect(PLACE_MARKER_FOCUSED_STYLE.fillOpacity).toBeGreaterThan(
+      PLACE_MARKER_STYLE.fillOpacity,
+    )
+    expect(PLACE_MARKER_FOCUSED_STYLE.color).not.toBe(PLACE_MARKER_STYLE.color)
+    expect(PLACE_MARKER_FOCUSED_STYLE.fillColor).not.toBe(PLACE_MARKER_STYLE.fillColor)
+  })
+})
+
+describe('shouldRenderPlacesMap — the dead-map guard', () => {
+  const HOME = { lat: 47.66757, lng: -122.37789 }
+
+  it('mounts the map when there are places to plot', () => {
+    expect(shouldRenderPlacesMap(1, null)).toBe(true)
+    expect(shouldRenderPlacesMap(239, HOME)).toBe(true)
+  })
+
+  it('mounts it for a home pin with no places, because the pin IS the content', () => {
+    // The one case where an empty map is honest: the viewer's own location with
+    // nothing around it. Rendering nothing here would hide their own pin.
+    expect(shouldRenderPlacesMap(0, HOME)).toBe(true)
+  })
+
+  it('does NOT mount it with neither places nor a home pin', () => {
+    // THE DEFECT CASE. If the map were mounted here, `PlacesMap` would null out
+    // its own container, the once-per-mount effect's cleanup would never run, and
+    // the Leaflet instance would survive attached to a destroyed div — a
+    // permanently blank pane after the search is widened again.
+    expect(shouldRenderPlacesMap(0, null)).toBe(false)
   })
 })

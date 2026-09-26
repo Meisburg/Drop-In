@@ -378,14 +378,32 @@ test('the map view pins EVERY matching place, capping only the cards (V24 s10)',
     new RegExp(`^${placeableTotal} places? on the map$`),
   )
 
-  // AC: nothing is unreachable — every row is either a card, a pin, or in the
-  // linear list. The list carries what the cards did not.
-  // The placeable total is `viewPins + 1`: the counted plain pins plus the one
-  // pin that carries the focus mark (excluded from the count by its selector).
-  const listed = await page.getByTestId('places-map-list').locator('a').count()
-  expect(listed, 'the linear list carries exactly the rows the cards did not').toBe(
-    placeableTotal - cards,
+  /**
+   * AC: NOTHING IS UNREACHABLE — the cards and the linear list PARTITION the
+   * matched rows.
+   *
+   * MEASURED AND CORRECTED (ocr finding 4): the first version asserted
+   * `listed === pins - cards`, which silently assumed the directory has ZERO
+   * unplaceable rows. The seed happens to have three ("PlayDate SEA", "Seattle
+   * Children's Museum", "Wunderkind"), so the sum is the matched row count while
+   * the difference is the placeable count — an assertion that would have started
+   * failing the day the seed changed, or worse, passed while a row was dropped
+   * because two errors cancelled.
+   *
+   * The count is read from the APP's own total (`see-all`'s "See all N places",
+   * the label the directory renders from `listRows.length`) rather than from an
+   * arithmetic expectation, so this measures the partition and not the fixture.
+   */
+  const matchedRows = Number(
+    (await page.getByTestId('places-map-view').getAttribute('data-matched-rows')) ?? '0',
   )
+  expect(matchedRows, 'the map view must declare how many rows it carries').toBeGreaterThan(0)
+  const listed = await page.getByTestId('places-map-list').locator('a').count()
+  expect(
+    cards + listed,
+    `the cards (${cards}) and the linear list (${listed}) must account for every matched ` +
+      `row (${matchedRows}) — none dropped, none duplicated`,
+  ).toBe(matchedRows)
 })
 
 test('the map view shows the list\'s own result set and mounts exactly one map (V24 s10)', async ({
@@ -729,6 +747,19 @@ test('the strip is fully operable with the keyboard alone (V24 s10)', async ({ p
     'at the first card there is no earlier card, so Previous is disabled',
   ).toBeDisabled()
 
+  // AC: NO PIN IS A TAB STOP (ocr finding 6). The place pins, the home pin and the
+  // radius circle are all reading aids or pointer affordances; a keyboard user
+  // reaches places through the cards and the list, not by tabbing through a few
+  // hundred SVG paths. `tabindex="-1"` is written on every one of them, so this
+  // walks them all rather than sampling.
+  const unstoppable = await page.evaluate(() => {
+    const paths = Array.from(document.querySelectorAll('.leaflet-interactive'))
+    return paths
+      .filter((el) => el.getAttribute('tabindex') !== '-1')
+      .map((el) => el.getAttribute('fill') ?? el.tagName)
+  })
+  expect(unstoppable, 'every Leaflet path must be out of the tab order').toEqual([])
+
   // AC: ArrowRight moves the focus to the next card AND recentres the map.
   await page.keyboard.press('ArrowRight')
   await expect(page.getByTestId('places-map-card-1')).toHaveAttribute('aria-current', 'true')
@@ -940,6 +971,184 @@ test('a tapped pin\'s panel survives a focus move (V24 s10)', async ({ page }) =
     'data-focused-marker',
     focusedName,
   )
+})
+
+test('narrowing the map view to zero pins and widening again leaves a live map (V24 s10)', async ({
+  page,
+}) => {
+  /**
+   * THE DEAD-MAP DEFECT (ocr HIGH), and what this spec can and cannot reach.
+   *
+   * THE DEFECT: `PlacesMap` returns `null` when it has nothing to draw, which
+   * unmounts its own container while the component stays mounted — and its
+   * Leaflet instance is created by a once-per-mount effect whose cleanup only
+   * fires when the COMPONENT unmounts. So `map.remove()` never ran and the
+   * instance stayed attached to a destroyed div, leaving the pane blank for good
+   * after the search was widened again.
+   *
+   * THE FIX: the map view decides whether to mount a map at all, above the
+   * component that owns the pitfall (`shouldRenderPlacesMap`, `src/lib/mapStrip.ts`).
+   *
+   * WHICH BRANCH THIS SPEC CAN REACH, MEASURED: the seeded marker always has a
+   * home pin, so shrinking the search to nothing leaves `pins: []` with
+   * `homePin !== null` — the case where the map is KEPT, with the home pin as its
+   * only content. That is the branch asserted here: shrink to zero pins, widen,
+   * and require a live camera and drawn pins again. The branch the bug actually
+   * needed (`0 pins && null home pin`, an anonymous or home-zip-less viewer) is
+   * not reachable from this UI, so its decision is asserted directly by
+   * `shouldRenderPlacesMap`'s unit test — the reason that rule lives in `lib/` at
+   * all.
+   */
+  await openMapView(page)
+  const mapViewMap = page.getByTestId('places-map-view-map')
+  await expect(mapViewMap).toBeVisible()
+  await expect
+    .poll(() => placePinCount(mapViewMap), { message: 'the map view starts with pins' })
+    .toBeGreaterThan(0)
+
+  // SHRINK to zero matching rows: the strip empties and the map has no places.
+  await page.getByTestId('places-search').fill('zzzz-no-such-place-at-all-zzzz')
+  await expect(page.getByTestId('places-map-list').locator('a')).toHaveCount(0)
+  await expect(page.locator('[data-testid^="places-map-card-"]')).toHaveCount(0)
+  expect(await placePinCount(mapViewMap), 'no place pins remain').toBe(0)
+
+  // AC (a): THE CAMERA IS STILL LIVE ON THE EMPTIED MAP. A map left pointing at a
+  // destroyed div reports no centre at all; this one still reports real
+  // coordinates, because the container it lives in was never torn out from under
+  // it.
+  await expect
+    .poll(() => mapCenter(page), { message: 'the emptied map still reports a live camera' })
+    .toMatch(/^-?\d+\.\d+,-?\d+\.\d+$/)
+
+  // WIDEN: the search is cleared and the map must be fully working again.
+  await page.getByTestId('places-search').fill('park')
+  await expect(page.getByTestId('places-map-view-map')).toBeVisible()
+  await expect
+    .poll(() => placePinCount(page.getByTestId('places-map-view-map')), {
+      message: 'pins are drawn again after the widen',
+    })
+    .toBeGreaterThan(0)
+  await expect
+    .poll(() => mapCenter(page), { message: 'the widened map reports a live camera' })
+    .toMatch(/^-?\d+\.\d+,-?\d+\.\d+$/)
+
+  // AC (b): the strip is populated again and the focus has been re-established.
+  await expect(page.locator('[data-testid^="places-map-card-"]').first()).toBeVisible()
+  await expect(page.getByTestId('places-map-card-0')).toHaveAttribute('aria-current', 'true')
+
+  // AC (c): NO LEAKED LEAFLET INSTANCE. The emptied map kept its companion alive,
+  // so there must still be exactly one Leaflet container inside this one map, and
+  // exactly one map container in the document.
+  // The map's own container IS the Leaflet container, so the check is that the
+  // document holds exactly one of them — no second instance alongside this one.
+  expect(
+    await page.locator('.leaflet-container').count(),
+    'exactly one Leaflet container exists in the document (no leak alongside it)',
+  ).toBe(1)
+  await expect(page.getByTestId('places-map-view-map')).toHaveCount(1)
+})
+
+test('a second "See map" activation does not disturb the saved list offset (V24 s10)', async ({
+  page,
+}) => {
+  /**
+   * THE RE-ENTRANCY DEFECT (ocr MEDIUM). The controls card — and so the "See map"
+   * button — stays mounted in the map view, which means it can be activated
+   * again. That second activation used to overwrite the saved list offset with
+   * the MAP VIEW's `window.scrollY` (a number from a different, shorter
+   * document), so the next "Back to list" restored the wrong position.
+   */
+  await page.goto('/browse')
+  await settleOnRoute(page, '/browse')
+  await setAnyDistance(page)
+  await page.getByTestId('places-search').fill('park')
+  await expect(page.getByTestId('place-row').first()).toBeVisible()
+
+  // Park the list at a known, non-zero offset (see the scroll-restore spec for
+  // why a spacer is needed on this seed).
+  await page.evaluate(() => {
+    const spacer = document.createElement('div')
+    spacer.id = 'scroll-range-probe'
+    spacer.style.height = '1800px'
+    document.body.appendChild(spacer)
+  })
+  const seeMap = page.getByTestId('places-see-map')
+  await seeMap.scrollIntoViewIfNeeded()
+  await page.evaluate(() => window.scrollBy(0, 250))
+  await page.waitForTimeout(200)
+  const savedBefore = await page.evaluate(() => window.scrollY)
+  expect(savedBefore, 'the list must be parked away from the top').toBeGreaterThan(0)
+
+  await seeMap.click()
+  await expect(page.getByTestId('places-map-view-map')).toBeVisible()
+
+  /**
+   * THE MAP VIEW IS SCROLLED FURTHER DOWN THAN THE LIST CAN GO.
+   *
+   * This is what makes the corruption DETECTABLE, and it was MEASURED: with the
+   * guard removed the spec still passed on the first attempt, because the map
+   * view and the list happened to be at the same offset — a corruption that
+   * writes the same number is invisible. The map view is the taller document (the
+   * strip and the linear list are metres of content below the map), so scrolling
+   * it to the bottom and then reading the offset produces a number the LIST
+   * cannot reach. The corruption then restores to the list's clamped maximum,
+   * which is a different number, and the assertion below fails.
+   */
+  const listMaxScroll = await page.evaluate(
+    () => document.documentElement.scrollHeight - window.innerHeight,
+  )
+  // The probe spacer is GROWN while the map view is up. The list's own height is
+  // fixed by the seed, so this is the only way to park the map view at an offset
+  // the list cannot reach — and an offset the list cannot reach is what turns the
+  // corruption into a visible difference rather than a same-number no-op.
+  await page.evaluate(() => {
+    const spacer = document.getElementById('scroll-range-probe')
+    if (spacer !== null) spacer.style.height = '5000px'
+  })
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+  await page.waitForTimeout(200)
+  const mapViewScroll = await page.evaluate(() => window.scrollY)
+  expect(
+    mapViewScroll - listMaxScroll,
+    'the map view must be scrollable WELL past the list for this to be a real check',
+  ).toBeGreaterThan(1000)
+
+  /**
+   * NOW THE CORRUPTION PATH: with the map view up, activate "See map" AGAIN.
+   *
+   * The activation is dispatched on the DOM, not clicked, and that is MEASURED
+   * rather than convenient: the button lives far above this offset, so a real
+   * click would have Playwright scroll it into view first and the page would move
+   * for a reason that has nothing to do with the guard. Dispatching the event
+   * leaves the offset where the test put it, which is the state the guard has to
+   * defend. (The click path itself is covered by every other spec here, which
+   * clicks this control normally.)
+   */
+  const activated = await page.evaluate(() => {
+    const button = document.querySelector('[data-testid="places-see-map"]')
+    if (button === null) return false
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    return true
+  })
+  expect(activated, 'the See map control must still be mounted in the map view').toBe(true)
+  // The guard makes that a no-op, so the view is still the map view...
+  await expect(page.getByTestId('places-map-view-map')).toBeVisible()
+  // ...and the page did not jump.
+  expect(await page.evaluate(() => window.scrollY)).toBe(mapViewScroll)
+
+  // AC: AND THE SAVED OFFSET SURVIVED IT. Without the guard this activation
+  // would have written the map view's offset (larger than the list can even
+  // reach) over the saved one, and the restore below would land at the list's
+  // clamped maximum instead of where the parent left off.
+  await page.getByTestId('places-back-to-list').click()
+  await expect(page.getByTestId('places-map')).toHaveCount(1)
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY), {
+      message: 'the saved offset is the one from the LIST, not from the map view',
+    })
+    .toBe(savedBefore)
+
+  await page.evaluate(() => document.getElementById('scroll-range-probe')?.remove())
 })
 
 test('the map view leaves no second Leaflet container behind (V24 s10)', async ({ page }) => {

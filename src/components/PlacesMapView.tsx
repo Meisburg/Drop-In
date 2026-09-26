@@ -5,7 +5,13 @@ import {
   formatDistanceLabel,
   type ZipCoords,
 } from '../lib/feed'
-import { clampCardIndex, nearestCardIndex, nextCardIndex, splitStripRows } from '../lib/mapStrip'
+import {
+  clampCardIndex,
+  nearestCardIndex,
+  nextCardIndex,
+  shouldRenderPlacesMap,
+  splitStripRows,
+} from '../lib/mapStrip'
 import { placeIndoorLabel, placeKindLabel, placePath } from '../lib/places'
 import type { PlaceListRow } from '../lib/places'
 import { reviewRatingLine } from '../lib/reviews'
@@ -129,6 +135,13 @@ export function PlacesMapView({
     pinnedIds.has(row.place.id),
   )
 
+  /** The rows-reset effect below needs a stable way to write the index too. */
+  const resetFocus = useCallback(() => {
+    setFocusedIndex(0)
+    const strip = stripRef.current
+    if (strip !== null) strip.scrollTo({ left: 0, behavior: behaviorRef.current })
+  }, [])
+
   /**
    * A NEW RESULT SET RESTARTS THE STRIP, and this is a correctness rule rather
    * than a nicety. `focusedIndex` is an INDEX, so it outlives the rows it
@@ -143,10 +156,8 @@ export function PlacesMapView({
   useEffect(() => {
     if (lastRowsKeyRef.current === rowsKey) return
     lastRowsKeyRef.current = rowsKey
-    setFocusedIndex(0)
-    const strip = stripRef.current
-    if (strip !== null) strip.scrollTo({ left: 0, behavior: behaviorRef.current })
-  }, [rowsKey])
+    resetFocus()
+  }, [rowsKey, resetFocus])
 
   const pinCount = pins.length
   const count = stripRows.length
@@ -204,6 +215,17 @@ export function PlacesMapView({
   }, [syncFocusToScroll])
 
   /**
+   * The card count, readable from a handler that must not close over it. A ref
+   * rather than the render value for the same reason the index below uses the
+   * functional updater: a keyboard or click handler can run against a commit the
+   * render it was created in has already been replaced by.
+   */
+  const countRef = useRef(count)
+  useEffect(() => {
+    countRef.current = count
+  }, [count])
+
+  /**
    * Move the focus one card, and take the DOM focus with it.
    *
    * The step itself is `nextCardIndex` (clamps — see its doc comment in
@@ -213,19 +235,49 @@ export function PlacesMapView({
    * moment a parent pressed ArrowRight. The strip is then scrolled explicitly,
    * with the reduced-motion-derived behaviour — the same value the map uses, so
    * the card and the pin move together or neither animates.
+   *
+   * THE BASE INDEX IS COMPUTED INSIDE THE UPDATER, and that is the fix for a real
+   * defect ocr's re-read surfaced: the previous version read `safeIndex` from the
+   * render closure, so a handler created before a rows change stepped from a
+   * stale index — and the render value could be out of range for the new set
+   * while the clamp is exactly what makes it valid. Reading `current` inside the
+   * updater is always the freshest committed value, and the card to scroll to is
+   * computed from the same `target` the state receives, so the two cannot
+   * disagree.
    */
-  function moveFocus(delta: number) {
-    if (count === 0) return
-    const target = nextCardIndex(focusedIndex, delta, count)
-    setFocusedIndex(target)
-    const card = cardRefs.current[target]
-    if (card === undefined || card === null) return
-    card.focus({ preventScroll: true })
-    card.scrollIntoView({ behavior: behaviorRef.current, inline: 'center', block: 'nearest' })
-  }
+  const moveFocus = useCallback((delta: number) => {
+    const total = countRef.current
+    if (total === 0) return
+    setFocusedIndex((current) => {
+      const target = nextCardIndex(clampCardIndex(current, total), delta, total)
+      const card = cardRefs.current[target]
+      if (card !== undefined && card !== null) {
+        card.focus({ preventScroll: true })
+        card.scrollIntoView({ behavior: behaviorRef.current, inline: 'center', block: 'nearest' })
+      }
+      return target
+    })
+  }, [])
+
 
   return (
-    <div className="flex flex-col gap-3">
+    <div
+      data-testid="places-map-view"
+      /**
+       * V24 slice 10 — HOW MANY ROWS THIS SURFACE CARRIES, published for the spec
+       * that checks nothing is dropped (ocr finding 4).
+       *
+       * The cards and the linear list must PARTITION the rows, and a spec cannot
+       * prove that from the DOM alone: the card count and the list count are both
+       * readable, but the total is the component's own state. Asserting the two
+       * add up to a number derived from the SEED (as the first version did) is an
+       * assertion about today's data; asserting it against the surface's own
+       * declared total is an assertion about the partition. Same discipline as
+       * `data-map-center`: publish the fact, then assert the fact.
+       */
+      data-matched-rows={rows.length}
+      className="flex flex-col gap-3"
+    >
       {/* The map panel. Its own test id — never `places-map` — because every
           existing spec locates the directory's map by that name and a second
           match would fail them in strict mode. The height is shorter than the
@@ -250,15 +302,56 @@ export function PlacesMapView({
             Back to list
           </button>
         </div>
-        <PlacesMap
-          className="h-[38dvh] min-h-[200px]"
-          places={pins.map((row) => row.place)}
-          zipCoords={zipCoords}
-          homePin={homePin}
-          focusPlaceId={focusedPlaceId}
-          focusBehavior={focusBehavior}
-          testId="places-map-view-map"
-        />
+        {/* V24 slice 10 (ocr HIGH) — THE MAP IS RENDERED ONLY WHEN THERE IS
+            SOMETHING TO PUT ON IT, and that is a correctness condition rather
+            than tidiness.
+
+            THE DEFECT: `PlacesMap` early-returns `null` when it has no entries and
+            no home pin, which UNMOUNTS ITS OWN CONTAINER DIV while the component
+            stays mounted. Its Leaflet instance is created by an effect whose
+            cleanup only runs when the COMPONENT unmounts — so that never fires,
+            `map.remove()` is never called, and `mapRef.current` keeps pointing at
+            a map whose container has been destroyed. Widening the search then
+            renders a NEW div while that effect refuses to re-create the map (its
+            deps are `[]`), so the pane is permanently blank. A parent who types a
+            narrow search and then clears it, with no home pin, hits it.
+
+            THE SHAPE CHOSEN: conditionally RENDER the whole map here, so React
+            unmounts `PlacesMap` — and runs its cleanup, `map.remove()` — at
+            exactly the moment there is nothing to draw. That is stronger than
+            teaching `PlacesMap` to render a placeholder for its empty case: the
+            component's other callers (the band, the place page, /new's picker)
+            keep their `null`-means-nothing behaviour untouched, and the Leaflet
+            instance is genuinely destroyed rather than parked against a dead
+            container. Letting `PlacesMap` hold an empty map instead would leave a
+            live Leaflet instance attached to a zero-pin view, which is the state
+            this bug is made of.
+
+            The decision itself is `shouldRenderPlacesMap` in `src/lib/mapStrip.ts`,
+            a pure predicate with its own tests — one of which is the defect case
+            (no places AND no home pin), because that branch is the one the seeded
+            marker cannot reach from the UI: it always has a home pin, so the
+            runtime path this spec exercises is the other one (an empty map that
+            keeps its live camera). Splitting the rule out is what makes the
+            unreachable branch assertable at all. */}
+        {shouldRenderPlacesMap(pins.length, homePin) ? (
+          <PlacesMap
+            className="h-[38dvh] min-h-[200px]"
+            places={pins.map((row) => row.place)}
+            zipCoords={zipCoords}
+            homePin={homePin}
+            focusPlaceId={focusedPlaceId}
+            focusBehavior={focusBehavior}
+            testId="places-map-view-map"
+          />
+        ) : (
+          <p
+            data-testid="places-map-view-empty"
+            className="flex h-[38dvh] min-h-[200px] w-full items-center justify-center p-4 text-center text-sm text-slate-600"
+          >
+            No places to show on the map for this search. Widen it, or go back to the list.
+          </p>
+        )}
       </div>
 
       {/* The strip. `overflow-x-auto` + `snap-x snap-mandatory` and `snap-center`
@@ -284,7 +377,13 @@ export function PlacesMapView({
                   row.place.name,
                 )
               : null
-          const focused = index === focusedIndex
+          // `safeIndex`, not the raw state: the card highlight must agree with
+          // the pin the map was told to focus (`focusedPlaceId`, also derived from
+          // `safeIndex`). Reading the raw index here was ocr finding [2] — after
+          // the set shrank, the label and the pin used the clamped index while the
+          // highlight and the buttons used the stale one, so they could disagree
+          // about which card was even focused.
+          const focused = index === safeIndex
           return (
             <Link
               key={row.place.id}
@@ -337,19 +436,19 @@ export function PlacesMapView({
           type="button"
           data-testid="places-map-prev"
           onClick={() => moveFocus(-1)}
-          disabled={focusedIndex <= 0}
+          disabled={safeIndex <= 0}
           className="flex min-h-11 items-center gap-1.5 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 hover:bg-slate-50 disabled:opacity-50"
         >
           <span aria-hidden="true">←</span> Previous
         </button>
         <span data-testid="places-map-position" className="text-xs text-slate-500">
-          {count === 0 ? 'No places' : `${Math.min(focusedIndex + 1, count)} of ${count}`}
+          {count === 0 ? 'No places' : `${safeIndex + 1} of ${count}`}
         </span>
         <button
           type="button"
           data-testid="places-map-next"
           onClick={() => moveFocus(1)}
-          disabled={count === 0 || focusedIndex >= count - 1}
+          disabled={count === 0 || safeIndex >= count - 1}
           className="flex min-h-11 items-center gap-1.5 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 hover:bg-slate-50 disabled:opacity-50"
         >
           Next <span aria-hidden="true">→</span>

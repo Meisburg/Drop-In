@@ -30,6 +30,10 @@ import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router'
 import type { ZipCoords } from '../lib/feed'
 import {
+  PLACE_MARKER_FOCUSED_STYLE,
+  PLACE_MARKER_STYLE,
+} from '../lib/mapStrip'
+import {
   DETAIL_ZOOM_FALLBACK,
   placeDetailsPath,
   placeKindLabel,
@@ -58,32 +62,6 @@ interface MapMarker {
 }
 
 /**
- * V24 slice 10: the pins' two appearances, as module constants so the FOCUSED
- * style and the PLAIN style are one definition each instead of literals repeated
- * at a construction site and a style-update site.
- *
- * The focused pin is a visibly larger dot in a darker indigo with a heavier
- * stroke — bigger AND heavier AND a different colour, so the distinction does not
- * rest on colour alone. MEASURED for the spec: Leaflet writes `r`-equivalents
- * into the path's `d` arc, so the drawn radius (12 vs 8) is readable as geometry
- * rather than only as colour.
- */
-const PLACE_MARKER_STYLE: L.CircleMarkerOptions = {
-  radius: 8,
-  color: '#4f46e5',
-  weight: 2,
-  fillColor: '#4f46e5',
-  fillOpacity: 0.35,
-}
-const PLACE_MARKER_FOCUSED_STYLE: L.CircleMarkerOptions = {
-  radius: 12,
-  color: '#312e81',
-  weight: 3,
-  fillColor: '#312e81',
-  fillOpacity: 0.85,
-}
-
-/**
  * V24 slice 10 — KEEP THE PINS OUT OF THE TAB ORDER.
  *
  * MEASURED, and it is a keyboard-a11y fix rather than tidiness: Leaflet emits a
@@ -102,7 +80,7 @@ const PLACE_MARKER_FOCUSED_STYLE: L.CircleMarkerOptions = {
  * places are keyboard-reachable as cards (real links), as list rows, and through
  * the popup's own buttons.
  */
-function keepMarkerOutOfTabOrder(marker: L.CircleMarker): void {
+function keepMarkerOutOfTabOrder(marker: L.CircleMarker | L.Circle): void {
   const el = marker.getElement() as SVGElement | null
   if (el === null) return
   el.setAttribute('focusable', 'false')
@@ -424,7 +402,12 @@ export function PlacesMap({
         fillOpacity: 0.85,
       })
       pin.bindTooltip('Home', { direction: 'top', offset: [0, -10] })
-      layers.push(pin.addTo(map))
+      const addedPin = pin.addTo(map)
+      // V24 slice 10 (ocr finding 6): the home pin is `interactive: true` for its
+      // tooltip, which also makes it a TAB STOP. It is a reading aid, not a
+      // control, so it leaves the tab order with the place pins.
+      keepMarkerOutOfTabOrder(addedPin)
+      layers.push(addedPin)
     }
     if (radiusCircle !== undefined && radiusCircle !== null) {
       const meters = radiusCircle.radiusMiles * 1609.344
@@ -477,7 +460,12 @@ export function PlacesMap({
        * `stroke: false` / `fill: false` would not do: those stop the shape being
        * drawn, and the circle has to stay visible to be a measuring tool.
        */
-      layers.push(circle.addTo(map))
+      const addedCircle = circle.addTo(map)
+      layers.push(addedCircle)
+      // V24 slice 10 (ocr finding 6): the radius circle is `pointer-events: none`
+      // and has NO handler, so as a tab stop it was a focusable control that did
+      // nothing — the same defect class as a button that looks live and is not.
+      keepMarkerOutOfTabOrder(addedCircle)
       // `getElement()` is typed as `Element`; an `L.Circle` is always an SVG
       // `<path>`, and the narrow cast is what lets the style be set. (`instanceof
       // SVGElement` would also work and would silently do NOTHING if Leaflet ever
@@ -966,23 +954,57 @@ export function PlacesMap({
    *
    * `setStyle` is Leaflet's own path update, so there is still exactly ONE writer
    * of this element's appearance — the concern that put the focus into the
-   * construction path in the first place. The `data-focused-marker` attribute and
-   * the class are re-applied on every pass, so a `setStyle` that rewrote the
-   * element's attributes cannot leave the observable behind. MEASURED: the
-   * attribute and the class survive a pan, a zoom and a marker tap.
+   * construction path in the first place. MEASURED: the attribute survives a pan,
+   * a zoom and a marker tap.
    *
-   * Every marker is restyled on every pass (not only the two that changed), which
-   * is what REMOVES the attribute from the previously focused pin: the loop is
-   * the single place that decides, so at most one marker can carry it.
+   * ONLY THE PAIR THAT CHANGED IS REPAINTED (ocr finding 3). The first version
+   * called `setStyle` on every marker on every pass: on the unfiltered seed that
+   * is ~239 markers × 6 properties of DOM writes per arrow press or swipe, for a
+   * change that involves exactly two pins. The previous id is tracked in a ref so
+   * the pass can restyle the pin LOSING focus and the pin GAINING it.
+   *
+   * THE FULL PASS STILL HAPPENS WHEN THE MARKERS ARE REBUILT. `markersKey` is a
+   * dependency for that reason: after a rebuild the refs are new elements, every
+   * one of them carries no focus mark, and nothing knows which — if any — was
+   * focused before. Narrowing to a pair there would leave the focus mark off
+   * entirely.
+   *
+   * THE PLAIN STYLE IS A COMPLETE RESET — `PLACE_MARKER_STYLE` sets every property
+   * `PLACE_MARKER_FOCUSED_STYLE` sets (it lives in `src/lib/mapStrip.ts` with a
+   * test asserting exactly that key-set equality). Without that completeness, the
+   * narrowed repaint would leave the pin that LOST the focus holding a stale
+   * focused property, which is the leak this note exists to prevent.
    */
+  const previousFocusIdRef = useRef<string>('')
+  /**
+   * The marker-set identity the LAST repaint saw, so a `markersKey` change can be
+   * told apart from a `focusKey` change. A ref rather than state: this is
+   * bookkeeping for an effect, not something the render reads.
+   */
+  const previousMarkerGenerationRef = useRef<string | null>(null)
   useEffect(() => {
-    for (const { id, marker } of markerRefs.current) {
-      const focused = id !== '' && id === focusKey
-      marker.setStyle(focused ? PLACE_MARKER_FOCUSED_STYLE : PLACE_MARKER_STYLE)
-      const el = marker.getElement() as SVGElement | null
-      if (el === null) continue
-      if (focused) el.setAttribute('data-focused-marker', id)
+    const repaint = (entry: { id: string; marker: L.CircleMarker }) => {
+      const focused = entry.id !== '' && entry.id === focusKey
+      entry.marker.setStyle(focused ? PLACE_MARKER_FOCUSED_STYLE : PLACE_MARKER_STYLE)
+      const el = entry.marker.getElement() as SVGElement | null
+      if (el === null) return
+      if (focused) el.setAttribute('data-focused-marker', entry.id)
       else el.removeAttribute('data-focused-marker')
+    }
+    const markersRebuilt = previousMarkerGenerationRef.current !== markersKey
+    previousMarkerGenerationRef.current = markersKey
+    const previousId = previousFocusIdRef.current
+    previousFocusIdRef.current = focusKey
+    if (markersRebuilt) {
+      // New elements: repaint all of them (and clear any stale pair state).
+      for (const entry of markerRefs.current) repaint(entry)
+      return
+    }
+    if (previousId === focusKey) return
+    // The pair only: the pin that lost the focus keeps nothing, the one that
+    // gained it gets the focused style and the observable.
+    for (const entry of markerRefs.current) {
+      if (entry.id === previousId || entry.id === focusKey) repaint(entry)
     }
   }, [focusKey, markersKey])
 

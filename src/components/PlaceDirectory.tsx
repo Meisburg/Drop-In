@@ -353,8 +353,19 @@ export function PlaceDirectory({
    * V24 slice 10: enter the map view. The list's CURRENT scroll offset is saved
    * here — on the way out, before the DOM changes — because once the map view is
    * up the page is a different height and the offset is no longer readable.
+   *
+   * THE GUARD IS THE FIX FOR ocr FINDING 2, and it is a real corruption rather
+   * than a no-op: the controls card stays mounted in the map view, so this button
+   * is still there and still activatable. Activating it a second time would
+   * OVERWRITE the saved offset with the MAP VIEW's `window.scrollY` — a number
+   * from a different, shorter document — and the next "Back to list" would then
+   * restore the parent to the wrong place (clamped to the list's height) instead
+   * of where they left it. `setView('map')` was already a no-op, so the ONLY
+   * effect of the second activation was the corruption; the early return removes
+   * it and keeps the transition one-way until "Back to list" is pressed.
    */
   function openMapView() {
+    if (view === 'map') return
     listScrollRef.current = typeof window === 'undefined' ? null : window.scrollY
     setView('map')
   }
@@ -728,8 +739,9 @@ export function PlaceDirectory({
       )}
 
       {/* Places we could not measure. Never hidden, never given a fake distance.
-          V24 slice 10: list view only — the map view carries its own list of the
-          same rows (PlacesMapView's `allRows`), so nothing becomes unreachable. */}
+          V24 slice 10: list view only — the map view carries a list of its own
+          (the rows that did not become pins or cards), so nothing becomes
+          unreachable. */}
       {view === 'list' && filteredUnplaced.length > 0 ? (
         <section className="flex flex-col gap-2 md:col-start-2">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">

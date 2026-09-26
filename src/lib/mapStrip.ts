@@ -192,3 +192,70 @@ export function splitStripRows<T>(
   }
   return { cards, rest }
 }
+
+/**
+ * The plain and focused appearances of a place pin, as DATA.
+ *
+ * WHY THEY LIVE IN `lib` rather than beside the map. Two reasons, and the second
+ * is the one that matters:
+ *
+ *  1. They are pure data — no React, no Leaflet, no DOM — so this is where the
+ *     build law puts them.
+ *  2. THE PLAIN STYLE IS A COMPLETE RESET OF THE FOCUSED STYLE, and that is a
+ *     RULE, not a coincidence. The map repaints a pin by calling `setStyle` with
+ *     one of these two objects, and Leaflet only writes the properties it is
+ *     given. So any property the FOCUSED style sets and the PLAIN style does not
+ *     would LEAK onto a pin when it stopped being focused — a pin that keeps a
+ *     bigger radius or a different colour after the focus moved away. That
+ *     invariant is asserted in the sibling test; keeping the objects here is what
+ *     makes it assertable without importing a component.
+ *
+ * The focused pin is VISIBLY DIFFERENT on three channels, not one — bigger
+ * (12 vs 8), heavier (stroke 3 vs 2) and darker (#312e81 vs #4f46e5), with a
+ * higher fill opacity — so the distinction survives a colour-blind reader and a
+ * monochrome screen. MEASURED: Leaflet writes the radius into the path's `d`
+ * arc, so the drawn size is readable as geometry rather than only as colour.
+ */
+export const PLACE_MARKER_STYLE = {
+  radius: 8,
+  color: '#4f46e5',
+  weight: 2,
+  fillColor: '#4f46e5',
+  fillOpacity: 0.35,
+} as const
+
+export const PLACE_MARKER_FOCUSED_STYLE = {
+  radius: 12,
+  color: '#312e81',
+  weight: 3,
+  fillColor: '#312e81',
+  fillOpacity: 0.85,
+} as const
+
+/**
+ * Should the map view mount a Leaflet map at all? (V24 slice 10, ocr HIGH.)
+ *
+ * THE DEFECT THIS PREDICATE EXISTS FOR: `PlacesMap` returns `null` when it has
+ * nothing to draw, which unmounts its OWN container while the component stays
+ * mounted — and its Leaflet instance is created by a once-per-mount effect whose
+ * cleanup only runs when the COMPONENT unmounts. That never fires, so
+ * `map.remove()` is never called, `mapRef.current` keeps pointing at a destroyed
+ * div, and the next widen renders a fresh div that the effect refuses to
+ * initialise. The pane is then blank forever.
+ *
+ * The map view therefore decides whether to render the map at all, ABOVE the
+ * component that owns the pitfall. Two cases keep the map alive:
+ *
+ *  - there are places to plot (obviously), and
+ *  - the viewer has a home pin — an empty map is still meaningful then, because
+ *    the home pin itself is what is being shown.
+ *
+ * With neither, there is nothing to draw, so the map must not be mounted at all —
+ * which is what makes React run the cleanup and destroy the instance.
+ */
+export function shouldRenderPlacesMap(
+  pinCount: number,
+  homePin: { lat: number; lng: number } | null,
+): boolean {
+  return pinCount > 0 || homePin !== null
+}
