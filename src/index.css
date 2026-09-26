@@ -185,8 +185,8 @@ h3 {
    * Terracotta. Two tones on purpose:
    *  - 500 is the BRAND HUE (logo, icon, splash, large fills);
    *  - 600 is the ACTION/TEXT tone. It is a hair deeper than the brand hue
-   *    because #e8552f as 17px text or as a button fill with white text only
-   *    reaches ~4.2:1 and would FAIL AA; #c8411c reaches 4.97:1 on the page
+   *    because #e8552f as 17px text on the page, or as a fill under white text,
+   *    reaches only 3.64:1 and would FAIL AA; #c8411c reaches 4.97:1 on the page
    *    background (#ffffff, V25 t12) and 4.97:1 reversed, so it is the one that
    *    ships on buttons and links.
    */
@@ -203,19 +203,19 @@ h3 {
 
   /* Park green — "Happening now" and the host status chip */
   --color-emerald-100: #e2f0d6;
-  --color-emerald-700: #3f6b28; /* 5.27:1 on its own tint (unchanged by V25 t12); 6.28:1 on the page */
+  --color-emerald-700: #3f6b28; /* 5.28:1 on its own tint (bg-emerald-100, DropInCard:266; unchanged by V25 t12); 6.28:1 on the page */
   --color-green-700: #47802e; /* the "I'm going"/"Going" pill — white on green: 4.78:1 */
 
   /* Gold — "Starts soon" */
   --color-amber-50: #fef8e8;
   --color-amber-100: #fdf0cf;
   --color-amber-200: #f7dfa2;
-  --color-amber-700: #8a6410; /* 4.75:1 on its own tint (unchanged by V25 t12); 5.37:1 on the page */
-  --color-amber-800: #6f5009; /* 7.43:1 on the page */
+  --color-amber-700: #8a6410; /* 4.74:1 on its own tint (bg-amber-100, DropInCard:270; unchanged by V25 t12); 5.37:1 on the page */
+  --color-amber-800: #6f5009; /* 7.01:1 on bg-amber-50 (its actual pairing: WhileAwayCard:33, NotificationsSection:222, OnboardingPage:408); 6.56:1 on amber-100 */
 
   /* Sky — the "Rain likely" forecast badge */
   --color-sky-100: #e2eef7;
-  --color-sky-700: #1d5b7a; /* 6.0:1 on its own tint (unchanged by V25 t12); 7.42:1 on the page */
+  --color-sky-700: #1d5b7a; /* 6.29:1 on its own tint (bg-sky-100, WeatherChip:55; unchanged by V25 t12); 7.42:1 on the page */
 }
 
 /*

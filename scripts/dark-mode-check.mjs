@@ -94,9 +94,12 @@ async function samplePage(page) {
      * DIV itself (LoginPage.tsx:270, the element this slice re-pointed).
      * /login was deliberately DE-CARDED by the frontend-design pass (see the
      * "centered logo card was the same template… removed" note in LoginPage), so
-     * the page's remaining opaque surfaces are the provider BUTTON (bg-white) and
-     * the submit BUTTON (bg-indigo-600) — nothing this query can call a card.
-     * Widening the SAME filter to `*` yields three colours, two of them bright,
+     * the page's remaining opaque surfaces are the provider BUTTON (bg-white),
+     * the submit BUTTON (bg-indigo-600) and two 1px-tall bg-slate-200 rule SPANs
+     * (LoginPage.tsx:327 and :329 — hairlines, not surfaces). None of the four is
+     * a card, and only the shell is even in the query's tag list.
+     * Widening the SAME filter to `*` yields three colours (the two buttons and
+     * the hairlines' #eee3dc), two of them bright,
      * i.e. the check would pass: the emptiness is a limitation of the query, and
      * a probe that is supposed to be checking CARDS is asserting on a route that
      * has none.
