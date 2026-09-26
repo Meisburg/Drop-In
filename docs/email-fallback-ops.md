@@ -139,6 +139,31 @@ answers `{"error":"Backend error! Retry your query."}` to **every** query —
 including a bare `SELECT 1`. So while the dashboard is unreachable there is **no
 log-based diagnosis of a missing email**; the only proof is the message arriving.
 
+## The /settings opt-out is verified on the DEPLOYED build, not just locally
+
+The e2e suite runs against a local preview, so "the bundle contains
+`email-optout`" was the only claim about production. It has now been driven for
+real: the marker session was carried to `https://drop-in-mu.vercel.app` (same
+Supabase project, so only the storageState *origin* needed rewriting) and
+`/settings` was loaded at 390x844.
+
+| | |
+|---|---|
+| landed on | `/settings`, **signed in** — no redirect to `/login` |
+| email block | **present** |
+| toggle | **present and CHECKED** — the correct polarity, since `email_optout = false` means email is allowed |
+| wrapping label | **86px**, clearing the 44px floor |
+| overflow | `scrollWidth 390 == innerWidth 390` |
+
+The rendered copy also does not over-promise: *"Email is the fallback for when
+you don't have notifications turned on for this device. It can arrive a few
+minutes after the alert in the app — it is not instant."*
+
+**Why this is a separate check from the e2e run:** those specs serve a local
+`vite preview`. This confirms the *deployed artifact* — which matters here
+because the Vercel pipeline had been silently **blocking** builds until the
+commit-author fix, so "pushed" and "live" had diverged for a while.
+
 ## Still outstanding
 
 1. **✅ AUTH EMAIL IS PROVEN END TO END (2026-09-26).** A real password reset
