@@ -9,7 +9,10 @@ import {
   dateWindowEmptyCopy,
   distanceMiles,
   filterPlacesByRadius,
+  feedMapPinEvent,
   feedMapPins,
+  pinMoreDropInsLabel,
+  soonestFeedPinEvent,
   framingCircle,
   groupPlacesByKind,
   MIN_FOCUS_RADIUS_MILES,
@@ -49,9 +52,9 @@ import {
   usesPlaceAlias,
   zipFromAddress,
 } from './places'
-import type { PlaceListRow } from './places'
+import type { FeedMapPin, FeedMapPinEvent, PlaceListRow } from './places'
 import type { ReviewSummary } from './reviews'
-import { DEFAULT_RADIUS_MILES, formatDayLabel, localDayKey, neighborhoodIdField, RADIUS_MILES_OPTIONS } from './feed'
+import { DEFAULT_RADIUS_MILES, cardWhenLabel, formatDayLabel, localDayKey, neighborhoodIdField, RADIUS_MILES_OPTIONS } from './feed'
 import type { Place, PlaceKind } from './types'
 import type { ZipCoords } from './feed'
 
@@ -1796,6 +1799,230 @@ describe('feedMapPins (V19 t02 — the feed map)', () => {
     expect(pins[0].name).toBe('Green Lake')
     const noName = feedMapPins([{ place_coords: { lat: 47.67, lng: -122.38 } }])
     expect(noName[0].name).toBe('')
+  })
+
+  /**
+   * V25 t07 — THE COLLAPSE ACCUMULATES.
+   *
+   * Rule 2 makes one dot stand for 1..N drop-ins, which is exactly why the pin
+   * has to CARRY all of them: a bubble that names one of two sessions presents a
+   * choice as the whole truth. These tests pin the accumulation, and they are the
+   * reason `feedMapPins` stopped keeping a `Set` of seen keys.
+   */
+  it('keeps EVERY drop-in behind a collapsed pin, in input order (V25 t07)', () => {
+    const id = '26a77f22-7f99-4bd5-88df-4169b91ae7c7'
+    const pins = feedMapPins([
+      {
+        id: 'morning',
+        title: 'Morning session',
+        starts_at: '2026-09-26T09:00:00',
+        ends_at: '2026-09-26T10:30:00',
+        place: 'Ballard Corners Park',
+        place_id: id,
+        place_coords: { lat: 47.6743, lng: -122.3791 },
+      },
+      {
+        id: 'afternoon',
+        title: 'Afternoon session',
+        starts_at: '2026-09-26T14:00:00',
+        ends_at: '2026-09-26T15:00:00',
+        place: 'Ballard Corners Park',
+        place_id: id,
+        place_coords: { lat: 47.6743, lng: -122.3791 },
+      },
+    ])
+    expect(pins).toHaveLength(1)
+    // Both, not just the first — the whole point of the ticket's collapse rule.
+    expect(pins[0].events.map((event) => event.id)).toEqual(['morning', 'afternoon'])
+    expect(pins[0].events.map((event) => event.title)).toEqual([
+      'Morning session',
+      'Afternoon session',
+    ])
+    // The first post at the place still owns the pin's identity (unchanged).
+    expect(pins[0].name).toBe('Ballard Corners Park')
+    expect(pins[0].placeId).toBe(id)
+  })
+
+  it('keeps every event on a FREE-TEXT pin collapsed by coordinate (V25 t07)', () => {
+    // Nothing to key a place on, so the coordinate collapse applies — and the
+    // ticket's free-text bullet is exactly this case: no directory id, and the
+    // event must still be nameable.
+    const pins = feedMapPins([
+      {
+        id: 'text-1',
+        title: 'Rooftop play',
+        starts_at: '2026-09-26T09:00:00',
+        ends_at: '2026-09-26T10:00:00',
+        place: 'Somewhere else entirely',
+        place_coords: { lat: 47.67, lng: -122.38 },
+      },
+      {
+        id: 'text-2',
+        title: 'Second rooftop play',
+        starts_at: '2026-09-26T11:00:00',
+        ends_at: '2026-09-26T12:00:00',
+        place: 'Somewhere else entirely',
+        place_coords: { lat: 47.67, lng: -122.38 },
+      },
+    ])
+    expect(pins).toHaveLength(1)
+    expect(pins[0].placeId).toBeNull()
+    expect(pins[0].events.map((event) => event.id)).toEqual(['text-1', 'text-2'])
+  })
+
+  it('contributes NO event for a post with no id — and still draws its pin (V25 t07)', () => {
+    // There is no `/playdate/:id` behind a post with no id, so there is no event
+    // this seam can name. The PIN is unaffected (rule 1/2 are about location).
+    const pins = feedMapPins([
+      { title: 'Nameless', place: 'Green Lake', place_coords: { lat: 47.67, lng: -122.38 } },
+    ])
+    expect(pins).toHaveLength(1)
+    expect(pins[0].events).toEqual([])
+    expect(feedMapPinEvent(pins[0])).toBeNull()
+  })
+
+  it('contributes NO event when the window does not parse, rather than "Invalid Date" (V25 t07)', () => {
+    // `cardWhenLabel` would print the unparseable half verbatim
+    // (`formatTimeWindow`'s `Invalid Date`), which is a popup that lies. The
+    // refusal is the honest answer; real rows are NOT NULL timestamptz.
+    const badStart = feedMapPins([
+      {
+        id: 'x',
+        title: 'X',
+        starts_at: 'not a date',
+        ends_at: '2026-09-26T10:00:00',
+        place_coords: { lat: 47.67, lng: -122.38 },
+      },
+    ])
+    expect(badStart[0].events).toEqual([])
+    const badEnd = feedMapPins([
+      {
+        id: 'x',
+        title: 'X',
+        starts_at: '2026-09-26T09:00:00',
+        ends_at: '',
+        place_coords: { lat: 47.67, lng: -122.38 },
+      },
+    ])
+    expect(badEnd[0].events).toEqual([])
+    // A missing title is not a missing event: the bubble gets a name.
+    const untitled = feedMapPins([
+      {
+        id: 'x',
+        title: '   ',
+        starts_at: '2026-09-26T09:00:00',
+        ends_at: '2026-09-26T10:00:00',
+        place_coords: { lat: 47.67, lng: -122.38 },
+      },
+    ])
+    expect(untitled[0].events[0].title).toBe('Drop-in')
+  })
+})
+
+/**
+ * V25 t07 — THE BUBBLE'S OWN DECISIONS.
+ *
+ * The founder, on `/`: tapping a blue circle should tell you "the name of the
+ * event that's happening there and some information about that". The pin can
+ * stand for SEVERAL drop-ins (rule 2), so these tests pin the two halves of the
+ * honest answer: WHICH event is named (the soonest, by data rather than by the
+ * caller's sort) and HOW the rest are disclosed (a count, never silence).
+ */
+describe('feedMapPinEvent (V25 t07 — the feed pin\'s popup payload)', () => {
+  const pinOf = (events: FeedMapPinEvent[]): FeedMapPin => ({
+    placeId: null,
+    name: 'Ballard Corners Park',
+    address: 'Ballard, Seattle',
+    lat: 47.6743,
+    lng: -122.3791,
+    events,
+  })
+  const at = (id: string, title: string, startsAt: string, endsAt: string): FeedMapPinEvent => ({
+    id,
+    title,
+    startsAt,
+    endsAt,
+  })
+
+  it('names the event: its title, the CARD\'s own when line, and the /playdate door', () => {
+    const event = feedMapPinEvent(
+      pinOf([at('aaaaaaaa-1111-4111-8111-111111111111', 'Pumpkin painting', '2026-09-26T17:00:00', '2026-09-26T18:30:00')]),
+    )
+    expect(event).not.toBeNull()
+    expect(event?.title).toBe('Pumpkin painting')
+    expect(event?.playdateId).toBe('aaaaaaaa-1111-4111-8111-111111111111')
+    // ONE window rule: the bubble's line IS `cardWhenLabel`'s, so a feed card
+    // and the bubble over its pin cannot disagree about the same drop-in.
+    expect(event?.whenLabel).toBe(cardWhenLabel('2026-09-26T17:00:00', '2026-09-26T18:30:00'))
+    // And it really is a day + window, not an empty or generic string. The DAY
+    // is locale-independent by construction (`formatStartDayLabel`'s own tables).
+    expect(event?.whenLabel.startsWith('Sat, Sep 26 · ')).toBe(true)
+    expect(event?.href).toBe('/playdate/aaaaaaaa-1111-4111-8111-111111111111')
+    // One drop-in says nothing about others.
+    expect(event?.moreLabel).toBeNull()
+  })
+
+  it('encodes the id in the href so a path segment cannot break', () => {
+    const event = feedMapPinEvent(pinOf([at('a/b', 'Split', '2026-09-26T09:00:00', '2026-09-26T10:00:00')]))
+    expect(event?.href).toBe('/playdate/a%2Fb')
+  })
+
+  /**
+   * THE NON-VACUOUS HALF. `events[0]` would name the AFTERNOON session here,
+   * because input order is the caller's business (rule 3). The bubble's claim is
+   * "the soonest", so it must read the data.
+   */
+  it('names the SOONEST event, not the first one in the list', () => {
+    const event = feedMapPinEvent(
+      pinOf([
+        at('afternoon', 'Afternoon session', '2026-09-26T14:00:00', '2026-09-26T15:00:00'),
+        at('morning', 'Morning session', '2026-09-26T09:00:00', '2026-09-26T10:30:00'),
+      ]),
+    )
+    expect(event?.playdateId).toBe('morning')
+    expect(event?.title).toBe('Morning session')
+    // And the second drop-in is DISCLOSED rather than hidden.
+    expect(event?.moreLabel).toBe('1 more drop-in here')
+  })
+
+  it('keeps input order when two events start at the same instant', () => {
+    const both = [
+      at('first', 'First', '2026-09-26T09:00:00', '2026-09-26T10:00:00'),
+      at('second', 'Second', '2026-09-26T09:00:00', '2026-09-26T10:00:00'),
+    ]
+    expect(soonestFeedPinEvent(both)?.id).toBe('first')
+  })
+
+  it('skips an unparseable start rather than letting it win', () => {
+    const events = [
+      at('bad', 'Bad', 'not a date', '2026-09-26T10:00:00'),
+      at('good', 'Good', '2026-09-26T09:00:00', '2026-09-26T10:00:00'),
+    ]
+    expect(soonestFeedPinEvent(events)?.id).toBe('good')
+    // Nothing parses at all: the first member stands, so the rule is total.
+    expect(soonestFeedPinEvent([events[0], at('bad2', 'Bad 2', '', '')])?.id).toBe('bad')
+  })
+
+  it('returns null for a pin with no events, and for the empty list', () => {
+    expect(feedMapPinEvent(pinOf([]))).toBeNull()
+    expect(soonestFeedPinEvent([])).toBeNull()
+  })
+
+  it('states the overflow in one place: 0 → nothing, 1 → singular, N → plural', () => {
+    expect(pinMoreDropInsLabel(0)).toBeNull()
+    expect(pinMoreDropInsLabel(-1)).toBeNull()
+    expect(pinMoreDropInsLabel(1)).toBe('1 more drop-in here')
+    expect(pinMoreDropInsLabel(2)).toBe('2 more drop-ins here')
+    // Three drop-ins behind one dot: the bubble names one and counts the rest.
+    const event = feedMapPinEvent(
+      pinOf([
+        at('a', 'A', '2026-09-26T09:00:00', '2026-09-26T10:00:00'),
+        at('b', 'B', '2026-09-26T11:00:00', '2026-09-26T12:00:00'),
+        at('c', 'C', '2026-09-26T13:00:00', '2026-09-26T14:00:00'),
+      ]),
+    )
+    expect(event?.playdateId).toBe('a')
+    expect(event?.moreLabel).toBe('2 more drop-ins here')
   })
 })
 

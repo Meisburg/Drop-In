@@ -2555,3 +2555,306 @@ test('the feed maps its placed drop-ins and ignores free-text ones (V19 t02)', a
     }
   }
 })
+
+/**
+ * V25 ticket 07 — THE FEED PIN'S POPUP NAMES THE EVENT, AND ADMITS A SECOND.
+ *
+ * The founder, tapping a blue circle on `/`: *"it make[s] more sense to tell you
+ * the name of the event that's happening there and some information about
+ * that."* Before this slice the feed handed the shared map a `Place`-shaped row
+ * whose `name` was the PLACE text and which carried no event identity at all, so
+ * the bubble could only ever say "Ballard Corners Park".
+ *
+ * WHY THIS SPEC SEEDS TWO POSTS AT ONE PLACE, SPECIFICALLY. `feedMapPins` rule 2
+ * collapses every drop-in at one place into ONE dot (`lib/places.ts:226-233`), so
+ * "one pin = one event" is FALSE on real data — a morning and an afternoon
+ * session at one park are a single circle. Two posts, one place, is therefore the
+ * only fixture that can prove the two halves the ticket demands at once:
+ *
+ *   1. the dot DOES name an event (title + when + a link to `/playdate/:id`), and
+ *   2. the dot does NOT pretend that event is the only one — it says how many
+ *      more drop-ins share it.
+ *
+ * The pair is 20 and 25 minutes out, both comfortably future (the feed only
+ * carries upcoming posts), and it is written at the SAME seeded place the V19
+ * t02 spec above uses — 0.44 mi from the marker's home, inside the one-mile
+ * frame, so its pin is on-canvas and tappable. As in that spec, the two rows are
+ * deleted at the end, so the live DB is left as it was found.
+ *
+ * THE PIN IS FOUND BY ITS POPUP, NOT BY POSITION. The feed's map draws whatever
+ * the live database holds (the batch ledger records a founder-created "Drop-in at
+ * Salmon Bay Park" that is exactly why one assertion in the V19 t02 spec is
+ * known-red), so "click the first indigo marker and assert" would be a spec
+ * against somebody else's row. This spec clicks EVERY indigo pin and reads the
+ * popups, which is also what lets it assert the collapse from the popup side:
+ * exactly ONE dot in the whole feed may carry a title with this run's prefix, no
+ * matter how many posts the run seeded.
+ */
+test('a tapped feed pin names the drop-in happening there, and says when it stands for more than one (V25 t07)', async ({
+  page,
+}) => {
+  const { url: restUrl, anonKey } = readSupabaseEnv()
+  const { accessToken, userId } = readMarkerSession()
+  const restHeaders: Record<string, string> = {
+    apikey: anonKey,
+    Authorization: `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+    Prefer: 'return=representation',
+  }
+
+  /**
+   * The run's own prefix, so the popup search cannot be satisfied by live data.
+   * `Date.now()` is the marker pattern the rest of this file uses.
+   */
+  const runPrefix = `V25 t07 ${Date.now()}`
+  const seedMinutes = [20, 25]
+  const seeds = seedMinutes.map((minutes, index) => {
+    const start = Date.now() + minutes * 60 * 1000
+    return {
+      title: `${runPrefix} ${index === 0 ? 'first' : 'second'}`,
+      starts_at: new Date(start).toISOString(),
+      ends_at: new Date(start + 45 * 60 * 1000).toISOString(),
+    }
+  })
+
+  const created: string[] = []
+  try {
+    for (const seed of seeds) {
+      const res = await fetch(`${restUrl}/rest/v1/playdates`, {
+        method: 'POST',
+        headers: restHeaders,
+        body: JSON.stringify({
+          ...seed,
+          place: MARKER_PLACE_NAME,
+          // The pin's ADDRESS is the POST's own typed address, not the place
+          // row's (that is `feedMapPins`' pre-existing rule) — so the row is
+          // seeded with one, and the assertion below can prove the address still
+          // rides along under the event.
+          address: MARKER_PLACE_ADDRESS,
+          place_id: MARKER_PLACE_ID,
+          host_profile_id: userId,
+        }),
+      })
+      if (!res.ok) throw new Error(`playdates insert HTTP ${res.status} ${await res.text()}`)
+      const rows = (await res.json()) as Array<{ id: string }>
+      created.push(rows[0].id)
+    }
+    // Both ids, in seed order (soonest first) — the href assertion below reads
+    // this, so a link that pointed at the WRONG drop-in could not pass by
+    // matching the place or the other row.
+    const [firstId, secondId] = created
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/')
+    await settleOnRoute(page, '/')
+    // The feed defaults to the LIST (pinned by e2e/feed-view-toggle.e2e.ts), and
+    // the map band only mounts in Map view.
+    await page.getByRole('button', { name: 'Map' }).click()
+    const band = page.getByTestId('feed-map-band')
+    await expect(band).toBeVisible({ timeout: 15000 })
+
+    type NamedPin = { title: string; when: string; href: string; more: string | null }
+    /**
+     * Click every indigo pin once and collect the popups that name THIS RUN's
+     * drop-ins, plus the index of the dot that named one.
+     *
+     * Clicking ALL of them (rather than assuming which pin is ours) is what makes
+     * the collapse assertion below a real claim about the whole feed: if the two
+     * seeded posts had produced two dots, TWO popups would carry the prefix.
+     */
+    const probeEventPins = async (): Promise<{
+      named: NamedPin[]
+      index: number
+      count: number
+    }> => {
+      const pins = page.locator('path.leaflet-interactive[fill="#4f46e5"]:not([d="M0 0"])')
+      /**
+       * WAIT FOR THE PINS TO BE POSITIONED, not merely present.
+       *
+       * Leaflet appends a marker to the overlay pane and only then positions it,
+       * and a circle marker whose position has not been computed yet renders as
+       * the zero-size `d="M0 0"` path — which is exactly what this locator
+       * excludes (a tap on it could not be aimed at anything). The band being
+       * visible therefore proves nothing about the pins: after a reload the band
+       * appears first and every pin is briefly `M0 0`. Without this wait, the
+       * probe returns zero dots and the spec fails for a rendering race rather
+       * than for the product — which is how this spec failed its first run.
+       */
+      await expect
+        .poll(async () => await pins.count(), {
+          message: 'the feed map must position its drop-in pins before their popups can be read',
+        })
+        .toBeGreaterThan(0)
+      // And GROW the bound as we go: the wait above only guarantees the FIRST
+      // positioned pin, and a slow view update can position the rest after it.
+      let count = await pins.count()
+      const found: NamedPin[] = []
+      let foundIndex = -1
+      for (let index = 0; index < count; index += 1) {
+        count = Math.max(count, await pins.count())
+        await pins.nth(index).click({ force: true })
+        const probePanel = page.getByTestId('place-marker-info')
+        // A marker whose click opened no popup, or a popup with no event payload
+        // (every non-feed caller's shape), is simply not this spec's pin.
+        if ((await probePanel.count()) === 0) continue
+        if ((await probePanel.getByTestId('pin-event-title').count()) === 0) continue
+        const title = (await probePanel.getByTestId('pin-event-title').innerText()).trim()
+        if (!title.startsWith(runPrefix)) continue
+        const more = probePanel.getByTestId('pin-event-more')
+        found.push({
+          title,
+          when: (await probePanel.getByTestId('pin-event-when').innerText()).trim(),
+          href: (await probePanel.getByTestId('pin-event-link').getAttribute('href')) ?? '',
+          more: (await more.count()) > 0 ? (await more.innerText()).trim() : null,
+        })
+        foundIndex = index
+      }
+      return { named: found, index: foundIndex, count }
+    }
+
+    const before = await probeEventPins()
+    expect(before.count, 'the seeded drop-ins must produce at least one pin').toBeGreaterThan(0)
+
+    // ----------------------------------------------------------------
+    // AC: ONE DOT FOR TWO DROP-INS, AND THE DOT KNOWS IT STANDS FOR TWO.
+    // ----------------------------------------------------------------
+    expect(
+      before.named.length,
+      `two seeded drop-ins at one place must be ONE dot (found ${before.named.length} dots naming "${runPrefix}")`,
+    ).toBe(1)
+
+    const tapped = before.named[0]
+    // The SOONEST of the pair is the one named (20 minutes out, not 25).
+    expect(
+      tapped.title,
+      'the dot must name the SOONEST drop-in it stands for',
+    ).toBe(seeds[0].title)
+    // ...and it must NOT present that as the whole story: the second drop-in at
+    // this place is disclosed as a count. This is the ticket's explicit
+    // "silently showing one event as if it were the only one is a failure".
+    expect(tapped.more, 'a two-drop-in dot must disclose the drop-ins it collapses').not.toBeNull()
+    expect(tapped.more, 'the disclosure must be a count of the others').toMatch(
+      /^[1-9]\d* more drop-ins? here$/,
+    )
+
+    // ----------------------------------------------------------------
+    // AC: THE TAP CAN REACH THE EVENT — and reaches THE EVENT, not the place.
+    // ----------------------------------------------------------------
+    expect(tapped.href, 'the bubble must link the drop-in it named').toBe(`/playdate/${firstId}`)
+    // A real day + window, from the card's own rule (`cardWhenLabel`): the DAY
+    // tables are locale-independent, so asserting the SHAPE here is stable
+    // whatever the browser's locale; the exact string is pinned by the seam's
+    // sibling test in `src/lib/places.test.ts`.
+    expect(tapped.when, 'the bubble must state when the drop-in starts').toMatch(
+      /^[A-Z][a-z]{2}, [A-Z][a-z]{2} \d{1,2} · .+–.+$/,
+    )
+    // The link is NOT a second "Details" for the place: the place's own door is
+    // a different control with a different destination.
+    expect(tapped.href, 'the event link must never be a /place/ link').not.toContain('/place/')
+
+    // ----------------------------------------------------------------
+    // AC: THE PLACE IS STILL HOW A PARENT KNOWS WHERE, AND THE BUBBLE STILL
+    // WORKS: reachable, dismissible, inside the band at 390x844.
+    // ----------------------------------------------------------------
+    await page
+      .locator('path.leaflet-interactive[fill="#4f46e5"]:not([d="M0 0"])')
+      .nth(before.index)
+      .click({ force: true })
+    const panel = page.getByTestId('place-marker-info')
+    await expect(panel).toBeVisible()
+    await expect(panel).toContainText(MARKER_PLACE_NAME)
+    await expect(panel).toContainText(MARKER_PLACE_ADDRESS)
+    // The place's own actions are untouched by the event addition (this pin has a
+    // real `place_id`, so `placeActions` is true — see the V19 t02 spec's belief-1
+    // note).
+    await expect(panel.getByTestId('host-here')).toBeVisible()
+
+    const eventLink = panel.getByTestId('pin-event-link')
+    await expect(eventLink).toHaveAccessibleName('Drop-in details')
+    await eventLink.focus()
+    await expect(eventLink).toBeFocused()
+    const linkBox = await eventLink.boundingBox()
+    expect(linkBox, 'the event link must be rendered').not.toBeNull()
+    // The house tap-target floor, on the new control too.
+    expect(linkBox!.height).toBeGreaterThanOrEqual(44)
+
+    // The popup that owns THIS panel (there is one bubble; filtering by the
+    // panel is what makes the lookup unambiguous).
+    const popup = page.locator('.leaflet-popup').filter({ has: panel })
+    const bandBox = await band.boundingBox()
+    const popupBox = await popup.boundingBox()
+    expect(bandBox).not.toBeNull()
+    expect(popupBox, 'the bubble must be rendered').not.toBeNull()
+    // AC9: taller content must not undo the autoPan/max-height work — the bubble
+    // stays inside the band it belongs to, so nothing hangs over the page above.
+    expect(
+      popupBox!.y,
+      `the bubble must start inside the map band (bubble y=${popupBox!.y}, band y=${bandBox!.y})`,
+    ).toBeGreaterThanOrEqual(bandBox!.y - 2)
+    expect(
+      popupBox!.y + popupBox!.height,
+      'the bubble must end inside the map band',
+    ).toBeLessThanOrEqual(bandBox!.y + bandBox!.height + 2)
+    // The EVENT — the thing the tap is asking about — is in the visible part of
+    // the bubble rather than scrolled out of it, which is why it leads.
+    const titleBox = await panel.getByTestId('pin-event-title').boundingBox()
+    expect(titleBox, 'the event title must be rendered').not.toBeNull()
+    expect(titleBox!.y).toBeGreaterThanOrEqual(bandBox!.y)
+    expect(titleBox!.y + titleBox!.height).toBeLessThanOrEqual(bandBox!.y + bandBox!.height)
+
+    // Dismissible as before: the ✕ is still a 44px target with the taller
+    // content, and it really closes the bubble.
+    const closeBox = await popup.locator('a.leaflet-popup-close-button').boundingBox()
+    expect(closeBox, 'the bubble must keep its close control').not.toBeNull()
+    expect(closeBox!.width).toBeGreaterThanOrEqual(44)
+    await popup.locator('a.leaflet-popup-close-button').click()
+    await expect(page.getByTestId('place-marker-info')).toHaveCount(0)
+
+    /**
+     * THE COLLAPSE, PROVEN FROM THE OTHER SIDE: delete the SOONER of the pair and
+     * the SAME dot must now name the surviving drop-in.
+     *
+     * Without this, "1 more drop-in here" is only a sentence: it could be about
+     * whatever else the live feed holds. After it, the second seeded row is
+     * demonstrably BEHIND that dot — the dot changed its mind when the row went
+     * away, and it now links the survivor's own `/playdate/:id`.
+     */
+    const deleted = await fetch(`${restUrl}/rest/v1/playdates?id=eq.${firstId}`, {
+      method: 'DELETE',
+      headers: restHeaders,
+    })
+    expect(deleted.ok, `the sooner seeded row must be deletable (HTTP ${deleted.status})`).toBe(true)
+    created.shift()
+
+    await page.reload()
+    await settleOnRoute(page, '/')
+    await page.getByRole('button', { name: 'Map' }).click()
+    await expect(band).toBeVisible({ timeout: 15000 })
+
+    const after = await probeEventPins()
+    expect(
+      after.named.length,
+      'the surviving drop-in must still be one dot, not zero and not two',
+    ).toBe(1)
+    expect(
+      after.named[0].title,
+      'with the sooner drop-in deleted, the dot must name the one that is left',
+    ).toBe(seeds[1].title)
+    expect(after.named[0].href).toBe(`/playdate/${secondId}`)
+
+    console.log(
+      `[V25 t07] pins probed: ${before.count}; dot naming "${tapped.title}" ` +
+        `(when "${tapped.when}", more "${tapped.more}", href "${tapped.href}"); ` +
+        `after deleting the sooner row the same dot names "${after.named[0].title}" ` +
+        `(href "${after.named[0].href}")`,
+    )
+  } finally {
+    // Best-effort cleanup: a leftover row would skew every later feed spec.
+    for (const id of created) {
+      await fetch(`${restUrl}/rest/v1/playdates?id=eq.${id}`, {
+        method: 'DELETE',
+        headers: restHeaders,
+      }).catch(() => {})
+    }
+  }
+})

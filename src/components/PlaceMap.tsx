@@ -42,6 +42,7 @@ import {
   resolveMapCoords,
   zoomForRadius,
 } from '../lib/places'
+import type { MapPinEvent } from '../lib/places'
 import type { Place, PlacePrefill } from '../lib/types'
 
 /** The tile source (pinned by the ticket — the only tile host the app fetches). */
@@ -202,6 +203,7 @@ export function PlacesMap({
   onSelect,
   focusPlaceId,
   focusBehavior = 'smooth',
+  pinEvents,
 }: {
   places: readonly Place[]
   zipCoords: ReadonlyMap<string, ZipCoords> | null
@@ -293,6 +295,31 @@ export function PlacesMap({
    * interpretation could drift.
    */
   focusBehavior?: ScrollBehavior
+  /**
+   * V25 t07 — THE EVENT EACH PIN STANDS FOR, keyed by the pin's own `id` in
+   * `places`, or absent.
+   *
+   * WHY THE EVENT ARRIVES AS A LOOKUP RATHER THAN ON THE `places` ROWS. The
+   * bubble is shared by three surfaces (this component's header records them),
+   * and only one of them — the feed — has events at all. A `Place` is a
+   * directory row; hanging feed-only fields off it would put a key on every
+   * row that two of the three callers must simply not pass, and would invite
+   * `placeActions`-style conditionals on a type that never meant to carry
+   * events. A lookup the caller may omit keeps the payload OPTIONAL by
+   * construction: /browse, the map view and the place page pass nothing and
+   * this component's output for them is byte-for-byte what it was.
+   *
+   * KEYED BY THE PLACE ID THE CALLER PUT ON THE ROW (`feed-pin-N` for the
+   * feed's free-text pins, which carry no directory place and must still name
+   * their event), so the lookup is the same identity the popup already holds
+   * when it opens — no second key to keep in sync.
+   *
+   * The value is a DECISION, not a row (see `lib/places.ts`): the title, the
+   * `cardWhenLabel` window, the "N more drop-ins here" sentence and the
+   * `/playdate/:id` href, all built by the tested seam. This component formats
+   * nothing and counts nothing.
+   */
+  pinEvents?: ReadonlyMap<string, MapPinEvent>
 }) {
   const navigate = useNavigate()
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -1172,6 +1199,20 @@ export function PlacesMap({
   const showHostHere = isRealPlaceId
   const showDetails = isRealPlaceId && placeActions
 
+  /**
+   * V25 t07 — THE EVENT THE TAPPED PIN STANDS FOR, or null.
+   *
+   * Read during RENDER only (never from an effect): the marker layer is built
+   * once per coordinate set, and a map that rebuilt its markers because a
+   * lookup's identity changed would close the popup the parent is reading. The
+   * caller hands this component a fresh Map each render exactly as it hands a
+   * fresh `places` array — neither is a dependency of anything here.
+   *
+   * `undefined` (every caller but the feed) and a missing key are the same
+   * thing: no event, so the bubble keeps its place-only content.
+   */
+  const pinEvent = selected !== null ? (pinEvents?.get(selected.id) ?? null) : null
+
   return (
     <div className="flex flex-col gap-2">
       <div
@@ -1302,6 +1343,53 @@ export function PlacesMap({
               data-testid="place-marker-info"
               className="flex flex-col gap-2 p-1"
             >
+              {/* V25 t07: THE EVENT FIRST, THEN THE PLACE — and that order is
+                  the founder's ask, not a preference. On the feed the pin IS a
+                  drop-in, so the drop-in's own name and time are what the tap
+                  is asking for; the place is how a parent knows WHERE, and it
+                  stays (with the address) directly below. A two-event dot says
+                  so here rather than presenting one session as the whole
+                  story — the count comes from `feedMapPinEvent`, so this
+                  component never counts anything.
+
+                  `pr-4` clears Leaflet's ✕, exactly as the place block below
+                  does; without it the title runs under the close button. */}
+              {pinEvent !== null ? (
+                <>
+                  <div className="flex flex-col gap-0.5 pr-4">
+                    <span
+                      data-testid="pin-event-title"
+                      className="text-sm font-semibold text-slate-900"
+                    >
+                      {pinEvent.title}
+                    </span>
+                    <span data-testid="pin-event-when" className="text-xs text-slate-600">
+                      {pinEvent.whenLabel}
+                    </span>
+                    {pinEvent.moreLabel !== null ? (
+                      <span data-testid="pin-event-more" className="text-xs text-slate-600">
+                        {pinEvent.moreLabel}
+                      </span>
+                    ) : null}
+                  </div>
+                  {/* V25 t07: THE DOOR TO THE EVENT. It is NOT a second
+                      "Details" for the place — its destination is
+                      `/playdate/:id`, built by the same seam that built the
+                      title above it, and its name says which one it opens. A
+                      real `<Link>` (keyboard reachable, named by its own text)
+                      at the house 44px tap target, so it is not a second-class
+                      control beside the row below. `Link` works here because the
+                      portal keeps this content inside the React tree (see the
+                      portal's doc comment). */}
+                  <Link
+                    to={pinEvent.href}
+                    data-testid="pin-event-link"
+                    className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
+                  >
+                    Drop-in details
+                  </Link>
+                </>
+              ) : null}
               <div className="flex flex-col gap-0.5 pr-4">
                 <span className="text-sm font-semibold text-slate-900">{selected.name}</span>
                 <span className="text-xs text-slate-600">{selected.address}</span>

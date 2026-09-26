@@ -9,7 +9,14 @@
  * thing they share is the distance math (feed.haversineMiles), which is
  * imported rather than reimplemented.
  */
-import { coordNumber, haversineMiles, localDayKey, placeDistanceMiles, statedAgeRangeLine } from './feed'
+import {
+  cardWhenLabel,
+  coordNumber,
+  haversineMiles,
+  localDayKey,
+  placeDistanceMiles,
+  statedAgeRangeLine,
+} from './feed'
 import type { DistanceChoice, ZipCoords } from './feed'
 import type { Place, PlaceKind } from './types'
 import type { ReviewSummary } from './reviews'
@@ -232,6 +239,17 @@ export function placeIdField(placeId?: string | null): { place_id?: string } {
  * 3. **Order is preserved from the input.** The caller passes posts in its own
  *    display order; nothing here re-sorts, because a map's draw order is not a
  *    ranking.
+ *
+ * 4. **A pin KEEPS every drop-in it collapsed (V25 t07).** Rule 2 makes one dot
+ *    stand for 1..N drop-ins, so a bubble that names "the" event is a claim the
+ *    pin cannot always honour: a morning and an afternoon session at one park
+ *    are ONE dot, and naming only one of them presents a choice as the whole
+ *    truth. So the collapse ACCUMULATES instead of discarding — the pin carries
+ *    every event behind it, in the caller's order — and `feedMapPinEvent`
+ *    below picks the SOONEST for the bubble and says how many others share the
+ *    dot. The founder's own words, on tapping a blue circle on the feed: *"it
+ *    make[s] more sense to tell you the name of the event that's happening
+ *    there and some information about that."*
  */
 export interface FeedMapPin {
   /** The drop-in's real directory place, or null for a free-text post. */
@@ -241,17 +259,83 @@ export interface FeedMapPin {
   address: string
   lat: number
   lng: number
+  /**
+   * EVERY drop-in this one dot stands for, in the caller's order — 1..N, never
+   * empty for a pin that exists. A post that cannot be named as an event (no
+   * id, or no parseable window) still contributes its PIN but no entry here;
+   * see `pinEventForPost`.
+   */
+  events: FeedMapPinEvent[]
 }
 
-export function feedMapPins(
-  posts: ReadonlyArray<{
-    place?: string | null
-    address?: string | null
-    place_id?: string | null
-    place_coords?: { lat?: number | string | null; lng?: number | string | null } | null
-  }>,
-): FeedMapPin[] {
-  const seen = new Set<string>()
+/**
+ * ONE drop-in standing behind a feed pin (V25 t07).
+ *
+ * `id` is the post's own id and is what the bubble's `/playdate/:id` link is
+ * built from, so an event without one is not an event this seam can report.
+ */
+export interface FeedMapPinEvent {
+  /** The drop-in's own `playdates.id`. */
+  id: string
+  /** The post's own title, trimmed and never empty. */
+  title: string
+  /** The post's start, as stored (ISO). */
+  startsAt: string
+  /** The post's end, as stored (ISO). */
+  endsAt: string
+}
+
+/**
+ * The minimal post shape this seam reads — all optional, so
+ * `PlaydateWithNeighborhood` satisfies it without a cast, exactly as the
+ * previous inline type did.
+ */
+export interface FeedMapPinPost {
+  id?: string | null
+  title?: string | null
+  starts_at?: string | null
+  ends_at?: string | null
+  place?: string | null
+  address?: string | null
+  place_id?: string | null
+  place_coords?: { lat?: number | string | null; lng?: number | string | null } | null
+}
+
+/** What to call a drop-in whose own title is blank — the same shape of fallback
+ *  the pin's own name uses (`Drop-in location`) rather than an empty line. */
+const UNTITLED_DROP_IN = 'Drop-in'
+
+/**
+ * The event a post contributes to its pin, or null when the post cannot be
+ * named as one.
+ *
+ * TWO REFUSALS, both deliberate:
+ *
+ *  - **No id.** The bubble's link is `/playdate/:id`, and a post with no id has
+ *    no event page behind it. Every real row has one (`playdates.id` is the
+ *    primary key), so this is the defensive half of the rule.
+ *  - **No parseable window.** The bubble states when the drop-in starts, so an
+ *    event whose `starts_at`/`ends_at` do not parse could only be named by
+ *    printing "Invalid Date" (`formatTimeWindow`'s behaviour). Both columns are
+ *    NOT NULL timestamptz on live data, so this cannot fire there either; it
+ *    exists so that a malformed row degrades to the place-only popup — the
+ *    pre-V25-t07 behaviour — instead of a popup that lies.
+ */
+function pinEventForPost(post: FeedMapPinPost): FeedMapPinEvent | null {
+  const id = typeof post.id === 'string' ? post.id.trim() : ''
+  if (id === '') return null
+  const startsAt = typeof post.starts_at === 'string' ? post.starts_at : ''
+  const endsAt = typeof post.ends_at === 'string' ? post.ends_at : ''
+  if (Number.isNaN(Date.parse(startsAt)) || Number.isNaN(Date.parse(endsAt))) return null
+  const title = (post.title ?? '').trim()
+  return { id, title: title === '' ? UNTITLED_DROP_IN : title, startsAt, endsAt }
+}
+
+export function feedMapPins(posts: ReadonlyArray<FeedMapPinPost>): FeedMapPin[] {
+  /** Key -> index in `pins`, so a later drop-in at the same place can be
+   *  ACCUMULATED onto the pin its first post created (rule 4) rather than
+   *  dropped. A `Set` cannot do that; this is the smallest thing that can. */
+  const indexByKey = new Map<string, number>()
   const pins: FeedMapPin[] = []
   for (const post of posts) {
     /**
@@ -273,17 +357,125 @@ export function feedMapPins(
     // Key on the PLACE where the post names one, so every drop-in there is one
     // dot; otherwise on the exact coordinate pair.
     const key = placeId ?? `${coords.lat},${coords.lng}`
-    if (seen.has(key)) continue
-    seen.add(key)
+    const event = pinEventForPost(post)
+    const existing = indexByKey.get(key)
+    if (existing !== undefined) {
+      // Rule 4: the dot already exists — this drop-in joins it rather than
+      // vanishing. The FIRST post at the place still owns the pin's identity
+      // (name, address, coordinates), which is unchanged from before.
+      if (event !== null) pins[existing].events.push(event)
+      continue
+    }
+    indexByKey.set(key, pins.length)
     pins.push({
       placeId,
       name: (post.place ?? '').trim(),
       address: (post.address ?? '').trim(),
       lat: coords.lat,
       lng: coords.lng,
+      events: event === null ? [] : [event],
     })
   }
   return pins
+}
+
+/**
+ * V25 t07 — WHAT THE TAPPED PIN'S BUBBLE SAYS ABOUT ITS EVENT, ready to render.
+ *
+ * The founder, on `/`: *"when you click on a blue circle … it make[s] more sense
+ * to tell you the name of the event that's happening there and some information
+ * about that."* The pin used to carry no event identity at all, so the bubble
+ * could only name the PLACE. This is the payload that fixes that, and it is
+ * built here — pure, with a sibling test — so the component renders a decision
+ * instead of making one.
+ *
+ * WHY IT CARRIES THE LABELS RATHER THAN THE RAW ROW. The `when` line goes
+ * through `cardWhenLabel`, the card's own day + window rule (V25 t05), so a feed
+ * card and the bubble over its pin cannot disagree about the same drop-in; the
+ * `more` sentence is copy, and copy belongs next to the rule that decides it.
+ * `PlaceMap` then has nothing to format and nothing to count.
+ *
+ * THE SHAPE OF THE ANSWER FOR A PIN THAT STANDS FOR SEVERAL DROP-INS: name the
+ * SOONEST and say how many more share the dot. The alternative the ticket allows
+ * — listing them all — does not fit this bubble: it is capped at `34vh` of
+ * content by `index.css` (measured for a place panel: name + address + one 44px
+ * action ≈ 200px of a 287px ceiling at 390×844), so a list would push the place
+ * label and the panel's own actions out of reach for every pin with a second
+ * session. Naming the soonest is the honest subset, and the count is what keeps
+ * it from pretending to be the whole story.
+ */
+export interface MapPinEvent {
+  /** The named drop-in's own id (`playdates.id`). */
+  playdateId: string
+  /** Its title — the founder's "name of the event". */
+  title: string
+  /** Its day + window through `cardWhenLabel`: "Sat, Sep 26 · 5 PM–6:30 PM". */
+  whenLabel: string
+  /** "2 more drop-ins here", or null when this dot stands for ONE drop-in — so
+   *  a single-event pin says nothing extra rather than "0 more". */
+  moreLabel: string | null
+  /** `/playdate/:id` — the tap target that reaches the named EVENT. */
+  href: string
+}
+
+/**
+ * WHICH of a pin's events the bubble names: the SOONEST, by `starts_at`.
+ *
+ * NOT `events[0]`, and the difference is not hypothetical. Rule 3 keeps the
+ * caller's order, and the caller's order happens to be the feed's display order
+ * (soonest-first day sections) — but that is the CALLER's decision, and a bubble
+ * that reads "the soonest" has to be true of the DATA rather than of a sort this
+ * seam did not perform. Two events at the same instant keep input order (the
+ * strict `<` below), so the rule is total and stable.
+ *
+ * An unparseable `starts_at` cannot win and cannot block: it is skipped, and a
+ * list whose members are ALL unparseable falls back to its first member (the
+ * same defensive posture as `pinEventForPost`, which normally keeps such an
+ * event out of the list altogether).
+ */
+export function soonestFeedPinEvent(
+  events: readonly FeedMapPinEvent[],
+): FeedMapPinEvent | null {
+  if (events.length === 0) return null
+  let soonest = events[0]
+  let soonestMs = Date.parse(soonest.startsAt)
+  for (const event of events.slice(1)) {
+    const ms = Date.parse(event.startsAt)
+    if (Number.isNaN(ms)) continue
+    if (Number.isNaN(soonestMs) || ms < soonestMs) {
+      soonest = event
+      soonestMs = ms
+    }
+  }
+  return soonest
+}
+
+/** How a pin's overflow is stated. One source for the sentence, so the bubble
+ *  and any spec assert the same words. */
+export function pinMoreDropInsLabel(moreCount: number): string | null {
+  if (moreCount <= 0) return null
+  return moreCount === 1 ? '1 more drop-in here' : `${moreCount} more drop-ins here`
+}
+
+/**
+ * The bubble payload for one feed pin — or null when the pin names no event
+ * (every one of its posts was unnameable), which leaves the shared popup at
+ * exactly its pre-V25-t07 place-only behaviour.
+ */
+export function feedMapPinEvent(pin: FeedMapPin): MapPinEvent | null {
+  const soonest = soonestFeedPinEvent(pin.events)
+  if (soonest === null) return null
+  return {
+    playdateId: soonest.id,
+    title: soonest.title,
+    whenLabel: cardWhenLabel(soonest.startsAt, soonest.endsAt),
+    moreLabel: pinMoreDropInsLabel(pin.events.length - 1),
+    // Spelled here rather than at the call site, the same reason `placePath`
+    // exists: one builder, so the bubble and (later) anything else that links a
+    // drop-in cannot drift to different URLs. `/playdate/:id` is the route
+    // `DropInCard` and the detail page already use.
+    href: `/playdate/${encodeURIComponent(soonest.id)}`,
+  }
 }
 
 /**
