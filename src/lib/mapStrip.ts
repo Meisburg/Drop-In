@@ -19,9 +19,15 @@
  *  3. `scrollBehaviorFor` — the reduced-motion rule. Prevents an inline ternary
  *     in the component and gives the preference exactly one interpretation.
  *
- * NO React, no DOM, no Leaflet: every function below is a plain value in and a
- * plain value out.
+ * NO React, no DOM, no Leaflet AT RUNTIME: every function below is a plain value
+ * in and a plain value out, and the one Leaflet name below is a TYPE-ONLY
+ * import (`import type`), which the compiler erases. So this module still ships
+ * nothing that touches the map library — but `PLACE_MARKER_STYLE` /
+ * `PLACE_MARKER_FOCUSED_STYLE` are CHECKED against Leaflet's own
+ * `CircleMarkerOptions`, which is the whole point of the annotation (see the
+ * note above those constants).
  */
+import type { CircleMarkerOptions } from 'leaflet'
 
 /**
  * Where the focus moves to after a Previous/Next step or an ArrowLeft/ArrowRight.
@@ -215,6 +221,19 @@ export function splitStripRows<T>(
  * higher fill opacity — so the distinction survives a colour-blind reader and a
  * monochrome screen. MEASURED: Leaflet writes the radius into the path's `d`
  * arc, so the drawn size is readable as geometry rather than only as colour.
+ *
+ * **`satisfies CircleMarkerOptions` IS LOAD-BEARING, AND ITS ABSENCE WAS A REAL
+ * HOLE** (V24 slice 10, review fix 4). `import type` is erased, so this costs no
+ * runtime dependency on Leaflet — but it turns a typo in a Leaflet key
+ * (`fillOpactiy`) or a wrong-typed value (`radius: '8'`) into a COMPILE ERROR.
+ * It matters because there is no other check: these objects are handed to
+ * `L.circleMarker(...)` and `marker.setStyle(...)`, and EXCESS-PROPERTY CHECKING
+ * does not apply to a variable that is merely *passed* to a function — an
+ * unannotated `{ radius: 8, fillOpactiy: 0.35 }` compiles, and Leaflet silently
+ * ignores the key it does not know. `satisfies` (rather than a `: T`
+ * annotation) is deliberate: it checks the literal AGAINST the type while
+ * keeping the inferred property types, so `PLACE_MARKER_STYLE.radius` stays a
+ * plain `number` for the sibling test that compares the two styles.
  */
 export const PLACE_MARKER_STYLE = {
   radius: 8,
@@ -222,7 +241,7 @@ export const PLACE_MARKER_STYLE = {
   weight: 2,
   fillColor: '#4f46e5',
   fillOpacity: 0.35,
-} as const
+} satisfies CircleMarkerOptions
 
 export const PLACE_MARKER_FOCUSED_STYLE = {
   radius: 12,
@@ -230,7 +249,7 @@ export const PLACE_MARKER_FOCUSED_STYLE = {
   weight: 3,
   fillColor: '#312e81',
   fillOpacity: 0.85,
-} as const
+} satisfies CircleMarkerOptions
 
 /**
  * Should the map view mount a Leaflet map at all? (V24 slice 10, ocr HIGH.)

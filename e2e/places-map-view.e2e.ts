@@ -40,15 +40,20 @@
  *    Previous/Next controls are covered as first-class paths rather than as an
  *    afterthought.
  *
- * Cleanup: NONE, and that is deliberate — this spec creates no rows and no
- * accounts. It reads the seeded directory through the marker's own storage state
- * (the `chromium` project), filters it with the app's existing controls, and
- * writes nothing. There is therefore no fixture for the marker sweep to find and
- * no REST DELETE to scope.
+ * Cleanup: exactly ONE write, and it is restored by the spec that makes it. The
+ * `no home pin: …` spec needs a viewer with NO HOME PIN, which is the branch of
+ * `shouldRenderPlacesMap` the seeded marker cannot reach — the marker has a home
+ * zip. The other specs create no rows and no accounts: they read the seeded
+ * directory through the marker's own storage state (the `chromium` project),
+ * filter it with the app's existing controls, and write nothing. The one write
+ * goes through the marker's OWN JWT over REST (the app's own path and RLS
+ * policy, the `e2e/feed-empty-state.e2e.ts` precedent), is scoped to the
+ * marker's own profile row, and is restored AND verified before the spec ends —
+ * see `restoreMarkerHomeZip`.
  */
 import { expect, test } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
-import { settleOnRoute } from './fixtures'
+import { readMarkerSession, readSupabaseEnv, settleOnRoute } from './fixtures'
 import { MAP_STRIP_CARD_LIMIT } from '../src/lib/mapStrip'
 
 /** The directory's distance control, set to "Any distance" (see below). */
@@ -75,6 +80,99 @@ async function openMapView(page: Page): Promise<void> {
   await page.getByTestId('places-see-map').click()
   await expect(page.getByTestId('places-map-view-map')).toBeVisible()
   await expect(page.getByTestId('places-map-strip')).toBeVisible()
+}
+
+/**
+ * The zip the no-home-pin spec parks the viewer on, and WHY IT IS THIS VALUE.
+ *
+ * `home_zip` does two different jobs in this app, and the dead-map branch needs
+ * only the second one to be empty:
+ *
+ *  1. THE ONBOARDING GATE keys on it (`needsOnboarding(homeZipSet)`, `App.tsx`),
+ *     so a NULL home zip bounces every protected route to `/onboarding` — a
+ *     viewer who cannot reach `/browse` proves nothing about the map. The value
+ *     must therefore be SET.
+ *  2. THE HOME PIN resolves it through the gazetteer (`BrowsePage.tsx`, the
+ *     `homePinCoords` block), and a zip ABSENT from that extract yields
+ *     `homePin === null` — the branch under test.
+ *
+ * `00000` is not in `supabase/migrations/0012_zip_radius.sql`'s seeded extract
+ * (checked: zero occurrences), and it is already the value
+ * `src/lib/feed.test.ts` uses for exactly this "not in the gazetteer" case
+ * (`placeDistanceMiles(NEAR_PLACE, { homeZip: '00000' }, …)` → null). It is a
+ * real string, so it passes any NOT NULL/format assumption the column has (the
+ * column is plain `text`, nullable, with no CHECK).
+ */
+const NO_HOME_PIN_ZIP = '00000'
+
+/**
+ * The marker's own `home_zip`, read over PostgREST with the marker's JWT (the
+ * app's own SELECT path and RLS policy).
+ *
+ * `undefined` means THE READ FAILED (network, RLS, a rotated project) — as
+ * distinct from `null`, which is a real stored value. The caller must not
+ * confuse the two: treating a failed read as "the marker has no zip" would make
+ * the restore write `null` and break the onboarding gate for every later spec.
+ */
+async function readMarkerHomeZip(): Promise<string | null | undefined> {
+  const { url, anonKey } = readSupabaseEnv()
+  const { accessToken, userId } = readMarkerSession()
+  const res = await fetch(`${url}/rest/v1/profiles?id=eq.${userId}&select=home_zip`, {
+    headers: { apikey: anonKey, Authorization: `Bearer ${accessToken}` },
+  })
+  if (!res.ok) return undefined
+  const rows = (await res.json()) as Array<{ home_zip: string | null }>
+  return rows[0]?.home_zip ?? null
+}
+
+/**
+ * Write the marker's `home_zip`, scoped to the marker's OWN row id — never a
+ * broad filter (`profiles_update_own` + the owner RLS policy is the wall, and
+ * the same write path `e2e/feed-empty-state.e2e.ts` uses for this column).
+ *
+ * `Prefer: return=minimal` deliberately asks for NO row back: a write whose
+ * SELECT policy excludes the actor must never be sent through RETURNING. The
+ * caller re-reads with `readMarkerHomeZip` instead, so the verification is a
+ * second, independent read.
+ */
+async function patchMarkerHomeZip(zip: string | null): Promise<boolean> {
+  const { url, anonKey } = readSupabaseEnv()
+  const { accessToken, userId } = readMarkerSession()
+  const res = await fetch(`${url}/rest/v1/profiles?id=eq.${userId}`, {
+    method: 'PATCH',
+    headers: {
+      apikey: anonKey,
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
+    },
+    body: JSON.stringify({ home_zip: zip }),
+  })
+  return res.ok
+}
+
+/**
+ * Put the marker's `home_zip` back, and FAIL the run if it did not land.
+ *
+ * WHY FAILURE RATHER THAN A LOG LINE: specs run serially against ONE shared
+ * marker (`playwright.config.ts`: `workers: 1`), and every later spec that needs
+ * a home pin reads this row. A marker left at `00000` would break the NEXT spec
+ * in a way that looks like someone else's bug — the exact failure mode
+ * `feed-empty-state.e2e.ts`'s `afterAll` documents. Best-effort by attempt (3),
+ * never by silence.
+ */
+async function restoreMarkerHomeZip(previous: string | null): Promise<void> {
+  let restored: string | null | undefined
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await patchMarkerHomeZip(previous)
+    restored = await readMarkerHomeZip()
+    if (restored === previous) return
+  }
+  throw new Error(
+    `[e2e cleanup] FAILED — could not restore the marker's home_zip to ` +
+      `${JSON.stringify(previous)} (row now: ${JSON.stringify(restored)}). Every later spec ` +
+      `that needs a home pin reads this row: restore it by hand before re-running the suite.`,
+  )
 }
 
 /**
@@ -390,9 +488,13 @@ test('the map view pins EVERY matching place, capping only the cards (V24 s10)',
    * failing the day the seed changed, or worse, passed while a row was dropped
    * because two errors cancelled.
    *
-   * The count is read from the APP's own total (`see-all`'s "See all N places",
-   * the label the directory renders from `listRows.length`) rather than from an
-   * arithmetic expectation, so this measures the partition and not the fixture.
+   * The count is read from the APP's own total — the map view's own
+   * `data-matched-rows` (`PlacesMapView.tsx`, written from `rows.length`) rather
+   * than from an arithmetic expectation, so this measures the partition and not
+   * the fixture. (An earlier version of this comment named the directory's
+   * "See all N places" label as the source; the code has always read the map
+   * view's own attribute, and the map view is the only surface that publishes a
+   * total covering the cards AND the linear list.)
    */
   const matchedRows = Number(
     (await page.getByTestId('places-map-view').getAttribute('data-matched-rows')) ?? '0',
@@ -752,6 +854,19 @@ test('the strip is fully operable with the keyboard alone (V24 s10)', async ({ p
   // reaches places through the cards and the list, not by tabbing through a few
   // hundred SVG paths. `tabindex="-1"` is written on every one of them, so this
   // walks them all rather than sampling.
+  //
+  // NON-VACUITY FIRST (review fix 4): the list comprehension below is empty for
+  // TWO unrelated reasons — every path carries `tabindex="-1"` (correct) or
+  // there is no path AT ALL (a broken map, a culled layer, the wrong page). The
+  // previous version of this assertion could not tell them apart and passed on
+  // an empty page. The count assertion makes the empty page a FAILURE, so the
+  // `unstoppable` assertion is now about the tab order and nothing else.
+  const leafletPathCount = await page.locator('.leaflet-interactive').count()
+  expect(
+    leafletPathCount,
+    'there must be Leaflet paths on this map, or "no pin is a tab stop" is a ' +
+      'statement about an empty page rather than about the pins',
+  ).toBeGreaterThan(0)
   const unstoppable = await page.evaluate(() => {
     const paths = Array.from(document.querySelectorAll('.leaflet-interactive'))
     return paths
@@ -973,31 +1088,35 @@ test('a tapped pin\'s panel survives a focus move (V24 s10)', async ({ page }) =
   )
 })
 
-test('narrowing the map view to zero pins and widening again leaves a live map (V24 s10)', async ({
+test('narrowing the map view to zero pins and widening again leaves a live map — a viewer WITH a home pin (V24 s10)', async ({
   page,
 }) => {
   /**
-   * THE DEAD-MAP DEFECT (ocr HIGH), and what this spec can and cannot reach.
+   * THE DEAD-MAP DEFECT (ocr HIGH), on the branch a SEEDED VIEWER can reach.
    *
-   * THE DEFECT: `PlacesMap` returns `null` when it has nothing to draw, which
-   * unmounts its own container while the component stays mounted — and its
-   * Leaflet instance is created by a once-per-mount effect whose cleanup only
-   * fires when the COMPONENT unmounts. So `map.remove()` never ran and the
-   * instance stayed attached to a destroyed div, leaving the pane blank for good
-   * after the search was widened again.
+   * THE DEFECT: `PlacesMap`'s Leaflet instance is created by an effect whose
+   * dependency list is EMPTY and which skips when there are no markers to draw
+   * (`PlaceMap.tsx:346-348`, deps `[]` at `:387`). So an instance attached to a
+   * container that has been torn out from under it never gets re-created, and
+   * `map.remove()` never runs — the pane stays blank for good after the search is
+   * widened again.
    *
-   * THE FIX: the map view decides whether to mount a map at all, above the
-   * component that owns the pitfall (`shouldRenderPlacesMap`, `src/lib/mapStrip.ts`).
+   * THE FIX: the map view decides whether to mount a map at all, ABOVE the
+   * component that owns the pitfall (`shouldRenderPlacesMap`, `src/lib/mapStrip.ts`),
+   * so React unmounts `PlacesMap` — running its cleanup — exactly when there is
+   * nothing to draw.
    *
-   * WHICH BRANCH THIS SPEC CAN REACH, MEASURED: the seeded marker always has a
-   * home pin, so shrinking the search to nothing leaves `pins: []` with
-   * `homePin !== null` — the case where the map is KEPT, with the home pin as its
-   * only content. That is the branch asserted here: shrink to zero pins, widen,
-   * and require a live camera and drawn pins again. The branch the bug actually
-   * needed (`0 pins && null home pin`, an anonymous or home-zip-less viewer) is
-   * not reachable from this UI, so its decision is asserted directly by
-   * `shouldRenderPlacesMap`'s unit test — the reason that rule lives in `lib/` at
-   * all.
+   * WHICH BRANCH THIS SPEC PROVES, MEASURED, and it is the WEAKER of the two:
+   * the seeded marker always has a home pin, so shrinking the search to nothing
+   * leaves `pins: []` with `homePin !== null` — the case where the guard says
+   * KEEP the map, with the home pin as its only content. `shouldRenderPlacesMap`
+   * returns `true` on this branch, so this spec is satisfied by the UNFIXED code
+   * as well as by the fix: it is a live property of the reachable path, NOT
+   * evidence for the guard. The guard's own branch (`0 pins && null home pin`) is
+   * proven in a browser by the NEXT spec, `no home pin: …` — which is red when the
+   * guard is removed. This one is kept for what it does prove: the zero-pin
+   * branch that a normal viewer hits keeps a working camera, and no second
+   * Leaflet container leaks.
    */
   await openMapView(page)
   const mapViewMap = page.getByTestId('places-map-view-map')
@@ -1046,6 +1165,164 @@ test('narrowing the map view to zero pins and widening again leaves a live map (
     'exactly one Leaflet container exists in the document (no leak alongside it)',
   ).toBe(1)
   await expect(page.getByTestId('places-map-view-map')).toHaveCount(1)
+})
+
+/**
+ * THE MISSING EVIDENCE (fresh-context review of fix 3): the branch of
+ * `shouldRenderPlacesMap` that ACTUALLY CHANGES behaviour, proven in a browser.
+ *
+ * WHY THE PREVIOUS SPEC COULD NOT FAIL FOR THE DEFECT IT NAMED, stated as the
+ * reviewer stated it: on the seeded viewer's branch (`pins: []` WITH a home pin)
+ * `shouldRenderPlacesMap(0, HOME)` is `true` (`src/lib/mapStrip.ts`), so the fix
+ * renders the IDENTICAL element with IDENTICAL props as the unfixed `a35f9cf` —
+ * every assertion in that spec is satisfied by the unfixed code too. The branch
+ * the guard exists for is the one where the predicate FLIPS: `homePin === null`,
+ * where the guard replaces a mounted map with the empty state
+ * (`PlacesMapView.tsx`, the `shouldRenderPlacesMap(...) ? … : <p
+ * data-testid="places-map-view-empty">` ternary). Until this spec, that branch
+ * had no test at all outside `shouldRenderPlacesMap`'s unit test, and
+ * `places-map-view-empty` was referenced by nothing in the repo.
+ *
+ * HOW A HOME-PIN-LESS VIEWER IS REACHED WITHOUT NEW TOOLING, and why the other
+ * door was refused:
+ *
+ *  - The repo has NO component-test toolchain (no jsdom, no
+ *    `@testing-library/react`), so `vi.mock('./PlaceMap')` is not available, and
+ *    this slice may not add a dependency to get it. A browser spec is the honest
+ *    alternative, and it is strictly stronger: it exercises React's real unmount
+ *    and `map.remove()`.
+ *  - A THROWAWAY SIGNUP with an out-of-extract zip would create an account (a
+ *    fixture the sweep has to find) for a two-line state change.
+ *  - `home_zip = NULL` is NOT the way, MEASURED IN THE CODE: the app shell's
+ *    onboarding gate keys on `homeZipSet` (`src/App.tsx` →
+ *    `resolveOnboardingGate`, `src/lib/onboarding.ts`), so a null home zip
+ *    bounces `/browse` to `/onboarding` and the viewer never reaches the map.
+ *    `BrowsePage.tsx`'s `homePinCoords` has TWO null doors — "unset" and "absent
+ *    from the gazetteer" — and only the second one leaves the app usable.
+ *
+ * So the spec writes an OUT-OF-EXTRACT zip onto the marker's own profile row
+ * (`NO_HOME_PIN_ZIP`, the marker's own JWT over REST — the app's write path and
+ * RLS policy, the `feed-empty-state.e2e.ts` precedent), restores the previous
+ * value in a `finally`, and fails the run if the restore does not land. It is
+ * scoped to that one row and to this one spec: `workers: 1` and spec-level
+ * ordering mean no other signed-in viewer is looking at the value while it is
+ * changed.
+ *
+ * WHAT IT ASSERTS, in the order the branch changes:
+ *  (a) the branch is genuinely the home-pin-less one — the map view is up with
+ *      pins and NO red home marker, and exactly one live Leaflet container;
+ *  (b) narrowing to zero pins removes BOTH the map's test id AND every
+ *      `.leaflet-container`, and renders `places-map-view-empty` — the guard's
+ *      reachable effect. (The container count below would ALSO fail on an
+ *      unfixed build, because `PlaceMap.tsx`'s early return
+ *      `entries.length === 0 && homePin === undefined && homePin === null` is an
+ *      unsatisfiable conjunction — so the unfixed map never tears its own
+ *      container out. MEASURED in the mutation run: the empty-state assertion
+ *      above catches the mutation first, so that is the failure the run reports.)
+ *  (c) widening draws pins again in exactly ONE container, with a live camera and
+ *      one `[data-focused-marker]` — i.e. the instance really was destroyed and
+ *      re-created rather than left pointing at a container that no longer exists.
+ *
+ * MUTATION-CHECKED (the review asked for exactly this): with
+ * `shouldRenderPlacesMap` mutated to `return true` — the guard removed — (b)
+ * fails. Paste of both runs is in the fix-round report; the tree is NOT left
+ * mutated.
+ */
+test('no home pin: zero pins render the empty state (no Leaflet container), and widening brings the map back (V24 s10)', async ({
+  page,
+}) => {
+  const previous = await readMarkerHomeZip()
+  if (previous === undefined) {
+    throw new Error(
+      'the marker home_zip could not be read over REST — a restore would be a guess, so the ' +
+        'spec stops before writing anything',
+    )
+  }
+  expect(previous, 'the marker must start WITH a home zip, or the restore has no meaning').not.toBeNull()
+
+  try {
+    expect(
+      await patchMarkerHomeZip(NO_HOME_PIN_ZIP),
+      'the out-of-extract home_zip write must land',
+    ).toBe(true)
+    // Settle the location BEFORE the app loads: a stale profile would make every
+    // assertion below describe a race rather than the branch.
+    expect(
+      await readMarkerHomeZip(),
+      'the out-of-extract zip must be stored before the app loads',
+    ).toBe(NO_HOME_PIN_ZIP)
+
+    await openMapView(page)
+    const mapViewMap = page.getByTestId('places-map-view-map')
+    await expect(mapViewMap).toBeVisible()
+    await expect
+      .poll(() => placePinCount(mapViewMap), { message: 'the map view starts with pins' })
+      .toBeGreaterThan(0)
+
+    // (a) THE BRANCH IS REAL. The home pin is the red circle marker (radius 10,
+    // `#dc2626`) and the map view passes no radius circle — so a red path here
+    // would BE the home pin. Asserted AFTER the pins are drawn, because the home
+    // pin and the place pins are built by effects on the same commit: if the
+    // place pins are on the map, a home pin would be too, so 0 is the branch and
+    // not a slow effect.
+    await expect(
+      page.locator('.leaflet-interactive[fill="#dc2626"]'),
+      'this viewer must genuinely have NO home pin, or the spec is on the wrong branch',
+    ).toHaveCount(0)
+    // …and the map that must later be destroyed is live and singular now.
+    await expect(
+      page.locator('.leaflet-container'),
+      'exactly one live Leaflet container while there are pins to draw',
+    ).toHaveCount(1)
+
+    // (b) SHRINK to zero matching rows. With the guard, this is the moment
+    // `shouldRenderPlacesMap(0, null)` goes false and React UNMOUNTS `PlacesMap`.
+    await page.getByTestId('places-search').fill('zzzz-no-such-place-at-all-zzzz')
+    await expect(page.getByTestId('places-map-list').locator('a')).toHaveCount(0)
+    await expect(page.locator('[data-testid^="places-map-card-"]')).toHaveCount(0)
+
+    // THE GUARD'S OWN OBSERVABLE: the empty state, which exists ONLY on this
+    // branch and is rendered by nothing else in the app.
+    await expect(
+      page.getByTestId('places-map-view-empty'),
+      'with nothing to draw AND no home pin, the map view must render its empty state',
+    ).toBeVisible()
+    // AND NOTHING LEAFLET SURVIVES IT — asserted as a COUNT, retried, so an
+    // instance left attached to a destroyed div (the defect) cannot pass: the
+    // unfixed code keeps its container here, which is what this catches.
+    await expect(
+      page.locator('.leaflet-container'),
+      'the empty branch must not leave a Leaflet container behind',
+    ).toHaveCount(0)
+    await expect(page.getByTestId('places-map-view-map')).toHaveCount(0)
+
+    // (c) WIDEN. The component mounts again, so the once-per-mount creation
+    // effect runs again — the half that a killed instance makes impossible.
+    await page.getByTestId('places-search').fill('park')
+    await expect(page.getByTestId('places-map-view-map')).toBeVisible()
+    await expect
+      .poll(() => placePinCount(page.getByTestId('places-map-view-map')), {
+        message: 'pins are drawn again after the widen',
+      })
+      .toBeGreaterThan(0)
+    await expect(
+      page.locator('.leaflet-container'),
+      'the widened map is exactly ONE re-created Leaflet container (not a dead one, not two)',
+    ).toHaveCount(1)
+    await expect
+      .poll(() => mapCenter(page), { message: 'the re-created map reports a live camera' })
+      .toMatch(/^-?\d+\.\d+,-?\d+\.\d+$/)
+    await expect(
+      page.locator('[data-focused-marker]'),
+      'the re-created map paints the focused pin, so it is drawing and not a blank pane',
+    ).toHaveCount(1)
+    await expect(page.getByTestId('places-map-card-0')).toHaveAttribute('aria-current', 'true')
+  } finally {
+    // ALWAYS, including on a failed assertion above: the marker's home zip goes
+    // back, and a restore that does not land fails the run loudly rather than
+    // silently breaking every later spec that needs a home pin.
+    await restoreMarkerHomeZip(previous)
+  }
 })
 
 test('a second "See map" activation does not disturb the saved list offset (V24 s10)', async ({

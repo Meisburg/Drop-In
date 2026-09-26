@@ -216,14 +216,32 @@ export function PlacesMapView({
 
   /**
    * The card count, readable from a handler that must not close over it. A ref
-   * rather than the render value for the same reason the index below uses the
-   * functional updater: a keyboard or click handler can run against a commit the
-   * render it was created in has already been replaced by.
+   * rather than the render value for the same reason `indexRef` below exists: a
+   * keyboard or click handler can run against a commit the render it was created
+   * in has already been replaced by.
    */
   const countRef = useRef(count)
   useEffect(() => {
     countRef.current = count
   }, [count])
+
+  /**
+   * The COMMITTED card index, readable from a handler that must not close over
+   * the render value — the sibling of `countRef` above, and the base `moveFocus`
+   * steps from.
+   *
+   * A ref is the tool for the reason stated there: an event handler is created
+   * in one render and can run against a commit that render has already been
+   * replaced by, so a value baked into the closure is a value that can be one
+   * rows-change stale. Written from the effect, never during render: a ref write
+   * inside the render body is the pattern React flags and the one a discarded
+   * concurrent render would corrupt. `safeIndex` (not `focusedIndex`) is what is
+   * stored, so the ref is always a legal index for the current strip.
+   */
+  const indexRef = useRef(safeIndex)
+  useEffect(() => {
+    indexRef.current = safeIndex
+  }, [safeIndex])
 
   /**
    * Move the focus one card, and take the DOM focus with it.
@@ -236,27 +254,52 @@ export function PlacesMapView({
    * with the reduced-motion-derived behaviour — the same value the map uses, so
    * the card and the pin move together or neither animates.
    *
-   * THE BASE INDEX IS COMPUTED INSIDE THE UPDATER, and that is the fix for a real
-   * defect ocr's re-read surfaced: the previous version read `safeIndex` from the
-   * render closure, so a handler created before a rows change stepped from a
-   * stale index — and the render value could be out of range for the new set
-   * while the clamp is exactly what makes it valid. Reading `current` inside the
-   * updater is always the freshest committed value, and the card to scroll to is
-   * computed from the same `target` the state receives, so the two cannot
-   * disagree.
+   * THE BASE INDEX COMES FROM A REF, AND THE DOM WRITES SIT IN THE HANDLER BODY
+   * — both halves are corrections of real defects, and they conflict unless you
+   * are deliberate about which one moves where.
+   *
+   *  - The ORIGINAL defect (ocr's re-read): the handler read `safeIndex` from the
+   *    RENDER CLOSURE, so a handler created before a rows change stepped from a
+   *    stale index, and the render value could be out of range for the new set.
+   *    `indexRef` is written by the effect below on every commit, so the handler
+   *    reads the freshest COMMITTED index — the same value `safeIndex` had.
+   *  - The SECOND defect (this round): the fix for the first one put the writes
+   *    INSIDE the `setFocusedIndex` updater. An updater must be PURE — the app
+   *    runs StrictMode (`src/main.tsx`), which double-invokes it in dev, and a
+   *    concurrent render React throws away can run it too. Focusing a node and
+   *    scrolling it are side effects, and running them from a discarded render is
+   *    a real bug class, not a style note. They are back in the handler body,
+   *    where fix 2 (`a35f9cf:216-224`) had them, and the updater receives a plain
+   *    value rather than a function.
+   *
+   * The eager `indexRef.current = target` is what keeps the ref honest between
+   * the keypress and the re-render: two presses inside one frame must step twice,
+   * and the effect below (which re-syncs the ref from `safeIndex`) has not run
+   * yet at that point.
+   *
+   * WHAT IS *NOT* CLAIMED HERE, because the previous version of this comment
+   * claimed it and it was not true: `total` is read OUTSIDE the state update
+   * (from `countRef`) and the index from `indexRef`, so the two are read as two
+   * separate values rather than from one atomic snapshot. They cannot describe
+   * different strips in practice — both refs are written by effects that run
+   * after the SAME commit, and the eager write above only ever moves the index
+   * within a `total` that a render has already fixed (a keypress does not change
+   * the row set) — but "the two cannot disagree" was an overstatement, and the
+   * honest version is the one written here.
    */
   const moveFocus = useCallback((delta: number) => {
     const total = countRef.current
     if (total === 0) return
-    setFocusedIndex((current) => {
-      const target = nextCardIndex(clampCardIndex(current, total), delta, total)
-      const card = cardRefs.current[target]
-      if (card !== undefined && card !== null) {
-        card.focus({ preventScroll: true })
-        card.scrollIntoView({ behavior: behaviorRef.current, inline: 'center', block: 'nearest' })
-      }
-      return target
-    })
+    const target = nextCardIndex(clampCardIndex(indexRef.current, total), delta, total)
+    // Written BEFORE the state update: a second press in the same frame steps
+    // from where the first one landed rather than from the committed render.
+    indexRef.current = target
+    setFocusedIndex(target)
+    const card = cardRefs.current[target]
+    if (card !== undefined && card !== null) {
+      card.focus({ preventScroll: true })
+      card.scrollIntoView({ behavior: behaviorRef.current, inline: 'center', block: 'nearest' })
+    }
   }, [])
 
 
