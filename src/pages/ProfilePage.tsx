@@ -1067,7 +1067,22 @@ export function ProfilePage() {
     ...(nextParentSlot === null ? [] : [{ card: null, slot: nextParentSlot }]),
   ]
   const firstEditorSlot = parentCardEditors[0]?.slot ?? 1
-  const activeLinkSlot = linkOpenSlot ?? firstEditorSlot
+  /**
+   * V24 batch-end cleanup (ocr 11B): `linkOpenSlot` is RE-VALIDATED against the
+   * CURRENT editor list on every render. A parent can open the invite form on
+   * the empty "add a parent" slot and then remove the saved card; the list
+   * shrinks while the stored slot still names the vanished editor, every card
+   * then rendered "Link an account", and the form the parent was filling
+   * disappeared without their action.
+   *
+   * The choice: MOVE the form to the first editor rather than close it. The
+   * typed name/@handle survive in page state and this control's design is "one
+   * form, always open on some card", so a move loses nothing and cannot leave
+   * the account-link surface with no way in. (The stored slot is left alone; it
+   * is a preference, and this derived value is the validity-checked one.)
+   */
+  const openSlotExists = parentCardEditors.some((entry) => entry.slot === linkOpenSlot)
+  const activeLinkSlot = linkOpenSlot !== null && openSlotExists ? linkOpenSlot : firstEditorSlot
   const linkState: LinkView | null =
     accountLinks === null ? null : linkView(accountLinks, userId ?? '')
   /**
@@ -1953,6 +1968,120 @@ function ParentCardLink({
     )
   }
 
+  /**
+   * The FOUR ACCOUNT-LEVEL STATES, one flat `switch` branch each.
+   *
+   * This was a four-level nested ternary chain, with a second ternary nested in
+   * the `declined` branch's template literal — the shape the repo's review rules
+   * flag, and the shape the removed standalone "Linked parent" section rendered
+   * with a `switch`. Splitting it into a local function keeps each state's copy
+   * and controls on one readable branch; the rendered output is unchanged (same
+   * testids, same copy, same controls).
+   */
+  function accountStateView() {
+    switch (view.kind) {
+      case 'linked':
+        return (
+          <div className="flex items-center justify-between gap-3">
+            <p data-testid="linked-parent" className="text-sm text-slate-700">
+              Linked to{' '}
+              <span className="font-medium">
+                {view.otherHandle === '' ? 'your partner' : `@${view.otherHandle}`}
+              </span>
+            </p>
+            <button
+              type="button"
+              data-testid="unlink-parent"
+              disabled={busy}
+              onClick={() => onUnlink(view.linkId)}
+              className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
+            >
+              Unlink
+            </button>
+          </div>
+        )
+      case 'outgoing':
+        return (
+          <div className="flex items-center justify-between gap-3">
+            <p data-testid="link-outgoing" className="text-sm text-slate-700">
+              Invite sent to{' '}
+              <span className="font-medium">
+                {view.otherHandle === '' ? 'them' : `@${view.otherHandle}`}
+              </span>{' '}
+              — waiting for them to accept.
+            </p>
+            <button
+              type="button"
+              data-testid="withdraw-invite"
+              disabled={busy}
+              onClick={() => onUnlink(view.linkId)}
+              className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
+            >
+              Withdraw
+            </button>
+          </div>
+        )
+      case 'incoming':
+        return (
+          <div data-testid="link-incoming" className="flex flex-col gap-2">
+            <p className="text-sm text-slate-700">
+              <span className="font-medium">
+                {view.otherHandle === '' ? 'A parent' : `@${view.otherHandle}`}
+              </span>{' '}
+              wants to link accounts with you.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                data-testid="accept-invite"
+                disabled={busy}
+                onClick={() => onRespond(view.linkId, 'accepted')}
+                className="min-h-11 rounded-full bg-indigo-600 px-4 text-sm font-medium text-white disabled:opacity-60"
+              >
+                Accept
+              </button>
+              <button
+                type="button"
+                data-testid="decline-invite"
+                disabled={busy}
+                onClick={() => onRespond(view.linkId, 'declined')}
+                className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
+              >
+                Decline
+              </button>
+            </div>
+          </div>
+        )
+      case 'declined': {
+        // The only direction-dependent copy: compute the handle label and the
+        // sentence as two plain values, so no ternary sits inside the template
+        // literal (that nesting was the second half of the chain above).
+        const whose = view.otherHandle === '' ? 'that parent' : `@${view.otherHandle}`
+        const message = view.outgoing
+          ? `Your invitation to ${whose} was declined.`
+          : 'That invitation was declined.'
+        return (
+          <div className="flex items-center justify-between gap-3">
+            <p data-testid="link-declined" className="text-sm text-slate-600">
+              {message}
+            </p>
+            <button
+              type="button"
+              data-testid="clear-declined"
+              disabled={busy}
+              onClick={() => onUnlink(view.linkId)}
+              className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
+            >
+              Dismiss
+            </button>
+          </div>
+        )
+      }
+      case 'none':
+        return null
+    }
+  }
+
   return (
     <div
       data-testid={`parent-card-link-${slot}`}
@@ -2025,94 +2154,7 @@ function ParentCardLink({
           </button>
         </div>
       ) : (
-        <div className="flex flex-col gap-2">
-          {view.kind === 'linked' ? (
-            <div className="flex items-center justify-between gap-3">
-              <p data-testid="linked-parent" className="text-sm text-slate-700">
-                Linked to{' '}
-                <span className="font-medium">
-                  {view.otherHandle === '' ? 'your partner' : `@${view.otherHandle}`}
-                </span>
-              </p>
-              <button
-                type="button"
-                data-testid="unlink-parent"
-                disabled={busy}
-                onClick={() => onUnlink(view.linkId)}
-                className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
-              >
-                Unlink
-              </button>
-            </div>
-          ) : view.kind === 'outgoing' ? (
-            <div className="flex items-center justify-between gap-3">
-              <p data-testid="link-outgoing" className="text-sm text-slate-700">
-                Invite sent to{' '}
-                <span className="font-medium">
-                  {view.otherHandle === '' ? 'them' : `@${view.otherHandle}`}
-                </span>{' '}
-                — waiting for them to accept.
-              </p>
-              <button
-                type="button"
-                data-testid="withdraw-invite"
-                disabled={busy}
-                onClick={() => onUnlink(view.linkId)}
-                className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
-              >
-                Withdraw
-              </button>
-            </div>
-          ) : view.kind === 'incoming' ? (
-            <div data-testid="link-incoming" className="flex flex-col gap-2">
-              <p className="text-sm text-slate-700">
-                <span className="font-medium">
-                  {view.otherHandle === '' ? 'A parent' : `@${view.otherHandle}`}
-                </span>{' '}
-                wants to link accounts with you.
-              </p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  data-testid="accept-invite"
-                  disabled={busy}
-                  onClick={() => onRespond(view.linkId, 'accepted')}
-                  className="min-h-11 rounded-full bg-indigo-600 px-4 text-sm font-medium text-white disabled:opacity-60"
-                >
-                  Accept
-                </button>
-                <button
-                  type="button"
-                  data-testid="decline-invite"
-                  disabled={busy}
-                  onClick={() => onRespond(view.linkId, 'declined')}
-                  className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
-                >
-                  Decline
-                </button>
-              </div>
-            </div>
-          ) : view.kind === 'declined' ? (
-            <div className="flex items-center justify-between gap-3">
-              <p data-testid="link-declined" className="text-sm text-slate-600">
-                {view.outgoing
-                  ? `Your invitation to ${
-                      view.otherHandle === '' ? 'that parent' : `@${view.otherHandle}`
-                    } was declined.`
-                  : 'That invitation was declined.'}
-              </p>
-              <button
-                type="button"
-                data-testid="clear-declined"
-                disabled={busy}
-                onClick={() => onUnlink(view.linkId)}
-                className="min-h-11 rounded-full border border-slate-300 px-4 text-sm text-slate-600 disabled:opacity-60"
-              >
-                Dismiss
-              </button>
-            </div>
-          ) : null}
-        </div>
+        <div className="flex flex-col gap-2">{accountStateView()}</div>
       )}
       {error !== null ? (
         <p data-testid="link-error" className="text-sm text-red-600">

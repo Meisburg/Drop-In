@@ -685,6 +685,26 @@ test('the link action lives on the parent card, and the standalone section is go
   const { accessToken: markerToken, userId: markerId } = readMarkerSession()
   const { displayName: markerHandle } = readMarkerMeta()
 
+  /**
+   * fetch with a hard 15s cap — a hung live-DB call must fail fast.
+   *
+   * The 11A test above established this discipline; this test is the OTHER half
+   * of the same slice and talks to the same live database, so it routes every
+   * REST call (the two reads and the DELETE loop in `clearMarkerLinks`, the
+   * `parent_cards` DELETE + inserts, and the `finally` cleanup) through the same
+   * cap. Without it a hung call parks here until the 180s `setTimeout` ceiling,
+   * and the diagnosis of *which* call hung is lost.
+   */
+  async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 15_000)
+    try {
+      return await fetch(url, { ...init, signal: controller.signal })
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
   function authed(token: string): Record<string, string> {
     return { apikey: anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
   }
@@ -702,11 +722,11 @@ test('the link action lives on the parent card, and the standalone section is go
    * with.
    */
   async function clearMarkerLinks(): Promise<void> {
-    const asRequester = await fetch(
+    const asRequester = await fetchWithTimeout(
       `${restUrl}/rest/v1/account_links?select=id&requester_id=eq.${markerId}`,
       { headers: authed(markerToken) },
     )
-    const asAddressee = await fetch(
+    const asAddressee = await fetchWithTimeout(
       `${restUrl}/rest/v1/account_links?select=id&addressee_id=eq.${markerId}`,
       { headers: authed(markerToken) },
     )
@@ -715,7 +735,7 @@ test('the link action lives on the parent card, and the standalone section is go
       ...(asAddressee.ok ? ((await asAddressee.json()) as Array<{ id: string }>) : []),
     ]
     for (const row of rows) {
-      await fetch(`${restUrl}/rest/v1/account_links?id=eq.${row.id}`, {
+      await fetchWithTimeout(`${restUrl}/rest/v1/account_links?id=eq.${row.id}`, {
         method: 'DELETE',
         headers: authed(markerToken),
       }).catch(() => {})
@@ -725,7 +745,7 @@ test('the link action lives on the parent card, and the standalone section is go
   try {
     // A deterministic starting point: no link state, no leftover cards.
     await clearMarkerLinks()
-    await fetch(`${restUrl}/rest/v1/parent_cards?profile_id=eq.${markerId}`, {
+    await fetchWithTimeout(`${restUrl}/rest/v1/parent_cards?profile_id=eq.${markerId}`, {
       method: 'DELETE',
       headers: authed(markerToken),
     }).catch(() => {})
@@ -734,7 +754,7 @@ test('the link action lives on the parent card, and the standalone section is go
       [1, markerHandle],
       [2, cardTwoName],
     ] as const) {
-      const res = await fetch(`${restUrl}/rest/v1/parent_cards`, {
+      const res = await fetchWithTimeout(`${restUrl}/rest/v1/parent_cards`, {
         method: 'POST',
         headers: { ...authed(markerToken), Prefer: 'return=representation' },
         body: JSON.stringify({ profile_id: markerId, name, position }),
@@ -795,7 +815,7 @@ test('the link action lives on the parent card, and the standalone section is go
     // Best-effort, each query scoped to the marker's own columns. The `e2e-`
     // name on card two and the marker account itself are the sweep's net if a
     // hard crash lands here.
-    await fetch(`${restUrl}/rest/v1/parent_cards?profile_id=eq.${markerId}`, {
+    await fetchWithTimeout(`${restUrl}/rest/v1/parent_cards?profile_id=eq.${markerId}`, {
       method: 'DELETE',
       headers: authed(markerToken),
     }).catch(() => {})

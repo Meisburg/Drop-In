@@ -486,6 +486,17 @@ export interface DropInCardPingToggle {
  * the next, working URL arrived (re-uploading over a dead avatar on the user's
  * own surface would keep painting the initial circle until a remount). A URL
  * that is not the one that failed renders normally, so the recovery is instant.
+ *
+ * The URL key is sufficient for the "re-upload keeps the same avatar_url"
+ * worry: the object path is fixed per user (`<uid>/avatar`), but
+ * `uploadAvatarObject` returns `${publicUrl}?v=${Date.now()}` (db.ts), so
+ * replacing the photo ALWAYS produces a new `avatar_url` string and this
+ * component renders it immediately. The one value the latch can suppress is the
+ * SAME url — the same object version — which is the initial circle a remount
+ * would draw too, because there is no newer image to fetch. The alternatives
+ * were considered and rejected: a boolean regresses the re-upload recovery
+ * above; a bounded retry needs a cache-busting `src`, which belongs to the
+ * upload/write path, not to this presentational primitive.
  */
 export function HostAvatar({
   host,

@@ -205,7 +205,6 @@ function SearchGlyph() {
   )
 }
 
-
 /**
  * One bubble in the thread: the sender's display name (small, muted, above
  * the bubble) + the body in a rounded bubble. Own messages are right-aligned

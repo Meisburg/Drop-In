@@ -1238,19 +1238,14 @@ export async function fetchDailyForecastForZip(
   return fetchDailyForecast(zip, eventDateIso)
 }
 
-/**
- * The daily precipitation-probability max for a zip's event date (V3 slice 2,
- * ticket 02): a thin DERIVATION over the same single forecast fetch, so the
- * badge and the chip share one cached request per (zip, event-date). The badge
- * rule itself (`feed.rainBadgeLabel`) and its threshold are unchanged.
- */
-export async function fetchRainProbabilityForZip(
-  zip: string,
-  eventDateIso: string,
-): Promise<number | null> {
-  const forecast = await fetchDailyForecastForZip(zip, eventDateIso)
-  return forecast?.precipitationProbability ?? null
-}
+// V24 batch-end cleanup: `fetchRainProbabilityForZip` (the bare-probability
+// wrapper over this same fetch) was DELETED here. V24 slice 04 migrated its
+// last two callers (FeedPage, PlaydateDetailPage) to
+// `fetchDailyForecastForZip` + `rainBadgeLabel(forecast?.precipitationProbability)`,
+// and a repo-wide search found no other caller — no page, no test, no e2e. It
+// was a pure derivation of the call above, so removing it changes no behaviour:
+// the badge rule and the single-request cache live in `feed.rainBadgeLabel` and
+// this loader, which is where the four invariants are unit-tested.
 
 // ---------------------------------------------------------------------------
 // Slice 4: going-pings + reports + blocks (trust basics).

@@ -125,6 +125,17 @@ test.describe.configure({ retries: 1 })
 test.afterEach(async () => {
   // Best-effort, TITLE-SCOPED cleanup (never a sweep of the marker's other rows):
   // delete this spec's post with the marker's own JWT (the host-only DELETE policy).
+  //
+  // THE `*` IS A WILDCARD, NOT A LITERAL — do not "fix" it to `%`. PostgREST's
+  // `like`/`ilike` filters translate `*` to the percent sign (docs: "to avoid URL
+  // encoding you can use `*` as an alias of the percent sign `%` for the
+  // pattern"), so this compiles to `title LIKE 'e2e%weather%'`. Checked against
+  // this live project: the filter returned the pre-existing `e2e … weather`
+  // marker rows, and a run's two freshly seeded posts were gone after teardown.
+  //
+  // The count is logged because the old message claimed success without knowing
+  // whether anything matched — a teardown that deleted 0 rows read exactly like
+  // one that deleted the post.
   try {
     const { url, anonKey } = readSupabaseEnv()
     const { accessToken, userId } = readMarkerSession()
@@ -137,9 +148,17 @@ test.afterEach(async () => {
       Prefer: 'return=representation',
     }
     const del = await fetch(query, { method: 'DELETE', headers })
+    let deleted: number | null = null
+    if (del.ok) {
+      try {
+        deleted = ((await del.json()) as Array<{ id: string }>).length
+      } catch {
+        deleted = null
+      }
+    }
     console.log(
       del.ok
-        ? `[e2e weather cleanup] ok — deleted this spec's marker post(s) (host ${userId})`
+        ? `[e2e weather cleanup] ok — deleted ${deleted ?? '?'} of this spec's marker post(s) (host ${userId})`
         : `[e2e weather cleanup] FAILED — HTTP ${del.status} (orchestrator sweep picks up e2e- rows)`,
     )
   } catch (err) {
