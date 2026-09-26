@@ -475,7 +475,14 @@ test('an ended drop-in leaves the feed, a live one stays, and the archive still 
   // --- (8) The archive CARD's rules, on the surface that renders cards
   // (/u/:handle — V8/04's Past section). GREEN EITHER WAY. ---
   await page.goto(`/u/${encodeURIComponent(marker.displayName)}`)
-  const pastCard = section(page, 'Past').locator('a[href^="/playdate/"]').filter({ hasText: endedTitle })
+  // V25 ticket 05: the CARD, not its anchor. The card's box is the element that
+  // carries `opacity-60` and the border/radius — the body <Link> inside it is
+  // only the tap target now (the address's Maps row is the box's second child,
+  // and it must mute with the card). Every assertion below is about the card,
+  // and the muted class is only findable on the box, so this reads the box.
+  const pastCard = section(page, 'Past')
+    .getByTestId('dropin-card')
+    .filter({ hasText: endedTitle })
   await expect(pastCard).toBeVisible()
   // Muted, with the "Ended" chip: DropInCard's `isEnded` styling — the SAME
   // signal the archive rows on /profile now carry.

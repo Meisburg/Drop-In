@@ -11,6 +11,7 @@ import {
   ageRangeFields,
   ageRangeLine,
   cardAgeRangeLabel,
+  cardWhenLabel,
   buildGoingLine,
   buildWhileAwayItems,
   cloneLastPost,
@@ -30,6 +31,7 @@ import {
   formatGuestLine,
   formatStartDayLabel,
   formatTimeLabel,
+  formatTimeWindow,
   groupByDay,
   GOING_CIRCLE_LIMIT,
   haversineMiles,
@@ -3445,6 +3447,47 @@ describe('formatStartDayLabel (V9 ticket 03: the /new summary day line)', () => 
     expect(formatStartDayLabel('2026-08-29')).toBe(
       formatDayLabel('2026-08-29T15:30:00', '2026-07-04T12:00:00'),
     )
+  })
+})
+
+describe('cardWhenLabel (V25 ticket 05: the feed card’s day · time line)', () => {
+  // Local wall clock on purpose (the seam reads the DEVICE's calendar day, the
+  // same one the section headers group on): Saturday, September 26 2026, 5 PM.
+  const STARTS = new Date(2026, 8, 26, 17, 0).toISOString()
+  const ENDS = new Date(2026, 8, 26, 18, 30).toISOString()
+
+  it('leads with the day in the app’s own short words, then the window', () => {
+    const label = cardWhenLabel(STARTS, ENDS)
+    // The day half is locale-independent (the fixed English tables) and is the
+    // founder's reference form — his screenshot's "Sat, Sep 26".
+    expect(label.startsWith('Sat, Sep 26 · ')).toBe(true)
+    // The window half is `formatTimeWindow` — the ONE window rule, not a copy.
+    expect(label.endsWith(formatTimeWindow(STARTS, ENDS))).toBe(true)
+    expect(label).toContain('–')
+  })
+
+  it('reads the day from the SAME seam the /new summary uses (no second day rule)', () => {
+    // If a future edit reaches for formatDayLabel's today/tomorrow branch, or
+    // invents its own table, this agreement pin fails.
+    expect(cardWhenLabel(STARTS, ENDS).startsWith(formatStartDayLabel(localDayKey(STARTS)))).toBe(
+      true,
+    )
+  })
+
+  it('prints the DATE even when the section header says "Today"', () => {
+    // The deliberate difference: the header above the card is relative ("Today"),
+    // the card is a date — it also renders on browse, place pages and profiles,
+    // where there is no header to borrow the day from.
+    const nowIso = new Date(2026, 8, 26, 9, 0).toISOString()
+    expect(formatDayLabel(STARTS, nowIso)).toBe('Today')
+    expect(cardWhenLabel(STARTS, ENDS).startsWith('Sat, Sep 26 · ')).toBe(true)
+    expect(cardWhenLabel(STARTS, ENDS)).not.toContain('Today')
+  })
+
+  it('falls back to the window alone when the start cannot name a day (no dangling separator)', () => {
+    const bad = cardWhenLabel('not-a-date', 'not-a-date')
+    expect(bad).toBe(formatTimeWindow('not-a-date', 'not-a-date'))
+    expect(bad).not.toContain(' · ')
   })
 })
 

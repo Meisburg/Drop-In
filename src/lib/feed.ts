@@ -969,6 +969,34 @@ export function formatTimeWindow(startIso: string, endIso: string): string {
 }
 
 /**
+ * The card's WHEN line (V25 ticket 05): the day, then the window —
+ * "Sat, Sep 26 · 6:30 PM–7:30 PM" — the compact form the founder's own
+ * reference screenshot shows ("Sat, Sep 26 · 5:00 PM PDT"; there is deliberately
+ * NO zone label — the app has none anywhere, see the ticket's timezone
+ * question).
+ *
+ * WHY THE DATE AND NEVER "Today"/"Tomorrow": the card is not always under a day
+ * header (browse, both place pages and a profile's Upcoming/Past lists render
+ * bare cards), and what the founder asked for is the day it is happening — a
+ * DATE. So this runs the app's existing always-the-date wording —
+ * `formatStartDayLabel`, the documented sibling of `formatDayLabel` that skips
+ * the today/tomorrow branch — over the same local calendar day `localDayKey`
+ * hands `formatDayLabel`, i.e. the same day, the same WEEKDAYS_SHORT /
+ * MONTHS_SHORT tables, and NO second today/tomorrow rule.
+ *
+ * ONE LINE, TWO FACTS: day and time are joined here so the card renders a single
+ * <p> and a spec can assert a single string. The window is `formatTimeWindow` —
+ * the app's ONE window rule — never a second `toLocaleTimeString`. A start that
+ * does not parse yields `formatStartDayLabel`'s '' and the line falls back to
+ * the window alone (no dangling " · ").
+ */
+export function cardWhenLabel(startIso: string, endIso: string): string {
+  const day = formatStartDayLabel(localDayKey(startIso))
+  const window = formatTimeWindow(startIso, endIso)
+  return day === '' ? window : `${day} · ${window}`
+}
+
+/**
  * The start's UTC ISO instant for a local calendar date + minutes since
  * local midnight. `startDate` is the device's local date (the date input's
  * value); the stored timestamptz must be the local moment the parent meant,

@@ -28,6 +28,9 @@
  */
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
+// V25 ticket 05: the card's date words and the Maps href are asserted against
+// the app's OWN seams (the house lesson: import the rule, never restate it).
+import { formatStartDayLabel, mapsHref } from '../src/lib/feed'
 import {
   editTitle,
   localDatePlusDays,
@@ -50,16 +53,25 @@ const ADDRESS = '7200 4th Ave NE, Seattle, WA 98115'
 const MAPS_HREF = `https://www.google.com/maps?q=${encodeURIComponent(`${PLACE}, ${ADDRESS}`)}`
 
 /**
- * Post a drop-in WITH an address through the /new UI (the golden-path
- * pattern + the V3 slice 5 "Address (optional)" field) as the marker
- * (the signed-in default context), then return the feed card's detail
- * href — a real /playdate/:id.
+ * Post a drop-in through the /new UI (the golden-path pattern + the V3 slice 5
+ * "Address (optional)" field) as the marker (the signed-in default context),
+ * then return the feed card's detail href — a real /playdate/:id.
+ *
+ * `address` is typed into the visible Address field when it is given. When it is
+ * null the field is CLEARED instead: /new prefills it from the parent's
+ * remembered last post (`useState(placePrefill?.address ?? '')`,
+ * NewPlaydatePage.tsx:380), so "left alone" is NOT "no address" — V25 ticket 05's
+ * no-address half has to say so out loud.
  *
  * Pre-0021-apply the create 42703s (the address column is missing live):
  * the failure lands HERE, at the post-create step (the form's designed
  * submit error), never a crash.
  */
-async function postMarkerDropInWithAddress(page: Page, title: string): Promise<string> {
+async function postMarkerDropIn(
+  page: Page,
+  title: string,
+  address: string | null,
+): Promise<string> {
   await page.goto('/new')
   // A cold load can lose the route to the onboarding-gate race — settle on
   // /new via the app's own navigation once the SPA state is warm.
@@ -71,10 +83,12 @@ async function postMarkerDropInWithAddress(page: Page, title: string): Promise<s
   await page
     .getByPlaceholder('e.g. Green Lake playground, near the boathouse')
     .fill(PLACE)
-  // V9 ticket 03: the address's MANUAL entry, the start date and the 30-minute
-  // stepper live behind "More options" (the pick fills the address; typing one
-  // is the adjustment), so this spec opens the door before using them.
-  await page.getByPlaceholder('e.g. 7200 4th Ave NE, near the boathouse').fill(ADDRESS)
+  // V9 ticket 03: the address's MANUAL entry (the pick fills the address;
+  // typing one is the adjustment). V25 ticket 05: null means "post with NO
+  // address" and therefore CLEARS the field — /new prefills it from the
+  // remembered last post, so an untouched field can still carry a street.
+  const addressField = page.getByPlaceholder('e.g. 7200 4th Ave NE, near the boathouse')
+  await addressField.fill(address ?? '')
   // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
   await page.locator('input[type="date"]').fill(localDatePlusDays(1))
   const start = await stepStartTimeOnce(page)
@@ -121,7 +135,7 @@ test('a post with an address shows a tappable Maps link (host view + the signed-
 }) => {
   const marker = readMarkerMeta()
   const title = `e2e ${marker.displayName} maps`
-  const detailPath = await postMarkerDropInWithAddress(page, title)
+  const detailPath = await postMarkerDropIn(page, title, ADDRESS)
 
   // (a) The host's signed-in detail view: the place line is tappable
   // (the shared render logic — the pure mapsHref seam).
@@ -142,6 +156,97 @@ test('a post with an address shows a tappable Maps link (host view + the signed-
   await expectMapsLink(anonPage)
 
   await anonContext.close()
+})
+
+test('the feed card leads with title → day · time, and its address row is a real Maps link OUTSIDE the card link', async ({
+  page,
+}) => {
+  const marker = readMarkerMeta()
+  const title = `e2e ${marker.displayName} maps card`
+  // Posted for TOMORROW on purpose: the card's own day must be a DATE in the
+  // founder's reference form ("Sat, Sep 26") and NEVER the section header's
+  // relative word — the card also renders on browse, both place pages and a
+  // profile's lists, where there is no header to borrow the day from.
+  await postMarkerDropIn(page, title, ADDRESS)
+
+  const card = page.getByTestId('dropin-card').filter({ hasText: title }).first()
+  await expect(card).toBeVisible()
+
+  // (1) THE CARD'S OWN ANCHOR IS STILL THE DETAIL LINK — and it contains NO
+  //     anchor at all. This is the whole nested-link question in one assertion:
+  //     an <a> inside the card's <a> is invalid HTML (the browser hoists it out
+  //     of the card), so the count must be zero forever.
+  const bodyLink = card.locator('a[href^="/playdate/"]')
+  await expect(bodyLink).toHaveCount(1)
+  await expect(bodyLink.locator('a')).toHaveCount(0)
+
+  // (2) THE ADDRESS ROW: a REAL link (role=link), the app's own href, a new
+  //     tab, no referrer leak — and NOT a descendant of the card's anchor.
+  const mapsRow = card.getByTestId('card-maps-link')
+  await expect(mapsRow).toHaveCount(1)
+  await expect(mapsRow).toHaveRole('link')
+  await expect(mapsRow).toHaveAttribute('href', MAPS_HREF)
+  await expect(mapsRow).toHaveAttribute('href', mapsHref(PLACE, ADDRESS) ?? '')
+  await expect(mapsRow).toHaveAttribute('target', '_blank')
+  await expect(mapsRow).toHaveAttribute('rel', 'noopener')
+  await expect(bodyLink.getByTestId('card-maps-link')).toHaveCount(0)
+  // …announced: the accessible name carries the visible address AND the
+  // destination (WCAG 2.5.3 — the visible text is inside the name).
+  expect(await mapsRow.getAttribute('aria-label')).toContain(ADDRESS)
+  // …keyboard-reachable, with the house's focus ring (not just clickable).
+  await mapsRow.focus()
+  await expect(mapsRow).toBeFocused()
+
+  // (3) THE RENDERED ORDER: title, then the day · time line, then the place,
+  //     then the address row — proved by the boxes, not by the JSX order.
+  const titleBox = await card.getByRole('heading', { name: title, exact: true }).boundingBox()
+  const whenBox = await card.getByTestId('card-when').boundingBox()
+  const placeBox = await card.getByTestId('card-place').boundingBox()
+  const mapsBox = await mapsRow.boundingBox()
+  expect(titleBox).not.toBeNull()
+  expect(whenBox).not.toBeNull()
+  expect(placeBox).not.toBeNull()
+  expect(mapsBox).not.toBeNull()
+  expect(whenBox!.y).toBeGreaterThan(titleBox!.y)
+  expect(placeBox!.y).toBeGreaterThan(whenBox!.y)
+  expect(mapsBox!.y).toBeGreaterThan(placeBox!.y)
+  // The 44px tap target the house requires (the row is the whole card width).
+  expect(mapsBox!.height).toBeGreaterThanOrEqual(44)
+
+  // (4) THE DAY IS THE DATE the spec posted for, in the app's own words — the
+  //     reference's "Sat, Sep 26" form, never the header's "Tomorrow".
+  const expectedDay = formatStartDayLabel(localDatePlusDays(1))
+  const whenText = (await card.getByTestId('card-when').innerText()).replace(/\s+/g, ' ').trim()
+  expect(whenText.startsWith(`${expectedDay} · `), `the card's when line read "${whenText}"`).toBe(
+    true,
+  )
+  expect(whenText).not.toContain('Tomorrow')
+  expect(whenText).not.toContain('Today')
+  expect(whenText).toMatch(/(AM|PM)/)
+  // …and the place line is the place (it stays on the card; only its Maps
+  // affordance is new).
+  await expect(card.getByTestId('card-place')).toHaveText(PLACE)
+})
+
+test('a post with NO address gets no Maps row — the place stays plain text', async ({ page }) => {
+  const marker = readMarkerMeta()
+  const title = `e2e ${marker.displayName} maps none`
+  await postMarkerDropIn(page, title, null)
+
+  const card = page.getByTestId('dropin-card').filter({ hasText: title }).first()
+  await expect(card).toBeVisible()
+
+  // The mapsHref null contract: no address → NO link at all, and the place is
+  // plain text inside the card's one anchor.
+  await expect(card.getByTestId('card-maps-link')).toHaveCount(0)
+  await expect(card.locator('a')).toHaveCount(1)
+  await expect(card.getByTestId('card-place')).toHaveText(PLACE)
+  await expect(card.getByTestId('card-place').locator('a')).toHaveCount(0)
+
+  // The day · time line is there regardless of the address — it is the card's
+  // new leading fact, not something the Maps row brought.
+  const expectedDay = formatStartDayLabel(localDatePlusDays(1))
+  await expect(card.getByTestId('card-when')).toContainText(`${expectedDay} · `)
 })
 
 test.afterEach(async () => {
