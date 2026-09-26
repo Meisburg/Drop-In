@@ -1465,93 +1465,127 @@ test('an active search narrows the drawn set without moving the frame (V17 t04, 
 })
 
 /**
- * V20 t04 — THE PICKER'S PIN NEEDS A CONFIRMATION TAP.
+ * V25 t02 — ONE TAP ON A PICKER PIN WRITES BOTH FIELDS. THIS REPLACES the V20
+ * t04 spec ("a picker pin selects first, and only 'Select this place' fills the
+ * fields"), which pinned the two-step this ticket removes. ONE RECORD PER
+ * REVERSAL: the old spec and `PlacePickerMap`'s V20 t04 state doc were rewritten
+ * in the same commit as the behaviour.
  *
- * The founder, on /new's picker map: *"when you click on a blue circle, it fills
- * in the where in the address, which is great, but it's not obvious that that's
- * happening. So maybe when you click on a blue circle, there should be a button
- * that says like, select. Under the event that pops up or something, and when
- * you click it, then it populates those two fields."*
+ * V20 t04 introduced the two-step for a real reason: the write happened on the
+ * marker click, the fields sit ABOVE the map on /new, so on a phone the parent
+ * tapped a dot, the form changed off-screen, and nothing visible happened — the
+ * feature worked and read as broken. The founder's answer then was a button.
  *
- * The old behaviour wrote both fields on the marker click. The fields sit ABOVE
- * the map on /new, so on a phone the parent tapped a dot, the form changed
- * off-screen, and nothing visible happened — the feature worked and read as
- * broken. This spec pins the new contract in BOTH directions, because each half
- * alone can pass on a build that is wrong the other way:
+ * He has since rejected that button twice (V24 annotation #2; and again on the
+ * V25 walk: *"you shouldn't have to click Select this place button. It should
+ * just automatically select it and populate the address in the address bar
+ * above. Don't make the user have to do an extra step, it's annoying."*).
  *
- *   1. tapping a marker must NOT write the fields (it only selects), and
- *   2. pressing "Select this place" must write them.
+ * This spec pins the new contract in BOTH directions, because each half alone
+ * can pass on a build that is wrong the other way:
  *
- * A spec that only asserted (2) would pass on the old build. A spec that only
- * asserted (1) would pass on a build where the button did nothing.
+ *   1. the FIRST tap writes BOTH fields, with no second control in the path, and
+ *   2. a second tap on a DIFFERENT pin REPLACES both — no stale half.
+ *
+ * It also pins the two things that must not be collateral damage: the visible
+ * confirmation panel at the point of the tap (t04's own complaint — the write
+ * must never be silent) and the Details door (`place-picker-details`), the only
+ * way from the picker to a place's research page.
  */
-test('a picker pin selects first, and only "Select this place" fills the fields (V20 t04)', async ({
-  page,
-}) => {
+test('one tap on a picker pin writes both fields (V25 t02)', async ({ page }) => {
   await page.goto('/new')
   await page.getByRole('heading', { name: 'Post a drop-in' }).waitFor()
 
   const pickerMap = page.getByTestId('place-picker-map')
   await expect(pickerMap).toBeVisible()
+  // Bring the whole 256px band into the viewport BEFORE the reachability scan
+  // below, so the scan measures the same viewport position the clicks will use.
+  await pickerMap.scrollIntoViewIfNeeded()
 
   const placeInput = page.getByPlaceholder(PLACE_INPUT)
   const addressInput = page.getByPlaceholder(ADDRESS_INPUT)
   await expect(placeInput).toHaveValue('')
   await expect(addressInput).toHaveValue('')
 
-  // Tap a directory pin. `.not([d="M0 0"])` skips markers Leaflet projected
-  // fully outside the canvas (in the DOM, zero-size, unclickable).
+  // The pins a parent's finger can actually reach.
   //
-  // V23 DRIFT: `.first()` IS NOT ENOUGH — THE FIRST PROJECTED MARKER CAN SIT
-  // OUTSIDE THE MAP'S CLIPPED BAND. A marker just past the pane's top edge keeps
-  // a NON-zero `d` while its centre lies above the map and under the page behind
-  // it. `toBeVisible()` passes anyway (Playwright does not test an ancestor's
-  // `overflow: hidden` clipping), and `click({ force: true })` dispatches at a
-  // point the marker does not occupy, so the tap lands on the page and the panel
-  // never opens. The V23 follow-up's `zoomForRadius` change (the `FRAME_FILL`
-  // margin + latitude correction) moved the picker's initial frame just enough
-  // to push the first marker above the band. So pick the first pin that is
-  // ACTUALLY HIT-TESTABLE at its own centre — the pin a parent's finger reaches.
+  // `.not([d="M0 0"])` skips markers Leaflet projected fully outside the canvas
+  // (in the DOM, zero-size, unclickable). The hit-test below skips a pin whose
+  // CENTRE lies outside the map's clipped band — the V23 drift the spec this
+  // replaces recorded: a marker just past the pane's edge keeps a NON-zero `d`,
+  // `toBeVisible()` passes anyway (Playwright does not test an ancestor's
+  // `overflow: hidden` clipping), and a tap at that point lands on the page
+  // behind the map. A pin counts here only when it is its OWN top element at its
+  // own centre.
   const pins = pickerMap.locator('.leaflet-overlay-pane svg path[fill="#4f46e5"]:not([d="M0 0"])')
   const pinCount = await pins.count()
-  let pin = pins.first()
+  const reachable: number[] = []
   for (let i = 0; i < pinCount; i++) {
-    const candidate = pins.nth(i)
-    const reachable = await candidate.evaluate((el) => {
+    const hit = await pins.nth(i).evaluate((el) => {
       const rect = el.getBoundingClientRect()
       return (
         document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2) === el
       )
     })
-    if (reachable) {
-      pin = candidate
-      break
-    }
+    if (hit) reachable.push(i)
   }
-  await expect(pin).toBeVisible()
-  await pin.click()
+  console.log(
+    `[V25 t02 picker] pins plotted: ${pinCount}; hit-testable at their own centre: ${reachable.length}`,
+  )
+  expect(
+    reachable.length,
+    'the picker must plot at least one pin a parent can actually tap',
+  ).toBeGreaterThan(0)
 
-  // AC (1): the panel appears, naming the place, and the FIELDS ARE STILL
-  // EMPTY. This is the founder's complaint stated as an assertion.
   const selection = page.getByTestId('place-picker-selection')
-  await expect(selection).toBeVisible()
-  const selectedName = (await selection.locator('span').first().innerText()).trim()
-  expect(selectedName.length).toBeGreaterThan(0)
-  await expect(placeInput).toHaveValue('')
-  await expect(addressInput).toHaveValue('')
 
-  // AC (2): the button writes BOTH fields — the place and the address — which
-  // is the one-tap pick the suggestion list also performs (`placePickPatch`).
-  const selectButton = page.getByTestId('place-picker-select')
-  await expect(selectButton).toBeVisible()
-  await selectButton.click()
-  await expect(placeInput).toHaveValue(selectedName)
-  await expect(addressInput).not.toHaveValue('')
+  // AC (1): ONE tap writes the place AND the address. Nothing else is pressed —
+  // the single click below is the whole interaction.
+  await pins.nth(reachable[0]).click()
+  await expect(
+    selection,
+    'the tap must leave a visible result at the point of the tap (V20 t04 still holds)',
+  ).toBeVisible()
+  const firstName = (await selection.locator('span').first().innerText()).trim()
+  const firstAddress = (await selection.locator('span').nth(1).innerText()).trim()
+  expect(firstName.length).toBeGreaterThan(0)
+  expect(firstAddress.length).toBeGreaterThan(0)
+  await expect(placeInput).toHaveValue(firstName)
+  await expect(addressInput).toHaveValue(firstAddress)
 
-  // The address that landed is the directory row's own — the panel showed the
-  // same string above the button, so the two cannot drift apart.
-  const addressShown = (await selection.locator('span').nth(1).innerText()).trim()
-  await expect(addressInput).toHaveValue(addressShown)
+  // AC (2): there is no intermediate "selected but unwritten" state left to
+  // complete — the panel's old write button is gone, so the two-step cannot
+  // come back without failing here.
+  await expect(
+    page.getByTestId('place-picker-select'),
+    'the removed "Select this place" step must not return',
+  ).toHaveCount(0)
+
+  // AC (3): Details survives, and it is a READ — it must never write the field.
+  const details = page.getByTestId('place-picker-details')
+  await expect(details).toBeVisible()
+  await expect(details).toHaveAttribute('href', /^\/place\/.+\/details$/)
+
+  // AC (4): a SECOND tap on a DIFFERENT pin replaces both values. Scanning the
+  // reachable pins keeps this honest — two pins that happened to share a name
+  // AND an address would make "replaced" unobservable, so the loop only stops at
+  // a pin whose panel really reads differently.
+  let replaced = false
+  for (const index of reachable.slice(1)) {
+    await pins.nth(index).click()
+    await expect(selection).toBeVisible()
+    const name = (await selection.locator('span').first().innerText()).trim()
+    const address = (await selection.locator('span').nth(1).innerText()).trim()
+    if (name === firstName && address === firstAddress) continue
+    await expect(placeInput).toHaveValue(name)
+    await expect(addressInput).toHaveValue(address)
+    replaced = true
+    break
+  }
+  expect(
+    replaced,
+    'a second tap on a different pin must replace BOTH fields, so at least one other reachable pin must name a different place',
+  ).toBe(true)
 })
 
 /**

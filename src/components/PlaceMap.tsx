@@ -1399,25 +1399,56 @@ export function PlacePickerMap({
     .filter((e): e is { place: Place; coords: MapMarker } => e.coords !== null)
 
   /**
-   * V20 t04 — THE TAPPED PIN WAITS FOR A CONFIRMATION.
+   * V25 t02 — THE TAPPED PIN *IS* THE PICK. THIS REVERSES V20 t04.
    *
-   * The founder, on /new's picker: *"when you click on a blue circle, it fills
-   * in the where in the address, which is great, but it's not obvious that
-   * that's happening. So maybe when you click on a blue circle, there should be
-   * a button that says like, select. Under the event that pops up or something,
-   * and when you click it, then it populates those two fields."*
+   * V20 t04 moved the write OFF the marker click for a real reason, in the
+   * founder's own words on /new's picker: *"when you click on a blue circle, it
+   * fills in the where in the address, which is great, but it's not obvious
+   * that that's happening. So maybe when you click on a blue circle, there
+   * should be a button that says like, select… and when you click it, then it
+   * populates those two fields."* The answer then was two steps: the tap
+   * SELECTS (panel below the map, "Select this place"), the button WRITES.
    *
-   * The old behaviour wrote both fields on the marker click, and the fields sit
-   * ABOVE the map on /new — so on a phone the parent tapped a dot, the form
-   * changed off-screen, and nothing visible happened. A tap now SELECTS (the
-   * panel below the map names the place and offers "Select this place"), and
-   * the write happens on the button, where the parent is looking.
+   * The founder has since rejected the extra step twice — V24 annotation #2
+   * (`.scratch/v24/spec.md:23`) and again on the V25 walk: *"you shouldn't have
+   * to click Select this place button. It should just automatically select it
+   * and populate the address in the address bar above. Don't make the user have
+   * to do an extra step, it's annoying."*
    *
-   * THIS IS A REAL BEHAVIOUR CHANGE AND IT IS DELIBERATE: `onPick` is called
-   * from the panel's button, never from the marker. The marker click only moves
-   * `selectedId`, so a tap that was a mis-tap costs nothing.
+   * The t04 complaint does not stop being true because the button is annoying,
+   * so the contract now carries BOTH halves:
+   *   - the marker click WRITES — `onPick(place)`, the page's one pick path
+   *     (`places.placePickPatch`: place + address + neighbourhood) which also
+   *     regenerates the title, so no "selected but unwritten" state is left
+   *     behind; and
+   *   - the marker click still SELECTS — `setSelectedId`, which paints the panel
+   *     below the map naming the place and the address that just landed. That
+   *     panel IS t04's answer to "it's not obvious that that's happening": the
+   *     fields sit ABOVE the map on /new, so the write may never rest on them
+   *     alone being noticed.
+   *
+   * ONE WRITE, ONE CONTROL. "Select this place" had nothing left to do once the
+   * tap wrote — pressing it would be a second write of the same values — so it
+   * is removed. The panel keeps the place name + address and the Details link
+   * (`place-picker-details`), the only door from the picker to a place's
+   * research page.
+   *
+   * `e2e/places.e2e.ts` pins this in both directions: a tap writes both fields,
+   * and a second tap on a different pin replaces both.
    */
   const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  /**
+   * The marker layer is built once per coordinate set (the effect below), so a
+   * marker handler calling `onPick` directly would hold the `onPick` from THAT
+   * render. On /new that closure carries `titleTouched`, so a tapped pin could
+   * overwrite a title the parent had typed themselves. Read the prop through a
+   * ref instead — the same "read through a ref so the effect's dependency list
+   * stays empty" discipline the mount effect above uses for its anchor — and
+   * re-point it on every render so the handler always sees the current one.
+   */
+  const onPickRef = useRef(onPick)
+  onPickRef.current = onPick
 
   const markers = entries.map((e) => e.coords)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -1514,7 +1545,14 @@ export function PlacePickerMap({
           fillOpacity: 0.35,
         })
         marker.bindTooltip(place.name, { direction: 'top', offset: [0, -8] })
-        marker.on('click', () => setSelectedId(place.id))
+        // V25 t02: ONE TAP DOES BOTH — the write (`onPick`, the page's one pick
+        // path) and the visible confirmation (`setSelectedId`, the panel below
+        // the map). See the state doc above; `onPick` is read through a ref
+        // because this effect runs once per coordinate set, not per render.
+        marker.on('click', () => {
+          setSelectedId(place.id)
+          onPickRef.current(place)
+        })
         return marker
       }),
     ).addTo(map)
@@ -1540,9 +1578,12 @@ export function PlacePickerMap({
         data-testid="place-picker-map"
         className={`h-64 w-full overflow-hidden rounded-xl border border-slate-200 ${className ?? ''}`}
       />
-      {/* V20 t04: the confirmation panel. It appears on a marker tap and does
-          NOTHING until "Select this place" is pressed — see the state doc
-          above for why the write moved off the marker click.
+      {/* V25 t02: the CONFIRMATION panel. The marker tap has ALREADY written
+          the form (see the state doc above) — this panel is why that write is
+          not silent, which is the whole reason V20 t04 put a panel here. It
+          names the place and the address that just landed in the fields above
+          the map; `role="status"` announces the same confirmation to a screen
+          reader, which cannot see a panel appear.
 
           It is rendered BELOW the map, in normal flow, matching the browse
           map's `place-marker-info` panel: a panel inside the map's own box
@@ -1551,24 +1592,23 @@ export function PlacePickerMap({
       {selected !== null ? (
         <div
           data-testid="place-picker-selection"
+          role="status"
           className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
         >
           <div className="flex min-w-0 flex-col gap-0.5">
             <span className="truncate text-sm font-semibold text-slate-900">{selected.name}</span>
             <span className="truncate text-xs text-slate-600">{selected.address}</span>
           </div>
-          {/* V23 slice 4 — THE TWO ACTIONS THE FOUNDER NAMED, side by side:
-              "for each places, I think the two options should be start dropping
-              and details."
+          {/* V23 slice 4 — "for each places, I think the two options should be
+              start dropping and details."
 
-              "Select this place" is the WRITE (it fills the form), and
-              "Details" is the READ (it opens the place's research page — what
-              parents have said, who follows it, a web-search link). They are
-              deliberately different weights: a filled primary button for the
-              action that changes the form, a quiet outlined link for the one
-              that leaves the page. A parent comparing parks can open Details,
-              come back, and still select — which is exactly why Details must
-              NOT be the thing that fills the field.
+              V25 t02: the "Select this place" half of that pair is GONE with the
+              two-step it existed for — the tap writes now. Details is the READ
+              (it opens the place's research page — what parents have said, who
+              follows it, a web-search link) and it stays, at the same weight: a
+              parent comparing parks can open Details, come back, and see the
+              pick already written. It must NOT be the thing that fills the
+              field.
 
               The destination comes from `placeDetailsPath` (lib/places.ts), the
               one builder, so this panel, the map popup and the place page cannot
@@ -1576,14 +1616,6 @@ export function PlacePickerMap({
               browser's business) rather than a button, matching the popup's own
               "Details" link. */}
           <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              data-testid="place-picker-select"
-              onClick={() => onPick(selected)}
-              className="min-h-11 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700"
-            >
-              Select this place
-            </button>
             <Link
               to={placeDetailsPath(selected.id)}
               data-testid="place-picker-details"
