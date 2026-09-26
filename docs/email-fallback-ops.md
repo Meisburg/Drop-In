@@ -183,6 +183,26 @@ log-based diagnosis of a missing email**; the only proof is the message arriving
    not map the commit author to a GitHub account — the author address belonged
    to the deleted account. Every commit must be authored as
    `331023862+Meisburg@users.noreply.github.com`. See `task-state.md`.
+8. **The SMTP adapter is PROVEN to send (2026-09-26).** `smtpDeno.ts` imported
+   `npm:nodemailer@6`, so vitest could never load it and it had **never been
+   executed** — only type-checked, while being the code that will send
+   production email. `supabase/functions/_shared/smtpDeno_test.ts` now runs it
+   against an in-process fake SMTP server (raw `Deno.listen`, no new
+   dependency): a real EHLO/AUTH/DATA conversation, the captured message
+   containing subject/body/recipient, 550-on-RCPT → terminal, 451 → retryable, a
+   refused port → retryable with a null status, and `close()` called once. The
+   suite is not vacuous: **10 mutations were applied to throwaway copies and all
+   were killed.**
+   An environment fact worth knowing: importing nodemailer reads
+   `process.env.ETHEREAL_*` **at module load**, so a Deno run needs
+   `--allow-env`. Supabase's Edge runtime grants env, so production is fine.
+9. **TWO DENO LANES EXIST BUT ARE NOT IN THE GATE** — `scripts/deno-check-functions.sh`
+   and `scripts/deno-test-functions.sh`. They must be run directly. Wiring them
+   into `verify` means editing `package.json`, which is **`config-guard`
+   protected**, so it needs `ALLOW_CONFIG_CHANGE="<why>"` and a human decision.
+   **Until they are wired they will rot** (the repo's invariant 9), so this is a
+   real outstanding item, not a nicety.
+
 
 
 
