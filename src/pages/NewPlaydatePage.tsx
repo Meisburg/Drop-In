@@ -1232,7 +1232,14 @@ export function NewPlaydatePage({
       {directoryOpen ? (
         <div
           ref={directorySheetRef}
-          className="fixed inset-0 z-[1100] flex flex-col bg-slate-50"
+          /* V25 t12: `bg-page`, not `bg-slate-50`. This sheet is `fixed inset-0`
+             — a full-viewport SCREEN, and the founder's ask is white on every
+             screen. It is the one non-shell surface in the app that covers a
+             whole viewport, so leaving it warm would have made it the single
+             warm screen left. Its own separators do not depend on the page
+             tint: the sticky header below carries `border-b border-slate-200`
+             and PlaceDirectory's rows carry their own borders. */
+          className="fixed inset-0 z-[1100] flex flex-col bg-page"
           data-testid="place-directory-sheet"
           role="dialog"
           aria-modal="true"

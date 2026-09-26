@@ -23,8 +23,8 @@ const BASE = process.argv[2] ?? 'http://localhost:4173'
 const failures = []
 
 // The pinned painted values (src/index.css token declarations):
-const LIGHT_PAGE = 'rgb(251, 247, 244)' // --color-slate-50 light
-const DARK_PAGE = 'rgb(24, 20, 18)' // --color-slate-50 dark (#181412)
+const LIGHT_PAGE = 'rgb(255, 255, 255)' // --color-page light (V25 t12: the page is white, not --color-slate-50)
+const DARK_PAGE = 'rgb(24, 20, 18)' // --color-page / --color-slate-50 dark (#181412)
 
 function check(label, ok, detail) {
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}${detail ? ` — ${detail}` : ''}`)

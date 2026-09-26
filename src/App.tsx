@@ -132,7 +132,7 @@ function ProtectedShell() {
   // signed-out redirect — so the ban stays visible (no app access).
   if (gate === 'suspended') {
     return (
-      <div className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-slate-50 px-6 text-center">
+      <div className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-page px-6 text-center">
         <h1 className="text-xl font-semibold text-slate-900">Suspended</h1>
         <p className="text-sm text-slate-600">
           Your account was suspended by a moderator.
@@ -198,7 +198,7 @@ function ProtectedShell() {
   if (redirect !== null) return <Navigate to={redirect} replace />
 
   return (
-    <div className="min-h-dvh bg-slate-50 text-slate-900">
+    <div className="min-h-dvh bg-page text-slate-900">
       {/* V22 slice 9: the shell is a single column below md (the phone layout,
           pixel-equivalent to before) and a two-column grid at md+ — a left nav
           rail beside the content. The header spans both columns; the rail is

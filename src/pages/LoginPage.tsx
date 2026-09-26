@@ -267,7 +267,7 @@ export function LoginPage() {
     'w-full rounded-xl border border-slate-300 px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200'
 
   return (
-    <div className="pt-safe pb-safe mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 bg-slate-50 px-4">
+    <div className="pt-safe pb-safe mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 bg-page px-4">
       {/* Brand moment: /login sits outside the app shell (no header), so the
           mark lives here — and it is the first thing a new parent sees.
           Frontend-design pass: the centered logo card was the same template

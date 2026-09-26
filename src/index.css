@@ -123,11 +123,37 @@ h3 {
    * deliberately untouched: it is semantic (errors), not brand.
    *
    * All text-bearing values below are checked against the page background
-   * (#fbf7f4) and against their own tinted backgrounds for WCAG AA (4.5:1
-   * normal, 3:1 large) — mobile-audit.mjs measures the rendered pixels and fails
-   * the run below those floors.
+   * (#ffffff since V25 t12 — see --color-page) and against their own tinted
+   * backgrounds for WCAG AA (4.5:1 normal, 3:1 large) — mobile-audit.mjs
+   * measures the rendered pixels and fails the run below those floors.
    */
-  --color-slate-50: #fbf7f4; /* page background — warm off-white (Peanut's move) */
+  /*
+   * V25 ticket 12 — THE PAGE IS WHITE, AND IT IS NO LONGER `slate-50`.
+   *
+   * The founder overrode V7's warm page background, app-wide: "I think we
+   * should use a white background for everything. I don't like this color in
+   * the background. I like to just do white." The warm rationale above was a
+   * deliberate choice and this is a deliberate REVERSAL of it — do not
+   * "restore" the warm page from that rationale.
+   *
+   * WHY A NEW TOKEN rather than re-pointing `--color-slate-50` at #ffffff.
+   * That token had TWO roles: it was the page, AND it is the faint fill/hover
+   * tint on white cards — `hover:bg-slate-50` on buttons and rows, plus inert
+   * wells (the inbox thread panel, the form's hint panels, the readonly share
+   * field). Re-pointing it would have dragged all 38 non-page surfaces to pure
+   * white with it: hovers that no longer register, and wells that vanish into
+   * the card they sit on. A page token leaves every one of those sites exactly
+   * as it painted before, so there is nothing to re-tune at 38 call sites.
+   *
+   * WHY NOT JUST `bg-white` ON THE PAGE. In dark mode this file re-points
+   * `.bg-white` to the CARD surface (#241f1c, below), so a `bg-white` page
+   * would have become the card colour and inverted the page/card relationship.
+   * `--color-page` is re-pointed to the dark PAGE neutral (#181412) instead, so
+   * the whole dark appearance is value-identical to what shipped before this
+   * slice.
+   */
+  --color-page: #ffffff; /* the page/screen background. Re-pointed to #181412 in dark. */
+  --color-slate-50: #fbf7f4; /* warm off-white FILL — hover/inert tint on white cards. NOT the page. */
   --color-slate-100: #f4ece6; /* inert chips/fills, e.g. "Ended" */
   --color-slate-200: #eee3dc; /* the default border; avatar placeholder fill */
   --color-slate-300: #ddcec5; /* stronger border (inputs, secondary buttons) */
@@ -178,9 +204,9 @@ h3 {
 /*
  * V8 — DARK MODE (V22 slice 14: re-triggered from a user choice). Re-points
  * every existing token name to dark values. No call-site edits, no renames.
- * The lightness ramp inverts: slate-50 (page bg) becomes the darkest surface,
- * slate-900 (headings) becomes the brightest text. Monotonic order is
- * preserved.
+ * The lightness ramp inverts: the page (--color-page and slate-50, its fill
+ * role) becomes the darkest surface, slate-900 (headings) becomes the
+ * brightest text. Monotonic order is preserved.
  *
  * SLICE 14 CHANGED THE TRIGGER, NOT THE VALUES: this block used to key off an
  * OS colour-scheme media query — the app FOLLOWED THE OS. That was a
@@ -219,7 +245,8 @@ h3 {
   color-scheme: dark;
 
   /* Surfaces (lightest → darkest role inverted) */
-  --color-slate-50: #181412;   /* page background — very dark warm neutral */
+  --color-page: #181412;       /* page background — UNCHANGED from before V25 t12 */
+  --color-slate-50: #181412;   /* deepest neutral: the dark page, and the darkening hover/fill tint */
   --color-slate-100: #3a312b;  /* inert chips/fills */
   --color-slate-200: #4a4038;  /* default border */
   --color-slate-300: #5c5047;  /* stronger border (inputs, secondary buttons) */
