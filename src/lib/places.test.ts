@@ -8,13 +8,14 @@ import {
   DATE_WINDOW_LABELS,
   dateWindowEmptyCopy,
   distanceMiles,
-  filterPlacesByRadius,
   feedMapPinEvent,
+  filterPlacesByRadius,
   feedMapPins,
   pinMoreDropInsLabel,
   soonestFeedPinEvent,
   framingCircle,
   groupPlacesByKind,
+  kindEmptyCopy,
   MIN_FOCUS_RADIUS_MILES,
   MAP_FOCUS_RADIUS_MILES,
   matchPlaces,
@@ -24,6 +25,7 @@ import {
   placeIndoorLabel,
   placeInDateWindow,
   placeKindLabel,
+  placeKindChips,
   placePath,
   placeDetailsPath,
   placeWebSearchHref,
@@ -41,6 +43,7 @@ import {
   placeFollowIdSet,
   planDirectoryList,
   PLACE_BROWSE_LIMIT,
+  PLACE_KINDS,
   PLACE_SUGGESTION_LIMIT,
   resolveMapCoords,
   resolvePlaceByName,
@@ -2150,6 +2153,62 @@ describe('placeWebSearchHref (V23 slice 5)', () => {
   })
 })
 
+describe('placeKindChips + kindEmptyCopy (V25 t03, the category chip row)', () => {
+  it('covers exactly PLACE_KINDS, in schema order, with placeKindLabel words', () => {
+    // The founder's categories are the app's OWN taxonomy: the row is derived
+    // from PLACE_KINDS and labelled from placeKindLabel, which is also what the
+    // filter sheet's chips and the list's group headings render. An extra chip
+    // would be a category the schema cannot express; a missing one would hide a
+    // real kind.
+    const chips = placeKindChips([])
+    expect(chips.map((chip) => chip.kind)).toEqual([...PLACE_KINDS])
+    expect(chips.map((chip) => chip.label)).toEqual(PLACE_KINDS.map((kind) => placeKindLabel(kind)))
+  })
+
+  it('flags a kind empty ONLY when the loaded directory really holds no row of it — and never while the read is unknown', () => {
+    const rows = [
+      place({ name: 'Alki Beach Park', kind: 'park' }),
+      place({ name: 'Green Lake Pool', kind: 'pool' }),
+      place({ name: 'Madison Pool', kind: 'pool' }),
+    ]
+    const chips = placeKindChips(rows)
+    const chip = (kind: PlaceKind) => chips.find((c) => c.kind === kind)
+    // Present kinds are never flagged…
+    expect(chip('park')?.empty).toBe(false)
+    expect(chip('pool')?.empty).toBe(false)
+    // …and the seed's real zero-row kinds are: `park`/`trail` are legal kinds
+    // with 0 rows today (playground has 155), so the empty state, not the chip,
+    // is what has to be honest about them.
+    expect(chip('playground')?.empty).toBe(true)
+    expect(chip('trail')?.empty).toBe(true)
+    // `places === null` is UNKNOWN, not empty: claiming emptiness before the read
+    // answers would put an honest-sounding lie in front of the parent.
+    expect(placeKindChips(null).some((c) => c.empty)).toBe(false)
+  })
+
+  it('names the chip’s own label in the honest zero-row copy', () => {
+    expect(kindEmptyCopy('Park')).toBe('No “Park” places in the directory yet.')
+    // The words travel from placeKindLabel, so the copy can never drift from the
+    // chip that opened the state.
+    for (const kind of PLACE_KINDS) {
+      expect(kindEmptyCopy(placeKindLabel(kind))).toContain(placeKindLabel(kind))
+    }
+  })
+
+  it('ships no chip for a category the schema cannot express (food, zoo, coffee)', () => {
+    // The wife's list names food and a zoo; the thing she cares about most is
+    // "whether or not there's a coffee shop nearby". The 0029 CHECK has no such
+    // value (`food`/`zoo` are not kinds) and the directory has no amenity or POI
+    // data, so a chip for any of them would return nothing FOREVER. This pins
+    // that absence — the honest open question on ticket 03 — rather than letting
+    // a later "let's add the missing categories" diff quietly ship a dead chip.
+    const kinds: readonly string[] = placeKindChips([]).map((chip) => chip.kind)
+    for (const unsupported of ['food', 'zoo', 'cafe', 'coffee', 'restaurant']) {
+      expect(kinds).not.toContain(unsupported)
+    }
+  })
+})
+
 describe('planDirectoryList (the directory list composition, moved out of PlaceDirectory)', () => {
   const HOME_PIN = { lat: 47.66757, lng: -122.37789 } // 98107, the viewer's home pin
   const GEO_CENTER = { lat: 47.68, lng: -122.32 } // a geocoded "Set location" center
@@ -2499,5 +2558,53 @@ describe('planDirectoryList (the directory list composition, moved out of PlaceD
         'Weekend',
       ])
     })
+  })
+
+  it('kindReason names a selected chip ONLY when every selected kind has zero rows in the whole directory', () => {
+    // No kind selected → never a kind reason, whatever else is true.
+    expect(plan({ places: [] }).kindReason).toBeNull()
+    // A kind with rows that simply needs no narrowing → null.
+    expect(plan({ selectedKinds: new Set(['playground']) }).kindReason).toBeNull()
+    // A kind ABSENT from the loaded directory, nothing else narrowing → named,
+    // and `nothingMatches` is the generic flag it refines.
+    const only = plan({ places: [PLAY_B], selectedKinds: new Set(['park']) })
+    expect(only.nothingMatches).toBe(true)
+    expect(only.kindReason).toEqual({ kind: 'park', label: 'Park' })
+    // A search is ALSO narrowing, so the kind is not the whole story → the
+    // generic empty state, no kind-specific claim.
+    expect(
+      plan({ places: [PLAY_B], selectedKinds: new Set(['park']), query: 'zzz' }).kindReason,
+    ).toBeNull()
+    // While the read is in flight the directory is UNKNOWN, never empty.
+    expect(plan({ places: null, selectedKinds: new Set(['park']) }).kindReason).toBeNull()
+    // An empty directory that really loaded + a chip selected IS the honest case
+    // (and the one the seed's `park`/`trail` chips produce today).
+    const empty = plan({ places: [], selectedKinds: new Set(['trail']) })
+    expect(empty.kindReason).toEqual({ kind: 'trail', label: 'Trail' })
+    expect(empty.nothingMatches).toBe(true)
+  })
+
+  it('kindReason refuses to name a chip when the emptiness has ANOTHER cause (every, not any)', () => {
+    // `park` + `playground` selected, both in the directory, and a date window
+    // that matches nothing: naming `park` would be a FALSE cause — the window is
+    // what emptied the list, and clearing "Park" would not fix it.
+    const mixed = plan({
+      selectedKinds: new Set(['park', 'playground']),
+      upcomingStartTimes: null,
+      dateWindow: 'today',
+    })
+    expect(mixed.listRows.length).toBe(0)
+    expect(mixed.dateWindowReason).toBe('today')
+    expect(mixed.kindReason).toBeNull()
+    // Narrow it to the one kind that IS absent and the same emptiness becomes a
+    // true kind reason (a place that does not exist cannot be brought back by a
+    // window), so the kind state wins the render chain.
+    const absentOnly = plan({
+      places: [PLAY_B],
+      selectedKinds: new Set(['park']),
+      upcomingStartTimes: null,
+      dateWindow: 'today',
+    })
+    expect(absentOnly.kindReason).toEqual({ kind: 'park', label: 'Park' })
   })
 })

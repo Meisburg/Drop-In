@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { LocationModal } from './LocationModal'
-import { NAV_ICONS } from './icons'
+import { NAV_ICONS, PLACE_KIND_ICONS } from './icons'
 import { PlacesMapView } from './PlacesMapView'
 import { usePrefersReducedMotion } from './usePrefersReducedMotion'
 import { RadiusEmptyState } from './RadiusEmptyState'
@@ -21,9 +21,11 @@ import {
   DATE_WINDOWS,
   DATE_WINDOW_LABELS,
   dateWindowEmptyCopy,
+  kindEmptyCopy,
   MAP_FOCUS_RADIUS_MILES,
   planDirectoryList,
   PLACE_KINDS,
+  placeKindChips,
   placeLearnMoreLink,
   placeIndoorLabel,
   placeKindLabel,
@@ -218,6 +220,7 @@ export function PlaceDirectory({
     placedGroups,
     radiusReason,
     dateWindowReason,
+    kindReason,
     nothingMatches,
   } = planDirectoryList({
     places,
@@ -244,6 +247,20 @@ export function PlaceDirectory({
   // applied to the rendered list by planDirectoryList, which owns this rule.
   const filteredUnplaced =
     selectedKinds.size > 0 ? unplaced.filter((row) => selectedKinds.has(row.place.kind)) : unplaced
+
+  /**
+   * V25 t03: THE CATEGORY CHIP ROW's content — `PLACE_KINDS`, labelled by
+   * `placeKindLabel` and flagged with whether the loaded directory has any row
+   * of that kind at all. The decision lives in the pure seam
+   * (`placeKindChips`, src/lib/places.ts); this component only renders it.
+   *
+   * The words and the glyphs are both PRE-EXISTING app vocabulary, not new ones:
+   * `placeKindLabel` is what the list's group headings and the sheet's kind chips
+   * already render, and `PLACE_KIND_ICONS` is the per-kind glyph set V17 built
+   * for the card photo slot. The row therefore introduces no second label map and
+   * no second icon set.
+   */
+  const kindChips = placeKindChips(places)
 
   /**
    * V24 slice 10: the rows the MAP VIEW carries.
@@ -356,6 +373,17 @@ export function PlaceDirectory({
       else next.add(kind)
       return next
     })
+  }
+
+  /**
+   * V25 t03: the empty KIND state's escape — "Show all types" clears the kind
+   * selection entirely (the same meaning the sheet's own "None selected = show
+   * all types." line states), which is the one thing that can fix a chip whose
+   * category has no rows: the kind was the whole answer, so clearing it restores
+   * the directory.
+   */
+  function clearKindFilter() {
+    setSelectedKinds(new Set())
   }
 
   async function handleGeocode(address: string) {
@@ -477,6 +505,97 @@ export function PlaceDirectory({
           >
             Outdoor
           </button>
+        </div>
+
+        {/* V25 t03 — THE CATEGORY CHIP ROW (annotation 3).
+
+            THE FOUNDER'S ASK, verbatim: *"you got the three main drop downs that
+            you can click on at the top, and then beneath that there's like a
+            side scrolling filter where you can pick different ones with like
+            interesting icons on them like coffee shop or museum or playground,
+            you know what I mean?"*, and his own reference screenshot shows
+            exactly this shape (a horizontal icon chip row under the top
+            controls). His decision of 2026-09-26 fixed the pattern: a horizontal
+            scroll row of ICON + LABEL chips — the icon is decoration, the word
+            is the control.
+
+            WHY IT SITS HERE: it is "beneath that" set of controls — under the
+            search field, "Filter & sort" and the indoor/outdoor pair, and above
+            the date chips and the distance select.
+
+            WHAT A CHIP DOES: it toggles ONE kind in the SAME `selectedKinds` set
+            the filter sheet's `filter-kind-chip-<kind>` chips use, so the two
+            surfaces can never disagree — selecting "Pool" here shows as selected
+            in the sheet, and clearing it there clears it here. There is no second
+            filtering path: `planDirectoryList` narrows the list exactly as before.
+
+            `PLACE_KINDS` order is the sheet's order and the list's group order, so
+            the app has ONE taxonomy order. Each chip's word comes from
+            `placeKindLabel` and its glyph from `PLACE_KIND_ICONS` — both existing
+            vocabulary (the glyph map was built for the card photo slot; the row is
+            its first live consumer).
+
+            THE ZERO-ROW KINDS ARE SHOWN, and the `empty` flag from the pure seam
+            is what keeps that honest: `park` and `trail` are real, legal kinds with
+            zero seeded rows today, so selecting one renders the kind empty state
+            ("No “Park” places in the directory yet.") rather than the generic "No
+            places match that.". `data-empty` publishes the same measured fact for
+            the specs. Kinds the DATA cannot express at all — `food`, `zoo` and the
+            founder's "coffee shop nearby" — have no chip here on purpose: they
+            would return nothing forever, not until the seed grows (ticket 03
+            carries them as an open data-source decision).
+
+            A11Y: `aria-pressed` carries the toggle state (never colour alone),
+            every chip is `min-h-11` (44px) and the row is a labelled `group`. The
+            `svg` is `aria-hidden`; the accessible name is the chip's word. The row
+            scrolls horizontally (`overflow-x-auto` + `snap-x`, the map strip's own
+            pattern) instead of wrapping, which is the founder's "side scrolling
+            filter"; `overscroll-x-contain` keeps that scroll from chaining to the
+            page, and `motion-reduce:transition-none` keeps it still. */}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-slate-700">Place types</span>
+          <div
+            data-testid="place-kind-chip-row"
+            role="group"
+            aria-label="Place types"
+            className="flex snap-x gap-2 overflow-x-auto overscroll-x-contain pb-1"
+          >
+            {kindChips.map((chip) => {
+              const selected = selectedKinds.has(chip.kind)
+              return (
+                <button
+                  key={chip.kind}
+                  type="button"
+                  data-testid={`place-kind-chip-${chip.kind}`}
+                  data-empty={chip.empty ? 'true' : 'false'}
+                  aria-pressed={selected}
+                  onClick={() => {
+                    toggleKind(chip.kind)
+                  }}
+                  className={
+                    'flex min-h-11 shrink-0 snap-start items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+                    (selected
+                      ? 'border-indigo-600 bg-indigo-600 text-white'
+                      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')
+                  }
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    className="h-5 w-5 shrink-0"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d={PLACE_KIND_ICONS[chip.kind]} />
+                  </svg>
+                  {chip.label}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         {/* The date chips (annotation 15): Upcoming / Today / Tomorrow / Weekend.
@@ -624,13 +743,37 @@ export function PlaceDirectory({
           (empty states AND the 239-row list) rendered under the map in map mode.
 
           Gating the whole chain rather than only the `places-list` branch is
-          deliberate: a radius/date-window/zero-match message is a statement
+          deliberate: a radius/date-window/kind/zero-match message is a statement
           ABOUT THE LIST, and map mode is not showing a list. The mode toggle is
           always on screen (see the floating control below), so the way back to
           those messages is one tap and never a dead end. */}
       {view !== 'list' ? null : places === null ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm md:col-start-2">
           Loading…
+        </div>
+      ) : kindReason !== null ? (
+        /* V25 t03: THE HONEST ZERO-ROW KIND STATE, and it leads the empty chain
+           deliberately. `kindReason` is non-null only when EVERY selected kind has
+           zero rows in the whole loaded directory (`park` and `trail` today), and
+           that is the one emptiness no other control can explain or fix: widening
+           the radius, choosing another date window, or clearing the search cannot
+           conjure a place whose kind does not exist. Naming the chip's own label is
+           therefore the true answer, and the escape returns the parent to the full
+           directory. Every other cause (a radius, a window, a search) still falls
+           through to its own message below, exactly as before. */
+        <div
+          data-testid="empty-kind-state"
+          className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm md:col-start-2"
+        >
+          <p className="text-sm text-slate-600">{kindEmptyCopy(kindReason.label)}</p>
+          <button
+            type="button"
+            data-testid="kind-empty-escape-all"
+            onClick={clearKindFilter}
+            className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+          >
+            Show all types
+          </button>
         </div>
       ) : radiusReason !== null ? (
         <div className="md:col-start-2"><RadiusEmptyState radiusMiles={radiusReason.radiusMiles} /></div>

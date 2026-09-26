@@ -123,6 +123,106 @@ export function placeIndoorLabel(place: { indoor: boolean }): string {
   return place.indoor ? 'Indoor' : 'Outdoor'
 }
 
+/**
+ * V25 t03 — ONE CHIP IN THE CATEGORY ROW: a place kind, its word, and whether
+ * the loaded directory has anything at all behind it.
+ */
+export interface PlaceKindChip {
+  /** The kind this chip toggles in the SAME `selectedKinds` set the sheet uses. */
+  kind: PlaceKind
+  /** The chip's word — ALWAYS `placeKindLabel(kind)`; there is no second label map. */
+  label: string
+  /**
+   * TRUE when the loaded directory holds ZERO rows of this kind, FALSE when it
+   * holds at least one, and FALSE when the read has not answered yet
+   * (`places === null` = UNKNOWN, the module's standing convention: never call a
+   * category empty before measuring it).
+   *
+   * It exists so the empty state can be HONEST: a chip whose kind is absent from
+   * the whole directory can only ever return nothing (today: `park` and `trail`,
+   * 0 seeded rows each, versus `playground`'s 155), and the parent deserves to be
+   * told that rather than shown a bare "No places match that."
+   */
+  empty: boolean
+}
+
+/**
+ * V25 t03 — THE CATEGORY CHIP ROW, AS ONE PURE DECISION.
+ *
+ * THE FOUNDER'S ASK, verbatim: *"you got the three main drop downs that you can
+ * click on at the top, and then beneath that there's like a side scrolling
+ * filter where you can pick different ones with like interesting icons on them
+ * like coffee shop or museum or playground, you know what I mean?"*, and his
+ * reference screenshot shows exactly that pattern (a horizontal icon-chip row
+ * under the top controls). His decision of 2026-09-26 fixes the pattern: **a
+ * horizontal scroll row of icon + label chips**, one chip per category.
+ *
+ * WHAT SHIPS — `PLACE_KINDS`, the app's own taxonomy (the 0029 CHECK mirror):
+ * park, playground, indoor_play, museum, pool, splash_pad, library, beach,
+ * trail, other. The row is derived from that one constant and the words from
+ * `placeKindLabel`, so the row can never disagree with the sheet's kind chips
+ * (`filter-kind-chip-<kind>`) or with the list's group headings: they all read
+ * the same two sources.
+ *
+ * WHAT CANNOT SHIP, AND WHY IT IS NOT SILENTLY DROPPED. The wife's list names
+ * food and a zoo, and the thing she cares about most is *"whether or not there's
+ * a coffee shop nearby"*. The data has NO coffee/café, food, or zoo value at all
+ * — MEASURED against the live directory at 239 rows (2026-09-26): `kind` is one
+ * of the nine non-zero values below, a name/notes search for `coffee`, `cafe`,
+ * `food` or `zoo` returns ZERO rows, and the single `caf` hit in the whole
+ * database is PROSE inside one `indoor_play` row's notes ("LEGO play café in
+ * Northeast Seattle"). The 0029 CHECK allows no `food`/`zoo` kind, and there is
+ * no amenity dataset, no POI source, and no distance-to-a-third-party-place
+ * concept anywhere in the app. A chip for any of those would return nothing
+ * FOREVER, not until the seed grows, so none of them is built. They stay an
+ * explicit open question on ticket 03 (the coffee case needs its own data-source
+ * decision: source, licence, cost, attribution, rate limits) rather than a chip
+ * that lies.
+ *
+ * THE ZERO-ROW KINDS DO SHIP, and the difference is not hair-splitting: `park`
+ * and `trail` are real, legal kinds with a REAL predicate (`kind = 'park'`), so
+ * a seed row makes the chip work with no code change; `food` and `zoo` would
+ * need a migration first. The row answers the zero-row case the only honest way
+ * (see `empty` above and `kindEmptyCopy` below) instead of hiding the category.
+ *
+ * THE "PARKS" GROUPING DECISION, stated so it is not implied: the wife's first
+ * category is served by the `park` KIND chip, NOT by a hand-mapped
+ * "outdoor play" group over several kinds. The measured reason it currently
+ * filters to empty is a SEED TAXONOMY gap, not an absence of parks: against the
+ * live directory, `kind = 'park'` has 0 rows while **111 seeded places have
+ * "Park" in their name** — 90 of them `playground`, 13 `splash_pad`, 6 `beach`,
+ * 2 `other` (Seattle's open data files its rows by facility type). So a parent
+ * looking for Green Lake Park finds it under Playground, and the Park chip's
+ * honest empty state is a true statement about the KIND, not about the city.
+ * Whether those rows should be re-kind'd is a seed/data decision for the
+ * founder — the chip must not fake a grouping to hide it.
+ *
+ * ORDER is `PLACE_KINDS` order — deliberately the same order the sheet and the
+ * list's group headings use, so there is one taxonomy order in the app rather
+ * than a second one to keep in sync.
+ */
+export function placeKindChips(places: readonly Place[] | null): PlaceKindChip[] {
+  const counts = new Map<string, number>()
+  for (const place of places ?? []) counts.set(place.kind, (counts.get(place.kind) ?? 0) + 1)
+  return PLACE_KINDS.map((kind) => ({
+    kind,
+    label: placeKindLabel(kind),
+    empty: places !== null && (counts.get(kind) ?? 0) === 0,
+  }))
+}
+
+/**
+ * The honest empty-state copy for a KIND filter that can only ever return
+ * nothing: every selected kind has zero rows in the loaded directory. It names
+ * the chip's own label (passed in from `placeKindChips`/`placeKindLabel`), so
+ * the copy can never drift from the chip's text, and it does NOT claim the
+ * parent's other filters are innocent — the caller only reaches this state when
+ * the kind is the cause.
+ */
+export function kindEmptyCopy(label: string): string {
+  return `No “${label}” places in the directory yet.`
+}
+
 /** `/place/:id` — the one place path builder (links never hand-roll it). */
 export function placePath(placeId: string): string {
   return `/place/${encodeURIComponent(placeId)}`
@@ -1864,6 +1964,22 @@ export interface DirectoryListPlan {
    * also narrowing.
    */
   dateWindowReason: Exclude<DateWindow, 'upcoming'> | null
+  /**
+   * V25 t03 — the KIND CHIP is the reason nothing shows, and it can only ever
+   * be: non-null exactly when at least one kind is selected, the search box is
+   * empty, nothing renders in either section, and EVERY selected kind has zero
+   * rows in the loaded directory (`placeKindChips`).
+   *
+   * EVERY, not ANY: with `park` + `playground` selected and only a date window
+   * emptying the list, naming `park` would be a false cause — the list is empty
+   * because of the window. Requiring every selected kind to be absent makes the
+   * named kind a TRUE cause whatever else is narrowed, because a place that does
+   * not exist cannot be brought back by a radius, a window, or a search.
+   *
+   * It carries the label with the kind so the empty state renders one object
+   * (`kindEmptyCopy(kindReason.label)`) rather than re-deriving the word.
+   */
+  kindReason: { kind: PlaceKind; label: string } | null
 }
 
 export function planDirectoryList(input: {
@@ -2047,6 +2163,23 @@ export function planDirectoryList(input: {
   const dateWindowReason = dateWindowIsTheReason ? dateWindow : null
   const nothingMatches = listRows.length === 0 && filteredUnplaced.length === 0
 
+  // V25 t03 — IS A KIND CHIP THE REASON? Only when every selected kind is absent
+  // from the WHOLE loaded directory (see DirectoryListPlan.kindReason), a search
+  // is not also narrowing, and nothing rendered. `empty` is false while the read
+  // is in flight, so this can never fire on an unknown directory.
+  const kindReason = (() => {
+    if (selectedKinds.size === 0) return null
+    if (query.trim() !== '') return null
+    if (listRows.length > 0 || filteredUnplaced.length > 0) return null
+    const absent = placeKindChips(places).filter((chip) => chip.empty)
+    if (absent.length === 0) return null
+    if (![...selectedKinds].every((kind) => absent.some((chip) => chip.kind === kind))) return null
+    // PLACE_KINDS order decides WHICH absent kind is named, so the copy is stable
+    // when several empty chips are selected (park before trail).
+    const named = absent.find((chip) => selectedKinds.has(chip.kind))
+    return named === undefined ? null : { kind: named.kind, label: named.label }
+  })()
+
   return {
     rows,
     effectiveRows,
@@ -2059,6 +2192,7 @@ export function planDirectoryList(input: {
     radiusReason,
     dateWindowIsTheReason,
     dateWindowReason,
+    kindReason,
     nothingMatches,
   }
 }

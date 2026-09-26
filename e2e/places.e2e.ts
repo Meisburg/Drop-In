@@ -3024,3 +3024,210 @@ test('a tapped feed pin names the drop-in happening there, and says when it stan
     }
   }
 })
+
+/**
+ * V25 t03 — THE CATEGORY CHIP ROW (annotation 3).
+ *
+ * THE FOUNDER'S ASK, verbatim: *"you got the three main drop downs that you can
+ * click on at the top, and then beneath that there's like a side scrolling
+ * filter where you can pick different ones with like interesting icons on them
+ * like coffee shop or museum or playground, you know what I mean?"* — and his
+ * decision of 2026-09-26 fixes the shape: a horizontal scroll row of ICON +
+ * LABEL chips.
+ *
+ * WHAT THIS PROVES, against the REAL seeded directory (no fixtures invented):
+ *   1. The row is the app's OWN taxonomy — one chip per `PLACE_KINDS`, in schema
+ *      order, labelled by `placeKindLabel` (both imported here, so a drift in
+ *      either direction fails this spec), each with a decorative glyph and a
+ *      real accessible name;
+ *   2. every chip is a 44px target and carries its state in `aria-pressed`, not
+ *      in colour alone;
+ *   3. tapping a chip narrows the real list to that kind, and the SAME selection
+ *      shows as pressed on the filter sheet's own kind chip — one state, two
+ *      surfaces, no second filtering path;
+ *   4. a chip whose kind has ZERO rows in the whole directory (`park`, measured
+ *      live: 0 of 239) says so in its own words ("No “Park” places in the
+ *      directory yet.") instead of the generic "No places match that.", and its
+ *      escape returns the full directory;
+ *   5. the row side-scrolls WITHOUT widening the page — 390px and 320px, light
+ *      and dark.
+ *
+ * THE DATA WALL, pinned here rather than papered over: `food`, `zoo` and the
+ * founder's "coffee shop nearby" have NO chip, because the directory has no such
+ * kind and no amenity data at all (live: 0 rows for coffee/cafe/food/zoo). The
+ * step-2 exact-set assertion is what would fail if someone later added a chip
+ * for a category the schema cannot express.
+ */
+test('the category chips are one row over the real kinds, agree with the sheet, and say so when a kind is empty (V25 t03)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openPlacesTab(page)
+  await useAnyDistance(page)
+
+  const row = page.getByTestId('place-kind-chip-row')
+  await expect(row).toBeVisible()
+
+  // --- 1. The taxonomy, exactly: one chip per PLACE_KINDS, no extras. ---------
+  const chipButtons = row.getByRole('button')
+  await expect(chipButtons).toHaveCount(PLACE_KINDS.length)
+  for (const kind of PLACE_KINDS) {
+    const chip = page.getByTestId(`place-kind-chip-${kind}`)
+    await expect(chip, `every PLACE_KINDS kind needs a chip`).toBeVisible()
+    const label = placeKindLabel(kind)
+    // The accessible name is the chip's word — the same word the list's group
+    // headings and the filter sheet render.
+    await expect(row.getByRole('button', { name: label, exact: true })).toBeVisible()
+    // The founder asked for "interesting icons": the glyph is DECORATION
+    // (aria-hidden) and must be a real path, not an empty box.
+    const glyph = chip.locator('svg[aria-hidden="true"] path')
+    await expect(glyph).toHaveCount(1)
+    const d = await glyph.getAttribute('d')
+    expect(d !== null && d.trim().length > 0, `${kind}'s glyph must draw something`).toBe(true)
+    // State is never colour-only.
+    expect(await chip.getAttribute('aria-pressed')).toBe('false')
+  }
+  // No chip for a category the schema cannot express (the wife's food / zoo /
+  // coffee). These would return nothing FOREVER, unlike a zero-row real kind.
+  for (const unsupported of ['food', 'zoo', 'cafe', 'coffee']) {
+    await expect(page.getByTestId(`place-kind-chip-${unsupported}`)).toHaveCount(0)
+  }
+
+  // --- 2. 44px targets + the row scrolls instead of wrapping. -----------------
+  for (const kind of PLACE_KINDS) {
+    const box = await page.getByTestId(`place-kind-chip-${kind}`).boundingBox()
+    expect(box, `${kind} chip must be on screen`).not.toBeNull()
+    expect(Math.round(box?.height ?? 0), `${kind} chip must be >= 44px tall`).toBeGreaterThanOrEqual(44)
+  }
+  const metrics = await row.evaluate((el) => ({
+    scrollWidth: el.scrollWidth,
+    clientWidth: el.clientWidth,
+    pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  }))
+  expect(metrics.scrollWidth, 'the row must side-scroll (the founder asked for scrolling)').toBeGreaterThan(
+    metrics.clientWidth,
+  )
+  // Absolute at 390px, where the page IS clean (measured 0). The 320px case is
+  // asserted DIFFERENTIALLY in step 5, because the page has a pre-existing 3px
+  // overflow there from an unrelated control.
+  expect(metrics.pageOverflow, 'the scrolling row must not widen the page at 390px').toBe(0)
+
+  // --- 3. A chip filters the REAL list, and the sheet agrees. ----------------
+  const list = page.getByTestId('places-list')
+  const library = page.getByTestId('place-kind-chip-library')
+  await library.click()
+  await expect(library).toHaveAttribute('aria-pressed', 'true')
+  await expect(list).toBeVisible()
+  const libraryRows = page.locator('[data-testid="place-row"]')
+  const libraryCount = await libraryRows.count()
+  // The seed has 6 library rows; asserting > 0 rather than == 6 keeps this spec
+  // about the FILTER, not about today's seed count.
+  expect(libraryCount, 'the library chip must match real seeded rows').toBeGreaterThan(0)
+  for (const rowEl of await libraryRows.all()) {
+    await expect(rowEl).toContainText('Library')
+  }
+  // One state, two surfaces: the sheet's own chip for the SAME kind is pressed.
+  await page.getByTestId('filter-sort-btn').click()
+  const sheetChip = page.getByTestId('filter-kind-chip-library')
+  await expect(sheetChip).toHaveAttribute('aria-pressed', 'true')
+  // Clearing it THERE clears it in the ROW (and restores the wider list).
+  await sheetChip.click()
+  await page.getByTestId('filter-apply-btn').click()
+  await expect(library).toHaveAttribute('aria-pressed', 'false')
+  await expect
+    .poll(async () => page.locator('[data-testid="place-row"]').count())
+    .toBeGreaterThan(libraryCount)
+
+  // --- 4. The zero-row kind is honest, and escapable. ------------------------
+  // Measured against the live directory: `park` is a legal kind with 0 of 239
+  // rows, so the chip publishes that fact and the empty state names the chip.
+  const park = page.getByTestId('place-kind-chip-park')
+  await expect(park).toHaveAttribute('data-empty', 'true')
+  await park.click()
+  const kindEmpty = page.getByTestId('empty-kind-state')
+  await expect(kindEmpty).toBeVisible()
+  await expect(kindEmpty).toContainText(placeKindLabel('park'))
+  await expect(page.getByTestId('places-list')).toHaveCount(0)
+  // Not the generic message: the KIND is the true cause and is named.
+  await expect(page.getByText('No places match that.')).toHaveCount(0)
+  await page.getByTestId('kind-empty-escape-all').click()
+  await expect(park).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.locator('[data-testid="place-row"]').first()).toBeVisible()
+
+  // --- 5. 320px, and DARK: the row adds NO page overflow of its own. ---------
+  //
+  // THE ASSERTION IS DIFFERENTIAL ON PURPOSE, and the first version of this
+  // spec that asserted an absolute `overflow === 0` at 320px was WRONG about
+  // this app (it failed, and the failure was a fact, not a flake). MEASURED at
+  // 320px on this bundle: the page overflows by 3px, and the culprit is the
+  // PRE-EXISTING Distance `<select>` (`places-distance-filter`, right edge 323
+  // at a 320px viewport — its `<label class="flex …">` box), which this slice
+  // does not touch. Hiding the chip row's whole block leaves that 3px IDENTICAL,
+  // so the row's own contribution is exactly 0 at 320 and 390, light and dark.
+  //
+  // So this asserts the property the ticket actually needs — the horizontally
+  // scrolling row does not force page-level scroll — without claiming a clean
+  // page the app does not have, and without letting a future absolute-overflow
+  // regression hide behind the pre-existing 3px.
+  //
+  // NOTE ON THE CITED CHECK: the ticket points at
+  // `scripts/layout-width-check.mjs`; that script visits
+  // `/playdate/00000000-0000-0000-0000-000000000000` SIGNED OUT (a shell with no
+  // nav and no directory at all), so it cannot see this control — it is red for
+  // its own pre-existing reasons and is not evidence about the chip row. This
+  // measurement is.
+  const rowContribution = () =>
+    page.evaluate(() => {
+      const doc = document.documentElement
+      const withRow = doc.scrollWidth - doc.clientWidth
+      const row = document.querySelector('[data-testid="place-kind-chip-row"]') as HTMLElement | null
+      if (row === null || row.parentElement === null) return null
+      const block = row.parentElement
+      const previous = block.style.display
+      block.style.display = 'none'
+      const withoutRow = doc.scrollWidth - doc.clientWidth
+      block.style.display = previous
+      return { withRow, withoutRow, rowScrolls: row.scrollWidth > row.clientWidth }
+    })
+
+  await page.setViewportSize({ width: 320, height: 844 })
+  await expect
+    .poll(async () => (await rowContribution()) !== null)
+    .toBe(true)
+  const narrow = await rowContribution()
+  expect(narrow, 'the chip row must be measurable at 320px').not.toBeNull()
+  expect(narrow!.rowScrolls, 'the row side-scrolls at 320px').toBe(true)
+  expect(narrow!.withRow, 'the row must not add page overflow at 320px').toBe(narrow!.withoutRow)
+  const at320 = narrow!.withRow
+
+  // Dark is a persisted user choice (localStorage['dropin-theme']), not a
+  // Playwright colorScheme — the app ignores the latter by design.
+  await page.addInitScript(() => {
+    localStorage.setItem('dropin-theme', 'dark')
+  })
+  await page.reload()
+  await settleOnRoute(page, '/browse')
+  await expect(page.getByTestId('place-kind-chip-row')).toBeVisible()
+  await expect
+    .poll(async () => (await rowContribution()) !== null)
+    .toBe(true)
+  const dark = await rowContribution()
+  expect(dark, 'the chip row must be measurable in dark').not.toBeNull()
+  expect(dark!.rowScrolls, 'the row side-scrolls in dark').toBe(true)
+  expect(dark!.withRow, 'the row must not add page overflow in dark').toBe(dark!.withoutRow)
+  console.log(
+    `[V25 t03] chip row: scrolls internally at 320px; page overflow 320px light=${at320}px ` +
+      `dark=${dark!.withRow}px — identical with the row hidden (row's own contribution = 0)`,
+  )
+
+  // --- 6. REDUCED MOTION: the chip's colour transition is suppressed. --------
+  // The row itself only scrolls (a user gesture, never an animation), and the
+  // chip's one transition is colour. `motion-reduce:transition-none` is what
+  // makes that honest, and the computed property is what proves it — a class
+  // name in the source is not evidence that the media query applies.
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const transitionProperty = await page
+    .getByTestId(`place-kind-chip-${PLACE_KINDS[0]}`)
+    .evaluate((el) => getComputedStyle(el).transitionProperty)
+  expect(transitionProperty, 'reduced motion must suppress the chip transition').toBe('none')
+})
