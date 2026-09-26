@@ -1,8 +1,13 @@
 /**
- * send-push — the V8 ticket 08 sender (Supabase Edge Function, Deno).
+ * send-push — the V8 ticket 08 sender (Supabase Edge Function, Deno), now the
+ * ONE sender for TWO transports.
  *
  * One job, run every 5 minutes by pg_cron (or by hand): turn the
- * `notification_log` rows we OWE into real Web Push POSTs.
+ * `notification_log` rows we OWE into real Web Push POSTs — and, when a parent
+ * has NO registered device at all, into an email instead. Email is a FALLBACK
+ * BRANCH inside `drain()`, not a second function and not a second queue: a
+ * second function draining the same `sent_at is null` rows would race this one
+ * for the same rows.
  *
  *  1. CATCH-UP SCAN (`starting_soon` only). "Starts in an hour" is a property
  *     of the CLOCK, not of any write, so it is the one kind no trigger can
@@ -14,7 +19,17 @@
  *  2. DRAIN. Every row with `sent_at is null`, newest last: post it, stamp
  *     `sent_at` (or `error`), and DELETE any subscription the push service
  *     answers 404/410 for (the endpoint is dead: the browser unsubscribed, the
- *     app was deleted, or the subscription was rotated).
+ *     app was deleted, or the subscription was rotated). A row whose recipient
+ *     has NO subscription is handed to the email fallback: configured and
+ *     addressable → send the email; otherwise stamp it exactly as before.
+ *
+ * NAMING DEBT, RECORDED RATHER THAN HIDDEN. The function is still called
+ * `send-push` even though it now sends email too. The name is retained
+ * DELIBERATELY: renaming it means a redeploy plus a `pg_cron` job change (the
+ * job `send-push-every-5-minutes` calls this URL), which is deployment work this
+ * slice does not own. The pure decisions live in `../_shared/emailFallback.ts`
+ * (which the app's `src/lib/emailFallback.ts` re-exports and
+ * `src/lib/emailFallback.test.ts` unit-tests), so this file is wiring only.
  *
  * SAFE TO INVOKE REPEATEDLY, and that is the design, not a hope: the unique
  * key `(profile_id, kind, playdate_id)` (migration 0032) plus
@@ -43,6 +58,31 @@ import {
   notificationDedupeKey,
   type NotificationKind,
 } from '../_shared/pushCopy.ts'
+import { FALLBACK_BASE_URL, buildEmailPayload, type EmailEnv } from '../_shared/emailCopy.ts'
+import { sendEmail } from '../_shared/resend.ts'
+import { classifySendResult, decideEmailFallback } from '../_shared/emailFallback.ts'
+
+/**
+ * The email fallback's configuration, read ONCE at module scope. `Deno.env` is
+ * not a reactive source in an Edge Function — the isolate is created per
+ * invocation — so there is nothing to gain from re-reading it inside the loop.
+ *
+ * `emailEnabled` is both secrets being non-blank after trim; either one missing
+ * means there is no transport to call, and the drain keeps its old behaviour
+ * rather than failing every row on a request that could never be accepted.
+ */
+const RESEND_API_KEY = (Deno.env.get('RESEND_API_KEY') ?? '').trim()
+const EMAIL_FROM = (Deno.env.get('EMAIL_FROM') ?? '').trim()
+const EMAIL_REPLY_TO = (Deno.env.get('EMAIL_REPLY_TO') ?? '').trim()
+const PUBLIC_BASE_URL = (Deno.env.get('PUBLIC_BASE_URL') ?? '').trim()
+const EMAIL_ENABLED = RESEND_API_KEY !== '' && EMAIL_FROM !== ''
+
+/** Links are built against the configured origin, else the pinned deployment
+ *  fallback — a relative link in an inbox is a dead link. */
+const EMAIL_ENV: EmailEnv = {
+  baseUrl: PUBLIC_BASE_URL !== '' ? PUBLIC_BASE_URL : FALLBACK_BASE_URL,
+  replyTo: EMAIL_REPLY_TO,
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -256,12 +296,121 @@ async function drain(admin: SupabaseClient): Promise<{
     // stamped anyway: it is not "owed" any more — it is the /profile fallback
     // list's content — and leaving it unsent would make every future tick
     // re-read it forever.
+    //
+    // …UNLESS email is configured, in which case "no device" is no longer
+    // "no way to reach them": an iPhone parent who never completed the push
+    // opt-in (iOS web push needs the app installed to the home screen) still
+    // gets told. The email branch below is a FALLBACK INSIDE this drain, on
+    // purpose — a second function draining the same `sent_at is null` rows
+    // would race this one for them. The unique key
+    // `(profile_id, kind, playdate_id)` plus `sent_at is null` remains the only
+    // anti-double-send wall; there is still no in-memory dedupe.
     if (subscriptions.length === 0) {
+      if (!EMAIL_ENABLED) {
+        // Not configured. Keep the EXISTING behaviour exactly, including the
+        // error string — other things read it, and the honest reading is "we
+        // had no way to reach them".
+        await admin
+          .from('notification_log')
+          .update({ sent_at: new Date().toISOString(), error: 'no subscription' })
+          .eq('id', row.id)
+        skipped += 1
+        continue
+      }
+
+      // Resolve the recipient. NEITHER read may throw out of the loop: one
+      // unreadable row must not strand every notification behind it. A failed
+      // read is `undefined`, which for the opt-out column means "fall through
+      // and send" (see the header of _shared/emailFallback.ts) and for the
+      // address means "we have nowhere to send", which the decision reports.
+      let optout: boolean | undefined
+      let email: string | null | undefined
+
+      try {
+        const { data, error } = await admin
+          .from('profiles')
+          .select('email_optout')
+          .eq('id', row.profile_id)
+          .maybeSingle()
+        if (error) throw error
+        optout = (data as { email_optout: boolean } | null)?.email_optout
+      } catch (error) {
+        // Pre-0053 project (the column is absent → 42703) or a failed read. NOT
+        // `true`: an unreadable opt-out column is not a parent asking us to stop.
+        console.error(`send-push: could not read email_optout for ${row.profile_id}:`, errorMessage(error))
+        optout = undefined
+      }
+
+      try {
+        const { data, error } = await admin.auth.admin.getUserById(row.profile_id)
+        if (error) throw error
+        email = data.user?.email
+      } catch (error) {
+        console.error(`send-push: could not read the email address for ${row.profile_id}:`, errorMessage(error))
+        email = undefined
+      }
+
+      const decision = decideEmailFallback({ emailEnabled: EMAIL_ENABLED, optout, email })
+
+      if (decision.action !== 'send-email') {
+        // Same stamp as the unconfigured path, with the decision's own reason
+        // appended so the queue row records WHY this parent was not reached.
+        await admin
+          .from('notification_log')
+          .update({
+            sent_at: new Date().toISOString(),
+            error: `no subscription (${decision.reason})`.slice(0, 500),
+          })
+          .eq('id', row.id)
+        skipped += 1
+        continue
+      }
+
+      // The cap counts EMAILS exactly as it counts pushes — an attempt is an
+      // attempt, or the per-invocation cap stops meaning anything.
+      sends += 1
+
+      const emailPayload = buildEmailPayload(row, EMAIL_ENV)
+      const result = await sendEmail(
+        { fetch },
+        { to: email ?? '', ...emailPayload },
+        { apiKey: RESEND_API_KEY, from: EMAIL_FROM, replyTo: EMAIL_REPLY_TO },
+      )
+      const verdict = classifySendResult(result)
+
+      if (verdict === 'sent') {
+        await admin
+          .from('notification_log')
+          .update({ sent_at: new Date().toISOString(), error: 'sent:email' })
+          .eq('id', row.id)
+        sent += 1
+        continue
+      }
+
+      if (verdict === 'retry') {
+        // DO NOT STAMP. The transport said "come back later" (a 429, a 5xx, or a
+        // fetch that never reached a status), so `sent_at` stays null and the
+        // next 5-minute tick picks the row up again. Stamping here would mark the
+        // notification delivered and DROP it forever — the parent would never be
+        // told about the playdate, which is the exact failure this slice exists
+        // to remove.
+        failed += 1
+        continue
+      }
+
+      // Terminal (a 4xx that is not a rate limit, or a misconfiguration): the
+      // identical request will fail identically forever, so it IS stamped —
+      // leaving it unsent would make every future tick retry a bad address and
+      // starve every notice queued behind it (this drain is oldest-first).
+      const detail = result.ok ? 'unknown' : result.error
       await admin
         .from('notification_log')
-        .update({ sent_at: new Date().toISOString(), error: 'no subscription' })
+        .update({
+          sent_at: new Date().toISOString(),
+          error: `email failed: ${detail}`.slice(0, 500),
+        })
         .eq('id', row.id)
-      skipped += 1
+      failed += 1
       continue
     }
 

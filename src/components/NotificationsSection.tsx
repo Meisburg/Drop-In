@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  getEmailOptout,
   listPushSubscriptions,
   listRecentNotifications,
+  updateEmailOptout,
   type NotificationLogItem,
   type PushSubscriptionSummary,
 } from '../lib/db'
+import { decideEmailOptoutControl } from '../lib/emailOptout'
 import {
   NOTIFICATION_KIND_COPY,
   NOTIFICATION_KINDS,
@@ -67,6 +70,17 @@ type Loadable<T> =
   | { status: 'ready'; value: T }
   | { status: 'error'; message: string }
 
+/**
+ * The email opt-out read (migration 0053). `ready` can still carry `undefined`
+ * — the column did not come back (pre-0053 project, or no row) — and that is
+ * NOT "email is off": the render rule is `decideEmailOptoutControl`, which
+ * shows the default-on state with an honest note.
+ */
+type EmailOptoutLoad =
+  | { status: 'loading' }
+  | { status: 'ready'; value: boolean | undefined }
+  | { status: 'error'; message: string }
+
 function errorText(error: unknown): string {
   if (error instanceof Error && error.message !== '') return error.message
   if (typeof error === 'object' && error !== null) {
@@ -104,6 +118,9 @@ export function NotificationsSection() {
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [tone, setTone] = useState<'info' | 'error'>('info')
+  const [emailOptout, setEmailOptout] = useState<EmailOptoutLoad>({ status: 'loading' })
+  const [savingEmailOptout, setSavingEmailOptout] = useState(false)
+  const [emailOptoutError, setEmailOptoutError] = useState<string | null>(null)
 
   const reload = useCallback(async () => {
     try {
@@ -147,6 +164,24 @@ export function NotificationsSection() {
     }
   }, [reload])
 
+  // The email opt-out read is SEPARATE from reload() on purpose: a failed
+  // `push_subscriptions` / `notification_log` read must not decide anything
+  // about email, and vice versa. The failure lands in its own state, which the
+  // pure decision turns into the default-on control plus a note. It is read
+  // ONCE (not re-read after a write): the write path renders what it just sent,
+  // because 0031's lesson is that an immediate read-after-write can miss the
+  // row it wrote (see db.ts savePushSubscription).
+  useEffect(() => {
+    void (async () => {
+      try {
+        const value = await getEmailOptout()
+        setEmailOptout({ status: 'ready', value })
+      } catch (error) {
+        setEmailOptout({ status: 'error', message: errorText(error) })
+      }
+    })()
+  }, [])
+
   const optedIn = subscriptions.status === 'ready' && subscriptions.value.length > 0
 
   /**
@@ -161,6 +196,28 @@ export function NotificationsSection() {
     subscriptions.status === 'ready' ? (optedIn ? 'registered' : 'none') : 'unknown'
 
   const control = decideOptInControl({ decision, permission, gate, registration })
+
+  // The email opt-out's rendered state is the PURE decision (src/lib/emailOptout.ts)
+  // — the component never decides it inline. `loading` is true only for the
+  // first read; a FAILED or absent read arrives as `undefined` and renders the
+  // default-on state with its note, never "email is off".
+  const emailControl = decideEmailOptoutControl({
+    optout: emailOptout.status === 'ready' ? emailOptout.value : undefined,
+    saving: savingEmailOptout,
+    loading: emailOptout.status === 'loading',
+  })
+
+  /**
+   * The one inline error line for this block: the failed WRITE if there is one,
+   * otherwise the failed READ's reason. The read's CONSEQUENCE is already in the
+   * control's note (the default-on sentence, see decideEmailOptoutControl), so
+   * this line carries the cause only.
+   */
+  const emailOptoutReadError =
+    emailOptout.status === 'error'
+      ? `Couldn't load your email setting (${emailOptout.message}).`
+      : null
+  const emailOptoutFailure = emailOptoutError ?? emailOptoutReadError
 
   async function handleTurnOn() {
     setBusy(true)
@@ -203,6 +260,33 @@ export function NotificationsSection() {
     const outcome = await promptInstall()
     readDevice()
     if (outcome === null) setSurface(currentInstallSurface())
+  }
+
+  /**
+   * Write the email opt-out. `nextChecked` is the checkbox state (true = email
+   * allowed) and the COLUMN is the negation — the polarity lives in
+   * src/lib/emailOptout.ts and in 0053's header, and this is the one place the
+   * two are translated.
+   *
+   * On success the state is set from what was just written rather than re-read
+   * (0031's measured read-after-write gap, see db.ts savePushSubscription). On
+   * failure NOTHING flips: the stored value is unchanged, so the control keeps
+   * rendering it and the error is stated in a sentence.
+   */
+  async function handleEmailOptoutChange(nextChecked: boolean) {
+    setSavingEmailOptout(true)
+    setEmailOptoutError(null)
+    const nextOptout = !nextChecked
+    try {
+      await updateEmailOptout(nextOptout)
+      setEmailOptout({ status: 'ready', value: nextOptout })
+    } catch (error) {
+      setEmailOptoutError(
+        `Couldn't save your email setting (${errorText(error)}). Nothing changed.`,
+      )
+    } finally {
+      setSavingEmailOptout(false)
+    }
   }
 
   const sendingConfigured = vapidPublicKey() !== ''
@@ -315,6 +399,60 @@ export function NotificationsSection() {
               </p>
             )}
           </div>
+        )}
+      </div>
+
+      {/* The EMAIL opt-out (migration 0053) — a SIBLING block to the push
+          status above, deliberately outside it: email is the fallback channel
+          for a parent who does not have push set up on this device, so the
+          control is meaningful (and writable) whatever the push state is. It
+          ALWAYS renders — no env var and no build flag gates it, because a flag
+          that failed closed would silently hide the preference (decision
+          recorded in 0053's header).
+
+          The rendered state and the note come from the pure
+          decideEmailOptoutControl; this component only renders and executes. */}
+      <div className="mt-4 border-t border-slate-100 pt-3" data-testid="email-optout">
+        <h2 className="text-base font-semibold text-slate-900">Email</h2>
+        <p className="mt-1 text-xs text-slate-500">
+          Email is the fallback for when you don&apos;t have notifications turned on for this
+          device. It can arrive a few minutes after the alert in the app — it is not instant.
+        </p>
+        <label
+          className={`mt-2 flex min-h-11 items-start gap-3 ${
+            emailControl.disabled ? 'cursor-not-allowed' : 'cursor-pointer'
+          }`}
+        >
+          <input
+            type="checkbox"
+            className="mt-2 h-5 w-5 shrink-0 accent-indigo-600 disabled:opacity-50"
+            data-testid="email-optout-toggle"
+            checked={emailControl.checked}
+            disabled={emailControl.disabled}
+            onChange={(event) => void handleEmailOptoutChange(event.target.checked)}
+          />
+          <span className="text-sm text-slate-700">
+            <span className="font-medium">Email me about my drop-ins</span>
+            <span className="block text-xs text-slate-500">
+              Sent to the email address on your account. Some kinds of alert may not go out by
+              email yet.
+            </span>
+          </span>
+        </label>
+        {/* The note is '' when there is nothing honest to add; it carries the
+            failed-read sentence (the default-on state, stated) when there is. */}
+        {emailControl.note === '' ? null : (
+          <p className="mt-2 text-xs text-slate-500" data-testid="email-optout-note">
+            {emailControl.note}
+          </p>
+        )}
+        {/* A failed WRITE (or the cause of a failed read): said plainly, next
+            to the control, which keeps rendering the stored value — nothing
+            was silently flipped. */}
+        {emailOptoutFailure === null ? null : (
+          <p className="mt-2 text-xs text-red-600" data-testid="email-optout-error">
+            {emailOptoutFailure}
+          </p>
         )}
       </div>
 

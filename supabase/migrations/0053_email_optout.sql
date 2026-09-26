@@ -1,0 +1,56 @@
+-- ===========================================================================
+-- (migration 0053): the channel-level EMAIL OPT-OUT — profiles.email_optout.
+-- ===========================================================================
+--
+-- WHAT THIS ADDS: ONE column — `profiles.email_optout boolean not null default
+-- false`. No table, no index, no policy, no backfill statement (a NOT NULL
+-- column with a default materialises `false` on every existing row), and no
+-- data is touched.
+--
+-- THE POLARITY, STATED PLAINLY — the pin that matters most, because getting it
+-- backwards silently unsubscribes families: this column is an OPT-OUT.
+-- `false` means EMAIL IS ALLOWED and `true` means the parent asked us to stop.
+-- The DEFAULT IS ON (`false`), so a profile that has never seen the toggle is
+-- emailable, and every row that predates this migration is emailable too.
+--
+-- WHY (the ask): notification email is the FALLBACK channel for a parent who
+-- does not have push set up on this device. Recording the preference is
+-- meaningful even before a sender is configured, so the /settings control ships
+-- unconditionally — no env var and no build flag gates it, because a flag that
+-- failed closed would silently hide the preference on any deployment that
+-- forgot to set it (decided; do not change).
+--
+-- THE CONSENT POSTURE (decided — do not "improve" without a product decision):
+-- the notification kinds (NOTIFICATION_KINDS in src/lib/push.ts — five today)
+-- are transactional in INTENT: they tell a parent something about a drop-in
+-- they are already part of (someone joined, a comment, it starts soon, it was
+-- cancelled or ended early). They are not marketing, so email is not gated on a
+-- double opt-in, a confirmation round trip, or a second consent column. The two
+-- opt-out surfaces are the /settings toggle that writes this column
+-- (src/components/NotificationsSection.tsx via db.updateEmailOptout) and the
+-- List-Unsubscribe header on the message itself — both are one tap, and the
+-- header works without a signed-in session.
+--
+-- NO NEW RLS POLICY, AND WHY (verified, not assumed): 0001's
+-- `profiles_update_own` (0001_create_profiles.sql:25) grants the owner UPDATE on
+-- EVERY column of `profiles` — stated explicitly at 0012_zip_radius.sql:682 —
+-- so this column is already writable by its owner and a per-column policy would
+-- be a documented no-op union of that policy: noise, plus one more thing to keep
+-- in sync. The READ needs no new policy either: 0001's
+-- `profiles_select_authenticated` already covers the column for a signed-in
+-- reader, the app's own read is scoped to the caller (`db.getEmailOptout`,
+-- `.eq('id', userId)`), and the sender reads exactly the one recipient row it is
+-- about to email.
+--
+-- Idempotent + re-paste-safe (the 2026-09-04 house lesson): `add column if not
+-- exists` IS the guard — a second run is a no-op with no error and no change,
+-- and no DO block is required because this statement has no companion DDL to
+-- keep in step (contrast 0045, where a DROP had to precede an ADD). ASSUMES only
+-- 0001, which the live project is far past.
+-- ===========================================================================
+
+alter table public.profiles add column if not exists email_optout boolean not null default false;
+
+-- The sender's intended read — one row, the recipient, nothing else:
+--   select email_optout from public.profiles where id = <profile_id>;
+-- `true` means DO NOT EMAIL this profile. `false` means email is allowed.
