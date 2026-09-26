@@ -89,8 +89,11 @@ import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
  *
  * V3 slice 4 (ticket 07): the card's age-hint line is REPLACED by the
  * going line (feedback #1 — "it'd be cool to see their little circles"):
- * "N going" + up to 3 pinger avatar circles (24px, -8px overlap) + a
- * "+N" overflow chip. The circles are the pingers' avatars (the feed
+ * up to 3 pinger avatar circles (24px, -12px overlap), then the "N going"
+ * label — plus a "+N" chip riding the stack when the cap drops faces. The
+ * circles LEAD and the count follows (V25 ticket 06 changed the order and the
+ * overlap, and nothing else about this line). The circles are the pingers'
+ * avatars (the feed
  * page's listPingsForPosts group, in the 0020 created_at order), with a
  * display-name initial on a slate-200 circle as the fallback; names
  * never surface as VISIBLE TEXT on cards (the guest list stays on the detail
@@ -153,6 +156,18 @@ import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
  *     The href is `feed.mapsHref` — the same seam the detail page uses — and a
  *     post with no address renders no row at all (the mapsHref null contract;
  *     the place line stays plain text).
+ *
+ * V25 ticket 06 (the attendee line): the going row's CIRCLES now LEAD and the
+ * count follows them ("◍◍◍ 3 going · 1 kid", never the old order), and the
+ * circles overlap by HALF the face (12px on the 24px avatar, `-ml-3`) instead
+ * of a third (the old `-ml-2`). The founder read the old row as confusing —
+ * the numbers named the faces before the faces appeared. The cap
+ * (`feed.GOING_CIRCLE_LIMIT`) and the label string (`feed.goingCountsLabel`)
+ * are UNCHANGED and are still the pure seam's; this ticket is ordering and
+ * stagger only. The count text is deliberately NOT rewritten to the reference
+ * app's single "61 attendees" number — the V6 decision comment at
+ * `feed.ts` stands (parents are how the app is used, kids are why it exists),
+ * and the copy question is raised with the founder rather than decided here.
  */
 export function DropInCard({
   playdate,
@@ -189,9 +204,9 @@ export function DropInCard({
   /**
    * V3 slice 4 (ticket 07): this post's pingers (the feed page's
    * listPingsForPosts group, in ping order). Rendered as the card's
-   * going line (buildGoingLine: "N going" + up to 3 circles + a "+N"
-   * chip), replacing the old age-hint line. Empty (BrowsePage; no pings)
-   * = no line.
+   * going line (buildGoingLine: up to 3 circles + a "+N" chip, then the
+   * "N going" label), replacing the old age-hint line. Empty (BrowsePage; no
+   * pings) = no line.
    */
   goingPings?: ReadonlyArray<GoingPinger>
   /**
@@ -258,7 +273,9 @@ export function DropInCard({
       : null
   // V3 slice 4 (ticket 07): the card's going line (null = hidden — no
   // pings yet). The page owns the data (the listPingsForPosts group); the
-  // card applies the pure buildGoingLine with the 3-circle cap.
+  // card applies the pure buildGoingLine with the 3-circle cap. V25 ticket
+  // 06 changes only how this line is LAID OUT (circles first, half-stagger):
+  // the cap and the label are still that seam's.
   const goingLine = buildGoingLine(
     goingPings.length,
     goingPings,
@@ -409,7 +426,13 @@ export function DropInCard({
             <div className="flex items-center gap-1.5">
               {goingLine !== null ? (
                 <>
-                  <span className="text-xs text-slate-600">{goingLine.label}</span>
+                  {/* V25 ticket 06: the CIRCLES lead and the count follows —
+                      "◍◍◍ 3 going · 1 kid", never the old "3 going · 1 kid ◍◍◍".
+                      The label named the numbers before the faces it was
+                      counting, which is what the founder read as confusing.
+                      These siblings render in DOM order, so the stack is simply
+                      FIRST here; the cap (GOING_CIRCLE_LIMIT) and the label
+                      string are still the pure buildGoingLine's. */}
                   <div className="flex items-center">
                     {goingLine.circles.map((circle, index) => {
                       // frontend-design pass slice 2: the circle is an identity
@@ -417,6 +440,11 @@ export function DropInCard({
                       // the name rides the avatar for assistive tech. `circles`
                       // is `goingPings.slice(0, limit)` (buildGoingLine), so the
                       // index aligns with the raw pingers passed in.
+                      //
+                      // V25 ticket 06: the overlap is HALF the 24px face
+                      // (`-ml-3` = 12px), not the old third (`-ml-2` = 8px), and
+                      // it applies from the SECOND circle on — so the first face
+                      // stays whole and the stack reads as a stack.
                       const pingerName = goingPings[index]?.displayName ?? ''
                       return circle.avatarUrl !== null && circle.avatarUrl !== '' ? (
                         <img
@@ -425,7 +453,7 @@ export function DropInCard({
                           alt={pingerName}
                           loading="lazy"
                           decoding="async"
-                          className={`h-6 w-6 rounded-full border-2 border-white object-cover${index > 0 ? ' -ml-2' : ''}`}
+                          className={`h-6 w-6 rounded-full border-2 border-white object-cover${index > 0 ? ' -ml-3' : ''}`}
                         />
                       ) : (
                         <span
@@ -433,16 +461,20 @@ export function DropInCard({
                           role={pingerName === '' ? undefined : 'img'}
                           aria-label={pingerName === '' ? undefined : pingerName}
                           aria-hidden={pingerName === '' ? true : undefined}
-                          className={`flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-xs font-semibold text-slate-600${index > 0 ? ' -ml-2' : ''}`}
+                          className={`flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-xs font-semibold text-slate-600${index > 0 ? ' -ml-3' : ''}`}
                         >
                           {circle.initial}
                         </span>
                       )
                     })}
                   </div>
+                  {/* The "+N" chip stays welded to the circle stack it counts
+                      the missing faces of (it is not a count of the post); the
+                      "N going · M kids" count is the row's LAST item. */}
                   {goingLine.overflow > 0 ? (
                     <span className="text-xs font-medium text-slate-600">+{goingLine.overflow}</span>
                   ) : null}
+                  <span className="text-xs text-slate-600">{goingLine.label}</span>
                 </>
               ) : (
                 <span className="text-xs text-slate-600">

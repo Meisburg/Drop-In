@@ -8,8 +8,15 @@
  * 0010 self-ping trigger allows it, the viewer is not the host). The
  * host's OWN feed card then shows the going line (the ticket pin: own
  * posts keep the line, the host sees who's coming — unlike the ping
- * toggle, which is hidden there): "1 going" + the pinger's circle. The
- * viewer has no avatar → the fallback-initial circle (the display name's
+ * toggle, which is hidden there): the pinger's circle, then "1 going". V25
+ * ticket 06 flipped that order — the circles LEAD and the count follows — and
+ * this spec asserts the ORDER on the rendered geometry, because it is the
+ * change a regression would silently undo. The ticket also took the overlap to
+ * HALF the 24px face (`-ml-3` = 12px, was `-ml-2` = 8px); that overlap only
+ * exists from the SECOND circle on and this fixture has exactly ONE pinger, so
+ * NOTHING here can measure it — the stagger is pinned by the source in
+ * `src/components/DropInCard.tsx` and by no automated assertion. The viewer has
+ * no avatar → the fallback-initial circle (the display name's
  * first char, upper — "E" for e2e-v-<epoch>; names never surface on
  * cards, the guest list stays on the detail page per ticket 05). One
  * pinger: the "+N" overflow chip is absent (it appears only past the
@@ -163,6 +170,25 @@ test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no 
   // One pinger: no "+N" overflow chip (the chip only appears past the
   // 3-circle cap — buildGoingLine's overflow math, unit-tested).
   await expect(hostCard.getByText(/^\+\d+$/)).toHaveCount(0)
+
+  // V25 ticket 06: the CIRCLES lead and the count follows — the row reads
+  // "◍ 1 going", never the old "1 going ◍". Pinned on the RENDERED geometry
+  // (not on a class name, which is what the ordering is made of): the
+  // fallback circle's left edge sits left of the "1 going" label. Both halves
+  // matter — an x comparison alone would also pass if the two were stacked
+  // vertically, so the SAME ROW is pinned by their vertical centres agreeing.
+  // This is non-vacuous: the pre-ticket order (label first) fails the x check.
+  const goingCircleBox = await hostCard.locator('span.bg-slate-200').boundingBox()
+  const goingLabelBox = await hostCard
+    .getByText('1 going', { exact: true })
+    .boundingBox()
+  if (goingCircleBox === null || goingLabelBox === null) {
+    throw new Error('the going row did not render a measurable circle AND label')
+  }
+  expect(goingCircleBox.x).toBeLessThan(goingLabelBox.x)
+  const circleMidY = goingCircleBox.y + goingCircleBox.height / 2
+  const labelMidY = goingLabelBox.y + goingLabelBox.height / 2
+  expect(Math.abs(circleMidY - labelMidY)).toBeLessThan(4)
 
   await viewerContext.close()
 })

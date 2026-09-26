@@ -1262,7 +1262,7 @@ export function rainBadgeLabel(probability: number | null): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// V3 slice 4 (ticket 07): the card's going line — "N going" + circles.
+// V3 slice 4 (ticket 07): the card's going line — circles + the "N going" count.
 
 /**
  * One pinger the card's going line shows (V3 slice 4, ticket 07): the
@@ -1299,9 +1299,11 @@ export const GOING_CIRCLE_LIMIT = 3
 
 /**
  * The card's going line (V3 slice 4, ticket 07; V6 adds the kids count):
- * "N going · M kids" + up to `limit` pinger circles (avatar, or the
- * display-name initial on a slate-200 circle when there is no avatar) + a "+N"
- * overflow chip. The kids count is a bare number by design (decision #2,
+ * the "N going · M kids" label, up to `limit` pinger circles (avatar, or the
+ * display-name initial on a slate-200 circle when there is no avatar), and a
+ * "+N" overflow chip. The seam returns PARTS, not an arrangement: which part
+ * renders first is the card's business (V25 ticket 06 draws the circles
+ * first). The kids count is a bare number by design (decision #2,
  * 2026-09-11) — names and ages only reach the host and the people going.
  *
  * Pure + unit-tested: the caller (the feed page) groups the pings by post

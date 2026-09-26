@@ -1633,7 +1633,7 @@ export async function listMyPingPostIds(): Promise<ReadonlySet<string>> {
 
 /**
  * One ping of a feed post, with the pinger's profile joined in (V3 slice
- * 4, ticket 07 — the card's going line: "N going" + the pinger circles).
+ * 4, ticket 07 — the card's going line: the pinger circles + "N going").
  * `avatarUrl` null = the card's initial-fallback circle; `displayName`
  * feeds that fallback only (names never surface on cards — the guest list
  * stays on the detail page per ticket 05).

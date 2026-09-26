@@ -145,9 +145,9 @@ const FEED_REFRESH_WINDOW_MS = 60_000
  * (db.listPingsForPosts: the going_pings rows + the pinger profiles
  * embed, the FK hint pinned, ordered by the 0020 created_at); the rows
  * are grouped by post and each card renders its group via the pure
- * buildGoingLine ("N going" + up to 3 circles + a "+N" chip), replacing
- * the old age-hint line. The host's own posts keep the line (the host
- * sees who's coming); the signed-out public view never renders a
+ * buildGoingLine (up to 3 circles + a "+N" chip + the "N going" label),
+ * replacing the old age-hint line. The host's own posts keep the line (the
+ * host sees who's coming); the signed-out public view never renders a
  * DropInCard, so no circles cross to it (the 0015 going-count pin stays
  * count-only there). A failed pings load (pre-0020-apply: the created_at
  * column is missing → 42703) degrades to no going lines, never a crash.
@@ -231,7 +231,7 @@ export function FeedPage() {
   // One in-flight card toggle per feed (the write path round-trips).
   const [pingBusyPostId, setPingBusyPostId] = useState<string | null>(null)
   // V3 slice 4 (ticket 07): the feed posts' "going" pings (the cards'
-  // going lines — "N going" + up to 3 avatar circles + a "+N" chip). The
+  // going lines — up to 3 avatar circles + a "+N" chip + "N going"). The
   // rows are grouped by post id (the card renders its own group via the
   // pure buildGoingLine). null = not settled (the cards show no line
   // yet); a failed load (pre-0020-apply: 42703 on the missing created_at
