@@ -43,6 +43,8 @@ import {
   placeFollowIdSet,
   planDirectoryList,
   PLACE_BROWSE_LIMIT,
+  PLACE_KIND_CHIP_KINDS,
+  PLACE_KIND_MISSING_NOTE,
   PLACE_KINDS,
   PLACE_SUGGESTION_LIMIT,
   resolveMapCoords,
@@ -2154,42 +2156,64 @@ describe('placeWebSearchHref (V23 slice 5)', () => {
 })
 
 describe('placeKindChips + kindEmptyCopy (V25 t03, the category chip row)', () => {
-  it('covers exactly PLACE_KINDS, in schema order, with placeKindLabel words', () => {
-    // The founder's categories are the app's OWN taxonomy: the row is derived
-    // from PLACE_KINDS and labelled from placeKindLabel, which is also what the
-    // filter sheet's chips and the list's group headings render. An extra chip
-    // would be a category the schema cannot express; a missing one would hide a
-    // real kind.
+  it('ships exactly PLACE_KIND_CHIP_KINDS — the eight kinds with rows — in PLACE_KINDS order', () => {
+    // The row's set is the app's own taxonomy MINUS the kinds a chip could only
+    // ever return empty for. The exact-set assertion is what makes that
+    // deliberate: a kind added to PLACE_KINDS must be consciously added here (or
+    // consciously withheld), and it cannot silently disappear from the row.
     const chips = placeKindChips([])
-    expect(chips.map((chip) => chip.kind)).toEqual([...PLACE_KINDS])
-    expect(chips.map((chip) => chip.label)).toEqual(PLACE_KINDS.map((kind) => placeKindLabel(kind)))
+    expect(chips.map((chip) => chip.kind)).toEqual([...PLACE_KIND_CHIP_KINDS])
+    expect(chips.length).toBe(8)
+    // The words come from placeKindLabel — the SAME words the filter sheet's chips
+    // and the list's group headings render. No second label map.
+    expect(chips.map((chip) => chip.label)).toEqual(
+      PLACE_KIND_CHIP_KINDS.map((kind) => placeKindLabel(kind)),
+    )
+    // In PLACE_KINDS order: filtering the taxonomy, never re-sorting it.
+    const order = PLACE_KINDS.filter((kind) => placeKindChips([]).some((c) => c.kind === kind))
+    expect(chips.map((chip) => chip.kind)).toEqual(order)
+  })
+
+  it('withholds the chips that could only ever return an empty list (park, trail) — while the KINDS stay real', () => {
+    // The founder's binding decision: no chip that can only ever come back empty.
+    // Live and in the 0029 seed, park and trail both hold 0 of 239 rows.
+    const kinds: readonly string[] = placeKindChips([]).map((chip) => chip.kind)
+    expect(kinds).not.toContain('park')
+    expect(kinds).not.toContain('trail')
+    // But the KIND is NOT deleted from the app: the taxonomy, its label, the
+    // filter sheet's chips (which iterate PLACE_KINDS) and the list's group
+    // headings all still carry them, so a seed row would surface immediately.
+    expect([...PLACE_KINDS]).toContain('park')
+    expect([...PLACE_KINDS]).toContain('trail')
+    expect(placeKindLabel('park')).toBe('Park')
+    expect(placeKindLabel('trail')).toBe('Trail')
   })
 
   it('flags a kind empty ONLY when the loaded directory really holds no row of it — and never while the read is unknown', () => {
     const rows = [
-      place({ name: 'Alki Beach Park', kind: 'park' }),
       place({ name: 'Green Lake Pool', kind: 'pool' }),
       place({ name: 'Madison Pool', kind: 'pool' }),
     ]
     const chips = placeKindChips(rows)
     const chip = (kind: PlaceKind) => chips.find((c) => c.kind === kind)
-    // Present kinds are never flagged…
-    expect(chip('park')?.empty).toBe(false)
+    // A kind with rows is never flagged…
     expect(chip('pool')?.empty).toBe(false)
-    // …and the seed's real zero-row kinds are: `park`/`trail` are legal kinds
-    // with 0 rows today (playground has 155), so the empty state, not the chip,
-    // is what has to be honest about them.
+    // …and a shipped kind that measures empty at runtime IS (the flag is a
+    // measurement of the loaded directory, not a claim about the seed), which is
+    // what lets the empty state name it instead of the generic copy.
     expect(chip('playground')?.empty).toBe(true)
-    expect(chip('trail')?.empty).toBe(true)
+    expect(chip('museum')?.empty).toBe(true)
     // `places === null` is UNKNOWN, not empty: claiming emptiness before the read
     // answers would put an honest-sounding lie in front of the parent.
     expect(placeKindChips(null).some((c) => c.empty)).toBe(false)
   })
 
-  it('names the chip’s own label in the honest zero-row copy', () => {
+  it('names the selected label in the honest zero-row copy — including a kind only the sheet can select', () => {
     expect(kindEmptyCopy('Park')).toBe('No “Park” places in the directory yet.')
     // The words travel from placeKindLabel, so the copy can never drift from the
-    // chip that opened the state.
+    // selection that opened the state. Every kind is covered, including the two
+    // the ROW withholds: the filter sheet still lists them, so their empty state
+    // is reachable and must be just as honest.
     for (const kind of PLACE_KINDS) {
       expect(kindEmptyCopy(placeKindLabel(kind))).toContain(placeKindLabel(kind))
     }
@@ -2206,6 +2230,17 @@ describe('placeKindChips + kindEmptyCopy (V25 t03, the category chip row)', () =
     for (const unsupported of ['food', 'zoo', 'cafe', 'coffee', 'restaurant']) {
       expect(kinds).not.toContain(unsupported)
     }
+  })
+
+  it('names those unshippable categories in RENDERED copy, not only in a comment', () => {
+    // The decision requires the withholding to be visible to the parent: the row
+    // carries one quiet line naming food, a zoo and a coffee shop nearby. Without
+    // this assertion the naming could be deleted and every other test would pass.
+    for (const named of ['food', 'zoo', 'coffee']) {
+      expect(PLACE_KIND_MISSING_NOTE.toLowerCase()).toContain(named)
+    }
+    // It is a statement, not an apology or a promise, and it is not a control.
+    expect(PLACE_KIND_MISSING_NOTE).toContain('We don’t have that data yet.')
   })
 })
 
@@ -2560,7 +2595,11 @@ describe('planDirectoryList (the directory list composition, moved out of PlaceD
     })
   })
 
-  it('kindReason names a selected chip ONLY when every selected kind has zero rows in the whole directory', () => {
+  it('kindReason names a selected kind ONLY when every selected kind has zero rows in the whole directory', () => {
+    // NOTE: the ROW no longer offers a park/trail chip (they could only ever
+    // return an empty list), but the filter SHEET still lists every kind — so
+    // these selections are reachable in the product, and the honest empty state
+    // must still fire for them.
     // No kind selected → never a kind reason, whatever else is true.
     expect(plan({ places: [] }).kindReason).toBeNull()
     // A kind with rows that simply needs no narrowing → null.
@@ -2577,11 +2616,14 @@ describe('planDirectoryList (the directory list composition, moved out of PlaceD
     ).toBeNull()
     // While the read is in flight the directory is UNKNOWN, never empty.
     expect(plan({ places: null, selectedKinds: new Set(['park']) }).kindReason).toBeNull()
-    // An empty directory that really loaded + a chip selected IS the honest case
-    // (and the one the seed's `park`/`trail` chips produce today).
+    // An empty directory that really loaded + a kind selected IS the honest case.
     const empty = plan({ places: [], selectedKinds: new Set(['trail']) })
     expect(empty.kindReason).toEqual({ kind: 'trail', label: 'Trail' })
     expect(empty.nothingMatches).toBe(true)
+    // A SHIPPED chip whose kind measures empty at runtime gets the same honest
+    // state — the rule is about the selection, not about a hardcoded list.
+    const goneKind = plan({ places: [PLAY_B], selectedKinds: new Set(['museum']) })
+    expect(goneKind.kindReason).toEqual({ kind: 'museum', label: 'Museum' })
   })
 
   it('kindReason refuses to name a chip when the emptiness has ANOTHER cause (every, not any)', () => {

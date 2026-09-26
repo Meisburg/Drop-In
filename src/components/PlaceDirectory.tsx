@@ -24,6 +24,7 @@ import {
   kindEmptyCopy,
   MAP_FOCUS_RADIUS_MILES,
   planDirectoryList,
+  PLACE_KIND_MISSING_NOTE,
   PLACE_KINDS,
   placeKindChips,
   placeLearnMoreLink,
@@ -249,10 +250,12 @@ export function PlaceDirectory({
     selectedKinds.size > 0 ? unplaced.filter((row) => selectedKinds.has(row.place.kind)) : unplaced
 
   /**
-   * V25 t03: THE CATEGORY CHIP ROW's content — `PLACE_KINDS`, labelled by
-   * `placeKindLabel` and flagged with whether the loaded directory has any row
-   * of that kind at all. The decision lives in the pure seam
-   * (`placeKindChips`, src/lib/places.ts); this component only renders it.
+   * V25 t03: THE CATEGORY CHIP ROW's content — one chip per
+   * `PLACE_KIND_CHIP_KINDS` (the EIGHT kinds the data actually has; `park` and
+   * `trail` are withheld because a chip for either could only ever return an
+   * empty list), labelled by `placeKindLabel` and flagged with whether the loaded
+   * directory has any row of that kind at all. The decision lives in the pure
+   * seam (`placeKindChips`, src/lib/places.ts); this component only renders it.
    *
    * The words and the glyphs are both PRE-EXISTING app vocabulary, not new ones:
    * `placeKindLabel` is what the list's group headings and the sheet's kind chips
@@ -529,21 +532,35 @@ export function PlaceDirectory({
             in the sheet, and clearing it there clears it here. There is no second
             filtering path: `planDirectoryList` narrows the list exactly as before.
 
-            `PLACE_KINDS` order is the sheet's order and the list's group order, so
-            the app has ONE taxonomy order. Each chip's word comes from
-            `placeKindLabel` and its glyph from `PLACE_KIND_ICONS` — both existing
-            vocabulary (the glyph map was built for the card photo slot; the row is
-            its first live consumer).
+            `PLACE_KIND_CHIP_KINDS` order is the sheet's order and the list's group
+            order (filtered — see below), so the app has ONE taxonomy order. Each
+            chip's word comes from `placeKindLabel` and its glyph from
+            `PLACE_KIND_ICONS` — both existing vocabulary (the glyph map was built
+            for the card photo slot; this row is its first live consumer).
 
-            THE ZERO-ROW KINDS ARE SHOWN, and the `empty` flag from the pure seam
-            is what keeps that honest: `park` and `trail` are real, legal kinds with
-            zero seeded rows today, so selecting one renders the kind empty state
-            ("No “Park” places in the directory yet.") rather than the generic "No
-            places match that.". `data-empty` publishes the same measured fact for
-            the specs. Kinds the DATA cannot express at all — `food`, `zoo` and the
-            founder's "coffee shop nearby" — have no chip here on purpose: they
-            would return nothing forever, not until the seed grows (ticket 03
-            carries them as an open data-source decision).
+            WHY THERE ARE ONLY EIGHT CHIPS. The founder's binding decision —
+            **no chip that can only ever return an empty list** — is newer than
+            ticket 03's "park (0 rows), declared honestly" concession, so `park`
+            and `trail` have NO chip here: both hold 0 rows in the live directory
+            and 0 in the 0029 seed, so a chip for either could only ever come back
+            empty. Their KIND values are untouched (the DB CHECK, `PLACE_KINDS`,
+            `placeKindLabel`, the filter sheet's own chips and the list's group
+            headings all still carry them) — only the row withholds the chips.
+
+            THE EMPTY STATE IS STILL LIVE, and the `empty` flag from the pure seam
+            is what keeps it honest: a shipped kind can measure empty at runtime,
+            and `park`/`trail` can still be selected in the filter SHEET (an
+            exhaustive list, unlike this discovery row). Either selection renders
+            the kind empty state ("No “Park” places in the directory yet.") rather
+            than the generic "No places match that."; `data-empty` publishes the
+            same measured fact for the specs.
+
+            AND THE CATEGORIES THE DATA CANNOT EXPRESS AT ALL — `food`, `zoo` and
+            the founder's "coffee shop nearby" — are named to the parent in ONE
+            quiet rendered line under the row (`PLACE_KIND_MISSING_NOTE`), because
+            the decision asks for the withholding to be in the COPY, not only the
+            commit: they would return nothing forever, so a chip would lie, and
+            silence would drop the wife's list from the product.
 
             A11Y: `aria-pressed` carries the toggle state (never colour alone),
             every chip is `min-h-11` (44px) and the row is a labelled `group`. The
@@ -596,6 +613,12 @@ export function PlaceDirectory({
               )
             })}
           </div>
+          {/* The categories this app cannot serve yet, named to the parent in one
+              quiet line (see the block comment above). Not a button: there is
+              nothing to tap, because the data does not exist. */}
+          <p data-testid="place-kind-missing-note" className="text-xs text-slate-500">
+            {PLACE_KIND_MISSING_NOTE}
+          </p>
         </div>
 
         {/* The date chips (annotation 15): Upcoming / Today / Tomorrow / Weekend.

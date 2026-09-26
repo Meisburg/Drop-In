@@ -138,13 +138,51 @@ export interface PlaceKindChip {
    * (`places === null` = UNKNOWN, the module's standing convention: never call a
    * category empty before measuring it).
    *
-   * It exists so the empty state can be HONEST: a chip whose kind is absent from
-   * the whole directory can only ever return nothing (today: `park` and `trail`,
-   * 0 seeded rows each, versus `playground`'s 155), and the parent deserves to be
-   * told that rather than shown a bare "No places match that."
+   * WHY IT SURVIVES THE REMOVAL of the two known-empty chips: `empty` is a
+   * MEASUREMENT of the loaded directory, not a claim about the seed. A shipped
+   * kind can go empty at runtime (a partial read, a removed seed row), and a
+   * zero-row kind can still be SELECTED from the filter sheet, which lists every
+   * kind. Either way the UI must be able to say "No “Trail” places in the
+   * directory yet." rather than a generic "No places match that.", and this flag
+   * is what lets `kindEmptyCopy` name the real cause.
    */
   empty: boolean
 }
+
+/**
+ * V25 t03 — THE KINDS THE CATEGORY ROW ACTUALLY OFFERS (eight).
+ *
+ * THE BINDING DECISION THIS ENCODES: **no chip that can only ever return an
+ * empty list.** That decision (founder, 2026-09-26, recorded in the V25 ledger)
+ * is NEWER than ticket 03's own concession that "`park` (0 rows) can ship,
+ * declared honestly in the empty state", so the decision wins. `park` and
+ * `trail` are therefore NOT in this row: against the live directory (239 rows,
+ * 2026-09-26) both hold ZERO rows, and the 0029 seed has zero rows for both too,
+ * so a chip for either could only ever come back empty.
+ *
+ * WHAT IS *NOT* DELETED: the `park`/`trail` KIND values stay in `PLACE_KINDS`, in
+ * `placeKindLabel` and in the database CHECK. They are real kinds — the filter
+ * sheet still lists them (`filter-kind-chip-<kind>`), because a filter sheet is
+ * an exhaustive list rather than a discovery row; the list's kind group headings
+ * still render them if a row ever appears; and `kindReason`/`kindEmptyCopy`
+ * still produce the honest "No “Park” places in the directory yet." for a
+ * selection made in the sheet. Only the CHIPS are withheld.
+ *
+ * ORDER is `PLACE_KINDS` order (filtered) — deliberately the same order the sheet
+ * and the list's group headings use, so there is one taxonomy order in the app
+ * rather than a second one to keep in sync. The sibling test pins the exact set,
+ * so a kind added to `PLACE_KINDS` cannot silently go missing here.
+ */
+export const PLACE_KIND_CHIP_KINDS = [
+  'playground',
+  'indoor_play',
+  'museum',
+  'pool',
+  'splash_pad',
+  'library',
+  'beach',
+  'other',
+] as const satisfies readonly PlaceKind[]
 
 /**
  * V25 t03 — THE CATEGORY CHIP ROW, AS ONE PURE DECISION.
@@ -155,61 +193,80 @@ export interface PlaceKindChip {
  * like coffee shop or museum or playground, you know what I mean?"*, and his
  * reference screenshot shows exactly that pattern (a horizontal icon-chip row
  * under the top controls). His decision of 2026-09-26 fixes the pattern: **a
- * horizontal scroll row of icon + label chips**, one chip per category.
+ * horizontal scroll row of icon + label chips**.
  *
- * WHAT SHIPS — `PLACE_KINDS`, the app's own taxonomy (the 0029 CHECK mirror):
- * park, playground, indoor_play, museum, pool, splash_pad, library, beach,
- * trail, other. The row is derived from that one constant and the words from
- * `placeKindLabel`, so the row can never disagree with the sheet's kind chips
- * (`filter-kind-chip-<kind>`) or with the list's group headings: they all read
- * the same two sources.
+ * WHAT SHIPS — the eight kinds of `PLACE_KIND_CHIP_KINDS` (see above for why
+ * `park` and `trail` are withheld). The words come from `placeKindLabel`, so the
+ * row can never disagree with the sheet's chips or with the list's group
+ * headings: they all read the same source.
  *
- * WHAT CANNOT SHIP, AND WHY IT IS NOT SILENTLY DROPPED. The wife's list names
- * food and a zoo, and the thing she cares about most is *"whether or not there's
- * a coffee shop nearby"*. The data has NO coffee/café, food, or zoo value at all
- * — MEASURED against the live directory at 239 rows (2026-09-26): `kind` is one
- * of the nine non-zero values below, a name/notes search for `coffee`, `cafe`,
- * `food` or `zoo` returns ZERO rows, and the single `caf` hit in the whole
- * database is PROSE inside one `indoor_play` row's notes ("LEGO play café in
- * Northeast Seattle"). The 0029 CHECK allows no `food`/`zoo` kind, and there is
- * no amenity dataset, no POI source, and no distance-to-a-third-party-place
- * concept anywhere in the app. A chip for any of those would return nothing
- * FOREVER, not until the seed grows, so none of them is built. They stay an
- * explicit open question on ticket 03 (the coffee case needs its own data-source
- * decision: source, licence, cost, attribution, rate limits) rather than a chip
- * that lies.
+ * WHAT CANNOT SHIP, AND WHY THE PARENT IS TOLD IN RENDERED COPY. The wife's list
+ * names food and a zoo, and the thing she cares about most is *"whether or not
+ * there's a coffee shop nearby"*. The data has NO coffee/café, food, or zoo value
+ * at all — MEASURED against the live directory at 239 rows (2026-09-26): `kind`
+ * takes one of the EIGHT non-zero values in the live distribution (playground
+ * 155 · splash_pad 30 · other 26 · pool 10 · beach 9 · library 6 · indoor_play 2
+ * · museum 1; `park` and `trail` are the two zeros), a name/notes search for
+ * `coffee`, `cafe`, `food` or `zoo` returns ZERO rows, and the single `caf` hit
+ * in the whole database is PROSE inside one `indoor_play` row's notes ("LEGO
+ * play café in Northeast Seattle"). The 0029 CHECK allows no `food`/`zoo` kind,
+ * and there is no amenity dataset, no POI source, and no
+ * distance-to-a-third-party-place concept anywhere in the app. A chip for any of
+ * those would return nothing FOREVER, not until the seed grows, so none of them
+ * is built — and rather than leaving the wife's categories in a code comment
+ * only, the row carries `PLACE_KIND_MISSING_NOTE`, which names those three
+ * categories to the parent in one quiet rendered line. The coffee case stays an
+ * explicit open question on ticket 03 and needs its own data-source decision
+ * (source, licence, cost, attribution, rate limits).
  *
- * THE ZERO-ROW KINDS DO SHIP, and the difference is not hair-splitting: `park`
- * and `trail` are real, legal kinds with a REAL predicate (`kind = 'park'`), so
- * a seed row makes the chip work with no code change; `food` and `zoo` would
- * need a migration first. The row answers the zero-row case the only honest way
- * (see `empty` above and `kindEmptyCopy` below) instead of hiding the category.
- *
- * THE "PARKS" GROUPING DECISION, stated so it is not implied: the wife's first
- * category is served by the `park` KIND chip, NOT by a hand-mapped
- * "outdoor play" group over several kinds. The measured reason it currently
- * filters to empty is a SEED TAXONOMY gap, not an absence of parks: against the
- * live directory, `kind = 'park'` has 0 rows while **111 seeded places have
- * "Park" in their name** — 90 of them `playground`, 13 `splash_pad`, 6 `beach`,
- * 2 `other` (Seattle's open data files its rows by facility type). So a parent
- * looking for Green Lake Park finds it under Playground, and the Park chip's
- * honest empty state is a true statement about the KIND, not about the city.
- * Whether those rows should be re-kind'd is a seed/data decision for the
- * founder — the chip must not fake a grouping to hide it.
- *
- * ORDER is `PLACE_KINDS` order — deliberately the same order the sheet and the
- * list's group headings use, so there is one taxonomy order in the app rather
- * than a second one to keep in sync.
+ * THE "PARKS" GROUPING, stated so it is not implied: there is no hand-mapped
+ * "outdoor play" group over several kinds. The wife's first category is served
+ * by the ordinary outdoor kinds the seed DOES have — `playground` (155),
+ * `splash_pad` (30) and `beach` (9) — while `kind = 'park'` holds 0 rows even
+ * though **111 seeded places have "Park" in their name** (90 playground, 13
+ * splash_pad, 6 beach, 2 other; Seattle's open data files its rows by facility
+ * type). So a parent looking for Green Lake Park finds it under Playground, and
+ * whether those rows should be re-kind'd to `park` is a seed/data decision for
+ * the founder. The row must not fake a grouping, and it must not offer a `Park`
+ * chip that can only come back empty — which is why the measurement matters: the
+ * gap is in the taxonomy, not in the city.
  */
 export function placeKindChips(places: readonly Place[] | null): PlaceKindChip[] {
-  const counts = new Map<string, number>()
-  for (const place of places ?? []) counts.set(place.kind, (counts.get(place.kind) ?? 0) + 1)
-  return PLACE_KINDS.map((kind) => ({
+  const counts = placeKindRowCounts(places)
+  return PLACE_KIND_CHIP_KINDS.map((kind) => ({
     kind,
     label: placeKindLabel(kind),
     empty: places !== null && (counts.get(kind) ?? 0) === 0,
   }))
 }
+
+/**
+ * How many rows of each kind the LOADED directory holds, keyed by `kind`.
+ *
+ * An empty map means the read has not answered (`places === null`), which is
+ * UNKNOWN — never "every kind is empty". Callers must check for null themselves;
+ * both callers here do (`placeKindChips`'s `empty` flag and `planDirectoryList`'s
+ * `kindReason`), because turning an unanswered read into "this category has no
+ * places" is exactly the honest-sounding lie this module's conventions forbid.
+ */
+function placeKindRowCounts(places: readonly Place[] | null): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>()
+  for (const place of places ?? []) counts.set(place.kind, (counts.get(place.kind) ?? 0) + 1)
+  return counts
+}
+
+/**
+ * V25 t03 — THE ONE QUIET LINE UNDER THE CHIP ROW that names the categories this
+ * app cannot serve yet: food, a zoo, and the coffee shop nearby.
+ *
+ * WHY IT EXISTS AS RENDERED COPY: the decision that withholds those chips also
+ * requires the withholding to be NAMED to the parent, not only in the commit or
+ * a source comment — otherwise the wife's list is silently dropped from the
+ * product. It is deliberately not a button (there is nothing to tap: the data
+ * does not exist) and not an apology; it is a statement of what exists.
+ */
+export const PLACE_KIND_MISSING_NOTE =
+  'Looking for food, a zoo, or a coffee shop nearby? We don’t have that data yet.'
 
 /**
  * The honest empty-state copy for a KIND filter that can only ever return
@@ -2163,21 +2220,33 @@ export function planDirectoryList(input: {
   const dateWindowReason = dateWindowIsTheReason ? dateWindow : null
   const nothingMatches = listRows.length === 0 && filteredUnplaced.length === 0
 
-  // V25 t03 — IS A KIND CHIP THE REASON? Only when every selected kind is absent
-  // from the WHOLE loaded directory (see DirectoryListPlan.kindReason), a search
-  // is not also narrowing, and nothing rendered. `empty` is false while the read
-  // is in flight, so this can never fire on an unknown directory.
+  // V25 t03 — IS A SELECTED KIND THE REASON? Only when EVERY selected kind is
+  // absent from the WHOLE loaded directory (see DirectoryListPlan.kindReason), a
+  // search is not also narrowing, and nothing rendered.
+  //
+  // IT IS DELIBERATELY NOT BUILT FROM `placeKindChips`: the row withholds the
+  // chips whose kinds hold no rows (park, trail), but the filter SHEET still
+  // offers every kind, so a parent can select one of them and must still get the
+  // honest, named empty state rather than the generic "No places match that.".
+  // The measurement is therefore over PLACE_KINDS ∩ selectedKinds.
   const kindReason = (() => {
     if (selectedKinds.size === 0) return null
     if (query.trim() !== '') return null
     if (listRows.length > 0 || filteredUnplaced.length > 0) return null
-    const absent = placeKindChips(places).filter((chip) => chip.empty)
-    if (absent.length === 0) return null
-    if (![...selectedKinds].every((kind) => absent.some((chip) => chip.kind === kind))) return null
+    // An unanswered read is UNKNOWN, never "every kind is empty".
+    if (places === null) return null
+    const counts = placeKindRowCounts(places)
+    // `absent.length === selectedKinds.size` IS the "every" — and it also rejects
+    // a selection that is not a real kind (the filter only produces real ones, but
+    // naming a bogus selection "Place" would be a lie).
+    const absent = PLACE_KINDS.filter(
+      (kind) => selectedKinds.has(kind) && (counts.get(kind) ?? 0) === 0,
+    )
+    if (absent.length !== selectedKinds.size) return null
     // PLACE_KINDS order decides WHICH absent kind is named, so the copy is stable
-    // when several empty chips are selected (park before trail).
-    const named = absent.find((chip) => selectedKinds.has(chip.kind))
-    return named === undefined ? null : { kind: named.kind, label: named.label }
+    // when several empty kinds are selected (park before trail).
+    const named = absent[0]
+    return named === undefined ? null : { kind: named, label: placeKindLabel(named) }
   })()
 
   return {

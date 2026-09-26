@@ -91,7 +91,12 @@ import {
   settleOnRoute,
   stepStartTimeOnce,
 } from './fixtures'
-import { BROWSE_LIST_LEAD_LIMIT, PLACE_KINDS, placeKindLabel } from '../src/lib/places'
+import {
+  BROWSE_LIST_LEAD_LIMIT,
+  PLACE_KIND_CHIP_KINDS,
+  PLACE_KINDS,
+  placeKindLabel,
+} from '../src/lib/places'
 
 /** A real seeded playground (Play Areas -> kind 'playground', 0029's seed). */
 const PLACE_NAME = 'Green Lake Park'
@@ -3068,12 +3073,18 @@ test('the category chips are one row over the real kinds, agree with the sheet, 
   const row = page.getByTestId('place-kind-chip-row')
   await expect(row).toBeVisible()
 
-  // --- 1. The taxonomy, exactly: one chip per PLACE_KINDS, no extras. ---------
+  // --- 1. The taxonomy, exactly: one chip per PLACE_KIND_CHIP_KINDS, no extras.
+  // The row ships the EIGHT kinds the data actually has. `park` and `trail` are
+  // real kinds with ZERO rows (live and in the 0029 seed), and the founder's
+  // binding decision is that a chip which can only ever return an empty list does
+  // not ship — so their absence is asserted here, together with their KIND values
+  // still being real (the sheet below still lists them).
   const chipButtons = row.getByRole('button')
-  await expect(chipButtons).toHaveCount(PLACE_KINDS.length)
-  for (const kind of PLACE_KINDS) {
+  await expect(chipButtons).toHaveCount(PLACE_KIND_CHIP_KINDS.length)
+  expect(PLACE_KIND_CHIP_KINDS.length, 'the row ships eight kinds with rows').toBe(8)
+  for (const kind of PLACE_KIND_CHIP_KINDS) {
     const chip = page.getByTestId(`place-kind-chip-${kind}`)
-    await expect(chip, `every PLACE_KINDS kind needs a chip`).toBeVisible()
+    await expect(chip, `every chip kind needs a chip`).toBeVisible()
     const label = placeKindLabel(kind)
     // The accessible name is the chip's word — the same word the list's group
     // headings and the filter sheet render.
@@ -3087,14 +3098,32 @@ test('the category chips are one row over the real kinds, agree with the sheet, 
     // State is never colour-only.
     expect(await chip.getAttribute('aria-pressed')).toBe('false')
   }
-  // No chip for a category the schema cannot express (the wife's food / zoo /
-  // coffee). These would return nothing FOREVER, unlike a zero-row real kind.
-  for (const unsupported of ['food', 'zoo', 'cafe', 'coffee']) {
-    await expect(page.getByTestId(`place-kind-chip-${unsupported}`)).toHaveCount(0)
+  // The withheld zero-row kinds, the categories the schema cannot express at all
+  // (the wife's food / zoo / coffee), and a restaurant to be sure.
+  for (const withheld of ['park', 'trail', 'food', 'zoo', 'cafe', 'coffee', 'restaurant']) {
+    await expect(page.getByTestId(`place-kind-chip-${withheld}`)).toHaveCount(0)
   }
+  // ...but the withheld KINDS did not leave the app: the filter sheet still lists
+  // them (it is an exhaustive filter list, not a discovery row).
+  await page.getByTestId('filter-sort-btn').click()
+  await expect(page.getByTestId('filter-kind-chip-park')).toBeVisible()
+  await expect(page.getByTestId('filter-kind-chip-trail')).toBeVisible()
+  await page.getByTestId('filter-apply-btn').click()
+  await expect(page.getByTestId('filter-sort-modal')).toHaveCount(0)
+
+  // --- 1b. The unshippable categories are NAMED IN RENDERED COPY. -------------
+  // The decision requires the withholding to be visible to the parent, not only
+  // in a commit or a source comment: one quiet line under the row, not a button.
+  const missingNote = page.getByTestId('place-kind-missing-note')
+  await expect(missingNote).toBeVisible()
+  for (const named of ['food', 'zoo', 'coffee']) {
+    await expect(missingNote).toContainText(named)
+  }
+  await expect(missingNote).toContainText('We don’t have that data yet.')
+  await expect(missingNote.getByRole('button')).toHaveCount(0)
 
   // --- 2. 44px targets + the row scrolls instead of wrapping. -----------------
-  for (const kind of PLACE_KINDS) {
+  for (const kind of PLACE_KIND_CHIP_KINDS) {
     const box = await page.getByTestId(`place-kind-chip-${kind}`).boundingBox()
     expect(box, `${kind} chip must be on screen`).not.toBeNull()
     expect(Math.round(box?.height ?? 0), `${kind} chip must be >= 44px tall`).toBeGreaterThanOrEqual(44)
@@ -3138,20 +3167,30 @@ test('the category chips are one row over the real kinds, agree with the sheet, 
     .poll(async () => page.locator('[data-testid="place-row"]').count())
     .toBeGreaterThan(libraryCount)
 
-  // --- 4. The zero-row kind is honest, and escapable. ------------------------
-  // Measured against the live directory: `park` is a legal kind with 0 of 239
-  // rows, so the chip publishes that fact and the empty state names the chip.
-  const park = page.getByTestId('place-kind-chip-park')
-  await expect(park).toHaveAttribute('data-empty', 'true')
-  await park.click()
+  // --- 4. A zero-row KIND selected in the SHEET is still honest, and escapable.
+  // `park` is a legal kind with 0 of 239 live rows. It is deliberately NOT a row
+  // chip (a chip that can only ever return an empty list does not ship), but the
+  // filter sheet — an exhaustive list — still offers it, so the parent can reach
+  // this state and the state must name the real cause rather than fall through to
+  // the generic copy.
+  await page.getByTestId('filter-sort-btn').click()
+  await page.getByTestId('filter-kind-chip-park').click()
+  await page.getByTestId('filter-apply-btn').click()
+  await expect(page.getByTestId('filter-sort-modal')).toHaveCount(0)
   const kindEmpty = page.getByTestId('empty-kind-state')
   await expect(kindEmpty).toBeVisible()
   await expect(kindEmpty).toContainText(placeKindLabel('park'))
   await expect(page.getByTestId('places-list')).toHaveCount(0)
   // Not the generic message: the KIND is the true cause and is named.
   await expect(page.getByText('No places match that.')).toHaveCount(0)
+  // The escape clears the kind selection — a row chip is not the way out, since
+  // the row has no park chip.
   await page.getByTestId('kind-empty-escape-all').click()
-  await expect(park).toHaveAttribute('aria-pressed', 'false')
+  await expect(kindEmpty).toHaveCount(0)
+  expect(
+    await page.locator('[data-testid^="place-kind-chip-"][aria-pressed="true"]').count(),
+    'the escape must clear the kind selection in the row too',
+  ).toBe(0)
   await expect(page.locator('[data-testid="place-row"]').first()).toBeVisible()
 
   // --- 5. 320px, and DARK: the row adds NO page overflow of its own. ---------
@@ -3227,7 +3266,7 @@ test('the category chips are one row over the real kinds, agree with the sheet, 
   // name in the source is not evidence that the media query applies.
   await page.emulateMedia({ reducedMotion: 'reduce' })
   const transitionProperty = await page
-    .getByTestId(`place-kind-chip-${PLACE_KINDS[0]}`)
+    .getByTestId(`place-kind-chip-${PLACE_KIND_CHIP_KINDS[0]}`)
     .evaluate((el) => getComputedStyle(el).transitionProperty)
   expect(transitionProperty, 'reduced motion must suppress the chip transition').toBe('none')
 })
