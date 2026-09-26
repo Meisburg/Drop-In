@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { nearestCardIndex, nextCardIndex, scrollBehaviorFor } from './mapStrip'
+import {
+  clampCardIndex,
+  MAP_STRIP_CARD_LIMIT,
+  nearestCardIndex,
+  nextCardIndex,
+  scrollBehaviorFor,
+  splitStripRows,
+} from './mapStrip'
 
 /**
  * The map view's card-strip seams (V24 slice 10). Everything here is pure: no
@@ -98,5 +105,69 @@ describe('scrollBehaviorFor — the reduced-motion interpretation', () => {
 
   it('jumps instantly when the viewer HAS asked for reduced motion', () => {
     expect(scrollBehaviorFor(true)).toBe('auto')
+  })
+})
+
+describe('clampCardIndex — a stored index against a shrunken set', () => {
+  it('leaves an in-range index alone', () => {
+    expect(clampCardIndex(0, 3)).toBe(0)
+    expect(clampCardIndex(2, 3)).toBe(2)
+  })
+
+  it('pulls an index past the end back onto the last card', () => {
+    // The defect this pins: narrowing the search while the map view is open left
+    // `focusedIndex` at 5 over a two-card set, so the strip focused NOTHING and
+    // the map kept a pin that no card named.
+    expect(clampCardIndex(5, 2)).toBe(1)
+  })
+
+  it('pulls a negative index back onto the first card', () => {
+    expect(clampCardIndex(-3, 4)).toBe(0)
+  })
+
+  it('answers 0 for an empty set rather than a negative index', () => {
+    expect(clampCardIndex(2, 0)).toBe(0)
+  })
+})
+
+describe('splitStripRows — the strip and the list partition the rows', () => {
+  it('caps the strip at the documented limit', () => {
+    const rows = Array.from({ length: MAP_STRIP_CARD_LIMIT + 5 }, (_, i) => i)
+    expect(splitStripRows(rows, rows.length).cards).toHaveLength(MAP_STRIP_CARD_LIMIT)
+  })
+
+  it('leaves an under-cap set whole, with nothing in the rest list', () => {
+    // The map view for any ordinary filtered set: every row is on the map, so
+    // the linear list is empty and a screen reader hears each name ONCE.
+    const rows = ['a', 'b', 'c']
+    expect(splitStripRows(rows, 3)).toEqual({ cards: ['a', 'b', 'c'], rest: [] })
+  })
+
+  it('pairs the overflow with the unplaceable rows, losing none of either', () => {
+    // Four rows, the last one unplaceable, cap of two (simulated by a tiny
+    // placeable count would not exercise the cap, so this asserts the SHAPE the
+    // callers depend on instead).
+    const rows = ['near', 'far', 'further', 'unknown']
+    const split = splitStripRows(rows, 3)
+    expect(split.cards).toEqual(['near', 'far', 'further'])
+    expect(split.rest).toEqual(['unknown'])
+  })
+
+  it('partitions exactly: cards + rest is the input, with no repeats', () => {
+    const rows = ['a', 'b', 'c', 'd', 'e']
+    const { cards, rest } = splitStripRows(rows, 3)
+    expect([...cards, ...rest].sort()).toEqual([...rows].sort())
+    expect(new Set([...cards, ...rest]).size).toBe(rows.length)
+  })
+
+  it('clamps a placeable count larger than the array instead of losing rows', () => {
+    // A caller bug (or a set that shrank between two reads) must not empty the
+    // map: every row still lands somewhere.
+    const rows = ['a', 'b']
+    expect(splitStripRows(rows, 9)).toEqual({ cards: ['a', 'b'], rest: [] })
+  })
+
+  it('survives an empty set', () => {
+    expect(splitStripRows([], 0)).toEqual({ cards: [], rest: [] })
   })
 })

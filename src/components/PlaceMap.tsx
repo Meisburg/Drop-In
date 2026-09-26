@@ -295,6 +295,17 @@ export function PlacesMap({
   const markers = entries.map((e) => e.coords)
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
+  /**
+   * V24 slice 10: the markers this effect BUILT, in `entries` order, so the
+   * focused one can be marked once the group is actually on the map.
+   *
+   * WHY AFTER `addTo` AND NOT AT CONSTRUCTION, MEASURED: `L.circleMarker(...)`
+   * creates an SVG path, but Leaflet does not attach it to the pane until the
+   * layer is added — `marker.getElement()` at construction time yields nothing,
+   * so the focused pin's attribute was never written and no element carried it.
+   * After `addTo`, `getElement()` is the live `<path>`.
+   */
+  const markerElsRef = useRef<Array<SVGElement | null>>([])
   // V15 t02: anchor on the home pin when provided (the ticket's AC1), else the
   // first place marker (existing behavior). Read through a ref so the mount
   // effect's dependency list stays empty.
@@ -435,14 +446,35 @@ export function PlacesMap({
   useEffect(() => {
     const map = mapRef.current
     if (map === null || markers.length === 0) return
+    markerElsRef.current = []
+    /**
+     * V24 slice 10 — ONE PLACE TO STYLE A PIN, and the focus flag is part of the
+     * marker's construction rather than a second pass over it.
+     *
+     * WHY IT IS INLINED HERE RATHER THAN A SEPARATE EFFECT: a separate effect
+     * that re-styled a marker afterwards would be a SECOND writer of the same SVG
+     * path, and Leaflet repaints paths on its own schedule (a zoom, an opacity
+     * change). Two writers for one element is the defect class this file keeps
+     * recording, so the focus style is applied where the marker is built and the
+     * layer is rebuilt when the focus changes.
+     *
+     * WHAT THE FOCUSED PIN LOOKS LIKE: a visibly larger dot in a darker indigo
+     * (radius 12 vs 8, fill opacity 0.85 vs 0.35) with a heavier stroke — bigger
+     * AND heavier AND a different colour, so the distinction does not rest on
+     * colour alone. It is still an ordinary `circleMarker`: it keeps the tooltip,
+     * the click → popup handler and every other behaviour the plain pins have,
+     * because the focused card must not become the only way to reach the place it
+     * names.
+     */
     const group = L.layerGroup(
       entries.map(({ place, coords }) => {
+        const focused = place.id === focusPlaceId
         const marker = L.circleMarker([coords.lat, coords.lng], {
-          radius: 8,
-          color: '#4f46e5',
-          weight: 2,
-          fillColor: '#4f46e5',
-          fillOpacity: 0.35,
+          radius: focused ? 12 : 8,
+          color: focused ? '#312e81' : '#4f46e5',
+          weight: focused ? 3 : 2,
+          fillColor: focused ? '#312e81' : '#4f46e5',
+          fillOpacity: focused ? 0.85 : 0.35,
         })
         /**
          * V20 t03 — THE BUBBLE ITSELF EXPANDS, AND STAYS.
@@ -640,6 +672,39 @@ export function PlacesMap({
         return marker
       }),
     ).addTo(map)
+    /**
+     * V24 slice 10 — THE FOCUSED PIN IS MARKED HERE, on the element Leaflet has
+     * actually attached. This is the second half of the AC that the focused
+     * card's pin is VISUALLY DISTINGUISHED among many pins.
+     *
+     * The visual distinction itself is set at construction, through Leaflet's own
+     * path options (radius 12 vs 8, darker indigo, heavier stroke, higher fill
+     * opacity), so it is what the pane draws and it survives a redraw. What is
+     * set here is the OBSERVABLE — `data-focused-marker` naming the place, plus a
+     * class — because both need the element that exists in the DOM.
+     *
+     * MEASURED before relying on it: Leaflet keeps the classes it is given, and a
+     * `setStyle` does not strip an attribute off the path, so both are durable
+     * facts about this marker rather than values that evaporate on the next
+     * repaint.
+     *
+     * EXACTLY ONE MARKER CAN CARRY THE ATTRIBUTE: this effect rebuilds the group
+     * when the focus changes (see its dependency list), so the previously marked
+     * element leaves with the old group.
+     *
+     * `getLayers()` preserves insertion order, so layer N is `entries[N]` — the
+     * pairing is positional rather than a second lookup by coordinate.
+     */
+    const layers = group.getLayers() as L.CircleMarker[]
+    layers.forEach((layer, index) => {
+      const el = layer.getElement() as SVGElement | null
+      markerElsRef.current[index] = el
+      if (el === null) return
+      const entry = entries[index]
+      if (entry === undefined || entry.place.id !== focusPlaceId) return
+      el.setAttribute('data-focused-marker', entry.place.id)
+      el.classList.add('place-marker-focused')
+    })
     // V16 t07 item 2 — THE CAMERA IS NOT MOVED HERE ANY MORE.
     //
     // This effect used to fitBounds over every place PLUS the home pin, on the
@@ -671,7 +736,12 @@ export function PlacesMap({
     return () => {
       group.remove()
     }
-  }, [markersKey])
+    // V24 slice 10: `focusPlaceId` IS a dependency, because the focus flag is
+    // read at marker-construction time (see the block at the top of this
+    // effect). The group is torn down and rebuilt on a focus change, which is
+    // also what clears the previous `data-focused-marker` attribute: the old
+    // element leaves with the group, so at most one marker ever carries it.
+  }, [markersKey, focusPlaceId])
 
   // V15 t02 / V16 t07 item 2: THE framing authority. When the caller sets a
   // radiusCircle — geocoded center, else the home pin at the viewer's radius —
@@ -696,6 +766,43 @@ export function PlacesMap({
     onZoomEnd()
     return () => {
       map.off('zoomend', onZoomEnd)
+    }
+  }, [])
+
+  /**
+   * V24 slice 10 — THE CAMERA'S OWN REPORT, and the difference between "the app
+   * decided to focus this place" and "the map actually moved there".
+   *
+   * WHY THIS EXISTS. `data-focused-place` (below) is the caller's STATE: it is
+   * written from the prop, so it would keep saying "focused" even if the
+   * recentring `setView` call were deleted entirely — a spec asserting only that
+   * attribute would pass for a camera that never moved, which is a test that
+   * cannot fail for the defect it exists to catch. This slice's first review
+   * caught exactly that.
+   *
+   * So the live centre is published too, from Leaflet's OWN `getCenter()` on
+   * `moveend` — the map's report of where it is, not the app's intent. A spec
+   * that reads it can fail for a camera that did not move, and the focused
+   * marker's position in the pane is the same fact measured a second way.
+   *
+   * `moveend` (not `move`) for the same reason `zoomend` is used above: it fires
+   * once per settled camera rather than on every animation frame, so this does
+   * not put a React render inside the pan's frame loop. Rounded to 5 decimals
+   * (~1 m, far below the map's own precision) so the attribute is a stable
+   * string and the equality assertion is exact rather than tolerance-shaped.
+   */
+  const [mapCenter, setMapCenter] = useState<string>('')
+  useEffect(() => {
+    const map = mapRef.current
+    if (map === null) return
+    const report = () => {
+      const center = map.getCenter()
+      setMapCenter(`${center.lat.toFixed(5)},${center.lng.toFixed(5)}`)
+    }
+    map.on('moveend', report)
+    report()
+    return () => {
+      map.off('moveend', report)
     }
   }, [])
 
@@ -990,6 +1097,16 @@ export function PlacesMap({
         // would call a broken preview healthy. Zoom falling while the radius
         // grows is what "zoomed out to show more area" means, measured.
         data-map-zoom={zoom}
+        /**
+         * V24 slice 10 — THE CAMERA'S LIVE CENTRE, `"lat,lng"` at 5 decimals.
+         *
+         * This is the observable that CAN fail for a camera that did not move:
+         * it is written from Leaflet's `getCenter()` on `moveend`, not from a
+         * prop. The spec asserts it changes to the focused place when the focus
+         * moves, which a deleted `setView` breaks — see the doc comment on the
+         * state above.
+         */
+        data-map-center={mapCenter}
         /**
          * V24 slice 10 — `data-focused-place` IS THE OBSERVABLE RECENTRE, and it
          * is deliberately on the container rather than asserted from the map's

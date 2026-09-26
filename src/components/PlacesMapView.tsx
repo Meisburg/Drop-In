@@ -5,7 +5,7 @@ import {
   formatDistanceLabel,
   type ZipCoords,
 } from '../lib/feed'
-import { nearestCardIndex, nextCardIndex } from '../lib/mapStrip'
+import { clampCardIndex, nearestCardIndex, nextCardIndex, splitStripRows } from '../lib/mapStrip'
 import { placeIndoorLabel, placeKindLabel, placePath } from '../lib/places'
 import type { PlaceListRow } from '../lib/places'
 import { reviewRatingLine } from '../lib/reviews'
@@ -109,6 +109,14 @@ export function PlacesMapView({
   }, [focusBehavior])
 
   /**
+   * WHERE THE STRIP STOPS, as a tested rule rather than a slice in this file.
+   * `stripRows` is what the strip renders; `restRows` is everything else — the
+   * rows past the cap and the rows the map cannot place — and it is rendered as
+   * the linear list below, so no row is in two places and none is nowhere.
+   */
+  const { cards: stripRows, rest: restRows } = splitStripRows(allRows, rows.length)
+
+  /**
    * A NEW RESULT SET RESTARTS THE STRIP, and this is a correctness rule rather
    * than a nicety. `focusedIndex` is an INDEX, so it outlives the rows it
    * indexes: narrowing the search while the map is open could leave index 5
@@ -117,7 +125,7 @@ export function PlacesMapView({
    * of the new set. The identity is the row ids, not the array — the parent
    * hands a fresh array on every render.
    */
-  const rowsKey = rows.map((row) => row.place.id).join('|')
+  const rowsKey = stripRows.map((row) => row.place.id).join('|')
   const lastRowsKeyRef = useRef(rowsKey)
   useEffect(() => {
     if (lastRowsKeyRef.current === rowsKey) return
@@ -127,8 +135,20 @@ export function PlacesMapView({
     if (strip !== null) strip.scrollTo({ left: 0, behavior: behaviorRef.current })
   }, [rowsKey])
 
-  const count = rows.length
-  const focusedRow = rows.length === 0 ? null : (rows[Math.min(focusedIndex, count - 1)] ?? null)
+  const count = stripRows.length
+  /**
+   * The index is normalised through `clampCardIndex` (lib, with its own test)
+   * rather than being trusted, and rather than being clamped inline.
+   *
+   * `focusedIndex` is STATE and outlives the array it indexes: a search that
+   * narrows the set under an open map view can leave it past the end, and an
+   * inline `Math.min` here would be a rule living in a `.tsx` — the thing
+   * `docs/agents/code-structure.md` forbids and this slice's first review caught.
+   * `rowsKey`'s effect above resets the index when the set changes; this clamp
+   * is the second half, covering the render BEFORE that effect commits.
+   */
+  const safeIndex = clampCardIndex(focusedIndex, count)
+  const focusedRow = count === 0 ? null : (stripRows[safeIndex] ?? null)
   const focusedPlaceId = focusedRow === null ? null : focusedRow.place.id
 
   /**
@@ -213,7 +233,7 @@ export function PlacesMapView({
         </div>
         <PlacesMap
           className="h-[38dvh] min-h-[200px]"
-          places={rows.map((row) => row.place)}
+          places={stripRows.map((row) => row.place)}
           zipCoords={zipCoords}
           homePin={homePin}
           focusPlaceId={focusedPlaceId}
@@ -236,7 +256,7 @@ export function PlacesMapView({
         data-testid="places-map-strip"
         className="flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-2"
       >
-        {rows.map((row, index) => {
+        {stripRows.map((row, index) => {
           const ratingLine =
             row.ratingSummary !== null && row.ratingSummary.hasReviews
               ? reviewRatingLine(
@@ -317,13 +337,18 @@ export function PlacesMapView({
         </button>
       </div>
 
-      {/* The rows the map could not place (and, for a screen-reader user, the
-          same directory in a linear form). The strip is a visual,
-          horizontally-scrolling surface; this list is what keeps the map view
-          from being a sighted-only view of the directory, and it is why dropping
-          unplaceable rows from the STRIP loses nothing. */}
+      {/* THE ROWS THE STRIP DOES NOT CARRY, and ONLY those: the placeable rows
+          past the strip's cap, plus every row the map cannot place (no
+          coordinates means no pin, so no card).
+
+          WHY IT IS A SUBTRACTION AND NOT A COPY. `splitStripRows` partitions the
+          caller's rows into `cards` and `rest` in one place, so the two lists
+          cannot overlap: a place is either on the map or in this list. This
+          slice's first pass listed the WHOLE directory here instead, which made a
+          screen reader hear every name twice — once from the strip's card link
+          and once from this list. */}
       <ul data-testid="places-map-list" className="sr-only">
-        {allRows.map((row) => (
+        {restRows.map((row) => (
           <li key={row.place.id} className="text-sm">
             <Link to={placePath(row.place.id)} className="text-indigo-700 underline">
               {row.place.name}

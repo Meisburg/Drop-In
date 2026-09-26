@@ -7,16 +7,25 @@
  *
  * WHY THE ASSERTIONS LOOK THE WAY THEY DO:
  *
- *  - THE RECENTRE IS PROVEN BY STATE, NOT PIXELS. The map container carries
- *    `data-focused-place="<place id>"` and the focused card carries
- *    `aria-current="true"`. A pixel diff or a "did this tile load" check is a
- *    flake: both depend on OpenStreetMap being reachable and on easing having
- *    finished. The attribute is the app's own decision, and the pan is that
- *    decision's rendering.
+ *  - THE RECENTRE IS PROVEN BY THE CAMERA'S OWN REPORT, IN TWO WAYS, and NOT by
+ *    pixels or tiles. `data-focused-place` alone would be STATE — it is written
+ *    from the caller's prop, so it would still say "focused" if the recentring
+ *    call were deleted, and a spec asserting only that could not fail for the
+ *    defect it exists to catch. So the recentre is asserted twice more:
+ *      (a) `data-map-center` is Leaflet's own `getCenter()` on `moveend` — the
+ *          map's report of where it is, written by the camera, not by the prop;
+ *      (b) the FOCUSED MARKER's own position converges on the map pane's centre,
+ *          measured with `getBoundingClientRect` on the two elements. A camera
+ *          that did not move leaves the pin where it was.
+ *    Neither of those reads a tile or a colour, so an unreachable OpenStreetMap
+ *    cannot fail this spec; both read geometry the browser has already laid out.
  *
- *  - THE SWIPE IS A REAL SCROLL. The strip is CSS `scroll-snap`; the spec sets
- *    `scrollLeft` on the real element (what a thumb does) rather than calling a
- *    handler, so the rAF-throttled scroll → index mapping is what is under test.
+ *  - THE SWIPE SCROLLS THE REAL STRIP. The strip is CSS `scroll-snap`, so the
+ *    spec scrolls the real element and lets the snap settle, then asserts the
+ *    focus moved. It does NOT assign `scrollLeft`: MEASURED, an assignment is
+ *    not honoured under `scroll-snap-type: x mandatory` — the container snapped
+ *    straight back — so an assertion built on it would be testing the fudge
+ *    rather than the app.
  *
  *  - AT MOST ONE MAP IS MOUNTED. Every existing spec locates the directory's map
  *    as `places-map`, so the map view's own map is `places-map-view-map` and the
@@ -26,8 +35,10 @@
  *    the suite under Playwright's strict mode.
  *
  *  - ONE SPEC DRIVES THE STRIP WITH THE KEYBOARD ONLY. Tapping is not an input
- *    method for everyone, so the arrow keys and the explicit Previous/Next
- *    controls are covered as first-class paths, not as an afterthought.
+ *    method for everyone, so the strip is REACHED BY REAL TAB PRESSES from the
+ *    control that opened the map view, and the arrow keys and the explicit
+ *    Previous/Next controls are covered as first-class paths rather than as an
+ *    afterthought.
  *
  * Cleanup: NONE, and that is deliberate — this spec creates no rows and no
  * accounts. It reads the seeded directory through the marker's own storage state
@@ -61,6 +72,34 @@ async function openMapView(page: Page): Promise<void> {
   await page.getByTestId('places-search').fill('park')
   await expect(page.getByTestId('place-row').first()).toBeVisible()
   await page.getByTestId('places-see-map').click()
+  await expect(page.getByTestId('places-map-view-map')).toBeVisible()
+  await expect(page.getByTestId('places-map-strip')).toBeVisible()
+}
+
+/**
+ * The same entry as `openMapView`, but reached WITHOUT a pointer: the "See map"
+ * control is given the focus (the keyboard user's position after arriving at it)
+ * and activated with Enter, which is the real activation a keyboard user
+ * performs.
+ *
+ * The focus-placement call is the one test-API step, and it is deliberate: the
+ * spec's job is to prove the TAB PATH FROM THAT CONTROL INTO THE STRIP, not to
+ * re-prove that a page can be traversed from the top. The traversal itself is
+ * real key events (see the keyboard spec).
+ */
+async function openMapViewByKeyboardEntry(page: Page): Promise<void> {
+  await page.goto('/browse')
+  await settleOnRoute(page, '/browse')
+  await setAnyDistance(page)
+  await page.getByTestId('places-search').fill('park')
+  await expect(page.getByTestId('place-row').first()).toBeVisible()
+  const seeMap = page.getByTestId('places-see-map')
+  await seeMap.focus()
+  expect(
+    await page.evaluate(() => document.activeElement?.getAttribute('data-testid')),
+    'the entry control is focused before it is activated',
+  ).toBe('places-see-map')
+  await page.keyboard.press('Enter')
   await expect(page.getByTestId('places-map-view-map')).toBeVisible()
   await expect(page.getByTestId('places-map-strip')).toBeVisible()
 }
@@ -99,9 +138,112 @@ async function placeIds(scope: Locator): Promise<string[]> {
 /**
  * The map's declared focused place, read from the map view's OWN container (the
  * band's `places-map` is not mounted in this view — see the file header).
+ *
+ * This is STATE, not a camera report — see `mapCenter` and `focusedPinOffset`
+ * below for the two observables that can fail when the camera does not move.
  */
 function focusedPlaceId(page: Page): Promise<string | null> {
   return page.getByTestId('places-map-view-map').getAttribute('data-focused-place')
+}
+
+/**
+ * The radius Leaflet actually DREW into a marker's SVG path, read from the arc
+ * command (`d="M370,136a12,12 …"` → 12).
+ *
+ * WHY THE `d` ATTRIBUTE AND NOT A BOX: a `circleMarker` has no `r` attribute, and
+ * Leaflet draws an off-pane marker as a zero-size path (`d="M0 0"`) — so a box is
+ * only evidence when the marker happens to be in view. The arc radius is the
+ * geometry Leaflet computed for the marker's own options, so it is readable for
+ * a culled marker too and it is the value the visual distinction is made of.
+ * `null` when the path is culled (no arc) or the marker is not rendered yet.
+ */
+function drawnMarkerRadius(locator: Locator): Promise<number | null> {
+  return locator.evaluate((el) => {
+    const match = /a(\d+(?:\.\d+)?),/.exec(el.getAttribute('d') ?? '')
+    return match === null ? null : Number(match[1])
+  })
+}
+
+/**
+ * The drawn radius of the first PLAIN place pin that Leaflet has actually drawn.
+ *
+ * A plain pin may be off-pane (culled to `d="M0 0"`), in which case its radius is
+ * null and the next candidate is tried. `null` when no plain pin is drawn at all,
+ * which the caller treats as "the component's own base radius is 8" — the value
+ * this slice's contrast is defined against.
+ */
+async function plainPinDrawnRadius(page: Page): Promise<number | null> {
+  const pins = page.locator('.leaflet-interactive[fill="#4f46e5"]')
+  const count = await pins.count()
+  for (let index = 0; index < count; index += 1) {
+    const radius = await drawnMarkerRadius(pins.nth(index))
+    if (radius !== null) return radius
+  }
+  return null
+}
+
+/**
+ * The map camera's OWN report of where it is: `"lat,lng"`, written by Leaflet's
+ * `getCenter()` on `moveend`. Unlike `data-focused-place` this value comes from
+ * the map, so an assertion on it fails if the recentring call is removed.
+ */
+function mapCenter(page: Page): Promise<string | null> {
+  return page.getByTestId('places-map-view-map').getAttribute('data-map-center')
+}
+
+/**
+ * How far the FOCUSED MARKER's centre is from the map pane's centre, in pixels —
+ * the geometric form of "the map is centred on the focused pin".
+ *
+ * Read in ONE `evaluate` so both rects come from the same layout pass. `null`
+ * when no marker carries `data-focused-marker` (the defect this helper exists to
+ * catch) or the map pane is not there.
+ */
+function focusedPinOffset(page: Page): Promise<{ dx: number; dy: number } | null> {
+  return page.evaluate(() => {
+    const pin = document.querySelector('[data-focused-marker]')
+    const map = document.querySelector('[data-testid="places-map-view-map"]')
+    if (pin === null || map === null) return null
+    const pinBox = pin.getBoundingClientRect()
+    const mapBox = map.getBoundingClientRect()
+    return {
+      dx: Math.abs(pinBox.x + pinBox.width / 2 - (mapBox.x + mapBox.width / 2)),
+      dy: Math.abs(pinBox.y + pinBox.height / 2 - (mapBox.y + mapBox.height / 2)),
+    }
+  })
+}
+
+/**
+ * The pixel tolerance on "the pin is at the centre of the pane".
+ *
+ * MEASURED on the live dev server (1280x720, then 390x844): the settled offset
+ * after a focus move was `{dx: 0, dy: 0.2}` — sub-pixel, because Leaflet centres
+ * the marker on the lat/lng it was given and the fractional zoom (`zoomSnap: 0`)
+ * does not shift the anchor. The tolerance is a layout-rounding allowance, not a
+ * fudge factor: 12px is under 2% of the pane's shorter side, far tighter than
+ * "the camera did not move" (the un-panned offset was `{dx: 382, dy: 136}`).
+ */
+const FOCUSED_PIN_TOLERANCE_PX = 12
+
+/**
+ * Assert the pin is centred IN THE PANE, and that it got there from somewhere
+ * else — i.e. that this is a recentre and not a coincidence of the mount view.
+ */
+async function expectPinCentredOnMap(page: Page): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const offset = await focusedPinOffset(page)
+        if (offset === null) return null
+        return offset.dx <= FOCUSED_PIN_TOLERANCE_PX && offset.dy <= FOCUSED_PIN_TOLERANCE_PX
+      },
+      {
+        message:
+          "the focused pin's centre converges on the map pane's centre " +
+          `(within ${FOCUSED_PIN_TOLERANCE_PX}px) — i.e. the camera really moved`,
+      },
+    )
+    .toBe(true)
 }
 
 test('the map view shows the list\'s own result set and mounts exactly one map (V24 s10)', async ({
@@ -147,6 +289,59 @@ test('the map view shows the list\'s own result set and mounts exactly one map (
   await expect(page.getByTestId('places-map-card-0')).toHaveAttribute('aria-current', 'true')
   expect(await focusedPlaceId(page)).toBe(cardIds[0])
 
+  // AC: THE FOCUSED CARD'S PIN IS VISUALLY DISTINGUISHED AMONG MANY PINS — and
+  // it is asserted without a pixel or a tile comparison.
+  //
+  // Three facts, all observable and all about the pins rather than about the
+  // camera: exactly ONE marker carries `data-focused-marker`; it names the
+  // focused place; and it is drawn with a different radius and fill from every
+  // other marker (so the distinction is a fact about the rendered geometry, not
+  // just about an attribute). A map on which every pin looks identical fails
+  // here, which is exactly the finding this asserts against.
+  const focusedMarker = page.locator('[data-focused-marker]')
+  await expect(focusedMarker, 'exactly one pin is marked as the focused one').toHaveCount(1)
+  await expect(focusedMarker).toHaveAttribute('data-focused-marker', cardIds[0] ?? '')
+  /**
+   * THE STYLE, READ TWO WAYS THAT DO NOT DEPEND ON THE PIN BEING IN VIEW.
+   *
+   * MEASURED while writing this: the focused place is not necessarily near the
+   * map's initial view, and Leaflet draws an off-pane marker as a zero-size path
+   * (`d="M0 0"`) — so at this moment the focused pin's BOX is genuinely 0x0 and a
+   * ratio against a visible pin would be meaningless. The two style attributes
+   * survive a culled marker, and the arc radius Leaflet computed into `d` is
+   * readable whenever the path has been drawn at all. The rendered BOX is
+   * asserted after the recentre below, where the pin is on the pane by
+   * definition.
+   */
+  const focusedStyle = focusedMarker.evaluate((el) => ({
+    fillOpacity: Number(el.getAttribute('fill-opacity') ?? '0'),
+    strokeWidth: Number(el.getAttribute('stroke-width') ?? '0'),
+  }))
+  const plainPin = page.locator('.leaflet-interactive[fill="#4f46e5"]').first()
+  const plainStyle = plainPin.evaluate((el) => ({
+    fillOpacity: Number(el.getAttribute('fill-opacity') ?? '0'),
+    strokeWidth: Number(el.getAttribute('stroke-width') ?? '0'),
+  }))
+  const [focusedAttrs, plainAttrs] = await Promise.all([focusedStyle, plainStyle])
+  expect(
+    focusedAttrs.fillOpacity,
+    'the focused pin is filled more solidly than a plain place pin',
+  ).toBeGreaterThan(plainAttrs.fillOpacity)
+  expect(
+    focusedAttrs.strokeWidth,
+    'the focused pin carries a heavier stroke than a plain place pin',
+  ).toBeGreaterThan(plainAttrs.strokeWidth)
+  // (The pins' drawn RADII are not compared here: at this moment the focused
+  // place has not been centred yet, so it — and often every other pin — is
+  // culled to `d="M0 0"`. That comparison is in the swipe spec, after a recentre
+  // has put the pin on the pane, which is where it is measurable at all.)
+
+  // AC: the camera reports a centre at all (Leaflet's own `getCenter()` on
+  // `moveend`), which is the observable the recentre assertions below use.
+  expect(await mapCenter(page), 'the map publishes its own live centre').toMatch(
+    /^-?\d+\.\d+,-?\d+\.\d+$/,
+  )
+
   // AC: a swipe must never be the ONLY way — the explicit controls exist, carry
   // real accessible names, and are >=44px.
   const prev = page.getByTestId('places-map-prev')
@@ -168,12 +363,24 @@ test('the map view shows the list\'s own result set and mounts exactly one map (
   expect(overflowX, 'the strip scrolls horizontally').toBe('auto')
   const snapType = await strip.evaluate((el) => getComputedStyle(el).scrollSnapType)
   expect(snapType, 'the strip snaps').toContain('x')
-  const beforeScroll = await page.evaluate(() => window.scrollY)
+
+  // MEASURED, and the reason this spec never fakes a swipe by assigning
+  // `scrollLeft`: under `scroll-snap-type: x mandatory` Chromium clamps and
+  // re-snaps the write, so the container settles on a SNAP POINT rather than
+  // where the assignment put it. What is asserted is the fact that survives that
+  // behaviour and matters: the FOCUS does not move on a programmatic write — the
+  // strip only follows the settled geometry — and the page itself is untouched.
+  // (The swipe spec drives the strip for real, and is where the focus move is
+  // proven.)
+  const pageScrollBefore = await page.evaluate(() => window.scrollY)
   await strip.evaluate((el) => {
     el.scrollLeft = el.clientWidth
   })
-  // A horizontal scroll inside the strip must not move the PAGE.
-  expect(await page.evaluate(() => window.scrollY)).toBe(beforeScroll)
+  await expect(page.getByTestId('places-map-card-0')).toHaveAttribute('aria-current', 'true')
+  expect(
+    await page.evaluate(() => window.scrollY),
+    'a horizontal scroll inside the strip must not move the page',
+  ).toBe(pageScrollBefore)
 })
 
 test('swiping the strip recentres the map, and a card opens its detail page (V24 s10)', async ({
@@ -187,6 +394,8 @@ test('swiping the strip recentres the map, and a card opens its detail page (V24
   // Baseline: card 0 is focused and the map says so.
   expect(await focusedPlaceId(page)).toBe(cardIds[0])
   await expect(page.getByTestId('places-map-card-0')).toHaveAttribute('aria-current', 'true')
+  // The camera's own report BEFORE the swipe, to compare against afterwards.
+  const centreBeforeSwipe = await mapCenter(page)
 
   // AC: THE SWIPE. The strip really moves, and the focus/map follow it.
   //
@@ -222,6 +431,50 @@ test('swiping the strip recentres the map, and a card opens its detail page (V24
     })
     .toBe(cardIds[1])
 
+  // AC: AND THE CAMERA ACTUALLY WENT THERE. `data-focused-place` above is the
+  // caller's state and would say the same thing with the recentring call
+  // deleted, so the recentre is proven twice more, from the map's side:
+  //
+  //  (a) the CAMERA's report changed — `data-map-center` is Leaflet's own
+  //      `getCenter()` on `moveend`, so a camera that did not pan keeps the old
+  //      value and this fails;
+  //  (b) the FOCUSED PIN's own position converged on the pane's centre, measured
+  //      from the two elements' rects. No tile, no colour, no easing timing.
+  await expect
+    .poll(() => mapCenter(page), {
+      message:
+        "the camera's own report moves to the focused place — a deleted recentre " +
+        'leaves the old centre and fails here',
+    })
+    .not.toBe(centreBeforeSwipe)
+  await expect(page.locator('[data-focused-marker]'), 'the pin follows the swipe').toHaveAttribute(
+    'data-focused-marker',
+    cardIds[1] ?? '',
+  )
+
+  // AC: AND IT IS DRAWN BIGGER. The camera has just centred on this pin, so it
+  // is on the pane by definition: its rendered box is real AND its path carries
+  // the arc Leaflet computed for it. Both are asserted, because they are the two
+  // sides of "visually distinguished" — the geometry the browser painted and the
+  // geometry Leaflet derived from the component's options.
+  const focusedPinNow = page.locator('[data-focused-marker]')
+  const focusedRadius = await drawnMarkerRadius(focusedPinNow)
+  expect(focusedRadius, 'the focused pin is drawn as a circle, not a culled path').not.toBeNull()
+  // The comparison number is a plain pin's OWN drawn radius when one is on the
+  // pane; 8 (the component's base radius) is the fallback for a view where every
+  // plain pin is culled — see `PlacesMap`'s marker options.
+  const plainRadius = (await plainPinDrawnRadius(page)) ?? 8
+  expect(
+    focusedRadius ?? 0,
+    `the focused pin's drawn radius (${String(focusedRadius)}) is larger than a plain pin's (${plainRadius})`,
+  ).toBeGreaterThan(plainRadius)
+  const focusedBox = await focusedPinNow.boundingBox()
+  if (focusedBox === null) throw new Error('the focused pin has no box after the recentre')
+  expect(
+    Math.max(focusedBox.width, focusedBox.height),
+    'the focused pin has a real, non-zero drawn size on the pane',
+  ).toBeGreaterThan(0)
+
   // AC: the card the map followed is the card the swipe moved to — the two
   // halves cannot be reading different state. (Already implied by the two
   // assertions above; restated as one href check so a future change to either
@@ -242,14 +495,40 @@ test('swiping the strip recentres the map, and a card opens its detail page (V24
 })
 
 test('the strip is fully operable with the keyboard alone (V24 s10)', async ({ page }) => {
-  await openMapView(page)
+  // The map view is opened WITHOUT a click, because the click would leave the
+  // focus on the entry control and this spec is about the tab path INTO the
+  // strip. The focus is placed on that same entry control instead, so every
+  // press below is a real traversal step rather than a jump.
+  await openMapViewByKeyboardEntry(page)
   const cardIds = await placeIds(page.locator('[data-testid^="places-map-card-"]'))
   expect(cardIds.length, 'the keyboard spec needs at least three cards').toBeGreaterThan(2)
 
-  // Reach the strip the way a keyboard user does — by Tabbing, not by a test
-  // shortcut. The first card is a real focusable link.
-  await page.getByTestId('places-map-card-0').focus()
-  expect(await page.evaluate(() => document.activeElement?.getAttribute('data-testid'))).toBe(
+  // AC: THE STRIP IS REACHABLE BY REAL TAB PRESSES. A focus placed with a test
+  // API would prove only that the element is focusable — every `<a href>` is —
+  // and would not prove that a keyboard user can ARRIVE at it. So this walks the
+  // real focus order with real key events and fails if it never lands.
+  //
+  // The walk is bounded (`TAB_LIMIT`) rather than while(true): a strip that
+  // became unreachable would otherwise hang the spec instead of failing it.
+  const activeTestId = () =>
+    page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? null)
+  const TAB_LIMIT = 40
+  let tabs = 0
+  let reached = false
+  while (tabs < TAB_LIMIT) {
+    await page.keyboard.press('Tab')
+    tabs += 1
+    const id = await activeTestId()
+    if (id !== null && id.startsWith('places-map-card-')) {
+      reached = true
+      break
+    }
+  }
+  expect(
+    reached,
+    `the strip must be reachable by Tab (walked ${tabs} stops from the See map control)`,
+  ).toBe(true)
+  expect(await activeTestId(), 'the first card is the first strip stop in tab order').toBe(
     'places-map-card-0',
   )
 
@@ -263,6 +542,7 @@ test('the strip is fully operable with the keyboard alone (V24 s10)', async ({ p
   await expect
     .poll(() => focusedPlaceId(page), { message: 'ArrowRight recentres the map' })
     .toBe(cardIds[1])
+  await expectPinCentredOnMap(page)
 
   // AC: ArrowRight again, and the map follows without a pointer ever touching the
   // strip.

@@ -116,3 +116,72 @@ export function nearestCardIndex(
 export function scrollBehaviorFor(reducedMotion: boolean): ScrollBehavior {
   return reducedMotion ? 'auto' : 'smooth'
 }
+
+/**
+ * Bring a stored card index back inside a strip of `count` cards.
+ *
+ * WHY THIS EXISTS AS A RULE rather than as `Math.min(index, count - 1)` at the
+ * call site: `focusedIndex` is STATE, and state outlives the array it indexes.
+ * Narrowing the search while the map view is open leaves the index pointing past
+ * the end of the new set, and the clamp is the answer to "which card is focused
+ * now?" — a rule, not an arithmetic convenience. An inline clamp in a `.tsx` is
+ * exactly what `docs/agents/code-structure.md` forbids.
+ *
+ * It is written in terms of `nextCardIndex` with a delta of zero, which is not a
+ * trick for its own sake: "normalise a stale index" and "step a valid index" are
+ * the same rule, and routing the clamp through the step means the two can never
+ * disagree about the ends of the strip — in particular an out-of-range index is
+ * CLAMPED rather than wrapping, for the spatial reason `nextCardIndex` documents.
+ */
+export function clampCardIndex(index: number, count: number): number {
+  return nextCardIndex(index, 0, count)
+}
+
+/**
+ * How many cards the strip renders at once.
+ *
+ * WHY A CAP EXISTS AT ALL, and it is not a style preference: the strip is
+ * `overflow-x: auto` with every card MOUNTED, so the node count is the whole
+ * directory. MEASURED on the seeded data with no filter: the directory has 239
+ * rows, and the map view mounted 239 card links in one scroller — a strip that
+ * takes a visible beat to appear and scrolls badly on a phone, which is the
+ * surface it exists for. The map view is not a list with no bottom; the strip is
+ * for comparing what is NEARBY.
+ *
+ * `BROWSE_LIST_LEAD_LIMIT` (6, the list view's own lead) was considered and
+ * rejected: that number is tuned for a page of cards you scroll VERTICALLY, and
+ * a map wants a wider neighbourhood than a lead paragraph. 40 is roughly the
+ * point where the strip stops being a strip and starts being a scrollbar.
+ */
+export const MAP_STRIP_CARD_LIMIT = 40
+
+/**
+ * Split the map view's rows into the cards the strip renders and the rows it
+ * must not lose.
+ *
+ * `placeable` — the rows the map can plot — is capped. `rest` is EVERYTHING else:
+ * the placeable rows past the cap, and every unplaceable row. The caller renders
+ * `rest` as a linear list under the strip, so a place is either on the map or in
+ * that list and is never silently dropped. This is the ONE place the split is
+ * decided, which is why it is a tested rule rather than a slice in a `.tsx`.
+ *
+ * `count` is the number of placeable rows in the caller's own order, and the
+ * caller has already filtered for placeability — this function does not need to
+ * know how a row's coordinates resolve.
+ */
+export function splitStripRows<T>(rows: readonly T[], placeableCount: number): {
+  cards: readonly T[]
+  rest: readonly T[]
+} {
+  // A count outside the array (a caller bug, or a set that shrank between the
+  // two reads) is clamped rather than trusted: `slice` would happily produce an
+  // empty `cards` and an all-in-`rest` split, which renders as an empty map view
+  // with everything hidden in the sr-only list.
+  const usable = Math.max(0, Math.min(placeableCount, rows.length))
+  const cards = rows.slice(0, Math.min(usable, MAP_STRIP_CARD_LIMIT))
+  // The remaining placeable rows, then the unplaceable ones. The two slices are
+  // disjoint and their union with `cards` is the whole array, so no row can be
+  // lost or shown twice — which is the property the callers rely on.
+  const rest = [...rows.slice(cards.length, usable), ...rows.slice(usable)]
+  return { cards, rest }
+}

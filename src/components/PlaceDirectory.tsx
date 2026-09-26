@@ -302,18 +302,23 @@ export function PlaceDirectory({
     selectedKinds.size > 0 ? unplaced.filter((row) => selectedKinds.has(row.place.kind)) : unplaced
 
   /**
-   * V24 slice 10: the rows the MAP VIEW'S STRIP shows, in the direction the list
-   * renders them (lead first, then the overflow when its door is open).
+   * V24 slice 10: the rows the MAP VIEW carries, in the list's own order.
    *
    * It is `listRows` — the directory's already-filtered, already-sorted,
    * date-windowed output — so the map view cannot disagree with the list it
    * replaced: nothing here re-filters, re-sorts, re-queries or re-windows.
    *
+   * THE SAME SET THE LIST IS SHOWING — the lead rows, plus the overflow once the
+   * "See all" door is open. The map view opens "over the same result set the
+   * list is showing", so entering the map must not silently widen or narrow it:
+   * if the door is open, the map carries the opened list; if it is not, the map
+   * carries the six the parent was just looking at. `PlacesMapView` caps what it
+   * renders as cards and keeps the remainder reachable in its own list.
+   *
    * Only rows the map can actually PLACE take a card: a row whose coordinates do
    * not resolve has no marker to recentre on, so a card for it would drive the
-   * map at a place that is not there. Those rows stay in the directory and stay
-   * reachable from the map view's own list — they are left off the MAP for the
-   * same reason they are not drawn on it, never because a filter dropped them.
+   * map at a place that is not there. Those rows are not dropped — the map view's
+   * linear list carries every row that did not become a card.
    */
   const mapViewRows = showAll ? listRows : leadGroups.flatMap((group) => group.rows)
   const placeableMapRows = mapViewRows.filter(
