@@ -15,7 +15,7 @@
  *     load-bearing: the directory has to be reachable from the feed's own
  *     "Post a drop-in" action.
  *  2. /new OFFERS THE DIRECTORY: the field's own "Browse places" button opens
- *     the SAME `PlaceDirectory` component /browse renders — the map band AND
+ *     the SAME `PlaceDirectory` component /browse renders — the map AND
  *     the list, not a second copy. V23 slice 3: the bottom "Browse all N
  *     places" door is GONE; the field's button is the only door.
  *  3. THE DIRECTORY IS THE REAL ONE: the search field and the filter control

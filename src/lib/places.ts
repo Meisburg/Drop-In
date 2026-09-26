@@ -1550,10 +1550,10 @@ export function placeFollowIdSet(
  *   explicit center + radius, which is its own complete answer.
  *
  * EVERYTHING ELSE IS SHARED: `placed` (the map's markers — always the full
- * home-zip set, never the filtered list), the kind groups, and the two empty-
- * state flags below. (V25 t01 retired the lead/overflow split at
- * BROWSE_LIST_LEAD_LIMIT: the fields survive, the split does not — see the note
- * in the body.)
+ * home-zip set, never the filtered list), the listed groups, and the two
+ * empty-state flags below. (V25 t01 retired the lead/overflow split at
+ * `BROWSE_LIST_LEAD_LIMIT`, so the constant is no longer part of this plan's
+ * shape — see `placedGroups`.)
  */
 export interface DirectoryListPlan {
   /** The home-zip browse rows (before the modal's kind/radius narrowing). */
@@ -1569,18 +1569,20 @@ export interface DirectoryListPlan {
   /** The rendered list's unknown-distance rows (the "Not on the map yet" section). */
   unplaced: PlaceListRow[]
   /**
-   * V25 t01: EVERY row of the rendered list (the lead/overflow split is the
-   * identity — see the note in the function body). Named `leadRows` for the
-   * existing consumer and because a future surface that wants a lead belongs
-   * here, in the module that owns the rule.
+   * V25 t01: the PLACED rows of the rendered list, grouped by kind — what the
+   * list container actually renders.
+   *
+   * WHY IT IS `placed` AND NOT `listRows`: the unplaced rows (no resolvable
+   * coordinates) render in their OWN section below the list ("Not on the map
+   * yet"), so a grouped list built from `listRows` renders them a SECOND time.
+   * The two surfaces partition `listRows` exactly: grouped placed rows + the
+   * unplaced rows = every matching row, once each.
+   *
+   * It replaces the retired lead/overflow pair (`leadRows`/`overflowRows`/
+   * `leadGroups`/`overflowGroups`) rather than sitting beside it: nothing read
+   * those, and a field nothing reads is a rule nobody owns.
    */
-  leadRows: PlaceListRow[]
-  /** Empty under V25 t01: the overflow door is retired, so nothing overflows. */
-  overflowRows: PlaceListRow[]
-  /** The full list's kind groups (groupPlacesByKind over leadRows). */
-  leadGroups: PlaceKindGroup[]
-  /** Empty set of groups (groupPlacesByKind over overflowRows). */
-  overflowGroups: PlaceKindGroup[]
+  placedGroups: PlaceKindGroup[]
   /** The shared radius empty state is the honest answer ONLY when the radius is actually the reason nothing shows. */
   radiusIsTheReason: boolean
   /**
@@ -1745,20 +1747,22 @@ export function planDirectoryList(input: {
   const listRows = geocodeCenter !== null ? effectiveRows : filteredRows
   const unplaced = listRows.filter((row) => row.distanceMiles === null)
   /**
-   * V25 t01: THE LIST IS THE WHOLE LIST. The founder reversed the V13 t05 A7
-   * overflow fold — "I want to see all these place cards under the filters below
-   * it as a long list" — so the split below is now the IDENTITY: the lead is
-   * every row and there is no overflow. It is kept as two fields rather than
-   * deleted because `BROWSE_LIST_LEAD_LIMIT` is what the retired fold was, the
-   * shape is what downstream code already reads, and a future surface that wants
-   * a lead can reintroduce it here — in the one place that owns the rule — rather
-   * than in a component. `leadRows` (not `overflowRows`) is the field that
-   * carries the rows for that reason.
+   * V25 t01: THE LIST IS THE WHOLE LIST, AND NOTHING RENDERS TWICE.
+   *
+   * The founder reversed the V13 t05 A7 overflow fold — "I want to see all these
+   * place cards under the filters below it as a long list" — so every placed row
+   * is grouped and rendered, with no lead and no door. The unplaced rows are
+   * EXCLUDED from these groups because the component renders them in their own
+   * section below the list; including them here would put each of the seed's
+   * three coordinate-less places on the page twice, under two different
+   * headings ("Distance unknown" in the list, "Not on the map yet" below).
+   *
+   * So the two surfaces PARTITION `listRows`: `placedGroups` flattens to the
+   * placed rows and `unplaced` is the rest, and neither surface is derived from
+   * the other.
    */
-  const leadRows = listRows
-  const overflowRows: PlaceListRow[] = []
-  const leadGroups = groupPlacesByKind(leadRows)
-  const overflowGroups = groupPlacesByKind(overflowRows)
+  const placedRows = listRows.filter((row) => row.distanceMiles !== null)
+  const placedGroups = groupPlacesByKind(placedRows)
 
   // The KIND filter must reach the "Not on the map yet" section too. Distance-
   // shaped filters are deliberately NOT applied there (a place may not be
@@ -1800,10 +1804,7 @@ export function planDirectoryList(input: {
     listRows,
     placed,
     unplaced,
-    leadRows,
-    overflowRows,
-    leadGroups,
-    overflowGroups,
+    placedGroups,
     radiusIsTheReason,
     radiusReason,
     dateWindowIsTheReason,

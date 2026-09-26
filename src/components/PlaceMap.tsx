@@ -814,6 +814,26 @@ export function PlacesMap({
     // check on the object rather than on the string so the narrowing is visible
     // to the compiler and the center read below needs no non-null assertion.
     if (map === null || radiusCircle === undefined || radiusCircle === null) return
+    /**
+     * V25 t01 — THE FOCUSED PIN OWNS THE CAMERA WHEN THERE IS ONE.
+     *
+     * This effect is the framing authority for every caller that passes a
+     * `radiusCircle` and no `focusPlaceId` (the place page, /new's picker, and
+     * the directory's retired list-view band). The MAP VIEW passes BOTH: it
+     * draws the committed-radius circle and it centres on the focused card.
+     * Without this guard the circle's re-pin ran on every render of the map view
+     * — `radiusCircle` is an object literal, so its identity changes each
+     * render — and fought the focus effect for the camera. MEASURED: four
+     * map-view specs went red on "the focused pin's centre converges on the
+     * map pane's centre" when the prop was first threaded through, because the
+     * circle's `panTo` landed last.
+     *
+     * `focusPlaceId === undefined` is every pre-existing caller, so their
+     * behaviour is byte-for-byte what it was. The circle is still DRAWN and
+     * still redraws on a radius change (that is the separate overlay effect);
+     * only the CAMERA framing is yielded.
+     */
+    if (focusPlaceId !== undefined && focusPlaceId !== null) return
     const miles = radiusCircle.radiusMiles
     /**
      * V20 t05 — THE CIRCLE IS DRAWN TO SCALE AT THE CURRENT ZOOM, AND THE

@@ -21,6 +21,7 @@ import {
   DATE_WINDOWS,
   DATE_WINDOW_LABELS,
   dateWindowEmptyCopy,
+  MAP_FOCUS_RADIUS_MILES,
   planDirectoryList,
   PLACE_KINDS,
   placeLearnMoreLink,
@@ -28,6 +29,7 @@ import {
   placeKindLabel,
   placePath,
   placeUpcomingLabel,
+  radiusPreviewCircle,
   resolveMapCoords,
 } from '../lib/places'
 import type { DateWindow, PlaceListRow, SortMode } from '../lib/places'
@@ -213,7 +215,7 @@ export function PlaceDirectory({
   const {
     listRows,
     unplaced,
-    leadGroups,
+    placedGroups,
     radiusReason,
     dateWindowReason,
     nothingMatches,
@@ -270,6 +272,29 @@ export function PlaceDirectory({
   const placeableMapRows = mapViewRows.filter(
     (row) => resolveMapCoords(row.place, zipCoords) !== null,
   )
+
+  /**
+   * V25 t01: DOES THE MODE TOGGLE RENDER?
+   *
+   * THE DEFECT THIS NAMES (found in review): an unconditional button is on
+   * screen while the directory is still loading and on a search that matches
+   * nothing, where it opens a map with nothing on it and a way back to a list
+   * with nothing in it — a control that promises two modes and delivers none.
+   *
+   * The rule, in one place:
+   *
+   *   * not while the read is in flight (`places === null`): there is no second
+   *     mode yet;
+   *   * not when there is nothing to draw in either mode (no rows AND nothing
+   *     the map can plot): a mode switch between two empty surfaces is not a
+   *     switch. This is the zero-result / radius-reason / date-window case —
+   *     those messages are what the parent needs, and they are already up.
+   *   * otherwise it is on screen in BOTH modes, which is the founder's ask
+   *     ("when you get to the map mode, this button should come back and it
+   *     should be called list").
+   */
+  const toggleAvailable =
+    places !== null && (listRows.length > 0 || placeableMapRows.length > 0)
 
   // --- Handlers --------------------------------------------------------------
 
@@ -569,18 +594,41 @@ export function PlaceDirectory({
             rows={mapViewRows}
             zipCoords={zipCoords}
             homePin={homePin}
+            /* V25 t01: the committed-radius circle (and the live preview while
+               the Set-location dialog is open) is drawn on the map in map mode.
+               The band that used to carry it is gone, and the founder's ask —
+               "when you drag the radius, it should expand or grow the red circle
+               in real time" — needs a map to be visible on. Passed only in map
+               mode: in list view there is no map to draw it on. */
+            radiusCircle={
+              view === 'map'
+                ? radiusPreviewCircle({
+                    previewCenter: locationModalOpen ? geocodeCenter : null,
+                    previewMiles: radiusMiles,
+                    geocodeCenter,
+                    homePin,
+                    committedMiles: MAP_FOCUS_RADIUS_MILES,
+                  })
+                : null
+            }
             focusBehavior={focusBehavior}
             onBackToList={backToList}
           />
         </div>
       ) : null}
 
-      {/* The list (or its empty states). V22 slice 9: column 2 at md+.
-          V24 slice 10: the WHOLE list renders only in list view — the map view
-          REPLACES it (see the map view block above), because two mounted maps
-          would give every existing `getByTestId('places-map')` spec two nodes to
-          choose from and fail them in Playwright's strict mode. */}
-      {view === 'list' && places === null ? (
+      {/* The list (or its empty states). V25 t01: THE WHOLE BLOCK IS LIST-ONLY.
+          The map view REPLACES the list — "they're not both visible on the page
+          at the same time in different places" is the founder's ask — and the
+          V24 shape only gated the Loading branch, so the else-chain below
+          (empty states AND the 239-row list) rendered under the map in map mode.
+
+          Gating the whole chain rather than only the `places-list` branch is
+          deliberate: a radius/date-window/zero-match message is a statement
+          ABOUT THE LIST, and map mode is not showing a list. The mode toggle is
+          always on screen (see the floating control below), so the way back to
+          those messages is one tap and never a dead end. */}
+      {view !== 'list' ? null : places === null ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm md:col-start-2">
           Loading…
         </div>
@@ -613,23 +661,31 @@ export function PlaceDirectory({
       ) : (
         <div
           data-testid="places-list"
-          /* V25 t01: the directory's own matched-row total, published for the
-             spec that pins "the list is the whole list". Same discipline as the
-             map view's `data-matched-rows`: assert the render against the
-             surface's own declared total rather than against a seed size.
-             Summed over the kind groups because that is the one array this
-             component still holds; `planDirectoryList` grouped every row. */
-          data-matched-rows={leadGroups.reduce((total, group) => total + group.rows.length, 0)}
+          /* V25 t01: the directory's own totals, published for the specs that
+             pin "the list is the whole list" and "nothing renders twice" — the
+             same publish-the-fact discipline the map view uses. Asserting the
+             render against the surface's own declared totals is an assertion
+             about the render; asserting numbers derived from the seed is an
+             assertion about today's data.
+
+             `matched` is EVERY matching row (placed + unplaced); `placed` is
+             the subset this container renders. The difference must be the rows
+             the "Not on the map yet" section renders, exactly once each. */
+          data-matched-rows={listRows.length}
+          data-placed-rows={placedGroups.reduce((total, group) => total + group.rows.length, 0)}
           className="flex flex-col gap-2"
         >
-          {/* V25 t01: THE WHOLE LIST, not a lead behind a door. `leadGroups` IS
-              every matching row grouped by kind now — `planDirectoryList`'s
-              lead/overflow split is the identity — which is the founder's "all
-              these place cards under the filters below it as a long list". The
-              A–Z / kind grouping is kept (grouping was never the complaint) and
-              the "See all N places" fold is gone, so no matching place hides
-              behind a second tap. */}
-          {leadGroups.map((group) => (
+          {/* V25 t01: THE WHOLE LIST, not a lead behind a door — every PLACED
+              row, grouped by kind, on the first paint. That is the founder's
+              "all these place cards under the filters below it as a long list".
+              The A–Z / kind grouping is kept (grouping was never the complaint)
+              and the "See all N places" fold is gone, so no matching place hides
+              behind a second tap.
+
+              The unplaced rows are NOT here: they render once, in the "Not on
+              the map yet" section below, which is why these groups are built
+              from the placed subset. */}
+          {placedGroups.map((group) => (
             <section key={group.kind} className="flex flex-col gap-2">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
                 {group.label}
@@ -655,7 +711,7 @@ export function PlaceDirectory({
           (the rows that did not become pins or cards), so nothing becomes
           unreachable. */}
       {view === 'list' && filteredUnplaced.length > 0 ? (
-        <section className="flex flex-col gap-2">
+        <section data-testid="places-unplaced" className="flex flex-col gap-2">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
             Not on the map yet
           </h2>
@@ -683,37 +739,40 @@ export function PlaceDirectory({
           `scrollBackToMap` and the IntersectionObserver that used to hide this
           button while the band was visible are both gone).
 
-          It renders in BOTH modes and its label follows the mode, because that
-          is the founder's ask — "when you get to the map mode, this button
-          should come back and it should be called list. you can toggle back and
-          forth between them." The accessible name is the same word the button
-          shows (`aria-label` matches the visible label), so a screen reader and
-          the screen agree.
+          It renders in BOTH modes — `toggleAvailable` above is the one rule
+          that can suppress it, and that rule exists so it is never a button to
+          nowhere — and its label follows the mode, because that is the founder's
+          ask: "when you get to the map mode, this button should come back and it
+          should be called list. you can toggle back and forth between them." The
+          accessible name is the same word the button shows (`aria-label`
+          matches the visible label), so a screen reader and the screen agree.
 
           NO z-index by design (document order clears the content; Leaflet's
           controls sit at 1000, so a number buys nothing). Clears the bottom nav
           by geometry and honours reduced motion. */}
-      <button
-        type="button"
-        data-testid="places-view-toggle"
-        aria-label={view === 'list' ? 'Map' : 'List'}
-        onClick={view === 'list' ? openMapView : backToList}
-        className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-1/2 flex min-h-11 min-w-11 -translate-x-1/2 items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 shadow-lg outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 hover:bg-slate-50 md:bottom-[calc(2rem+env(safe-area-inset-bottom))]"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          aria-hidden="true"
-          className="h-5 w-5"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+      {toggleAvailable ? (
+        <button
+          type="button"
+          data-testid="places-view-toggle"
+          aria-label={view === 'list' ? 'Map' : 'List'}
+          onClick={view === 'list' ? openMapView : backToList}
+          className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-1/2 flex min-h-11 min-w-11 -translate-x-1/2 items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 shadow-lg outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 hover:bg-slate-50 md:bottom-[calc(2rem+env(safe-area-inset-bottom))]"
         >
-          <path d={NAV_ICONS.browse} />
-        </svg>
-        {view === 'list' ? 'Map' : 'List'}
-      </button>
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            className="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d={NAV_ICONS.browse} />
+          </svg>
+          {view === 'list' ? 'Map' : 'List'}
+        </button>
+      ) : null}
 
       {/* The Filter & sort modal. State commits live as the parent toggles;
           Apply just closes. Stacking class beats Leaflet's 1000 wrapper. */}

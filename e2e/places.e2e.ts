@@ -43,17 +43,16 @@
  *     marker's own JWT), the heart reports pressed, and tapping it again
  *     deletes the row. A SIGNED-OUT visitor to /browse renders NO heart at all
  *     and issues no follows request. Every heart is ≥44px in both dimensions.
- * (12) V17 t01: the map is a fixed-height BAND (spec §3's measurable rule: at
- *     390px wide it renders >=240px and <=60dvh tall, and the first list row's
- *     top edge sits BELOW the band's bottom edge), and every card leads with a
- *     photo slot — the kind-illustration fallback while `photo_url` is NULL for
- *     every seeded row (t05 supplies real ones), never a broken image and never
- *     an empty box. The heart is pinned INSIDE that slot (top-right), so the
- *     t02 behavior spec above and this position spec together cover the move.
- * (13) V17 t03: once the map band scrolls out of view, a floating "Map" button
- *     appears; it is a ≥44px tap target, it carries no z-index (or one strictly
- *     below Leaflet's 1000), it never covers a card's heart, and tapping it
- *     brings the band back into the viewport and then retires itself.
+ * (12) V25 t01 REPLACED the V17 t01 band rule: list view is FILTERS FIRST, with
+ *     every matching row below it and NO map mounted — the only map the page has
+ *     is the map mode. The card-shape rules V17 t01 also carried still hold: no
+ *     photo slot (V20 t01 retired it), one honest learn-more link per card, and
+ *     the heart in the card's top-right corner.
+ * (13) V25 t01 REPLACED the V17 t03 scroll-to-band button with the mode TOGGLE:
+ *     one floating control, labelled Map in list view and List in map view, that
+ *     flips between the two surfaces. It is a ≥44px tap target, it carries no
+ *     z-index (or one strictly below Leaflet's 1000), it never covers a card's
+ *     heart, and it never scrolls the page to a band — there is no band.
  *
  * RED BY DESIGN pre-0029-apply: `places` does not exist live yet, so PostgREST
  * answers the first read with PGRST205 (schema cache: table not found). The
@@ -388,20 +387,17 @@ test('the Places tab is the seeded directory, and anon can read it (RED pre-0029
   await page.getByTestId('places-back-to-list').click()
   await expect(page.getByTestId('place-row').first()).toBeVisible()
 
-  // (8) V13 ticket 05 (A7): the raw unbroken long-list is gone — the list
-  // leads with the first places (alphabetical by default, V15 t03) grouped by
-  // kind, then a single "See all N places" overflow door reveals every
-  // remaining row. At least one group header (a kind chip as an h2 section
-  // header) is visible, and the lead rows still carry the row testid (the
-  // existing helpers keep working against the new layout).
+  // (8) V25 t01: the list below the filters IS the whole matching set, grouped
+  // by kind (alphabetical by default, V15 t03), with no "See all" door and no
+  // lead to expand. At least one group header (a kind chip as an h2 section
+  // header) is visible, and the rows still carry the row testid (the existing
+  // helpers keep working against the layout).
   await expect(
     page
       .locator('h2')
       .filter({ hasText: KIND_GROUP_LABEL })
       .first(),
   ).toBeVisible()
-  // V25 t01: the overflow door is retired — the list below the filters IS the
-  // whole matching set.
   await expect(page.getByTestId('places-see-all')).toHaveCount(0)
 })
 
@@ -1288,31 +1284,6 @@ test('the floating control toggles list and map, and its label follows (V25 t01)
   await expect(page.locator('[data-testid^="row-learn-more-"]').first()).toBeVisible()
 })
 
-/**
- * THE SEARCH FILTERS THE MAP'S DOTS, NOT ITS CAMERA.
- *
- * V17 t04 built this spec to prove the map framed the search results; V19 t01
- * (ruling D1) narrowed that to "never wider than the neighbourhood"; V20 t05
- * removed the searched-subset input from the framing seam entirely, because the
- * founder's V20 ask makes the RADIUS the one thing that sizes the circle
- * ("when you drag the radius, it should expand or grow the red circle in real
- * time"). So this spec now asserts the pair that replaced it:
- *
- *   1. a search NARROWS the drawn set (the filter still works), and
- *   2. the frame does not move by so much as a pixel (the camera is the
- *      radius's alone).
- *
- * Read the frame's tightness from the Leaflet radius circle's own rendered SVG
- * radius rather than from `boundingBox()`. The circle IS the framing authority
- * (`PlaceMap` fits the view to it), and `boundingBox()` reports the CLIPPED
- * width once the circle exceeds the pane — measured, that made two genuinely
- * different frames both read ~314px. Tiles are never asserted on, so a flaky
- * tile fetch cannot fail this spec (the spec's own recorded choice).
- *
- * DISTANCE FILTER: deliberately left at its DEFAULT ("Within your radius"), so
- * the drawn set is the same neighbourhood the frame covers. `useAnyDistance` is
- * what the other specs need; this one must NOT call it.
- */
 test('an active search narrows the WHOLE list, and no map is drawn (V25 t01)', async ({
   page,
 }) => {
@@ -1377,6 +1348,24 @@ test('an active search narrows the WHOLE list, and no map is drawn (V25 t01)', a
   await expect(page.getByTestId('place-row')).toHaveCount(0)
   await expect(page.getByTestId('places-search')).toBeVisible()
   await expect(page.locator('.leaflet-container')).toHaveCount(0)
+
+  /**
+   * AC (N5, found in review): THE TOGGLE IS NOT A BUTTON TO NOWHERE.
+   *
+   * With nothing matching, both "modes" are empty — the list is a message and
+   * the map would be an empty pane — so the control must RETIRE rather than
+   * offer a switch between two empty surfaces. The parent's way forward is the
+   * message that is already on screen and the search box above it.
+   */
+  await expect(
+    page.getByTestId('places-view-toggle'),
+    'with nothing to show in either mode the toggle must not render',
+  ).toHaveCount(0)
+
+  // …and it comes back the moment there is something to switch to.
+  await page.getByTestId('places-search').fill('park')
+  await expect(page.getByTestId('place-row').first()).toBeVisible()
+  await expect(page.getByTestId('places-view-toggle')).toBeVisible()
 })
 
 test('the distance control narrows and widens the LIST, and still draws no map (V25 t01)', async ({
@@ -1458,38 +1447,201 @@ test('the list is the WHOLE list — every matching row renders with no second t
    * thing hiding them, so it is gone — and with it the only case that could
    * make a matching place unreachable.
    *
-   * The count is read from the LIST's OWN declared total
-   * (`data-matched-rows`, written from the plan's rows) rather than from an
-   * arithmetic expectation, so this measures the render against the app's own
-   * decision instead of against today's seed size.
+   * THE COUNTS ARE THE APP'S OWN (the list publishes `data-matched-rows` = every
+   * matching row and `data-placed-rows` = the subset it renders), so this
+   * measures the RENDER against the app's decision rather than against today's
+   * seed size.
+   *
+   * AND IT PINS THE PARTITION, which is what the first version of this spec
+   * missed (found in review): the unplaced rows (the seed has three, with no
+   * resolvable coordinates) render in the "Not on the map yet" section BELOW the
+   * list, so the list container must hold the PLACED rows and the two surfaces
+   * together must account for every matching row exactly once. A grouped list
+   * built from the full row set — the bug this now catches — renders each
+   * unplaced place twice, under two different headings.
    */
   await openPlacesTab(page)
   await useAnyDistance(page)
 
-  const matched = Number(
-    (await page.getByTestId('places-list').getAttribute('data-matched-rows')) ?? '0',
-  )
+  const list = page.getByTestId('places-list')
+  const matched = Number((await list.getAttribute('data-matched-rows')) ?? '0')
+  const placed = Number((await list.getAttribute('data-placed-rows')) ?? '0')
   expect(
     matched,
     'the seed must match more places than the retired lead limit for this to be a real check',
   ).toBeGreaterThan(BROWSE_LIST_LEAD_LIMIT)
+  expect(
+    placed,
+    'the seed must have placed rows for the partition below to mean anything',
+  ).toBeGreaterThan(0)
+  expect(placed, 'the placed subset cannot exceed every matching row').toBeLessThanOrEqual(matched)
 
   // AC: no door, and no "See all"/"Hide" toggle anywhere on the page.
   await expect(page.getByTestId('places-see-all')).toHaveCount(0)
 
-  // AC: EVERY matching row is rendered on the first paint — the whole point.
-  const renderedListRows = await page
-    .getByTestId('places-list')
-    .getByTestId('place-row')
-    .count()
+  // AC: EVERY PLACED ROW renders in the list on the first paint — the point.
+  const renderedListRows = await list.getByTestId('place-row').count()
   expect(
     renderedListRows,
-    `all ${matched} matching rows must render without a tap (got ${renderedListRows})`,
+    `every placed row must render in the list without a tap (declared ${placed}, got ${renderedListRows})`,
+  ).toBe(placed)
+
+  // AC: THE UNPLACED ROWS RENDER EXACTLY ONCE, in their own section.
+  const unplacedSection = page.getByTestId('places-unplaced')
+  const unplacedCount =
+    (await unplacedSection.count()) === 0
+      ? 0
+      : await unplacedSection.getByTestId('place-row').count()
+  expect(
+    unplacedCount,
+    'the seed carries coordinate-less places, so this check must have something to count',
+  ).toBeGreaterThan(0)
+
+  // AC: THE PARTITION. List rows + unplaced rows = every matching row, and no
+  // row is rendered in both places.
+  expect(
+    renderedListRows + unplacedCount,
+    `the list (${renderedListRows}) and the "Not on the map yet" section (${unplacedCount}) ` +
+      `must account for every matching row (${matched}) exactly once`,
   ).toBe(matched)
+
+  // AC: no place name appears under both headings — the defect stated as the
+  // thing a parent would see.
+  const listNames = await list.getByTestId('place-card-name').allInnerTexts()
+  const unplacedNames =
+    (await unplacedSection.count()) === 0
+      ? []
+      : await unplacedSection.getByTestId('place-card-name').allInnerTexts()
+  const doubled = unplacedNames.filter((name) => listNames.includes(name))
+  expect(doubled, 'a place must not render in the list AND in the unplaced section').toEqual([])
 
   // AC: a row that used to live behind the fold is reachable without any
   // interaction. `INDOOR_PLACE` sorts well past the old six-row lead.
   await expect(placeRow(page, INDOOR_PLACE)).toBeVisible()
+})
+
+/**
+ * V25 t02 — ONE TAP ON A PICKER PIN WRITES BOTH FIELDS. THIS REPLACES the V20
+ * t04 spec ("a picker pin selects first, and only 'Select this place' fills the
+ * fields"), which pinned the two-step this ticket removes. ONE RECORD PER
+ * REVERSAL: the old spec and `PlacePickerMap`'s V20 t04 state doc were rewritten
+ * in the same commit as the behaviour.
+ *
+ * V20 t04 introduced the two-step for a real reason: the write happened on the
+ * marker click, the fields sit ABOVE the map on /new, so on a phone the parent
+ * tapped a dot, the form changed off-screen, and nothing visible happened — the
+ * feature worked and read as broken. The founder's answer then was a button.
+ *
+ * He has since rejected that button twice (V24 annotation #2; and again on the
+ * V25 walk: *"you shouldn't have to click Select this place button. It should
+ * just automatically select it and populate the address in the address bar
+ * above. Don't make the user have to do an extra step, it's annoying."*).
+ *
+ * This spec pins the new contract in BOTH directions, because each half alone
+ * can pass on a build that is wrong the other way:
+ *
+ *   1. the FIRST tap writes BOTH fields, with no second control in the path, and
+ *   2. a second tap on a DIFFERENT pin REPLACES both — no stale half.
+ *
+ * It also pins the two things that must not be collateral damage: the visible
+ * confirmation panel at the point of the tap (t04's own complaint — the write
+ * must never be silent) and the Details door (`place-picker-details`), the only
+ * way from the picker to a place's research page.
+ */
+test('one tap on a picker pin writes both fields (V25 t02)', async ({ page }) => {
+  await page.goto('/new')
+  await page.getByRole('heading', { name: 'Post a drop-in' }).waitFor()
+
+  const pickerMap = page.getByTestId('place-picker-map')
+  await expect(pickerMap).toBeVisible()
+  // Bring the whole 256px band into the viewport BEFORE the reachability scan
+  // below, so the scan measures the same viewport position the clicks will use.
+  await pickerMap.scrollIntoViewIfNeeded()
+
+  const placeInput = page.getByPlaceholder(PLACE_INPUT)
+  const addressInput = page.getByPlaceholder(ADDRESS_INPUT)
+  await expect(placeInput).toHaveValue('')
+  await expect(addressInput).toHaveValue('')
+
+  // The pins a parent's finger can actually reach.
+  //
+  // `.not([d="M0 0"])` skips markers Leaflet projected fully outside the canvas
+  // (in the DOM, zero-size, unclickable). The hit-test below skips a pin whose
+  // CENTRE lies outside the map's clipped band — the V23 drift the spec this
+  // replaces recorded: a marker just past the pane's edge keeps a NON-zero `d`,
+  // `toBeVisible()` passes anyway (Playwright does not test an ancestor's
+  // `overflow: hidden` clipping), and a tap at that point lands on the page
+  // behind the map. A pin counts here only when it is its OWN top element at its
+  // own centre.
+  const pins = pickerMap.locator('.leaflet-overlay-pane svg path[fill="#4f46e5"]:not([d="M0 0"])')
+  const pinCount = await pins.count()
+  const reachable: number[] = []
+  for (let i = 0; i < pinCount; i++) {
+    const hit = await pins.nth(i).evaluate((el) => {
+      const rect = el.getBoundingClientRect()
+      return (
+        document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2) === el
+      )
+    })
+    if (hit) reachable.push(i)
+  }
+  console.log(
+    `[V25 t02 picker] pins plotted: ${pinCount}; hit-testable at their own centre: ${reachable.length}`,
+  )
+  expect(
+    reachable.length,
+    'the picker must plot at least one pin a parent can actually tap',
+  ).toBeGreaterThan(0)
+
+  const selection = page.getByTestId('place-picker-selection')
+
+  // AC (1): ONE tap writes the place AND the address. Nothing else is pressed —
+  // the single click below is the whole interaction.
+  await pins.nth(reachable[0]).click()
+  await expect(
+    selection,
+    'the tap must leave a visible result at the point of the tap (V20 t04 still holds)',
+  ).toBeVisible()
+  const firstName = (await selection.locator('span').first().innerText()).trim()
+  const firstAddress = (await selection.locator('span').nth(1).innerText()).trim()
+  expect(firstName.length).toBeGreaterThan(0)
+  expect(firstAddress.length).toBeGreaterThan(0)
+  await expect(placeInput).toHaveValue(firstName)
+  await expect(addressInput).toHaveValue(firstAddress)
+
+  // AC (2): there is no intermediate "selected but unwritten" state left to
+  // complete — the panel's old write button is gone, so the two-step cannot
+  // come back without failing here.
+  await expect(
+    page.getByTestId('place-picker-select'),
+    'the removed "Select this place" step must not return',
+  ).toHaveCount(0)
+
+  // AC (3): Details survives, and it is a READ — it must never write the field.
+  const details = page.getByTestId('place-picker-details')
+  await expect(details).toBeVisible()
+  await expect(details).toHaveAttribute('href', /^\/place\/.+\/details$/)
+
+  // AC (4): a SECOND tap on a DIFFERENT pin replaces both values. Scanning the
+  // reachable pins keeps this honest — two pins that happened to share a name
+  // AND an address would make "replaced" unobservable, so the loop only stops at
+  // a pin whose panel really reads differently.
+  let replaced = false
+  for (const index of reachable.slice(1)) {
+    await pins.nth(index).click()
+    await expect(selection).toBeVisible()
+    const name = (await selection.locator('span').first().innerText()).trim()
+    const address = (await selection.locator('span').nth(1).innerText()).trim()
+    if (name === firstName && address === firstAddress) continue
+    await expect(placeInput).toHaveValue(name)
+    await expect(addressInput).toHaveValue(address)
+    replaced = true
+    break
+  }
+  expect(
+    replaced,
+    'a second tap on a different pin must replace BOTH fields, so at least one other reachable pin must name a different place',
+  ).toBe(true)
 })
 
 test('a place page renders the seeded data with the existing Maps link', async ({ page }) => {
