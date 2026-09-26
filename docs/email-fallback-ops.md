@@ -141,8 +141,16 @@ log-based diagnosis of a missing email**; the only proof is the message arriving
 
 ## Still outstanding
 
-1. **Prove auth email delivers** — `https://drop-in-mu.vercel.app/login` →
-   Forgot password → check the inbox (spam on the very first one).
+1. **✅ AUTH EMAIL IS PROVEN END TO END (2026-09-26).** A real password reset
+   arrived in a real inbox: sender `Drop In <jonmeisburg@gmail.com>`, delivered to
+   the **inbox, not spam**, in under a minute. The link's destination was also
+   verified rather than assumed — `site_url` is
+   `https://drop-in-mu.vercel.app` (the `localhost:3000` bug `beta-checklist.md`
+   warned about was fixed long ago), the site is in `uri_allow_list`, and
+   `/reset-password` serves HTTP 200 on the deployed app. **The "2 emails per
+   hour, project-wide" wall is gone.** Note that `uri_allow_list` deliberately
+   still carries the localhost and `192.168.1.61` entries — that is the
+   documented intent, not drift.
 2. **`RESEND_API_KEY` / `EMAIL_FROM` function secrets** — **STILL NOT SET**, so
    the *notification* email fallback built in slices 1–4 still delivers nothing.
    That path speaks Resend's HTTP API and would need a sending domain.
@@ -152,4 +160,7 @@ log-based diagnosis of a missing email**; the only proof is the message arriving
 5. **Recover the Supabase dashboard** — create a GitHub account on the same
    email, or mail `support@supabase.com` from a different address. Needed for
    billing, logs, and settings even though email no longer depends on it.
+6. **`git push` does not deploy** — the frontend half of the email feature is
+   pushed but not live. See the deploy note in `task-state.md`.
+
 
