@@ -971,9 +971,16 @@ export function formatTimeWindow(startIso: string, endIso: string): string {
 /**
  * The card's WHEN line (V25 ticket 05): the day, then the window —
  * "Sat, Sep 26 · 6:30 PM–7:30 PM" — the compact form the founder's own
- * reference screenshot shows ("Sat, Sep 26 · 5:00 PM PDT"; there is deliberately
- * NO zone label — the app has none anywhere, see the ticket's timezone
- * question).
+ * reference screenshot shows ("Sat, Sep 26 · 5:00 PM PDT").
+ *
+ * NO ZONE LABEL, AND NONE INVENTED HERE: this line prints no zone and this
+ * function adds none, so the screenshot's "PDT" is not produced. (The app is not
+ * zoneless: `series.resolveTimeZone` / `deviceTimeZone` serve weekly-series
+ * scheduling and `playdate_series` stores a zone. A one-off `playdates` row
+ * stores only starts_at/ends_at, and this line's window is `formatTimeWindow` —
+ * device-local, with no zone parameter — so nothing could label it with the
+ * EVENT's zone rather than the viewer's. See the ticket's timezone question,
+ * deliberately left unanswered.)
  *
  * WHY THE DATE AND NEVER "Today"/"Tomorrow": the card is not always under a day
  * header (browse, both place pages and a profile's Upcoming/Past lists render
