@@ -169,6 +169,8 @@ export function PlacesMap({
   placeActions = true,
   testId = 'places-map',
   onSelect,
+  focusPlaceId,
+  focusBehavior = 'smooth',
 }: {
   places: readonly Place[]
   zipCoords: ReadonlyMap<string, ZipCoords> | null
@@ -227,6 +229,39 @@ export function PlacesMap({
    * absent, the existing navigate-to-/new behaviour stands unchanged.
    */
   onSelect?: (place: Place) => void
+  /**
+   * V24 slice 10 — THE CONTROLLED FOCUS PROP, and the whole reason the map view
+   * can have a card strip without becoming a second map component.
+   *
+   * The strip's focused card index is React state in the CALLER; that index is
+   * the SINGLE source of truth, and it arrives here as the focused place's id.
+   * The map recentres from this prop and from nothing else — there is no second
+   * mechanism (no marker-click callback the caller also has to feed), which is
+   * the invariant the slice exists to keep.
+   *
+   * `undefined` (the default) means "this caller does not drive the camera":
+   * every pre-existing caller (/browse's band, the place page, /new's picker)
+   * passes nothing and is therefore byte-for-byte unchanged. An id that matches
+   * no marker is likewise a no-op — there is nothing to pan to, and inventing a
+   * center would be a fake pin.
+   *
+   * THE MARKER-TAP POPUP IS UNTOUCHED: `selectedId` and `popupHost` stay private
+   * internal state. A parent tapping a pin still selects it for the popup; the
+   * strip is a different control with a different job, and conflating them is
+   * the two-sources-of-truth defect this prop is shaped to avoid.
+   */
+  focusPlaceId?: string | null
+  /**
+   * How the recentre ANIMATES, as a value rather than a boolean.
+   *
+   * The caller computes it with `scrollBehaviorFor(reducedMotion)` from
+   * `src/lib/mapStrip.ts` — the pure rule this repo's build law requires. This
+   * component deliberately does NOT read `matchMedia` itself: a component that
+   * both reads the preference and decides what it means is the layout-vs-logic
+   * collapse code-structure.md forbids, and it would be a second place the
+   * interpretation could drift.
+   */
+  focusBehavior?: ScrollBehavior
 }) {
   const navigate = useNavigate()
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -764,6 +799,75 @@ export function PlacesMap({
     map.panTo([radiusCircle.center.lat, radiusCircle.center.lng], { animate: false })
   }, [circleKey])
 
+  /**
+   * V24 slice 10 — THE CONTROLLED FOCUS, and the ONE effect that may move the
+   * camera for a reason other than the radius circle.
+   *
+   * The comment on the circle effect above says "this is now the ONLY effect
+   * that moves the camera". That stays true for every caller that passes no
+   * `focusPlaceId` — which is all of them except the map view. The map view
+   * passes no `radiusCircle` at all, so the two effects can never both drive the
+   * camera in the same mount: exactly one of them is armed. That is why this is
+   * an addition rather than a conflict.
+   *
+   * WHY IT SKIPS THE FIRST RUN. The mount view and the circle effect above
+   * already frame the map correctly on mount. Re-running the focus here on mount
+   * would zoom a freshly-opened map into whatever card happened to be first —
+   * overriding the frame the caller asked for and doing it invisibly. So the
+   * first pass records the id and does nothing; only a CHANGE pans. The ref (not
+   * a state flag) is what makes that decision without a re-render.
+   *
+   * `focusPlaceId === null` is honoured as "no card is focused": the map simply
+   * does not move. `undefined` (the prop absent) and `null` therefore behave the
+   * same way for the camera, and the caller's `data-focused-place` attribute is
+   * written separately in the render below so the spec can see the honest value.
+   *
+   * `setView` rather than `panTo` because a card is a place, not a direction:
+   * panning alone at city zoom would leave the pin somewhere off-pane, so the
+   * focus also sets `DETAIL_ZOOM`. `setView` is also what makes the call
+   * idempotent — Leaflet's own `panTo` re-entry guard can leave the view
+   * fractionally off the requested center, and the spec asserts the recentre
+   * through a data attribute, so "did the camera really move" is proven by the
+   * caller's state rather than by a pixel.
+   */
+  const focusedEntry = focusPlaceId === undefined || focusPlaceId === null
+    ? null
+    : (entries.find((e) => e.place.id === focusPlaceId) ?? null)
+  const focusKey = focusedEntry === null ? '' : focusedEntry.place.id
+  const lastFocusKeyRef = useRef<string | null>(null)
+  const ranOnceRef = useRef(false)
+  useEffect(() => {
+    const map = mapRef.current
+    if (map === null) return
+    // The first pass records the incoming id and does NOT move: on mount the map
+    // is already framed (see above). The separate ref is load-bearing — an empty
+    // focusKey ('') on that first pass would otherwise be indistinguishable from
+    // "has not run", and the second pass would re-run the comparison forever.
+    if (!ranOnceRef.current) {
+      ranOnceRef.current = true
+      lastFocusKeyRef.current = focusKey
+      return
+    }
+    if (lastFocusKeyRef.current === focusKey) return
+    lastFocusKeyRef.current = focusKey
+    if (focusedEntry === null) return
+    // The map's size is re-measured before the move, for the reason the marker
+    // group's own `invalidateSize` gives: a card tap can be the first event after
+    // a layout change, and a stale measurement would center on the wrong pixel.
+    map.invalidateSize()
+    map.setView(
+      [focusedEntry.coords.lat, focusedEntry.coords.lng],
+      DETAIL_ZOOM,
+      { animate: focusBehavior === 'smooth' },
+    )
+    // `focusBehavior` IS a dependency, even though it changes only when the
+    // viewer's reduced-motion preference does: the effect reads it, and leaving
+    // it out would let a preference flipped while the map view is open keep
+    // animating until the next focus change. `focusedEntry` is derived from
+    // `focusKey` (a place id present in `entries`) so the key is the honest
+    // identity of everything this body reads.
+  }, [focusKey, focusBehavior])
+
   if (entries.length === 0 && homePin === undefined && homePin === null) return null
 
   /**
@@ -886,6 +990,23 @@ export function PlacesMap({
         // would call a broken preview healthy. Zoom falling while the radius
         // grows is what "zoomed out to show more area" means, measured.
         data-map-zoom={zoom}
+        /**
+         * V24 slice 10 — `data-focused-place` IS THE OBSERVABLE RECENTRE, and it
+         * is deliberately on the container rather than asserted from the map's
+         * own camera.
+         *
+         * A pixel diff of the pane, or a check that a given tile loaded, is a
+         * flake: both depend on OpenStreetMap being reachable, on font metrics
+         * and on animation timing. The focused id is the app's own state and it
+         * is exactly what "recentred on the focused card" MEANS — a spec that
+         * reads this attribute is asserting the decision, and the pan is the
+         * rendering of that decision.
+         *
+         * The value is the FOCUSED id, never the popup's `selectedId`: the two
+         * are independent controls (see the `focusPlaceId` prop), and naming the
+         * popup here would let a marker tap masquerade as a strip focus.
+         */
+        data-focused-place={focusPlaceId ?? ''}
         /**
          * V23 slice 7 — `className` IS FROZEN AT ITS FIRST VALUE, AND THAT IS
          * THE FIX FOR THE WHITE MAP.

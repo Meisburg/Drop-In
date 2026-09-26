@@ -1,9 +1,11 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { LocationModal } from './LocationModal'
 import { NAV_ICONS } from './icons'
 import { PlacesMap } from './PlaceMap'
+import { PlacesMapView } from './PlacesMapView'
+import { usePrefersReducedMotion } from './usePrefersReducedMotion'
 import { RadiusEmptyState } from './RadiusEmptyState'
 import {
   DEFAULT_RADIUS_MILES,
@@ -35,6 +37,7 @@ import {
 import type { DateWindow, PlaceListRow, SortMode } from '../lib/places'
 import { reviewRatingLine } from '../lib/reviews'
 import type { ReviewSummary } from '../lib/reviews'
+import { scrollBehaviorFor } from '../lib/mapStrip'
 import type { Place, PlacePrefill } from '../lib/types'
 import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
 
@@ -165,6 +168,51 @@ export function PlaceDirectory({
   const [geocodeCenter, setGeocodeCenter] = useState<{ lat: number; lng: number } | null>(null)
   const [radiusMiles, setRadiusMiles] = useState<number>(DEFAULT_RADIUS_MILES)
 
+  // --- V24 slice 10: the view mode ------------------------------------------
+
+  /**
+   * WHICH SURFACE THE DIRECTORY IS SHOWING — the list (band + filters + grouped
+   * rows) or the map view (one map + the swipeable strip). `'list'` is the
+   * pre-existing surface and therefore the default.
+   *
+   * WHY THIS IS STATE AND NOT A ROUTE, and why it is not `history.back()`: the
+   * map view's "Back to list" must return to THE LIST THE PARENT CAME FROM. A
+   * new route (`/browse/map`) would rely on the browser's history containing
+   * that list, and it may not — a parent who deep-linked into the map, or whose
+   * history entry was replaced, would be sent somewhere else. State makes the
+   * return unconditional. It also keeps the playtest `routes.json` guard
+   * untouched (no new route exists to register).
+   */
+  const [view, setView] = useState<'list' | 'map'>('list')
+  /**
+   * The list's scroll offset, saved on ENTRY to the map view and restored on the
+   * way back. Without it, "Back to list" lands at the top of a long directory
+   * and the parent loses their place — the round trip would be a reset.
+   */
+  const listScrollRef = useRef<number | null>(null)
+  /**
+   * The restore is a ONE-SHOT: set the pending flag on the way back, and the
+   * effect below consumes it. An effect rather than inlining the scroll in the
+   * click handler because the handler runs BEFORE React has re-rendered the
+   * list — scrolling then would measure the map view's (shorter) page and clamp
+   * to a wrong maximum.
+   */
+  const pendingScrollRestoreRef = useRef(false)
+  const reducedMotion = usePrefersReducedMotion()
+  // The pure rule decides what the preference MEANS (src/lib/mapStrip.ts); this
+  // component only reads it. The same value drives the map's recentre and the
+  // strip's own scrolling, so the card and the pin animate together or not at
+  // all.
+  const focusBehavior = scrollBehaviorFor(reducedMotion)
+
+  useEffect(() => {
+    if (!pendingScrollRestoreRef.current) return
+    pendingScrollRestoreRef.current = false
+    const saved = listScrollRef.current
+    if (saved === null) return
+    window.scrollTo({ top: saved, behavior: focusBehavior })
+  }, [view, focusBehavior])
+
   // --- Floating "Map" button (V17 t03) --------------------------------------
   // Is the map band scrolled out of view? Drives the floating button that
   // scrolls back to it. An IntersectionObserver rather than a scroll listener:
@@ -253,6 +301,25 @@ export function PlaceDirectory({
   const filteredUnplaced =
     selectedKinds.size > 0 ? unplaced.filter((row) => selectedKinds.has(row.place.kind)) : unplaced
 
+  /**
+   * V24 slice 10: the rows the MAP VIEW'S STRIP shows, in the direction the list
+   * renders them (lead first, then the overflow when its door is open).
+   *
+   * It is `listRows` — the directory's already-filtered, already-sorted,
+   * date-windowed output — so the map view cannot disagree with the list it
+   * replaced: nothing here re-filters, re-sorts, re-queries or re-windows.
+   *
+   * Only rows the map can actually PLACE take a card: a row whose coordinates do
+   * not resolve has no marker to recentre on, so a card for it would drive the
+   * map at a place that is not there. Those rows stay in the directory and stay
+   * reachable from the map view's own list — they are left off the MAP for the
+   * same reason they are not drawn on it, never because a filter dropped them.
+   */
+  const mapViewRows = showAll ? listRows : leadGroups.flatMap((group) => group.rows)
+  const placeableMapRows = mapViewRows.filter(
+    (row) => resolveMapCoords(row.place, zipCoords) !== null,
+  )
+
   // --- Handlers --------------------------------------------------------------
 
   /** Any filter change collapses the list back to its lead. */
@@ -270,6 +337,28 @@ export function PlaceDirectory({
 
   function scrollBackToMap() {
     mapBandRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  /**
+   * V24 slice 10: enter the map view. The list's CURRENT scroll offset is saved
+   * here — on the way out, before the DOM changes — because once the map view is
+   * up the page is a different height and the offset is no longer readable.
+   */
+  function openMapView() {
+    listScrollRef.current = typeof window === 'undefined' ? null : window.scrollY
+    setView('map')
+  }
+
+  /**
+   * V24 slice 10: return to the list the parent came from — the SAME list, with
+   * its search/filter/sort/date state (all of it is this component's state and
+   * was never unmounted) AND its scroll position (restored by the effect above).
+   * The pending flag is what tells that effect this particular transition is a
+   * return rather than an ordinary render.
+   */
+  function backToList() {
+    pendingScrollRestoreRef.current = true
+    setView('list')
   }
 
   /** Toggle one kind chip. An empty selection means "all kinds". */
@@ -315,7 +404,7 @@ export function PlaceDirectory({
           V22 slice 9: at md+ this is column 1 of a two-column grid, sticky
           under the full-width header so the map stays in view while the list
           scrolls. Below md it is the ordinary stacked band. */}
-      {places !== null && mappedMarkers.length > 0 ? (
+      {view === 'list' && places !== null && mappedMarkers.length > 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm md:sticky md:top-16">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs font-medium text-slate-500">Nearby places</span>
@@ -477,10 +566,71 @@ export function PlaceDirectory({
             </select>
           </label>
         </div>
+
+        {/* V24 slice 10: the MAP VIEW's entry point. It lives in the controls
+            card rather than in the band's header so it is still reachable when
+            the band itself is not rendered (a search that matches no PLACEABLE
+            row) — the parent can open the map and see that the filter emptied
+            it. It is NOT the floating `scroll-to-map-btn`, whose job is
+            unchanged: scrolling back to the band.
+
+            It renders only when at least one row has coordinates, so the control
+            is never a door to an empty map. The way back is the map view's own
+            "Back to list" button. */}
+        {placeableMapRows.length > 0 ? (
+          <button
+            type="button"
+            data-testid="places-see-map"
+            onClick={openMapView}
+            className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 hover:bg-indigo-100"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d={NAV_ICONS.browse} />
+            </svg>
+            See map
+          </button>
+        ) : null}
       </div>
 
-      {/* The list (or its empty states). V22 slice 9: column 2 at md+. */}
-      {places === null ? (
+      {/* V24 slice 10 — THE MAP VIEW REPLACES the band and the list rather than
+          sitting beside them, and this is the MEASURED reason for that shape:
+          two mounted Leaflet maps means two `data-testid="places-map"` nodes,
+          and every existing spec that calls `page.getByTestId('places-map')`
+          then fails in Playwright's strict mode. At most ONE map is mounted at
+          any moment, and the map view's own map carries its OWN test id
+          (`places-map-view-map`, through PlacesMap's existing `testId` prop).
+
+          It spans both columns at md+: the strip wants the width, and the
+          controls above it stay mounted so a parent can narrow the map's result
+          set without leaving the map. */}
+      {view === 'map' && places !== null ? (
+        <div className="md:col-span-2">
+          <PlacesMapView
+            rows={placeableMapRows}
+            allRows={mapViewRows}
+            zipCoords={zipCoords}
+            homePin={homePin}
+            focusBehavior={focusBehavior}
+            onBackToList={backToList}
+          />
+        </div>
+      ) : null}
+
+      {/* The list (or its empty states). V22 slice 9: column 2 at md+.
+          V24 slice 10: the WHOLE list renders only in list view — the map view
+          REPLACES it (see the map view block above), because two mounted maps
+          would give every existing `getByTestId('places-map')` spec two nodes to
+          choose from and fail them in Playwright's strict mode. */}
+      {view === 'list' && places === null ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm md:col-start-2">
           Loading…
         </div>
@@ -567,8 +717,10 @@ export function PlaceDirectory({
         </div>
       )}
 
-      {/* Places we could not measure. Never hidden, never given a fake distance. */}
-      {filteredUnplaced.length > 0 ? (
+      {/* Places we could not measure. Never hidden, never given a fake distance.
+          V24 slice 10: list view only — the map view carries its own list of the
+          same rows (PlacesMapView's `allRows`), so nothing becomes unreachable. */}
+      {view === 'list' && filteredUnplaced.length > 0 ? (
         <section className="flex flex-col gap-2 md:col-start-2">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
             Not on the map yet
@@ -595,7 +747,7 @@ export function PlaceDirectory({
       {/* The floating "Map" button. NO z-index by design (document order clears
           the list; Leaflet's controls sit at 1000, so a number buys nothing).
           Clears the bottom nav by geometry. */}
-      {mapBandOutOfView ? (
+      {view === 'list' && mapBandOutOfView ? (
         <button
           type="button"
           data-testid="scroll-to-map-btn"
