@@ -1,5 +1,38 @@
 # Implementation Plan: the iOS notification hole — an email backstop
 
+> ## ⚠️ AMENDED IN PLACE 2026-09-26 — THE TRANSPORT IS SMTP, NOT RESEND
+>
+> A **founder-approved plan change** (posted by Cora/Hermes CoS; brief at
+> `.scratch/ios-notification-hole/SMTP-SWAP-BRIEF.md`) supersedes every
+> Resend-specific statement below. The Resend path needed an account **and a
+> sending domain** the founder does not have; the Gmail account already carries
+> Drop In's auth email and is proven live, so **Gmail SMTP became the primary
+> transport**. Read the Resend text below as the *original* design, not the
+> shipped one.
+>
+> **What actually shipped:**
+> - `_shared/smtp.ts` — a **pure** transport with an injected client. No library
+>   import at all, because a vitest spec imports it under Node.
+> - `_shared/smtpDeno.ts` — the real `npm:nodemailer@6` adapter, Deno-only, the
+>   one place a mail library appears. Its pure helpers
+>   (`smtpStatusFromResponse`, `smtpConfigFrom`) were moved into `smtp.ts` so
+>   they are testable; `supabase/functions/_shared/smtpDeno_test.ts` then proved
+>   the remaining wiring against an in-process fake SMTP server.
+> - `_shared/emailTransport.ts` — the pure precedence: **SMTP → Resend →
+>   disabled**, with a `disabled` reason that NAMES the missing secret.
+> - **`resend.ts` is retained and stays selectable** (SMTP wins when both are
+>   configured), so nothing in Slice 2 is wasted.
+>
+> **Slice 2 below is therefore DONE AS WRITTEN but is no longer the primary
+> path; Slice 3's "Resend 5xx retryable / 4xx terminal" rule is the HTTP rule
+> and is INVERTED for SMTP** (4xx transient → retryable; 5xx permanent →
+> terminal; no reply code → retryable). Slice 5's wizard is superseded by
+> `scripts/setup-email-api.sh` (Management API, no dashboard — the founder lost
+> dashboard access, see `task-state.md`). The **domain blocker is RETIRED**: the
+> brief states explicitly that it is no longer the blocker, and the live proof
+> now pends only the founder's app password via
+> `~/hermes/scripts/set-email-credential.sh`.
+
 > Owned by the orchestrator. Written BEFORE any builder dispatch.
 > Supersedes nothing: `plan.md` (V22 design batch) is a different, still-active
 > batch. This plan lives in its own directory per `docs/agents/issue-tracker.md`.
