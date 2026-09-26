@@ -93,15 +93,63 @@ works.
   two transports — a second function draining the same `sent_at is null` rows
   would race this one for them.
 
-## The founder's remaining steps
+## AUTH email is now DONE — over Gmail SMTP, via the API (2026-09-26)
 
-1. `bash scripts/setup-email.sh` — Resend account, domain, Supabase Auth SMTP,
-   rate limit, and the `send-push` secrets. **Human-only; an agent cannot create
-   the account.**
-2. **The domain decision.** Resend's shared `onboarding@resend.dev` sender only
-   delivers to the account owner's own address, and `drop-in-mu.vercel.app`
-   cannot be verified for sending (we do not control its DNS). Without a domain
-   the fallback cannot reach real parents — this is the one hard blocker.
-3. Re-run probes 1–3, then watch a real ping land in a real inbox.
-4. Real hardware: post a drop-in on one phone, ping it from a second account with
-   **no push subscription**, and confirm the email arrives.
+The founder **lost Supabase dashboard access** (the GitHub account behind the
+OAuth login was deleted; the live GitHub account `Meisburg` is a different one
+and is fine). Auth email was therefore configured **through the Management API
+instead**, which works without the dashboard:
+
+```bash
+bash scripts/setup-email-api.sh
+```
+
+Live and independently re-read afterwards:
+
+| Setting | Value |
+|---|---|
+| `smtp_host` | `smtp.gmail.com` |
+| `smtp_port` | `465` — **sent as a STRING**; the API rejects a number |
+| `smtp_user` | `jonmeisburg@gmail.com` |
+| `smtp_sender_name` | `Drop In` |
+| `rate_limit_email_sent` | **30** (was 2 — the actual bug) |
+
+**TWO API SHARP EDGES, both hit for real:**
+
+1. **`smtp_port` must be a string.** Sending the number 465 yields
+   `{"message":"smtp_port: Invalid input: expected string, received number"}`.
+2. **The rate limit cannot be set on its own.** A PATCH carrying only
+   `rate_limit_email_sent` fails — and the failure is a **401, not a 400**, which
+   reads like an auth problem and is not. The body is the tell:
+   *"Custom SMTP required to configure SMTP_SENDER_NAME or
+   RATE_LIMIT_EMAIL_SENT. Missing SMTP_ADMIN_EMAIL, SMTP_HOST, SMTP_PORT,
+   SMTP_USER, SMTP_PASS fields."* Send every SMTP field in the same request.
+   `setup-email-api.sh` retries automatically on a type mismatch (a 400 applies
+   nothing, so a retry is safe).
+
+**⚠️ `SUPABASE_ACCESS_TOKEN` is now the ONLY working credential on this project.**
+It reads *and* writes. Do not rotate or lose it; treat this machine's `.env` as
+load-bearing.
+
+**⚠️ AUTH LOGS ARE NOT AVAILABLE THROUGH THE API.** The old
+`/analytics/endpoints/logs.all` endpoint was removed on 2026-09-23; the
+replacement `/analytics/endpoints/logs` takes ClickHouse SQL over a single
+unified `logs` table (`WHERE source_name = 'auth_logs'`), but for this project it
+answers `{"error":"Backend error! Retry your query."}` to **every** query —
+including a bare `SELECT 1`. So while the dashboard is unreachable there is **no
+log-based diagnosis of a missing email**; the only proof is the message arriving.
+
+## Still outstanding
+
+1. **Prove auth email delivers** — `https://drop-in-mu.vercel.app/login` →
+   Forgot password → check the inbox (spam on the very first one).
+2. **`RESEND_API_KEY` / `EMAIL_FROM` function secrets** — **STILL NOT SET**, so
+   the *notification* email fallback built in slices 1–4 still delivers nothing.
+   That path speaks Resend's HTTP API and would need a sending domain.
+3. **Sending domain (SPF + DKIM)** — still does not exist. This is the blocker
+   for the notification half, not the auth half.
+4. **Real-device verification** — not done.
+5. **Recover the Supabase dashboard** — create a GitHub account on the same
+   email, or mail `support@supabase.com` from a different address. Needed for
+   billing, logs, and settings even though email no longer depends on it.
+
