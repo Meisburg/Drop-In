@@ -34,8 +34,10 @@ import {
   pushOptInGate,
   readArmedOrigin,
   readArmedTrigger,
+  readOfferedTriggers,
   readPermissionDecision,
   rememberPermissionDecision,
+  rememberTriggerOffered,
   serializePushPrefs,
   setKindMuted,
   type BrowserPermission,
@@ -345,23 +347,49 @@ export function armedPushTrigger(): PushPromptTrigger | null {
   return readArmedTrigger(sessionStore())
 }
 
+/**
+ * The trigger points already OFFERED to this parent (localStorage, permanent —
+ * see the offered-set section in src/lib/push.ts). Read by the prompt as one of
+ * the facts the pure decision seam judges.
+ */
+export function offeredPushPoints(): PushPromptTrigger[] {
+  return readOfferedTriggers(localStore())
+}
+
+/**
+ * Record that this point has been put in front of the parent. Written the
+ * moment the card is drawn (the point IS offered then) — deliberately WITHOUT
+ * notifying the prompt's own listeners: the card that is up must not unmount
+ * itself. The next fact re-read sees it and stops asking.
+ */
+export function markPushPointOffered(trigger: PushPromptTrigger): void {
+  rememberTriggerOffered(localStore(), trigger)
+}
+
 /** The route the still-armed action happened on, or null when unknown. */
 export function armedPushOrigin(): string | null {
   return readArmedOrigin(sessionStore())
 }
 
 /**
- * "Not now": remember the answer, so the prompt never asks again.
+ * "Not now": remember that THIS point has been offered — for this point only
+ * (V25 ticket 15's re-ask rule). A parent who says not-now at signup is still
+ * asked after their first post and again when they say they are going.
  *
- * It deliberately does NOT clear the armed trigger: the prompt's own note effect
- * (src/components/PushOptInPrompt.tsx) says the pinned "you can turn them on
- * any time from your settings … while you were away" sentence when it sees that
- * the answer was a fallback outcome, and THEN stands the trigger down. Clearing
- * it here would make the card vanish silently instead — which is exactly the
- * discarded-note bug of finding F.
+ * TWO THINGS IT DELIBERATELY DOES NOT DO:
+ *
+ *  * It does NOT write the 'dismissed' decision. That value is now the GLOBAL
+ *    answer — "Turn off notifications" in /settings (see disablePush) — and a
+ *    global dismissal here is exactly what made a not-now at one point cancel
+ *    every later point. The per-point fact lives in the offered set instead.
+ *  * It does NOT leave the armed trigger standing. The point is spent, so the
+ *    action that armed it has been consumed; the prompt's note (the pinned
+ *    "you can turn them on any time from your settings …" sentence) is held by
+ *    the caller for this render rather than derived from the stored trigger.
  */
-export function dismissPushPrompt(): void {
-  rememberPermissionDecision(localStore(), 'dismissed')
+export function dismissPushPrompt(trigger: PushPromptTrigger): void {
+  markPushPointOffered(trigger)
+  clearArmedTrigger(sessionStore())
   notifyArmed()
 }
 

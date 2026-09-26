@@ -28,12 +28,16 @@ import {
   IOS_INSTALL_REASON,
   IOS_SAFARI_ONLY_REASON,
   IOS_WEBVIEW_REASON,
+  PING_PROMPT_REASON,
   PUSH_DECISION_KEY,
+  PUSH_OFFERED_KEY,
   PUSH_PROMPT_REASON,
+  PUSH_PROMPT_TRIGGERS,
   PUSH_TRIGGER_KEY,
   PUSH_TRIGGER_ORIGIN_KEY,
   UNSUPPORTED_POINTER,
   WHILE_AWAY_POINTER,
+  addOfferedTrigger,
   armPushPrompt,
   armPushPromptOrigin,
   browserPermissionOf,
@@ -43,6 +47,7 @@ import {
   decidePermissionPrompt,
   dedupeNotifications,
   familiesGoingLabel,
+  hasOfferedTrigger,
   installSurface,
   isIosDevice,
   isIosSafari,
@@ -50,16 +55,24 @@ import {
   isKindMuted,
   isNotificationKind,
   isPlaydateDetailPath,
+  isPushPromptTrigger,
+  isRsvpDeferredAt,
+  isPromptSuppressedPath,
   isStandalone,
   notificationDedupeKey,
   notificationUrl,
+  parseOfferedTriggers,
   parsePermissionDecision,
   parsePushPrefs,
+  promptReasonFor,
   pushOptInGate,
   readArmedOrigin,
   readArmedTrigger,
+  readOfferedTriggers,
   readPermissionDecision,
   rememberPermissionDecision,
+  rememberTriggerOffered,
+  serializeOfferedTriggers,
   serializePushPrefs,
   setKindMuted,
   type StorageLike,
@@ -583,6 +596,132 @@ describe('the armed trigger origin', () => {
   })
 })
 
+// ---------------------------------------------------------------------------
+// The per-point memory (V25 ticket 15). The founder's three trigger points,
+// each offered at most once, so a "Not now" at ONE of them cannot cancel the
+// others.
+// ---------------------------------------------------------------------------
+
+describe('the offered points', () => {
+  it('names exactly the three moments, and reads only those', () => {
+    expect(PUSH_PROMPT_TRIGGERS).toEqual(['signup', 'post_created', 'ping_saved'])
+    expect(isPushPromptTrigger('signup')).toBe(true)
+    expect(isPushPromptTrigger('post_created')).toBe(true)
+    expect(isPushPromptTrigger('ping_saved')).toBe(true)
+    expect(isPushPromptTrigger('cold_load')).toBe(false)
+    expect(isPushPromptTrigger(null)).toBe(false)
+    expect(isPushPromptTrigger(3)).toBe(false)
+  })
+
+  it('arms and reads back the signup moment (it is a trigger like the other two)', () => {
+    const storage = fakeStorage()
+    armPushPrompt(storage, 'signup')
+    expect(readArmedTrigger(storage)).toBe('signup')
+  })
+
+  it('parses a stored list, drops anything that is not a point, and reads garbage as empty', () => {
+    expect(parseOfferedTriggers('signup,post_created')).toEqual(['signup', 'post_created'])
+    expect(parseOfferedTriggers('signup, nonsense ,ping_saved')).toEqual(['signup', 'ping_saved'])
+    expect(parseOfferedTriggers('')).toEqual([])
+    expect(parseOfferedTriggers(null)).toEqual([])
+    expect(parseOfferedTriggers(undefined)).toEqual([])
+    expect(parseOfferedTriggers('yes')).toEqual([])
+  })
+
+  it('serializes in the founder’s order, deduplicated — one canonical form', () => {
+    expect(serializeOfferedTriggers(['ping_saved', 'signup', 'signup'])).toBe('signup,ping_saved')
+    expect(serializeOfferedTriggers([])).toBe('')
+  })
+
+  it('adds a point without disturbing the ones already there', () => {
+    expect(addOfferedTrigger(['signup'], 'ping_saved')).toEqual(['signup', 'ping_saved'])
+    expect(addOfferedTrigger([], 'post_created')).toEqual(['post_created'])
+    expect(addOfferedTrigger(['signup'], 'signup')).toEqual(['signup'])
+    // Never mutates the list it is handed.
+    const offered: Array<'signup' | 'post_created' | 'ping_saved'> = ['signup']
+    addOfferedTrigger(offered, 'post_created')
+    expect(offered).toEqual(['signup'])
+  })
+
+  it('round-trips through storage, merging rather than replacing', () => {
+    const storage = fakeStorage()
+    rememberTriggerOffered(storage, 'signup')
+    rememberTriggerOffered(storage, 'ping_saved')
+    expect(storage.dump()[PUSH_OFFERED_KEY]).toBe('signup,ping_saved')
+    expect(readOfferedTriggers(storage)).toEqual(['signup', 'ping_saved'])
+  })
+
+  it('reads an absent key as "no point offered yet"', () => {
+    expect(readOfferedTriggers(fakeStorage())).toEqual([])
+  })
+
+  it('survives a storage that refuses everything', () => {
+    expect(readOfferedTriggers(throwingStorage)).toEqual([])
+    expect(() => rememberTriggerOffered(throwingStorage, 'signup')).not.toThrow()
+    expect(readOfferedTriggers(null)).toEqual([])
+    expect(() => rememberTriggerOffered(null, 'signup')).not.toThrow()
+  })
+
+  it('answers "is this point spent?" — and a cold load (null) is never spent', () => {
+    expect(hasOfferedTrigger(['signup'], 'signup')).toBe(true)
+    expect(hasOfferedTrigger(['signup'], 'ping_saved')).toBe(false)
+    expect(hasOfferedTrigger([], 'ping_saved')).toBe(false)
+    expect(hasOfferedTrigger(['signup'], null)).toBe(false)
+  })
+})
+
+describe('promptReasonFor', () => {
+  it('gives the going-to-an-event point its own reason — comments and cancellations', () => {
+    expect(promptReasonFor('ping_saved')).toBe(PING_PROMPT_REASON)
+    expect(PING_PROMPT_REASON).toContain('comments')
+    expect(PING_PROMPT_REASON).toContain('cancelled')
+  })
+
+  it('keeps the drop-in reason for the other two points', () => {
+    expect(promptReasonFor('signup')).toBe(PUSH_PROMPT_REASON)
+    expect(promptReasonFor('post_created')).toBe(PUSH_PROMPT_REASON)
+  })
+})
+
+describe('isPromptSuppressedPath', () => {
+  it('names the surfaces that own the slot themselves', () => {
+    expect(isPromptSuppressedPath('/settings')).toBe(true)
+    expect(isPromptSuppressedPath('/onboarding')).toBe(true)
+    // The composer: the post point is armed while its form submits and the app
+    // then navigates to the feed by itself, so a card there is spent unseen.
+    expect(isPromptSuppressedPath('/new')).toBe(true)
+  })
+
+  it('is not a blanket route filter — every other surface can carry the prompt', () => {
+    for (const path of ['/', '/playdate/abc', '/profile', '/inbox', null, undefined]) {
+      expect(isPromptSuppressedPath(path), String(path)).toBe(false)
+    }
+  })
+})
+
+describe('isRsvpDeferredAt', () => {
+  const DETAIL = '/playdate/11111111-2222-3333-4444-555555555555'
+
+  it('defers only while the parent is still on a detail page', () => {
+    expect(isRsvpDeferredAt(DETAIL, DETAIL)).toBe(true)
+    expect(isRsvpDeferredAt(DETAIL, '/')).toBe(false)
+    expect(isRsvpDeferredAt(DETAIL, '/new')).toBe(false)
+    // A different detail page is still a detail page.
+    expect(isRsvpDeferredAt(DETAIL, '/playdate/other')).toBe(true)
+  })
+
+  it('is not a deferral at all when the action happened elsewhere', () => {
+    expect(isRsvpDeferredAt('/', '/')).toBe(false)
+    expect(isRsvpDeferredAt('/playdate/x/edit', '/playdate/x/edit')).toBe(false)
+    expect(isRsvpDeferredAt(null, '/')).toBe(false)
+  })
+
+  it('keeps deferring when the current route is unknown — the conservative direction', () => {
+    expect(isRsvpDeferredAt(DETAIL, null)).toBe(true)
+    expect(isRsvpDeferredAt(DETAIL, undefined)).toBe(true)
+  })
+})
+
 describe('isPlaydateDetailPath', () => {
   it('recognizes the detail route, with or without a trailing slash', () => {
     expect(isPlaydateDetailPath('/playdate/abc')).toBe(true)
@@ -727,6 +866,164 @@ describe('decidePermissionPrompt', () => {
 })
 
 // ---------------------------------------------------------------------------
+// The per-point re-ask rule (V25 ticket 15). THE RULE, in the founder's terms:
+// each of the three points is offered at most once, a "Not now" at one point
+// does not cancel the others, and after all three the app is silent.
+// ---------------------------------------------------------------------------
+
+describe('decidePermissionPrompt — one offer per point', () => {
+  it('asks each point when it has not been offered yet — signup, post, going', () => {
+    for (const trigger of ['signup', 'post_created', 'ping_saved'] as const) {
+      const decision = decidePermissionPrompt({
+        decision: 'unknown',
+        permission: 'default',
+        trigger,
+        origin: '/',
+        currentPath: '/',
+        offered: [],
+        gate: OPEN_GATE,
+      })
+      expect(decision.ask, `${trigger} must ask`).toBe(true)
+      expect(decision.reason).toBe(promptReasonFor(trigger))
+    }
+  })
+
+  it('a "Not now" at SIGNUP does not cancel the after-post ask — the ticket’s rule', () => {
+    expect(
+      decidePermissionPrompt({
+        decision: 'unknown',
+        permission: 'default',
+        trigger: 'post_created',
+        origin: '/new',
+        currentPath: '/',
+        offered: ['signup'],
+        gate: OPEN_GATE,
+      }).ask,
+    ).toBe(true)
+  })
+
+  it('a "Not now" at the post does not cancel the going ask either', () => {
+    expect(
+      decidePermissionPrompt({
+        decision: 'unknown',
+        permission: 'default',
+        trigger: 'ping_saved',
+        origin: '/',
+        currentPath: '/',
+        offered: ['signup', 'post_created'],
+        gate: OPEN_GATE,
+      }).ask,
+    ).toBe(true)
+  })
+
+  it('a point already offered is SILENCE — no ask and no sentence on a loop', () => {
+    const decision = decidePermissionPrompt({
+      decision: 'unknown',
+      permission: 'default',
+      trigger: 'post_created',
+      origin: '/new',
+      currentPath: '/',
+      offered: ['post_created'],
+      gate: OPEN_GATE,
+    })
+    expect(decision).toEqual({ ask: false, reason: null, note: null })
+  })
+
+  it('after all three points, the app is silent and /settings is the only door back', () => {
+    for (const trigger of ['signup', 'post_created', 'ping_saved'] as const) {
+      expect(
+        decidePermissionPrompt({
+          decision: 'unknown',
+          permission: 'default',
+          trigger,
+          origin: '/',
+          currentPath: '/',
+          offered: ['signup', 'post_created', 'ping_saved'],
+          gate: OPEN_GATE,
+        }),
+        `${trigger} must be silent once spent`,
+      ).toEqual({ ask: false, reason: null, note: null })
+    }
+  })
+
+  it('a SPENT point beats a remembered dismissal — spent reads as silence, not the sentence', () => {
+    expect(
+      decidePermissionPrompt({
+        decision: 'dismissed',
+        permission: 'default',
+        trigger: 'post_created',
+        origin: '/new',
+        currentPath: '/',
+        offered: ['post_created'],
+        gate: OPEN_GATE,
+      }),
+    ).toEqual({ ask: false, reason: null, note: null })
+  })
+
+  it('a remembered dismissal is still global when the point is NEW (the /settings off-switch)', () => {
+    // 'dismissed' is what "Turn off notifications" writes; a device the parent
+    // switched off must not be asked again just because a later point is new.
+    const decision = decidePermissionPrompt({
+      decision: 'dismissed',
+      permission: 'default',
+      trigger: 'ping_saved',
+      origin: '/',
+      currentPath: '/',
+      offered: [],
+      gate: OPEN_GATE,
+    })
+    expect(decision.ask).toBe(false)
+    expect(decision.note).toBe(DISMISSED_POINTER)
+  })
+
+  it('a denial still stops every point, offered or not', () => {
+    for (const offered of [[], ['signup']] as const) {
+      const decision = decidePermissionPrompt({
+        decision: 'unknown',
+        permission: 'denied',
+        trigger: 'post_created',
+        origin: '/new',
+        currentPath: '/',
+        offered,
+        gate: OPEN_GATE,
+      })
+      expect(decision.ask).toBe(false)
+      expect(decision.note).toBe(DENIED_POINTER)
+    }
+  })
+
+  it('a missing offered list reads as "nothing offered yet" — a caller cannot silence by omission', () => {
+    expect(
+      decidePermissionPrompt({
+        decision: 'unknown',
+        permission: 'default',
+        trigger: 'signup',
+        origin: '/login',
+        currentPath: '/',
+        gate: OPEN_GATE,
+      }).ask,
+    ).toBe(true)
+  })
+
+  it('never asks on /settings, /onboarding or /new — the surface owns the question', () => {
+    for (const currentPath of ['/settings', '/onboarding', '/new']) {
+      expect(
+        decidePermissionPrompt({
+          decision: 'unknown',
+          permission: 'default',
+          trigger: 'signup',
+          origin: '/login',
+          currentPath,
+          offered: [],
+          gate: OPEN_GATE,
+        }),
+        currentPath,
+      ).toEqual({ ask: false, reason: null, note: null })
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
 // The RSVP-priority deferral (first-use audit, ticket 03)
 //
 // The action that arms the prompt happened on a drop-in's DETAIL page, whose
@@ -820,6 +1117,35 @@ describe('decidePermissionPrompt — the RSVP-priority deferral', () => {
         }).ask,
       ).toBe(true)
     }
+  })
+
+  it('asks on the NEXT non-detail surface — the deferral is a wait, not a swallow', () => {
+    // V25 ticket 15: at HEAD the origin alone decided this, so the point was
+    // deferred on every route forever and the trigger-3 offer never happened.
+    // The live route is the fact that ends it.
+    const decision = decidePermissionPrompt({
+      decision: 'unknown',
+      permission: 'default',
+      trigger: 'ping_saved',
+      origin: DETAIL,
+      currentPath: '/',
+      gate: OPEN_GATE,
+    })
+    expect(decision.ask).toBe(true)
+    expect(decision.reason).toBe(PING_PROMPT_REASON)
+  })
+
+  it('still defers while the parent is on a detail page — the confirmation keeps its moment', () => {
+    expect(
+      decidePermissionPrompt({
+        decision: 'unknown',
+        permission: 'default',
+        trigger: 'ping_saved',
+        origin: DETAIL,
+        currentPath: DETAIL,
+        gate: OPEN_GATE,
+      }),
+    ).toEqual({ ask: false, reason: null, note: null })
   })
 })
 

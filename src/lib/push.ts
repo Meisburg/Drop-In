@@ -240,8 +240,22 @@ export type PermissionDecision = 'unknown' | 'granted' | 'denied' | 'dismissed'
 /** What the browser reports (`Notification.permission`, plus our own 'unsupported'). */
 export type BrowserPermission = 'default' | 'granted' | 'denied' | 'unsupported'
 
-/** The two meaningful actions the ticket allows a prompt to follow. */
-export type PushPromptTrigger = 'post_created' | 'ping_saved'
+/**
+ * The three meaningful moments a prompt may follow (V25 ticket 15 — the
+ * founder's three trigger points, in his order): the account they just
+ * created, the drop-in they just posted, and the RSVP they just gave.
+ */
+export type PushPromptTrigger = 'signup' | 'post_created' | 'ping_saved'
+
+export const PUSH_PROMPT_TRIGGERS: readonly PushPromptTrigger[] = [
+  'signup',
+  'post_created',
+  'ping_saved',
+]
+
+export function isPushPromptTrigger(value: unknown): value is PushPromptTrigger {
+  return value === 'signup' || value === 'post_created' || value === 'ping_saved'
+}
 
 export const PUSH_DECISION_KEY = 'dropin.push.decision'
 export const PUSH_TRIGGER_KEY = 'dropin.push.trigger'
@@ -307,7 +321,7 @@ export function readArmedTrigger(storage: StorageLike | null): PushPromptTrigger
   if (storage === null) return null
   try {
     const raw = storage.getItem(PUSH_TRIGGER_KEY)
-    return raw === 'post_created' || raw === 'ping_saved' ? raw : null
+    return isPushPromptTrigger(raw) ? raw : null
   } catch {
     return null
   }
@@ -348,8 +362,104 @@ export function clearArmedTrigger(storage: StorageLike | null): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// WHICH POINTS HAVE ALREADY BEEN OFFERED (localStorage, permanent).
+//
+// The ticket's re-ask rule, stored as one fact per trigger point: "A decline at
+// a trigger point is remembered for THAT trigger point only — 'Not now' at
+// signup does not cancel the after-first-post ask or the going-to-an-event ask.
+// Each point is offered at most once."
+//
+// It is a SEPARATE key from the decision on purpose, and conflating the two is
+// the bug this section exists to prevent:
+//
+//  * PUSH_DECISION_KEY is the parent's ANSWER ('denied' / 'dismissed' /
+//    'granted'). 'dismissed' is written by "Turn off notifications" in
+//    /settings, and that answer IS global — a parent who switched notifications
+//    off in Settings has said no to all of it, not to one card.
+//  * PUSH_OFFERED_KEY is which of the three MOMENTS have been put in front of
+//    them. A point in this set is never offered again; a point outside it still
+//    is, even after a "Not now" somewhere else.
+// ---------------------------------------------------------------------------
+
+export const PUSH_OFFERED_KEY = 'dropin.push.offered'
+
+/** A missing or garbage value reads as "no point offered yet". */
+export function parseOfferedTriggers(raw: string | null | undefined): PushPromptTrigger[] {
+  if (raw === null || raw === undefined || raw === '') return []
+  return raw
+    .split(',')
+    .map((part) => part.trim())
+    .filter(isPushPromptTrigger)
+}
+
+/** Always in the founder's order, without duplicates — the one canonical form. */
+export function serializeOfferedTriggers(triggers: readonly PushPromptTrigger[]): string {
+  return PUSH_PROMPT_TRIGGERS.filter((trigger) => triggers.includes(trigger)).join(',')
+}
+
+/** The same list with one more point on it. Pure, so the merge is testable. */
+export function addOfferedTrigger(
+  offered: readonly PushPromptTrigger[],
+  trigger: PushPromptTrigger,
+): PushPromptTrigger[] {
+  return PUSH_PROMPT_TRIGGERS.filter(
+    (candidate) => candidate === trigger || offered.includes(candidate),
+  )
+}
+
+export function readOfferedTriggers(storage: StorageLike | null): PushPromptTrigger[] {
+  if (storage === null) return []
+  try {
+    return parseOfferedTriggers(storage.getItem(PUSH_OFFERED_KEY))
+  } catch {
+    return []
+  }
+}
+
+export function rememberTriggerOffered(
+  storage: StorageLike | null,
+  trigger: PushPromptTrigger,
+): void {
+  if (storage === null) return
+  try {
+    // Read-then-merge-then-write, so the whole set survives: writing only the
+    // new point would erase the points offered earlier in this parent's life.
+    const next = addOfferedTrigger(readOfferedTriggers(storage), trigger)
+    storage.setItem(PUSH_OFFERED_KEY, serializeOfferedTriggers(next))
+  } catch {
+    // See rememberPermissionDecision: an unwritable storage means the point may
+    // be offered once more, which is cosmetic — never a broken flow.
+  }
+}
+
+/** Whether this point is already spent (null trigger = a cold load, never). */
+export function hasOfferedTrigger(
+  offered: readonly PushPromptTrigger[],
+  trigger: PushPromptTrigger | null,
+): boolean {
+  return trigger !== null && offered.includes(trigger)
+}
+
 export const PUSH_PROMPT_REASON =
   'Get a heads-up when someone joins your drop-in, when it starts, or if it gets cancelled.'
+
+/**
+ * The reason shown with the going-to-an-event prompt (V25 ticket 15, trigger 3),
+ * in the founder's own terms: asking when a parent saves a "going" is asking so
+ * "you could get updates on the event, like comments or if it gets cancelled or
+ * whatever." The sentence names both things they actually get.
+ */
+export const PING_PROMPT_REASON =
+  'You’re going — turn these on and we’ll tell you about new comments, or if it gets cancelled.'
+
+/**
+ * The one-line reason shown WITH the prompt for a given point. Pure and total,
+ * so a new trigger point cannot ship without a sentence.
+ */
+export function promptReasonFor(trigger: PushPromptTrigger): string {
+  return trigger === 'ping_saved' ? PING_PROMPT_REASON : PUSH_PROMPT_REASON
+}
 
 /**
  * The pointer shown instead of a prompt, for a parent the app will never ask
@@ -377,10 +487,24 @@ export interface PermissionPromptInput {
    * The route the meaningful action happened ON, when it is known (the first-use
    * audit's deferral, ticket 03). A ping saved on a drop-in's detail page must
    * not have the prompt land on top of the RSVP confirmation the parent just
-   * earned; it waits for the next feed visit. Missing/unknown origin keeps
-   * today's behavior — never silently drop a legitimate prompt.
+   * earned; it waits until the parent is somewhere else. Missing/unknown origin
+   * keeps today's behavior — never silently drop a legitimate prompt.
    */
   origin?: string | null
+  /**
+   * The route the prompt would appear on RIGHT NOW (the live pathname). The
+   * deferral above is about the RSVP confirmation's screen, not about the
+   * action: it holds while the parent is still on a drop-in's detail page, and
+   * the next non-detail visit asks instead. Missing reads as "still there",
+   * which is the conservative direction for a deferral.
+   */
+  currentPath?: string | null
+  /**
+   * The points already put in front of this parent (see readOfferedTriggers).
+   * Absent reads as "none offered yet" — today's behavior — so a caller that has
+   * not been taught the per-point memory cannot silence a point by omission.
+   */
+  offered?: readonly PushPromptTrigger[]
   /** Whether the app is running installed (see pushOptInGate). */
   gate: PushOptInGate
 }
@@ -396,6 +520,29 @@ export function isPlaydateDetailPath(pathname: string | null | undefined): boole
   return /^\/playdate\/[^/]+\/?$/.test(pathname)
 }
 
+/**
+ * The routes the prompt never occupies at all (V25 ticket 15).
+ *
+ *  * `/settings` — the control's own home. The Notifications section IS the
+ *    durable switch; a floating opt-in card there would be two controls for one
+ *    answer (this is where the suppression has always lived).
+ *  * `/onboarding` — a setup flow the app itself navigates out of. A point is
+ *    SPENT the moment it is offered (see the offered set below), so a card drawn
+ *    on the location step would be spent by the app's own "Continue" tap before
+ *    the parent could answer it. The ticket's own fallback for trigger point 1
+ *    is "the first signed-in surface": onboarding is a step, not that surface,
+ *    and the feed immediately behind it is.
+ *  * `/new` — the composer, for the same reason. The post point is ARMED while
+ *    the form is submitting and the app then navigates to the feed by itself, so
+ *    a card drawn over the composer would be spent before the parent ever read
+ *    it (found by this slice's browser lane: the feed showed no card at all).
+ *    The moment the ticket names is "after a first post", and the feed behind
+ *    the composer is where that moment lives.
+ */
+export function isPromptSuppressedPath(pathname: string | null | undefined): boolean {
+  return pathname === '/settings' || pathname === '/onboarding' || pathname === '/new'
+}
+
 export interface PermissionPromptDecision {
   /** Whether the prompt may be shown. */
   ask: boolean
@@ -403,6 +550,28 @@ export interface PermissionPromptDecision {
   reason: string | null
   /** The fallback sentence shown INSTEAD of a prompt (null when we are asking). */
   note: string | null
+}
+
+/**
+ * Whether the RSVP-priority deferral applies RIGHT NOW.
+ *
+ * True when the meaningful action happened on a drop-in's detail page AND the
+ * parent has not left a detail page since. The deferral is not a blanket "never"
+ * and not a delay: the confirmation's own screen stays clear, and the first
+ * non-detail surface is where the point is offered.
+ *
+ * (At HEAD this was decided on the origin alone, so a ping saved from a detail
+ * page was deferred on EVERY route — including the next feed visit — which
+ * contradicted the comment on the branch and swallowed the point the ticket
+ * exists to offer. The `currentPath` half is what makes the claim true.)
+ */
+export function isRsvpDeferredAt(
+  origin: string | null | undefined,
+  currentPath: string | null | undefined,
+): boolean {
+  if (!isPlaydateDetailPath(origin)) return false
+  if (currentPath === null || currentPath === undefined) return true
+  return isPlaydateDetailPath(currentPath)
 }
 
 /**
@@ -415,11 +584,28 @@ export interface PermissionPromptDecision {
  *  3. the gate says no     → never ask; the reason already explains itself
  *                            (iOS before install: granting would be a lie).
  *  4. denied (browser or remembered) → never ask again; point at the inbox.
- *  5. dismissed            → never ask again; point at the profile control.
- *  6. no meaningful action → never ask: THE COLD-LOAD PIN.
- *  7. saved on a drop-in's DETAIL page → never ask HERE (the RSVP-priority
- *                            deferral): the next feed visit asks instead.
- *  8. otherwise            → ask, with the one-line reason.
+ *                            THIS ONE IS GLOBAL and permanent: the browser will
+ *                            not show its prompt again, so re-asking is a
+ *                            silent no-op that looks broken.
+ *  5. no meaningful action → never ask: THE COLD-LOAD PIN.
+ *  6. the surface owns it → never ask, and say nothing: /settings is the
+ *                            control's own home and /onboarding is a setup flow
+ *                            the app navigates out of (see
+ *                            isPromptSuppressedPath).
+ *  7. this point is spent  → never ask again AND say nothing: the point has
+ *                            already been put in front of this parent (each is
+ *                            offered at most once), so /settings → Notifications
+ *                            is the only door back. Silence, not the fallback
+ *                            sentence, so the sentence cannot loop.
+ *  8. 'dismissed'          → never ask; point at the profile control. This is
+ *                            the GLOBAL answer ("Turn off notifications" in
+ *                            /settings, or a not-now remembered before this
+ *                            ticket), and it is why a "Not now" on a CARD does
+ *                            not write it — see dismissPushPrompt.
+ *  9. saved on a drop-in's DETAIL page, still on one → never ask HERE (the
+ *                            RSVP-priority deferral): the next non-detail visit
+ *                            asks instead.
+ * 10. otherwise            → ask, with the reason this point earns.
  */
 export function decidePermissionPrompt(input: PermissionPromptInput): PermissionPromptDecision {
   const no = (note: string | null): PermissionPromptDecision => ({ ask: false, reason: null, note })
@@ -428,14 +614,16 @@ export function decidePermissionPrompt(input: PermissionPromptInput): Permission
   if (input.permission === 'granted' || input.decision === 'granted') return no(null)
   if (!input.gate.allowed) return no(input.gate.reason)
   if (input.permission === 'denied' || input.decision === 'denied') return no(DENIED_POINTER)
-  if (input.decision === 'dismissed') return no(DISMISSED_POINTER)
   if (input.trigger === null) return no(null)
-  // Step 7. Silence here, not a note: the note would be the interruption the
-  // deferral exists to remove. The trigger stays armed, so the next feed visit
-  // asks (or shows the pointer the parent's answer deserves).
-  if (isPlaydateDetailPath(input.origin)) return no(null)
+  if (isPromptSuppressedPath(input.currentPath)) return no(null)
+  if (hasOfferedTrigger(input.offered ?? [], input.trigger)) return no(null)
+  if (input.decision === 'dismissed') return no(DISMISSED_POINTER)
+  // Step 9. Silence here, not a note: the note would be the interruption the
+  // deferral exists to remove. The trigger stays armed, so the next non-detail
+  // visit asks (or shows the pointer the parent's answer deserves).
+  if (isRsvpDeferredAt(input.origin, input.currentPath)) return no(null)
 
-  return { ask: true, reason: PUSH_PROMPT_REASON, note: null }
+  return { ask: true, reason: promptReasonFor(input.trigger), note: null }
 }
 
 /** `Notification.permission` (or the absence of `Notification`) → our shape. */

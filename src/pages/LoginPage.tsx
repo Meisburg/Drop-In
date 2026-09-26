@@ -10,6 +10,7 @@ import {
 } from '../lib/account'
 import { LOGIN_PATH, resolveAuthRedirect } from '../lib/auth'
 import { markSignupZipUnresolved } from '../lib/onboarding'
+import { armPushPromptForAction } from '../lib/pushClient'
 import {
   createProfile,
   HandleTakenError,
@@ -228,6 +229,14 @@ export function LoginPage() {
       // now — otherwise the onboarding gate, and V4's handle step for
       // social users, would see a stale null and ask for a name twice.
       await refresh()
+      // V25 ticket 15, trigger point 1: the account exists, so the FIRST of the
+      // three natural moments has arrived — the founder's "probably at signup".
+      // This records the moment only; the shell's `PushOptInPrompt` owns every
+      // decision (pure `decidePermissionPrompt`), and the permission request
+      // itself is made from that card's own button click, never from this
+      // handler — so no permission call ever depends on the transient
+      // activation of the Create-account tap surviving the awaits above.
+      armPushPromptForAction('signup')
       setAwaitingProfile(false)
       navigate('/', { replace: true })
     } catch (err) {
