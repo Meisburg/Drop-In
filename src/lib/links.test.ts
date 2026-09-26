@@ -7,6 +7,7 @@ import {
   linkView,
   linkedNameTargetForViewer,
   normalizeHandle,
+  parentCardLinkOwnerIndex,
   parentCardLinkState,
   validateLinkRequest,
   type LinkRowForView,
@@ -166,7 +167,52 @@ describe('linkView — which state the profile is in', () => {
   })
 })
 
-describe('parentCardLinkState — where the link action lives (V24 11B)', () => {
+describe('parentCardLinkOwnerIndex — ONE card carries the account state (V24 11B fix round 1)', () => {
+  it('THE CANONICAL CASE: card 1 does not match, card 2 does — card 2 wins', () => {
+    // The defect this rule was written for, executed against the real rule: a
+    // per-card "match, else the first card" fallback printed the SAME accepted
+    // link on BOTH cards (two "Linked to @Nicole", two Unlink buttons) because
+    // the first card also fell through to its fallback branch.
+    expect(parentCardLinkOwnerIndex(['Jon', 'Nicole'], 'Nicole')).toBe(1)
+    // ...and the mirror image: the matching card FIRST keeps it.
+    expect(parentCardLinkOwnerIndex(['Nicole', 'Jon'], 'Nicole')).toBe(0)
+  })
+
+  it('matches the way the handshake and the read surface compare handles', () => {
+    expect(parentCardLinkOwnerIndex(['Jon', 'Nicole'], '@Nicole')).toBe(1)
+    expect(parentCardLinkOwnerIndex(['Jon', 'nicole'], 'Nicole')).toBe(1)
+    // A near miss is NOT a match (parentNameRows' rule): so the fallback lands.
+    expect(parentCardLinkOwnerIndex(['Jon', 'Nicole Rivera'], 'Nicole')).toBe(0)
+  })
+
+  it('falls back to the FIRST card ONLY when no card matches', () => {
+    // Reachability: a link whose handle matches no card name must still be
+    // endable/answerable somewhere, and the first card is the stable place.
+    expect(parentCardLinkOwnerIndex(['Jon', 'Nicole'], 'Nobody')).toBe(0)
+    expect(parentCardLinkOwnerIndex(['Jon'], 'Nobody')).toBe(0)
+    // The not-yet-saved slot is a rendered card too, and matches nothing.
+    expect(parentCardLinkOwnerIndex([''], 'Nicole')).toBe(0)
+  })
+
+  it('lets ONE card claim a name two cards share', () => {
+    // One accepted partner is one person; the first bearer claims it, exactly
+    // as `parentNameRows`' `claimed` flag does on the read surface.
+    expect(parentCardLinkOwnerIndex(['Nicole', 'Nicole'], 'Nicole')).toBe(0)
+  })
+
+  it('treats an empty or missing handle as matching NOBODY', () => {
+    // A failed handle embed must not turn the first nameless card into the
+    // partner; the fallback still lands on the first card.
+    expect(parentCardLinkOwnerIndex(['Jon', 'Nicole'], '')).toBe(0)
+    expect(parentCardLinkOwnerIndex(['', 'Nicole'], '')).toBe(0)
+  })
+
+  it('is -1 with no cards at all — nothing carries it', () => {
+    expect(parentCardLinkOwnerIndex([], 'Nicole')).toBe(-1)
+  })
+})
+
+describe('parentCardLinkState — what one card shows (V24 11B)', () => {
   const linked = {
     kind: 'linked',
     linkId: 'l1',
@@ -182,46 +228,56 @@ describe('parentCardLinkState — where the link action lives (V24 11B)', () => 
     outgoing: true,
   } as const
 
-  it('puts the accepted link on the card whose NAME is the linked account', () => {
-    // The same name match the read surface renders the link with, so the two
-    // surfaces cannot disagree about whose card carries the relationship.
-    expect(parentCardLinkState(linked, 'nicole', false)).toBe('linked')
-    expect(parentCardLinkState(linked, '@Nicole', false)).toBe('linked')
+  it('THE CANONICAL CASE: exactly ONE card carries the accepted link', () => {
+    // cards ["Jon", "Nicole"], linked to @Nicole. The old per-card rule answered
+    // 'linked' for BOTH cards here; the list-level rule answers it once.
+    const owner = parentCardLinkOwnerIndex(['Jon', 'Nicole'], 'Nicole')
+    const states = ['Jon', 'Nicole'].map((_name, i) => parentCardLinkState(linked, i, owner))
+    expect(states).toEqual(['hidden', 'linked'])
+    expect(states.filter((s) => s === 'linked')).toHaveLength(1)
   })
 
-  it('hides the account-level state on a card it does not concern', () => {
-    expect(parentCardLinkState(linked, 'Jon', false)).toBe('hidden')
-    expect(parentCardLinkState(outgoing, 'Jon', false)).toBe('hidden')
+  it('prints the pending and declined states ONCE, whichever direction', () => {
+    const owner = parentCardLinkOwnerIndex(['Jon', 'Nicole'], 'Nicole')
+    expect([
+      parentCardLinkState(incoming, 0, owner),
+      parentCardLinkState(incoming, 1, owner),
+    ]).toEqual(['hidden', 'incoming'])
+    expect([
+      parentCardLinkState(outgoing, 0, owner),
+      parentCardLinkState(outgoing, 1, owner),
+    ]).toEqual(['hidden', 'outgoing'])
+    expect([
+      parentCardLinkState(declined, 0, owner),
+      parentCardLinkState(declined, 1, owner),
+    ]).toEqual(['hidden', 'declined'])
   })
 
-  it('falls back to the FIRST card when no card name matches the handle', () => {
-    // The N5 residual: the card is free text and may not match the handle. The
-    // relationship still has to be endable/answerable from somewhere, and the
-    // first card is the only stable place for it.
-    expect(parentCardLinkState(linked, 'Jon', true)).toBe('linked')
-    expect(parentCardLinkState(incoming, 'Jon', true)).toBe('incoming')
+  it('puts the unmatched fallback on the FIRST card alone', () => {
+    const owner = parentCardLinkOwnerIndex(['Jon', 'Nicole'], 'Nobody')
+    expect(owner).toBe(0)
+    expect([
+      parentCardLinkState(incoming, 0, owner),
+      parentCardLinkState(incoming, 1, owner),
+    ]).toEqual(['incoming', 'hidden'])
   })
 
-  it('keeps the pending and declined states distinct so the right controls render', () => {
-    expect(parentCardLinkState(outgoing, 'Nicole', false)).toBe('outgoing')
-    expect(parentCardLinkState(incoming, 'Nicole', false)).toBe('incoming')
-    expect(parentCardLinkState(declined, 'Nicole', false)).toBe('declined')
+  it('hides the state everywhere when there are no cards to carry it', () => {
+    const owner = parentCardLinkOwnerIndex([], 'Nicole')
+    expect(owner).toBe(-1)
+    expect([
+      parentCardLinkState(linked, 0, owner),
+      parentCardLinkState(linked, 1, owner),
+    ]).toEqual(['hidden', 'hidden'])
   })
 
   it('offers the invite on EVERY card while no link exists', () => {
-    expect(parentCardLinkState({ kind: 'none' }, 'Jon', true)).toBe('invite')
-    expect(parentCardLinkState({ kind: 'none' }, 'Nicole', false)).toBe('invite')
-    // A nameless (not-yet-saved) slot offers it too — the control lives with
-    // the person, and a family with no saved card must still be able to link.
-    expect(parentCardLinkState({ kind: 'none' }, '', false)).toBe('invite')
-  })
-
-  it('does not match an empty card name to a missing handle', () => {
-    // The handle can be '' when the embed failed; an empty name must not be
-    // treated as "this nameless card is the partner".
-    const handleless = { kind: 'outgoing', linkId: 'l1', otherHandle: '' } as const
-    expect(parentCardLinkState(handleless, '', false)).toBe('hidden')
-    expect(parentCardLinkState(handleless, '', true)).toBe('outgoing')
+    // Linking is per-person ("link an account to that person's name"), so unlike
+    // the account-level states this one is not exclusive. `ownerIndex` is
+    // irrelevant here.
+    expect(parentCardLinkState({ kind: 'none' }, 0, 0)).toBe('invite')
+    expect(parentCardLinkState({ kind: 'none' }, 1, 0)).toBe('invite')
+    expect(parentCardLinkState({ kind: 'none' }, 1, -1)).toBe('invite')
   })
 })
 

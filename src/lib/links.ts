@@ -171,6 +171,52 @@ export function linkView(
 }
 
 /**
+ * V24 slice 11B: WHICH ONE CARD CARRIES THE ACCOUNT-LEVEL LINK STATE — the
+ * LIST-level decision, and the reason it must be list-level.
+ *
+ * THE ASSOCIATION IS THE SAME NAME MATCH THE READ SURFACE USES
+ * (`parentNameRows`, src/lib/parentCards.ts): a card is the linked partner when
+ * its name equals the other account's handle, case- and @-insensitively. There
+ * is no stored card↔account identity in 0047 to read, so this is the only
+ * honest association available.
+ *
+ * WHY THIS TAKES THE WHOLE LIST. A per-card rule cannot answer it. The first
+ * version decided one card at a time — "match, or else the first card" — which
+ * printed the SAME relationship on TWO cards the moment the first card did not
+ * match but a later one did (card 1 "Jon", card 2 "Nicole", linked to @Nicole:
+ * both cards matched the "front of the list" branch in turn). One accepted
+ * partner is one person, so ONE card must carry the state; that is a property of
+ * the list, not of a card, exactly as `parentNameRows`' `claimed` flag is.
+ *
+ * THE WINNER, in order, and documented because each case is a real page:
+ *   1. the FIRST card whose name is the counterparty's handle — the person the
+ *      relationship belongs to;
+ *   2. the FIRST card, when NO card matches (the N5 residual: a card name is
+ *      free text and may match nothing). The link is still a live relationship
+ *      the parent must be able to end, withdraw or answer, so it has to be
+ *      rendered SOMEWHERE, and the first card is the only stable place for it.
+ *      This is the one case where the edit surface carries a link the read
+ *      surface does not show — the read view links names, and no name matches;
+ *      see the note on the `hidden` state below.
+ *   3. `-1` when there are no cards at all: nothing carries it.
+ *
+ * Two cards bearing the same name cannot both claim it: (1) picks the first.
+ * An empty or missing handle matches NOTHING (an unresolved embed must not turn
+ * the first nameless card into the partner), so (2) applies.
+ */
+export function parentCardLinkOwnerIndex(
+  cardNames: ReadonlyArray<string>,
+  otherHandle: string,
+): number {
+  const handle = normalizeHandle(otherHandle)
+  if (handle !== '') {
+    const matched = cardNames.findIndex((name) => normalizeHandle(name) === handle)
+    if (matched !== -1) return matched
+  }
+  return cardNames.length > 0 ? 0 : -1
+}
+
+/**
  * V24 slice 11B: WHAT ONE PARENT CARD'S LINK CONTROL SHOWS.
  *
  * The edit surface used to render the whole account-link state machine in its
@@ -186,9 +232,9 @@ export function linkView(
  *                  card.
  *   - `declined` — the declined link concerns this card.
  *   - `invite`   — no link exists, so this card offers the account-link form.
- *   - `hidden`   — the account-level state belongs to ANOTHER card. Rendered as
- *                  nothing, so the same "Invite sent" / Unlink control is never
- *                  printed twice on one page.
+ *   - `hidden`   — the account-level state belongs to ANOTHER card (or to no
+ *                  card at all). Rendered as nothing, so the same "Linked to @x"
+ *                  / Unlink / Accept control is never printed twice on one page.
  */
 export type ParentCardLinkState =
   | 'linked'
@@ -199,20 +245,9 @@ export type ParentCardLinkState =
   | 'hidden'
 
 /**
- * Which card carries the account-level link state, and what it shows.
- *
- * THE ASSOCIATION IS THE SAME NAME MATCH THE READ SURFACE USES
- * (`parentNameRows`, src/lib/parentCards.ts): a card is the linked partner when
- * its name equals the other account's handle, case- and @-insensitively. There
- * is no stored card↔account identity in 0047 to read, so this is the only
- * honest association available — and it is deliberately the SAME one, so the
- * editor and the read view cannot disagree about who the link belongs to.
- *
- * WHEN NO CARD MATCHES, THE FIRST CARD CARRIES IT. A link whose handle matches
- * no card name (the N5 residual: a card can say anything) is still a live
- * relationship the parent must be able to end or answer, and the first card is
- * the only stable place for it. `isFirstCard` is passed rather than the card
- * list so this stays a pure decision over one card.
+ * What the card at `index` shows, given the ONE card that owns the account
+ * state (`parentCardLinkOwnerIndex` over the SAME rendered card list — the two
+ * calls must be made together or the ownership decision is meaningless).
  *
  * The `invite` case belongs to EVERY card with no link: linking is per-person —
  * "an option to click on something to link an account to that person's name" —
@@ -221,13 +256,11 @@ export type ParentCardLinkState =
  */
 export function parentCardLinkState(
   view: LinkView,
-  cardName: string,
-  isFirstCard: boolean,
+  index: number,
+  ownerIndex: number,
 ): ParentCardLinkState {
   if (view.kind === 'none') return 'invite'
-  const name = normalizeHandle(cardName)
-  const matches = name !== '' && name === normalizeHandle(view.otherHandle)
-  if (!matches && !isFirstCard) return 'hidden'
+  if (index !== ownerIndex) return 'hidden'
   switch (view.kind) {
     case 'linked':
       return 'linked'

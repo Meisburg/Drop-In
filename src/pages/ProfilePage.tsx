@@ -41,6 +41,7 @@ import {
 import {
   linkView,
   normalizeHandle,
+  parentCardLinkOwnerIndex,
   parentCardLinkState,
   validateLinkRequest,
   type LinkView,
@@ -331,6 +332,20 @@ export function ProfilePage() {
    * OFFERS the action ("Link an account"); tapping one moves the form to that
    * card. `null` means "nobody has chosen" and the first card carries it, so the
    * form is never hidden behind a tap that used to be unnecessary.
+   *
+   * THE NOT-YET-SAVED SLOT CARRIES IT TOO, deliberately, and this is the one
+   * place the control renders without a person behind it:
+   *   - it is not a regression — the removed "Linked parent" section offered the
+   *     same handshake to a family with no cards at all, and deleting that
+   *     capability was not part of this ticket;
+   *   - a fresh account has NO saved cards, and the accepted V21 t07 spec drives
+   *     this very form in the empty slot (it types a name, picks a match and
+   *     expects the invite to send). Gating the control on "some card is saved"
+   *     would break that accepted flow and strand a family that has not filled a
+   *     card yet;
+   *   - the honest cost is the N5 residual: a link started here has no card name
+   *     to match, so the READ surface shows the relationship as plain names until
+   *     a card is saved under that handle. Same association, same limitation.
    */
   const [linkOpenSlot, setLinkOpenSlot] = useState<number | null>(null)
 
@@ -1055,6 +1070,17 @@ export function ProfilePage() {
   const activeLinkSlot = linkOpenSlot ?? firstEditorSlot
   const linkState: LinkView | null =
     accountLinks === null ? null : linkView(accountLinks, userId ?? '')
+  /**
+   * WHICH CARD CARRIES THE ACCOUNT-LEVEL STATE — decided over the WHOLE list
+   * (`parentCardLinkOwnerIndex`), never per card: a per-card "match, else the
+   * first card" rule printed one relationship on two cards as soon as the first
+   * card did not match and a later one did. Exactly one index wins, so exactly
+   * one card renders "Linked to @x" / the pending pair / Accept-Decline.
+   */
+  const linkOwnerIndex = parentCardLinkOwnerIndex(
+    parentCardEditors.map((entry) => entry.card?.name ?? ''),
+    linkState === null || linkState.kind === 'none' ? '' : linkState.otherHandle,
+  )
 
   /**
    * V20 t01: THE READ MODE — the SAME view a `@handle` link opens.
@@ -1579,7 +1605,7 @@ export function ProfilePage() {
                   linkState === null
                     ? null
                     : {
-                        state: parentCardLinkState(linkState, entry.card?.name ?? '', index === 0),
+                        state: parentCardLinkState(linkState, index, linkOwnerIndex),
                         open: entry.slot === activeLinkSlot,
                         onOpen: () => setLinkOpenSlot(entry.slot),
                         view: linkState,

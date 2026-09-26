@@ -570,6 +570,23 @@ test('the read surface shows both parents, and a linked name reaches that profil
       page.getByRole('heading', { name: `@${partnerHandle}`, exact: true }),
     ).toBeVisible({ timeout: 20_000 })
 
+    // ---- (d) V24 11B fix round 1: the account-level control is on ONE card --
+    // The edit surface used to answer "which card carries the link?" ONE CARD AT
+    // A TIME, so with the marker's own card FIRST (a non-match) and the partner's
+    // card second (the match) it rendered the relationship TWICE: two "Linked to
+    // @Nicole" lines and two Unlink buttons, one of them misattributed to the
+    // wrong parent. The list-level rule (`parentCardLinkOwnerIndex`) owns it
+    // once. This is the live half of the unit test in src/lib/links.test.ts — on
+    // the pre-fix rule the two `toHaveCount(1)` assertions below count 2.
+    await page.goto('/profile')
+    await page.getByTestId('edit-profile').click()
+    const partnerCardLinked = page.getByTestId('parent-card-2').getByTestId('linked-parent')
+    await expect(partnerCardLinked).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByTestId('linked-parent')).toHaveCount(1)
+    await expect(page.getByTestId('unlink-parent')).toHaveCount(1)
+    // ...and it does NOT sit on the marker's own card (slot 1, the non-match).
+    await expect(page.getByTestId('parent-card-1').getByTestId('linked-parent')).toHaveCount(0)
+
     // ---- (c): a THIRD account sees names and NO link -----------------------
     // The privacy claim, in the same browser: the stranger may see the family's
     // parent cards (RLS permits any signed-in parent to read them) but must not
@@ -758,7 +775,10 @@ test('the link action lives on the parent card, and the standalone section is go
     ).toBe(true)
 
     // ---- (b) the second parent's card offers its own, and it MOVES the form --
-    const openTwo = page.getByTestId('link-parent-open-2')
+    // Scoped to `parent-card-2`: "its OWN affordance" has to mean the control is
+    // inside THAT card, not merely that a testid with its slot number exists
+    // somewhere on the page.
+    const openTwo = page.getByTestId('parent-card-2').getByTestId('link-parent-open-2')
     await expect(openTwo).toBeVisible()
     await openTwo.click()
     const cardTwo = page.getByTestId('parent-card-2')
