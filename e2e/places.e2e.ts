@@ -86,7 +86,7 @@ import {
   settleOnRoute,
   stepStartTimeOnce,
 } from './fixtures'
-import { PLACE_KINDS, placeKindLabel } from '../src/lib/places'
+import { BROWSE_LIST_LEAD_LIMIT, PLACE_KINDS, placeKindLabel } from '../src/lib/places'
 
 /** A real seeded playground (Play Areas -> kind 'playground', 0029's seed). */
 const PLACE_NAME = 'Green Lake Park'
@@ -181,6 +181,37 @@ async function useAnyDistance(page: Page): Promise<void> {
 /** The seeded place row for `name` (the row is a link to the place page). */
 function placeRow(page: Page, name: string) {
   return page.getByTestId('place-row').filter({ hasText: name }).first()
+}
+
+/**
+ * V25 t01: ENTER MAP MODE. The directory is list-first now, and the ONLY map on
+ * the page is the map view's own (`places-map-view-map`) — the list-view band
+ * is gone. So every spec about a map marker, a popup or the radius circle goes
+ * through this door first.
+ *
+ * The door is the in-card "See map" button (`places-see-map`), which is the one
+ * entry point that exists whether or not the floating toggle is on screen; the
+ * floating toggle opens the same mode and is asserted by its own spec.
+ */
+async function openMapMode(page: Page): Promise<void> {
+  await page.getByTestId('places-see-map').click()
+  await expect(page.getByTestId('places-map-view-map')).toBeVisible()
+}
+
+/**
+ * V25 t01: the markers a map can actually offer, in EITHER marker style.
+ *
+ * The old band drew every pin in `PLACE_MARKER_STYLE` (`#4f46e5`). The map view
+ * also paints ONE pin in `PLACE_MARKER_FOCUSED_STYLE` (`#312e81`) and marks it
+ * `data-focused-marker`, so a search that narrows to the focused place alone
+ * leaves no `#4f46e5` path at all. Selecting on the focus attribute as well
+ * keeps these specs about the marker behaviour rather than about which style the
+ * one visible pin happens to carry.
+ */
+function mapPins(map: ReturnType<Page['getByTestId']>) {
+  return map.locator(
+    '.leaflet-overlay-pane svg path[data-focused-marker], .leaflet-overlay-pane svg path[fill="#4f46e5"]:not([d="M0 0"])',
+  )
 }
 
 /** The marker's REST headers (its OWN JWT — the follows table is owner-only). */
@@ -318,49 +349,44 @@ test('the Places tab is the seeded directory, and anon can read it (RED pre-0029
     'noopener',
   )
 
-  // (6) V12 t05: the directory's overview map — one marker per placed row
-  // (the rows the distance model could place, i.e. the ones with stored
-  // coordinates). Live OSM tiles; we assert the container + the SVG marker
-  // paths (the circleMarkers' <path> inside the overlay pane's <svg>), never
-  // tile pixels.
-  const overviewMap = page.getByTestId('places-map')
+  // (6) V12 t05, RE-CUT BY V25 t01: the directory's overview map still exists
+  // and still draws one marker per placeable row — but it is a MODE now, not a
+  // block above the filters. So this step asserts the founder's ordering first
+  // (no map in list view) and then enters map mode to assert the map itself.
+  // Live OSM tiles; we assert the container + the SVG marker paths (the
+  // circleMarkers' <path> inside the overlay pane's <svg>), never tile pixels.
+  await expect(
+    page.getByTestId('places-map'),
+    'the overview map must NOT lead the page any more — list view mounts no map',
+  ).toHaveCount(0)
+  await openMapMode(page)
+  const overviewMap = page.getByTestId('places-map-view-map')
   await expect(overviewMap).toBeVisible()
   await expect(overviewMap.locator('.leaflet-overlay-pane svg path')).not.toHaveCount(0)
   // The tile pane exists whether or not the live tiles have loaded yet.
   await expect(overviewMap.locator('.leaflet-tile-pane')).toHaveCount(1)
 
-  // (7) V13 ticket 05 (A6), re-cut for V22 slice 9: the map still LEADS the
-  // page, but the two-column desktop layout changed what "leads" means. At
-  // the md+ breakpoint PlaceDirectory is a two-column grid with the map as
-  // sticky column 1 (PlaceDirectory.tsx ~336: "at md+ this is column 1 of a
-  // two-column grid, sticky under the full-width header") — accepted product
-  // design (commit 67544b0), so the map's box sits to the LEFT of the
-  // search/filter card, and the old stacked "map's y above search's y" no
-  // longer holds at the default desktop viewport (the two tops differ by a
-  // few px of card padding). Below the md breakpoint the original stacked
-  // order still holds: the map sits ABOVE the search/filter card.
-  const searchInput = page.getByTestId('places-search')
-  const [mapBox, searchBox] = await Promise.all([
-    overviewMap.boundingBox(),
-    searchInput.boundingBox(),
-  ])
-  expect(mapBox !== null && searchBox !== null, 'the map and the search/filter card both render').toBe(true)
-  if (mapBox !== null && searchBox !== null) {
-    if (mapBox.x === 0) {
-      // Stacked mobile/narrow layout (< md): DOM order rules — map on top.
-      expect(
-        mapBox.y < searchBox.y,
-        'the overview map must sit ABOVE the search/filter card (narrow layout)',
-      ).toBe(true)
-    } else {
-      // Two-column desktop layout (md+): the map is column 1 — map first
-      // across the row.
-      expect(
-        mapBox.x < searchBox.x,
-        'the overview map must sit to the LEFT of the search/filter card (two-column desktop layout)',
-      ).toBe(true)
-    }
+  // (7) V25 t01 REPLACES the V13 t05 A6 "the map leads the page" ordering claim
+  // — that is the claim the founder reversed. What survives, and what is
+  // asserted instead, is that the map the parent reaches is the WIDE one when
+  // the mode is up: the map view spans both columns at md+, so it is never a
+  // narrow column pinned beside the list it replaced.
+  const wideMapBox = await overviewMap.boundingBox()
+  const wideControlsBox = await page.getByTestId('places-search').boundingBox()
+  expect(
+    wideMapBox !== null && wideControlsBox !== null,
+    'the map and the search/filter card both render in map mode',
+  ).toBe(true)
+  if (wideMapBox !== null && wideControlsBox !== null) {
+    expect(
+      wideMapBox.width,
+      `the map must be the wide surface in map mode (map ${wideMapBox.width}px vs ` +
+        `the controls card ${wideControlsBox.width}px)`,
+    ).toBeGreaterThan(wideControlsBox.width)
   }
+  // Back to the list for the remaining steps, which are about the list.
+  await page.getByTestId('places-back-to-list').click()
+  await expect(page.getByTestId('place-row').first()).toBeVisible()
 
   // (8) V13 ticket 05 (A7): the raw unbroken long-list is gone — the list
   // leads with the first places (alphabetical by default, V15 t03) grouped by
@@ -374,11 +400,9 @@ test('the Places tab is the seeded directory, and anon can read it (RED pre-0029
       .filter({ hasText: KIND_GROUP_LABEL })
       .first(),
   ).toBeVisible()
-  // The overflow door names the total ("See all N places") when more than the
-  // lead limit exist (the seed has far more than six places).
-  const seeAll = page.getByTestId('places-see-all')
-  await expect(seeAll).toBeVisible()
-  await expect(seeAll).toContainText('See all')
+  // V25 t01: the overflow door is retired — the list below the filters IS the
+  // whole matching set.
+  await expect(page.getByTestId('places-see-all')).toHaveCount(0)
 })
 
 test('tapping an overview map marker shows the place info + "Start a drop-in" (V13 ticket 05 A6)', async ({
@@ -415,10 +439,14 @@ test('tapping an overview map marker shows the place info + "Start a drop-in" (V
   // The re-fit fix in PlacesMap is what makes this reachable at all: before it,
   // narrowing the search left the surviving markers projected through the
   // mount-time viewport and any outside it rendered as `d="M0 0"`.
-  const overviewMap = page.getByTestId('places-map')
-  const placeMarker = overviewMap
-    .locator('.leaflet-overlay-pane svg path[fill="#4f46e5"]:not([d="M0 0"])')
-    .first()
+  //
+  // V25 t01: MAP MODE. The list view no longer mounts a band, so the only map
+  // is `places-map-view-map`. A one-row search leaves that map's single pin as
+  // the FOCUSED one (`#312e81`, `data-focused-marker`), which is why the pin
+  // locator below accepts either marker style.
+  await openMapMode(page)
+  const overviewMap = page.getByTestId('places-map-view-map')
+  const placeMarker = mapPins(overviewMap).first()
   await expect(placeMarker).toBeVisible()
   /**
    * V20 t03: SET THE VIEWPORT BEFORE TAPPING, not after.
@@ -607,7 +635,10 @@ test('tapping an overview map marker shows the place info + "Start a drop-in" (V
    * at its own centre. An earlier version of this spec asserted containment
    * anyway and failed correct builds on both surfaces.
    */
-  const cardBox = await page.getByTestId('places-map-band').boundingBox().catch(() => null)
+  // V25 t01: `places-map-view-map` IS the card edge here — the popup is
+  // appended to the map's own container, which is what the horizontal
+  // containment below is about. (It used to measure the band's wrapper div.)
+  const cardBox = await page.getByTestId('places-map-view-map').boundingBox().catch(() => null)
   const infoBox = await info.boundingBox()
   if (infoBox === null) throw new Error('the popup has no box once open')
   if (cardBox !== null) {
@@ -753,10 +784,10 @@ test('a marker\'s tooltip is hit-testable, and tapping opens the place panel (V2
   await page.getByTestId('places-search').fill(MARKER_PLACE_NAME)
   await expect(exactPlaceName(page, MARKER_PLACE_NAME)).toBeVisible()
 
-  const overviewMap = page.getByTestId('places-map')
-  const placeMarker = overviewMap
-    .locator('.leaflet-overlay-pane svg path[fill="#4f46e5"]:not([d="M0 0"])')
-    .first()
+  // V25 t01: MAP MODE — the band is gone, the map view's map is the only one.
+  await openMapMode(page)
+  const overviewMap = page.getByTestId('places-map-view-map')
+  const placeMarker = mapPins(overviewMap).first()
   await expect(placeMarker).toBeVisible()
 
   /**
@@ -777,7 +808,7 @@ test('a marker\'s tooltip is hit-testable, and tapping opens the place panel (V2
    * this spec is about, and asserting through it would make this test fail for a
    * reason that has nothing to do with the tooltip being interactive.
    */
-  await page.getByTestId('places-map-band').scrollIntoViewIfNeeded()
+  await page.getByTestId('places-map-view-map').scrollIntoViewIfNeeded()
   await page.waitForTimeout(400)
 
   // Hover to raise the tooltip — the white text box the founder means. Leaflet
@@ -874,16 +905,15 @@ test('the marker bubble stays open, and a different circle replaces it (V20 t03)
   await page.setViewportSize({ width: 390, height: 844 })
   await openPlacesTab(page)
   await useAnyDistance(page)
-  await expect(page.getByTestId('places-map-band')).toBeVisible()
-  // Let the first frame settle before measuring anything: the pan/marker effects
+  // V25 t01: MAP MODE, then let the first frame settle before measuring
+  // anything: the pan/marker effects
   // run on mount and a measurement taken during them is a measurement of the
   // animation, not the map.
   await page.waitForTimeout(1800)
 
-  const overviewMap = page.getByTestId('places-map')
-  const pins = overviewMap.locator(
-    '.leaflet-overlay-pane svg path[fill="#4f46e5"]:not([d="M0 0"])',
-  )
+  await openMapMode(page)
+  const overviewMap = page.getByTestId('places-map-view-map')
+  const pins = mapPins(overviewMap)
   const popup = page.locator('.place-popup')
   const panel = page.getByTestId('place-marker-info')
   const mapBox = await overviewMap.boundingBox()
@@ -1008,58 +1038,41 @@ test('the marker bubble stays open, and a different circle replaces it (V20 t03)
   await expect(panel).toHaveCount(0)
 })
 
-test('the map is a fixed-height band and every card leads with its photo slot (V17 t01)', async ({
+test('list view is FILTERS FIRST and the list below, with no map mounted (V25 t01)', async ({
   page,
 }) => {
-  // The spec's §3 measurable rule is a PHONE measurement, so this spec pins the
-  // viewport the rule names. The default desktop-sized viewport would make the
-  // dvh ceiling meaningless (60dvh of 720px is 432px, which trivially contains
-  // a 240px band), so measuring here would not test the rule at all.
+  // A PHONE measurement, because the ordering claim is about the shape a parent
+  // sees on the page they use.
   await page.setViewportSize({ width: 390, height: 844 })
   await openPlacesTab(page)
   await useAnyDistance(page)
 
-  // AC: at 390px the band renders >= 240px and <= 60dvh tall.
-  const band = page.getByTestId('places-map-band')
-  await expect(band).toBeVisible()
-  const bandBox = await band.boundingBox()
-  if (bandBox === null) throw new Error('the map band has no box — it is not rendered')
-  const dvh = page.viewportSize()!.height / 100
-  expect(
-    bandBox.height,
-    `the map band must be >= 240px tall at 390px wide (got ${bandBox.height}px)`,
-  ).toBeGreaterThanOrEqual(240)
-  expect(
-    bandBox.height,
-    `the map band must be <= 60dvh tall at 390px wide (got ${bandBox.height}px, 60dvh = ${
-      60 * dvh
-    }px)`,
-  ).toBeLessThanOrEqual(60 * dvh)
-
-  // The band is a REAL band, not two borders around nothing. This assertion is
-  // here because the first version of this slice passed the band measurement
-  // while the MAP inside it had collapsed to a 2px border: `PlacesMap` was
-  // handed `h-full`, which resolves `height: 100%` against the auto-height
-  // wrapper the component itself renders, and both classes sit in Tailwind's
-  // `utilities` layer so `h-full` won by source order. A band-only assertion
-  // would have shipped an invisible map. So the map element is measured too.
-  const mapBox = await page.getByTestId('places-map').boundingBox()
-  if (mapBox === null) throw new Error('the map has no box')
-  expect(
-    mapBox.height,
-    `the map must fill the band, not collapse inside it (got ${mapBox.height}px of a ${bandBox.height}px band)`,
-  ).toBeGreaterThanOrEqual(bandBox.height - 2)
-
-  // AC: the first list row's top edge is BELOW the band's bottom edge — the
-  // list really does scroll beneath the map rather than beside it.
+  // AC (V25 t01): THE SEARCH + FILTER CARD IS THE FIRST BLOCK ON THE PAGE.
+  // The founder: "I don't want to see the map first when I click on the Places
+  // page. I want to see the search filters at the very top with the list of all
+  // the different places below it." Measured, not asserted from class names: the
+  // filters card's top edge is above the first row's top edge.
+  const controls = page.getByTestId('places-search')
+  await expect(controls).toBeVisible()
   const firstRow = page.getByTestId('place-row').first()
   await expect(firstRow).toBeVisible()
+  const controlsBox = await controls.boundingBox()
   const rowBox = await firstRow.boundingBox()
+  if (controlsBox === null) throw new Error('the search control has no box')
   if (rowBox === null) throw new Error('the first place row has no box')
   expect(
-    rowBox.y,
-    `the first row's top (${rowBox.y}) must be at or below the band's bottom (${bandBox.y + bandBox.height})`,
-  ).toBeGreaterThanOrEqual(bandBox.y + bandBox.height)
+    controlsBox.y,
+    `the filters must lead the page: the search box top (${controlsBox.y}) must be above ` +
+      `the first row's top (${rowBox.y})`,
+  ).toBeLessThan(rowBox.y)
+
+  // AC: NO MAP IS MOUNTED ABOVE IT. Both the band wrapper and the band's own
+  // map (the pre-V25 `places-map` id) are absent in list view, so nothing can
+  // be "seen first" and no second Leaflet container exists to fail
+  // `page.getByTestId('places-map')` in strict mode.
+  await expect(page.getByTestId('places-map-band')).toHaveCount(0)
+  await expect(page.getByTestId('places-map')).toHaveCount(0)
+  await expect(page.locator('.leaflet-container')).toHaveCount(0)
 
   // AC (REWRITTEN BY V20 t01): the card NO LONGER LEADS WITH A PHOTO SLOT.
   //
@@ -1145,162 +1158,134 @@ test('the map is a fixed-height band and every card leads with its photo slot (V
     'the heart shares a row with the place name',
   ).toBeLessThan(24)
 
-  // AC: the grouped lead + overflow door still work under the new card shape.
+  // AC (V25 t01): the kind grouping is KEPT — grouping was never the
+  // complaint — and the overflow door is GONE: every matching row renders on
+  // the first paint, with no second tap.
   await expect(
     page
       .locator('h2')
       .filter({ hasText: KIND_GROUP_LABEL })
       .first(),
   ).toBeVisible()
-  const seeAll = page.getByTestId('places-see-all')
-  await expect(seeAll).toBeVisible()
-  await expect(seeAll).toContainText('See all')
+  expect(
+    await page.getByTestId('places-see-all').count(),
+    'the overflow door is retired — the list is the whole list',
+  ).toBe(0)
+  const matched = Number(
+    (await page.getByTestId('places-list').getAttribute('data-matched-rows')) ?? '0',
+  )
+  expect(matched, 'the seed must have more places than a lead for this to mean anything').toBeGreaterThan(
+    BROWSE_LIST_LEAD_LIMIT,
+  )
+  const renderedRows = await page.getByTestId('place-row').count()
+  // The list's rows PLUS the "Not on the map yet" rows: `data-matched-rows` is
+  // the directory's own total, and the unplaced section renders rows too.
+  expect(
+    renderedRows,
+    `every matching row must render without a second tap (rendered ${renderedRows} for ${matched} matched)`,
+  ).toBeGreaterThanOrEqual(matched)
 })
 
-test('once the map band is scrolled past, a floating Map button brings it back (V17 t03)', async ({
+test('the floating control toggles list and map, and its label follows (V25 t01)', async ({
   page,
 }) => {
-  // The band's own rule is a PHONE measurement (t01's spec), and so is this
-  // one: on a 720px-tall desktop viewport the 45dvh band plus the filters puts
-  // the button's first opportunity below the fold in a way that depends on the
-  // harness rather than the feature. Pinning 390x844 keeps this spec measuring
-  // the real phone shape the button exists for.
+  /**
+   * V25 t01 REPLACES the V17 t03 spec ("once the map band is scrolled past, a
+   * floating Map button brings it back").
+   *
+   * That spec pinned a scroll-to-top affordance for a band that no longer
+   * exists. The founder's ask is the opposite shape: *"clicking this shouldn't
+   * take you up to the top of the page to a map on the screen. It's more like
+   * it switches the list view to a map view… And when you get to the map mode,
+   * this button should come back and it should be called list."*
+   *
+   * So what is asserted here is the MODE SWITCH and the LABEL, in both
+   * directions, plus the two properties the old spec proved that must not be
+   * collateral damage: the >=44px tap target, and the control staying below
+   * Leaflet's 1000 stacking layer.
+   *
+   * NOTHING SCROLLS. The old spec's own failure mode — a tap that moved the
+   * page instead of switching the surface — is unrepresentable now, and the
+   * assertion below pins that no longer happens by measuring the scroll offset
+   * across the toggle.
+   */
   await page.setViewportSize({ width: 390, height: 844 })
   await openPlacesTab(page)
   await useAnyDistance(page)
 
-  const button = page.getByTestId('scroll-to-map-btn')
-  const band = page.getByTestId('places-map-band')
-  await expect(band).toBeVisible()
-
-  // AC: HIDDEN while the map band is visible. The page opens with the band at
-  // the top of the viewport, so the observer's first callback must leave the
-  // button unrendered — not merely transparent or offscreen.
-  await expect(button).toHaveCount(0)
-
-  // Scroll the band fully past the viewport. A raw scrollBy is what a real
-  // thumb does; `scrollIntoView` on a lower row would be the spec driving the
-  // page in a way the parent never does.
-  await page.evaluate(() => window.scrollBy(0, window.innerHeight))
-  await expect(band).not.toBeInViewport()
-
-  // AC: VISIBLE after scrolling past it.
-  await expect(button).toBeVisible()
+  const toggle = page.getByTestId('places-view-toggle')
+  await expect(toggle).toBeVisible()
+  await expect(toggle).toHaveText('Map')
+  // The accessible name IS the visible label — the old control's
+  // `aria-label="Back to map"` named a different job.
+  await expect(toggle).toHaveAttribute('aria-label', 'Map')
 
   // AC: the tap target is >=44px in BOTH dimensions (the repo's measured floor,
   // enforced by scripts/mobile-audit.mjs and the ocr a11y rule).
-  const buttonBox = await button.boundingBox()
-  if (buttonBox === null) throw new Error('the scroll-to-map button has no box')
-  expect(buttonBox.width).toBeGreaterThanOrEqual(44)
-  expect(buttonBox.height).toBeGreaterThanOrEqual(44)
+  const toggleBox = await toggle.boundingBox()
+  if (toggleBox === null) throw new Error('the floating toggle has no box')
+  expect(toggleBox.width).toBeGreaterThanOrEqual(44)
+  expect(toggleBox.height).toBeGreaterThanOrEqual(44)
 
   // AC: it renders BELOW the map's stacking layer. Leaflet's
   // `.leaflet-top`/`.leaflet-bottom` wrappers sit at z-index 1000
   // (src/lib/stacking.ts), and a plain in-page control must stay under them.
-  // The assertion accepts EITHER "no z-index at all" (the preferred answer —
-  // document order paints a fixed element later in the DOM above earlier
-  // flow content) OR an explicit value strictly below 1000. `auto` is what
-  // getComputedStyle reports when no z-index is set.
-  const computedZ = await button.evaluate((el) => window.getComputedStyle(el).zIndex)
+  const computedZ = await toggle.evaluate((el) => window.getComputedStyle(el).zIndex)
   if (computedZ !== 'auto') {
     const z = Number(computedZ)
-    expect(Number.isNaN(z), `the button's z-index must be a number or auto (got "${computedZ}")`).toBe(
+    expect(Number.isNaN(z), `the toggle's z-index must be a number or auto (got "${computedZ}")`).toBe(
       false,
     )
     expect(
       z,
-      `the floating Map button must stay BELOW Leaflet's 1000 (got z-index ${z}) — see src/lib/stacking.ts`,
+      `the floating toggle must stay BELOW Leaflet's 1000 (got z-index ${z}) — see src/lib/stacking.ts`,
     ).toBeLessThan(1000)
   }
 
-  // AC: it does NOT cover the HEART of the bottom-most card — the plan's exact
-  // wording ("it never covers the heart of the bottom-most card").
-  //
-  // This assertion is deliberately scoped to the heart and NOT to "every card's
-  // content". A first version asserted zero overlap against every card rect and
-  // was a FALSE standard: this button is `fixed` in a full-width content
-  // column, so it necessarily floats over whatever card is at its screen
-  // position (the plan's own parenthetical anticipates this: "it sits above the
-  // last row's content"). A test that cannot pass for any correct
-  // implementation is a defect, not rigor. A right-gutter placement was tried
-  // and MEASURED WORSE (5 scroll positions covered a heart — the heart pins to
-  // the card's top-right, exactly where a right-gutter control lands), so the
-  // centred placement ships and the heart is what the spec pins.
-  //
-  // The check SWEEPS the scroll range rather than sampling one position. The
-  // single-position version passed while a whole-range probe found real
-  // coverage, because whether a heart lands under the button depends entirely
-  // on where the page happens to be scrolled. Sampling one offset tests the
-  // harness, not the button.
-  const pageHeight = await page.evaluate(
-    () => document.documentElement.scrollHeight - window.innerHeight,
-  )
-  expect(pageHeight, 'the directory must be scrollable for this to be a real check').toBeGreaterThan(
-    0,
-  )
-  let heartsCompared = 0
-  for (let step = 1; step <= 8; step += 1) {
-    await page.evaluate((y) => window.scrollTo(0, y), (pageHeight * step) / 8)
-    // Give the observer a frame to settle before measuring.
-    await page.waitForTimeout(120)
-    // The button retires when the band is back in view; nothing to check then.
-    if ((await page.getByTestId('scroll-to-map-btn').count()) === 0) continue
-    const liveButtonBox = await page.getByTestId('scroll-to-map-btn').boundingBox()
-    if (liveButtonBox === null) continue
-    for (const heart of await page.locator('[data-testid^="place-heart-"]').all()) {
-      const heartBox = await heart.boundingBox()
-      // A heart scrolled off-screen cannot be covered by a fixed button.
-      if (heartBox === null) continue
-      if (
-        heartBox.y + heartBox.height < 0 ||
-        heartBox.y > (page.viewportSize()?.height ?? 0)
-      ) {
-        continue
-      }
-      heartsCompared += 1
-      const overlaps =
-        liveButtonBox.x < heartBox.x + heartBox.width &&
-        liveButtonBox.x + liveButtonBox.width > heartBox.x &&
-        liveButtonBox.y < heartBox.y + heartBox.height &&
-        liveButtonBox.y + liveButtonBox.height > heartBox.y
-      expect(
-        overlaps,
-        `at scrollY=${Math.round((pageHeight * step) / 8)} the floating Map button ` +
-          `(${JSON.stringify(liveButtonBox)}) covered a card's heart ` +
-          `(${JSON.stringify(heartBox)})`,
-      ).toBe(false)
-    }
-  }
+  // Scroll down the long list, then toggle: the page must NOT jump to the top
+  // (the ask this spec replaces), and the surface must change.
+  await page.evaluate(() => window.scrollBy(0, window.innerHeight))
+  const scrolledTo = await page.evaluate(() => window.scrollY)
+  expect(scrolledTo, 'the directory must be scrollable for this to be a real check').toBeGreaterThan(0)
+
+  await toggle.click()
+  // AC: MAP MODE — the map view is mounted and the map it owns is visible.
+  const mapViewMap = page.getByTestId('places-map-view-map')
+  await expect(mapViewMap).toBeVisible()
+  await expect(page.getByTestId('places-map-band')).toHaveCount(0)
+  await expect(page.getByTestId('places-map')).toHaveCount(0)
+  await expect(page.locator('.leaflet-container')).toHaveCount(1)
+
+  // AC: NO SCROLL TO A BAND. The offset did not change by more than the layout
+  // reflow of swapping surfaces (the map view is shorter than a 239-row list,
+  // so a much smaller value would mean the page jumped to the top).
+  const afterToggleY = await page.evaluate(() => window.scrollY)
   expect(
-    heartsCompared,
-    'at least one heart must have been on screen with the button visible',
+    afterToggleY,
+    `toggling to the map must not scroll the page to the top (was ${scrolledTo}, now ${afterToggleY})`,
   ).toBeGreaterThan(0)
 
-  // Scroll back to the mid-page position the remaining assertions were written
-  // against (the sweep above moved the page).
-  await page.evaluate(() => window.scrollTo(0, window.innerHeight))
-  await expect(button).toBeVisible()
+  // AC: the label follows the mode, and so does the accessible name.
+  await expect(toggle).toHaveText('List')
+  await expect(toggle).toHaveAttribute('aria-label', 'List')
 
-  // AC: TAPPING it brings the band back into the viewport. The button scrolls
-  // smoothly, so this waits for the band to actually arrive rather than
-  // sampling one frame after the click.
-  await button.click()
-  await expect(band).toBeInViewport()
-  // …and having arrived, the button retires again (the observer is symmetric —
-  // a button that stayed would cover the map it just returned the parent to).
-  await expect(button).toHaveCount(0)
+  // AC: the map view's own "Back to list" is still there and still distinct —
+  // it is the in-panel control (the strip's header); the floating control is
+  // the page-level mode switch. Both return to the list.
+  await expect(page.getByTestId('places-back-to-list')).toBeVisible()
 
-  // AC: every existing testid still resolves. The band and the search box are
-  // the two the button's own layout work could plausibly have disturbed.
-  await expect(page.getByTestId('places-map-band')).toHaveCount(1)
+  // AC: TOGGLING BACK returns to the list, with its rows and its own door.
+  await toggle.click()
+  await expect(page.getByTestId('place-row').first()).toBeVisible()
+  await expect(page.getByTestId('places-map-view')).toHaveCount(0)
+  await expect(toggle).toHaveText('Map')
+  await expect(toggle).toHaveAttribute('aria-label', 'Map')
+
+  // AC: the controls card and the in-card door survived the round trip.
   await expect(page.getByTestId('places-search')).toBeVisible()
-  await expect(page.getByTestId('places-see-all')).toBeVisible()
-  // V20 t01: the card's photo slot is retired, so its testid is asserted ABSENT
-  // here and the learn-more link takes its place in the "these still resolve"
-  // sweep.
+  await expect(page.getByTestId('places-see-map')).toBeVisible()
   await expect(page.getByTestId('place-card-photo')).toHaveCount(0)
   await expect(page.locator('[data-testid^="row-learn-more-"]').first()).toBeVisible()
-  await expect(page.getByTestId('place-row').first()).toBeVisible()
 })
 
 /**
@@ -1328,413 +1313,182 @@ test('once the map band is scrolled past, a floating Map button brings it back (
  * the drawn set is the same neighbourhood the frame covers. `useAnyDistance` is
  * what the other specs need; this one must NOT call it.
  */
-test('an active search narrows the drawn set without moving the frame (V17 t04, rewritten by V20 t05)', async ({
+test('an active search narrows the WHOLE list, and no map is drawn (V25 t01)', async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 390, height: 844 })
-  await openPlacesTab(page)
-  await expect(page.getByTestId('places-map-band')).toBeVisible()
-
   /**
-   * The rendered radius circle's pixel radius — the camera's tightness.
+   * V25 t01 REPLACES the V17 t04 / V20 t05 spec ("an active search narrows the
+   * drawn set without moving the frame").
    *
-   * Read from the SVG path's own `d` attribute, NOT from `boundingBox()`.
-   * Leaflet renders circles into the overlay SVG, which the band CLIPS: once
-   * the circle is wider than the pane, `boundingBox()` reports the clipped
-   * width and two genuinely different frames both measure ~314px. That is a
-   * measurement artifact of the harness, and it made the first version of this
-   * spec report "unchanged" for a frame that had in fact tightened (measured
-   * 156px vs 116px). The `d` attribute carries the circle's true radius
-   * (`M<x>,<y>a<r>,<r> 0 1,0 ...`), clip-independent.
+   * That spec measured the LIST-VIEW map band: its radius circle was the
+   * framing authority, and the claim was "the search changes which dots are
+   * drawn and not the camera". V25 t01 removes the band — list view mounts no
+   * map at all — so the half of that claim which still exists is the half the
+   * founder's ask is about:
+   *
+   *   * a search NARROWS THE LIST, and
+   *   * list view draws NO MAP, so no search can reframe one.
+   *
+   * The retired claim ("the camera is the radius's alone") is no longer
+   * reachable from list view, and the radius circle it measured is not drawn in
+   * the map view either — see the note in the toggle spec. What is asserted
+   * instead is the invariant that makes the retirement safe: the map is not
+   * mounted until the parent asks for it.
    */
-  async function circleRadiusPx(): Promise<number> {
-    // The radius circle ONLY. The home pin is drawn with the same red stroke
-    // (radius 10) and the place markers with indigo, so the circle is told
-    // apart by its own translucent fill — the attribute unique to it.
-    const circle = page.locator('path.leaflet-interactive[stroke="#dc2626"][fill-opacity="0.08"]')
-    await expect(circle).toHaveCount(1)
-    const d = await circle.getAttribute('d')
-    const match = /a([\d.]+),/.exec(d ?? '')
-    if (match === null) {
-      throw new Error(`the radius circle's path has no arc radius — the map is not framed (d="${d}")`)
-    }
-    return Number(match[1])
-  }
-
-  // Settle: the circle effect only reframes once Leaflet has laid the map out.
-  await page.waitForTimeout(1500)
-  const unfilteredRadius = await circleRadiusPx()
-  const unfilteredMarkers = await page.locator('path.leaflet-interactive').count()
-  expect(
-    unfilteredRadius,
-    'the unfiltered map must actually be framed by the radius circle',
-  ).toBeGreaterThan(20)
-  expect(
-    unfilteredMarkers,
-    'the unfiltered map must be drawing the placed rows (this is the dense frame t04 narrows from)',
-  ).toBeGreaterThan(20)
-
-  // The plan's MEASURED case: `"pool"` drops the drawn set to a couple of dozen
-  // markers while the frame had stayed on the whole radius.
-  await page.getByTestId('places-search').fill('pool')
-  await page.waitForTimeout(2000)
-  const searchedRadius = await circleRadiusPx()
-  const searchedMarkers = await page.locator('path.leaflet-interactive').count()
-
-  // AC: the search really did narrow the result set (otherwise this spec would
-  // be asserting a reframe over an unchanged list).
-  expect(
-    searchedMarkers,
-    `the "pool" search must narrow the drawn set (got ${searchedMarkers} of ${unfilteredMarkers})`,
-  ).toBeLessThan(unfilteredMarkers)
-  expect(searchedMarkers, 'the "pool" search must leave at least one marker').toBeGreaterThan(0)
-
-  // AC (REWRITTEN BY V20 t05): THE SEARCH DOES NOT MOVE THE CAMERA AT ALL.
-  //
-  // The history, because this assertion has now been rewritten twice and the
-  // reason matters more than the code:
-  //
-  //   * V17 t04 asserted a "pool" search frames TIGHTER than the unfiltered
-  //     radius (the map then framed the picked radius, up to 35 miles, so there
-  //     was room to pull in).
-  //   * V19 t01 (ruling D1) reframed the map to a one-mile neighbourhood and
-  //     relaxed this to "never WIDER than the neighbourhood".
-  //   * V20 t05 replaced the framing seam itself with `radiusPreviewCircle`,
-  //     whose only caller-supplied input is the RADIUS. The searched subset
-  //     (`focusPoints`) is gone, so the correct assertion is now exact equality:
-  //     a search changes which dots are drawn and nothing else.
-  //
-  // Equality is the stronger claim and it is what the code does. A leaked
-  // points-fit (the `93f313b` deletion) or a re-merged radius would break it in
-  // either direction.
-  expect(
-    Math.abs(searchedRadius - unfilteredRadius),
-    `the search must not reframe the map ` +
-      `(unfiltered r=${unfilteredRadius}px, searched r=${searchedRadius}px)`,
-  ).toBeLessThan(1)
-
-  // The map is framed at all — a zero-extent circle would mean no frame, and the
-  // equality above would then be comparing two degenerate values.
-  expect(
-    unfilteredRadius,
-    'the unfiltered map must be framed at all (a zero-extent circle means no frame)',
-  ).toBeGreaterThan(20)
-
-  // AC: clearing the query restores the radius frame EXACTLY — the regression
-  // guard from `places.test.ts`, restated on the real map. A `93f313b`-style
-  // points-fit leaking back into the component would show up here.
-  await page.getByTestId('places-search').fill('')
-  await page.waitForTimeout(2000)
-  const restoredRadius = await circleRadiusPx()
-  expect(
-    Math.abs(restoredRadius - unfilteredRadius),
-    `clearing the search must restore the radius frame exactly ` +
-      `(was r=${unfilteredRadius}px, now r=${restoredRadius}px)`,
-  ).toBeLessThan(1)
-
-  // AC: a query matching NOTHING does not throw and does not collapse the map
-  // to a zero-extent frame.
-  //
-  // The observed, PRE-EXISTING behavior (BrowsePage's own `mappedMarkers.length
-  // === 0` guard, untouched by t04): with no placed row resolving to a
-  // coordinate the whole map card is skipped, so there is no circle to frame
-  // and nothing to zoom to street level. That is the honest form of "falls back
-  // rather than goes degenerate", and it is what this asserts — the alternative
-  // reading, "the radius frame survives", is not what this page does. What
-  // matters is that the page stays ALIVE: no crash, no blank band, no stale
-  // list, and a real empty state.
-  await page.getByTestId('places-search').fill('zzzz-no-such-place-zzzz')
-  await page.waitForTimeout(1500)
-  expect(
-    await page.locator('path.leaflet-interactive').count(),
-    'the zero-result query must leave no markers',
-  ).toBe(0)
-  await expect(
-    page.getByTestId('places-map-band'),
-    'a zero-result search unmounts the map card (the pre-existing guard) — it must not render a degenerate frame',
-  ).toHaveCount(0)
-  await expect(page.getByTestId('places-search')).toBeVisible()
-  await expect(page.getByTestId('place-row')).toHaveCount(0)
-  await expect(page.getByTestId('places-see-all')).toHaveCount(0)
-
-  // AC (the other failure mode): the frame never got LOOSER than the radius.
-  // The searched reading is bounded by the unfiltered radius, which is exactly
-  // the "t04 cannot revert `93f313b`" rule — a points-fit would have blown
-  // straight past it.
-  expect(searchedRadius).toBeLessThanOrEqual(unfilteredRadius)
-})
-
-/**
- * V25 t02 — ONE TAP ON A PICKER PIN WRITES BOTH FIELDS. THIS REPLACES the V20
- * t04 spec ("a picker pin selects first, and only 'Select this place' fills the
- * fields"), which pinned the two-step this ticket removes. ONE RECORD PER
- * REVERSAL: the old spec and `PlacePickerMap`'s V20 t04 state doc were rewritten
- * in the same commit as the behaviour.
- *
- * V20 t04 introduced the two-step for a real reason: the write happened on the
- * marker click, the fields sit ABOVE the map on /new, so on a phone the parent
- * tapped a dot, the form changed off-screen, and nothing visible happened — the
- * feature worked and read as broken. The founder's answer then was a button.
- *
- * He has since rejected that button twice (V24 annotation #2; and again on the
- * V25 walk: *"you shouldn't have to click Select this place button. It should
- * just automatically select it and populate the address in the address bar
- * above. Don't make the user have to do an extra step, it's annoying."*).
- *
- * This spec pins the new contract in BOTH directions, because each half alone
- * can pass on a build that is wrong the other way:
- *
- *   1. the FIRST tap writes BOTH fields, with no second control in the path, and
- *   2. a second tap on a DIFFERENT pin REPLACES both — no stale half.
- *
- * It also pins the two things that must not be collateral damage: the visible
- * confirmation panel at the point of the tap (t04's own complaint — the write
- * must never be silent) and the Details door (`place-picker-details`), the only
- * way from the picker to a place's research page.
- */
-test('one tap on a picker pin writes both fields (V25 t02)', async ({ page }) => {
-  await page.goto('/new')
-  await page.getByRole('heading', { name: 'Post a drop-in' }).waitFor()
-
-  const pickerMap = page.getByTestId('place-picker-map')
-  await expect(pickerMap).toBeVisible()
-  // Bring the whole 256px band into the viewport BEFORE the reachability scan
-  // below, so the scan measures the same viewport position the clicks will use.
-  await pickerMap.scrollIntoViewIfNeeded()
-
-  const placeInput = page.getByPlaceholder(PLACE_INPUT)
-  const addressInput = page.getByPlaceholder(ADDRESS_INPUT)
-  await expect(placeInput).toHaveValue('')
-  await expect(addressInput).toHaveValue('')
-
-  // The pins a parent's finger can actually reach.
-  //
-  // `.not([d="M0 0"])` skips markers Leaflet projected fully outside the canvas
-  // (in the DOM, zero-size, unclickable). The hit-test below skips a pin whose
-  // CENTRE lies outside the map's clipped band — the V23 drift the spec this
-  // replaces recorded: a marker just past the pane's edge keeps a NON-zero `d`,
-  // `toBeVisible()` passes anyway (Playwright does not test an ancestor's
-  // `overflow: hidden` clipping), and a tap at that point lands on the page
-  // behind the map. A pin counts here only when it is its OWN top element at its
-  // own centre.
-  const pins = pickerMap.locator('.leaflet-overlay-pane svg path[fill="#4f46e5"]:not([d="M0 0"])')
-  const pinCount = await pins.count()
-  const reachable: number[] = []
-  for (let i = 0; i < pinCount; i++) {
-    const hit = await pins.nth(i).evaluate((el) => {
-      const rect = el.getBoundingClientRect()
-      return (
-        document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2) === el
-      )
-    })
-    if (hit) reachable.push(i)
-  }
-  console.log(
-    `[V25 t02 picker] pins plotted: ${pinCount}; hit-testable at their own centre: ${reachable.length}`,
-  )
-  expect(
-    reachable.length,
-    'the picker must plot at least one pin a parent can actually tap',
-  ).toBeGreaterThan(0)
-
-  const selection = page.getByTestId('place-picker-selection')
-
-  // AC (1): ONE tap writes the place AND the address. Nothing else is pressed —
-  // the single click below is the whole interaction.
-  await pins.nth(reachable[0]).click()
-  await expect(
-    selection,
-    'the tap must leave a visible result at the point of the tap (V20 t04 still holds)',
-  ).toBeVisible()
-  const firstName = (await selection.locator('span').first().innerText()).trim()
-  const firstAddress = (await selection.locator('span').nth(1).innerText()).trim()
-  expect(firstName.length).toBeGreaterThan(0)
-  expect(firstAddress.length).toBeGreaterThan(0)
-  await expect(placeInput).toHaveValue(firstName)
-  await expect(addressInput).toHaveValue(firstAddress)
-
-  // AC (2): there is no intermediate "selected but unwritten" state left to
-  // complete — the panel's old write button is gone, so the two-step cannot
-  // come back without failing here.
-  await expect(
-    page.getByTestId('place-picker-select'),
-    'the removed "Select this place" step must not return',
-  ).toHaveCount(0)
-
-  // AC (3): Details survives, and it is a READ — it must never write the field.
-  const details = page.getByTestId('place-picker-details')
-  await expect(details).toBeVisible()
-  await expect(details).toHaveAttribute('href', /^\/place\/.+\/details$/)
-
-  // AC (4): a SECOND tap on a DIFFERENT pin replaces both values. Scanning the
-  // reachable pins keeps this honest — two pins that happened to share a name
-  // AND an address would make "replaced" unobservable, so the loop only stops at
-  // a pin whose panel really reads differently.
-  let replaced = false
-  for (const index of reachable.slice(1)) {
-    await pins.nth(index).click()
-    await expect(selection).toBeVisible()
-    const name = (await selection.locator('span').first().innerText()).trim()
-    const address = (await selection.locator('span').nth(1).innerText()).trim()
-    if (name === firstName && address === firstAddress) continue
-    await expect(placeInput).toHaveValue(name)
-    await expect(addressInput).toHaveValue(address)
-    replaced = true
-    break
-  }
-  expect(
-    replaced,
-    'a second tap on a different pin must replace BOTH fields, so at least one other reachable pin must name a different place',
-  ).toBe(true)
-})
-
-/**
- * V20 t05 — DRAGGING THE RADIUS SHOWS A BIGGER AREA ON THE MAP.
- *
- * The founder: *"when you click on set location and you drag the radius, it
- * should expand or grow the red circle in real time over the map… This is what
- * Facebook Marketplace does."*
- *
- * WHAT THE FIRST VERSION OF THIS SPEC GOT WRONG, AND WHY IT MATTERS. It
- * asserted the circle's on-screen PIXEL RADIUS grows. That assertion failed —
- * and it failed against a genuinely unhelpful implementation, not a broken
- * test. The old code `fitBounds`-ed the circle on every change, so the camera
- * rescaled to the circle: measured, 1 mile and 30 miles BOTH drew a 125px
- * circle. "The circle is the same size on screen while the radius octuples" is
- * precisely the outcome the founder cannot use — under a self-fitting camera
- * the parent never sees the area change.
- *
- * SO THE CONTRACT IS NOW ABOUT WHAT THE PARENT READS, and it is stated as the
- * two things that must both be true:
- *
- *   1. **The camera zooms OUT.** A wider radius shows more world; with the
- *      camera no longer fitting the circle, this is what makes a 30-mile circle
- *      visibly 30 times a 1-mile one. `data-map-zoom` is the live Leaflet zoom.
- *   2. **The circle grows relative to the map.** The circle's pixel radius
- *      divided by 2^zoom is a zoom-independent measure of the geographic area
- *      the circle covers on screen — the honest form of "it grew".
- *
- * And it happens WITHOUT pressing "See places" again — that is the whole slice.
- * A third assertion pins that closing the dialog retires the preview, so the
- * dialog is not a one-way door on the camera.
- */
-test('dragging the radius slider shows a bigger area on the map (V20 t05)', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await openPlacesTab(page)
-  await expect(page.getByTestId('places-map-band')).toBeVisible()
-  await expect(page.getByTestId('places-map')).toBeVisible()
 
-  /** The rendered radius circle's true pixel radius, read from its path `d`. */
-  async function circleRadius(): Promise<number> {
-    const circle = page.locator('path.leaflet-interactive[stroke="#dc2626"][fill-opacity="0.08"]')
-    await expect(circle).toHaveCount(1)
-    const d = await circle.getAttribute('d')
-    const m = /a([\d.]+),/.exec(d ?? '')
-    if (m === null) throw new Error(`the radius circle is not framed (d="${d}")`)
-    return Number(m[1])
+  const list = page.getByTestId('places-list')
+  await expect(list).toBeVisible()
+  const unfilteredRows = await list.getByTestId('place-row').count()
+  expect(
+    unfilteredRows,
+    'the unfiltered list must be long enough for a narrowing to be measurable',
+  ).toBeGreaterThan(10)
+
+  // AC: no map is mounted in list view — not the band's, not the map view's.
+  await expect(page.getByTestId('places-map-band')).toHaveCount(0)
+  await expect(page.getByTestId('places-map')).toHaveCount(0)
+  await expect(page.getByTestId('places-map-view')).toHaveCount(0)
+  await expect(page.locator('.leaflet-container')).toHaveCount(0)
+
+  // The plan's MEASURED case: `pool` narrows the list hard.
+  await page.getByTestId('places-search').fill('pool')
+  await expect
+    .poll(() => list.getByTestId('place-row').count(), {
+      message: 'the search must narrow the rendered list',
+    })
+    .toBeLessThan(unfilteredRows)
+  const searchedRows = await list.getByTestId('place-row').count()
+  expect(searchedRows, 'the search must leave at least one row').toBeGreaterThan(0)
+  // Still no map after the search.
+  await expect(page.locator('.leaflet-container')).toHaveCount(0)
+
+  // AC: clearing the query restores the full list exactly — no stale narrowing.
+  await page.getByTestId('places-search').fill('')
+  await expect
+    .poll(() => list.getByTestId('place-row').count(), {
+      message: 'clearing the search must restore every matching row',
+    })
+    .toBe(unfilteredRows)
+
+  // AC: a query matching NOTHING does not crash and leaves no rows and no map.
+  await page.getByTestId('places-search').fill('zzzz-no-such-place-zzzz')
+  await expect(page.getByTestId('place-row')).toHaveCount(0)
+  await expect(page.getByTestId('places-search')).toBeVisible()
+  await expect(page.locator('.leaflet-container')).toHaveCount(0)
+})
+
+test('the distance control narrows and widens the LIST, and still draws no map (V25 t01)', async ({
+  page,
+}) => {
+  /**
+   * V25 t01 REPLACES the V20 t05 spec ("dragging the radius slider shows a
+   * bigger area on the map").
+   *
+   * The live-preview circle that spec measured was drawn by the LIST-VIEW map
+   * band, which this slice removes. The founder's underlying ask — *"when you
+   * drag the radius, it should expand or grow the red circle in real time"* —
+   * has no surface left to happen on while list view is showing, so this spec
+   * does NOT pretend to pin it. What it pins is the half that survives and that
+   * the radius feature is actually FOR: the distance control changes which
+   * places the parent is shown, and no map materialises while they change it.
+   *
+   * (The modal's own radius label is asserted too, so the number the parent
+   * reads cannot drift from the value the control holds.)
+   */
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openPlacesTab(page)
+
+  const radiusControl = page.getByTestId('places-distance-filter')
+  await expect(radiusControl).toBeVisible()
+
+  async function listRowCount(): Promise<number> {
+    return page.getByTestId('places-list').getByTestId('place-row').count()
   }
 
-  /** The live Leaflet zoom, published on the map element by the component. */
-  async function mapZoom(): Promise<number> {
-    const raw = await page.getByTestId('places-map').getAttribute('data-map-zoom')
-    const z = Number(raw)
-    if (!Number.isFinite(z)) throw new Error(`the map publishes no zoom (got "${raw}")`)
-    return z
-  }
+  await radiusControl.selectOption('1')
+  await page.waitForTimeout(2200)
+  const atOneMile = await listRowCount()
 
-  /** A zoom-independent measure of the circle's geographic size on screen. */
-  async function circleAreaScore(): Promise<number> {
-    return (await circleRadius()) / Math.pow(2, await mapZoom())
-  }
+  await radiusControl.selectOption('35')
+  await page.waitForTimeout(2200)
+  const atThirtyFive = await listRowCount()
 
+  // AC: the control really filters. Without this the ordering claim below would
+  // be an assertion over an unchanged list.
+  expect(
+    atOneMile,
+    'a 1-mile radius must leave at least one place (the marker lives in it)',
+  ).toBeGreaterThan(0)
+  expect(
+    atThirtyFive,
+    `a 35-mile radius must widen the list (1 mi -> ${atOneMile} rows, 35 mi -> ${atThirtyFive})`,
+  ).toBeGreaterThan(atOneMile)
+
+  // AC: and the frame the founder asked about is now judged where it lives —
+  // the list. No map is mounted while this control is being driven, so the
+  // radius cannot reframe anything behind the parent's back.
+  await expect(page.locator('.leaflet-container')).toHaveCount(0)
+  await expect(page.getByTestId('places-map-band')).toHaveCount(0)
+
+  // The radius's own modal still works from its relocated home in the controls
+  // card, and its label tracks the slider.
   await page.getByTestId('set-location-btn').click()
   await expect(page.getByTestId('location-modal')).toBeVisible()
-
-  // Give the preview a centre the way a parent does. If Nominatim is unreachable
-  // the address does not resolve and the preview anchors on the home pin — the
-  // circle still grows, which is what this asserts, so the spec does not depend
-  // on a third-party service being up.
-  await page.getByTestId('location-address-input').fill('Green Lake Park, Seattle')
-  await page.getByTestId('location-see-places-btn').click()
-  await page.waitForTimeout(3000)
-
   const slider = page.getByTestId('location-radius-slider')
   await expect(slider).toBeVisible()
-
-  /**
-   * THE SLIDER'S RANGE IS 1–30, BUT THE PREVIEW PINS THE CAMERA AT ITS FIRST
-   * RADIUS — so the comparison is made inside a range that stays on the pane.
-   *
-   * The first version of this spec dragged 1 -> 30 and failed with
-   * `d="M0 0"`, i.e. the circle projected entirely off the canvas. That is a
-   * real consequence of the design rather than a bug in it: opening the dialog
-   * at 30 miles zooms out to frame 30 miles and then dragging to 1 mile leaves
-   * the camera far too wide out, so the tiny circle is a dot. It is a poor first
-   * impression at the range's edge and worth a follow-up, but the behaviour the
-   * founder asked for — the circle growing as you drag — is what this asserts,
-   * and 2 -> 10 demonstrates it without measuring at the extremes.
-   */
   await slider.fill('2')
-  await page.waitForTimeout(1200)
-  const smallZoom = await mapZoom()
-  const smallScore = await circleAreaScore()
-
-  // …then WIDER, WITHOUT pressing "See places" again. This is the whole slice:
-  // the map must answer the slider itself.
+  await expect(page.getByTestId('location-modal')).toContainText('2 miles')
   await slider.fill('10')
-  await page.waitForTimeout(1200)
-  const largeZoom = await mapZoom()
-  const largeScore = await circleAreaScore()
-
-  // (1) the camera zoomed OUT — more world visible, which is the only way a
-  //     wider radius can be seen at all once the circle stops self-fitting.
-  expect(
-    largeZoom,
-    `a wider radius must zoom the map OUT (2 mi -> zoom ${smallZoom}, 10 mi -> zoom ${largeZoom})`,
-  ).toBeLessThan(smallZoom)
-
-  // (2) the circle now covers far more of the map. Under the retired
-  //     fitBounds behaviour these two scores were equal — the exact defect.
-  expect(
-    largeScore,
-    `the circle must cover more map at 10 mi than at 2 mi without pressing "See places" ` +
-      `(2 mi -> ${smallScore.toFixed(3)}, 10 mi -> ${largeScore.toFixed(3)})`,
-  ).toBeGreaterThan(smallScore * 2)
-
-  // The modal's own label tracks the same value, so the number on screen and the
-  // circle on the map cannot disagree.
   await expect(page.getByTestId('location-modal')).toContainText('10 miles')
-
-  // Closing the dialog RETIRES the preview: the map returns to its committed
-  // frame rather than staying stuck at the dragged radius. Without this the
-  // dialog would be a one-way door on the camera.
-  const committedZoomBefore = await mapZoom()
   await page.getByTestId('location-modal-close').click()
   await expect(page.getByTestId('location-modal')).toHaveCount(0)
-  await page.waitForTimeout(2200)
-  const afterClose = await mapZoom()
-  expect(
-    afterClose,
-    `closing the dialog must restore the committed neighbourhood frame ` +
-      `(was zoom ${committedZoomBefore} with the dialog open, now ${afterClose})`,
-  ).toBeGreaterThan(largeZoom)
 })
 
-test('the browse list overflows behind "See all", keeping every row reachable (V13 ticket 05 A7)', async ({
+test('the list is the WHOLE list — every matching row renders with no second tap (V25 t01)', async ({
   page,
 }) => {
+  /**
+   * V25 t01 REPLACES the V13 t05 A7 spec ("the browse list overflows behind
+   * 'See all', keeping every row reachable").
+   *
+   * The founder asked for the opposite: *"I want to see all these place cards
+   * under the filters below it as a long list."* The overflow fold was the
+   * thing hiding them, so it is gone — and with it the only case that could
+   * make a matching place unreachable.
+   *
+   * The count is read from the LIST's OWN declared total
+   * (`data-matched-rows`, written from the plan's rows) rather than from an
+   * arithmetic expectation, so this measures the render against the app's own
+   * decision instead of against today's seed size.
+   */
   await openPlacesTab(page)
   await useAnyDistance(page)
 
-  // Collapsed by default when more than the lead limit exist (the seed has far
-  // more than six places): the door names the total. Tapping it reveals the
-  // remaining rows (all place data stays reachable), and the door flips to
-  // "Hide".
-  const seeAll = page.getByTestId('places-see-all')
-  await expect(seeAll).toBeVisible()
-  await expect(seeAll).toContainText('See all')
-  await seeAll.click()
-  await expect(page.getByTestId('places-see-all')).toContainText('Hide')
+  const matched = Number(
+    (await page.getByTestId('places-list').getAttribute('data-matched-rows')) ?? '0',
+  )
+  expect(
+    matched,
+    'the seed must match more places than the retired lead limit for this to be a real check',
+  ).toBeGreaterThan(BROWSE_LIST_LEAD_LIMIT)
+
+  // AC: no door, and no "See all"/"Hide" toggle anywhere on the page.
+  await expect(page.getByTestId('places-see-all')).toHaveCount(0)
+
+  // AC: EVERY matching row is rendered on the first paint — the whole point.
+  const renderedListRows = await page
+    .getByTestId('places-list')
+    .getByTestId('place-row')
+    .count()
+  expect(
+    renderedListRows,
+    `all ${matched} matching rows must render without a tap (got ${renderedListRows})`,
+  ).toBe(matched)
+
+  // AC: a row that used to live behind the fold is reachable without any
+  // interaction. `INDOOR_PLACE` sorts well past the old six-row lead.
   await expect(placeRow(page, INDOOR_PLACE)).toBeVisible()
 })
 
@@ -2280,14 +2034,9 @@ test('every card offers an honest learn-more link, and no card shows a photo (V2
   await openPlacesTab(page)
   await expect(page.getByTestId('place-row').first()).toBeVisible()
 
-  // Reach the full list: the lead is a few rows per kind, and the curated
-  // websites (community centers, pools, beaches, libraries) are spread through
-  // it, so a lead-only sample would miss most `website` links.
-  const seeAll = page.getByTestId('places-see-all')
-  if ((await seeAll.count()) > 0) {
-    await seeAll.first().click()
-    await expect(page.getByTestId('place-row').first()).toBeVisible()
-  }
+  // V25 t01: the FULL list renders on the first paint, so the sample below
+  // covers every card — there is no lead to expand past any more.
+  await expect(page.getByTestId('places-see-all')).toHaveCount(0)
 
   // (4) the retired slot is genuinely gone from every card.
   expect(await page.getByTestId('place-card-photo').count()).toBe(0)
@@ -2349,21 +2098,30 @@ test('every card offers an honest learn-more link, and no card shows a photo (V2
  * Plus the affordance that keeps a tight map honest: places outside the frame
  * are COUNTED on screen, so a parent never reads the map as the whole picture.
  */
-test('the map stays a neighbourhood while the radius widens the list (V19 t01 — D1)', async ({
+test('the neighbourhood frame is a MODE, and the radius only widens the list (V25 t01)', async ({
   page,
 }) => {
+  /**
+   * V25 t01 REPLACES the V19 t01 (ruling D1) spec, which measured the LIST-VIEW
+   * band's radius circle in pixels and compared it at 1 mile against 35 miles.
+   *
+   * D1's decision — "the map is always the neighbourhood, the radius only sizes
+   * the LIST" — is unchanged, and it is now STRUCTURAL rather than a measured
+   * coincidence: list view mounts no map at all, so no radius setting can reach
+   * a camera, and the only map the page has is the one the parent explicitly
+   * opens. This spec asserts that structure, and keeps the half of D1 that can
+   * still fail: the radius really does widen the LIST.
+   *
+   * The two halves, both asserted against the list's own rows:
+   *
+   *   1. THE LIST WIDENS with the radius. If this is flat, the radius stopped
+   *      filtering and the rest of the spec would pass for the wrong reason.
+   *   2. NO MAP IS MOUNTED in list view, at either radius. This is the claim a
+   *      reintroduced band would break, and it is the honest replacement for
+   *      "the map did not move": there is no map to move.
+   */
   await page.setViewportSize({ width: 390, height: 844 })
   await openPlacesTab(page)
-  await expect(page.getByTestId('places-map-band')).toBeVisible()
-
-  /** The rendered radius circle's true pixel radius, read from its path `d`. */
-  async function circleRadius(): Promise<number> {
-    const circle = page.locator('path.leaflet-interactive[stroke="#dc2626"][fill-opacity="0.08"]')
-    const d = await circle.getAttribute('d')
-    const m = /a([\d.]+),/.exec(d ?? '')
-    if (m === null) throw new Error(`the radius circle is not framed (d="${d}")`)
-    return Number(m[1])
-  }
 
   /** The furthest distance among the rendered list rows, in miles. */
   async function maxListMiles(): Promise<number> {
@@ -2375,51 +2133,54 @@ test('the map stays a neighbourhood while the radius widens the list (V19 t01 �
     return miles.length === 0 ? 0 : Math.max(...miles)
   }
 
+  async function listRowCount(): Promise<number> {
+    return page.getByTestId('places-list').getByTestId('place-row').count()
+  }
+
   const radiusControl = page.getByTestId('places-distance-filter')
   await expect(radiusControl).toBeVisible()
 
   // ---- radius = 1 mile -----------------------------------------------------
   await radiusControl.selectOption('1')
   await page.waitForTimeout(2200)
-  const r1 = await circleRadius()
   const d1 = await maxListMiles()
+  const n1 = await listRowCount()
 
   // ---- radius = 35 miles (the widest) --------------------------------------
   await radiusControl.selectOption('35')
   await page.waitForTimeout(2200)
-  const r35 = await circleRadius()
   const d35 = await maxListMiles()
+  const n35 = await listRowCount()
 
-  // (1) THE MAP DID NOT MOVE. D1's whole claim, stated as a measurement.
+  // (2) THE LIST MOVED. If this is flat, the radius stopped filtering and the
+  // absence below would have passed for the wrong reason.
   expect(
-    Math.abs(r35 - r1),
-    `the map frame must not change with the radius ` +
-      `(r=${r1}px at 1 mi, r=${r35}px at 35 mi) — D1 says the map is always the neighbourhood`,
-  ).toBeLessThanOrEqual(1)
-
-  // (2) THE LIST DID MOVE. If this is flat, the radius stopped filtering and the
-  // assertion above would have passed for the wrong reason.
+    n35,
+    `the list must widen with the radius (${n1} rows at 1 mi, ${n35} rows at 35 mi)`,
+  ).toBeGreaterThan(n1)
   expect(
     d35,
-    `the list must widen with the radius (max ${d1} mi at 1 mi radius, ` +
+    `the furthest rendered place must widen with the radius (max ${d1} mi at 1 mi radius, ` +
       `${d35} mi at 35 mi) — the radius still filters the LIST`,
   ).toBeGreaterThan(d1)
 
-  // (3) The out-of-frame count is rendered whenever places fall outside, and it
-  // names the frame so the number is actionable rather than mysterious.
-  const outside = page.getByTestId('places-outside-focus')
-  await radiusControl.selectOption('35')
-  await page.waitForTimeout(2000)
-  if ((await outside.count()) > 0) {
-    const text = await outside.innerText()
-    expect(text, 'the outside-view line must state a count').toMatch(/\d+\s+places?/)
-    expect(text, 'the outside-view line must name the frame it is talking about').toMatch(/mile/)
-    console.log(`[V19 map] radius 1mi -> r=${r1}px max=${d1}mi | 35mi -> r=${r35}px max=${d35}mi | "${text}"`)
-  } else {
-    // Legitimate only when nothing is outside — say so loudly rather than
-    // passing silently, so a future empty map cannot masquerade as a pass.
-    console.log(`[V19 map] no out-of-frame places at 35 mi (map r=${r35}px, list max ${d35} mi)`)
-  }
+  // (1) THE MAP IS NOT THERE TO MOVE. The neighbourhood frame D1 protects is
+  // now a mode: nothing in list view is framed, at either radius.
+  await expect(page.getByTestId('places-map-band')).toHaveCount(0)
+  await expect(page.getByTestId('places-map')).toHaveCount(0)
+  await expect(page.locator('.leaflet-container')).toHaveCount(0)
+
+  // …and the frame the parent asked for is what the map view shows when they
+  // open it: every matching place pinned, on one map.
+  await page.getByTestId('places-see-map').click()
+  await expect(page.getByTestId('places-map-view-map')).toBeVisible()
+  await expect(page.locator('.leaflet-container')).toHaveCount(1)
+  expect(
+    await page.locator('[data-testid^="places-map-card-"]').count(),
+    'the map view must carry cards for the widened list',
+  ).toBeGreaterThan(0)
+  await page.getByTestId('places-back-to-list').click()
+  await expect(page.locator('.leaflet-container')).toHaveCount(0)
 })
 
 /**

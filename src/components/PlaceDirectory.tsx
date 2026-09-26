@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { LocationModal } from './LocationModal'
 import { NAV_ICONS } from './icons'
-import { PlacesMap } from './PlaceMap'
 import { PlacesMapView } from './PlacesMapView'
 import { usePrefersReducedMotion } from './usePrefersReducedMotion'
 import { RadiusEmptyState } from './RadiusEmptyState'
@@ -22,10 +21,7 @@ import {
   DATE_WINDOWS,
   DATE_WINDOW_LABELS,
   dateWindowEmptyCopy,
-  distanceMiles,
-  MAP_FOCUS_RADIUS_MILES,
   planDirectoryList,
-  radiusPreviewCircle,
   PLACE_KINDS,
   placeLearnMoreLink,
   placeIndoorLabel,
@@ -45,10 +41,12 @@ import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
 export { PlaceDirectory as default }
 
 /**
- * V21 t02: the PLACES DIRECTORY SURFACE — the map band, the search/filter/distance
- * controls, the grouped list with its overflow door, the "Not on the map yet"
- * section, the Filter & sort modal, the Set location modal, and the floating
- * "Map" button that scrolls back to the band.
+ * V21 t02: the PLACES DIRECTORY SURFACE — V25 t01 made it LIST-FIRST: the
+ * search/filter/distance card is the first block, the grouped list (every
+ * matching row, no overflow door) sits below it, and the map is a MODE the
+ * floating control toggles into. Still here: the "Not on the map yet" section,
+ * the Filter & sort modal, the Set location modal (moved out of the removed
+ * band's header into the controls card), and the PlacesMapView map mode.
  *
  * This is the ONE implementation of the directory. It used to live inside
  * `BrowsePage.tsx`; the page now renders it (Phase A) and `/new` opens it in a
@@ -64,10 +62,9 @@ export { PlaceDirectory as default }
  * full directory with its filters" from the V9 8-row picker shortcut.
  *
  * The component owns every piece of DIRECTORY STATE (search text, kind chips,
- * sort mode, radius filter, indoor/outdoor, the distance choice, the overflow
- * door, both modals, the geocoded center + preview radius, the map-band observer)
- * and exposes only the DATA it needs plus the CALLBACKS the host decides. The
- * host supplies:
+ * sort mode, radius filter, indoor/outdoor, the distance choice, the view mode,
+ * both modals, the geocoded center + preview radius) and exposes only the DATA
+ * it needs plus the CALLBACKS the host decides. The host supplies:
  *
  *   - the loaded directory rows (`places`, `zipCoords`, `upcoming`) — the reads
  *     stay in the host because each page loads them with its own discipline
@@ -143,9 +140,6 @@ export function PlaceDirectory({
   // 'profile' = follow the viewer's own radius (the default, and what makes the
   // shared empty state's escapes work). 'any' = no ceiling. A number = picked.
   const [distanceChoice, setDistanceChoice] = useState<DistanceChoice>('profile')
-  // The overflow door. Collapsed shows the lead; expanded shows every row.
-  const [showAll, setShowAll] = useState(false)
-
   // The filter & sort modal. The list defaults to alphabetical (A–Z); the modal
   // is where filtering + re-sorting lives — there are no controls below the list.
   const [sortMode, setSortMode] = useState<SortMode>('alpha')
@@ -171,9 +165,10 @@ export function PlaceDirectory({
   // --- V24 slice 10: the view mode ------------------------------------------
 
   /**
-   * WHICH SURFACE THE DIRECTORY IS SHOWING — the list (band + filters + grouped
-   * rows) or the map view (one map + the swipeable strip). `'list'` is the
-   * pre-existing surface and therefore the default.
+   * WHICH SURFACE THE DIRECTORY IS SHOWING — the list (the filters card plus
+   * every grouped row) or the map view (one map + the swipeable strip).
+   * `'list'` is the default: the founder's ask is that the filters and the list
+   * lead the page, with the map as a mode you toggle into.
    *
    * WHY THIS IS STATE AND NOT A ROUTE, and why it is not `history.back()`: the
    * map view's "Back to list" must return to THE LIST THE PARENT CAME FROM. A
@@ -213,51 +208,12 @@ export function PlaceDirectory({
     window.scrollTo({ top: saved, behavior: focusBehavior })
   }, [view, focusBehavior])
 
-  // --- Floating "Map" button (V17 t03) --------------------------------------
-  // Is the map band scrolled out of view? Drives the floating button that
-  // scrolls back to it. An IntersectionObserver rather than a scroll listener:
-  // a scroll handler fires on every frame of every scroll and would force a
-  // layout read inside the paint frame; the observer hit-tests off the main
-  // thread and calls back only on a crossing. `true` is the honest initial
-  // value (the band lives at the top, so first paint either sees it or the page
-  // opened already scrolled).
-  const [mapBandOutOfView, setMapBandOutOfView] = useState(true)
-  const mapBandRef = useRef<HTMLDivElement | null>(null)
-  const bandObserverRef = useRef<IntersectionObserver | null>(null)
-  // A callback ref attaches exactly when the node enters the DOM and detaches
-  // when it leaves — the lifetime the observer actually wants. The band renders
-  // CONDITIONALLY (after an early return), so an effect could not depend on it
-  // without calling a hook conditionally (a real rules-of-hooks error).
-  const attachMapBand = useCallback((node: HTMLDivElement | null) => {
-    bandObserverRef.current?.disconnect()
-    bandObserverRef.current = null
-    mapBandRef.current = node
-    if (node === null) {
-      // The band left the DOM (no mappable places): nothing to scroll back TO.
-      setMapBandOutOfView(false)
-      return
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[entries.length - 1]
-        if (entry === undefined) return
-        setMapBandOutOfView(!entry.isIntersecting)
-      },
-      { threshold: 0 },
-    )
-    observer.observe(node)
-    bandObserverRef.current = observer
-  }, [])
-
   // --- Derived rows ----------------------------------------------------------
 
   const {
     listRows,
-    placed,
     unplaced,
-    overflowRows,
     leadGroups,
-    overflowGroups,
     radiusReason,
     dateWindowReason,
     nothingMatches,
@@ -280,20 +236,6 @@ export function PlaceDirectory({
     ratings,
   })
 
-  // The overview map's null condition: at least one placed row resolves to a
-  // stored coordinate (same seam as PlacesMap).
-  const mappedMarkers = placed
-    .map((row) => resolveMapCoords(row.place, zipCoords))
-    .filter((c): c is { lat: number; lng: number } => c !== null)
-
-  // How many drawn places fall outside the map's neighbourhood frame (V19 t01).
-  const outsideFocusCount = (() => {
-    const anchor = geocodeCenter ?? homePin
-    if (anchor === null) return 0
-    return mappedMarkers.filter((point) => distanceMiles(anchor, point) > MAP_FOCUS_RADIUS_MILES)
-      .length
-  })()
-
   // The KIND filter must reach the "Not on the map yet" section too. Distance-
   // shaped filters are deliberately NOT applied there (a place may not be
   // hidden for missing data), but the kind is stated data. The date window is
@@ -308,13 +250,12 @@ export function PlaceDirectory({
    * caught both halves of it:
    *
    *  1. `mapViewRows` is EVERY row the directory's filter produces
-   *     (`filteredUnplaced` aside, it is `listRows`), NOT the list view's lead.
-   *     The list's "See all N places" door governs how the LIST renders; it must
-   *     not narrow what the MAP draws, because the band above already pins the
-   *     full set (`placed`, the line that renders `<PlacesMap>`). A parent who
-   *     searched for "park" and tapped "See map" was shown six pins and told
-   *     nothing about the other 233 — a matching place with no pin on the map is
-   *     the defect, not a feature of the door.
+   *     (`filteredUnplaced` aside, it is `listRows`) — never a slice of it. (Before
+   *     V25 t01 the list rendered a six-row lead behind a door, and a map fed from
+   *     that lead showed six pins and said nothing about the other 233; the lead is
+   *     gone now, but the rule it produced is the reason this field exists at all.)
+   *     A parent who searched for "park" and tapped "See map" must see every
+   *     matching place pinned — a matching place with no pin is the defect.
    *
    *  2. `placeableMapRows` is that set minus the rows the map cannot plot (no
    *     coordinates means no pin, never a fake one). The map view gets BOTH: the
@@ -332,21 +273,12 @@ export function PlaceDirectory({
 
   // --- Handlers --------------------------------------------------------------
 
-  /** Any filter change collapses the list back to its lead. */
-  function resetShowAll() {
-    setShowAll(false)
-  }
-
   function openFilterModal() {
     setFilterModalOpen(true)
   }
 
   function closeFilterModal() {
     setFilterModalOpen(false)
-  }
-
-  function scrollBackToMap() {
-    mapBandRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   /**
@@ -382,6 +314,15 @@ export function PlaceDirectory({
     setView('list')
   }
 
+  /**
+   * V25 t01: THE MODE SWITCH ITSELF, in one place. The in-card "See map" button
+   * and the floating toggle both flip list<->map, and both must save/restore the
+   * list's scroll offset identically (`openMapView` below owns the saving).
+   */
+  function seeMap() {
+    openMapView()
+  }
+
   /** Toggle one kind chip. An empty selection means "all kinds". */
   function toggleKind(kind: string) {
     setSelectedKinds((prev) => {
@@ -391,8 +332,6 @@ export function PlaceDirectory({
       return next
     })
   }
-
-  const seeAllLabel = showAll ? 'Hide' : `See all ${listRows.length} places`
 
   async function handleGeocode(address: string) {
     const result = await geocodeAddress(address)
@@ -420,57 +359,45 @@ export function PlaceDirectory({
   // --- Render ----------------------------------------------------------------
 
   return (
-    <div className="flex flex-col gap-4 md:grid md:grid-cols-2 md:items-start">
-      {/* The map leads the surface — the mental model for "what's nearby".
-          V22 slice 9: at md+ this is column 1 of a two-column grid, sticky
-          under the full-width header so the map stays in view while the list
-          scrolls. Below md it is the ordinary stacked band. */}
-      {view === 'list' && places !== null && mappedMarkers.length > 0 ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm md:sticky md:top-16">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500">Nearby places</span>
-            <button
-              type="button"
-              data-testid="set-location-btn"
-              onClick={openLocationModal}
-              className="rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100"
-            >
-              Set location
-            </button>
-          </div>
-          {/* The BAND. 45dvh with a 240px floor. The height is given to the MAP
-              itself (className), not a wrapper — a fixed clipping band cut the
-              popup panel off (measured, ocr-found). The band sizes only the map
-              and clips nothing; the panel renders in normal flow beneath it. */}
-          <div ref={attachMapBand} data-testid="places-map-band" className="w-full">
-            <PlacesMap
-              className="h-[45dvh] min-h-[240px]"
-              places={placed.map((row) => row.place)}
-              zipCoords={zipCoords}
-              homePin={homePin}
-              placeActions={!selectable}
-              onSelect={selectable ? onSelect : undefined}
-              radiusCircle={radiusPreviewCircle({
-                previewCenter: locationModalOpen ? geocodeCenter : null,
-                previewMiles: radiusMiles,
-                geocodeCenter,
-                homePin,
-                committedMiles: MAP_FOCUS_RADIUS_MILES,
-              })}
-            />
-          </div>
-          {outsideFocusCount > 0 ? (
-            <p data-testid="places-outside-focus" className="mt-2 text-xs text-slate-500">
-              {outsideFocusCount} {outsideFocusCount === 1 ? 'place' : 'places'} outside this{' '}
-              {milesWord(MAP_FOCUS_RADIUS_MILES)} view — widen the distance below to see more.
-            </p>
-          ) : null}
-        </div>
-      ) : null}
+    <div
+      className={
+        view === 'map'
+          ? 'flex flex-col gap-4 md:grid md:grid-cols-2 md:items-start'
+          : 'flex flex-col gap-4'
+      }
+    >
+      {/* Search + filter chips + distance control. V25 t01: this card is the
+           FIRST block in list view — the founder's ask ("I want to see the
+           search filters at the very top with the list of all the different
+           places below it"). It used to be column 2 of a two-column grid whose
+           column 1 was the map band; the band is gone from list view, so the
+           grid would now leave an empty column and a card pinned beside
+           nothing. The grid returns in MAP VIEW only, where the map is real
+           content beside the card.
 
-      {/* Search + filter chips + distance control. V22 slice 9: column 2 at md+.
-           V23 slice 3: stickyControls pins this card to the top of the scroll area. */}
-      <div className={`flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm md:col-start-2 ${stickyControls ? 'sticky top-0 z-10' : ''}`}>
+           It carries "Set location" because that control lived in the band's
+           header and the band no longer renders in list view — the location
+           modal is the page's only address entry point, so it moved here
+           rather than disappearing with its old host.
+
+           V23 slice 3: stickyControls pins this card to the top of the scroll
+           area (the directory sheet's own scroll container). */}
+      <div className={`flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm ${view === 'map' ? 'md:col-start-2' : ''} ${stickyControls ? 'sticky top-0 z-10' : ''}`}>
+        {/* V25 t01: "Set location" — relocated from the removed band header.
+            It opens the shared LocationModal, which sets the geocoded center
+            and radius the list and the map's preview circle both consume. */}
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-slate-500">Nearby places</span>
+          <button
+            type="button"
+            data-testid="set-location-btn"
+            onClick={openLocationModal}
+            className="min-h-11 rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          >
+            Set location
+          </button>
+        </div>
+
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-slate-700">Search</span>
           <input
@@ -478,10 +405,7 @@ export function PlaceDirectory({
             data-testid="places-search"
             className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
             value={query}
-            onChange={(e) => {
-              setQuery(e.target.value)
-              resetShowAll()
-            }}
+            onChange={(e) => setQuery(e.target.value)}
             placeholder="e.g. Green Lake, splash pad, library"
             autoComplete="off"
           />
@@ -502,7 +426,6 @@ export function PlaceDirectory({
             aria-pressed={indoorFilter === true}
             onClick={() => {
               setIndoorFilter((prev) => (prev === true ? null : true))
-              resetShowAll()
             }}
             className={
               'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors motion-reduce:transition-none ' +
@@ -519,7 +442,6 @@ export function PlaceDirectory({
             aria-pressed={indoorFilter === false}
             onClick={() => {
               setIndoorFilter((prev) => (prev === false ? null : false))
-              resetShowAll()
             }}
             className={
               'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors motion-reduce:transition-none ' +
@@ -550,7 +472,6 @@ export function PlaceDirectory({
                 data-testid={`date-chip-${window}`}
                 onClick={() => {
                   setDateWindow(window)
-                  resetShowAll()
                 }}
                 className={
                   'min-h-11 min-w-11 rounded-full border px-3 py-1.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
@@ -574,7 +495,6 @@ export function PlaceDirectory({
               value={distanceSelectValue(distanceChoice)}
               onChange={(e) => {
                 setDistanceChoice(distanceChoiceFromValue(e.target.value))
-                resetShowAll()
               }}
             >
               <option value="profile">Within your radius ({viewerRadius} mi)</option>
@@ -588,21 +508,26 @@ export function PlaceDirectory({
           </label>
         </div>
 
-        {/* V24 slice 10: the MAP VIEW's entry point. It lives in the controls
-            card rather than in the band's header so it is still reachable when
-            the band itself is not rendered (a search that matches no PLACEABLE
-            row) — the parent can open the map and see that the filter emptied
-            it. It is NOT the floating `scroll-to-map-btn`, whose job is
-            unchanged: scrolling back to the band.
+        {/* V24 slice 10, KEPT BY V25 t01: the map view's in-card entry point.
+            Before V25 it was the only list-view door to the map (and the
+            floating control's separate job was scrolling back to the band).
+            Now the floating control is the mode toggle and NOTHING scrolls to a
+            band, so this button is the explicit "See map" affordance beside the
+            filters — the same door the toggle opens, reached from the card the
+            founder asked to lead the page. Two doors to one mode, one map.
+
+            It lives in the controls card rather than in the old band's header so
+            it is still reachable when a search matches no PLACEABLE row — the
+            parent can open the map and see the filter emptied it.
 
             It renders only when at least one row has coordinates, so the control
             is never a door to an empty map. The way back is the map view's own
-            "Back to list" button. */}
+            "Back to list" button, or the floating control, now labelled "List". */}
         {placeableMapRows.length > 0 ? (
           <button
             type="button"
             data-testid="places-see-map"
-            onClick={openMapView}
+            onClick={seeMap}
             className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 hover:bg-indigo-100"
           >
             <svg
@@ -622,13 +547,17 @@ export function PlaceDirectory({
         ) : null}
       </div>
 
-      {/* V24 slice 10 — THE MAP VIEW REPLACES the band and the list rather than
-          sitting beside them, and this is the MEASURED reason for that shape:
-          two mounted Leaflet maps means two `data-testid="places-map"` nodes,
-          and every existing spec that calls `page.getByTestId('places-map')`
-          then fails in Playwright's strict mode. At most ONE map is mounted at
-          any moment, and the map view's own map carries its OWN test id
+      {/* V24 slice 10 — THE MAP VIEW REPLACES the list rather than sitting
+          beside it, and this is the MEASURED reason for that shape: two mounted
+          Leaflet maps means two `data-testid="places-map"` nodes, and every
+          existing spec that calls `page.getByTestId('places-map')` then fails in
+          Playwright's strict mode. At most ONE map is mounted at any moment, and
+          the map view's own map carries its OWN test id
           (`places-map-view-map`, through PlacesMap's existing `testId` prop).
+
+          V25 t01 made this the ONLY map on the page: list view no longer mounts
+          a band above the filters, so the two maps this comment guards against
+          cannot coexist even transiently.
 
           It spans both columns at md+: the strip wants the width, and the
           controls above it stay mounted so a parent can narrow the map's result
@@ -671,7 +600,6 @@ export function PlaceDirectory({
             data-testid="date-window-escape-upcoming"
             onClick={() => {
               setDateWindow('upcoming')
-              resetShowAll()
             }}
             className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500 outline-none"
           >
@@ -683,7 +611,24 @@ export function PlaceDirectory({
           No places match that.
         </div>
       ) : (
-        <div className="flex flex-col gap-2 md:col-start-2">
+        <div
+          data-testid="places-list"
+          /* V25 t01: the directory's own matched-row total, published for the
+             spec that pins "the list is the whole list". Same discipline as the
+             map view's `data-matched-rows`: assert the render against the
+             surface's own declared total rather than against a seed size.
+             Summed over the kind groups because that is the one array this
+             component still holds; `planDirectoryList` grouped every row. */
+          data-matched-rows={leadGroups.reduce((total, group) => total + group.rows.length, 0)}
+          className="flex flex-col gap-2"
+        >
+          {/* V25 t01: THE WHOLE LIST, not a lead behind a door. `leadGroups` IS
+              every matching row grouped by kind now — `planDirectoryList`'s
+              lead/overflow split is the identity — which is the founder's "all
+              these place cards under the filters below it as a long list". The
+              A–Z / kind grouping is kept (grouping was never the complaint) and
+              the "See all N places" fold is gone, so no matching place hides
+              behind a second tap. */}
           {leadGroups.map((group) => (
             <section key={group.kind} className="flex flex-col gap-2">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
@@ -702,39 +647,6 @@ export function PlaceDirectory({
               ))}
             </section>
           ))}
-
-          {overflowRows.length > 0 ? (
-            <div className="flex flex-col gap-2">
-              <button
-                type="button"
-                data-testid="places-see-all"
-                onClick={() => setShowAll((prev) => !prev)}
-                className="self-start rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
-              >
-                {seeAllLabel}
-              </button>
-              {showAll
-                ? overflowGroups.map((group) => (
-                    <section key={group.kind} className="flex flex-col gap-2">
-                      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
-                        {group.label}
-                      </h2>
-                      {group.rows.map((row) => (
-                        <DirectoryRow
-                          key={row.place.id}
-                          row={row}
-                          followed={followedPlaceIds.has(row.place.id)}
-                          canFollow={canFollow}
-                          onToggleFollow={onToggleFollow}
-                          selectable={selectable}
-                          onSelect={onSelect}
-                        />
-                      ))}
-                    </section>
-                  ))
-                : null}
-            </div>
-          ) : null}
         </div>
       )}
 
@@ -743,7 +655,7 @@ export function PlaceDirectory({
           (the rows that did not become pins or cards), so nothing becomes
           unreachable. */}
       {view === 'list' && filteredUnplaced.length > 0 ? (
-        <section className="flex flex-col gap-2 md:col-start-2">
+        <section className="flex flex-col gap-2">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
             Not on the map yet
           </h2>
@@ -766,32 +678,42 @@ export function PlaceDirectory({
         </section>
       ) : null}
 
-      {/* The floating "Map" button. NO z-index by design (document order clears
-          the list; Leaflet's controls sit at 1000, so a number buys nothing).
-          Clears the bottom nav by geometry. */}
-      {view === 'list' && mapBandOutOfView ? (
-        <button
-          type="button"
-          data-testid="scroll-to-map-btn"
-          aria-label="Back to map"
-          onClick={scrollBackToMap}
-          className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-1/2 flex min-h-11 min-w-11 -translate-x-1/2 items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 shadow-lg transition-colors motion-reduce:transition-none hover:bg-slate-50 md:bottom-[calc(2rem+env(safe-area-inset-bottom))]"
+      {/* V25 t01: THE MODE TOGGLE. One floating control that flips list↔map
+          instead of scrolling to a band (there is no band left to scroll to:
+          `scrollBackToMap` and the IntersectionObserver that used to hide this
+          button while the band was visible are both gone).
+
+          It renders in BOTH modes and its label follows the mode, because that
+          is the founder's ask — "when you get to the map mode, this button
+          should come back and it should be called list. you can toggle back and
+          forth between them." The accessible name is the same word the button
+          shows (`aria-label` matches the visible label), so a screen reader and
+          the screen agree.
+
+          NO z-index by design (document order clears the content; Leaflet's
+          controls sit at 1000, so a number buys nothing). Clears the bottom nav
+          by geometry and honours reduced motion. */}
+      <button
+        type="button"
+        data-testid="places-view-toggle"
+        aria-label={view === 'list' ? 'Map' : 'List'}
+        onClick={view === 'list' ? openMapView : backToList}
+        className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-1/2 flex min-h-11 min-w-11 -translate-x-1/2 items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 shadow-lg outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 hover:bg-slate-50 md:bottom-[calc(2rem+env(safe-area-inset-bottom))]"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          className="h-5 w-5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
         >
-          <svg
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-            className="h-5 w-5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d={NAV_ICONS.browse} />
-          </svg>
-          Map
-        </button>
-      ) : null}
+          <path d={NAV_ICONS.browse} />
+        </svg>
+        {view === 'list' ? 'Map' : 'List'}
+      </button>
 
       {/* The Filter & sort modal. State commits live as the parent toggles;
           Apply just closes. Stacking class beats Leaflet's 1000 wrapper. */}

@@ -1550,9 +1550,10 @@ export function placeFollowIdSet(
  *   explicit center + radius, which is its own complete answer.
  *
  * EVERYTHING ELSE IS SHARED: `placed` (the map's markers — always the full
- * home-zip set, never the filtered list), the lead/overflow split at
- * BROWSE_LIST_LEAD_LIMIT, the kind groups for both halves, and the two empty-
- * state flags below.
+ * home-zip set, never the filtered list), the kind groups, and the two empty-
+ * state flags below. (V25 t01 retired the lead/overflow split at
+ * BROWSE_LIST_LEAD_LIMIT: the fields survive, the split does not — see the note
+ * in the body.)
  */
 export interface DirectoryListPlan {
   /** The home-zip browse rows (before the modal's kind/radius narrowing). */
@@ -1567,13 +1568,18 @@ export interface DirectoryListPlan {
   placed: PlaceListRow[]
   /** The rendered list's unknown-distance rows (the "Not on the map yet" section). */
   unplaced: PlaceListRow[]
-  /** The first BROWSE_LIST_LEAD_LIMIT rows of the rendered list. */
+  /**
+   * V25 t01: EVERY row of the rendered list (the lead/overflow split is the
+   * identity — see the note in the function body). Named `leadRows` for the
+   * existing consumer and because a future surface that wants a lead belongs
+   * here, in the module that owns the rule.
+   */
   leadRows: PlaceListRow[]
-  /** Everything after the lead (the overflow door's content). */
+  /** Empty under V25 t01: the overflow door is retired, so nothing overflows. */
   overflowRows: PlaceListRow[]
-  /** The lead's kind groups (groupPlacesByKind over leadRows). */
+  /** The full list's kind groups (groupPlacesByKind over leadRows). */
   leadGroups: PlaceKindGroup[]
-  /** The overflow's kind groups (groupPlacesByKind over overflowRows). */
+  /** Empty set of groups (groupPlacesByKind over overflowRows). */
   overflowGroups: PlaceKindGroup[]
   /** The shared radius empty state is the honest answer ONLY when the radius is actually the reason nothing shows. */
   radiusIsTheReason: boolean
@@ -1738,8 +1744,19 @@ export function planDirectoryList(input: {
 
   const listRows = geocodeCenter !== null ? effectiveRows : filteredRows
   const unplaced = listRows.filter((row) => row.distanceMiles === null)
-  const leadRows = listRows.slice(0, BROWSE_LIST_LEAD_LIMIT)
-  const overflowRows = listRows.slice(BROWSE_LIST_LEAD_LIMIT)
+  /**
+   * V25 t01: THE LIST IS THE WHOLE LIST. The founder reversed the V13 t05 A7
+   * overflow fold — "I want to see all these place cards under the filters below
+   * it as a long list" — so the split below is now the IDENTITY: the lead is
+   * every row and there is no overflow. It is kept as two fields rather than
+   * deleted because `BROWSE_LIST_LEAD_LIMIT` is what the retired fold was, the
+   * shape is what downstream code already reads, and a future surface that wants
+   * a lead can reintroduce it here — in the one place that owns the rule — rather
+   * than in a component. `leadRows` (not `overflowRows`) is the field that
+   * carries the rows for that reason.
+   */
+  const leadRows = listRows
+  const overflowRows: PlaceListRow[] = []
   const leadGroups = groupPlacesByKind(leadRows)
   const overflowGroups = groupPlacesByKind(overflowRows)
 

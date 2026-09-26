@@ -413,8 +413,8 @@ test('the map view pins EVERY matching place, capping only the cards (V24 s10)',
    * directory of 239 matching places drew exactly 40 pins and the other 199 were
    * pinned nowhere — while the list's own band drew all of them. No spec asserted
    * a pin count, so nothing in the suite could fail. This one can: it asserts the
-   * map view plots the SAME number of places as the band, that the number is
-   * larger than the strip's card cap, and that the cards really are capped.
+   * map view plots every placeable matching row — more than the strip's card cap
+   * and no more than the list's own total — and that the cards really are capped.
    */
   await page.goto('/browse')
   await settleOnRoute(page, '/browse')
@@ -422,11 +422,19 @@ test('the map view pins EVERY matching place, capping only the cards (V24 s10)',
   // No search: this needs MORE matching places than the strip's cap, and "park"
   // happened to land exactly on it during review. `park` is kept out of the
   // count so the assertion measures the directory, not the query.
-  await page.getByTestId('places-map').waitFor()
-  await expect(page.getByTestId('places-map')).toBeVisible()
-  const bandPins = await settledPlacePinCount(page.getByTestId('places-map'))
+  //
+  // V25 t01: THE COMPARISON SURFACE CHANGED, AND THE CLAIM DID NOT. This spec
+  // used to compare the map view's pins against the list-view BAND's pins — the
+  // band was "the surface that has always pinned the full matching set". The band
+  // is gone (list view mounts no map at all), so the full matching set is now
+  // read from the LIST's own declared total (`places-list[data-matched-rows]`,
+  // the same publish-the-total discipline this component already uses for the
+  // map view itself).
+  const listMatchedRows = Number(
+    (await page.getByTestId('places-list').getAttribute('data-matched-rows')) ?? '0',
+  )
   expect(
-    bandPins,
+    listMatchedRows,
     'the directory must match more places than the strip cap for this to be a real check',
   ).toBeGreaterThan(MAP_STRIP_CARD_LIMIT)
 
@@ -434,26 +442,22 @@ test('the map view pins EVERY matching place, capping only the cards (V24 s10)',
   const mapViewMap = page.getByTestId('places-map-view-map')
   await expect(mapViewMap).toBeVisible()
 
-  // AC B1: THE PINS ARE COMPLETE. Same count as the band — the surface that has
-  // always pinned the full matching set — and strictly more than the card cap.
-  const viewPins = await placePinCount(mapViewMap)
+  // AC B1: THE PINS ARE COMPLETE — every placeable matching row, which is all
+  // but the handful the seed carries without coordinates.
+  const viewPins = await settledPlacePinCount(mapViewMap)
   /**
-   * AT LEAST AS MANY AS THE BAND, and the asymmetry with "exactly the same" is
-   * MEASURED rather than a hedge. The band pins `planDirectoryList`'s `placed`
-   * set (rows whose distance resolved); the map view pins the rows the LIST
-   * carries, which is that same decision made from `planDirectoryList`'s own
-   * output — and on the live seed the two differ by a couple of rows, because
-   * "placed" is the reader view and the rendered list is the filtered, sorted one.
-   * The regression this spec exists for is not a two-row difference: a cap on the
-   * pins turns 236 into 40, which fails `toBeGreaterThan(MAP_STRIP_CARD_LIMIT)`
-   * AND this comparison. Asserting strict equality against a neighbouring view's
-   * internal set would be a spec that fails for reasons unrelated to the pins.
+   * WHY THIS IS A RANGE AND NOT AN EQUALITY. The map can only pin rows that
+   * resolve to coordinates, and the seed deliberately carries a few rows without
+   * them ("PlayDate SEA", "Seattle Children's Museum", "Wunderkind"). So the
+   * strongest true statement is: strictly more pins than the card cap — the
+   * regression this spec exists for turns 236 into 40, which fails that — and no
+   * more pins than the list has rows. An exact count would be an assertion about
+   * today's seed.
    */
   expect(
     viewPins,
-    `the map view must pin at least as many places as the band does ` +
-      `(band: ${bandPins}, map view: ${viewPins}) — the strip's card cap must never reach the pins`,
-  ).toBeGreaterThanOrEqual(bandPins)
+    `the map cannot pin more places than the list matches (pins: ${viewPins}, matched: ${listMatchedRows})`,
+  ).toBeLessThanOrEqual(listMatchedRows)
   expect(
     viewPins,
     'the pin count must exceed the card cap, or the cap has reached the pins again',
@@ -528,7 +532,10 @@ test('the map view shows the list\'s own result set and mounts exactly one map (
    * written. Opening the door makes the list render every matching row, so the
    * comparison below is against the full set.
    */
-  await page.getByTestId('places-see-all').click()
+  // V25 t01: THE LIST IS THE WHOLE LIST. The "See all N places" fold this spec
+  // used to open is retired — every matching row renders on the first paint, so
+  // the comparison below is against the full set with no door to click.
+  await expect(page.getByTestId('places-see-all')).toHaveCount(0)
   await expect(page.getByTestId('place-row').first()).toBeVisible()
   const names = await listNames(page)
   expect(names.length, 'the search must leave more than one row to compare').toBeGreaterThan(1)
@@ -991,10 +998,13 @@ test('"Back to list" restores the same list, its filters and its scroll position
   expect(backBox.height).toBeGreaterThanOrEqual(44)
   await back.click()
 
-  // AC: the band is back — and there is still exactly ONE map mounted, because
-  // the map view's map is unmounted rather than hidden.
-  await expect(page.getByTestId('places-map-band')).toBeVisible()
-  await expect(page.getByTestId('places-map')).toHaveCount(1)
+  // AC: the LIST is back — V25 t01's shape, so the assertion is the list's own
+  // rows plus NO map at all (the band that used to come back is gone), and there
+  // is still exactly ONE map mounted while the map view is up, because its map
+  // is unmounted rather than hidden.
+  await expect(page.getByTestId('place-row').first()).toBeVisible()
+  await expect(page.getByTestId('places-map-band')).toHaveCount(0)
+  await expect(page.getByTestId('places-map')).toHaveCount(0)
   await expect(page.getByTestId('places-map-view-map')).toHaveCount(0)
 
   // AC: the SCROLL POSITION came back, to the exact offset the parent left, and
@@ -1036,11 +1046,14 @@ test('"Back to list" restores the same list, its filters and its scroll position
 })
 
 /**
- * The one thing the four specs above deliberately do NOT assert: that no
- * `places-map-band` node survives while the map view is up. It is asserted in
- * the first spec through its own test id (count 0 for `places-map`), and the trap
- * is about the MAP's id rather than the band's wrapper — so the band is checked
- * where the round trip brings it back rather than duplicated here.
+ * The one thing the four specs above deliberately do NOT assert: that no map
+ * node survives while the map view is up. It is asserted in the first spec
+ * through its own test id (count 0 for `places-map`), and the trap is about the
+ * MAP's id rather than a wrapper — so the absence is checked where the round trip
+ * lands rather than duplicated here.
+ *
+ * V25 t01: list view mounts NO map at all, so `places-map-band` is a count-0
+ * assertion wherever the list is showing (see the round-trip spec above).
  */
 test('a tapped pin\'s panel survives a focus move (V24 s10)', async ({ page }) => {
   /**
@@ -1418,7 +1431,11 @@ test('a second "See map" activation does not disturb the saved list offset (V24 
   // reach) over the saved one, and the restore below would land at the list's
   // clamped maximum instead of where the parent left off.
   await page.getByTestId('places-back-to-list').click()
-  await expect(page.getByTestId('places-map')).toHaveCount(1)
+  // V25 t01: the list mounts NO map, so "back to the list" is asserted by the
+  // absence of every map rather than by the retired band's id.
+  await expect(page.getByTestId('places-map')).toHaveCount(0)
+  await expect(page.getByTestId('places-map-view-map')).toHaveCount(0)
+  await expect(page.getByTestId('place-row').first()).toBeVisible()
   await expect
     .poll(() => page.evaluate(() => window.scrollY), {
       message: 'the saved offset is the one from the LIST, not from the map view',
@@ -1433,6 +1450,12 @@ test('the map view leaves no second Leaflet container behind (V24 s10)', async (
   const containers = await page.locator('.leaflet-container').count()
   expect(containers, 'exactly one Leaflet instance is live in the map view').toBe(1)
   await page.getByTestId('places-back-to-list').click()
-  await expect(page.getByTestId('places-map')).toHaveCount(1)
-  expect(await page.locator('.leaflet-container').count()).toBe(1)
+  // V25 t01: back in list view there is NO map at all — the map view's own
+  // Leaflet instance is the one that was destroyed.
+  await expect(page.getByTestId('places-map')).toHaveCount(0)
+  await expect(page.getByTestId('places-map-view-map')).toHaveCount(0)
+  expect(
+    await page.locator('.leaflet-container').count(),
+    'the map view must leave no Leaflet container behind',
+  ).toBe(0)
 })
