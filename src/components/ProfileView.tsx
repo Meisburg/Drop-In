@@ -10,14 +10,17 @@ import {
   countPostsByHost,
   getBlockState,
   getFollowState,
+  getLinkedPartnerForProfile,
   kidAgesByPostForPosts,
+  listParentCards,
   listPostsByHost,
   toggleBlock,
   toggleFollowProfile,
 } from '../lib/db'
 import { cardAgeRangeLabel, kidLabel, partitionPostsByTime } from '../lib/feed'
+import { parentNameRows } from '../lib/parentCards'
 import { profileBlurbOrder } from '../lib/photoStorage'
-import type { PlaydateWithNeighborhood, ProfileWithKids } from '../lib/types'
+import type { ParentCard, PlaydateWithNeighborhood, ProfileWithKids } from '../lib/types'
 import type { ProfileSectionKey } from '../lib/profileSections'
 
 /**
@@ -111,6 +114,27 @@ export function ProfileView({
   const [kidAgesByPostId, setKidAgesByPostId] = useState<Record<string, number[]>>({})
   const [olderCount, setOlderCount] = useState(0)
   const [postsError, setPostsError] = useState<string | null>(null)
+  /**
+   * V24 slice 11A: THE FAMILY'S PARENT CARDS — the names the "About the
+   * parents" card now renders on the READ surface. `null` = still loading
+   * (nothing renders); a failed read or the pre-0047 state lands `[]` and the
+   * card simply carries no names — the same zero-pressure degradation the post
+   * ages line uses. Read with this component's own client, so RLS is unchanged:
+   * `parent_cards_select_authenticated` (migration 0047) already returns any
+   * family's cards to any signed-in parent.
+   */
+  const [parentCards, setParentCards] = useState<ParentCard[] | null>(null)
+  /**
+   * V24 slice 11A: THE ACCEPTED PARTNER OF *THIS PROFILE*, or null when the
+   * caller's RLS lets them read no such link. Deliberately not a prop: this
+   * component already loads what it needs (posts, kid ages), and whether a link
+   * is visible is a property of the VIEWER's session, which the two call sites
+   * do not know.
+   */
+  const [linkedParent, setLinkedParent] = useState<{
+    profileId: string
+    handle: string
+  } | null>(null)
   // V21 t06: whether the "Hosted N drop-ins" line has been tapped to reveal
   // the past events list below. Starts false (collapsed); tapping the line
   // sets it true and scrolls the user to the Past section. The control is
@@ -256,6 +280,51 @@ export function ProfileView({
     }
   }, [posts])
 
+  /**
+   * V24 slice 11A: the family's parent cards, once per settled profile id. The
+   * sort/cap/naming rules are the pure `parentNameRows` at render; this effect
+   * only fetches. A failed read (the table not applied yet) renders no names and
+   * no error line — a decoration is never worth an error state.
+   */
+  useEffect(() => {
+    let cancelled = false
+    setParentCards(null)
+    listParentCards(profileId)
+      .then((rows) => {
+        if (!cancelled) setParentCards(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setParentCards([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [profileId])
+
+  /**
+   * V24 slice 11A: the accepted link, IF the viewer is allowed to see it.
+   *
+   * The database is the boundary, not this effect: `account_links` is readable
+   * only by its two parties (migration 0047), so a third account opening
+   * `/u/:handle` gets zero rows and the names render as plain text. That is the
+   * design, not a degradation — the relationship is not a stranger's to see.
+   * A failed read is treated exactly like "no link".
+   */
+  useEffect(() => {
+    let cancelled = false
+    setLinkedParent(null)
+    getLinkedPartnerForProfile(profileId)
+      .then((partner) => {
+        if (!cancelled) setLinkedParent(partner)
+      })
+      .catch(() => {
+        if (!cancelled) setLinkedParent(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [profileId])
+
   /** One card's ages label (the shared precedence seam over this row's columns). */
   function buildCardAgeRangeLabel(post: PlaydateWithNeighborhood) {
     return cardAgeRangeLabel(post, kidAgesByPostId[post.id] ?? [])
@@ -315,12 +384,25 @@ export function ProfileView({
   // photo block now carries its OWN "Family photos" h2 inside that card (V24);
   // the heading does not move the block's position — the seam still emits it
   // last, and the cross-surface order guard sees the same block on each side.
+  //
+  // V24 slice 11A: the seam is UNCHANGED by the parent names. Its 'about' block
+  // is the BIO, and this slice adds no block: the names render INSIDE that same
+  // card (below the bio), so no block moves and no block is added. A family with
+  // cards but no bio now reaches the same "About the parents" heading — same
+  // text, same position — which is why the guard, which compares heading text
+  // and order, sees nothing new.
   const blurb = profileBlurbOrder(profile, isOwnProfile && profile.kids.length > 0)
   const showsAbout = blurb.includes('about')
   const showsKids = blurb.includes('kids')
   // V20 t01: hoisted out of the JSX because the wrapper card's own existence is
   // the union of its three contents (see the card's gate below).
   const showsInterests = profile.interests != null && profile.interests.trim() !== ''
+  // V24 slice 11A: the names the "About the parents" card renders — each card's
+  // name, paired with the handle of the accepted account link it IS (or null).
+  // The rule is pure (`parentNameRows`, src/lib/parentCards.ts): a card alone is
+  // never a link, and a name that does not match the linked account renders as
+  // plain text.
+  const parentNames = parentNameRows(parentCards, linkedParent)
   // V8 ticket 04: nowIso is read ONCE per render (the BrowsePage pattern) and
   // drives BOTH the Upcoming/Past split and each card's ended/muted styling,
   // so a card can never sit in a section its own styling contradicts.
@@ -504,26 +586,37 @@ export function ProfileView({
           family photo got an EMPTY BORDERED BOX between its identity card and
           the Hosted drop-ins heading — exactly the placeholder the V16 t05 note
           below says must never render ("a family with none of them gets the
-          identity block at the top and nothing else"). The three children are
+          identity block at the top and nothing else"). The children are
           independently gated; this gate is the union of them, computed from the
           same values they use so the card and its contents can never disagree.
           `showsInterests` is hoisted above rather than inlined below because the
-          card's own existence now depends on it. */}
-      {showsAbout || showsInterests || familyPhotoUrl !== null ? (
+          card's own existence now depends on it.
+          V24 slice 11A adds the fourth child, `parentNames`: a family with two
+          parent cards and no bio still shows its parents, under the same
+          "About the parents" heading — the names are the card's content. */}
+      {showsAbout || showsInterests || familyPhotoUrl !== null || parentNames.length > 0 ? (
         <div className="flex flex-col gap-3">
           {/* V13 ticket 01: the identity row (avatar + @handle + "Here since" +
               "Hosted N drop-ins") is the page's identity block at the top (V15
               ticket 06, A20). This card carries the "About the parents" block
-              (the bio + interests, under a real heading) and, after it, the
-              family photo.
+              (the bio + interests + the parents' names, under a real heading)
+              and, after it, the family photo.
 
               V9 ticket 11 (folded ticket 08) pinned these optional blocks; V16
               t05 RE-PINNED THE ORDER to kids → about → photo (the kids card now
               sits above this one, and the family photo is the page's closer).
               Every one of them is optional: a family with none of them gets the
               identity block at the top and nothing else, no placeholder
-              anywhere — which is what the wrapper's own gate above enforces. */}
-          {showsAbout ? (
+              anywhere — which is what the wrapper's own gate above enforces.
+
+              V24 slice 11A: the heading's condition gained `parentNames.length`
+              — the SAME heading, in the SAME place, for a family whose only
+              "about" content is its parents. It stays inside the card and moves
+              no block: `profileBlurbOrder` is unchanged (its 'about' block is
+              the BIO), and the cross-surface order guard reads heading TEXT and
+              POSITION, both of which are untouched. A parent name never renders
+              without this heading above it. */}
+          {showsAbout || parentNames.length > 0 ? (
           <div className="mt-3 first:mt-0">
             <h2 className="text-base font-semibold text-slate-900">About the parents</h2>
             {/* V16 t05: the parent photo (the founder's item 3 — the one part of
@@ -533,6 +626,7 @@ export function ProfileView({
                 in the public `avatars` bucket (0011), the same value every
                 drop-in card renders — so this is not a signed-URL mint and
                 needs no hook; a family with no avatar simply gets no image. */}
+            {showsAbout ? (
             <div className="mt-2 flex items-start gap-3">
               {profile.avatar_url != null && profile.avatar_url !== '' ? (
                 <PhotoButton
@@ -550,6 +644,47 @@ export function ProfileView({
               ) : null}
               <p className="min-w-0 whitespace-pre-line text-sm text-slate-700">{profile.bio}</p>
             </div>
+            ) : null}
+            {/* V24 slice 11A (the founder's annotation 10): THE FAMILY'S PARENTS,
+                by name, as the read surface now shows them — on your own profile
+                AND on /u/:handle, because "the family profile reflects the
+                family".
+
+                A name is a LINK only when it IS the accepted linked account
+                (matched by name, the only association the schema holds — see
+                `parentNameRows` in src/lib/parentCards.ts). Every other parent
+                renders as plain text: a card alone is not a link, and the link
+                row itself is readable only by the two parties
+                (`account_links_select_parties`, migration 0047), so a third
+                account opening this page sees names and no link — the
+                relationship is not theirs to see. The link is a real
+                react-router Link to `/u/<handle>`: a real href, the parent's
+                name as its accessible name, and `min-h-11` (44px) as its
+                target. No heading, no new block. */}
+            {parentNames.length > 0 ? (
+              <ul
+                data-testid="parent-names"
+                className="mt-2 flex flex-wrap items-center gap-x-4 text-sm text-slate-800"
+              >
+                {parentNames.map((row) => (
+                  <li key={row.key}>
+                    {row.handle !== null ? (
+                      <Link
+                        data-testid="parent-name-link"
+                        to={`/u/${encodeURIComponent(row.handle)}`}
+                        className="inline-flex min-h-11 items-center font-medium text-indigo-700 underline decoration-dotted underline-offset-2 transition-colors hover:text-indigo-800 motion-reduce:transition-none"
+                      >
+                        {row.name}
+                      </Link>
+                    ) : (
+                      <span data-testid="parent-name" className="inline-flex min-h-11 items-center">
+                        {row.name}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
         ) : null}
         {/* V3 slice 6 (ticket 09, migration 0022): the family's interests line —

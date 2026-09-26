@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { readMarkerSession, readSupabaseEnv } from './fixtures'
+import { readMarkerMeta, readMarkerSession, readSupabaseEnv } from './fixtures'
 
 /**
  * V19 t03/t04 — the PRIVACY POSTURE of `account_links` and `parent_cards`,
@@ -365,6 +365,268 @@ test('typing a name suggests parents; selecting one sends the invite (V21 t07)',
       throw new Error(
         `cleanup deleted ${withdrawn} pending invite(s), expected the one the flow sent — residue would hang the next run`,
       )
+    }
+  }
+})
+
+/**
+ * V24 slice 11A — THE READ SURFACE SHOWS THE FAMILY'S PARENTS.
+ *
+ * The read surface (`ProfileView`, one component behind `/profile` AND
+ * `/u/:handle`) rendered NO parent names before this slice. The ticket's ask
+ * (the founder's annotation 10) is: the two parents appear under the existing
+ * "About the parents" card, and a parent who has an ACCEPTED account link has
+ * their NAME as a real link to that parent's profile.
+ *
+ * WHAT THIS SPEC PROVES, in a real browser against the real database:
+ *   (a) both parent cards render by name on the read view, INSIDE the card that
+ *       carries the "About the parents" heading (asserted on the DOM, not by
+ *       eyeball: the names' ancestor is required to own that h2);
+ *   (b) the linked parent's name is a real anchor with a real href, and
+ *       following it REACHES that parent's profile (`/u/<handle>` renders their
+ *       identity heading) — not a button-styled span;
+ *   (c) a THIRD account viewing the same profile sees both names as PLAIN text
+ *       and ZERO links — the privacy half. `account_links_select_parties`
+ *       (migration 0047) returns a stranger zero rows, so the relationship is
+ *       not theirs to see. This assertion would FAIL if the name link were
+ *       derived from anything a stranger can read (for example a bare
+ *       name-matches-a-profile lookup).
+ *
+ * WHY IT BUILDS ITS OWN FAMILY. There is no seeded linked pair (the live
+ * project holds only the founder's accounts), and the ticket's link is a real
+ * handshake: the marker invites, the partner ACCEPTS (only the addressee may),
+ * and the accept is what makes the link real. The marker is a throwaway account
+ * created by `auth.setup.ts` on every run, and every row this spec creates is
+ * removed in the `finally` below.
+ *
+ * FAILS FOR THE RIGHT REASON: remove the render and (a) fails; make the name a
+ * plain span and (b) fails; read the link from something a stranger can see and
+ * (c) fails; drop the link-only-when-accepted rule and (c) fails on the count.
+ */
+test('the read surface shows both parents, and a linked name reaches that profile (V24 11A)', async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(240_000) // 2 REST signups + a second browser login; live-DB timing
+  const { url: restUrl, anonKey } = readSupabaseEnv()
+  const { accessToken: markerToken, userId: markerId } = readMarkerSession()
+  const { displayName: markerHandle } = readMarkerMeta()
+
+  /** fetch with a hard 15s cap — a hung live-DB call must fail fast. */
+  async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 15_000)
+    try {
+      return await fetch(url, { ...init, signal: controller.signal })
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  function authed(token: string): Record<string, string> {
+    return { apikey: anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+  }
+
+  /**
+   * One throwaway parent, over the same REST signup path the specs above use.
+   * The `e2e-` account marker is on the EMAIL (the sweep's handle) and on the
+   * display name, so even a hard crash leaves rows the sweep can name.
+   */
+  async function signUpThrowaway(
+    tag: string,
+    displayName: string,
+  ): Promise<{ id: string; token: string; email: string }> {
+    const stamp = Date.now()
+    const email = `e2e-plink-${tag}-${stamp}@gmail.com`
+    let res = await fetchWithTimeout(`${restUrl}/auth/v1/signup`, {
+      method: 'POST',
+      headers: { apikey: anonKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: 'e2e-disposable-account-pw' }),
+    })
+    // The live project rate-limits signups (429). Back off and retry rather than
+    // fail the spec on a transient limit.
+    for (let attempt = 0; res.status === 429 && attempt < 5; attempt++) {
+      await new Promise((r) => setTimeout(r, 3_000 * (attempt + 1)))
+      res = await fetchWithTimeout(`${restUrl}/auth/v1/signup`, {
+        method: 'POST',
+        headers: { apikey: anonKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: 'e2e-disposable-account-pw' }),
+      })
+    }
+    if (!res.ok) throw new Error(`signup HTTP ${res.status} ${await res.text()}`)
+    const body = (await res.json()) as {
+      id?: string
+      access_token?: string
+      user?: { id?: string }
+      session?: { access_token?: string }
+    }
+    const id = body.id ?? body.user?.id
+    const token = body.access_token ?? body.session?.access_token
+    if (id === undefined || token === undefined) {
+      throw new Error(`signup returned no id/token: ${JSON.stringify(body).slice(0, 200)}`)
+    }
+    const prof = await fetchWithTimeout(`${restUrl}/rest/v1/profiles`, {
+      method: 'POST',
+      headers: { ...authed(token), Prefer: 'return=representation' },
+      // home_zip is set at creation so the account clears the onboarding gate
+      // and lands on the feed when it signs in through the UI below.
+      body: JSON.stringify({ id, display_name: displayName, home_zip: '98107', radius_miles: 5 }),
+    })
+    if (!prof.ok) throw new Error(`profile insert HTTP ${prof.status} ${await prof.text()}`)
+    return { id, token, email }
+  }
+
+  const stamp = Date.now()
+  const partnerHandle = `e2e-plink Partner ${stamp}`
+  const strangerHandle = `e2e-plink Stranger ${stamp}`
+  const partner = await signUpThrowaway('partner', partnerHandle)
+  const stranger = await signUpThrowaway('stranger', strangerHandle)
+  let linkId: string | null = null
+
+  try {
+    // The marker's TWO parent cards: the marker itself (plain text), and the
+    // partner (the card the accepted link should turn into a link). POST, not
+    // upsert: a pre-existing card in a slot would be a 23505 and fail loudly
+    // rather than silently overwriting the marker's own data.
+    for (const [position, name] of [
+      [1, markerHandle],
+      [2, partnerHandle],
+    ] as const) {
+      const res = await fetchWithTimeout(`${restUrl}/rest/v1/parent_cards`, {
+        method: 'POST',
+        headers: { ...authed(markerToken), Prefer: 'return=representation' },
+        body: JSON.stringify({ profile_id: markerId, name, position }),
+      })
+      if (!res.ok) {
+        throw new Error(`parent_cards insert (slot ${position}) HTTP ${res.status} ${await res.text()}`)
+      }
+    }
+
+    // The handshake: the marker invites, the PARTNER accepts. Only the addressee
+    // may move a row out of 'pending' (migration 0047), so this cannot be
+    // short-circuited by the requester accepting on their own behalf.
+    const inv = await fetchWithTimeout(`${restUrl}/rest/v1/account_links`, {
+      method: 'POST',
+      headers: { ...authed(markerToken), Prefer: 'return=representation' },
+      body: JSON.stringify({ requester_id: markerId, addressee_id: partner.id, status: 'pending' }),
+    })
+    if (!inv.ok) throw new Error(`account_links insert HTTP ${inv.status} ${await inv.text()}`)
+    linkId = ((await inv.json()) as Array<{ id: string }>)[0].id
+    const acc = await fetchWithTimeout(`${restUrl}/rest/v1/account_links?id=eq.${linkId}`, {
+      method: 'PATCH',
+      headers: { ...authed(partner.token), Prefer: 'return=representation' },
+      body: JSON.stringify({ status: 'accepted' }),
+    })
+    if (!acc.ok) throw new Error(`account_links accept HTTP ${acc.status} ${await acc.text()}`)
+
+    // ---- (a) + (b): the OWNER'S read view /profile -------------------------
+    await page.goto('/profile')
+    // The app's own origin, read from the settled page — the second browser
+    // context below has no project baseURL of its own.
+    const origin = new URL(page.url()).origin
+    const names = page.getByTestId('parent-names')
+    await expect(names).toBeVisible({ timeout: 20_000 })
+
+    // Both parents, by name: the marker's own card as plain text, the partner's
+    // as the ONE link.
+    await expect(page.getByTestId('parent-name')).toHaveCount(1)
+    await expect(page.getByTestId('parent-name')).toHaveText(markerHandle)
+    const nameLink = page.getByTestId('parent-name-link')
+    await expect(nameLink).toHaveCount(1)
+    await expect(nameLink).toHaveText(partnerHandle)
+
+    // The names sit INSIDE the card that owns the "About the parents" heading —
+    // walked on the DOM, so a name rendered anywhere else on the page fails.
+    const insideAboutCard = await names.evaluate((el) => {
+      let node: HTMLElement | null = el as HTMLElement
+      while (node !== null) {
+        const heading = node.querySelector('h2')
+        if (heading?.textContent?.trim() === 'About the parents') return true
+        node = node.parentElement
+      }
+      return false
+    })
+    expect(
+      insideAboutCard,
+      'the parent names must render inside the "About the parents" card',
+    ).toBe(true)
+
+    // A REAL link: a real href, the parent's name as its accessible name, and a
+    // >=44px target (`min-h-11`). Not a button, not a click handler on a span.
+    await expect(nameLink).toHaveAttribute('href', `/u/${encodeURIComponent(partnerHandle)}`)
+    const linkBox = await nameLink.boundingBox()
+    expect(linkBox?.height ?? 0, 'the name link must be a >=44px target').toBeGreaterThanOrEqual(44)
+
+    // ...and it REACHES the partner's profile. The pathname is percent-encoded
+    // in `location`, so compare it DECODED — otherwise a handle with a space
+    // (every V20 composed display name) would never equal the route.
+    await nameLink.click()
+    await page.waitForFunction(
+      (path) => decodeURIComponent(new URL(window.location.href).pathname) === path,
+      `/u/${partnerHandle}`,
+      { timeout: 20_000 },
+    )
+    await expect(
+      page.getByRole('heading', { name: `@${partnerHandle}`, exact: true }),
+    ).toBeVisible({ timeout: 20_000 })
+
+    // ---- (c): a THIRD account sees names and NO link -----------------------
+    // The privacy claim, in the same browser: the stranger may see the family's
+    // parent cards (RLS permits any signed-in parent to read them) but must not
+    // see WHO is account-linked to whom (RLS returns them zero link rows).
+    //
+    // `storageState: { cookies: [], origins: [] }` is REQUIRED, not decoration:
+    // a context created from the `browser` fixture inside a test INHERITS the
+    // project's `use.storageState` (measured, not assumed), so without it this
+    // page is the MARKER — signed in, with the marker's session in
+    // localStorage — and `/login` redirects to the feed. An empty state makes it
+    // the signed-out stranger this lane is about.
+    const strangerContext = await browser.newContext({
+      storageState: { cookies: [], origins: [] },
+      viewport: { width: 390, height: 844 },
+    })
+    strangerContext.setDefaultTimeout(20_000)
+    const strangerPage = await strangerContext.newPage()
+    try {
+      await strangerPage.goto(`${origin}/login`)
+      await strangerPage.locator('input[type="email"]').fill(stranger.email)
+      await strangerPage.locator('input[type="password"]').fill('e2e-disposable-account-pw')
+      await strangerPage.getByRole('button', { name: 'Sign in', exact: true }).click()
+      await strangerPage
+        .getByRole('heading', { name: 'Near you' })
+        .waitFor({ timeout: 30_000 })
+
+      await strangerPage.goto(`${origin}/u/${encodeURIComponent(markerHandle)}`)
+      await expect(strangerPage.getByTestId('parent-names')).toBeVisible({ timeout: 20_000 })
+      await expect(strangerPage.getByTestId('parent-name')).toHaveCount(2)
+      await expect(
+        strangerPage.getByTestId('parent-name-link'),
+        'a third account must not learn which parent is account-linked',
+      ).toHaveCount(0)
+    } finally {
+      await strangerContext.close()
+    }
+  } finally {
+    // Cleanup, each query scoped to a column this spec owns: the marker's own
+    // cards, the link row it created (by id), and the two throwaway profiles
+    // (whose deletion cascades to anything else they own). Best-effort, so a
+    // failure here cannot mask a real assertion — the `e2e-` account marker and
+    // the sweep are the net for a hard crash.
+    await fetchWithTimeout(`${restUrl}/rest/v1/parent_cards?profile_id=eq.${markerId}`, {
+      method: 'DELETE',
+      headers: authed(markerToken),
+    }).catch(() => {})
+    if (linkId !== null) {
+      await fetchWithTimeout(`${restUrl}/rest/v1/account_links?id=eq.${linkId}`, {
+        method: 'DELETE',
+        headers: authed(markerToken),
+      }).catch(() => {})
+    }
+    for (const acct of [partner, stranger]) {
+      await fetchWithTimeout(`${restUrl}/rest/v1/profiles?id=eq.${acct.id}`, {
+        method: 'DELETE',
+        headers: authed(acct.token),
+      }).catch(() => {})
     }
   }
 })

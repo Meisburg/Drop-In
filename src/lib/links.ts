@@ -13,7 +13,7 @@
  * one with that handle" and "that's you" need different fixes from the user,
  * so they get different sentences.
  */
-import type { AccountLinkStatus } from './types'
+import type { AccountLink, AccountLinkStatus } from './types'
 
 /**
  * A handle as it should be compared: a leading `@` stripped, trimmed, and
@@ -168,4 +168,40 @@ export function linkView(
   }
 
   return { kind: 'none' }
+}
+
+/**
+ * V24 slice 11A: THE OTHER PARENT OF A PROFILE'S ACCEPTED LINK, or null.
+ *
+ * `linkView` answers "what is MY link state" — it is anchored on the VIEWER.
+ * The read surface needs the mirror of that question: it renders a FAMILY's
+ * profile and asks "does THIS profile have an accepted partner, and who is it?"
+ * The anchor is the profile being viewed, which is why this is a second pure
+ * rule rather than a second caller of `linkView`.
+ *
+ * RLS IS THE BOUNDARY, NOT THIS FUNCTION. `rows` is whatever the caller's own
+ * client returned, and `account_links_select_parties` (migration 0047) hands a
+ * caller ONLY rows they are a party to. So:
+ *   - the owner's own profile read returns their accepted link → the partner;
+ *   - a partner viewing that profile returns the same row → the same partner;
+ *   - a THIRD account returns ZERO rows → null, and the profile renders plain
+ *     names. That is the honest answer, not a fallback: the relationship is not
+ *     theirs to see.
+ * Nothing here widens that. It selects WHICH readable row concerns `profileId`.
+ *
+ * An accepted link wins over a pending one for the same reason it does in
+ * `linkView`: if a partner is accepted, that is the relationship, whatever
+ * older invitations may also be readable.
+ */
+export function acceptedCounterpartyForProfile(
+  rows: ReadonlyArray<Pick<AccountLink, 'requester_id' | 'addressee_id' | 'status'>>,
+  profileId: string,
+): string | null {
+  const accepted = rows.find(
+    (row) =>
+      row.status === 'accepted' &&
+      (row.requester_id === profileId || row.addressee_id === profileId),
+  )
+  if (accepted === undefined) return null
+  return accepted.requester_id === profileId ? accepted.addressee_id : accepted.requester_id
 }

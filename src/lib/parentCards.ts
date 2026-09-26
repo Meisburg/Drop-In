@@ -9,6 +9,7 @@
  * them, so the page renders a list rather than deciding one.
  */
 import type { ParentCard } from './types'
+import { normalizeHandle } from './links'
 
 /** The most parent cards one account can have. Mirrors the 0047 CHECK. */
 export const MAX_PARENT_CARDS = 2
@@ -83,4 +84,58 @@ export function parentCardSaveLabel(
   }
   // idle: the verb depends on whether this editor is adding or updating.
   return isNew ? 'Add parent' : 'Save'
+}
+
+/**
+ * V24 slice 11A: ONE PARENT NAME as the read surface renders it — the name, and
+ * the handle of the accepted linked account that name IS (or null for a plain
+ * name).
+ *
+ * WHY THE ASSOCIATION IS A NAME MATCH, AND WHY THAT IS THE HONEST RULE HERE.
+ * `parent_cards` has no column pointing at an account (migration 0047 gives it
+ * `profile_id`, `name`, `photo_url`, `about`, `position`), and `account_links`
+ * relates two ACCOUNTS, not two cards. There is therefore NO stored card↔account
+ * identity to read — the only evidence that the card "Nicole" is the account
+ * `@Nicole` is that a parent typed the same name in both places. So the rule is
+ * deliberately conservative:
+ *
+ *   - the name matches the linked account's handle (case- and @-insensitive,
+ *     via the same `normalizeHandle` the handshake compares handles with) →
+ *     that ONE card is the link;
+ *   - anything else → a PLAIN NAME. A card alone is never a link, and a near
+ *     miss ("Nicole" against a handle "Nicole Rivera") renders plain text
+ *     rather than guessing a person's identity from a prefix.
+ *
+ * The `handle` on the returned row is the value a caller uses for `/u/<handle>`
+ * — not a display string, so the caller must URL-encode it.
+ *
+ * `linked` is the accepted counterparty of the profile being read (null when
+ * there is none the reader may see). Only the FIRST matching card links: one
+ * accepted partner is one person, and two cards bearing the same name must not
+ * both claim them.
+ */
+export interface ParentNameRow {
+  /** Stable key for React — the card's id. */
+  key: string
+  name: string
+  /** The linked account's handle when this name IS that account, else null. */
+  handle: string | null
+}
+
+export function parentNameRows(
+  cards: ReadonlyArray<ParentCard> | null,
+  linked: { handle: string } | null,
+): ParentNameRow[] {
+  const linkedHandle = linked === null ? '' : normalizeHandle(linked.handle)
+  let claimed = false
+  return parentCardList(cards).map((card) => {
+    const isLinked =
+      !claimed && linkedHandle !== '' && normalizeHandle(card.name) === linkedHandle
+    if (isLinked) claimed = true
+    return {
+      key: card.id,
+      name: card.name,
+      handle: isLinked && linked !== null ? linked.handle : null,
+    }
+  })
 }

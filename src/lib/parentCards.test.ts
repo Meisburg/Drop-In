@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_PARENT_CARDS, nextParentPosition, parentCardList, parentCardSaveLabel } from './parentCards'
+import { MAX_PARENT_CARDS, nextParentPosition, parentCardList, parentCardSaveLabel, parentNameRows } from './parentCards'
 import type { ParentCard } from './types'
 
 /**
@@ -116,5 +116,73 @@ describe('parentCardSaveLabel (V24 slice 02 — one save-state pattern)', () => 
     expect(parentCardSaveLabel('error', false, null)).toBe('Try again')
     expect(parentCardSaveLabel('error', false, '')).toBe('Try again')
     expect(parentCardSaveLabel('error', false)).toBe('Try again')
+  })
+})
+
+describe('parentNameRows (V24 slice 11A — the names the READ surface shows)', () => {
+  // The read surface renders the family's parent names. A name is a LINK only
+  // when we can say WHICH card is the linked account, and the only evidence the
+  // schema holds is that the card's name matches that account's handle. These
+  // tests pin that rule, including its refusals — the refusals are the privacy
+  // posture ("a parent card alone is not a link").
+
+  it('returns every card as a plain name when there is no linked account', () => {
+    expect(parentNameRows([card({}), card({ id: 'c2', name: 'Nicole', position: 2 })], null)).toEqual([
+      { key: 'c1', name: 'Jon', handle: null },
+      { key: 'c2', name: 'Nicole', handle: null },
+    ])
+  })
+
+  it('links the ONE card whose name is the linked account, and leaves the rest plain', () => {
+    const rows = parentNameRows(
+      [card({}), card({ id: 'c2', name: 'Nicole', position: 2 })],
+      { handle: 'Nicole' },
+    )
+    expect(rows).toEqual([
+      { key: 'c1', name: 'Jon', handle: null },
+      { key: 'c2', name: 'Nicole', handle: 'Nicole' },
+    ])
+  })
+
+  it('matches case- and @-insensitively, the way the handshake compares handles', () => {
+    const rows = parentNameRows([card({ name: '  @nicole ' })], { handle: 'Nicole' })
+    expect(rows[0]?.handle).toBe('Nicole')
+  })
+
+  it('does NOT guess: a near miss stays plain text', () => {
+    // "Nicole" is not "Nicole Rivera". A prefix match would put a real profile
+    // behind a name whose owner never linked it — the one failure mode this
+    // rule must not have.
+    const rows = parentNameRows([card({ name: 'Nicole' })], { handle: 'Nicole Rivera' })
+    expect(rows[0]?.handle).toBeNull()
+  })
+
+  it('links only the FIRST card bearing the name — one partner is one person', () => {
+    const rows = parentNameRows(
+      [card({ id: 'a', name: 'Nicole' }), card({ id: 'b', name: 'Nicole', position: 2 })],
+      { handle: 'nicole' },
+    )
+    expect(rows.map((row) => row.handle)).toEqual(['nicole', null])
+  })
+
+  it('is empty for a family with no cards, and for the still-loading null', () => {
+    expect(parentNameRows([], { handle: 'Nicole' })).toEqual([])
+    expect(parentNameRows(null, { handle: 'Nicole' })).toEqual([])
+  })
+
+  it('keeps the slot order and the two-card cap (the parentCardList rules)', () => {
+    const rows = parentNameRows(
+      [
+        card({ id: 'second', name: 'Nicole', position: 2 }),
+        card({ id: 'first', name: 'Jon', position: 1 }),
+        card({ id: 'third', name: 'Extra', position: 3 }),
+      ],
+      null,
+    )
+    expect(rows.map((row) => row.name)).toEqual(['Jon', 'Nicole'])
+  })
+
+  it('drops a nameless card rather than rendering a blank name', () => {
+    expect(parentNameRows([card({ name: '   ' })], { handle: 'Jon' })).toEqual([])
   })
 })

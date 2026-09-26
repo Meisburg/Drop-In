@@ -23,7 +23,7 @@ import type {
 // frame the user chose rather than computing one of its own, and refuses a frame
 // that could not be drawn.
 import { isDrawableRect, type CropRect } from './photoCrop'
-import type { LinkRowForView } from './links'
+import { acceptedCounterpartyForProfile, type LinkRowForView } from './links'
 // V9 ticket 11: where a family's images live and who may fetch each kind. The
 // paths are the pure seams (photoStorage.ts) so this file never spells one out.
 import {
@@ -5415,6 +5415,40 @@ export async function getProfileSummaryByIdWithClient(
     (data as unknown as { id: string; display_name: string; avatar_url: string | null } | null) ??
     null
   )
+}
+
+/**
+ * V24 slice 11A: THE ACCEPTED PARTNER OF THE PROFILE BEING READ, if the caller's
+ * own RLS lets them see one.
+ *
+ * `listMyAccountLinksWithClient` is anchored on a profile id and asks for the
+ * rows involving it; `account_links_select_parties` then filters those rows to
+ * the ones the CALLER is a party to. The two together are exactly the question
+ * the read surface asks — "does the family I am looking at have an accepted
+ * partner I am allowed to know about?":
+ *
+ *   - the owner's own profile → their accepted link → the partner;
+ *   - a partner's view of that profile → the same row → the same partner;
+ *   - a third account → ZERO rows → null, and the profile renders plain names.
+ *
+ * That last line is the whole privacy posture of this seam, and it is the
+ * DATABASE's answer, not this function's: there is no widening here, no
+ * service-role client, and no second query that could dodge the policy. The
+ * handle comes from `getProfileSummaryByIdWithClient`, a narrow three-column
+ * read of a profile the caller can already open by that same handle.
+ *
+ * Never throws on the caller's side of a missing row: a profile with no readable
+ * link returns null, which the read surface renders as plain text.
+ */
+export async function getLinkedPartnerForProfile(
+  profileId: string,
+): Promise<{ profileId: string; handle: string } | null> {
+  const links = await listMyAccountLinksWithClient(supabase, profileId)
+  const counterpartyId = acceptedCounterpartyForProfile(links, profileId)
+  if (counterpartyId === null) return null
+  const summary = await getProfileSummaryByIdWithClient(supabase, counterpartyId)
+  if (summary === null) return null
+  return { profileId: summary.id, handle: summary.display_name }
 }
 
 /**

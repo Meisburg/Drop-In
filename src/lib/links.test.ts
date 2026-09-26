@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   LINK_EMPTY_MESSAGE,
   LINK_SELF_MESSAGE,
+  acceptedCounterpartyForProfile,
   linkStatusLabel,
   linkView,
   normalizeHandle,
   validateLinkRequest,
   type LinkRowForView,
 } from './links'
+import type { AccountLink } from './types'
 
 /**
  * V19 t04 — the pure rules behind linking two parent accounts.
@@ -159,5 +161,71 @@ describe('linkView — which state the profile is in', () => {
   it('tolerates a missing handle rather than rendering "undefined"', () => {
     const view = linkView([row({ addressee_handle: null })], 'me')
     expect(view.kind === 'outgoing' && view.otherHandle).toBe('')
+  })
+})
+
+describe('acceptedCounterpartyForProfile — the OTHER parent of a VIEWED profile', () => {
+  // The read surface is anchored on the profile being looked at, not on the
+  // viewer: it asks "does THIS family have an accepted partner?". These rows are
+  // whatever the caller's RLS returned — the tests below pin what the function
+  // does with them, not what RLS hands it (that is asserted live in e2e).
+  const row = (over: Partial<AccountLink>): AccountLink => ({
+    id: 'l1',
+    requester_id: 'sam',
+    addressee_id: 'nicole',
+    status: 'accepted',
+    ...over,
+  })
+
+  it('returns the counterparty when the viewed profile is the requester', () => {
+    expect(acceptedCounterpartyForProfile([row({})], 'sam')).toBe('nicole')
+  })
+
+  it('returns the counterparty when the viewed profile is the addressee', () => {
+    expect(acceptedCounterpartyForProfile([row({})], 'nicole')).toBe('sam')
+  })
+
+  it('is null for a profile the readable rows do not concern', () => {
+    // The RLS case, from the function's side: a third account's own link rows
+    // are readable to them but say nothing about the family they are viewing.
+    // Returning a counterparty here would put a stranger's partner on someone
+    // else's card grid.
+    expect(acceptedCounterpartyForProfile([row({})], 'someone-else')).toBeNull()
+  })
+
+  it('is null with no rows — the third-account read, which returns zero', () => {
+    expect(acceptedCounterpartyForProfile([], 'sam')).toBeNull()
+  })
+
+  it('ignores pending and declined rows: only an accepted link is a partner', () => {
+    expect(
+      acceptedCounterpartyForProfile(
+        [row({ id: 'p', status: 'pending' }), row({ id: 'd', status: 'declined' })],
+        'sam',
+      ),
+    ).toBeNull()
+  })
+
+  it('lets an accepted link win over a pending one for the SAME profile', () => {
+    // Same rule as linkView: a live partner is the state, whatever older
+    // invitations are also readable.
+    expect(
+      acceptedCounterpartyForProfile(
+        [row({ id: 'invite', status: 'pending' }), row({ id: 'live', status: 'accepted' })],
+        'sam',
+      ),
+    ).toBe('nicole')
+  })
+
+  it('finds the accepted link even when a pending row comes first', () => {
+    // Ordering must not decide the answer: the accepted row is the relationship.
+    const counterparty = acceptedCounterpartyForProfile(
+      [
+        row({ id: 'old', status: 'declined', requester_id: 'sam', addressee_id: 'other' }),
+        row({ id: 'live', status: 'accepted', requester_id: 'other2', addressee_id: 'sam' }),
+      ],
+      'sam',
+    )
+    expect(counterparty).toBe('other2')
   })
 })
