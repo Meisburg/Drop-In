@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router'
 import { PhotoButton } from './ImageLightbox'
 import { WeatherChip } from './WeatherChip'
@@ -473,6 +474,13 @@ export interface DropInCardPingToggle {
  * cards, the detail page's host line and the comment rows all keep their
  * 40px circle, because they were never the founder's complaint and their
  * density is deliberate.
+ *
+ * V24 slice 04: a stored `avatar_url` whose object is GONE (a re-upload, a
+ * deleted bucket object) used to paint a broken-image glyph on every surface
+ * that renders this primitive. The image's own `onError` now flips HostAvatar
+ * to the initial circle it already draws for a missing URL — so "no photo" and
+ * "dead photo" render identically, and the inbox's row faces inherit the fix
+ * rather than carrying a second avatar implementation.
  */
 export function HostAvatar({
   host,
@@ -496,11 +504,15 @@ export function HostAvatar({
    */
   eager?: boolean
 }) {
+  // Hooks run before every return (the early returns below are on the photo).
+  const [photoFailed, setPhotoFailed] = useState(false)
   const box = size === 'sm' ? 'h-6 w-6' : size === 'lg' ? 'h-20 w-20' : 'h-10 w-10'
   const initialClass = size === 'sm' ? 'text-xs' : size === 'lg' ? 'text-2xl' : 'text-sm'
   // Slice 11: list imagery lazy-loads; the first feed card's host avatar is
   // the LCP hero and stays eager (FeedPage passes `eager` for its first card).
-  const photoUrl = host.avatar_url ?? ''
+  // A URL whose object is gone is treated as no URL at all (see the header):
+  // `photoFailed` is set by the image's own onError below.
+  const photoUrl = photoFailed ? '' : (host.avatar_url ?? '')
   // V21 t05: the expandable wrapper must own the SAME box as its child img —
   // a fixed h-11 w-11 (44px) around an 80px `lg` photo drew an ellipse. The
   // 44px tap floor is preserved for the default `md` size (the only caller that
@@ -514,9 +526,21 @@ export function HostAvatar({
         : 'flex h-11 w-11 shrink-0 items-center justify-center rounded-full'
   if (photoUrl !== '') {
     const photo = eager ? (
-      <img src={photoUrl} alt="" className={`${box} shrink-0 rounded-full object-cover`} />
+      <img
+        src={photoUrl}
+        alt=""
+        onError={() => setPhotoFailed(true)}
+        className={`${box} shrink-0 rounded-full object-cover`}
+      />
     ) : (
-      <img src={photoUrl} alt="" loading="lazy" decoding="async" className={`${box} shrink-0 rounded-full object-cover`} />
+      <img
+        src={photoUrl}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        onError={() => setPhotoFailed(true)}
+        className={`${box} shrink-0 rounded-full object-cover`}
+      />
     )
     return expandable ? (
       <PhotoButton src={photoUrl} alt={`${host.display_name}’s photo`} className={buttonBox}>

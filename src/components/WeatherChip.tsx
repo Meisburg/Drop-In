@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useState } from 'react'
 import { weatherPanelFor, type DailyForecast } from '../lib/weather'
 
 /**
@@ -13,6 +13,10 @@ import { weatherPanelFor, type DailyForecast } from '../lib/weather'
  * The null rule is the load-bearing one: a NULL (or fact-less) forecast renders
  * the plain badge the app already shipped — NOT a disabled-looking button, NOT a
  * tap that opens an empty panel, NOT an error (the zero-pressure soul).
+ *
+ * The disclosure is announced with `aria-expanded` alone: the panel is MOUNTED
+ * only while open, so an `aria-controls` pointing at it would dangle (an ARIA
+ * reference to an id that is not in the document) whenever the chip is closed.
  *
  * Tapping is intercepted (`preventDefault` + `stopPropagation`) because the feed
  * card is itself a `<Link>` — the same pinned pattern as the card's going
@@ -35,7 +39,6 @@ export function WeatherChip({
   whenLabel: string
 }) {
   const [open, setOpen] = useState(false)
-  const panelId = useId()
   const panel = weatherPanelFor(forecast, whenLabel)
   const pill =
     'inline-flex min-h-11 items-center rounded-full bg-sky-100 px-2.5 text-xs font-medium text-sky-700'
@@ -52,7 +55,6 @@ export function WeatherChip({
         type="button"
         data-testid="weather-chip"
         aria-expanded={open}
-        aria-controls={panelId}
         aria-label={`${label} — see the forecast for this drop-in`}
         onClick={(event) => {
           event.preventDefault()
@@ -65,7 +67,6 @@ export function WeatherChip({
       </button>
       {open ? (
         <span
-          id={panelId}
           data-testid="weather-panel"
           className="mt-1 block w-full basis-full rounded-xl border border-sky-200 bg-sky-50 p-3 text-left"
         >

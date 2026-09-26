@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { BackControl } from '../components/BackControl'
+// V24 slice 04: the row's FACE reuses the app's ONE avatar primitive (40px,
+// `avatar_url` or the deterministic initial circle, plus its own dead-URL
+// fallback) instead of a second implementation living in this page.
+import { HostAvatar } from '../components/DropInCard'
 import { NAV_ICONS, REACTION_GLYPHS } from '../components/icons'
 import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
@@ -126,9 +130,12 @@ function ConversationCard({
       className="w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-50"
     >
       <div className="flex items-start gap-3">
-        <ConversationFace
-          name={conversation.otherPartyName}
-          avatarUrl={conversation.otherPartyAvatarUrl}
+        <HostAvatar
+          host={{
+            id: conversation.otherPartyId,
+            display_name: conversation.otherPartyName,
+            avatar_url: conversation.otherPartyAvatarUrl,
+          }}
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
@@ -191,42 +198,6 @@ function SearchGlyph() {
   )
 }
 
-/**
- * V24 slice 04 (ticket 04): the row's FACE — the counterpart's profile photo
- * (`profiles.avatar_url`, the PUBLIC parent avatar the going circles and the
- * card's host avatar already use), falling back to the display-name initial on
- * the same slate circle when there is no photo OR the image fails to load, so a
- * row can never render a broken image.
- *
- * The image is DECORATIVE (`alt=""`): the row button's aria-label already names
- * the counterpart, and a second "Pat" would be read twice. The initial is
- * `aria-hidden` for the same reason.
- */
-function ConversationFace({ name, avatarUrl }: { name: string; avatarUrl: string | null }) {
-  const [failed, setFailed] = useState(false)
-  const initial = (name.trim().charAt(0) || '?').toUpperCase()
-  if (avatarUrl !== null && avatarUrl !== '' && !failed) {
-    return (
-      <img
-        src={avatarUrl}
-        alt=""
-        aria-hidden="true"
-        loading="lazy"
-        decoding="async"
-        onError={() => setFailed(true)}
-        className="h-10 w-10 shrink-0 rounded-full bg-slate-200 object-cover"
-      />
-    )
-  }
-  return (
-    <span
-      aria-hidden="true"
-      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-semibold text-slate-600"
-    >
-      {initial}
-    </span>
-  )
-}
 
 /**
  * One bubble in the thread: the sender's display name (small, muted, above
