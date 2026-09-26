@@ -128,9 +128,15 @@ import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
  *     quiet meta line); `feed.cardWhenLabel` now composes them into ONE line
  *     directly under the title — "Sat, Sep 26 · 6:30 PM–7:30 PM" — which is the
  *     compact form of the founder's own reference ("Sat, Sep 26 · 5:00 PM PDT").
- *     NO ZONE LABEL IS PRINTED: the app has no timezone anywhere, so the
- *     screenshot's "PDT" cannot be honestly produced (the ticket forbids
- *     inventing one). The quiet meta line therefore keeps only the
+ *     NO ZONE LABEL IS PRINTED — this card prints no zone and this diff invents
+ *     none, so the screenshot's "PDT" cannot be honestly produced here. (The app
+ *     is not zoneless everywhere: `series.resolveTimeZone` / `deviceTimeZone`
+ *     exist for weekly-series scheduling, and `playdate_series` stores a zone.
+ *     A one-off `playdates` row stores only `starts_at`/`ends_at`, and
+ *     `formatTimeWindow` renders them device-local with no zone parameter — so
+ *     there is nothing to label the card's time with that would mean the EVENT's
+ *     zone rather than the viewer's. The ticket forbids inventing one.) The
+ *     quiet meta line therefore keeps only the
  *     neighbourhood and the distance (the weekly marker moved up to the when
  *     line), and it renders NOTHING when both are absent — the old form ended
  *     each fact with " · " precisely because the window was always there to
@@ -343,8 +349,10 @@ export function DropInCard({
             under the title ("Sat, Sep 26 · 6:30 PM–7:30 PM"). Both halves come
             from the pure `feed.cardWhenLabel` seam (the day from the app's
             always-the-date wording, the window from the ONE `formatTimeWindow`
-            rule). NO ZONE is printed — the app has no timezone anywhere, so the
-            founder's reference's "PDT" cannot be produced honestly.
+            rule). NO ZONE is printed: this line prints none and this diff
+            invents none, so the founder's reference's "PDT" is not produced
+            (see the file header, (a) — the app's only zones are the series
+            scheduling seam's, and a one-off post stores none).
             `data-testid` is the stable handle the specs read, because the line
             moved and a positional `p` index silently tests the wrong element
             (see e2e/post-fast, e2e/post-location).
@@ -512,7 +520,11 @@ export function DropInCard({
           HTML and the browser hoists it out of the card.
           `min-h-11` is the 44px tap target the house requires; the accessible
           name says where the tap goes (the visible address first, then the
-          destination — WCAG 2.5.3's label-in-name). */}
+          destination — WCAG 2.5.3's label-in-name).
+          `rounded-b-xl` matches the box's own radius (V25 t05 fix round 1): the
+          box paints its border/radius but does NOT clip (`overflow-hidden` would
+          also clip focus rings), so without it this row's hover fill squared off
+          the box's bottom two corners. */}
       {maps !== null ? (
         <a
           data-testid="card-maps-link"
@@ -520,7 +532,7 @@ export function DropInCard({
           target="_blank"
           rel="noopener"
           aria-label={`${playdate.address ?? ''} — open in Google Maps`}
-          className="flex min-h-11 items-center gap-1.5 border-t border-slate-100 px-4 py-2 text-sm font-medium text-indigo-600 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="flex min-h-11 items-center gap-1.5 rounded-b-xl border-t border-slate-100 px-4 py-2 text-sm font-medium text-indigo-600 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           <svg
             viewBox="0 0 16 16"

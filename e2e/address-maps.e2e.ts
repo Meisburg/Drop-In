@@ -58,10 +58,16 @@ const MAPS_HREF = `https://www.google.com/maps?q=${encodeURIComponent(`${PLACE},
  * then return the feed card's detail href — a real /playdate/:id.
  *
  * `address` is typed into the visible Address field when it is given. When it is
- * null the field is CLEARED instead: /new prefills it from the parent's
- * remembered last post (`useState(placePrefill?.address ?? '')`,
- * NewPlaydatePage.tsx:380), so "left alone" is NOT "no address" — V25 ticket 05's
- * no-address half has to say so out loud.
+ * null the field is CLEARED instead, so the post really carries no street. Two
+ * prefills exist and NEITHER runs on this helper's cold `goto('/new')` — the
+ * field starts EMPTY, and the clear is a belt-and-braces no-op:
+ *   * the place page's "Start a drop-in here" router state
+ *     (`App.tsx:355` → `NewPlaydatePage.tsx:380`, `placePrefill?.address`), which
+ *     needs that navigation; and
+ *   * the "post again" clone (`applyLastPost`, NewPlaydatePage.tsx:685-689),
+ *     which only runs from a tap on a `post-again` row (`:1086`).
+ * (Corrected in V25 t05 fix round 1: this comment first claimed /new prefills
+ * the address from the remembered last post at mount. It does not.)
  *
  * Pre-0021-apply the create 42703s (the address column is missing live):
  * the failure lands HERE, at the post-create step (the form's designed
@@ -85,8 +91,10 @@ async function postMarkerDropIn(
     .fill(PLACE)
   // V9 ticket 03: the address's MANUAL entry (the pick fills the address;
   // typing one is the adjustment). V25 ticket 05: null means "post with NO
-  // address" and therefore CLEARS the field — /new prefills it from the
-  // remembered last post, so an untouched field can still carry a street.
+  // address" and therefore CLEARS the field — a no-op on this cold /new (the
+  // only prefills are the place page's router state and the tap-only post-again
+  // clone; see the helper's doc), kept so the no-address half cannot silently
+  // become an address-carrying post if either path ever runs first.
   const addressField = page.getByPlaceholder('e.g. 7200 4th Ave NE, near the boathouse')
   await addressField.fill(address ?? '')
   // V9 ticket 01: /new no longer asks for a neighbourhood — nothing to pick.
@@ -212,6 +220,19 @@ test('the feed card leads with title → day · time, and its address row is a r
   expect(mapsBox!.y).toBeGreaterThan(placeBox!.y)
   // The 44px tap target the house requires (the row is the whole card width).
   expect(mapsBox!.height).toBeGreaterThanOrEqual(44)
+  // V25 t05 fix round 1 (the reviewer measured this): the box paints its radius
+  // but does NOT clip, so the row must round its OWN bottom corners or its
+  // hover fill squares them off. Asserted as an EQUALITY with the box's radius
+  // rather than a literal 12px, so the two cannot drift apart.
+  const radii = await card.evaluate((el) => {
+    const row = el.querySelector('[data-testid="card-maps-link"]')
+    return {
+      box: getComputedStyle(el).borderBottomLeftRadius,
+      row: row === null ? null : getComputedStyle(row).borderBottomLeftRadius,
+    }
+  })
+  expect(radii.row).not.toBeNull()
+  expect(radii.row).toBe(radii.box)
 
   // (4) THE DAY IS THE DATE the spec posted for, in the app's own words — the
   //     reference's "Sat, Sep 26" form, never the header's "Tomorrow".
