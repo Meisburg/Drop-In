@@ -248,6 +248,141 @@ test('unchecking reaches the live column, survives a reload, and re-checking res
 })
 
 /**
+ * The phone widths the repo audits (scripts/mobile-audit.mjs's VIEWPORTS list):
+ * 390x844 is the common phone, 320x812 is the NARROWEST supported width — the
+ * one where a control's own padding is most likely to push the page sideways
+ * (post-fast.e2e.ts's "the phone pass" makes the same argument).
+ */
+const PHONE_VIEWPORTS = [
+  { width: 390, height: 844 },
+  { width: 320, height: 812 },
+] as const
+
+/**
+ * Measure the email block at the CURRENT viewport — the same shape
+ * scripts/mobile-audit.mjs measures on the signed-out routes, scoped to the
+ * email block.
+ *
+ * The selector mirrors measureControls() (e2e/post-fast.e2e.ts): the tap
+ * targets the audit looks for (`button, a[href], label`) plus the form fields,
+ * skipping zero-size elements and `display: inline` running text.
+ *
+ * THE CHECKBOX/RADIO EXEMPTION IS COPIED DELIBERATELY, not guessed. The audit
+ * exempts `input[type=checkbox|radio]` (scripts/mobile-audit.mjs, the <16px
+ * font-size loop: `if (type === 'checkbox' || type === 'radio') continue`), and
+ * its tap-target sweep never matches inputs at all — `button, a[href],
+ * label[for]`. The reason is the same in both places: the INPUT (20px here) is
+ * not the tap target, the WRAPPING `<label>` is (min-h-11 = 44px). That is only
+ * honest if the label itself clears the floor, so the wrapping label's height
+ * is returned separately and asserted EXPLICITLY by the caller — the exemption
+ * must not be allowed to hide a small target. (This block's label is a wrapping
+ * label with no `for=`, which is why the sweep matches bare `label` as well as
+ * `label[for]`.)
+ */
+async function measureEmailBlock(page: Page): Promise<{
+  controls: Array<{ label: string; height: number }>
+  scrollWidth: number
+  innerWidth: number
+  wrappingLabelHeight: number
+}> {
+  return page.evaluate(() => {
+    const block = document.querySelector('[data-testid="email-optout"]')
+    if (block === null) throw new Error('the email block is not in the DOM')
+    const selector = 'button, a[href], label, input, textarea, select'
+    const controls: Array<{ label: string; height: number }> = []
+    for (const el of Array.from(block.querySelectorAll(selector))) {
+      const rect = el.getBoundingClientRect()
+      if (rect.width === 0 || rect.height === 0) continue
+      const style = getComputedStyle(el)
+      if (style.display === 'inline') continue
+      const type = el.getAttribute('type')
+      // The audit's documented exemption — see the header above. The wrapping
+      // label carries the floor instead.
+      if (type === 'checkbox' || type === 'radio') continue
+      const label = (el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 32)
+      controls.push({
+        label: `${el.tagName.toLowerCase()} "${label}"`,
+        height: Math.round(rect.height),
+      })
+    }
+    const input = block.querySelector('input[data-testid="email-optout-toggle"]')
+    const wrappingLabel = input === null ? null : input.closest('label')
+    return {
+      controls,
+      scrollWidth: document.documentElement.scrollWidth,
+      innerWidth: window.innerWidth,
+      wrappingLabelHeight:
+        wrappingLabel === null ? 0 : Math.round(wrappingLabel.getBoundingClientRect().height),
+    }
+  })
+}
+
+/**
+ * WHY THIS TEST EXISTS — THE SIGNED-IN PHONE LANE.
+ *
+ * By convention the signed-in layouts are measured HERE, in the specs that own
+ * the surface: scripts/mobile-audit.mjs walks only the SIGNED-OUT routes
+ * (/login, /playdate/:id, /browse) because its contexts carry no session, and
+ * its own header says so — "the signed-in layout is measured by ... the
+ * mobile-audit assertions those specs carry". /settings is a signed-in route and
+ * this spec is the only one that opens it, so if the floors are not asserted
+ * here they are asserted nowhere for this block.
+ *
+ * It matters because playwright.config.ts sets NO `viewport`: the two behaviour
+ * tests above run at Playwright's default 1280x720, so this block has never been
+ * rendered at phone width in any automated lane. 320 is the narrowest phone the
+ * repo audits (a control that fits at 390 can still push 320 sideways), 390 the
+ * common one; the assertions below run at BOTH.
+ *
+ * The floors are the audit's own, with its exact exemptions: no horizontal
+ * overflow, and every visible control at least 44px tall — skipping zero-size
+ * elements, skipping `display: inline` running text, and applying the
+ * checkbox/radio exemption (the wrapping label is the real target and is
+ * asserted explicitly, see measureEmailBlock).
+ */
+test('the email block holds the phone floors at 390 and 320: no sideways page, no control under 44px', async ({
+  page,
+}) => {
+  for (const { width, height } of PHONE_VIEWPORTS) {
+    await page.setViewportSize({ width, height })
+    // The SAME sign-in path as the tests above — one way to open this page.
+    await openSettings(page)
+
+    // 5. The block and its toggle are still RENDERED at this width. A layout
+    //    that clips the control away is as broken as one that overflows.
+    await expect(page.getByTestId('email-optout')).toBeVisible()
+    await expect(page.getByTestId('email-optout-toggle')).toBeVisible()
+
+    // 3. NO HORIZONTAL OVERFLOW, with BOTH numbers in the message so a failure
+    //    is diagnosable rather than merely red.
+    const measured = await measureEmailBlock(page)
+    expect(
+      measured.scrollWidth,
+      `${width}x${height}: the page must not scroll sideways — documentElement.scrollWidth=${measured.scrollWidth}, window.innerWidth=${measured.innerWidth}`,
+    ).toBeLessThanOrEqual(measured.innerWidth + 1)
+
+    // 4. THE WRAPPING LABEL CARRIES THE FLOOR (the checkbox exemption's other
+    //    half — the input is exempt because this label is the tap target).
+    expect(
+      measured.wrappingLabelHeight,
+      `${width}x${height}: the wrapping <label> is the 44px tap target — got ${measured.wrappingLabelHeight}px`,
+    ).toBeGreaterThanOrEqual(44)
+
+    // A sweep that matched nothing would pass vacuously.
+    expect(
+      measured.controls.length,
+      `${width}x${height}: the email block must render at least one non-exempt control`,
+    ).toBeGreaterThanOrEqual(1)
+    const small = measured.controls.filter((control) => control.height < 44)
+    expect(
+      small.length,
+      `${width}x${height}: every visible control in [data-testid="email-optout"] must be >= 44px tall — ` +
+        `offenders: ${small.map((c) => `${c.label} ${c.height}px`).join(', ')}`,
+    ).toBe(0)
+  }
+})
+
+/**
  * The net, for a failure that lands between "unchecked" and "re-checked": put
  * the marker account back in the default state with its own JWT. Best-effort by
  * house rule — it logs and never changes a test result (a hard crash is the
