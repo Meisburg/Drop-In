@@ -527,6 +527,74 @@ all history forever. Reuse the existing `MAX_SCAN_POSTS = 500` cap (`:142`).
 - **Budget:** one local builder context.
 - **Depends on:** Slice 2.
 
+### Slice 4 (human decision, V26 amendment): skip parents who already reviewed the place
+
+> **Added 2026-09-27 by human decision** — the human chose the orchestrator's
+> recommendation ("add the skip first") over "deploy as-is". It AMENDS Slice 2
+> (one new pure rule) and Slice 3 (one new read in the wiring); it changes no
+> migration, no route, no copy, and no other kind.
+
+- **Objective:** a parent who already has a `reviews` row for the drop-in's
+  place is **not** asked to review it again. The prompt becomes
+  "rate this place" for a first rating, never "edit the rating you left".
+- **Why:** the one real candidate the first live run would have notified
+  (drop-in `04a073f4…`) is the **same profile that already wrote that place's
+  review**. Risks item 3 accepted the case in the abstract; it is the only case
+  that fires today. Prompting someone who already reviewed a place is nagging by
+  construction and recurs for every parent who reviews a place then attends a
+  second drop-in there.
+- **Files in scope:**
+  - `supabase/functions/_shared/reviewScan.ts` — the pure rule
+  - `src/lib/reviewScan.test.ts` — the sibling test (guards require it)
+  - `supabase/functions/send-push/index.ts` — the scan's new read + the fact it
+    injects + two stale header/comment corrections
+- **Approach (pinned; the builder does not re-decide it):**
+  1. `ReviewPromptFacts` gains a **required** `alreadyReviewed: boolean` —
+     required (not optional) so TypeScript, not discipline, forces every caller
+     to supply the fact. Rule **(f)**, appended after (e) so the existing a–e
+     numbering and their killing tests are untouched:
+     `if (facts.alreadyReviewed) return false`.
+  2. `catchUpReviewDue` derives the candidate **place** ids from the already-
+     fetched `pings` (trimmed, unique, non-empty), reads
+     `reviews (place_id, author_profile_id)` with `.in('place_id', placeIds)`
+     **only when that list is non-empty**, throws on `reviewError` like the two
+     existing reads, and builds a `Set` keyed `` `${author_profile_id}:${place_id}` ``.
+     The predicate call adds
+     `alreadyReviewed: reviewed.has(\`${row.profile_id}:${row.playdate?.place_id ?? ''}\`)`.
+  3. The predicate still runs **before** the mapper (Slice 3's rule), and this is
+     a **fifth rejection**, not a filter that reorders anything.
+  4. **Header honesty (the disease this batch has already paid for twice):** the
+     file header's `review_due` sentence and `catchUpReviewDue`'s doc comment
+     must state the new exclusion; a comment the diff makes false is a defect.
+- **Acceptance criteria:**
+  1. `isReviewPromptCandidate` returns **false** when `alreadyReviewed` is `true`,
+     at any `status`/`endsAt`/`placeId`, **with a positive control** at identical
+     facts and `alreadyReviewed: false` → `true` (proves the new fact, not a
+     neighbouring rule, decided it).
+  2. The module stays pure — the existing no-clock/no-client/no-I/O checks pass —
+     and rule (f) is **mutation-checked**: flipping it to a no-op kills the named
+     test; raw output saved to `.scratch/v26/`.
+  3. `catchUpReviewDue` reads `reviews` for the candidate places, keyed on the
+     `(author_profile_id, place_id)` pair, and passes `alreadyReviewed` into the
+     predicate; the predicate is still called before `reviewPromptRow`.
+  4. The new read is **bounded** (candidate place ids only, `.in()` on a
+     non-empty list) and its PostgREST error is thrown — never swallowed.
+  5. The file header and the function doc comment describe the new exclusion.
+  6. `npm run verify` **EXIT=0** and `bash scripts/deno-check-functions.sh`
+     **EXIT=0**; no test deleted or weakened.
+  7. *(coordinator, read-only, BEFORE any deploy)* the scan's exact query with the
+     new exclusion applied returns **zero** candidates for the identified real
+     drop-in `04a073f4…` — so the go-live notifies no family that has already
+     reviewed the place.
+- **Verification command:**
+  ```bash
+  npm run verify
+  bash scripts/deno-check-functions.sh
+  ```
+  Evidence in `.scratch/v26/` (gate output, Deno output, the mutation flip).
+- **Budget:** one local builder context.
+- **Depends on:** Slice 2 (the predicate) and Slice 3 (the wiring).
+
 ## Risks / open questions
 
 1. **`REVIEW_PROMPT_WINDOW_HOURS = 24` is the orchestrator's choice, not the
@@ -668,4 +736,30 @@ all history forever. Reuse the existing `MAX_SCAN_POSTS = 500` cap (`:142`).
   reports rows *attempted*. The fixture for criteria 3–4 is designed, and cleanup
   must go **through the profile** — `notification_log` cascades on `profile_id`
   but has **no FK on `playdate_id`**.
+
+- 2026-09-27 — **Slice 4 (the human-chosen amendment: skip parents who already
+  reviewed the place) is built, reviewed, fixed, and verified green. The
+  go-live is the only remaining step.** The human chose the orchestrator's
+  recommendation ("add the skip first") over "deploy as-is". Slice 2 gains a
+  **required** `alreadyReviewed` fact and rule **(f)**; Slice 3's
+  `catchUpReviewDue` gains the bounded `reviews (place_id, author_profile_id)`
+  read and injects the fact. Builder DONE (`npm run verify` EXIT=0 · 56 files /
+  **1785 tests** · 78 warnings / 0 errors · GUARDS PASS; `deno-check` EXIT=0;
+  rule (f) mutation-killed by the named test). Verifier independently reproduced
+  the full gate and the Deno lane (`.scratch/v26/s4-verify-verifier.txt`,
+  `s4-deno-verifier.txt`). Reviewer **NEEDS_CHANGES** on exactly one blocking
+  finding — a comment the diff made false, `src/lib/reviewScan.test.ts:10` still
+  said "five rejection rules" while the same file now tests six — plus one
+  stale test label ("criterion 8"); both were fixed in fix round 1 and re-gated
+  (`s4-verify-fix1.txt` EXIT=0 · 1785 tests · GUARDS PASS). The `ocr` lane
+  reviewed the code (`.scratch/v26/ocr-s4.json`) with **zero findings on the
+  product files**; its single low finding is `.scratch` JSON gitignore hygiene,
+  **parked** (untracked scratch, mechanically excluded by `check-push-range.sh`,
+  and out of this slice's scope).
+  **Live read-only blast-radius probe run BEFORE the deploy**
+  (`.scratch/v26/live-blast-radius.txt`): exactly **1** finished place-backed
+  ping inside the 24-hour window (`04a073f4…`, ended 2026-09-26 14:30 UTC) and it
+  is by **the parent who already reviewed that place** — so with rule (f) the
+  go-live notifies **zero** families. `notification_log` `review_due` rows
+  before the deploy: **0**.
 

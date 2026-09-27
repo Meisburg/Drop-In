@@ -7,7 +7,7 @@
  * be right ("does this finished drop-in earn a review prompt?") was extracted
  * into the pure module above. This file pins it.
  *
- * The tests are written so each of the five rejection rules can DIE
+ * The tests are written so each of the six rejection rules can DIE
  * individually: `plan.md` Slice 2 criterion 7 requires that flipping any one of
  * them to always-true makes at least one named test fail. Each test below
  * therefore states the rule it kills, and every negative assertion is paired
@@ -42,7 +42,7 @@ function ago(ms: number): string {
 
 /** The known-good shape: finished 2 hours ago, still on, at a real place. */
 function candidateFacts(overrides: Partial<ReviewPromptFacts> = {}): ReviewPromptFacts {
-  return { status: 'on', endsAt: ago(2 * HOUR), placeId: PLACE_ID, ...overrides }
+  return { status: 'on', endsAt: ago(2 * HOUR), placeId: PLACE_ID, alreadyReviewed: false, ...overrides }
 }
 
 describe('REVIEW_PROMPT_WINDOW_HOURS', () => {
@@ -69,7 +69,7 @@ describe('isReviewPromptCandidate', () => {
     for (const status of ['cancelled', 'ended']) {
       for (const endsAt of endsAts) {
         expect(
-          isReviewPromptCandidate({ status, endsAt, placeId: PLACE_ID }, NOW),
+          isReviewPromptCandidate({ status, endsAt, placeId: PLACE_ID, alreadyReviewed: false }, NOW),
           `status=${status} endsAt=${JSON.stringify(endsAt)}`,
         ).toBe(false)
       }
@@ -77,7 +77,7 @@ describe('isReviewPromptCandidate', () => {
     // The control that makes this test about the STATUS: the identical ends_at
     // with status 'on' is a candidate, so a flip that drops rule (a) turns the
     // first row above green and this test fails on it.
-    expect(isReviewPromptCandidate({ status: 'on', endsAt: ago(2 * HOUR), placeId: PLACE_ID }, NOW)).toBe(
+    expect(isReviewPromptCandidate({ status: 'on', endsAt: ago(2 * HOUR), placeId: PLACE_ID, alreadyReviewed: false }, NOW)).toBe(
       true,
     )
     // Anything that is not exactly 'on' is also rejected — an unknown status is
@@ -126,6 +126,13 @@ describe('isReviewPromptCandidate', () => {
     }
     // A padded id is the SAME id trimmed — the rule is blankness, not length.
     expect(isReviewPromptCandidate(candidateFacts({ placeId: `  ${PLACE_ID}  ` }), NOW)).toBe(true)
+  })
+
+  it('rule (f): a parent who already reviewed this place is NOT a candidate', () => {
+    expect(isReviewPromptCandidate(candidateFacts({ alreadyReviewed: true }), NOW)).toBe(false)
+    // The positive control at identical facts proves rule (f), not a neighbouring
+    // rule, is what decided it.
+    expect(isReviewPromptCandidate(candidateFacts({ alreadyReviewed: false }), NOW)).toBe(true)
   })
 
   it('rule c: a missing, empty or unparseable ends_at is NOT a candidate (it is not "long ago")', () => {

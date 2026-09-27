@@ -29,7 +29,7 @@
  * test ran, and the window boundary ("exactly 24 hours ago") could never be
  * asserted at all. The caller reads the clock once and hands it over.
  *
- * THE FIVE RULES, in order. Each one is a rejection, and each is mutation-checked
+ * THE SIX RULES, in order. Each one is a rejection, and each is mutation-checked
  * by `src/lib/reviewScan.test.ts` (flip any one of them to always-true and at
  * least one named test fails):
  *
@@ -67,6 +67,12 @@
  *                                    governs which drop-ins are CONSIDERED, not
  *                                    how long a parent has to act — the row,
  *                                    once inserted, is never withdrawn.
+ *  f. `alreadyReviewed` is true     → NOT a candidate. A parent who already rated
+ *                                    this place is never asked twice — `reviews`
+ *                                    is one row per (place_id, author_profile_id)
+ *                                    (0052), the same record the place page
+ *                                    writes, so a prompt here asks them to edit a
+ *                                    review they already left.
  *
  * THE PAYLOAD IS NOT RE-SPELLED HERE. Title, body and url all come from
  * `buildNotificationPayload` in `./pushCopy.ts`, which is the one place the copy
@@ -92,6 +98,11 @@ export interface ReviewPromptFacts {
   endsAt: string | null | undefined
   /** `playdates.place_id` as read. Nullable by design (see rule b). */
   placeId: string | null | undefined
+  /**
+   * Whether THIS parent already has a `reviews` row for THIS drop-in's place
+   * (the `(place_id, author_profile_id)` PK pair from migration 0052).
+   */
+  alreadyReviewed: boolean
 }
 
 /**
@@ -127,6 +138,11 @@ export function isReviewPromptCandidate(facts: ReviewPromptFacts, now: Date): bo
   // REVIEW_PROMPT_WINDOW_HOURS ago is still inside the window.
   const windowMs = REVIEW_PROMPT_WINDOW_HOURS * 60 * 60 * 1000
   if (nowMs - endedAtMs > windowMs) return false
+
+  // (f) A parent who already rated this place is never asked twice: `reviews` is
+  // one row per (place_id, author_profile_id) (0052), the same record the place
+  // page writes, so a prompt here asks them to edit a review they already left.
+  if (facts.alreadyReviewed) return false
 
   return true
 }

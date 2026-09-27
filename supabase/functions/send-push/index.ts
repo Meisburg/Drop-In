@@ -24,8 +24,9 @@
  *     the next 60 minutes, (b) are still on, (c) someone pinged, and (d) have no
  *     `notification_log` row for that person yet. The `review_due` scan looks
  *     for place-backed posts that (a) are still on, (b) ended within the last
- *     24 hours (`REVIEW_PROMPT_WINDOW_HOURS`), (c) someone pinged, and (d) have
- *     no `review_due` row for that person yet. Each inserts the rows it is
+ *     24 hours (`REVIEW_PROMPT_WINDOW_HOURS`), (c) someone pinged, (d) have no
+ *     `review_due` row for that person yet, and (e) have not already rated the
+ *     place. Each inserts the rows it is
  *     about to send, in the same invocation. The other four kinds come from the
  *     SECURITY DEFINER triggers: `ping_received`, `new_comment` and `cancelled`
  *     in migration 0032, and `ended` in 0041 — which replaces 0032's cancelled
@@ -310,7 +311,10 @@ async function catchUpStartingSoon(admin: SupabaseClient): Promise<number> {
  * created. The other clock-produced catch-up scan, beside
  * `catchUpStartingSoon`, and deliberately its twin: same source of truth
  * (`going_pings`), same two-wall idempotence (the exclusion read, then the
- * `ignoreDuplicates` upsert), same `MAX_SCAN_POSTS` bound, one clock read.
+ * `ignoreDuplicates` upsert), same `MAX_SCAN_POSTS` bound, one clock read. It
+ * adds one more exclusion read: a parent who already has a `reviews` row for
+ * the drop-in's place is never asked to rate it again (rule (f) in
+ * `../_shared/reviewScan.ts`).
  *
  * "It finished" is a property of the CLOCK, not of any write — nothing sets
  * `'ended'` automatically (only a host ending early does, `0041`), so a
@@ -380,6 +384,29 @@ async function catchUpReviewDue(admin: SupabaseClient): Promise<number> {
     ),
   )
 
+  // THE ANTI-NAG WALL: never ask a parent to review a place they already
+  // reviewed. `reviews` is one row per `(place_id, author_profile_id)` (0052) —
+  // the same record the place page writes. `.in()` on a non-empty list only,
+  // like the `told` read above.
+  const placeIds = [
+    ...new Set(
+      pings
+        .map((row) => row.playdate?.place_id)
+        .filter((id): id is string => typeof id === 'string' && id.trim() !== ''),
+    ),
+  ]
+  const reviewed = new Set<string>()
+  if (placeIds.length > 0) {
+    const { data: reviewRows, error: reviewError } = await admin
+      .from('reviews')
+      .select('place_id, author_profile_id')
+      .in('place_id', placeIds)
+    if (reviewError) throw reviewError
+    for (const row of (reviewRows ?? []) as Array<{ place_id: string; author_profile_id: string }>) {
+      reviewed.add(`${row.author_profile_id}:${row.place_id}`)
+    }
+  }
+
   // THE PREDICATE IS CALLED BEFORE THE MAPPER, ALWAYS. `reviewPromptRow` is
   // deliberately total and does NOT re-run `isReviewPromptCandidate`, so a row
   // reaching the mapper unfiltered would yield a fallback url instead of being
@@ -392,6 +419,7 @@ async function catchUpReviewDue(admin: SupabaseClient): Promise<number> {
           status: row.playdate?.status,
           endsAt: row.playdate?.ends_at,
           placeId: row.playdate?.place_id,
+          alreadyReviewed: reviewed.has(`${row.profile_id}:${row.playdate?.place_id ?? ''}`),
         },
         now,
       ),
