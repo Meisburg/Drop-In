@@ -763,3 +763,25 @@ all history forever. Reuse the existing `MAX_SCAN_POSTS = 500` cap (`:142`).
   go-live notifies **zero** families. `notification_log` `review_due` rows
   before the deploy: **0**.
 
+- 2026-09-27 — **SHIPPED, DEPLOYED, AND CLOSED. Every acceptance criterion is
+  now proven, and criterion 3 was closed without a production write.**
+  `40ffa83` pushed through the gated hook (full gate green inside the hook);
+  `send-push` deployed (v5→v6, `updated_at` moved, `ezbr_sha256
+  8d25f1f8…→2ebf8ceb…`). The first post-deploy cron tick
+  (`2026-09-27 14:20:00.109Z`, 13 s after the deploy) returned
+  `{"reviewDueCreated":0,…}` with the Green Lake candidate still in-window, and
+  the same tick exercised the `place_id is null` wall against two real
+  place-less pinged drop-ins — so **the go-live notified zero families**
+  (`.scratch/v26/live-tick.txt`). **Criterion 3 (`cancelled` → zero rows) is
+  proven against the live schema with ZERO persistence**
+  (`.scratch/v26/live-criterion3-rollback.txt`): the Management API query
+  endpoint accepts explicit transaction control, so a `cancelled` place-backed
+  finished drop-in + ping (and an identical `status='on'` control + ping) were
+  inserted inside one `begin`/`rollback`; the scan's exact predicate returned
+  `cancelled_candidates = 0`, `on_control_candidates = 1`, and a post-rollback
+  read confirmed 0 playdates / 0 pings / 0 notifications persisted. Criterion 4
+  is live-proven by the tick; criteria 1/5/6/7 are satisfied or vacuous as
+  recorded in `V26-SUMMARY.md`. Remaining items are **human-gated**: the two
+  leftover `e2e ` fixtures' sweep (drives the human's Chrome), and the
+  24h-window / copy product calls.
+
