@@ -96,9 +96,11 @@ export function rsvpConfirmationAfterPing(
   isHost: boolean,
 ): RsvpConfirmationState {
   if (outcome.kind === 'pinged') {
-    // The host has no ping control (`:1828-1838`) and the write itself refuses
-    // to let them ping their own post, so this is defence in depth rather than
-    // a reachable path — but it is the rule, so it is stated and pinned.
+    // The host has no ping control — `PlaydateDetailPage.tsx:1564` is the
+    // `isHost` gate, `:1933` the branch it selects, and `:2095` the ping control
+    // that branch never renders — and the write itself refuses to let them ping
+    // their own post, so this is defence in depth rather than a reachable path
+    // — but it is the rule, so it is stated and pinned.
     if (isHost) return state
     // ONE raise per ping: a parent who already dismissed this confirmation does
     // not get it again for the same yes.
@@ -216,16 +218,16 @@ export interface RsvpConfirmationCopy {
  *    and `messages_participation_guard` both gate on
  *    `playdates.host_profile_id = auth.uid() OR a going_pings row`), and the
  *    detail page offers the affordance itself (`canMessageHost`,
- *    `PlaydateDetailPage.tsx:1612`, rendered "Message the host" `:2431`,
- *    routing to `/inbox?thread=<playdateId>`), where the thread lists every
- *    participant (`InboxPage.tsx`).
+ *    `PlaydateDetailPage.tsx:1648`, rendered "Message the host" `:2461`, its
+ *    text at `:2467`, routing to `/inbox?thread=<playdateId>`), where the
+ *    thread lists every participant (`InboxPage.tsx`).
  *  - MAY NOT: "you'll be added to the group chat soon, keep an eye out for the
  *    notification" (the mockup's example). There is no group chat — the thread
  *    is one playdate's conversation, and membership is not something that
  *    happens later: pinging IS becoming a participant, instantly. And the
  *    notification prompt is deliberately deferred off this very page
- *    (`push.ts:394` `isPlaydateDetailPath`, applied at `:436`), so promising a
- *    notification here would point at a
+ *    (`push.ts:575` `isPlaydateDetailPath`, applied at `:629`/`:631`, with the
+ *    offer gate at `:714`), so promising a notification here would point at a
  *    moment the app intentionally does not fire.
  *
  * The test beside this module asserts the absence of that promise, so a future
