@@ -108,6 +108,11 @@ type ThreadState =
  * `conversation_reads` cursor (migration 0042) and free-form DMs use the
  * `direct_conversation_reads` cursor (migration 0051), each keyed on its own
  * conversation identity. Both are stamped when the thread is opened.
+ *
+ * Every testid this card emits is suffixed with `conversation.mergeKey`, NOT
+ * `otherPartyId`: two unresolved rows both carry `otherPartyId === ''`, so an
+ * `otherPartyId`-suffixed testid is the SAME string on both rows and cannot
+ * address either one. `mergeKeyFor` is the identity that keeps them apart.
  */
 function ConversationCard({
   conversation,
@@ -135,7 +140,7 @@ function ConversationCard({
       type="button"
       onClick={onOpen}
       aria-label={accessibleLabel}
-      data-testid={`inbox-row-${conversation.otherPartyId}`}
+      data-testid={`inbox-row-${conversation.mergeKey}`}
       className="w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-50"
     >
       <div className="flex items-start gap-3">
@@ -163,12 +168,12 @@ function ConversationCard({
                 {/* The colour dot: a pure decoration (aria-hidden); the button's
                     aria-label carries the accessible "N unread" state. */}
                 <span
-                  data-testid={`unread-dot-${conversation.otherPartyId}`}
+                  data-testid={`unread-dot-${conversation.mergeKey}`}
                   aria-hidden="true"
                   className="h-2.5 w-2.5 rounded-full bg-indigo-600"
                 />
                 <span
-                  data-testid={`unread-badge-${conversation.otherPartyId}`}
+                  data-testid={`unread-badge-${conversation.mergeKey}`}
                   className="rounded-full bg-indigo-600 px-2 py-0.5 text-xs font-semibold text-white"
                 >
                   {conversation.unreadCount}
@@ -184,7 +189,7 @@ function ConversationCard({
           </div>
           {activity !== null ? (
             <p
-              data-testid={`inbox-activity-${conversation.otherPartyId}`}
+              data-testid={`inbox-activity-${conversation.mergeKey}`}
               className="mt-1 text-xs text-slate-500"
             >
               {activity}
@@ -840,6 +845,11 @@ export function InboxPage() {
   // keyed on the counterpart's profile id — never the display name. The merge
   // is a pure lib function (src/lib/inbox.ts); this page only decides which
   // thread a row opens based on the winner's `kind`.
+  //
+  // V25: a row whose counterpart could NOT be resolved keeps its own row and
+  // carries `mergeKey` (src/lib/inbox.ts `mergeKeyFor`) as its identity, which
+  // is what the list key and the card's testids use. `otherPartyId` is '' for
+  // every such row, so it cannot tell two of them apart.
   const mergedConversations = useMemo(
     () => mergeConversations(directConvs, list.status === 'ready' ? list.conversations : []),
     [directConvs, list],
@@ -1010,8 +1020,12 @@ export function InboxPage() {
                 </div>
               ) : (
                 <ul className="mt-4 flex flex-col gap-2">
+                  {/* Each row's IDENTITY, not its counterpart id: two
+                      unresolved rows both carry otherPartyId === '', so keying
+                      on that gives them the same React key (and the same
+                      testids inside ConversationCard). */}
                   {mergedConversations.map((row) => (
-                    <li key={row.otherPartyId || row.kind}>
+                    <li key={row.mergeKey}>
                       <ConversationCard conversation={row} onOpen={() => openMergedRow(row)} />
                     </li>
                   ))}

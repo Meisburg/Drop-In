@@ -22,8 +22,13 @@ import { ModalShell } from './ModalShell'
  * — into `ModalShell`, so the RSVP confirmation lightbox could be a second
  * consumer of ONE shell rather than a third copy of it. This component keeps
  * what is specific to a CONFIRMATION and nothing else: the two buttons, which
- * one takes focus, and the destructive styling. No test id, class, string or
- * behaviour changed in the move.
+ * one takes focus, and the destructive styling. The move was NOT byte-identical
+ * (`ModalShell.tsx:21-30` is the list of what changed): the panel gained
+ * `tabIndex={-1}` and the 140ms `modal-pop` entrance, a wrapper `<div>` now
+ * holds the heading and the optional dismiss control, the static
+ * `confirm-dialog-title` became a generated `aria-labelledby`, and the shell
+ * adds a body scroll lock this component never had. The two buttons, their ids,
+ * their labels and the dismissal rules are unchanged.
  *
  * Callers today: the comment delete confirm and the kid-row Remove confirm —
  * both destructive. The `destructive: false` branch (a plain indigo confirm)

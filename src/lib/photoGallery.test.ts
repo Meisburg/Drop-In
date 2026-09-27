@@ -6,6 +6,7 @@ import {
   GALLERY_TILE_CLASS,
   clampGalleryIndex,
   galleryAltAt,
+  galleryIndexInKept,
   galleryPhotoAt,
   galleryPhotosAreSteppable,
   galleryPhotosFrom,
@@ -190,5 +191,77 @@ describe('the viewer’s controls and words', () => {
     expect(galleryPhotoAt(TWO, -1)).toEqual(TWO[0])
     expect(galleryPhotoAt([], 0)).toBeNull()
     expect(galleryPhotoAt(ONE, 0)).toEqual(ONE[0])
+  })
+})
+
+describe('galleryIndexInKept — the tap index lands on the SAME photo after drops', () => {
+  /**
+   * The reported defect's own fixture: `['', 'a', 'b']`. `galleryPhotosFrom`
+   * drops the first entry, so a tap on `'a'` arrives at pre-filter index 1 while
+   * `'a'` is the KEPT array's index 0.
+   */
+  const LEADING_DROP: GalleryPhoto[] = [
+    { src: '', alt: 'P0 — no src, dropped by galleryPhotosFrom' },
+    { src: 'a', alt: 'P1' },
+    { src: 'b', alt: 'P2' },
+  ]
+  /** The same shape with the drop AFTER the tap: nothing may shift. */
+  const TRAILING_DROP: GalleryPhoto[] = [
+    { src: 'a', alt: 'P1' },
+    { src: '', alt: 'P1b — no src, dropped by galleryPhotosFrom' },
+    { src: 'b', alt: 'P2' },
+  ]
+
+  it('THE DEFECT, pinned: clamping the PRE-filter index opened the wrong photo', () => {
+    // What `openGallery` carried before this fix, verbatim: the caller's index
+    // clamped against the FILTERED length, on the fixture above. It answers 'b'
+    // for a tap on 'a' — the off-by-N — and it is pinned here so a regression to
+    // that expression fails in this suite rather than in a browser.
+    const kept = galleryPhotosFrom(null, '', LEADING_DROP)
+    expect(galleryPhotoAt(kept, clampGalleryIndex(kept.length, 1))?.src).toBe('b')
+  })
+
+  it('a drop BEFORE the tap: pre-filter 1 becomes kept 0 and selects "a"', () => {
+    const kept = galleryPhotosFrom(null, '', LEADING_DROP)
+    expect(kept.map((photo) => photo.src)).toEqual(['a', 'b'])
+    expect(galleryIndexInKept(LEADING_DROP, 1)).toBe(0)
+    expect(galleryPhotoAt(kept, galleryIndexInKept(LEADING_DROP, 1))?.src).toBe('a')
+  })
+
+  it('a drop AFTER the tap shifts nothing, and a tap past it shifts by exactly one', () => {
+    const kept = galleryPhotosFrom(null, '', TRAILING_DROP)
+    expect(kept.map((photo) => photo.src)).toEqual(['a', 'b'])
+    // The tap before the drop: still 0, still 'a'.
+    expect(galleryIndexInKept(TRAILING_DROP, 0)).toBe(0)
+    expect(galleryPhotoAt(kept, galleryIndexInKept(TRAILING_DROP, 0))?.src).toBe('a')
+    // The tap after the drop: shifted by exactly the one drop before it.
+    expect(galleryIndexInKept(TRAILING_DROP, 2)).toBe(1)
+    expect(galleryPhotoAt(kept, galleryIndexInKept(TRAILING_DROP, 2))?.src).toBe('b')
+  })
+
+  it('an array with no drops is the identity — the reachable arrival is untouched', () => {
+    // Today's production arrival is ONE photo with a src (no drop possible), and
+    // the multi-photo case with nothing dropped must map through unchanged.
+    expect(galleryIndexInKept(ONE, 0)).toBe(0)
+    expect(galleryIndexInKept(TWO, 0)).toBe(0)
+    expect(galleryIndexInKept(TWO, 1)).toBe(1)
+    expect(galleryIndexInKept(THREE, 2)).toBe(2)
+  })
+
+  it('a tap on a dropped entry lands on the first KEPT entry at or after it', () => {
+    // Total on purpose: PhotoButton paints no button for a src-less photo, so
+    // this cannot be tapped today — but the rule must still answer.
+    expect(galleryIndexInKept(LEADING_DROP, 0)).toBe(0) // the dropped P0 → 'a'
+    expect(galleryIndexInKept(TRAILING_DROP, 1)).toBe(1) // the dropped P1b → 'b'
+  })
+
+  it('a tap past the end, a negative index, NaN and an all-dropped array are defined', () => {
+    // "First kept at or after" has no answer past the end, so it is the LAST
+    // kept entry; everything else is clamped into its own array first.
+    expect(galleryIndexInKept(LEADING_DROP, 99)).toBe(1)
+    expect(galleryIndexInKept(LEADING_DROP, -5)).toBe(0)
+    expect(galleryIndexInKept(LEADING_DROP, Number.NaN)).toBe(0)
+    expect(galleryIndexInKept([], 0)).toBe(0)
+    expect(galleryIndexInKept([{ src: '', alt: 'nothing to fetch' }], 0)).toBe(0)
   })
 })

@@ -87,6 +87,16 @@ export function photosAreTiled(count: number): boolean {
 }
 
 /**
+ * The ONE drop rule `galleryPhotosFrom` applies, named and private so the index
+ * remap below cannot drift from the filter: a photo is KEPT exactly when it has
+ * a `src` to fetch. Two copies of `src !== ''` in this module would be an
+ * off-by-N waiting to happen again.
+ */
+function photoHasSrc(photo: GalleryPhoto): boolean {
+  return photo.src !== ''
+}
+
+/**
  * The photo array a render should work from, given either shape a call site can
  * hand over: the historical `(src, alt)` pair (host avatars, comment rows, kid
  * rows — `PhotoButton`'s existing contract, unchanged) or an explicit gallery.
@@ -94,6 +104,9 @@ export function photosAreTiled(count: number): boolean {
  * that cannot be fetched must never become a tile (a broken-image frame is worse
  * than one fewer tile). Returns `[]` when there is nothing to show — callers
  * render no block, which is the app's existing "no placeholder" rule.
+ *
+ * DROPPING IS WHY THE CALLER'S INDEX CANNOT BE USED AS-IS — see
+ * `galleryIndexInKept`.
  */
 export function galleryPhotosFrom(
   src: string | null | undefined,
@@ -101,7 +114,7 @@ export function galleryPhotosFrom(
   photos?: readonly GalleryPhoto[] | null,
 ): GalleryPhoto[] {
   if (photos !== undefined && photos !== null) {
-    return photos.filter((photo) => photo.src !== '')
+    return photos.filter(photoHasSrc)
   }
   if (src === undefined || src === null || src === '') return []
   return [{ src, alt }]
@@ -121,6 +134,35 @@ export function clampGalleryIndex(count: number, index: number): number {
   if (whole < 0) return 0
   if (whole > count - 1) return count - 1
   return whole
+}
+
+/**
+ * `index` — a position in the caller's OWN array — re-expressed as a position
+ * in the KEPT array `galleryPhotosFrom` returns for that same array. This is
+ * the tap's meaning: a tile at pre-filter position 1 is the SECOND entry in the
+ * array a grid maps over, and once a no-`src` entry before it is dropped it is
+ * the FIRST photo the viewer holds. Clamping the caller's index against the
+ * FILTERED length instead (what this module's caller did until this fix) opens
+ * a different photo than the one tapped: with `[P0(''), P1, P2]` clamped against
+ * the 2 kept photos, a tap on P1 at pre-filter index 1 renders P2.
+ *
+ * RULE, stated so every branch below is a consequence of it: the result points
+ * at the FIRST KEPT entry at or after `index` (a tap cannot land on a dropped
+ * entry through `PhotoButton`, which renders no button for one, but the rule is
+ * total); when no kept entry sits at or after it — a tap past the end, or an
+ * all-dropped array — it is the LAST kept entry, and `0` for an empty result.
+ *
+ * Pure arithmetic on the two primitives above: the caller's index is clamped
+ * into its own array first, the drops strictly before it are counted, and the
+ * remainder is clamped into the kept array. The component stores THIS value, so
+ * the invariant "the stored index is a position in the filtered array" holds
+ * whatever array a future caller hands `openGallery`.
+ */
+export function galleryIndexInKept(photos: readonly GalleryPhoto[], index: number): number {
+  const tapped = clampGalleryIndex(photos.length, index)
+  const droppedBefore = photos.slice(0, tapped).filter((photo) => !photoHasSrc(photo)).length
+  const keptCount = photos.reduce((count, photo) => (photoHasSrc(photo) ? count + 1 : count), 0)
+  return clampGalleryIndex(keptCount, tapped - droppedBefore)
 }
 
 /**

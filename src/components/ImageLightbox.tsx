@@ -5,6 +5,7 @@ import { nextTrapTarget } from '../lib/focusTrap'
 import {
   clampGalleryIndex,
   galleryAltAt,
+  galleryIndexInKept,
   galleryPhotoAt,
   galleryPhotosAreSteppable,
   galleryLabelAt,
@@ -63,6 +64,16 @@ import type { GalleryPhoto } from '../lib/photoGallery'
  * hold a second photo. That is a schema decision, not a client one, and V25 t10
  * deliberately does not add a migration. See `src/lib/photoGallery.ts`'s header.
  *
+ * CONSEQUENCE FOR THE TAP INDEX, stated where the next reader will look: both
+ * call sites that reach `openGallery` (`src/pages/ProfilePage.tsx:1570` and
+ * `src/components/ProfileView.tsx:880`) hand it `galleryPhotosFrom(...)` — an
+ * array of length 0 or 1 whose one entry always has a `src`. So a caller's index
+ * and a filtered index cannot differ on any arrival reachable today, and the
+ * off-by-N that `galleryIndexInKept` prevents is LATENT, not live. It is fixed
+ * anyway: the stored index must mean a position in the filtered array whatever
+ * array a future caller passes, and the remap is one pure, unit-tested function
+ * rather than two lines of arithmetic inside this component.
+ *
  * WHAT DID NOT CHANGE, and is pinned by live specs (grep for `getByRole('dialog')`
  * and `Close photo`): the dialog's `role`, `aria-modal`, `aria-label` (the alt),
  * the 44px close button, `document.body.style.overflow` locking and restoring,
@@ -110,12 +121,18 @@ export function LightboxProvider({ children }: { children: ReactNode }) {
       const galleryPhotos = galleryPhotosFrom(null, '', photos)
       setGallery({
         photos: galleryPhotos,
-        // Clamp against the FILTERED array's length: `galleryPhotosFrom`
-        // drops entries with an empty `src`, so clamping against the
-        // caller's pre-filter `photos.length` would open a DIFFERENT
-        // photo than the one tapped whenever a dropped entry sits before
-        // it (an off-by-N, latent while every gallery holds one photo).
-        index: clampGalleryIndex(galleryPhotos.length, index),
+        // `index` is a position in the CALLER's array, and `galleryPhotosFrom`
+        // DROPS the entries with no `src` — so the tap must be re-expressed as
+        // a position in `galleryPhotos` before it is stored.
+        // `galleryIndexInKept` (src/lib/photoGallery.ts) is that remap, and it
+        // is the fix for the off-by-N this line used to have: clamping the
+        // pre-filter index against the FILTERED length opened a DIFFERENT photo
+        // than the one tapped whenever a dropped entry sat before it — with
+        // `[P0(''), P1, P2]` and a tap on P1 (index 1) the viewer rendered P2.
+        // The remap ends in `clampGalleryIndex(keptCount, …)`, so the value
+        // stored here is always a position inside `galleryPhotos`; there is no
+        // second clamp to restate the meaning of `index`.
+        index: galleryIndexInKept(photos, index),
       })
     },
     [],
