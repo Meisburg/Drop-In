@@ -30,10 +30,11 @@
  */
 
 /**
- * The five kinds — the app-side twin of the `notification_log` CHECK
+ * The six kinds — the app-side twin of the `notification_log` CHECK
  * constraint, which migration 0041 widened from four to five when the `ended`
- * kind joined the set. Same order as `NOTIFICATION_KINDS` in pushCopy.ts, and
- * `src/lib/email.test.ts` asserts the two lists are equal so they cannot
+ * kind joined the set, and migration 0055 widened from five to six when
+ * `review_due` joined it. Same order as `NOTIFICATION_KINDS` in pushCopy.ts,
+ * and `src/lib/email.test.ts` asserts the two lists are equal so they cannot
  * silently diverge the way this one did (it was stuck at 0041's four).
  */
 export const EMAIL_KINDS = [
@@ -42,6 +43,7 @@ export const EMAIL_KINDS = [
   'cancelled',
   'new_comment',
   'ended',
+  'review_due',
 ] as const
 
 export type EmailKind = (typeof EMAIL_KINDS)[number]

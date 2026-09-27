@@ -6,7 +6,7 @@
  * The four pinned acceptance criteria of the slice are the reason this file is
  * not a formality:
  *
- *  1. all FIVE kinds flow through the builder and produce all four payload
+ *  1. all SIX kinds flow through the builder and produce all four payload
  *     fields — the outbox already holds the copy, email wraps it, it does not
  *     invent new copy.
  *  1b. DRIFT GUARD: `EMAIL_KINDS` and `NOTIFICATION_KINDS` are hand-maintained
@@ -67,17 +67,18 @@ function row(overrides: Partial<EmailRow> = {}): EmailRow {
 }
 
 // ---------------------------------------------------------------------------
-// 1. The five kinds, and the drift guard that keeps them in step.
+// 1. The six kinds, and the drift guard that keeps them in step.
 // ---------------------------------------------------------------------------
 
-describe('buildEmailPayload — the five kinds', () => {
-  it('pins the five kind names (the app-side twin of 0041\'s five-kind CHECK constraint)', () => {
+describe('buildEmailPayload — the six kinds', () => {
+  it('pins the six kind names (the app-side twin of 0055\'s six-kind CHECK constraint)', () => {
     expect([...EMAIL_KINDS]).toEqual([
       'ping_received',
       'starting_soon',
       'cancelled',
       'new_comment',
       'ended',
+      'review_due',
     ])
   })
 
@@ -89,7 +90,7 @@ describe('buildEmailPayload — the five kinds', () => {
     expect([...EMAIL_KINDS]).toEqual([...NOTIFICATION_KINDS])
   })
 
-  it('returns non-empty subject/html/text/listUnsubscribe for all five kinds', () => {
+  it('returns non-empty subject/html/text/listUnsubscribe for all six kinds', () => {
     for (const kind of EMAIL_KINDS) {
       const payload = buildEmailPayload(row({ kind }), env)
 
@@ -317,10 +318,13 @@ describe('listUnsubscribe — the opt-out value slice 3 sends as a header', () =
 // ---------------------------------------------------------------------------
 
 describe('isEmailKind', () => {
-  it('accepts the five kinds and rejects anything else', () => {
+  it('accepts the six kinds and rejects anything else', () => {
     for (const kind of EMAIL_KINDS) expect(isEmailKind(kind)).toBe(true)
     // `ended` is a real kind (migration 0041) — it was the missing one.
     expect(isEmailKind('ended')).toBe(true)
+    // `review_due` is the newest (migration 0055), and the one this file's
+    // list sat without until the drift guard above demanded it.
+    expect(isEmailKind('review_due')).toBe(true)
     expect(isEmailKind('unknown_kind')).toBe(false)
     expect(isEmailKind('')).toBe(false)
     expect(isEmailKind(null)).toBe(false)

@@ -16,20 +16,22 @@
  * `public.notification_payload` (migration 0032) — the same
  * "one pure seam + one SQL function" pairing as `src/lib/series.ts` ↔
  * `public.ensure_series_occurrences` (0028). Keep the two in step: the vitest
- * spec pins the wording of all five kinds and the SQL header names this file.
+ * spec pins the wording of all six kinds and the SQL header names this file.
  *
  * Everything here is deliberately string/number in, string out, so it can be
  * unit-tested without a DOM and evaluated identically in Deno and the browser.
  */
 
-/** The five kinds — the app-side twin of 0032's CHECK constraint (widened to
- * five by V12 t03, migration 0041: 'ended' joins the four). */
+/** The six kinds — the app-side twin of 0032's CHECK constraint (widened to
+ * five by V12 t03, migration 0041: 'ended' joins the four; widened to six by
+ * V26 slice 1, migration 0055: 'review_due' joins the five). */
 export const NOTIFICATION_KINDS = [
   'ping_received',
   'starting_soon',
   'cancelled',
   'new_comment',
   'ended',
+  'review_due',
 ] as const
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
@@ -44,6 +46,35 @@ export function notificationUrl(playdateId: string): string {
   return `/playdate/${playdateId}`
 }
 
+/**
+ * The route a review prompt opens — the PLACE's detail page, not the drop-in's
+ * (V26 slice 1, migration 0055). A SIBLING of `notificationUrl`, deliberately:
+ * that function's `/playdate/:id` output is pinned by `src/lib/push.test.ts`
+ * (a URL form five KINDS already depend on — it has exactly ONE call site,
+ * `buildNotificationPayload` below), so the new kind gets its own rule rather
+ * than widening the old one's contract.
+ *
+ * THE ID IS ENCODED, matching `/place/:id/details`'s canonical builder
+ * `placeDetailsPath` (src/lib/places.ts, which uses `encodeURIComponent`). ONE
+ * route, ONE encoding contract: unencoded, an id containing `/` would silently
+ * point at a different route (`/place/a/b/details`) instead of at the place
+ * named `a/b`. For a real uuid the output is byte-identical either way.
+ *
+ * WHY THIS IS A SECOND SPELLING RATHER THAN AN IMPORT of `placeDetailsPath`:
+ * the dependency runs the OTHER way. `src/lib/places.ts` is app-side and pulls
+ * in `./feed`, `./types` and `./reviews` (which reach for app-shaped modules),
+ * while this file must stay pure — no browser, no Deno globals, no app imports
+ * — because the deployed `send-push` function imports it too, and a relative
+ * import escaping `supabase/` is not something the Supabase CLI's bundler
+ * promises (see this file's header). Importing the app module here would drag
+ * the whole app graph into the Edge Function. The duplication is deliberate and
+ * this comment is the tally; the two are held together by the same
+ * `encodeURIComponent` contract and pinned by `src/lib/push.test.ts`.
+ */
+export function reviewPromptUrl(placeId: string): string {
+  return `/place/${encodeURIComponent(placeId)}/details`
+}
+
 export interface NotificationPayloadInput {
   kind: NotificationKind
   playdateId: string
@@ -53,6 +84,8 @@ export interface NotificationPayloadInput {
   actorName?: string | null
   /** How many families have pinged — only `starting_soon` uses it. */
   goingCount?: number | null
+  /** The place to review. Only `review_due` uses it; null falls back. */
+  placeId?: string | null
 }
 
 export interface NotificationPayload {
@@ -103,13 +136,20 @@ export function familiesGoingLabel(count: number | null | undefined): string {
  * The full title/body/url for one notification — the exact strings the
  * producers write into `notification_log` and the sender posts.
  *
- * The `switch` is exhaustive over NotificationKind, so a sixth kind is a
+ * The `switch` is exhaustive over NotificationKind, so a seventh kind is a
  * compile error here rather than a silent default at runtime.
  */
 export function buildNotificationPayload(input: NotificationPayloadInput): NotificationPayload {
   const subject = quotedSubject(input.postTitle)
   const actor = actorLabel(input.actorName)
   const url = notificationUrl(input.playdateId)
+  // A review prompt points at the PLACE, never the drop-in — but only when a
+  // usable place id actually arrived. null, empty and whitespace-only all fall
+  // back to the drop-in route rather than rendering `/place/null/details` or
+  // `/place//details`. The trim matches the subject/actor rules above: it is
+  // invisible for a real uuid and closes the whitespace hole.
+  const placeId = (input.placeId ?? '').trim()
+  const reviewUrl = placeId === '' ? url : reviewPromptUrl(placeId)
 
   switch (input.kind) {
     case 'ping_received':
@@ -136,6 +176,17 @@ export function buildNotificationPayload(input: NotificationPayloadInput): Notif
         title: `Starting soon: ${subject}`,
         body: `Starts within the hour · ${familiesGoingLabel(input.goingCount)}`,
         url,
+      }
+    case 'review_due':
+      return {
+        title: `How was ${subject}?`,
+        // NOT "you went". `going_pings` (0007) has no status column and no
+        // check-in exists anywhere in the schema, so a ping is a STATED
+        // INTENTION, never evidence of attendance — "you went" would be false
+        // for every no-show. The SQL twin (0055 section 2) carries this string
+        // char-for-char.
+        body: 'You said you were going — rate the place.',
+        url: reviewUrl,
       }
   }
 }

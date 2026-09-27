@@ -4,11 +4,11 @@
  * Three of these are pinned by the ticket and are the reason this file is not
  * a formality:
  *
- *  1. the PAYLOAD BUILDER — the wording of all five kinds, including the
+ *  1. the PAYLOAD BUILDER — the wording of all six kinds, including the
  *     singular "1 family is going" (the plural template would say
  *     "1 families", the same broken English the while-away inbox already
  *     fixed). These literals are the spec the SQL twin
- *     (`public.notification_payload`, migration 0032) and the `send-push`
+ *     (`public.notification_payload`, migration 0055) and the `send-push`
  *     function must match, so they are asserted as literal strings rather
  *     than recomputed.
  *  2. the DEDUPE KEY — the app-side derivation of 0032's
@@ -28,6 +28,7 @@ import {
   IOS_INSTALL_REASON,
   IOS_SAFARI_ONLY_REASON,
   IOS_WEBVIEW_REASON,
+  NOTIFICATION_KINDS,
   PING_PROMPT_REASON,
   PUSH_DECISION_KEY,
   PUSH_DECISION_MIGRATED_KEY,
@@ -75,6 +76,7 @@ import {
   readPermissionDecision,
   rememberPermissionDecision,
   rememberTriggerOffered,
+  reviewPromptUrl,
   serializeOfferedTriggers,
   serializePushPrefs,
   setKindMuted,
@@ -170,6 +172,65 @@ describe('buildNotificationPayload', () => {
       body: "The host ended it — don't head out.",
       url: `/playdate/${POST_ID}`,
     })
+  })
+
+  it('builds the review prompt kind, pointed at the PLACE (V26 s1, migration 0055)', () => {
+    const PLACE_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    // The literal strings the SQL twin (public.notification_payload, the
+    // 0055-rewritten branch) must match char-for-char.
+    expect(
+      buildNotificationPayload({
+        kind: 'review_due',
+        playdateId: POST_ID,
+        postTitle: 'Green Lake',
+        placeId: PLACE_ID,
+      }),
+    ).toEqual({
+      title: 'How was "Green Lake"?',
+      body: 'You said you were going — rate the place.',
+      url: `/place/${PLACE_ID}/details`,
+    })
+  })
+
+  it('never claims attendance — a ping is a stated intention, not a check-in', () => {
+    // `going_pings` (0007) has no status column and no check-in exists, so a
+    // no-show is indistinguishable from a show. "you went" would be a
+    // falsehood for every no-show; "you said you were going" is true for both.
+    const payload = buildNotificationPayload({
+      kind: 'review_due',
+      playdateId: POST_ID,
+      postTitle: 'Green Lake',
+      placeId: 'place-1',
+    })
+    expect(payload.body).toBe('You said you were going — rate the place.')
+    expect(payload.body).not.toContain('you went')
+    expect(payload.body.toLowerCase()).not.toContain('you were there')
+  })
+
+  it('falls back to the drop-in url when review_due has no usable place id', () => {
+    for (const placeId of [null, undefined, '', '   ']) {
+      const payload = buildNotificationPayload({
+        kind: 'review_due',
+        playdateId: POST_ID,
+        postTitle: 'Green Lake',
+        placeId,
+      })
+      // Never `/place/null/details` and never `/place//details`.
+      expect(payload.url).toBe(`/playdate/${POST_ID}`)
+      expect(payload.url).not.toContain('/place/')
+      expect(payload.url).not.toContain('null')
+    }
+  })
+
+  it('uses the honest title fallback for an untitled review prompt', () => {
+    expect(
+      buildNotificationPayload({
+        kind: 'review_due',
+        playdateId: POST_ID,
+        postTitle: null,
+        placeId: 'place-1',
+      }).title,
+    ).toBe('How was "your drop-in"?')
   })
 
   it('builds starting_soon with the SINGULAR at exactly one family going', () => {
@@ -285,12 +346,56 @@ describe('notificationUrl', () => {
   })
 })
 
+describe('reviewPromptUrl', () => {
+  it('points at the place detail route, not the drop-in route', () => {
+    // The SIBLING of notificationUrl: five KINDS flow through that one (it has
+    // a single call site, buildNotificationPayload) and its `/playdate/:id`
+    // route is pinned above, so the review prompt got its own rule rather than
+    // widening that contract.
+    expect(reviewPromptUrl('place-1')).toBe('/place/place-1/details')
+    expect(reviewPromptUrl('place-1')).not.toContain('/playdate/')
+    // A real uuid is byte-identical to the unencoded spelling, so every
+    // uuid-based assertion elsewhere stays true.
+    const uuid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    expect(reviewPromptUrl(uuid)).toBe(`/place/${uuid}/details`)
+  })
+
+  it('ENCODES the id — one route, one encoding contract (places.ts)', () => {
+    // The canonical builder is `placeDetailsPath` (src/lib/places.ts), which
+    // uses encodeURIComponent. Unencoded, an id containing `/` would silently
+    // become a SECOND PATH SEGMENT and lead somewhere else entirely.
+    expect(reviewPromptUrl('a/b')).toBe('/place/a%2Fb/details')
+    expect(reviewPromptUrl('a/b')).not.toBe('/place/a/b/details')
+    // `/place/:id/details` is four segments even for a hostile id; unencoded
+    // this string has five.
+    expect(reviewPromptUrl('a/b').split('/')).toHaveLength(4)
+    expect(reviewPromptUrl('a/b?x=1#y')).toBe('/place/a%2Fb%3Fx%3D1%23y/details')
+    // The payload builder routes through this function, so the encoding holds
+    // on the notification's url too — not just on the helper.
+    expect(
+      buildNotificationPayload({
+        kind: 'review_due',
+        playdateId: POST_ID,
+        postTitle: 'Green Lake',
+        placeId: 'a/b',
+      }).url,
+    ).toBe('/place/a%2Fb/details')
+  })
+})
+
 describe('isNotificationKind', () => {
-  it('accepts the five kinds and rejects anything else', () => {
+  it('accepts the six kinds and rejects anything else', () => {
+    // Iterating the one list is the point: a seventh kind added to
+    // NOTIFICATION_KINDS without a thought for this guard still has to pass
+    // (and every kind it names is accepted).
+    expect([...NOTIFICATION_KINDS]).toHaveLength(6)
+    for (const kind of NOTIFICATION_KINDS) expect(isNotificationKind(kind)).toBe(true)
     expect(isNotificationKind('ping_received')).toBe(true)
     expect(isNotificationKind('cancelled')).toBe(true)
     expect(isNotificationKind('ended')).toBe(true)
+    expect(isNotificationKind('review_due')).toBe(true)
     expect(isNotificationKind('reminder')).toBe(false)
+    expect(isNotificationKind('review_prompt')).toBe(false)
     expect(isNotificationKind(null)).toBe(false)
     expect(isNotificationKind(7)).toBe(false)
   })

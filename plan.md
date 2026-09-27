@@ -1,469 +1,432 @@
-# Implementation Plan: V22 — the design-quality batch (18 items, both lenses)
+# Implementation Plan: V26 — the post-drop-in review prompt
 
-> Owned by the orchestrator. Written BEFORE any builder dispatch.
-> Source: `MASTER-IMPROVEMENTS.md` (synthesis), `AUDIT.md` (impeccable, 10/20),
-> `DESIGN-REVIEW.md` (Apple HIG), `PRODUCT.md` (product truth).
-> Prior plan preserved at `plan-v21-backup.md`.
+> Owned by the orchestrator. Written BEFORE any builder dispatch. Every slice
+> below must be executable without interpretation. If a slice cannot state its
+> acceptance criteria and verification command, it is not ready.
 >
-> The default slice gate is `npm run verify` (build + test + lint +
-> steering-lint). Slices that touch rendered behavior ALSO pin
-> `node scripts/mobile-audit.mjs` (needs `npm run build && npm run preview`).
+> The default slice gate is `npm run verify` (build + test + lint). Anything
+> extra is pinned per slice.
+>
+> **This file replaces the V22 design-quality batch plan, which is preserved
+> byte-identically at `plan-v22-backup.md` (verified `diff -q` clean at the time
+> of writing).**
 
 ## Goal
 
-Drop In keeps its design system and gains the two axes it does not yet reach —
-dark appearance and regular-width layout — plus full accessibility of dynamic
-state, and platform-conformant navigation. We know it is done when:
-`npm run verify` passes, the mobile audit passes at every phone viewport in both
-appearances, dialogs trap focus, and the tab bar contains no action.
+A drop-in a parent said they were going to ends. Within one 5-minute cron tick
+of it ending, that parent gets **one** Web Push — or, if they have no device
+registered at all, one email through the existing fallback branch — inviting
+them to rate the place. Tapping it lands on `/place/<id>/details`, where the
+**existing** `ReviewForm` is already rendered, and the rating they leave is the
+**same row** the place page has always written (`reviews`, one row per
+(place, parent), migration 0052). No new table, no new form, no new route.
 
-Baseline before any work (measured 2026-09-23, commit `790dca7`):
-**1134 tests passing**, `git status` clean apart from untracked `.scratch/`.
+We will know it works when a seeded finished drop-in with a `place_id` produces
+exactly one `notification_log` row of kind `review_due` on the first run of
+`send-push` and zero on the second, and the row's `url` opens the review form.
 
 ## Non-goals
 
-- **No rebrand.** The terracotta palette, the raised role-based type scale, and
-  the Bricolage Grotesque / system-stack split are binding product decisions
-  (`PRODUCT.md › Brand Commitments`). Slices extend them; none replace them.
-- **No app-level appearance toggle.** `dark-mode.md` explicitly warns against one.
-- **No test-first rewrite of existing suites.** New pure logic gets sibling
-  tests per the build law; existing behavior is verified by the existing 1134.
-- **No swipe-to-go-back** (item 12 in the master list is dropped, not deferred:
-  the browser owns the gesture in a web PWA, and `accessibility.md` requires a
-  tap alternative that already exists).
-- **No new dependencies.** React 18, Tailwind v4, `react-router`, Leaflet,
-  Supabase only. Focus trapping is ~20 lines; it does not need a library.
+- **No new review model.** `reviews` stays place-level, one row per
+  (place, parent). No per-drop-in reviews, no attendance verification, no
+  "verified visit" badge. The review prompt and the place page write the same
+  record — that is a requirement, not an implementation detail (see Interfaces).
+- **No in-app "while you were away" prompt.** Push + email only. An in-app
+  banner is a separate ask if the push proves too quiet.
+- **No prompting when `place_id is null`.** Most drop-ins are at a typed
+  address with no directory place to attach stars to; the feature is silent
+  there. Accepted gap.
+- **No anti-nag beyond what exists.** The `(profile_id, kind, playdate_id)`
+  unique key already makes it once-per-drop-in, and the `/settings` per-kind
+  mute already covers "stop telling me". A weekly family at the same park gets
+  a weekly prompt; a "don't ask again for this place" rule is out of scope.
+- **No change to `notificationUrl(playdateId)`.** It is pinned by
+  `src/lib/push.test.ts:283` and five call sites use it. Add a sibling function
+  instead.
+- **No new route.** `/place/:id` and `/place/:id/details` both exist
+  (`src/App.tsx:511` and `:520`), so `routes.json` (the playtest lane) is
+  unchanged.
+- **No service-worker change.** `src/sw.ts:154` reads `data.url` generically.
 
 ## Interfaces
 
-Pinned here so builders do not re-decide them.
+The orchestrator pins these. Builders do not re-decide them.
 
-**New pure module — `src/lib/a11y.ts`** (build law: pure function + sibling test):
+**Kind name:** `'review_due'`. Deliberately **not** reusing `'ended'`, which
+already means *"the host ended it early — don't head out"* (`0041`, pin d) —
+different moment, different copy.
+
+**Copy** (the one place it lives, per `0032` pin i):
+
+| Field | Value |
+|---|---|
+| push title | `How was "<subject>"?` |
+| push body | `You said you were going — rate the place.` |
+| url | `/place/<place_id>/details` |
+
+`<subject>` is the drop-in title, falling back to `'your drop-in'` — the
+existing `TITLE_FALLBACK` in `_shared/emailCopy.ts:55` (reviewer caught this
+plan citing `:44`, which is wrong at base `63ef790`).
+
+**The body says "you said you were going", not "you went".** `going_pings`
+(`0007`) has **no status column and no check-in exists** — a ping is a stated
+intention, not evidence of attendance. Copy that claims attendance would be
+false for every no-show. This is a hard rule for the reviewer, not a style note.
+
+**New pure function in `supabase/functions/_shared/pushCopy.ts`:**
+
 ```ts
-/** Stable ids so aria-describedby can reference an error node. */
-export function errorId(field: string): string        // `err-${field}`
-/** Props for a control with a possibly-failing validation message. */
-export function fieldA11y(field: string, message: string | null): {
-  'aria-invalid': boolean
-  'aria-describedby': string | undefined
+export function reviewPromptUrl(placeId: string): string {
+  return `/place/${placeId}/details`
 }
 ```
 
-**New component — `src/components/FocusTrap.tsx`**: a hook
-`useFocusTrap(ref, active)` that (a) records `document.activeElement` on
-activate, (b) wraps Tab/Shift+Tab inside `ref`, (c) restores the recorded element
-on deactivate. Used by all three dialogs. No dependency.
+`NotificationPayloadInput` gains exactly one optional field:
 
-**Token contract (dark mode).** `src/index.css` keeps every existing token NAME
-and adds dark values under `@media (prefers-color-scheme: dark)`. Contrast floor
-for every text token against its own surface: **4.5:1** (AA). The existing
-light-mode token comments must remain accurate; add dark figures beside them.
+```ts
+  /** The place to review. Only `review_due` uses it; null falls back. */
+  placeId?: string | null
+```
 
-**Layout contract (regular width).** Breakpoint is **`@media (min-width: 768px)`**
-expressed with Tailwind's `md:` prefix. At `md`: the shell becomes a two-column
-grid (nav rail + content) and content max-width rises from `max-w-md` (448px) to
-`max-w-3xl` (768px) for list surfaces. The bottom nav becomes a left rail.
-**Functionality must not change between sizes** (`layout.md`): same routes, same
-controls, different arrangement.
+`buildNotificationPayload` returns `reviewPromptUrl(placeId)` for `review_due`,
+and **falls back to the existing `notificationUrl(playdateId)` when `placeId` is
+null/empty** — never `/place/null/details`.
+
+**"Finished" means `status = 'on' and ends_at < now()`.** Nothing sets `'ended'`
+automatically (only a host ending early does, `0041`), so a naturally-expired
+drop-in keeps `status = 'on'` forever — that predicate is how "it's over" is
+expressed. **A `cancelled` or `ended` drop-in must never prompt for a review.**
+
+**Migration number: `0055`** (highest applied is `0054`; `0055` is next free).
+Live-database migration on real family data: every statement guarded, additive,
+re-paste-safe — follow `0052`'s structure, not its content.
+
+**The SEVEN hand-maintained lists that describe ONE database constraint.** All
+must agree. The explicit drift guard is `src/lib/email.test.ts:87`
+(`EMAIL_KINDS` must equal `NOTIFICATION_KINDS`); the `isNotificationKind` block
+in `src/lib/push.test.ts` (cited by symbol, not line — the file grew during this
+slice and a stale number is how this plan already produced two false citations)
+pins the same list from the app side (`isNotificationKind` accepts exactly
+these and rejects anything else):
+
+| # | Location | What |
+|---|---|---|
+| 1 | `supabase/migrations/0041_end_event_early.sql:165` (widened by `0055`) | the `notification_log.kind` CHECK |
+| 2 | `supabase/functions/_shared/pushCopy.ts:27` | `NOTIFICATION_KINDS` |
+| 3 | `supabase/functions/_shared/pushCopy.ts` (`buildNotificationPayload`) | the copy branch |
+| 4 | `supabase/functions/_shared/emailCopy.ts:39` | `EMAIL_KINDS` — **same order** |
+| 5 | `src/lib/push.ts` | the `NotificationKind` union + `NOTIFICATION_KIND_COPY` (a `Record`, so TypeScript forces the entry) |
+| 6 | `supabase/migrations/0041_end_event_early.sql:246` (replaced by `0055`) | `public.notification_payload`'s `CASE` branches (the `ended` branch is at `:276`) |
+| 7 | `e2e/push-subscribe.e2e.ts:939-946` (the `const kinds` array; `'review_due'` at `:945`) | a hand-written five-name array + a docstring asserting "every NOTIFICATION_KIND renders a checkbox" / "all five start CHECKED" |
+
+**Row 7 was added by review, not by the author of this plan — and that is the
+point.** This inventory claimed "six" while the slice's own disease (a
+hand-maintained kind list that no longer matches the code) was sitting in an
+e2e spec the plan never named: `NotificationsSection` maps `NOTIFICATION_KINDS`,
+so a **sixth toggle renders with no assertion covering it** and its docstring
+became false the moment the kind list grew. `npm run verify` cannot see it —
+nothing under `scripts/` names the kinds, and e2e is a separate lane. **Any
+future kind change must sweep all seven rows.**
+
+**The SQL payload branch is deliberately unreachable in production** and is
+added anyway for twin parity: `review_due` is clock-produced by the scan, which
+builds its payload in TypeScript exactly as `catchUpStartingSoon` does
+(`send-push/index.ts:269`), so no trigger ever calls `notification_payload`
+with this kind. Recording the reason beats a reviewer re-litigating it.
+
+**The email fallback needs almost nothing.** `EmailRow.url` is the relative path
+already stored on the `notification_log` row (`emailCopy.ts:77`) and
+`emailUrl(url, base)` only prefixes the base (`:124`), so a correct `url` on the
+row is all the email needs. Only `EMAIL_KINDS` gains the entry.
+
+**New constant in `send-push/index.ts`, beside `STARTING_SOON_WINDOW_MINUTES`
+(`:133`):**
+
+```ts
+/** Only drop-ins that ended within this many hours are considered. */
+const REVIEW_PROMPT_WINDOW_HOURS = 24
+```
+
+The window keeps the scan bounded. Without it, the every-5-minutes query walks
+all history forever. Reuse the existing `MAX_SCAN_POSTS = 500` cap (`:142`).
+
+**Idempotence is the existing unique key, not new logic:**
+`upsert(rows, { onConflict: 'profile_id,kind,playdate_id', ignoreDuplicates: true })`.
 
 ## Slices
 
-### Slice 14: Appearance becomes a user choice, not a system follow
-- **Objective:** The app is LIGHT by default for everyone, with an opt-in Dark
-  switch on `/settings`. It no longer auto-follows the OS.
-- **Why this overrides Apple:** `dark-mode.md › Best practices` says "Avoid
-  offering an app-specific appearance setting." The human made the opposite call
-  on 2026-09-23 after seeing the app auto-darken on their own machine (their
-  desktop is `prefer-dark`, so the app followed it): *"i think it should always
-  be light but the user has an option to turn it on in the settings menu."*
-  Recorded as a deliberate deviation, not a guideline oversight. The cost is
-  real and named: a user who sets their OS to dark gets a light app until they
-  find the switch.
-- **Files in scope:** `index.html`, `src/index.css`, `src/lib/theme.ts` (new),
-  `src/lib/theme.test.ts` (new), `src/pages/SettingsPage.tsx`,
-  `src/components/ThemeToggle.tsx` (new), `vite.config.ts`,
-  `scripts/dark-mode-check.mjs`.
-- **Approach:**
-  1. `src/lib/theme.ts` — PURE, tested (build law): `THEME_KEY`, `readTheme()`,
-     `applyTheme(theme)`, `nextTheme(current)`. Reads/writes localStorage,
-     sets `document.documentElement.dataset.theme`, and updates the
-     `<meta name="theme-color">` so the browser chrome matches.
-  2. **An explicit `data-theme` attribute replaces the media query as the
-     trigger.** `src/index.css` changes `@media (prefers-color-scheme: dark)` to
-     `:root[data-theme='dark']`. This is the whole point: the OS stops deciding.
-  3. **No flash of wrong theme.** `index.html` runs a tiny inline script BEFORE
-     the app bundle that reads localStorage and sets `data-theme` on `<html>`.
-     Without it a user who chose Dark sees a light frame on every cold load.
-     The boot splash's background must also stop being hard-coded terracotta if
-     that would flash against the chosen theme.
-  4. `ThemeToggle.tsx` — a real switch on `/settings`, in the existing section
-     style, with an accessible name and a 44px target.
-  5. `dark-mode-check.mjs` updated: it must drive the TOGGLE now, not
-     `colorScheme`, and assert light is the default with no stored preference.
-- **Acceptance criteria:**
-  - Fresh visitor with NO stored preference renders LIGHT even when the OS is
-    dark (this is the regression the slice exists to fix)
-  - Flipping the switch in /settings switches the app and PERSISTS across reload
-  - A cold load with `theme=dark` stored paints dark with no light flash
-  - The toggle has an accessible name and a >=44px target
-  - `src/lib/theme.test.ts` covers read/apply/next, including the absent-key case
-  - `npm run verify` passes (1147+ tests, 0 lint errors)
-- **Verification command:** `npm run verify`, then
-  `node scripts/dark-mode-check.mjs` (updated to drive the toggle).
-- **Budget:** one local builder context.
-- **Depends on:** Slice 8 (rewrites its trigger), Slice 13 (do last in the batch).
+### Slice 1: the `review_due` kind exists, end to end, with no producer
 
-
-### Slice 1: Announce every error and status change
-- **Objective:** All error/status text nodes are announced to assistive tech.
-- **Files in scope:** `src/lib/a11y.ts` (new), `src/lib/a11y.test.ts` (new),
-  `src/pages/LoginPage.tsx`, `src/pages/OnboardingPage.tsx`,
-  `src/pages/ResetPasswordPage.tsx`, `src/components/PlaydateFormFields.tsx`,
-  `src/components/ReportDialog.tsx`, `src/components/ConfirmDialog.tsx`,
-  `src/components/DeletePlaydateDialog.tsx`
-- **Approach:** Add `lib/a11y.ts` (pure, tested). For each error node add
-  `role="alert"` and an `id={errorId(field)}`; on its control add
-  `aria-invalid` + `aria-describedby` via `fieldA11y()`. On failed submit, move
-  focus to the first invalid control. Do NOT restructure the JSX beyond these
-  attributes.
-- **Acceptance criteria:**
-  - `grep -ro 'role="alert"' src/ | wc -l` >= 20
-  - `fieldA11y(` is spread on every control whose error node carries
-    `role="alert"` — **measured on the RENDERED DOM**, not by grepping for the
-    literal attribute string. A spread produces `aria-describedby` at runtime and
-    is invisible to a source grep, so the original `>= 15` literal-grep criterion
-    was a plan defect (corrected 2026-09-23 after Slice 1 flagged it).
-    The check is `.scratch/a11y-dom-check.mjs`: trigger a real validation failure
-    and assert every `role="alert"` id is referenced by a control's
-    `aria-describedby` and that the reference resolves.
-  - No error node has `role="alert"` without a matching `aria-describedby` on a
-    control in the same file
-  - No duplicated element `id` in the rendered DOM (an `errorId` collision would
-    make `aria-describedby` resolve to the wrong node)
-  - `src/lib/a11y.test.ts` covers `errorId` and `fieldA11y` (null and non-null)
-- **Verification command:** `npm run verify`
-- **Budget:** one local builder context. 8 files, additive attributes only.
-- **Depends on:** nothing
-
-### Slice 2: Fix the low-contrast body text
-- **Objective:** No body text below 4.5:1 remains.
-- **Files in scope:** `src/pages/InboxPage.tsx` (lines ~112, ~165, ~837)
-- **Approach:** `text-slate-400` -> `text-slate-500` on the three text nodes
-  only. Leave every icon-only `text-slate-400` alone
-  (`PlaceDirectory.tsx:593,685,905`) — glyphs are not text and keep a
-  lower-emphasis tone.
-- **Acceptance criteria:**
-  - `grep -c 'text-slate-400' src/pages/InboxPage.tsx` returns 0
-  - `text-slate-500` (#66737a) on the page background (#fbf7f4) = 4.59:1 — quote
-    the computed figure in the report
-- **Verification command:** `npm run verify`
-- **Budget:** trivial, one context with room to spare.
-- **Depends on:** nothing
-
-### Slice 3: Stop shipping dev scaffolding
-- **Objective:** The two mockup HTML files are no longer in the production build.
-- **Files in scope:** `public/logo-mockup.html`, `public/color-compare.html`,
-  `.gitignore` (if needed)
-- **Approach:** `git mv` both into `.scratch/design-mockups/`. Confirm nothing in
-  `src/`, `index.html`, `vite.config.ts`, or `scripts/` references them (already
-  verified: no references exist).
-- **Acceptance criteria:**
-  - `ls dist/logo-mockup.html dist/color-compare.html` fails after a fresh build
-  - `grep -rn 'logo-mockup\|color-compare' src/ index.html vite.config.ts` is empty
-- **Verification command:** `npm run build && ls dist/ && ! ls dist/logo-mockup.html`
-- **Budget:** trivial.
-- **Depends on:** nothing
-
-### Slice 4: Make the design gate honest about its false positives
-- **Objective:** `design-detect.mjs` no longer reports the 3 verified false
-  positives, and still fails on real findings.
-- **Files in scope:** `scripts/design-detect.mjs`
-- **Approach:** Add three ACCEPTED entries, each with a REASON in the existing
-  style (the file's own convention: every entry explains why). The reasons must
-  state the *evidence*, not the preference: the token resolves to a terracotta,
-  and the gray-on-color pair computes to 7.75:1.
-- **Acceptance criteria:**
-  - `node scripts/design-detect.mjs` no longer reports `ai-color-palette` for
-    `LoginPage.tsx:248` / `ResetPasswordPage.tsx:61` or `gray-on-color` for
-    `InboxPage.tsx:169`
-  - It still reports the `low-contrast` class of rule (do not blanket-disable)
-  - Each new entry has a `reason` string of >= 2 sentences
-- **Verification command:** `node scripts/design-detect.mjs; npm run verify`
-- **Budget:** trivial.
-- **Depends on:** Slice 3 (the low-contrast hits it reports live in those files)
-
-### Slice 5: Trap and restore focus in dialogs
-- **Objective:** Keyboard focus cannot escape an open dialog, and returns to the
-  trigger on close.
-- **Files in scope:** `src/components/FocusTrap.tsx` (new),
-  `src/components/ConfirmDialog.tsx`, `src/components/DeletePlaydateDialog.tsx`,
-  `src/components/ReportDialog.tsx`
-- **Approach:** `useFocusTrap` records `document.activeElement` on activate,
-  intercepts Tab/Shift+Tab at the dialog boundary, and restores focus on cleanup.
-  Wire into the three existing dialogs; they already focus the safe action and
-  handle Escape — do not change that.
-- **Acceptance criteria:**
-  - `grep -rn 'activeElement' src/` is non-empty
-  - Tab from the last focusable element in a dialog moves to the first (and
-    Shift+Tab reverses)
-  - Closing any dialog returns focus to the element that opened it
-- **Verification command:** `npm run verify`
-- **Budget:** one context. 4 files, one new small component.
-- **Depends on:** nothing (independent of Slice 1, but both touch the dialogs —
-  see R4)
-
-### Slice 6: Respect reduced motion
-- **Objective:** Every meaningful transition has a reduced-motion answer.
-- **Files in scope:** `src/index.css`, plus the components carrying the 79
-  `transition-`/`animate-` usages (audit lists them)
-- **Approach:** Prefer per-transition `motion-reduce:` (Tailwind) over a global
-  `0.01ms` kill — `AUDIT.md` cites `impeccable audit.md` warning that a blanket
-  kill destroys useful state feedback. Apply `motion-reduce:transition-none` to
-  decorative/hover transitions and leave state-change transitions legible
-  (reduced duration, not zero).
-- **Acceptance criteria:**
-  - `grep -ro 'motion-reduce:' src/ | wc -l` >= 10 (from 1)
-  - No global `*{transition-duration:.01ms}` rule added
-  - Splash behavior unchanged (it already had `motion-reduce`)
-- **Verification command:** `npm run verify`
-- **Budget:** one context.
-- **Depends on:** nothing
-
-### Slice 7: Focus rings only for keyboard users
-- **Objective:** `focus:` -> `focus-visible:` on inputs and buttons.
-- **Files in scope:** ~37 sites, concentrated in
-  `src/components/PlaydateFormFields.tsx`, `src/components/PlaceDirectory.tsx`,
-  `src/components/ReportDialog.tsx`, `src/pages/LoginPage.tsx`,
-  `src/pages/OnboardingPage.tsx`
-- **Approach:** Mechanical rename of the focus variant on interactive controls
-  that carry a visible ring. Verify no control is left with NO focus indication.
-- **Acceptance criteria:**
-  - `grep -ro 'focus-visible:' src/ | wc -l` >= 30
-  - Every element that previously had `focus:ring` has a `focus-visible:`
-    equivalent (report the before/after counts)
-  - No element ends up with zero focus indication
-- **Verification command:** `npm run verify`
-- **Budget:** one context; it is a sweep, so report the count rather than the diff.
-- **Depends on:** nothing
-
-### Slice 8: Dark mode over the existing tokens
-- **Objective:** The app renders correctly in dark appearance with no app toggle.
-- **Files in scope:** `src/index.css`, `index.html`, `vite.config.ts`,
-  `scripts/mobile-audit.mjs` (a dark pass, per the gates decision)
-- **Approach:** Add `@media (prefers-color-scheme: dark)` re-pointing the SAME
-  token names (slate ramp, terracotta ramp, emerald/amber/sky tints). Add
-  `color-scheme: light dark` on `:root`. Add a second `theme-color` meta with
-  `media="(prefers-color-scheme: dark)"`. Design the dark palette *for* the
-  terracotta — do not invert. The dark surface must not be pure black; soften
-  whites per `dark-mode.md`.
-- **Acceptance criteria:**
-  - `grep -c 'prefers-color-scheme: dark' src/index.css` >= 1
-  - `grep -c 'color-scheme' src/index.css` >= 1 and `<meta name="theme-color">`
-    appears twice in `index.html` with light/dark media queries
-  - Every text token against its own dark surface computes >= 4.5:1 (list the
-    figures in the report — the same standard the light palette already meets)
-  - No app-level appearance toggle exists
-- **Verification command:** `npm run verify && node scripts/mobile-audit.mjs`
-- **Budget:** one context, but the largest reasoning load in the batch. If the
-  contrast table cannot be produced cleanly, return BLOCKED rather than shipping
-  an unmeasured palette.
-- **Depends on:** Slice 2 (contrast work in the same token file)
-
-### Slice 9: A real regular-width layout
-- **Objective:** At >=768px the app uses the width instead of showing a phone
-  column with empty gutters.
-- **Files in scope:** `src/App.tsx`, `src/index.css`, and the pages whose
-  `max-w-md` blocks are in scope (`src/components/DropInCard.tsx`,
-  `src/components/PlaceDirectory.tsx`, `src/pages/FeedPage.tsx`)
-- **Approach:** At `md`: shell becomes a two-column grid — a left nav rail
-  replacing the bottom bar, and a content column at `max-w-3xl`. Keep the same
-  routes and controls (`layout.md`: functionality must not change with size).
-  Below `md`, nothing changes.
-- **Acceptance criteria:**
-  - At 390px the layout is pixel-equivalent to today (bottom nav, `max-w-md`)
-  - At 1024px there is no bottom bar; a rail is visible and content uses the width
-  - No horizontal overflow at 320/375/390/430/768/1024/1440
-  - All nav destinations remain reachable at both sizes
-- **Verification command:** `npm run build && npm run preview` then
-  `node scripts/mobile-audit.mjs` (extended with a 1024 width)
-- **Budget:** one context. Largest layout risk in the batch.
-- **Depends on:** Slice 8 (same shell region — serialize)
-
-### Slice 10: Code-split the map
-- **Objective:** `/login` and `/` do not load Leaflet.
-- **Files in scope:** `src/App.tsx`, `src/pages/FeedPage.tsx`,
-  `src/pages/NewPlaydatePage.tsx`, `src/pages/PlacePage.tsx`,
-  `src/pages/BrowsePage.tsx`
-- **Approach:** `React.lazy` + `Suspense` around the map-bearing components
-  (`PlaceMap.tsx`, `PlaceDirectory.tsx` consumers) and the `/browse` route.
-  A loading fallback must render something immediately (`loading.md`: "Show
-  something as soon as possible").
-- **Acceptance criteria:**
-  - `grep -rn 'lazy(' src/` is non-empty
-  - The initial JS chunk for `/login` no longer contains leaflet (report the
-    before/after chunk sizes and the gzip figures)
-  - The map still renders on `/browse`, `/new`, and `/place/:id`
-- **Verification command:** `npm run build` then inspect chunk sizes; `npm run verify`
-- **Budget:** one context.
-- **Depends on:** Slice 9 (same shell file — serialize)
-
-### Slice 11: Lazy-load list imagery
-- **Objective:** Off-screen images do not decode at load.
-- **Files in scope:** the 17 `<img>` sites; primarily
-  `src/components/DropInCard.tsx`, `src/components/ProfileView.tsx`,
-  `src/components/PlaceDirectory.tsx`
-- **Approach:** Add `loading="lazy"` + `decoding="async"` and intrinsic sizing
-  (explicit `width`/`height` or an `aspect-ratio` class) so lazy loading does not
-  cause layout shift. Hero/above-fold imagery stays eager.
-- **Acceptance criteria:**
-  - `grep -ro 'loading="lazy"' src/ | wc -l` >= 10
-  - No `<img>` in a list context has an unknown aspect ratio (report each)
-  - The first feed card's image is NOT lazy (it is above the fold)
-- **Verification command:** `npm run verify`
-- **Budget:** one context.
-- **Depends on:** nothing
-
-### Slice 12: The tab bar navigates; the action moves out
-- **Objective:** No action in the tab bar; active state no longer color-only.
-- **Files in scope:** `src/App.tsx`, `src/pages/FeedPage.tsx`,
-  `src/components/icons.ts`
-- **Approach:** Remove the `Post` NavTab. Put "Post a drop-in" as a prominent
-  action on the Feed. Free tab holds Search or Places (`/browse` already has a
-  route). Add a non-color active state (weight + a filled icon variant) and an
-  unread badge on Inbox if a count is already available client-side. Keep the
-  stroke family for in-content glyphs; add filled variants for nav only.
-- **Acceptance criteria:**
-  - The bottom nav contains only navigation destinations (no `/new` tab)
-  - `/new` is still reachable from the Feed in <=1 tap
-  - Active tab differs from inactive by more than color (report the class diff)
-  - `tab-bars.md` items satisfied: labels single-word, tabs never hidden/disabled
-- **Verification command:** `npm run verify` + the e2e specs that assert the tab bar
-- **Budget:** one context.
-- **Depends on:** Slice 9 (the nav rail and bar share markup — serialize)
-
-### Slice 13: Copy and image-alt consistency
-- **Objective:** One capitalization convention; identity avatars are named.
-- **Files in scope:** the label strings across `src/pages/` and
-  `src/components/`, plus `src/components/DropInCard.tsx`,
-  `src/components/ProfileView.tsx`
-- **Approach:** Adopt **sentence case** throughout (it matches the warm plain
-  voice in `PRODUCT.md`), and change `alt=""` -> the person's name where no
-  adjacent label already names them. `WhileAwayCard.tsx:104` is the in-repo
-  pattern to follow.
-- **Acceptance criteria:**
-  - No button label mixes conventions with another in the same flow (report the
-    before/after strings for every changed label)
-  - Identity avatars carry a name in `alt`; decorative imagery keeps `alt=""`
-  - Action names stay consistent end-to-end (`writing.md`): a "Post drop-in"
-    button produces "Posted"
-- **Verification command:** `npm run verify`
-- **Budget:** one context.
-- **Depends on:** Slice 12 (it renames the Post action — do copy last)
-
-### Slice 15: Edit profile must be the read page, in the read order
-- **Objective:** Tapping "Edit profile" keeps you on the SAME page in the SAME
-  order. Today the edit surface renders its sections in a different sequence
-  than the read view, so it feels like a different page.
-- **THE HUMAN'S REPORT (verbatim):** *"in profile page, it goes @user, about the
-  kids, about the parents... hosted drop-ins. but when i click edit profile page,
-  it goes @user, A photo of your family, About the parents, about the kids, The
-  parents, Linked parent. What I hate about this is, as a user, when I click edit
-  profile, I don't want to feel like a different page. I just want it to feel
-  like the page where I'm editing this profile. And a BIG part of what will make
-  it feel like it's the same page is to keep the same sequential order."*
-- **MEASURED (a real bug, reproduced in the DOM):**
+- **Objective:** migration `0055` widens the `notification_log.kind` CHECK and
+  completes the SQL twin; all six lists carry `'review_due'`; the pure copy and
+  URL rules exist and are unit-tested.
+- **Files in scope:**
+  - `supabase/migrations/0055_review_prompt.sql` (new)
+  - `supabase/functions/_shared/pushCopy.ts`
+  - `supabase/functions/_shared/emailCopy.ts`
+  - `src/lib/push.ts`
+  - `supabase/functions/send-push/index.ts` — **only** the `NotificationKind`
+    import/`isNotificationKind` surface if it does not compile; **no scan, no
+    wiring**
+  - `src/lib/push.test.ts`, `src/lib/email.test.ts`
+  - `e2e/push-subscribe.e2e.ts` — **added to scope by review ruling** (see
+    Interfaces row 7 and the Status log). Its :931-937 array and its :909/:916/
+    :920 docstring are place 7 of the same list; leaving them uncured would ship
+    a rendered-but-unasserted sixth toggle and a false docstring.
+  - `src/lib/db.ts` — **added to scope by review ruling**: the comment at :3640
+    reads "not one of the five" and the diff makes it stale. Comment-only fix.
+  - `supabase/migrations/0055_review_prompt.sql` must be mode **644**, matching
+    all 50 sibling migrations (it was created `600`; `find
+    supabase/migrations -name '*.sql' ! -perm 644` must return nothing).
+- **Approach:** mirror `0041`'s amendment structure exactly — `drop constraint
+  if exists` + re-`add` the widened CHECK inside the guarded `DO` block; `drop
+  function if exists public.notification_payload(text, uuid, text, text, int)`
+  then `create` with the `review_due` branch added and **every other branch
+  carried over char-for-char**. Re-grant exactly as `0032:268-271` does
+  (`service_role` only; `public`/`anon`/`authenticated` revoked). Append
+  `'review_due'` to `NOTIFICATION_KINDS` and `EMAIL_KINDS` in the **same
+  position in both**; add the `NOTIFICATION_KIND_COPY` entry; add the
+  `buildNotificationPayload` branch and `reviewPromptUrl`.
+- **Acceptance criteria:** criteria **1–3 are coordinator-applied** (after the
+  builder's gate, per `docs/agents/coordinator.md` step 3 — the live apply needs
+  the human's CDP browser and credentials, so no builder touches production);
+  criteria **4–7 are builder-owned** and must be green before the builder
+  returns.
+  1. *(coordinator)* `0055` applies clean to the live database and **applies a
+     second time with exit 0** (re-paste-safe).
+  2. *(coordinator)* Read-back proves `notification_log`'s kind CHECK
+     **accepts** `'review_due'` and **still rejects** a bogus kind — both
+     probed, not assumed.
+  3. *(coordinator)* Read-back proves `public.notification_payload` exists with
+     the same signature and `prosecdef`/`stable` as before, and that
+     `notification_payload('review_due', …)` returns non-empty
+     title/body/url.
+  4. `EMAIL_KINDS` and `NOTIFICATION_KINDS` are both **six** entries, in the
+     same order; both drift guards green.
+  5. `buildNotificationPayload({ kind: 'review_due', playdateId, postTitle: 'Green Lake', placeId })`
+     → `url === '/place/<placeId>/details'`, `title === 'How was "Green Lake"?'`.
+  6. `buildNotificationPayload({ kind: 'review_due', playdateId, placeId: null })`
+     → `url === '/playdate/<playdateId>'`, **never** `/place/null/details`; same
+     for `placeId: ''`.
+  7. Every test that pinned "the five kinds" becomes "the six kinds" —
+     **updated, never deleted**. This includes **all seven places in the
+     Interfaces inventory**, and specifically
+     `e2e/push-subscribe.e2e.ts:931-937` (append `'review_due'` to the array and
+     correct "five"/"all five" in its docstring) — which this plan originally
+     omitted from the file list. Post-diff positions the reviewer confirmed:
+     drift guard `src/lib/email.test.ts:85`, `notificationUrl` pin
+     `src/lib/push.test.ts:345`, `isNotificationKind` `:386` (round 2 inserted
+     the `reviewPromptUrl` block at `:349-384`, which moved it from `:360` —
+     a number this plan briefly asserted wrongly). The
+     `notificationUrl(POST_ID) === '/playdate/<id>'` assertion stays green and
+     unmodified.
+  8. *(builder)* The introduced-false comment is fixed: `notificationUrl` has
+     **one** call site, not five — "used by five call sites" at
+     `_shared/pushCopy.ts:53` and `src/lib/push.test.ts:351` is wrong; five
+     *kinds* flow through it. Also `src/lib/db.ts:3640` "one of the five" → six.
+  9. *(builder)* `0055`'s read-back **asserts** `prosecdef` rather than only
+     printing it (it already selects it into `v_prosecdef` and only checks
+     `provolatile` at `:298-300`). A value that is printed is a claim; a value
+     that is asserted is a proof — the repo's own "assert its own effect" rule
+     (`0052`). Expected value: **false**.
+  10. *(builder)* `0055_review_prompt.sql` is mode `644`, matching all 50
+      siblings; `find supabase/migrations -name '*.sql' ! -perm 644` returns
+      nothing.
+- **Verification command:** the **builder** runs, from the repo root:
+  ```bash
+  npm run verify
   ```
-  EDIT MODE, actual:  Your photo & name -> A photo of your family ->
-                      About the parents -> About the kids ->
-                      The parents -> Linked parent
-  PINNED order:       user -> kids -> parents -> dropins
-  ```
-  **Parents renders BEFORE kids.** The read view is correct; the edit surface is not.
-- **WHY THE EXISTING GUARD MISSED IT, and the fix for that:** V21 t08 built a real
-  seam (`src/lib/profileSections.ts`, `isInPinnedOrder`) plus a unit test — but the
-  test asserts a **hand-maintained literal** (`PROFILE_EDIT_SECTIONS`,
-  `ProfilePage.tsx:70`, which says `['user','kids','parents']`). The JSX emits a
-  different order, so constant and JSX drifted and the test stayed green. Worse,
-  `ProfilePage.tsx:1671` carries a comment claiming the kids card "moved UP ...
-  before the parents group" — the comment moved, the card did not. **A comment is
-  not a check; neither is a constant that mirrors nothing.**
-- **Files in scope:** `src/pages/ProfilePage.tsx`, `src/lib/profileSections.test.ts`
-  (comment only), and a NEW `scripts/profile-order-check.mjs`.
-- **Approach:**
-  1. **Move the JSX, not the constant.** Relocate the "About the kids" card so it
-     renders BEFORE "About the parents" and "The parents", matching the read view.
-     Nothing else moves; no restyle, no renumber. Correct the stale comment at
-     line 1671 to describe what the code now does.
-  2. **Make the guard able to fail.** Add `scripts/profile-order-check.mjs`: render
-     the profile, enter edit mode, read section headings in DOM order, assert they
-     are a legal subsequence of `PROFILE_SECTIONS`. Prove it FAILS on the pre-fix
-     order and PASSES on the fixed one — red-green, both directions reported.
-  3. The unit test stays (pinning the constant is still worth doing) but its doc
-     comment must stop claiming it is the anti-drift mechanism for the JSX. The DOM
-     check is.
-- **Acceptance criteria:**
-  - Edit-mode DOM order of section headings is a legal subsequence of
-    `['user','kids','parents','dropins']`, reported from a real render
-  - Read-view order UNCHANGED (it was already correct)
-  - `scripts/profile-order-check.mjs` FAILS against the old order and PASSES
-    against the new one (report both runs)
-  - No styling, copy, or behavior change beyond the block move
-  - `npm run verify` passes (1156+ tests, 0 lint errors)
-- **Verification command:** `npm run verify`, then `node scripts/profile-order-check.mjs`
-  (needs a server + the marker session).
-- **Budget:** one local builder context.
+  and records its full output to `.scratch/v26/s1-verify.txt` (accepted:
+  `npm run verify` is build + vitest + oxlint + `a11y:focus` + steering-lint +
+  guards; **none of it opens a browser**, so a builder can run it without
+  touching the human's Chrome). The **coordinator** then applies `0055` live
+  **twice** via `bash scripts/db-sql.sh --file supabase/migrations/0055_review_prompt.sql`
+  — the **browserless** path, which needs no browser at all
+  (`docs/agents/browser-lanes.md` §7). **Do not use
+  `scripts/cdp-migration-tooling.sh` + `scripts/apply-migration.mjs` for this:**
+  the tooling script `pkill -9`s every `google/chrome` process, and the human
+  has a live Chrome session on this box, while `apply-migration.mjs` visibly
+  navigates a window they are working in. `db-sql.sh` uses the
+  `SUPABASE_ACCESS_TOKEN` already present in `.env` against `api.supabase.com`.
+  Record to `.scratch/v26/` the two `information_schema` / `pg_proc` read-backs
+  and both kind-CHECK probes.
+- **Budget:** one local builder context (~98k tokens, `qwen3.8-27b`).
 - **Depends on:** nothing.
 
+### Slice 2: the pure scan decision — who gets asked, and what the row says
+
+- **Objective:** the selection rule and the row mapping live in a pure module
+  with a sibling test, so the vitest lane can reach them.
+- **Files in scope:**
+  - `supabase/functions/_shared/reviewScan.ts` (new)
+  - `src/lib/reviewScan.ts` (new — the re-export)
+  - `src/lib/reviewScan.test.ts` (new — the sibling test `npm run guards`
+    requires for every `lib/*.ts`)
+- **Approach:** the proven seam in this repo, stated verbatim in
+  `send-push/index.ts:36-39`: *"The pure decisions live in
+  `../_shared/emailFallback.ts` (which the app's `src/lib/emailFallback.ts`
+  re-exports and `src/lib/emailFallback.test.ts` unit-tests), so this file is
+  wiring only."* Do exactly that. The module exports a pure
+  `isReviewPromptCandidate`-style predicate plus a `reviewPromptRow` mapper
+  taking already-fetched values (`{ profileId, playdateId, placeId, title }`)
+  and returning the `notification_log` insert shape. **No `Date.now()`, no
+  client, no I/O inside the pure functions** — `now` is an argument, the same
+  discipline the scan constants encode.
+- **Acceptance criteria:**
+  1. A drop-in that ended 2 hours ago with `status = 'on'` and a non-null
+     `place_id` is a candidate.
+  2. `status` of `'cancelled'` or `'ended'` is **not** a candidate, at any
+     `ends_at`.
+  3. `ends_at` in the future is **not** a candidate.
+  4. `ends_at` older than `REVIEW_PROMPT_WINDOW_HOURS` is **not** a candidate.
+  5. `place_id` null or empty is **not** a candidate.
+  6. The mapper produces `kind: 'review_due'`, the pinned title/body, and
+     `url === '/place/<placeId>/details'`.
+  7. The candidate predicate is **mutation-checked**: flipping any one of the
+     five conditions to always-true makes at least one test fail — the builder
+     records which test dies for each flip. (The repo requires a spec that can
+     actually fail for the defect it names.)
+- **Verification command:**
+  ```bash
+  npm run verify
+  ```
+  Evidence file in `.scratch/v26/` recording the five mutation flips and the
+  test that died for each.
+- **Budget:** one local builder context.
+- **Depends on:** Slice 1 (the `review_due` kind and `reviewPromptUrl`).
+
+### Slice 3: wire the scan in, and prove it on the live database
+
+- **Objective:** `send-push` gains `catchUpReviewDue`, runs it on every
+  invocation beside the `starting_soon` scan, and a real finished drop-in
+  produces exactly one row.
+- **Files in scope:**
+  - `supabase/functions/send-push/index.ts`
+  - `docs/push-setup.md` — only if the deploy note needs the new scan
+    documented; **no `pg_cron` change** (the job URL is unchanged, which is the
+    whole reason the function keeps its misleading name — `:37-42`)
+- **Approach:** `catchUpReviewDue(admin)` mirrors `catchUpStartingSoon`
+  (`:206-295`) step for step: one `going_pings` select with the `!inner` embed
+  on `playdates` (the `!inner` is what makes the filters restrict the join
+  rather than blank the embed — `:212`), the `.in()` exclusion on
+  `(kind = 'review_due', playdate_id)` over the **non-empty** id list, the
+  `told` set, then the `ignoreDuplicates` upsert. Call it in the handler next to
+  the existing scan and report its count in the same JSON summary. Keep the
+  whole thing **wiring only** — every decision is already in `reviewScan.ts`.
+- **Acceptance criteria:**
+  1. One invocation against a seeded finished, place-backed drop-in inserts
+     exactly **one** `notification_log` row: `kind = 'review_due'`,
+     `sent_at is null`, `url = '/place/<place_id>/details'`, `profile_id` = the
+     pinging parent.
+  2. **A second invocation inserts zero** — the reported count is `0`, and
+     `select count(*)` on that `(profile_id, kind, playdate_id)` is still `1`.
+  3. A seeded **cancelled** finished drop-in produces **zero** rows.
+  4. A seeded finished drop-in with `place_id is null` produces **zero** rows.
+  5. The existing `starting_soon` scan still reports its own count unchanged —
+     the new scan does not disturb it (both counts appear in the response).
+  6. The row drains: one real push (or one email, for a profile with no
+     subscription) is sent and `sent_at` is stamped — or, if no live device is
+     available, the drain's dry path is recorded and the gap named explicitly
+     rather than claimed as passing.
+  7. Every seeded fixture is cleaned up, and the cleanup is verified by a
+     post-run `count(*) = 0` — the repo's e2e-fixture convention.
+- **Verification command:**
+  ```bash
+  npm run verify
+  ```
+  plus the live by-hand invocation (`send-push` is documented as runnable by
+  hand — `:5`), with every request/response captured to
+  `.scratch/v26/live-*.json` and the seeded rows' before/after state recorded.
+- **Budget:** one local builder context.
+- **Depends on:** Slice 2.
 
 ## Risks / open questions
 
-- **R1 — Dark palette quality is a design judgment, not a mechanical one.**
-  RESOLVED 2026-09-23: built, measured in a browser, screenshots reviewed by the
-  human. Human's verdict: "I don't think many people are going to even want dark
-  mode, but if they want to use it, they can use it." Shipped as insurance, not
-  as a headline feature. No further work.
-- **R2 — Slice 9 (regular width) is the largest behavioral change.** It alters
-  every route's shell. CONFIRMED IN SCOPE 2026-09-23: the human explicitly chose
-  the full rail + wide content over the cheaper "just widen the content" option.
-  Mitigation: gated on the mobile audit at 7 widths and must be provably
-  equivalent below `md`.
-- **R3 — Slice 12 may break existing e2e specs** that assume a `/new` tab.
-  CONFIRMED IN SCOPE 2026-09-23: the human chose to move the Post action out of
-  the tab bar. Mitigation: the builder runs the e2e lane and reports every spec
-  it had to touch; a spec change is a signal to check, not a fix to apply
-  silently.
-- **R4 — Serialization.** Slices 8/9 both edit `src/App.tsx` or `index.css`;
-  9/10/12 all edit `src/App.tsx`. These MUST run serially, one builder at a time
-  (`AGENTS.md` invariant 1). Only read-only exploration parallelizes.
-  VIOLATED ONCE, HONESTLY RECORDED: slices 6 and 11 were dispatched together and
-  both edited DropInCard/FeedPage/etc. No conflict materialized (s6 touched class
-  strings, s11 touched img attributes) but that was luck, not design. Slices
-  9→10→12 are running strictly serially.
-
----
+1. **`REVIEW_PROMPT_WINDOW_HOURS = 24` is the orchestrator's choice, not the
+   human's.** Every other decision in this plan traces to a human answer; this
+   one does not. The failure it bounds: a parent who ignores the prompt for a
+   week still gets nothing new, because the row was inserted on the first tick
+   after the drop-in ended and is never withdrawn — the window governs which
+   drop-ins are *considered*, not how long a parent has to act. Flagged so the
+   human can reduce it to 6h or raise it; it blocks neither slice.
+2. **The copy wording is the orchestrator's draft** (pinned in Interfaces).
+   It is honest about attendance, which is the constraint that matters; the
+   exact phrasing is a founder read.
+3. **A parent who already reviewed that place is still prompted once.** The
+   `ReviewForm` loads their existing review and the button reads "Update
+   review" (`src/components/ReviewForm.tsx:214`), so this is coherent rather
+   than broken — but it is a prompt to edit, not to write. Accepted.
+4. **No-shows get asked.** `going_pings` records intent only. The copy says so.
+   Accepted as the cost of having no check-in.
+5. **`0055` touches a live database holding real family data.** Guarded,
+   additive, re-paste-safe, applied twice with read-back — the `0052`/`0053`
+   standard. This is the only genuinely risky step in the batch.
+6. **The push is the only surface.** No in-app fallback for a parent who has
+   muted notifications or declined the browser permission — the `starting_soon`
+   scan has the same property, so this is consistent, but it means a muted
+   parent never learns the prompt exists.
+7. **RETIRED — "the `ADD CONSTRAINT` could abort on a pre-existing row outside
+   the CHECK."** Raised by the reviewer as uncheckable without SQL; retired by a
+   coordinator read-only probe of the live table: the only kinds ever stored are
+   `cancelled` (290), `ping_received` (273), `new_comment` (16) and
+   `starting_soon` (1) — a strict subset of the five-value CHECK. Nothing
+   outside it can fail validation. (Read via `bash scripts/db-sql.sh --read`,
+   the browserless path.)
+8. **RETIRED — "dropping then re-adding the CHECK leaves a window with no
+   constraint if `db-sql.sh` autocommits per statement."** The live constraint
+   definition read during the same probe **is** `0041`'s widen —
+   `CHECK (kind = ANY (ARRAY['ping_received','starting_soon','cancelled',
+   'new_comment','ended']))` — so this exact drop-then-add pattern has already
+   been applied through this exact path and is visible in production. No
+   `004x`/`005x` migration uses an explicit `begin;`/`commit;`: `db-sql.sh` POSTs
+   the entire file as **one** query string, which the Supabase SQL API evaluates
+   as a single request.
+9. **THIS PLAN'S OWN INVENTORY WAS WRONG, AND REVIEW FOUND IT.** The Interfaces
+   section listed "six" hand-maintained kind lists while the slice's own disease
+   sat uncured in a seventh (`e2e/push-subscribe.e2e.ts`), and Slice 1's file
+   list omitted it while criterion 7 demanded it — the builder could not satisfy
+   the criterion without leaving scope. Resolved by **widening both**, not by
+   narrowing the criterion (see the Status log for the ruling and its reasoning).
+   Recorded rather than tidied away: a plan that miscounts its own inventory is
+   the failure mode this batch exists to cure.
 
 ## Status log (orchestrator appends after every phase transition)
 
-- 2026-09-23 — plan written; baseline `790dca7`, 1134 tests passing. Awaiting
-  dispatch of Slice 1.
-- 2026-09-23 — **Slice 1 complete** (local `qwen3.8-27b` builder). Evidence:
-  `npm run verify` → build OK, **1139 tests passing** (1134 + 5 new), 0 lint
-  errors, steering clean. `role="alert"` count 24 (target ≥20). Verified on the
-  RENDERED DOM, not by grep: `.scratch/a11y-dom-check.mjs` drove a real auth
-  failure and confirmed `aria-describedby` resolves, `aria-invalid="true"`, and
-  no duplicate ids.
-  - **Plan defect found and corrected:** the original criterion "`grep` for ≥15
-    literal `aria-describedby`" was wrong — the attribute is applied via a
-    `fieldA11y()` spread, so it exists only at runtime. The criterion would have
-    failed a correct implementation. Corrected in Slice 1 above; the builder
-    flagged it rather than gaming the grep.
-  - **Gate promoted:** `scripts/a11y-dom-check.mjs` (assertion-based, exits
-    non-zero). Proven to fail, not assumed: mutating `errorId` to produce a
-    dangling reference made it fail 2 checks and exit 1.
-  - Focus-move-on-failed-submit NOT implemented; the builder reported that no
-    file has a single unambiguous submit target (LoginPage branches by mode,
-    Onboarding has multiple forms, PlaydateFormFields is presentational). Accepted
-    as a park — see the ledger ruling below.
-  - Next: Slices 2, 5, 6, 7, 11 are independent and can dispatch; 3 → 4 is a
-    pair; 8 → 9 → 10 → 12 is a serial chain.
+- 2026-09-26 — **Plan written, batch opened as V26, no slice dispatched yet.**
+  Derived from a founder idea ("after somebody attends a drop-in they should be
+  given the opportunity to give feedback on that place… five stars one through
+  five and also write a comment"), which the orchestrator grounded in the
+  existing system before planning: the stars-and-comment half **already ships**
+  (`reviews`, migration `0052`; `ReviewForm`; the aggregate line on place
+  pages, browse cards and map pins), so the whole batch is the *prompt*.
+  Two decisions taken by the human, both recorded in the Non-goals:
+  (a) the prompt writes **the same `reviews` row** the place page writes — no
+  new table; (b) **`place_id is null` prompts nothing**. Supersedes the V22
+  plan (preserved at `plan-v22-backup.md`, `diff -q` clean). Next action:
+  dispatch Slice 1 to one local builder.
 
+- 2026-09-26 — **Slice 1 built, independently verified green, reviewed
+  NEEDS_CHANGES. Fix round 1 dispatched. `0055` NOT yet applied.** Verifier
+  reproduced the gate exactly (`npm run verify` EXIT=0 · 55 files / 1754 tests ·
+  78 warnings / 0 errors · GUARDS PASS · Deno lane EXIT=0 · no test deleted) and
+  **corrected this file's lint baseline**: the real base at `63ef790` is **78**
+  warnings, not the 68 repeated here since V21 — so this diff's lint delta is
+  **0**. Reviewer verdict NEEDS_CHANGES on one blocking finding (the e2e
+  five-kind array and its now-false docstring) plus four comment-level findings
+  and **three defects in this plan**, all accepted. Coordinator rulings:
+  **(A) widen, don't narrow** — criterion 7 is widened and
+  `e2e/push-subscribe.e2e.ts` + `src/lib/db.ts` join Slice 1's file list,
+  because narrowing would enshrine a rendered-but-unasserted sixth toggle and a
+  declared-false docstring, which is precisely the drift this batch exists to
+  cure; **(B)** the diff introduced a falsehood — `notificationUrl` has **one**
+  call site, not five ("used by five call sites") — and a false comment is a
+  defect, not a nit; **(C)** `docs/push-setup.md:212` parked to Slice 3, which
+  already owns that file; **(D)** `0055`'s read-back must **assert** `prosecdef`
+  (expected `false`), not merely print it; **(E)** `0055` moves to mode `644`,
+  matching all 50 siblings. Two reviewer risks **retired with live data**, not
+  argument: the `ADD CONSTRAINT` cannot abort (only 4 kinds ever stored, all
+  inside the CHECK) and the drop-then-add window is a non-issue (the live
+  constraint *is* `0041`'s widen, applied through this same browserless path).
+  The brief's "keep `security definer`" was **my error** and the builder was
+  right to refuse it. Next action: fix round 1 returns, then re-review, then the
+  coordinator's live apply.

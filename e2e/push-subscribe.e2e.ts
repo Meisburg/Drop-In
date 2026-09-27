@@ -906,7 +906,7 @@ test.afterEach(async () => {
  *
  * This closes a gap t01 opened. That slice relabelled the "What to tell me
  * about" paragraph into an `<h2>` ("Choose what you get notified about") plus a
- * helper line, on the founder's decision that the five toggles already EXISTED
+ * helper line, on the founder's decision that the toggles already EXISTED
  * and the real problem was finding them. But nothing in the suite asserted the
  * toggles at all: the only test that touches `notifications-section` drives the
  * device-level turn-on/off control, so a regression that dropped a kind, or
@@ -917,9 +917,17 @@ test.afterEach(async () => {
  *  - each is labelled with the kind's `copy.label` (the founder-facing name,
  *    e.g. "Someone joins your drop-in") — the label is the whole point of the
  *    discoverability fix;
- *  - all five start CHECKED (unmuted), the documented default;
+ *  - all six start CHECKED (unmuted), the documented default;
  *  - toggling one off is reflected in the control (the UI is the app's own
  *    report of the state it holds).
+ *
+ * THE LIST BELOW IS A SEVENTH HAND-MAINTAINED TWIN of the same
+ * `notification_log.kind` constraint (see plan.md's Interfaces inventory).
+ * `NotificationsSection` maps `NOTIFICATION_KINDS`, so a kind added there
+ * renders a toggle that this spec would silently not cover — which is exactly
+ * what happened when `review_due` (migration 0055) joined the list: the sixth
+ * checkbox rendered unasserted until review caught it. A NEW KIND MUST BE
+ * APPENDED HERE TOO, or this file becomes a lie.
  *
  * The muted set lives in localStorage + a Cache Storage mirror for the service
  * worker, NOT a table — so this asserts the control's own state rather than a
@@ -934,6 +942,7 @@ test('every notification kind has a labelled toggle, and toggling is reflected',
     'starting_soon',
     'cancelled',
     'ended',
+    'review_due',
   ] as const
 
   await page.goto('/settings')
