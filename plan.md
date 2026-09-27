@@ -489,12 +489,21 @@ all history forever. Reuse the existing `MAX_SCAN_POSTS = 500` cap (`:142`).
   `ends_at === now` is treated as *not yet over* (`>=` rejects), and exactly
   24h old is treated as *inside* the window (`>` rejects only strictly older).
 - **Acceptance criteria:**
-  1. One invocation against a seeded finished, place-backed drop-in inserts
-     exactly **one** `notification_log` row: `kind = 'review_due'`,
+  1. One invocation inserts exactly **one** `notification_log` row: `kind = 'review_due'`,
      `sent_at is null`, `url = '/place/<place_id>/details'`, `profile_id` = the
-     pinging parent.
-  2. **A second invocation inserts zero** — the reported count is `0`, and
-     `select count(*)` on that `(profile_id, kind, playdate_id)` is still `1`.
+     pinging parent. **No fixture is needed for this criterion — CORRECTED, real
+     data supplies it:** the one row the first run creates is for drop-in
+     `04a073f4-8db7-4adb-8310-9863e1411424` (*"Drop-in at Green Lake Park
+     (East)"*, ended `2026-09-26 14:30 UTC`), whose `place_id` is
+     `7b6ada36-b925-4a13-8850-f29593e2dc2f`, and the scan's exact query was run
+     read-only against the live API to confirm it returns **exactly that one
+     candidate** (HTTP 200).
+  2. **A second invocation inserts zero** — `select count(*)` on that
+     `(profile_id, kind, playdate_id)` is still `1`. **Read the count from the
+     DATABASE, never from the function's own `reviewDueCreated`:** that field
+     returns rows **attempted**, not created (the reviewer proved it is
+     precedent-identical to `startingSoonCreated`), so under a concurrent
+     double-fire it can over-report. The DB is the only witness.
   3. A seeded **cancelled** finished drop-in produces **zero** rows.
   4. A seeded finished drop-in with `place_id is null` produces **zero** rows.
   5. The existing `starting_soon` scan still reports its own count unchanged —
@@ -503,8 +512,11 @@ all history forever. Reuse the existing `MAX_SCAN_POSTS = 500` cap (`:142`).
      subscription) is sent and `sent_at` is stamped — or, if no live device is
      available, the drain's dry path is recorded and the gap named explicitly
      rather than claimed as passing.
-  7. Every seeded fixture is cleaned up, and the cleanup is verified by a
-     post-run `count(*) = 0` — the repo's e2e-fixture convention.
+  7. Every fixture is cleaned up, and the cleanup is verified by a post-run
+     `count(*) = 0` — the repo's e2e-fixture convention. **Fixtures exist only
+     for criteria 3 and 4** (criterion 1 needs none), and cleanup goes **through
+     the profile**: `notification_log` cascades on `profile_id` but has **no FK
+     on `playdate_id`**, so deleting a drop-in would leave the row behind.
 - **Verification command:**
   ```bash
   npm run verify
