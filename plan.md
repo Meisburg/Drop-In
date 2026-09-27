@@ -139,12 +139,19 @@ already stored on the `notification_log` row (`emailCopy.ts:77`) and
 `emailUrl(url, base)` only prefixes the base (`:124`), so a correct `url` on the
 row is all the email needs. Only `EMAIL_KINDS` gains the entry.
 
-**New constant in `send-push/index.ts`, beside `STARTING_SOON_WINDOW_MINUTES`
-(`:133`):**
+**New constant `REVIEW_PROMPT_WINDOW_HOURS = 24` — and it lives in the PURE
+module, not in `send-push/index.ts`.** *Corrected while dispatching Slice 2:*
+this plan first put it beside `STARTING_SOON_WINDOW_MINUTES` (`send-push:133`),
+but a window is a **rule**, and Slice 2's acceptance criterion 4 has to test it —
+so a constant in the Deno wiring file would be unreachable from the vitest lane.
+It is therefore defined and exported in
+`supabase/functions/_shared/reviewScan.ts`, re-exported through
+`src/lib/reviewScan.ts`, and **imported** by `send-push/index.ts` in Slice 3.
+That is the same direction of dependency as `emailFallback.ts`.
 
 ```ts
 /** Only drop-ins that ended within this many hours are considered. */
-const REVIEW_PROMPT_WINDOW_HOURS = 24
+export const REVIEW_PROMPT_WINDOW_HOURS = 24
 ```
 
 The window keeps the scan bounded. Without it, the every-5-minutes query walks
@@ -313,6 +320,72 @@ all history forever. Reuse the existing `MAX_SCAN_POSTS = 500` cap (`:142`).
   `told` set, then the `ignoreDuplicates` upsert. Call it in the handler next to
   the existing scan and report its count in the same JSON summary. Keep the
   whole thing **wiring only** — every decision is already in `reviewScan.ts`.
+
+- **THE WIRING HAS NO UNIT LANE, AND THAT IS WHY THE DECISIONS ARE ELSEWHERE.**
+  Verified by reading both Deno scripts: `scripts/deno-check-functions.sh`
+  type-checks the functions but **never runs** them, and
+  `scripts/deno-test-functions.sh` is **hardcoded to stage and run exactly one
+  file** — `_shared/smtpDeno_test.ts` — so it is not a general Deno test runner.
+  Plain `npm run test` (vitest, Node) cannot load an Edge Function that touches
+  `Deno` globals. **Therefore `catchUpReviewDue` cannot be unit-tested by any
+  existing lane**, and the builder must not invent one, add a `deno.json`, or
+  claim coverage it does not have. The verification for this slice is exactly:
+  `npm run verify` (which includes the already-green `reviewScan` sibling test)
+  + `bash scripts/deno-check-functions.sh` (types) + **the live proof, which is
+  the coordinator's**. This is the whole reason the plan pushes every decision
+  into the pure `reviewScan.ts` and holds `index.ts` to wiring only: **the
+  wiring's only real test is the run against the live database.**
+- **THE EMBED STRING IS PINNED** (verified against the live schema and the
+  precedent at `send-push/index.ts:216`): the foreign key is
+  **`going_pings_playdate_id_fkey`** (`going_pings.playdate_id → playdates(id)
+  ON DELETE CASCADE`, confirmed live), so the select is
+  `'profile_id, playdate_id, playdate:playdates!going_pings_playdate_id_fkey!inner ( id, title, ends_at, status, place_id )'`
+  — the precedent's four columns plus **`ends_at`** (the window and "is it
+  over" both need it) and **`place_id`** (the mapper needs it, and the
+  `place_id is not null` filter depends on it). The `!inner` is load-bearing:
+  without it the playdate filters would blank the embed instead of restricting
+  the join.
+- **GO-LIVE MECHANICS — CORRECTED WHILE PREPARING THIS SLICE. THE DEPLOY *IS*
+  THE GO-LIVE.** Verified against the live database this slice targets:
+  `cron.job` jobid 3 is `send-push-every-5-minutes`, schedule `*/5 * * * *`,
+  **`active = true`**. So this slice does **not** end at a by-hand invocation I
+  control: the moment the new `send-push` is deployed, the cron runs
+  `catchUpReviewDue` within five minutes, inserts the rows, and drains them.
+  **The human checkpoint belongs BEFORE the deploy, not before an invocation** —
+  and the plan's criteria below were originally worded as though a manual call
+  were the go-live moment. **Measured cost, read-only, before building it:** 23
+  drop-ins · 12 place-backed · 2 finished-and-place-backed inside the 24h window
+  · **1** `going_pings` row across them — so the first automatic run notifies
+  **exactly one real family**, and a sent push cannot be recalled.
+- **What real data can prove for free, and what it cannot** (probed read-only):
+  `finished_no_place_24h = 4`, so criterion 4 (a null `place_id` yields zero
+  rows) is provable against **real** rows with no fixture at all.
+  `finished_cancelled_or_ended_24h = 0`, so criterion 3 (a cancelled drop-in
+  yields zero rows) **cannot** be proven from real data and needs a seeded
+  fixture. **Any fixture must carry the marker convention in
+  `docs/agents/e2e-fixture-convention.md`** — account email `e2e-` prefix,
+  drop-in title `e2e ` prefix, cleanup scoped to owned ids — or it becomes
+  unsweepable content in real parents' discovery feed, which is the exact leak
+  that document's guard exists to prevent.
+- **The by-hand invocation is available** and must not be reported as blocked on
+  a credential: `GET https://api.supabase.com/v1/projects/<ref>/api-keys` with
+  the `SUPABASE_ACCESS_TOKEN` already in `.env` returns the `service_role` key
+  (HTTP 200, verified), which is what `docs/push-setup.md:220-221` invokes the
+  function with. (`.env` itself holds no service-role key — but "not in `.env`"
+  is not "not available", the false negative this repo paid ~25 rounds for
+  during V16.)
+- **SLICE 3 MUST CALL THE PREDICATE BEFORE THE MAPPER.** Slice 2's
+  `reviewPromptRow` is deliberately **total**: it does not re-run
+  `isReviewPromptCandidate`, so a blank `placeId` passed straight to it yields
+  the fallback `/playdate/<id>` url rather than an error (tested in
+  `reviewScan.test.ts`). That keeps one copy of the rule, but it means the
+  mapper is **not** a safety net — `catchUpReviewDue` must filter with the
+  predicate first, and its SQL-side `.not('place_id','is',null)` filter is the
+  second, independent wall.
+- **Two boundary choices in Slice 2 are ACCEPTED as judgement calls** (both
+  pinned by tests, both inconsequential against a 5-minute cron): exactly
+  `ends_at === now` is treated as *not yet over* (`>=` rejects), and exactly
+  24h old is treated as *inside* the window (`>` rejects only strictly older).
 - **Acceptance criteria:**
   1. One invocation against a seeded finished, place-backed drop-in inserts
      exactly **one** `notification_log` row: `kind = 'review_due'`,
