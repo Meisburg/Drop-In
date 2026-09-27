@@ -112,11 +112,16 @@ push and no email reached any family.
   already proven for `starting_soon`; with zero rows created there is nothing to
   double. The 14:20 tick's `reviewDueCreated:0` against the same candidate the
   prior `notification_log` state held no row for is consistent.
-- **Criterion 3 (seeded `cancelled` finished drop-in → zero rows): still
-  UNIT-PROVEN ONLY.** No finished cancelled/ended drop-in exists live
-  (`finished_cancelled_or_ended_24h = 0`), so proving it live needs a seeded
-  fixture — a production write. Rule (a) is unit-tested and mutation-killed; the
-  SQL `.eq('playdate.status','on')` is the second wall. **Not claimed as live.**
+- **Criterion 3 (a `cancelled` finished drop-in → zero rows): PROVEN against the
+  live schema with ZERO persistence** (`.scratch/v26/live-criterion3-rollback.txt`).
+  A `cancelled`, place-backed, finished drop-in with a ping was inserted **inside
+  an explicit transaction and then rolled back**: the scan's exact predicate
+  returned **`cancelled_candidates = 0`** while an identical `status = 'on'`
+  control returned **`on_control_candidates = 1`**, so the status wall is what
+  discriminated. A post-rollback check found **0 playdates, 0 pings,
+  0 notifications** left behind. This exercises the live schema and the exact
+  `.eq('playdate.status','on')` / window / `place_id is not null` predicate the
+  deployed function runs.
 - **Criterion 4 (`place_id is null` → zero rows): PROVEN LIVE, by real data, no
   fixture.** Two place-less finished drop-ins with pingers were inside the
   window during the 14:20 tick; the scan's `.not('place_id','is',null)` filtered
@@ -174,20 +179,18 @@ for the full exoneration.
 
 ## Open — filed rather than dropped
 
-1. **Criterion 3's live fixture proof is not done** (seeded `cancelled`
-   drop-in → zero rows). It is unit-proven; the live proof is a production
-   write deferred as out of scope for this close-out.
-2. **Two leftover `e2e ` fixtures are live in the feed** — place-less finished
+1. **Two leftover `e2e ` fixtures are live in the feed** — place-less finished
    drop-ins `6e2e8877…` (profile `ffa54c4d…`) and `2c6b734b…` (profile
    `ecfa9599…`), both titled `e2e e2e-… Marker inbox rt`, from a prior run.
    They are marker-convention-sweepable but not swept. Not V26's, and not
    touched; surfaced because they are exactly the leak the fixture guard exists
-   to prevent.
-3. **The 24-hour window** (`REVIEW_PROMPT_WINDOW_HOURS = 24`) remains the one
+   to prevent. Sweeping them drives the human's Chrome (browser-lane rule), so
+   it waits for a yes.
+2. **The 24-hour window** (`REVIEW_PROMPT_WINDOW_HOURS = 24`) remains the one
    pin tracing to no human answer.
-4. **The review-prompt copy** — a founder read; the non-negotiable half is that
+3. **The review-prompt copy** — a founder read; the non-negotiable half is that
    it must not claim attendance.
-5. **A known flake:** `npm run verify` can go spuriously red on
+4. **A known flake:** `npm run verify` can go spuriously red on
    `scripts/guards/no-bypass-guard.test.mjs` (a git-internal hardlink race).
    Candidate fix: `--no-hardlinks` in `plainClone()`.
 
