@@ -22,11 +22,21 @@ import { localDayKey } from './feed'
 /** A normalized row of the merged inbox list (one per distinct counterpart). */
 export interface MergedConversation {
   /**
-   * The counterpart's profile id (the merge key; '' when unknown —
-   * unresolved rows are keyed PER CONVERSATION so they never share a
-   * single '' bucket and collapse into one another).
+   * The counterpart's profile id, and '' when the counterpart could not be
+   * resolved. This is NOT a row identity: EVERY unresolved row carries '',
+   * so several rows share it at once. It is kept because it is the real
+   * profile id for the avatar and for DM navigation; the LIST keys on
+   * `mergeKey`.
    */
   otherPartyId: string
+  /**
+   * THIS ROW's identity in the list — the per-conversation merge key that
+   * produced it (`mergeKeyFor`). The list's React key and the row's
+   * `data-testid` are built from this, never from `otherPartyId` (which
+   * collapses two unresolved playdate rows onto one key and one testid) and
+   * never from `latestAt` (a new message changes it).
+   */
+  mergeKey: string
   /** The counterpart's display name (the bold line). */
   otherPartyName: string
   /** The latest message's body, truncated to ~60 chars. */
@@ -80,6 +90,63 @@ export interface PlaydateConversationRow {
 }
 
 /**
+ * The fields `mergeKeyFor` reads — a subset of every row shape this module
+ * merges (`DmConversationRow`, `PlaydateConversationRow`, the internal
+ * `Normalized` shape, and `MergedConversation`).
+ */
+export interface MergeKeyFields {
+  /** The counterpart's profile id; '' when the counterpart is unresolved. */
+  otherPartyId: string
+  /** Which kind of thread this row opens. */
+  kind: 'dm' | 'playdate'
+  /** The playdate id — present on every playdate-kind row, absent on a DM. */
+  playdateId?: string
+}
+
+/**
+ * The per-conversation MERGE KEY: the identity of one conversation in the
+ * merged inbox list.
+ *
+ * THE DEFECT THIS EXISTS FOR. `c253865` made `mergeConversations` able to
+ * emit SEVERAL rows whose `otherPartyId` is `''` (one per unresolved
+ * conversation) — which is the point of that fix — but the key that told
+ * those rows apart lived only INSIDE `mergeConversations`, and the consumer
+ * (`InboxPage.tsx`) keyed both the list and the `data-testid` on
+ * `otherPartyId`. Two unresolved playdate rows therefore produced the SAME
+ * React key (`row.otherPartyId || row.kind` → `'playdate'`) and the SAME
+ * testid (`inbox-row-` + `''`). Exposing the key as this pure function — and
+ * on `MergedConversation` as `mergeKey` — gives every row a real identity.
+ *
+ * THE RULE, in order:
+ *   1. a RESOLVED counterpart → its profile id. The id is what distinct
+ *      people cannot share, which is why this merge is id-keyed and never
+ *      name-keyed;
+ *   2. an UNRESOLVED playdate row → `playdate:<playdateId>`. The playdate's
+ *      own id IS a durable identity, so two unresolved conversations stay two
+ *      rows, and the row's identity does not change when a message arrives;
+ *   3. an UNRESOLVED DM row → `dm:unresolved:<unresolvedOrdinal>`, the count
+ *      of unresolved DM rows preceding it in this merge. Deliberately NOT
+ *      `dm:<latestAt>`: a message timestamp is not an identity — a new
+ *      message changes it, and two unresolved conversations whose latest
+ *      messages share a timestamp would collapse back into ONE bucket, i.e.
+ *      the original bug resurfacing on a tie. An unresolved DM row carries no
+ *      id of ANY kind (there is none on `DmConversationRow`, and db.ts's
+ *      `listDirectConversationsWithClient` keys its Map on profile PKs — the
+ *      sender's or the recipient's — so `''` cannot occur from today's
+ *      producer; see the reachability note in `mergeConversations`), so the
+ *      ordinal is the only discriminator this module can compute. It is
+ *      stable for a given input array; if an unresolved DM row ever becomes
+ *      producible, the real fix is a conversation id ON the row.
+ *
+ * Pure: reads three fields and an ordinal. No I/O, no clock, no mutation.
+ */
+export function mergeKeyFor(row: MergeKeyFields, unresolvedOrdinal = 0): string {
+  if (row.otherPartyId !== '') return row.otherPartyId
+  if (row.kind === 'playdate') return `playdate:${row.playdateId}`
+  return `dm:unresolved:${unresolvedOrdinal}`
+}
+
+/**
  * Collapse a DM row and a playdate row for the SAME counterpart id into one
  * row, preferring the row with the newer `latestAt`. Rows with DIFFERENT
  * counterpart ids never collapse (the same-name-different-id case must stay
@@ -93,6 +160,25 @@ export interface PlaydateConversationRow {
  * wins (it carries the richer context: the post title). A group with both
  * kinds sums those retained rows' unreadCounts; a single-kind group keeps its
  * winner's unreadCount.
+ *
+ * Each emitted row carries its bucket's key as `mergeKey` — the identity the
+ * consumer keys the list and the row's testid on. `otherPartyId` cannot serve
+ * that role, because every unresolved row carries ''.
+ *
+ * REACHABILITY of an unresolved row, from the PRODUCERS (db.ts). A
+ * `DmConversationRow` can never carry '': `listDirectConversationsWithClient`
+ * builds its `byOtherParty` Map from `row.sender_id` (db.ts:4891) or
+ * `recipient.id` (db.ts:4905), both profile PKs. A
+ * `PlaydateConversationRow` CAN: `listConversationsWithClient` derives
+ * `otherPartyId` as `counterpartIds[playdateId] ?? ''` (db.ts:4384-4387) and
+ * only reaches that fallback when the caller SENT the last message
+ * (`entry.latest.sender_id === userId`), while `counterpartIds` is ''
+ * whenever the caller is the HOST and no pinger resolves (db.ts:4305,
+ * `lastPinger?.id ?? ''`) — i.e. the host has messaged a playdate that has no
+ * visible `going_pings` profile (nobody pinged, or the pinger un-pinged, which
+ * DELETEs the row — trust.ts:68-75). Two such playdates produce two unresolved
+ * playdate rows all carrying '', which is the collision `mergeKey` exists to
+ * resolve.
  */
 export function mergeConversations(
   dmRows: DmConversationRow[],
@@ -136,18 +222,16 @@ export function mergeConversations(
 
   type CounterpartRows = Partial<Record<Normalized['kind'], Normalized>>
   const byKey = new Map<string, CounterpartRows>()
+  // An UNRESOLVED counterpart (otherPartyId === '') must not share one ''
+  // bucket: `mergeKeyFor` keys it PER CONVERSATION (the playdate's own id, or
+  // an ordinal for a DM) so every distinct conversation keeps its own row
+  // instead of collapsing into one survivor that sums their unreadCounts.
+  // Only the unresolved-DM case consumes an ordinal, because a DM row is the
+  // one shape with no id of any kind — see `mergeKeyFor`.
+  let unresolvedDmOrdinal = 0
   for (const row of [...dmNormalized, ...playdateNormalized]) {
-    // An UNRESOLVED counterpart (otherPartyId === '') must not share one
-    // '' bucket: keying it per conversation (the playdate's id, the row's
-    // own latestAt for a DM) keeps every distinct conversation its own row
-    // instead of collapsing them, summing their unreadCounts onto a
-    // single survivor.
-    const key =
-      row.otherPartyId !== ''
-        ? row.otherPartyId
-        : row.kind === 'playdate'
-          ? `playdate:${row.playdateId}`
-          : `dm:${row.latestAt}`
+    const key = mergeKeyFor(row, unresolvedDmOrdinal)
+    if (row.otherPartyId === '' && row.kind === 'dm') unresolvedDmOrdinal += 1
     const counterpartRows = byKey.get(key) ?? {}
     const existing = counterpartRows[row.kind]
     if (
@@ -160,11 +244,15 @@ export function mergeConversations(
     byKey.set(key, counterpartRows)
   }
 
-  const merged: MergedConversation[] = Array.from(byKey.values(), ({ dm, playdate }) => {
-    if (dm === undefined) return playdate!
-    if (playdate === undefined) return dm
+  // The BUCKET'S KEY is the row's identity: it is what told these rows apart,
+  // so it rides out as `mergeKey` and the consumer keys the list item and the
+  // row's testid on it. `otherPartyId` cannot serve that role — it is '' for
+  // every unresolved row.
+  const merged: MergedConversation[] = Array.from(byKey, ([mergeKey, { dm, playdate }]) => {
+    if (dm === undefined) return { ...playdate!, mergeKey }
+    if (playdate === undefined) return { ...dm, mergeKey }
     const winner = dm.latestAt > playdate.latestAt ? dm : playdate
-    return { ...winner, unreadCount: dm.unreadCount + playdate.unreadCount }
+    return { ...winner, mergeKey, unreadCount: dm.unreadCount + playdate.unreadCount }
   })
   // Newest first (matches the inbox's existing sort order).
   merged.sort((a, b) => (a.latestAt < b.latestAt ? 1 : -1))

@@ -3,6 +3,7 @@ import {
   activeTodayLabel,
   firstNamedCounterpart,
   mergeConversations,
+  mergeKeyFor,
   messageSenderLabel,
   singleSenderCounterpart,
 } from './inbox'
@@ -24,6 +25,10 @@ import type { DmConversationRow, MessageSenderFields, PlaydateConversationRow } 
  *   7. two playdate threads with the same counterpart — the newer winner
  *      keeps its own unreadCount.
  *   8. a DM plus multiple playdate rows sums the newest row of each kind.
+ *   9. two rows whose counterpart could NOT be resolved both survive, and
+ *      carry DISTINCT `mergeKey` identities (the list key / testid input).
+ *  10. the `dm:` branch of that key rule — the one with no producer behind it
+ *      — behaves the same, including on a shared timestamp.
  */
 
 function dm(overrides: Partial<DmConversationRow> = {}): DmConversationRow {
@@ -159,11 +164,20 @@ describe('mergeConversations', () => {
     expect(result[0].unreadCount).toBe(1)
   })
 
-  it('two playdate rows with an UNRESOLVED counterpart both survive (per-conversation keys)', () => {
-    // db.ts sets otherPartyId to '' when the host and the pinger both fail
-    // to resolve. The merge must not lump every such row into one ''
-    // bucket — before the fix only ONE row survived per kind, with the
-    // unread counts summed onto the survivor.
+  it('two playdate rows with an UNRESOLVED counterpart both survive, with DISTINCT identities', () => {
+    // An unresolved playdate row IS reachable from the producer: db.ts
+    // `listConversationsWithClient` derives otherPartyId as
+    // `counterpartIds[playdateId] ?? ''` (db.ts:4384-4387) and only takes that
+    // fallback when the caller SENT the last message, while `counterpartIds`
+    // is '' whenever the caller is the HOST and no pinger resolves
+    // (db.ts:4305 — `lastPinger?.id ?? ''`: nobody pinged, or the pinger
+    // un-pinged, which DELETEs the row at trust.ts:68-75).
+    //
+    // The merge must not lump those rows into one '' bucket — before the fix
+    // only ONE row survived per kind, with the unread counts summed onto the
+    // survivor — AND the two survivors must carry DISTINCT identities, because
+    // `otherPartyId` is '' on both, so a React list key or a data-testid built
+    // from it collides.
     const pdOne = pd({
       otherPartyId: '',
       otherPartyDisplayName: '',
@@ -186,6 +200,72 @@ describe('mergeConversations', () => {
     expect(p2?.otherPartyId).toBe('')
     expect(p1?.unreadCount).toBe(2)
     expect(p2?.unreadCount).toBe(3)
+    // THE BUG PINNED. At c253865 both rows were `otherPartyId === ''`, so the
+    // consumer's `key={row.otherPartyId || row.kind}` gave BOTH the React key
+    // 'playdate', and `data-testid={'inbox-row-' + otherPartyId}` gave both
+    // the testid 'inbox-row-'.
+    expect(p1?.mergeKey).toBe('playdate:p1')
+    expect(p2?.mergeKey).toBe('playdate:p2')
+    expect(new Set(result.map((r) => r.mergeKey)).size).toBe(2)
+  })
+
+  it('two DM rows with an UNRESOLVED counterpart both survive, with DISTINCT identities', () => {
+    // THE `dm:` BRANCH — ZERO coverage before this test: the only unresolved
+    // row a test had ever fed was a playdate. An unresolved DM row cannot come
+    // from db.ts today (that producer's Map is keyed on profile PKs —
+    // db.ts:4891 `row.sender_id`, db.ts:4905 `recipient.id`), but
+    // `mergeConversations` is a public pure function, so it must not collapse
+    // two distinct unresolved DM conversations if one ever can.
+    const dmOne = dm({
+      otherPartyId: '',
+      otherPartyName: '',
+      latestAt: '2026-09-23T10:00:00Z',
+      unreadCount: 2,
+    })
+    const dmTwo = dm({
+      otherPartyId: '',
+      otherPartyName: '',
+      latestAt: '2026-09-23T11:00:00Z',
+      unreadCount: 3,
+    })
+    const result = mergeConversations([dmOne, dmTwo], [])
+    expect(result).toHaveLength(2)
+    expect(result.every((r) => r.otherPartyId === '')).toBe(true)
+    expect(new Set(result.map((r) => r.mergeKey)).size).toBe(2)
+    expect(result.map((r) => r.mergeKey).sort()).toEqual([
+      'dm:unresolved:0',
+      'dm:unresolved:1',
+    ])
+  })
+
+  it('two unresolved DM rows SHARING A TIMESTAMP stay two rows with two identities', () => {
+    // The exact tie the old `dm:${row.latestAt}` key collapsed: two distinct
+    // unresolved conversations whose latest messages share a created_at. That
+    // is the original single-''-bucket bug resurfacing on a tie, so it is
+    // pinned by count: two rows in, two rows out.
+    const sameMoment = '2026-09-23T10:00:00Z'
+    const result = mergeConversations(
+      [
+        dm({ otherPartyId: '', otherPartyName: '', latestAt: sameMoment }),
+        dm({ otherPartyId: '', otherPartyName: '', latestAt: sameMoment }),
+      ],
+      [],
+    )
+    expect(result).toHaveLength(2)
+    expect(new Set(result.map((r) => r.mergeKey)).size).toBe(2)
+  })
+
+  it('a RESOLVED row keeps the counterpart id as its identity (the consumer testids do not move)', () => {
+    // Every resolved row's identity is its profile id, exactly what the list
+    // key and the row testids used before this change — so the e2e specs that
+    // address rows by `inbox-row-<profileId>` (e2e/dm.e2e.ts:109,123) keep
+    // resolving.
+    const result = mergeConversations(
+      [dm({ otherPartyId: 'parent-1' })],
+      [pd({ otherPartyId: 'parent-1' })],
+    )
+    expect(result).toHaveLength(1)
+    expect(result[0].mergeKey).toBe('parent-1')
   })
 
   it('DM plus two read playdate threads keeps the DM unreadCount', () => {
@@ -208,6 +288,45 @@ describe('mergeConversations', () => {
     expect(result[0].kind).toBe('playdate')
     expect(result[0].playdateId).toBe('p2')
     expect(result[0].unreadCount).toBe(6)
+  })
+})
+
+describe('mergeKeyFor (the per-conversation identity, tested on its own)', () => {
+  it('a RESOLVED counterpart keys on its profile id — the id both kinds collapse under', () => {
+    expect(mergeKeyFor({ otherPartyId: 'parent-1', kind: 'dm' })).toBe('parent-1')
+    expect(mergeKeyFor({ otherPartyId: 'parent-1', kind: 'playdate', playdateId: 'p1' })).toBe(
+      'parent-1',
+    )
+  })
+
+  it('an UNRESOLVED playdate row keys on the playdate id — a durable identity', () => {
+    expect(mergeKeyFor({ otherPartyId: '', kind: 'playdate', playdateId: 'p1' })).toBe(
+      'playdate:p1',
+    )
+    expect(mergeKeyFor({ otherPartyId: '', kind: 'playdate', playdateId: 'p2' })).toBe(
+      'playdate:p2',
+    )
+  })
+
+  it('an UNRESOLVED DM row keys on the ordinal — NEVER on latestAt', () => {
+    // `latestAt` is not an identity: a new message changes it, and two
+    // distinct conversations whose latest messages share a timestamp would
+    // collapse back into one bucket. The ordinal is what keeps them apart.
+    expect(mergeKeyFor({ otherPartyId: '', kind: 'dm' }, 0)).toBe('dm:unresolved:0')
+    expect(mergeKeyFor({ otherPartyId: '', kind: 'dm' }, 1)).toBe('dm:unresolved:1')
+  })
+
+  it('the ordinal is ignored by the resolved and playdate branches', () => {
+    expect(mergeKeyFor({ otherPartyId: 'parent-1', kind: 'dm' }, 7)).toBe('parent-1')
+    expect(mergeKeyFor({ otherPartyId: '', kind: 'playdate', playdateId: 'p1' }, 7)).toBe(
+      'playdate:p1',
+    )
+  })
+
+  it('two unresolved rows of different kinds never share one key', () => {
+    const playdateKey = mergeKeyFor({ otherPartyId: '', kind: 'playdate', playdateId: 'p1' }, 0)
+    const dmKey = mergeKeyFor({ otherPartyId: '', kind: 'dm' }, 0)
+    expect(playdateKey).not.toBe(dmKey)
   })
 })
 
