@@ -30,6 +30,7 @@ import {
   IOS_WEBVIEW_REASON,
   PING_PROMPT_REASON,
   PUSH_DECISION_KEY,
+  PUSH_DECISION_MIGRATED_KEY,
   PUSH_OFFERED_KEY,
   PUSH_PROMPT_REASON,
   PUSH_PROMPT_TRIGGERS,
@@ -59,6 +60,8 @@ import {
   isRsvpDeferredAt,
   isPromptSuppressedPath,
   isStandalone,
+  migrateLegacyDecision,
+  migrateLegacyDecisionOnce,
   notificationDedupeKey,
   notificationUrl,
   parseOfferedTriggers,
@@ -75,6 +78,7 @@ import {
   serializeOfferedTriggers,
   serializePushPrefs,
   setKindMuted,
+  shouldSpendPushPoint,
   type StorageLike,
 } from './push'
 
@@ -543,6 +547,85 @@ describe('readPermissionDecision / rememberPermissionDecision', () => {
   })
 })
 
+// ---------------------------------------------------------------------------
+// The one-time legacy-decision migration (V25 ticket 15, fix round · finding 3)
+//
+// `PUSH_DECISION_KEY` was read verbatim, with no versioning. Every parent who
+// ever tapped "Not now" on the OLD prompt — or turned notifications off, or
+// dismissed the OS dialog, which used to write the same value (finding 1) —
+// already has 'dismissed' stored, and the decision seam turns a stored
+// 'dismissed' into global silence. So for exactly those parents all three new
+// moments were a no-op. The migration resets a legacy 'dismissed' to 'unknown'
+// ONCE, guarded by a marker, so a 'dismissed' the /settings off-switch writes
+// afterwards (a CURRENT answer) is never erased out from under the parent.
+// ---------------------------------------------------------------------------
+
+describe('the one-time legacy-decision migration', () => {
+  it('resets a legacy dismissed — the value that predates the three moments', () => {
+    expect(migrateLegacyDecision('dismissed')).toBe('unknown')
+  })
+
+  it('carries a real browser fact forward untouched', () => {
+    expect(migrateLegacyDecision('granted')).toBe('granted')
+    expect(migrateLegacyDecision('denied')).toBe('denied')
+    expect(migrateLegacyDecision('unknown')).toBe('unknown')
+  })
+
+  it('a legacy dismissed no longer blocks the prompts', () => {
+    // THE PIN FOR FINDING 3: the parent who said "Not now" on the old prompt is
+    // offered the three moments again, and the legacy value is gone.
+    const storage = fakeStorage({ [PUSH_DECISION_KEY]: 'dismissed' })
+    migrateLegacyDecisionOnce(storage)
+    expect(readPermissionDecision(storage)).toBe('unknown')
+    expect(storage.dump()[PUSH_DECISION_KEY]).toBeUndefined()
+    for (const trigger of PUSH_PROMPT_TRIGGERS) {
+      expect(
+        decidePermissionPrompt({
+          decision: readPermissionDecision(storage),
+          permission: 'default',
+          trigger,
+          origin: '/',
+          currentPath: '/',
+          offered: [],
+          gate: OPEN_GATE,
+        }).ask,
+        `${trigger} must be offered again`,
+      ).toBe(true)
+    }
+  })
+
+  it('leaves a granted/denied decision alone, and records that it ran', () => {
+    const storage = fakeStorage({ [PUSH_DECISION_KEY]: 'denied' })
+    migrateLegacyDecisionOnce(storage)
+    expect(readPermissionDecision(storage)).toBe('denied')
+    expect(storage.dump()[PUSH_DECISION_MIGRATED_KEY]).toBe('1')
+  })
+
+  it('runs EXACTLY once — a dismissal written after the marker is a current answer', () => {
+    // The /settings off-switch after the migration must stay global: a migration
+    // that re-ran on every read would erase that answer.
+    const storage = fakeStorage({ [PUSH_DECISION_KEY]: 'dismissed' })
+    migrateLegacyDecisionOnce(storage)
+    rememberPermissionDecision(storage, 'dismissed')
+    migrateLegacyDecisionOnce(storage)
+    expect(readPermissionDecision(storage)).toBe('dismissed')
+  })
+
+  it('is a no-op once the marker exists, whatever the stored value is', () => {
+    const storage = fakeStorage({
+      [PUSH_DECISION_KEY]: 'dismissed',
+      [PUSH_DECISION_MIGRATED_KEY]: '1',
+    })
+    migrateLegacyDecisionOnce(storage)
+    expect(readPermissionDecision(storage)).toBe('dismissed')
+  })
+
+  it('never throws into a handler, and no storage means no migration', () => {
+    expect(() => migrateLegacyDecisionOnce(null)).not.toThrow()
+    expect(() => migrateLegacyDecisionOnce(throwingStorage)).not.toThrow()
+  })
+})
+
 describe('the armed trigger', () => {
   it('round-trips the two meaningful actions', () => {
     const storage = fakeStorage()
@@ -960,11 +1043,40 @@ describe('decidePermissionPrompt — one offer per point', () => {
     ).toEqual({ ask: false, reason: null, note: null })
   })
 
-  it('a remembered dismissal is still global when the point is NEW (the /settings off-switch)', () => {
-    // 'dismissed' is what "Turn off notifications" writes; a device the parent
-    // switched off must not be asked again just because a later point is new.
+  it('a remembered dismissal is still global when the point is NEW — and the /settings off-switch is its only writer', () => {
+    // FIX ROUND, FINDING 1. 'dismissed' no longer has three writers: a dismissed
+    // OS dialog writes NOTHING (see src/lib/pushClient.ts enablePush), and a
+    // legacy 'dismissed' — an old "Not now", an old "Turn off", or that OS dialog
+    // — is reset once by migrateLegacyDecisionOnce (finding 3). So the value that
+    // reaches the branch below is a CURRENT answer ("Turn off notifications" in
+    // /settings), and that answer IS global: a device the parent switched off
+    // must not be asked again just because a later point is new. This is the
+    // corrected rule the old version of this test encoded wrongly — it asserted
+    // global silence without pinning who may write the value.
+    const storage = fakeStorage({ [PUSH_DECISION_KEY]: 'dismissed' })
+
+    // A LEGACY 'dismissed' is not that answer: it is migrated away, and the new
+    // point is offered — which is the whole bug this fix round exists for.
+    migrateLegacyDecisionOnce(storage)
+    expect(readPermissionDecision(storage)).toBe('unknown')
+    expect(
+      decidePermissionPrompt({
+        decision: readPermissionDecision(storage),
+        permission: 'default',
+        trigger: 'ping_saved',
+        origin: '/',
+        currentPath: '/',
+        offered: [],
+        gate: OPEN_GATE,
+      }).ask,
+      'a legacy dismissal must not silence a NEW point',
+    ).toBe(true)
+
+    // The off-switch writes a CURRENT 'dismissed' (after the migration marker),
+    // and that one still silences a new point.
+    rememberPermissionDecision(storage, 'dismissed')
     const decision = decidePermissionPrompt({
-      decision: 'dismissed',
+      decision: readPermissionDecision(storage),
       permission: 'default',
       trigger: 'ping_saved',
       origin: '/',
@@ -1019,6 +1131,89 @@ describe('decidePermissionPrompt — one offer per point', () => {
         }),
         currentPath,
       ).toEqual({ ask: false, reason: null, note: null })
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// WHEN a point is SPENT (V25 ticket 15, fix round · finding 2)
+//
+// This rule used to be an `if` inside src/components/PushOptInPrompt.tsx, which
+// put it out of reach of the vitest lane entirely and duplicated two predicates
+// that already live in this module (isPromptSuppressedPath, isPlaydateDetailPath).
+// It is a pure function here now, and the component only applies it.
+// ---------------------------------------------------------------------------
+
+const DETAIL_PATH = '/playdate/11111111-2222-3333-4444-555555555555'
+
+describe('shouldSpendPushPoint — when is a point spent', () => {
+  it('spends the point the moment the card is drawn on a normal surface', () => {
+    expect(
+      shouldSpendPushPoint({ ask: true, trigger: 'post_created', currentPath: '/' }),
+    ).toBe(true)
+  })
+
+  it('never spends on a suppressed surface — the app navigates out of it by itself', () => {
+    for (const currentPath of ['/settings', '/onboarding', '/new']) {
+      expect(
+        shouldSpendPushPoint({ ask: true, trigger: 'signup', currentPath }),
+        currentPath,
+      ).toBe(false)
+    }
+  })
+
+  it('never spends on a drop-in DETAIL page, even when the seam would ask there', () => {
+    // The case the seam does NOT cover on its own: an action armed on the feed
+    // and a parent now standing on a detail page. isRsvpDeferredAt only defers
+    // the ask when the ACTION happened on a detail page too, so `ask` can be
+    // true here — and the RSVP confirmation still owns the screen.
+    expect(
+      shouldSpendPushPoint({ ask: true, trigger: 'ping_saved', currentPath: DETAIL_PATH }),
+    ).toBe(false)
+    expect(
+      shouldSpendPushPoint({ ask: true, trigger: 'ping_saved', currentPath: `${DETAIL_PATH}/` }),
+    ).toBe(false)
+  })
+
+  it('a host form under /playdate/:id is not the detail page — the point is spent', () => {
+    expect(
+      shouldSpendPushPoint({
+        ask: true,
+        trigger: 'post_created',
+        currentPath: `${DETAIL_PATH}/edit`,
+      }),
+    ).toBe(true)
+  })
+
+  it('never spends when there is no card to draw — no ask, or no trigger', () => {
+    expect(shouldSpendPushPoint({ ask: false, trigger: 'signup', currentPath: '/' })).toBe(false)
+    expect(shouldSpendPushPoint({ ask: false, trigger: null, currentPath: '/' })).toBe(false)
+    expect(shouldSpendPushPoint({ ask: true, trigger: null, currentPath: '/' })).toBe(false)
+  })
+
+  it('is total — an unknown route reads as "not suppressed" and never throws', () => {
+    expect(shouldSpendPushPoint({ ask: true, trigger: 'signup', currentPath: undefined })).toBe(
+      true,
+    )
+    expect(shouldSpendPushPoint({ ask: true, trigger: 'signup', currentPath: null })).toBe(true)
+  })
+
+  it('agrees with the ask seam on every suppressed surface — the predicates cannot drift', () => {
+    for (const currentPath of ['/settings', '/onboarding', '/new']) {
+      const ask = decidePermissionPrompt({
+        decision: 'unknown',
+        permission: 'default',
+        trigger: 'signup',
+        origin: '/',
+        currentPath,
+        offered: [],
+        gate: OPEN_GATE,
+      }).ask
+      expect(ask, `${currentPath} must not ask`).toBe(false)
+      expect(
+        shouldSpendPushPoint({ ask, trigger: 'signup', currentPath }),
+        `${currentPath} must not spend`,
+      ).toBe(false)
     }
   })
 })

@@ -5,6 +5,7 @@ import {
   decidePermissionPrompt,
   isPlaydateDetailPath,
   isPromptSuppressedPath,
+  shouldSpendPushPoint,
   type BrowserPermission,
   type PermissionDecision,
   type PushOptInGate,
@@ -35,7 +36,10 @@ import {
  * all on /settings (where the real control lives), /onboarding and /new (surfaces
  * the app navigates out of by itself — see `isPromptSuppressedPath`). The whole
  * decision is the pure `decidePermissionPrompt` seam; this file only reads the
- * facts and draws the card.
+ * facts and draws the card. The second decision this file used to make — WHEN a
+ * point is spent — was an `if` here until the fix round; it is now the pure
+ * `shouldSpendPushPoint` in the same lib module, so the vitest lane can reach it
+ * (fix-round finding 2: a rule that lives only in a .tsx is untestable).
  *
  * HOW IT LEARNS THAT THE ACTION HAPPENED (fix-round finding B): the arm is
  * written by a PAGE's event handler and this component lives in the SHELL,
@@ -132,15 +136,23 @@ export function PushOptInPrompt() {
    * ping saved on a detail page is armed and then DEFERRED, and the point may
    * not be spent without ever having been put in front of them.
    *
+   * WHEN that is (fix-round finding 2): the rule is the pure
+   * `shouldSpendPushPoint` in src/lib/push.ts — not an `if` here, because
+   * "suppressed surface", "detail page" and "the seam decided to ask" are rules,
+   * and a rule that lives only in a .tsx is unreachable from the vitest lane.
+   * This effect only applies it. (The `trigger === null` guard below is the type
+   * narrowing `markPushPointOffered` needs — the rule already refused a null
+   * trigger, so it is a cast, not a second decision.)
+   *
    * The write deliberately does not notify this component's own listeners — the
    * card that is up must not pull itself out from under the parent. The next
    * fact re-read (a route hop, an answer, a new action) sees the point as spent.
    */
   useEffect(() => {
-    if (suppressed || onDetailPage) return
-    if (!state.ask || trigger === null) return
+    if (trigger === null) return
+    if (!shouldSpendPushPoint({ ask: state.ask, trigger, currentPath: pathname })) return
     markPushPointOffered(trigger)
-  }, [suppressed, onDetailPage, state.ask, trigger])
+  }, [state.ask, trigger, pathname])
 
   /**
    * Say the fallback sentence ONCE, and stand the trigger down so it cannot

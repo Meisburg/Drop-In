@@ -258,6 +258,18 @@ export function isPushPromptTrigger(value: unknown): value is PushPromptTrigger 
 }
 
 export const PUSH_DECISION_KEY = 'dropin.push.decision'
+
+/**
+ * The one-time migration marker (V25 ticket 15, fix round). A parent who
+ * dismissed the OLD prompt (an old "Not now", an old "Turn off" in /settings,
+ * or a dismissed OS dialog) has a legacy 'dismissed' under `PUSH_DECISION_KEY`.
+ * That value predates the three-moment feature, so it must not silence it:
+ * exactly once, `migrateLegacyDecisionOnce` resets a stored 'dismissed' to
+ * 'unknown' and sets this marker, so the migration never runs again — a
+ * 'dismissed' written by the /settings off-switch AFTER the marker is a current
+ * answer and is kept.
+ */
+export const PUSH_DECISION_MIGRATED_KEY = 'dropin.push.decision.migrated.v15'
 export const PUSH_TRIGGER_KEY = 'dropin.push.trigger'
 /**
  * WHERE the armed action happened (sessionStorage, this tab). A separate key
@@ -304,6 +316,48 @@ export function rememberPermissionDecision(
     // A storage that refuses writes (private mode, quota) means the decision
     // is not remembered — the prompt may then reappear, which is a cosmetic
     // regression, never a broken flow. Never throw into a click handler.
+  }
+}
+
+/**
+ * The one-time legacy-decision migration (V25 ticket 15, fix round). A parent
+ * who dismissed the OLD prompt — an old "Not now", an old "Turn off" in
+ * /settings, or a dismissed OS dialog — has a legacy 'dismissed' stored under
+ * `PUSH_DECISION_KEY`. That value predates the three-moment feature, so it must
+ * not silence it: a legacy 'dismissed' is reset to 'unknown' so the parent can
+ * be offered the three moments again. A 'granted' or 'denied' is a real browser
+ * fact and carries forward untouched; 'unknown' stays 'unknown'.
+ *
+ * Pure and total — the test lane pins all four branches.
+ */
+export function migrateLegacyDecision(value: PermissionDecision): PermissionDecision {
+  return value === 'dismissed' ? 'unknown' : value
+}
+
+/**
+ * Perform the one-time legacy-decision migration, guarded by
+ * `PUSH_DECISION_MIGRATED_KEY` so it runs EXACTLY once per parent. Before the
+ * marker is set, a stored 'dismissed' (a legacy one, from the pre-ticket-15
+ * prompt) is reset to 'unknown' (the key is cleared) and the marker is written;
+ * a 'granted' / 'denied' is carried forward and the marker is written. Once the
+ * marker is set the stored value is treated as a current answer and left alone —
+ * so a 'dismissed' written by the /settings off-switch AFTER the migration is
+ * never reset. Never throws into a handler; an unreadable storage just means no
+ * migration.
+ */
+export function migrateLegacyDecisionOnce(storage: StorageLike | null): void {
+  if (storage === null) return
+  try {
+    if (storage.getItem(PUSH_DECISION_MIGRATED_KEY) !== null) return
+    const legacy = parsePermissionDecision(storage.getItem(PUSH_DECISION_KEY))
+    const migrated = migrateLegacyDecision(legacy)
+    if (migrated === 'unknown') storage.removeItem(PUSH_DECISION_KEY)
+    else storage.setItem(PUSH_DECISION_KEY, serializePermissionDecision(migrated))
+    storage.setItem(PUSH_DECISION_MIGRATED_KEY, '1')
+  } catch {
+    // A storage that refuses writes (private mode, quota) means the migration is
+    // not remembered — a legacy value may then still block a point, a cosmetic
+    // regression, never a broken flow. Never throw into a handler.
   }
 }
 
@@ -374,9 +428,12 @@ export function clearArmedTrigger(storage: StorageLike | null): void {
 // the bug this section exists to prevent:
 //
 //  * PUSH_DECISION_KEY is the parent's ANSWER ('denied' / 'dismissed' /
-//    'granted'). 'dismissed' is written by "Turn off notifications" in
-//    /settings, and that answer IS global — a parent who switched notifications
-//    off in Settings has said no to all of it, not to one card.
+//    'granted'). 'dismissed' has a SINGLE writer — "Turn off notifications" in
+//    /settings (fix round, finding 1: a dismissed OS dialog no longer writes
+//    it, and a legacy 'dismissed' from the pre-ticket-15 prompt is reset once
+//    by migrateLegacyDecisionOnce) — and that answer IS global: a parent who
+//    switched notifications off in Settings has said no to all of it, not to
+//    one card.
 //  * PUSH_OFFERED_KEY is which of the three MOMENTS have been put in front of
 //    them. A point in this set is never offered again; a point outside it still
 //    is, even after a "Not now" somewhere else.
@@ -597,11 +654,15 @@ export function isRsvpDeferredAt(
  *                            offered at most once), so /settings → Notifications
  *                            is the only door back. Silence, not the fallback
  *                            sentence, so the sentence cannot loop.
- *  8. 'dismissed'          → never ask; point at the profile control. This is
- *                            the GLOBAL answer ("Turn off notifications" in
- *                            /settings, or a not-now remembered before this
- *                            ticket), and it is why a "Not now" on a CARD does
- *                            not write it — see dismissPushPrompt.
+ *  8. 'dismissed'          → never ask; point at the control. This is the
+ *                            GLOBAL answer, written ONLY by "Turn off
+ *                            notifications" in /settings (fix round, finding 1:
+ *                            a dismissed OS dialog no longer writes it, and a
+ *                            legacy 'dismissed' — an old not-now or OS-dialog,
+ *                            pre-ticket-15 — is migrated to 'unknown' once, so
+ *                            it does not block the points). That is why a "Not
+ *                            now" on a CARD does not write it — see
+ *                            dismissPushPrompt.
  *  9. saved on a drop-in's DETAIL page, still on one → never ask HERE (the
  *                            RSVP-priority deferral): the next non-detail visit
  *                            asks instead.
@@ -624,6 +685,34 @@ export function decidePermissionPrompt(input: PermissionPromptInput): Permission
   if (isRsvpDeferredAt(input.origin, input.currentPath)) return no(null)
 
   return { ask: true, reason: promptReasonFor(input.trigger), note: null }
+}
+
+/**
+ * The "when is a point SPENT" decision (V25 ticket 15) — the one rule the
+ * prompt component used to encode as an `if` inside the .tsx (the build law
+ * says React renders, it does not decide; and a rule that lives only in the
+ * component is unreachable by the vitest lane). A point is marked OFFERED the
+ * moment its card is actually drawn, and ONLY there:
+ *
+ *  * never on a suppressed surface (isPromptSuppressedPath — /settings, the
+ *    control's own home, and /onboarding + /new, which the app navigates out
+ *    of by itself),
+ *  * never on a drop-in's detail page (isPlaydateDetailPath — the RSVP
+ *    confirmation owns that screen),
+ *  * only when the pure seam has decided to ASK (ask) for a real trigger
+ *    (trigger !== null).
+ *
+ * Pure and total — the test lane pins it. `currentPath` is the component's
+ * current route (which the lib path predicates already read).
+ */
+export function shouldSpendPushPoint(input: {
+  ask: boolean
+  trigger: PushPromptTrigger | null
+  currentPath: string | null | undefined
+}): boolean {
+  if (isPromptSuppressedPath(input.currentPath)) return false
+  if (isPlaydateDetailPath(input.currentPath)) return false
+  return input.ask && input.trigger !== null
 }
 
 /** `Notification.permission` (or the absence of `Notification`) → our shape. */

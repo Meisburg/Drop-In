@@ -30,6 +30,7 @@ import {
   installSurface,
   isKindMuted,
   isStandalone,
+  migrateLegacyDecisionOnce,
   parsePushPrefs,
   pushOptInGate,
   readArmedOrigin,
@@ -382,6 +383,10 @@ export function armedPushOrigin(): string | null {
  *    answer — "Turn off notifications" in /settings (see disablePush) — and a
  *    global dismissal here is exactly what made a not-now at one point cancel
  *    every later point. The per-point fact lives in the offered set instead.
+ *    (Fix round, finding 1: the /settings off-switch is now the ONLY writer of
+ *    'dismissed'. A dismissed OS dialog no longer writes it either — see
+ *    enablePush — and a legacy value from the pre-ticket-15 prompt is reset once
+ *    by migrateLegacyDecisionOnce, so this comment is true rather than intended.)
  *  * It does NOT leave the armed trigger standing. The point is spent, so the
  *    action that armed it has been consumed; the prompt's note (the pinned
  *    "you can turn them on any time from your settings …" sentence) is held by
@@ -409,7 +414,16 @@ export function currentOptInGate() {
   return pushOptInGate({ ...deviceFacts(), standalone: runningStandalone() })
 }
 
+/**
+ * The browser half of `decidePermissionPrompt`: read the decision, running the
+ * one-time legacy migration first (V25 ticket 15, fix round) so a parent who
+ * dismissed the OLD prompt (a legacy 'dismissed') is not silently locked out of
+ * the three-moment feature. Every decision read in the browser goes through
+ * here (the prompt component, the /settings control, and the repair path), so
+ * the migration runs once before the first real read.
+ */
 export function currentDecision(): PermissionDecision {
+  migrateLegacyDecisionOnce(localStore())
   return readPermissionDecision(localStore())
 }
 
@@ -440,7 +454,11 @@ function describeError(error: unknown): string {
  * else; the row is written LAST so the UI can never claim "on" without a row
  * (which is precisely the state the pre-apply red e2e spec pins).
  *
- * A denial (or a dismissed dialog) is REMEMBERED, so the prompt never nags.
+ * A denial is REMEMBERED ('denied'), so the prompt never nags. A dismissed
+ * dialog is NOT remembered (fix round, finding 1): the parent merely closed the
+ * OS box, and remembering that as 'dismissed' would silence the three-moment
+ * feature forever — 'dismissed' is written only by the /settings off-switch
+ * (disablePush, below).
  */
 export async function enablePush(): Promise<PushEnableResult> {
   if (!pushSupported()) {
@@ -463,7 +481,10 @@ export async function enablePush(): Promise<PushEnableResult> {
     return { ok: false, reason: 'denied', message: DENIED_POINTER }
   }
   if (permission !== 'granted') {
-    rememberPermissionDecision(localStore(), 'dismissed')
+    // A DISMISSED DIALOG IS NOT REMEMBERED (fix round, finding 1). The parent
+    // merely closed the OS box; remembering it as 'dismissed' would silence the
+    // three-moment feature forever. 'dismissed' is written only by the
+    // /settings off-switch (disablePush, below) — nothing is remembered here.
     return { ok: false, reason: 'dismissed', message: DISMISSED_POINTER }
   }
 
