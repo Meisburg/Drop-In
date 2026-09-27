@@ -159,6 +159,35 @@ describe('mergeConversations', () => {
     expect(result[0].unreadCount).toBe(1)
   })
 
+  it('two playdate rows with an UNRESOLVED counterpart both survive (per-conversation keys)', () => {
+    // db.ts sets otherPartyId to '' when the host and the pinger both fail
+    // to resolve. The merge must not lump every such row into one ''
+    // bucket — before the fix only ONE row survived per kind, with the
+    // unread counts summed onto the survivor.
+    const pdOne = pd({
+      otherPartyId: '',
+      otherPartyDisplayName: '',
+      playdateId: 'p1',
+      latestMessageAt: '2026-09-23T10:00:00Z',
+      unreadCount: 2,
+    })
+    const pdTwo = pd({
+      otherPartyId: '',
+      otherPartyDisplayName: '',
+      playdateId: 'p2',
+      latestMessageAt: '2026-09-23T11:00:00Z',
+      unreadCount: 3,
+    })
+    const result = mergeConversations([], [pdOne, pdTwo])
+    expect(result).toHaveLength(2)
+    const p1 = result.find((r) => r.playdateId === 'p1')
+    const p2 = result.find((r) => r.playdateId === 'p2')
+    expect(p1?.otherPartyId).toBe('')
+    expect(p2?.otherPartyId).toBe('')
+    expect(p1?.unreadCount).toBe(2)
+    expect(p2?.unreadCount).toBe(3)
+  })
+
   it('DM plus two read playdate threads keeps the DM unreadCount', () => {
     const dmRow = dm({ otherPartyId: 'same', latestAt: '2026-09-23T10:00:00Z', unreadCount: 2 })
     const pdOne = pd({ otherPartyId: 'same', playdateId: 'p1', latestMessageAt: '2026-09-23T11:00:00Z', unreadCount: 0 })

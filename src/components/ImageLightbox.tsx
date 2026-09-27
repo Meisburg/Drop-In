@@ -106,11 +106,18 @@ export function LightboxProvider({ children }: { children: ReactNode }) {
     [],
   )
   const openGallery = useCallback(
-    (photos: readonly GalleryPhoto[], index: number) =>
+    (photos: readonly GalleryPhoto[], index: number) => {
+      const galleryPhotos = galleryPhotosFrom(null, '', photos)
       setGallery({
-        photos: galleryPhotosFrom(null, '', photos),
-        index: clampGalleryIndex(photos.length, index),
-      }),
+        photos: galleryPhotos,
+        // Clamp against the FILTERED array's length: `galleryPhotosFrom`
+        // drops entries with an empty `src`, so clamping against the
+        // caller's pre-filter `photos.length` would open a DIFFERENT
+        // photo than the one tapped whenever a dropped entry sits before
+        // it (an off-by-N, latent while every gallery holds one photo).
+        index: clampGalleryIndex(galleryPhotos.length, index),
+      })
+    },
     [],
   )
   const close = useCallback(() => setGallery({ photos: [], index: 0 }), [])
