@@ -18,13 +18,18 @@
  * (`_shared/emailTransport.ts`), because that stamp is the only record of why
  * nothing was delivered.
  *
- *  1. CATCH-UP SCAN (`starting_soon` only). "Starts in an hour" is a property
- *     of the CLOCK, not of any write, so it is the one kind no trigger can
- *     produce. This function scans for posts that (a) start within the next 60
- *     minutes, (b) are still on, (c) someone pinged, and (d) have no
- *     `notification_log` row for that person yet — then inserts the rows it is
- *     about to send, in the same invocation. The other three kinds are
- *     produced by the SECURITY DEFINER triggers in migration 0032.
+ *  1. CATCH-UP SCANS (`starting_soon` and `review_due`). Both are properties of
+ *     the CLOCK, not of any write, so they are the two kinds no trigger can
+ *     produce. The `starting_soon` scan looks for posts that (a) start within
+ *     the next 60 minutes, (b) are still on, (c) someone pinged, and (d) have no
+ *     `notification_log` row for that person yet. The `review_due` scan looks
+ *     for place-backed posts that (a) are still on, (b) ended within the last
+ *     24 hours (`REVIEW_PROMPT_WINDOW_HOURS`), (c) someone pinged, and (d) have
+ *     no `review_due` row for that person yet. Each inserts the rows it is
+ *     about to send, in the same invocation. The other four kinds come from the
+ *     SECURITY DEFINER triggers: `ping_received`, `new_comment` and `cancelled`
+ *     in migration 0032, and `ended` in 0041 — which replaces 0032's cancelled
+ *     function so the same trigger emits both notifying statuses.
  *  2. DRAIN. Every row with `sent_at is null`, newest last: post it, stamp
  *     `sent_at` (or `error`), and DELETE any subscription the push service
  *     answers 404/410 for (the endpoint is dead: the browser unsubscribed, the
@@ -73,6 +78,11 @@ import { sendEmailViaSmtp, smtpConfigFrom } from '../_shared/smtp.ts'
 import { smtpDeps } from '../_shared/smtpDeno.ts'
 import { chooseTransport } from '../_shared/emailTransport.ts'
 import { classifySendResult, decideEmailFallback } from '../_shared/emailFallback.ts'
+import {
+  REVIEW_PROMPT_WINDOW_HOURS,
+  isReviewPromptCandidate,
+  reviewPromptRow,
+} from '../_shared/reviewScan.ts'
 
 /**
  * The email fallback's configuration, read ONCE at module scope. `Deno.env` is
@@ -284,6 +294,122 @@ async function catchUpStartingSoon(admin: SupabaseClient): Promise<number> {
   // ignoreDuplicates is the second half of the anti-double-send wall: a
   // concurrent invocation that inserted the same rows first wins, and this one
   // creates nothing.
+  const { error: insertError } = await admin
+    .from('notification_log')
+    .upsert(insertRows, {
+      onConflict: 'profile_id,kind,playdate_id',
+      ignoreDuplicates: true,
+    })
+
+  if (insertError) throw insertError
+  return insertRows.length
+}
+
+/**
+ * Insert the `review_due` rows that are missing, and report how many were
+ * created. The other clock-produced catch-up scan, beside
+ * `catchUpStartingSoon`, and deliberately its twin: same source of truth
+ * (`going_pings`), same two-wall idempotence (the exclusion read, then the
+ * `ignoreDuplicates` upsert), same `MAX_SCAN_POSTS` bound, one clock read.
+ *
+ * "It finished" is a property of the CLOCK, not of any write — nothing sets
+ * `'ended'` automatically (only a host ending early does, `0041`), so a
+ * naturally-expired drop-in keeps `status = 'on'` forever and no trigger can
+ * produce this kind. Hence the scan, and hence nothing to change in `pg_cron`.
+ *
+ * THIS IS WIRING ONLY. WHO gets asked and WHAT the row says are decided in the
+ * pure `../_shared/reviewScan.ts` (vitest-pinned by `src/lib/reviewScan.test.ts`),
+ * because this file cannot be unit-tested — `scripts/deno-check-functions.sh`
+ * only type-checks it and `scripts/deno-test-functions.sh` runs one SMTP file.
+ * No rule, comparison or validity check is added here.
+ */
+async function catchUpReviewDue(admin: SupabaseClient): Promise<number> {
+  // ONE clock read, handed to both the query bound and the predicate, so the
+  // two walls cannot disagree about what "now" is.
+  const now = new Date()
+  const windowMs = REVIEW_PROMPT_WINDOW_HOURS * 60 * 60 * 1000
+  const since = new Date(now.getTime() - windowMs).toISOString()
+
+  // (a)+(b)+(c): who pinged a place-backed post that is still on and ended
+  // inside the window. The !inner embed is what makes the playdate filters
+  // restrict the join rather than blank out the embed. `status = 'on'` is the
+  // only signal a naturally-expired drop-in is over, so 'cancelled' and 'ended'
+  // ("don't head out") can never reach the mapper. These SQL-side filters are a
+  // SECOND, independent wall — the predicate below is the rule.
+  const { data: pingRows, error: pingError } = await admin
+    .from('going_pings')
+    .select(
+      'profile_id, playdate_id, playdate:playdates!going_pings_playdate_id_fkey!inner ( id, title, ends_at, status, place_id )',
+    )
+    .eq('playdate.status', 'on')
+    .lt('playdate.ends_at', now.toISOString())
+    .gte('playdate.ends_at', since)
+    .not('playdate.place_id', 'is', null)
+    .limit(MAX_SCAN_POSTS)
+
+  if (pingError) throw pingError
+
+  const pings = (pingRows ?? []) as unknown as Array<{
+    profile_id: string
+    playdate_id: string
+    playdate: {
+      id: string
+      title: string | null
+      ends_at: string | null
+      status: string
+      place_id: string | null
+    } | null
+  }>
+  if (pings.length === 0) return 0
+
+  const postIds = [...new Set(pings.map((row) => row.playdate_id))]
+
+  // (d): who has already been told. `.in()` on a non-empty list only — an empty
+  // `.in()` matches nothing, which would make every candidate look unsent.
+  const { data: existingRows, error: existingError } = await admin
+    .from('notification_log')
+    .select('profile_id, playdate_id')
+    .eq('kind', 'review_due')
+    .in('playdate_id', postIds)
+
+  if (existingError) throw existingError
+
+  const told = new Set(
+    ((existingRows ?? []) as Array<{ profile_id: string; playdate_id: string }>).map(
+      (row) => `${row.profile_id}:${row.playdate_id}`,
+    ),
+  )
+
+  // THE PREDICATE IS CALLED BEFORE THE MAPPER, ALWAYS. `reviewPromptRow` is
+  // deliberately total and does NOT re-run `isReviewPromptCandidate`, so a row
+  // reaching the mapper unfiltered would yield a fallback url instead of being
+  // dropped. Filter with the rule first; map second.
+  const insertRows = pings
+    .filter((row) => !told.has(`${row.profile_id}:${row.playdate_id}`))
+    .filter((row) =>
+      isReviewPromptCandidate(
+        {
+          status: row.playdate?.status,
+          endsAt: row.playdate?.ends_at,
+          placeId: row.playdate?.place_id,
+        },
+        now,
+      ),
+    )
+    .map((row) =>
+      reviewPromptRow({
+        profileId: row.profile_id,
+        playdateId: row.playdate_id,
+        placeId: row.playdate?.place_id,
+        title: row.playdate?.title ?? null,
+      }),
+    )
+
+  if (insertRows.length === 0) return 0
+
+  // ignoreDuplicates is the second half of the anti-double-send wall: a
+  // concurrent invocation that inserted the same rows first wins, and this one
+  // creates nothing. The unique key IS the idempotence — no in-memory dedupe.
   const { error: insertError } = await admin
     .from('notification_log')
     .upsert(insertRows, {
@@ -591,8 +717,14 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
   try {
     const scanned = await catchUpStartingSoon(admin)
+    const reviewDueScanned = await catchUpReviewDue(admin)
     const drained = await drain(admin)
-    return json({ ok: true, startingSoonCreated: scanned, ...drained })
+    return json({
+      ok: true,
+      startingSoonCreated: scanned,
+      reviewDueCreated: reviewDueScanned,
+      ...drained,
+    })
   } catch (error) {
     return json({ ok: false, error: errorMessage(error) }, 500)
   }

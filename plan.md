@@ -321,6 +321,100 @@ all history forever. Reuse the existing `MAX_SCAN_POSTS = 500` cap (`:142`).
   the existing scan and report its count in the same JSON summary. Keep the
   whole thing **wiring only** — every decision is already in `reviewScan.ts`.
 
+- **GO-LIVE RUNBOOK — VERIFIED, BROWSERLESS, ONE COMMAND.** The deploy needs no
+  interactive login: `npx supabase` resolves CLI **2.118.0**, the
+  `SUPABASE_ACCESS_TOKEN` is already in `.env`, and although
+  `scripts/push-deploy.sh` reads `.env.push.local`, that file exists only to
+  **set** the three VAPID secrets — which `docs/push-setup.md:21` records as
+  already set and verified live. So:
+  ```bash
+  set -a; . ./.env; set +a
+  npx supabase functions deploy send-push --project-ref ayzvjwxbxyrcgyoeaxuk
+  ```
+  **Leave JWT verification ON** (the deploy default) — the function has its own
+  service-role wall on top. **And remember the cron:** this command *is* the
+  go-live, not a preparation for it.
+  **⚠️ TWO FOOTGUNS, BOTH VALIDATED AGAINST THE CLI (2.118.0), BOTH AVOIDED BY
+  THE COMMAND ABOVE:**
+  1. **NAME THE FUNCTION.** `functions deploy` documents *"Deploys all if
+     omitted"* — dropping `send-push` from the command would deploy **every**
+     function, including `prefill-playdate`, an unintended production change.
+  2. **`--project-ref` IS REQUIRED.** This checkout is not `supabase link`ed, so
+     without the flag the CLI errors *"Cannot find project ref. Have you run
+     supabase link?"*. Verified: an authenticated `projects list` with the
+     `.env` token succeeds non-interactively and resolves the project as
+     `ayzvjwxbxyrcgyoeaxuk` / "PlayDate", so **no `supabase login` is needed** —
+     the token is sufficient.
+  **POST-DEPLOY PROOF — three independent signals, all read from the live
+  project (no browser, read-only).** Recorded from the pre-deploy state, so the
+  "before" is a fact rather than a recollection:
+
+  | signal | BEFORE the deploy | expected AFTER |
+  |---|---|---|
+  | `version` | `5` | `6` (must increment) |
+  | `updated_at` | `1790450713441` (2026-09-26T19:25:13Z) | ≈ the deploy time |
+  | `ezbr_sha256` | `8d25f1f891ffa8684e781cbe4ff622a5d91501ea4ca0a584a2c7cf8eee18da8b` | **a different hash** |
+
+  ```bash
+  REF=$(sed -n 's|^VITE_SUPABASE_URL=https\?://\([a-z0-9]*\)\.supabase\.co.*|\1|p' .env)
+  curl -s "https://api.supabase.com/v1/projects/$REF/functions" \
+    -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
+  ```
+  The count-appearance proof, read from the database (not the function's own
+  report, which could lie):
+  `select count(*) from public.notification_log where kind = 'review_due';`
+  — `0` before, `1` after, and `sent_at` stamped once the drain has run.
+  **Do not print any key or secret when running these.**
+- **THE FIXTURE FOR CRITERIA 3 AND 4 — DESIGNED, NOT YET SEEDED** (seeding is a
+  production write and belongs to the authorized go-live step). Because only
+  criterion 1 comes free, the negatives must be built. **Minimal shape:**
+  1. **One `e2e-` marked account** (the sweep's primary handle:
+     `scripts/sweep-e2e-markers.mjs` deletes `auth.users` where
+     `email like 'e2e-%'`, and rows the account owns cascade with it — with a
+     safety gate that refuses if a founder account is inside the marker set).
+  2. **For criterion 4** (null `place_id` → zero rows): the cheapest possible
+     fixture — that account adds **one `going_ping` on an existing finished,
+     place-less drop-in**. No new drop-in needed; the scan must then produce
+     **zero** rows for that profile, which is exactly the assertion.
+  3. **For criterion 3** (`cancelled` → zero rows): no finished cancelled drop-in
+     exists, so this one needs a **fixture drop-in** — marked with an `e2e `
+     title prefix, `status = 'cancelled'`, `ends_at` in the past, a real
+     `place_id` (so only the *status* rule can reject it) — plus one `going_ping`
+     from the marked account.
+  **Cleanup is provable, and here is why:** `notification_log`'s only foreign key
+  is `notification_log_profile_id_fkey` … **ON DELETE CASCADE**, verified live. So
+  deleting the marked account removes the `review_due` row with it.
+  **⚠️ There is NO foreign key on `notification_log.playdate_id`** (verified
+  live) — so deleting a drop-in does **not** remove its notification rows.
+  Cleanup must therefore go **through the profile**, which the sweep already
+  does; a fixture designed around "delete the drop-in" would leave the row
+  behind and fail criterion 7.
+  **The upsert's conflict target exists exactly as pinned:**
+  `notification_log_profile_id_kind_playdate_id_key UNIQUE (profile_id, kind,
+  playdate_id)` — confirmed live, so `onConflict` cannot silently no-op.
+  **And a fixture must never be left behind in the feed:** per
+  `docs/agents/e2e-fixture-convention.md`, the marker makes a fixture
+  *identifiable*, not *invisible* — so the seeded drop-in is visible copy in the
+  discovery feed for as long as it exists, which argues for seeding and sweeping
+  inside one short, authorized window.
+- **THE ONE REAL NOTIFICATION IS IDENTIFIED — AND IT IS THE AWKWARD CASE.**
+  Read-only probes of the live project: the single row the first run creates is
+  for drop-in `04a073f4-8db7-4adb-8310-9863e1411424` — *"Drop-in at Green Lake
+  Park (East)"*, ended `2026-09-26 14:30 UTC` — with exactly **1 pinger**, at
+  place *"Green Lake Park (East)"*. That place **already has 1 review**, and the
+  pinger is **the same profile that wrote it**
+  (`pinger_already_reviewed_this_place = true`). So the first real notification
+  this feature ever sends is a prompt to **edit an existing review**, not to
+  write a first one. Risks item 3 accepted that case in the abstract; it is no
+  longer abstract — **it is the only case that fires today.**
+  **Open human decision, bundled with the deploy authorization:** go live as-is
+  and accept one prompt-to-update, **or** add a *"skip parents who already
+  reviewed this place"* exclusion first (an anti-join against `reviews` on
+  `(place_id, author_profile_id)`) — one filter in the scan, plus a Slice 2
+  amendment and a re-review. The orchestrator recommends **adding it**, because
+  prompting someone who already reviewed a place is nagging by construction and
+  recurs for every parent who reviews a place and then attends another drop-in
+  there. Either way the deploy waits for the human's word.
 - **THE WIRING HAS NO UNIT LANE, AND THAT IS WHY THE DECISIONS ARE ELSEWHERE.**
   Verified by reading both Deno scripts: `scripts/deno-check-functions.sh`
   type-checks the functions but **never runs** them, and
@@ -357,12 +451,20 @@ all history forever. Reuse the existing `MAX_SCAN_POSTS = 500` cap (`:142`).
   drop-ins · 12 place-backed · 2 finished-and-place-backed inside the 24h window
   · **1** `going_pings` row across them — so the first automatic run notifies
   **exactly one real family**, and a sent push cannot be recalled.
-- **What real data can prove for free, and what it cannot** (probed read-only):
-  `finished_no_place_24h = 4`, so criterion 4 (a null `place_id` yields zero
-  rows) is provable against **real** rows with no fixture at all.
-  `finished_cancelled_or_ended_24h = 0`, so criterion 3 (a cancelled drop-in
-  yields zero rows) **cannot** be proven from real data and needs a seeded
-  fixture. **Any fixture must carry the marker convention in
+- **What real data can prove for free, and what it cannot** — **CORRECTED: I
+  originally wrote that real data proved criterion 4 for free, and that was
+  WRONG.** The first reading counted 4 finished drop-ins with `place_id is null`
+  in the window, which looked like free coverage. Running the scan's actual
+  query against the live API settled it: with the pinned embed and the
+  `place_id` filter **removed**, the window still returns **1 row, of which 0
+  have a null `place_id`** — because the scan joins **from `going_pings`**, and
+  those place-less drop-ins have **no pingers at all**, so they never enter the
+  candidate set. The `place_id is not null` filter therefore excludes nothing in
+  the live window: correct by construction, **unexercised by production data**.
+  The correct statement is: **only criterion 1 comes free** (the one identified
+  real row); **criteria 3 AND 4 both need a seeded fixture**. And
+  `finished_cancelled_or_ended_24h = 0`, so criterion 3 was never free either.
+  **Any fixture must carry the marker convention in
   `docs/agents/e2e-fixture-convention.md`** — account email `e2e-` prefix,
   drop-in title `e2e ` prefix, cleanup scoped to owned ids — or it becomes
   unsweepable content in real parents' discovery feed, which is the exact leak

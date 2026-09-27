@@ -66,7 +66,7 @@ kept because the reasoning in it is what makes the order matter.
 | 1 | Generate the VAPID keypair | human | the sender |
 | 2 | Put the public key in `.env` and rebuild | human | bound subscriptions |
 | 3 | Deploy `send-push` + set its secrets | human | all delivery |
-| 4 | Schedule it every 5 minutes | human | `starting_soon` |
+| 4 | Schedule it every 5 minutes | human | `starting_soon`, `review_due` |
 | 5 | Verify | human | — |
 
 ---
@@ -208,10 +208,24 @@ select status, return_message, created
   from net._http_response order by created desc limit 5;
 ```
 
-**What the schedule is actually for:** only the `starting_soon` kind. The other
-three (`ping_received`, `new_comment`, `cancelled`) are event-driven triggers
-inside Postgres and are inserted the instant the event happens — they are sent
-on the next tick, so a broken schedule delays them but never loses them.
+**What the schedule is actually for:** the two kinds no trigger can produce,
+because they are properties of the CLOCK rather than of any write —
+`starting_soon` ("starts in an hour") and `review_due` ("it finished"). The
+sender runs a catch-up scan for each on every tick: it finds the posts that
+qualify, inserts the rows it is about to send, and the drain sends them in the
+same invocation. The other four (`ping_received`, `new_comment`, `cancelled`,
+`ended`) are event-driven triggers inside Postgres and are inserted the instant
+the event happens — they are sent on the next tick, so a broken schedule delays
+them but never loses them.
+
+The second catch-up scan is `catchUpReviewDue` (V26 slice 3, beside
+`catchUpStartingSoon` in the same function): once a place-backed drop-in that is
+still `'on'` ended within the last 24 hours, each parent who pinged it is asked
+to rate the place. Nothing sets `'ended'` automatically, so "it's over" is
+`status = 'on' and ends_at < now()`; a `cancelled` or host-`ended` post never
+prompts. It shares this one schedule, this one function and this one idempotence
+key `(profile_id, kind, playdate_id)` — **no `pg_cron` change**, which is why the
+job name still says only `send-push`.
 
 ## 5. Verify (≈10 minutes)
 
@@ -220,7 +234,7 @@ on the next tick, so a broken schedule delays them but never loses them.
    curl -i -X POST https://ayzvjwxbxyrcgyoeaxuk.supabase.co/functions/v1/send-push \
      -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H "Content-Type: application/json" -d '{}'
    ```
-   Expect `200` and `{"ok":true,"startingSoonCreated":N,"rows":…,"sent":…,"failed":…,"skipped":…,"pruned":…}`.
+   Expect `200` and `{"ok":true,"startingSoonCreated":N,"reviewDueCreated":N,"rows":…,"sent":…,"failed":…,"skipped":…,"pruned":…}`.
    Then repeat with the ANON key as the bearer — expect **401
    `{"error":"send-push is service-role only"}`**. If you get a `200` there,
    STOP and report it: that is the wall failing.
@@ -263,18 +277,20 @@ on the next tick, so a broken schedule delays them but never loses them.
   (`unique (profile_id, kind, playdate_id)`) and the audit trail. Owner-only
   SELECT; **no** authenticated INSERT/UPDATE policy, so an authenticated insert
   fails closed. `notification_payload(...)` is the single server side copy rule
-  (including the singular "1 family is going"). Three SECURITY DEFINER trigger
-  functions produce `ping_received`, `new_comment` and `cancelled`; none of them
-  ever notifies the actor, and all of them pass through when `auth.uid() is null`
-  (the 0011 lesson).
+  (including the singular "1 family is going"). The SECURITY DEFINER trigger
+  functions produce four kinds — `ping_received`, `new_comment` and `cancelled`
+  (0032), plus `ended` (0041, which replaces 0032's cancelled function so the
+  same trigger emits both notifying statuses). None of them ever notifies the
+  actor, and all of them pass through when `auth.uid() is null` (the 0011
+  lesson).
 - `src/sw.ts` + `vite.config.ts` — the service worker is now
   `injectManifest`-built from `src/sw.ts`: workbox precaching plus `push`,
   `notificationclick` and `pushsubscriptionchange`. `scripts/verify-pwa.mjs`
   (cold OFFLINE shell) and `scripts/verify-splash.mjs` are the regression guard
   for that switch.
-- `supabase/functions/send-push/index.ts` — the sender: `starting_soon`
-  catch-up scan (the one kind no trigger can produce), then the drain, with
-  404/410 pruning dead endpoints.
+- `supabase/functions/send-push/index.ts` — the sender: the two clock-produced
+  catch-up scans (`starting_soon` and `review_due` — the kinds no trigger can
+  produce), then the drain, with 404/410 pruning dead endpoints.
 - `src/lib/push.ts` — the pure seams (payload copy, dedupe key, iOS detection,
   the permission-decision memory), all unit-tested. `src/lib/pushClient.ts` is
   the only file that touches the browser. `src/components/NotificationsSection.tsx`
