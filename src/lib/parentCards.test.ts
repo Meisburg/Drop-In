@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_PARENT_CARDS, nextParentPosition, parentCardList, parentCardSaveLabel, parentNameRows } from './parentCards'
+import { MAX_PARENT_CARDS, nextParentPosition, parentCardAboutText, parentCardList, parentCardPhotoSrc, parentCardSaveLabel, parentNameRows } from './parentCards'
 import type { ParentCard } from './types'
 
 /**
@@ -119,17 +119,22 @@ describe('parentCardSaveLabel (V24 slice 02 — one save-state pattern)', () => 
   })
 })
 
-describe('parentNameRows (V24 slice 11A — the names the READ surface shows)', () => {
+describe('parentNameRows (V24 slice 11A — the names the READ surface shows; V25 t09 added the photo and the about)', () => {
   // The read surface renders the family's parent names. A name is a LINK only
   // when we can say WHICH card is the linked account, and the only evidence the
   // schema holds is that the card's name matches that account's handle. These
   // tests pin that rule, including its refusals — the refusals are the privacy
   // posture ("a parent card alone is not a link").
+  //
+  // V25 t09: each row also carries the card's own `about` and `photo`, because
+  // the founder asked for a horizontal ROW per parent (photo · name ·
+  // description). The name/handle expectations below were extended, not
+  // loosened: the same rule, the same refusals.
 
   it('returns every card as a plain name when there is no linked account', () => {
     expect(parentNameRows([card({}), card({ id: 'c2', name: 'Nicole', position: 2 })], null)).toEqual([
-      { key: 'c1', name: 'Jon', handle: null },
-      { key: 'c2', name: 'Nicole', handle: null },
+      { key: 'c1', name: 'Jon', handle: null, about: null, photo: null },
+      { key: 'c2', name: 'Nicole', handle: null, about: null, photo: null },
     ])
   })
 
@@ -139,8 +144,28 @@ describe('parentNameRows (V24 slice 11A — the names the READ surface shows)', 
       { handle: 'Nicole' },
     )
     expect(rows).toEqual([
-      { key: 'c1', name: 'Jon', handle: null },
-      { key: 'c2', name: 'Nicole', handle: 'Nicole' },
+      { key: 'c1', name: 'Jon', handle: null, about: null, photo: null },
+      { key: 'c2', name: 'Nicole', handle: 'Nicole', about: null, photo: null },
+    ])
+  })
+
+  it('carries each card’s own about and photo — one row per parent', () => {
+    const rows = parentNameRows(
+      [
+        card({ about: '  Loves the beach  ' }),
+        card({
+          id: 'c2',
+          name: 'Nicole',
+          position: 2,
+          about: null,
+          photo_url: 'https://example.test/nicole.jpg',
+        }),
+      ],
+      null,
+    )
+    expect(rows.map((row) => ({ about: row.about, photo: row.photo }))).toEqual([
+      { about: 'Loves the beach', photo: null },
+      { about: null, photo: 'https://example.test/nicole.jpg' },
     ])
   })
 
@@ -184,5 +209,50 @@ describe('parentNameRows (V24 slice 11A — the names the READ surface shows)', 
 
   it('drops a nameless card rather than rendering a blank name', () => {
     expect(parentNameRows([card({ name: '   ' })], { handle: 'Jon' })).toEqual([])
+  })
+})
+
+describe('parentCardAboutText (V25 t09 — the row’s description half)', () => {
+  it('trims the card’s words', () => {
+    expect(parentCardAboutText('  Loves the beach  ')).toBe('Loves the beach')
+  })
+
+  it('answers null for absent and blank words, so no empty paragraph renders', () => {
+    expect(parentCardAboutText(null)).toBeNull()
+    expect(parentCardAboutText(undefined)).toBeNull()
+    expect(parentCardAboutText('')).toBeNull()
+    expect(parentCardAboutText('   \n ')).toBeNull()
+  })
+})
+
+describe('parentCardPhotoSrc (V25 t09 — THE SCHEMA WALL, stated as a rule)', () => {
+  // `parent_cards.photo_url` is a PRIVATE-BUCKET object path (0047), and there
+  // is no parent-photo mint, no path convention and no storage policy for that
+  // class — so a path cannot be turned into something an <img> can load. These
+  // tests pin the honest consequence: the row renders a value the browser can
+  // fetch AS GIVEN, and refuses to paint a broken image for anything else.
+
+  it('passes through a source the browser can fetch as given', () => {
+    expect(parentCardPhotoSrc('https://example.test/p.jpg')).toBe('https://example.test/p.jpg')
+    expect(parentCardPhotoSrc('http://example.test/p.jpg')).toBe('http://example.test/p.jpg')
+    expect(parentCardPhotoSrc('data:image/png;base64,AAAA')).toBe('data:image/png;base64,AAAA')
+    expect(parentCardPhotoSrc('blob:https://app.test/1234')).toBe('blob:https://app.test/1234')
+  })
+
+  it('trims, and answers null for absent or empty', () => {
+    expect(parentCardPhotoSrc('  https://example.test/p.jpg  ')).toBe(
+      'https://example.test/p.jpg',
+    )
+    expect(parentCardPhotoSrc(null)).toBeNull()
+    expect(parentCardPhotoSrc(undefined)).toBeNull()
+    expect(parentCardPhotoSrc('')).toBeNull()
+    expect(parentCardPhotoSrc('   ')).toBeNull()
+  })
+
+  it('REFUSES a bare object path — it would render as a broken image, not a photo', () => {
+    // The shape migration 0047 documents. No mint exists for it, so rendering
+    // it is a lie about there being a picture; the row simply has no image.
+    expect(parentCardPhotoSrc('11111111-1111-1111-1111-111111111111/parents/1.jpg')).toBeNull()
+    expect(parentCardPhotoSrc('kid-photos/1111/parents/1.jpg')).toBeNull()
   })
 })

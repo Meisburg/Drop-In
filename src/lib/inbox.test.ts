@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { activeTodayLabel, mergeConversations } from './inbox'
-import type { DmConversationRow, PlaydateConversationRow } from './inbox'
+import {
+  activeTodayLabel,
+  firstNamedCounterpart,
+  mergeConversations,
+  messageSenderLabel,
+  singleSenderCounterpart,
+} from './inbox'
+import type { DmConversationRow, MessageSenderFields, PlaydateConversationRow } from './inbox'
 
 /**
  * V23 s7 — the inbox's id-keyed merge seam (src/lib/inbox.ts).
@@ -153,6 +159,35 @@ describe('mergeConversations', () => {
     expect(result[0].unreadCount).toBe(1)
   })
 
+  it('two playdate rows with an UNRESOLVED counterpart both survive (per-conversation keys)', () => {
+    // db.ts sets otherPartyId to '' when the host and the pinger both fail
+    // to resolve. The merge must not lump every such row into one ''
+    // bucket — before the fix only ONE row survived per kind, with the
+    // unread counts summed onto the survivor.
+    const pdOne = pd({
+      otherPartyId: '',
+      otherPartyDisplayName: '',
+      playdateId: 'p1',
+      latestMessageAt: '2026-09-23T10:00:00Z',
+      unreadCount: 2,
+    })
+    const pdTwo = pd({
+      otherPartyId: '',
+      otherPartyDisplayName: '',
+      playdateId: 'p2',
+      latestMessageAt: '2026-09-23T11:00:00Z',
+      unreadCount: 3,
+    })
+    const result = mergeConversations([], [pdOne, pdTwo])
+    expect(result).toHaveLength(2)
+    const p1 = result.find((r) => r.playdateId === 'p1')
+    const p2 = result.find((r) => r.playdateId === 'p2')
+    expect(p1?.otherPartyId).toBe('')
+    expect(p2?.otherPartyId).toBe('')
+    expect(p1?.unreadCount).toBe(2)
+    expect(p2?.unreadCount).toBe(3)
+  })
+
   it('DM plus two read playdate threads keeps the DM unreadCount', () => {
     const dmRow = dm({ otherPartyId: 'same', latestAt: '2026-09-23T10:00:00Z', unreadCount: 2 })
     const pdOne = pd({ otherPartyId: 'same', playdateId: 'p1', latestMessageAt: '2026-09-23T11:00:00Z', unreadCount: 0 })
@@ -204,5 +239,182 @@ describe('activeTodayLabel (V24 slice 04 — the honest, non-presence activity l
     const label = activeTodayLabel('2026-09-25T20:59:59.000Z', nowIso)
     expect(label).toBe('Active today')
     expect(label ?? '').not.toMatch(/now|online/i)
+  })
+})
+
+/**
+ * V25 ticket 11 — the per-MESSAGE identity rules.
+ *
+ * The founder's live defect: `"UnknownComing👍"`. The bubble label was
+ * thread-level (`threadHeaderName || 'Unknown'`), so (a) a thread whose header
+ * had not resolved printed "Unknown" over a real parent's message, and (b) a
+ * group thread labelled a third participant's message with the counterpart's
+ * name. These tests pin the replacements: the label comes from the message's
+ * OWN sender, and the only honest answer for an unnameable sender is NO label.
+ */
+function msg(overrides: Partial<MessageSenderFields> = {}): MessageSenderFields {
+  return {
+    sender_id: 'sender-1',
+    sender_display_name: 'Nicole Meisburg',
+    ...overrides,
+  }
+}
+
+describe('messageSenderLabel (V25 t11 — each bubble names its OWN sender)', () => {
+  it("labels an other-party bubble with THAT sender's display name", () => {
+    expect(
+      messageSenderLabel(msg({ sender_id: 'nicole', sender_display_name: 'Nicole Meisburg' }), {
+        viewerId: 'me',
+        viewerDisplayName: 'Jon Meisburg',
+        counterpart: { id: 'nicole', name: 'Nicole Meisburg' },
+      }),
+    ).toBe('Nicole Meisburg')
+  })
+
+  it('labels a group thread by the message sender, NOT the thread counterpart', () => {
+    // The measured defect: Priya's message wore the counterpart's name.
+    const counterpart = { id: 'nicole', name: 'Nicole Meisburg' }
+    expect(
+      messageSenderLabel(msg({ sender_id: 'priya', sender_display_name: 'Priya Patel' }), {
+        viewerId: 'me',
+        viewerDisplayName: 'Jon Meisburg',
+        counterpart,
+      }),
+    ).toBe('Priya Patel')
+    expect(
+      messageSenderLabel(msg({ sender_id: 'nicole', sender_display_name: 'Nicole Meisburg' }), {
+        viewerId: 'me',
+        viewerDisplayName: 'Jon Meisburg',
+        counterpart,
+      }),
+    ).toBe('Nicole Meisburg')
+  })
+
+  it('labels the viewer\'s own bubble with their own name, falling back to "You"', () => {
+    expect(
+      messageSenderLabel(msg({ sender_id: 'me', sender_display_name: null }), {
+        viewerId: 'me',
+        viewerDisplayName: 'Jon Meisburg',
+      }),
+    ).toBe('Jon Meisburg')
+    expect(
+      messageSenderLabel(msg({ sender_id: 'me', sender_display_name: null }), {
+        viewerId: 'me',
+        viewerDisplayName: null,
+      }),
+    ).toBe('You')
+    expect(
+      messageSenderLabel(msg({ sender_id: 'me', sender_display_name: null }), {
+        viewerId: 'me',
+        viewerDisplayName: '   ',
+      }),
+    ).toBe('You')
+  })
+
+  it('NEVER says "Unknown": an unnameable sender gets NO label (null)', () => {
+    expect(
+      messageSenderLabel(msg({ sender_id: 'ghost', sender_display_name: null }), {
+        viewerId: 'me',
+        viewerDisplayName: 'Jon Meisburg',
+        counterpart: { id: 'nicole', name: 'Nicole Meisburg' },
+      }),
+    ).toBeNull()
+    expect(
+      messageSenderLabel(msg({ sender_id: 'ghost', sender_display_name: '  ' }), {
+        viewerId: 'me',
+      }),
+    ).toBeNull()
+    // And the literal word is unreachable even when the counterpart is unnamed.
+    expect(
+      messageSenderLabel(msg({ sender_id: 'ghost', sender_display_name: null }), {
+        viewerId: 'me',
+        counterpart: { id: 'ghost', name: '' },
+      }),
+    ).toBeNull()
+  })
+
+  it('uses the thread counterpart ONLY when the sender id IS the counterpart', () => {
+    // A Realtime INSERT payload carries no embed — the counterpart name may
+    // stand in, but strictly by ID, never by position.
+    expect(
+      messageSenderLabel(msg({ sender_id: 'nicole', sender_display_name: undefined }), {
+        viewerId: 'me',
+        counterpart: { id: 'nicole', name: 'Nicole Meisburg' },
+      }),
+    ).toBe('Nicole Meisburg')
+    // A different participant's embed-less message must stay unlabelled.
+    expect(
+      messageSenderLabel(msg({ sender_id: 'priya', sender_display_name: undefined }), {
+        viewerId: 'me',
+        counterpart: { id: 'nicole', name: 'Nicole Meisburg' },
+      }),
+    ).toBeNull()
+    // An id-less counterpart (nothing resolved) can never stand in.
+    expect(
+      messageSenderLabel(msg({ sender_id: 'nicole', sender_display_name: undefined }), {
+        viewerId: 'me',
+        counterpart: { id: '', name: 'Nicole Meisburg' },
+      }),
+    ).toBeNull()
+  })
+})
+
+describe('singleSenderCounterpart (V25 t11 — the header can name a one-sender thread)', () => {
+  it('names the one non-own sender when every other message is theirs', () => {
+    expect(
+      singleSenderCounterpart(
+        [
+          msg({ sender_id: 'me', sender_display_name: 'Jon Meisburg' }),
+          msg({ sender_id: 'nicole', sender_display_name: 'Nicole Meisburg' }),
+          msg({ sender_id: 'nicole', sender_display_name: 'Nicole Meisburg' }),
+        ],
+        'me',
+      ),
+    ).toEqual({ id: 'nicole', name: 'Nicole Meisburg' })
+  })
+
+  it('returns null for a group: two distinct non-own senders have no one name', () => {
+    expect(
+      singleSenderCounterpart(
+        [
+          msg({ sender_id: 'nicole', sender_display_name: 'Nicole Meisburg' }),
+          msg({ sender_id: 'priya', sender_display_name: 'Priya Patel' }),
+        ],
+        'me',
+      ),
+    ).toBeNull()
+  })
+
+  it('returns null for an empty thread or a thread of only own messages', () => {
+    expect(singleSenderCounterpart([], 'me')).toBeNull()
+    expect(
+      singleSenderCounterpart([msg({ sender_id: 'me', sender_display_name: 'Jon' })], 'me'),
+    ).toBeNull()
+  })
+
+  it('keeps the sender id even when its display name never arrived', () => {
+    // The id is still real information (it is what the bubble's fallback and
+    // the header's priority chain key on); only the name is ''.
+    expect(singleSenderCounterpart([msg({ sender_id: 'nicole', sender_display_name: null })], 'me')).toEqual({
+      id: 'nicole',
+      name: '',
+    })
+  })
+})
+
+describe('firstNamedCounterpart (V25 t11 — first real name wins, blanks are unknown)', () => {
+  it('takes the first candidate with a non-blank name, preserving its id', () => {
+    expect(
+      firstNamedCounterpart([
+        { id: 'a', name: '' },
+        { id: 'b', name: 'Nicole Meisburg' },
+        { id: 'c', name: 'Priya Patel' },
+      ]),
+    ).toEqual({ id: 'b', name: 'Nicole Meisburg' })
+  })
+
+  it('skips null/undefined candidates and returns an unnamed counterpart when none carry a name', () => {
+    expect(firstNamedCounterpart([null, undefined, { id: 'a', name: '  ' }])).toEqual({ id: '', name: '' })
+    expect(firstNamedCounterpart([])).toEqual({ id: '', name: '' })
   })
 })

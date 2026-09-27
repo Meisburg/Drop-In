@@ -82,7 +82,27 @@ h3 {
   letter-spacing: -0.012em;
 }
 
+/*
+ * V25 ticket 13: the modal panel's arrival, registered as a Tailwind v4 theme
+ * token so a component can say `animate-modal-pop` rather than carry the whole
+ * `animation:` shorthand. The reduced-motion half is deliberately NOT here: it
+ * belongs at the call site (`motion-reduce:animate-none`), because that is the
+ * utility the ticket asks for and it keeps the decision visible in the diff of
+ * the component that owns the dialog.
+ */
+@keyframes modal-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 @theme {
+  --animate-modal-pop: modal-pop 140ms ease-out;
   --font-display: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
   --text-xs: 0.875rem;
   --text-xs--line-height: 1.25rem;
@@ -123,29 +143,72 @@ h3 {
    * deliberately untouched: it is semantic (errors), not brand.
    *
    * All text-bearing values below are checked against the page background
-   * (#fbf7f4) and against their own tinted backgrounds for WCAG AA (4.5:1
-   * normal, 3:1 large) — mobile-audit.mjs measures the rendered pixels and fails
-   * the run below those floors.
+   * (#ffffff since V25 t12 — see --color-page) and against their own tinted
+   * backgrounds for WCAG AA (4.5:1 normal, 3:1 large) — mobile-audit.mjs
+   * measures the rendered pixels and fails the run below those floors.
    */
-  --color-slate-50: #fbf7f4; /* page background — warm off-white (Peanut's move) */
+  /*
+   * V25 ticket 12 — THE PAGE IS WHITE, AND IT IS NO LONGER `slate-50`.
+   *
+   * The founder overrode V7's warm page background, app-wide: "I think we
+   * should use a white background for everything. I don't like this color in
+   * the background. I like to just do white." The warm rationale above was a
+   * deliberate choice and this is a deliberate REVERSAL of it — do not
+   * "restore" the warm page from that rationale.
+   *
+   * WHY A NEW TOKEN rather than re-pointing `--color-slate-50` at #ffffff.
+   * That token had TWO roles: it was the page, AND it is the faint fill/hover
+   * tint on white cards — `hover:bg-slate-50` on buttons and rows, plus inert
+   * wells (the inbox thread panel, the form's hint panels, the readonly share
+   * field). Re-pointing it would have dragged all 38 non-page surfaces to pure
+   * white with it: hovers that no longer register, and wells that vanish into
+   * the card they sit on. A page token leaves every one of those sites exactly
+   * as it painted before, so there is nothing to re-tune at 38 call sites.
+   *
+   * WHY NOT JUST `bg-white` ON THE PAGE. In dark mode this file re-points
+   * `.bg-white` to the CARD surface (#241f1c, below), so a `bg-white` page
+   * would have become the card colour and inverted the page/card relationship.
+   * `--color-page` is re-pointed to the dark PAGE neutral (#181412) instead, so
+   * the whole dark appearance is value-identical to what shipped before this
+   * slice.
+   */
+  --color-page: #ffffff; /* the page/screen background. Re-pointed to #181412 in dark. */
+  --color-slate-50: #fbf7f4; /* warm off-white FILL — hover/inert tint on white cards. NOT the page. */
   --color-slate-100: #f4ece6; /* inert chips/fills, e.g. "Ended" */
   --color-slate-200: #eee3dc; /* the default border; avatar placeholder fill */
   --color-slate-300: #ddcec5; /* stronger border (inputs, secondary buttons) */
-  --color-slate-400: #94867e; /* lowest-emphasis text/icon — NOT for body copy */
-  --color-slate-500: #66737a; /* meta text — 4.59:1 on the page background */
-  --color-slate-600: #5a676e; /* the most-used text tone — 5.44:1 */
-  --color-slate-700: #4a575e; /* body copy — 7.0:1 */
-  --color-slate-800: #3b4a52;
-  --color-slate-900: #2f4858; /* headings + dark surfaces — 9.0:1 */
+  /*
+   * TEXT RAMP — every figure below is measured against the CURRENT page
+   * background, #ffffff (V25 t12). The pre-V25 t12 figures were measured against
+   * the old warm page (#fbf7f4) and are NOT interchangeable; going white raised
+   * every one of them, because #ffffff is brighter than #fbf7f4:
+   *
+   *            on #fbf7f4 (old)   on #ffffff (now)
+   *   s400          3.30               3.52   ← still < 4.5: NOT for body copy
+   *   s500          4.59               4.89
+   *   s600          5.48               5.83
+   *   s700          7.00               7.46
+   *   s800          8.62               9.18
+   *   s900          9.01               9.59
+   *
+   * Figures marked "on its own tint" are unchanged by this slice: they are
+   * relative to a tint token that did not move.
+   */
+  --color-slate-400: #94867e; /* lowest-emphasis text/icon — 3.52:1 on the page; NOT for body copy */
+  --color-slate-500: #66737a; /* meta text — 4.89:1 on the page background */
+  --color-slate-600: #5a676e; /* the most-used text tone — 5.83:1 on the page */
+  --color-slate-700: #4a575e; /* body copy — 7.46:1 on the page */
+  --color-slate-800: #3b4a52; /* 9.18:1 on the page */
+  --color-slate-900: #2f4858; /* headings + dark surfaces — 9.59:1 on the page */
 
   /*
    * Terracotta. Two tones on purpose:
    *  - 500 is the BRAND HUE (logo, icon, splash, large fills);
    *  - 600 is the ACTION/TEXT tone. It is a hair deeper than the brand hue
-   *    because #e8552f as 17px text or as a button fill with white text only
-   *    reaches ~4.2:1 and would FAIL AA; #c8411c reaches 4.66:1 on the page
-   *    background and 4.97:1 reversed, so it is the one that ships on buttons
-   *    and links.
+   *    because #e8552f as 17px text on the page, or as a fill under white text,
+   *    reaches only 3.64:1 and would FAIL AA; #c8411c reaches 4.97:1 on the page
+   *    background (#ffffff, V25 t12) and 4.97:1 reversed, so it is the one that
+   *    ships on buttons and links.
    */
   --color-indigo-50: #fdf1ec;
   --color-indigo-100: #fbe2d7;
@@ -153,34 +216,34 @@ h3 {
   --color-indigo-300: #f0a686;
   --color-indigo-400: #ec8259;
   --color-indigo-500: #e8552f; /* brand hue */
-  --color-indigo-600: #c8411c; /* actions + links (AA) */
-  --color-indigo-700: #a63615;
+  --color-indigo-600: #c8411c; /* actions + links (AA) — 4.97:1 on the page */
+  --color-indigo-700: #a63615; /* 6.65:1 on the page */
   --color-indigo-800: #8a2c11;
   --color-indigo-900: #7a2710;
 
   /* Park green — "Happening now" and the host status chip */
   --color-emerald-100: #e2f0d6;
-  --color-emerald-700: #3f6b28; /* 5.27:1 on its own tint */
-  --color-green-700: #47802e; /* the "I'm going"/"Going" pill (white on green) */
+  --color-emerald-700: #3f6b28; /* 5.28:1 on its own tint (bg-emerald-100, DropInCard:266; unchanged by V25 t12); 6.28:1 on the page */
+  --color-green-700: #47802e; /* the "I'm going"/"Going" pill — white on green: 4.78:1 */
 
   /* Gold — "Starts soon" */
   --color-amber-50: #fef8e8;
   --color-amber-100: #fdf0cf;
   --color-amber-200: #f7dfa2;
-  --color-amber-700: #8a6410; /* 4.75:1 on its own tint */
-  --color-amber-800: #6f5009;
+  --color-amber-700: #8a6410; /* 4.74:1 on its own tint (bg-amber-100, DropInCard:270; unchanged by V25 t12); 5.37:1 on the page */
+  --color-amber-800: #6f5009; /* 7.01:1 on bg-amber-50 (its actual pairing: WhileAwayCard:33, NotificationsSection:222, OnboardingPage:408); 6.56:1 on amber-100 */
 
   /* Sky — the "Rain likely" forecast badge */
   --color-sky-100: #e2eef7;
-  --color-sky-700: #1d5b7a; /* 6.0:1 on its own tint */
+  --color-sky-700: #1d5b7a; /* 6.29:1 on its own tint (bg-sky-100, WeatherChip:55; unchanged by V25 t12); 7.42:1 on the page */
 }
 
 /*
  * V8 — DARK MODE (V22 slice 14: re-triggered from a user choice). Re-points
  * every existing token name to dark values. No call-site edits, no renames.
- * The lightness ramp inverts: slate-50 (page bg) becomes the darkest surface,
- * slate-900 (headings) becomes the brightest text. Monotonic order is
- * preserved.
+ * The lightness ramp inverts: the page (--color-page and slate-50, its fill
+ * role) becomes the darkest surface, slate-900 (headings) becomes the
+ * brightest text. Monotonic order is preserved.
  *
  * SLICE 14 CHANGED THE TRIGGER, NOT THE VALUES: this block used to key off an
  * OS colour-scheme media query — the app FOLLOWED THE OS. That was a
@@ -219,7 +282,8 @@ h3 {
   color-scheme: dark;
 
   /* Surfaces (lightest → darkest role inverted) */
-  --color-slate-50: #181412;   /* page background — very dark warm neutral */
+  --color-page: #181412;       /* page background — UNCHANGED from before V25 t12 */
+  --color-slate-50: #181412;   /* deepest neutral: the dark page, and the darkening hover/fill tint */
   --color-slate-100: #3a312b;  /* inert chips/fills */
   --color-slate-200: #4a4038;  /* default border */
   --color-slate-300: #5c5047;  /* stronger border (inputs, secondary buttons) */

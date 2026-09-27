@@ -3,13 +3,18 @@
  * render site, and it renders through the batched, best-effort signed-URL read
  * path — never a public URL.
  *
- * V16 t05 (founder decision Q3) ADDED A SECOND SITE: the owner's own self view
- * of /u/:handle (`isOwnProfile`) now renders the same photos through the same
- * hook. Test 1 below covers both halves. The visitor half of the privacy line
- * — a signed-in STRANGER gets no kid rows and therefore no kid photo — lives in
- * e2e/kid-photo-exposure.e2e.ts test 3 and e2e/kid-names-privacy.e2e.ts 3b,
- * which use a real second account; this spec's marker always IS the owner, so
- * it can only make the owner-side assertion.
+ * V16 t05 (founder decision Q3) ADDED A SECOND SITE: the owner's own view of
+ * /u/:handle now renders the same photos through the same hook. Test 1 below
+ * covers both halves. This spec's marker always IS the owner, so it makes the
+ * owner-side assertion only.
+ *
+ * V25 t14 WIDENED WHO MAY SEE THESE PHOTOS: the founder reversed V9 ticket 11's
+ * owner-only rule on 2026-09-26 (migration 0054 drops the owner check from the
+ * kid class's storage SELECT policy; the bucket stays private, anon still reads
+ * nothing). The OTHER side of that boundary — a second signed-in parent, both
+ * before and after 0040 hands them the row — is asserted with a real second
+ * account in e2e/kid-photo-exposure.e2e.ts test 2, with the stranger's empty
+ * answer pinned in e2e/kid-names-privacy.e2e.ts 3b.
  *
  * WHAT IT WALKS, in file order (the tests share the live project and run
  * serially — workers are pinned to 1 in playwright.config.ts — so each one
@@ -37,12 +42,10 @@
  * and test 2 does the same in the null direction. A `toHaveCount(0)` that
  * would also pass on missing data is not evidence.
  *
- * THE HOUSE INvariants this spec does NOT re-prove: the stranger's mint
- * refusal, the anon bucket walk, and the no-<img> pin for a VISITOR live in
- * e2e/kid-photo-exposure.e2e.ts (V9 ticket 11), which this ticket leaves
- * untouched — that spec's test 3 seeds a SET `avatar_url` and pins the
- * photo-free render on a stranger's view of /u/:handle, so a regression there
- * is its failure, not this one.
+ * THE HOUSE INVARIANTS this spec does NOT re-prove: the ANON mint refusal, the
+ * anon bucket walk, the legacy-column no-<img> pin, and (since V25 t14) the
+ * second parent's mint-and-render all live in e2e/kid-photo-exposure.e2e.ts —
+ * so a regression there is its failure, not this one.
  *
  * WHAT THIS SPEC DOES NOT DO: it never uploads a kid photo to the PUBLIC
  * `avatars` bucket (that would re-create the exposure ticket 11 exists to
@@ -260,15 +263,14 @@ test('the owner’s /profile shows a kid’s photo as a signed URL — and so do
   const fetched = await fetch(src)
   expect(fetched.status, `the signed kid-photo URL must be fetchable (HTTP ${fetched.status})`).toBe(200)
 
-  // AC2, RE-PINNED BY V16 t05 (founder decision Q3): the SELF view of
-  // /u/:handle is now a SECOND kid-photo render site — the owner looking at
-  // their own public page is still the owner, so the photo renders there too,
-  // minted through the same private-bucket read path as the /profile row above.
-  // What Q3 did NOT change is the privacy line: the VISITOR path stays
-  // photo-free, and that is pinned by e2e/kid-photo-exposure.e2e.ts test 3 and
-  // e2e/kid-names-privacy.e2e.ts 3b (a signed-in stranger sees no kids section
-  // at all, hence no photo to render). The marker IS the owner, so this walk
-  // asserts the owner half: the row is there AND carries the signed photo.
+  // AC2, RE-PINNED BY V16 t05 (founder decision Q3): the owner's own view of
+  // /u/:handle is a SECOND kid-photo render site — the owner looking at their
+  // own public page is still the owner, so the photo renders there too, minted
+  // through the same private-bucket read path as the /profile row above. V25 t14
+  // then widened that path to any signed-in parent (0054); the marker IS the
+  // owner, so this walk still asserts the owner half only: the row is there AND
+  // carries the signed photo. The other half — a second parent, and a parent
+  // 0040 returns no row to — is e2e/kid-photo-exposure.e2e.ts test 2.
   await page.goto(`/u/${encodeURIComponent(e.markerHandle)}`)
   await expect(page.getByTestId('kid-row').filter({ hasText: kidName })).toContainText(kidName)
   const selfImg = page.getByTestId('kid-photo')

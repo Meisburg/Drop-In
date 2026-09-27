@@ -13,7 +13,7 @@ import {
   splitStripRows,
 } from '../lib/mapStrip'
 import { placeIndoorLabel, placeKindLabel, placePath } from '../lib/places'
-import type { PlaceListRow } from '../lib/places'
+import type { FramingCircle, PlaceListRow } from '../lib/places'
 import { reviewRatingLine } from '../lib/reviews'
 
 /**
@@ -23,8 +23,8 @@ import { reviewRatingLine } from '../lib/reviews'
  *
  * WHY THIS IS A SEPARATE COMPONENT FROM `PlaceDirectory`, and not more JSX
  * inside it. The directory is already 900+ lines and owns search, filter, sort,
- * the distance control, the date window, two modals, the map band and the
- * grouped list. The map view is a different SURFACE over the same data: it has
+ * the distance control, the date window, two modals and the grouped list. The
+ * map view is a different SURFACE over the same data: it has
  * its own focus state, its own scroll handling and its own keyboard rules. Adding
  * it inline would put two focus models in one file. It is a component, not a
  * route — see `PlaceDirectory`'s `view` state for why there is no new route.
@@ -32,10 +32,11 @@ import { reviewRatingLine } from '../lib/reviews'
  * THE MEASURED TRAP THIS COMPONENT IS SHAPED AROUND: two mounted Leaflet maps
  * means two `data-testid="places-map"` nodes, and every existing spec that does
  * `page.getByTestId('places-map')` then dies in Playwright strict mode. So the
- * directory REPLACES the band and the list with this view rather than sitting
- * beside them, and this view's map gets its OWN test id
- * (`places-map-view-map`, passed through `PlacesMap`'s existing `testId` prop).
- * At most ONE map is mounted at any moment.
+ * directory REPLACES the list with this view rather than sitting beside it, and
+ * this view's map gets its OWN test id (`places-map-view-map`, passed through
+ * `PlacesMap`'s existing `testId` prop). At most ONE map is mounted at any
+ * moment — V25 t01 removed the list-view band, so this holds structurally now
+ * rather than by convention.
  *
  * FOCUS IS THE SINGLE SOURCE OF TRUTH (`focusedIndex` below). Everything else
  * is a rendering of it:
@@ -64,6 +65,7 @@ export function PlacesMapView({
   rows,
   zipCoords,
   homePin,
+  radiusCircle,
   focusBehavior,
   onBackToList,
 }: {
@@ -71,8 +73,8 @@ export function PlacesMapView({
    * EVERY row the map can plot — the map's pins, and the source of the strip's
    * cards. NOT capped: the strip's `MAP_STRIP_CARD_LIMIT` governs cards only, and
    * a cap that reached here would draw fewer pins than the directory matched.
-   * (This slice's second review caught exactly that regression.) This is the same
-   * set the directory's own band pins.
+   * (This slice's second review caught exactly that regression.) This is every
+   * row of the directory's own list that resolves to coordinates.
    */
   pins: readonly PlaceListRow[]
   /**
@@ -85,6 +87,23 @@ export function PlacesMapView({
   zipCoords: ReadonlyMap<string, ZipCoords> | null
   /** The viewer's home pin (the map's frame when there is one). */
   homePin: { lat: number; lng: number } | null
+  /**
+   * V25 t01: the radius frame's circle. The directory's list-view band used to
+   * draw it; the band is gone, so its caller hands it here instead and map mode
+   * keeps the committed-radius circle — and the LIVE preview while the
+   * Set-location dialog is open, which is the founder's *"when you drag the
+   * radius, it should expand or grow the red circle in real time"*.
+   *
+   * IT DOES NOT STEAL THE CAMERA. `PlacesMap` yields the framing to a caller
+   * that passes `focusPlaceId` (this component always does), so the circle is
+   * drawn and redrawn while the focused card keeps ownership of the view.
+   * Without that yield the two effects fight and four camera specs go red —
+   * measured, see the guard in `PlaceMap.tsx`.
+   *
+   * Absent/null means no circle, which is what the picker and the place page's
+   * own maps pass.
+   */
+  radiusCircle?: FramingCircle | null
   /** `scrollBehaviorFor(reducedMotion)` — computed by the caller, never here. */
   focusBehavior: ScrollBehavior
   /** "Back to list" — restores the parent directory's view AND its scroll. */
@@ -319,13 +338,24 @@ export function PlacesMapView({
        * `data-map-center`: publish the fact, then assert the fact.
        */
       data-matched-rows={rows.length}
+      /**
+       * V25 t01: HOW MANY OF THOSE ROWS THE MAP CAN ACTUALLY PIN — the `pins`
+       * array's length, which is also what the header's count is written from.
+       * Published for the same reason as `data-matched-rows`: the spec that
+       * pins "the pins are complete" must assert the render against the
+       * surface's own declared total, not against a number derived from the
+       * seed (a partial pin loss — 239 rows down to 45 pins — is exactly what
+       * a seed-derived bound cannot see).
+       */
+      data-placeable-rows={pins.length}
       className="flex flex-col gap-3"
     >
       {/* The map panel. Its own test id — never `places-map` — because every
           existing spec locates the directory's map by that name and a second
-          match would fail them in strict mode. The height is shorter than the
-          list's band on purpose: the strip below it needs room too, and the two
-          together have to fit one phone screen. */}
+          match would fail them in strict mode. The map is deliberately short
+          (`h-[38dvh] min-h-[200px]`, asserted by the map-view spec): the strip
+          below it needs room too, and the two together have to fit one phone
+          screen. */}
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
           {/* THE PIN COUNT, not the card count. The strip may show fewer cards
@@ -363,7 +393,7 @@ export function PlacesMapView({
             unmounts `PlacesMap` — and runs its cleanup, `map.remove()` — at
             exactly the moment there is nothing to draw. That is stronger than
             teaching `PlacesMap` to render a placeholder for its empty case: the
-            component's other callers (the band, the place page, /new's picker)
+            component's other callers (the place page, /new's picker)
             keep their `null`-means-nothing behaviour untouched, and the Leaflet
             instance is genuinely destroyed rather than parked against a dead
             container. Letting `PlacesMap` hold an empty map instead would leave a
@@ -383,6 +413,7 @@ export function PlacesMapView({
             places={pins.map((row) => row.place)}
             zipCoords={zipCoords}
             homePin={homePin}
+            radiusCircle={radiusCircle}
             focusPlaceId={focusedPlaceId}
             focusBehavior={focusBehavior}
             testId="places-map-view-map"

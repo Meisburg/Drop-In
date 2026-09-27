@@ -132,7 +132,7 @@ function ProtectedShell() {
   // signed-out redirect — so the ban stays visible (no app access).
   if (gate === 'suspended') {
     return (
-      <div className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-slate-50 px-6 text-center">
+      <div className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-page px-6 text-center">
         <h1 className="text-xl font-semibold text-slate-900">Suspended</h1>
         <p className="text-sm text-slate-600">
           Your account was suspended by a moderator.
@@ -147,9 +147,14 @@ function ProtectedShell() {
   // The loading state (ticket 06): the persisted session and/or the
   // profile + membership fetch is still in flight — render it, never
   // redirect mid-load.
+  // V25 t12: `bg-page`, like the suspended branch above. This was the one
+  // branch rendering a full screen with NO background of its own, and neither
+  // <html> nor <body> declares one either (index.html ships only the fixed boot
+  // splash), so a cold load that lingered here painted the UA canvas rather
+  // than the app's page.
   if (gate === 'loading') {
     return (
-      <div className="flex min-h-dvh items-center justify-center text-sm text-slate-600">
+      <div className="flex min-h-dvh items-center justify-center bg-page text-sm text-slate-600">
         Loading…
       </div>
     )
@@ -198,7 +203,7 @@ function ProtectedShell() {
   if (redirect !== null) return <Navigate to={redirect} replace />
 
   return (
-    <div className="min-h-dvh bg-slate-50 text-slate-900">
+    <div className="min-h-dvh bg-page text-slate-900">
       {/* V22 slice 9: the shell is a single column below md (the phone layout,
           pixel-equivalent to before) and a two-column grid at md+ — a left nav
           rail beside the content. The header spans both columns; the rail is

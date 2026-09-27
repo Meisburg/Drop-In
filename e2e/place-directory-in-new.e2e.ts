@@ -15,7 +15,7 @@
  *     load-bearing: the directory has to be reachable from the feed's own
  *     "Post a drop-in" action.
  *  2. /new OFFERS THE DIRECTORY: the field's own "Browse places" button opens
- *     the SAME `PlaceDirectory` component /browse renders — the map band AND
+ *     the SAME `PlaceDirectory` component /browse renders — the map AND
  *     the list, not a second copy. V23 slice 3: the bottom "Browse all N
  *     places" door is GONE; the field's button is the only door.
  *  3. THE DIRECTORY IS THE REAL ONE: the search field and the filter control
@@ -75,9 +75,18 @@ test('the place directory is reachable from /new, with its map and list (V21 t02
   await expect(sheet.getByTestId('places-search')).toBeVisible()
   // The filter/sort control: the "filters" half of the founder's ask.
   await expect(sheet.getByTestId('filter-sort-btn')).toBeVisible()
-  // The map band with a real Leaflet canvas.
-  await expect(sheet.getByTestId('places-map-band')).toBeVisible()
+  // V25 t01: LIST-FIRST. The sheet opens on the filters + the whole list, and
+  // NO map is mounted below them — the map is a mode entered from the card.
+  await expect(sheet.getByTestId('places-map-band')).toHaveCount(0)
+  await expect(sheet.locator('.leaflet-container')).toHaveCount(0)
+
+  // …and the map is one tap away, with a real Leaflet canvas in map mode.
+  await sheet.getByTestId('places-see-map').click()
+  await expect(sheet.getByTestId('places-map-view-map')).toBeVisible()
   await expect(sheet.locator('.leaflet-container')).toBeVisible()
+  // Back to the list, which is where the row pick below happens.
+  await sheet.getByTestId('places-back-to-list').click()
+  await expect(sheet.getByTestId('places-map-view')).toHaveCount(0)
 
   // The list itself: at least one real place row, and more than the 8-row
   // shortcut would have shown once we ask for them all. (The sheet renders the

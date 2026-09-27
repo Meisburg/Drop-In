@@ -302,6 +302,48 @@ export function planSaveToggle(currentlySaved: boolean): SaveToggleDecision {
 }
 
 /**
+ * V25 t08 — THE ONE SET RULE THE HEARTS SURFACES SHARE.
+ *
+ * The saved set (`followedPlaceIds`) is what the bookmark controls read AND what
+ * the Saved filter narrows the directory by, on both surfaces that show it
+ * (/browse and the /new picker sheet). Each host moves that set through this
+ * function, so the collection can never disagree with the bookmark that produced
+ * it; if each host hand-rolled the set arithmetic, a rollback on one surface
+ * could restore a set the other had already moved on from.
+ *
+ * THE TWO HOSTS APPLY IT AT DIFFERENT MOMENTS, FROM DIFFERENT SOURCES, and that
+ * difference is deliberate — this function takes the decision as a plain value
+ * and does not care which produced it:
+ *
+ *   * `BrowsePage.handleTogglePlaceFollow` (the card's own heart) applies it
+ *     OPTIMISTICALLY, BEFORE the write: the decision is derived from the LOCAL
+ *     set (`planSaveToggle(followedPlaceIds.has(placeId))`), the set flips so
+ *     the card moves on tap, and a REJECTED write applies the inverse decision
+ *     to roll back. It never reads `toggleFollowPlace`'s return value — on
+ *     success the optimistic flip is already the final state.
+ *   * `NewPlaydatePage.handleTogglePickerSave` (the sheet's heart) applies it
+ *     AFTER the write, from the WRITE'S OWN boolean (`nowSaved`), with NO
+ *     pre-flip and no `planSaveToggle` call: the sheet's entire Saved list is
+ *     derived from this set, so flipping first would add and then remove a row
+ *     on a rejected write, which reads as a flicker rather than as a failure. A
+ *     rejected write leaves the set untouched.
+ *
+ * The result is a NEW set — the input is never mutated, because React state must
+ * change identity to re-render (both hosts call this inside a functional
+ * updater).
+ */
+export function savedPlaceIdSetAfterToggle(
+  savedPlaceIds: ReadonlySet<string>,
+  placeId: string,
+  decision: SaveToggleDecision,
+): Set<string> {
+  const next = new Set(savedPlaceIds)
+  if (decision === 'save') next.add(placeId)
+  else next.delete(placeId)
+  return next
+}
+
+/**
  * "Sat, Sep 19 · 10:00 AM" — one occurrence said back as a day and a time
  * (the confirmation line's and the button's hint). Built from the existing
  * pure formatters (feed.formatDayLabel / feed.formatTimeLabel) so the app

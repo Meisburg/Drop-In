@@ -11,6 +11,7 @@ import {
   ageRangeFields,
   ageRangeLine,
   cardAgeRangeLabel,
+  cardWhenLabel,
   buildGoingLine,
   buildWhileAwayItems,
   cloneLastPost,
@@ -30,6 +31,7 @@ import {
   formatGuestLine,
   formatStartDayLabel,
   formatTimeLabel,
+  formatTimeWindow,
   groupByDay,
   GOING_CIRCLE_LIMIT,
   haversineMiles,
@@ -41,6 +43,7 @@ import {
   isStartingSoon,
   isSteppedTime,
   isStillAhead,
+  kidHeading,
   kidLabel,
   kidsComingLine,
   KID_AGE_MAX,
@@ -1726,6 +1729,88 @@ describe('the age-range seams (V9 ticket 05: ages first on a card)', () => {
     it('is "" when there is nothing to say (the caller decides the fallback)', () => {
       expect(kidLabel('', null)).toBe('')
       expect(kidLabel(null, undefined)).toBe('')
+    })
+  })
+
+  describe('kidHeading (V25 t09 — the profile row, split for typography)', () => {
+    // The read surface's kid row leads with the NAME and marks the AGE
+    // secondarily. These tests pin the SPLIT, and that the words themselves are
+    // still `kidLabel`'s: the privacy pin (first name + age only) is unchanged,
+    // only the arrangement moved.
+
+    it('splits a named kid with an age into a lead and an age mark', () => {
+      expect(kidHeading({ first_name: 'Bernie', age: 6 })).toEqual({
+        name: 'Bernie',
+        age: 'Age 6',
+        fallback: 'Bernie · Age 6',
+      })
+    })
+
+    it('trims the name so the renderer never has to', () => {
+      expect(kidHeading({ first_name: '  Bernie  ', age: 6 }).name).toBe('Bernie')
+    })
+
+    it('leaves the age mark null for a kid with no age (name alone leads)', () => {
+      expect(kidHeading({ first_name: 'Bernie', age: null })).toEqual({
+        name: 'Bernie',
+        age: null,
+        fallback: 'Bernie',
+      })
+    })
+
+    it('gives a nameless kid NO lead and carries "Age 6" in the fallback', () => {
+      // There is nothing for a secondary mark to sit beside, so the row renders
+      // the label as one piece — never " · Age 6", never the word "null".
+      expect(kidHeading({ first_name: '', age: 6 })).toEqual({
+        name: '',
+        age: null,
+        fallback: 'Age 6',
+      })
+      expect(kidHeading({ first_name: null, age: 6 }).fallback).toBe('Age 6')
+    })
+
+    it('is empty all round when a kid has neither name nor age', () => {
+      expect(kidHeading({ first_name: '', age: null })).toEqual({
+        name: '',
+        age: null,
+        fallback: '',
+      })
+    })
+
+    it('refuses a non-finite age rather than printing NaN', () => {
+      expect(kidHeading({ first_name: 'Bernie', age: Number.NaN }).age).toBeNull()
+      expect(kidHeading({ first_name: 'Bernie', age: Number.NaN }).fallback).toBe('Bernie')
+    })
+
+    it('ROUND-TRIPS: the row re-joins to exactly kidLabel’s string', () => {
+      // THE INVARIANT THE READ SURFACE DEPENDS ON. `ProfileView` renders the
+      // name and the age as separate, separately-styled elements (`{' · '}`
+      // between them), and two e2e assertions read that row as ONE text node
+      // (`getByText(kidLabel(name, age), { exact: true })` in
+      // e2e/profiles-v2 and e2e/polish). If a styling change ever makes the
+      // pieces stop re-joining to `kidLabel`'s exact words — a new separator, a
+      // dropped space — those live assertions fail for a reason nothing in the
+      // unit layer names. This is that name.
+      const cases: Array<{ first_name: string | null; age: number | null }> = [
+        { first_name: 'Bernie', age: 6 },
+        { first_name: '  Bernie  ', age: 6 },
+        { first_name: 'Bernie', age: null },
+        { first_name: '', age: 6 },
+        { first_name: null, age: 6 },
+        { first_name: '', age: null },
+        { first_name: null, age: null },
+        { first_name: 'Bernie', age: Number.NaN },
+      ]
+      for (const kid of cases) {
+        const heading = kidHeading(kid)
+        const joined =
+          heading.name !== '' && heading.age !== null
+            ? `${heading.name} · ${heading.age}`
+            : heading.name !== ''
+              ? heading.name
+              : heading.fallback
+        expect(joined, JSON.stringify(kid)).toBe(kidLabel(kid.first_name, kid.age))
+      }
     })
   })
 })
@@ -3445,6 +3530,47 @@ describe('formatStartDayLabel (V9 ticket 03: the /new summary day line)', () => 
     expect(formatStartDayLabel('2026-08-29')).toBe(
       formatDayLabel('2026-08-29T15:30:00', '2026-07-04T12:00:00'),
     )
+  })
+})
+
+describe('cardWhenLabel (V25 ticket 05: the feed card’s day · time line)', () => {
+  // Local wall clock on purpose (the seam reads the DEVICE's calendar day, the
+  // same one the section headers group on): Saturday, September 26 2026, 5 PM.
+  const STARTS = new Date(2026, 8, 26, 17, 0).toISOString()
+  const ENDS = new Date(2026, 8, 26, 18, 30).toISOString()
+
+  it('leads with the day in the app’s own short words, then the window', () => {
+    const label = cardWhenLabel(STARTS, ENDS)
+    // The day half is locale-independent (the fixed English tables) and is the
+    // founder's reference form — his screenshot's "Sat, Sep 26".
+    expect(label.startsWith('Sat, Sep 26 · ')).toBe(true)
+    // The window half is `formatTimeWindow` — the ONE window rule, not a copy.
+    expect(label.endsWith(formatTimeWindow(STARTS, ENDS))).toBe(true)
+    expect(label).toContain('–')
+  })
+
+  it('reads the day from the SAME seam the /new summary uses (no second day rule)', () => {
+    // If a future edit reaches for formatDayLabel's today/tomorrow branch, or
+    // invents its own table, this agreement pin fails.
+    expect(cardWhenLabel(STARTS, ENDS).startsWith(formatStartDayLabel(localDayKey(STARTS)))).toBe(
+      true,
+    )
+  })
+
+  it('prints the DATE even when the section header says "Today"', () => {
+    // The deliberate difference: the header above the card is relative ("Today"),
+    // the card is a date — it also renders on browse, place pages and profiles,
+    // where there is no header to borrow the day from.
+    const nowIso = new Date(2026, 8, 26, 9, 0).toISOString()
+    expect(formatDayLabel(STARTS, nowIso)).toBe('Today')
+    expect(cardWhenLabel(STARTS, ENDS).startsWith('Sat, Sep 26 · ')).toBe(true)
+    expect(cardWhenLabel(STARTS, ENDS)).not.toContain('Today')
+  })
+
+  it('falls back to the window alone when the start cannot name a day (no dangling separator)', () => {
+    const bad = cardWhenLabel('not-a-date', 'not-a-date')
+    expect(bad).toBe(formatTimeWindow('not-a-date', 'not-a-date'))
+    expect(bad).not.toContain(' · ')
   })
 })
 

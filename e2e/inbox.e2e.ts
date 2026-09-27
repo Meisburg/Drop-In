@@ -32,6 +32,7 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import {
+  dismissRsvpConfirmationIfOpen,
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
   readSupabaseEnv, settleOnRoute, finishSignup,
   signUpViewer, stepStartTimeOnce,
@@ -115,6 +116,11 @@ async function createPingingViewer(
   await expect(
     viewerPage.getByRole('button', { name: /^✓ Going$/ }),
   ).toBeVisible()
+  // V25 ticket 13: the ping raises the RSVP confirmation lightbox, whose
+  // backdrop covers the page. Dismiss it the way a parent does (the "Got it"
+  // control) so the rest of this spec drives the real UI instead of a page
+  // behind an overlay.
+  await dismissRsvpConfirmationIfOpen(viewerPage)
   return { context: viewerContext, page: viewerPage }
 }
 
@@ -212,6 +218,125 @@ test('two-account conversation: pinger messages the host, host reads + badge cle
 
   // Close the viewer's context (its ping row cascades with the post cleanup).
   await viewer.context.close()
+})
+
+/**
+ * V25 ticket 11 — each bubble names its OWN sender.
+ *
+ * THE DEFECT (reproduced live, `.scratch/v25/evidence/`): the bubble label was
+ * `threadHeaderName || 'Unknown'` — ONE thread-level name on every non-own
+ * bubble. On a drop-in the thread's participants are the host + its pingers, so
+ * a third participant's message wore the counterpart's name (measured in a
+ * local replay: Priya's message labelled "Nicole Meisburg"), and a thread whose
+ * header had not resolved printed the literal "Unknown" over a real parent's
+ * message — the founder's `"UnknownComing👍"`, byte-identical to the annotation.
+ *
+ * This spec drives the group case with REAL accounts: the host opens a thread
+ * in which TWO pingers each wrote. Every other-party bubble must carry its own
+ * sender's display name (the label is located with the annotation's OWN
+ * selector, so the assertion means the same thing before and after the fix),
+ * the word "Unknown" must appear nowhere, and the header must still resolve.
+ */
+test('every bubble is labelled by its own sender, not the thread counterpart (V25 t11)', async ({
+  page,
+  browser,
+}) => {
+  const marker = readMarkerMeta()
+  const epoch = Math.floor(Date.now() / 1000)
+  const title = `e2e ${marker.displayName} inbox senders`
+  const firstName = `e2e-v-${epoch}-snd-a`
+  const secondName = `e2e-v-${epoch}-snd-b`
+
+  // --- The host posts a drop-in. ---
+  await seedPostViaUi(page, title)
+  const playdateId = await latestMarkerPlaydateIdByTitle(title)
+
+  // --- TWO distinct pingers, each writing one message. ---
+  const first = await createPingingViewer(
+    page,
+    browser,
+    playdateId,
+    firstName,
+    `${firstName}@gmail.com`,
+    `e2e-v-pw-${epoch}-snd-a`,
+    marker.homeZip,
+    marker.radiusMiles,
+  )
+  await first.page.getByRole('button', { name: 'Message the host' }).click()
+  await first.page.getByPlaceholder('Write a message…').fill('First pinger here')
+  const firstSent = first.page.waitForResponse(
+    (response) => response.url().includes('/rest/v1/messages') && response.request().method() === 'POST',
+  )
+  await first.page.getByRole('button', { name: 'Send' }).click()
+  await expect(first.page.getByTestId('own-message').first()).toContainText('First pinger here')
+  // Wait for the INSERT to be ACKNOWLEDGED before closing: the optimistic
+  // bubble proves only the tap, and the host's thread needs the row on the
+  // server (a closed context before the insert lands reads nothing).
+  expect((await firstSent).ok()).toBe(true)
+  await first.context.close()
+
+  const second = await createPingingViewer(
+    page,
+    browser,
+    playdateId,
+    secondName,
+    `${secondName}@gmail.com`,
+    `e2e-v-pw-${epoch}-snd-b`,
+    marker.homeZip,
+    marker.radiusMiles,
+  )
+  await second.page.getByRole('button', { name: 'Message the host' }).click()
+  await second.page.getByPlaceholder('Write a message…').fill('Second pinger here')
+  const secondSent = second.page.waitForResponse(
+    (response) => response.url().includes('/rest/v1/messages') && response.request().method() === 'POST',
+  )
+  await second.page.getByRole('button', { name: 'Send' }).click()
+  await expect(second.page.getByTestId('own-message').first()).toContainText('Second pinger here')
+  expect((await secondSent).ok()).toBe(true)
+  await second.context.close()
+
+  // --- The host opens the thread (both pingers are the thread's participants,
+  // so the host's own thread header names only ONE counterpart while the
+  // bubbles must name two different people). ---
+  await page.goto(`/inbox?thread=${playdateId}`)
+  await settleOnRoute(page, '/inbox')
+
+  // The label paragraph, found the way the founder's annotation found it —
+  // class-escaped, because Playwright's CSS parser reads `.mb-0.5` as two
+  // classes (`mb-0` + `.5`) and rejects it unescaped.
+  const labelFor = (body: string) =>
+    page
+      .getByTestId('other-message')
+      .filter({ hasText: body })
+      .locator('..')
+      .locator('p.mb-0\\.5.text-xs.text-slate-500')
+
+  // The pre-fix state was DURABLE but INTERMITTENT — the third repro measured
+  // the wrong name settling on 8 of 10 loads — so ONE load proves nothing (the
+  // old code passes ~20% of the time by construction). Load the thread TEN
+  // times and assert every one.
+  for (let load = 1; load <= 10; load += 1) {
+    if (load > 1) {
+      await page.reload()
+      await settleOnRoute(page, '/inbox')
+    }
+    await expect(labelFor('First pinger here'), `load ${load}: first pinger's own name`).toHaveText(
+      firstName,
+      { timeout: 30_000 },
+    )
+    await expect(labelFor('Second pinger here'), `load ${load}: second pinger's own name`).toHaveText(
+      secondName,
+    )
+    // The old thread-level label showed the counterpart on BOTH bubbles; on a
+    // group thread that is the wrong person for one of them.
+    await expect(labelFor('First pinger here'), `load ${load}: never the counterpart`).not.toHaveText(
+      secondName,
+    )
+    // "Unknown" reads as a broken person — the founder's report. It must be gone.
+    await expect(page.getByText('Unknown', { exact: true }), `load ${load}: no "Unknown"`).toHaveCount(0)
+    // And the header keeps its own meaning: the conversation is still named.
+    await expect(page.locator('div.min-w-0 > p').first(), `load ${load}: header named`).not.toBeEmpty()
+  }
 })
 
 test('RLS isolation: a stranger cannot read or write messages', async ({

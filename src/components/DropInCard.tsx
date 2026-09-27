@@ -7,11 +7,13 @@ import { WeatherChip } from './WeatherChip'
 // meta line against the SAME rule the card renders, instead of a copy of it.
 import {
   buildGoingLine,
+  cardWhenLabel,
   formatDistanceLabel,
   formatTimeWindow,
   GOING_CIRCLE_LIMIT,
   isEnded,
   isHappeningNow,
+  mapsHref,
   type GoingPinger,
 } from '../lib/feed'
 import { weeklyMetaSuffix } from '../lib/series'
@@ -44,7 +46,9 @@ import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
  * badge (amber) renders in the same badge slot as "Happening now" when the page
  * passes startsSoon (the single soonest event of the Today section that starts
  * within 60 min — the page decides who gets it, the card only renders it).
- * Cards never carry a per-card day label — the day section headers do.
+ * V25 ticket 05 SUPERSEDES the old pin that "cards never carry a per-card day
+ * label — the day section headers do": the card now carries its own day (see
+ * the ticket-05 paragraph below).
  *
  * V3 slice 2 (ticket 02): a host-marked post (playdate.status
  * 'cancelled' — 0016, trimmed to 'on' | 'cancelled' by 0019) renders
@@ -85,8 +89,11 @@ import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
  *
  * V3 slice 4 (ticket 07): the card's age-hint line is REPLACED by the
  * going line (feedback #1 — "it'd be cool to see their little circles"):
- * "N going" + up to 3 pinger avatar circles (24px, -8px overlap) + a
- * "+N" overflow chip. The circles are the pingers' avatars (the feed
+ * up to 3 pinger avatar circles (24px, -12px overlap), then the "N going"
+ * label — plus a "+N" chip riding the stack when the cap drops faces. The
+ * circles LEAD and the count follows (V25 ticket 06 changed the order and the
+ * overlap, and nothing else about this line). The circles are the pingers'
+ * avatars (the feed
  * page's listPingsForPosts group, in the 0020 created_at order), with a
  * display-name initial on a slate-200 circle as the fallback; names
  * never surface as VISIBLE TEXT on cards (the guest list stays on the detail
@@ -115,6 +122,52 @@ import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
  * is every card for a viewer who follows nobody: the card is then
  * byte-identical to the one that shipped before this ticket. The page owns
  * the data; this component only renders the string it is handed.
+ *
+ * V25 ticket 05 (the founder's sequencing note + "this should be hyperlinked"):
+ *
+ * (a) THE ORDER IS NOW title → day · time → ages → place → meta → host → the
+ *     going row. The day and the window used to be two different lines in two
+ *     different places (the day was the SECTION HEADER's, the window sat in the
+ *     quiet meta line); `feed.cardWhenLabel` now composes them into ONE line
+ *     directly under the title — "Sat, Sep 26 · 6:30 PM–7:30 PM" — which is the
+ *     compact form of the founder's own reference ("Sat, Sep 26 · 5:00 PM PDT").
+ *     NO ZONE LABEL IS PRINTED — this card prints no zone and this diff invents
+ *     none, so the screenshot's "PDT" cannot be honestly produced here. (The app
+ *     is not zoneless everywhere: `series.resolveTimeZone` / `deviceTimeZone`
+ *     exist for weekly-series scheduling, and `playdate_series` stores a zone.
+ *     A one-off `playdates` row stores only `starts_at`/`ends_at`, and
+ *     `formatTimeWindow` renders them device-local with no zone parameter — so
+ *     there is nothing to label the card's time with that would mean the EVENT's
+ *     zone rather than the viewer's. The ticket forbids inventing one.) The
+ *     quiet meta line therefore keeps only the
+ *     neighbourhood and the distance (the weekly marker moved up to the when
+ *     line), and it renders NOTHING when both are absent — the old form ended
+ *     each fact with " · " precisely because the window was always there to
+ *     follow it.
+ *
+ * (b) THE ADDRESS IS A REAL GOOGLE MAPS LINK — and it cannot live inside the
+ *     card's own anchor. The card body is still ONE <Link> (the whole-card tap
+ *     target every spec and every habit depends on), so the address row is a
+ *     SIBLING of that <Link> inside a wrapper that carries the card's border,
+ *     radius and width. An <a> inside an <a> is invalid HTML and browsers hoist
+ *     it out of the card; siblings are valid, keep the Maps link keyboard-
+ *     reachable and screen-reader-announced, and leave every existing
+ *     descendant-based spec (the toggle, the avatar, the circles) untouched.
+ *     The href is `feed.mapsHref` — the same seam the detail page uses — and a
+ *     post with no address renders no row at all (the mapsHref null contract;
+ *     the place line stays plain text).
+ *
+ * V25 ticket 06 (the attendee line): the going row's CIRCLES now LEAD and the
+ * count follows them ("◍◍◍ 3 going · 1 kid", never the old order), and the
+ * circles overlap by HALF the face (12px on the 24px avatar, `-ml-3`) instead
+ * of a third (the old `-ml-2`). The founder read the old row as confusing —
+ * the numbers named the faces before the faces appeared. The cap
+ * (`feed.GOING_CIRCLE_LIMIT`) and the label string (`feed.goingCountsLabel`)
+ * are UNCHANGED and are still the pure seam's; this ticket is ordering and
+ * stagger only. The count text is deliberately NOT rewritten to the reference
+ * app's single "61 attendees" number — the V6 decision comment at
+ * `feed.ts` stands (parents are how the app is used, kids are why it exists),
+ * and the copy question is raised with the founder rather than decided here.
  */
 export function DropInCard({
   playdate,
@@ -151,9 +204,9 @@ export function DropInCard({
   /**
    * V3 slice 4 (ticket 07): this post's pingers (the feed page's
    * listPingsForPosts group, in ping order). Rendered as the card's
-   * going line (buildGoingLine: "N going" + up to 3 circles + a "+N"
-   * chip), replacing the old age-hint line. Empty (BrowsePage; no pings)
-   * = no line.
+   * going line (buildGoingLine: up to 3 circles + a "+N" chip, then the
+   * "N going" label), replacing the old age-hint line. Empty (BrowsePage; no
+   * pings) = no line.
    */
   goingPings?: ReadonlyArray<GoingPinger>
   /**
@@ -220,7 +273,9 @@ export function DropInCard({
       : null
   // V3 slice 4 (ticket 07): the card's going line (null = hidden — no
   // pings yet). The page owns the data (the listPingsForPosts group); the
-  // card applies the pure buildGoingLine with the 3-circle cap.
+  // card applies the pure buildGoingLine with the 3-circle cap. V25 ticket
+  // 06 changes only how this line is LAID OUT (circles first, half-stagger):
+  // the cap and the label are still that seam's.
   const goingLine = buildGoingLine(
     goingPings.length,
     goingPings,
@@ -232,7 +287,12 @@ export function DropInCard({
     // but a single-card column reads best at the phone measure — so cards cap
     // at max-w-md (448px) there. Below md the shell is already 448px, so this
     // class changes nothing on a phone.
-    'block rounded-xl border border-slate-200 bg-white p-4 transition-colors motion-reduce:transition-none hover:border-indigo-300 md:max-w-md',
+    // V25 ticket 05: the padding moved to the body <Link> below, because the
+    // box now holds TWO siblings — that link and the address's Maps row.
+    // (The body's own indentation is deliberately left at its old depth: the
+    // structural change is then the only thing the diff shows — code-structure
+    // .md's 5-minute read test.)
+    'rounded-xl border border-slate-200 bg-white transition-colors motion-reduce:transition-none hover:border-indigo-300 md:max-w-md',
     muted ? 'opacity-60' : '',
   ]
     .filter((c) => c !== '')
@@ -241,8 +301,25 @@ export function DropInCard({
   // (the ordinary case now — every seeded place carries none, and /new stopped
   // asking). One derived value, so the meta line has exactly one rule.
   const neighborhoodLabel = playdate.neighborhood?.name ?? null
+  // V25 ticket 05: the quiet line's facts, with the EMPTY ones dropped so the
+  // join can never print a dangling " · " (the old form was safe from that only
+  // because the window was always there to follow the neighbourhood) and the
+  // line disappears entirely when both are absent.
+  const metaParts = [neighborhoodLabel, distanceLabel].filter(
+    (part): part is string => part !== null && part !== '',
+  )
+  // V25 ticket 05: the Maps row's href, or null when the post has no address —
+  // the SAME pure seam the detail page links with (feed.mapsHref).
+  const maps = mapsHref(playdate.place, playdate.address)
   return (
-    <Link to={`/playdate/${playdate.id}`} className={cardClasses}>
+    <div data-testid="dropin-card" className={cardClasses}>
+      {/* The card body: still ONE anchor, so the whole-card tap target, the
+          going toggle and the avatar behave exactly as they always have. The
+          address's Maps link is its SIBLING below (see the file header, (b)) —
+          never a child of this one. V25 ticket 05 also added the card box's
+          `data-testid="dropin-card"`: the specs need to address the CARD, not
+          the anchor, now that the box holds two of them. */}
+      <Link to={`/playdate/${playdate.id}`} className="block p-4">
       <div className="flex flex-col gap-1">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <h3 className="text-base font-semibold text-slate-900">{playdate.title}</h3>
@@ -285,6 +362,26 @@ export function DropInCard({
 
           </div>
         </div>
+        {/* V25 ticket 05: the WHEN line — the day, then the window, directly
+            under the title ("Sat, Sep 26 · 6:30 PM–7:30 PM"). Both halves come
+            from the pure `feed.cardWhenLabel` seam (the day from the app's
+            always-the-date wording, the window from the ONE `formatTimeWindow`
+            rule). NO ZONE is printed: this line prints none and this diff
+            invents none, so the founder's reference's "PDT" is not produced
+            (see the file header, (a) — the app's only zones are the series
+            scheduling seam's, and a one-off post stores none).
+            `data-testid` is the stable handle the specs read, because the line
+            moved and a positional `p` index silently tests the wrong element
+            (see e2e/post-fast, e2e/post-location).
+
+            The weekly marker rides THIS line (V8 ticket 06's text suffix, V25
+            ticket 05 moved it): the when line is never empty, so the suffix can
+            never dangle, and "this repeats" is a property of WHEN the drop-in
+            happens. */}
+        <p data-testid="card-when" className="text-sm font-medium text-slate-900">
+          {cardWhenLabel(playdate.starts_at, playdate.ends_at)}
+          {weeklyMetaSuffix(playdate.series_id)}
+        </p>
         {/* V9 ticket 05: the AGE RANGE — the card's meta starts here. It is
             the question another parent asks first ("is this the right age
             crowd?"), so it leads the block, above the place. Absent (null)
@@ -297,31 +394,23 @@ export function DropInCard({
             {ageRangeLabel}
           </p>
         ) : null}
-        <p className="text-sm text-slate-700">{playdate.place}</p>
-        {/* V9 ticket 01: the neighbourhood label renders ONLY when the post
-            carries one. The line above is already the place, so the meta line
-            is `neighborhood · window` — and with no neighbourhood it is the
-            WINDOW alone. Never `{null} · …` (React would print nothing and
-            leave a dangling separator) and never the word "null": the post is
-            normal, the parent just was not asked.
-
-            frontend-design pass: the WINDOW is wrapped in its own span so the
-            perishable fact ("when") is the loud line in the card, while the
-            neighbourhood and distance stay quiet around it. The text content is
-            byte-identical — only the weight and tone of the window change — so
-            the specs that pin this meta line still read the same string. */}
-        <p className="text-sm text-slate-600">
-          {neighborhoodLabel !== null ? `${neighborhoodLabel} · ` : ''}
-          <span className="font-semibold text-slate-900">
-            {formatTimeWindow(playdate.starts_at, playdate.ends_at)}
-          </span>
-          {/* V8 ticket 06: ` · weekly` (text, right after the time window) when
-              this post is an occurrence of a weekly series — the pure
-              weeklyMetaSuffix seam returns '' for a one-off, so nothing
-              changes for a normal post. */}
-          {weeklyMetaSuffix(playdate.series_id)}
-          {distanceLabel !== null ? ` · ${distanceLabel}` : ''}
+        <p data-testid="card-place" className="text-sm text-slate-700">
+          {playdate.place}
         </p>
+        {/* V9 ticket 01, narrowed by V25 ticket 05: the QUIET line — the
+            neighbourhood and the distance, each dropping out when the post has
+            none, joined by ` · ` with nothing to dangle (the WINDOW used to
+            live here and is the card's own when-line now; the weekly marker
+            moved up to that line). Both absent → `metaParts` is empty → NO
+            paragraph renders: never an empty line and never the word "null"
+            (the post is normal, the parent just was not asked). The perishable
+            fact the founder asked to lead (when) is the loud line above; these
+            stay quiet. */}
+        {metaParts.length > 0 ? (
+          <p data-testid="card-meta" className="text-sm text-slate-600">
+            {metaParts.join(' · ')}
+          </p>
+        ) : null}
         <div className="flex items-center gap-2">
           <HostAvatar host={playdate.host} eager={eagerAvatar} />
           <p className="text-sm text-slate-500">@{playdate.host.display_name}</p>
@@ -337,7 +426,13 @@ export function DropInCard({
             <div className="flex items-center gap-1.5">
               {goingLine !== null ? (
                 <>
-                  <span className="text-xs text-slate-600">{goingLine.label}</span>
+                  {/* V25 ticket 06: the CIRCLES lead and the count follows —
+                      "◍◍◍ 3 going · 1 kid", never the old "3 going · 1 kid ◍◍◍".
+                      The label named the numbers before the faces it was
+                      counting, which is what the founder read as confusing.
+                      These siblings render in DOM order, so the stack is simply
+                      FIRST here; the cap (GOING_CIRCLE_LIMIT) and the label
+                      string are still the pure buildGoingLine's. */}
                   <div className="flex items-center">
                     {goingLine.circles.map((circle, index) => {
                       // frontend-design pass slice 2: the circle is an identity
@@ -345,6 +440,11 @@ export function DropInCard({
                       // the name rides the avatar for assistive tech. `circles`
                       // is `goingPings.slice(0, limit)` (buildGoingLine), so the
                       // index aligns with the raw pingers passed in.
+                      //
+                      // V25 ticket 06: the overlap is HALF the 24px face
+                      // (`-ml-3` = 12px), not the old third (`-ml-2` = 8px), and
+                      // it applies from the SECOND circle on — so the first face
+                      // stays whole and the stack reads as a stack.
                       const pingerName = goingPings[index]?.displayName ?? ''
                       return circle.avatarUrl !== null && circle.avatarUrl !== '' ? (
                         <img
@@ -353,7 +453,7 @@ export function DropInCard({
                           alt={pingerName}
                           loading="lazy"
                           decoding="async"
-                          className={`h-6 w-6 rounded-full border-2 border-white object-cover${index > 0 ? ' -ml-2' : ''}`}
+                          className={`h-6 w-6 rounded-full border-2 border-white object-cover${index > 0 ? ' -ml-3' : ''}`}
                         />
                       ) : (
                         <span
@@ -361,16 +461,20 @@ export function DropInCard({
                           role={pingerName === '' ? undefined : 'img'}
                           aria-label={pingerName === '' ? undefined : pingerName}
                           aria-hidden={pingerName === '' ? true : undefined}
-                          className={`flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-xs font-semibold text-slate-600${index > 0 ? ' -ml-2' : ''}`}
+                          className={`flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-xs font-semibold text-slate-600${index > 0 ? ' -ml-3' : ''}`}
                         >
                           {circle.initial}
                         </span>
                       )
                     })}
                   </div>
+                  {/* The "+N" chip stays welded to the circle stack it counts
+                      the missing faces of (it is not a count of the post); the
+                      "N going · M kids" count is the row's LAST item. */}
                   {goingLine.overflow > 0 ? (
                     <span className="text-xs font-medium text-slate-600">+{goingLine.overflow}</span>
                   ) : null}
+                  <span className="text-xs text-slate-600">{goingLine.label}</span>
                 </>
               ) : (
                 <span className="text-xs text-slate-600">
@@ -429,15 +533,59 @@ export function DropInCard({
             </button>
           ) : null}
         </div>
-        {/* The card is a link, so this is a label, not a nested control
+        {/* The card BODY is a link, so this is a label, not a nested control
             (an <a> inside an <a> is invalid HTML) — it advertises where a tap
-            already goes. */}
+            already goes. The address row below IS a real link, which is exactly
+            why it is OUTSIDE this anchor rather than inside it. */}
         <div className="flex items-center justify-end gap-1 text-sm font-medium text-indigo-600">
           More info
           <span aria-hidden="true">›</span>
         </div>
       </div>
-    </Link>
+      </Link>
+      {/* V25 ticket 05: the address, as a real Google Maps link — `feed.mapsHref`
+          (the same builder the detail page uses), opening in a new tab with
+          `rel="noopener"`. A post with NO address renders no row at all (the
+          mapsHref null contract) and the place line above stays plain text.
+          The row is a SIBLING of the body <Link>, inside the border that makes
+          it read as part of the card, because an <a> inside an <a> is invalid
+          HTML and the browser hoists it out of the card.
+          `min-h-11` is the 44px tap target the house requires; the accessible
+          name says where the tap goes (the visible address first, then the
+          destination — WCAG 2.5.3's label-in-name).
+          `rounded-b-xl` matches the box's own radius (V25 t05 fix round 1): the
+          box paints its border/radius but does NOT clip (`overflow-hidden` would
+          also clip focus rings), so without it this row's hover fill squared off
+          the box's bottom two corners. */}
+      {maps !== null ? (
+        <a
+          data-testid="card-maps-link"
+          href={maps}
+          target="_blank"
+          rel="noopener"
+          aria-label={`${playdate.address ?? ''} — open in Google Maps`}
+          className="flex min-h-11 items-center gap-1.5 rounded-b-xl border-t border-slate-100 px-4 py-2 text-sm font-medium text-indigo-600 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+        >
+          <svg
+            viewBox="0 0 16 16"
+            className="h-4 w-4 shrink-0"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            aria-hidden="true"
+          >
+            <path
+              d="M8 1.75c-2.35 0-4.25 1.9-4.25 4.25C3.75 9.2 8 14.25 8 14.25s4.25-5.05 4.25-8.25C12.25 3.65 10.35 1.75 8 1.75Z"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <circle cx="8" cy="6" r="1.5" />
+          </svg>
+          <span className="min-w-0">{playdate.address}</span>
+          <span aria-hidden="true">↗</span>
+        </a>
+      ) : null}
+    </div>
   )
 }
 

@@ -26,6 +26,7 @@ import {
   occurrenceWhenLabel,
   planSaveToggle,
   placeFollowerLine,
+  savedPlaceIdSetAfterToggle,
   validateFollowTarget,
 } from './follows'
 import type { OccurrenceLike } from './follows'
@@ -326,6 +327,33 @@ describe('planSaveToggle (the place-save toggle decision)', () => {
     const results: ReadonlyArray<'save' | 'unsave'> = [planSaveToggle(false), planSaveToggle(true)]
     expect(results).toEqual(['save', 'unsave'])
     expect(results.every((result) => result === 'save' || result === 'unsave')).toBe(true)
+  })
+})
+
+describe('savedPlaceIdSetAfterToggle (the saved set a confirmed write leaves)', () => {
+  it('adds the id on save and removes it on unsave', () => {
+    expect([...savedPlaceIdSetAfterToggle(new Set(['a']), 'b', 'save')].sort()).toEqual(['a', 'b'])
+    expect([...savedPlaceIdSetAfterToggle(new Set(['a', 'b']), 'a', 'unsave')]).toEqual(['b'])
+  })
+
+  it('is a no-op in effect for a save already saved (a Set cannot hold a duplicate)', () => {
+    expect([...savedPlaceIdSetAfterToggle(new Set(['a']), 'a', 'save')]).toEqual(['a'])
+  })
+
+  it('tolerates unsaving an id that is not in the set (a rollback landing twice)', () => {
+    expect([...savedPlaceIdSetAfterToggle(new Set(['a']), 'zzz', 'unsave')]).toEqual(['a'])
+  })
+
+  it('returns a NEW set and never mutates the caller’s (React state must change identity)', () => {
+    const before = new Set(['a'])
+    const after = savedPlaceIdSetAfterToggle(before, 'b', 'save')
+    expect(after).not.toBe(before)
+    expect([...before]).toEqual(['a'])
+  })
+
+  it('is total over an empty set and a blank id (never throws in a handler)', () => {
+    expect(() => savedPlaceIdSetAfterToggle(new Set(), '', 'save')).not.toThrow()
+    expect([...savedPlaceIdSetAfterToggle(new Set(), '', 'save')]).toEqual([''])
   })
 })
 

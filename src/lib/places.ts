@@ -9,7 +9,15 @@
  * thing they share is the distance math (feed.haversineMiles), which is
  * imported rather than reimplemented.
  */
-import { coordNumber, haversineMiles, localDayKey, placeDistanceMiles, statedAgeRangeLine } from './feed'
+import {
+  cardWhenLabel,
+  coordNumber,
+  haversineMiles,
+  localDayKey,
+  mapsHref,
+  placeDistanceMiles,
+  statedAgeRangeLine,
+} from './feed'
 import type { DistanceChoice, ZipCoords } from './feed'
 import type { Place, PlaceKind } from './types'
 import type { ReviewSummary } from './reviews'
@@ -113,6 +121,191 @@ export function placeKindLabel(kind: PlaceKind | string): string {
 /** "Indoor" / "Outdoor" — the place page's and the filter's one word. */
 export function placeIndoorLabel(place: { indoor: boolean }): string {
   return place.indoor ? 'Indoor' : 'Outdoor'
+}
+
+/**
+ * V25 t03 — ONE CHIP IN THE CATEGORY ROW: a place kind, its word, and whether
+ * the loaded directory has anything at all behind it.
+ */
+export interface PlaceKindChip {
+  /** The kind this chip toggles in the SAME `selectedKinds` set the sheet uses. */
+  kind: PlaceKind
+  /** The chip's word — ALWAYS `placeKindLabel(kind)`; there is no second label map. */
+  label: string
+  /**
+   * TRUE when the loaded directory holds ZERO rows of this kind, FALSE when it
+   * holds at least one, and FALSE when the read has not answered yet
+   * (`places === null` = UNKNOWN, the module's standing convention: never call a
+   * category empty before measuring it).
+   *
+   * WHY IT SURVIVES THE REMOVAL of the two known-empty chips: `empty` is a
+   * MEASUREMENT of the loaded directory, not a claim about the seed. A shipped
+   * kind can go empty at runtime (a partial read, a removed seed row), and a
+   * zero-row kind can still be SELECTED from the filter sheet, which lists every
+   * kind. Either way the UI must be able to say "No “Trail” places in the
+   * directory yet." rather than a generic "No places match that.", and this flag
+   * is what lets `kindEmptyCopy` name the real cause.
+   */
+  empty: boolean
+}
+
+/**
+ * V25 t03 — THE KINDS THE CATEGORY ROW ACTUALLY OFFERS (eight).
+ *
+ * THE BINDING DECISION THIS ENCODES: **no chip that can only ever return an
+ * empty list.** That decision (founder, 2026-09-26, recorded in the V25 ledger)
+ * is NEWER than ticket 03's own concession that "`park` (0 rows) can ship,
+ * declared honestly in the empty state", so the decision wins. `park` and
+ * `trail` are therefore NOT in this row: against the live directory (239 rows,
+ * 2026-09-26) both hold ZERO rows, and the 0029 seed has zero rows for both too,
+ * so a chip for either could only ever come back empty.
+ *
+ * WHAT IS *NOT* DELETED: the `park`/`trail` KIND values stay in `PLACE_KINDS`, in
+ * `placeKindLabel` and in the database CHECK. They are real kinds — the filter
+ * sheet still lists them (`filter-kind-chip-<kind>`), because a filter sheet is
+ * an exhaustive list rather than a discovery row; the list's kind group headings
+ * still render them if a row ever appears; and `kindReason`/`kindEmptyCopy`
+ * still produce the honest "No “Park” places in the directory yet." for a
+ * selection made in the sheet. Only the CHIPS are withheld.
+ *
+ * ORDER is `PLACE_KINDS` order (filtered) — deliberately the same order the sheet
+ * and the list's group headings use, so there is one taxonomy order in the app
+ * rather than a second one to keep in sync. The sibling test pins the exact set,
+ * so a kind added to `PLACE_KINDS` cannot silently go missing here.
+ */
+export const PLACE_KIND_CHIP_KINDS = [
+  'playground',
+  'indoor_play',
+  'museum',
+  'pool',
+  'splash_pad',
+  'library',
+  'beach',
+  'other',
+] as const satisfies readonly PlaceKind[]
+
+/**
+ * V25 t03 — THE CATEGORY CHIP ROW, AS ONE PURE DECISION.
+ *
+ * THE FOUNDER'S ASK, verbatim: *"you got the three main drop downs that you can
+ * click on at the top, and then beneath that there's like a side scrolling
+ * filter where you can pick different ones with like interesting icons on them
+ * like coffee shop or museum or playground, you know what I mean?"*, and his
+ * reference screenshot shows exactly that pattern (a horizontal icon-chip row
+ * under the top controls). His decision of 2026-09-26 fixes the pattern: **a
+ * horizontal scroll row of icon + label chips**.
+ *
+ * WHAT SHIPS — the eight kinds of `PLACE_KIND_CHIP_KINDS` (see above for why
+ * `park` and `trail` are withheld). The words come from `placeKindLabel`, so the
+ * row can never disagree with the sheet's chips or with the list's group
+ * headings: they all read the same source.
+ *
+ * WHAT CANNOT SHIP, AND WHY THE PARENT IS TOLD IN RENDERED COPY. The wife's list
+ * names food and a zoo, and the thing she cares about most is *"whether or not
+ * there's a coffee shop nearby"*. The data has NO coffee/café, food, or zoo value
+ * at all — MEASURED against the live directory at 239 rows (2026-09-26): `kind`
+ * takes one of the EIGHT non-zero values in the live distribution (playground
+ * 155 · splash_pad 30 · other 26 · pool 10 · beach 9 · library 6 · indoor_play 2
+ * · museum 1; `park` and `trail` are the two zeros), a name/notes search for
+ * `coffee`, `cafe`, `food` or `zoo` returns ZERO rows, and the single `caf` hit
+ * in the whole database is PROSE inside one `indoor_play` row's notes ("LEGO
+ * play café in Northeast Seattle"). The 0029 CHECK allows no `food`/`zoo` kind,
+ * and there is no amenity dataset, no POI source, and no
+ * distance-to-a-third-party-place concept anywhere in the app. A chip for any of
+ * those would return nothing FOREVER, not until the seed grows, so none of them
+ * is built — and rather than leaving the wife's categories in a code comment
+ * only, the row carries `PLACE_KIND_MISSING_NOTE`, which names those three
+ * categories to the parent in one quiet rendered line. The coffee case stays an
+ * explicit open question on ticket 03 and needs its own data-source decision
+ * (source, licence, cost, attribution, rate limits).
+ *
+ * THE "PARKS" GROUPING, stated so it is not implied: there is no hand-mapped
+ * "outdoor play" group over several kinds. The wife's first category is served
+ * by the ordinary outdoor kinds the seed DOES have — `playground` (155),
+ * `splash_pad` (30) and `beach` (9) — while `kind = 'park'` holds 0 rows even
+ * though **111 seeded places have "Park" in their name** (90 playground, 13
+ * splash_pad, 6 beach, 2 other; Seattle's open data files its rows by facility
+ * type). So a parent looking for Green Lake Park finds it under Playground, and
+ * whether those rows should be re-kind'd to `park` is a seed/data decision for
+ * the founder. The row must not fake a grouping, and it must not offer a `Park`
+ * chip that can only come back empty — which is why the measurement matters: the
+ * gap is in the taxonomy, not in the city.
+ */
+export function placeKindChips(places: readonly Place[] | null): PlaceKindChip[] {
+  const counts = placeKindRowCounts(places)
+  return PLACE_KIND_CHIP_KINDS.map((kind) => ({
+    kind,
+    label: placeKindLabel(kind),
+    empty: places !== null && (counts.get(kind) ?? 0) === 0,
+  }))
+}
+
+/**
+ * How many rows of each kind the LOADED directory holds, keyed by `kind`.
+ *
+ * An empty map means the read has not answered (`places === null`), which is
+ * UNKNOWN — never "every kind is empty". Callers must check for null themselves;
+ * both callers here do (`placeKindChips`'s `empty` flag and `planDirectoryList`'s
+ * `kindReason`), because turning an unanswered read into "this category has no
+ * places" is exactly the honest-sounding lie this module's conventions forbid.
+ */
+function placeKindRowCounts(places: readonly Place[] | null): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>()
+  for (const place of places ?? []) counts.set(place.kind, (counts.get(place.kind) ?? 0) + 1)
+  return counts
+}
+
+/**
+ * V25 t03 — THE ONE QUIET LINE UNDER THE CHIP ROW that names the categories this
+ * app cannot serve yet: food, a zoo, and the coffee shop nearby.
+ *
+ * WHY IT EXISTS AS RENDERED COPY: the decision that withholds those chips also
+ * requires the withholding to be NAMED to the parent, not only in the commit or
+ * a source comment — otherwise the wife's list is silently dropped from the
+ * product. It is deliberately not a button (there is nothing to tap: the data
+ * does not exist) and not an apology; it is a statement of what exists.
+ */
+export const PLACE_KIND_MISSING_NOTE =
+  'Looking for food, a zoo, or a coffee shop nearby? We don’t have that data yet.'
+
+/**
+ * The honest empty-state copy for a KIND filter that can only ever return
+ * nothing: every selected kind has zero rows in the loaded directory. It names
+ * the chip's own label (passed in from `placeKindChips`/`placeKindLabel`), so
+ * the copy can never drift from the chip's text, and it does NOT claim the
+ * parent's other filters are innocent — the caller only reaches this state when
+ * the kind is the cause.
+ */
+export function kindEmptyCopy(label: string): string {
+  return `No “${label}” places in the directory yet.`
+}
+
+/**
+ * V25 t08 — THE SAVED (hearts) FILTER'S TWO EMPTY STATES, as pure copy.
+ *
+ * THE VOCABULARY: the app says **Saved** for the place bookmark the founder
+ * called a **heart** ("a collection of all of your favorite places that you can
+ * select from"). "Saved" is the word already on the controls this slice does not
+ * rename (the card's `Save X` / `Saved X — tap to unsave` accessible name, the
+ * place page's `Save` / `Saved` button, the `follow-place`/`place-heart` ids it
+ * keeps), so the new surface adopts the existing word instead of inventing a
+ * fourth one between follow / save / heart / favourite.
+ *
+ * TWO MESSAGES, because there are two different truths and the ticket forbids
+ * one of them reading as a broken filter:
+ *
+ *   * `hasSaves === false` — this parent has saved NOTHING, so the empty list is
+ *     not a filter failure at all; the copy says what the list is FOR and how a
+ *     place gets in it. Never an empty bordered list.
+ *   * `hasSaves === true` — saves exist but the CURRENT narrowing (search, kind,
+ *     radius, date window) excludes them all. Saying "you haven't saved
+ *     anything" there would be a lie about the parent's own data, so the copy
+ *     names the cause and the caller offers the escape.
+ */
+export function savedPlacesEmptyCopy(hasSaves: boolean): string {
+  return hasSaves
+    ? 'None of your saved places match these filters.'
+    : 'You haven’t saved any places yet. Tap the bookmark on a place to keep it here.'
 }
 
 /** `/place/:id` — the one place path builder (links never hand-roll it). */
@@ -232,6 +425,17 @@ export function placeIdField(placeId?: string | null): { place_id?: string } {
  * 3. **Order is preserved from the input.** The caller passes posts in its own
  *    display order; nothing here re-sorts, because a map's draw order is not a
  *    ranking.
+ *
+ * 4. **A pin KEEPS every drop-in it collapsed (V25 t07).** Rule 2 makes one dot
+ *    stand for 1..N drop-ins, so a bubble that names "the" event is a claim the
+ *    pin cannot always honour: a morning and an afternoon session at one park
+ *    are ONE dot, and naming only one of them presents a choice as the whole
+ *    truth. So the collapse ACCUMULATES instead of discarding — the pin carries
+ *    every event behind it, in the caller's order — and `feedMapPinEvent`
+ *    below picks the SOONEST for the bubble and says how many others share the
+ *    dot. The founder's own words, on tapping a blue circle on the feed: *"it
+ *    make[s] more sense to tell you the name of the event that's happening
+ *    there and some information about that."*
  */
 export interface FeedMapPin {
   /** The drop-in's real directory place, or null for a free-text post. */
@@ -241,17 +445,83 @@ export interface FeedMapPin {
   address: string
   lat: number
   lng: number
+  /**
+   * EVERY drop-in this one dot stands for, in the caller's order — 1..N, never
+   * empty for a pin that exists. A post that cannot be named as an event (no
+   * id, or no parseable window) still contributes its PIN but no entry here;
+   * see `pinEventForPost`.
+   */
+  events: FeedMapPinEvent[]
 }
 
-export function feedMapPins(
-  posts: ReadonlyArray<{
-    place?: string | null
-    address?: string | null
-    place_id?: string | null
-    place_coords?: { lat?: number | string | null; lng?: number | string | null } | null
-  }>,
-): FeedMapPin[] {
-  const seen = new Set<string>()
+/**
+ * ONE drop-in standing behind a feed pin (V25 t07).
+ *
+ * `id` is the post's own id and is what the bubble's `/playdate/:id` link is
+ * built from, so an event without one is not an event this seam can report.
+ */
+export interface FeedMapPinEvent {
+  /** The drop-in's own `playdates.id`. */
+  id: string
+  /** The post's own title, trimmed and never empty. */
+  title: string
+  /** The post's start, as stored (ISO). */
+  startsAt: string
+  /** The post's end, as stored (ISO). */
+  endsAt: string
+}
+
+/**
+ * The minimal post shape this seam reads — all optional, so
+ * `PlaydateWithNeighborhood` satisfies it without a cast, exactly as the
+ * previous inline type did.
+ */
+export interface FeedMapPinPost {
+  id?: string | null
+  title?: string | null
+  starts_at?: string | null
+  ends_at?: string | null
+  place?: string | null
+  address?: string | null
+  place_id?: string | null
+  place_coords?: { lat?: number | string | null; lng?: number | string | null } | null
+}
+
+/** What to call a drop-in whose own title is blank — the same shape of fallback
+ *  the pin's own name uses (`Drop-in location`) rather than an empty line. */
+const UNTITLED_DROP_IN = 'Drop-in'
+
+/**
+ * The event a post contributes to its pin, or null when the post cannot be
+ * named as one.
+ *
+ * TWO REFUSALS, both deliberate:
+ *
+ *  - **No id.** The bubble's link is `/playdate/:id`, and a post with no id has
+ *    no event page behind it. Every real row has one (`playdates.id` is the
+ *    primary key), so this is the defensive half of the rule.
+ *  - **No parseable window.** The bubble states when the drop-in starts, so an
+ *    event whose `starts_at`/`ends_at` do not parse could only be named by
+ *    printing "Invalid Date" (`formatTimeWindow`'s behaviour). Both columns are
+ *    NOT NULL timestamptz on live data, so this cannot fire there either; it
+ *    exists so that a malformed row degrades to the place-only popup — the
+ *    pre-V25-t07 behaviour — instead of a popup that lies.
+ */
+function pinEventForPost(post: FeedMapPinPost): FeedMapPinEvent | null {
+  const id = typeof post.id === 'string' ? post.id.trim() : ''
+  if (id === '') return null
+  const startsAt = typeof post.starts_at === 'string' ? post.starts_at : ''
+  const endsAt = typeof post.ends_at === 'string' ? post.ends_at : ''
+  if (Number.isNaN(Date.parse(startsAt)) || Number.isNaN(Date.parse(endsAt))) return null
+  const title = (post.title ?? '').trim()
+  return { id, title: title === '' ? UNTITLED_DROP_IN : title, startsAt, endsAt }
+}
+
+export function feedMapPins(posts: ReadonlyArray<FeedMapPinPost>): FeedMapPin[] {
+  /** Key -> index in `pins`, so a later drop-in at the same place can be
+   *  ACCUMULATED onto the pin its first post created (rule 4) rather than
+   *  dropped. A `Set` cannot do that; this is the smallest thing that can. */
+  const indexByKey = new Map<string, number>()
   const pins: FeedMapPin[] = []
   for (const post of posts) {
     /**
@@ -273,17 +543,125 @@ export function feedMapPins(
     // Key on the PLACE where the post names one, so every drop-in there is one
     // dot; otherwise on the exact coordinate pair.
     const key = placeId ?? `${coords.lat},${coords.lng}`
-    if (seen.has(key)) continue
-    seen.add(key)
+    const event = pinEventForPost(post)
+    const existing = indexByKey.get(key)
+    if (existing !== undefined) {
+      // Rule 4: the dot already exists — this drop-in joins it rather than
+      // vanishing. The FIRST post at the place still owns the pin's identity
+      // (name, address, coordinates), which is unchanged from before.
+      if (event !== null) pins[existing].events.push(event)
+      continue
+    }
+    indexByKey.set(key, pins.length)
     pins.push({
       placeId,
       name: (post.place ?? '').trim(),
       address: (post.address ?? '').trim(),
       lat: coords.lat,
       lng: coords.lng,
+      events: event === null ? [] : [event],
     })
   }
   return pins
+}
+
+/**
+ * V25 t07 — WHAT THE TAPPED PIN'S BUBBLE SAYS ABOUT ITS EVENT, ready to render.
+ *
+ * The founder, on `/`: *"when you click on a blue circle … it make[s] more sense
+ * to tell you the name of the event that's happening there and some information
+ * about that."* The pin used to carry no event identity at all, so the bubble
+ * could only name the PLACE. This is the payload that fixes that, and it is
+ * built here — pure, with a sibling test — so the component renders a decision
+ * instead of making one.
+ *
+ * WHY IT CARRIES THE LABELS RATHER THAN THE RAW ROW. The `when` line goes
+ * through `cardWhenLabel`, the card's own day + window rule (V25 t05), so a feed
+ * card and the bubble over its pin cannot disagree about the same drop-in; the
+ * `more` sentence is copy, and copy belongs next to the rule that decides it.
+ * `PlaceMap` then has nothing to format and nothing to count.
+ *
+ * THE SHAPE OF THE ANSWER FOR A PIN THAT STANDS FOR SEVERAL DROP-INS: name the
+ * SOONEST and say how many more share the dot. The alternative the ticket allows
+ * — listing them all — does not fit this bubble: it is capped at `34vh` of
+ * content by `index.css` (measured for a place panel: name + address + one 44px
+ * action ≈ 200px of a 287px ceiling at 390×844), so a list would push the place
+ * label and the panel's own actions out of reach for every pin with a second
+ * session. Naming the soonest is the honest subset, and the count is what keeps
+ * it from pretending to be the whole story.
+ */
+export interface MapPinEvent {
+  /** The named drop-in's own id (`playdates.id`). */
+  playdateId: string
+  /** Its title — the founder's "name of the event". */
+  title: string
+  /** Its day + window through `cardWhenLabel`: "Sat, Sep 26 · 5 PM–6:30 PM". */
+  whenLabel: string
+  /** "2 more drop-ins here", or null when this dot stands for ONE drop-in — so
+   *  a single-event pin says nothing extra rather than "0 more". */
+  moreLabel: string | null
+  /** `/playdate/:id` — the tap target that reaches the named EVENT. */
+  href: string
+}
+
+/**
+ * WHICH of a pin's events the bubble names: the SOONEST, by `starts_at`.
+ *
+ * NOT `events[0]`, and the difference is not hypothetical. Rule 3 keeps the
+ * caller's order, and the caller's order happens to be the feed's display order
+ * (soonest-first day sections) — but that is the CALLER's decision, and a bubble
+ * that reads "the soonest" has to be true of the DATA rather than of a sort this
+ * seam did not perform. Two events at the same instant keep input order (the
+ * strict `<` below), so the rule is total and stable.
+ *
+ * An unparseable `starts_at` cannot win and cannot block: it is skipped, and a
+ * list whose members are ALL unparseable falls back to its first member (the
+ * same defensive posture as `pinEventForPost`, which normally keeps such an
+ * event out of the list altogether).
+ */
+export function soonestFeedPinEvent(
+  events: readonly FeedMapPinEvent[],
+): FeedMapPinEvent | null {
+  if (events.length === 0) return null
+  let soonest = events[0]
+  let soonestMs = Date.parse(soonest.startsAt)
+  for (const event of events.slice(1)) {
+    const ms = Date.parse(event.startsAt)
+    if (Number.isNaN(ms)) continue
+    if (Number.isNaN(soonestMs) || ms < soonestMs) {
+      soonest = event
+      soonestMs = ms
+    }
+  }
+  return soonest
+}
+
+/** How a pin's overflow is stated. One source for the sentence, so the bubble
+ *  and any spec assert the same words. */
+export function pinMoreDropInsLabel(moreCount: number): string | null {
+  if (moreCount <= 0) return null
+  return moreCount === 1 ? '1 more drop-in here' : `${moreCount} more drop-ins here`
+}
+
+/**
+ * The bubble payload for one feed pin — or null when the pin names no event
+ * (every one of its posts was unnameable), which leaves the shared popup at
+ * exactly its pre-V25-t07 place-only behaviour.
+ */
+export function feedMapPinEvent(pin: FeedMapPin): MapPinEvent | null {
+  const soonest = soonestFeedPinEvent(pin.events)
+  if (soonest === null) return null
+  return {
+    playdateId: soonest.id,
+    title: soonest.title,
+    whenLabel: cardWhenLabel(soonest.startsAt, soonest.endsAt),
+    moreLabel: pinMoreDropInsLabel(pin.events.length - 1),
+    // Spelled here rather than at the call site, the same reason `placePath`
+    // exists: one builder, so the bubble and (later) anything else that links a
+    // drop-in cannot drift to different URLs. `/playdate/:id` is the route
+    // `DropInCard` and the detail page already use.
+    href: `/playdate/${encodeURIComponent(soonest.id)}`,
+  }
 }
 
 /**
@@ -502,10 +880,18 @@ export function placeExternalUrl(place: Pick<Place, 'name'>): string | null {
  * this straight into an anchor. Only a well-formed http(s) URL is accepted;
  * anything else falls through to the search link exactly as a NULL would.
  *
- * The `kind` of link is returned ALONGSIDE the URL, because the button's label
- * depends on it ("Visit website" vs "Find it on the map") and that is a
- * decision, not a render detail — the build law's split, expressed as a return
- * shape so a caller cannot pair the wrong label with the wrong href.
+ * The `kind` of link is returned ALONGSIDE the URL, because a caller must never
+ * pair the wrong label with the wrong href — and that is a decision, not a
+ * render detail (the build law's split, expressed as a return shape). Exactly
+ * ONE surface labels from it: the DIRECTORY row, `PlaceDirectory.tsx:1046`
+ * ("Visit website" vs "Find it on the map"). The map PANEL uses `kind` as a
+ * GUARD, not a label — `PlaceMap.tsx` keeps only the `website` kind
+ * (`websiteLink`) and its anchor hard-codes "Visit website", because V23 slice 4
+ * deliberately removed the map-search fallback from that panel (it floats over
+ * a map); do not "restore" it as a bug fix. The place PAGE stopped labelling
+ * from it in V25 t04 (both kinds now read "Learn more", because "Find it on the
+ * map" sat under a map and made no sense) and keeps `data-link-kind` on the
+ * anchor as the honesty channel instead.
  */
 export interface PlaceLearnMoreLink {
   url: string
@@ -522,6 +908,55 @@ export function placeLearnMoreLink(
   }
   const search = placeExternalUrl(place)
   return search === null ? null : { url: search, kind: 'map-search' }
+}
+
+/**
+ * V25 t04 — THE PLACE PAGE'S TWO OUTBOUND ACTIONS: "Learn more" and "Get
+ * directions".
+ *
+ * The founder, on the page: *"I think inside each place, the information should
+ * be sequenced differently… you've got a text description of the place, And
+ * then you have two buttons next to each other. Probably one that's like, learn
+ * more, that does the Google search on it, and the other one's like, get
+ * directions, just like, takes you to, like a map of it."* He said it while
+ * pointing at a control labelled "Find it on the map" that sat UNDER the page's
+ * map: *"This doesn't really make sense to me because I can see the map above
+ * this button."*
+ *
+ * BOTH DESTINATIONS ALREADY EXIST and this composes them without building a
+ * single URL of its own:
+ *   * `learnMore` — V20 t01's chain (the verified operator site, else the
+ *     derived OSM search, else nothing). Unchanged, still the wider-web door.
+ *   * `directions` — `feed.mapsHref`, the SAME href the address link above the
+ *     map and the feed card's address row already use. One builder, so the
+ *     address and the button cannot drift; `null` on a blank address, and the
+ *     page then renders NO "Get directions" control rather than a dead one
+ *     (the feed card's no-address convention).
+ *
+ * WHY THIS IS A SEAM AND NOT TWO INLINE CALLS IN THE PAGE. "Get directions is
+ * absent when the place has no address" is an acceptance criterion, and this
+ * repo has no component-test harness (vitest runs in the node environment —
+ * there is no jsdom, no RTL), so nothing can render-assert the absence. A pure
+ * seam can: the sibling tests state the exact pair of facts the page's
+ * `!== null` conditionals consume (no address → `directions: null` while
+ * `learnMore` survives; an address → `directions` is byte-equal to
+ * `mapsHref`). The render test of the PRESENT case lives in
+ * `e2e/places.e2e.ts` (V25 t04).
+ */
+export interface PlaceOutboundLinks {
+  /** The V20 t01 chain; null only when the place has neither a usable site nor a name. */
+  learnMore: PlaceLearnMoreLink | null
+  /** Google Maps for the place's address; null when there is no address to search for. */
+  directions: string | null
+}
+
+export function placeOutboundLinks(
+  place: Pick<Place, 'name'> & { address?: string | null; website_url?: string | null },
+): PlaceOutboundLinks {
+  return {
+    learnMore: placeLearnMoreLink(place),
+    directions: mapsHref(place.name, place.address),
+  }
 }
 
 /**
@@ -1532,6 +1967,13 @@ export function placeFollowIdSet(
 }
 
 /**
+ * The shared "saved nothing" set for `planDirectoryList`'s default. One frozen
+ * instance rather than a fresh `new Set()` in the parameter list, so the default
+ * is a value the plan can compare by identity if it ever needs to.
+ */
+const EMPTY_PLACE_IDS: ReadonlySet<string> = new Set<string>()
+
+/**
  * The directory LIST's whole composition, as one pure decision (the build law:
  * the component renders and does not decide). PlaceDirectory used to compute
  * every one of these values inline; this is that block, moved here so a unit
@@ -1550,9 +1992,10 @@ export function placeFollowIdSet(
  *   explicit center + radius, which is its own complete answer.
  *
  * EVERYTHING ELSE IS SHARED: `placed` (the map's markers — always the full
- * home-zip set, never the filtered list), the lead/overflow split at
- * BROWSE_LIST_LEAD_LIMIT, the kind groups for both halves, and the two empty-
- * state flags below.
+ * home-zip set, never the filtered list), the listed groups, and the two
+ * empty-state flags below. (V25 t01 retired the lead/overflow split at
+ * `BROWSE_LIST_LEAD_LIMIT`, so the constant is no longer part of this plan's
+ * shape — see `placedGroups`.)
  */
 export interface DirectoryListPlan {
   /** The home-zip browse rows (before the modal's kind/radius narrowing). */
@@ -1567,14 +2010,21 @@ export interface DirectoryListPlan {
   placed: PlaceListRow[]
   /** The rendered list's unknown-distance rows (the "Not on the map yet" section). */
   unplaced: PlaceListRow[]
-  /** The first BROWSE_LIST_LEAD_LIMIT rows of the rendered list. */
-  leadRows: PlaceListRow[]
-  /** Everything after the lead (the overflow door's content). */
-  overflowRows: PlaceListRow[]
-  /** The lead's kind groups (groupPlacesByKind over leadRows). */
-  leadGroups: PlaceKindGroup[]
-  /** The overflow's kind groups (groupPlacesByKind over overflowRows). */
-  overflowGroups: PlaceKindGroup[]
+  /**
+   * V25 t01: the PLACED rows of the rendered list, grouped by kind — what the
+   * list container actually renders.
+   *
+   * WHY IT IS `placed` AND NOT `listRows`: the unplaced rows (no resolvable
+   * coordinates) render in their OWN section below the list ("Not on the map
+   * yet"), so a grouped list built from `listRows` renders them a SECOND time.
+   * The two surfaces partition `listRows` exactly: grouped placed rows + the
+   * unplaced rows = every matching row, once each.
+   *
+   * It replaces the retired lead/overflow pair (`leadRows`/`overflowRows`/
+   * `leadGroups`/`overflowGroups`) rather than sitting beside it: nothing read
+   * those, and a field nothing reads is a rule nobody owns.
+   */
+  placedGroups: PlaceKindGroup[]
   /** The shared radius empty state is the honest answer ONLY when the radius is actually the reason nothing shows. */
   radiusIsTheReason: boolean
   /**
@@ -1589,6 +2039,15 @@ export interface DirectoryListPlan {
    * === 'any'`, where maxMiles is null and there is no radius to blame).
    */
   radiusReason: { radiusMiles: number } | null
+  /**
+   * V25 t08: the SAVED gate's empty state — non-null exactly when
+   * `savedOnly` is on, the directory has loaded, and NOTHING survived the gate
+   * (neither the list nor the "Not on the map yet" section). The carried
+   * `hasSaves` says which copy is honest (see `savedPlacesEmptyCopy`): false =
+   * this viewer has saved no places, true = their saves are all excluded by the
+   * other filters. Null for every caller that does not pass `savedOnly`.
+   */
+  savedReason: { hasSaves: boolean } | null
   /** Nothing at all in the list OR the unplaced section (the generic empty state). */
   nothingMatches: boolean
   /**
@@ -1606,6 +2065,22 @@ export interface DirectoryListPlan {
    * also narrowing.
    */
   dateWindowReason: Exclude<DateWindow, 'upcoming'> | null
+  /**
+   * V25 t03 — the KIND CHIP is the reason nothing shows, and it can only ever
+   * be: non-null exactly when at least one kind is selected, the search box is
+   * empty, nothing renders in either section, and EVERY selected kind has zero
+   * rows in the loaded directory (`placeKindChips`).
+   *
+   * EVERY, not ANY: with `park` + `playground` selected and only a date window
+   * emptying the list, naming `park` would be a false cause — the list is empty
+   * because of the window. Requiring every selected kind to be absent makes the
+   * named kind a TRUE cause whatever else is narrowed, because a place that does
+   * not exist cannot be brought back by a radius, a window, or a search.
+   *
+   * It carries the label with the kind so the empty state renders one object
+   * (`kindEmptyCopy(kindReason.label)`) rather than re-deriving the word.
+   */
+  kindReason: { kind: PlaceKind; label: string } | null
 }
 
 export function planDirectoryList(input: {
@@ -1621,6 +2096,21 @@ export function planDirectoryList(input: {
   viewerRadius: number
   /** The modal's kind chips (empty set = all kinds). */
   selectedKinds: ReadonlySet<string>
+  /**
+   * V25 t08: the SAVED gate — true renders ONLY the viewer's own saved places
+   * (the hearts collection). It is the same set of ids the save controls read
+   * (`followedPlaceIds`), never a second store: filtering the directory to the
+   * viewer's follows is the whole feature, and there is no `saved_places` table
+   * anywhere. Defaults to false so every existing caller is unchanged.
+   */
+  savedOnly?: boolean
+  /**
+   * The viewer's own saved place ids (the batched `listMyFollows` read, the same
+   * set the bookmark controls read). Read ONLY when `savedOnly` is true; the
+   * default empty set + `savedOnly: true` therefore means "you saved nothing",
+   * which is a true statement about a signed-in viewer who has.
+   */
+  followedPlaceIds?: ReadonlySet<string>
   /** Miles from the home pin (the modal's radius filter; null = off). */
   radiusFilter: number | null
   /** The date chip's window ('upcoming' = no date filter — the default state). */
@@ -1658,6 +2148,8 @@ export function planDirectoryList(input: {
     distanceChoice,
     viewerRadius,
     selectedKinds,
+    savedOnly = false,
+    followedPlaceIds = EMPTY_PLACE_IDS,
     radiusFilter,
     dateWindow,
     sortMode,
@@ -1698,7 +2190,9 @@ export function planDirectoryList(input: {
   const effectiveRows: PlaceListRow[] = (() => {
     if (geocodeCenter === null) return rows
     const filtered = filterPlacesByRadius(places ?? [], geocodeCenter, radiusMiles, zipCoords)
-    return filtered.map((place) => {
+    return filtered
+      .filter((place) => !savedOnly || followedPlaceIds.has(place.id))
+      .map((place) => {
       const c = resolveMapCoords(place, zipCoords)
       const starts = upcomingStartTimes === null ? null : (upcomingStartTimes.get(place.id) ?? [])
       return {
@@ -1715,6 +2209,12 @@ export function planDirectoryList(input: {
   // full placed set (the circle overlay communicates the filter visually).
   const filteredRows: PlaceListRow[] = (() => {
     let base = rows
+    // V25 t08 — THE SAVED GATE, applied here so BOTH list paths (the geocoded
+    // center path above and this one) honour it: this is the same filter the
+    // kind chips below are, over the viewer's own follow ids.
+    if (savedOnly) {
+      base = base.filter((row) => followedPlaceIds.has(row.place.id))
+    }
     if (selectedKinds.size > 0) {
       base = base.filter((row) => selectedKinds.has(row.place.kind))
     }
@@ -1738,10 +2238,23 @@ export function planDirectoryList(input: {
 
   const listRows = geocodeCenter !== null ? effectiveRows : filteredRows
   const unplaced = listRows.filter((row) => row.distanceMiles === null)
-  const leadRows = listRows.slice(0, BROWSE_LIST_LEAD_LIMIT)
-  const overflowRows = listRows.slice(BROWSE_LIST_LEAD_LIMIT)
-  const leadGroups = groupPlacesByKind(leadRows)
-  const overflowGroups = groupPlacesByKind(overflowRows)
+  /**
+   * V25 t01: THE LIST IS THE WHOLE LIST, AND NOTHING RENDERS TWICE.
+   *
+   * The founder reversed the V13 t05 A7 overflow fold — "I want to see all these
+   * place cards under the filters below it as a long list" — so every placed row
+   * is grouped and rendered, with no lead and no door. The unplaced rows are
+   * EXCLUDED from these groups because the component renders them in their own
+   * section below the list; including them here would put each of the seed's
+   * three coordinate-less places on the page twice, under two different
+   * headings ("Distance unknown" in the list, "Not on the map yet" below).
+   *
+   * So the two surfaces PARTITION `listRows`: `placedGroups` flattens to the
+   * placed rows and `unplaced` is the rest, and neither surface is derived from
+   * the other.
+   */
+  const placedRows = listRows.filter((row) => row.distanceMiles !== null)
+  const placedGroups = groupPlacesByKind(placedRows)
 
   // The KIND filter must reach the "Not on the map yet" section too. Distance-
   // shaped filters are deliberately NOT applied there (a place may not be
@@ -1776,6 +2289,58 @@ export function planDirectoryList(input: {
   const dateWindowReason = dateWindowIsTheReason ? dateWindow : null
   const nothingMatches = listRows.length === 0 && filteredUnplaced.length === 0
 
+  // V25 t03 — IS A SELECTED KIND THE REASON? Only when EVERY selected kind is
+  // absent from the WHOLE loaded directory (see DirectoryListPlan.kindReason), a
+  // search is not also narrowing, and nothing rendered.
+  //
+  // IT IS DELIBERATELY NOT BUILT FROM `placeKindChips`: the row withholds the
+  // chips whose kinds hold no rows (park, trail), but the filter SHEET still
+  // offers every kind, so a parent can select one of them and must still get the
+  // honest, named empty state rather than the generic "No places match that.".
+  // The measurement is therefore over PLACE_KINDS ∩ selectedKinds.
+  const kindReason = (() => {
+    if (selectedKinds.size === 0) return null
+    if (query.trim() !== '') return null
+    if (listRows.length > 0 || filteredUnplaced.length > 0) return null
+    // An unanswered read is UNKNOWN, never "every kind is empty".
+    if (places === null) return null
+    const counts = placeKindRowCounts(places)
+    // `absent.length === selectedKinds.size` IS the "every" — and it also rejects
+    // a selection that is not a real kind (the filter only produces real ones, but
+    // naming a bogus selection "Place" would be a lie).
+    const absent = PLACE_KINDS.filter(
+      (kind) => selectedKinds.has(kind) && (counts.get(kind) ?? 0) === 0,
+    )
+    if (absent.length !== selectedKinds.size) return null
+    // PLACE_KINDS order decides WHICH absent kind is named, so the copy is stable
+    // when several empty kinds are selected (park before trail).
+    const named = absent[0]
+    return named === undefined ? null : { kind: named, label: placeKindLabel(named) }
+  })()
+
+  /**
+   * V25 t08 — IS THE SAVED GATE THE REASON NOTHING IS SHOWING?
+   *
+   * Non-null exactly when `savedOnly` is on and the gate emptied the list
+   * (nothing in the rendered list AND nothing in the "Not on the map yet"
+   * section). `hasSaves` distinguishes the TWO truths the copy must not
+   * conflate: false = this viewer has saved nothing at all (the empty list is
+   * the honest first-run state, not a filter failure); true = saves exist but
+   * the current search/kind/radius/date narrowing excludes them all.
+   *
+   * The component puts this branch BEFORE the radius and date-window branches,
+   * for the same reason the kind branch leads: when the viewer asked for their
+   * own collection, "your collection is empty" is the answer — "Nothing within
+   * N miles yet" would blame a filter they never touched and hide the fact that
+   * the gate itself is why there is nothing to see.
+   */
+  const savedReason = (() => {
+    if (!savedOnly) return null
+    if (places === null) return null
+    if (listRows.length > 0 || filteredUnplaced.length > 0) return null
+    return { hasSaves: followedPlaceIds.size > 0 }
+  })()
+
   return {
     rows,
     effectiveRows,
@@ -1783,14 +2348,13 @@ export function planDirectoryList(input: {
     listRows,
     placed,
     unplaced,
-    leadRows,
-    overflowRows,
-    leadGroups,
-    overflowGroups,
+    placedGroups,
     radiusIsTheReason,
     radiusReason,
     dateWindowIsTheReason,
     dateWindowReason,
+    kindReason,
+    savedReason,
     nothingMatches,
   }
 }

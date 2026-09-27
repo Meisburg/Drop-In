@@ -421,3 +421,33 @@ export async function finishSignup(
   // Either way, a signed-in, onboarded parent now stands on the feed.
   await feed.waitFor({ timeout: 30_000 })
 }
+
+/**
+ * V25 ticket 13 — DISMISS THE RSVP CONFIRMATION LIGHTBOX IF IT IS OPEN.
+ *
+ * A ping on a drop-in's detail page raises the confirmation dialog, whose
+ * backdrop covers the whole page. Specs that ping a post and then keep driving
+ * that page (to open the thread, to react to a message, to follow the
+ * "same time next week" link — inbox.e2e, reactions.e2e and loop-closing.e2e
+ * all do) would otherwise find their NEXT tap landing on the backdrop.
+ *
+ * WHY THIS IS A HELPER AND NOT A `.click({ force: true })` OR A PAGE RELOAD:
+ *  - it dismisses the dialog the way a parent does — the visible "Got it"
+ *    control — so the spec still exercises the real UI;
+ *  - it is a no-op when nothing is open (`count() === 0`), so a helper that
+ *    pings something which does NOT raise the lightbox (the feed card's own
+ *    toggle, an un-ping) can call it unconditionally;
+ *  - it leaves the page in the state the caller expects afterwards (still
+ *    `✓ Going`, still on the detail page) rather than navigating around the
+ *    assertion.
+ *
+ * The existence check is a plain `count()` rather than a race against a
+ * timeout: every call site has already settled the write (the button reads
+ * "✓ Going"), so the dialog is either open now or was never going to open.
+ */
+export async function dismissRsvpConfirmationIfOpen(page: Page): Promise<void> {
+  const gotIt = page.getByTestId('rsvp-confirmation-got-it')
+  if ((await gotIt.count()) === 0) return
+  await gotIt.click()
+  await expect(page.getByTestId('rsvp-confirmation')).toHaveCount(0)
+}

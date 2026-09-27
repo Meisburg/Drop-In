@@ -473,14 +473,18 @@ test('a cold /new is posted in three taps or fewer, typing exactly one place', a
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
   const card = page.locator('a').filter({ hasText: title }).first()
   await expect(card).toBeVisible()
-  // The card's first <p> is the place (DropInCard), and it is exactly the place
-  // the summary read back — not a reshaped version of it. (V9 ticket 05 puts an
-  // AGE RANGE above the place when a card has one to show; this post has none —
-  // no kids picked, and since V16 t03 item 1 there is no "Ages (optional)" chip
-  // that could state one — so the place is still the card's first line, and the
-  // same assertion holds. e2e/feed-ages is where the ages line's position above
-  // the place is pinned.)
-  await expect(card.locator('p').first()).toHaveText(PLACE_NAME)
+  // The card's PLACE line (DropInCard) is exactly the place the summary read
+  // back — not a reshaped version of it. (V9 ticket 05 puts an AGE RANGE above
+  // the place when a card has one to show; this post has none — no kids picked,
+  // and since V16 t03 item 1 there is no "Ages (optional)" chip that could state
+  // one. e2e/feed-ages is where the ages line's position above the place is
+  // pinned.)
+  //
+  // V25 ticket 05: read by `data-testid`, NOT by a `p` index. The card now leads
+  // with its own WHEN line ("Sat, Sep 26 · 10 AM–11 AM"), so the place is no
+  // longer the first <p> — an index would have silently asserted the wrong
+  // element (and did, in this file's own history). The testid is the seam.
+  await expect(card.getByTestId('card-place')).toHaveText(PLACE_NAME)
 
   const row = await readMarkerPost(title)
   expect(row, 'the posted drop-in must exist in the database').not.toBeNull()
@@ -504,10 +508,12 @@ test('a cold /new is posted in three taps or fewer, typing exactly one place', a
   expect(localMinutes(row?.starts_at ?? '')).toBe(summaryStart)
   expect(localMinutes(row?.ends_at ?? '')).toBe(summaryEnd)
   expect(wrapMinutes(summaryEnd - summaryStart)).toBe(60)
-  // …and the feed's card shows that same window (its meta line is the card's
-  // second <p>, the card's own formatTimeWindow of the stored instants).
-  const metaText = (await card.locator('p').nth(1).innerText()).replace(/\s+/g, ' ').trim()
-  const [cardStart, cardEnd] = parseWindowLine(metaText)
+  // …and the feed's card shows that same window, on the card's WHEN line (V25
+  // ticket 05: `data-testid="card-when"` — the card's own formatTimeWindow of
+  // the stored instants, now with the day in front of it, which is why this
+  // parses the window out of the line rather than comparing the whole string).
+  const whenText = (await card.getByTestId('card-when').innerText()).replace(/\s+/g, ' ').trim()
+  const [cardStart, cardEnd] = parseWindowLine(whenText)
   expect([cardStart, cardEnd]).toEqual([summaryStart, summaryEnd])
 })
 

@@ -10,6 +10,7 @@ import {
 } from '../lib/account'
 import { LOGIN_PATH, resolveAuthRedirect } from '../lib/auth'
 import { markSignupZipUnresolved } from '../lib/onboarding'
+import { armPushPromptForAction } from '../lib/pushClient'
 import {
   createProfile,
   HandleTakenError,
@@ -228,6 +229,14 @@ export function LoginPage() {
       // now — otherwise the onboarding gate, and V4's handle step for
       // social users, would see a stale null and ask for a name twice.
       await refresh()
+      // V25 ticket 15, trigger point 1: the account exists, so the FIRST of the
+      // three natural moments has arrived — the founder's "probably at signup".
+      // This records the moment only; the shell's `PushOptInPrompt` owns every
+      // decision (pure `decidePermissionPrompt`), and the permission request
+      // itself is made from that card's own button click, never from this
+      // handler — so no permission call ever depends on the transient
+      // activation of the Create-account tap surviving the awaits above.
+      armPushPromptForAction('signup')
       setAwaitingProfile(false)
       navigate('/', { replace: true })
     } catch (err) {
@@ -267,7 +276,7 @@ export function LoginPage() {
     'w-full rounded-xl border border-slate-300 px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200'
 
   return (
-    <div className="pt-safe pb-safe mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 bg-slate-50 px-4">
+    <div className="pt-safe pb-safe mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 bg-page px-4">
       {/* Brand moment: /login sits outside the app shell (no header), so the
           mark lives here — and it is the first thing a new parent sees.
           Frontend-design pass: the centered logo card was the same template

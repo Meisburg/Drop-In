@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { LocationModal } from './LocationModal'
-import { NAV_ICONS } from './icons'
-import { PlacesMap } from './PlaceMap'
+import { NAV_ICONS, PLACE_KIND_ICONS } from './icons'
 import { PlacesMapView } from './PlacesMapView'
 import { usePrefersReducedMotion } from './usePrefersReducedMotion'
 import { RadiusEmptyState } from './RadiusEmptyState'
@@ -22,17 +21,20 @@ import {
   DATE_WINDOWS,
   DATE_WINDOW_LABELS,
   dateWindowEmptyCopy,
-  distanceMiles,
+  kindEmptyCopy,
   MAP_FOCUS_RADIUS_MILES,
   planDirectoryList,
-  radiusPreviewCircle,
+  PLACE_KIND_MISSING_NOTE,
   PLACE_KINDS,
+  placeKindChips,
   placeLearnMoreLink,
   placeIndoorLabel,
   placeKindLabel,
   placePath,
   placeUpcomingLabel,
+  radiusPreviewCircle,
   resolveMapCoords,
+  savedPlacesEmptyCopy,
 } from '../lib/places'
 import type { DateWindow, PlaceListRow, SortMode } from '../lib/places'
 import { reviewRatingLine } from '../lib/reviews'
@@ -45,10 +47,12 @@ import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
 export { PlaceDirectory as default }
 
 /**
- * V21 t02: the PLACES DIRECTORY SURFACE — the map band, the search/filter/distance
- * controls, the grouped list with its overflow door, the "Not on the map yet"
- * section, the Filter & sort modal, the Set location modal, and the floating
- * "Map" button that scrolls back to the band.
+ * V21 t02: the PLACES DIRECTORY SURFACE — V25 t01 made it LIST-FIRST: the
+ * search/filter/distance card is the first block, the grouped list (every
+ * matching row, no overflow door) sits below it, and the map is a MODE the
+ * floating control toggles into. Still here: the "Not on the map yet" section,
+ * the Filter & sort modal, the Set location modal (moved out of the removed
+ * band's header into the controls card), and the PlacesMapView map mode.
  *
  * This is the ONE implementation of the directory. It used to live inside
  * `BrowsePage.tsx`; the page now renders it (Phase A) and `/new` opens it in a
@@ -64,10 +68,9 @@ export { PlaceDirectory as default }
  * full directory with its filters" from the V9 8-row picker shortcut.
  *
  * The component owns every piece of DIRECTORY STATE (search text, kind chips,
- * sort mode, radius filter, indoor/outdoor, the distance choice, the overflow
- * door, both modals, the geocoded center + preview radius, the map-band observer)
- * and exposes only the DATA it needs plus the CALLBACKS the host decides. The
- * host supplies:
+ * sort mode, radius filter, indoor/outdoor, the distance choice, the view mode,
+ * both modals, the geocoded center + preview radius) and exposes only the DATA
+ * it needs plus the CALLBACKS the host decides. The host supplies:
  *
  *   - the loaded directory rows (`places`, `zipCoords`, `upcoming`) — the reads
  *     stay in the host because each page loads them with its own discipline
@@ -143,15 +146,23 @@ export function PlaceDirectory({
   // 'profile' = follow the viewer's own radius (the default, and what makes the
   // shared empty state's escapes work). 'any' = no ceiling. A number = picked.
   const [distanceChoice, setDistanceChoice] = useState<DistanceChoice>('profile')
-  // The overflow door. Collapsed shows the lead; expanded shows every row.
-  const [showAll, setShowAll] = useState(false)
-
   // The filter & sort modal. The list defaults to alphabetical (A–Z); the modal
   // is where filtering + re-sorting lives — there are no controls below the list.
   const [sortMode, setSortMode] = useState<SortMode>('alpha')
   const [filterModalOpen, setFilterModalOpen] = useState(false)
   // Empty set = all kinds (no kind filter active).
   const [selectedKinds, setSelectedKinds] = useState<Set<string>>(new Set())
+  /**
+   * V25 t08 — THE SAVED GATE. True = the directory shows ONLY the viewer's own
+   * saved places (the founder's "collection of all of your favorite places").
+   * It is a filter over the SAME `followedPlaceIds` set the bookmark controls
+   * read — the follows table through `listMyFollows`, never a second store —
+   * and the pure seam (`planDirectoryList`) owns what it does, exactly like
+   * `selectedKinds` above. Component state (not a route): the ticket chose a
+   * filter on the surfaces that already exist, and a new route would have to
+   * join the playtest `routes.json`.
+   */
+  const [savedOnly, setSavedOnly] = useState(false)
   // Miles from the home pin; null = no radius constraint from the modal.
   const [radiusFilter, setRadiusFilter] = useState<number | null>(null)
 
@@ -171,9 +182,10 @@ export function PlaceDirectory({
   // --- V24 slice 10: the view mode ------------------------------------------
 
   /**
-   * WHICH SURFACE THE DIRECTORY IS SHOWING — the list (band + filters + grouped
-   * rows) or the map view (one map + the swipeable strip). `'list'` is the
-   * pre-existing surface and therefore the default.
+   * WHICH SURFACE THE DIRECTORY IS SHOWING — the list (the filters card plus
+   * every grouped row) or the map view (one map + the swipeable strip).
+   * `'list'` is the default: the founder's ask is that the filters and the list
+   * lead the page, with the map as a mode you toggle into.
    *
    * WHY THIS IS STATE AND NOT A ROUTE, and why it is not `history.back()`: the
    * map view's "Back to list" must return to THE LIST THE PARENT CAME FROM. A
@@ -213,53 +225,16 @@ export function PlaceDirectory({
     window.scrollTo({ top: saved, behavior: focusBehavior })
   }, [view, focusBehavior])
 
-  // --- Floating "Map" button (V17 t03) --------------------------------------
-  // Is the map band scrolled out of view? Drives the floating button that
-  // scrolls back to it. An IntersectionObserver rather than a scroll listener:
-  // a scroll handler fires on every frame of every scroll and would force a
-  // layout read inside the paint frame; the observer hit-tests off the main
-  // thread and calls back only on a crossing. `true` is the honest initial
-  // value (the band lives at the top, so first paint either sees it or the page
-  // opened already scrolled).
-  const [mapBandOutOfView, setMapBandOutOfView] = useState(true)
-  const mapBandRef = useRef<HTMLDivElement | null>(null)
-  const bandObserverRef = useRef<IntersectionObserver | null>(null)
-  // A callback ref attaches exactly when the node enters the DOM and detaches
-  // when it leaves — the lifetime the observer actually wants. The band renders
-  // CONDITIONALLY (after an early return), so an effect could not depend on it
-  // without calling a hook conditionally (a real rules-of-hooks error).
-  const attachMapBand = useCallback((node: HTMLDivElement | null) => {
-    bandObserverRef.current?.disconnect()
-    bandObserverRef.current = null
-    mapBandRef.current = node
-    if (node === null) {
-      // The band left the DOM (no mappable places): nothing to scroll back TO.
-      setMapBandOutOfView(false)
-      return
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[entries.length - 1]
-        if (entry === undefined) return
-        setMapBandOutOfView(!entry.isIntersecting)
-      },
-      { threshold: 0 },
-    )
-    observer.observe(node)
-    bandObserverRef.current = observer
-  }, [])
-
   // --- Derived rows ----------------------------------------------------------
 
   const {
     listRows,
-    placed,
     unplaced,
-    overflowRows,
-    leadGroups,
-    overflowGroups,
+    placedGroups,
     radiusReason,
     dateWindowReason,
+    kindReason,
+    savedReason,
     nothingMatches,
   } = planDirectoryList({
     places,
@@ -268,6 +243,8 @@ export function PlaceDirectory({
     distanceChoice,
     viewerRadius,
     selectedKinds,
+    savedOnly,
+    followedPlaceIds,
     radiusFilter,
     dateWindow,
     sortMode,
@@ -280,20 +257,6 @@ export function PlaceDirectory({
     ratings,
   })
 
-  // The overview map's null condition: at least one placed row resolves to a
-  // stored coordinate (same seam as PlacesMap).
-  const mappedMarkers = placed
-    .map((row) => resolveMapCoords(row.place, zipCoords))
-    .filter((c): c is { lat: number; lng: number } => c !== null)
-
-  // How many drawn places fall outside the map's neighbourhood frame (V19 t01).
-  const outsideFocusCount = (() => {
-    const anchor = geocodeCenter ?? homePin
-    if (anchor === null) return 0
-    return mappedMarkers.filter((point) => distanceMiles(anchor, point) > MAP_FOCUS_RADIUS_MILES)
-      .length
-  })()
-
   // The KIND filter must reach the "Not on the map yet" section too. Distance-
   // shaped filters are deliberately NOT applied there (a place may not be
   // hidden for missing data), but the kind is stated data. The date window is
@@ -302,19 +265,34 @@ export function PlaceDirectory({
     selectedKinds.size > 0 ? unplaced.filter((row) => selectedKinds.has(row.place.kind)) : unplaced
 
   /**
+   * V25 t03: THE CATEGORY CHIP ROW's content — one chip per
+   * `PLACE_KIND_CHIP_KINDS` (the EIGHT kinds the data actually has; `park` and
+   * `trail` are withheld because a chip for either could only ever return an
+   * empty list), labelled by `placeKindLabel` and flagged with whether the loaded
+   * directory has any row of that kind at all. The decision lives in the pure
+   * seam (`placeKindChips`, src/lib/places.ts); this component only renders it.
+   *
+   * The words and the glyphs are both PRE-EXISTING app vocabulary, not new ones:
+   * `placeKindLabel` is what the list's group headings and the sheet's kind chips
+   * already render, and `PLACE_KIND_ICONS` is the per-kind glyph set V17 built
+   * for the card photo slot. The row therefore introduces no second label map and
+   * no second icon set.
+   */
+  const kindChips = placeKindChips(places)
+
+  /**
    * V24 slice 10: the rows the MAP VIEW carries.
    *
    * TWO SETS, AND THE DISTINCTION IS LOAD-BEARING — this slice's second review
    * caught both halves of it:
    *
    *  1. `mapViewRows` is EVERY row the directory's filter produces
-   *     (`filteredUnplaced` aside, it is `listRows`), NOT the list view's lead.
-   *     The list's "See all N places" door governs how the LIST renders; it must
-   *     not narrow what the MAP draws, because the band above already pins the
-   *     full set (`placed`, the line that renders `<PlacesMap>`). A parent who
-   *     searched for "park" and tapped "See map" was shown six pins and told
-   *     nothing about the other 233 — a matching place with no pin on the map is
-   *     the defect, not a feature of the door.
+   *     (`filteredUnplaced` aside, it is `listRows`) — never a slice of it. (Before
+   *     V25 t01 the list rendered a six-row lead behind a door, and a map fed from
+   *     that lead showed six pins and said nothing about the other 233; the lead is
+   *     gone now, but the rule it produced is the reason this field exists at all.)
+   *     A parent who searched for "park" and tapped "See map" must see every
+   *     matching place pinned — a matching place with no pin is the defect.
    *
    *  2. `placeableMapRows` is that set minus the rows the map cannot plot (no
    *     coordinates means no pin, never a fake one). The map view gets BOTH: the
@@ -330,12 +308,51 @@ export function PlaceDirectory({
     (row) => resolveMapCoords(row.place, zipCoords) !== null,
   )
 
-  // --- Handlers --------------------------------------------------------------
+  /**
+   * V25 t01: DOES THE MODE TOGGLE RENDER?
+   *
+   * THE DEFECT THIS NAMES (found in review): an unconditional button is on
+   * screen while the directory is still loading and on a search that matches
+   * nothing, where it opens a map with nothing on it and a way back to a list
+   * with nothing in it — a control that promises two modes and delivers none.
+   *
+   * The rule, in one place:
+   *
+   *   * not while the read is in flight (`places === null`): there is no second
+   *     mode yet;
+   *   * not when there is nothing to draw in either mode (no rows AND nothing
+   *     the map can plot): a mode switch between two empty surfaces is not a
+   *     switch. This is the zero-result / radius-reason / date-window case —
+   *     those messages are what the parent needs, and they are already up.
+   *   * otherwise it is on screen in BOTH modes, which is the founder's ask
+   *     ("when you get to the map mode, this button should come back and it
+   *     should be called list").
+   */
+  const toggleAvailable =
+    places !== null && (listRows.length > 0 || placeableMapRows.length > 0)
 
-  /** Any filter change collapses the list back to its lead. */
-  function resetShowAll() {
-    setShowAll(false)
-  }
+  /**
+   * V25 t08 — DOES THE SAVED CHIP RENDER?
+   *
+   * YES when this viewer has saved at least one place (the collection exists to
+   * be opened) OR when the gate is already on (so the control that clears a
+   * filter is never the thing the filter removed). NO when the read is in
+   * flight, and NO for a viewer with no saves: `setSavedOnly(true)` exists only
+   * in this chip's own onClick, so a zero-save viewer has no way to turn the gate
+   * on, and a chip there really would be a door to nowhere — the same "a control
+   * that promises and delivers nothing" defect `toggleAvailable` above exists to
+   * prevent.
+   *
+   * SO THE hasSaves=false SENTENCE IS NOT REACHED BY TURNING THE GATE ON. It is
+   * reached FROM INSIDE an already-open collection: a viewer who HAS saves opens
+   * the Saved list and un-saves their last one — the gate is still on, so the
+   * chip stays (the `savedOnly` half of the rule above) and the first-run copy is
+   * what they see. That is the path e2e/hearts-collection.e2e.ts step (d) drives.
+   */
+  const savedToggleAvailable =
+    places !== null && (followedPlaceIds.size > 0 || savedOnly)
+
+  // --- Handlers --------------------------------------------------------------
 
   function openFilterModal() {
     setFilterModalOpen(true)
@@ -343,10 +360,6 @@ export function PlaceDirectory({
 
   function closeFilterModal() {
     setFilterModalOpen(false)
-  }
-
-  function scrollBackToMap() {
-    mapBandRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   /**
@@ -382,6 +395,15 @@ export function PlaceDirectory({
     setView('list')
   }
 
+  /**
+   * V25 t01: THE MODE SWITCH ITSELF, in one place. The in-card "See map" button
+   * and the floating toggle both flip list<->map, and both must save/restore the
+   * list's scroll offset identically (`openMapView` below owns the saving).
+   */
+  function seeMap() {
+    openMapView()
+  }
+
   /** Toggle one kind chip. An empty selection means "all kinds". */
   function toggleKind(kind: string) {
     setSelectedKinds((prev) => {
@@ -392,7 +414,16 @@ export function PlaceDirectory({
     })
   }
 
-  const seeAllLabel = showAll ? 'Hide' : `See all ${listRows.length} places`
+  /**
+   * V25 t03: the empty KIND state's escape — "Show all types" clears the kind
+   * selection entirely (the same meaning the sheet's own "None selected = show
+   * all types." line states), which is the one thing that can fix a chip whose
+   * category has no rows: the kind was the whole answer, so clearing it restores
+   * the directory.
+   */
+  function clearKindFilter() {
+    setSelectedKinds(new Set())
+  }
 
   async function handleGeocode(address: string) {
     const result = await geocodeAddress(address)
@@ -420,57 +451,45 @@ export function PlaceDirectory({
   // --- Render ----------------------------------------------------------------
 
   return (
-    <div className="flex flex-col gap-4 md:grid md:grid-cols-2 md:items-start">
-      {/* The map leads the surface — the mental model for "what's nearby".
-          V22 slice 9: at md+ this is column 1 of a two-column grid, sticky
-          under the full-width header so the map stays in view while the list
-          scrolls. Below md it is the ordinary stacked band. */}
-      {view === 'list' && places !== null && mappedMarkers.length > 0 ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm md:sticky md:top-16">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500">Nearby places</span>
-            <button
-              type="button"
-              data-testid="set-location-btn"
-              onClick={openLocationModal}
-              className="rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100"
-            >
-              Set location
-            </button>
-          </div>
-          {/* The BAND. 45dvh with a 240px floor. The height is given to the MAP
-              itself (className), not a wrapper — a fixed clipping band cut the
-              popup panel off (measured, ocr-found). The band sizes only the map
-              and clips nothing; the panel renders in normal flow beneath it. */}
-          <div ref={attachMapBand} data-testid="places-map-band" className="w-full">
-            <PlacesMap
-              className="h-[45dvh] min-h-[240px]"
-              places={placed.map((row) => row.place)}
-              zipCoords={zipCoords}
-              homePin={homePin}
-              placeActions={!selectable}
-              onSelect={selectable ? onSelect : undefined}
-              radiusCircle={radiusPreviewCircle({
-                previewCenter: locationModalOpen ? geocodeCenter : null,
-                previewMiles: radiusMiles,
-                geocodeCenter,
-                homePin,
-                committedMiles: MAP_FOCUS_RADIUS_MILES,
-              })}
-            />
-          </div>
-          {outsideFocusCount > 0 ? (
-            <p data-testid="places-outside-focus" className="mt-2 text-xs text-slate-500">
-              {outsideFocusCount} {outsideFocusCount === 1 ? 'place' : 'places'} outside this{' '}
-              {milesWord(MAP_FOCUS_RADIUS_MILES)} view — widen the distance below to see more.
-            </p>
-          ) : null}
-        </div>
-      ) : null}
+    <div
+      className={
+        view === 'map'
+          ? 'flex flex-col gap-4 md:grid md:grid-cols-2 md:items-start'
+          : 'flex flex-col gap-4'
+      }
+    >
+      {/* Search + filter chips + distance control. V25 t01: this card is the
+           FIRST block in list view — the founder's ask ("I want to see the
+           search filters at the very top with the list of all the different
+           places below it"). It used to be column 2 of a two-column grid whose
+           column 1 was the map band; the band is gone from list view, so the
+           grid would now leave an empty column and a card pinned beside
+           nothing. The grid returns in MAP VIEW only, where the map is real
+           content beside the card.
 
-      {/* Search + filter chips + distance control. V22 slice 9: column 2 at md+.
-           V23 slice 3: stickyControls pins this card to the top of the scroll area. */}
-      <div className={`flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm md:col-start-2 ${stickyControls ? 'sticky top-0 z-10' : ''}`}>
+           It carries "Set location" because that control lived in the band's
+           header and the band no longer renders in list view — the location
+           modal is the page's only address entry point, so it moved here
+           rather than disappearing with its old host.
+
+           V23 slice 3: stickyControls pins this card to the top of the scroll
+           area (the directory sheet's own scroll container). */}
+      <div className={`flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm ${view === 'map' ? 'md:col-start-2' : ''} ${stickyControls ? 'sticky top-0 z-10' : ''}`}>
+        {/* V25 t01: "Set location" — relocated from the removed band header.
+            It opens the shared LocationModal, which sets the geocoded center
+            and radius the list and the map's preview circle both consume. */}
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-slate-500">Nearby places</span>
+          <button
+            type="button"
+            data-testid="set-location-btn"
+            onClick={openLocationModal}
+            className="min-h-11 rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          >
+            Set location
+          </button>
+        </div>
+
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-slate-700">Search</span>
           <input
@@ -478,10 +497,7 @@ export function PlaceDirectory({
             data-testid="places-search"
             className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
             value={query}
-            onChange={(e) => {
-              setQuery(e.target.value)
-              resetShowAll()
-            }}
+            onChange={(e) => setQuery(e.target.value)}
             placeholder="e.g. Green Lake, splash pad, library"
             autoComplete="off"
           />
@@ -502,7 +518,6 @@ export function PlaceDirectory({
             aria-pressed={indoorFilter === true}
             onClick={() => {
               setIndoorFilter((prev) => (prev === true ? null : true))
-              resetShowAll()
             }}
             className={
               'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors motion-reduce:transition-none ' +
@@ -519,7 +534,6 @@ export function PlaceDirectory({
             aria-pressed={indoorFilter === false}
             onClick={() => {
               setIndoorFilter((prev) => (prev === false ? null : false))
-              resetShowAll()
             }}
             className={
               'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors motion-reduce:transition-none ' +
@@ -530,6 +544,170 @@ export function PlaceDirectory({
           >
             Outdoor
           </button>
+          {/* V25 t08 — THE SAVED (hearts) FILTER. The founder: "you have a
+              collection of all of your favorite places that you can select
+              from." This is that collection, on the surface that already holds
+              the directory's other narrowing controls, so BOTH consumers get it:
+              /browse (read the list, un-save from it) and /new's picker sheet
+              (tap a saved place → the existing `pickPlace` write; its heart
+              un-saves there too).
+
+              IT IS A FILTER, NOT A SECOND LIST: `planDirectoryList` narrows the
+              SAME rows it already produces, from the SAME `followedPlaceIds` set
+              the bookmarks render — there is no `saved_places` store, and this
+              component issues no read of its own (the host passes the set).
+              Un-saving from this list drops the row on the spot because the host
+              updates that one set — optimistically on /browse, from the write's
+              own answer in the sheet; `follows.savedPlaceIdSetAfterToggle` names
+              both paths at the seam.
+
+              IT RENDERS ONLY WHEN IT IS NOT A DOOR TO NOWHERE
+              (`savedToggleAvailable`): a viewer with saves, or the gate already
+              on. Every chip keeps the house pattern — min-h-11 (44px),
+              focus-visible ring, `motion-reduce`, a real accessible name and
+              `aria-pressed` for the state, so the pressed state is never colour
+              alone. */}
+          {savedToggleAvailable ? (
+            <button
+              type="button"
+              data-testid="places-saved-filter"
+              aria-pressed={savedOnly}
+              onClick={() => {
+                setSavedOnly((prev) => !prev)
+              }}
+              className={
+                'flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+                (savedOnly
+                  ? 'border-indigo-600 bg-indigo-600 text-white'
+                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')
+              }
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className="h-5 w-5 shrink-0"
+                fill={savedOnly ? 'currentColor' : 'none'}
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d={NAV_ICONS.bookmark} />
+              </svg>
+              Saved
+            </button>
+          ) : null}
+        </div>
+
+        {/* V25 t03 — THE CATEGORY CHIP ROW (annotation 3).
+
+            THE FOUNDER'S ASK, verbatim: *"you got the three main drop downs that
+            you can click on at the top, and then beneath that there's like a
+            side scrolling filter where you can pick different ones with like
+            interesting icons on them like coffee shop or museum or playground,
+            you know what I mean?"*, and his own reference screenshot shows
+            exactly this shape (a horizontal icon chip row under the top
+            controls). His decision of 2026-09-26 fixed the pattern: a horizontal
+            scroll row of ICON + LABEL chips — the icon is decoration, the word
+            is the control.
+
+            WHY IT SITS HERE: it is "beneath that" set of controls — under the
+            search field, "Filter & sort" and the indoor/outdoor pair, and above
+            the date chips and the distance select.
+
+            WHAT A CHIP DOES: it toggles ONE kind in the SAME `selectedKinds` set
+            the filter sheet's `filter-kind-chip-<kind>` chips use, so the two
+            surfaces can never disagree — selecting "Pool" here shows as selected
+            in the sheet, and clearing it there clears it here. There is no second
+            filtering path: `planDirectoryList` narrows the list exactly as before.
+
+            `PLACE_KIND_CHIP_KINDS` order is the sheet's order and the list's group
+            order (filtered — see below), so the app has ONE taxonomy order. Each
+            chip's word comes from `placeKindLabel` and its glyph from
+            `PLACE_KIND_ICONS` — both existing vocabulary (the glyph map was built
+            for the card photo slot; this row is its first live consumer).
+
+            WHY THERE ARE ONLY EIGHT CHIPS. The founder's binding decision —
+            **no chip that can only ever return an empty list** — is newer than
+            ticket 03's "park (0 rows), declared honestly" concession, so `park`
+            and `trail` have NO chip here: both hold 0 rows in the live directory
+            and 0 in the 0029 seed, so a chip for either could only ever come back
+            empty. Their KIND values are untouched (the DB CHECK, `PLACE_KINDS`,
+            `placeKindLabel`, the filter sheet's own chips and the list's group
+            headings all still carry them) — only the row withholds the chips.
+
+            THE EMPTY STATE IS STILL LIVE, and the `empty` flag from the pure seam
+            is what keeps it honest: a shipped kind can measure empty at runtime,
+            and `park`/`trail` can still be selected in the filter SHEET (an
+            exhaustive list, unlike this discovery row). Either selection renders
+            the kind empty state ("No “Park” places in the directory yet.") rather
+            than the generic "No places match that."; `data-empty` publishes the
+            same measured fact for the specs.
+
+            AND THE CATEGORIES THE DATA CANNOT EXPRESS AT ALL — `food`, `zoo` and
+            the founder's "coffee shop nearby" — are named to the parent in ONE
+            quiet rendered line under the row (`PLACE_KIND_MISSING_NOTE`), because
+            the decision asks for the withholding to be in the COPY, not only the
+            commit: they would return nothing forever, so a chip would lie, and
+            silence would drop the wife's list from the product.
+
+            A11Y: `aria-pressed` carries the toggle state (never colour alone),
+            every chip is `min-h-11` (44px) and the row is a labelled `group`. The
+            `svg` is `aria-hidden`; the accessible name is the chip's word. The row
+            scrolls horizontally (`overflow-x-auto` + `snap-x`, the map strip's own
+            pattern) instead of wrapping, which is the founder's "side scrolling
+            filter"; `overscroll-x-contain` keeps that scroll from chaining to the
+            page, and `motion-reduce:transition-none` keeps it still. */}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-slate-700">Place types</span>
+          <div
+            data-testid="place-kind-chip-row"
+            role="group"
+            aria-label="Place types"
+            className="flex snap-x gap-2 overflow-x-auto overscroll-x-contain pb-1"
+          >
+            {kindChips.map((chip) => {
+              const selected = selectedKinds.has(chip.kind)
+              return (
+                <button
+                  key={chip.kind}
+                  type="button"
+                  data-testid={`place-kind-chip-${chip.kind}`}
+                  data-empty={chip.empty ? 'true' : 'false'}
+                  aria-pressed={selected}
+                  onClick={() => {
+                    toggleKind(chip.kind)
+                  }}
+                  className={
+                    'flex min-h-11 shrink-0 snap-start items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+                    (selected
+                      ? 'border-indigo-600 bg-indigo-600 text-white'
+                      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')
+                  }
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    className="h-5 w-5 shrink-0"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d={PLACE_KIND_ICONS[chip.kind]} />
+                  </svg>
+                  {chip.label}
+                </button>
+              )
+            })}
+          </div>
+          {/* The categories this app cannot serve yet, named to the parent in one
+              quiet line (see the block comment above). Not a button: there is
+              nothing to tap, because the data does not exist. */}
+          <p data-testid="place-kind-missing-note" className="text-xs text-slate-500">
+            {PLACE_KIND_MISSING_NOTE}
+          </p>
         </div>
 
         {/* The date chips (annotation 15): Upcoming / Today / Tomorrow / Weekend.
@@ -550,7 +728,6 @@ export function PlaceDirectory({
                 data-testid={`date-chip-${window}`}
                 onClick={() => {
                   setDateWindow(window)
-                  resetShowAll()
                 }}
                 className={
                   'min-h-11 min-w-11 rounded-full border px-3 py-1.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
@@ -574,7 +751,6 @@ export function PlaceDirectory({
               value={distanceSelectValue(distanceChoice)}
               onChange={(e) => {
                 setDistanceChoice(distanceChoiceFromValue(e.target.value))
-                resetShowAll()
               }}
             >
               <option value="profile">Within your radius ({viewerRadius} mi)</option>
@@ -588,21 +764,26 @@ export function PlaceDirectory({
           </label>
         </div>
 
-        {/* V24 slice 10: the MAP VIEW's entry point. It lives in the controls
-            card rather than in the band's header so it is still reachable when
-            the band itself is not rendered (a search that matches no PLACEABLE
-            row) — the parent can open the map and see that the filter emptied
-            it. It is NOT the floating `scroll-to-map-btn`, whose job is
-            unchanged: scrolling back to the band.
+        {/* V24 slice 10, KEPT BY V25 t01: the map view's in-card entry point.
+            Before V25 it was the only list-view door to the map (and the
+            floating control's separate job was scrolling back to the band).
+            Now the floating control is the mode toggle and NOTHING scrolls to a
+            band, so this button is the explicit "See map" affordance beside the
+            filters — the same door the toggle opens, reached from the card the
+            founder asked to lead the page. Two doors to one mode, one map.
+
+            It lives in the controls card rather than in the old band's header so
+            it is still reachable when a search matches no PLACEABLE row — the
+            parent can open the map and see the filter emptied it.
 
             It renders only when at least one row has coordinates, so the control
             is never a door to an empty map. The way back is the map view's own
-            "Back to list" button. */}
+            "Back to list" button, or the floating control, now labelled "List". */}
         {placeableMapRows.length > 0 ? (
           <button
             type="button"
             data-testid="places-see-map"
-            onClick={openMapView}
+            onClick={seeMap}
             className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 hover:bg-indigo-100"
           >
             <svg
@@ -622,13 +803,17 @@ export function PlaceDirectory({
         ) : null}
       </div>
 
-      {/* V24 slice 10 — THE MAP VIEW REPLACES the band and the list rather than
-          sitting beside them, and this is the MEASURED reason for that shape:
-          two mounted Leaflet maps means two `data-testid="places-map"` nodes,
-          and every existing spec that calls `page.getByTestId('places-map')`
-          then fails in Playwright's strict mode. At most ONE map is mounted at
-          any moment, and the map view's own map carries its OWN test id
+      {/* V24 slice 10 — THE MAP VIEW REPLACES the list rather than sitting
+          beside it, and this is the MEASURED reason for that shape: two mounted
+          Leaflet maps means two `data-testid="places-map"` nodes, and every
+          existing spec that calls `page.getByTestId('places-map')` then fails in
+          Playwright's strict mode. At most ONE map is mounted at any moment, and
+          the map view's own map carries its OWN test id
           (`places-map-view-map`, through PlacesMap's existing `testId` prop).
+
+          V25 t01 made this the ONLY map on the page: list view no longer mounts
+          a band above the filters, so the two maps this comment guards against
+          cannot coexist even transiently.
 
           It spans both columns at md+: the strip wants the width, and the
           controls above it stay mounted so a parent can narrow the map's result
@@ -640,20 +825,103 @@ export function PlaceDirectory({
             rows={mapViewRows}
             zipCoords={zipCoords}
             homePin={homePin}
+            /* V25 t01: the committed-radius circle (and the live preview while
+               the Set-location dialog is open) is drawn on the map in map mode.
+               The band that used to carry it is gone, and the founder's ask —
+               "when you drag the radius, it should expand or grow the red circle
+               in real time" — needs a map to be visible on. Passed only in map
+               mode: in list view there is no map to draw it on. */
+            radiusCircle={
+              view === 'map'
+                ? radiusPreviewCircle({
+                    previewCenter: locationModalOpen ? geocodeCenter : null,
+                    previewMiles: radiusMiles,
+                    geocodeCenter,
+                    homePin,
+                    committedMiles: MAP_FOCUS_RADIUS_MILES,
+                  })
+                : null
+            }
             focusBehavior={focusBehavior}
             onBackToList={backToList}
           />
         </div>
       ) : null}
 
-      {/* The list (or its empty states). V22 slice 9: column 2 at md+.
-          V24 slice 10: the WHOLE list renders only in list view — the map view
-          REPLACES it (see the map view block above), because two mounted maps
-          would give every existing `getByTestId('places-map')` spec two nodes to
-          choose from and fail them in Playwright's strict mode. */}
-      {view === 'list' && places === null ? (
+      {/* The list (or its empty states). V25 t01: THE WHOLE BLOCK IS LIST-ONLY.
+          The map view REPLACES the list — "they're not both visible on the page
+          at the same time in different places" is the founder's ask — and the
+          V24 shape only gated the Loading branch, so the else-chain below
+          (empty states AND the 239-row list) rendered under the map in map mode.
+
+          Gating the whole chain rather than only the `places-list` branch is
+          deliberate: a radius/date-window/kind/zero-match message is a statement
+          ABOUT THE LIST, and map mode is not showing a list. The mode toggle is
+          always on screen (see the floating control below), so the way back to
+          those messages is one tap and never a dead end. */}
+      {view !== 'list' ? null : places === null ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm md:col-start-2">
           Loading…
+        </div>
+      ) : savedReason !== null ? (
+        /* V25 t08 — THE SAVED GATE'S EMPTY STATE, and it leads the chain for the
+           same reason the kind state does: the parent asked for their own
+           collection, so "your collection is empty" is the true answer, and
+           "Nothing within N miles yet" (the radius branch below) would blame a
+           control they never touched. Two honest messages plus their escapes:
+
+             * `hasSaves === false` — no saves at all. A sentence, no bordered
+               empty list, and the escape is to the whole directory so the
+               bookmark they need is one tap away.
+             * `hasSaves === true` — saves exist but the current narrowing
+               excluded them all. The copy says exactly that; the escape clears
+               the gate.
+
+           Both escapes write the SAME `savedOnly` state the chip does, so there
+           is one filter and one way to clear it. */
+        <div
+          data-testid="empty-saved-state"
+          className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm md:col-start-2"
+        >
+          <p className="text-sm text-slate-600">{savedPlacesEmptyCopy(savedReason.hasSaves)}</p>
+          <button
+            type="button"
+            data-testid="saved-empty-escape-all"
+            onClick={() => {
+              setSavedOnly(false)
+            }}
+            className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+          >
+            {savedReason.hasSaves ? 'Show all places' : 'Browse all places'}
+          </button>
+        </div>
+      ) : kindReason !== null ? (
+        /* V25 t03: THE HONEST ZERO-ROW KIND STATE, and it still outranks the
+           radius and date-window branches. `kindReason` is non-null only when
+           EVERY selected kind has zero rows in the whole loaded directory
+           (`park` and `trail` today), and that is the one emptiness no other
+           control can explain or fix: widening the radius, choosing another date
+           window, or clearing the search cannot conjure a place whose kind does
+           not exist. Naming the chip's own label is therefore the true answer,
+           and the escape returns the parent to the full directory. Every other
+           cause (a radius, a window, a search) still falls through to its own
+           message below, exactly as before.
+           V25 t08: the SAVED branch now sits ahead of it, because when the
+           parent has asked for their own collection, "your collection is empty"
+           is the more specific truth; the kind state still leads the others. */
+        <div
+          data-testid="empty-kind-state"
+          className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm md:col-start-2"
+        >
+          <p className="text-sm text-slate-600">{kindEmptyCopy(kindReason.label)}</p>
+          <button
+            type="button"
+            data-testid="kind-empty-escape-all"
+            onClick={clearKindFilter}
+            className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+          >
+            Show all types
+          </button>
         </div>
       ) : radiusReason !== null ? (
         <div className="md:col-start-2"><RadiusEmptyState radiusMiles={radiusReason.radiusMiles} /></div>
@@ -671,7 +939,6 @@ export function PlaceDirectory({
             data-testid="date-window-escape-upcoming"
             onClick={() => {
               setDateWindow('upcoming')
-              resetShowAll()
             }}
             className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500 outline-none"
           >
@@ -683,8 +950,33 @@ export function PlaceDirectory({
           No places match that.
         </div>
       ) : (
-        <div className="flex flex-col gap-2 md:col-start-2">
-          {leadGroups.map((group) => (
+        <div
+          data-testid="places-list"
+          /* V25 t01: the directory's own totals, published for the specs that
+             pin "the list is the whole list" and "nothing renders twice" — the
+             same publish-the-fact discipline the map view uses. Asserting the
+             render against the surface's own declared totals is an assertion
+             about the render; asserting numbers derived from the seed is an
+             assertion about today's data.
+
+             `matched` is EVERY matching row (placed + unplaced); `placed` is
+             the subset this container renders. The difference must be the rows
+             the "Not on the map yet" section renders, exactly once each. */
+          data-matched-rows={listRows.length}
+          data-placed-rows={placedGroups.reduce((total, group) => total + group.rows.length, 0)}
+          className="flex flex-col gap-2"
+        >
+          {/* V25 t01: THE WHOLE LIST, not a lead behind a door — every PLACED
+              row, grouped by kind, on the first paint. That is the founder's
+              "all these place cards under the filters below it as a long list".
+              The A–Z / kind grouping is kept (grouping was never the complaint)
+              and the "See all N places" fold is gone, so no matching place hides
+              behind a second tap.
+
+              The unplaced rows are NOT here: they render once, in the "Not on
+              the map yet" section below, which is why these groups are built
+              from the placed subset. */}
+          {placedGroups.map((group) => (
             <section key={group.kind} className="flex flex-col gap-2">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
                 {group.label}
@@ -702,39 +994,6 @@ export function PlaceDirectory({
               ))}
             </section>
           ))}
-
-          {overflowRows.length > 0 ? (
-            <div className="flex flex-col gap-2">
-              <button
-                type="button"
-                data-testid="places-see-all"
-                onClick={() => setShowAll((prev) => !prev)}
-                className="self-start rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
-              >
-                {seeAllLabel}
-              </button>
-              {showAll
-                ? overflowGroups.map((group) => (
-                    <section key={group.kind} className="flex flex-col gap-2">
-                      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
-                        {group.label}
-                      </h2>
-                      {group.rows.map((row) => (
-                        <DirectoryRow
-                          key={row.place.id}
-                          row={row}
-                          followed={followedPlaceIds.has(row.place.id)}
-                          canFollow={canFollow}
-                          onToggleFollow={onToggleFollow}
-                          selectable={selectable}
-                          onSelect={onSelect}
-                        />
-                      ))}
-                    </section>
-                  ))
-                : null}
-            </div>
-          ) : null}
         </div>
       )}
 
@@ -743,7 +1002,7 @@ export function PlaceDirectory({
           (the rows that did not become pins or cards), so nothing becomes
           unreachable. */}
       {view === 'list' && filteredUnplaced.length > 0 ? (
-        <section className="flex flex-col gap-2 md:col-start-2">
+        <section data-testid="places-unplaced" className="flex flex-col gap-2">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
             Not on the map yet
           </h2>
@@ -766,16 +1025,29 @@ export function PlaceDirectory({
         </section>
       ) : null}
 
-      {/* The floating "Map" button. NO z-index by design (document order clears
-          the list; Leaflet's controls sit at 1000, so a number buys nothing).
-          Clears the bottom nav by geometry. */}
-      {view === 'list' && mapBandOutOfView ? (
+      {/* V25 t01: THE MODE TOGGLE. One floating control that flips list↔map
+          instead of scrolling to a band (there is no band left to scroll to:
+          `scrollBackToMap` and the IntersectionObserver that used to hide this
+          button while the band was visible are both gone).
+
+          It renders in BOTH modes — `toggleAvailable` above is the one rule
+          that can suppress it, and that rule exists so it is never a button to
+          nowhere — and its label follows the mode, because that is the founder's
+          ask: "when you get to the map mode, this button should come back and it
+          should be called list. you can toggle back and forth between them." The
+          accessible name is the same word the button shows (`aria-label`
+          matches the visible label), so a screen reader and the screen agree.
+
+          NO z-index by design (document order clears the content; Leaflet's
+          controls sit at 1000, so a number buys nothing). Clears the bottom nav
+          by geometry and honours reduced motion. */}
+      {toggleAvailable ? (
         <button
           type="button"
-          data-testid="scroll-to-map-btn"
-          aria-label="Back to map"
-          onClick={scrollBackToMap}
-          className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-1/2 flex min-h-11 min-w-11 -translate-x-1/2 items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 shadow-lg transition-colors motion-reduce:transition-none hover:bg-slate-50 md:bottom-[calc(2rem+env(safe-area-inset-bottom))]"
+          data-testid="places-view-toggle"
+          aria-label={view === 'list' ? 'Map' : 'List'}
+          onClick={view === 'list' ? openMapView : backToList}
+          className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-1/2 flex min-h-11 min-w-11 -translate-x-1/2 items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 shadow-lg outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 hover:bg-slate-50 md:bottom-[calc(2rem+env(safe-area-inset-bottom))]"
         >
           <svg
             viewBox="0 0 24 24"
@@ -789,7 +1061,7 @@ export function PlaceDirectory({
           >
             <path d={NAV_ICONS.browse} />
           </svg>
-          Map
+          {view === 'list' ? 'Map' : 'List'}
         </button>
       ) : null}
 

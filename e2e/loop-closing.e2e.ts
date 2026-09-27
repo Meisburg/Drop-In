@@ -60,7 +60,7 @@ import { weekdayFromDateIso } from '../src/lib/series'
 import {
   editTitle, localDatePlusDays, parseTimeLabel, readMarkerMeta,
   readMarkerSession, readSupabaseEnv, settleOnRoute, finishSignup,
-  signUpViewer,
+  signUpViewer, dismissRsvpConfirmationIfOpen,
 } from './fixtures'
 
 const TITLE_PLACEHOLDER = 'e.g. Playground time at Green Lake'
@@ -204,6 +204,11 @@ async function pingPost(page: Page, postId: string): Promise<void> {
   await page.goto(`/playdate/${postId}`)
   await page.getByRole('button', { name: 'I’m going', exact: true }).click()
   await expect(page.getByRole('button', { name: '✓ Going', exact: true })).toBeVisible()
+  // V25 ticket 13: the ping raises the RSVP confirmation lightbox, whose
+  // backdrop covers the page — the callers below keep driving this page (the
+  // guest list, the "same time next week" block), so it has to be dismissed
+  // exactly as a parent would.
+  await dismissRsvpConfirmationIfOpen(page)
 }
 
 /**

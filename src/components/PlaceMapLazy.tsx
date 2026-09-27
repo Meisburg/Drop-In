@@ -149,6 +149,15 @@ export function PlacesMap(props: {
   placeActions?: boolean
   testId?: string
   onSelect?: (place: import('../lib/types').Place) => void
+  /**
+   * V25 t07: the event each pin stands for, keyed by the pin's own id — the
+   * feed's one addition to the shared map (see `PlacesMap`'s prop doc for why
+   * it is a lookup the other callers simply omit). Declared here because this
+   * wrapper is the module the FEED imports, and a prop a caller passes but the
+   * wrapper does not declare is a TypeScript error rather than a value that
+   * quietly goes missing.
+   */
+  pinEvents?: ReadonlyMap<string, import('../lib/places').MapPinEvent>
 }) {
   const Comp = LazyPlacesMap
   return (

@@ -52,7 +52,13 @@
  */
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
-import { computeEndIso, computeStartIso, formatTimeWindow, mapsHref } from '../src/lib/feed'
+import {
+  cardWhenLabel,
+  computeEndIso,
+  computeStartIso,
+  formatTimeWindow,
+  mapsHref,
+} from '../src/lib/feed'
 import {
   BROWSE_PLACES_LABEL,
   PLACE_BROWSE_LIMIT,
@@ -376,36 +382,49 @@ test('typing @ opens the picker, and picking a place fills place + address in on
   expect(row?.neighborhood_id ?? null).toBeNull()
   expect(row?.address).toBe(PLACE_ADDRESS)
 
-  // The card in the feed: the place on its own line, then the WINDOW ALONE on
-  // the meta line — no neighbourhood label, and above all no dangling
-  // separator. Pinned as the exact expected text rather than "no double
-  // separator" (review cycle 1, F3): the plausible wrong implementations are a
-  // LEADING " · 6:00 PM–7:00 PM" (blank neighbourhood) or "null · 6:00 PM…"
-  // (a literal null), and neither contains two adjacent separators. The window
-  // comes from feed.formatTimeWindow — the very function the card renders —
-  // compared with whitespace collapsed (see collapseSpaces).
+  // The card in the feed: the place on its own line, then the WHEN line — the
+  // day and the WINDOW ALONE, no neighbourhood label in front of it, and above
+  // all no dangling separator. Pinned as the exact expected text rather than "no
+  // double separator" (review cycle 1, F3): the plausible wrong implementations
+  // are a LEADING " · 6:00 PM–7:00 PM" (blank neighbourhood) or "null · 6:00 PM…"
+  // (a literal null), and neither contains two adjacent separators. Both halves
+  // come from the app's own seams — feed.cardWhenLabel over the day wording and
+  // feed.formatTimeWindow — compared with whitespace collapsed (collapseSpaces),
+  // so this asserts the function the card actually renders.
   const card = page.locator('a').filter({ hasText: title }).first()
   await expect(card).toBeVisible()
   await expect(card).toContainText(PLACE_NAME)
   await expect(card).not.toContainText('null')
   const windowLabel = collapseSpaces(formatTimeWindow(row?.starts_at ?? '', row?.ends_at ?? ''))
-  // The meta line is the card's second <p>: the first is the place. Assert that
-  // shape explicitly, so a structural change fails loudly instead of silently
-  // testing the wrong element.
-  const metaLine = card.locator('p').nth(1)
-  await expect(metaLine).toContainText('–')
-  const metaText = collapseSpaces(await metaLine.innerText())
+  // V25 ticket 05: the when line is its own `card-when` element now — read by
+  // testid, never by a `p` index (the window moved out of the quiet meta line,
+  // and a positional read silently tests the wrong element; it did exactly that
+  // once in this file's history).
+  const whenLine = card.getByTestId('card-when')
+  await expect(whenLine).toContainText('–')
+  const whenText = collapseSpaces(await whenLine.innerText())
   expect(
-    // Either the window alone, or the window followed by the card's own
-    // suffixes (` · weekly`, ` · N mi` — neither applies to a plain new post,
-    // but the assertion must not depend on that).
-    metaText === windowLabel || metaText.startsWith(`${windowLabel} · `),
-    `the card meta line must be the window${windowLabel === '' ? '' : ` "${windowLabel}"`} with no ` +
-      `neighbourhood label in front of it (got "${metaText}")`,
-  ).toBe(true)
+    whenText,
+    `the card's when line must be the day and the window${windowLabel === '' ? '' : ` "${windowLabel}"`} with no ` +
+      `neighbourhood label in front of it (got "${whenText}")`,
+  ).toBe(collapseSpaces(cardWhenLabel(row?.starts_at ?? '', row?.ends_at ?? '')))
+  // The QUIET line (V25 ticket 05) renders only when the post has a
+  // neighbourhood or a distance, and then it must START with that fact: never
+  // the removed window's leading separator and never a literal null.
+  const metaLine = card.getByTestId('card-meta')
+  if ((await metaLine.count()) > 0) {
+    const metaText = collapseSpaces(await metaLine.innerText())
+    expect(
+      metaText.startsWith('· ') || metaText.startsWith('null'),
+      `the card's quiet meta line must not begin with a separator or "null" (got "${metaText}")`,
+    ).toBe(false)
+    // …and the window is NOT still in it (the "moved the line but left a copy"
+    // regression, which is exactly what a `p`-index read would have missed).
+    await expect(metaLine).not.toContainText('–')
+  }
 
   // The DETAIL page's place line, host view: exactly the place, and nothing
-  // appended. The same exact-text guard as the card's meta line — the AC's
+  // appended. The same exact-text guard as the card's when line above — the AC's
   // "never an empty neighbourhood label" on the page that renders the place and
   // the window separately (`place · window`).
   await page.goto(`/playdate/${row?.id ?? ''}`)

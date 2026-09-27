@@ -8,10 +8,14 @@ import {
   DATE_WINDOW_LABELS,
   dateWindowEmptyCopy,
   distanceMiles,
+  feedMapPinEvent,
   filterPlacesByRadius,
   feedMapPins,
+  pinMoreDropInsLabel,
+  soonestFeedPinEvent,
   framingCircle,
   groupPlacesByKind,
+  kindEmptyCopy,
   MIN_FOCUS_RADIUS_MILES,
   MAP_FOCUS_RADIUS_MILES,
   matchPlaces,
@@ -21,6 +25,7 @@ import {
   placeIndoorLabel,
   placeInDateWindow,
   placeKindLabel,
+  placeKindChips,
   placePath,
   placeDetailsPath,
   placeWebSearchHref,
@@ -30,13 +35,18 @@ import {
   placeUpcomingLabel,
   placeExternalUrl,
   placeLearnMoreLink,
+  placeOutboundLinks,
   photoCreditLine,
   radiusPreviewCircle,
+  savedPlacesEmptyCopy,
   zoomForRadius,
   DETAIL_ZOOM_FALLBACK,
   placeFollowIdSet,
   planDirectoryList,
   PLACE_BROWSE_LIMIT,
+  PLACE_KIND_CHIP_KINDS,
+  PLACE_KIND_MISSING_NOTE,
+  PLACE_KINDS,
   PLACE_SUGGESTION_LIMIT,
   resolveMapCoords,
   resolvePlaceByName,
@@ -49,9 +59,9 @@ import {
   usesPlaceAlias,
   zipFromAddress,
 } from './places'
-import type { PlaceListRow } from './places'
+import type { FeedMapPin, FeedMapPinEvent, PlaceListRow } from './places'
 import type { ReviewSummary } from './reviews'
-import { DEFAULT_RADIUS_MILES, formatDayLabel, localDayKey, neighborhoodIdField, RADIUS_MILES_OPTIONS } from './feed'
+import { DEFAULT_RADIUS_MILES, cardWhenLabel, formatDayLabel, localDayKey, mapsHref, neighborhoodIdField, RADIUS_MILES_OPTIONS } from './feed'
 import type { Place, PlaceKind } from './types'
 import type { ZipCoords } from './feed'
 
@@ -875,6 +885,64 @@ describe('placeLearnMoreLink (V20 t01: the stored website, else the map search)'
   it('returns null when there is neither a usable URL nor a name to search', () => {
     expect(placeLearnMoreLink({ name: '', website_url: null })).toBeNull()
     expect(placeLearnMoreLink({ name: '   ', website_url: 'javascript:x' })).toBeNull()
+  })
+})
+
+/**
+ * V25 t04 — the place page's two outbound actions ("Learn more" + "Get
+ * directions"), and above all the NULL contract the page renders from: no
+ * address means no Get-directions control, never a queryless Google Maps link.
+ *
+ * This is the only deterministic place that absence CAN be pinned — vitest runs
+ * in the node environment (no jsdom/RTL in this repo), and every one of the 239
+ * seeded places carries an address (measured: an anon REST read of
+ * `places?address=is.null` returns []), so a browser lane can never meet the
+ * no-address case either. The render's conditionals consume exactly the two
+ * booleans these tests pin.
+ */
+describe('placeOutboundLinks (V25 t04: the place page\'s two buttons)', () => {
+  it('offers both actions when the place has an address, keeping the site when there is one', () => {
+    expect(
+      placeOutboundLinks({
+        name: 'Green Lake Park',
+        address: '7201 East Green Lake Dr N',
+        website_url: 'https://www.seattle.gov/parks/greenlake',
+      }),
+    ).toEqual({
+      learnMore: { url: 'https://www.seattle.gov/parks/greenlake', kind: 'website' },
+      directions:
+        'https://www.google.com/maps?q=Green%20Lake%20Park%2C%207201%20East%20Green%20Lake%20Dr%20N',
+    })
+  })
+
+  it('reuses feed.mapsHref verbatim — no second URL builder, and the address link cannot drift', () => {
+    const place = { name: 'Zürich Spielplatz', address: 'Café str. 12' }
+    // Byte equality against the seam the address link and the feed card use.
+    expect(placeOutboundLinks(place).directions).toBe(mapsHref(place.name, place.address))
+    // …including its trimming, so "  123 Main  " and "123 Main" are one href.
+    expect(placeOutboundLinks({ name: 'X', address: '  123 Main  ' }).directions).toBe(
+      mapsHref('X', '123 Main'),
+    )
+  })
+
+  it('drops Get directions when there is no address — and still offers Learn more', () => {
+    for (const address of [null, undefined, '', '   '] as const) {
+      const links = placeOutboundLinks({ name: 'Green Lake Park', address })
+      expect(links.directions, `address ${JSON.stringify(address)} must yield no Maps link`).toBeNull()
+      // The other action is INDEPENDENT of the address: a park with no street
+      // still has its OSM search, so the row is one button, not none.
+      expect(links.learnMore).toEqual({
+        url: placeExternalUrl({ name: 'Green Lake Park' }),
+        kind: 'map-search',
+      })
+    }
+  })
+
+  it('keeps Get directions when Learn more is null (no name, no site) — the two are independent', () => {
+    expect(placeOutboundLinks({ name: '', address: '123 Main St' })).toEqual({
+      learnMore: null,
+      directions: 'https://www.google.com/maps?q=%2C%20123%20Main%20St',
+    })
   })
 })
 
@@ -1797,6 +1865,230 @@ describe('feedMapPins (V19 t02 — the feed map)', () => {
     const noName = feedMapPins([{ place_coords: { lat: 47.67, lng: -122.38 } }])
     expect(noName[0].name).toBe('')
   })
+
+  /**
+   * V25 t07 — THE COLLAPSE ACCUMULATES.
+   *
+   * Rule 2 makes one dot stand for 1..N drop-ins, which is exactly why the pin
+   * has to CARRY all of them: a bubble that names one of two sessions presents a
+   * choice as the whole truth. These tests pin the accumulation, and they are the
+   * reason `feedMapPins` stopped keeping a `Set` of seen keys.
+   */
+  it('keeps EVERY drop-in behind a collapsed pin, in input order (V25 t07)', () => {
+    const id = '26a77f22-7f99-4bd5-88df-4169b91ae7c7'
+    const pins = feedMapPins([
+      {
+        id: 'morning',
+        title: 'Morning session',
+        starts_at: '2026-09-26T09:00:00',
+        ends_at: '2026-09-26T10:30:00',
+        place: 'Ballard Corners Park',
+        place_id: id,
+        place_coords: { lat: 47.6743, lng: -122.3791 },
+      },
+      {
+        id: 'afternoon',
+        title: 'Afternoon session',
+        starts_at: '2026-09-26T14:00:00',
+        ends_at: '2026-09-26T15:00:00',
+        place: 'Ballard Corners Park',
+        place_id: id,
+        place_coords: { lat: 47.6743, lng: -122.3791 },
+      },
+    ])
+    expect(pins).toHaveLength(1)
+    // Both, not just the first — the whole point of the ticket's collapse rule.
+    expect(pins[0].events.map((event) => event.id)).toEqual(['morning', 'afternoon'])
+    expect(pins[0].events.map((event) => event.title)).toEqual([
+      'Morning session',
+      'Afternoon session',
+    ])
+    // The first post at the place still owns the pin's identity (unchanged).
+    expect(pins[0].name).toBe('Ballard Corners Park')
+    expect(pins[0].placeId).toBe(id)
+  })
+
+  it('keeps every event on a FREE-TEXT pin collapsed by coordinate (V25 t07)', () => {
+    // Nothing to key a place on, so the coordinate collapse applies — and the
+    // ticket's free-text bullet is exactly this case: no directory id, and the
+    // event must still be nameable.
+    const pins = feedMapPins([
+      {
+        id: 'text-1',
+        title: 'Rooftop play',
+        starts_at: '2026-09-26T09:00:00',
+        ends_at: '2026-09-26T10:00:00',
+        place: 'Somewhere else entirely',
+        place_coords: { lat: 47.67, lng: -122.38 },
+      },
+      {
+        id: 'text-2',
+        title: 'Second rooftop play',
+        starts_at: '2026-09-26T11:00:00',
+        ends_at: '2026-09-26T12:00:00',
+        place: 'Somewhere else entirely',
+        place_coords: { lat: 47.67, lng: -122.38 },
+      },
+    ])
+    expect(pins).toHaveLength(1)
+    expect(pins[0].placeId).toBeNull()
+    expect(pins[0].events.map((event) => event.id)).toEqual(['text-1', 'text-2'])
+  })
+
+  it('contributes NO event for a post with no id — and still draws its pin (V25 t07)', () => {
+    // There is no `/playdate/:id` behind a post with no id, so there is no event
+    // this seam can name. The PIN is unaffected (rule 1/2 are about location).
+    const pins = feedMapPins([
+      { title: 'Nameless', place: 'Green Lake', place_coords: { lat: 47.67, lng: -122.38 } },
+    ])
+    expect(pins).toHaveLength(1)
+    expect(pins[0].events).toEqual([])
+    expect(feedMapPinEvent(pins[0])).toBeNull()
+  })
+
+  it('contributes NO event when the window does not parse, rather than "Invalid Date" (V25 t07)', () => {
+    // `cardWhenLabel` would print the unparseable half verbatim
+    // (`formatTimeWindow`'s `Invalid Date`), which is a popup that lies. The
+    // refusal is the honest answer; real rows are NOT NULL timestamptz.
+    const badStart = feedMapPins([
+      {
+        id: 'x',
+        title: 'X',
+        starts_at: 'not a date',
+        ends_at: '2026-09-26T10:00:00',
+        place_coords: { lat: 47.67, lng: -122.38 },
+      },
+    ])
+    expect(badStart[0].events).toEqual([])
+    const badEnd = feedMapPins([
+      {
+        id: 'x',
+        title: 'X',
+        starts_at: '2026-09-26T09:00:00',
+        ends_at: '',
+        place_coords: { lat: 47.67, lng: -122.38 },
+      },
+    ])
+    expect(badEnd[0].events).toEqual([])
+    // A missing title is not a missing event: the bubble gets a name.
+    const untitled = feedMapPins([
+      {
+        id: 'x',
+        title: '   ',
+        starts_at: '2026-09-26T09:00:00',
+        ends_at: '2026-09-26T10:00:00',
+        place_coords: { lat: 47.67, lng: -122.38 },
+      },
+    ])
+    expect(untitled[0].events[0].title).toBe('Drop-in')
+  })
+})
+
+/**
+ * V25 t07 — THE BUBBLE'S OWN DECISIONS.
+ *
+ * The founder, on `/`: tapping a blue circle should tell you "the name of the
+ * event that's happening there and some information about that". The pin can
+ * stand for SEVERAL drop-ins (rule 2), so these tests pin the two halves of the
+ * honest answer: WHICH event is named (the soonest, by data rather than by the
+ * caller's sort) and HOW the rest are disclosed (a count, never silence).
+ */
+describe('feedMapPinEvent (V25 t07 — the feed pin\'s popup payload)', () => {
+  const pinOf = (events: FeedMapPinEvent[]): FeedMapPin => ({
+    placeId: null,
+    name: 'Ballard Corners Park',
+    address: 'Ballard, Seattle',
+    lat: 47.6743,
+    lng: -122.3791,
+    events,
+  })
+  const at = (id: string, title: string, startsAt: string, endsAt: string): FeedMapPinEvent => ({
+    id,
+    title,
+    startsAt,
+    endsAt,
+  })
+
+  it('names the event: its title, the CARD\'s own when line, and the /playdate door', () => {
+    const event = feedMapPinEvent(
+      pinOf([at('aaaaaaaa-1111-4111-8111-111111111111', 'Pumpkin painting', '2026-09-26T17:00:00', '2026-09-26T18:30:00')]),
+    )
+    expect(event).not.toBeNull()
+    expect(event?.title).toBe('Pumpkin painting')
+    expect(event?.playdateId).toBe('aaaaaaaa-1111-4111-8111-111111111111')
+    // ONE window rule: the bubble's line IS `cardWhenLabel`'s, so a feed card
+    // and the bubble over its pin cannot disagree about the same drop-in.
+    expect(event?.whenLabel).toBe(cardWhenLabel('2026-09-26T17:00:00', '2026-09-26T18:30:00'))
+    // And it really is a day + window, not an empty or generic string. The DAY
+    // is locale-independent by construction (`formatStartDayLabel`'s own tables).
+    expect(event?.whenLabel.startsWith('Sat, Sep 26 · ')).toBe(true)
+    expect(event?.href).toBe('/playdate/aaaaaaaa-1111-4111-8111-111111111111')
+    // One drop-in says nothing about others.
+    expect(event?.moreLabel).toBeNull()
+  })
+
+  it('encodes the id in the href so a path segment cannot break', () => {
+    const event = feedMapPinEvent(pinOf([at('a/b', 'Split', '2026-09-26T09:00:00', '2026-09-26T10:00:00')]))
+    expect(event?.href).toBe('/playdate/a%2Fb')
+  })
+
+  /**
+   * THE NON-VACUOUS HALF. `events[0]` would name the AFTERNOON session here,
+   * because input order is the caller's business (rule 3). The bubble's claim is
+   * "the soonest", so it must read the data.
+   */
+  it('names the SOONEST event, not the first one in the list', () => {
+    const event = feedMapPinEvent(
+      pinOf([
+        at('afternoon', 'Afternoon session', '2026-09-26T14:00:00', '2026-09-26T15:00:00'),
+        at('morning', 'Morning session', '2026-09-26T09:00:00', '2026-09-26T10:30:00'),
+      ]),
+    )
+    expect(event?.playdateId).toBe('morning')
+    expect(event?.title).toBe('Morning session')
+    // And the second drop-in is DISCLOSED rather than hidden.
+    expect(event?.moreLabel).toBe('1 more drop-in here')
+  })
+
+  it('keeps input order when two events start at the same instant', () => {
+    const both = [
+      at('first', 'First', '2026-09-26T09:00:00', '2026-09-26T10:00:00'),
+      at('second', 'Second', '2026-09-26T09:00:00', '2026-09-26T10:00:00'),
+    ]
+    expect(soonestFeedPinEvent(both)?.id).toBe('first')
+  })
+
+  it('skips an unparseable start rather than letting it win', () => {
+    const events = [
+      at('bad', 'Bad', 'not a date', '2026-09-26T10:00:00'),
+      at('good', 'Good', '2026-09-26T09:00:00', '2026-09-26T10:00:00'),
+    ]
+    expect(soonestFeedPinEvent(events)?.id).toBe('good')
+    // Nothing parses at all: the first member stands, so the rule is total.
+    expect(soonestFeedPinEvent([events[0], at('bad2', 'Bad 2', '', '')])?.id).toBe('bad')
+  })
+
+  it('returns null for a pin with no events, and for the empty list', () => {
+    expect(feedMapPinEvent(pinOf([]))).toBeNull()
+    expect(soonestFeedPinEvent([])).toBeNull()
+  })
+
+  it('states the overflow in one place: 0 → nothing, 1 → singular, N → plural', () => {
+    expect(pinMoreDropInsLabel(0)).toBeNull()
+    expect(pinMoreDropInsLabel(-1)).toBeNull()
+    expect(pinMoreDropInsLabel(1)).toBe('1 more drop-in here')
+    expect(pinMoreDropInsLabel(2)).toBe('2 more drop-ins here')
+    // Three drop-ins behind one dot: the bubble names one and counts the rest.
+    const event = feedMapPinEvent(
+      pinOf([
+        at('a', 'A', '2026-09-26T09:00:00', '2026-09-26T10:00:00'),
+        at('b', 'B', '2026-09-26T11:00:00', '2026-09-26T12:00:00'),
+        at('c', 'C', '2026-09-26T13:00:00', '2026-09-26T14:00:00'),
+      ]),
+    )
+    expect(event?.playdateId).toBe('a')
+    expect(event?.moreLabel).toBe('2 more drop-ins here')
+  })
 })
 
 /**
@@ -1861,6 +2153,95 @@ describe('placeWebSearchHref (V23 slice 5)', () => {
 
   it('ships the one label the callers render', () => {
     expect(PLACE_WEB_SEARCH_LABEL).toBe('Search the web for this place')
+  })
+})
+
+describe('placeKindChips + kindEmptyCopy (V25 t03, the category chip row)', () => {
+  it('ships exactly PLACE_KIND_CHIP_KINDS — the eight kinds with rows — in PLACE_KINDS order', () => {
+    // The row's set is the app's own taxonomy MINUS the kinds a chip could only
+    // ever return empty for. The exact-set assertion is what makes that
+    // deliberate: a kind added to PLACE_KINDS must be consciously added here (or
+    // consciously withheld), and it cannot silently disappear from the row.
+    const chips = placeKindChips([])
+    expect(chips.map((chip) => chip.kind)).toEqual([...PLACE_KIND_CHIP_KINDS])
+    expect(chips.length).toBe(8)
+    // The words come from placeKindLabel — the SAME words the filter sheet's chips
+    // and the list's group headings render. No second label map.
+    expect(chips.map((chip) => chip.label)).toEqual(
+      PLACE_KIND_CHIP_KINDS.map((kind) => placeKindLabel(kind)),
+    )
+    // In PLACE_KINDS order: filtering the taxonomy, never re-sorting it.
+    const order = PLACE_KINDS.filter((kind) => placeKindChips([]).some((c) => c.kind === kind))
+    expect(chips.map((chip) => chip.kind)).toEqual(order)
+  })
+
+  it('withholds the chips that could only ever return an empty list (park, trail) — while the KINDS stay real', () => {
+    // The founder's binding decision: no chip that can only ever come back empty.
+    // Live and in the 0029 seed, park and trail both hold 0 of 239 rows.
+    const kinds: readonly string[] = placeKindChips([]).map((chip) => chip.kind)
+    expect(kinds).not.toContain('park')
+    expect(kinds).not.toContain('trail')
+    // But the KIND is NOT deleted from the app: the taxonomy, its label, the
+    // filter sheet's chips (which iterate PLACE_KINDS) and the list's group
+    // headings all still carry them, so a seed row would surface immediately.
+    expect([...PLACE_KINDS]).toContain('park')
+    expect([...PLACE_KINDS]).toContain('trail')
+    expect(placeKindLabel('park')).toBe('Park')
+    expect(placeKindLabel('trail')).toBe('Trail')
+  })
+
+  it('flags a kind empty ONLY when the loaded directory really holds no row of it — and never while the read is unknown', () => {
+    const rows = [
+      place({ name: 'Green Lake Pool', kind: 'pool' }),
+      place({ name: 'Madison Pool', kind: 'pool' }),
+    ]
+    const chips = placeKindChips(rows)
+    const chip = (kind: PlaceKind) => chips.find((c) => c.kind === kind)
+    // A kind with rows is never flagged…
+    expect(chip('pool')?.empty).toBe(false)
+    // …and a shipped kind that measures empty at runtime IS (the flag is a
+    // measurement of the loaded directory, not a claim about the seed), which is
+    // what lets the empty state name it instead of the generic copy.
+    expect(chip('playground')?.empty).toBe(true)
+    expect(chip('museum')?.empty).toBe(true)
+    // `places === null` is UNKNOWN, not empty: claiming emptiness before the read
+    // answers would put an honest-sounding lie in front of the parent.
+    expect(placeKindChips(null).some((c) => c.empty)).toBe(false)
+  })
+
+  it('names the selected label in the honest zero-row copy — including a kind only the sheet can select', () => {
+    expect(kindEmptyCopy('Park')).toBe('No “Park” places in the directory yet.')
+    // The words travel from placeKindLabel, so the copy can never drift from the
+    // selection that opened the state. Every kind is covered, including the two
+    // the ROW withholds: the filter sheet still lists them, so their empty state
+    // is reachable and must be just as honest.
+    for (const kind of PLACE_KINDS) {
+      expect(kindEmptyCopy(placeKindLabel(kind))).toContain(placeKindLabel(kind))
+    }
+  })
+
+  it('ships no chip for a category the schema cannot express (food, zoo, coffee)', () => {
+    // The wife's list names food and a zoo; the thing she cares about most is
+    // "whether or not there's a coffee shop nearby". The 0029 CHECK has no such
+    // value (`food`/`zoo` are not kinds) and the directory has no amenity or POI
+    // data, so a chip for any of them would return nothing FOREVER. This pins
+    // that absence — the honest open question on ticket 03 — rather than letting
+    // a later "let's add the missing categories" diff quietly ship a dead chip.
+    const kinds: readonly string[] = placeKindChips([]).map((chip) => chip.kind)
+    for (const unsupported of ['food', 'zoo', 'cafe', 'coffee', 'restaurant']) {
+      expect(kinds).not.toContain(unsupported)
+    }
+  })
+
+  it('names those unshippable categories in RENDERED copy, not only in a comment', () => {
+    // The decision requires the withholding to be visible to the parent: the row
+    // carries one quiet line naming food, a zoo and a coffee shop nearby. Without
+    // this assertion the naming could be deleted and every other test would pass.
+    for (const named of ['food', 'zoo', 'coffee']) {
+      expect(PLACE_KIND_MISSING_NOTE.toLowerCase()).toContain(named)
+    }
+    // It is a statement, not an apology or a promise, and it is not a control.
+    expect(PLACE_KIND_MISSING_NOTE).toContain('We don’t have that data yet.')
   })
 })
 
@@ -2213,5 +2594,151 @@ describe('planDirectoryList (the directory list composition, moved out of PlaceD
         'Weekend',
       ])
     })
+  })
+
+  it('kindReason names a selected kind ONLY when every selected kind has zero rows in the whole directory', () => {
+    // NOTE: the ROW no longer offers a park/trail chip (they could only ever
+    // return an empty list), but the filter SHEET still lists every kind — so
+    // these selections are reachable in the product, and the honest empty state
+    // must still fire for them.
+    // No kind selected → never a kind reason, whatever else is true.
+    expect(plan({ places: [] }).kindReason).toBeNull()
+    // A kind with rows that simply needs no narrowing → null.
+    expect(plan({ selectedKinds: new Set(['playground']) }).kindReason).toBeNull()
+    // A kind ABSENT from the loaded directory, nothing else narrowing → named,
+    // and `nothingMatches` is the generic flag it refines.
+    const only = plan({ places: [PLAY_B], selectedKinds: new Set(['park']) })
+    expect(only.nothingMatches).toBe(true)
+    expect(only.kindReason).toEqual({ kind: 'park', label: 'Park' })
+    // A search is ALSO narrowing, so the kind is not the whole story → the
+    // generic empty state, no kind-specific claim.
+    expect(
+      plan({ places: [PLAY_B], selectedKinds: new Set(['park']), query: 'zzz' }).kindReason,
+    ).toBeNull()
+    // While the read is in flight the directory is UNKNOWN, never empty.
+    expect(plan({ places: null, selectedKinds: new Set(['park']) }).kindReason).toBeNull()
+    // An empty directory that really loaded + a kind selected IS the honest case.
+    const empty = plan({ places: [], selectedKinds: new Set(['trail']) })
+    expect(empty.kindReason).toEqual({ kind: 'trail', label: 'Trail' })
+    expect(empty.nothingMatches).toBe(true)
+    // A SHIPPED chip whose kind measures empty at runtime gets the same honest
+    // state — the rule is about the selection, not about a hardcoded list.
+    const goneKind = plan({ places: [PLAY_B], selectedKinds: new Set(['museum']) })
+    expect(goneKind.kindReason).toEqual({ kind: 'museum', label: 'Museum' })
+  })
+
+  it('kindReason refuses to name a chip when the emptiness has ANOTHER cause (every, not any)', () => {
+    // `park` + `playground` selected, both in the directory, and a date window
+    // that matches nothing: naming `park` would be a FALSE cause — the window is
+    // what emptied the list, and clearing "Park" would not fix it.
+    const mixed = plan({
+      selectedKinds: new Set(['park', 'playground']),
+      upcomingStartTimes: null,
+      dateWindow: 'today',
+    })
+    expect(mixed.listRows.length).toBe(0)
+    expect(mixed.dateWindowReason).toBe('today')
+    expect(mixed.kindReason).toBeNull()
+    // Narrow it to the one kind that IS absent and the same emptiness becomes a
+    // true kind reason (a place that does not exist cannot be brought back by a
+    // window), so the kind state wins the render chain.
+    const absentOnly = plan({
+      places: [PLAY_B],
+      selectedKinds: new Set(['park']),
+      upcomingStartTimes: null,
+      dateWindow: 'today',
+    })
+    expect(absentOnly.kindReason).toEqual({ kind: 'park', label: 'Park' })
+  })
+
+  /**
+   * V25 t08 — THE SAVED GATE (the hearts collection). The gate is a filter over
+   * the SAME saved-id set the bookmark controls read, so these cases pin what it
+   * does to the plan and, just as importantly, that it is INERT for every caller
+   * that does not pass it.
+   */
+  describe('the saved gate (V25 t08)', () => {
+    it('is INERT by default — an unfiltered plan is byte-for-byte what it was', () => {
+      const plain = plan()
+      const explicitOff = plan({ savedOnly: false, followedPlaceIds: new Set(['alki-beach-park']) })
+      expect(explicitOff.listRows).toStrictEqual(plain.listRows)
+      expect(explicitOff.savedReason).toBeNull()
+    })
+
+    it('shows ONLY the viewer’s saved places, whatever else is in the directory', () => {
+      const p = plan({ savedOnly: true, followedPlaceIds: new Set([PLAY_B.id]) })
+      expect(p.listRows.map((r) => r.place.name)).toEqual(['Bellevue Playground'])
+      expect(p.savedReason).toBeNull()
+    })
+
+    it('reads the set by id, not by index or name — an id that is not in the directory shows nothing', () => {
+      const p = plan({ savedOnly: true, followedPlaceIds: new Set(['no-such-place-id']) })
+      expect(p.listRows).toHaveLength(0)
+      expect(p.savedReason).toEqual({ hasSaves: true })
+    })
+
+    it('honours the gate on the GEOCODED path too (both list paths narrow)', () => {
+      const p = plan({
+        savedOnly: true,
+        followedPlaceIds: new Set([PLAY_B.id]),
+        geocodeCenter: GEO_CENTER,
+        radiusMiles: 50,
+      })
+      expect(p.listRows.map((r) => r.place.name)).toEqual(['Bellevue Playground'])
+    })
+
+    it('reports the saved gate as the reason, with hasSaves FALSE for a viewer who saved nothing', () => {
+      const p = plan({ savedOnly: true, followedPlaceIds: new Set() })
+      expect(p.savedReason).toEqual({ hasSaves: false })
+      expect(p.nothingMatches).toBe(true)
+      // The radius/date branches must NOT claim this emptiness: the gate is why
+      // there is nothing to see, and the component renders `savedReason` first.
+      expect(p.radiusIsTheReason).toBe(false)
+      expect(p.dateWindowIsTheReason).toBe(false)
+    })
+
+    it('reports hasSaves TRUE when saves exist but the search excludes them all', () => {
+      const p = plan({
+        savedOnly: true,
+        followedPlaceIds: new Set([PLAY_B.id]),
+        query: 'zzzz-nothing-matches',
+      })
+      expect(p.listRows).toHaveLength(0)
+      expect(p.savedReason).toEqual({ hasSaves: true })
+    })
+
+    it('is null while a genuinely-matching saved row renders (never a false empty state)', () => {
+      const p = plan({ savedOnly: true, followedPlaceIds: new Set([PARK_A.id, PLAY_B.id]) })
+      expect(p.savedReason).toBeNull()
+      expect(p.listRows).toHaveLength(2)
+    })
+
+    it('is null while the read is in flight (an unanswered read is UNKNOWN, never "none saved")', () => {
+      const p = plan({ savedOnly: true, followedPlaceIds: new Set(), places: null })
+      expect(p.savedReason).toBeNull()
+    })
+
+    it('keeps the unplaced saved row reachable (a coordinate-less save is not hidden by the gate)', () => {
+      const p = plan({ savedOnly: true, followedPlaceIds: new Set([PLAY_B.id]) })
+      expect(p.unplaced.map((r) => r.place.name)).toEqual(['Bellevue Playground'])
+    })
+  })
+})
+
+describe('savedPlacesEmptyCopy (V25 t08, the two honest empty messages)', () => {
+  it('tells a viewer who saved nothing what the list is for — and never blames a filter', () => {
+    const copy = savedPlacesEmptyCopy(false)
+    expect(copy).toContain('haven’t saved any places yet')
+    expect(copy.toLowerCase()).not.toContain('filter')
+  })
+
+  it('tells a viewer whose saves are all filtered out the truth about their own data', () => {
+    const copy = savedPlacesEmptyCopy(true)
+    expect(copy).toBe('None of your saved places match these filters.')
+    expect(copy).not.toContain('haven’t saved')
+  })
+
+  it('is two DIFFERENT sentences (the branches cannot collapse to one)', () => {
+    expect(savedPlacesEmptyCopy(true)).not.toBe(savedPlacesEmptyCopy(false))
   })
 })

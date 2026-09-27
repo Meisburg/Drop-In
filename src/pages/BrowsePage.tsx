@@ -14,7 +14,7 @@ import {
 import type { ReviewSummaryRow } from '../lib/db'
 import { DEFAULT_RADIUS_MILES, type ZipCoords } from '../lib/feed'
 import { placeFollowIdSet } from '../lib/places'
-import { planSaveToggle } from '../lib/follows'
+import { planSaveToggle, savedPlaceIdSetAfterToggle } from '../lib/follows'
 import type { ReviewSummary } from '../lib/reviews'
 import type { Place } from '../lib/types'
 
@@ -253,7 +253,18 @@ export function BrowsePage() {
    * can find it again; nothing here promises notifications.
    *
    * The local set is flipped FIRST (the control moves on tap, the ping toggle's
-   * optimistic discipline), then the write confirms it in the background.
+   * optimistic discipline); on SUCCESS nothing else happens — the flip already
+   * IS the final state and the write's return value is deliberately unused. Only
+   * a REJECTED write touches the set again, rolling the one place back.
+   *
+   * V25 t08: the SECOND half of the pair is the pure
+   * `savedPlaceIdSetAfterToggle` — the same set rule the /new picker sheet
+   * applies — so a save or unsave reads identically on both hearts surfaces and
+   * the Saved filter on one cannot disagree with the bookmark on the other
+   * within one page load. The optimistic flip stays here because this page's
+   * control must move on tap (it is the primary affordance); the sheet's list
+   * refreshes from the write's answer instead (see NewPlaydatePage's handler),
+   * and `follows.savedPlaceIdSetAfterToggle` names that difference at the seam.
    *
    * Both writes use the FUNCTIONAL updater, not a value captured from this
    * render's closure. The follows read is a concurrent effect: it can land a
@@ -262,29 +273,18 @@ export function BrowsePage() {
    * replaced — silently discarding a read that arrived mid-flight. The updater
    * receives the CURRENT state and inverts only this place, so the rollback
    * restores exactly what it changed.
-   *
-   * There is no second local write when the promise resolves: the database
-   * decides, the UI only reflects it.
    */
   async function handleTogglePlaceFollow(placeId: string) {
     const wasFollowed = followedPlaceIds.has(placeId)
     // The decision: save or unsave? The pure seam decides; execution below.
-    planSaveToggle(wasFollowed)
-    setFollowedPlaceIds((prev) => {
-      const next = new Set(prev)
-      if (wasFollowed) next.delete(placeId)
-      else next.add(placeId)
-      return next
-    })
+    const decision = planSaveToggle(wasFollowed)
+    setFollowedPlaceIds((prev) => savedPlaceIdSetAfterToggle(prev, placeId, decision))
     try {
       await toggleFollowPlace(placeId)
     } catch {
-      setFollowedPlaceIds((prev) => {
-        const next = new Set(prev)
-        if (wasFollowed) next.add(placeId)
-        else next.delete(placeId)
-        return next
-      })
+      setFollowedPlaceIds((prev) =>
+        savedPlaceIdSetAfterToggle(prev, placeId, decision === 'save' ? 'unsave' : 'save'),
+      )
     }
   }
 

@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useLocation } from 'react-router'
 import {
+  DISMISSED_POINTER,
   decidePermissionPrompt,
   isPlaydateDetailPath,
+  isPromptSuppressedPath,
+  shouldSpendPushPoint,
   type BrowserPermission,
   type PermissionDecision,
   type PushOptInGate,
@@ -17,18 +20,26 @@ import {
   currentPermission,
   dismissPushPrompt,
   enablePush,
+  markPushPointOffered,
+  offeredPushPoints,
   subscribePushArmed,
 } from '../lib/pushClient'
 
 /**
- * The post-action notification prompt (V8 ticket 08).
+ * The post-action notification prompt (V8 ticket 08; V25 ticket 15's three
+ * trigger points).
  *
  * THE PIN THIS COMPONENT EXISTS TO HOLD: never on a cold load. It renders
  * nothing until a MEANINGFUL ACTION has been recorded in this tab
- * (sessionStorage — `armPushPromptForAction`, called after a post is created and
- * after a ping is saved), and it renders nothing at all on /settings, where the
- * real control lives. The whole decision is the pure `decidePermissionPrompt`
- * seam; this file only reads the facts and draws the card.
+ * (sessionStorage — `armPushPromptForAction`, called when an account is created,
+ * after a post is created, and after a ping is saved), and it renders nothing at
+ * all on /settings (where the real control lives), /onboarding and /new (surfaces
+ * the app navigates out of by itself — see `isPromptSuppressedPath`). The whole
+ * decision is the pure `decidePermissionPrompt` seam; this file only reads the
+ * facts and draws the card. The second decision this file used to make — WHEN a
+ * point is spent — was an `if` here until the fix round; it is now the pure
+ * `shouldSpendPushPoint` in the same lib module, so the vitest lane can reach it
+ * (fix-round finding 2: a rule that lives only in a .tsx is untestable).
  *
  * HOW IT LEARNS THAT THE ACTION HAPPENED (fix-round finding B): the arm is
  * written by a PAGE's event handler and this component lives in the SHELL,
@@ -37,14 +48,24 @@ import {
  * `pathname` change therefore only ever caught the one action that navigates
  * (a created post). The arm now publishes through
  * `subscribePushArmed` (src/lib/pushClient.ts), which is the observation path;
- * `pathname` is still re-read for the /settings suppression.
+ * `pathname` is still re-read for the /settings suppression (and, since V25
+ * ticket 15, it is also the fact that ends the RSVP deferral — see
+ * `isRsvpDeferredAt`).
+ *
+ * EACH POINT IS OFFERED AT MOST ONCE (V25 ticket 15). The moment this card is
+ * actually drawn for a trigger point, the point is recorded as offered
+ * (`markPushPointOffered` — localStorage, so it survives a reload), and the pure
+ * seam then refuses to ask for it again. "Not now" records the same point and
+ * says the pinned fallback sentence on this render (see the button below); a
+ * parent who says not-now at signup is still asked after their first post and
+ * again when they say they are going.
  *
  * AND WHEN IT MAY NOT ASK (fix-round finding F): a denial or a "Not now" after
  * a real action used to render NOTHING — the fallback sentence the ticket pins
  * ("…pings and cancellations also show up in the While you were away card")
  * only ever appeared on /profile. Now the prompt stands down and says the
- * sentence once, in the same place, then stops (see the effect below). A cold
- * load still renders nothing at all: no trigger, no card, no note.
+ * sentence once, in the same place, then stops. A cold load still renders
+ * nothing at all: no trigger, no card, no note.
  */
 export function PushOptInPrompt() {
   const { pathname } = useLocation()
@@ -53,6 +74,7 @@ export function PushOptInPrompt() {
   const [gate, setGate] = useState<PushOptInGate>({ allowed: true, reason: null })
   const [trigger, setTrigger] = useState<PushPromptTrigger | null>(null)
   const [origin, setOrigin] = useState<string | null>(null)
+  const [offered, setOffered] = useState<PushPromptTrigger[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   /** The sentence said INSTEAD of the prompt, held until it is dismissed or a
@@ -65,6 +87,7 @@ export function PushOptInPrompt() {
     setGate(currentOptInGate())
     setTrigger(armedPushTrigger())
     setOrigin(armedPushOrigin())
+    setOffered(offeredPushPoints())
   }, [])
 
   useEffect(() => {
@@ -78,9 +101,10 @@ export function PushOptInPrompt() {
   }, [readFacts, pathname])
 
   // /settings owns this surface (its Notifications section, V11 ticket 06
-  // moved it off the read-only /profile), so the floating prompt stays out of
-  // the way there.
-  const suppressed = pathname === '/settings'
+  // moved it off the read-only /profile), and /onboarding and /new are surfaces
+  // the app navigates out of by itself — see isPromptSuppressedPath. The
+  // floating prompt stays out of the way on all three.
+  const suppressed = isPromptSuppressedPath(pathname)
 
   // First-use audit (ticket 03): a drop-in's DETAIL page is the one surface
   // whose immediate confirmation — "✓ Going", the count, "You" — must not share
@@ -90,16 +114,53 @@ export function PushOptInPrompt() {
   // deferral is real visually and not just logically. Leaving the detail page
   // re-reads the facts and the held `note`, so the next feed visit still
   // surfaces whatever this parent's answer deserves.
+  //
+  // V25 ticket 15: the deferral is decided on the ACTION's route and the live
+  // one together (see `isRsvpDeferredAt`), so a ping saved here is offered on
+  // the next non-detail surface instead of being swallowed for the tab's life.
   const onDetailPage = isPlaydateDetailPath(pathname)
 
-  const state = decidePermissionPrompt({ decision, permission, trigger, origin, gate })
+  const state = decidePermissionPrompt({
+    decision,
+    permission,
+    trigger,
+    origin,
+    currentPath: pathname,
+    offered,
+    gate,
+  })
+
+  /**
+   * The point the parent is looking at IS now offered (V25 ticket 15). Recorded
+   * here, the moment the card is drawn, and not when the action was armed: a
+   * ping saved on a detail page is armed and then DEFERRED, and the point may
+   * not be spent without ever having been put in front of them.
+   *
+   * WHEN that is (fix-round finding 2): the rule is the pure
+   * `shouldSpendPushPoint` in src/lib/push.ts — not an `if` here, because
+   * "suppressed surface", "detail page" and "the seam decided to ask" are rules,
+   * and a rule that lives only in a .tsx is unreachable from the vitest lane.
+   * This effect only applies it. (The `trigger === null` guard below is the type
+   * narrowing `markPushPointOffered` needs — the rule already refused a null
+   * trigger, so it is a cast, not a second decision.)
+   *
+   * The write deliberately does not notify this component's own listeners — the
+   * card that is up must not pull itself out from under the parent. The next
+   * fact re-read (a route hop, an answer, a new action) sees the point as spent.
+   */
+  useEffect(() => {
+    if (trigger === null) return
+    if (!shouldSpendPushPoint({ ask: state.ask, trigger, currentPath: pathname })) return
+    markPushPointOffered(trigger)
+  }, [state.ask, trigger, pathname])
 
   /**
    * Say the fallback sentence ONCE, and stand the trigger down so it cannot
    * trail the parent around the app: the prompt is a one-shot offer, not a
-   * banner. The parent's answer is already remembered (a denial is in
-   * localStorage, "Not now" is the 'dismissed' decision), so clearing the armed
-   * trigger changes nothing about what may be asked later.
+   * banner. This is the path for the outcomes that are NOT the card's own "Not
+   * now" button — a browser denial, a closed gate, an unsupported browser: each
+   * is a fact that needs saying without a prompt, and the armed action is
+   * consumed with it.
    *
    * It does NOT clear on a cold load (trigger null) — an unsupported browser or
    * an un-installed iOS Safari tab already has its explanation in /settings, and
@@ -110,6 +171,9 @@ export function PushOptInPrompt() {
    * trigger there would consume it without ever showing the parent anything —
    * the deferral would silently become a dismissal. Leaving it armed lets the
    * next feed visit surface whatever this parent's answer deserves.
+   *
+   * A point already offered yields `note: null` (the pure seam's step 6), so
+   * this effect cannot re-say a sentence for a spent point.
    */
   useEffect(() => {
     if (suppressed || onDetailPage || trigger === null) return
@@ -149,8 +213,12 @@ export function PushOptInPrompt() {
             className="min-h-11 rounded-md border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700"
             data-testid="push-optin-not-now"
             onClick={() => {
-              dismissPushPrompt()
-              readFacts()
+              // The point is spent for good, and the sentence is said HERE
+              // rather than derived from the stored trigger: the stored trigger
+              // is cleared with the answer (V25 ticket 15 — a spent point must
+              // read as silence, not as the sentence on a loop).
+              if (trigger !== null) dismissPushPrompt(trigger)
+              setNote(DISMISSED_POINTER)
             }}
           >
             Not now

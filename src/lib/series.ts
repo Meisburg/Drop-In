@@ -269,9 +269,12 @@ export function seriesLineLabel(weekday: number, startMinutes: number): string {
 }
 
 /**
- * The meta line's weekly marker: ` · weekly` for an occurrence (a post whose
- * series_id is set), '' for a one-off. Appended to the EXISTING meta line as
- * text — the badge slot stays as it is (the no-new-badge pin).
+ * The weekly marker: ` · weekly` for an occurrence (a post whose series_id is
+ * set), '' for a one-off. Appended to an EXISTING line as text — the badge slot
+ * stays as it is (the no-new-badge pin). V25 ticket 05 moved the CARD's half of
+ * that suffix from the card's old meta line to its new when line (the day · time
+ * line under the title, which is never empty, so the suffix can never dangle);
+ * the detail page still appends it to its own meta line.
  */
 export function weeklyMetaSuffix(seriesId: string | null | undefined): string {
   return typeof seriesId === 'string' && seriesId !== '' ? WEEKLY_MARKER : ''

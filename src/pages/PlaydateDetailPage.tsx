@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { DeletePlaydateDialog } from '../components/DeletePlaydateDialog'
@@ -6,6 +6,7 @@ import { HostAvatar } from '../components/DropInCard'
 import { PhotoButton } from '../components/ImageLightbox'
 import { KidsComingPicker } from '../components/KidsComingPicker'
 import { ReportDialog } from '../components/ReportDialog'
+import { RsvpConfirmationDialog } from '../components/RsvpConfirmationDialog'
 import { useSessionContext } from '../components/SessionProvider'
 import { WeatherChip } from '../components/WeatherChip'
 import { LOGIN_PATH } from '../lib/auth'
@@ -75,6 +76,16 @@ import {
 // V8 ticket 08: recording the meaningful action (a saved ping) that may be
 // followed by the notification opt-in; the shell's PushOptInPrompt decides.
 import { armPushPromptForAction } from '../lib/pushClient'
+// V25 ticket 13: the RSVP confirmation lightbox — the pure state machine that
+// decides when it may appear (a ping's false→true result, once per yes) and the
+// copy builder whose claims are pinned by tests.
+import {
+  INITIAL_RSVP_CONFIRMATION,
+  classifyPingOutcome,
+  dismissRsvpConfirmation,
+  rsvpConfirmationAfterPing,
+  rsvpConfirmationOnRouteChange,
+} from '../lib/rsvpConfirmation'
 import { seriesLineLabel, weeklyMetaSuffix } from '../lib/series'
 import {
   COMMENT_MAX_LENGTH,
@@ -366,6 +377,11 @@ export function PlaydateDetailPage() {
   const [reporting, setReporting] = useState(false)
   const [pingBusy, setPingBusy] = useState(false)
   const [pingError, setPingError] = useState<string | null>(null)
+  // V25 ticket 13: the RSVP confirmation lightbox's state. The RULES live in
+  // `lib/rsvpConfirmation.ts` (pure, table-tested): only a ping's false→true
+  // result may raise it, at most once per yes, and an un-ping forgets the yes so
+  // a later re-ping is a genuinely new one. This is only the storage.
+  const [rsvpConfirmation, setRsvpConfirmation] = useState(INITIAL_RSVP_CONFIRMATION)
   // V8 ticket 02: the two degraded states' retry buttons (a failed going-count
   // read, a failed comment-thread read). Both live up here with every other
   // hook — the component returns early for its loading/error states, and a
@@ -785,6 +801,53 @@ export function PlaydateDetailPage() {
     }
   }, [id])
 
+  // V25 ticket 13: the RSVP confirmation belongs to the post it confirmed.
+  // Navigating to a DIFFERENT drop-in (the same mounted component) must not
+  // carry the old confirmation, its open dialog, or the memory of a yes the
+  // parent gave to another post.
+  //
+  // RECOVERY FIX (round 1). The first version called
+  // `forgetRsvpConfirmation(prev, id)` with the id being navigated TO — which
+  // forgets the WRONG post and returns the SAME state when that id was never
+  // confirmed. Executed against the real module:
+  // `forget({pending:null,confirmed:["A"]}, "B")` returns the original object,
+  // so the memory of A survived, and with B's dialog open the call on B→A left
+  // `pending:"B"` standing. That is a reachable break of the transition-only
+  // criterion: ping on B, press browser Back to an earlier `/playdate/:id`
+  // (same mounted route, no remount), and the still-pending box re-rendered over
+  // the post the parent just landed on.
+  //
+  // WHICH ID TO FORGET IS A RULE IN `lib/`, NOT A DECISION TAKEN HERE. The
+  // choice now lives in `rsvpConfirmationOnRouteChange` (round 2), whose two
+  // separate id parameters name what each one is, so the original bug — passing
+  // the id navigated TO as the id to forget — is a visible expression instead of
+  // an inline argument. Be precise about the limit: the tests beside that
+  // function pin the RULE, not THIS call site — reverting the call below to a
+  // wrong-id form was measured to leave them green, because NO TEST IMPORTS THIS
+  // PAGE (not because the environment cannot run it; it imports fine in the
+  // Node test env). Pinning this line would need a seam the suite can import,
+  // not a DOM suite.
+  //
+  // The ref holds the last SHOWN route id — confirmed or not — because a post
+  // the parent merely viewed is exactly what must not be forgotten. A first
+  // mount, a same-id re-render and an unconfirmed post all cost nothing: the
+  // rule returns the SAME object, so React discards the update.
+  //
+  // The dialog is additionally DERIVED from `pending === id` at the render site
+  // below, which the ref alone does not cover: on the way BACK to a post whose
+  // confirmation was previously dismissed, the memory of that post is gone, so
+  // `pending` still carries the route the parent just left — and with a merely
+  // non-null `pending` the box would RE-RAISE over the post being returned to.
+  // The effect cannot prevent that (effects run after paint); the derived guard
+  // can, before anything is shown.
+  const previousRouteIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const current = id === undefined || id === '' ? null : id
+    const previous = previousRouteIdRef.current
+    previousRouteIdRef.current = current
+    setRsvpConfirmation((prev) => rsvpConfirmationOnRouteChange(prev, previous, current))
+  }, [id])
+
   // V3 slice 2 (ticket 02): the best-effort "Rain likely" badge — the
   // Open-Meteo daily probability for the HOST's home_zip on the event's
   // local date (the post's location = the host's home zip, the V2 pin; the
@@ -812,6 +875,11 @@ export function PlaydateDetailPage() {
   async function handlePingToggle() {
     if (state.status !== 'ready' || pingBusy) return
     const detail = state.detail
+    // V25 ticket 13: the state BEFORE the tap. The confirmation is keyed on this
+    // toggle's false→true RESULT, never on `going` — `going` is also true on
+    // every load of a post the parent already said yes to, and the lightbox must
+    // not greet a returning parent (the ticket says so explicitly).
+    const wasGoing = state.going
     // V2 slice 5: the explicit tap happened — clear the stored ping intent
     // (the "Tap to confirm" highlight was its whole job).
     window.sessionStorage.removeItem(PLAYDATE_PING_INTENT_KEY)
@@ -826,6 +894,36 @@ export function PlaydateDetailPage() {
       // shell's PushOptInPrompt listens to); it owns the decision, not this
       // page. Only on the way IN: taking a ping back is not "we're going".
       if (going) armPushPromptForAction('ping_saved')
+      // V25 ticket 13: the write has LANDED — apply the toggle's own state now,
+      // BEFORE the two best-effort reads below.
+      //
+      // WHY THE HEAD START MATTERS, twice over:
+      //  - the confirmation must never DELAY or depend on the write. The ping is
+      //    in the database at this line; the button's `aria-pressed` and its
+      //    "✓ Going" label come off this same state, so the parent sees the
+      //    confirmation only over a button that already agrees with it;
+      //  - the count / guest-list reads are best-effort by design (V8 ticket 02
+      //    above), and the lightbox must not wait on them. A slow RPC now delays
+      //    nothing the parent is looking at.
+      // The merge below is IDENTICAL to the one this replaces — same fields,
+      // same `prev.detail.id` guard — just split so the outcome lands first.
+      setState((prev) =>
+        prev.status === 'ready' && prev.detail.id === detail.id
+          ? { ...prev, going }
+          : prev,
+      )
+      // The one transition allowed to raise the lightbox (the pure machine):
+      // `false → true`, not the host, not a ping already confirmed and
+      // dismissed. A no-op tap, an un-ping and a failed write all leave the
+      // state untouched — asserted by identity in `rsvpConfirmation.test.ts`.
+      setRsvpConfirmation((prev) =>
+        rsvpConfirmationAfterPing(
+          prev,
+          detail.id,
+          classifyPingOutcome(wasGoing, true, going),
+          isHost,
+        ),
+      )
       // V8 ticket 02: the count read is BEST-EFFORT here, deliberately. The
       // ping WRITE already landed — if only the follow-up read fails, this
       // used to throw and report "Could not update your ping" over a ping that
@@ -852,6 +950,10 @@ export function PlaydateDetailPage() {
       )
     } catch (err) {
       setPingError(err instanceof Error ? err.message : 'Could not update your ping. Try again.')
+      // A THROWN write confirms nothing — the parent is not going, and the
+      // state's `going` never moved. Left as an explicit no-op rather than an
+      // omission on purpose: `classifyPingOutcome`'s table pins that 'failed'
+      // can never raise the lightbox, so the failure path cannot drift into one.
     } finally {
       setPingBusy(false)
     }
@@ -2559,6 +2661,39 @@ export function PlaydateDetailPage() {
             setConfirmingDelete(false)
             setDeleteError(null)
           }}
+        />
+      ) : null}
+
+      {/* V25 ticket 13: the RSVP confirmation lightbox. Raised ONLY by the
+          ping's false→true result (the pure machine above owns that), so it
+          cannot appear on a load, on an un-ping, or a second time for the same
+          yes. The event facts come from the loaded detail — the dialog is
+          anchored to the drop-in the parent just joined, and dismissing it
+          leaves them on this page with the ping intact.
+
+          It is rendered from the same ready branch that owns the ping control,
+          which is also what makes "the host never sees it" structural: the host
+          has no ping control, so no host tap can reach
+          `rsvpConfirmationAfterPing`, and the machine refuses the host anyway
+          (`:1828-1838`).
+
+          `pending === id` and not merely `pending !== null`. The real reason is
+          the way BACK, not a stale frame: on the return to a post whose
+          confirmation was already dismissed, the post-switch rule has cleared
+          that post's memory, so `pending` is left carrying the route the parent
+          just came from. With a merely non-null `pending` the box would
+          RE-RAISE itself over the post being returned to — the one thing the
+          ticket forbids. The effect above cannot cover it (effects run after
+          paint); keying the render on the id the page is actually showing does,
+          before anything is drawn. */}
+      {rsvpConfirmation.pending === id ? (
+        <RsvpConfirmationDialog
+          facts={{
+            title: detail.title,
+            startsAt: detail.starts_at,
+            endsAt: detail.ends_at,
+          }}
+          onDismiss={() => setRsvpConfirmation(dismissRsvpConfirmation)}
         />
       ) : null}
     </div>

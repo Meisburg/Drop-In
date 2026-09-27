@@ -822,3 +822,237 @@ test('the link action lives on the parent card, and the standalone section is go
     await clearMarkerLinks().catch(() => {})
   }
 })
+
+/**
+ * V25 t09 — THE PARENTS ARE HORIZONTAL ROWS, and one of them is a real, private
+ * door out of this page.
+ *
+ * The founder's annotation 4 asked for "two horizontal rows … her profile
+ * picture and her name and her description … the name is clickable if it's
+ * linked to another account". The render is `ProfileView`'s "About the parents"
+ * block; this spec is the browser proof of what a viewer actually gets.
+ *
+ * WHAT IT PINS, and why each assertion can fail for the right reason:
+ *
+ *   (a) ONE ROW PER PARENT, EACH CARRYING THE CARD'S OWN WORDS. The card seeded
+ *       with a description must render it, and the card seeded without one must
+ *       render no description paragraph (no empty frame). The per-card scoping
+ *       is what makes this a row check rather than "the word appears somewhere
+ *       on the page": both are read on the row that owns that card's name.
+ *   (b) THE ROW IS A ROW — one line across. The three pieces (picture, name,
+ *       description) must share a horizontal band: their rects overlap
+ *       vertically, the name sits to the right of the picture, and the words sit
+ *       beside the name rather than under the picture. A layout regression to
+ *       three stacked blocks fails here and nowhere else.
+ *   (c) NO PHOTO, NO IMAGE, NO BARE FRAME. Exactly one of the two rows carries
+ *       the picture, and it is the card that was given one. `parent_cards`'s
+ *       `photo_url` is a value the row may render as given (`parentCardPhotoSrc`
+ *       — an http/data source); the other card has none.
+ *   (d) THE PICTURE IS THE LIGHTBOX, and Escape closes it — the same photo
+ *       component the family avatar uses, so a row's photo is not a dead image.
+ *   (e) UNLINKED MEANS PLAIN TEXT, and the count is exact: with NO account link
+ *       seeded, the marker's own two cards render as text and there is not one
+ *       link among them. (Change `parentCardPhotoSrc`'s name rule or make a card
+ *       alone a link and this fails.)
+ *   (f) 320px: NOTHING OVERFLOWS THE VIEWPORT. The row may wrap, never push a
+ *       horizontal scrollbar — the narrow-phone pin the ticket asks for.
+ *   (g) ANNOTATION 2: the redundant "tap to see past events" hint is GONE while
+ *       the count link that does the same job stays. Both halves are asserted,
+ *       so this cannot pass by deleting the control itself.
+ *
+ * WHY IT SEEDS ITS OWN STATE, and clears it before and after: it establishes the
+ * no-link state first (the marker's own link rows are deleted, as the spec above
+ * does) and then writes the two cards it asserts on, so nothing here depends on
+ * a previous spec's residue. Every row it creates is removed in the `finally`.
+ * The one LINK assertion is the marker's own accepted partner, whose card and
+ * name live in the 11A test above; `toHaveCount(0)` on this page is what this
+ * one owns.
+ *
+ * THE PHOTO IS A DATA URL ON PURPOSE. What is under test is the ROW's render
+ * path (`parentCardPhotoSrc` → the `<img>` → `PhotoButton`), not Supabase
+ * Storage. The private-bucket path form is deliberately NOT rendered by that
+ * rule (no parent-photo mint or storage class exists — see `parentCards.ts`),
+ * and the unit test pins that refusal; mixing a storage probe into a layout
+ * spec would make a layout red look like a bucket red.
+ */
+test('each parent is its own row — photo, name, description — and no link without a link (V25 t09)', async ({
+  page,
+}) => {
+  test.setTimeout(180_000) // live-DB reads + two card writes; no signups needed
+  const { url: restUrl, anonKey } = readSupabaseEnv()
+  const { accessToken: markerToken, userId: markerId } = readMarkerSession()
+
+  /** fetch with a hard 15s cap — a hung live-DB call must fail fast. */
+  async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 15_000)
+    try {
+      return await fetch(url, { ...init, signal: controller.signal })
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  function authed(token: string): Record<string, string> {
+    return { apikey: anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+  }
+
+  /** Remove the marker's own link rows, one row at a time by id (the 11B rule). */
+  async function clearMarkerLinks(): Promise<void> {
+    const asRequester = await fetchWithTimeout(
+      `${restUrl}/rest/v1/account_links?select=id&requester_id=eq.${markerId}`,
+      { headers: authed(markerToken) },
+    )
+    const asAddressee = await fetchWithTimeout(
+      `${restUrl}/rest/v1/account_links?select=id&addressee_id=eq.${markerId}`,
+      { headers: authed(markerToken) },
+    )
+    const rows = [
+      ...(asRequester.ok ? ((await asRequester.json()) as Array<{ id: string }>) : []),
+      ...(asAddressee.ok ? ((await asAddressee.json()) as Array<{ id: string }>) : []),
+    ]
+    for (const row of rows) {
+      await fetchWithTimeout(`${restUrl}/rest/v1/account_links?id=eq.${row.id}`, {
+        method: 'DELETE',
+        headers: authed(markerToken),
+      }).catch(() => {})
+    }
+  }
+
+  async function clearMarkerCards(): Promise<void> {
+    await fetchWithTimeout(`${restUrl}/rest/v1/parent_cards?profile_id=eq.${markerId}`, {
+      method: 'DELETE',
+      headers: authed(markerToken),
+    }).catch(() => {})
+  }
+
+  // A 1x1 transparent PNG. The row's business is that an <img> with this src
+  // resolves and opens the lightbox — not what the pixels say.
+  const PHOTO_DATA_URL =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+  const FIRST = 'e2e-plink Row One'
+  const FIRST_ABOUT = 'Loves the beach and the long way home.'
+  const SECOND = 'e2e-plink Row Two'
+
+  try {
+    // A deterministic starting point: no link state, no leftover cards.
+    await clearMarkerLinks()
+    await clearMarkerCards()
+    for (const [position, name, about, photo] of [
+      [1, FIRST, FIRST_ABOUT, PHOTO_DATA_URL],
+      [2, SECOND, null, null],
+    ] as const) {
+      const res = await fetchWithTimeout(`${restUrl}/rest/v1/parent_cards`, {
+        method: 'POST',
+        headers: { ...authed(markerToken), Prefer: 'return=representation' },
+        body: JSON.stringify({ profile_id: markerId, name, about, photo_url: photo, position }),
+      })
+      if (!res.ok) {
+        throw new Error(`parent_cards insert (slot ${position}) HTTP ${res.status} ${await res.text()}`)
+      }
+    }
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/profile')
+
+    const names = page.getByTestId('parent-names')
+    await expect(names).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByTestId('parent-row')).toHaveCount(2)
+    // ...and they live in the "About the parents" card, walked on the DOM (the
+    // 11A assertion, repeated because the ROW structure is new).
+    const insideAboutCard = await names.evaluate((el) => {
+      let node: HTMLElement | null = el as HTMLElement
+      while (node !== null) {
+        const heading = node.querySelector('h2')
+        if (heading?.textContent?.trim() === 'About the parents') return true
+        node = node.parentElement
+      }
+      return false
+    })
+    expect(
+      insideAboutCard,
+      'the parent rows must render inside the "About the parents" card',
+    ).toBe(true)
+
+    // ---- (a) one row per parent, each with the card's OWN words ------------
+    const rowOne = page.getByTestId('parent-row').filter({ hasText: FIRST })
+    const rowTwo = page.getByTestId('parent-row').filter({ hasText: SECOND })
+    await expect(rowOne).toHaveCount(1)
+    await expect(rowTwo).toHaveCount(1)
+    await expect(rowOne).toContainText(FIRST_ABOUT)
+    // The card WITH words renders a description paragraph; the card WITHOUT one
+    // renders none — no empty paragraph standing in for a description.
+    await expect(rowOne.locator('p')).toHaveCount(1)
+    await expect(rowTwo.locator('p')).toHaveCount(0)
+
+    // ---- (b) it is ONE row: the pieces share a horizontal band -------------
+    async function bandOf(locator: ReturnType<typeof page.getByTestId>) {
+      const box = await locator.boundingBox()
+      if (box === null) throw new Error('an element that should be on screen has no box')
+      return box
+    }
+    const photoBox = await bandOf(rowOne.getByTestId('parent-card-photo'))
+    const nameOneBox = await bandOf(rowOne.getByTestId('parent-name'))
+    const aboutBox = await bandOf(rowOne.locator('p'))
+    expect(
+      photoBox.y < nameOneBox.y + nameOneBox.height && nameOneBox.y < photoBox.y + photoBox.height,
+      'the photo and the name must sit in the SAME horizontal band (a row, not a stack)',
+    ).toBe(true)
+    expect(nameOneBox.x, 'the name begins to the right of the picture').toBeGreaterThanOrEqual(
+      photoBox.x + photoBox.width,
+    )
+    expect(
+      aboutBox.x,
+      'the description starts beside the name, not back under the picture',
+    ).toBeGreaterThanOrEqual(nameOneBox.x)
+
+    // ---- (c) no photo, no image, no bare frame -----------------------------
+    await expect(rowOne.getByTestId('parent-card-photo')).toHaveCount(1)
+    await expect(rowTwo.getByTestId('parent-card-photo')).toHaveCount(0)
+    await expect(page.getByTestId('parent-card-photo')).toHaveCount(1)
+
+    // ---- (d) the picture opens the app's lightbox, and Escape closes it ----
+    // The lightbox names the photo on the DIALOG itself (`aria-label`), not in
+    // its text content — the alt text is the accessible name, so assert THAT
+    // rather than visible copy the overlay never renders.
+    await rowOne.getByTestId('parent-card-photo').click()
+    const lightbox = page.getByRole('dialog')
+    await expect(lightbox).toBeVisible()
+    await expect(lightbox).toHaveAttribute('aria-label', `${FIRST}’s photo`)
+    await page.keyboard.press('Escape')
+    await expect(lightbox).toHaveCount(0)
+
+    // ---- (e) unlinked means plain text, and the count is exact -------------
+    await expect(page.getByTestId('parent-name')).toHaveCount(2)
+    await expect(
+      page.getByTestId('parent-name-link'),
+      'no account link is seeded, so NO parent name may be a link',
+    ).toHaveCount(0)
+
+    // ---- (f) 320px: the row wraps, nothing pushes the page sideways --------
+    await page.setViewportSize({ width: 320, height: 844 })
+    const overflow = await page.evaluate(() => ({
+      scroll: document.documentElement.scrollWidth,
+      client: document.documentElement.clientWidth,
+    }))
+    expect(
+      overflow.scroll,
+      `the 320px row must not overflow (scrollWidth ${overflow.scroll} vs clientWidth ${overflow.client})`,
+    ).toBeLessThanOrEqual(overflow.client)
+
+    // ---- (g) annotation 2: the redundant hint is gone ------------------------
+    // The hint is asserted ABSENT, not "the link is present": whether this
+    // marker has a hosted drop-in at this moment is live data it does not own
+    // (its own posts are created and removed by other specs), and the count
+    // link's own text is already pinned exactly by host-retention and
+    // profile-posts. What this slice removed is the hint, and that is what this
+    // checks.
+    await expect(page.getByText('tap to see past events')).toHaveCount(0)
+  } finally {
+    // Best-effort, each query scoped to the marker's own rows. The `e2e-` name
+    // on both cards and the marker account itself are the sweep's net if a hard
+    // crash lands here.
+    await clearMarkerCards()
+    await clearMarkerLinks().catch(() => {})
+  }
+})

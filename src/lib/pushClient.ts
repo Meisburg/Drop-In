@@ -30,12 +30,15 @@ import {
   installSurface,
   isKindMuted,
   isStandalone,
+  migrateLegacyDecisionOnce,
   parsePushPrefs,
   pushOptInGate,
   readArmedOrigin,
   readArmedTrigger,
+  readOfferedTriggers,
   readPermissionDecision,
   rememberPermissionDecision,
+  rememberTriggerOffered,
   serializePushPrefs,
   setKindMuted,
   type BrowserPermission,
@@ -345,23 +348,53 @@ export function armedPushTrigger(): PushPromptTrigger | null {
   return readArmedTrigger(sessionStore())
 }
 
+/**
+ * The trigger points already OFFERED to this parent (localStorage, permanent —
+ * see the offered-set section in src/lib/push.ts). Read by the prompt as one of
+ * the facts the pure decision seam judges.
+ */
+export function offeredPushPoints(): PushPromptTrigger[] {
+  return readOfferedTriggers(localStore())
+}
+
+/**
+ * Record that this point has been put in front of the parent. Written the
+ * moment the card is drawn (the point IS offered then) — deliberately WITHOUT
+ * notifying the prompt's own listeners: the card that is up must not unmount
+ * itself. The next fact re-read sees it and stops asking.
+ */
+export function markPushPointOffered(trigger: PushPromptTrigger): void {
+  rememberTriggerOffered(localStore(), trigger)
+}
+
 /** The route the still-armed action happened on, or null when unknown. */
 export function armedPushOrigin(): string | null {
   return readArmedOrigin(sessionStore())
 }
 
 /**
- * "Not now": remember the answer, so the prompt never asks again.
+ * "Not now": remember that THIS point has been offered — for this point only
+ * (V25 ticket 15's re-ask rule). A parent who says not-now at signup is still
+ * asked after their first post and again when they say they are going.
  *
- * It deliberately does NOT clear the armed trigger: the prompt's own note effect
- * (src/components/PushOptInPrompt.tsx) says the pinned "you can turn them on
- * any time from your settings … while you were away" sentence when it sees that
- * the answer was a fallback outcome, and THEN stands the trigger down. Clearing
- * it here would make the card vanish silently instead — which is exactly the
- * discarded-note bug of finding F.
+ * TWO THINGS IT DELIBERATELY DOES NOT DO:
+ *
+ *  * It does NOT write the 'dismissed' decision. That value is now the GLOBAL
+ *    answer — "Turn off notifications" in /settings (see disablePush) — and a
+ *    global dismissal here is exactly what made a not-now at one point cancel
+ *    every later point. The per-point fact lives in the offered set instead.
+ *    (Fix round, finding 1: the /settings off-switch is now the ONLY writer of
+ *    'dismissed'. A dismissed OS dialog no longer writes it either — see
+ *    enablePush — and a legacy value from the pre-ticket-15 prompt is reset once
+ *    by migrateLegacyDecisionOnce, so this comment is true rather than intended.)
+ *  * It does NOT leave the armed trigger standing. The point is spent, so the
+ *    action that armed it has been consumed; the prompt's note (the pinned
+ *    "you can turn them on any time from your settings …" sentence) is held by
+ *    the caller for this render rather than derived from the stored trigger.
  */
-export function dismissPushPrompt(): void {
-  rememberPermissionDecision(localStore(), 'dismissed')
+export function dismissPushPrompt(trigger: PushPromptTrigger): void {
+  markPushPointOffered(trigger)
+  clearArmedTrigger(sessionStore())
   notifyArmed()
 }
 
@@ -381,7 +414,16 @@ export function currentOptInGate() {
   return pushOptInGate({ ...deviceFacts(), standalone: runningStandalone() })
 }
 
+/**
+ * The browser half of `decidePermissionPrompt`: read the decision, running the
+ * one-time legacy migration first (V25 ticket 15, fix round) so a parent who
+ * dismissed the OLD prompt (a legacy 'dismissed') is not silently locked out of
+ * the three-moment feature. Every decision read in the browser goes through
+ * here (the prompt component, the /settings control, and the repair path), so
+ * the migration runs once before the first real read.
+ */
 export function currentDecision(): PermissionDecision {
+  migrateLegacyDecisionOnce(localStore())
   return readPermissionDecision(localStore())
 }
 
@@ -412,7 +454,11 @@ function describeError(error: unknown): string {
  * else; the row is written LAST so the UI can never claim "on" without a row
  * (which is precisely the state the pre-apply red e2e spec pins).
  *
- * A denial (or a dismissed dialog) is REMEMBERED, so the prompt never nags.
+ * A denial is REMEMBERED ('denied'), so the prompt never nags. A dismissed
+ * dialog is NOT remembered (fix round, finding 1): the parent merely closed the
+ * OS box, and remembering that as 'dismissed' would silence the three-moment
+ * feature forever — 'dismissed' is written only by the /settings off-switch
+ * (disablePush, below).
  */
 export async function enablePush(): Promise<PushEnableResult> {
   if (!pushSupported()) {
@@ -435,7 +481,10 @@ export async function enablePush(): Promise<PushEnableResult> {
     return { ok: false, reason: 'denied', message: DENIED_POINTER }
   }
   if (permission !== 'granted') {
-    rememberPermissionDecision(localStore(), 'dismissed')
+    // A DISMISSED DIALOG IS NOT REMEMBERED (fix round, finding 1). The parent
+    // merely closed the OS box; remembering it as 'dismissed' would silence the
+    // three-moment feature forever. 'dismissed' is written only by the
+    // /settings off-switch (disablePush, below) — nothing is remembered here.
     return { ok: false, reason: 'dismissed', message: DISMISSED_POINTER }
   }
 

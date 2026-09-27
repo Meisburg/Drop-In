@@ -1,7 +1,6 @@
-import { useEffect, useRef } from 'react'
-import { createPortal } from 'react-dom'
+import { useRef } from 'react'
 import { fieldA11y } from '../lib/a11y'
-import { useFocusTrap } from './FocusTrap'
+import { ModalShell } from './ModalShell'
 
 /**
  * The one in-page confirmation dialog (V8 ticket 10) — the DeletePlaydateDialog
@@ -17,6 +16,14 @@ import { useFocusTrap } from './FocusTrap'
  *
  * Focus lands on Cancel (never the destructive button), so a stray Enter
  * cancels instead of destroying something.
+ *
+ * V25 ticket 13 moved the modal MECHANICS — portal, backdrop, `role="dialog"`,
+ * `aria-modal`, the accessible name, the focus trap, Escape and the scroll lock
+ * — into `ModalShell`, so the RSVP confirmation lightbox could be a second
+ * consumer of ONE shell rather than a third copy of it. This component keeps
+ * what is specific to a CONFIRMATION and nothing else: the two buttons, which
+ * one takes focus, and the destructive styling. No test id, class, string or
+ * behaviour changed in the move.
  *
  * Callers today: the comment delete confirm and the kid-row Remove confirm —
  * both destructive. The `destructive: false` branch (a plain indigo confirm)
@@ -47,71 +54,40 @@ export function ConfirmDialog({
   onCancel: () => void
 }) {
   const cancelRef = useRef<HTMLButtonElement>(null)
-  const dialogRef = useRef<HTMLDivElement>(null)
 
-  // Focus lands on the safe choice when the dialog opens.
-  useEffect(() => {
-    cancelRef.current?.focus()
-  }, [])
-
-  // Trap Tab inside the dialog; restore focus to the trigger on close.
-  useFocusTrap(dialogRef, true)
-
-  // Esc closes (same as a backdrop click), unless the write is in flight.
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape' && !busy) onCancel()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onCancel, busy])
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
-      role="presentation"
-      onClick={(event) => {
-        if (event.target === event.currentTarget && !busy) onCancel()
-      }}
+  return (
+    <ModalShell
+      title={title}
+      testId={testId ?? 'confirm-dialog'}
+      busy={busy}
+      onDismiss={onCancel}
+      initialFocusRef={cancelRef}
     >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="confirm-dialog-title"
-        data-testid={testId ?? 'confirm-dialog'}
-        className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-4 shadow-lg"
-      >
-        <h2 id="confirm-dialog-title" className="text-base font-semibold text-slate-900">
-          {title}
-        </h2>
-        <p className="mt-2 text-sm text-slate-600">{body}</p>
-        <div className="mt-4 flex items-center justify-end gap-2">
-          <button
-            ref={cancelRef}
-            type="button"
-            disabled={busy}
-            onClick={onCancel}
-            className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600 disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onConfirm}
-            data-testid="confirm-dialog-confirm"
-            className={
-              'rounded-xl px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ' +
-              (destructive ? 'bg-red-600' : 'bg-indigo-600')
-            }
-            {...fieldA11y('submit', null)}
-          >
-            {busy ? (busyLabel ?? confirmLabel) : confirmLabel}
-          </button>
-        </div>
+      <p className="mt-2 text-sm text-slate-600">{body}</p>
+      <div className="mt-4 flex items-center justify-end gap-2">
+        <button
+          ref={cancelRef}
+          type="button"
+          disabled={busy}
+          onClick={onCancel}
+          className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600 disabled:opacity-50"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onConfirm}
+          data-testid="confirm-dialog-confirm"
+          className={
+            'rounded-xl px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ' +
+            (destructive ? 'bg-red-600' : 'bg-indigo-600')
+          }
+          {...fieldA11y('submit', null)}
+        >
+          {busy ? (busyLabel ?? confirmLabel) : confirmLabel}
+        </button>
       </div>
-    </div>,
-    document.body,
+    </ModalShell>
   )
 }

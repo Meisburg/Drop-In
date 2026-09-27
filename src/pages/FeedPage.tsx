@@ -54,10 +54,12 @@ import {
 import { geocodeAddress } from '../lib/geocode'
 import type { DailyForecast } from '../lib/weather'
 import {
+  feedMapPinEvent,
   feedMapPins,
   framingCircle,
   MAP_FOCUS_RADIUS_MILES,
   distanceMiles,
+  type MapPinEvent,
 } from '../lib/places'
 // V21 t09 (A9): the feed view toggle's pure rules — default list, labels, and
 // which view makes the map band the primary content. The page holds the state;
@@ -145,9 +147,9 @@ const FEED_REFRESH_WINDOW_MS = 60_000
  * (db.listPingsForPosts: the going_pings rows + the pinger profiles
  * embed, the FK hint pinned, ordered by the 0020 created_at); the rows
  * are grouped by post and each card renders its group via the pure
- * buildGoingLine ("N going" + up to 3 circles + a "+N" chip), replacing
- * the old age-hint line. The host's own posts keep the line (the host
- * sees who's coming); the signed-out public view never renders a
+ * buildGoingLine (up to 3 circles + a "+N" chip + the "N going" label),
+ * replacing the old age-hint line. The host's own posts keep the line (the
+ * host sees who's coming); the signed-out public view never renders a
  * DropInCard, so no circles cross to it (the 0015 going-count pin stays
  * count-only there). A failed pings load (pre-0020-apply: the created_at
  * column is missing → 42703) degrades to no going lines, never a crash.
@@ -231,7 +233,7 @@ export function FeedPage() {
   // One in-flight card toggle per feed (the write path round-trips).
   const [pingBusyPostId, setPingBusyPostId] = useState<string | null>(null)
   // V3 slice 4 (ticket 07): the feed posts' "going" pings (the cards'
-  // going lines — "N going" + up to 3 avatar circles + a "+N" chip). The
+  // going lines — up to 3 avatar circles + a "+N" chip + "N going"). The
   // rows are grouped by post id (the card renders its own group via the
   // pure buildGoingLine). null = not settled (the cards show no line
   // yet); a failed load (pre-0020-apply: 42703 on the missing created_at
@@ -380,6 +382,28 @@ export function FeedPage() {
    * and the map keeps its own mount view rather than framing on nothing.
    */
   const feedPins = feedMapPins(posts ?? [])
+  /**
+   * V25 t07 — THE FEED PIN IDENTITY, and the event payload that goes with it.
+   *
+   * The map's popup is keyed by the id the pin carries in the `places` array
+   * below, so that id is built ONCE, here, and the `places` array and the
+   * `pinEvents` lookup both read it. Two spellings of `feed-pin-${index}` in one
+   * render is exactly how a lookup goes missing for the free-text pins the
+   * ticket calls out — those are the pins with no directory id, and they must
+   * name their event like any other.
+   *
+   * `feedMapPinEvent` is the tested seam: the SOONEST of the drop-ins behind the
+   * dot, its title and `cardWhenLabel` window, the "N more drop-ins here"
+   * sentence when the dot stands for several, and the `/playdate/:id` the bubble
+   * links. Null when a pin names no event, and the popup then keeps its
+   * place-only content.
+   */
+  const feedPinIds = feedPins.map((pin, index) => pin.placeId ?? `feed-pin-${index}`)
+  const feedPinEvents = new Map(
+    feedPins
+      .map((pin, index) => [feedPinIds[index], feedMapPinEvent(pin)] as const)
+      .filter((entry): entry is readonly [string, MapPinEvent] => entry[1] !== null),
+  )
   /** V19 t02: how many feed pins fall OUTSIDE the neighbourhood frame the map
    * draws. The header counts every place in the FEED; the map shows only the
    * ones near home, so this states the difference rather than letting the two
@@ -1116,7 +1140,7 @@ export function FeedPage() {
                    that cannot succeed. Such a pin keeps the informational
                    panel — the place text the parent typed. */
                 places={feedPins.map((pin, index) => ({
-                  id: pin.placeId ?? `feed-pin-${index}`,
+                  id: feedPinIds[index],
                   name: pin.name === '' ? 'Drop-in location' : pin.name,
                   kind: 'other' as const,
                   address: pin.address,
@@ -1134,6 +1158,10 @@ export function FeedPage() {
                 homePin={homePinCoords}
                 radiusCircle={feedMapFrame}
                 placeActions={feedPins.every((pin) => pin.placeId !== null)}
+                /* V25 t07: what each pin's popup should say about the EVENT
+                   happening there. The browse and picker surfaces pass nothing
+                   and are unchanged (see `PlacesMap`'s prop doc). */
+                pinEvents={feedPinEvents}
               />
               {/* V19 t02: the same honesty rule the browse map follows. The map
                   frames the NEIGHBOURHOOD (`MAP_FOCUS_RADIUS_MILES`), and the

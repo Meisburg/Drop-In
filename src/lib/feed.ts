@@ -969,6 +969,41 @@ export function formatTimeWindow(startIso: string, endIso: string): string {
 }
 
 /**
+ * The card's WHEN line (V25 ticket 05): the day, then the window —
+ * "Sat, Sep 26 · 6:30 PM–7:30 PM" — the compact form the founder's own
+ * reference screenshot shows ("Sat, Sep 26 · 5:00 PM PDT").
+ *
+ * NO ZONE LABEL, AND NONE INVENTED HERE: this line prints no zone and this
+ * function adds none, so the screenshot's "PDT" is not produced. (The app is not
+ * zoneless: `series.resolveTimeZone` / `deviceTimeZone` serve weekly-series
+ * scheduling and `playdate_series` stores a zone. A one-off `playdates` row
+ * stores only starts_at/ends_at, and this line's window is `formatTimeWindow` —
+ * device-local, with no zone parameter — so nothing could label it with the
+ * EVENT's zone rather than the viewer's. See the ticket's timezone question,
+ * deliberately left unanswered.)
+ *
+ * WHY THE DATE AND NEVER "Today"/"Tomorrow": the card is not always under a day
+ * header (browse, both place pages and a profile's Upcoming/Past lists render
+ * bare cards), and what the founder asked for is the day it is happening — a
+ * DATE. So this runs the app's existing always-the-date wording —
+ * `formatStartDayLabel`, the documented sibling of `formatDayLabel` that skips
+ * the today/tomorrow branch — over the same local calendar day `localDayKey`
+ * hands `formatDayLabel`, i.e. the same day, the same WEEKDAYS_SHORT /
+ * MONTHS_SHORT tables, and NO second today/tomorrow rule.
+ *
+ * ONE LINE, TWO FACTS: day and time are joined here so the card renders a single
+ * <p> and a spec can assert a single string. The window is `formatTimeWindow` —
+ * the app's ONE window rule — never a second `toLocaleTimeString`. A start that
+ * does not parse yields `formatStartDayLabel`'s '' and the line falls back to
+ * the window alone (no dangling " · ").
+ */
+export function cardWhenLabel(startIso: string, endIso: string): string {
+  const day = formatStartDayLabel(localDayKey(startIso))
+  const window = formatTimeWindow(startIso, endIso)
+  return day === '' ? window : `${day} · ${window}`
+}
+
+/**
  * The start's UTC ISO instant for a local calendar date + minutes since
  * local midnight. `startDate` is the device's local date (the date input's
  * value); the stored timestamptz must be the local moment the parent meant,
@@ -1227,7 +1262,7 @@ export function rainBadgeLabel(probability: number | null): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// V3 slice 4 (ticket 07): the card's going line — "N going" + circles.
+// V3 slice 4 (ticket 07): the card's going line — circles + the "N going" count.
 
 /**
  * One pinger the card's going line shows (V3 slice 4, ticket 07): the
@@ -1264,9 +1299,11 @@ export const GOING_CIRCLE_LIMIT = 3
 
 /**
  * The card's going line (V3 slice 4, ticket 07; V6 adds the kids count):
- * "N going · M kids" + up to `limit` pinger circles (avatar, or the
- * display-name initial on a slate-200 circle when there is no avatar) + a "+N"
- * overflow chip. The kids count is a bare number by design (decision #2,
+ * the "N going · M kids" label, up to `limit` pinger circles (avatar, or the
+ * display-name initial on a slate-200 circle when there is no avatar), and a
+ * "+N" overflow chip. The seam returns PARTS, not an arrangement: which part
+ * renders first is the card's business (V25 ticket 06 draws the circles
+ * first). The kids count is a bare number by design (decision #2,
  * 2026-09-11) — names and ages only reach the host and the people going.
  *
  * Pure + unit-tested: the caller (the feed page) groups the pings by post
@@ -1564,6 +1601,49 @@ export function kidLabel(
   if (trimmed !== '') return trimmed
   if (hasAge) return `Age ${age}`
   return ''
+}
+
+/** One kid row's name and age, split for the profile card's typographic row. */
+export interface KidHeading {
+  /** The first name, trimmed — '' when the kid has none (the age-only fallback). */
+  name: string
+  /** "Age 6", or null when this kid has no age — never a bare number. */
+  age: string | null
+  /** `kidLabel`'s whole label, for the age-only row that has no name to lead with. */
+  fallback: string
+}
+
+/**
+ * V25 t09 (the founder's annotation 3): ONE KID'S HEADING, SPLIT FOR RENDERING.
+ *
+ * The kids list on the read surface used to be one run-on line — "Sam · Age 6 ·
+ * Likes: soccer" — and the founder's note was that it "just looks like there's
+ * just like a name … it should be formatting here. It makes it more legible."
+ * Making the NAME the row's lead and the AGE its own secondary mark means the
+ * two halves have to be separable, and this is the seam that separates them
+ * while keeping `kidLabel` the one rule that decides WHICH words appear:
+ *
+ *   - name + age → `{ name: 'Sam', age: 'Age 6', fallback: 'Sam · Age 6' }`
+ *   - name only  → `{ name: 'Sam', age: null,    fallback: 'Sam' }`
+ *   - age only   → `{ name: '',    age: null,    fallback: 'Age 6' }`
+ *   - neither    → all empty; the caller renders nothing.
+ *
+ * A name with a trailing space is trimmed HERE, so the renderer never has to.
+ * The age-only case deliberately sets `age: null` and carries "Age 6" in
+ * `fallback` instead: there is no lead for a secondary mark to sit beside, so
+ * the row renders the label as one piece (which is what it always did).
+ */
+export function kidHeading(kid: {
+  first_name?: string | null
+  age?: number | null
+}): KidHeading {
+  const name = (kid.first_name ?? '').trim()
+  const hasAge = typeof kid.age === 'number' && Number.isFinite(kid.age)
+  return {
+    name,
+    age: name !== '' && hasAge ? `Age ${kid.age}` : null,
+    fallback: kidLabel(kid.first_name, kid.age),
+  }
 }
 
 /** Upper-case the first character (the detail line heads its own sentence). */

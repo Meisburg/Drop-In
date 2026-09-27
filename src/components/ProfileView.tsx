@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { DropInCard, HostAvatar } from './DropInCard'
-import { PhotoButton } from './ImageLightbox'
+import { PhotoButton, FamilyPhotoBlock } from './ImageLightbox'
 import { ReportDialog } from './ReportDialog'
 import { useSessionContext } from './SessionProvider'
 import { useFamilyPhotoUrl } from './useFamilyPhotoUrl'
+import { galleryPhotosFrom } from '../lib/photoGallery'
 import { useKidPhotoUrls } from './useKidPhotoUrls'
 import {
   countPostsByHost,
@@ -17,7 +18,7 @@ import {
   toggleBlock,
   toggleFollowProfile,
 } from '../lib/db'
-import { cardAgeRangeLabel, kidLabel, partitionPostsByTime } from '../lib/feed'
+import { cardAgeRangeLabel, kidHeading, partitionPostsByTime } from '../lib/feed'
 import { linkedNameTargetForViewer } from '../lib/links'
 import { parentNameRows } from '../lib/parentCards'
 import { profileBlurbOrder, profileHasBio } from '../lib/photoStorage'
@@ -63,11 +64,16 @@ export const PROFILE_VIEW_SECTIONS: readonly ProfileSectionKey[] = [
  *    name every block both surfaces show). The JSX below lays the three
  *    optional blocks out in exactly the sequence that function emits them.
  *
- * PRIVACY NOTE (carried from UserPage, unchanged by the extraction): the whole
- * kids block sits behind `isOwnProfile`, and the kid-photo mint is handed
- * `null` as the owner for every other viewer. `kidPhotoVisibility` answers
- * `'owner'` or `'denied'`, nothing else. The visitor path here is
- * byte-for-byte what the standalone page rendered.
+ * PRIVACY NOTE (carried from UserPage, widened by V25 t14): the kids block
+ * renders when the DATABASE returned kid rows to this viewer — `profile.kids`
+ * is the 0040-filtered embed, so it is the family's own list, the kids attached
+ * to a drop-in the viewer hosts or pinged, or any of them for a moderator, and
+ * an empty array for anyone else. The kid-photo mint is handed the PROFILE's id
+ * whenever there is a session (and `null` when there is none), because
+ * `kidPhotoVisibility` answers `'owner'`, `'authenticated'` or `'denied'` and
+ * migration 0054 lets any signed-in parent read the kid class. The visitor path
+ * for a viewer 0040 returns no rows to is still what it was: nothing renders,
+ * because there is nothing to render.
  *
  * `header` is the one slot the owner's surface adds: ProfilePage passes its
  * Edit/read toggle so the control sits at the very top of the page, above the
@@ -139,16 +145,16 @@ export function ProfileView({
   const [linkedParent, setLinkedParent] = useState<{
     handle: string
   } | null>(null)
-  // V21 t06: whether the "Hosted N drop-ins" line has been tapped to reveal
-  // the past events list below. Starts false (collapsed); tapping the line
-  // sets it true and scrolls the user to the Past section. The control is
-  // only rendered when hostedCount > 0, so a parent with zero hosted
-  // drop-ins never sees an empty expandable list.
-  const [pastRevealed, setPastRevealed] = useState(false)
   // V21 t06: ref to the Past section so tapping "Hosted N drop-ins" can
   // scroll the user there. TAP (not hover) — this is a phone app; the
   // founder's "hover over and see the past events" becomes a tap that
-  // reveals + scrolls to the bounded past list (most recent first).
+  // scrolls to the bounded past list (most recent first).
+  //
+  // V25 t09: the old `pastRevealed` boolean is GONE with the "tap to see past
+  // events" hint it existed to hide (the founder's annotation 2). It gated
+  // nothing but that hint — the Past section below renders whenever there is a
+  // past post — so the control's whole job now is the scroll, and a state
+  // variable nothing reads is dead code, not a feature.
   const pastSectionRef = useRef<HTMLDivElement>(null)
 
   const profileId = profile.id
@@ -164,17 +170,17 @@ export function ProfileView({
   // hook count between renders).
   const familyPhotoUrl = useFamilyPhotoUrl(profile.family_photo_url)
 
-  // V16 t05 (founder decision Q3): THE OWNER'S OWN KID PHOTOS. The kids block
-  // below already renders in the SELF VIEW only, and this hook is the app's one
+  // V16 t05 (founder decision Q3) added the kid photos; V25 t14 (founder
+  // decision, 2026-09-26) WIDENED WHO GETS THEM. This hook is the app's one
   // kid-photo mint path (`signedKidPhotoUrls` → the PRIVATE `kid-photos`
-  // bucket). It is called with `null` as the owner for every viewer who is not
-  // the owner, which is what keeps this page's visitor path exactly as
-  // photo-free as it was: the hook's own contract is "no owner id, no mint",
-  // and `kidPhotoVisibility` (the rule the storage policies implement) allows
-  // `'owner'` and nothing else. So the gate here is NOT a new privacy rule —
-  // it is the same `isOwnProfile` the kids block has always used, wired to the
-  // existing mint.
-  const kidPhotoUrls = useKidPhotoUrls(isOwnProfile ? profileId : null, profile.kids)
+  // bucket). Its first argument is the profile WHOSE KIDS these are, and
+  // migration 0054's policy lets any signed-in parent mint for the kid class —
+  // so the gate is no longer "you are the owner" but "there is a session"
+  // (the `null` branch is the anonymous case, which 0040 would already have
+  // stripped of rows; passing null is defence in depth, not the only wall).
+  // `profile.kids` is itself the RLS-filtered answer, so the hook is never
+  // asked to mint for a child this viewer may not see.
+  const kidPhotoUrls = useKidPhotoUrls(session === null ? null : profileId, profile.kids)
 
   // The initial block state, for other people's profiles only. A failed
   // read (blocks table not applied yet) leaves the toggle unpressed — the
@@ -372,17 +378,19 @@ export function ProfileView({
     month: 'long',
     year: 'numeric',
   })
-  // V24 slice 11A: the names the "About the parents" card renders — each card's
-  // name, paired with the handle of the accepted account link it IS (or null).
-  // The rule is pure (`parentNameRows`, src/lib/parentCards.ts): a card alone is
-  // never a link, and a name that does not match the linked account renders as
-  // plain text.
+  // V24 slice 11A: the rows the "About the parents" card renders — one per
+  // parent card, each carrying the name, the handle of the accepted account
+  // link that name IS (or null), the card's own words and its picture. The rule
+  // is pure (`parentNameRows`, src/lib/parentCards.ts): a card alone is never a
+  // link, and a name that does not match the linked account renders as plain
+  // text. V25 t09 made each entry a whole ROW (photo + about) rather than a
+  // bare name; the naming/link rule itself is unchanged.
   //
   // V24 slice 11B (finding N4): the counterparty is suppressed when it is the
   // READER — a partner opening this page is the profile's accepted partner, and
   // linking their own name to their own profile is a control that does nothing
   // for them (`linkedNameTargetForViewer`, src/lib/links.ts).
-  const parentNames = parentNameRows(
+  const parentRows = parentNameRows(
     parentCards,
     linkedNameTargetForViewer(linkedParent, viewerProfile?.display_name ?? null),
   )
@@ -393,7 +401,10 @@ export function ProfileView({
   // family photo (the photo closes the about card), and the editor-only
   // parent-cards block is omitted. All optional blocks are independent — an
   // empty profile still shows the identity card. `kidsVisible` is this page's
-  // own rule — the self view only — not something the pure seam could know.
+  // own rule — V25 t14 widened it from "the self view only" to "the database
+  // returned this viewer kid rows" (`profile.kids.length > 0`), which is the
+  // same RLS-filtered answer the pure seam is handed rather than a second gate
+  // invented here.
   //
   // NOTE the JSX below consumes this seam in order: the kids card is emitted
   // first, then the about-the-parents card (with the family photo as its
@@ -408,9 +419,9 @@ export function ProfileView({
   // The ordering gate and the heading gate are now the same call.
   const blurb = profileBlurbOrder(
     profile,
-    isOwnProfile && profile.kids.length > 0,
+    profile.kids.length > 0,
     'read',
-    parentNames.length > 0,
+    parentRows.length > 0,
   )
   /** The "About the parents" block renders (bio and/or parent names). */
   const showsAbout = blurb.includes('about')
@@ -462,7 +473,6 @@ export function ProfileView({
                   type="button"
                   data-testid="hosted-dropins-toggle"
                   onClick={() => {
-                    setPastRevealed(true)
                     // Scroll to the Past section after state settles.
                     requestAnimationFrame(() => {
                       pastSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -476,16 +486,14 @@ export function ProfileView({
                       `/^Hosted \d+ drop-ins?$/`), and folding the "tap" hint
                       into the same text node silently broke both — a real
                       regression caught by the full e2e suite, not by the unit
-                      gate. The hint is a sibling span instead, so the label
-                      stays matchable and the affordance stays visible. */}
+                      gate. So the count stays alone: V25 t09 DELETED the
+                      sibling "tap to see past events" hint, because the count
+                      link above it does the same job on its own (the founder's
+                      annotation 2) and a control needs one affordance, not
+                      two. The tappable count is still the door. */}
                   <span>
                     Hosted {hostedCount} {hostedCount === 1 ? 'drop-in' : 'drop-ins'}
                   </span>
-                  {pastRevealed ? null : (
-                    <span className="text-xs font-normal no-underline">
-                      tap to see past events
-                    </span>
-                  )}
                 </button>
               ) : null}
           </div>
@@ -509,49 +517,53 @@ export function ProfileView({
           below is minted from the CANONICAL object path
           (`useKidPhotoUrls` → `signedKidPhotoUrls`), never from that column.
 
-          V16 t05 (founder decision Q3) RESTORES THE PHOTO — but only here, and
-          only for the owner. The rule that makes that safe is unchanged:
-          `kidPhotoVisibility` (`photoStorage.ts`) answers `'owner'` for the
-          owner and `'denied'` for everyone else, and the mint call above is
-          handed `null` as the owner for every other viewer, so a visitor's
-          page never mints and never renders a kid photo. The visitor path is
-          byte-for-byte what it was: this whole block is behind `showsKids`,
-          which is `isOwnProfile && kids.length > 0`.
+          V16 t05 (founder decision Q3) RESTORED THE PHOTO; V25 TICKET 14
+          (founder decision, 2026-09-26) WIDENED WHO SEES IT. The founder's
+          words: "I don't think the photos should be private. I think it's
+          optional if you want to upload photos and if someone chooses to upload
+          photos, other people should be able to see them." "People" is scoped
+          to signed-in parents, so `kidPhotoVisibility` (`photoStorage.ts`) now
+          answers `'owner'` for the family and `'authenticated'` for any other
+          signed-in parent (still `'denied'` for an anonymous caller), migration
+          0054 drops the owner check from the kid-class storage policy while
+          keeping its `[2] = 'kids'` class guard, and the mint call above is
+          handed this PROFILE's id whenever there is a session. The block below
+          is behind `showsKids`, which is `profile.kids.length > 0` — the
+          database's own RLS-filtered answer to "may this viewer see these
+          children at all".
 
-          V9 ticket 10 (the accepted cost, CONFIRMED by the human 2026-09-13
-          and recorded in .scratch/v9/issues/10-kid-names-privacy-gate.md):
-          this section renders ONLY in the self view, and V9 ticket 11 moved
-          that rule into the `showsKids` decision above (the pure
-          `profileBlurbOrder`, told `isOwnProfile && kids.length > 0`) — one
-          place decides whether this block exists, and the ticket's block order
-          lives in the same seam. V2 shipped it to every
-          signed-in visitor deliberately ("the public-profile-surface class"
-          0022's own header names), and migration 0040 ends that: a kid's first
-          name and photo are visible to the kid's own family, the host of a
-          drop-in the kid is attached to, a family who pinged that drop-in, and
-          moderators — nobody else. RLS already returns no kid rows to anyone
-          else (the embed is filtered row by row), so the honest render for
-          those viewers is NO section at all: a "No kids listed." line would be a
-          false statement about the family, and an initials circle, a count or
-          a blur would be a partial substitute the ticket explicitly rejects.
-          The AGES signal that DOES remain on this page is the one ticket 05
-          put on its post cards ("ages 3–6" — never a name), which is the same
-          honest replacement the detail page's line uses.
+          V9 ticket 10's accepted cost is still the boundary for the ROWS
+          (confirmed by the human 2026-09-13, recorded in
+          .scratch/v9/issues/10-kid-names-privacy-gate.md): a kid's first name
+          and photo are visible to the kid's own family, the host of a drop-in
+          the kid is attached to, a family who pinged that drop-in, and
+          moderators — nobody else. RLS returns no kid rows to anyone else (the
+          embed is filtered row by row), so those viewers get NO section at all:
+          a "No kids listed." line would be a false statement about the family,
+          and an initials circle, a count or a blur would be a partial
+          substitute the ticket explicitly rejects. The AGES signal that DOES
+          remain on this page is the one ticket 05 put on its post cards
+          ("ages 3–6" — never a name), which is the same honest replacement the
+          detail page's line uses.
 
-          Why the gate is `isOwnProfile` and not `profile.kids.length > 0`: the
-          policy is per KID, so a viewer who pinged ONE of this family's
-          drop-ins (or hosted one) would receive a PARTIAL list — the kids
-          attached to that drop-in only. A partial list of children is worse
-          than no list: it reads as the whole family.
+          THE PARTIAL-LIST COST V25 T14 ACCEPTS, stated rather than hidden.
+          V16's gate was `isOwnProfile` precisely to avoid showing a host/pinger
+          a PARTIAL list — the policy is per KID, so a viewer who pinged one of
+          this family's drop-ins receives only the kids attached to it, and a
+          partial list of children reads as the whole family. T14 deliberately
+          trades that away: the founder asked for other parents to see the
+          photos, the rows that carry the photos are exactly the rows 0040
+          returns, and the alternative (no render for any non-owner) shows
+          nothing at all. So a host/pinger viewer may now see the subset of this
+          family's kids that is attached to the shared drop-in, with or without
+          photos. Closing the gap properly means either changing 0040 or
+          designing a partial-list affordance; both are separate decisions, and
+          the ticket's note 7 flags the same asymmetry for the NAME.
 
           AND THIS IS UX, NOT THE CONTROL (review cycle 1, F5 — do not read a
-          guarantee into it): the RLS policy is the boundary. A host/pinger
-          viewer still RECEIVES the rows they may see — the embed is filtered
-          row by row by the database, and whatever survives that filter sits in
-          `profile.kids` in React state whether or not this JSX renders it. What
-          the client gate buys is that a partial list is never SHOWN as if it
-          were the whole family. Nothing here is a privacy control; the
-          database is.
+          guarantee into it): the RLS policy is the boundary. Whatever survives
+          that filter sits in `profile.kids` in React state whether or not this
+          JSX renders it. Nothing here is a privacy control; the database is.
 
           THE KIDS BLOCK IS OPTIONAL (V9 ticket 11), so there is no empty-state
           branch inside it any more: a family with no kids gets NO card (the
@@ -565,14 +577,18 @@ export function ProfileView({
             {profile.kids.map((kid) => {
               const likes = kid.likes?.trim() ?? ''
               const kidPhoto = kidPhotoUrls[kid.id]
+              // V25 t09: the heading's two halves, from the one seam that
+              // already owns which words a kid row shows (`kidLabel`).
+              const heading = kidHeading(kid)
               return (
                 <li key={kid.id} data-testid="kid-row" className="flex flex-wrap items-center gap-2">
                   {/* V16 t05: the kid's photo, when this page minted one.
-                      `kidPhoto === undefined` is the EVERY-viewer-but-the-owner
-                      case (the hook returns `{}`) AND the owner's
-                      no-photo-yet case — both render exactly the old
-                      name · age · likes row, so the fallback is the previous
-                      design rather than a new placeholder. */}
+                      `kidPhoto === undefined` is every case where no URL was
+                      minted for this row — a kid whose `avatar_url` is unset, a
+                      viewer with no session, and a mint the storage policy
+                      refused (the hook returns `{}`) — and each renders exactly
+                      the old name · age · likes row, so the fallback is the
+                      previous design rather than a new placeholder. */}
                   {kidPhoto !== undefined ? (
                     <img
                       data-testid="kid-photo"
@@ -582,14 +598,57 @@ export function ProfileView({
                     />
                   ) : null}
                   <div className="min-w-0 flex-1">
-                    {/* V15 ticket 06 (A17/A18): one unambiguous inline line —
-                        "Sam · Age 6 · Likes: soccer". The likes label is always
-                        present when the field has content; name/age fall back
-                        to kidLabel's age-only / name-only forms. */}
-                    <p className="text-sm text-slate-800">
-                      {kidLabel(kid.first_name, kid.age)}
-                      {likes !== '' ? ` · Likes: ${likes}` : null}
-                    </p>
+                    {/* V15 ticket 06 (A17/A18) + V25 t09 (the founder's
+                        annotation 3): the row is TYPOGRAPHICALLY STRUCTURED
+                        rather than one run-on line. The founder's words —
+                        "It just looks like there's just like a name … it
+                        should be formatting here" — were about LEGIBILITY, so
+                        the name is the row's lead (larger, bold, dark), the age
+                        reads as distinct secondary information beside it
+                        (smaller, muted), and the likes sit on their own muted
+                        line that wraps instead of stretching a `·` sentence
+                        past the 320px edge.
+
+                        THE FACTS ARE UNCHANGED, and so is the privacy pin:
+                        first name + age only, no full names, no gender. The
+                        name and the age are SEPARATE elements so each can be
+                        styled, but they are ADJACENT with no separator between
+                        them, and `kidHeading`'s split concatenates to exactly
+                        `kidLabel`'s string (unit-pinned by a round-trip against
+                        the seam). That matters beyond tidiness: two spec
+                        assertions read the row as ONE `getByText('Name · Age
+                        7')` node (e2e/profiles-v2, e2e/polish), so the DOM text
+                        must stay `kidLabel`'s while the two halves wear
+                        different type. The likes line is omitted entirely when
+                        the field is empty, exactly as the old inline form did
+                        with its own `likes !== ''` guard. */}
+                    {heading.name !== '' ? (
+                      <p className="text-base leading-6">
+                        <span className="font-semibold text-slate-900">{heading.name}</span>
+                        {heading.age !== null ? (
+                          <span className="ml-1 text-sm text-slate-500">
+                            {/* THE SEPARATOR LIVES INSIDE THE AGE'S SPAN, and it
+                                carries BOTH of its own spaces (` · `). The
+                                DOM then reads name-span + " · " + "Age 6",
+                                which concatenates to kidLabel's exact
+                                "Name · Age 6" — the round-trip is unit-pinned
+                                in src/lib/feed.test.ts. The span boundary is
+                                invisible to text matching (it does not inject
+                                whitespace), so the two exact-text e2e reads
+                                still match. */}
+                            {' · '}
+                            {heading.age}
+                          </span>
+                        ) : null}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-slate-600">{heading.fallback}</p>
+                    )}
+                    {likes !== '' ? (
+                      <p className="mt-0.5 text-sm text-slate-600 [overflow-wrap:anywhere]">
+                        Likes: {likes}
+                      </p>
+                    ) : null}
                   </div>
                 </li>
               )
@@ -611,6 +670,8 @@ export function ProfileView({
           V24 slice 11A adds the fourth child, `parentNames`: a family with two
           parent cards and no bio still shows its parents, under the same
           "About the parents" heading — the names are the card's content.
+          (V25 t09 renamed that local to `parentRows` and gave each entry a
+          photo and an about: the reasoning above is unchanged.)
           V24 slice 11B: `showsAbout` now comes from `profileBlurbOrder` and IS
           the union of those two reasons, so this gate and the heading's below
           are the same decision rather than two conditions that could drift. */}
@@ -645,7 +706,11 @@ export function ProfileView({
                 `profile.avatar_url` is the PUBLIC parent avatar — a plain URL
                 in the public `avatars` bucket (0011), the same value every
                 drop-in card renders — so this is not a signed-URL mint and
-                needs no hook; a family with no avatar simply gets no image. */}
+                needs no hook; a family with no avatar simply gets no image.
+                V25 t09 KEEPS it as the FAMILY's description and avatar (the
+                whole-account "about us" text the editor still autosaves), and
+                the PARENT rows below are the people. Keeping the two legible is
+                the distinction the ticket's builder note asks for. */}
             {showsBio ? (
             <div className="mt-2 flex items-start gap-3">
               {profile.avatar_url != null && profile.avatar_url !== '' ? (
@@ -665,10 +730,15 @@ export function ProfileView({
               <p className="min-w-0 whitespace-pre-line text-sm text-slate-700">{profile.bio}</p>
             </div>
             ) : null}
-            {/* V24 slice 11A (the founder's annotation 10): THE FAMILY'S PARENTS,
-                by name, as the read surface now shows them — on your own profile
-                AND on /u/:handle, because "the family profile reflects the
-                family".
+            {/* V24 slice 11A (the founder's annotation 10) + V25 t09 (annotation
+                4): THE FAMILY'S PARENTS as horizontal ROWS — photo · name ·
+                their own description — on the owner's own profile AND on
+                /u/:handle, because "the family profile reflects the family".
+
+                V25 t09's change is STRUCTURAL: this used to be one bio block
+                plus a separate bare names list, so a parent's picture and words
+                had nowhere to stand and the names read as a run of text. Each
+                parent is now its own row, in slot order (`parentCardList`).
 
                 A name is a LINK only when it IS the accepted linked account
                 (matched by name, the only association the schema holds — see
@@ -680,34 +750,73 @@ export function ProfileView({
                 relationship is not theirs to see. The link is a real
                 react-router Link to `/u/<handle>`: a real href, the parent's
                 name as its accessible name, and `min-h-11` (44px) as its
-                target. No heading, no new block.
+                target.
 
                 V24 slice 11B (finding N4): when the READER is a party to the
                 link, the counterparty the database returns IS the reader, so
                 the name that would link is the reader's own — suppressed above
                 (`linkedNameTargetForViewer`), and this page then shows both
                 parents as plain text. Nothing is lost: the reader is already
-                looking at the family they are linked to. */}
-            {parentNames.length > 0 ? (
-              <ul
-                data-testid="parent-names"
-                className="mt-2 flex flex-wrap items-center gap-x-4 text-sm text-slate-800"
-              >
-                {parentNames.map((row) => (
-                  <li key={row.key}>
-                    {row.handle !== null ? (
-                      <Link
-                        data-testid="parent-name-link"
-                        to={`/u/${encodeURIComponent(row.handle)}`}
-                        className="inline-flex min-h-11 items-center font-medium text-indigo-700 underline decoration-dotted underline-offset-2 transition-colors hover:text-indigo-800 motion-reduce:transition-none"
+                looking at the family they are linked to.
+
+                INTERESTS DO NOT APPEAR PER ROW, because the schema has no
+                per-parent interests column: `parent_cards` is
+                name/photo_url/about/position (migration 0047). The family's
+                one `profile.interests` line still renders below, once for the
+                family — faking a per-parent interests line would be inventing
+                data. Per-parent interests is a schema decision (a new column +
+                migration), not something this row may smuggle in. */}
+            {parentRows.length > 0 ? (
+              <ul data-testid="parent-names" className="mt-2 flex flex-col gap-1">
+                {parentRows.map((row) => (
+                  <li
+                    key={row.key}
+                    data-testid="parent-row"
+                    className="flex items-start gap-3 py-1"
+                  >
+                    {/* The card's own picture, when the row has one it can
+                        actually load (`parentCardPhotoSrc` — a value the
+                        browser can fetch as given; a private-bucket PATH is
+                        deliberately not rendered as a broken image, and the
+                        mint for that is its own schema decision). No image
+                        when absent: `parentCardPhotoSrc` answers null. Alt is
+                        the parent's NAME, not the account handle — this is the
+                        person's picture. */}
+                    {row.photo !== null ? (
+                      <PhotoButton
+                        src={row.photo}
+                        alt={`${row.name}’s photo`}
+                        className="block shrink-0 overflow-hidden rounded-full"
                       >
-                        {row.name}
-                      </Link>
-                    ) : (
-                      <span data-testid="parent-name" className="inline-flex min-h-11 items-center">
-                        {row.name}
-                      </span>
-                    )}
+                        <img
+                          data-testid="parent-card-photo"
+                          src={row.photo}
+                          alt={`${row.name}’s photo`}
+                          className="h-12 w-12 rounded-full object-cover"
+                        />
+                      </PhotoButton>
+                    ) : null}
+                    <div className="min-w-0 flex-1">
+                      {row.handle !== null ? (
+                        <Link
+                          data-testid="parent-name-link"
+                          to={`/u/${encodeURIComponent(row.handle)}`}
+                          className="inline-flex min-h-11 items-center text-base font-medium text-indigo-700 underline decoration-dotted underline-offset-2 transition-colors hover:text-indigo-800 motion-reduce:transition-none"
+                        >
+                          {row.name}
+                        </Link>
+                      ) : (
+                        <span
+                          data-testid="parent-name"
+                          className="inline-flex min-h-11 items-center text-base font-medium text-slate-900"
+                        >
+                          {row.name}
+                        </span>
+                      )}
+                      {row.about !== null ? (
+                        <p className="whitespace-pre-line text-sm text-slate-700">{row.about}</p>
+                      ) : null}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -743,18 +852,35 @@ export function ProfileView({
         {familyPhotoUrl !== null ? (
           <div className="mt-3 first:mt-0">
             <h2 className="text-base font-semibold text-slate-900">Family photos</h2>
-            <PhotoButton
-              src={familyPhotoUrl}
-              alt={`@${profile.display_name}’s family photo`}
-              className="block max-w-full overflow-hidden rounded-xl"
-            >
-              <img
-                data-testid="family-photo"
-                src={familyPhotoUrl}
-                alt={`@${profile.display_name}’s family photo`}
-                className="max-h-72 w-full object-cover"
-              />
-            </PhotoButton>
+            {/* V25 t10 (the founder's annotation): THE PHOTO FILLS THE BLOCK'S
+                WIDTH. The height cap `max-h-72` is GONE — it was the letterbox
+                the founder circled: a portrait photo lost its bottom and a
+                landscape one got bars, so the image never reached the block's
+                edges. The photo now takes the full width at the image's own
+                aspect ratio (`object-cover` is not needed here: nothing is
+                cropped, so nothing can be distorted), and the mount, which
+                carries no `max-h`, is what the width is measured against.
+                The block is the family-photo GRID when there is more than one
+                photo and this single photo otherwise — `photosAreTiled` owns
+                that decision (src/lib/photoGallery.ts) rather than this JSX.
+                ONE CONSEQUENCE, measured rather than argued: with the cap gone
+                a portrait photo is now as tall as its own ratio makes it (e.g. a
+                3:4 source is ~430px tall at a 358px phone column). That is the
+                asked-for behaviour — the photo's shape decides its box, the
+                block no longer crops a portrait's bottom — and the
+                `family-photo-grid` mount is what the width is measured against
+                in the lane.
+                THE WALL, so no future reader mistakes the array for a choice:
+                ONE source photo exists (one column, one object path), so the
+                array below always has length 1 today and tiling is never
+                reached. Rendering several photos needs a schema decision —
+                a second column or a photo table — and this slice deliberately
+                ships no migration. */}
+            <FamilyPhotoBlock
+              photos={galleryPhotosFrom(familyPhotoUrl, `@${profile.display_name}’s family photo`)}
+              label={`@${profile.display_name}’s family photo`}
+              roundedClassName="rounded-xl"
+            />
           </div>
         ) : null}
         </div>

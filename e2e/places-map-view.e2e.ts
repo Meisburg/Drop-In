@@ -29,7 +29,8 @@
  *
  *  - AT MOST ONE MAP IS MOUNTED. Every existing spec locates the directory's map
  *    as `places-map`, so the map view's own map is `places-map-view-map` and the
- *    band is NOT rendered while the map view is up. Each phase here asserts the
+ *    the list-view band is NOT mounted at all (V25 t01), and the list is not
+ *    rendered while the map view is up. Each phase here asserts the
  *    other id has count 0, which is the trap this slice was designed around:
  *    two mounted Leaflet maps would fail every `getByTestId('places-map')` in
  *    the suite under Playwright's strict mode.
@@ -273,9 +274,10 @@ function focusedPlaceId(page: Page): Promise<string | null> {
 function placePinCount(scope: Locator): Promise<number> {
   // The selector does the work rather than a loop with fill tests: a PLAIN place
   // pin is the only marker with that fill AND no focus mark. MEASURED reasons for
-  // both exclusions: the home pin is also `#dc2626`-ish and the band's radius
-  // circle is an SVG path with the same fill as the home pin, so a fill-only test
-  // counted 2 "home pins" in the band and 1 in the map view; and the focused pin
+  // both exclusions: the home pin is also `#dc2626`-ish, and a radius circle
+  // (the retired band drew one; the map view does not) is an SVG path with the
+  // same fill as the home pin, so a fill-only test counted it as a home pin; and
+  // the focused pin
   // is deliberately a DIFFERENT fill in each view's own state, so counting it as
   // plain would compare two different things.
   return scope.locator('.leaflet-interactive[fill="#4f46e5"]:not([data-focused-marker])').count()
@@ -284,10 +286,11 @@ function placePinCount(scope: Locator): Promise<number> {
 /**
  * `placePinCount`, retried until the number settles.
  *
- * WHY: the band's marker layer is built by Leaflet inside an effect, so for a
+ * WHY: the marker layer is built by Leaflet inside an effect, so for a
  * frame or two after the map is "visible" the DOM holds fewer paths than the map
  * is about to draw. MEASURED while writing the pin-count spec: an immediate read
- * of the band returned 236 where a settled read returned the map view's 239 —
+ * of the list-view band returned 236 where a settled read returned the map
+ * view's 239 —
  * three paths short, which is exactly how a timing artefact impersonates a real
  * pin loss. Two identical consecutive reads (or a timeout) means settled.
  */
@@ -411,10 +414,10 @@ test('the map view pins EVERY matching place, capping only the cards (V24 s10)',
    *
    * A first version of the strip's cap fed the MAP from the capped slice, so a
    * directory of 239 matching places drew exactly 40 pins and the other 199 were
-   * pinned nowhere — while the list's own band drew all of them. No spec asserted
+   * pinned nowhere — while the list-view band drew all of them. No spec asserted
    * a pin count, so nothing in the suite could fail. This one can: it asserts the
-   * map view plots the SAME number of places as the band, that the number is
-   * larger than the strip's card cap, and that the cards really are capped.
+   * map view plots every placeable matching row — more than the strip's card cap
+   * and no more than the list's own total — and that the cards really are capped.
    */
   await page.goto('/browse')
   await settleOnRoute(page, '/browse')
@@ -422,11 +425,19 @@ test('the map view pins EVERY matching place, capping only the cards (V24 s10)',
   // No search: this needs MORE matching places than the strip's cap, and "park"
   // happened to land exactly on it during review. `park` is kept out of the
   // count so the assertion measures the directory, not the query.
-  await page.getByTestId('places-map').waitFor()
-  await expect(page.getByTestId('places-map')).toBeVisible()
-  const bandPins = await settledPlacePinCount(page.getByTestId('places-map'))
+  //
+  // V25 t01: THE COMPARISON SURFACE CHANGED, AND THE CLAIM DID NOT. This spec
+  // used to compare the map view's pins against the list-view BAND's pins — the
+  // band was "the surface that has always pinned the full matching set". That
+  // band is gone (list view mounts no map at all), so the full matching set is now
+  // read from the LIST's own declared total (`places-list[data-matched-rows]`,
+  // the same publish-the-total discipline this component already uses for the
+  // map view itself).
+  const listMatchedRows = Number(
+    (await page.getByTestId('places-list').getAttribute('data-matched-rows')) ?? '0',
+  )
   expect(
-    bandPins,
+    listMatchedRows,
     'the directory must match more places than the strip cap for this to be a real check',
   ).toBeGreaterThan(MAP_STRIP_CARD_LIMIT)
 
@@ -434,26 +445,35 @@ test('the map view pins EVERY matching place, capping only the cards (V24 s10)',
   const mapViewMap = page.getByTestId('places-map-view-map')
   await expect(mapViewMap).toBeVisible()
 
-  // AC B1: THE PINS ARE COMPLETE. Same count as the band — the surface that has
-  // always pinned the full matching set — and strictly more than the card cap.
-  const viewPins = await placePinCount(mapViewMap)
-  /**
-   * AT LEAST AS MANY AS THE BAND, and the asymmetry with "exactly the same" is
-   * MEASURED rather than a hedge. The band pins `planDirectoryList`'s `placed`
-   * set (rows whose distance resolved); the map view pins the rows the LIST
-   * carries, which is that same decision made from `planDirectoryList`'s own
-   * output — and on the live seed the two differ by a couple of rows, because
-   * "placed" is the reader view and the rendered list is the filtered, sorted one.
-   * The regression this spec exists for is not a two-row difference: a cap on the
-   * pins turns 236 into 40, which fails `toBeGreaterThan(MAP_STRIP_CARD_LIMIT)`
-   * AND this comparison. Asserting strict equality against a neighbouring view's
-   * internal set would be a spec that fails for reasons unrelated to the pins.
-   */
+  // AC B1: THE PINS ARE COMPLETE — every placeable matching row, which is all
+  // but the handful the seed carries without coordinates.
+  //
+  // READ FROM THE SURFACE'S OWN DECLARED TOTAL, not from a seed-derived number
+  // and not from a loose upper bound. `data-placeable-rows` is written from the
+  // very array the pins are drawn from, so the comparison below is the strongest
+  // available statement of "nothing was dropped": the counted pins plus the ONE
+  // focused pin (which `placePinCount` deliberately excludes) must be exactly
+  // the number of places this surface says it can plot. A partial pin loss —
+  // 239 rows pinned as 45 — passes a `> MAP_STRIP_CARD_LIMIT` bound and fails
+  // this one.
+  const declaredPlaceable = Number(
+    (await page.getByTestId('places-map-view').getAttribute('data-placeable-rows')) ?? '0',
+  )
+  const viewPins = await settledPlacePinCount(mapViewMap)
   expect(
-    viewPins,
-    `the map view must pin at least as many places as the band does ` +
-      `(band: ${bandPins}, map view: ${viewPins}) — the strip's card cap must never reach the pins`,
-  ).toBeGreaterThanOrEqual(bandPins)
+    declaredPlaceable,
+    'the map view must declare how many matching rows it can pin',
+  ).toBeGreaterThan(MAP_STRIP_CARD_LIMIT)
+  expect(
+    viewPins + 1,
+    `every placeable row must be pinned: the surface declares ${declaredPlaceable} ` +
+      `placeable rows and the map drew ${viewPins} plain pins plus its focused one`,
+  ).toBe(declaredPlaceable)
+  expect(
+    declaredPlaceable,
+    `the map cannot pin more places than the list matches ` +
+      `(placeable: ${declaredPlaceable}, matched: ${listMatchedRows})`,
+  ).toBeLessThanOrEqual(listMatchedRows)
   expect(
     viewPins,
     'the pin count must exceed the card cap, or the cap has reached the pins again',
@@ -528,7 +548,10 @@ test('the map view shows the list\'s own result set and mounts exactly one map (
    * written. Opening the door makes the list render every matching row, so the
    * comparison below is against the full set.
    */
-  await page.getByTestId('places-see-all').click()
+  // V25 t01: THE LIST IS THE WHOLE LIST. The "See all N places" fold this spec
+  // used to open is retired — every matching row renders on the first paint, so
+  // the comparison below is against the full set with no door to click.
+  await expect(page.getByTestId('places-see-all')).toHaveCount(0)
   await expect(page.getByTestId('place-row').first()).toBeVisible()
   const names = await listNames(page)
   expect(names.length, 'the search must leave more than one row to compare').toBeGreaterThan(1)
@@ -551,6 +574,52 @@ test('the map view shows the list\'s own result set and mounts exactly one map (
   // no spec in the suite can match two maps at once.
   await expect(page.getByTestId('places-map')).toHaveCount(0)
   await expect(page.getByTestId('places-map-view-map')).toHaveCount(1)
+
+  /**
+   * AC (V25 t01, THE ASSERTION THE PREVIOUS VERSION WAS MISSING): MAP MODE
+   * SHOWS THE MAP AND NOT THE LIST.
+   *
+   * The founder: *"it switches the list view to a map view, but they're not both
+   * visible on the page at the same time in different places."* Asserting only
+   * that the map ids exist could not fail when the list also rendered below it —
+   * which is exactly what shipped: only the Loading branch was gated, so the
+   * else-chain (the empty states AND the whole 239-row list) stayed mounted
+   * under the map. These three assertions are the ones that fail on that build.
+   */
+  await expect(
+    page.getByTestId('places-list'),
+    'map mode must not render the list container',
+  ).toHaveCount(0)
+  await expect(
+    page.getByTestId('place-row'),
+    'map mode must not render directory rows',
+  ).toHaveCount(0)
+  await expect(
+    page.getByTestId('places-unplaced'),
+    'map mode must not render the unplaced section either',
+  ).toHaveCount(0)
+
+  // AC (V25 t01, N7): THE REMAINING MAP IS A REAL MAP, NOT TWO BORDERS.
+  //
+  // The retired V17 t01 spec measured the band and warned, from a measured
+  // defect, that a height assertion alone can pass while the map inside collapses
+  // to a 2px border (`PlacesMap` was handed `h-full`, which resolved against the
+  // auto-height wrapper the component itself renders). The band is gone, so that
+  // guard has to live on the map that is left: the pane is >= 200px (the
+  // component's own `min-h-[200px]`) and the Leaflet container really fills it.
+  const paneBox = await mapViewMap.boundingBox()
+  const leafletBox = await page.locator('.leaflet-container').boundingBox()
+  if (paneBox === null) throw new Error('the map view map has no box — it is not rendered')
+  if (leafletBox === null) throw new Error('the Leaflet container has no box')
+  expect(
+    paneBox.height,
+    `the map must not collapse (min-h-[200px], got ${paneBox.height}px)`,
+  ).toBeGreaterThanOrEqual(200)
+  expect(
+    leafletBox.height,
+    `the Leaflet pane must fill the map, not collapse inside it ` +
+      `(pane ${leafletBox.height}px of a ${paneBox.height}px map)`,
+  ).toBeGreaterThanOrEqual(paneBox.height - 2)
 
   // AC: THE SAME RESULT SET, IN THE SAME ORDER — capped on the cards only.
   //
@@ -991,10 +1060,13 @@ test('"Back to list" restores the same list, its filters and its scroll position
   expect(backBox.height).toBeGreaterThanOrEqual(44)
   await back.click()
 
-  // AC: the band is back — and there is still exactly ONE map mounted, because
-  // the map view's map is unmounted rather than hidden.
-  await expect(page.getByTestId('places-map-band')).toBeVisible()
-  await expect(page.getByTestId('places-map')).toHaveCount(1)
+  // AC: the LIST is back — V25 t01's shape, so the assertion is the list's own
+  // rows plus NO map at all (the band that used to come back is gone), and there
+  // is still exactly ONE map mounted while the map view is up, because its map
+  // is unmounted rather than hidden.
+  await expect(page.getByTestId('place-row').first()).toBeVisible()
+  await expect(page.getByTestId('places-map-band')).toHaveCount(0)
+  await expect(page.getByTestId('places-map')).toHaveCount(0)
   await expect(page.getByTestId('places-map-view-map')).toHaveCount(0)
 
   // AC: the SCROLL POSITION came back, to the exact offset the parent left, and
@@ -1036,11 +1108,14 @@ test('"Back to list" restores the same list, its filters and its scroll position
 })
 
 /**
- * The one thing the four specs above deliberately do NOT assert: that no
- * `places-map-band` node survives while the map view is up. It is asserted in
- * the first spec through its own test id (count 0 for `places-map`), and the trap
- * is about the MAP's id rather than the band's wrapper — so the band is checked
- * where the round trip brings it back rather than duplicated here.
+ * The one thing the four specs above deliberately do NOT assert: that no map
+ * node survives while the map view is up. It is asserted in the first spec
+ * through its own test id (count 0 for `places-map`), and the trap is about the
+ * MAP's id rather than a wrapper — so the absence is checked where the round trip
+ * lands rather than duplicated here.
+ *
+ * V25 t01: list view mounts NO map at all, so `places-map-band` is a count-0
+ * assertion wherever the list is showing (see the round-trip spec above).
  */
 test('a tapped pin\'s panel survives a focus move (V24 s10)', async ({ page }) => {
   /**
@@ -1418,7 +1493,11 @@ test('a second "See map" activation does not disturb the saved list offset (V24 
   // reach) over the saved one, and the restore below would land at the list's
   // clamped maximum instead of where the parent left off.
   await page.getByTestId('places-back-to-list').click()
-  await expect(page.getByTestId('places-map')).toHaveCount(1)
+  // V25 t01: the list mounts NO map, so "back to the list" is asserted by the
+  // absence of every map rather than by the retired band's id.
+  await expect(page.getByTestId('places-map')).toHaveCount(0)
+  await expect(page.getByTestId('places-map-view-map')).toHaveCount(0)
+  await expect(page.getByTestId('place-row').first()).toBeVisible()
   await expect
     .poll(() => page.evaluate(() => window.scrollY), {
       message: 'the saved offset is the one from the LIST, not from the map view',
@@ -1428,11 +1507,136 @@ test('a second "See map" activation does not disturb the saved list offset (V24 
   await page.evaluate(() => document.getElementById('scroll-range-probe')?.remove())
 })
 
+test('map mode draws the radius circle, and the radius cannot move the camera (V25 t01)', async ({
+  page,
+}) => {
+  /**
+   * V20 t05's live preview, RESTORED ON THE SURFACE THAT IS LEFT — the half that
+   * needs no third-party service.
+   *
+   * That spec measured the list-view band's circle: dragging the radius slider
+   * made the red circle grow on the map. V25 t01 removes the band, so the
+   * preview has to happen in map mode or not at all. Two claims, each able to
+   * fail alone:
+   *
+   *   1. THE CIRCLE IS DRAWN — the committed-radius frame, on the only map the
+   *      page has. Its `d` path is drawn geometry, not an intention.
+   *   2. THE CAMERA DOES NOT MOVE. This is the constraint that made threading a
+   *      circle into this map dangerous: `PlacesMap`'s circle effect used to
+   *      re-pin the camera on every render, and the map view's focused card owns
+   *      the view. It now yields when a `focusPlaceId` is passed; without that
+   *      yield this assertion fails.
+   *
+   * The REDRAW half (the slider growing the circle) needs a preview CENTRE, so
+   * it lives in the next spec with a stubbed geocoder — the old spec relied on
+   * the live Nominatim service being up, which is a flake, not a check.
+   */
+  await openMapView(page)
+  const map = page.getByTestId('places-map-view-map')
+  const circle = page.locator('path.leaflet-interactive[stroke="#dc2626"][fill-opacity="0.08"]')
+
+  // The committed-radius circle is drawn on mount.
+  await expect(circle, 'map mode must draw the radius circle').toHaveCount(1)
+  const dBefore = await circle.getAttribute('d')
+  const cameraBefore = await map.getAttribute('data-map-center')
+  expect(dBefore, 'the drawn circle must have a path').toMatch(/^M/)
+  expect(cameraBefore, 'the map must report its camera').toMatch(/^-?\d/)
+
+  // The shared dialog is reachable from the controls card (it moved out of the
+  // retired band's header), and its label tracks the slider.
+  await page.getByTestId('set-location-btn').click()
+  await expect(page.getByTestId('location-modal')).toBeVisible()
+  const slider = page.getByTestId('location-radius-slider')
+  await expect(slider).toBeVisible()
+  await slider.fill('10')
+  await expect(page.getByTestId('location-modal')).toContainText('10 miles')
+
+  // AC: the circle is a READING AID, never a camera move.
+  expect(
+    await map.getAttribute('data-map-center'),
+    'the radius must not move the camera — the focused card owns the view in map mode',
+  ).toBe(cameraBefore)
+  await page.getByTestId('location-modal-close').click()
+  await expect(page.getByTestId('location-modal')).toHaveCount(0)
+})
+
+test('the radius preview REDRAWS the circle in map mode (V25 t01, V20 t05 live preview)', async ({
+  page,
+}) => {
+  /**
+   * THE FOUNDER'S LIVE PREVIEW: *"when you drag the radius, it should expand or
+   * grow the red circle in real time."*
+   *
+   * WHERE IT LIVES NOW. The circle is drawn to scale at the current zoom, and it
+   * follows the DRAFT radius only when the dialog has a preview CENTRE — the
+   * committed frame is what it draws otherwise (`radiusPreviewCircle`,
+   * `src/lib/places.ts`). So this spec stubs the geocoder rather than hoping
+   * Nominatim answers: the preview needs a resolved address, and a check that
+   * depends on a third party being up is a flake, not a check. The stub is a
+   * real Street View of the seam — the app's own `geocodeAddress` turns this
+   * response into a centre and everything after it is production code.
+   */
+  await page.route('https://nominatim.openstreetmap.org/search**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      // Green Lake, Seattle — a centre inside the seeded directory.
+      body: JSON.stringify([{ lat: '47.6806', lon: '-122.3283' }]),
+    })
+  })
+
+  await openMapView(page)
+  const circle = page.locator('path.leaflet-interactive[stroke="#dc2626"][fill-opacity="0.08"]')
+  await expect(circle, 'the committed circle must be drawn first').toHaveCount(1)
+  const dCommitted = await circle.getAttribute('d')
+
+  await page.getByTestId('set-location-btn').click()
+  await expect(page.getByTestId('location-modal')).toBeVisible()
+  await page.getByTestId('location-address-input').fill('Green Lake Park, Seattle')
+  await page.getByTestId('location-see-places-btn').click()
+
+  // The geocoded centre and its radius are now the preview's frame. The dialog
+  // STAYS OPEN (`handleGeocode` only resolves the address — the radius slider
+  // below is the point of the preview), so the same dialog is dragged next.
+  await expect
+    .poll(async () => circle.getAttribute('d'), {
+      message: 'the geocoded centre must reframe the drawn circle',
+    })
+    .not.toBe(dCommitted)
+  const dSmall = await circle.getAttribute('d')
+
+  const slider = page.getByTestId('location-radius-slider')
+  await expect(slider).toBeVisible()
+  await slider.fill('10')
+  await expect(page.getByTestId('location-modal')).toContainText('10 miles')
+  await expect
+    .poll(async () => circle.getAttribute('d'), {
+      message: 'dragging the radius must redraw the circle in real time',
+    })
+    .not.toBe(dSmall)
+  const dWide = await circle.getAttribute('d')
+
+  // …and back down: the change tracks the RADIUS, not a one-way transition.
+  await slider.fill('2')
+  await expect(page.getByTestId('location-modal')).toContainText('2 miles')
+  await expect.poll(async () => circle.getAttribute('d')).not.toBe(dWide)
+
+  await page.getByTestId('location-modal-close').click()
+  await expect(page.getByTestId('location-modal')).toHaveCount(0)
+  await page.unroute('https://nominatim.openstreetmap.org/search**')
+})
+
 test('the map view leaves no second Leaflet container behind (V24 s10)', async ({ page }) => {
   await openMapView(page)
   const containers = await page.locator('.leaflet-container').count()
   expect(containers, 'exactly one Leaflet instance is live in the map view').toBe(1)
   await page.getByTestId('places-back-to-list').click()
-  await expect(page.getByTestId('places-map')).toHaveCount(1)
-  expect(await page.locator('.leaflet-container').count()).toBe(1)
+  // V25 t01: back in list view there is NO map at all — the map view's own
+  // Leaflet instance is the one that was destroyed.
+  await expect(page.getByTestId('places-map')).toHaveCount(0)
+  await expect(page.getByTestId('places-map-view-map')).toHaveCount(0)
+  expect(
+    await page.locator('.leaflet-container').count(),
+    'the map view must leave no Leaflet container behind',
+  ).toBe(0)
 })

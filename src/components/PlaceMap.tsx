@@ -42,6 +42,7 @@ import {
   resolveMapCoords,
   zoomForRadius,
 } from '../lib/places'
+import type { MapPinEvent } from '../lib/places'
 import type { Place, PlacePrefill } from '../lib/types'
 
 /** The tile source (pinned by the ticket — the only tile host the app fetches). */
@@ -202,6 +203,7 @@ export function PlacesMap({
   onSelect,
   focusPlaceId,
   focusBehavior = 'smooth',
+  pinEvents,
 }: {
   places: readonly Place[]
   zipCoords: ReadonlyMap<string, ZipCoords> | null
@@ -293,6 +295,31 @@ export function PlacesMap({
    * interpretation could drift.
    */
   focusBehavior?: ScrollBehavior
+  /**
+   * V25 t07 — THE EVENT EACH PIN STANDS FOR, keyed by the pin's own `id` in
+   * `places`, or absent.
+   *
+   * WHY THE EVENT ARRIVES AS A LOOKUP RATHER THAN ON THE `places` ROWS. The
+   * bubble is shared by three surfaces (this component's header records them),
+   * and only one of them — the feed — has events at all. A `Place` is a
+   * directory row; hanging feed-only fields off it would put a key on every
+   * row that two of the three callers must simply not pass, and would invite
+   * `placeActions`-style conditionals on a type that never meant to carry
+   * events. A lookup the caller may omit keeps the payload OPTIONAL by
+   * construction: /browse, the map view and the place page pass nothing and
+   * this component's output for them is byte-for-byte what it was.
+   *
+   * KEYED BY THE PLACE ID THE CALLER PUT ON THE ROW (`feed-pin-N` for the
+   * feed's free-text pins, which carry no directory place and must still name
+   * their event), so the lookup is the same identity the popup already holds
+   * when it opens — no second key to keep in sync.
+   *
+   * The value is a DECISION, not a row (see `lib/places.ts`): the title, the
+   * `cardWhenLabel` window, the "N more drop-ins here" sentence and the
+   * `/playdate/:id` href, all built by the tested seam. This component formats
+   * nothing and counts nothing.
+   */
+  pinEvents?: ReadonlyMap<string, MapPinEvent>
 }) {
   const navigate = useNavigate()
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -814,6 +841,26 @@ export function PlacesMap({
     // check on the object rather than on the string so the narrowing is visible
     // to the compiler and the center read below needs no non-null assertion.
     if (map === null || radiusCircle === undefined || radiusCircle === null) return
+    /**
+     * V25 t01 — THE FOCUSED PIN OWNS THE CAMERA WHEN THERE IS ONE.
+     *
+     * This effect is the framing authority for every caller that passes a
+     * `radiusCircle` and no `focusPlaceId` (the place page, /new's picker, and
+     * the directory's retired list-view band). The MAP VIEW passes BOTH: it
+     * draws the committed-radius circle and it centres on the focused card.
+     * Without this guard the circle's re-pin ran on every render of the map view
+     * — `radiusCircle` is an object literal, so its identity changes each
+     * render — and fought the focus effect for the camera. MEASURED: four
+     * map-view specs went red on "the focused pin's centre converges on the
+     * map pane's centre" when the prop was first threaded through, because the
+     * circle's `panTo` landed last.
+     *
+     * `focusPlaceId === undefined` is every pre-existing caller, so their
+     * behaviour is byte-for-byte what it was. The circle is still DRAWN and
+     * still redraws on a radius change (that is the separate overlay effect);
+     * only the CAMERA framing is yielded.
+     */
+    if (focusPlaceId !== undefined && focusPlaceId !== null) return
     const miles = radiusCircle.radiusMiles
     /**
      * V20 t05 — THE CIRCLE IS DRAWN TO SCALE AT THE CURRENT ZOOM, AND THE
@@ -1092,11 +1139,20 @@ export function PlacesMap({
    * reasoning: this panel floats OVER a map. A button labelled "Find it on the
    * map" that opens an OpenStreetMap SEARCH is offering to do something the
    * parent is already looking at — the pin they just tapped is the location.
-   * The fallback was never wrong on the place page (where there is no map in
-   * view and `placeExternalUrl` is the only way to locate it), so
-   * `placeLearnMoreLink` KEEPS its two-kind behaviour and the place page KEEPS
-   * its "Find it on the map" label. What is dropped is only this PANEL's use of
-   * the map-search kind, where it duplicates the surface behind it.
+   * `placeLearnMoreLink` KEEPS its two-kind behaviour; what is dropped is only
+   * this PANEL's use of the map-search kind, where it duplicates the surface
+   * behind it.
+   *
+   * V25 t04 CHANGED THE PLACE PAGE'S LABEL, NOT THIS PANEL'S. That page's
+   * "Find it on the map" control sat under the page's OWN map and was replaced
+   * by the founder's two-button row ("Learn more" + "Get directions"), so the
+   * place page no longer labels from `kind` at all: BOTH of its kinds read
+   * "Learn more", and the anchor carries `data-link-kind` (website | map-search)
+   * as the machine-readable honesty channel, asserted per kind by
+   * `e2e/places.e2e.ts`. This PANEL's rule is unchanged and comes from a
+   * different fact (it floats over a map), so it still says nothing at all for
+   * a place with no verified site; the DIRECTORY row still labels from `kind`
+   * ("Visit website" / "Find it on the map").
    *
    * So: a place with a VERIFIED site still shows "Visit website" here; a place
    * with none simply has no outbound link on this panel, and the parent reaches
@@ -1151,6 +1207,20 @@ export function PlacesMap({
   const isRealPlaceId = selected !== null && /^[0-9a-f-]{36}$/i.test(selected.id)
   const showHostHere = isRealPlaceId
   const showDetails = isRealPlaceId && placeActions
+
+  /**
+   * V25 t07 — THE EVENT THE TAPPED PIN STANDS FOR, or null.
+   *
+   * Read during RENDER only (never from an effect): the marker layer is built
+   * once per coordinate set, and a map that rebuilt its markers because a
+   * lookup's identity changed would close the popup the parent is reading. The
+   * caller hands this component a fresh Map each render exactly as it hands a
+   * fresh `places` array — neither is a dependency of anything here.
+   *
+   * `undefined` (every caller but the feed) and a missing key are the same
+   * thing: no event, so the bubble keeps its place-only content.
+   */
+  const pinEvent = selected !== null ? (pinEvents?.get(selected.id) ?? null) : null
 
   return (
     <div className="flex flex-col gap-2">
@@ -1282,6 +1352,53 @@ export function PlacesMap({
               data-testid="place-marker-info"
               className="flex flex-col gap-2 p-1"
             >
+              {/* V25 t07: THE EVENT FIRST, THEN THE PLACE — and that order is
+                  the founder's ask, not a preference. On the feed the pin IS a
+                  drop-in, so the drop-in's own name and time are what the tap
+                  is asking for; the place is how a parent knows WHERE, and it
+                  stays (with the address) directly below. A two-event dot says
+                  so here rather than presenting one session as the whole
+                  story — the count comes from `feedMapPinEvent`, so this
+                  component never counts anything.
+
+                  `pr-4` clears Leaflet's ✕, exactly as the place block below
+                  does; without it the title runs under the close button. */}
+              {pinEvent !== null ? (
+                <>
+                  <div className="flex flex-col gap-0.5 pr-4">
+                    <span
+                      data-testid="pin-event-title"
+                      className="text-sm font-semibold text-slate-900"
+                    >
+                      {pinEvent.title}
+                    </span>
+                    <span data-testid="pin-event-when" className="text-xs text-slate-600">
+                      {pinEvent.whenLabel}
+                    </span>
+                    {pinEvent.moreLabel !== null ? (
+                      <span data-testid="pin-event-more" className="text-xs text-slate-600">
+                        {pinEvent.moreLabel}
+                      </span>
+                    ) : null}
+                  </div>
+                  {/* V25 t07: THE DOOR TO THE EVENT. It is NOT a second
+                      "Details" for the place — its destination is
+                      `/playdate/:id`, built by the same seam that built the
+                      title above it, and its name says which one it opens. A
+                      real `<Link>` (keyboard reachable, named by its own text)
+                      at the house 44px tap target, so it is not a second-class
+                      control beside the row below. `Link` works here because the
+                      portal keeps this content inside the React tree (see the
+                      portal's doc comment). */}
+                  <Link
+                    to={pinEvent.href}
+                    data-testid="pin-event-link"
+                    className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
+                  >
+                    Drop-in details
+                  </Link>
+                </>
+              ) : null}
               <div className="flex flex-col gap-0.5 pr-4">
                 <span className="text-sm font-semibold text-slate-900">{selected.name}</span>
                 <span className="text-xs text-slate-600">{selected.address}</span>
@@ -1399,25 +1516,56 @@ export function PlacePickerMap({
     .filter((e): e is { place: Place; coords: MapMarker } => e.coords !== null)
 
   /**
-   * V20 t04 — THE TAPPED PIN WAITS FOR A CONFIRMATION.
+   * V25 t02 — THE TAPPED PIN *IS* THE PICK. THIS REVERSES V20 t04.
    *
-   * The founder, on /new's picker: *"when you click on a blue circle, it fills
-   * in the where in the address, which is great, but it's not obvious that
-   * that's happening. So maybe when you click on a blue circle, there should be
-   * a button that says like, select. Under the event that pops up or something,
-   * and when you click it, then it populates those two fields."*
+   * V20 t04 moved the write OFF the marker click for a real reason, in the
+   * founder's own words on /new's picker: *"when you click on a blue circle, it
+   * fills in the where in the address, which is great, but it's not obvious
+   * that that's happening. So maybe when you click on a blue circle, there
+   * should be a button that says like, select… and when you click it, then it
+   * populates those two fields."* The answer then was two steps: the tap
+   * SELECTS (panel below the map, "Select this place"), the button WRITES.
    *
-   * The old behaviour wrote both fields on the marker click, and the fields sit
-   * ABOVE the map on /new — so on a phone the parent tapped a dot, the form
-   * changed off-screen, and nothing visible happened. A tap now SELECTS (the
-   * panel below the map names the place and offers "Select this place"), and
-   * the write happens on the button, where the parent is looking.
+   * The founder has since rejected the extra step twice — V24 annotation #2
+   * (`.scratch/v24/spec.md:23`) and again on the V25 walk: *"you shouldn't have
+   * to click Select this place button. It should just automatically select it
+   * and populate the address in the address bar above. Don't make the user have
+   * to do an extra step, it's annoying."*
    *
-   * THIS IS A REAL BEHAVIOUR CHANGE AND IT IS DELIBERATE: `onPick` is called
-   * from the panel's button, never from the marker. The marker click only moves
-   * `selectedId`, so a tap that was a mis-tap costs nothing.
+   * The t04 complaint does not stop being true because the button is annoying,
+   * so the contract now carries BOTH halves:
+   *   - the marker click WRITES — `onPick(place)`, the page's one pick path
+   *     (`places.placePickPatch`: place + address + neighbourhood) which also
+   *     regenerates the title, so no "selected but unwritten" state is left
+   *     behind; and
+   *   - the marker click still SELECTS — `setSelectedId`, which paints the panel
+   *     below the map naming the place and the address that just landed. That
+   *     panel IS t04's answer to "it's not obvious that that's happening": the
+   *     fields sit ABOVE the map on /new, so the write may never rest on them
+   *     alone being noticed.
+   *
+   * ONE WRITE, ONE CONTROL. "Select this place" had nothing left to do once the
+   * tap wrote — pressing it would be a second write of the same values — so it
+   * is removed. The panel keeps the place name + address and the Details link
+   * (`place-picker-details`), the only door from the picker to a place's
+   * research page.
+   *
+   * `e2e/places.e2e.ts` pins this in both directions: a tap writes both fields,
+   * and a second tap on a different pin replaces both.
    */
   const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  /**
+   * The marker layer is built once per coordinate set (the effect below), so a
+   * marker handler calling `onPick` directly would hold the `onPick` from THAT
+   * render. On /new that closure carries `titleTouched`, so a tapped pin could
+   * overwrite a title the parent had typed themselves. Read the prop through a
+   * ref instead — the same "read through a ref so the effect's dependency list
+   * stays empty" discipline the mount effect above uses for its anchor — and
+   * re-point it on every render so the handler always sees the current one.
+   */
+  const onPickRef = useRef(onPick)
+  onPickRef.current = onPick
 
   const markers = entries.map((e) => e.coords)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -1514,7 +1662,14 @@ export function PlacePickerMap({
           fillOpacity: 0.35,
         })
         marker.bindTooltip(place.name, { direction: 'top', offset: [0, -8] })
-        marker.on('click', () => setSelectedId(place.id))
+        // V25 t02: ONE TAP DOES BOTH — the write (`onPick`, the page's one pick
+        // path) and the visible confirmation (`setSelectedId`, the panel below
+        // the map). See the state doc above; `onPick` is read through a ref
+        // because this effect runs once per coordinate set, not per render.
+        marker.on('click', () => {
+          setSelectedId(place.id)
+          onPickRef.current(place)
+        })
         return marker
       }),
     ).addTo(map)
@@ -1540,9 +1695,12 @@ export function PlacePickerMap({
         data-testid="place-picker-map"
         className={`h-64 w-full overflow-hidden rounded-xl border border-slate-200 ${className ?? ''}`}
       />
-      {/* V20 t04: the confirmation panel. It appears on a marker tap and does
-          NOTHING until "Select this place" is pressed — see the state doc
-          above for why the write moved off the marker click.
+      {/* V25 t02: the CONFIRMATION panel. The marker tap has ALREADY written
+          the form (see the state doc above) — this panel is why that write is
+          not silent, which is the whole reason V20 t04 put a panel here. It
+          names the place and the address that just landed in the fields above
+          the map; `role="status"` announces the same confirmation to a screen
+          reader, which cannot see a panel appear.
 
           It is rendered BELOW the map, in normal flow, matching the browse
           map's `place-marker-info` panel: a panel inside the map's own box
@@ -1551,24 +1709,23 @@ export function PlacePickerMap({
       {selected !== null ? (
         <div
           data-testid="place-picker-selection"
+          role="status"
           className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
         >
           <div className="flex min-w-0 flex-col gap-0.5">
             <span className="truncate text-sm font-semibold text-slate-900">{selected.name}</span>
             <span className="truncate text-xs text-slate-600">{selected.address}</span>
           </div>
-          {/* V23 slice 4 — THE TWO ACTIONS THE FOUNDER NAMED, side by side:
-              "for each places, I think the two options should be start dropping
-              and details."
+          {/* V23 slice 4 — "for each places, I think the two options should be
+              start dropping and details."
 
-              "Select this place" is the WRITE (it fills the form), and
-              "Details" is the READ (it opens the place's research page — what
-              parents have said, who follows it, a web-search link). They are
-              deliberately different weights: a filled primary button for the
-              action that changes the form, a quiet outlined link for the one
-              that leaves the page. A parent comparing parks can open Details,
-              come back, and still select — which is exactly why Details must
-              NOT be the thing that fills the field.
+              V25 t02: the "Select this place" half of that pair is GONE with the
+              two-step it existed for — the tap writes now. Details is the READ
+              (it opens the place's research page — what parents have said, who
+              follows it, a web-search link) and it stays, at the same weight: a
+              parent comparing parks can open Details, come back, and see the
+              pick already written. It must NOT be the thing that fills the
+              field.
 
               The destination comes from `placeDetailsPath` (lib/places.ts), the
               one builder, so this panel, the map popup and the place page cannot
@@ -1576,14 +1733,6 @@ export function PlacePickerMap({
               browser's business) rather than a button, matching the popup's own
               "Details" link. */}
           <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              data-testid="place-picker-select"
-              onClick={() => onPick(selected)}
-              className="min-h-11 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700"
-            >
-              Select this place
-            </button>
             <Link
               to={placeDetailsPath(selected.id)}
               data-testid="place-picker-details"

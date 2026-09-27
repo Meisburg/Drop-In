@@ -23,7 +23,7 @@ const check = (label, ok, detail) => {
   if (!ok) failures.push(label)
 }
 
-const LIGHT_PAGE = 'rgb(251, 247, 244)'
+const LIGHT_PAGE = 'rgb(255, 255, 255)' // --color-page light (V25 t12: white page)
 const DARK_PAGE = 'rgb(24, 20, 18)'
 const KEY = 'dropin-theme'
 

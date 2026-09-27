@@ -12,17 +12,27 @@
  *      what proves parent avatars are unaffected, from the other side: the
  *      marker uploads a real avatar object through the real owner policy, and
  *      anon must still be able to list and FETCH it.
- *   2. THE TWO CLASSES, PROVEN BY A PAIR OF MINTS (T4: "prove it with a probe,
- *      not an assumption"). The marker puts one kid photo in the PRIVATE bucket
- *      and mints a signed URL for it (200 + `token=`); a signed-in STRANGER
- *      attempts the same mint against the marker's kid path and must get NO
- *      signed URL. That is the case ticket 10's gate exists for: a signed-URL
- *      path must never let one parent fetch another family's kid photos.
- *   3. NO KID PHOTO RENDERS — and the row it would have rendered in still holds
- *      its `avatar_url` (a legacy public-URL shape, deliberately), so the
- *      assertion is not passing because the data is missing: it is passing
- *      because nothing reads it. No `<img>`, no photo control, and the sentence
- *      that tells a parent where the control went.
+ *   2. THE TWO CLASSES, PROVEN BY MINTS, AND THE V25 t14 BOUNDARY (T4: "prove
+ *      it with a probe, not an assumption"). The marker puts one kid photo in
+ *      the PRIVATE bucket and mints a signed URL for it (200 + `token=`, the
+ *      owner half); ANON must get NO signed URL; and ANOTHER SIGNED-IN PARENT
+ *      now MUST get one — the founder reversed V9 ticket 11's owner-only rule
+ *      on 2026-09-26 ("if someone chooses to upload photos, other people should
+ *      be able to see them"), and migration 0054 drops the owner check from the
+ *      kid class's SELECT policy while keeping its `[2] = 'kids'` class guard.
+ *      The same test then walks the RENDER as that other parent: before they
+ *      have any relationship with the family, their /u/<handle> shows no kids
+ *      section at all (0040 returns them no kid rows), and after they ping a
+ *      drop-in the marker's kid is attached to, the same page renders the kid
+ *      row WITH its photo. That last pair is the ticket's AC observed with a
+ *      real second parent's own session, not inferred from the policy SQL.
+ *   3. THE LEGACY COLUMN DOES NOT DRIVE A RENDER — and the row it would have
+ *      rendered in still holds its `avatar_url` (a legacy public-URL shape,
+ *      deliberately), so the assertion is not passing because the data is
+ *      missing: it is passing because nothing reads that column. No `<img>` on
+ *      the profile's kid row, and no photo control on the /profile editor row
+ *      either, because no object exists at the canonical path for the mint to
+ *      sign.
  *   4. THE FAMILY PHOTO round-trips through the real crop dialog onto /profile
  *      AND /u/:handle, as a SIGNED URL (never a public one), and what the
  *      DATABASE holds is an object PATH — a stored URL would expire on a timer.
@@ -49,9 +59,11 @@
  *     200 with a `token=` URL. It is a pivot for the same reason as B (it needs
  *     the bucket AND the policy), but it is UNREACHABLE while B is red: the
  *     pre-apply run stops at the upload above, so the evidence for C is a green
- *     run after 0038, not a quoted failure. Together with the stranger's refusal
- *     right below it, C is the T4 pair — and the stranger's half is the one that
- *     must stay empty.
+ *     run after 0038, not a quoted failure. Together with the ANON refusal
+ *     asserted at its side, C is the T4 pair — and under V25 t14 (migration
+ *     0054) the SECOND half of that pair is no longer "a signed-in stranger is
+ *     refused" (it is now the reversal's positive case): the refusal half that
+ *     must hold is "an ANON caller is refused", which the run below supplies.
  *   PIVOT D (test 4) — the family photo uploads through the crop dialog and
  *     renders as a signed URL. Pre-apply this fails twice over: the bucket is
  *     missing AND `profiles.family_photo_url` does not exist (42703 on the
@@ -65,17 +77,19 @@
  *
  * GREEN IN EVERY STATE (they need no migration, and a failure here is a real
  * regression, not the documented red):
- *   - the stranger's kid-photo mint returns NO signed URL (fail-closed by
- *     construction, and still fail-closed after 0038 — where it is the storage
- *     POLICY that refuses, which is the point);
+ *   - the ANON kid-photo mint returns NO signed URL (fail-closed by
+ *     construction, and still fail-closed after 0054 — where it is the storage
+ *     POLICY's `to authenticated` role that refuses, which is the point; the
+ *     signed-in non-owner's mint is asserted to SUCCEED in test 2, so a failure
+ *     there is a real regression in the reversal, never the documented red);
  *   - anon cannot list or fetch anything in `kid-photos`, and the old
  *     public-URL SHAPE of a kid photo does not resolve;
  *   - the parent avatar stays public (upload, list, fetch, all with the anon key);
  *   - the kid row renders no `<img>` on `/u/:handle` for a kid whose only photo
  *     data is the retired public `avatar_url` column (V16 t05: the owner's own
  *     self view MAY render a private-bucket photo, so the pin here is the
- *     COLUMN, and the visitor half — a stranger sees no kids section at all —
- *     lives in e2e/kid-names-privacy.e2e.ts 3b);
+ *     COLUMN; and a parent 0040 returns no rows to still sees no kids section
+ *     at all — e2e/kid-names-privacy.e2e.ts 3b);
  *   - "About the parents" saves and renders; an empty profile renders cleanly.
  * A failure in one of THOSE is a real assertion failure with the received value
  * quoted — never a crash, never a bare timeout.
@@ -95,8 +109,10 @@
  * coordinator's sweep picks stragglers up): every object THIS spec uploaded is
  * deleted with the marker's own JWT — its avatar object, its kid-photo probe in
  * the private bucket, and its family photo — plus the kid rows it created, the
- * `family_photo_url` and the `bio` it set, and the `avatar_url` it nulled. The
- * `e2e-v-*` stranger ACCOUNT is left for the coordinator's sweep (the sweep owns
+ * drop-in and attachment rows test 2 creates (the attachment cascades with the
+ * post), the other parent's OWN going-ping row (deleted with that parent's JWT),
+ * the `family_photo_url` and the `bio` it set, and the `avatar_url` it nulled.
+ * The `e2e-v-*` ACCOUNT is left for the coordinator's sweep (the sweep owns
  * `email like 'e2e-%'`); no rows are. Every failure is logged, never fatal.
  */
 import { expect, test } from '@playwright/test'
@@ -247,7 +263,7 @@ function describePaths(paths: string[]): string {
   return `${paths.length} object(s): ${masked.join(', ')}`
 }
 
-interface Stranger {
+interface OtherParent {
   context: BrowserContext
   page: Page
   userId: string
@@ -259,13 +275,16 @@ interface Stranger {
  * from e2e/kid-names-privacy.e2e.ts — NOT lifted into fixtures.ts, which every
  * spec shares and which this ticket has no reason to change).
  *
- * The session is read back from a temp storageState file: the stranger's mint
- * attempt has to be issued AS THE STRANGER, which is the whole point — a
- * client-side absence is not proof that the storage policy refuses.
+ * The session is read back from a temp storageState file: the parent's mint and
+ * page loads have to be issued AS THAT PARENT, which is the whole point — a
+ * client-side absence is not proof of what a signed-in non-owner may do.
+ *
+ * IT IS A REAL SECOND ACCOUNT, not a second context on the marker's session:
+ * V25 t14's whole subject is what ANOTHER signed-in family can see.
  */
-async function signUpStranger(browser: Browser, e: Env, name: string): Promise<Stranger> {
-  // The marker's own zip + radius, so the stranger is a plausible neighbour of
-  // this family rather than a caller with no relationship at all (the
+async function signUpOtherParent(browser: Browser, e: Env, name: string): Promise<OtherParent> {
+  // The marker's own zip + radius, so this parent is a plausible neighbour of
+  // the family rather than a caller with no relationship at all (the
   // kid-names-privacy pattern).
   const marker = readMarkerMeta()
   const context = await browser.newContext({
@@ -351,6 +370,91 @@ async function readStoredFamilyPhoto(e: Env): Promise<string | null | undefined>
   return rows[0]?.family_photo_url
 }
 
+/**
+ * ONE drop-in hosted by the marker, over REST with the marker's own JWT (the
+ * `playdates_insert_own_host` policy: `host_profile_id = auth.uid()`).
+ * `neighborhood_id` is optional since 0035, so a minimal future-dated row is a
+ * legal insert. The read-back is not decorative: the attachment and the ping
+ * below both need this id, and a `201` with no body would leave them writing
+ * against `undefined`.
+ */
+async function markerCreatePost(e: Env, title: string): Promise<string> {
+  const starts = new Date(Date.now() + 24 * 60 * 60 * 1000)
+  const ends = new Date(starts.getTime() + 60 * 60 * 1000)
+  const res = await fetch(`${e.url}/rest/v1/playdates`, {
+    method: 'POST',
+    headers: { ...markerHeaders(e, true), Prefer: 'return=representation' },
+    body: JSON.stringify({
+      host_profile_id: e.markerUserId,
+      title,
+      place: 'E2E photo probe lot',
+      starts_at: starts.toISOString(),
+      ends_at: ends.toISOString(),
+    }),
+  })
+  if (!res.ok) throw new Error(`marker playdate insert HTTP ${res.status}: ${await res.text()}`)
+  const rows = (await res.json()) as Array<{ id?: unknown }>
+  const id = rows[0]?.id
+  if (typeof id !== 'string') throw new Error(`playdate insert returned no id: ${JSON.stringify(rows)}`)
+  return id
+}
+
+/**
+ * Attach the marker's OWN kid to the marker's OWN post — exactly the write 0040
+ * section 4 tightened `playdate_kids_insert_host` to allow ("the caller hosts
+ * the post AND owns the kid"), and the reason the other parent below can be a
+ * pinger rather than a forger.
+ */
+async function markerAttachKid(e: Env, playdateId: string, kidId: string): Promise<void> {
+  const res = await fetch(`${e.url}/rest/v1/playdate_kids`, {
+    method: 'POST',
+    headers: markerHeaders(e, true),
+    body: JSON.stringify({ playdate_id: playdateId, kid_id: kidId }),
+  })
+  if (!res.ok) {
+    throw new Error(
+      `the marker could not attach its own kid to its own post (HTTP ${res.status}): ` +
+        `${await res.text()} — 0040's tightened INSERT allows exactly this pair`,
+    )
+  }
+}
+
+/** The other parent says they are going (the `going_pings_insert_own` policy: `profile_id = auth.uid()`). */
+async function parentPings(
+  e: Env,
+  accessToken: string,
+  profileId: string,
+  playdateId: string,
+): Promise<void> {
+  const res = await fetch(`${e.url}/rest/v1/going_pings`, {
+    method: 'POST',
+    headers: {
+      apikey: e.anonKey,
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ playdate_id: playdateId, profile_id: profileId }),
+  })
+  if (!res.ok) throw new Error(`going_pings insert HTTP ${res.status}: ${await res.text()}`)
+}
+
+/**
+ * The kid ROWS the DATABASE returns a given signed-in viewer for one family —
+ * read AS THAT VIEWER, with their own JWT, so it measures 0040's gate rather
+ * than the marker's privileges.
+ */
+async function readKidsVisibleTo(
+  e: Env,
+  accessToken: string,
+  ownerUid: string,
+): Promise<Array<{ id: string }>> {
+  const res = await fetch(`${e.url}/rest/v1/kids?profile_id=eq.${ownerUid}&select=id`, {
+    headers: { apikey: e.anonKey, Authorization: `Bearer ${accessToken}` },
+  })
+  if (!res.ok) throw new Error(`kids read HTTP ${res.status}: ${await res.text()}`)
+  return (await res.json()) as Array<{ id: string }>
+}
+
 /** Upload one object with the marker's own JWT (the owner-scoped write policies). */
 async function markerUpload(e: Env, bucket: string, objectPath: string, bytes: Buffer) {
   return fetch(`${e.url}/storage/v1/object/${bucket}/${objectPath}`, {
@@ -424,10 +528,16 @@ const created: {
   kidProbePath: string | null
   familyPhotoUploaded: boolean
   avatarUploaded: boolean
+  /** Test 2's drop-in — the attachment rows cascade when it is deleted. */
+  postId: string | null
+  /** Test 2's second parent, kept so its OWN going-ping row can be removed with its own JWT. */
+  otherParent: OtherParent | null
 } = {
   kidProbePath: null,
   familyPhotoUploaded: false,
   avatarUploaded: false,
+  postId: null,
+  otherParent: null,
 }
 
 // ---------------------------------------------------------------------------
@@ -521,105 +631,204 @@ test('the anon probe that found the exposure lists no kid photo — and parent a
 })
 
 // ---------------------------------------------------------------------------
-// 2. THE TWO CLASSES, BY A PAIR OF MINTS.
+// 2. THE V25 t14 BOUNDARY (owner / other signed-in parent / anon) AND THE
+//    OTHER PARENT'S RENDER.
 // ---------------------------------------------------------------------------
-test('a signed-in stranger cannot mint a URL for another family’s kid photo — the family can', async ({
+test('another SIGNED-IN parent can mint and SEE the kid photo once the row is theirs to see — an anon caller cannot', async ({
   browser,
 }) => {
   const e = env()
   const epoch = Math.floor(Date.now() / 1000)
-  // The row carries a LEGACY `avatar_url` on purpose: test 3 uses the same row
-  // to prove that a SET avatar_url still renders nothing. No bytes are ever put
-  // in the public bucket for it.
-  const kidId = await createMarkerKid(
-    e,
-    `E2E Photo ${epoch}`,
-    4,
-    `${e.url}${LEGACY_PUBLIC_MARKER}${e.markerUserId}/kids/legacy-${epoch}`,
-  )
-  const objectPath = kidPhotoPath(e.markerUserId, kidId)
-
-  // THE INTENTION, asserted before the wall is probed (the seam is what the app
-  // believes; the storage policy is what enforces it).
-  expect(kidPhotoVisibility(e.markerUserId, e.markerUserId)).toBe('owner')
-  expect(kidPhotoStoredRef(e.markerUserId, kidId)).toBe(`${PHOTO_BUCKET}/${objectPath}`)
-
-  // PIVOT B: the owner's own write into the private bucket.
-  const upload = await markerUpload(e, PHOTO_BUCKET, objectPath, makePng(48, 48, 232, 85, 47))
-  expect(
-    upload.status,
-    `PIVOT B: the owner's kid-photo write into '${PHOTO_BUCKET}' must succeed — the ` +
-      'bucket exists only once migration 0038 is applied (pre-apply the storage API ' +
-      `answers 400). Received HTTP ${upload.status}: ${(await upload.text()).slice(0, 200)}`,
-  ).toBe(200)
-  created.kidProbePath = objectPath
-
-  // PIVOT C: the FAMILY can still reach the file it kept (the AC's "a signed-URL
-  // read by the family still works"). This is also the positive control that
-  // makes the stranger's empty answer below evidence.
-  const ownMint = await mintSignedUrl(e, e.markerToken, PHOTO_BUCKET, objectPath)
-  expect(
-    ownMint.signedUrl,
-    `PIVOT C: the owner must be able to mint a signed URL for its own kid photo ` +
-      `(HTTP ${ownMint.status}): ${ownMint.body}`,
-  ).not.toBeNull()
-
-  // THE STRANGER: a fresh, genuinely signed-in account that has no relationship
-  // to this family — the case ticket 10's gate is about.
-  const stranger = await signUpStranger(browser, e, `e2e-v-photo-${epoch}`)
+  // A real second account, signed up and onboarded. NOT a second context on the
+  // marker's session: this ticket's whole subject is what another family sees.
+  const otherParent = await signUpOtherParent(browser, e, `e2e-v-photo-${epoch}`)
+  created.otherParent = otherParent
   try {
-    const attempt = await mintSignedUrl(e, stranger.accessToken, PHOTO_BUCKET, objectPath)
+    // The row carries a LEGACY `avatar_url` on purpose: test 3 uses the same
+    // shape to prove that a SET avatar_url still renders nothing. No bytes are
+    // ever put in the public bucket for it — the object uploaded below goes to
+    // the private bucket's canonical path, which is the only source the render
+    // reads.
+    const kidId = await createMarkerKid(
+      e,
+      `E2E Photo ${epoch}`,
+      4,
+      `${e.url}${LEGACY_PUBLIC_MARKER}${e.markerUserId}/kids/legacy-${epoch}`,
+    )
+    const objectPath = kidPhotoPath(e.markerUserId, kidId)
+
+    // THE INTENTION, asserted before the wall is probed (the seam is what the app
+    // believes; the storage policy is what enforces it). These three answers ARE
+    // the boundary this test then proves over the wire and in the DOM.
+    expect(kidPhotoVisibility(e.markerUserId, e.markerUserId)).toBe('owner')
+    expect(kidPhotoVisibility(otherParent.userId, e.markerUserId)).toBe('authenticated')
+    expect(kidPhotoVisibility(null, e.markerUserId)).toBe('denied')
+    expect(kidPhotoStoredRef(e.markerUserId, kidId)).toBe(`${PHOTO_BUCKET}/${objectPath}`)
+
+    // PIVOT B: the owner's own write into the private bucket.
+    const upload = await markerUpload(e, PHOTO_BUCKET, objectPath, makePng(48, 48, 232, 85, 47))
     expect(
-      attempt.signedUrl,
-      'a SIGNED-IN STRANGER must not be able to mint a URL for another family’s kid ' +
-        `photo — that would undo ticket 10’s gate through the storage layer. ` +
-        `HTTP ${attempt.status}: ${attempt.body}`,
+      upload.status,
+      `PIVOT B: the owner's kid-photo write into '${PHOTO_BUCKET}' must succeed — the ` +
+        'bucket exists only once migration 0038 is applied (pre-apply the storage API ' +
+        `answers 400). Received HTTP ${upload.status}: ${(await upload.text()).slice(0, 200)}`,
+    ).toBe(200)
+    created.kidProbePath = objectPath
+
+    // PIVOT C: the FAMILY can still reach the file it kept (the AC's "a signed-URL
+    // read by the family still works"). The positive control that keeps the
+    // refusals below from being vacuous.
+    const ownMint = await mintSignedUrl(e, e.markerToken, PHOTO_BUCKET, objectPath)
+    expect(
+      ownMint.signedUrl,
+      `PIVOT C: the owner must be able to mint a signed URL for its own kid photo ` +
+        `(HTTP ${ownMint.status}): ${ownMint.body}`,
+    ).not.toBeNull()
+
+    // ===================== THE REFUSAL HALF: ANON =====================
+    // This is the half of the T4 pair that must stay empty, and under V25 t14 it
+    // is the ONLY half that must: the policy is `to authenticated`, so a
+    // signed-out caller matches no SELECT policy for this bucket and the storage
+    // API refuses the mint. Proven with the project's own anon key and no
+    // session, which is the credential that ships in the client bundle.
+    const anonMint = await mintSignedUrl(e, e.anonKey, PHOTO_BUCKET, objectPath)
+    expect(
+      anonMint.signedUrl,
+      'an ANON caller must not be able to mint a URL for any kid photo — the reversal is ' +
+        `scoped to SIGNED-IN parents. HTTP ${anonMint.status}: ${anonMint.body}`,
     ).toBeNull()
-    // And it must not be able to fetch the object by any other storage-API door.
-    const strangerList = await fetch(`${e.url}/storage/v1/object/list/${PHOTO_BUCKET}`, {
+
+    // ==================== THE REVERSAL: THE OTHER PARENT ====================
+    // V25 ticket 14 (founder, 2026-09-26; migration 0054). Before 0054 this
+    // assertion was its opposite — the signed-in non-owner was refused — and
+    // that is exactly what changed. A failure here is a real regression in the
+    // reversal, not a documented red.
+    const parentMint = await mintSignedUrl(e, otherParent.accessToken, PHOTO_BUCKET, objectPath)
+    expect(
+      parentMint.signedUrl,
+      'V25 t14: another SIGNED-IN parent MUST be able to mint a URL for a kid photo — ' +
+        "migration 0054 drops the owner check from the kid class's SELECT policy and " +
+        `keeps its [2] = 'kids' class guard. HTTP ${parentMint.status}: ${parentMint.body}`,
+    ).not.toBeNull()
+    // The URL is not merely shaped right: a plain GET (no session) serves the
+    // bytes, which is what the browser's <img> does.
+    //
+    // THE STORAGE API ANSWERS A *RELATIVE* `signedURL` — `/object/sign/<bucket>/
+    // <path>?token=…`, relative to `<project>/storage/v1` — unlike the
+    // supabase-js client, whose `createSignedUrls` hands the render site an
+    // absolute one. MEASURED, not assumed: the first run of this assertion
+    // passed a bare relative string to `fetch` and threw `Invalid URL`. So the
+    // prefix below is what makes this a fetch of the bytes rather than a parse
+    // error, and the shape is asserted separately so a future change to either
+    // half is visible.
+    expect(parentMint.signedUrl ?? '', 'the mint must address this bucket').toContain(
+      `/object/sign/${PHOTO_BUCKET}/`,
+    )
+    const parentFetch = await fetch(`${e.url}/storage/v1${parentMint.signedUrl ?? ''}`)
+    expect(
+      parentFetch.status,
+      `the signed URL the other parent minted must serve the object (HTTP ${parentFetch.status})`,
+    ).toBe(200)
+
+    // THE ENUMERATION THIS DECISION ALSO OPENS, asserted rather than left
+    // implicit: the List API filters rows by the same policy, so the widened
+    // class is discoverable by prefix, not only by a path someone already knows.
+    // That is the founder's decision ("other people should be able to see them")
+    // read honestly — see migration 0054's header.
+    const parentList = await fetch(`${e.url}/storage/v1/object/list/${PHOTO_BUCKET}`, {
       method: 'POST',
       headers: {
         apikey: e.anonKey,
-        Authorization: `Bearer ${stranger.accessToken}`,
+        Authorization: `Bearer ${otherParent.accessToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ prefix: `${e.markerUserId}/kids`, limit: 100 }),
     })
-    // BOTH BRANCHES ARE ASSERTED (review cycle 1, F8). This used to check only the
-    // 200 case, which meant any refusal — the likeliest answer, 403 — skipped the
-    // assertion entirely and the check silently proved nothing. So: a 200 must be
-    // EMPTY, and anything else must be a REFUSAL (4xx) rather than a server error
-    // (5xx), which would be a real finding rather than a policy saying no.
-    if (strangerList.status === 200) {
-      const rows = (await strangerList.json()) as unknown[]
-      expect(rows.length, 'a stranger must not list another family’s kid photos').toBe(0)
-    } else {
-      expect(
-        strangerList.status,
-        'a refused list must be a 4xx refusal, not a server error: ' +
-          `${strangerList.status} ${(await strangerList.text()).slice(0, 200)}`,
-      ).toBeLessThan(500)
-    }
-    // The stranger's own profile page still works (the account is a real signed-in
-    // viewer, not a broken session) — the check that makes the refusals above
-    // mean "denied", not "that caller could do nothing at all".
-    await stranger.page.goto(`/u/${encodeURIComponent(e.markerHandle)}`)
-    await expect(stranger.page.getByRole('heading', { name: `@${e.markerHandle}` })).toBeVisible()
+    expect(parentList.status, 'the widened class must be LISTABLE by that parent').toBe(200)
+    const parentListRows = (await parentList.json()) as Array<{ name?: unknown }>
+    expect(
+      parentListRows.map((row) => String(row.name ?? '')),
+      'the parent LIST above must actually contain this kid object — an empty 200 would prove nothing',
+    ).toContain(kidId)
+
+    // ========== BEFORE THE RELATIONSHIP: NO ROWS, SO NO PHOTO ==========
+    // 0040 returns this parent NO kid rows (they are neither family nor
+    // host/pinger/moderator), so `/u/:handle` renders no kids section and
+    // therefore no photo. Pinned BEFORE the ping below, which is what makes the
+    // AFTER assertion evidence rather than "the page shows photos to everyone".
+    const profileUrl = `/u/${encodeURIComponent(e.markerHandle)}`
+    await otherParent.page.goto(profileUrl)
+    await expect(
+      otherParent.page.getByRole('heading', { name: `@${e.markerHandle}` }),
+      'the profile must actually render for this parent — otherwise the absence below is vacuous',
+    ).toBeVisible()
+    expect(
+      await readKidsVisibleTo(e, otherParent.accessToken, e.markerUserId),
+      '0040: a stranger has no relationship with this family yet, so its kid rows are invisible',
+    ).toEqual([])
+    await expect(otherParent.page.getByTestId('kid-photo')).toHaveCount(0)
+    await expect(otherParent.page.getByRole('heading', { name: 'About the kids' })).toHaveCount(0)
+
+    // ============ THE RELATIONSHIP THAT MAKES THE ROW THEIRS ============
+    // The marker hosts a drop-in, attaches this kid to it, and the other parent
+    // says they are going — over REST rather than the /new UI (this spec carries
+    // no post fixture; e2e/kid-names-privacy.e2e.ts walks the UI path). The
+    // poll below gates the render on the ROW landing, not on the write's 2xx.
+    const postId = await markerCreatePost(e, `e2e t14 photo ${epoch}`)
+    created.postId = postId
+    await markerAttachKid(e, postId, kidId)
+    await parentPings(e, otherParent.accessToken, otherParent.userId, postId)
+    await expect
+      .poll(
+        async () =>
+          (await readKidsVisibleTo(e, otherParent.accessToken, e.markerUserId)).filter(
+            (row) => row.id === kidId,
+          ).length,
+        { timeout: 10_000 },
+      )
+      .toBe(1)
+
+    // ================== THE TICKET'S AC, OBSERVED ==================
+    // Same page, same session, now WITH the row — and the row carries the
+    // uploaded photo as a signed URL into the PRIVATE bucket.
+    await otherParent.page.goto(profileUrl)
+    const row = otherParent.page.getByTestId('kid-row').first()
+    await expect(
+      row,
+      'the kid row must render for the parent 0040 admitted (a pinger on the shared drop-in)',
+    ).toContainText(`E2E Photo ${epoch}`)
+    const img = row.getByTestId('kid-photo')
+    await expect(
+      img,
+      'V25 t14: another signed-in parent must SEE the uploaded kid photo on the profile',
+    ).toBeVisible()
+    const src = (await img.getAttribute('src')) ?? ''
+    expect(src, `the kid photo must render from '${PHOTO_BUCKET}'`).toContain(PHOTO_BUCKET)
+    expect(src, 'a kid photo must never be served from a public object URL').not.toContain(
+      '/object/public/',
+    )
+    expect(src, 'and it must be a SIGNED url').toContain('token=')
+    const renderedFetch = await fetch(src)
+    expect(
+      renderedFetch.status,
+      `the rendered kid-photo URL must load (HTTP ${renderedFetch.status})`,
+    ).toBe(200)
   } finally {
-    await stranger.context.close().catch(() => {})
+    await otherParent.context.close().catch(() => {})
   }
 })
 
 // ---------------------------------------------------------------------------
-// 3. THE KID ROW'S PHOTO ON /u/:handle FOLLOWS THE SELF-VIEW GATE.
-//    V16 t05 (founder decision Q3) sharpened this test: the page is no longer
-//    photo-free for EVERYONE, it is photo-free for everyone BUT the owner. This
-//    spec's session IS the owner (the marker), so the assertion below pins the
-//    owner half only — which is that a SET `avatar_url` does NOT by itself
-//    produce an image, because the legacy public column is retired and only a
-//    private-bucket object mints. The STRANGER half of the privacy line is
-//    pinned by test 2's stranger walk (that page carries no kid rows at all)
-//    and by e2e/kid-names-privacy.e2e.ts 3b.
+// 3. A SET `avatar_url` DOES NOT BY ITSELF PRODUCE AN IMAGE.
+//    V16 t05 (founder decision Q3) restored the kid photo; V25 t14 widened who
+//    sees it. What this test pins is narrower than either: this spec's session
+//    IS the owner (the marker), and the row's only photo data is the RETIRED
+//    public `avatar_url` — so no signed URL can be minted and the row renders
+//    name · age · likes with no image. The COLUMN does not drive the render; the
+//    private-bucket object does, and e2e/profile-kid-photos.e2e.ts is the
+//    positive half that uploads one. The "who may see the rows at all" half is
+//    pinned by test 2 above (no relationship → no rows → no section; pinger →
+//    the row AND the photo) and by e2e/kid-names-privacy.e2e.ts 3b.
 // ---------------------------------------------------------------------------
 test('a kid row with only a legacy avatar_url renders no photo on /u/:handle; the private bucket is the only source', async ({ page }) => {
   const e = env()
@@ -633,8 +842,8 @@ test('a kid row with only a legacy avatar_url renders no photo on /u/:handle; th
     `${e.url}${LEGACY_PUBLIC_MARKER}${e.markerUserId}/kids/legacy-${epoch}`,
   )
 
-  // V13 ticket 01 / V16 t05: the marker IS the owner, so this is the SELF view
-  // — the one view where a kid photo may render at all. The row's `avatar_url`
+  // V13 ticket 01 / V16 t05: the marker IS the owner, so this is its own view.
+  // The row's `avatar_url`
   // IS set, but to the RETIRED public shape with no object behind it, so no
   // signed URL can be minted and the row renders name · age · likes with no
   // image. The assertion is that the column does not drive the render; the
@@ -744,7 +953,7 @@ test('the family photo uploads through the crop dialog and renders on /profile a
   expect(stored, 'profiles.family_photo_url must hold the object path').toBe(storedPath)
 
   // (c) /u/<handle> renders the same photo. The marker IS the owner, so this is
-  //     the self view; the stranger's mint below covers the other viewer class.
+  //     its own view; the other parent's mint below covers the other viewer class.
   await page.goto(`/u/${encodeURIComponent(e.markerHandle)}`)
   const publicImg = page.getByTestId('family-photo')
   await expect(publicImg).toBeVisible()
@@ -758,21 +967,21 @@ test('the family photo uploads through the crop dialog and renders on /profile a
   const anonMint = await mintSignedUrl(e, e.anonKey, PHOTO_BUCKET, storedPath)
   expect(anonMint.signedUrl, 'an ANON caller must not be able to mint a family-photo URL').toBeNull()
 
-  const stranger = await signUpStranger(browser, e, `e2e-v-family-${epoch}`)
+  const otherParent = await signUpOtherParent(browser, e, `e2e-v-family-${epoch}`)
   try {
-    const strangerMint = await mintSignedUrl(e, stranger.accessToken, PHOTO_BUCKET, storedPath)
+    const parentMint = await mintSignedUrl(e, otherParent.accessToken, PHOTO_BUCKET, storedPath)
     expect(
-      strangerMint.signedUrl,
+      parentMint.signedUrl,
       'another signed-in family must be able to mint the family photo (that is how ' +
-        `/u/:handle renders it): HTTP ${strangerMint.status}: ${strangerMint.body}`,
+        `/u/:handle renders it): HTTP ${parentMint.status}: ${parentMint.body}`,
     ).not.toBeNull()
-    await stranger.page.goto(`/u/${encodeURIComponent(e.markerHandle)}`)
+    await otherParent.page.goto(`/u/${encodeURIComponent(e.markerHandle)}`)
     await expect(
-      stranger.page.getByTestId('family-photo'),
+      otherParent.page.getByTestId('family-photo'),
       'the family photo must render for another signed-in family on /u/<handle>',
     ).toBeVisible()
   } finally {
-    await stranger.context.close().catch(() => {})
+    await otherParent.context.close().catch(() => {})
   }
 })
 
@@ -845,15 +1054,49 @@ test('“About the parents” saves and renders; a profile with none of the bloc
 
 test.afterEach(async () => {
   // Best-effort cleanup (per ticket): every object THIS spec uploaded, plus the
-  // rows it created and the two profile fields it set — all with the marker's own
-  // JWT, so nothing here can reach another family's data. Logged, never fatal.
+  // rows it created and the two profile fields it set. The marker's rows go with
+  // the marker's own JWT; test 2's drop-in cascades its `playdate_kids` rows; and
+  // the OTHER parent's own going-ping is deleted with THAT parent's JWT, because
+  // the marker has no business writing rows that belong to another family.
+  // Logged, never fatal.
   try {
     const e = env()
     const notes: string[] = []
 
     const remainingKids = await markerDeleteKids(e)
     notes.push(`marker kid rows deleted: ${remainingKids < 0 ? 'FAILED' : remainingKids}`)
-  
+
+    if (created.postId !== null) {
+      // The other parent's ping is deleted FIRST, with its own JWT: `going_pings`
+      // has no FK to this spec's rows beyond `playdate_id`, but the order keeps
+      // the log readable and the ping's own DELETE policy is the only one that
+      // can reach it.
+      if (created.otherParent !== null) {
+        const pingRes = await fetch(
+          `${e.url}/rest/v1/going_pings?playdate_id=eq.${created.postId}` +
+            `&profile_id=eq.${created.otherParent.userId}`,
+          {
+            method: 'DELETE',
+            headers: {
+              apikey: e.anonKey,
+              Authorization: `Bearer ${created.otherParent.accessToken}`,
+              Prefer: 'return=representation',
+            },
+          },
+        )
+        const removed = pingRes.ok ? ((await pingRes.json()) as unknown[]).length : -1
+        notes.push(`other parent's going_pings row deleted: ${removed}`)
+      }
+      const postRes = await fetch(`${e.url}/rest/v1/playdates?id=eq.${created.postId}`, {
+        method: 'DELETE',
+        headers: { ...markerHeaders(e), Prefer: 'return=representation' },
+      })
+      const posts = postRes.ok ? ((await postRes.json()) as unknown[]).length : -1
+      notes.push(`test-drop-in deleted: ${posts} (its playdate_kids rows cascade)`)
+      created.postId = null
+    }
+    created.otherParent = null
+
     if (created.kidProbePath !== null) {
       const ok = await markerDeleteObject(e, PHOTO_BUCKET, created.kidProbePath)
       notes.push(`kid-photo probe object (${created.kidProbePath.replace(/^[^/]+/, '<uid>')}) deleted: ${ok}`)
