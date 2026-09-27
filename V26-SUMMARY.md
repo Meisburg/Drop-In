@@ -179,20 +179,24 @@ for the full exoneration.
 
 ## Open — filed rather than dropped
 
-1. **Two leftover `e2e ` fixtures are live in the feed** — place-less finished
-   drop-ins `6e2e8877…` (profile `ffa54c4d…`) and `2c6b734b…` (profile
-   `ecfa9599…`), both titled `e2e e2e-… Marker inbox rt`, from a prior run.
-   They are marker-convention-sweepable but not swept. Not V26's, and not
-   touched; surfaced because they are exactly the leak the fixture guard exists
-   to prevent. Sweeping them drives the human's Chrome (browser-lane rule), so
-   it waits for a yes.
-2. **The 24-hour window** (`REVIEW_PROMPT_WINDOW_HOURS = 24`) remains the one
+1. **The 24-hour window** (`REVIEW_PROMPT_WINDOW_HOURS = 24`) remains the one
    pin tracing to no human answer.
-3. **The review-prompt copy** — a founder read; the non-negotiable half is that
+2. **The review-prompt copy** — a founder read; the non-negotiable half is that
    it must not claim attendance.
-4. **A known flake:** `npm run verify` can go spuriously red on
+3. **A known flake:** `npm run verify` can go spuriously red on
    `scripts/guards/no-bypass-guard.test.mjs` (a git-internal hardlink race).
    Candidate fix: `--no-hardlinks` in `plainClone()`.
+
+## Swept (resolved 2026-09-27)
+
+- **The leftover `e2e ` fixtures are gone.** `node scripts/sweep-e2e-markers.mjs
+  delete` ran **browserless** (the `SUPABASE_ACCESS_TOKEN` path, not the CDP
+  Chrome), passed the founder-overlap gate (`949 accounts, 0 overlap`), and
+  removed **1910 marker rows across 13 tables** (949 `auth.users`,
+  948 `profiles`, 6 `playdates`, 5 `follows`, 2 `going_pings`); `verify` exits 0
+  with zero marker rows left (`all_users` 995 → 46, moderator preserved), and
+  both flagged drop-ins (`6e2e8877…`, `2c6b734b…`) are confirmed gone.
+  Evidence: `.scratch/sweep-e2e/{list,select,delete}.txt`.
 
 ## Files
 
