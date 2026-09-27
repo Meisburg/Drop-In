@@ -605,3 +605,55 @@ all history forever. Reuse the existing `MAX_SCAN_POSTS = 500` cap (`:142`).
   The brief's "keep `security definer`" was **my error** and the builder was
   right to refuse it. Next action: fix round 1 returns, then re-review, then the
   coordinator's live apply.
+
+- 2026-09-26 — **Slice 2 COMPLETE AND ACCEPTED, then pushed (`7e53c22`).** Three
+  new files: the pure rules in `_shared/reviewScan.ts`, the `src/lib` re-export
+  seam, and the sibling test the guards require. Reviewer **PASS** with all seven
+  criteria at `file:line` and no blocking findings; the verifier's own gate green
+  (56 files / 1784 tests / guards PASS / Deno EXIT=0). Mutation-checked: **5/5
+  rule flips each killed a different named test**, raw per-flip output saved. The
+  module is provably pure — no clock read, `now` is a parameter, proven by a test
+  that ages the same facts out under a later `now`.
+  **A red gate turned out to be a genuine environmental flake**, and it was
+  disproved rather than explained away: `scripts/guards/no-bypass-guard.test.mjs`
+  failed once inside the full suite with a git-internal hardlink error, then
+  passed **5/5 in isolation and 3/3 at the base commit**, with two independent
+  full gates green on the identical tree. Causation was **impossible by
+  construction** — that guard's clone is built from `git push HEAD`, and every
+  Slice 2 file was **untracked**, so the failing process could not have contained
+  them. Deferred known issue: this flake can spuriously red the gate, and the
+  pre-push hook runs the same gate; candidate fix is `--no-hardlinks` in
+  `plainClone()`. **The coordinator's own "commit-graph rewritten at 20:24"
+  hypothesis was killed by the verifier** — that mtime is the `..` row for
+  `.git/objects`, not the directory's, and no writer is configured.
+- 2026-09-26 — **Slice 3 CODE COMPLETE AND ACCEPTED, pushed (`e64d298`). The
+  batch's only remaining item is the human-authorized go-live.** `catchUpReviewDue`
+  wired into the 5-minute scan, mirroring `catchUpStartingSoon` step for step:
+  reviewer verdict was NEEDS_CHANGES on one blocking finding (a file header this
+  slice made false), plus assertions that everything else was right — wiring-only,
+  predicate strictly before the mapper, the embed character-identical, the
+  non-empty `.in()` exclusion, the pinned upsert, both counts reported, and
+  **`catchUpStartingSoon` byte-identical** (91 lines vs 91, proven by extraction
+  in both lanes). The fix round was prose-only and the re-review returned **PASS
+  with no blocking and no non-blocking findings**, confirming all four corrected
+  sites accurate and **no new false claim introduced**.
+  **The re-review settled a dispute by enumeration, against the coordinator:**
+  every `insert into public.notification_log` is one of four statements inside
+  exactly **three** function bodies — `0041:178` *replaces* `0032:416` rather
+  than adding one — so it is **three functions, four kinds**. The builder refused
+  the coordinator's "four functions" instruction and was right.
+  **Cross-slice seams verified** (a check no lane owned): the window constant has
+  one source, the kind name agrees in all seven places, the url encodes like the
+  canonical `places.ts:327` builder, and the copy has one source pinned against
+  its SQL twin.
+  ⛔ **NOT DEPLOYED, DELIBERATELY.** `cron.job` jobid 3 is active at `*/5`, so
+  **deploying IS the go-live** — one real family, irreversibly. Everything about
+  it is rehearsed: a single browserless command, no `supabase login` needed, two
+  footguns pinned (name the function or it deploys all of them; `--project-ref` is
+  mandatory because this checkout is not `supabase link`ed), and the landing
+  proved by three live signals (`version` 5→6, `updated_at`, `ezbr_sha256`) plus a
+  database row count rather than the function's own `reviewDueCreated`, which
+  reports rows *attempted*. The fixture for criteria 3–4 is designed, and cleanup
+  must go **through the profile** — `notification_log` cascades on `profile_id`
+  but has **no FK on `playdate_id`**.
+
