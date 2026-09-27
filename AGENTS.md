@@ -187,6 +187,7 @@ Read it when its situation arrives — the pointer says when.
 | Starting ANY browser lane (e2e, playtest, audits) | `docs/agents/browser-lanes.md` — the human works here; never touch their Chrome |
 | A slice touches an external API, library, or version-specific behavior | `docs/agents/grounding-gates.md` — Exa grounding before dispatch; findings into `research/` |
 | Acting as the DSH coordinator | `docs/agents/coordinator.md` — dispatch mechanics, this session's migration/QA steps, fleet roles |
+| Running agents in Orca (worktrees, terminals, diff, browser) | `docs/agents/orca.md` — the workspace substrate, and what it must never own |
 | Changing agent models or debugging a lane's cost | `docs/agents/model-routing.md` — cloud/local split, NInfer specifics |
 | Writing or reviewing a diff | `docs/agents/code-structure.md` — the build law |
 | Adding a deterministic guard, or evaluating an external agent framework | `docs/agents/borrowed-guards.md` — provenance, refusals, the four tests |
