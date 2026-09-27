@@ -1,8 +1,22 @@
 /**
- * send-push — the V8 ticket 08 sender (Supabase Edge Function, Deno).
+ * send-push — the V8 ticket 08 sender (Supabase Edge Function, Deno), now the
+ * ONE sender for TWO transports.
  *
  * One job, run every 5 minutes by pg_cron (or by hand): turn the
- * `notification_log` rows we OWE into real Web Push POSTs.
+ * `notification_log` rows we OWE into real Web Push POSTs — and, when a parent
+ * has NO registered device at all, into an email instead. Email is a FALLBACK
+ * BRANCH inside `drain()`, not a second function and not a second queue: a
+ * second function draining the same `sent_at is null` rows would race this one
+ * for the same rows.
+ *
+ * THE EMAIL TRANSPORT IS SELECTABLE, SMTP PREFERRED. Gmail SMTP
+ * (`SMTP_USER` + `SMTP_PASS` + `EMAIL_FROM`) is the PRIMARY path: the account
+ * already carries Drop In's auth email and is proven live, and it needs no
+ * sending domain. Resend HTTP stays available (`_shared/resend.ts`, untouched)
+ * for when a domain exists. When NEITHER is configured the branch is not
+ * silently skipped — the row is stamped with the NAME of the missing secret
+ * (`_shared/emailTransport.ts`), because that stamp is the only record of why
+ * nothing was delivered.
  *
  *  1. CATCH-UP SCAN (`starting_soon` only). "Starts in an hour" is a property
  *     of the CLOCK, not of any write, so it is the one kind no trigger can
@@ -14,7 +28,17 @@
  *  2. DRAIN. Every row with `sent_at is null`, newest last: post it, stamp
  *     `sent_at` (or `error`), and DELETE any subscription the push service
  *     answers 404/410 for (the endpoint is dead: the browser unsubscribed, the
- *     app was deleted, or the subscription was rotated).
+ *     app was deleted, or the subscription was rotated). A row whose recipient
+ *     has NO subscription is handed to the email fallback: configured and
+ *     addressable → send the email; otherwise stamp it exactly as before.
+ *
+ * NAMING DEBT, RECORDED RATHER THAN HIDDEN. The function is still called
+ * `send-push` even though it now sends email too. The name is retained
+ * DELIBERATELY: renaming it means a redeploy plus a `pg_cron` job change (the
+ * job `send-push-every-5-minutes` calls this URL), which is deployment work this
+ * slice does not own. The pure decisions live in `../_shared/emailFallback.ts`
+ * (which the app's `src/lib/emailFallback.ts` re-exports and
+ * `src/lib/emailFallback.test.ts` unit-tests), so this file is wiring only.
  *
  * SAFE TO INVOKE REPEATEDLY, and that is the design, not a hope: the unique
  * key `(profile_id, kind, playdate_id)` (migration 0032) plus
@@ -43,6 +67,62 @@ import {
   notificationDedupeKey,
   type NotificationKind,
 } from '../_shared/pushCopy.ts'
+import { FALLBACK_BASE_URL, buildEmailPayload, type EmailEnv } from '../_shared/emailCopy.ts'
+import { sendEmail } from '../_shared/resend.ts'
+import { sendEmailViaSmtp, smtpConfigFrom } from '../_shared/smtp.ts'
+import { smtpDeps } from '../_shared/smtpDeno.ts'
+import { chooseTransport } from '../_shared/emailTransport.ts'
+import { classifySendResult, decideEmailFallback } from '../_shared/emailFallback.ts'
+
+/**
+ * The email fallback's configuration, read ONCE at module scope. `Deno.env` is
+ * not a reactive source in an Edge Function — the isolate is created per
+ * invocation — so there is nothing to gain from re-reading it inside the loop.
+ *
+ * `TRANSPORT` is the PRECEDENCE decision (`_shared/emailTransport.ts`): SMTP
+ * when `SMTP_USER` + `SMTP_PASS` + `EMAIL_FROM` are all non-blank (Gmail is the
+ * primary path), else Resend when `RESEND_API_KEY` + `EMAIL_FROM` are non-blank,
+ * else `disabled` with the NAME of the missing secret in `reason`. Either way
+ * there is nothing to gain from re-deciding per row, and a missing secret means
+ * the drain keeps its old behaviour rather than failing every row on a request
+ * that could never be accepted.
+ */
+const SMTP_USER = (Deno.env.get('SMTP_USER') ?? '').trim()
+const SMTP_PASS = (Deno.env.get('SMTP_PASS') ?? '').trim()
+const SMTP_HOST = (Deno.env.get('SMTP_HOST') ?? '').trim()
+const SMTP_PORT = (Deno.env.get('SMTP_PORT') ?? '').trim()
+const RESEND_API_KEY = (Deno.env.get('RESEND_API_KEY') ?? '').trim()
+const EMAIL_FROM = (Deno.env.get('EMAIL_FROM') ?? '').trim()
+const EMAIL_REPLY_TO = (Deno.env.get('EMAIL_REPLY_TO') ?? '').trim()
+const PUBLIC_BASE_URL = (Deno.env.get('PUBLIC_BASE_URL') ?? '').trim()
+
+/** Which transport this deployment has, and (when disabled) what is missing. */
+const TRANSPORT = chooseTransport({
+  smtpUser: SMTP_USER,
+  smtpPass: SMTP_PASS,
+  resendApiKey: RESEND_API_KEY,
+  emailFrom: EMAIL_FROM,
+})
+
+/** There is a transport to call at all — the flag `decideEmailFallback` wants. */
+const EMAIL_ENABLED = TRANSPORT.kind !== 'disabled'
+
+/** The SMTP branch's config, from the same secrets. Unused when disabled. */
+const SMTP_CONFIG = smtpConfigFrom({
+  SMTP_USER,
+  SMTP_PASS,
+  EMAIL_FROM,
+  EMAIL_REPLY_TO,
+  SMTP_HOST,
+  SMTP_PORT,
+})
+
+/** Links are built against the configured origin, else the pinned deployment
+ *  fallback — a relative link in an inbox is a dead link. */
+const EMAIL_ENV: EmailEnv = {
+  baseUrl: PUBLIC_BASE_URL !== '' ? PUBLIC_BASE_URL : FALLBACK_BASE_URL,
+  replyTo: EMAIL_REPLY_TO,
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -256,12 +336,137 @@ async function drain(admin: SupabaseClient): Promise<{
     // stamped anyway: it is not "owed" any more — it is the /profile fallback
     // list's content — and leaving it unsent would make every future tick
     // re-read it forever.
+    //
+    // …UNLESS a transport is configured, in which case "no device" is no longer
+    // "no way to reach them": an iPhone parent who never completed the push
+    // opt-in (iOS web push needs the app installed to the home screen) still
+    // gets told. The email branch below is a FALLBACK INSIDE this drain, on
+    // purpose — a second function draining the same `sent_at is null` rows
+    // would race this one for them. The unique key
+    // `(profile_id, kind, playdate_id)` plus `sent_at is null` remains the only
+    // anti-double-send wall; there is still no in-memory dedupe.
     if (subscriptions.length === 0) {
+      if (TRANSPORT.kind === 'disabled') {
+        // Not configured. Keep the EXISTING behaviour, including the LEADING
+        // part of the error string — other things read it, and the honest
+        // reading is "we had no way to reach them" — but APPEND the transport's
+        // own reason, the same way the decision branch below does. Without it
+        // the row says only that email is off; with it the row names the
+        // missing secret, and that row is the only record of why no parent was
+        // told.
+        await admin
+          .from('notification_log')
+          .update({
+            sent_at: new Date().toISOString(),
+            error: `no subscription (email disabled: ${TRANSPORT.reason})`.slice(0, 500),
+          })
+          .eq('id', row.id)
+        skipped += 1
+        continue
+      }
+
+      // Resolve the recipient. NEITHER read may throw out of the loop: one
+      // unreadable row must not strand every notification behind it. A failed
+      // read is `undefined`, which for the opt-out column means "fall through
+      // and send" (see the header of _shared/emailFallback.ts) and for the
+      // address means "we have nowhere to send", which the decision reports.
+      let optout: boolean | undefined
+      let email: string | null | undefined
+
+      try {
+        const { data, error } = await admin
+          .from('profiles')
+          .select('email_optout')
+          .eq('id', row.profile_id)
+          .maybeSingle()
+        if (error) throw error
+        optout = (data as { email_optout: boolean } | null)?.email_optout
+      } catch (error) {
+        // Pre-0053 project (the column is absent → 42703) or a failed read. NOT
+        // `true`: an unreadable opt-out column is not a parent asking us to stop.
+        console.error(`send-push: could not read email_optout for ${row.profile_id}:`, errorMessage(error))
+        optout = undefined
+      }
+
+      try {
+        const { data, error } = await admin.auth.admin.getUserById(row.profile_id)
+        if (error) throw error
+        email = data.user?.email
+      } catch (error) {
+        console.error(`send-push: could not read the email address for ${row.profile_id}:`, errorMessage(error))
+        email = undefined
+      }
+
+      const decision = decideEmailFallback({ emailEnabled: EMAIL_ENABLED, optout, email })
+
+      if (decision.action !== 'send-email') {
+        // Same stamp as the unconfigured path, with the decision's own reason
+        // appended so the queue row records WHY this parent was not reached.
+        await admin
+          .from('notification_log')
+          .update({
+            sent_at: new Date().toISOString(),
+            error: `no subscription (${decision.reason})`.slice(0, 500),
+          })
+          .eq('id', row.id)
+        skipped += 1
+        continue
+      }
+
+      // The cap counts EMAILS exactly as it counts pushes — an attempt is an
+      // attempt, or the per-invocation cap stops meaning anything.
+      sends += 1
+
+      const emailPayload = buildEmailPayload(row, EMAIL_ENV)
+      // SMTP first (the primary transport), Resend second — the same precedence
+      // `chooseTransport` decided above. Both branches resolve the SAME
+      // `SendResult`, so the stamping below cannot tell them apart.
+      const result =
+        TRANSPORT.kind === 'smtp'
+          ? await sendEmailViaSmtp(smtpDeps, { to: email ?? '', ...emailPayload }, SMTP_CONFIG)
+          : await sendEmail(
+              { fetch },
+              { to: email ?? '', ...emailPayload },
+              { apiKey: RESEND_API_KEY, from: EMAIL_FROM, replyTo: EMAIL_REPLY_TO },
+            )
+      const verdict = classifySendResult(result)
+
+      if (verdict === 'sent') {
+        await admin
+          .from('notification_log')
+          .update({ sent_at: new Date().toISOString(), error: 'sent:email' })
+          .eq('id', row.id)
+        sent += 1
+        continue
+      }
+
+      if (verdict === 'retry') {
+        // DO NOT STAMP. The transport said "come back later" — SMTP 4xx (421/
+        // 450/451/452), a Resend 429/5xx, or a connection/TLS failure that
+        // never reached a status — so `sent_at` stays null and the next
+        // 5-minute tick picks the row up again. Stamping here would mark the
+        // notification delivered and DROP it forever — the parent would never be
+        // told about the playdate, which is the exact failure this slice exists
+        // to remove.
+        failed += 1
+        continue
+      }
+
+      // Terminal: the identical request will fail identically forever — an SMTP
+      // 5xx (550 is an ADDRESS REJECTION), a Resend 4xx that is not a rate
+      // limit, or a misconfiguration — so it IS stamped. Leaving it unsent
+      // would make every future tick retry a bad address and starve every
+      // notice queued behind it (this drain is oldest-first, and the cap is a
+      // send budget).
+      const detail = result.ok ? 'unknown' : result.error
       await admin
         .from('notification_log')
-        .update({ sent_at: new Date().toISOString(), error: 'no subscription' })
+        .update({
+          sent_at: new Date().toISOString(),
+          error: `email failed: ${detail}`.slice(0, 500),
+        })
         .eq('id', row.id)
-      skipped += 1
+      failed += 1
       continue
     }
 

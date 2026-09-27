@@ -3696,6 +3696,98 @@ export async function listRecentNotifications(
 }
 
 // ---------------------------------------------------------------------------
+// Migration 0053: the channel-level EMAIL OPT-OUT (`profiles.email_optout`).
+//
+// A column on a table that ALREADY has the right posture, so there is no new
+// SQL surface here: the owner UPDATE rides 0001's `profiles_update_own` (which
+// covers every column — 0012_zip_radius.sql:682) and the read rides 0001's
+// `profiles_select_authenticated`, scoped to the caller's own id by the query.
+//
+// THE POLARITY IS THE API, and it is why the read returns `boolean | undefined`
+// rather than a boolean: `email_optout` is an OPT-OUT — `false` = email is
+// ALLOWED (the NOT NULL default), `true` = the parent asked us to stop. A read
+// that did not come back is `undefined`, NEVER `false`, because "false" is a
+// real, stored, emailable value and conflating the two would make a failed read
+// indistinguishable from a parent's explicit "yes". The render rule for that
+// case is the pure `decideEmailOptoutControl` (src/lib/emailOptout.ts).
+//
+// MISSING-COLUMN BEHAVIOUR (the pre-0053 state, the 0031/0032/0052 discipline):
+// selecting the absent column is PostgREST 42703, so `getEmailOptout` THROWS
+// and the caller renders the default-on state with its note. Nothing here is on
+// a shared load path — the only consumer is the /settings Notifications
+// section, whose other reads keep working when this one fails.
+// ---------------------------------------------------------------------------
+
+/**
+ * The caller's email opt-out flag (migration 0053), or `undefined` when the
+ * value did not come back.
+ *
+ * `undefined` is deliberately NOT flattened into a boolean, because `false` is
+ * a real, stored, emailable value (the OPT-OUT polarity): it means "no readable
+ * row" (`maybeSingle`'s null) or "the payload carried no boolean". A pre-0053
+ * project does not land on either — selecting the absent column is PostgREST
+ * 42703, which this function THROWS, and the caller catches it into the same
+ * default-on state. Both paths must render as email-is-on, never as "opted
+ * out"; the rule lives in the pure `decideEmailOptoutControl`
+ * (src/lib/emailOptout.ts).
+ *
+ * `maybeSingle()` rather than `single()`: a missing row is a legitimate "we
+ * could not read this", not a PGRST116 the caller would have to tell apart from
+ * a real failure.
+ */
+export async function getEmailOptoutWithClient(
+  client: SupabaseClient,
+  userId: string,
+): Promise<boolean | undefined> {
+  const { data, error } = await client
+    .from('profiles')
+    .select('email_optout')
+    .eq('id', userId)
+    .maybeSingle()
+  if (error) throw error
+  const value = (data as { email_optout?: unknown } | null)?.email_optout
+  return typeof value === 'boolean' ? value : undefined
+}
+
+/** The default-client wrapper (the /settings Notifications section). */
+export async function getEmailOptout(): Promise<boolean | undefined> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) return undefined
+  return getEmailOptoutWithClient(supabase, user.id)
+}
+
+/**
+ * Set the caller's email opt-out flag (migration 0053) against an injected
+ * client. The parameter is the COLUMN value, not the checkbox state: `true`
+ * means "stop emailing me". One plain UPDATE with no RETURNING — the value is
+ * the whole write, so there is nothing to read back (and 0031's saved-write
+ * lesson is that an immediate re-read can miss the row it just wrote); the
+ * caller can render what it just sent.
+ */
+export async function updateEmailOptoutWithClient(
+  client: SupabaseClient,
+  userId: string,
+  emailOptout: boolean,
+): Promise<void> {
+  const { error } = await client
+    .from('profiles')
+    .update({ email_optout: emailOptout })
+    .eq('id', userId)
+  if (error) throw error
+}
+
+/** The default-client wrapper ("Email me about my drop-ins" on /settings). */
+export async function updateEmailOptout(emailOptout: boolean): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) throw new Error('Not signed in')
+  return updateEmailOptoutWithClient(supabase, user.id, emailOptout)
+}
+
+// ---------------------------------------------------------------------------
 // V8 ticket 09 (migration 0033): FOLLOWS — the loop-closing bookmark.
 //
 // A follow targets EITHER another family OR a place, and there is exactly one

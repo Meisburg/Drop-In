@@ -85,6 +85,17 @@ export interface Profile {
    * yet, the pre-0016 status-column discipline).
    */
   last_seen_at?: string | null
+  /**
+   * The channel-level EMAIL OPT-OUT (migration 0053). An OPT-OUT, not an
+   * opt-in: false means email is ALLOWED (the column's NOT NULL default) and
+   * true means the parent asked us to stop. Read/written by the /settings
+   * Notifications section through db.getEmailOptout / db.updateEmailOptout,
+   * whose rendered state is the pure `decideEmailOptoutControl`
+   * (src/lib/emailOptout.ts). Optional: absent until the live project is
+   * past 0053 (undefined at runtime — a read of the absent column 42703s and
+   * the app renders the default-on state, never "email is off").
+   */
+  email_optout?: boolean
 }
 
 /**
