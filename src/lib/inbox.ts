@@ -21,7 +21,11 @@ import { localDayKey } from './feed'
 
 /** A normalized row of the merged inbox list (one per distinct counterpart). */
 export interface MergedConversation {
-  /** The counterpart's profile id (the merge key; '' when unknown). */
+  /**
+   * The counterpart's profile id (the merge key; '' when unknown —
+   * unresolved rows are keyed PER CONVERSATION so they never share a
+   * single '' bucket and collapse into one another).
+   */
   otherPartyId: string
   /** The counterpart's display name (the bold line). */
   otherPartyName: string
@@ -133,7 +137,17 @@ export function mergeConversations(
   type CounterpartRows = Partial<Record<Normalized['kind'], Normalized>>
   const byKey = new Map<string, CounterpartRows>()
   for (const row of [...dmNormalized, ...playdateNormalized]) {
-    const key = row.otherPartyId
+    // An UNRESOLVED counterpart (otherPartyId === '') must not share one
+    // '' bucket: keying it per conversation (the playdate's id, the row's
+    // own latestAt for a DM) keeps every distinct conversation its own row
+    // instead of collapsing them, summing their unreadCounts onto a
+    // single survivor.
+    const key =
+      row.otherPartyId !== ''
+        ? row.otherPartyId
+        : row.kind === 'playdate'
+          ? `playdate:${row.playdateId}`
+          : `dm:${row.latestAt}`
     const counterpartRows = byKey.get(key) ?? {}
     const existing = counterpartRows[row.kind]
     if (
