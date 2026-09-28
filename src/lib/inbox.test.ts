@@ -6,6 +6,7 @@ import {
   mergeKeyFor,
   messageSenderLabel,
   singleSenderCounterpart,
+  sumUnread,
 } from './inbox'
 import type { DmConversationRow, MessageSenderFields, PlaydateConversationRow } from './inbox'
 
@@ -535,5 +536,35 @@ describe('firstNamedCounterpart (V25 t11 — first real name wins, blanks are un
   it('skips null/undefined candidates and returns an unnamed counterpart when none carry a name', () => {
     expect(firstNamedCounterpart([null, undefined, { id: 'a', name: '  ' }])).toEqual({ id: '', name: '' })
     expect(firstNamedCounterpart([])).toEqual({ id: '', name: '' })
+  })
+})
+
+describe('sumUnread (V27 s3 — the Inbox tab badge total)', () => {
+  it('returns 0 for no rows', () => {
+    expect(sumUnread([])).toBe(0)
+  })
+
+  it('sums both conversation kinds', () => {
+    expect(sumUnread([dm({ unreadCount: 2 }), pd({ unreadCount: 3 })])).toBe(5)
+  })
+
+  it('clamps NaN, negative, undefined/null and non-numbers to 0 instead of poisoning the sum', () => {
+    expect(
+      sumUnread([
+        { unreadCount: Number.NaN },
+        { unreadCount: -4 },
+        { unreadCount: undefined },
+        { unreadCount: null },
+        { unreadCount: 'lots' } as unknown as { unreadCount: number },
+        { unreadCount: Number.POSITIVE_INFINITY },
+        dm({ unreadCount: 7 }),
+      ]),
+    ).toBe(7)
+  })
+
+  it('never returns NaN, even when every row is nonsense', () => {
+    const total = sumUnread([{ unreadCount: Number.NaN }, { unreadCount: undefined }])
+    expect(Number.isNaN(total)).toBe(false)
+    expect(total).toBe(0)
   })
 })

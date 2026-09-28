@@ -4,6 +4,7 @@ import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useLocat
 import { DropInMark } from './components/DropInMark'
 import { NAV_ICONS, NAV_ICONS_FILLED } from './components/icons'
 import { LightboxProvider } from './components/ImageLightbox'
+import { InboxUnreadProvider, useInboxUnread } from './components/InboxUnreadProvider'
 import { PostActionButton } from './components/PostActionButton'
 import { PushOptInPrompt } from './components/PushOptInPrompt'
 import { SectionHeader } from './components/SectionHeader'
@@ -78,6 +79,8 @@ const MOD_PATH = '/mod'
 function ProtectedShell() {
   const { session, loading, profile, homeZipSet, suspended, profileLoading } =
     useSessionContext()
+  // V27 slice 3: the Inbox tab's unread marker (see InboxUnreadProvider).
+  const { unreadCount } = useInboxUnread()
   const { pathname } = useLocation()
 
   // The onboarding-gate decision (ticket 06, V2 slice 3: keys on the home
@@ -280,7 +283,7 @@ function ProtectedShell() {
               <NavTab to="/" label="Drop Ins" icon={<NavIcon path={NAV_ICONS.nearby} />} filledIcon={<NavIcon path={NAV_ICONS_FILLED.nearby} filled />} />
               {/* V14 ticket 01: the inbox — parent↔parent messaging, scoped to
                   the drop-ins both parties are going to (host ↔ pinger). */}
-              <NavTab to="/inbox" label="Inbox" icon={<NavIcon path={NAV_ICONS.inbox} />} filledIcon={<NavIcon path={NAV_ICONS_FILLED.inbox} filled />} />
+              <NavTab to="/inbox" label="Inbox" badge={unreadCount} icon={<NavIcon path={NAV_ICONS.inbox} />} filledIcon={<NavIcon path={NAV_ICONS_FILLED.inbox} filled />} />
               {/* V24 slice 05: the Post action returns to the nav's CENTRE as a
                   raised circular "+" (PostActionButton) — an ACTION, not a fifth
                   NavTab destination. This is a DELIBERATE REVERSAL of V22 slice
@@ -405,6 +408,7 @@ function NavTab({
   label,
   icon,
   filledIcon,
+  badge,
 }: {
   to: string
   label: string
@@ -412,11 +416,26 @@ function NavTab({
   /** V22 slice 12: the FILLED variant (NAV_ICONS_FILLED) — rendered when the tab
       is active, so "where you are" is a shape change, not a color change. */
   filledIcon?: ReactNode
+  /**
+   * V27 slice 3: an optional unread count. A marker renders ONLY when it is a
+   * finite number > 0, and it is announced — the visible pill carries the
+   * digits and the NavLink's `aria-label` says "Inbox, 3 unread", so the state
+   * never depends on colour alone. Capped at "99+". `undefined` (the default)
+   * leaves the tab exactly as it was.
+   */
+  badge?: number
 }) {
+  let badgeText: string | null = null
+  let badgeLabel: string | undefined
+  if (badge !== undefined && Number.isFinite(badge) && badge > 0) {
+    badgeText = badge > 99 ? '99+' : String(badge)
+    badgeLabel = `${label}, ${badge} unread`
+  }
   return (
     <NavLink
       to={to}
       end={to === '/'}
+      aria-label={badgeLabel}
       className={({ isActive }) =>
         `flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 whitespace-nowrap px-1 py-1.5 text-xs transition-colors motion-reduce:transition-none ${
           isActive ? 'font-semibold text-indigo-600' : 'font-medium text-slate-600'
@@ -425,7 +444,14 @@ function NavTab({
     >
       {({ isActive }) => (
         <>
-          <span aria-hidden="true">{isActive && filledIcon !== undefined ? filledIcon : icon}</span>
+          <span aria-hidden="true" className="relative">
+            {isActive && filledIcon !== undefined ? filledIcon : icon}
+            {badgeText !== null ? (
+              <span className="absolute -right-2 -top-1 flex min-w-[1.1rem] items-center justify-center rounded-full bg-indigo-600 px-1 text-[0.625rem] font-semibold leading-4 text-white">
+                {badgeText}
+              </span>
+            ) : null}
+          </span>
           {label}
         </>
       )}
@@ -459,6 +485,10 @@ export default function App() {
   return (
     <BrowserRouter>
       <SessionProvider>
+        {/* V27 slice 3: one shared unread total for the Inbox nav badge. Inside
+            SessionProvider so it reads the shared session; the shell below
+            consumes it via useInboxUnread. */}
+        <InboxUnreadProvider>
         {/* V6: any photo in the app can open full-screen — the provider owns
             the single overlay instance (see components/ImageLightbox.tsx). */}
         <LightboxProvider>
@@ -536,6 +566,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </LightboxProvider>
+        </InboxUnreadProvider>
       </SessionProvider>
     </BrowserRouter>
   )

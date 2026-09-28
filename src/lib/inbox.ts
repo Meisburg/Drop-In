@@ -260,6 +260,32 @@ export function mergeConversations(
 }
 
 /**
+ * V27 slice 3 — the Inbox tab's unread TOTAL.
+ *
+ * The two conversation seams (`listConversations`,
+ * `listDirectConversations`) each carry a per-row `unreadCount`. The bottom
+ * nav's badge needs ONE number across both kinds, computed in a pure place so
+ * the provider that fetches has no decision of its own to make.
+ *
+ * Deliberately total: a non-finite (`NaN`/`Infinity`), negative, missing, or
+ * non-number count contributes ZERO rather than poisoning the sum — a badge
+ * reading `NaN` is worse than no badge, and a realtime/refetch race must never
+ * be able to produce one. No I/O, no clock, no mutation, never throws.
+ */
+export function sumUnread(
+  rows: ReadonlyArray<{ unreadCount?: number | null }>,
+): number {
+  let total = 0
+  for (const row of rows) {
+    const value = row?.unreadCount
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      total += value
+    }
+  }
+  return total
+}
+
+/**
  * V25 ticket 11 — the thread's per-MESSAGE identity.
  *
  * THE DEFECT THIS EXISTS FOR. The bubble label used to be a THREAD-level value:
