@@ -63,15 +63,20 @@
       media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2)"
     />
     <title>Drop In</title>
-    <!-- V22 slice 14: NO FLASH OF WRONG THEME. The app no longer follows the OS;
-         a stored dark choice must paint dark on every cold load, so this runs
-         BEFORE the module script and sets <html data-theme="dark"> synchronously
-         (index.css keys its dark tokens off that attribute). try/catch is
-         required: localStorage throws in some privacy modes, and a throw here
-         would blank the whole page. Absent/garbage key = light default. -->
+    <!-- V22 slice 14: NO FLASH OF WRONG THEME. The app no longer follows the OS
+         by default; a stored dark choice must paint dark on every cold load, so
+         this runs BEFORE the module script and sets <html data-theme="dark">
+         synchronously (index.css keys its dark tokens off that attribute).
+         V27 adds the stored 'system' choice: it resolves against the OS
+         preference HERE, before paint, so "match my phone" is flash-free too.
+         try/catch is required: localStorage throws in some privacy modes, and a
+         throw here would blank the whole page. Absent/garbage key = light. -->
     <script>
       try {
-        if (localStorage.getItem('dropin-theme') === 'dark') {
+        var choice = localStorage.getItem('dropin-theme')
+        var mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)')
+        var dark = choice === 'dark' || (choice === 'system' && !!mq && mq.matches)
+        if (dark) {
           document.documentElement.setAttribute('data-theme', 'dark')
           // Also point the browser-chrome meta at the dark neutral, in the SAME
           // pre-paint pass. The app ships one static (light) meta because it no

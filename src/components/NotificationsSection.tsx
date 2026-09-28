@@ -8,6 +8,7 @@ import {
   type PushSubscriptionSummary,
 } from '../lib/db'
 import { decideEmailOptoutControl } from '../lib/emailOptout'
+import { settingsErrorMessage } from '../lib/settingsError'
 import {
   NOTIFICATION_KIND_COPY,
   NOTIFICATION_KINDS,
@@ -35,13 +36,15 @@ import {
   pushSupported,
   readPushPrefs,
   refreshPushSubscription,
+  saveQuietHours,
   subscribeInstallPrompt,
   toggleKindMuted,
   vapidPublicKey,
 } from '../lib/pushClient'
 
 /**
- * The /profile Notifications section (V8 ticket 08).
+ * The /settings Notifications section (V8 ticket 08; V27 added quiet hours and
+ * moved the alerts log behind a disclosure).
  *
  * It owns the whole notification surface for one parent:
  *   - the opt-in ("Turn on notifications" / "Turn off", which DELETES the
@@ -82,14 +85,7 @@ type EmailOptoutLoad =
   | { status: 'error'; message: string }
 
 function errorText(error: unknown): string {
-  if (error instanceof Error && error.message !== '') return error.message
-  if (typeof error === 'object' && error !== null) {
-    const candidate = error as { message?: unknown; details?: unknown; code?: unknown }
-    if (typeof candidate.message === 'string' && candidate.message !== '') return candidate.message
-    if (typeof candidate.details === 'string' && candidate.details !== '') return candidate.details
-    if (typeof candidate.code === 'string' && candidate.code !== '') return candidate.code
-  }
-  return 'unknown error'
+  return settingsErrorMessage(error, 'the service did not respond')
 }
 
 /** "just now" / "12 min ago" / "3 h ago" / "Sep 12" for one log row. */
@@ -256,6 +252,13 @@ export function NotificationsSection() {
     setPrefs(toggleKindMuted(kind))
   }
 
+  /** Quiet hours are device-level, like the mutes: the write persists to
+   *  localStorage, mirrors into the SW cache, and renders from the new prefs. A
+   *  cleared time input is ignored rather than stored as an empty window. */
+  function handleQuietHoursChange(patch: Partial<PushPrefs['quietHours']>) {
+    setPrefs(saveQuietHours({ ...prefs.quietHours, ...patch }))
+  }
+
   async function handleInstall() {
     const outcome = await promptInstall()
     readDevice()
@@ -296,7 +299,7 @@ export function NotificationsSection() {
       className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
       data-testid="notifications-section"
     >
-      <h2 className="text-base font-semibold text-slate-900">Notifications</h2>
+      <h3 className="text-base font-semibold text-slate-900">Notifications</h3>
       <p className="mt-1 text-sm text-slate-600">
         A heads-up when someone joins your drop-in, when it starts, or if it gets cancelled.
       </p>
@@ -413,7 +416,7 @@ export function NotificationsSection() {
           The rendered state and the note come from the pure
           decideEmailOptoutControl; this component only renders and executes. */}
       <div className="mt-4 border-t border-slate-100 pt-3" data-testid="email-optout">
-        <h2 className="text-base font-semibold text-slate-900">Email</h2>
+        <h3 className="text-base font-semibold text-slate-900">Email</h3>
         <p className="mt-1 text-xs text-slate-500">
           Email is the fallback for when you don&apos;t have notifications turned on for this
           device. It can arrive a few minutes after the alert in the app — it is not instant.
@@ -481,9 +484,9 @@ export function NotificationsSection() {
           src/sw.ts + 0032's accepted residual) — a muted kind arrives and is
           dropped before it shows. */}
       <div className="mt-4 border-t border-slate-100 pt-3" data-testid="push-kind-prefs">
-        <h2 className="text-base font-semibold text-slate-900">
+        <h3 className="text-base font-semibold text-slate-900">
           Choose what you get notified about
-        </h2>
+        </h3>
         <p className="mt-1 text-xs text-slate-500">
           Tap any row below to switch a kind on or off.
         </p>
@@ -510,14 +513,75 @@ export function NotificationsSection() {
           })}
         </ul>
         <p className="mt-2 text-xs text-slate-500">
-          Unchecked kinds are dropped on this device before they show.
+          Unchecked kinds are dropped on this device before they show. These choices are saved on
+          this device only — email is set separately above.
         </p>
       </div>
 
+      {/* Quiet hours (V27). A device-level window enforced by the service
+          worker, exactly like the mutes. Cancellations and early ends are
+          deliberately exempt (see QUIET_HOURS_ALWAYS_ALLOWED): those exist to
+          stop a parent driving out, so silence there would be a safety bug, not
+          a courtesy. */}
+      <div className="mt-4 border-t border-slate-100 pt-3" data-testid="quiet-hours">
+        <h3 className="text-base font-semibold text-slate-900">Quiet hours</h3>
+        <p className="mt-1 text-xs text-slate-500">
+          Pause alerts while your family sleeps. Cancellations and drop-ins that end early still
+          come through, so you never drive out to an empty park.
+        </p>
+        <label className="mt-2 flex min-h-11 items-center gap-3">
+          <input
+            type="checkbox"
+            className="h-5 w-5 shrink-0 accent-indigo-600"
+            data-testid="quiet-hours-toggle"
+            checked={prefs.quietHours.enabled}
+            onChange={(event) =>
+              handleQuietHoursChange({ enabled: event.target.checked })
+            }
+          />
+          <span className="text-sm font-medium text-slate-700">Pause non-urgent alerts overnight</span>
+        </label>
+        {prefs.quietHours.enabled ? (
+          <div className="mt-1 flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-1 text-xs text-slate-600">
+              From
+              <input
+                type="time"
+                data-testid="quiet-hours-start"
+                className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-base text-slate-800"
+                value={prefs.quietHours.start}
+                onChange={(event) => {
+                  if (event.target.value === '') return
+                  handleQuietHoursChange({ start: event.target.value })
+                }}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-600">
+              To
+              <input
+                type="time"
+                data-testid="quiet-hours-end"
+                className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-base text-slate-800"
+                value={prefs.quietHours.end}
+                onChange={(event) => {
+                  if (event.target.value === '') return
+                  handleQuietHoursChange({ end: event.target.value })
+                }}
+              />
+            </label>
+          </div>
+        ) : null}
+      </div>
+
       {/* The visible fallback: the same alerts, in the app, whether or not the
-          browser ever granted permission. */}
-      <div className="mt-4 border-t border-slate-100 pt-3" data-testid="push-recent">
-        <p className="text-sm font-medium text-slate-800">Recent alerts</p>
+          browser ever granted permission. V27 put it behind a disclosure — it
+          is a log, not a preference, and it should not push the controls a
+          parent came to change off the screen. It stays on the page and stays
+          honest; it just waits to be asked. */}
+      <details className="mt-4 border-t border-slate-100 pt-3" data-testid="push-recent">
+        <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium text-slate-800">
+          Recent alerts
+        </summary>
         {recent.status === 'loading' ? (
           <p className="mt-1 text-sm text-slate-600">Loading…</p>
         ) : recent.status === 'error' ? (
@@ -549,7 +613,7 @@ export function NotificationsSection() {
         <p className="mt-2 text-xs text-slate-500">
           This list works whether or not your browser shows notifications.
         </p>
-      </div>
+      </details>
 
       {pushSupported() ? null : (
         <p className="mt-2 text-xs text-slate-500">

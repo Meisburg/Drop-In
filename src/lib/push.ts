@@ -815,11 +815,87 @@ export function decideOptInControl(input: OptInControlInput): OptInControlDecisi
 // the accepted residual is written down in 0032's header.
 // ---------------------------------------------------------------------------
 
-export interface PushPrefs {
-  muted: NotificationKind[]
+export interface QuietHours {
+  enabled: boolean
+  /** Local wall-clock start, 'HH:MM' 24-hour. */
+  start: string
+  /** Local wall-clock end, 'HH:MM' 24-hour. May be earlier than `start`, which
+   *  is how an overnight window (21:00 -> 07:00) is expressed. */
+  end: string
 }
 
-export const DEFAULT_PUSH_PREFS: PushPrefs = { muted: [] }
+/**
+ * Quiet hours are OFF by default and never suppress the two kinds whose whole
+ * job is to stop a parent driving to an empty park: a cancellation and an
+ * early end. Everything else waits — the alert is still in the app's Recent
+ * alerts list, so nothing is lost.
+ */
+export const DEFAULT_QUIET_HOURS: QuietHours = { enabled: false, start: '21:00', end: '07:00' }
+
+/** The kinds quiet hours must NEVER drop (safety, not chatter). */
+export const QUIET_HOURS_ALWAYS_ALLOWED: readonly NotificationKind[] = ['cancelled', 'ended']
+
+export interface PushPrefs {
+  muted: NotificationKind[]
+  quietHours: QuietHours
+}
+
+export const DEFAULT_PUSH_PREFS: PushPrefs = {
+  muted: [],
+  quietHours: DEFAULT_QUIET_HOURS,
+}
+
+/** A well-formed 24-hour clock time, or null. */
+export function minutesOfDay(value: unknown): number | null {
+  if (typeof value !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) return null
+  const [hours, minutes] = value.split(':').map(Number)
+  return hours * 60 + minutes
+}
+
+/** Parse one quiet-hours object, falling back per-field to the default. */
+export function parseQuietHours(raw: unknown): QuietHours {
+  if (typeof raw !== 'object' || raw === null) return DEFAULT_QUIET_HOURS
+  const candidate = raw as { enabled?: unknown; start?: unknown; end?: unknown }
+  return {
+    enabled: candidate.enabled === true,
+    start: minutesOfDay(candidate.start) === null ? DEFAULT_QUIET_HOURS.start : (candidate.start as string),
+    end: minutesOfDay(candidate.end) === null ? DEFAULT_QUIET_HOURS.end : (candidate.end as string),
+  }
+}
+
+/** Whether `date` falls inside the window. Overnight windows wrap midnight.
+ *  A zero-length window (start === end) is treated as "no quiet window" rather
+ *  than as all-day silence. */
+export function isQuietAt(quiet: QuietHours, date: Date): boolean {
+  if (!quiet.enabled) return false
+  const start = minutesOfDay(quiet.start)
+  const end = minutesOfDay(quiet.end)
+  if (start === null || end === null || start === end) return false
+  const now = date.getHours() * 60 + date.getMinutes()
+  if (start < end) return now >= start && now < end
+  return now >= start || now < end
+}
+
+/**
+ * The service worker's one quiet-hours question: should this arriving kind be
+ * dropped? Unknown kinds (a sender that forgot to set one) FAIL OPEN — a push
+ * we cannot classify must not be swallowed. The always-allowed list wins even
+ * inside the window.
+ */
+export function shouldSuppressForQuietHours(
+  prefs: PushPrefs,
+  kind: NotificationKind | null,
+  date: Date,
+): boolean {
+  if (kind === null) return false
+  if (QUIET_HOURS_ALWAYS_ALLOWED.includes(kind)) return false
+  return isQuietAt(prefs.quietHours, date)
+}
+
+/** Replace the quiet-hours window, returning a new prefs object. */
+export function setQuietHours(prefs: PushPrefs, quiet: QuietHours): PushPrefs {
+  return { ...prefs, quietHours: quiet }
+}
 
 /** A garbage or absent value reads as "nothing muted" — fail OPEN, so a
  *  storage problem can never silently swallow a cancellation. */
@@ -829,15 +905,26 @@ export function parsePushPrefs(raw: string | null | undefined): PushPrefs {
     const parsed: unknown = JSON.parse(raw)
     if (typeof parsed !== 'object' || parsed === null) return DEFAULT_PUSH_PREFS
     const muted = (parsed as { muted?: unknown }).muted
-    if (!Array.isArray(muted)) return DEFAULT_PUSH_PREFS
-    return { muted: NOTIFICATION_KINDS.filter((kind) => muted.includes(kind)) }
+    const quietHours = (parsed as { quietHours?: unknown }).quietHours
+    if (!Array.isArray(muted)) {
+      // A payload with quiet hours but no muted array is still usable: keep the
+      // quiet window rather than throwing the whole preference away.
+      return {
+        muted: [],
+        quietHours: parseQuietHours(quietHours),
+      }
+    }
+    return {
+      muted: NOTIFICATION_KINDS.filter((kind) => muted.includes(kind)),
+      quietHours: parseQuietHours(quietHours),
+    }
   } catch {
     return DEFAULT_PUSH_PREFS
   }
 }
 
 export function serializePushPrefs(prefs: PushPrefs): string {
-  return JSON.stringify({ muted: prefs.muted })
+  return JSON.stringify({ muted: prefs.muted, quietHours: prefs.quietHours })
 }
 
 export function isKindMuted(prefs: PushPrefs, kind: NotificationKind): boolean {
@@ -848,7 +935,7 @@ export function setKindMuted(prefs: PushPrefs, kind: NotificationKind, muted: bo
   const next = new Set(prefs.muted)
   if (muted) next.add(kind)
   else next.delete(kind)
-  return { muted: NOTIFICATION_KINDS.filter((candidate) => next.has(candidate)) }
+  return { ...prefs, muted: NOTIFICATION_KINDS.filter((candidate) => next.has(candidate)) }
 }
 
 /**

@@ -43,6 +43,7 @@ import {
   isKindMuted,
   isNotificationKind,
   parsePushPrefs,
+  shouldSuppressForQuietHours,
   type PushPrefs,
   type RotatedSubscriptionMessage,
   type ServiceWorkerInboundMessage,
@@ -127,9 +128,14 @@ async function showPush(event: PushEvent): Promise<void> {
 
   const kind = isNotificationKind(message.kind) ? message.kind : null
 
-  // The per-kind mute. The push has already arrived; dropping it here is what
-  // "off" means until a profile×kind table exists.
-  if (kind !== null && isKindMuted(await readPrefs(), kind)) return
+  // The per-kind mute and the quiet-hours window. The push has already arrived;
+  // dropping it here is what "off" means until a profile×kind table exists.
+  // Quiet hours never drop a cancellation or an early end — see
+  // QUIET_HOURS_ALWAYS_ALLOWED — because those exist to stop a parent driving
+  // out, and the alert is still in the app's Recent alerts list either way.
+  const prefs = await readPrefs()
+  if (kind !== null && isKindMuted(prefs, kind)) return
+  if (shouldSuppressForQuietHours(prefs, kind, new Date())) return
 
   const url = asText(message.url) ?? '/'
   const title = asText(message.title) ?? 'Drop In'

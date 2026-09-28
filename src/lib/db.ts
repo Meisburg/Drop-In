@@ -6171,3 +6171,180 @@ export async function getReviewSummaries(
 ): Promise<Map<string, ReviewSummaryRow>> {
   return getReviewSummariesWithClient(supabase, placeIds)
 }
+
+// ---------------------------------------------------------------------------
+// V27: BLOCKED-FAMILIES MANAGEMENT + ACCOUNT LIFECYCLE.
+//
+// The `blocks` table (0006) has always held the caller's own rows, and the
+// feed/profile paths already honor them; what was missing was a place to SEE and
+// undo a block without finding the family's profile again. The two reads below
+// are the caller's own rows (owner RLS), named through one batched profiles
+// read — the same shape as listMyFollowing.
+//
+// Account lifecycle is the parent-facing half of leaving: export the rows the
+// account owns, and delete the account through one SECURITY DEFINER RPC
+// (0056) so the auth row and its cascades go together. Neither path is called
+// on mount — a settings visit must never trigger a destructive or expensive
+// read.
+// ---------------------------------------------------------------------------
+
+/** One family this parent has blocked, as the /settings list renders it. */
+export interface BlockedFamily {
+  profileId: string
+  /** display_name, or null when the profile row is gone (keep the row so the
+   *  unblock control still exists rather than silently dropping it). */
+  displayName: string | null
+  avatarUrl: string | null
+}
+
+/**
+ * The caller's own blocks, named. Owner-only RLS means this returns only rows
+ * where the caller is the blocker; the profiles read is the same authenticated
+ * read every @handle surface uses.
+ */
+export async function listMyBlocksWithClient(
+  client: SupabaseClient,
+  profileId: string,
+): Promise<BlockedFamily[]> {
+  const { data, error } = await client
+    .from('blocks')
+    .select('blocked_profile_id')
+    .eq('blocker_profile_id', profileId)
+  if (error) throw error
+
+  const ids = [...new Set((data ?? []).map((row) => row.blocked_profile_id as string))]
+  if (ids.length === 0) return []
+
+  const byId = new Map<string, { displayName: string | null; avatarUrl: string | null }>()
+  const { data: profiles, error: profileError } = await client
+    .from('profiles')
+    .select('id, display_name, avatar_url')
+    .in('id', ids)
+  if (profileError) throw profileError
+  for (const row of (profiles ?? []) as unknown as Array<{
+    id: string
+    display_name: string | null
+    avatar_url: string | null
+  }>) {
+    byId.set(row.id, { displayName: row.display_name ?? null, avatarUrl: row.avatar_url ?? null })
+  }
+
+  return ids.map((id) => ({
+    profileId: id,
+    displayName: byId.get(id)?.displayName ?? null,
+    avatarUrl: byId.get(id)?.avatarUrl ?? null,
+  }))
+}
+
+/** The default-client wrapper (/settings' blocked-families list). */
+export async function listMyBlocks(): Promise<BlockedFamily[]> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) return []
+  return listMyBlocksWithClient(supabase, user.id)
+}
+
+/** Remove one block row (the pair, so the caller's own row only). */
+export async function unblockProfileWithClient(
+  client: SupabaseClient,
+  blockerProfileId: string,
+  blockedProfileId: string,
+): Promise<void> {
+  const { error } = await client
+    .from('blocks')
+    .delete()
+    .eq('blocker_profile_id', blockerProfileId)
+    .eq('blocked_profile_id', blockedProfileId)
+  if (error) throw error
+}
+
+/** The default-client wrapper. */
+export async function unblockProfile(blockedProfileId: string): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) throw new Error('No authenticated user — cannot unblock a profile.')
+  return unblockProfileWithClient(supabase, user.id, blockedProfileId)
+}
+
+/** The account's own rows, in one downloadable object. Deliberately flat and
+ *  readable: a parent's data, not our schema dump. */
+export interface AccountExport {
+  exported_at: string
+  profile: unknown
+  kids: unknown[]
+  hosted_playdates: unknown[]
+  going: unknown[]
+  follows: unknown[]
+  blocks: unknown[]
+  comments: unknown[]
+  reviews: unknown[]
+}
+
+/**
+ * Read every row the account owns, table by table, against an injected client.
+ * A failed read THROWS (a partial export silently missing a table would be a
+ * lie about "your data"); `exported_at` is a parameter so the test lane can pin
+ * the timestamp instead of racing the clock.
+ */
+export async function exportMyDataWithClient(
+  client: SupabaseClient,
+  profileId: string,
+  exportedAt: string,
+): Promise<AccountExport> {
+  const kids = await client.from('kids').select('*').eq('profile_id', profileId)
+  if (kids.error) throw kids.error
+  const playdates = await client.from('playdates').select('*').eq('host_profile_id', profileId)
+  if (playdates.error) throw playdates.error
+  const going = await client.from('going_pings').select('*').eq('profile_id', profileId)
+  if (going.error) throw going.error
+  const follows = await client.from('follows').select('*').eq('follower_profile_id', profileId)
+  if (follows.error) throw follows.error
+  const blocks = await client.from('blocks').select('*').eq('blocker_profile_id', profileId)
+  if (blocks.error) throw blocks.error
+  const comments = await client.from('comments').select('*').eq('author_profile_id', profileId)
+  if (comments.error) throw comments.error
+  const reviews = await client.from('reviews').select('*').eq('author_profile_id', profileId)
+  if (reviews.error) throw reviews.error
+  const profile = await client.from('profiles').select('*').eq('id', profileId).maybeSingle()
+  if (profile.error) throw profile.error
+
+  return {
+    exported_at: exportedAt,
+    profile: profile.data ?? null,
+    kids: (kids.data ?? []) as unknown[],
+    hosted_playdates: (playdates.data ?? []) as unknown[],
+    going: (going.data ?? []) as unknown[],
+    follows: (follows.data ?? []) as unknown[],
+    blocks: (blocks.data ?? []) as unknown[],
+    comments: (comments.data ?? []) as unknown[],
+    reviews: (reviews.data ?? []) as unknown[],
+  }
+}
+
+/** The default-client wrapper. */
+export async function exportMyData(): Promise<AccountExport> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) throw new Error('No authenticated user — cannot export data.')
+  return exportMyDataWithClient(supabase, user.id, new Date().toISOString())
+}
+
+/**
+ * Delete the signed-in account. One RPC (migration 0056) deletes the
+ * `auth.users` row; every table that references `profiles` cascades from there,
+ * so the account leaves no orphaned rows. The migration is additive and the app
+ * renders an honest failure sentence until it is applied.
+ */
+export async function deleteMyAccountWithClient(client: SupabaseClient): Promise<void> {
+  const { error } = await client.rpc('delete_my_account')
+  if (error) throw error
+}
+
+/** The default-client wrapper. */
+export async function deleteMyAccount(): Promise<void> {
+  return deleteMyAccountWithClient(supabase)
+}
+

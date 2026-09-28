@@ -1,42 +1,57 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router'
+import { useCallback, useEffect, useState } from 'react'
+import { Link, useLocation } from 'react-router'
+import { AccountSection } from '../components/AccountSection'
+import { BrowsingSection } from '../components/BrowsingSection'
+import { HostAvatar } from '../components/DropInCard'
 import { NAV_ICONS } from '../components/icons'
 import { NotificationsSection } from '../components/NotificationsSection'
+import { PrivacySection } from '../components/PrivacySection'
 import { SectionHeader } from '../components/SectionHeader'
-import { useSessionContext } from '../components/SessionProvider'
-import { listMyFollowing, unfollowById, type MyFollowing } from '../lib/db'
-// V8 ticket 09: the Following list's family rows reuse the card's 40px avatar
-// (the HostAvatar shape) rather than growing a second one.
-import { HostAvatar } from '../components/DropInCard'
-// V22 slice 14: the appearance switch — light default, dark opt-in.
+import { SettingsSection } from '../components/SettingsSection'
 import { ThemeToggle } from '../components/ThemeToggle'
+import { UndoLine } from '../components/UndoLine'
+import { useSessionContext } from '../components/SessionProvider'
+import {
+  listMyFollowing,
+  toggleFollowPlace,
+  toggleFollowProfile,
+  unfollowById,
+  type MyFollowing,
+} from '../lib/db'
+import { settingsErrorMessage } from '../lib/settingsError'
+
+/** The two kinds of saved target, discriminated so undo calls the right toggle. */
+type FollowTarget = { profileId: string } | { placeId: string }
+
+interface RemovedFollow {
+  label: string
+  target: FollowTarget
+}
 
 /**
- * /settings — the signed-in family's app-wide settings page (V15 T07 slimmed it
- * to app-wide controls only; the profile-specific editors all live on /profile).
+ * /settings — the signed-in family's app-wide settings (V15 T07 slimmed it to
+ * app-wide controls; V27 gave it a real information architecture).
  *
- * The page keeps:
- * - notifications: the NotificationsSection (push opt-in / status / dismiss).
- * - following: the families and places this parent has bookmarked, with an
- *   Unfollow button on every row (the owner-only 0033 SELECT policy makes this
- *   the only place a follow graph is read in full; no follower counts anywhere).
+ * Sections, in the order a parent is most likely to want them:
+ *   - Notifications (push opt-in, per-kind mutes, quiet hours, email fallback)
+ *   - Near you (the saved discovery radius)
+ *   - Following & saved (the families and places this parent bookmarked)
+ *   - Privacy & safety (what others can see, and the block list)
+ *   - Appearance (light / dark / match my phone)
+ *   - Account (download your data, delete your account)
  *
- * Removed in V15 T07 (A21–A25):
- * - display name input (A23) — moved to /profile (T06 A20 identity block).
- * - nudge banner "Finish your profile" (A24) — deleted; the items it named are
- *   reachable via /profile.
- * - location card (home zip + radius) (A22) — removed; radius is owned by the
- *   browse modal (T02), zip is set during onboarding.
- * - interests textarea (A21) — belongs on /profile ("About the parents" bio).
- * - neighborhoods display-only card (A25) — redundant; discovery is
- *   zip+radius, no neighborhood control exists.
+ * Every section has a stable id, so copy elsewhere can deep-link to the exact
+ * control (`/settings#notifications`); a hash on load is scrolled to. The page
+ * still owns no profile editor — the profile fields live on /profile, and the
+ * "Your profile" row at the top is the one obvious door between the two.
  *
- * Sign-out lives in the app shell header (App.tsx); account deletion is not
- * on this page.
+ * Sign-out lives in the app shell header (App.tsx); account deletion is in the
+ * Account section below.
  */
 export function SettingsPage() {
   const { session, loading } = useSessionContext()
   const userId = session?.user?.id ?? null
+  const location = useLocation()
 
   // V8 ticket 09 (migration 0033): the Following list — the families and
   // places this parent bookmarked (null = still loading). A failed read
@@ -45,6 +60,23 @@ export function SettingsPage() {
   const [following, setFollowing] = useState<MyFollowing | null>(null)
   const [followingError, setFollowingError] = useState<string | null>(null)
   const [unfollowBusyId, setUnfollowBusyId] = useState<string | null>(null)
+  // V27: the optimistic-removal undo. One row at a time, with its target kept
+  // so the undo re-follows through the existing toggle instead of a second
+  // insert path.
+  const [removedFollow, setRemovedFollow] = useState<RemovedFollow | null>(null)
+  const [undoBusy, setUndoBusy] = useState(false)
+
+  const reloadFollowing = useCallback(async () => {
+    try {
+      const rows = await listMyFollowing()
+      setFollowing(rows)
+      setFollowingError(null)
+    } catch (err) {
+      setFollowingError(
+        settingsErrorMessage(err, "Couldn't load your saved families and places."),
+      )
+    }
+  }, [])
 
   // V8 ticket 09: the Following list (the caller's OWN follows — owner-only
   // RLS — named through one batched profiles read and one batched places
@@ -62,7 +94,7 @@ export function SettingsPage() {
       .catch((err: unknown) => {
         if (cancelled) return
         setFollowingError(
-          err instanceof Error ? err.message : 'Could not load your following list.',
+          settingsErrorMessage(err, "Couldn't load your saved families and places."),
         )
       })
     return () => {
@@ -70,14 +102,27 @@ export function SettingsPage() {
     }
   }, [userId])
 
+  // V27 deep links: `/settings#privacy` must land on the section, not at the
+  // top of the page. React Router does not scroll to a hash on its own, and the
+  // section headings render immediately (the data inside them may still load),
+  // so this is safe to run on the hash alone.
+  useEffect(() => {
+    if (location.hash === '') return
+    const element = document.getElementById(location.hash.slice(1))
+    if (element !== null && typeof element.scrollIntoView === 'function') {
+      element.scrollIntoView({ block: 'start' })
+    }
+  }, [location.hash])
+
   /**
    * V8 ticket 09: unfollow one row (the DELETE scoped to the caller's own
    * row). On success the row is removed from LOCAL state — the list is the
    * caller's own data, already in hand, so a full re-read would be a second
-   * round trip for a fact we just changed. A failure reports in the section
-   * and leaves the row standing (never a lie about the state).
+   * round trip for a fact we just changed. V27 keeps the removed row (with its
+   * target) behind an Undo line instead of destroying it silently, and the
+   * failure report still leaves the row standing.
    */
-  async function handleUnfollow(followId: string) {
+  async function handleUnfollow(followId: string, label: string, target: FollowTarget) {
     if (unfollowBusyId !== null) return
     setUnfollowBusyId(followId)
     setFollowingError(null)
@@ -91,10 +136,36 @@ export function SettingsPage() {
               places: prev.places.filter((row) => row.followId !== followId),
             },
       )
+      setRemovedFollow({ label, target })
     } catch (err) {
-      setFollowingError(err instanceof Error ? err.message : 'Could not unfollow. Try again.')
+      setFollowingError(settingsErrorMessage(err, "Couldn't remove that. Nothing changed."))
     } finally {
       setUnfollowBusyId(null)
+    }
+  }
+
+  /**
+   * Put the removed row back. The follow is re-created through the existing
+   * toggle (the row is currently absent, so it inserts), then the list is
+   * re-read once — necessary because the re-created row has a NEW follow id,
+   * and a locally-restored old id could not be removed again.
+   */
+  async function handleUndoFollow() {
+    if (removedFollow === null || undoBusy) return
+    setUndoBusy(true)
+    setFollowingError(null)
+    try {
+      if ('profileId' in removedFollow.target) {
+        await toggleFollowProfile(removedFollow.target.profileId)
+      } else {
+        await toggleFollowPlace(removedFollow.target.placeId)
+      }
+      await reloadFollowing()
+      setRemovedFollow(null)
+    } catch (err) {
+      setFollowingError(settingsErrorMessage(err, "Couldn't undo that. Please try again."))
+    } finally {
+      setUndoBusy(false)
     }
   }
 
@@ -106,66 +177,77 @@ export function SettingsPage() {
     )
   }
 
-  const tagline = 'Appearance, notifications and following'
+  const tagline = 'Notifications, privacy, appearance, and your saved families and places'
 
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <SectionHeader icon={NAV_ICONS.gear} title="Settings" tagline={tagline} />
-      </div>
+    <div className="flex flex-col gap-6">
+      <SectionHeader icon={NAV_ICONS.gear} title="Settings" tagline={tagline} />
 
-      {/* V22 slice 14: appearance is a user choice — light default, dark opt-in.
-          The switch owns its own persistence (localStorage) and applies the
-          theme attribute; it renders before the data-loading sections so a
-          settings visit never waits on the network to change the look. */}
-      <ThemeToggle />
+      {/* One obvious door to the profile editor. The editable profile fields
+          stay on /profile (V15 T07); a parent who lands here looking for their
+          name or kids is pointed there instead of guessing. */}
+      <Link
+        to="/profile"
+        data-testid="settings-profile-link"
+        className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+      >
+        <span className="text-sm font-medium text-slate-800">Your family profile</span>
+        <span className="text-sm text-indigo-600">Name, kids &amp; photos ›</span>
+      </Link>
 
-      {/* V8 ticket 08: the notification surface — opt-in/off, per-kind mutes,
-          the install affordance and the recent-alerts fallback. It loads its
-          own data and CONTAINS its own failures (pre-apply it renders one
-          sentence about the missing tables), so nothing above it changes when
-          the push migrations are not installed yet. */}
-      <NotificationsSection />
+      <SettingsSection
+        id="notifications"
+        title="Notifications"
+        description="What Drop In tells you about, and when it is allowed to."
+      >
+        <NotificationsSection />
+      </SettingsSection>
 
-      {/* V8 ticket 09 (migration 0033): the Following list — the families and
-          places this parent bookmarked. Counts only (there is no follower list
-          anywhere); the rows are the caller's OWN follows, which is the only
-          way the owner-only 0033 policy ever returns rows. A failed read
-          (pre-apply: PGRST205) is its own sentence — the rest of the page is
-          untouched. */}
-      <section className="flex flex-col gap-3">
-        <h2 className="font-display text-lg font-semibold text-slate-900">Following</h2>
-        {/* V25 t08 — THE VOCABULARY, RECONCILED IN ONE DIRECTION. The app calls
-            a place bookmark a SAVE (the founder's "heart"): the card's
-            `Save`/`Saved` accessible name, the place page's button, and now the
-            Places directory's Saved filter. This section keeps its heading and
-            its test ids, and the two anchors that pin them are precise:
-            e2e/loop-closing.e2e.ts:697 asserts the HEADING ("Following") and
-            :704 clicks `unfollow-place` — neither of those may move in this
-            ticket. `following-empty` (:158) has no spec anchor today; it is kept
-            anyway, because renaming an id is churn a copy change does not
-            justify. Only the copy below moved to the save word, so a parent who
-            saves a place and comes looking for it is not told they "followed"
-            it. */}
-        <p className="text-sm text-slate-600">
-          The families and places you’ve saved — you’ll see when they’re going to something.
-        </p>
+      <SettingsSection
+        id="near-you"
+        title="Near you"
+        description="How far away the drop-ins you see can be."
+      >
+        {userId === null ? (
+          <p className="text-sm text-slate-600">Sign in to change this.</p>
+        ) : (
+          <BrowsingSection userId={userId} />
+        )}
+      </SettingsSection>
 
+      <SettingsSection
+        id="saved"
+        title="Following & saved"
+        description="The families you follow and the places you save. You'll see when they're going to something."
+      >
         {followingError !== null ? (
-          <p data-testid="following-error" className="text-sm text-slate-600">
-            Couldn’t load your following list ({followingError}).
+          <p data-testid="following-error" className="text-sm text-slate-600" role="alert">
+            {followingError}
           </p>
-        ) : following === null ? (
-          <p className="text-sm text-slate-600">Loading…</p>
+        ) : null}
+
+        {removedFollow === null ? null : (
+          <UndoLine
+            message={`Removed ${removedFollow.label}.`}
+            busy={undoBusy}
+            onUndo={() => void handleUndoFollow()}
+          />
+        )}
+
+        {following === null ? (
+          followingError === null ? (
+            <p className="text-sm text-slate-600">Loading…</p>
+          ) : null
         ) : following.families.length === 0 && following.places.length === 0 ? (
           <p data-testid="following-empty" className="text-sm text-slate-600">
-            No saved families or places yet. Save a family on their profile, or a place on its page.
+            No saved families or places yet. Follow a family on their profile, or save a place on
+            its page.
           </p>
         ) : (
           <div className="flex flex-col gap-3">
             {following.families.length > 0 ? (
               <section className="flex flex-col gap-2">
-                <h3 className="text-sm font-semibold text-slate-700">Families</h3>
+                <h3 className="text-sm font-semibold text-slate-700">Families you follow</h3>
                 <ul className="flex flex-col gap-2">
                   {following.families.map((row) => (
                     <li key={row.followId} className="flex flex-wrap items-center gap-2">
@@ -190,10 +272,16 @@ export function SettingsPage() {
                         type="button"
                         data-testid="unfollow-family"
                         disabled={unfollowBusyId === row.followId}
-                        onClick={() => void handleUnfollow(row.followId)}
-                        className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 disabled:opacity-50"
+                        onClick={() =>
+                          void handleUnfollow(
+                            row.followId,
+                            row.handle === null ? 'that family' : `@${row.handle}`,
+                            { profileId: row.profileId },
+                          )
+                        }
+                        className="ml-auto inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 disabled:opacity-50"
                       >
-                        {unfollowBusyId === row.followId ? 'Updating…' : 'Unfollow'}
+                        {unfollowBusyId === row.followId ? 'Removing…' : 'Remove'}
                       </button>
                     </li>
                   ))}
@@ -202,7 +290,7 @@ export function SettingsPage() {
             ) : null}
             {following.places.length > 0 ? (
               <section className="flex flex-col gap-2">
-                <h3 className="text-sm font-semibold text-slate-700">Places</h3>
+                <h3 className="text-sm font-semibold text-slate-700">Places you saved</h3>
                 <ul className="flex flex-col gap-2">
                   {following.places.map((row) => (
                     <li key={row.followId} className="flex flex-wrap items-center gap-2">
@@ -220,10 +308,16 @@ export function SettingsPage() {
                         type="button"
                         data-testid="unfollow-place"
                         disabled={unfollowBusyId === row.followId}
-                        onClick={() => void handleUnfollow(row.followId)}
-                        className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 disabled:opacity-50"
+                        onClick={() =>
+                          void handleUnfollow(
+                            row.followId,
+                            row.name === null ? 'that place' : row.name,
+                            { placeId: row.placeId },
+                          )
+                        }
+                        className="ml-auto inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 disabled:opacity-50"
                       >
-                        {unfollowBusyId === row.followId ? 'Updating…' : 'Unfollow'}
+                        {unfollowBusyId === row.followId ? 'Removing…' : 'Remove'}
                       </button>
                     </li>
                   ))}
@@ -232,7 +326,31 @@ export function SettingsPage() {
             ) : null}
           </div>
         )}
-      </section>
+      </SettingsSection>
+
+      <SettingsSection
+        id="privacy"
+        title="Privacy & safety"
+        description="What other parents can see, and who you have blocked."
+      >
+        {userId === null ? (
+          <p className="text-sm text-slate-600">Sign in to see this.</p>
+        ) : (
+          <PrivacySection userId={userId} />
+        )}
+      </SettingsSection>
+
+      <SettingsSection id="appearance" title="Appearance">
+        <ThemeToggle />
+      </SettingsSection>
+
+      <SettingsSection
+        id="account"
+        title="Account"
+        description="Take your data with you, or close your account."
+      >
+        <AccountSection />
+      </SettingsSection>
     </div>
   )
 }
