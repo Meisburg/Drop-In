@@ -2315,6 +2315,32 @@ describe('planDirectoryList (the directory list composition, moved out of PlaceD
     expect(p.nothingMatches).toBe(false)
   })
 
+  it('the open-now gate keeps only places whose schedule says open, and explains an empty list', () => {
+    const openNow = place({
+      name: 'Open Playground',
+      hours: { display: '6:00 AM – 10:00 PM', weekly: { '5': [['06:00', '22:00']] } },
+      hours_source: 'city_default',
+    })
+    const closedNow = place({
+      name: 'Closed Playground',
+      hours: { display: '6:00 PM – 10:00 PM', weekly: { '5': [['18:00', '22:00']] } },
+      hours_source: 'osm',
+    })
+    // No hours at all: UNKNOWN must never be shown as open.
+    const unknown = place({ name: 'Unknown Playground' })
+
+    const filtered = plan({ places: [openNow, closedNow, unknown], openNowOnly: true })
+    expect(filtered.listRows.map((r) => r.place.name)).toEqual(['Open Playground'])
+    expect(filtered.openNowReason).toBe(false)
+
+    const none = plan({ places: [closedNow, unknown], openNowOnly: true })
+    expect(none.listRows).toEqual([])
+    expect(none.openNowReason).toBe(true)
+
+    // Off by default: the same directory keeps every row.
+    expect(plan({ places: [openNow, closedNow, unknown] }).listRows.length).toBe(3)
+  })
+
   it('a kind filter narrows the list to that kind only', () => {
     const p = plan({ selectedKinds: new Set(['park']) })
     expect(p.listRows.map((r) => r.place.name)).toEqual(['Alki Beach Park'])

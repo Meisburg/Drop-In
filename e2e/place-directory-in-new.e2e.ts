@@ -71,7 +71,8 @@ test('the place directory is reachable from /new, with its map and list (V21 t02
   // --- 3. THE SHEET IS THE DIRECTORY: search + filters + list + map. ---
   const sheet = page.getByTestId('place-directory-sheet')
   await expect(sheet).toBeVisible()
-  // The search field: present only on the real directory surface.
+  // The search control: the always-visible inline field, present only on the
+  // real directory surface.
   await expect(sheet.getByTestId('places-search')).toBeVisible()
   // The filter/sort control: the "filters" half of the founder's ask.
   await expect(sheet.getByTestId('filter-sort-btn')).toBeVisible()
@@ -81,7 +82,10 @@ test('the place directory is reachable from /new, with its map and list (V21 t02
   await expect(sheet.locator('.leaflet-container')).toHaveCount(0)
 
   // …and the map is one tap away, with a real Leaflet canvas in map mode.
-  await sheet.getByTestId('places-see-map').click()
+  // V27: the in-card "See map" button is gone; in selectable mode the floating
+  // `places-view-toggle` is always rendered (there is no window scroll to read
+  // inside the sheet).
+  await sheet.getByTestId('places-view-toggle').click()
   await expect(sheet.getByTestId('places-map-view-map')).toBeVisible()
   await expect(sheet.locator('.leaflet-container')).toBeVisible()
   // Back to the list, which is where the row pick below happens.

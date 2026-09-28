@@ -36,6 +36,7 @@ export function LocationModal({
   onGeocode,
   onRadiusChange,
   onApplyRadius,
+  addressPlaceholder = 'e.g. Green Lake Park, Seattle',
 }: {
   /** Render the modal at all (the caller owns the open state). */
   open: boolean
@@ -43,6 +44,12 @@ export function LocationModal({
   onClose: () => void
   /** The current radius the slider shows (the caller's saved value). */
   radiusMiles: number
+  /**
+   * The address field's placeholder. Defaults to the original example; /browse's
+   * search sheet passes "Neighborhood, city, or zip" (the founder's wording for
+   * the location row that opens this dialog).
+   */
+  addressPlaceholder?: string
   /**
    * LIVE radius as the slider moves, before "Apply radius" — the Places
    * directory redraws its map circle and refilters on every tick through this.
@@ -180,7 +187,7 @@ export function LocationModal({
             type="text"
             data-testid="location-address-input"
             className="min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
-            placeholder="e.g. Green Lake Park, Seattle"
+            placeholder={addressPlaceholder}
             autoComplete="off"
             value={address}
             onChange={(e) => setAddress(e.target.value)}

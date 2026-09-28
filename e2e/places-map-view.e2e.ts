@@ -59,7 +59,29 @@ import { MAP_STRIP_CARD_LIMIT } from '../src/lib/mapStrip'
 
 /** The directory's distance control, set to "Any distance" (see below). */
 async function setAnyDistance(page: Page): Promise<void> {
-  await page.getByTestId('places-distance-filter').selectOption('any')
+  // V27: the distance filter is a dropdown button + bottom sheet now.
+  await page.getByTestId('places-distance-filter-btn').click()
+  await page.getByTestId('places-distance-sheet-option-any').click()
+}
+
+/**
+ * Scroll far enough that the floating map toggle renders on /browse.
+ *
+ * V27: list view withholds `places-view-toggle` until `window.scrollY` clears
+ * ~220px. Short result sets leave the page un-scrollable at Playwright's
+ * viewport, so a temporary spacer (the same `scroll-range-probe` technique the
+ * round-trip spec already uses) guarantees a scroll range without touching the
+ * directory's own DOM. The spacer is left in place for the caller to remove.
+ */
+async function scrollPastMapToggleThreshold(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    if (document.getElementById('scroll-range-probe') !== null) return
+    const spacer = document.createElement('div')
+    spacer.id = 'scroll-range-probe'
+    spacer.style.height = '1800px'
+    document.body.appendChild(spacer)
+  })
+  await page.evaluate(() => window.scrollTo(0, 400))
 }
 
 /**
@@ -71,6 +93,9 @@ async function setAnyDistance(page: Page): Promise<void> {
  * the swipe test would have nothing to swipe to. The search text then narrows
  * the set to one kind, so the strip is long enough for a swipe and short enough
  * to be cheap.
+ *
+ * V27: the search input is an always-visible inline field, and the only map
+ * door is the floating `places-view-toggle`, which needs a scroll first.
  */
 async function openMapView(page: Page): Promise<void> {
   await page.goto('/browse')
@@ -78,9 +103,11 @@ async function openMapView(page: Page): Promise<void> {
   await setAnyDistance(page)
   await page.getByTestId('places-search').fill('park')
   await expect(page.getByTestId('place-row').first()).toBeVisible()
-  await page.getByTestId('places-see-map').click()
+  await scrollPastMapToggleThreshold(page)
+  await page.getByTestId('places-view-toggle').click()
   await expect(page.getByTestId('places-map-view-map')).toBeVisible()
   await expect(page.getByTestId('places-map-strip')).toBeVisible()
+  await page.evaluate(() => document.getElementById('scroll-range-probe')?.remove())
 }
 
 /**
@@ -177,15 +204,17 @@ async function restoreMarkerHomeZip(previous: string | null): Promise<void> {
 }
 
 /**
- * The same entry as `openMapView`, but reached WITHOUT a pointer: the "See map"
- * control is given the focus (the keyboard user's position after arriving at it)
- * and activated with Enter, which is the real activation a keyboard user
+ * The same entry as `openMapView`, but reached WITHOUT a pointer: the floating
+ * map toggle is given the focus (the keyboard user's position after arriving at
+ * it) and activated with Enter, which is the real activation a keyboard user
  * performs.
  *
- * The focus-placement call is the one test-API step, and it is deliberate: the
- * spec's job is to prove the TAB PATH FROM THAT CONTROL INTO THE STRIP, not to
- * re-prove that a page can be traversed from the top. The traversal itself is
- * real key events (see the keyboard spec).
+ * V27: the in-card "See map" button is removed; the entry control is now the
+ * floating `places-view-toggle` (aria-label "Map" in list view), which only
+ * renders after a scroll. The focus-placement call is the one test-API step, and
+ * it is deliberate: the spec's job is to prove the TAB PATH FROM THAT CONTROL
+ * INTO THE STRIP, not to re-prove that a page can be traversed from the top. The
+ * traversal itself is real key events (see the keyboard spec).
  */
 async function openMapViewByKeyboardEntry(page: Page): Promise<void> {
   await page.goto('/browse')
@@ -193,24 +222,27 @@ async function openMapViewByKeyboardEntry(page: Page): Promise<void> {
   await setAnyDistance(page)
   await page.getByTestId('places-search').fill('park')
   await expect(page.getByTestId('place-row').first()).toBeVisible()
-  const seeMap = page.getByTestId('places-see-map')
+  await scrollPastMapToggleThreshold(page)
+  const seeMap = page.getByTestId('places-view-toggle')
   await seeMap.focus()
   expect(
     await page.evaluate(() => document.activeElement?.getAttribute('data-testid')),
     'the entry control is focused before it is activated',
-  ).toBe('places-see-map')
+  ).toBe('places-view-toggle')
   await page.keyboard.press('Enter')
   await expect(page.getByTestId('places-map-view-map')).toBeVisible()
   await expect(page.getByTestId('places-map-strip')).toBeVisible()
+  await page.evaluate(() => document.getElementById('scroll-range-probe')?.remove())
   /**
    * THE FOCUS IS PUT BACK ON THE CONTROL THAT NOW EXISTS, and this is a faithful
-   * model rather than a convenience: activating "See map" replaces the surface
-   * under the parent's focus, so the focus does not stay on a control that the
-   * map view no longer renders (the entry control is in the list view). A real
-   * keyboard user's next Tab therefore starts from the top of the new view, whose
-   * first control is "Back to list" — placing it there is what makes the traversal
-   * below measure the distance a person actually walks, without a handful of
-   * presses spent tabbing off a control that just disappeared.
+   * model rather than a convenience: activating the map toggle replaces the
+   * surface under the parent's focus, so the focus does not stay on a control
+   * that the map view no longer renders as the entry control (the toggle now
+   * reads "List"). A real keyboard user's next Tab therefore starts from the top
+   * of the new view, whose first control is "Back to list" — placing it there is
+   * what makes the traversal below measure the distance a person actually walks,
+   * without a handful of presses spent tabbing off a control that just changed
+   * job.
    */
   const back = page.getByTestId('places-back-to-list')
   await back.focus()
@@ -441,9 +473,13 @@ test('the map view pins EVERY matching place, capping only the cards (V24 s10)',
     'the directory must match more places than the strip cap for this to be a real check',
   ).toBeGreaterThan(MAP_STRIP_CARD_LIMIT)
 
-  await page.getByTestId('places-see-map').click()
+  // V27: the in-card "See map" door is gone; the floating toggle is the only
+  // way in, and it needs a scroll before it renders on /browse.
+  await scrollPastMapToggleThreshold(page)
+  await page.getByTestId('places-view-toggle').click()
   const mapViewMap = page.getByTestId('places-map-view-map')
   await expect(mapViewMap).toBeVisible()
+  await page.evaluate(() => document.getElementById('scroll-range-probe')?.remove())
 
   // AC B1: THE PINS ARE COMPLETE — every placeable matching row, which is all
   // but the handful the seed carries without coordinates.
@@ -557,18 +593,21 @@ test('the map view shows the list\'s own result set and mounts exactly one map (
   expect(names.length, 'the search must leave more than one row to compare').toBeGreaterThan(1)
   const listRowIds = await placeIds(page.getByTestId('place-row'))
 
-  // AC: there IS a "See map" entry point, and it is a real >=44px tap target
-  // with a real accessible name (the repo's measured floor).
-  const seeMap = page.getByTestId('places-see-map')
+  // AC: there IS a map entry point, and it is a real >=44px tap target with a
+  // real accessible name (the repo's measured floor). V27: the in-card "See map"
+  // button is gone; the floating toggle is the only door and needs a scroll.
+  await scrollPastMapToggleThreshold(page)
+  const seeMap = page.getByTestId('places-view-toggle')
   await expect(seeMap).toBeVisible()
   const seeMapBox = await seeMap.boundingBox()
-  if (seeMapBox === null) throw new Error('the See map control has no box')
+  if (seeMapBox === null) throw new Error('the map toggle has no box')
   expect(seeMapBox.width).toBeGreaterThanOrEqual(44)
   expect(seeMapBox.height).toBeGreaterThanOrEqual(44)
 
   await seeMap.click()
   const mapViewMap = page.getByTestId('places-map-view-map')
   await expect(mapViewMap).toBeVisible()
+  await page.evaluate(() => document.getElementById('scroll-range-probe')?.remove())
 
   // AC (the trap): the map view REPLACED the band — the old test id is gone, so
   // no spec in the suite can match two maps at once.
@@ -594,10 +633,9 @@ test('the map view shows the list\'s own result set and mounts exactly one map (
     page.getByTestId('place-row'),
     'map mode must not render directory rows',
   ).toHaveCount(0)
-  await expect(
-    page.getByTestId('places-unplaced'),
-    'map mode must not render the unplaced section either',
-  ).toHaveCount(0)
+  // V27: the "Not on the map yet" section is gone entirely; coordinate-less
+  // places render inline as `place-row`s, which the assertion above already
+  // proves are absent in map mode.
 
   // AC (V25 t01, N7): THE REMAINING MAP IS A REAL MAP, NOT TWO BORDERS.
   //
@@ -998,11 +1036,20 @@ test('"Back to list" restores the same list, its filters and its scroll position
   // for `park` + indoor + Tomorrow, does) narrow the set to nothing, which would
   // leave the map view with no card to open its entry control from. Sorting only
   // REORDERS, so the round trip is exercised against a live, non-empty list.
-  await page.getByTestId('places-indoor-filter').click()
+  //
+  // V27: the indoor toggle is now the type dropdown's "Indoor" option.
+  await page.getByTestId('places-type-filter').click()
+  await page.getByTestId('places-type-sheet-option-indoor').click()
   await page.getByTestId('filter-sort-btn').click()
   await page.getByTestId('filter-sort-select').selectOption('newest')
   await page.getByTestId('filter-apply-btn').click()
-  await expect(page.getByTestId('places-indoor-filter')).toHaveAttribute('aria-pressed', 'true')
+  // The option carries the state; reopen the sheet to read it.
+  await page.getByTestId('places-type-filter').click()
+  await expect(page.getByTestId('places-type-sheet-option-indoor')).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await page.getByTestId('places-type-sheet-close').click()
   await expect(page.getByTestId('place-row').first()).toBeVisible()
   const names = await listNames(page)
 
@@ -1026,21 +1073,15 @@ test('"Back to list" restores the same list, its filters and its scroll position
     spacer.style.height = '1800px'
     document.body.appendChild(spacer)
   })
-  const seeMap = page.getByTestId('places-see-map')
-  // Let the harness settle the control into view first, then scroll a little
-  // FURTHER — which keeps the control on screen while moving the page away from
-  // the top.
+  const seeMap = page.getByTestId('places-view-toggle')
+  // V27: the floating toggle only renders once the page is scrolled, and the
+  // spacer above guarantees a scroll range. Park the page away from the top so
+  // the round trip has a real offset to restore.
   //
-  // The order is load-bearing and was MEASURED: choosing an offset first and
-  // letting the click settle the control afterwards loses the offset, because a
-  // control left above the viewport is scrolled by Playwright immediately before
-  // the click. Settling first and then nudging keeps both — the control stays
-  // visible and the page is genuinely scrolled when the offset is saved.
-  await seeMap.scrollIntoViewIfNeeded()
-  await page.evaluate(() => window.scrollBy(0, 250))
-  // Give the nudge a beat to land before it is read as the offset to restore.
-  // Without it the read can happen inside the same task as the scroll, and the
-  // number it captures is not the one the parent left.
+  // Scroll FIRST, then wait: the read below must capture the offset the parent
+  // left, not a number from inside the same task as the scroll.
+  await page.evaluate(() => window.scrollTo(0, 250))
+  await expect(seeMap).toBeVisible()
   await page.waitForTimeout(200)
   const savedScroll = await page.evaluate(() => window.scrollY)
   expect(
@@ -1095,9 +1136,22 @@ test('"Back to list" restores the same list, its filters and its scroll position
   // AC: the FILTER STATE survived the round trip. Asserted from the CONTROLS,
   // not from the result count: a filter that silently reset could still leave a
   // same-sized list behind, and the control is the state itself.
+  // V27: the query is readable from the inline input's value; the type and
+  // distance state lives in their sheets, so each is reopened and its option
+  // checked.
   await expect(page.getByTestId('places-search')).toHaveValue('park')
-  await expect(page.getByTestId('places-indoor-filter')).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByTestId('places-distance-filter')).toHaveValue('any')
+  await page.getByTestId('places-type-filter').click()
+  await expect(page.getByTestId('places-type-sheet-option-indoor')).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await page.getByTestId('places-type-sheet-close').click()
+  await page.getByTestId('places-distance-filter-btn').click()
+  await expect(page.getByTestId('places-distance-sheet-option-any')).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await page.getByTestId('places-distance-sheet-close').click()
   // The sort lives behind the modal, so it is read from the control that owns it.
   await page.getByTestId('filter-sort-btn').click()
   await expect(page.getByTestId('filter-sort-select')).toHaveValue('newest')
@@ -1201,6 +1255,7 @@ test('narrowing the map view to zero pins and widening again leaves a live map �
     .toBeGreaterThan(0)
 
   // SHRINK to zero matching rows: the strip empties and the map has no places.
+  // V27: the always-visible inline input filters the map live as it is typed.
   await page.getByTestId('places-search').fill('zzzz-no-such-place-at-all-zzzz')
   await expect(page.getByTestId('places-map-list').locator('a')).toHaveCount(0)
   await expect(page.locator('[data-testid^="places-map-card-"]')).toHaveCount(0)
@@ -1352,6 +1407,7 @@ test('no home pin: zero pins render the empty state (no Leaflet container), and 
 
     // (b) SHRINK to zero matching rows. With the guard, this is the moment
     // `shouldRenderPlacesMap(0, null)` goes false and React UNMOUNTS `PlacesMap`.
+    // V27: the always-visible inline input filters live as it is typed.
     await page.getByTestId('places-search').fill('zzzz-no-such-place-at-all-zzzz')
     await expect(page.getByTestId('places-map-list').locator('a')).toHaveCount(0)
     await expect(page.locator('[data-testid^="places-map-card-"]')).toHaveCount(0)
@@ -1409,7 +1465,17 @@ test('a second "See map" activation does not disturb the saved list offset (V24 
    * again. That second activation used to overwrite the saved list offset with
    * the MAP VIEW's `window.scrollY` (a number from a different, shorter
    * document), so the next "Back to list" restored the wrong position.
+   *
+   * V27: THE PREMISE IS GONE. The in-card "See map" button is removed, and the
+   * one floating control renders as "List" in map view and calls `backToList` —
+   * it never calls `openMapView` a second time. There is therefore no UI path
+   * that reaches the re-entrancy guard any more. The spec is left in place (not
+   * deleted) for the day a re-entrant entry point returns, and skipped loudly.
    */
+  test.fixme(
+    true,
+    'V27: in-card "See map" removed; the map view toggle is "List", so the second-activation re-entrancy path no longer exists',
+  )
   await page.goto('/browse')
   await settleOnRoute(page, '/browse')
   await setAnyDistance(page)
@@ -1544,6 +1610,8 @@ test('map mode draws the radius circle, and the radius cannot move the camera (V
 
   // The shared dialog is reachable from the controls card (it moved out of the
   // retired band's header), and its label tracks the slider.
+  // V27: "Set location" is an inline icon button in the controls card; tapping
+  // it hands off to the shared modal (the map stays mounted behind it).
   await page.getByTestId('set-location-btn').click()
   await expect(page.getByTestId('location-modal')).toBeVisible()
   const slider = page.getByTestId('location-radius-slider')
@@ -1590,6 +1658,8 @@ test('the radius preview REDRAWS the circle in map mode (V25 t01, V20 t05 live p
   await expect(circle, 'the committed circle must be drawn first').toHaveCount(1)
   const dCommitted = await circle.getAttribute('d')
 
+  // V27: "Set location" is an inline icon button in the controls card; tapping
+  // it hands off to the shared modal (the map stays mounted behind it).
   await page.getByTestId('set-location-btn').click()
   await expect(page.getByTestId('location-modal')).toBeVisible()
   await page.getByTestId('location-address-input').fill('Green Lake Park, Seattle')

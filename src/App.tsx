@@ -7,7 +7,6 @@ import { LightboxProvider } from './components/ImageLightbox'
 import { InboxUnreadProvider, useInboxUnread } from './components/InboxUnreadProvider'
 import { PostActionButton } from './components/PostActionButton'
 import { PushOptInPrompt } from './components/PushOptInPrompt'
-import { SectionHeader } from './components/SectionHeader'
 import { SessionProvider, useSessionContext } from './components/SessionProvider'
 import { SplashScreen } from './components/SplashScreen'
 import { signOutUser } from './lib/db'
@@ -510,14 +509,14 @@ export default function App() {
               path="/browse"
               element={
                 /* V22 slice 10: the directory page is lazy (deep-link only);
-                   the fallback keeps the header + a fixed-height card so the
-                   shell paints immediately and nothing shifts layout. */
+                   the fallback keeps the shell painting immediately and nothing
+                   shifts layout. V27: it mirrors the directory's list-first
+                   shape (no visible page header — the search pill carries the
+                   page's name), so the header does not flash in and vanish. */
                 <Suspense
                   fallback={
                     <div className="flex flex-col gap-4">
-                      <div className="md:max-w-md">
-                        <SectionHeader icon={NAV_ICONS.browse} title="Places" tagline="Find a place to host Drop In" />
-                      </div>
+                      <h1 className="sr-only">Places</h1>
                       <div
                         role="status"
                         aria-label="Loading places…"

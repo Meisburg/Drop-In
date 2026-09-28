@@ -37,6 +37,12 @@ import {
   kidPhotoStoredRef,
 } from './photoStorage'
 import {
+  dropInProofsFromRows,
+  type PlaceDropInProof,
+  type PlaceDropInRow,
+  type PlaceReviewHighlight,
+} from './placeSocial'
+import {
   ageRangeFields,
   filterFeed,
   lastOwnPlaydateFrom,
@@ -6432,3 +6438,89 @@ export async function deleteMyAccount(): Promise<void> {
   return deleteMyAccountWithClient(supabase)
 }
 
+// V27 — THE BROWSE CARD'S SOCIAL PROOF (the founder's top priority for the
+// places page: "do other parents rave about it? … good things in the
+// comments").
+//
+// Two BULK reads for the whole directory, never one per card — the same rule
+// that made `getReviewSummaries` loop the per-place RPC in one logical step.
+// Both are best-effort at the call site: a failure yields an empty map, so a
+// card shows no quote / no activity line rather than an error.
+// ---------------------------------------------------------------------------
+
+/**
+ * The newest review WITH A BODY for each of `placeIds`, against an injected
+ * client (the house pattern — mockable). One read of every review that has text
+ * for the whole set, ordered newest-first; the first row per place wins.
+ *
+ * A stars-only review (body null/empty) is deliberately NOT a highlight: a card
+ * has no room for "no comment", and the rating line already carries the score.
+ * Ids with no textual review are simply ABSENT from the map.
+ */
+export async function listPlaceReviewHighlightsWithClient(
+  client: SupabaseClient,
+  placeIds: readonly string[],
+): Promise<Map<string, PlaceReviewHighlight>> {
+  const highlights = new Map<string, PlaceReviewHighlight>()
+  if (placeIds.length === 0) return highlights
+  const { data, error } = await client
+    .from('reviews')
+    .select(
+      'place_id, score, body, created_at, ' +
+        'author:profiles!reviews_author_profile_id_fkey ( display_name )',
+    )
+    .in('place_id', [...placeIds])
+    .not('body', 'is', null)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  const rows = (data ?? []) as unknown as Array<{
+    place_id: string
+    score: number
+    body: string | null
+    created_at: string
+    author: { display_name: string } | null
+  }>
+  for (const row of rows) {
+    if (highlights.has(row.place_id)) continue // newest-first: first wins
+    const body = (row.body ?? '').trim()
+    if (body === '') continue
+    highlights.set(row.place_id, {
+      score: row.score,
+      body,
+      authorDisplayName: row.author?.display_name ?? '',
+      createdAt: row.created_at,
+    })
+  }
+  return highlights
+}
+
+/** The default-client wrapper (the browse directory's review-quote read). */
+export async function listPlaceReviewHighlights(
+  placeIds: readonly string[],
+): Promise<Map<string, PlaceReviewHighlight>> {
+  return listPlaceReviewHighlightsWithClient(supabase, placeIds)
+}
+
+/**
+ * Past-drop-in activity per place, against an injected client. Reads the whole
+ * (small) `playdates` set with a place and aggregates it through the pure
+ * `dropInProofsFromRows` — so "hosted" means what `placeSocial.ts` says it
+ * means, not what a hand-rolled query says. A cancelled or not-yet-ended
+ * drop-in never counts.
+ */
+export async function listPlaceDropInProofsWithClient(
+  client: SupabaseClient,
+  nowIso: string,
+): Promise<Map<string, PlaceDropInProof>> {
+  const { data, error } = await client
+    .from('playdates')
+    .select('place_id, ends_at, status')
+    .not('place_id', 'is', null)
+  if (error) throw error
+  return dropInProofsFromRows((data ?? []) as unknown as PlaceDropInRow[], nowIso)
+}
+
+/** The default-client wrapper (the browse directory's activity read). */
+export async function listPlaceDropInProofs(nowIso: string): Promise<Map<string, PlaceDropInProof>> {
+  return listPlaceDropInProofsWithClient(supabase, nowIso)
+}

@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
-import { SectionHeader } from '../components/SectionHeader'
+import { useEffect, useRef, useState } from 'react'
 import { PlaceDirectory } from '../components/PlaceDirectoryLazy'
 import { useSessionContext } from '../components/SessionProvider'
-import { NAV_ICONS } from '../components/icons'
 import {
   getReviewSummaries,
   listMyFollows,
+  listPlaceDropInProofs,
+  listPlaceReviewHighlights,
   listPlaces,
   loadZipCodes,
   toggleFollowPlace,
@@ -15,6 +15,7 @@ import type { ReviewSummaryRow } from '../lib/db'
 import { DEFAULT_RADIUS_MILES, type ZipCoords } from '../lib/feed'
 import { placeFollowIdSet } from '../lib/places'
 import { planSaveToggle, savedPlaceIdSetAfterToggle } from '../lib/follows'
+import type { PlaceDropInProof, PlaceReviewHighlight } from '../lib/placeSocial'
 import type { ReviewSummary } from '../lib/reviews'
 import type { Place } from '../lib/types'
 
@@ -114,6 +115,17 @@ export function BrowsePage() {
     () => new Set<string>(),
   )
   /**
+   * A MONOTONIC COUNT OF SAVE TOGGLES since mount. The initial `listMyFollows`
+   * read and a tap are concurrent: if the read is slow, its response can land
+   * AFTER an optimistic toggle and overwrite the whole set with the state the
+   * database had when the read STARTED — silently un-saving a place the parent
+   * just saved. The read records this counter when it begins and refuses to
+   * apply its answer if a toggle has happened since; the optimistic set is then
+   * the truth until the next read (a fresh page load). This is the fix for the
+   * race the handler's own comment names.
+   */
+  const followsToggleSeq = useRef(0)
+  /**
    * V24: the per-place aggregate ratings (the DB-computed display average +
    * review count), hydrated by ONE bulk read for the whole grid — never one RPC
    * per card. `null` while the read is in flight OR when it failed → every
@@ -122,6 +134,25 @@ export function BrowsePage() {
    * land here, exactly like the `upcoming` counts above.
    */
   const [ratings, setRatings] = useState<Map<string, ReviewSummary> | null>(null)
+
+  /**
+   * V27 — the two SOCIAL-PROOF reads, each keyed by place id and each
+   * best-effort exactly like `ratings` above: the newest review WITH a body,
+   * and the past-drop-in activity. `null` means "in flight or failed" and every
+   * card simply renders no extra line — never an error state. The pure
+   * `placeSocial` seams turn these into the card's quote / activity copy.
+   */
+  const [reviewHighlights, setReviewHighlights] = useState<Map<string, PlaceReviewHighlight> | null>(
+    null,
+  )
+  const [dropInProofs, setDropInProofs] = useState<Map<string, PlaceDropInProof> | null>(null)
+  /**
+   * V27 — the ONE clock the activity line is measured against. It is captured
+   * when the proofs read RUNS and handed to the directory unchanged, so every
+   * card in one render agrees on "2 days ago" instead of each recomputing now
+   * and drifting across a minute boundary.
+   */
+  const [proofNowIso, setProofNowIso] = useState<string | null>(null)
 
   // The directory. A failed read is disclosed (placesFailed) rather than
   // rendered as a wall — see the page doc.
@@ -192,12 +223,19 @@ export function BrowsePage() {
   useEffect(() => {
     if (loading || session === null) return
     let cancelled = false
+    // Snapshot the toggle counter: if a save lands while this read is in flight,
+    // the read's answer is STALE about that place and must not overwrite it.
+    const seqAtStart = followsToggleSeq.current
     listMyFollows()
       .then((rows) => {
-        if (!cancelled) setFollowedPlaceIds(placeFollowIdSet(rows))
+        if (!cancelled && followsToggleSeq.current === seqAtStart) {
+          setFollowedPlaceIds(placeFollowIdSet(rows))
+        }
       })
       .catch(() => {
-        if (!cancelled) setFollowedPlaceIds(new Set<string>())
+        if (!cancelled && followsToggleSeq.current === seqAtStart) {
+          setFollowedPlaceIds(new Set<string>())
+        }
       })
     return () => {
       cancelled = true
@@ -218,6 +256,52 @@ export function BrowsePage() {
       })
       .catch(() => {
         if (!cancelled) setRatings(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [places])
+
+  // V27: the review-quote read — ONE batched read for the whole grid, the same
+  // shape and failure discipline as `getReviewSummaries` above (cancellation
+  // guard; a failure lands null so no card shows a quote). Runs whenever the
+  // places list lands.
+  useEffect(() => {
+    if (places === null || places.length === 0) return
+    let cancelled = false
+    const ids = places.map((p) => p.id)
+    listPlaceReviewHighlights(ids)
+      .then((rows) => {
+        if (!cancelled) setReviewHighlights(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setReviewHighlights(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [places])
+
+  // V27: the drop-in-activity read. `nowIso` is captured ONCE per run and
+  // stored so the directory measures every "last one X ago" against the same
+  // instant; a failure lands null (and clears the clock) so no card shows an
+  // activity line rather than an invented one.
+  useEffect(() => {
+    if (places === null || places.length === 0) return
+    let cancelled = false
+    const nowIso = new Date().toISOString()
+    listPlaceDropInProofs(nowIso)
+      .then((rows) => {
+        if (!cancelled) {
+          setDropInProofs(rows)
+          setProofNowIso(nowIso)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDropInProofs(null)
+          setProofNowIso(null)
+        }
       })
     return () => {
       cancelled = true
@@ -278,6 +362,8 @@ export function BrowsePage() {
     const wasFollowed = followedPlaceIds.has(placeId)
     // The decision: save or unsave? The pure seam decides; execution below.
     const decision = planSaveToggle(wasFollowed)
+    // Mark this toggle so an in-flight `listMyFollows` read cannot clobber it.
+    followsToggleSeq.current += 1
     setFollowedPlaceIds((prev) => savedPlaceIdSetAfterToggle(prev, placeId, decision))
     try {
       await toggleFollowPlace(placeId)
@@ -290,11 +376,11 @@ export function BrowsePage() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* V22 slice 9: the header band stays at the phone measure — a full-width
-          gradient band across the 768px content column would read as a hero. */}
-      <div className="md:max-w-md">
-        <SectionHeader icon={NAV_ICONS.browse} title="Places" tagline="Find a place to host Drop In" />
-      </div>
+      {/* V27: the page's title is now the search pill's own text (the reference's
+          "Places · Seattle, WA"), so the visible SectionHeader is gone. The page
+          still owns exactly one h1 — screen-reader only — so the document
+          outline is unchanged. */}
+      <h1 className="sr-only">Places</h1>
 
       {placesFailed ? (
         <p className="text-sm text-red-600">
@@ -308,12 +394,16 @@ export function BrowsePage() {
         zipCoords={zipCoords}
         upcomingStartTimes={upcomingStartTimes}
         ratings={ratings}
+        reviewHighlights={reviewHighlights}
+        dropInProofs={dropInProofs}
+        nowIso={proofNowIso ?? undefined}
         followedPlaceIds={followedPlaceIds}
         canFollow={session !== null}
         onToggleFollow={(placeId) => void handleTogglePlaceFollow(placeId)}
         homePin={homePinCoords}
         viewerRadius={viewerRadius}
         homeZip={profile.home_zip ?? null}
+        locationLabel="Seattle, WA"
       />
     </div>
   )

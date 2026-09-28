@@ -3,6 +3,8 @@
  * Supabase column names are used verbatim (snake_case).
  */
 
+import type { PlaceHoursSource, PlaceWeeklyHours } from './placeHours'
+
 /** A parent's public handle + account row. id = Supabase auth user id. */
 export interface Profile {
   id: string
@@ -359,6 +361,16 @@ export interface Place {
   neighborhood_id: string | null
   /** 'seattle-parks' (the city's open data) or 'hand' (the curated indoor list). */
   source: string
+  /**
+   * V27 (0056): normalized weekly opening hours — `{display, weekly}` keyed by
+   * `getDay()`. NULL for most rows (no trustworthy source); the card renders no
+   * open/closed chip for them, never a guessed status. See `lib/placeHours.ts`.
+   */
+  hours?: PlaceWeeklyHours | null
+  /** V27 (0056): 'osm' (real schedule) or 'city_default' (labelled assumption). */
+  hours_source?: PlaceHoursSource | null
+  /** V27 (0056): when the hours snapshot was fetched. */
+  hours_checked_at?: string | null
   created_at?: string
 }
 

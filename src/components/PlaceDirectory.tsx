@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { LocationModal } from './LocationModal'
+import { PlaceFilterSheet } from './PlaceFilterSheet'
 import { NAV_ICONS, PLACE_KIND_ICONS } from './icons'
 import { PlacesMapView } from './PlacesMapView'
 import { usePrefersReducedMotion } from './usePrefersReducedMotion'
@@ -9,7 +10,6 @@ import { RadiusEmptyState } from './RadiusEmptyState'
 import {
   DEFAULT_RADIUS_MILES,
   distanceChoiceFromValue,
-  distanceSelectValue,
   formatDistanceLabel,
   milesWord,
   RADIUS_MILES_OPTIONS,
@@ -19,29 +19,118 @@ import type { ZipCoords } from '../lib/feed'
 import { geocodeAddress } from '../lib/geocode'
 import {
   DATE_WINDOWS,
-  DATE_WINDOW_LABELS,
   dateWindowEmptyCopy,
   kindEmptyCopy,
   MAP_FOCUS_RADIUS_MILES,
   planDirectoryList,
-  PLACE_KIND_MISSING_NOTE,
   PLACE_KINDS,
   placeKindChips,
   placeLearnMoreLink,
   placeIndoorLabel,
   placeKindLabel,
   placePath,
-  placeUpcomingLabel,
+  placeAgeFitLabel,
+  photoCreditLine,
   radiusPreviewCircle,
   resolveMapCoords,
   savedPlacesEmptyCopy,
 } from '../lib/places'
 import type { DateWindow, PlaceListRow, SortMode } from '../lib/places'
-import { reviewRatingLine } from '../lib/reviews'
 import type { ReviewSummary } from '../lib/reviews'
 import { scrollBehaviorFor } from '../lib/mapStrip'
+import { hoursSourceNote, hoursStatus } from '../lib/placeHours'
+import { dropInProofLine, reviewQuoteLine } from '../lib/placeSocial'
+import type { PlaceDropInProof, PlaceReviewHighlight } from '../lib/placeSocial'
 import type { Place, PlacePrefill } from '../lib/types'
 import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
+
+/**
+ * V27 — per-kind accent for the kind icon INSIDE each intent pill and on the
+ * placeholder card banner. The founder's reference screenshot used colourful
+ * pictograms, so each kind gets a distinct hue rather than one monochrome
+ * stroke. Decorative only: the word is the control and `aria-pressed` carries
+ * the state, so colour is never the sole channel (the active pill also flips to
+ * a solid indigo fill with white text/icon).
+ */
+const KIND_ACCENTS: Record<string, string> = {
+  playground: 'text-emerald-500',
+  indoor_play: 'text-violet-500',
+  museum: 'text-amber-600',
+  pool: 'text-sky-500',
+  splash_pad: 'text-cyan-500',
+  library: 'text-rose-500',
+  beach: 'text-orange-500',
+  other: 'text-slate-500',
+}
+
+/**
+ * V27 — the "When" dropdown trigger's words. The reference screenshot's default
+ * is "Any day" (not the filter sheet's "Upcoming"), so the trigger reads as a
+ * control that is off rather than one that has chosen a window. The window
+ * VALUES are untouched — this is only the button's own label.
+ */
+const DATE_DROPDOWN_LABELS: Record<DateWindow, string> = {
+  upcoming: 'Any day',
+  today: 'Today',
+  tomorrow: 'Tomorrow',
+  weekend: 'Weekend',
+}
+
+/**
+ * V27 — one of the three prominent dropdown triggers. A shared presentational
+ * control so the type, distance and when buttons cannot drift apart: same
+ * height, same chevron, same focus ring. Pure presentation; the caller owns the
+ * option list and the sheet.
+ */
+function DropdownTrigger({
+  testId,
+  label,
+  iconPath,
+  onClick,
+}: {
+  testId: string
+  label: string
+  iconPath: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      onClick={onClick}
+      className="flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1 rounded-full border border-slate-300 bg-white px-2 text-sm font-medium text-slate-700 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        className="hidden h-4 w-4 shrink-0 text-slate-500 sm:block"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d={iconPath} />
+      </svg>
+      <span className="truncate">{label}</span>
+      <svg
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        className="h-3.5 w-3.5 shrink-0 text-slate-400"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d={NAV_ICONS['chevron-down']} />
+      </svg>
+    </button>
+  )
+}
+
+/** V27: how far the page scrolls before the floating map toggle appears. */
+const MAP_TOGGLE_SCROLL_THRESHOLD_PX = 220
 
 /** V22 slice 10: default export for the lazy wrapper (see above). */
 export { PlaceDirectory as default }
@@ -97,12 +186,16 @@ export function PlaceDirectory({
   zipCoords,
   upcomingStartTimes,
   ratings,
+  reviewHighlights,
+  dropInProofs,
+  nowIso,
   followedPlaceIds,
   canFollow,
   onToggleFollow,
   homePin,
   viewerRadius,
   homeZip,
+  locationLabel,
   selectable = false,
   stickyControls = false,
   onSelect,
@@ -120,6 +213,25 @@ export function PlaceDirectory({
    * Optional: hosts that do not load ratings omit it entirely (same effect).
    */
   ratings?: ReadonlyMap<string, ReviewSummary> | null
+  /**
+   * V27: per-place review highlight (the newest review with a body), keyed by
+   * place id. `null`/omitted while the read is in flight OR when it failed —
+   * then no card shows a quote. Optional: hosts that do not load highlights
+   * omit it entirely (same effect).
+   */
+  reviewHighlights?: ReadonlyMap<string, PlaceReviewHighlight> | null
+  /**
+   * V27: per-place past-drop-in activity, keyed by place id. `null`/omitted
+   * while the read is in flight OR when it failed — then no card shows an
+   * activity line (never a fabricated "0 drop-ins hosted here").
+   */
+  dropInProofs?: ReadonlyMap<string, PlaceDropInProof> | null
+  /**
+   * V27: the single clock the activity line is measured against. Hosts that
+   * load proofs pass the SAME instant they read with, so every card's "last one
+   * X ago" agrees within one render.
+   */
+  nowIso?: string
   /** The caller's own saved place ids (the batched read; empty set default). */
   followedPlaceIds: ReadonlySet<string>
   /** Signed in? Signed out renders no save control at all (the /browse rule). */
@@ -132,6 +244,12 @@ export function PlaceDirectory({
   viewerRadius: number
   /** The viewer's stored home zip (the distance seam measures from it; null = none). */
   homeZip: string | null
+  /**
+   * V27: the place-name shown on the search pill and the location row.
+   * Defaults to the app's city so /new's picker sheet (which does not pass one)
+   * still renders the reference's "Places · Seattle, WA" shape.
+   */
+  locationLabel?: string
   /** When true, taps select into the host instead of navigating away. */
   selectable?: boolean
   /** V23 slice 3: when true, the search + filter card pins to the top of the scroll area. */
@@ -163,6 +281,12 @@ export function PlaceDirectory({
    * join the playtest `routes.json`.
    */
   const [savedOnly, setSavedOnly] = useState(false)
+  /**
+   * V27 — THE "OPEN NOW" GATE. True = show only places whose hours say they are
+   * open this minute. A place with no hours is excluded (unknown ≠ open); the
+   * decision itself lives in the pure `planDirectoryList` seam.
+   */
+  const [openNowOnly, setOpenNowOnly] = useState(false)
   // Miles from the home pin; null = no radius constraint from the modal.
   const [radiusFilter, setRadiusFilter] = useState<number | null>(null)
 
@@ -178,6 +302,41 @@ export function PlaceDirectory({
   const [locationModalOpen, setLocationModalOpen] = useState(false)
   const [geocodeCenter, setGeocodeCenter] = useState<{ lat: number; lng: number } | null>(null)
   const [radiusMiles, setRadiusMiles] = useState<number>(DEFAULT_RADIUS_MILES)
+
+  // --- V27: the top controls ------------------------------------------------
+
+  /**
+   * V27 — THE SEARCH IS INLINE. The founder: *"I expected to be able to do it
+   * right then and there on the same screen. I don't want it to take me
+   * anywhere else."* So there is no search sheet any more: the pill IS a real
+   * `<input>` on the page that filters the list live as it is typed. Focusing
+   * it reveals the topic chips underneath (the old sheet's suggestions) and
+   * nothing else moves. Because the parent taps the input itself, the
+   * on-screen keyboard opens natively — the sheet's programmatic-focus problem
+   * cannot occur.
+   */
+  const [searchFocused, setSearchFocused] = useState(false)
+  /**
+   * V27 — a placeholder category the parent tapped (Food/Cafe, Zoo/Animals).
+   * The data source for these does not exist, so rather than a chip that could
+   * only ever return an empty list, they open one honest "coming soon" line.
+   */
+  const [comingSoonKind, setComingSoonKind] = useState<string | null>(null)
+  /** Which of the three prominent dropdowns is open (one at a time), or none. */
+  const [openDropdown, setOpenDropdown] = useState<'type' | 'distance' | 'when' | null>(null)
+  /**
+   * The place-name shown on the pill / location row. The host may pass one
+   * (the viewer's city); after a "Set location" geocode the typed address wins,
+   * so the row reflects where the list is actually measured from.
+   */
+  const [locationLabelText, setLocationLabelText] = useState(locationLabel ?? 'Seattle, WA')
+  /**
+   * V27: whether the floating map toggle is on screen. It starts HIDDEN and
+   * appears once the page is scrolled — the founder's ask (*"This shouldn't
+   * populate until you start scrolling down"*) — but the map view itself always
+   * shows it (the "List" way back can never be scrolled away).
+   */
+  const [showMapToggle, setShowMapToggle] = useState(false)
 
   // --- V24 slice 10: the view mode ------------------------------------------
 
@@ -225,17 +384,37 @@ export function PlaceDirectory({
     window.scrollTo({ top: saved, behavior: focusBehavior })
   }, [view, focusBehavior])
 
+  /**
+   * V27 — the floating map toggle's visibility. It is hidden at the top of the
+   * list and appears once the parent scrolls past the controls (the design
+   * feedback: *"This shouldn't populate until you start scrolling down"*). The
+   * listener reads the window scroll (the page scrolls normally), is passive,
+   * and is only attached in list view — the map view's "List" control must
+   * never depend on a scroll position.
+   */
+  useEffect(() => {
+    if (view !== 'list') {
+      setShowMapToggle(false)
+      return
+    }
+    function onScroll() {
+      setShowMapToggle(window.scrollY > MAP_TOGGLE_SCROLL_THRESHOLD_PX)
+    }
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [view])
+
   // --- Derived rows ----------------------------------------------------------
 
   const {
     listRows,
-    unplaced,
-    placedGroups,
     radiusReason,
     dateWindowReason,
     kindReason,
     savedReason,
     nothingMatches,
+    openNowReason,
   } = planDirectoryList({
     places,
     query,
@@ -244,6 +423,7 @@ export function PlaceDirectory({
     viewerRadius,
     selectedKinds,
     savedOnly,
+    openNowOnly,
     followedPlaceIds,
     radiusFilter,
     dateWindow,
@@ -257,12 +437,16 @@ export function PlaceDirectory({
     ratings,
   })
 
-  // The KIND filter must reach the "Not on the map yet" section too. Distance-
-  // shaped filters are deliberately NOT applied there (a place may not be
-  // hidden for missing data), but the kind is stated data. The date window is
-  // applied to the rendered list by planDirectoryList, which owns this rule.
-  const filteredUnplaced =
-    selectedKinds.size > 0 ? unplaced.filter((row) => selectedKinds.has(row.place.kind)) : unplaced
+  /**
+   * V27 — NO SECTION HEADINGS. The founder: *"We don't need headers for the
+   * places. At all."* The old list grouped placed rows by kind under an `<h2>`
+   * and split coordinate-less rows into a separate "Not on the map yet" section
+   * with its own heading. The list now renders `listRows` FLAT — every matching
+   * row, placed or not, in `sortPlaces` order — so a place with no coordinates
+   * still appears (the "a filter may not hide a place for missing data" rule)
+   * but under no heading and exactly once. The card's own kind · indoor ·
+   * distance line is what tells the parent what the row is.
+   */
 
   /**
    * V25 t03: THE CATEGORY CHIP ROW's content — one chip per
@@ -286,12 +470,12 @@ export function PlaceDirectory({
    * TWO SETS, AND THE DISTINCTION IS LOAD-BEARING — this slice's second review
    * caught both halves of it:
    *
-   *  1. `mapViewRows` is EVERY row the directory's filter produces
-   *     (`filteredUnplaced` aside, it is `listRows`) — never a slice of it. (Before
+   *  1. `mapViewRows` is EVERY row the directory's filter produces (it IS
+   *     `listRows`) — never a slice of it. (Before
    *     V25 t01 the list rendered a six-row lead behind a door, and a map fed from
    *     that lead showed six pins and said nothing about the other 233; the lead is
    *     gone now, but the rule it produced is the reason this field exists at all.)
-   *     A parent who searched for "park" and tapped "See map" must see every
+   *     A parent who searched for "park" and opened the map must see every
    *     matching place pinned — a matching place with no pin is the defect.
    *
    *  2. `placeableMapRows` is that set minus the rows the map cannot plot (no
@@ -395,15 +579,6 @@ export function PlaceDirectory({
     setView('list')
   }
 
-  /**
-   * V25 t01: THE MODE SWITCH ITSELF, in one place. The in-card "See map" button
-   * and the floating toggle both flip list<->map, and both must save/restore the
-   * list's scroll offset identically (`openMapView` below owns the saving).
-   */
-  function seeMap() {
-    openMapView()
-  }
-
   /** Toggle one kind chip. An empty selection means "all kinds". */
   function toggleKind(kind: string) {
     setSelectedKinds((prev) => {
@@ -434,6 +609,9 @@ export function PlaceDirectory({
       setGeocodeCenter(null)
     } else {
       setGeocodeCenter(result)
+      // V27: once the address resolves, the pill and the search sheet's
+      // location row name where the list is actually measured from.
+      setLocationLabelText(address)
     }
     return result
   }
@@ -450,6 +628,58 @@ export function PlaceDirectory({
 
   // --- Render ----------------------------------------------------------------
 
+  /**
+   * V27 — the three dropdown triggers' own labels. Each names the CURRENT choice
+   * (or the "any" word), so the row is a state readout and not just a set of
+   * doors. The option lists live beside them so a trigger and its sheet can
+   * never disagree about what is selectable.
+   */
+  const typeLabel =
+    indoorFilter === true ? 'Indoor' : indoorFilter === false ? 'Outdoor' : 'Any setting'
+  const distanceLabel =
+    distanceChoice === 'any'
+      ? 'Any distance'
+      : distanceChoice === 'profile'
+        ? `Within ${viewerRadius} mi`
+        : `Within ${distanceChoice} mi`
+  const whenLabel = DATE_DROPDOWN_LABELS[dateWindow]
+  const typeOptions = [
+    { value: 'any', label: 'Any setting' },
+    { value: 'indoor', label: 'Indoor' },
+    { value: 'outdoor', label: 'Outdoor' },
+  ] as const
+  const distanceOptions = [
+    { value: 'profile', label: `Within your radius (${viewerRadius} mi)` },
+    ...RADIUS_MILES_OPTIONS.map((m) => ({
+      value: String(m),
+      label: `Within ${m} ${milesWord(m)}`,
+    })),
+    { value: 'any', label: 'Any distance' },
+  ]
+  const whenOptions = DATE_WINDOWS.map((window) => ({
+    value: window,
+    label: DATE_DROPDOWN_LABELS[window],
+  }))
+  /**
+   * The inline suggestion chips shown when the search field is focused and
+   * empty — the same kind words the pill row uses, so the two can never
+   * disagree.
+   */
+  const suggestionWords = kindChips.map((chip) => chip.label)
+  /**
+   * V27 — the two categories the DATA CANNOT EXPRESS (no food/cafe, zoo or amenity
+   * dataset anywhere), rendered as the row's trailing pills. They are not
+   * filters: tapping one opens a single honest "coming soon" line instead of a
+   * chip that could only ever return an empty list. The founder asked for them
+   * by name; the substrate does not exist, so the request is named rather than
+   * faked.
+   */
+  const comingSoonKinds = [
+    { id: 'food', label: 'Food/Cafe', copy: 'Coming soon! Want to request local food spots?' },
+    { id: 'zoo', label: 'Zoo/Animals', copy: 'Coming soon! Want to request a zoo or animal farm?' },
+  ] as const
+  const comingSoonCopy = comingSoonKinds.find((k) => k.id === comingSoonKind)?.copy ?? null
+
   return (
     <div
       className={
@@ -458,125 +688,158 @@ export function PlaceDirectory({
           : 'flex flex-col gap-4'
       }
     >
-      {/* Search + filter chips + distance control. V25 t01: this card is the
-           FIRST block in list view — the founder's ask ("I want to see the
-           search filters at the very top with the list of all the different
-           places below it"). It used to be column 2 of a two-column grid whose
-           column 1 was the map band; the band is gone from list view, so the
-           grid would now leave an empty column and a card pinned beside
-           nothing. The grid returns in MAP VIEW only, where the map is real
-           content beside the card.
+      {/* V27 — THE TOP THIRD: search pill, three dropdowns, and the horizontal
+          icon sub-filter row. The founder's ask was that the controls read like
+          the reference (a rounded search bar, three prominent dropdown filters,
+          a colourful icon strip under them) and occupy only the top of the
+          screen, leaving the list to own the rest of it. The controls that used
+          to sit here are all still reachable, restated:
+            * the TYPE dropdown      — Any type / Indoor / Outdoor (was the
+                                       indoor + outdoor chip pair)
+            * the DISTANCE dropdown  — the same radius ladder the <select> had
+            * the WHEN dropdown      — Any day / Today / Tomorrow / Weekend
+                                       (was the date chip radiogroup)
+            * the search pill        — opens the full-screen search sheet, which
+                                       now owns the location row (the old "Set
+                                       location" control) and the topic list
+            * the icon strip         — the same `selectedKinds` set as the
+                                       filter sheet's own chips
+          Sorting and the home-pin radius input still live in the sliders
+          ("Filter & sort") sheet, so nothing was dropped in the restyle. */}
+      <div
+        className={`flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm ${view === 'map' ? 'md:col-start-2' : ''} ${stickyControls ? 'sticky top-0 z-10' : ''}`}
+      >
+        {/* The search field + the two utilities, ONE inline row.
+            THE FOUNDER: *"I expected to be able to do it right then and there on
+            the same screen. I don't want it to take me anywhere else."* So the
+            old full-screen sheet is gone. This is a REAL `<input>` that filters
+            the list live as it is typed, and because the parent taps the input
+            itself the on-screen keyboard opens natively. The pin button changes
+            the location; the sliders button opens Filter & sort. */}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-200">
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              className="h-5 w-5 shrink-0 text-slate-400"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d={NAV_ICONS.search} />
+            </svg>
+            <input
+              type="search"
+              data-testid="places-search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
+              placeholder={`Places · ${locationLabelText}`}
+              autoComplete="off"
+              className="min-h-11 min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-500 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+            />
+            {/* The location door, inline in the field's own frame (the founder:
+                "embed a clear, low-profile map icon or 'Change Location' … on
+                the far right"). It opens the SAME shared Set-location dialog. */}
+            <button
+              type="button"
+              data-testid="set-location-btn"
+              onClick={openLocationModal}
+              aria-label="Change location"
+              className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-slate-500 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-200 focus-visible:ring-2 focus-visible:ring-indigo-500"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d={NAV_ICONS.nearby} />
+              </svg>
+            </button>
+            <button
+              type="button"
+              data-testid="filter-sort-btn"
+              onClick={openFilterModal}
+              aria-label="Filter and sort"
+              className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-slate-500 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-200 focus-visible:ring-2 focus-visible:ring-indigo-500"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d={NAV_ICONS.sliders} />
+              </svg>
+            </button>
+          </div>
 
-           It carries "Set location" because that control lived in the band's
-           header and the band no longer renders in list view — the location
-           modal is the page's only address entry point, so it moved here
-           rather than disappearing with its old host.
-
-           V23 slice 3: stickyControls pins this card to the top of the scroll
-           area (the directory sheet's own scroll container). */}
-      <div className={`flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm ${view === 'map' ? 'md:col-start-2' : ''} ${stickyControls ? 'sticky top-0 z-10' : ''}`}>
-        {/* V25 t01: "Set location" — relocated from the removed band header.
-            It opens the shared LocationModal, which sets the geocoded center
-            and radius the list and the map's preview circle both consume. */}
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-slate-500">Nearby places</span>
-          <button
-            type="button"
-            data-testid="set-location-btn"
-            onClick={openLocationModal}
-            className="min-h-11 rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-          >
-            Set location
-          </button>
+          {/* Focusing the empty field offers the SAME kind words as the pill row,
+              as quick starts. `onPointerDown` preventDefault keeps focus on the
+              input so the keyboard does not flicker shut when one is tapped. */}
+          {searchFocused && query.trim() === '' ? (
+            <div className="flex gap-1.5 overflow-x-auto overscroll-x-contain pb-1">
+              {suggestionWords.map((word) => (
+                <button
+                  key={word}
+                  type="button"
+                  data-testid={`places-search-suggestion-${word}`}
+                  onPointerDown={(e) => e.preventDefault()}
+                  onClick={() => setQuery(word)}
+                  className="min-h-11 shrink-0 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+                >
+                  {word}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
 
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-slate-700">Search</span>
-          <input
-            type="search"
-            data-testid="places-search"
-            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="e.g. Green Lake, splash pad, library"
-            autoComplete="off"
+        {/* The three prominent dropdowns. Equal width, one open sheet at a time;
+            the fourth control is the Saved gate, rendered only when it is not a
+            door to nowhere (see `savedToggleAvailable`). */}
+        <div className="flex items-center gap-2">
+          <DropdownTrigger
+            testId="places-type-filter"
+            label={typeLabel}
+            iconPath={NAV_ICONS.tag}
+            onClick={() => setOpenDropdown('type')}
           />
-        </label>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            data-testid="filter-sort-btn"
-            onClick={openFilterModal}
-            className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
-          >
-            Filter &amp; sort
-          </button>
-          <button
-            type="button"
-            data-testid="places-indoor-filter"
-            aria-pressed={indoorFilter === true}
-            onClick={() => {
-              setIndoorFilter((prev) => (prev === true ? null : true))
-            }}
-            className={
-              'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors motion-reduce:transition-none ' +
-              (indoorFilter === true
-                ? 'border-indigo-600 bg-indigo-600 text-white'
-                : 'border-slate-300 bg-white text-slate-700')
-            }
-          >
-            Indoor
-          </button>
-          <button
-            type="button"
-            data-testid="places-outdoor-filter"
-            aria-pressed={indoorFilter === false}
-            onClick={() => {
-              setIndoorFilter((prev) => (prev === false ? null : false))
-            }}
-            className={
-              'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors motion-reduce:transition-none ' +
-              (indoorFilter === false
-                ? 'border-indigo-600 bg-indigo-600 text-white'
-                : 'border-slate-300 bg-white text-slate-700')
-            }
-          >
-            Outdoor
-          </button>
-          {/* V25 t08 — THE SAVED (hearts) FILTER. The founder: "you have a
-              collection of all of your favorite places that you can select
-              from." This is that collection, on the surface that already holds
-              the directory's other narrowing controls, so BOTH consumers get it:
-              /browse (read the list, un-save from it) and /new's picker sheet
-              (tap a saved place → the existing `pickPlace` write; its heart
-              un-saves there too).
-
-              IT IS A FILTER, NOT A SECOND LIST: `planDirectoryList` narrows the
-              SAME rows it already produces, from the SAME `followedPlaceIds` set
-              the bookmarks render — there is no `saved_places` store, and this
-              component issues no read of its own (the host passes the set).
-              Un-saving from this list drops the row on the spot because the host
-              updates that one set — optimistically on /browse, from the write's
-              own answer in the sheet; `follows.savedPlaceIdSetAfterToggle` names
-              both paths at the seam.
-
-              IT RENDERS ONLY WHEN IT IS NOT A DOOR TO NOWHERE
-              (`savedToggleAvailable`): a viewer with saves, or the gate already
-              on. Every chip keeps the house pattern — min-h-11 (44px),
-              focus-visible ring, `motion-reduce`, a real accessible name and
-              `aria-pressed` for the state, so the pressed state is never colour
-              alone. */}
+          <DropdownTrigger
+            testId="places-distance-filter-btn"
+            label={distanceLabel}
+            iconPath={NAV_ICONS.nearby}
+            onClick={() => setOpenDropdown('distance')}
+          />
+          <DropdownTrigger
+            testId="places-when-filter"
+            label={whenLabel}
+            iconPath={NAV_ICONS.clock}
+            onClick={() => setOpenDropdown('when')}
+          />
           {savedToggleAvailable ? (
             <button
               type="button"
               data-testid="places-saved-filter"
               aria-pressed={savedOnly}
+              aria-label="Saved places"
               onClick={() => {
                 setSavedOnly((prev) => !prev)
               }}
               className={
-                'flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+                'flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full border outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
                 (savedOnly
                   ? 'border-indigo-600 bg-indigo-600 text-white'
                   : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')
@@ -594,72 +857,67 @@ export function PlaceDirectory({
               >
                 <path d={NAV_ICONS.bookmark} />
               </svg>
-              Saved
             </button>
           ) : null}
         </div>
 
-        {/* V25 t03 — THE CATEGORY CHIP ROW (annotation 3).
+        {/* V27 — TWO QUICK GATES the founder named: is it open, and is it
+            well-reviewed. "Open now" narrows to places whose hours say open
+            (unknown hours are excluded — never assumed open). "Top rated" flips
+            the sort to the review average; unrated places sort last, so the gate
+            never pretends a place with no reviews is the best. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            data-testid="places-open-now-filter"
+            aria-pressed={openNowOnly}
+            onClick={() => setOpenNowOnly((prev) => !prev)}
+            className={
+              'flex min-h-11 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+              (openNowOnly
+                ? 'border-emerald-600 bg-emerald-600 text-white'
+                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
+            }
+          >
+            <span aria-hidden="true" className={openNowOnly ? 'text-white' : 'text-emerald-500'}>
+              ●
+            </span>
+            Open now
+          </button>
+          <button
+            type="button"
+            data-testid="places-top-rated-sort"
+            aria-pressed={sortMode === 'top-rated'}
+            onClick={() => setSortMode((prev) => (prev === 'top-rated' ? 'alpha' : 'top-rated'))}
+            className={
+              'flex min-h-11 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+              (sortMode === 'top-rated'
+                ? 'border-amber-500 bg-amber-500 text-white'
+                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
+            }
+          >
+            <span
+              aria-hidden="true"
+              className={sortMode === 'top-rated' ? 'text-white' : 'text-amber-500'}
+            >
+              ★
+            </span>
+            Top rated
+          </button>
+        </div>
 
-            THE FOUNDER'S ASK, verbatim: *"you got the three main drop downs that
-            you can click on at the top, and then beneath that there's like a
-            side scrolling filter where you can pick different ones with like
-            interesting icons on them like coffee shop or museum or playground,
-            you know what I mean?"*, and his own reference screenshot shows
-            exactly this shape (a horizontal icon chip row under the top
-            controls). His decision of 2026-09-26 fixed the pattern: a horizontal
-            scroll row of ICON + LABEL chips — the icon is decoration, the word
-            is the control.
+        {/* V27 — THE INTENT PILLS. Padded capsule buttons rather than the old
+            tight icon-above-word chips: easier to hit one-handed, and the
+            selected state is a SOLID indigo fill with white text/icon so it
+            reads instantly against the neutral inactive pills. Each still
+            toggles the SAME `selectedKinds` set the filter sheet's chips use.
 
-            WHY IT SITS HERE: it is "beneath that" set of controls — under the
-            search field, "Filter & sort" and the indoor/outdoor pair, and above
-            the date chips and the distance select.
-
-            WHAT A CHIP DOES: it toggles ONE kind in the SAME `selectedKinds` set
-            the filter sheet's `filter-kind-chip-<kind>` chips use, so the two
-            surfaces can never disagree — selecting "Pool" here shows as selected
-            in the sheet, and clearing it there clears it here. There is no second
-            filtering path: `planDirectoryList` narrows the list exactly as before.
-
-            `PLACE_KIND_CHIP_KINDS` order is the sheet's order and the list's group
-            order (filtered — see below), so the app has ONE taxonomy order. Each
-            chip's word comes from `placeKindLabel` and its glyph from
-            `PLACE_KIND_ICONS` — both existing vocabulary (the glyph map was built
-            for the card photo slot; this row is its first live consumer).
-
-            WHY THERE ARE ONLY EIGHT CHIPS. The founder's binding decision —
-            **no chip that can only ever return an empty list** — is newer than
-            ticket 03's "park (0 rows), declared honestly" concession, so `park`
-            and `trail` have NO chip here: both hold 0 rows in the live directory
-            and 0 in the 0029 seed, so a chip for either could only ever come back
-            empty. Their KIND values are untouched (the DB CHECK, `PLACE_KINDS`,
-            `placeKindLabel`, the filter sheet's own chips and the list's group
-            headings all still carry them) — only the row withholds the chips.
-
-            THE EMPTY STATE IS STILL LIVE, and the `empty` flag from the pure seam
-            is what keeps it honest: a shipped kind can measure empty at runtime,
-            and `park`/`trail` can still be selected in the filter SHEET (an
-            exhaustive list, unlike this discovery row). Either selection renders
-            the kind empty state ("No “Park” places in the directory yet.") rather
-            than the generic "No places match that."; `data-empty` publishes the
-            same measured fact for the specs.
-
-            AND THE CATEGORIES THE DATA CANNOT EXPRESS AT ALL — `food`, `zoo` and
-            the founder's "coffee shop nearby" — are named to the parent in ONE
-            quiet rendered line under the row (`PLACE_KIND_MISSING_NOTE`), because
-            the decision asks for the withholding to be in the COPY, not only the
-            commit: they would return nothing forever, so a chip would lie, and
-            silence would drop the wife's list from the product.
-
-            A11Y: `aria-pressed` carries the toggle state (never colour alone),
-            every chip is `min-h-11` (44px) and the row is a labelled `group`. The
-            `svg` is `aria-hidden`; the accessible name is the chip's word. The row
-            scrolls horizontally (`overflow-x-auto` + `snap-x`, the map strip's own
-            pattern) instead of wrapping, which is the founder's "side scrolling
-            filter"; `overscroll-x-contain` keeps that scroll from chaining to the
-            page, and `motion-reduce:transition-none` keeps it still. */}
+            THE TWO TRAILING PILLS ARE NOT FILTERS. This app has no food/cafe or
+            zoo/animal dataset anywhere, so a real chip for either could only
+            ever return an empty list. They are named to the parent and open one
+            honest "coming soon" line instead — the previous static disclaimer
+            sentence is gone. */}
         <div className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium text-slate-700">Place types</span>
           <div
             data-testid="place-kind-chip-row"
             role="group"
@@ -679,16 +937,19 @@ export function PlaceDirectory({
                     toggleKind(chip.kind)
                   }}
                   className={
-                    'flex min-h-11 shrink-0 snap-start items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+                    'flex min-h-11 shrink-0 snap-start items-center gap-1.5 whitespace-nowrap rounded-full border px-4 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
                     (selected
                       ? 'border-indigo-600 bg-indigo-600 text-white'
-                      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')
+                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
                   }
                 >
                   <svg
                     viewBox="0 0 24 24"
                     aria-hidden="true"
-                    className="h-5 w-5 shrink-0"
+                    className={
+                      'h-5 w-5 shrink-0 ' +
+                      (selected ? 'text-white' : (KIND_ACCENTS[chip.kind] ?? 'text-slate-500'))
+                    }
                     fill="none"
                     stroke="currentColor"
                     strokeWidth="1.8"
@@ -701,106 +962,35 @@ export function PlaceDirectory({
                 </button>
               )
             })}
-          </div>
-          {/* The categories this app cannot serve yet, named to the parent in one
-              quiet line (see the block comment above). Not a button: there is
-              nothing to tap, because the data does not exist. */}
-          <p data-testid="place-kind-missing-note" className="text-xs text-slate-500">
-            {PLACE_KIND_MISSING_NOTE}
-          </p>
-        </div>
-
-        {/* The date chips (annotation 15): Upcoming / Today / Tomorrow / Weekend.
-            Single-choice, rendered as a radiogroup so the selection is conveyed
-            by MORE THAN colour (the role + aria-checked, not just the fill).
-            Each chip keeps the house chip pattern — the same rounded-full border
-            + indigo fill when selected — with min-h/min-w-11 (44px) tap targets
-            and focus-visible rings. */}
-        <div role="radiogroup" aria-label="Upcoming drop-in window" className="flex flex-wrap items-center gap-2">
-          {DATE_WINDOWS.map((window) => {
-            const selected = dateWindow === window
-            return (
+            {comingSoonKinds.map((kind) => (
               <button
-                key={window}
+                key={kind.id}
                 type="button"
-                role="radio"
-                aria-checked={selected}
-                data-testid={`date-chip-${window}`}
-                onClick={() => {
-                  setDateWindow(window)
-                }}
-                className={
-                  'min-h-11 min-w-11 rounded-full border px-3 py-1.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
-                  (selected
-                    ? 'border-indigo-600 bg-indigo-600 text-white'
-                    : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')
-                }
+                data-testid={`place-kind-placeholder-${kind.id}`}
+                onClick={() => setComingSoonKind((prev) => (prev === kind.id ? null : kind.id))}
+                className="flex min-h-11 shrink-0 snap-start items-center gap-1.5 whitespace-nowrap rounded-full border border-dashed border-slate-300 bg-white px-4 text-sm font-medium text-slate-400 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
               >
-                {DATE_WINDOW_LABELS[window]}
+                {kind.label}
               </button>
-            )
-          })}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="flex min-h-11 items-center gap-2 text-sm">
-            <span className="text-slate-500">Distance</span>
-            <select
-              data-testid="places-distance-filter"
-              className="min-h-11 max-w-full rounded-full border border-slate-300 bg-white px-3 text-base text-slate-600 outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
-              value={distanceSelectValue(distanceChoice)}
-              onChange={(e) => {
-                setDistanceChoice(distanceChoiceFromValue(e.target.value))
-              }}
+            ))}
+          </div>
+          {comingSoonCopy !== null ? (
+            <p
+              data-testid="place-kind-coming-soon"
+              role="status"
+              className="rounded-xl bg-slate-100 px-3 py-2 text-xs text-slate-600"
             >
-              <option value="profile">Within your radius ({viewerRadius} mi)</option>
-              {RADIUS_MILES_OPTIONS.map((miles) => (
-                <option key={miles} value={miles}>
-                  Within {miles} {milesWord(miles)}
-                </option>
-              ))}
-              <option value="any">Any distance</option>
-            </select>
-          </label>
+              {comingSoonCopy}{' '}
+              <button
+                type="button"
+                onClick={() => setComingSoonKind(null)}
+                className="font-medium text-indigo-600 underline underline-offset-2"
+              >
+                Dismiss
+              </button>
+            </p>
+          ) : null}
         </div>
-
-        {/* V24 slice 10, KEPT BY V25 t01: the map view's in-card entry point.
-            Before V25 it was the only list-view door to the map (and the
-            floating control's separate job was scrolling back to the band).
-            Now the floating control is the mode toggle and NOTHING scrolls to a
-            band, so this button is the explicit "See map" affordance beside the
-            filters — the same door the toggle opens, reached from the card the
-            founder asked to lead the page. Two doors to one mode, one map.
-
-            It lives in the controls card rather than in the old band's header so
-            it is still reachable when a search matches no PLACEABLE row — the
-            parent can open the map and see the filter emptied it.
-
-            It renders only when at least one row has coordinates, so the control
-            is never a door to an empty map. The way back is the map view's own
-            "Back to list" button, or the floating control, now labelled "List". */}
-        {placeableMapRows.length > 0 ? (
-          <button
-            type="button"
-            data-testid="places-see-map"
-            onClick={seeMap}
-            className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 hover:bg-indigo-100"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-              className="h-5 w-5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d={NAV_ICONS.browse} />
-            </svg>
-            See map
-          </button>
-        ) : null}
       </div>
 
       {/* V24 slice 10 — THE MAP VIEW REPLACES the list rather than sitting
@@ -945,6 +1135,30 @@ export function PlaceDirectory({
             Show Upcoming
           </button>
         </div>
+      ) : openNowReason ? (
+        /* V27 — THE OPEN-NOW EMPTY STATE. The gate is a control the parent
+           touched, so when it is the reason nothing shows, name it and offer the
+           one tap that restores the directory. Unknown-hours places are excluded
+           by the gate, which is the honest behaviour (never assume open), and
+           this line is where that is said out loud. */
+        <div
+          data-testid="empty-open-now-state"
+          className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm md:col-start-2"
+        >
+          <p className="text-sm text-slate-600">
+            Nothing here is open right now — or we don’t have their hours yet.
+          </p>
+          <button
+            type="button"
+            data-testid="open-now-empty-escape"
+            onClick={() => {
+              setOpenNowOnly(false)
+            }}
+            className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+          >
+            Show all places
+          </button>
+        </div>
       ) : nothingMatches ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm md:col-start-2">
           No places match that.
@@ -963,67 +1177,32 @@ export function PlaceDirectory({
              the subset this container renders. The difference must be the rows
              the "Not on the map yet" section renders, exactly once each. */
           data-matched-rows={listRows.length}
-          data-placed-rows={placedGroups.reduce((total, group) => total + group.rows.length, 0)}
+          data-placed-rows={listRows.filter((row) => row.distanceMiles !== null).length}
           className="flex flex-col gap-2"
         >
-          {/* V25 t01: THE WHOLE LIST, not a lead behind a door — every PLACED
-              row, grouped by kind, on the first paint. That is the founder's
-              "all these place cards under the filters below it as a long list".
-              The A–Z / kind grouping is kept (grouping was never the complaint)
-              and the "See all N places" fold is gone, so no matching place hides
-              behind a second tap.
-
-              The unplaced rows are NOT here: they render once, in the "Not on
-              the map yet" section below, which is why these groups are built
-              from the placed subset. */}
-          {placedGroups.map((group) => (
-            <section key={group.kind} className="flex flex-col gap-2">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
-                {group.label}
-              </h2>
-              {group.rows.map((row) => (
-                <DirectoryRow
-                  key={row.place.id}
-                  row={row}
-                  followed={followedPlaceIds.has(row.place.id)}
-                  canFollow={canFollow}
-                  onToggleFollow={onToggleFollow}
-                  selectable={selectable}
-                  onSelect={onSelect}
-                />
-              ))}
-            </section>
+          {/* V27: THE WHOLE LIST, FLAT AND UNGROUPED. The founder: "We don't
+              need headers for the places. At all." So every matching row —
+              placed or not — renders once, in `sortPlaces` order (A–Z by
+              default; the filter sheet's sort mode can change it). A
+              coordinate-less row is no longer exiled to a separate headed
+              section: it keeps its place in the flat order and its own card
+              line says "Distance unknown", so it is still never hidden. */}
+          {listRows.map((row) => (
+            <DirectoryRow
+              key={row.place.id}
+              row={row}
+              highlight={reviewHighlights?.get(row.place.id) ?? null}
+              proof={dropInProofs?.get(row.place.id) ?? null}
+              nowIso={nowIso}
+              followed={followedPlaceIds.has(row.place.id)}
+              canFollow={canFollow}
+              onToggleFollow={onToggleFollow}
+              selectable={selectable}
+              onSelect={onSelect}
+            />
           ))}
         </div>
       )}
-
-      {/* Places we could not measure. Never hidden, never given a fake distance.
-          V24 slice 10: list view only — the map view carries a list of its own
-          (the rows that did not become pins or cards), so nothing becomes
-          unreachable. */}
-      {view === 'list' && filteredUnplaced.length > 0 ? (
-        <section data-testid="places-unplaced" className="flex flex-col gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
-            Not on the map yet
-          </h2>
-          <p className="text-xs text-slate-500">
-            We don’t have coordinates for these, so the distance filter can’t place them.
-          </p>
-          <div className="flex flex-col gap-2">
-            {filteredUnplaced.map((row) => (
-              <DirectoryRow
-                key={row.place.id}
-                row={row}
-                followed={followedPlaceIds.has(row.place.id)}
-                canFollow={canFollow}
-                onToggleFollow={onToggleFollow}
-                selectable={selectable}
-                onSelect={onSelect}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
 
       {/* V25 t01: THE MODE TOGGLE. One floating control that flips list↔map
           instead of scrolling to a band (there is no band left to scroll to:
@@ -1040,8 +1219,16 @@ export function PlaceDirectory({
 
           NO z-index by design (document order clears the content; Leaflet's
           controls sit at 1000, so a number buys nothing). Clears the bottom nav
-          by geometry and honours reduced motion. */}
-      {toggleAvailable ? (
+          by geometry and honours reduced motion.
+
+          V27: IN LIST VIEW IT STARTS HIDDEN and appears only after the parent
+          scrolls past the controls (`showMapToggle`, the founder's "This
+          shouldn't populate until you start scrolling down"). In MAP VIEW it is
+          always on screen — the way back to the list can never be scrolled away.
+          In the /new picker SHEET (`selectable`) there is no window scroll to
+          read, so the control is always available there: the sheet's map mode is
+          a real way to pick a place and must never be unreachable. */}
+      {toggleAvailable && (view === 'map' || showMapToggle || selectable) ? (
         <button
           type="button"
           data-testid="places-view-toggle"
@@ -1158,12 +1345,16 @@ export function PlaceDirectory({
         </div>
       ) : null}
 
-      {/* The Set location modal — address input + radius slider + "See places". */}
+      {/* The Set location modal — address input + radius slider + "See places".
+          V27: opened from the search sheet's location row (the pill no longer
+          has a separate "Set location" button). The founder's placeholder names
+          the coordinate kinds a parent might type. */}
       <LocationModal
         open={locationModalOpen}
         onClose={closeLocationModal}
         radiusMiles={radiusMiles}
         homeZip={null}
+        addressPlaceholder="Neighborhood, city, or zip"
         onGeocode={handleGeocode}
         // V23 s1 extraction regression fix: the slider must drive the map LIVE
         // (V20 t05), not only on the Apply button. `onApplyRadius` is this
@@ -1172,7 +1363,82 @@ export function PlaceDirectory({
         onRadiusChange={(miles) => setRadiusMiles(miles)}
         onApplyRadius={(miles) => setRadiusMiles(miles)}
       />
+
+      {/* V27: the three dropdown sheets. One shared component, one open at a
+          time (`openDropdown`), each committing straight into the same state the
+          controls above render — there is no separate "apply" step. */}
+      <PlaceFilterSheet
+        open={openDropdown === 'type'}
+        testId="places-type-sheet"
+        title="Setting"
+        options={typeOptions}
+        value={indoorFilter === true ? 'indoor' : indoorFilter === false ? 'outdoor' : 'any'}
+        onSelect={(value) => {
+          setIndoorFilter(value === 'any' ? null : value === 'indoor')
+        }}
+        onClose={() => setOpenDropdown(null)}
+      />
+      <PlaceFilterSheet
+        open={openDropdown === 'distance'}
+        testId="places-distance-sheet"
+        title="Distance"
+        options={distanceOptions}
+        value={distanceChoice === 'profile' || distanceChoice === 'any' ? distanceChoice : String(distanceChoice)}
+        onSelect={(value) => {
+          setDistanceChoice(distanceChoiceFromValue(value))
+        }}
+        onClose={() => setOpenDropdown(null)}
+      />
+      <PlaceFilterSheet
+        open={openDropdown === 'when'}
+        testId="places-when-sheet"
+        title="When"
+        options={whenOptions}
+        value={dateWindow}
+        onSelect={(value) => {
+          setDateWindow(value)
+        }}
+        onClose={() => setOpenDropdown(null)}
+      />
     </div>
+  )
+}
+
+/**
+ * V27 — the parents' aggregate star rating, rendered as five stars plus the
+ * value and count. The founder: *"is it open? … is it indoor or outdoor? …
+ * how other parents have reviewed it … and how close it is to me. Those are
+ * the prominent things."*
+ *
+ * HONEST ZERO: this component is only rendered when `hasReviews` is true; the
+ * caller shows a quiet "No reviews yet" otherwise, so a place with no reviews
+ * is never given a 0-star or 5-star appearance it did not earn. `displayAverage`
+ * is the DB-computed value (0052's `review_summary`), never re-derived here.
+ *
+ * A11Y: `role="img"` with a full sentence label, and the glyphs + numeric text
+ * are `aria-hidden` so a screen reader hears "Rated 4.3 out of 5 from 12
+ * reviews" once, not a row of star characters.
+ */
+function PlaceStars({ count, average }: { count: number; average: number | null }) {
+  const value = average ?? 0
+  const filled = Math.max(0, Math.min(5, Math.round(value)))
+  const label = `Rated ${value.toFixed(1)} out of 5 from ${count} ${count === 1 ? 'review' : 'reviews'}`
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      data-testid="place-rating-line"
+      className="flex shrink-0 items-center gap-1 pt-0.5"
+    >
+      <span aria-hidden="true" className="text-sm leading-none text-amber-500">
+        {'★'.repeat(filled)}
+        {'☆'.repeat(5 - filled)}
+      </span>
+      <span aria-hidden="true" className="text-xs font-medium text-slate-600">
+        {value.toFixed(1)}
+        <span className="text-slate-400"> ({count})</span>
+      </span>
+    </span>
   )
 }
 
@@ -1190,6 +1456,9 @@ export function PlaceDirectory({
  */
 function DirectoryRow({
   row,
+  highlight,
+  proof,
+  nowIso,
   followed,
   canFollow,
   onToggleFollow,
@@ -1197,6 +1466,12 @@ function DirectoryRow({
   onSelect,
 }: {
   row: PlaceListRow
+  /** V27: this place's newest review with a body, or null (none / read failed). */
+  highlight: PlaceReviewHighlight | null
+  /** V27: this place's past-drop-in activity, or null (none / read failed). */
+  proof: PlaceDropInProof | null
+  /** V27: the shared clock for the activity line (falls back to now). */
+  nowIso?: string
   followed: boolean
   canFollow: boolean
   onToggleFollow: (placeId: string) => void
@@ -1204,15 +1479,62 @@ function DirectoryRow({
   onSelect?: (place: Place) => void
 }) {
   const navigate = useNavigate()
-  const upcomingLabel = placeUpcomingLabel(row.upcomingCount)
+  /**
+   * V27 — the photo, with a HARD fallback. About half the directory carries a
+   * Wikimedia `photo_url`; the rest draw the per-kind illustration, and a URL
+   * that fails (the founder's original reason for pulling photos) falls back on
+   * `onError` too, so a card is never a broken image.
+   */
+  const [photoFailed, setPhotoFailed] = useState(false)
+  const photoUrl = row.place.photo_url
+  const showPhoto = photoUrl !== null && photoUrl !== '' && !photoFailed
+  const photoCredit = photoCreditLine(row.place)
+  const ageFit = placeAgeFitLabel(row.place)
+  /**
+   * V27 — the open/closed answer, when the row has hours. `null` means UNKNOWN
+   * (no hours, or a schedule we could not read) and renders NO chip, never a
+   * guessed "Open". The note marks a citywide default as "typical hours" so an
+   * assumption is never shown in the same voice as a real schedule.
+   */
+  const openStatus = hoursStatus(row.place.hours ?? null, new Date())
+  const openNote = hoursSourceNote(row.place.hours_source ?? null)
+  /**
+   * V27 — THE SOCIAL CUE, in strict PRIORITY (a card shows exactly one line,
+   * and the first true fact wins):
+   *
+   *   1. a POSITIVE upcoming count — the most actionable fact ("3 drop-ins
+   *      planned here"), the pre-existing copy;
+   *   2. else a place that has ALREADY hosted past drop-ins — `dropInProofLine`
+   *      returns null for a place that never has, so this can never say "0
+   *      drop-ins hosted here";
+   *   3. else, only when the count is a KNOWN zero, the honest invitation;
+   *   4. else nothing — a null count with no activity is the honest unknown, and
+   *      a fabricated zero is exactly what this priority exists to prevent.
+   *
+   * The quote line (the newest review's text) renders separately under the
+   * title/rating row; it never replaces this line.
+   */
+  const plannedCopy =
+    row.upcomingCount !== null && row.upcomingCount > 0
+      ? row.upcomingCount === 1
+        ? '1 drop-in planned here'
+        : `${row.upcomingCount} drop-ins planned here`
+      : null
+  const proofLine = dropInProofLine(proof, nowIso ?? new Date().toISOString())
+  const inviteLine =
+    row.upcomingCount === 0 && proofLine === null
+      ? 'Be the first to start a drop-in here today!'
+      : null
+  /**
+   * V27 — the review quote, truncated to ~96 chars on a word boundary (the
+   * `reviewQuoteLine` seam). Null when the highlight has no body → nothing
+   * extra renders and the title row's existing "No reviews yet" answer stands.
+   */
+  const quoteLine = highlight === null ? null : reviewQuoteLine(highlight, 96)
   // V24: the rating line — a real VALUE for screen readers ("4.3 out of 5, 12
   // reviews"), never decorative glyphs alone. A null summary (unrated, or the
   // bulk read failed) renders NOTHING — never a 0.0 (the `upcomingCount` rule).
   const ratingSummary = row.ratingSummary
-  const ratingLine =
-    ratingSummary !== null && ratingSummary.hasReviews
-      ? reviewRatingLine(ratingSummary.count, ratingSummary.displayAverage, row.place.name)
-      : null
 
   /** Non-selectable: "Start a drop-in" — the existing PlacePrefill router-state
       seam (navigate('/new', { state: { place } })). stopPropagation keeps the
@@ -1236,80 +1558,168 @@ function DirectoryRow({
   const learnMore = placeLearnMoreLink(row.place)
 
   return (
-    <Link
-      to={placePath(row.place.id)}
-      data-testid="place-row"
-      onClick={selectable ? (e) => {
-        // In selectable mode the whole card selects instead of navigating.
-        // stopPropagation stops the Link's navigation; the name span's own
-        // click (below) is what actually selects, so a tap anywhere on the card
-        // lands the pick.
-        e.preventDefault()
-        e.stopPropagation()
-        select()
-      } : undefined}
-      className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-50"
-    >
-      <div className="flex flex-col gap-1 p-3">
+    /* V27 — THE SAVE CONTROL IS A SIBLING OF THE CARD LINK, not a button nested
+       inside the anchor. A `<button>` inside an `<a>` is invalid HTML, and under
+       a synthetic coordinate click (Playwright) the browser can resolve the
+       click to the anchor and navigate instead of toggling the save. The link
+       still wraps the whole card, so a tap anywhere else navigates; the bookmark
+       floats above it at the title row's height. The title row reserves a
+       matching 44px spacer so the name never runs under the floating control. */
+    <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-50">
+      <Link
+        to={placePath(row.place.id)}
+        data-testid="place-row"
+        onClick={selectable ? (e) => {
+          // In selectable mode the whole card selects instead of navigating.
+          // stopPropagation stops the Link's navigation; the name span's own
+          // click (below) is what actually selects, so a tap anywhere on the card
+          // lands the pick.
+          e.preventDefault()
+          e.stopPropagation()
+          select()
+        } : undefined}
+        className="flex flex-col"
+      >
+      {/* The picture first — the founder: *"each place should have a picture
+          above the title … that will really decide whether or not a parent would
+          want to go there."* A real Wikimedia photo when the row has one; the
+          per-kind illustration when it does not, or when the URL fails, so the
+          slot is never a broken image. */}
+      <div className="relative h-36 w-full bg-slate-100">
+        {showPhoto ? (
+          <img
+            src={photoUrl}
+            alt=""
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => setPhotoFailed(true)}
+            data-testid={`place-photo-${row.place.id}`}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div
+            aria-hidden="true"
+            className="flex h-full w-full items-center justify-center bg-slate-50"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className={`h-14 w-14 ${KIND_ACCENTS[row.place.kind] ?? 'text-slate-400'}`}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d={PLACE_KIND_ICONS[row.place.kind]} />
+            </svg>
+          </div>
+        )}
+        {/* Commons attribution travels with the card that shows the image, not
+            only with the place page. */}
+        {showPhoto && photoCredit !== null ? (
+          <span className="absolute bottom-1 right-2 rounded bg-black/50 px-1.5 py-0.5 text-[10px] text-white/90">
+            {photoCredit}
+          </span>
+        ) : null}
+      </div>
+
+      <div className="flex flex-col gap-1.5 p-3">
+        {/* Title row: the name on the left, the Save bookmark on the right — the
+            brief's "Top Line Row: [Place Title] on the left; explicit Bookmark/
+            Save actions stacked on the right", and the layout the specs pin
+            (the heart shares a row with the name). The stars sit on their own
+            line just below, so a rating never competes with the save control for
+            the same corner. */}
         <div className="flex items-start justify-between gap-2">
           <span
             data-testid="place-card-name"
             onClick={selectable ? select : undefined}
-            className="text-sm font-semibold text-slate-900"
+            className="text-base font-semibold text-slate-900"
           >
             {row.place.name}
           </span>
-          {canFollow ? (
-            <button
-              type="button"
-              data-testid={`place-heart-${row.place.id}`}
-              aria-pressed={followed}
-              aria-label={
-                followed
-                  ? `Saved ${row.place.name} — tap to unsave`
-                  : `Save ${row.place.name}`
+          {/* Reserves the floating bookmark's 44px so the name never runs under
+              it. The control itself is a SIBLING of this link (see the wrapper
+              comment) — never nested inside the anchor. */}
+          {canFollow ? <span aria-hidden="true" className="h-11 w-11 shrink-0" /> : null}
+        </div>
+        {/* Rating line, just under the name. "No reviews yet" is stated, never
+            left blank and never shown as 0 stars. */}
+        {ratingSummary !== null && ratingSummary.hasReviews ? (
+          <PlaceStars count={ratingSummary.count} average={ratingSummary.displayAverage} />
+        ) : (
+          <span className="text-xs text-slate-400">No reviews yet</span>
+        )}
+        {/* V27: a real parent's words under the rating. The `reviewQuoteLine`
+            seam owns truncation + the "Sam R." reduction; the stars are NOT
+            repeated here (they sit on the line above). Null renders nothing, so
+            "No reviews yet" is never second-guessed. */}
+        {quoteLine !== null ? (
+          <p
+            data-testid="place-review-quote"
+            className="line-clamp-2 text-xs italic text-slate-600"
+          >
+            {quoteLine}
+          </p>
+        ) : null}
+        {/* The prominent logistics row: indoor/outdoor (the rain question),
+            distance (how far), and the kind. A real "Open now" chip joins this
+            row the day the directory carries public opening hours — it is not
+            faked in the meantime. */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {openStatus !== null ? (
+            <span
+              data-testid="place-open-status"
+              title={row.place.hours?.display ?? undefined}
+              className={
+                'flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ' +
+                (openStatus === 'open'
+                  ? 'bg-emerald-50 text-emerald-700'
+                  : 'bg-slate-100 text-slate-500')
               }
-              onClick={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                onToggleFollow(row.place.id)
-              }}
-              className="-mr-1 -mt-1 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 outline-none hover:bg-slate-100"
             >
-              {/* The pressed state is conveyed by MORE THAN colour: the bookmark
-                  glyph fills when saved (stroked otherwise) AND the accessible
-                  name flips Save → Saved. Same glyph + fill channel as the
-                  place pages' control; the glyph is decorative (aria-hidden). */}
-              <svg
-                viewBox="0 0 24 24"
+              <span
                 aria-hidden="true"
-                className={`h-6 w-6 ${followed ? 'text-indigo-600' : 'text-slate-400'}`}
-                fill={followed ? 'currentColor' : 'none'}
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+                className={openStatus === 'open' ? 'text-emerald-500' : 'text-slate-400'}
               >
-                <path d={NAV_ICONS.bookmark} />
-              </svg>
-            </button>
+                ●
+              </span>
+              {openStatus === 'open' ? 'Open now' : 'Closed'}
+              {openNote !== null ? (
+                <span className="font-normal text-slate-400"> · {openNote}</span>
+              ) : null}
+            </span>
+          ) : null}
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+            {placeIndoorLabel(row.place)}
+          </span>
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+            {row.distanceMiles !== null
+              ? formatDistanceLabel(row.distanceMiles)
+              : 'Distance unknown'}
+          </span>
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+            {placeKindLabel(row.place.kind)}
+          </span>
+          {ageFit !== null ? (
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+              {ageFit}
+            </span>
           ) : null}
         </div>
-        <span className="text-xs text-slate-600">
-          {placeKindLabel(row.place.kind)} · {placeIndoorLabel(row.place)}
-          {' · '}
-          {row.distanceMiles !== null
-            ? formatDistanceLabel(row.distanceMiles)
-            : 'Distance unknown'}
-        </span>
         <span className="text-xs text-slate-500">{row.place.address}</span>
-        {ratingLine !== null ? (
-          <span data-testid="place-rating-line" className="text-xs font-medium text-amber-700">
-            {ratingLine}
+        {/* V27: the ONE social line, in the priority order computed above —
+            planned count, else past activity, else the zero-state invitation,
+            else nothing. `upcomingCount === 0` with a proof shows the proof,
+            so "be the first" can never appear on a place that has hosted. */}
+        {plannedCopy !== null ? (
+          <span className="text-xs font-medium text-indigo-700">👥 {plannedCopy}</span>
+        ) : proofLine !== null ? (
+          <span data-testid="place-dropin-proof" className="text-xs font-medium text-indigo-700">
+            {proofLine}
           </span>
-        ) : null}
-        {upcomingLabel !== null ? (
-          <span className="text-xs font-medium text-indigo-700">{upcomingLabel}</span>
+        ) : inviteLine !== null ? (
+          <span className="text-xs text-slate-500">✨ {inviteLine}</span>
         ) : null}
         <div className="mt-1 flex flex-wrap items-center gap-2">
           {!selectable ? (
@@ -1317,9 +1727,9 @@ function DirectoryRow({
               type="button"
               data-testid={`row-start-dropin-${row.place.id}`}
               onClick={(e) => startDropIn(e)}
-              className="min-h-11 rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700"
+              className="min-h-11 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700"
             >
-              Start a drop-in
+              🚀 Start a drop-in
             </button>
           ) : null}
           {learnMore !== null ? (
@@ -1332,9 +1742,9 @@ function DirectoryRow({
               onClick={(e) => {
                 e.stopPropagation()
               }}
-              className="flex min-h-11 items-center rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
+              className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
             >
-              {learnMore.kind === 'website' ? 'Visit website' : 'Find it on the map'}
+              🗺️ {learnMore.kind === 'website' ? 'Visit website' : 'Find it on the map'}
             </a>
           ) : (
             <span className="text-xs text-slate-500">
@@ -1346,7 +1756,42 @@ function DirectoryRow({
           )}
         </div>
       </div>
-    </Link>
+      </Link>
+
+      {/* The save control, a SIBLING of the link (never nested in the anchor),
+          floating at the title row's height — 9rem photo banner + 0.75rem card
+          padding, minus the old `-mt-1` nudge. */}
+      {canFollow ? (
+        <button
+          type="button"
+          data-testid={`place-heart-${row.place.id}`}
+          aria-pressed={followed}
+          aria-label={followed ? `Saved ${row.place.name} — tap to unsave` : `Save ${row.place.name}`}
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onToggleFollow(row.place.id)
+          }}
+          className="absolute right-2 top-[9.5rem] flex min-h-11 min-w-11 items-center justify-center rounded-full outline-none transition-colors motion-reduce:transition-none hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-indigo-500"
+        >
+          {/* The pressed state is conveyed by MORE THAN colour: the bookmark
+              glyph fills when saved (stroked otherwise) AND the accessible name
+              flips Save → Saved. The glyph is decorative (aria-hidden). */}
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            className={`h-6 w-6 ${followed ? 'text-indigo-600' : 'text-slate-400'}`}
+            fill={followed ? 'currentColor' : 'none'}
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d={NAV_ICONS.bookmark} />
+          </svg>
+        </button>
+      ) : null}
+    </div>
   )
 }
 

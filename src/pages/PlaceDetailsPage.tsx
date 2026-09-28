@@ -13,6 +13,7 @@ import {
   getReviewSummary,
   kidAgesByPostForPosts,
   listPlaceComments,
+  listPlaceDropInProofs,
   listPlaceFeed,
   loadZipCodes,
   toggleFollowPlace,
@@ -22,6 +23,8 @@ import {
 import { cardAgeRangeLabel, formatDistanceLabel, mapsHref } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
 import { placeFollowerLine, planSaveToggle } from '../lib/follows'
+import { hoursSourceNote, hoursStatus } from '../lib/placeHours'
+import { dropInProofLine, type PlaceDropInProof } from '../lib/placeSocial'
 import { reviewRatingLine, REVIEW_SCORE_MAX } from '../lib/reviews'
 import {
   placeAgeFitLabel,
@@ -94,6 +97,16 @@ export function PlaceDetailsPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [zipCoords, setZipCoords] = useState<ReadonlyMap<string, ZipCoords> | null>(null)
 
+  // ONE clock reading for the whole render (the "is it open?" chip and the
+  // drop-in activity age must agree). Captured once per mount so `new Date()`
+  // never runs inside JSX.
+  const [nowIso] = useState(() => new Date().toISOString())
+
+  // --- Drop-in activity (the browse card's social-proof seam) ------------
+  // null = not read yet OR the read failed — both render NO line at all. A
+  // failed read must never read as "0 drop-ins hosted here" (a verdict).
+  const [dropInProof, setDropInProof] = useState<PlaceDropInProof | null>(null)
+
   // --- The wall ---------------------------------------------------------
   // null = not read yet; [] = read, nothing there (or hidden). `commentsError`
   // is SEPARATE from `loadError` on purpose: an unapplied 0050 must not take
@@ -128,6 +141,7 @@ export function PlaceDetailsPage() {
     setComments(null)
     setCommentsError(null)
     setReviewSummary(null)
+    setDropInProof(null)
     setPosts(null)
     ;(async () => {
       try {
@@ -188,6 +202,25 @@ export function PlaceDetailsPage() {
       cancelled = true
     }
   }, [id])
+
+  // The drop-in activity line — its own effect, degrading like the rating line:
+  // a failed read renders NO line, never "0 drop-ins hosted here". Takes the
+  // per-place proof out of the map this place's read already returns.
+  useEffect(() => {
+    if (id === undefined) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const proofs = await listPlaceDropInProofs(nowIso)
+        if (!cancelled) setDropInProof(proofs.get(id) ?? null)
+      } catch {
+        if (!cancelled) setDropInProof(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [id, nowIso])
 
   // Follower count + own follow state (the 0033 SECDEF RPC + own row).
   useEffect(() => {
@@ -354,6 +387,11 @@ export function PlaceDetailsPage() {
   const commentCount = comments?.length ?? 0
   const draftLength = draft.trim().length
   const draftProblem = postError
+  // Both decisions are the pure seams' — this page renders, it does not decide
+  // whether a schedule means "open" or whether activity is worth stating.
+  const openStatus = hoursStatus(place.hours ?? null, new Date(nowIso))
+  const openNote = hoursSourceNote(place.hours_source ?? null)
+  const activityLine = dropInProofLine(dropInProof, nowIso)
 
   return (
     <div className="flex flex-col gap-4">
@@ -466,6 +504,51 @@ export function PlaceDetailsPage() {
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
           What parents say
         </h2>
+
+        {/* V27: is it open, and how much is going on there — the two facts a
+            parent weighs beside the rating. Hours render only when the place
+            actually carries a schedule (never a guessed status); the status
+            chip is the directory's own idiom, and the `typical hours`
+            qualifier says when the schedule is a citywide default rather than
+            a per-venue one. */}
+        {place.hours !== null && place.hours !== undefined ? (
+          <div data-testid="details-hours" className="mt-1 flex flex-wrap items-center gap-2">
+            {openStatus !== null ? (
+              <span
+                className={
+                  'flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ' +
+                  (openStatus === 'open'
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : 'bg-slate-100 text-slate-500')
+                }
+              >
+                <span
+                  aria-hidden="true"
+                  className={openStatus === 'open' ? 'text-emerald-500' : 'text-slate-400'}
+                >
+                  ●
+                </span>
+                {openStatus === 'open' ? 'Open now' : 'Closed'}
+              </span>
+            ) : null}
+            <span className="text-sm text-slate-600">
+              {place.hours.display}
+              {openNote !== null ? (
+                <span className="text-slate-400"> · {openNote}</span>
+              ) : null}
+            </span>
+          </div>
+        ) : null}
+
+        {/* The drop-in activity line, from the browse card's own pure seam.
+            Null (no past drop-ins, not read, or a failed read) renders
+            NOTHING — never "0 drop-ins hosted here", which reads as a
+            verdict. */}
+        {activityLine !== null ? (
+          <p data-testid="details-dropin-proof" className="text-xs text-slate-500">
+            {activityLine}
+          </p>
+        ) : null}
 
         {/* V24 ticket 06: the AGGREGATE rating line, above everything else in
             this section — the founder's "a total star rating above what
@@ -612,7 +695,7 @@ export function PlaceDetailsPage() {
               <DropInCard
                 key={post.id}
                 playdate={post}
-                nowIso={new Date().toISOString()}
+                nowIso={nowIso}
                 ageRangeLabel={cardAgeRangeLabel(post, kidAgesByPostId[post.id] ?? [])}
               />
             ))}

@@ -19,6 +19,7 @@ import {
   statedAgeRangeLine,
 } from './feed'
 import type { DistanceChoice, ZipCoords } from './feed'
+import { isOpenNow } from './placeHours'
 import type { Place, PlaceKind } from './types'
 import type { ReviewSummary } from './reviews'
 
@@ -2069,6 +2070,12 @@ export interface DirectoryListPlan {
   /** Nothing at all in the list OR the unplaced section (the generic empty state). */
   nothingMatches: boolean
   /**
+   * V27: the OPEN-NOW gate is on and it emptied the list. The honest empty state
+   * then names the gate ("Nothing is open right now") rather than blaming a
+   * search or a radius, and offers the way to clear it.
+   */
+  openNowReason: boolean
+  /**
    * The date window's empty state is the honest answer ONLY when the window
    * filter is actually the reason nothing shows: a non-'upcoming' window, zero
    * rendered rows, and no search text (a search narrows further, so it is not
@@ -2123,6 +2130,14 @@ export function planDirectoryList(input: {
    */
   savedOnly?: boolean
   /**
+   * V27: show ONLY places that are open right now, judged from the place's
+   * normalized `hours` by the pure `placeHours.isOpenNow`. A place with NO
+   * hours (or an unreadable schedule) is EXCLUDED rather than assumed open —
+   * "we do not know" cannot back an "Open now" claim, so it is not shown as one.
+   * Defaults to false so every existing caller is unchanged.
+   */
+  openNowOnly?: boolean
+  /**
    * The viewer's own saved place ids (the batched `listMyFollows` read, the same
    * set the bookmark controls read). Read ONLY when `savedOnly` is true; the
    * default empty set + `savedOnly: true` therefore means "you saved nothing",
@@ -2167,6 +2182,7 @@ export function planDirectoryList(input: {
     viewerRadius,
     selectedKinds,
     savedOnly = false,
+    openNowOnly = false,
     followedPlaceIds = EMPTY_PLACE_IDS,
     radiusFilter,
     dateWindow,
@@ -2254,7 +2270,17 @@ export function planDirectoryList(input: {
     return sortPlaces(base, sortMode, homePin ?? undefined)
   })()
 
-  const listRows = geocodeCenter !== null ? effectiveRows : filteredRows
+  const listRowsAll = geocodeCenter !== null ? effectiveRows : filteredRows
+  /**
+   * V27 — THE "OPEN NOW" GATE. Applied to the final list (either path), after
+   * every other narrowing, so it can only ever REMOVE rows the parent could not
+   * visit right now. `isOpenNow` returns `true` only for a schedule that says
+   * open; a place with no hours (or an unreadable one) returns `null` and is
+   * EXCLUDED — "unknown" must not be shown as an open place.
+   */
+  const listRows = openNowOnly
+    ? listRowsAll.filter((row) => isOpenNow(row.place.hours ?? null, new Date(nowIso)) === true)
+    : listRowsAll
   const unplaced = listRows.filter((row) => row.distanceMiles === null)
   /**
    * V25 t01: THE LIST IS THE WHOLE LIST, AND NOTHING RENDERS TWICE.
@@ -2306,6 +2332,11 @@ export function planDirectoryList(input: {
     dateWindow !== 'upcoming' && listRows.length === 0 && filteredUnplaced.length === 0 && query.trim() === ''
   const dateWindowReason = dateWindowIsTheReason ? dateWindow : null
   const nothingMatches = listRows.length === 0 && filteredUnplaced.length === 0
+  // V27: the open-now gate is the reason only when it is ON and nothing at all
+  // rendered. It outranks the generic message (the gate is a control the parent
+  // touched), but a search/kind/radius that also emptied the list keeps its own
+  // more specific message below.
+  const openNowReason = openNowOnly && nothingMatches
 
   // V25 t03 — IS A SELECTED KIND THE REASON? Only when EVERY selected kind is
   // absent from the WHOLE loaded directory (see DirectoryListPlan.kindReason), a
@@ -2374,5 +2405,6 @@ export function planDirectoryList(input: {
     kindReason,
     savedReason,
     nothingMatches,
+    openNowReason,
   }
 }

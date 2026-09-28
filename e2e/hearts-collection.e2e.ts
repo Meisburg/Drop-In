@@ -40,7 +40,7 @@
  * That is the designed degradation, not a crash.
  */
 import { expect, test } from '@playwright/test'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { readMarkerSession, readSupabaseEnv, settleOnRoute } from './fixtures'
 
 /** A real seeded playground (the V17 heart spec's own marker place). */
@@ -105,7 +105,9 @@ async function openPlacesTab(page: Page): Promise<void> {
  * on. Driving the control keeps this spec independent of that.
  */
 async function selectAnyDistance(page: Page): Promise<void> {
-  await page.getByTestId('places-distance-filter').selectOption('any')
+  // V27: the distance filter is a dropdown button + bottom sheet now.
+  await page.getByTestId('places-distance-filter-btn').click()
+  await page.getByTestId('places-distance-sheet-option-any').click()
 }
 
 /** The seeded place row for the marker place (a link to the place page). */
@@ -126,14 +128,30 @@ function savedChip(page: Page) {
   return page.getByTestId('places-saved-filter')
 }
 
+/**
+ * V27: press a control with the keyboard instead of a coordinate tap.
+ *
+ * On the full /browse directory (239 photo cards) this Chromium/Playwright build
+ * intermittently fails to deliver a synthetic coordinate click to React's
+ * onClick — the element is the hit target at the point, but the handler never
+ * runs. Keyboard activation (focus + Enter) is a real user path (this repo tests
+ * focus and reduced motion explicitly) and dispatches one deterministic click.
+ * The app's own taps are unaffected; this is a spec-side interaction workaround.
+ */
+async function activate(locator: Locator): Promise<void> {
+  await locator.focus()
+  await locator.press('Enter')
+}
+
 /** Save the marker place from /browse and return the heart locator. */
 async function saveMarkerPlaceFromBrowse(page: Page): Promise<void> {
   await openPlacesTab(page)
   await selectAnyDistance(page)
+  // V27: the query is typed into the always-visible inline search field.
   await page.getByTestId('places-search').fill(MARKER_PLACE_NAME)
   await expect(markerRow(page)).toBeVisible()
   await expect(markerHeart(page)).toHaveAttribute('aria-pressed', 'false')
-  await markerHeart(page).click()
+  await activate(markerHeart(page))
   await expect(markerHeart(page)).toHaveAttribute('aria-pressed', 'true')
   // The row is the database's answer, not a local bit: read it back.
   await expect.poll(async () => (await markerPlaceFollows(MARKER_PLACE_ID)).length).toBe(1)
@@ -156,13 +174,14 @@ test('saving a place puts it in the Places Saved list, and un-saving removes it 
   // A SECOND save (whatever the directory leads with), so the filter's list can
   // be narrowed by the search and the "saves exist but are filtered out" copy is
   // reachable — the two empty messages are different truths and both need a
-  // witness.
+  // witness. V27: the inline query is already empty; clear it so every row is
+  // in the list.
   await page.getByTestId('places-search').fill('')
   const secondHeart = page.locator('[data-testid^="place-heart-"]').first()
   const secondHeartId = (await secondHeart.getAttribute('data-testid')) ?? ''
   expect(secondHeartId).not.toMatch(new RegExp(`${MARKER_PLACE_ID}$`))
   await expect(secondHeart).toHaveAttribute('aria-pressed', 'false')
-  await secondHeart.click()
+  await activate(secondHeart)
   await expect(page.locator(`[data-testid="${secondHeartId}"]`)).toHaveAttribute(
     'aria-pressed',
     'true',
@@ -180,7 +199,7 @@ test('saving a place puts it in the Places Saved list, and un-saving removes it 
 
   // Turn the filter on. The search is still empty, so the collection is the
   // FILTER's doing, and it holds exactly the caller's own follows rows.
-  await chip.click()
+  await activate(chip)
   await expect(chip).toHaveAttribute('aria-pressed', 'true')
   await expect(markerRow(page)).toBeVisible()
   await expect(page.getByTestId('place-row')).toHaveCount(2)
@@ -189,6 +208,7 @@ test('saving a place puts it in the Places Saved list, and un-saving removes it 
   // --- (b) THE "ALL FILTERED OUT" EMPTY STATE (hasSaves === true). ---
   // A search that matches neither save: the collection is not empty, and the
   // copy must say so rather than tell this parent they have saved nothing.
+  // V27: type the nonsense query into the always-visible inline search field.
   await page.getByTestId('places-search').fill('zzzz-no-such-place-zzzz')
   await expect(page.getByTestId('place-row')).toHaveCount(0)
   await expect(page.getByTestId('empty-saved-state')).toBeVisible()
@@ -203,18 +223,20 @@ test('saving a place puts it in the Places Saved list, and un-saving removes it 
   await page.getByTestId('saved-empty-escape-all').click()
   await expect(page.getByTestId('empty-saved-state')).toHaveCount(0)
   await expect(chip).toHaveAttribute('aria-pressed', 'false')
+  // V27: clear the inline query before the Saved chip and the hearts are used.
   await page.getByTestId('places-search').fill('')
   await expect(page.getByTestId('place-row').first()).toBeVisible()
   expect(await page.getByTestId('place-row').count()).toBeGreaterThan(1)
 
   // --- (c) UN-SAVE FROM THE COLLECTION: each row leaves without a reload. ---
-  await chip.click()
+  await activate(chip)
+  await expect(chip).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByTestId('place-row')).toHaveCount(2)
-  await markerHeart(page).click()
+  await activate(markerHeart(page))
   await expect(page.getByTestId('place-row')).toHaveCount(1)
   await expect.poll(async () => (await markerPlaceFollows(MARKER_PLACE_ID)).length).toBe(0)
 
-  await page.locator(`[data-testid="${secondHeartId}"]`).click()
+  await activate(page.locator(`[data-testid="${secondHeartId}"]`))
   await expect(page.getByTestId('place-row')).toHaveCount(0)
 
   // --- (d) THE FIRST-RUN EMPTY STATE (hasSaves === false): after the LAST
@@ -277,7 +299,9 @@ test('the post form offers the saved places, and selecting one writes the form (
   const chip = sheet.getByTestId('places-saved-filter')
   await expect(chip).toBeVisible()
   await expect(chip).toHaveAttribute('aria-pressed', 'false')
-  await sheet.getByTestId('places-distance-filter').selectOption('any')
+  // V27: the distance control is a dropdown button + bottom sheet.
+  await sheet.getByTestId('places-distance-filter-btn').click()
+  await sheet.getByTestId('places-distance-sheet-option-any').click()
   await chip.click()
   await expect(chip).toHaveAttribute('aria-pressed', 'true')
 
