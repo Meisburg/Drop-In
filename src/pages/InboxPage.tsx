@@ -14,12 +14,12 @@ import {
   listDirectConversations,
   markConversationRead,
   markDirectConversationRead,
+  mergeIncomingMessage,
   queryDirectMessages,
   queryMessagesForPlaydate,
   reactionButtonClasses,
   reactionCountLabel,
   reactionStatesForMessages,
-  reconcileOptimisticMessage,
   searchProfiles,
   sendDirectMessage,
   sendMessage,
@@ -812,9 +812,12 @@ export function InboxPage() {
             if (newRow.sender_id !== myId && newRow.sender_id !== dmTargetId) return
             setThread((prev) => {
               if (prev === null || prev.status !== 'ready') return prev
-              const reconciled = reconcileOptimisticMessage(prev.messages, newRow as MessageRow)
-              if (reconciled !== null) return { ...prev, messages: reconciled }
-              return { ...prev, messages: [...prev.messages, newRow as MessageRow] }
+              // Dedupe by real id + reconcile the optimistic `pending-` row: a
+              // message the initial read already has must never be appended a
+              // second time (the V27 duplicate-bubble defect).
+              const merged = mergeIncomingMessage(prev.messages, newRow as MessageRow)
+              if (merged === prev.messages) return prev
+              return { ...prev, messages: merged }
             })
             setReloadToken((token) => token + 1)
           },
@@ -831,9 +834,12 @@ export function InboxPage() {
             if (newRow.id === undefined || newRow.created_at === undefined) return
             setThread((prev) => {
               if (prev === null || prev.status !== 'ready') return prev
-              const reconciled = reconcileOptimisticMessage(prev.messages, newRow as MessageRow)
-              if (reconciled !== null) return { ...prev, messages: reconciled }
-              return { ...prev, messages: [...prev.messages, newRow as MessageRow] }
+              // Dedupe by real id + reconcile the optimistic `pending-` row: a
+              // message the initial read already has must never be appended a
+              // second time (the V27 duplicate-bubble defect).
+              const merged = mergeIncomingMessage(prev.messages, newRow as MessageRow)
+              if (merged === prev.messages) return prev
+              return { ...prev, messages: merged }
             })
             setReloadToken((token) => token + 1)
           },
@@ -907,7 +913,7 @@ export function InboxPage() {
    * visible, its id is recorded in `failedIds` so it wears `Not sent · Retry`,
    * and the inline error line still explains why. Retry (`handleRetry`) re-runs
    * the SAME body; the realtime echo then reconciles the `pending-` row via
-   * `reconcileOptimisticMessage` (sender+body match).
+   * `mergeIncomingMessage` (id-dedupe first, then sender+body match).
    */
   async function handleSend(): Promise<void> {
     if (userId === null) return

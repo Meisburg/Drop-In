@@ -5277,8 +5277,13 @@ export async function reactionStatesForMessages(
  * Matching is on the placeholder marker plus sender + body: the optimistic
  * row is uniquely identified by the `pending-` prefix and the body it was
  * created with. Returns the messages array with the placeholder REPLACED by
- * the real row, or null when there is nothing to reconcile (the caller then
- * appends).
+ * the real row, or null when there is nothing to reconcile.
+ *
+ * AMBIGUOUS NULL — callers MUST NOT append on a null result. A null means
+ * EITHER "already present, do not append" OR "nothing to reconcile, append";
+ * this function alone cannot tell them apart. The realtime handler stores with
+ * `mergeIncomingMessage`, which disambiguates both cases (and is what the V27
+ * duplicate-bubble fix added).
  */
 export function reconcileOptimisticMessage(
   messages: MessageRow[],
@@ -5296,6 +5301,43 @@ export function reconcileOptimisticMessage(
   const next = messages.slice()
   next[index] = incoming
   return next
+}
+
+/**
+ * Merge a realtime INSERT into the open thread's message list — the PURE seam
+ * the realtime handler stores with. Returns the array to store, and the SAME
+ * array reference when the incoming row changes nothing (so the caller can
+ * skip the render).
+ *
+ * WHY IT EXISTS (V27 Inbox duplicate-render defect). `reconcileOptimisticMessage`
+ * returns `null` for TWO different situations — "the row is already present, do
+ * not append" and "nothing to reconcile, the caller should append" — and the
+ * realtime handler treated BOTH as append. So when the initial thread read had
+ * already fetched a row and the `postgres_changes` INSERT for that same row
+ * then arrived (the subscription is registered before the write commits, so the
+ * echo is delivered even though the read already saw it), the thread stored the
+ * message twice and rendered TWO `other-message` bubbles. The reactions e2e
+ * caught it as a Playwright strict-mode violation.
+ *
+ * THE RULE, in order:
+ *   1. the id is ALREADY present → return the array UNCHANGED (a duplicate
+ *      delivery, whatever its source: the initial read, a channel resubscribe,
+ *      or a double `postgres_changes` echo);
+ *   2. a `pending-` placeholder matches this row's sender + body → REPLACE it
+ *      in place (our own optimistic send, reconciled to the real id);
+ *   3. otherwise → APPEND.
+ *
+ * Pure: no mutation of the input array, no I/O, no clock. Callers that append
+ * MUST go through this function, never through the raw `reconcile` result.
+ */
+export function mergeIncomingMessage(
+  messages: MessageRow[],
+  incoming: MessageRow,
+): MessageRow[] {
+  if (messages.some((m) => m.id === incoming.id)) return messages
+  const reconciled = reconcileOptimisticMessage(messages, incoming)
+  if (reconciled !== null) return reconciled
+  return [...messages, incoming]
 }
 
 /**

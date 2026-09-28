@@ -7,6 +7,7 @@ import {
   listDirectConversationsWithClient,
   markConversationReadWithClient,
   markDirectConversationReadWithClient,
+  mergeIncomingMessage,
   MESSAGE_MAX_LENGTH,
   queryDirectMessagesWithClient,
   queryMessagesForPlaydateWithClient,
@@ -794,6 +795,58 @@ describe('reconcileOptimisticMessage (V15 send fix — the duplicate-bubble guar
     const messages = [row({ id: 'pending-1' })]
     const next = reconcileOptimisticMessage(messages, row({ id: 'real-1' }))
     expect(messages[0].id).toBe('pending-1')
+    expect(next).not.toBe(messages)
+  })
+})
+
+/**
+ * V27 Inbox duplicate-render defect. The realtime INSERT handler appended the
+ * `reconcileOptimisticMessage` result whenever it was null — but null means
+ * BOTH "already present" and "append me". When the initial thread read already
+ * had the row, the echo appended a second copy and the thread rendered two
+ * `other-message` bubbles (reactions.e2e.ts:286 strict-mode violation).
+ * `mergeIncomingMessage` is the unambiguous seam the handler now stores with.
+ */
+describe('mergeIncomingMessage (V27 — the duplicate-bubble guard)', () => {
+  const row = (over: Partial<MessageRow>): MessageRow => ({
+    id: 'real-1',
+    playdate_id: 'p1',
+    sender_id: 'them',
+    body: 'React to me live',
+    created_at: '2026-09-21T00:00:00.000Z',
+    ...over,
+  })
+
+  it('leaves the array UNCHANGED when the real id is already present', () => {
+    const existing = [row({ id: 'real-1' })]
+    const next = mergeIncomingMessage(existing, row({ id: 'real-1' }))
+    expect(next).toBe(existing)
+    expect(next).toHaveLength(1)
+  })
+
+  it('appends a genuinely new message exactly once', () => {
+    const next = mergeIncomingMessage([row({ id: 'real-0', body: 'before' })], row({ id: 'real-9' }))
+    expect(next.map((m) => m.id)).toEqual(['real-0', 'real-9'])
+  })
+
+  it('replaces a matching pending placeholder rather than adding to it', () => {
+    const pending = row({ id: 'pending-123', sender_id: 'me', body: 'hello' })
+    const next = mergeIncomingMessage([pending], row({ id: 'real-1', sender_id: 'me', body: 'hello' }))
+    expect(next).toHaveLength(1)
+    expect(next[0].id).toBe('real-1')
+  })
+
+  it('is idempotent across a duplicate delivery of the same row', () => {
+    const first = mergeIncomingMessage([], row({ id: 'real-1' }))
+    const second = mergeIncomingMessage(first, row({ id: 'real-1' }))
+    expect(second).toBe(first)
+    expect(second).toHaveLength(1)
+  })
+
+  it('does not mutate the input array (React state discipline)', () => {
+    const messages = [row({ id: 'real-0' })]
+    const next = mergeIncomingMessage(messages, row({ id: 'real-9' }))
+    expect(messages).toHaveLength(1)
     expect(next).not.toBe(messages)
   })
 })
