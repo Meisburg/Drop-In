@@ -1448,6 +1448,57 @@ export async function countKidsGoingForPosts(postIds: string[]): Promise<Record<
   return counts
 }
 
+/** An aggregate age band: the youngest and oldest kid coming (V27 slice 4). */
+export interface KidAgeBand {
+  min: number
+  max: number
+}
+
+/**
+ * The AGE BAND of the kids PINGERS are bringing, for a batch of posts (V27
+ * slice 4, migration 0056): one call for every card on screen, the same "one
+ * call per feed, never one per card" shape countKidsGoingForPosts (0027)
+ * established — the reason the card component itself owns no fetching.
+ *
+ * WHAT CROSSES, exactly: `playdate_id`, `min_age`, `max_age` — two integers
+ * derived with SQL `min`/`max`, and nothing else. It asks the OTHER question
+ * from kidAgesByPostForPostsWithClient below: 0056 reads the PINGERS' own
+ * ping_kids selections (0026), while the ages read is the HOST's playdate_kids
+ * selection. One function, one question. Per-kid ages and identities stay
+ * behind 0026's gated `get_kids_going`; a band is indistinguishable whether one
+ * kid or a dozen is coming.
+ *
+ * Best-effort by contract, like every other card decoration: the RPC throws on
+ * any failure (an absent function included — the pre-apply state) and the
+ * caller settles to `{}` — every card simply omits its band, never an error
+ * state, never a crash.
+ */
+export async function kidAgeBandsGoingForPostsWithClient(
+  client: SupabaseClient,
+  postIds: string[],
+): Promise<Record<string, KidAgeBand>> {
+  if (postIds.length === 0) return {}
+  const { data, error } = await client.rpc('kid_age_band_going_for', { p_ids: postIds })
+  if (error) throw error
+  const bands: Record<string, KidAgeBand> = {}
+  for (const row of (data ?? []) as unknown as Array<{
+    playdate_id: string
+    min_age: number | null
+    max_age: number | null
+  }>) {
+    if (typeof row.min_age !== 'number' || typeof row.max_age !== 'number') continue
+    bands[row.playdate_id] = { min: row.min_age, max: row.max_age }
+  }
+  return bands
+}
+
+/** The default-client wrapper (the feed's one batched age-band read). */
+export async function kidAgeBandsGoingForPosts(
+  postIds: string[],
+): Promise<Record<string, KidAgeBand>> {
+  return kidAgeBandsGoingForPostsWithClient(supabase, postIds)
+}
+
 /**
  * The HOST's announced kids' AGES for a batch of posts — ONE read for every
  * card on screen, the same "one call per feed, never one per card" shape

@@ -16,6 +16,7 @@ import {
   mapsHref,
   type CardCountdown,
   type GoingPinger,
+  type KidsAgeBand,
 } from '../lib/feed'
 // V27 slice 3: the place-trust line ("Playground · Outdoor") — the card only
 // renders the pure seam's decision.
@@ -185,6 +186,7 @@ export function DropInCard({
   pingToggle,
   goingPings = [],
   kidsGoingCount = 0,
+  kidsGoingAgeBand = null,
   metBeforeLabel = null,
   ageRangeLabel = null,
   eagerAvatar = false,
@@ -228,6 +230,14 @@ export function DropInCard({
    * only the host and the people going, through the 0026 gated RPC).
    */
   kidsGoingCount?: number
+  /**
+   * V27 slice 4 (migration 0056): the aggregate AGE BAND of the kids coming,
+   * for the same line. An AGGREGATE only (`min`/`max`) — per-kid ages and
+   * identities stay off the card (decision #2) and behind 0026's gated read.
+   * null (the ordinary case: the band read failed, or nobody said they are
+   * bringing a kid) leaves the V6 count label unchanged.
+   */
+  kidsGoingAgeBand?: KidsAgeBand | null
   /**
    * V8 ticket 09 (migration 0033): the met-before line — "2 families you've
    * met before are going" (the pure follows.metBeforeLine, computed by the
@@ -294,6 +304,7 @@ export function DropInCard({
     goingPings,
     GOING_CIRCLE_LIMIT,
     kidsGoingCount,
+    kidsGoingAgeBand,
   )
   const cardClasses = [
     // V22 slice 9: the feed's list column widens to max-w-3xl (768px) at md+,

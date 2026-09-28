@@ -34,6 +34,7 @@ import {
   formatTimeWindow,
   groupByDay,
   GOING_CIRCLE_LIMIT,
+  goingCountsLabel,
   haversineMiles,
   hostDistanceMiles,
   isDuration,
@@ -1410,6 +1411,33 @@ describe('buildGoingLine (the card\'s going line, V3 ticket 07)', () => {
       expect(line.circles).toHaveLength(3)
       expect(line.overflow).toBe(2)
       expect(line.label).toBe('5 going · 4 kids')
+    })
+  })
+
+  // V27 slice 4 (migration 0056): the aggregate age BAND of the kids coming.
+  // AGGREGATE ONLY — the band is two integers (min/max), never a per-kid age
+  // or identity.
+  describe('the kids age band', () => {
+    it('leaves the label unchanged when there is no band (the pre-apply / failed-read state)', () => {
+      expect(goingCountsLabel(3, 2)).toBe('3 going · 2 kids')
+      expect(goingCountsLabel(3, 2, null)).toBe('3 going · 2 kids')
+    })
+
+    it('states the range as "ages min–max" (the en dash the app’s ranges use)', () => {
+      expect(goingCountsLabel(3, 2, { min: 2, max: 5 })).toBe('3 going · 2 kids (ages 2–5)')
+    })
+
+    it('collapses a one-year band to "age N"', () => {
+      expect(goingCountsLabel(1, 1, { min: 4, max: 4 })).toBe('1 going · 1 kid (age 4)')
+    })
+
+    it('omits the kids segment (and the band) when nobody is bringing kids', () => {
+      expect(goingCountsLabel(2, 0, { min: 2, max: 5 })).toBe('2 going')
+    })
+
+    it('is threaded through buildGoingLine as the fifth argument', () => {
+      const line = buildGoingLine(3, pingers(3), GOING_CIRCLE_LIMIT, 2, { min: 2, max: 5 })!
+      expect(line.label).toBe('3 going · 2 kids (ages 2–5)')
     })
   })
 

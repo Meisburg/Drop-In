@@ -14,6 +14,7 @@ import { armPushPromptForAction } from '../lib/pushClient'
 import {
   countKidsGoingForPosts,
   fetchDailyForecastForZip,
+  kidAgeBandsGoingForPosts,
   kidAgesByPostForPosts,
   listCommentsOnPosts,
   listMyFollows,
@@ -27,6 +28,7 @@ import {
   restampLastSeen,
   togglePing,
   updateHomeZipRadius,
+  type KidAgeBand,
   type PingForPost,
   type PingProfileRow,
 } from '../lib/db'
@@ -257,6 +259,21 @@ export function FeedPage() {
    * worth an error state (the zero-pressure soul).
    */
   const [kidAgesByPostId, setKidAgesByPostId] = useState<Record<string, number[]> | null>(null)
+  /**
+   * V27 slice 4 (migration 0056): post id -> the aggregate AGE BAND of the
+   * kids the post's PINGERS are bringing (the ping_kids selections, reduced in
+   * SQL to `min`/`max` — an aggregate only; per-kid ages and identities never
+   * cross). ONE batched read for the whole feed (db.kidAgeBandsGoingForPosts),
+   * the same "one call per feed, never one per card" rule as the two reads
+   * above.
+   *
+   * null = unsettled; a failed read — or the pre-0056 state — settles to {} and
+   * every card simply omits its band, keeping the V6 count label. A card
+   * decoration is never worth an error state (the zero-pressure soul).
+   */
+  const [kidAgeBandsByPostId, setKidAgeBandsByPostId] = useState<
+    Record<string, KidAgeBand> | null
+  >(null)
   /**
    * V8 ticket 09 (migration 0033): the viewer's OWN followed families (the
    * `follows` rows, owner-only RLS) — the left half of the card's met-before
@@ -587,6 +604,19 @@ export function FeedPage() {
       })
       .catch(() => {
         if (!cancelled) setKidAgesByPostId({})
+      })
+    // V27 slice 4 (migration 0056): the aggregate AGE BAND of the kids the
+    // PINGERS are bringing — the SAME effect as the host-kids ages read above,
+    // one more batched call for the whole feed (never one per card).
+    // Best-effort like every card decoration: any failure (pre-0056-apply
+    // included) settles to {} and every card omits its band rather than
+    // costing the feed an error state.
+    kidAgeBandsGoingForPosts(postIds)
+      .then((bands) => {
+        if (!cancelled) setKidAgeBandsByPostId(bands)
+      })
+      .catch(() => {
+        if (!cancelled) setKidAgeBandsByPostId({})
       })
     listPingsForPosts(postIds)
       .then((rows) => {
@@ -1252,6 +1282,7 @@ export function FeedPage() {
                       pingToggle={buildCardPingToggle(post)}
                       goingPings={buildCardGoingPings(post)}
                       kidsGoingCount={buildCardKidsCount(post)}
+                      kidsGoingAgeBand={kidAgeBandsByPostId?.[post.id] ?? null}
                       metBeforeLabel={buildCardMetBeforeLabel(post)}
                       ageRangeLabel={buildCardAgeRangeLabel(post)}
                       eagerAvatar={groupIndex === 0 && postIndex === 0}

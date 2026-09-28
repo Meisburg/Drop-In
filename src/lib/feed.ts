@@ -1373,6 +1373,18 @@ export interface GoingLine {
   overflow: number
 }
 
+/**
+ * The aggregate age BAND of the kids coming (V27 slice 4) — the youngest and
+ * oldest, as two bare integers. It is deliberately NOT per-kid data: no id, no
+ * name, no individual age ever crosses (decision #2); the band is derived in
+ * the database by migration 0056 and reaches the card only through the batched
+ * read in db.ts.
+ */
+export interface KidsAgeBand {
+  min: number
+  max: number
+}
+
 /** The card's circle cap (V3 slice 4, ticket 07: up to 3 circles + a "+N" chip). */
 export const GOING_CIRCLE_LIMIT = 3
 
@@ -1397,6 +1409,7 @@ export function buildGoingLine(
   pingers: ReadonlyArray<GoingPinger>,
   limit: number,
   kidsCount = 0,
+  ageBand: KidsAgeBand | null = null,
 ): GoingLine | null {
   if (count <= 0) return null
   const circles = pingers.slice(0, limit).map((pinger) => ({
@@ -1405,7 +1418,7 @@ export function buildGoingLine(
   }))
   const overflow = Math.max(0, count - circles.length)
   return {
-    label: goingCountsLabel(count, kidsCount),
+    label: goingCountsLabel(count, kidsCount, ageBand),
     circles,
     overflow,
   }
@@ -1421,11 +1434,23 @@ export function buildGoingLine(
  *
  * "1 kid" is singular; a post with nobody going shows nothing at all (the
  * caller hides the line — "0 going" is not a state, the V3 pin).
+ *
+ * V27 slice 4 adds the optional aggregate BAND: `3 going · 2 kids (ages 2–5)`
+ * (or `(age 4)` when the band is a single age). It is an aggregate only — no
+ * per-kid age or identity — and it is simply absent when the band read failed
+ * (the pre-apply / best-effort state), leaving the V6 label byte-identical.
  */
-export function goingCountsLabel(pingCount: number, kidsCount: number): string {
+export function goingCountsLabel(
+  pingCount: number,
+  kidsCount: number,
+  ageBand: KidsAgeBand | null = null,
+): string {
   const going = `${pingCount} going`
   if (kidsCount <= 0) return going
-  return `${going} · ${kidsCount} ${kidsCount === 1 ? 'kid' : 'kids'}`
+  const kids = `${kidsCount} ${kidsCount === 1 ? 'kid' : 'kids'}`
+  if (ageBand === null) return `${going} · ${kids}`
+  const ages = ageBand.min === ageBand.max ? `age ${ageBand.min}` : `ages ${ageBand.min}–${ageBand.max}`
+  return `${going} · ${kids} (${ages})`
 }
 
 // ---------------------------------------------------------------------------
