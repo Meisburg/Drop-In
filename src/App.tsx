@@ -447,7 +447,7 @@ function NavTab({
           <span aria-hidden="true" className="relative">
             {isActive && filledIcon !== undefined ? filledIcon : icon}
             {badgeText !== null ? (
-              <span className="absolute -right-2 -top-1 flex min-w-[1.1rem] items-center justify-center rounded-full bg-indigo-600 px-1 text-[0.625rem] font-semibold leading-4 text-white">
+              <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-xs font-semibold leading-none text-white">
                 {badgeText}
               </span>
             ) : null}
