@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest'
 import {
   activeTodayLabel,
   firstNamedCounterpart,
+  groupLabel,
   mergeConversations,
   mergeKeyFor,
   messageSenderLabel,
   singleSenderCounterpart,
   sumUnread,
+  threadContextLine,
 } from './inbox'
+import { cardWhenLabel } from './feed'
 import type { DmConversationRow, MessageSenderFields, PlaydateConversationRow } from './inbox'
 
 /**
@@ -536,6 +539,145 @@ describe('firstNamedCounterpart (V25 t11 — first real name wins, blanks are un
   it('skips null/undefined candidates and returns an unnamed counterpart when none carry a name', () => {
     expect(firstNamedCounterpart([null, undefined, { id: 'a', name: '  ' }])).toEqual({ id: '', name: '' })
     expect(firstNamedCounterpart([])).toEqual({ id: '', name: '' })
+  })
+})
+
+describe('groupLabel (V27 s4 — the thread names the group, never the viewer)', () => {
+  it('returns null for no other participants or exactly one (a 1:1 keeps today\'s header)', () => {
+    expect(groupLabel([], 'me')).toBeNull()
+    expect(groupLabel([{ id: 'me', name: 'Jon' }], 'me')).toBeNull()
+    expect(groupLabel([{ id: 'a', name: 'Nicole' }], 'me')).toBeNull()
+  })
+
+  it('drops the viewer by id and names the first named other, with the count', () => {
+    expect(
+      groupLabel(
+        [
+          { id: 'me', name: 'Jon Meisburg' },
+          { id: 'a', name: 'Nicole Meisburg' },
+          { id: 'b', name: 'Priya Patel' },
+        ],
+        'me',
+      ),
+    ).toBe('Nicole Meisburg + 1 more')
+  })
+
+  it('dedupes repeated participants by id so a duplicate cannot pad the count', () => {
+    expect(
+      groupLabel(
+        [
+          { id: 'a', name: 'Nicole Meisburg' },
+          { id: 'a', name: 'Nicole Meisburg' },
+          { id: 'b', name: 'Priya Patel' },
+        ],
+        'me',
+      ),
+    ).toBe('Nicole Meisburg + 1 more')
+  })
+
+  it('uses the FIRST participant with a non-blank name, never a blank one', () => {
+    expect(
+      groupLabel(
+        [
+          { id: 'a', name: '   ' },
+          { id: 'b', name: '' },
+          { id: 'c', name: 'Priya Patel' },
+          { id: 'd', name: 'Nicole Meisburg' },
+        ],
+        'me',
+      ),
+    ).toBe('Priya Patel + 3 more')
+  })
+
+  it('falls back to the honest count when nobody has a name (never an invented name)', () => {
+    expect(
+      groupLabel(
+        [
+          { id: 'a', name: '' },
+          { id: 'b', name: '  ' },
+          { id: 'c', name: '' },
+        ],
+        'me',
+      ),
+    ).toBe('3 parents')
+  })
+
+  it('never names the viewer, even when the viewer is the first named row', () => {
+    // The viewer is dropped before the "first named" pick, so their name cannot
+    // leak into the label however the participants are ordered.
+    const label = groupLabel(
+      [
+        { id: 'me', name: 'Jon Meisburg' },
+        { id: 'a', name: '' },
+        { id: 'b', name: 'Priya Patel' },
+      ],
+      'me',
+    )
+    expect(label).toBe('Priya Patel + 1 more')
+    expect(label ?? '').not.toContain('Jon')
+  })
+
+  it('keeps everyone when the viewer id is unknown (null)', () => {
+    expect(
+      groupLabel(
+        [
+          { id: 'a', name: 'Nicole Meisburg' },
+          { id: 'b', name: 'Priya Patel' },
+        ],
+        null,
+      ),
+    ).toBe('Nicole Meisburg + 1 more')
+  })
+})
+
+describe('threadContextLine (V27 s4 — when · place, and a missing half renders nothing)', () => {
+  const start = '2026-09-27T15:00:00.000Z'
+  const end = '2026-09-27T16:00:00.000Z'
+
+  it('joins the app\'s ONE card window formatter with the place name', () => {
+    // The exact window wording is `cardWhenLabel`'s (feed.ts); this pins the
+    // COMPOSITION, so a second date format cannot grow here.
+    expect(threadContextLine(start, end, 'Gas Works Park')).toBe(
+      `${cardWhenLabel(start, end)} · Gas Works Park`,
+    )
+  })
+
+  it('renders just the place when the window is missing', () => {
+    expect(threadContextLine(null, null, 'Gas Works Park')).toBe('Gas Works Park')
+    expect(threadContextLine('', '', 'Gas Works Park')).toBe('Gas Works Park')
+    expect(threadContextLine(undefined, undefined, 'Gas Works Park')).toBe('Gas Works Park')
+  })
+
+  it('renders just the window (no dangling separator) when the place is missing', () => {
+    const when = cardWhenLabel(start, end)
+    for (const place of [null, undefined, '', '   ']) {
+      const line = threadContextLine(start, end, place)
+      expect(line).toBe(when)
+      // The card formatter's own day · window separator is fine; what must not
+      // appear is a trailing/leading separator for the missing place half.
+      expect((line ?? '').endsWith(' ·') || (line ?? '').startsWith('· ')).toBe(false)
+    }
+  })
+
+  it('returns null when neither half is known', () => {
+    expect(threadContextLine(null, null, null)).toBeNull()
+    expect(threadContextLine('', '', '   ')).toBeNull()
+  })
+
+  it('never leaks "null", "undefined", "Invalid Date" or a stray separator', () => {
+    const lines = [
+      threadContextLine(null, null, 'Gas Works Park'),
+      threadContextLine(start, end, null),
+      threadContextLine('not-a-date', 'also-not', 'Gas Works Park'),
+      threadContextLine(start, 'not-a-date', 'Gas Works Park'),
+    ]
+    for (const line of lines) {
+      expect(line).not.toBeNull()
+      expect(line ?? '').not.toMatch(/null|undefined|Invalid Date/)
+      expect((line ?? '').startsWith(' · ') || (line ?? '').endsWith(' · ')).toBe(false)
+    }
+    // A half-window is not a window: with no place, it renders nothing at all.
+    expect(threadContextLine('not-a-date', end, null)).toBeNull()
   })
 })
 

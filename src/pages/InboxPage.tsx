@@ -39,11 +39,18 @@ import { REACTION_KINDS } from '../lib/db'
 import {
   activeTodayLabel,
   firstNamedCounterpart,
+  groupLabel,
   mergeConversations,
   messageSenderLabel,
   singleSenderCounterpart,
+  threadContextLine,
 } from '../lib/inbox'
-import type { Counterpart, DmConversationRow, MergedConversation } from '../lib/inbox'
+import type {
+  Counterpart,
+  DmConversationRow,
+  GroupParticipant,
+  MergedConversation,
+} from '../lib/inbox'
 
 /**
  * /inbox — parent↔parent messaging (V14 ticket 01, migration 0042).
@@ -359,6 +366,15 @@ export function InboxPage() {
   // below) reads this state, so it cannot be clobbered by load ordering.
   const [fallbackCounterpart, setFallbackCounterpart] = useState<Counterpart>({ id: '', name: '' })
   const [fallbackTitle, setFallbackTitle] = useState('')
+  // V27 slice 4: the playdate thread's CONTEXT — the drop-in's window/place and
+  // its participant set — resolved by the read below. Deliberately its OWN state:
+  // routing it through `fallbackCounterpart`/`fallbackTitle` would feed the t11
+  // counterpart priority chain and could change a 1:1's header. `?dm=` threads
+  // never fill these (the read only runs for a `?thread=` id).
+  const [contextStartsAt, setContextStartsAt] = useState<string | null>(null)
+  const [contextEndsAt, setContextEndsAt] = useState<string | null>(null)
+  const [contextPlaceName, setContextPlaceName] = useState<string | null>(null)
+  const [contextParticipants, setContextParticipants] = useState<GroupParticipant[]>([])
   const [draft, setDraft] = useState('')
   const [sendError, setSendError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
@@ -447,6 +463,11 @@ export function InboxPage() {
     // A counterpart resolved for the PREVIOUS thread must never name this one.
     setFallbackCounterpart({ id: '', name: '' })
     setFallbackTitle('')
+    // V27 s4: neither must the previous thread's drop-in context paint this one.
+    setContextStartsAt(null)
+    setContextEndsAt(null)
+    setContextPlaceName(null)
+    setContextParticipants([])
 
     /**
      * The thread's starting reaction state, in ONE bounded request for all of
@@ -540,15 +561,19 @@ export function InboxPage() {
   // from data at render time cannot lose that race: there is no writer left to
   // wipe it.
   //
-  // Fallback read: when the conversation list has no named row for this
-  // playdate (e.g. the thread was opened directly via ?thread=<id>, or the row
-  // is not free-form-visible), resolve the counterpart from the playdates
-  // table. Its result lands in its OWN state and is never guarded on the
+  // Fallback read (V25 t11 counterpart + V27 s4 context): resolve the playdate
+  // from the `playdates` table for this `?thread=` id.
+  //
+  // V27 slice 4: this read now ALWAYS runs for a playdate thread — the header
+  // needs the drop-in's window/place and participant set even when the
+  // conversation-list row already carries a name — and its context lands in the
+  // separate `context*` state so it cannot touch the t11 counterpart chain. The
+  // counterpart-name fallback keeps its ORIGINAL gate exactly (the list must be
+  // ready and must have no named row for this playdate), and a `?dm=` thread
+  // never reaches here (`threadId` is null). Its result is never guarded on the
   // thread's readiness.
   useEffect(() => {
-    if (threadId === null || list.status !== 'ready') return
-    const conv = list.conversations.find((c) => c.playdateId === threadId)
-    if (conv !== undefined && conv.otherPartyDisplayName !== '') return
+    if (threadId === null) return
     let cancelled = false
     ;(async () => {
       try {
@@ -557,7 +582,9 @@ export function InboxPage() {
         const { data, error } = await supabase
           .from('playdates')
           .select(
-            'title, host_profile_id, host:profiles!playdates_host_profile_id_fkey ( id, display_name ), ' +
+            'title, starts_at, ends_at, host_profile_id, ' +
+              'place:places!playdates_place_id_fkey ( name ), ' +
+              'host:profiles!playdates_host_profile_id_fkey ( id, display_name ), ' +
               'pings:going_pings ( profile:profiles!going_pings_profile_id_fkey ( id, display_name ) )',
           )
           .eq('id', threadId)
@@ -565,10 +592,32 @@ export function InboxPage() {
         if (error || cancelled || data === null || data.length === 0) return
         const row = data[0] as unknown as {
           title: string | null
+          starts_at: string | null
+          ends_at: string | null
           host_profile_id: string
+          place: { name: string | null } | null
           host: { id: string; display_name: string } | null
           pings: Array<{ profile: { id: string; display_name: string } | null }>
         }
+        // V27 s4: the drop-in context, into its OWN state.
+        setContextStartsAt(row.starts_at ?? null)
+        setContextEndsAt(row.ends_at ?? null)
+        setContextPlaceName(row.place?.name ?? null)
+        const participants: GroupParticipant[] = []
+        if (row.host !== null) {
+          participants.push({ id: row.host.id, name: row.host.display_name })
+        }
+        for (const ping of row.pings) {
+          if (ping.profile !== null) {
+            participants.push({ id: ping.profile.id, name: ping.profile.display_name })
+          }
+        }
+        setContextParticipants(participants)
+        // The pre-t11 counterpart fallback, unchanged: only when the list is
+        // ready AND it has no named row for this playdate.
+        if (list.status !== 'ready') return
+        const conv = list.conversations.find((c) => c.playdateId === threadId)
+        if (conv !== undefined && conv.otherPartyDisplayName !== '') return
         setFallbackTitle(row.title ?? '')
         if (row.host_profile_id !== userId) {
           // The caller is a pinger; the other party is the host.
@@ -946,6 +995,25 @@ export function InboxPage() {
     return fallbackTitle
   }, [threadId, list, fallbackTitle])
 
+  // V27 slice 4: the header's GROUP label, derived from the context read. `null`
+  // for a 1:1 (0–1 others) or a DM, so the counterpart name stands unchanged.
+  const threadHeaderGroupLabel = useMemo(
+    () => groupLabel(contextParticipants, userId),
+    [contextParticipants, userId],
+  )
+
+  // V27 slice 4: the drop-in context line — `when · place`, decided by the pure
+  // `threadContextLine` (inbox.ts). A DM thread has no playdate context, so the
+  // line is suppressed outright; a missing half is omitted by the helper, never
+  // rendered as `null`/`undefined`/a dangling `·`.
+  const threadDropInLine = useMemo(
+    () =>
+      threadId === null
+        ? null
+        : threadContextLine(contextStartsAt, contextEndsAt, contextPlaceName),
+    [threadId, contextStartsAt, contextEndsAt, contextPlaceName],
+  )
+
   return (
     <div className="mx-auto max-w-md">
       {threadId === null && dmTargetId === null ? (
@@ -1074,13 +1142,44 @@ export function InboxPage() {
           {/* Thread header: the shared back control + the post's title + the other party.
               V24 slice 02: the ad-hoc bordered "←" square became BackControl (one
               circular control app-wide); the destination ("conversations") lives in
-              the heading below, not inside the control. */}
+              the heading below, not inside the control.
+
+              V27 slice 4: a playdate thread's identity block is a LINK back to
+              the post (/playdate/:id) and names the group + the drop-in's
+              window/place. The link is a SIBLING of BackControl — never an
+              ancestor — so it cannot swallow the back tap, and the inner
+              `div.min-w-0` is kept so the e2e header selector
+              (`div.min-w-0 > p`) still resolves. A DM thread has no playdate to
+              link to, so it keeps the plain block. */}
           <div className="flex items-center gap-2">
             <BackControl onClick={closeThread} testId="inbox-back-to-conversations" />
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-slate-900">{threadHeaderName}</p>
-              <p className="truncate text-xs text-slate-500">{threadHeaderTitle}</p>
-            </div>
+            {threadId !== null ? (
+              <Link
+                to={`/playdate/${threadId}`}
+                data-testid="inbox-thread-playdate-link"
+                className="min-w-0 flex-1 rounded-lg transition-colors motion-reduce:transition-none hover:bg-slate-50"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-900">
+                    {threadHeaderGroupLabel ?? threadHeaderName}
+                  </p>
+                  <p className="truncate text-xs text-slate-500">{threadHeaderTitle}</p>
+                  {threadDropInLine !== null ? (
+                    <p
+                      data-testid="inbox-thread-context"
+                      className="truncate text-xs text-slate-500"
+                    >
+                      {threadDropInLine}
+                    </p>
+                  ) : null}
+                </div>
+              </Link>
+            ) : (
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-900">{threadHeaderName}</p>
+                <p className="truncate text-xs text-slate-500">{threadHeaderTitle}</p>
+              </div>
+            )}
           </div>
 
           {list.status === 'error' ? (
