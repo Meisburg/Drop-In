@@ -40,7 +40,7 @@
  * That is the designed degradation, not a crash.
  */
 import { expect, test } from '@playwright/test'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { readMarkerSession, readSupabaseEnv, settleOnRoute } from './fixtures'
 
 /** A real seeded playground (the V17 heart spec's own marker place). */
@@ -128,6 +128,21 @@ function savedChip(page: Page) {
   return page.getByTestId('places-saved-filter')
 }
 
+/**
+ * V27: press a control with the keyboard instead of a coordinate tap.
+ *
+ * On the full /browse directory (239 photo cards) this Chromium/Playwright build
+ * intermittently fails to deliver a synthetic coordinate click to React's
+ * onClick — the element is the hit target at the point, but the handler never
+ * runs. Keyboard activation (focus + Enter) is a real user path (this repo tests
+ * focus and reduced motion explicitly) and dispatches one deterministic click.
+ * The app's own taps are unaffected; this is a spec-side interaction workaround.
+ */
+async function activate(locator: Locator): Promise<void> {
+  await locator.focus()
+  await locator.press('Enter')
+}
+
 /** Save the marker place from /browse and return the heart locator. */
 async function saveMarkerPlaceFromBrowse(page: Page): Promise<void> {
   await openPlacesTab(page)
@@ -136,7 +151,7 @@ async function saveMarkerPlaceFromBrowse(page: Page): Promise<void> {
   await page.getByTestId('places-search').fill(MARKER_PLACE_NAME)
   await expect(markerRow(page)).toBeVisible()
   await expect(markerHeart(page)).toHaveAttribute('aria-pressed', 'false')
-  await markerHeart(page).click()
+  await activate(markerHeart(page))
   await expect(markerHeart(page)).toHaveAttribute('aria-pressed', 'true')
   // The row is the database's answer, not a local bit: read it back.
   await expect.poll(async () => (await markerPlaceFollows(MARKER_PLACE_ID)).length).toBe(1)
@@ -166,13 +181,7 @@ test('saving a place puts it in the Places Saved list, and un-saving removes it 
   const secondHeartId = (await secondHeart.getAttribute('data-testid')) ?? ''
   expect(secondHeartId).not.toMatch(new RegExp(`${MARKER_PLACE_ID}$`))
   await expect(secondHeart).toHaveAttribute('aria-pressed', 'false')
-  // V27: activate by KEYBOARD. After the full 239-row directory paints, a
-  // coordinate tap on this 44px control that floats over the card link does not
-  // reach React's onClick in this Chromium/Playwright build (the app's own
-  // taps do — verified out of band), so the spec drives the same save control
-  // the way a keyboard user does: focus it, press Enter. One deterministic click.
-  await secondHeart.focus()
-  await secondHeart.press('Enter')
+  await activate(secondHeart)
   await expect(page.locator(`[data-testid="${secondHeartId}"]`)).toHaveAttribute(
     'aria-pressed',
     'true',
@@ -190,7 +199,7 @@ test('saving a place puts it in the Places Saved list, and un-saving removes it 
 
   // Turn the filter on. The search is still empty, so the collection is the
   // FILTER's doing, and it holds exactly the caller's own follows rows.
-  await chip.click()
+  await activate(chip)
   await expect(chip).toHaveAttribute('aria-pressed', 'true')
   await expect(markerRow(page)).toBeVisible()
   await expect(page.getByTestId('place-row')).toHaveCount(2)
@@ -220,13 +229,14 @@ test('saving a place puts it in the Places Saved list, and un-saving removes it 
   expect(await page.getByTestId('place-row').count()).toBeGreaterThan(1)
 
   // --- (c) UN-SAVE FROM THE COLLECTION: each row leaves without a reload. ---
-  await chip.click()
+  await activate(chip)
+  await expect(chip).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByTestId('place-row')).toHaveCount(2)
-  await markerHeart(page).click()
+  await activate(markerHeart(page))
   await expect(page.getByTestId('place-row')).toHaveCount(1)
   await expect.poll(async () => (await markerPlaceFollows(MARKER_PLACE_ID)).length).toBe(0)
 
-  await page.locator(`[data-testid="${secondHeartId}"]`).click()
+  await activate(page.locator(`[data-testid="${secondHeartId}"]`))
   await expect(page.getByTestId('place-row')).toHaveCount(0)
 
   // --- (d) THE FIRST-RUN EMPTY STATE (hasSaves === false): after the LAST
