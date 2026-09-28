@@ -1453,6 +1453,36 @@ export function goingCountsLabel(
   return `${going} · ${kids} (${ages})`
 }
 
+/**
+ * V27 slice 5: the card's common-ground line — the follow edge we ALREADY hold
+ * about the host, stated without a new query and without a fabricated
+ * safety/verification badge (PRODUCT.md principle 3: trust is structural, never
+ * invented).
+ *
+ * RULING (V27 slice 5 review): this seam names ONLY the follow edge. The host's
+ * picked kids' ages are DELIBERATELY not repeated here — the card's
+ * `card-age-range` line already derives from the same `kidAgesByPostId` source
+ * (`cardAgeRangeLabel`), so a "Host’s kids: ages …" half would print the same
+ * ages twice on one card, the duplicate-line failure the design reviews reject.
+ * The shared-interest signal is already on the card; this line adds the one
+ * missing fact.
+ *
+ * "You follow this host" only when the viewer follows the host's profile AND the
+ * post is not the viewer's own (`hostId !== viewerId`, so a parent's own post
+ * never makes this claim about itself); otherwise null, and the card renders no
+ * line. Pure — no I/O, no clock (no Date.now).
+ */
+export function hostCommonGroundLine(
+  hostId: string,
+  viewerId: string | null,
+  followeeIds: ReadonlySet<string>,
+): string | null {
+  if (viewerId !== null && hostId !== viewerId && followeeIds.has(hostId)) {
+    return 'You follow this host'
+  }
+  return null
+}
+
 // ---------------------------------------------------------------------------
 // V3 slice 5 (ticket 08): the detail page's tappable Google Maps link.
 

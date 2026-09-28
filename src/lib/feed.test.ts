@@ -36,6 +36,7 @@ import {
   GOING_CIRCLE_LIMIT,
   goingCountsLabel,
   haversineMiles,
+  hostCommonGroundLine,
   hostDistanceMiles,
   isDuration,
   isEnded,
@@ -1482,6 +1483,35 @@ describe('buildGoingLine (the card\'s going line, V3 ticket 07)', () => {
       'https://x/1.jpg',
       'https://x/2.jpg',
     ])
+  })
+})
+
+describe('hostCommonGroundLine (V27 slice 5: the follow edge only)', () => {
+  const HOST = 'host-1'
+  const VIEWER = 'viewer-1'
+  const FOLLOWING = new Set([HOST])
+
+  it('is "You follow this host" when the viewer follows the host', () => {
+    expect(hostCommonGroundLine(HOST, VIEWER, FOLLOWING)).toBe('You follow this host')
+  })
+
+  it('is null when the host is not in the viewer\'s follows', () => {
+    expect(hostCommonGroundLine(HOST, VIEWER, new Set())).toBeNull()
+    expect(hostCommonGroundLine(HOST, VIEWER, new Set(['someone-else']))).toBeNull()
+  })
+
+  it('is null when the viewer is signed out (viewerId null)', () => {
+    expect(hostCommonGroundLine(HOST, null, FOLLOWING)).toBeNull()
+  })
+
+  it('never says it on the parent\'s own post (hostId === viewerId)', () => {
+    // A parent's own post with their own id somehow in their follows: the guard
+    // `hostId !== viewerId` wins, so the line is absent.
+    expect(hostCommonGroundLine(HOST, HOST, new Set([HOST]))).toBeNull()
+  })
+
+  it('is null for an empty followees set', () => {
+    expect(hostCommonGroundLine(HOST, VIEWER, new Set())).toBeNull()
   })
 })
 

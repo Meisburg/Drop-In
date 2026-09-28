@@ -45,6 +45,7 @@ import {
   feedLocationSummary,
   feedNowSummary,
   groupByDay,
+  hostCommonGroundLine,
   isStartingSoon,
   localDayKey,
   milesWord,
@@ -1003,6 +1004,19 @@ export function FeedPage() {
   }
 
   /**
+   * V27 slice 5: one card's common-ground line — the follow edge ONLY (the
+   * viewer's own follows, `followeeIds`). The host's kids' ages are deliberately
+   * NOT passed: the card's `card-age-range` line already derives from the same
+   * `kidAgesByPostId` source, so repeating them here would print the same ages
+   * twice on one card (the slice-5 review ruling). Both inputs are already in
+   * scope, so this adds NO new query. null (no follow edge, own post, or signed
+   * out) renders no line.
+   */
+  function buildCardHostCommonGround(post: PlaydateWithNeighborhood) {
+    return hostCommonGroundLine(post.host_profile_id, viewerId, followeeIds)
+  }
+
+  /**
    * V8 ticket 09: one card's met-before line — "N families you've met before
    * are going" (the pure follows.metBeforeLine over this post's going
    * families ∩ the viewer's own follows). null (the line is hidden) when the
@@ -1285,6 +1299,7 @@ export function FeedPage() {
                       kidsGoingAgeBand={kidAgeBandsByPostId?.[post.id] ?? null}
                       metBeforeLabel={buildCardMetBeforeLabel(post)}
                       ageRangeLabel={buildCardAgeRangeLabel(post)}
+                      hostCommonGroundLabel={buildCardHostCommonGround(post)}
                       eagerAvatar={groupIndex === 0 && postIndex === 0}
                     />
                   ))}

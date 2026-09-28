@@ -189,6 +189,7 @@ export function DropInCard({
   kidsGoingAgeBand = null,
   metBeforeLabel = null,
   ageRangeLabel = null,
+  hostCommonGroundLabel = null,
   eagerAvatar = false,
 }: {
   playdate: PlaydateWithNeighborhood
@@ -267,6 +268,18 @@ export function DropInCard({
    * Names are never part of it — the whole string is a range.
    */
   ageRangeLabel?: string | null
+  /**
+   * V27 slice 5: the follow edge we ALREADY hold about the host, stated as one
+   * line directly under the host avatar/handle — "You follow this host" (the
+   * pure `feed.hostCommonGroundLine`). It is the follow edge ONLY: the host's
+   * kids' ages are already on the card's `card-age-range` line (same
+   * `kidAgesByPostId` source), so this seam never repeats them (the slice-5
+   * review ruling). It is TEXT, never a badge, and invents no safety or
+   * verification claim (PRODUCT.md principle 3 — trust is structural, never
+   * fabricated). The PAGE computes the string; null (no follow edge, own post,
+   * or signed out) renders no line at all, so the ordinary card is unchanged.
+   */
+  hostCommonGroundLabel?: string | null
   /**
    * Slice 11: keep the card's host avatar eager (no `loading="lazy"`). Only the
    * first feed card sets this; every other list/row card lazy-loads its avatar.
@@ -470,6 +483,15 @@ export function DropInCard({
           <HostAvatar host={playdate.host} eager={eagerAvatar} />
           <p className="text-sm text-slate-500">@{playdate.host.display_name}</p>
         </div>
+        {/* V27 slice 5: the common-ground line — the follow edge we ALREADY
+            hold, stated without a new query and without a fabricated
+            safety/verification badge (PRODUCT.md principle 3). It names ONLY the
+            follow edge; the host's kids' ages already ride the `card-age-range`
+            line above, so they are never repeated here. It sits directly under
+            the host line and renders nothing when there is no follow edge. */}
+        {hostCommonGroundLabel !== null ? (
+          <p data-testid="card-host-common" className="text-xs font-medium text-indigo-700">{hostCommonGroundLabel}</p>
+        ) : null}
         {/* V6 (first phone feedback): the going toggle used to be a bare
             circle in the badge cluster, and it read as a status badge rather
             than a button — 'it's not clear that's indicating that you're
