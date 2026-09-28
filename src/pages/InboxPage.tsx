@@ -594,11 +594,14 @@ export function InboxPage() {
     }
   }, [list, threadId, session])
 
-  // Real-time: append INSERTs for the open thread without a reload. The
-  // channel is rebuilt on every thread change (and torn down on unmount) so
-  // a stale filter can never deliver into the wrong conversation. For
-  // free-form DMs, we subscribe to messages where sender_id = me OR the
-  // other party (filtered client-side by playdate_id IS NULL).
+  // Real-time: live UPDATE of whichever view is open. The channel is rebuilt
+  // on every view change (and torn down on unmount) so a stale filter can
+  // never deliver into the wrong conversation. Two shapes:
+  //   - thread open — append INSERTs for the open thread without a reload.
+  //     For free-form DMs, we subscribe to messages where sender_id = me OR
+  //     the other party (filtered client-side by playdate_id IS NULL);
+  //   - list view — subscribe to ALL message INSERTs with NO server filter and
+  //     bump `reloadToken`, which the list-load effect above keys on.
   //
   // V15 ticket 08 (A26) adds a SECOND table to the SAME channel: every
   // message_reactions INSERT/DELETE, filtered CLIENT-SIDE to the ids in the
@@ -609,7 +612,23 @@ export function InboxPage() {
   // a reaction in some other conversation is dropped before it can touch this
   // one's counters.
   useEffect(() => {
-    if (threadId === null && dmTargetId === null) return
+    // List view: no thread is open. Subscribe to ALL message INSERTs with NO
+    // server-side filter — Supabase Realtime applies the caller's RLS, so only
+    // rows this parent may read are delivered. Each one bumps `reloadToken`,
+    // which the list-load effect above keys on (listConversations +
+    // listDirectConversations, hence the unread counts). This subscription
+    // never writes into `thread` state.
+    if (threadId === null && dmTargetId === null) {
+      const listChannel = supabase
+        .channel('inbox-list')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
+          setReloadToken((token) => token + 1)
+        })
+        .subscribe()
+      return () => {
+        void supabase.removeChannel(listChannel)
+      }
+    }
     const channelName = dmTargetId !== null ? `dm-${dmTargetId}` : `messages-${threadId}`
     const channel = supabase.channel(channelName)
 
@@ -729,6 +748,22 @@ export function InboxPage() {
       void supabase.removeChannel(channel)
     }
   }, [threadId, dmTargetId, session])
+
+  // Returning to the tab refetches the list. A background tab throttles
+  // realtime delivery, so on the next visible moment bump `reloadToken` once to
+  // reconcile previews/times/unread counts with the server. The listener is
+  // removed on unmount.
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        setReloadToken((token) => token + 1)
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [])
 
   // Keep the newest message in view as the thread grows.
   useEffect(() => {
