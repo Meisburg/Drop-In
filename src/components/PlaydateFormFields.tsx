@@ -203,6 +203,24 @@ export interface PlaydateFormFieldsProps {
    * owns no state, and /edit passes nothing, so no dead control appears there.
    */
   kidsSectionSlot?: ReactNode
+  /**
+   * V27 slice 1: the form's DOM `id`. Defaults to `'playdate-form'` — the id
+   * this form has always been addressable by through its `data-testid`, now
+   * made explicit. `/edit` passes nothing, so it keeps the default and its
+   * markup. `/new` passes `'new-playdate-form'` so its sticky bar (which sits
+   * OUTSIDE this form, above the bottom nav) can submit it through the HTML
+   * `form` attribute.
+   */
+  formId?: string
+  /**
+   * V27 slice 1: render the in-form submit button at all? Default FALSE —
+   * `/edit` renders exactly the submit it always has. `/new` sets this true so
+   * the sticky bar's button is the ONE control named "Post drop-in" on that
+   * page (a second would be a strict-mode violation for every posting spec).
+   * The `submitError` paragraph below is rendered either way, so a failed
+   * create still surfaces where it always did.
+   */
+  hideSubmit?: boolean
   submitLabel: string
   submittingLabel: string
   submitBusy: boolean
@@ -238,6 +256,8 @@ export function PlaydateFormFields({
   timePresetsSlot,
   preset,
   kidsSectionSlot,
+  formId = 'playdate-form',
+  hideSubmit = false,
   submitLabel,
   submittingLabel,
   submitBusy,
@@ -726,6 +746,7 @@ line. No kids yet → the designed empty state + the /settings link (the
 
   return (
     <form
+      id={formId}
       className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
       data-testid="playdate-form"
       onSubmit={onSubmit}
@@ -792,16 +813,18 @@ line. No kids yet → the designed empty state + the /settings link (the
       )}
 
       <div className="flex flex-col gap-2">
-        <button
-          type="submit"
-          disabled={submitBusy || submitDisabled}
-          className={touch(
-            'rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50',
-          )}
-          {...fieldA11y('submit', submitError)}
-        >
-          {submitBusy ? submittingLabel : submitLabel}
-        </button>
+        {hideSubmit ? null : (
+          <button
+            type="submit"
+            disabled={submitBusy || submitDisabled}
+            className={touch(
+              'rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50',
+            )}
+            {...fieldA11y('submit', submitError)}
+          >
+            {submitBusy ? submittingLabel : submitLabel}
+          </button>
+        )}
         {/* V8 ticket 06: a stable handle for the submit's error line — the
             weekly-series e2e reads it to report the documented pre-0028-apply
             failure (PGRST205 on the missing table) instead of racing the

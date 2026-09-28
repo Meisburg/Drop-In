@@ -17,6 +17,7 @@ import {
   GENERATED_TITLE_PREFIX,
   generatedTitle,
   postSummaryLines,
+  stickyPostLine,
   SUMMARY_NO_DAY,
   SUMMARY_NO_DURATION,
   SUMMARY_NO_PLACE,
@@ -252,5 +253,24 @@ describe('addressAfterPlaceTextEdit (V9 ticket 03, review cycle 1 F1)', () => {
   it('is a no-op on an empty address, either way', () => {
     expect(addressAfterPlaceTextEdit('', false)).toBe('')
     expect(addressAfterPlaceTextEdit('', true)).toBe('')
+  })
+})
+
+describe('stickyPostLine (V27 slice 1 — the sticky bar read-back)', () => {
+  it('reads back the day, the start and the place, joined by " · "', () => {
+    // The bar's whole line: the same day words and time label the form's
+    // summary and steppers use, plus the place as typed.
+    expect(stickyPostLine(answered)).toBe('Sat, Aug 29 · 3:30 PM · Green Lake Park')
+  })
+
+  it('says "Add a place" when the place is unanswered (or whitespace)', () => {
+    expect(stickyPostLine({ ...answered, place: '' })).toBe('Sat, Aug 29 · 3:30 PM · Add a place')
+    expect(stickyPostLine({ ...answered, place: '   ' })).toBe('Sat, Aug 29 · 3:30 PM · Add a place')
+  })
+
+  it('drops an unanswered day rather than leaving a dangling separator', () => {
+    // formatStartDayLabel('') is '' — the filter removes it, so the line opens
+    // on the time rather than on a bare " · ".
+    expect(stickyPostLine({ ...answered, startDate: '' })).toBe('3:30 PM · Green Lake Park')
   })
 })

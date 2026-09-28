@@ -240,3 +240,39 @@ export function postSummaryLines(
   }
   return lines
 }
+
+/**
+ * V27 slice 1 — the sticky Post bar's ONE-LINE read-back ("Sat, Aug 29 ·
+ * 3:30 PM · Green Lake Park"). The bar pins this line above the bottom nav on
+ * /new so the plan is always legible while the parent scrolls the form.
+ *
+ * The words are the SAME seams the rest of the app reads the plan back with:
+ * `feed.formatStartDayLabel` (the day words the summary and the feed use) and
+ * `feed.formatTimeLabel` (the stepper's own "3:30 PM"). Nothing is recomputed
+ * here, so the bar cannot promise one time while the form writes another.
+ *
+ * ONE LINE, not the full `postSummaryLines`: the bar has a phone's width and a
+ * button beside it. The three facts a parent glancing up needs are the day,
+ * the start and the place — the duration and the address stay on the form.
+ *
+ * The empty states are the read-back's own: an unanswered date is simply
+ * dropped (the filter below — the time seam always yields a label, so the line
+ * never dangles a separator), and an unanswered place reads "Add a place",
+ * which is the bar's gently-worded prompt rather than the form's
+ * `SUMMARY_NO_PLACE` ("no place picked"). A line with nothing at all falls
+ * back to "Add a place" too — one honest instruction, never an empty bar.
+ *
+ * `values.place` is TRIMMED but NOT alias-stripped: this is the bar's read-back
+ * of the field as the parent is typing it, and the field is never rewritten
+ * while they type (the `@` alias is dropped on the way to the database by the
+ * submit, not by a read-back).
+ */
+export function stickyPostLine(values: PlaydateFormValues): string {
+  const place = values.place.trim()
+  const parts = [
+    formatStartDayLabel(values.startDate),
+    formatTimeLabel(values.startMinutes),
+    place === '' ? 'Add a place' : place,
+  ].filter((part) => part !== '')
+  return parts.length === 0 ? 'Add a place' : parts.join(' · ')
+}

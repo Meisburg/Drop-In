@@ -41,7 +41,7 @@ import {
 } from '../lib/feed'
 import type { LastOwnPlaydate, PlaydateFormErrors, PlaydateFormValues, TimePreset, ZipCoords } from '../lib/feed'
 import type { PlaydateStatus } from '../lib/types'
-import { addressAfterPlaceTextEdit, generatedTitle } from '../lib/postSummary'
+import { addressAfterPlaceTextEdit, generatedTitle, stickyPostLine } from '../lib/postSummary'
 import {
   MAP_FOCUS_RADIUS_MILES,
   PLACE_BROWSE_LIMIT,
@@ -1159,7 +1159,10 @@ export function NewPlaydatePage({
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    /* V27 slice 1: `pb-24 md:pb-10` keeps the sticky Post bar (below) from
+       covering the last field or the submit error while the parent scrolls to
+       the bottom of the form. */
+    <div className="flex flex-col gap-4 pb-24 md:pb-10">
       {/* V3 slice 3 (ticket 06, feedback #8): the "We'll be at the park
           3–5, come by if you like." + "Open invitation, zero pressure."
           helper line is out (the ticket's quick-feedback batch). */}
@@ -1332,6 +1335,12 @@ export function NewPlaydatePage({
            by construction. With no kids selected, nothing is written at all
            (db.createPlaydate's ageRangeFields — the keys are absent, not null,
            so a kidless post is byte-identical to a pre-0037 post). */
+        /* V27 slice 1: /new's form carries a stable id and NO in-form submit —
+           the sticky bar below owns the ONE "Post drop-in" control, submitting
+           this form through the HTML `form` attribute. The submit error line is
+           still rendered inside the form either way. */
+        formId="new-playdate-form"
+        hideSubmit
         submitLabel="Post drop-in"
         submittingLabel="Posting…"
         submitBusy={submitting}
@@ -1342,6 +1351,44 @@ export function NewPlaydatePage({
         submitError={submitError}
         onSubmit={handleSubmit}
       />
+
+      {/* V27 slice 1: THE STICKY POST BAR — the plan read back and a Post
+          button, pinned above the app's fixed bottom nav while the parent
+          scrolls the form. It renders ONLY on /new (this page): /edit keeps its
+          own in-form submit and renders no bar.
+
+          It sits OUTSIDE the form, so its button submits through the HTML
+          `form` attribute (the form's `formId`). That is what keeps the page's
+          ONE accessible name "Post drop-in" on this control — many existing
+          specs click `getByRole('button', { name: 'Post drop-in' })`, which
+          strict mode fails on a second match, so the in-form button is hidden
+          by `hideSubmit`.
+
+          The read-back is the PURE seam `stickyPostLine(values)` (lib, with unit
+          tests) — never an inline rule here. The bar is only reachable once the
+          page is past its `loading` early return, so it is visible on the real
+          form and never on the loading shell. */}
+      <div
+        data-testid="sticky-post-bar"
+        className="fixed inset-x-0 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-20 px-4 md:bottom-[calc(2rem+env(safe-area-inset-bottom))]"
+      >
+        <div className="mx-auto flex max-w-md items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-lg md:max-w-3xl">
+          <p
+            data-testid="sticky-post-line"
+            className="min-w-0 truncate text-sm text-slate-700"
+          >
+            {stickyPostLine(values)}
+          </p>
+          <button
+            type="submit"
+            form="new-playdate-form"
+            disabled={submitting}
+            className="min-h-11 shrink-0 rounded-xl bg-indigo-600 px-4 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {submitting ? 'Posting…' : 'Post drop-in'}
+          </button>
+        </div>
+      </div>
 
       {/* V23 slice 3: the bottom "Browse all N places" door is GONE. The field's own
           "Browse places" button (above) opens this same sheet — a door at the
