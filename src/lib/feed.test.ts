@@ -84,7 +84,9 @@ import {
   RADIUS_MILES_OPTIONS,
   radiusEscapes,
   homeZipControlLabel,
+  feedCardCountdown,
   feedLocationSummary,
+  feedNowSummary,
   radiusChoices,
   coordNumber,
   placeDistanceMiles,
@@ -397,6 +399,84 @@ describe('isStartingSoon (nowIso < starts_at <= nowIso + 60 min)', () => {
 
   it('is false for a post that starts the next day', () => {
     expect(isStartingSoon({ starts_at: at(1441) }, NOW_ISO)).toBe(false)
+  })
+})
+
+describe('feedCardCountdown (V27 slice 2: the per-card time-to-start-or-end line)', () => {
+  // NOW_ISO is local 12:00 PM (minute 720) on the fixed day.
+  it('says "starts in 20 min" (tone starting) when the start is within the hour', () => {
+    expect(feedCardCountdown({ starts_at: at(740), ends_at: at(800) }, NOW_ISO)).toEqual({
+      tone: 'starting',
+      label: 'starts in 20 min',
+      minutes: 20,
+    })
+  })
+
+  it('is inclusive at the 60-minute boundary ("starts in 60 min")', () => {
+    expect(feedCardCountdown({ starts_at: at(780), ends_at: at(840) }, NOW_ISO)).toEqual({
+      tone: 'starting',
+      label: 'starts in 60 min',
+      minutes: 60,
+    })
+  })
+
+  it('is null one minute beyond the window (61 min out)', () => {
+    expect(feedCardCountdown({ starts_at: at(781), ends_at: at(841) }, NOW_ISO)).toBeNull()
+  })
+
+  it('says "ends in N min" (tone ending) for a post that is happening now', () => {
+    expect(feedCardCountdown({ starts_at: at(700), ends_at: at(760) }, NOW_ISO)).toEqual({
+      tone: 'ending',
+      label: 'ends in 40 min',
+      minutes: 40,
+    })
+  })
+
+  it('says "ending now" at the exact end boundary (now === ends_at)', () => {
+    expect(feedCardCountdown({ starts_at: at(660), ends_at: at(720) }, NOW_ISO)).toEqual({
+      tone: 'ending',
+      label: 'ending now',
+      minutes: 0,
+    })
+  })
+
+  it('is null after the end (an ended post has no countdown)', () => {
+    expect(feedCardCountdown({ starts_at: at(600), ends_at: at(719) }, NOW_ISO)).toBeNull()
+  })
+
+  it('is null when any of the three instants is unparseable (never invented)', () => {
+    expect(feedCardCountdown({ starts_at: 'nope', ends_at: at(800) }, NOW_ISO)).toBeNull()
+    expect(feedCardCountdown({ starts_at: at(740), ends_at: 'nope' }, NOW_ISO)).toBeNull()
+    expect(feedCardCountdown({ starts_at: at(740), ends_at: at(800) }, 'nope')).toBeNull()
+  })
+})
+
+describe('feedNowSummary (V27 slice 2: "N happening now · M today")', () => {
+  it('joins the live and today counts, dropping the zero part', () => {
+    // Two live (started, not ended) + one future today = 3 in today's section;
+    // the tomorrow post is in the feed but not in today's count.
+    const posts = [
+      { starts_at: at(660), ends_at: at(780) }, // live
+      { starts_at: at(700), ends_at: at(800) }, // live
+      { starts_at: at(780), ends_at: at(840) }, // today, later
+      { starts_at: at(1500), ends_at: at(1560) }, // tomorrow
+    ]
+    expect(feedNowSummary(posts, NOW_ISO)).toBe('2 happening now · 3 today')
+  })
+
+  it('is null when there is nothing live or today', () => {
+    expect(feedNowSummary([], NOW_ISO)).toBeNull()
+    const tomorrowOnly = [{ starts_at: at(1500), ends_at: at(1560) }]
+    expect(feedNowSummary(tomorrowOnly, NOW_ISO)).toBeNull()
+  })
+
+  it('says "3 today" when none of them are live', () => {
+    const posts = [
+      { starts_at: at(780), ends_at: at(840) },
+      { starts_at: at(840), ends_at: at(900) },
+      { starts_at: at(900), ends_at: at(960) },
+    ]
+    expect(feedNowSummary(posts, NOW_ISO)).toBe('3 today')
   })
 })
 

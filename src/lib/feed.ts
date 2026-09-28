@@ -399,6 +399,79 @@ export function isStartingSoon(post: { starts_at: string }, nowIso: string): boo
   return now < start && start <= now + 60 * 60_000
 }
 
+/**
+ * V27 slice 2: the time-to-start-or-end a card states on its own line, so the
+ * feed says what is happening NOW rather than only what is merely upcoming.
+ * `tone` drives the line's colour only; the copy is `label`.
+ */
+export interface CardCountdown {
+  tone: 'starting' | 'ending'
+  label: string
+  minutes: number
+}
+
+/**
+ * V27 slice 2: the countdown for one card, or null when there is nothing
+ * countdown-worthy to say. Pure — `nowIso` is the only clock (no Date.now).
+ *
+ * The three cases:
+ * - NOT started yet and within the hour: "starts in N min" (amber). Past the
+ *   hour it is null — the card is not imminent.
+ * - HAPPENING NOW (started, not ended): "ends in N min" (emerald), or
+ *   "ending now" at the exact end boundary (now === ends_at, so ceil rounds
+ *   the zero remainder to 0).
+ * - Ended (now > ends_at): null — the feed does not return ended posts, and
+ *   the archive lists do not want a countdown either.
+ *
+ * Any unparseable input (a bad nowIso, starts_at or ends_at) is null: a
+ * countdown is never invented from garbage.
+ */
+export function feedCardCountdown(
+  post: { starts_at: string; ends_at: string },
+  nowIso: string,
+): CardCountdown | null {
+  const now = Date.parse(nowIso)
+  const start = Date.parse(post.starts_at)
+  const end = Date.parse(post.ends_at)
+  if (Number.isNaN(now) || Number.isNaN(start) || Number.isNaN(end)) return null
+  if (now < start) {
+    const m = Math.ceil((start - now) / 60_000)
+    if (m > 60) return null
+    return { tone: 'starting', label: `starts in ${m} min`, minutes: m }
+  }
+  if (now <= end) {
+    const m = Math.ceil((end - now) / 60_000)
+    if (m <= 0) return { tone: 'ending', label: 'ending now', minutes: 0 }
+    return { tone: 'ending', label: `ends in ${m} min`, minutes: m }
+  }
+  return null
+}
+
+/**
+ * V27 slice 2: the feed's one-line "what is happening now" summary, e.g.
+ * "2 happening now · 3 today" — or "3 today" when nothing is live, or null
+ * when neither count is non-zero (so the page renders no line at all). Pure;
+ * the day count reuses `daySectionIso` + `localDayKey`, the same day rule the
+ * sections group on, so the summary cannot disagree with the list under it.
+ */
+export function feedNowSummary(
+  posts: ReadonlyArray<{ starts_at: string; ends_at: string }>,
+  nowIso: string,
+): string | null {
+  const nowKey = localDayKey(nowIso)
+  let live = 0
+  let today = 0
+  for (const post of posts) {
+    if (isHappeningNow(post, nowIso)) live += 1
+    if (localDayKey(daySectionIso(post, nowIso)) === nowKey) today += 1
+  }
+  if (live === 0 && today === 0) return null
+  const parts: string[] = []
+  if (live > 0) parts.push(`${live} happening now`)
+  if (today > 0) parts.push(`${today} today`)
+  return parts.join(' · ')
+}
+
 /** One local calendar day's group of posts (V3 ticket 01). */
 export interface DayGroup<T> {
   key: string

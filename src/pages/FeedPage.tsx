@@ -39,7 +39,9 @@ import {
   daySectionIso,
   DEFAULT_RADIUS_MILES,
   dueToRefreshLastSeen,
+  feedCardCountdown,
   feedLocationSummary,
+  feedNowSummary,
   groupByDay,
   isStartingSoon,
   localDayKey,
@@ -838,10 +840,11 @@ export function FeedPage() {
   // order). Every post the query returned has NOT ended (V9 ticket 04 moved
   // the cutoff from start-of-today to now on BOTH layers), so a section renders
   // its posts in starts_at order — there is no ended/upcoming split left to
-  // make. The "Starts soon" badge goes on the single soonest event of the Today
-  // section — and only when it has not started yet and starts within 60 min (an
-  // already-started soonest gets the card's "Happening now" badge instead).
+  // make. V27 slice 2: "Starts soon" is now PER CARD (isStartingSoon, within
+  // 60 min) rather than a single soonest event, and each card states its own
+  // time-to-start/end (feedCardCountdown).
   const dayGroups = posts === null ? [] : groupByDay(posts, nowIso)
+  const nowSummary = posts === null ? null : feedNowSummary(posts, nowIso)
   const todayKey = localDayKey(nowIso)
   // V3 slice 3 (ticket 06): the viewer id (the signed-in surface — cards
   // only render once the session is settled, so non-null here) for the
@@ -1058,6 +1061,18 @@ export function FeedPage() {
         })}
       </div>
 
+      {/* V27 slice 2: the "what is happening NOW" line — live count, then
+          today's count (feedNowSummary; null when neither is non-zero, so
+          nothing renders on an empty/loading feed). It sits under the view
+          toggle, above the WhileAway inbox, and renders in both views (the
+          count is about the feed, not the list, and duplicating it per view
+          would be the drift risk the seam exists to remove). */}
+      {nowSummary !== null ? (
+        <p data-testid="feed-now-summary" className="text-sm font-medium text-slate-700">
+          {nowSummary}
+        </p>
+      ) : null}
+
       {/* V8 ticket 03: the "While you were away" inbox — the retention
           banner's replacement and the ONLY "you have news" surface (the
           amber nudge-banner pattern). Renders nothing while the inbox is
@@ -1213,11 +1228,6 @@ export function FeedPage() {
               "the feed defaults to a LIST"). */}
           {dayGroups.map((group, groupIndex) => {
             const isToday = group.key === todayKey
-            const soonest = group.posts[0]
-            const startsSoonId =
-              isToday && soonest !== undefined && isStartingSoon(soonest, nowIso)
-                ? soonest.id
-                : null
             return (
               <section key={group.key} className="flex flex-col gap-2">
                 <p className="font-display text-lg font-semibold text-slate-900">
@@ -1229,7 +1239,8 @@ export function FeedPage() {
                       key={post.id}
                       playdate={post}
                       nowIso={nowIso}
-                      startsSoon={post.id === startsSoonId}
+                      startsSoon={isStartingSoon(post, nowIso)}
+                      countdown={feedCardCountdown(post, nowIso)}
                       rainLabel={
                         isToday
                           ? rainBadgeLabel(

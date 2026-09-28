@@ -393,6 +393,8 @@ test('an ended drop-in leaves the feed, a live one stays, and the archive still 
   const happeningCard = cardFor(page, nowTitle)
   await expect(happeningCard).toBeVisible()
   await expect(happeningCard).toContainText('Happening now')
+  // V27 slice 2: the live card also states the time left, not only the state.
+  await expect(happeningCard.getByTestId('card-countdown')).toContainText(/ends in|ending/)
 
   // (3b) …and the DAY SECTION follows the same rule as the cutoff (V9 ticket 04,
   // review cycle 1 / F1): this row's window began YESTERDAY, so grouping it by

@@ -14,6 +14,7 @@ import {
   isEnded,
   isHappeningNow,
   mapsHref,
+  type CardCountdown,
   type GoingPinger,
 } from '../lib/feed'
 import { weeklyMetaSuffix } from '../lib/series'
@@ -44,8 +45,10 @@ import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
  * /u/:handle, and the archive rows /profile renders) are exactly what those
  * branches serve, and this is what makes them read as history. A "Starts soon"
  * badge (amber) renders in the same badge slot as "Happening now" when the page
- * passes startsSoon (the single soonest event of the Today section that starts
- * within 60 min — the page decides who gets it, the card only renders it).
+ * passes startsSoon (V27 slice 2: EVERY card inside the 60-minute window, not
+ * just the soonest — the page decides who gets it, the card only renders it).
+ * V27 slice 2 also adds the `countdown` line (below the when line): "starts in
+ * N min" / "ends in N min", computed by the page.
  * V25 ticket 05 SUPERSEDES the old pin that "cards never carry a per-card day
  * label — the day section headers do": the card now carries its own day (see
  * the ticket-05 paragraph below).
@@ -173,6 +176,7 @@ export function DropInCard({
   playdate,
   nowIso,
   startsSoon = false,
+  countdown = null,
   rainLabel = null,
   rainForecast = null,
   pingToggle,
@@ -186,6 +190,12 @@ export function DropInCard({
   nowIso: string
   /** V3 slice 1: the feed's Today-section "Starts soon" badge (see above). */
   startsSoon?: boolean
+  /**
+   * V27 slice 2: the page-computed countdown (feed.feedCardCountdown) for a
+   * post that is either within the hour of starting or happening now. null
+   * (the ordinary case: further out, or already ended) renders no line.
+   */
+  countdown?: CardCountdown | null
   /** V3 slice 2: the Today-section "Rain likely" badge (see above). */
   rainLabel?: string | null
   /**
@@ -382,6 +392,23 @@ export function DropInCard({
           {cardWhenLabel(playdate.starts_at, playdate.ends_at)}
           {weeklyMetaSuffix(playdate.series_id)}
         </p>
+        {/* V27 slice 2: the countdown rides its OWN line, directly under the
+            when line, so the pinned `card-when` format ("Sat, Sep 26 ·
+            6:30 PM–7:30 PM") is untouched — specs assert that string exactly.
+            The page computes it (feed.feedCardCountdown); the card only
+            renders the tone colour + label it is handed. */}
+        {countdown !== null ? (
+          <p
+            data-testid="card-countdown"
+            className={
+              countdown.tone === 'starting'
+                ? 'text-xs font-medium text-amber-700'
+                : 'text-xs font-medium text-emerald-700'
+            }
+          >
+            {countdown.label}
+          </p>
+        ) : null}
         {/* V9 ticket 05: the AGE RANGE — the card's meta starts here. It is
             the question another parent asks first ("is this the right age
             crowd?"), so it leads the block, above the place. Absent (null)
