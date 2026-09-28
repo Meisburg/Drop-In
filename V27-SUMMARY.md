@@ -55,23 +55,31 @@ complete."
 - The `notification_payload` function keeps its 5-argument signature and its
   `prosecdef = false` posture (asserted by the read-back).
 
-## ACTION REQUIRED — one paired human step (do NOT do half)
+## LIVE — applied and deployed (2026-09-27, done by the orchestrator)
 
-This worktree has **no Supabase CLI and no `.env.push.local`**, so neither
-production step could run here. They must be done **together**:
+Both production steps ran, **in the safe order** (sender first, then schema):
 
-1. Apply the migration:
-   `bash scripts/db-sql.sh --file supabase/migrations/0056_messages_push.sql`
-2. Redeploy the sender:
-   `bash scripts/push-deploy.sh` (or
-   `npx supabase functions deploy send-push --project-ref ayzvjwxbxyrcgyoeaxuk`)
+1. **`send-push` redeployed → version 7** (`npx supabase functions deploy
+   send-push --project-ref ayzvjwxbxyrcgyoeaxuk`, script size 1.0 MB, updated
+   2026-09-28 00:32:15 UTC). The updated function understands all 7 kinds and is
+   harmless against the 6-kind schema, so deploying first removed the mislabel
+   window entirely.
+2. **Migration `0056` applied** (`bash scripts/db-sql.sh --file
+   supabase/migrations/0056_messages_push.sql`) → HTTP 201.
 
-**Why paired:** the currently-deployed `send-push` still has the 6-kind table;
-its drain falls back to `isNotificationKind(row.kind) ? row.kind : 'starting_soon'`
-(`send-push/index.ts:627`). Applying `0056` alone would send correct copy but tag
-every message push as `starting_soon` — the wrong notification tag and the wrong
-per-kind mute. Until both run, the feature is simply dormant (no producer, so
-nothing mislabeled).
+**Live evidence gathered after applying:** a read-back shows the kind CHECK
+admits all 7 including `new_message`, and `notification_new_message` exists with
+`prosecdef = true`. A **rolled-back functional probe**
+(`.scratch/v27/probe-0056-live.sql`) inserted a real message as a real
+playdate's host and asserted: one `new_message` row per other participant, the
+pinned title/url, and that a second message **re-arms** the row (`sent_at`
+reset). It passed; a post-probe read confirmed **zero persistence** (0 probe
+messages, 0 `new_message` rows). The feature is live: the next real message in a
+playdate thread enqueues a notification for the 5-minute drain.
+
+Note: the VAPID secrets were already configured in V26 and persist across a
+redeploy, so `.env.push.local` was not needed; only `SUPABASE_ACCESS_TOKEN`
+(already in `.env`) plus Docker for the CLI bundle.
 
 ## Not run / known gaps
 

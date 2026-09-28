@@ -275,3 +275,16 @@ app's one day rule).
   `0056` alone would mislabel pushes as `starting_soon` on the not-yet-redeployed
   function (`send-push/index.ts:627`). No supabase CLI / `.env.push.local` here.
 - 2026-09-27 — Slice 2 dispatched.
+- 2026-09-27 — Slices 2–5 COMPLETE and independently verified (detached
+  worktrees, build+test+lint each): `39c41a0` (live list), `f9faac2`+`e829ec8`
+  (nav badge; one fix round for the 14px floor), `d525ca2` (thread context;
+  acceptance amended to "context is additive for playdate threads"),
+  `6b4488e` (quick replies / times / retry). Final tip `2de1331`.
+- 2026-09-27 — **LIVE.** `send-push` redeployed → **v7** (updated 2026-09-28
+  00:32:15 UTC) FIRST, then migration **`0056` applied** (HTTP 201). Sender-first
+  removed the `starting_soon` mislabel window entirely. Post-apply read-back:
+  CHECK admits 7 kinds incl `new_message`; trigger present (`prosecdef = true`).
+  Rolled-back functional probe (`.scratch/v27/probe-0056-live.sql`) proved the
+  producer writes one row per other participant with the pinned title/url and
+  that a second message re-arms the row (`sent_at` reset); zero persistence
+  confirmed. **ACTION REQUIRED resolved.**
