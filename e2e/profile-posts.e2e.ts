@@ -28,10 +28,10 @@
  * (the founder's ask), so this spec now asserts the OPPOSITE there: the card,
  * its headings, its rows and its Duplicate action are GONE, and the page still
  * renders its own cards intact. The duplicate capability itself is NOT lost and
- * is pinned elsewhere: /new's "Duplicate existing" picker (post-again.e2e.ts,
- * which drives the `dup-duplicate` button → the `post-again` lightbox) and the
- * drop-in host panel's Duplicate button. The /u/:handle half of this spec is
- * unchanged — that page keeps its lists (t05's surface).
+ * is pinned elsewhere: /new's "Duplicate a previous drop-in" control
+ * (post-again.e2e.ts, which drives the `dup-duplicate` button → the `post-again`
+ * list) and the drop-in host panel's Duplicate button. The /u/:handle half of
+ * this spec is unchanged — that page keeps its lists (t05's surface).
  *
  * LIVE-DATA DISCIPLINE: every assertion is about the two rows THIS spec
  * created (its own `e2e-<epoch>` titles). Nothing here asserts a count, or the

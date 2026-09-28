@@ -184,6 +184,14 @@ export interface PlaydateFormFieldsProps {
    * state and /edit passes nothing, so no map appears there.
    */
   mapSlot?: ReactNode
+  /**
+   * /new only: the quick-start row ("Now", "In an hour", "Tomorrow 10am",
+   * "Sat 10am") — a stateless slot like `preset`, rendered under the "When"
+   * label and above the date/start steppers it fills. The PAGE owns both the
+   * preset values (lib/feed `timePresets`) and the write; /edit passes nothing,
+   * so no shortcut appears there.
+   */
+  timePresetsSlot?: ReactNode
   /** /new only: the quick-fill preset card, rendered inside the form first. */
   preset?: ReactNode
   /**
@@ -227,6 +235,7 @@ export function PlaydateFormFields({
   onPickPlace,
   onSomewhereElse,
   mapSlot,
+  timePresetsSlot,
   preset,
   kidsSectionSlot,
   submitLabel,
@@ -492,6 +501,9 @@ export function PlaydateFormFields({
   const whenBlock = (
     <div className="flex flex-col gap-1">
       <span className="text-sm font-semibold text-slate-700">When</span>
+      {/* /new's quick-start row (a stateless slot the page owns); branches 2/3
+          pass nothing, so /edit keeps its exact markup. */}
+      {timePresetsSlot}
       {startBlock}
     </div>
   )
