@@ -41,14 +41,16 @@ import { useSessionContext } from './SessionProvider'
  * itself); the empty-radius state no longer promises a personal archive from
  * either screen.
  *
- * V16 t06 item 1 adds ONE opt-out prop, `showEscapes` (default true), and
- * nothing else: the feed now renders a persistent radius picker directly
- * above this state, so on THAT one call site the three escapes would be a
+ * V16 t06 item 1 added the opt-out prop `showEscapes` (default true), and
+ * nothing else: the feed used to render a persistent radius picker directly
+ * above this state, so on that one call site the escapes would have been a
  * second row of near-identical radius buttons doing the same job one line
- * apart — the "two controls that look identical" failure. Browse keeps the
- * defaults (it is the escape's only remaining home, and its caller is
- * untouched); the copy and the post CTA render either way, so suppressing the
- * escapes never turns this state into a dead end.
+ * apart — the "two controls that look identical" failure. V23 slice 1 removed
+ * that picker, and V27 slice 1 stopped the feed opting out of the escapes, so
+ * the feed renders them again and this state IS its one-tap widen path. The
+ * prop survives for any caller that still wants to suppress them; Browse keeps
+ * the defaults. The copy and the post CTA render either way, so suppressing
+ * the escapes never turns this state into a dead end.
  *
  * V23 slice 1 adds a SECOND opt-out, `showPostCta` (default true): the feed
  * now has its own primary "Post a drop-in" button in the action row at the top

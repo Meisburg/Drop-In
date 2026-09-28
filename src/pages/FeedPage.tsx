@@ -14,6 +14,7 @@ import { armPushPromptForAction } from '../lib/pushClient'
 import {
   countKidsGoingForPosts,
   fetchDailyForecastForZip,
+  kidAgeBandsGoingForPosts,
   kidAgesByPostForPosts,
   listCommentsOnPosts,
   listMyFollows,
@@ -27,6 +28,7 @@ import {
   restampLastSeen,
   togglePing,
   updateHomeZipRadius,
+  type KidAgeBand,
   type PingForPost,
   type PingProfileRow,
 } from '../lib/db'
@@ -39,8 +41,11 @@ import {
   daySectionIso,
   DEFAULT_RADIUS_MILES,
   dueToRefreshLastSeen,
+  feedCardCountdown,
   feedLocationSummary,
+  feedNowSummary,
   groupByDay,
+  hostCommonGroundLine,
   isStartingSoon,
   localDayKey,
   milesWord,
@@ -255,6 +260,21 @@ export function FeedPage() {
    * worth an error state (the zero-pressure soul).
    */
   const [kidAgesByPostId, setKidAgesByPostId] = useState<Record<string, number[]> | null>(null)
+  /**
+   * V27 slice 4 (migration 0056): post id -> the aggregate AGE BAND of the
+   * kids the post's PINGERS are bringing (the ping_kids selections, reduced in
+   * SQL to `min`/`max` — an aggregate only; per-kid ages and identities never
+   * cross). ONE batched read for the whole feed (db.kidAgeBandsGoingForPosts),
+   * the same "one call per feed, never one per card" rule as the two reads
+   * above.
+   *
+   * null = unsettled; a failed read — or the pre-0056 state — settles to {} and
+   * every card simply omits its band, keeping the V6 count label. A card
+   * decoration is never worth an error state (the zero-pressure soul).
+   */
+  const [kidAgeBandsByPostId, setKidAgeBandsByPostId] = useState<
+    Record<string, KidAgeBand> | null
+  >(null)
   /**
    * V8 ticket 09 (migration 0033): the viewer's OWN followed families (the
    * `follows` rows, owner-only RLS) — the left half of the card's met-before
@@ -586,6 +606,19 @@ export function FeedPage() {
       .catch(() => {
         if (!cancelled) setKidAgesByPostId({})
       })
+    // V27 slice 4 (migration 0056): the aggregate AGE BAND of the kids the
+    // PINGERS are bringing — the SAME effect as the host-kids ages read above,
+    // one more batched call for the whole feed (never one per card).
+    // Best-effort like every card decoration: any failure (pre-0056-apply
+    // included) settles to {} and every card omits its band rather than
+    // costing the feed an error state.
+    kidAgeBandsGoingForPosts(postIds)
+      .then((bands) => {
+        if (!cancelled) setKidAgeBandsByPostId(bands)
+      })
+      .catch(() => {
+        if (!cancelled) setKidAgeBandsByPostId({})
+      })
     listPingsForPosts(postIds)
       .then((rows) => {
         if (cancelled) return
@@ -838,10 +871,11 @@ export function FeedPage() {
   // order). Every post the query returned has NOT ended (V9 ticket 04 moved
   // the cutoff from start-of-today to now on BOTH layers), so a section renders
   // its posts in starts_at order — there is no ended/upcoming split left to
-  // make. The "Starts soon" badge goes on the single soonest event of the Today
-  // section — and only when it has not started yet and starts within 60 min (an
-  // already-started soonest gets the card's "Happening now" badge instead).
+  // make. V27 slice 2: "Starts soon" is now PER CARD (isStartingSoon, within
+  // 60 min) rather than a single soonest event, and each card states its own
+  // time-to-start/end (feedCardCountdown).
   const dayGroups = posts === null ? [] : groupByDay(posts, nowIso)
+  const nowSummary = posts === null ? null : feedNowSummary(posts, nowIso)
   const todayKey = localDayKey(nowIso)
   // V3 slice 3 (ticket 06): the viewer id (the signed-in surface — cards
   // only render once the session is settled, so non-null here) for the
@@ -970,6 +1004,19 @@ export function FeedPage() {
   }
 
   /**
+   * V27 slice 5: one card's common-ground line — the follow edge ONLY (the
+   * viewer's own follows, `followeeIds`). The host's kids' ages are deliberately
+   * NOT passed: the card's `card-age-range` line already derives from the same
+   * `kidAgesByPostId` source, so repeating them here would print the same ages
+   * twice on one card (the slice-5 review ruling). Both inputs are already in
+   * scope, so this adds NO new query. null (no follow edge, own post, or signed
+   * out) renders no line.
+   */
+  function buildCardHostCommonGround(post: PlaydateWithNeighborhood) {
+    return hostCommonGroundLine(post.host_profile_id, viewerId, followeeIds)
+  }
+
+  /**
    * V8 ticket 09: one card's met-before line — "N families you've met before
    * are going" (the pure follows.metBeforeLine over this post's going
    * families ∩ the viewer's own follows). null (the line is hidden) when the
@@ -1000,8 +1047,23 @@ export function FeedPage() {
           className="flex min-h-11 w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
         >
           <span className="text-sm font-medium text-slate-700">Drop-ins near you</span>
-          <span className="text-xs text-slate-500">
+          <span className="flex items-center gap-1 text-xs text-slate-500">
             {feedLocationSummary(profile.home_zip, profile.radius_miles ?? DEFAULT_RADIUS_MILES)}
+            {/* V27 slice 1: a decorative chevron so the row reads as a control
+                that opens something, not as a status label. aria-hidden keeps
+                the button's accessible name exactly its two text spans. */}
+            <svg
+              viewBox="0 0 24 24"
+              className="h-4 w-4 shrink-0 text-slate-400"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M9 6l6 6-6 6" />
+            </svg>
           </span>
         </button>
       </div>
@@ -1042,6 +1104,18 @@ export function FeedPage() {
           )
         })}
       </div>
+
+      {/* V27 slice 2: the "what is happening NOW" line — live count, then
+          today's count (feedNowSummary; null when neither is non-zero, so
+          nothing renders on an empty/loading feed). It sits under the view
+          toggle, above the WhileAway inbox, and renders in both views (the
+          count is about the feed, not the list, and duplicating it per view
+          would be the drift risk the seam exists to remove). */}
+      {nowSummary !== null ? (
+        <p data-testid="feed-now-summary" className="text-sm font-medium text-slate-700">
+          {nowSummary}
+        </p>
+      ) : null}
 
       {/* V8 ticket 03: the "While you were away" inbox — the retention
           banner's replacement and the ONLY "you have news" surface (the
@@ -1091,15 +1165,18 @@ export function FeedPage() {
            shared state — it is the quiet line UNDER the day sections below,
            which only exists when there IS something to list.
 
-           V16 t06 item 1: the escapes still render HERE, and only here. The
-           picker above is the persistent surface; the escapes are the
-           empty-state's own copy and vanish the moment there is something to
-           list, so the two never sit on screen together and nothing looks
-           duplicated. RadiusEmptyState stays prop-compatible (its Browse
-           caller is untouched) — the suppression is this call site's. */
+           V16 t06 item 1 used to suppress the escapes HERE because a persistent
+           radius picker sat directly above this state.
+           V23 slice 1 removed that picker, so the feed's ONLY location control
+           is now the button that opens the shared LocationModal — the escapes
+           are the feed's one-tap widen path inside this empty state, and
+           suppressing them was the dead end the bug report names. V27 slice 1
+           therefore lets the component render its default escapes (its Browse
+           caller is untouched). showPostCta stays false: the raised nav "+" is
+           the persistent post action, so a second "Post a drop-in" link here is
+           the duplication V23 removed. */
         <RadiusEmptyState
           radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES}
-          showEscapes={false}
           showPostCta={false}
         />
       ) : feedViewShowsMap(feedView) ? (
@@ -1195,11 +1272,6 @@ export function FeedPage() {
               "the feed defaults to a LIST"). */}
           {dayGroups.map((group, groupIndex) => {
             const isToday = group.key === todayKey
-            const soonest = group.posts[0]
-            const startsSoonId =
-              isToday && soonest !== undefined && isStartingSoon(soonest, nowIso)
-                ? soonest.id
-                : null
             return (
               <section key={group.key} className="flex flex-col gap-2">
                 <p className="font-display text-lg font-semibold text-slate-900">
@@ -1211,7 +1283,8 @@ export function FeedPage() {
                       key={post.id}
                       playdate={post}
                       nowIso={nowIso}
-                      startsSoon={post.id === startsSoonId}
+                      startsSoon={isStartingSoon(post, nowIso)}
+                      countdown={feedCardCountdown(post, nowIso)}
                       rainLabel={
                         isToday
                           ? rainBadgeLabel(
@@ -1223,8 +1296,10 @@ export function FeedPage() {
                       pingToggle={buildCardPingToggle(post)}
                       goingPings={buildCardGoingPings(post)}
                       kidsGoingCount={buildCardKidsCount(post)}
+                      kidsGoingAgeBand={kidAgeBandsByPostId?.[post.id] ?? null}
                       metBeforeLabel={buildCardMetBeforeLabel(post)}
                       ageRangeLabel={buildCardAgeRangeLabel(post)}
+                      hostCommonGroundLabel={buildCardHostCommonGround(post)}
                       eagerAvatar={groupIndex === 0 && postIndex === 0}
                     />
                   ))}

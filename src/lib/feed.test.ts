@@ -34,7 +34,9 @@ import {
   formatTimeWindow,
   groupByDay,
   GOING_CIRCLE_LIMIT,
+  goingCountsLabel,
   haversineMiles,
+  hostCommonGroundLine,
   hostDistanceMiles,
   isDuration,
   isEnded,
@@ -84,7 +86,9 @@ import {
   RADIUS_MILES_OPTIONS,
   radiusEscapes,
   homeZipControlLabel,
+  feedCardCountdown,
   feedLocationSummary,
+  feedNowSummary,
   radiusChoices,
   coordNumber,
   placeDistanceMiles,
@@ -397,6 +401,84 @@ describe('isStartingSoon (nowIso < starts_at <= nowIso + 60 min)', () => {
 
   it('is false for a post that starts the next day', () => {
     expect(isStartingSoon({ starts_at: at(1441) }, NOW_ISO)).toBe(false)
+  })
+})
+
+describe('feedCardCountdown (V27 slice 2: the per-card time-to-start-or-end line)', () => {
+  // NOW_ISO is local 12:00 PM (minute 720) on the fixed day.
+  it('says "starts in 20 min" (tone starting) when the start is within the hour', () => {
+    expect(feedCardCountdown({ starts_at: at(740), ends_at: at(800) }, NOW_ISO)).toEqual({
+      tone: 'starting',
+      label: 'starts in 20 min',
+      minutes: 20,
+    })
+  })
+
+  it('is inclusive at the 60-minute boundary ("starts in 60 min")', () => {
+    expect(feedCardCountdown({ starts_at: at(780), ends_at: at(840) }, NOW_ISO)).toEqual({
+      tone: 'starting',
+      label: 'starts in 60 min',
+      minutes: 60,
+    })
+  })
+
+  it('is null one minute beyond the window (61 min out)', () => {
+    expect(feedCardCountdown({ starts_at: at(781), ends_at: at(841) }, NOW_ISO)).toBeNull()
+  })
+
+  it('says "ends in N min" (tone ending) for a post that is happening now', () => {
+    expect(feedCardCountdown({ starts_at: at(700), ends_at: at(760) }, NOW_ISO)).toEqual({
+      tone: 'ending',
+      label: 'ends in 40 min',
+      minutes: 40,
+    })
+  })
+
+  it('says "ending now" at the exact end boundary (now === ends_at)', () => {
+    expect(feedCardCountdown({ starts_at: at(660), ends_at: at(720) }, NOW_ISO)).toEqual({
+      tone: 'ending',
+      label: 'ending now',
+      minutes: 0,
+    })
+  })
+
+  it('is null after the end (an ended post has no countdown)', () => {
+    expect(feedCardCountdown({ starts_at: at(600), ends_at: at(719) }, NOW_ISO)).toBeNull()
+  })
+
+  it('is null when any of the three instants is unparseable (never invented)', () => {
+    expect(feedCardCountdown({ starts_at: 'nope', ends_at: at(800) }, NOW_ISO)).toBeNull()
+    expect(feedCardCountdown({ starts_at: at(740), ends_at: 'nope' }, NOW_ISO)).toBeNull()
+    expect(feedCardCountdown({ starts_at: at(740), ends_at: at(800) }, 'nope')).toBeNull()
+  })
+})
+
+describe('feedNowSummary (V27 slice 2: "N happening now · M today")', () => {
+  it('joins the live and today counts, dropping the zero part', () => {
+    // Two live (started, not ended) + one future today = 3 in today's section;
+    // the tomorrow post is in the feed but not in today's count.
+    const posts = [
+      { starts_at: at(660), ends_at: at(780) }, // live
+      { starts_at: at(700), ends_at: at(800) }, // live
+      { starts_at: at(780), ends_at: at(840) }, // today, later
+      { starts_at: at(1500), ends_at: at(1560) }, // tomorrow
+    ]
+    expect(feedNowSummary(posts, NOW_ISO)).toBe('2 happening now · 3 today')
+  })
+
+  it('is null when there is nothing live or today', () => {
+    expect(feedNowSummary([], NOW_ISO)).toBeNull()
+    const tomorrowOnly = [{ starts_at: at(1500), ends_at: at(1560) }]
+    expect(feedNowSummary(tomorrowOnly, NOW_ISO)).toBeNull()
+  })
+
+  it('says "3 today" when none of them are live', () => {
+    const posts = [
+      { starts_at: at(780), ends_at: at(840) },
+      { starts_at: at(840), ends_at: at(900) },
+      { starts_at: at(900), ends_at: at(960) },
+    ]
+    expect(feedNowSummary(posts, NOW_ISO)).toBe('3 today')
   })
 })
 
@@ -1333,6 +1415,33 @@ describe('buildGoingLine (the card\'s going line, V3 ticket 07)', () => {
     })
   })
 
+  // V27 slice 4 (migration 0056): the aggregate age BAND of the kids coming.
+  // AGGREGATE ONLY — the band is two integers (min/max), never a per-kid age
+  // or identity.
+  describe('the kids age band', () => {
+    it('leaves the label unchanged when there is no band (the pre-apply / failed-read state)', () => {
+      expect(goingCountsLabel(3, 2)).toBe('3 going · 2 kids')
+      expect(goingCountsLabel(3, 2, null)).toBe('3 going · 2 kids')
+    })
+
+    it('states the range as "ages min–max" (the en dash the app’s ranges use)', () => {
+      expect(goingCountsLabel(3, 2, { min: 2, max: 5 })).toBe('3 going · 2 kids (ages 2–5)')
+    })
+
+    it('collapses a one-year band to "age N"', () => {
+      expect(goingCountsLabel(1, 1, { min: 4, max: 4 })).toBe('1 going · 1 kid (age 4)')
+    })
+
+    it('omits the kids segment (and the band) when nobody is bringing kids', () => {
+      expect(goingCountsLabel(2, 0, { min: 2, max: 5 })).toBe('2 going')
+    })
+
+    it('is threaded through buildGoingLine as the fifth argument', () => {
+      const line = buildGoingLine(3, pingers(3), GOING_CIRCLE_LIMIT, 2, { min: 2, max: 5 })!
+      expect(line.label).toBe('3 going · 2 kids (ages 2–5)')
+    })
+  })
+
   it('labels exactly 3 pingers with no overflow', () => {
     const line = buildGoingLine(3, pingers(3), GOING_CIRCLE_LIMIT)
     expect(line).not.toBeNull()
@@ -1374,6 +1483,35 @@ describe('buildGoingLine (the card\'s going line, V3 ticket 07)', () => {
       'https://x/1.jpg',
       'https://x/2.jpg',
     ])
+  })
+})
+
+describe('hostCommonGroundLine (V27 slice 5: the follow edge only)', () => {
+  const HOST = 'host-1'
+  const VIEWER = 'viewer-1'
+  const FOLLOWING = new Set([HOST])
+
+  it('is "You follow this host" when the viewer follows the host', () => {
+    expect(hostCommonGroundLine(HOST, VIEWER, FOLLOWING)).toBe('You follow this host')
+  })
+
+  it('is null when the host is not in the viewer\'s follows', () => {
+    expect(hostCommonGroundLine(HOST, VIEWER, new Set())).toBeNull()
+    expect(hostCommonGroundLine(HOST, VIEWER, new Set(['someone-else']))).toBeNull()
+  })
+
+  it('is null when the viewer is signed out (viewerId null)', () => {
+    expect(hostCommonGroundLine(HOST, null, FOLLOWING)).toBeNull()
+  })
+
+  it('never says it on the parent\'s own post (hostId === viewerId)', () => {
+    // A parent's own post with their own id somehow in their follows: the guard
+    // `hostId !== viewerId` wins, so the line is absent.
+    expect(hostCommonGroundLine(HOST, HOST, new Set([HOST]))).toBeNull()
+  })
+
+  it('is null for an empty followees set', () => {
+    expect(hostCommonGroundLine(HOST, VIEWER, new Set())).toBeNull()
   })
 })
 

@@ -394,6 +394,12 @@ test('typing @ opens the picker, and picking a place fills place + address in on
   const card = page.locator('a').filter({ hasText: title }).first()
   await expect(card).toBeVisible()
   await expect(card).toContainText(PLACE_NAME)
+  // V27 slice 3: the place trust line — the picked directory place's kind and
+  // indoor/outdoor ("Playground · Outdoor"), stated without a tap. This is the
+  // spec that actually POSTS through the picker, so the card on `/` is where
+  // the line is proved to render.
+  await expect(card.getByTestId('card-place-trust')).toBeVisible()
+  await expect(card.getByTestId('card-place-trust')).toContainText('·')
   await expect(card).not.toContainText('null')
   const windowLabel = collapseSpaces(formatTimeWindow(row?.starts_at ?? '', row?.ends_at ?? ''))
   // V25 ticket 05: the when line is its own `card-when` element now — read by

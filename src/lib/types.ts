@@ -592,6 +592,14 @@ export interface PlaydateWithNeighborhood extends Playdate {
    * degraded — the host's home zip is then the fallback.
    */
   place_coords?: { lat: number | null; lng: number | null } | null
+  /**
+   * V27 slice 3: the named place's directory row (kind + indoor), embedded by
+   * the feed query so the card can state what kind of place it is without a
+   * tap. Null/absent when the post names no directory place (the ordinary
+   * typed-address post) or the embed degraded — the card then renders no
+   * trust line. NOT `place`, which is the free-text string the parent typed.
+   */
+  place_ref?: { id: string; kind: string; indoor: boolean } | null
 }
 
 /**

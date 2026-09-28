@@ -1,3 +1,178 @@
+# Implementation Plan: V27 — the Near you feed
+
+> Owned by the orchestrator. V26 is CLOSED and preserved unchanged below this
+> section. This batch builds five slices, commits each on `Meisburg/Drop-Ins`,
+> and **never pushes** (the coordinator serializes merges to master). Default
+> slice gate is `npm run verify`.
+>
+> **The job:** a parent on Near you asks four questions — *what can we do in the
+> next two hours, will my kid have someone to play with, is the place worth
+> going, and is the host someone I'd want to meet.* Today the page answers none
+> of them at a glance, and an empty radius is a dead end.
+
+## Cross-cutting environment facts (read before dispatching)
+
+- **No `.env` in this workspace.** `src/lib/db.ts` throws at module load without
+  `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`, so the base gate is red until a
+  gitignored placeholder `.env` exists (done; never committed).
+- **Targeted Playwright e2e CANNOT run in this workspace** — three independent
+  blockers: (a) no real Supabase credentials (`SUPABASE_ACCESS_TOKEN` empty,
+  placeholder URL), (b) no `e2e/.auth/marker-state.json` (the setup project
+  signs up against the live project), (c) port 4173 is held by another lane's
+  preview server. Every slice names its targeted spec; the blocker is recorded,
+  never silently skipped. `npm run verify` does not open a browser.
+
+### Slice 1: the empty-radius state is no longer a dead end
+
+- **Objective:** the feed's empty state offers the way out that Browse already
+  offers, and the location control reads as a control.
+- **Files in scope:** `src/pages/FeedPage.tsx`, `src/components/RadiusEmptyState.tsx`
+  (stale comment only), `e2e/feed-empty-state.e2e.ts`.
+- **Approach:** `FeedPage` passes `showEscapes={false}` on the strength of a
+  comment claiming a "persistent radius picker directly above" — the picker was
+  removed in V23 slice 1 and the control is now a modal-trigger button. The
+  suppression reason is void. Restore escapes (drop the prop / pass `true`) and
+  add a chevron affordance to `feed-location-control`. Keep `showPostCta={false}`:
+  the raised nav "+" is the persistent post action.
+- **Acceptance criteria:**
+  1. On `/` at radius 2 with nothing in range, `empty-radius-state` renders both
+     `Widen to 20 miles` and `See everything in Seattle`, enabled.
+  2. Tapping `Widen to 20 miles` writes `profiles.radius_miles = 20` and the copy
+     re-names to `emptyRadiusCopy(20)`.
+  3. `feed-location-control` still opens `location-modal`; its accessible name is
+     unchanged.
+  4. No `Post a drop-in` link inside the feed's empty state.
+  5. `/browse` empty state is unchanged.
+- **Verification command:** `npm run verify`; then
+  `npx playwright test e2e/feed-empty-state.e2e.ts` (blocked here — see above).
+- **Ruling:** a control the parent cannot find is a dead end wearing a label.
+
+### Slice 2: the feed says what is happening *now*
+
+- **Objective:** every card inside the 60-minute window is flagged, and the time
+  to start/end is stated.
+- **Files in scope:** `src/lib/feed.ts`, `src/lib/feed.test.ts`,
+  `src/components/DropInCard.tsx`, `src/pages/FeedPage.tsx`,
+  `e2e/feed-ended-out.e2e.ts` (extended — it already posts a live drop-in;
+  a new spec would have duplicated that fixture).
+- **Approach:** add pure `feedCardCountdown(post, nowIso)` (→ `{ tone:'starting'|'ending', label }`
+  or null) and `feedNowSummary(posts, nowIso)` (→ `"N happening now · M today"`
+  or null). Replace the single-soonest `isStartingSoon` computation in
+  `FeedPage` with a per-card call. Render the countdown on its own
+  `data-testid="card-countdown"` line so the pinned when-line format is untouched.
+- **Acceptance criteria:**
+  1. `feedCardCountdown` returns `starts in 20 min` for a post 20 min out, `ends
+     in 25 min` for a live post, and null for anything else; boundary-tested at
+     exactly 60 min, at start, and after end.
+  2. Two posts each starting within 60 min both render `Starts soon` (today only
+     the soonest does).
+  3. `feedNowSummary` counts live + today correctly and is not rendered when both
+     are zero.
+  4. Present-tense labels never claim a state the clock has not reached.
+- **Verification command:** `npm run verify`; then
+  `npx playwright test e2e/feed-ended-out.e2e.ts` (blocked here).
+- **As built:** the countdown rides its own `card-countdown` line; the live card
+  must contain `/ends in|ending/` (`e2e/feed-ended-out.e2e.ts:396`).
+- **Ruling:** the page is already soonest-first; the missing thing is telling the
+  parent *how soon*, not re-sorting.
+
+### Slice 3: the place is trust content, not a name
+
+- **Objective:** a place-backed card says what kind of place it is and whether it
+  is indoor or outdoor, without a tap.
+- **Files in scope:** `src/lib/feed.ts` (query embed), `src/lib/types.ts`,
+  `src/components/DropInCard.tsx`, `src/pages/FeedPage.tsx`, fixtures/tests that
+  pin the feed row shape.
+- **Approach:** embed the place on the feed query —
+  `place_ref:places!playdates_place_id_fkey ( id, kind, indoor )` — carry it on
+  `PlaydateWithNeighborhood`, and render `data-testid="card-place-trust"` with
+  `"{kindLabel} · {indoorLabel}"`. Null/place-less posts render nothing.
+- **Acceptance criteria:**
+  1. A place-backed row carries `place_ref.kind`/`indoor`; a place-less row
+     carries null and renders no trust line.
+  2. The trust line uses the existing pure `placeKindLabel`/`placeIndoorLabel`
+     seams — no new vocabulary.
+  3. No migration.
+- **Verification command:** `npm run verify`; then
+  `npx playwright test e2e/post-location.e2e.ts` (blocked here).
+- **As built:** `places.placeTrustLine` is the pure seam; the feed select
+  appends the `place_ref` embed; the assertion lives in `post-location.e2e.ts`
+  (it actually posts a picked place), not `place-directory-in-new.e2e.ts`
+  (that spec never submits).
+- **Named gaps (not silently skipped):** *rating on the card* needs a batched
+  `review_summaries_for(uuid[])` (the 0052 RPC is per-place and the house rule is
+  one call per feed); *open/closed* has **no data source at all** — no
+  open-hours column exists anywhere, and an invented "Open" badge would break
+  `PRODUCT.md`'s honesty rule.
+
+### Slice 4: "will my kid have someone to play with"
+
+- **Objective:** the going line says the age BAND of the kids who are coming,
+  not just how many.
+- **PRIVACY CONSTRAINT (pinned):** `DropInCard`'s contract states *"decision #2
+  keeps names and ages off the card entirely — they reach only the host and the
+  people going."* This slice therefore exposes **only an aggregate min–max
+  band**, never a per-kid age and never a kid identity.
+- **Files in scope:** new `supabase/migrations/0056_kid_age_band_going.sql`,
+  `src/lib/db.ts`, `src/lib/feed.ts` (label seam), `src/lib/feed.test.ts`,
+  `src/components/DropInCard.tsx`, `src/pages/FeedPage.tsx`,
+  `e2e/card-circles.e2e.ts` (the going-line spec; it pings without a kid, so the
+  band gets a documented TODO there — see As built).
+- **Approach:** mirror `0027`'s batched `count_kids_going_for` with a
+  `kid_age_band_going_for(uuid[])` returning
+  `(playdate_id, min_age, max_age)` from `ping_kids` join `kids`,
+  SECURITY DEFINER, authenticated-only, DROP+CREATE idempotent. One batched read
+  per feed; the card label is a pure seam. A single distinct age renders
+  `age 4`, two or more `ages 2–5`; a null age is dropped, never guessed. The
+  count is NOT returned: the existing 0027 count stays the one count source.
+- **Acceptance criteria:**
+  1. The RPC returns exactly one row per post that has pinged kids with a
+     non-null age, and no row for posts with none.
+  2. `db.ts` groups it to `Record<postId, {min, max}>`; a failed/pre-apply
+     read degrades to `{}` and every card simply omits the band.
+  3. The going label reads `3 going · 2 kids (ages 2–5)`.
+  4. No per-kid age or identity reaches the client; no per-card query.
+- **Verification command:** `npm run verify`; migration apply is **blocked —
+  `SUPABASE_ACCESS_TOKEN` is empty and the live dashboard is locked out** (the
+  V26 note); targeted `npx playwright test e2e/card-circles.e2e.ts` also
+  blocked, and the band's e2e fixture is a documented TODO. Code degrades
+  safely pre-apply.
+- **As built / GAP (named, not skipped):** migration `0056` is committed but
+  **not applied** (no token); the client settles to `{}` on the missing RPC, so
+  the band simply does not render live until a coordinator applies it.
+- **Ruling:** a count answers "is anyone going"; only a band answers "is anyone
+  *my kid's* age" — and the band, never the age list, is what decision #2 can
+  tolerate. This amends decision #2 for the aggregate band only, on the
+  coordinator's explicit V27 brief; flag for human review.
+
+### Slice 5: the host is a person, not a handle
+
+- **Objective:** the card states the common ground we already hold: whether the
+  viewer follows the host.
+- **Files in scope:** `src/components/DropInCard.tsx`, `src/pages/FeedPage.tsx`,
+  `src/lib/feed.ts` + `src/lib/feed.test.ts` (the pure line builder),
+  `e2e/card-circles.e2e.ts`.
+- **Approach:** the only input is the already-loaded `followeeIds`. Add pure
+  `hostCommonGroundLine(hostId, viewerId, followeeIds)` and render
+  `data-testid="card-host-common"`. No new query, no migration, no
+  social-proof fabrication (`PRODUCT.md` principle 3).
+- **Acceptance criteria:**
+  1. `You follow this host` renders when the host id is in `followeeIds` and the
+     post is not the viewer's own.
+  2. Hidden when the host is not followed, or the host is the viewer, or the set
+     is empty.
+  3. No new network read is issued.
+- **Verification command:** `npm run verify`; then
+  `npx playwright test e2e/card-circles.e2e.ts` (blocked here).
+- **Ruling (as built):** the line carries ONLY the follow edge. The host's
+  picked kids' ages already ride the card's `card-age-range` line (the same
+  `kidAgesByPostId` source), so repeating them would print the same ages twice
+  on one card — the duplicate-line failure the design reviews reject. Trust is
+  structural and honest: name what we *know*, never a verified/safety badge we
+  cannot back.
+
+---
+
 # Implementation Plan: V26 — the post-drop-in review prompt
 
 > Owned by the orchestrator. Written BEFORE any builder dispatch. Every slice

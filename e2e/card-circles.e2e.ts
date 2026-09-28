@@ -165,6 +165,29 @@ test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no 
   // name's first char, upper — "E" for e2e-v-<epoch>; the only
   // span.bg-slate-200 in the card is that circle). ---
   await page.reload()
+  // TODO(V27 slice 4, the going line's age BAND): this spec's pinger pings the
+  // post WITHOUT a kid, so there is no `ping_kids` row and the card has no
+  // aggregate band to assert — the going line reads "1 going", never
+  // "1 going · 1 kid (age N)". MISSING FIXTURE: a pinger who attaches a
+  // `ping_kids` row to their `going_pings` row (a kid owned by the pinger, the
+  // 0026/0040 policy), which would let this spec assert the 0056 band on the
+  // host's card. Not invented here on purpose (the fixture is a real change to
+  // the spec's write path, not a line). WORKSPACE BLOCKER: no live credentials
+  // and no e2e/.auth marker in this workspace, so the band cannot be exercised
+  // end-to-end; the unit seam (feed.goingCountsLabel / buildGoingLine) and the
+  // db helper's mocked-client test pin it instead.
+  // TODO(V27 slice 5, the host's common-ground line): `card-host-common` is the
+  // "You follow this host" line the pure `feed.hostCommonGroundLine` builds. It
+  // names ONLY the follow edge — the host's kids' ages already ride the card's
+  // `card-age-range` line, so this seam never repeats them. This spec's viewer
+  // does NOT follow the host, so the line is absent here and nothing below can
+  // assert it. MISSING FIXTURE: a viewer that FOLLOWS the host (a `follows` row
+  // from the viewer to the host — the 0033 edge) so the host's post renders
+  // `card-host-common` reading "You follow this host". That follow write is a
+  // real change to this spec's write path, not a line, so it is deliberately not
+  // invented here. WORKSPACE BLOCKER: no live credentials and no e2e/.auth
+  // marker in this workspace, so the line cannot be exercised end-to-end; the
+  // pure seam (feed.hostCommonGroundLine) is unit-tested instead.
   await expect(hostCard.getByText('1 going', { exact: true })).toBeVisible()
   await expect(hostCard.locator('span.bg-slate-200')).toHaveText('E')
   // One pinger: no "+N" overflow chip (the chip only appears past the

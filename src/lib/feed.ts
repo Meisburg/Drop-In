@@ -399,6 +399,79 @@ export function isStartingSoon(post: { starts_at: string }, nowIso: string): boo
   return now < start && start <= now + 60 * 60_000
 }
 
+/**
+ * V27 slice 2: the time-to-start-or-end a card states on its own line, so the
+ * feed says what is happening NOW rather than only what is merely upcoming.
+ * `tone` drives the line's colour only; the copy is `label`.
+ */
+export interface CardCountdown {
+  tone: 'starting' | 'ending'
+  label: string
+  minutes: number
+}
+
+/**
+ * V27 slice 2: the countdown for one card, or null when there is nothing
+ * countdown-worthy to say. Pure — `nowIso` is the only clock (no Date.now).
+ *
+ * The three cases:
+ * - NOT started yet and within the hour: "starts in N min" (amber). Past the
+ *   hour it is null — the card is not imminent.
+ * - HAPPENING NOW (started, not ended): "ends in N min" (emerald), or
+ *   "ending now" at the exact end boundary (now === ends_at, so ceil rounds
+ *   the zero remainder to 0).
+ * - Ended (now > ends_at): null — the feed does not return ended posts, and
+ *   the archive lists do not want a countdown either.
+ *
+ * Any unparseable input (a bad nowIso, starts_at or ends_at) is null: a
+ * countdown is never invented from garbage.
+ */
+export function feedCardCountdown(
+  post: { starts_at: string; ends_at: string },
+  nowIso: string,
+): CardCountdown | null {
+  const now = Date.parse(nowIso)
+  const start = Date.parse(post.starts_at)
+  const end = Date.parse(post.ends_at)
+  if (Number.isNaN(now) || Number.isNaN(start) || Number.isNaN(end)) return null
+  if (now < start) {
+    const m = Math.ceil((start - now) / 60_000)
+    if (m > 60) return null
+    return { tone: 'starting', label: `starts in ${m} min`, minutes: m }
+  }
+  if (now <= end) {
+    const m = Math.ceil((end - now) / 60_000)
+    if (m <= 0) return { tone: 'ending', label: 'ending now', minutes: 0 }
+    return { tone: 'ending', label: `ends in ${m} min`, minutes: m }
+  }
+  return null
+}
+
+/**
+ * V27 slice 2: the feed's one-line "what is happening now" summary, e.g.
+ * "2 happening now · 3 today" — or "3 today" when nothing is live, or null
+ * when neither count is non-zero (so the page renders no line at all). Pure;
+ * the day count reuses `daySectionIso` + `localDayKey`, the same day rule the
+ * sections group on, so the summary cannot disagree with the list under it.
+ */
+export function feedNowSummary(
+  posts: ReadonlyArray<{ starts_at: string; ends_at: string }>,
+  nowIso: string,
+): string | null {
+  const nowKey = localDayKey(nowIso)
+  let live = 0
+  let today = 0
+  for (const post of posts) {
+    if (isHappeningNow(post, nowIso)) live += 1
+    if (localDayKey(daySectionIso(post, nowIso)) === nowKey) today += 1
+  }
+  if (live === 0 && today === 0) return null
+  const parts: string[] = []
+  if (live > 0) parts.push(`${live} happening now`)
+  if (today > 0) parts.push(`${today} today`)
+  return parts.join(' · ')
+}
+
 /** One local calendar day's group of posts (V3 ticket 01). */
 export interface DayGroup<T> {
   key: string
@@ -737,7 +810,13 @@ export async function queryUpcomingFeedWithClient(
     .select(
       // V9 ticket 01: NO `!inner` on the neighborhood embed (see the note
       // above) — an inner join would drop every post that has no neighbourhood.
-      '*, neighborhood:neighborhoods ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip, radius_miles )',
+      // V27 slice 3: the place-trust embed — the feed card's source for
+      // "Playground · Outdoor". Aliased `place_ref` (never `place`) because a
+      // playdate already has a scalar `place` (the free-text name the parent
+      // typed, which the directory does not always know); the `places!` hint
+      // pins the `playdates_place_id_fkey` FK (the PGRST201 lesson), and the
+      // embed is a LEFT JOIN, so a free-text post yields null (no trust line).
+      '*, neighborhood:neighborhoods ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip, radius_miles ), place_ref:places!playdates_place_id_fkey ( id, kind, indoor )',
     )
     .gt('ends_at', cutoffIso)
     // V12 ticket 03 (0041): a host-early-ended post leaves the feed immediately.
@@ -1294,6 +1373,18 @@ export interface GoingLine {
   overflow: number
 }
 
+/**
+ * The aggregate age BAND of the kids coming (V27 slice 4) — the youngest and
+ * oldest, as two bare integers. It is deliberately NOT per-kid data: no id, no
+ * name, no individual age ever crosses (decision #2); the band is derived in
+ * the database by migration 0056 and reaches the card only through the batched
+ * read in db.ts.
+ */
+export interface KidsAgeBand {
+  min: number
+  max: number
+}
+
 /** The card's circle cap (V3 slice 4, ticket 07: up to 3 circles + a "+N" chip). */
 export const GOING_CIRCLE_LIMIT = 3
 
@@ -1318,6 +1409,7 @@ export function buildGoingLine(
   pingers: ReadonlyArray<GoingPinger>,
   limit: number,
   kidsCount = 0,
+  ageBand: KidsAgeBand | null = null,
 ): GoingLine | null {
   if (count <= 0) return null
   const circles = pingers.slice(0, limit).map((pinger) => ({
@@ -1326,7 +1418,7 @@ export function buildGoingLine(
   }))
   const overflow = Math.max(0, count - circles.length)
   return {
-    label: goingCountsLabel(count, kidsCount),
+    label: goingCountsLabel(count, kidsCount, ageBand),
     circles,
     overflow,
   }
@@ -1342,11 +1434,53 @@ export function buildGoingLine(
  *
  * "1 kid" is singular; a post with nobody going shows nothing at all (the
  * caller hides the line — "0 going" is not a state, the V3 pin).
+ *
+ * V27 slice 4 adds the optional aggregate BAND: `3 going · 2 kids (ages 2–5)`
+ * (or `(age 4)` when the band is a single age). It is an aggregate only — no
+ * per-kid age or identity — and it is simply absent when the band read failed
+ * (the pre-apply / best-effort state), leaving the V6 label byte-identical.
  */
-export function goingCountsLabel(pingCount: number, kidsCount: number): string {
+export function goingCountsLabel(
+  pingCount: number,
+  kidsCount: number,
+  ageBand: KidsAgeBand | null = null,
+): string {
   const going = `${pingCount} going`
   if (kidsCount <= 0) return going
-  return `${going} · ${kidsCount} ${kidsCount === 1 ? 'kid' : 'kids'}`
+  const kids = `${kidsCount} ${kidsCount === 1 ? 'kid' : 'kids'}`
+  if (ageBand === null) return `${going} · ${kids}`
+  const ages = ageBand.min === ageBand.max ? `age ${ageBand.min}` : `ages ${ageBand.min}–${ageBand.max}`
+  return `${going} · ${kids} (${ages})`
+}
+
+/**
+ * V27 slice 5: the card's common-ground line — the follow edge we ALREADY hold
+ * about the host, stated without a new query and without a fabricated
+ * safety/verification badge (PRODUCT.md principle 3: trust is structural, never
+ * invented).
+ *
+ * RULING (V27 slice 5 review): this seam names ONLY the follow edge. The host's
+ * picked kids' ages are DELIBERATELY not repeated here — the card's
+ * `card-age-range` line already derives from the same `kidAgesByPostId` source
+ * (`cardAgeRangeLabel`), so a "Host’s kids: ages …" half would print the same
+ * ages twice on one card, the duplicate-line failure the design reviews reject.
+ * The shared-interest signal is already on the card; this line adds the one
+ * missing fact.
+ *
+ * "You follow this host" only when the viewer follows the host's profile AND the
+ * post is not the viewer's own (`hostId !== viewerId`, so a parent's own post
+ * never makes this claim about itself); otherwise null, and the card renders no
+ * line. Pure — no I/O, no clock (no Date.now).
+ */
+export function hostCommonGroundLine(
+  hostId: string,
+  viewerId: string | null,
+  followeeIds: ReadonlySet<string>,
+): string | null {
+  if (viewerId !== null && hostId !== viewerId && followeeIds.has(hostId)) {
+    return 'You follow this host'
+  }
+  return null
 }
 
 // ---------------------------------------------------------------------------

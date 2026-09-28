@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   deletePlaydateWithClient,
+  kidAgeBandsGoingForPostsWithClient,
   kidAgesByPostForPostsWithClient,
   listPlaydateKidIdsWithClient,
   listPlaydateKidNamesWithClient,
@@ -304,6 +305,68 @@ describe('kidAgesByPostForPostsWithClient (V9 ticket 05, the feed\'s batched age
     )
     // ONE call: a real failure never silently re-reads the table.
     expect(calls).toEqual(['rpc(kid_ages_for, {"p_ids":["pd-1"]})'])
+  })
+})
+
+describe('kidAgeBandsGoingForPostsWithClient (V27 slice 4, the feed\'s batched age-band read)', () => {
+  it('is ONE call for every post and returns the aggregate band per post — never a per-kid age or id', async () => {
+    const { client, calls } = makeWriteMockClient(
+      {},
+      {
+        data: [
+          { playdate_id: 'pd-1', min_age: 2, max_age: 5 },
+          { playdate_id: 'pd-2', min_age: 4, max_age: 4 },
+        ],
+      },
+    )
+    await expect(kidAgeBandsGoingForPostsWithClient(client, ['pd-1', 'pd-2'])).resolves.toEqual({
+      'pd-1': { min: 2, max: 5 },
+      'pd-2': { min: 4, max: 4 },
+    })
+    // The wire, not the intent: one RPC, the batched id array, no table read.
+    expect(calls).toEqual(['rpc(kid_age_band_going_for, {"p_ids":["pd-1","pd-2"]})'])
+    for (const forbidden of ['first_name', 'kid_id', 'avatar_url']) {
+      expect(calls[0]).not.toContain(forbidden)
+    }
+  })
+
+  it('is a no-op for an empty feed (no call at all)', async () => {
+    const { client, calls } = makeWriteMockClient()
+    await expect(kidAgeBandsGoingForPostsWithClient(client, [])).resolves.toEqual({})
+    expect(calls).toEqual([])
+  })
+
+  it('skips a row with a missing bound (never a NaN in the band)', async () => {
+    const { client } = makeWriteMockClient(
+      {},
+      {
+        data: [
+          { playdate_id: 'pd-1', min_age: null, max_age: 6 },
+          { playdate_id: 'pd-1', min_age: 5, max_age: null },
+          { playdate_id: 'pd-2', min_age: 5, max_age: 5 },
+        ],
+      },
+    )
+    await expect(kidAgeBandsGoingForPostsWithClient(client, ['pd-1', 'pd-2'])).resolves.toEqual({
+      'pd-2': { min: 5, max: 5 },
+    })
+  })
+
+  it('throws when the function is absent (PGRST202) — the caller settles to {} (the pre-apply state)', async () => {
+    const { client, calls } = makeWriteMockClient(
+      {},
+      {
+        error: {
+          code: 'PGRST202',
+          message:
+            'Could not find the function public.kid_age_band_going_for(p_ids) in the schema cache',
+        },
+      },
+    )
+    await expect(kidAgeBandsGoingForPostsWithClient(client, ['pd-1'])).rejects.toThrow(
+      'Could not find the function public.kid_age_band_going_for(p_ids) in the schema cache',
+    )
+    expect(calls).toEqual(['rpc(kid_age_band_going_for, {"p_ids":["pd-1"]})'])
   })
 })
 

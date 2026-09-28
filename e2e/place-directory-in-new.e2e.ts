@@ -114,6 +114,9 @@ test('the place directory is reachable from /new, with its map and list (V21 t02
   const renderedMainText = await page.getByRole('main').innerText()
   expect(renderedMainText).not.toContain('/*')
   expect(renderedMainText).not.toContain('Browse all')
+
+  // V27 slice 3: the `card-place-trust` assertion lives in
+  // e2e/post-location.e2e.ts — that spec actually posts the picked place.
 })
 
 test('the directory sheet can be dismissed without picking (V21 t02)', async ({ page }) => {

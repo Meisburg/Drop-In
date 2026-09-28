@@ -14,8 +14,13 @@ import {
   isEnded,
   isHappeningNow,
   mapsHref,
+  type CardCountdown,
   type GoingPinger,
+  type KidsAgeBand,
 } from '../lib/feed'
+// V27 slice 3: the place-trust line ("Playground · Outdoor") — the card only
+// renders the pure seam's decision.
+import { placeTrustLine } from '../lib/places'
 import { weeklyMetaSuffix } from '../lib/series'
 import type { DailyForecast } from '../lib/weather'
 import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
@@ -44,8 +49,10 @@ import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
  * /u/:handle, and the archive rows /profile renders) are exactly what those
  * branches serve, and this is what makes them read as history. A "Starts soon"
  * badge (amber) renders in the same badge slot as "Happening now" when the page
- * passes startsSoon (the single soonest event of the Today section that starts
- * within 60 min — the page decides who gets it, the card only renders it).
+ * passes startsSoon (V27 slice 2: EVERY card inside the 60-minute window, not
+ * just the soonest — the page decides who gets it, the card only renders it).
+ * V27 slice 2 also adds the `countdown` line (below the when line): "starts in
+ * N min" / "ends in N min", computed by the page.
  * V25 ticket 05 SUPERSEDES the old pin that "cards never carry a per-card day
  * label — the day section headers do": the card now carries its own day (see
  * the ticket-05 paragraph below).
@@ -173,19 +180,28 @@ export function DropInCard({
   playdate,
   nowIso,
   startsSoon = false,
+  countdown = null,
   rainLabel = null,
   rainForecast = null,
   pingToggle,
   goingPings = [],
   kidsGoingCount = 0,
+  kidsGoingAgeBand = null,
   metBeforeLabel = null,
   ageRangeLabel = null,
+  hostCommonGroundLabel = null,
   eagerAvatar = false,
 }: {
   playdate: PlaydateWithNeighborhood
   nowIso: string
   /** V3 slice 1: the feed's Today-section "Starts soon" badge (see above). */
   startsSoon?: boolean
+  /**
+   * V27 slice 2: the page-computed countdown (feed.feedCardCountdown) for a
+   * post that is either within the hour of starting or happening now. null
+   * (the ordinary case: further out, or already ended) renders no line.
+   */
+  countdown?: CardCountdown | null
   /** V3 slice 2: the Today-section "Rain likely" badge (see above). */
   rainLabel?: string | null
   /**
@@ -216,6 +232,14 @@ export function DropInCard({
    */
   kidsGoingCount?: number
   /**
+   * V27 slice 4 (migration 0056): the aggregate AGE BAND of the kids coming,
+   * for the same line. An AGGREGATE only (`min`/`max`) — per-kid ages and
+   * identities stay off the card (decision #2) and behind 0026's gated read.
+   * null (the ordinary case: the band read failed, or nobody said they are
+   * bringing a kid) leaves the V6 count label unchanged.
+   */
+  kidsGoingAgeBand?: KidsAgeBand | null
+  /**
    * V8 ticket 09 (migration 0033): the met-before line — "2 families you've
    * met before are going" (the pure follows.metBeforeLine, computed by the
    * page). null/'' = the line is hidden (the count is 0, or the viewer
@@ -244,6 +268,18 @@ export function DropInCard({
    * Names are never part of it — the whole string is a range.
    */
   ageRangeLabel?: string | null
+  /**
+   * V27 slice 5: the follow edge we ALREADY hold about the host, stated as one
+   * line directly under the host avatar/handle — "You follow this host" (the
+   * pure `feed.hostCommonGroundLine`). It is the follow edge ONLY: the host's
+   * kids' ages are already on the card's `card-age-range` line (same
+   * `kidAgesByPostId` source), so this seam never repeats them (the slice-5
+   * review ruling). It is TEXT, never a badge, and invents no safety or
+   * verification claim (PRODUCT.md principle 3 — trust is structural, never
+   * fabricated). The PAGE computes the string; null (no follow edge, own post,
+   * or signed out) renders no line at all, so the ordinary card is unchanged.
+   */
+  hostCommonGroundLabel?: string | null
   /**
    * Slice 11: keep the card's host avatar eager (no `loading="lazy"`). Only the
    * first feed card sets this; every other list/row card lazy-loads its avatar.
@@ -281,6 +317,7 @@ export function DropInCard({
     goingPings,
     GOING_CIRCLE_LIMIT,
     kidsGoingCount,
+    kidsGoingAgeBand,
   )
   const cardClasses = [
     // V22 slice 9: the feed's list column widens to max-w-3xl (768px) at md+,
@@ -311,6 +348,11 @@ export function DropInCard({
   // V25 ticket 05: the Maps row's href, or null when the post has no address —
   // the SAME pure seam the detail page links with (feed.mapsHref).
   const maps = mapsHref(playdate.place, playdate.address)
+  // V27 slice 3: what kind of place this is and whether it is indoor/outdoor,
+  // from the feed's `place_ref` embed. null for a post that names no directory
+  // place (the ordinary typed-address post) or a degraded embed — and the card
+  // then renders no trust line at all.
+  const placeTrustLabel = placeTrustLine(playdate.place_ref)
   return (
     <div data-testid="dropin-card" className={cardClasses}>
       {/* The card body: still ONE anchor, so the whole-card tap target, the
@@ -382,6 +424,23 @@ export function DropInCard({
           {cardWhenLabel(playdate.starts_at, playdate.ends_at)}
           {weeklyMetaSuffix(playdate.series_id)}
         </p>
+        {/* V27 slice 2: the countdown rides its OWN line, directly under the
+            when line, so the pinned `card-when` format ("Sat, Sep 26 ·
+            6:30 PM–7:30 PM") is untouched — specs assert that string exactly.
+            The page computes it (feed.feedCardCountdown); the card only
+            renders the tone colour + label it is handed. */}
+        {countdown !== null ? (
+          <p
+            data-testid="card-countdown"
+            className={
+              countdown.tone === 'starting'
+                ? 'text-xs font-medium text-amber-700'
+                : 'text-xs font-medium text-emerald-700'
+            }
+          >
+            {countdown.label}
+          </p>
+        ) : null}
         {/* V9 ticket 05: the AGE RANGE — the card's meta starts here. It is
             the question another parent asks first ("is this the right age
             crowd?"), so it leads the block, above the place. Absent (null)
@@ -397,6 +456,15 @@ export function DropInCard({
         <p data-testid="card-place" className="text-sm text-slate-700">
           {playdate.place}
         </p>
+        {/* V27 slice 3: the place trust line — the directory row's kind and
+            indoor/outdoor ("Playground · Outdoor"), stated without a tap. It
+            renders ONLY when `place_ref` resolved; a free-text post (no
+            directory place) shows nothing rather than a guess. */}
+        {placeTrustLabel !== null ? (
+          <p data-testid="card-place-trust" className="text-xs text-slate-500">
+            {placeTrustLabel}
+          </p>
+        ) : null}
         {/* V9 ticket 01, narrowed by V25 ticket 05: the QUIET line — the
             neighbourhood and the distance, each dropping out when the post has
             none, joined by ` · ` with nothing to dangle (the WINDOW used to
@@ -415,6 +483,15 @@ export function DropInCard({
           <HostAvatar host={playdate.host} eager={eagerAvatar} />
           <p className="text-sm text-slate-500">@{playdate.host.display_name}</p>
         </div>
+        {/* V27 slice 5: the common-ground line — the follow edge we ALREADY
+            hold, stated without a new query and without a fabricated
+            safety/verification badge (PRODUCT.md principle 3). It names ONLY the
+            follow edge; the host's kids' ages already ride the `card-age-range`
+            line above, so they are never repeated here. It sits directly under
+            the host line and renders nothing when there is no follow edge. */}
+        {hostCommonGroundLabel !== null ? (
+          <p data-testid="card-host-common" className="text-xs font-medium text-indigo-700">{hostCommonGroundLabel}</p>
+        ) : null}
         {/* V6 (first phone feedback): the going toggle used to be a bare
             circle in the badge cluster, and it read as a status badge rather
             than a button — 'it's not clear that's indicating that you're
