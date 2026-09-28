@@ -1196,7 +1196,13 @@ export function NewPlaydatePage({
       // allowed is the pure decidePermissionPrompt seam's decision.
       armPushPromptForAction('post_created')
       // The feed re-fetches on mount, so the new post appears immediately.
-      navigate('/', { replace: true })
+      // V27 slice 4: the URL stays exactly `/` (router STATE, never a query —
+      // every existing `waitForURL('/')` spec must still match); the state
+      // carries the just-posted post so the feed can offer a one-tap share.
+      navigate('/', {
+        replace: true,
+        state: { justPosted: { id: createdPlaydate.id, title: createdPlaydate.title } },
+      })
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not post your drop-in. Try again.')
     } finally {
