@@ -905,7 +905,7 @@ test.afterEach(async () => {
  * V16 t01 — the per-kind notification toggles, and the heading that labels them.
  *
  * This closes a gap t01 opened. That slice relabelled the "What to tell me
- * about" paragraph into an `<h2>` ("Choose what you get notified about") plus a
+ * about" paragraph into a heading ("Choose what you get notified about") plus a
  * helper line, on the founder's decision that the toggles already EXISTED
  * and the real problem was finding them. But nothing in the suite asserted the
  * toggles at all: the only test that touches `notifications-section` drives the

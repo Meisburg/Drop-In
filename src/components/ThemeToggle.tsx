@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react'
-import { applyTheme, nextTheme, readTheme, themeColorFor, writeTheme } from '../lib/theme'
-import type { Theme } from '../lib/theme'
+import {
+  THEME_CHOICES,
+  THEME_CHOICE_COPY,
+  applyTheme,
+  readThemeChoice,
+  resolveTheme,
+  themeColorFor,
+  writeThemeChoice,
+} from '../lib/theme'
+import type { Theme, ThemeChoice } from '../lib/theme'
 
 /**
  * Point the single <meta name="theme-color"> at the chosen theme's chrome
@@ -14,87 +22,111 @@ function syncThemeColorMeta(theme: Theme): void {
     ?.setAttribute('content', themeColorFor(theme))
 }
 
+/** Read the OS preference right now (the fact `'system'` needs to resolve). */
+function osPrefersDark(): boolean {
+  return window.matchMedia('(prefers-color-scheme: dark)').matches
+}
+
+const CHOICE_TEST_ID: Record<ThemeChoice, string> = {
+  light: 'theme-choice-light',
+  dark: 'theme-choice-dark',
+  system: 'theme-choice-system',
+}
+
 /**
- * The appearance switch (V22 slice 14) — light is the default for everyone;
- * dark is opt-in and persisted under 'dropin-theme'. Mounted on /settings.
+ * The appearance control (V22 slice 14; V27 adds "Match my phone").
  *
- * CONTROL CHOICE: a real <input type="checkbox"> with role="switch" and
- * aria-checked, wrapped in a <label>. A labelled checkbox was picked over a
- * bare button+aria-label because it keeps native keyboard semantics (Space
- * toggles, focus ring, screen-reader "switch, checked/unchecked") with zero
- * custom key handling — the label supplies the accessible name.
+ * LIGHT IS STILL THE DEFAULT: an absent or unparseable stored value resolves to
+ * light, which is the V22 contract `scripts/theme-contract-check.mjs` pins.
+ * V27 adds the third choice a phone-shaped product needs — parents' devices
+ * switch to dark at night on their own, and "Match my phone" means they set it
+ * once and it keeps following, instead of re-checking a switch in every app.
  *
- * RULES live in src/lib/theme.ts (read/write/next/apply/themeColorFor — pure,
- * sibling-tested); this component only renders and executes. On mount it
- * reconciles the attribute the pre-paint script in index.html already set
- * (no flash either way); on change it applies + persists + updates the single
- * runtime-updated <meta name="theme-color"> tag.
+ * CONTROL CHOICE: three native `<input type="radio">` in a `fieldset` with a
+ * `legend`, each label a 44px-tall segment. Native radios keep arrow-key
+ * roving, Space to select, and a screen-reader "radio, selected" announcement
+ * with no custom key handling. The visible segment is the label; the input is
+ * `sr-only` inside it.
+ *
+ * RULES live in src/lib/theme.ts (pure, sibling-tested); this component only
+ * renders and executes. On mount the effect reconciles what the pre-paint
+ * script in index.html already set (no flash either way); a live media-query
+ * listener keeps "Match my phone" correct when the OS flips while the app is
+ * open.
  */
 export function ThemeToggle() {
-  const [dark, setDark] = useState<boolean>(() => readTheme(window.localStorage) === 'dark')
+  const [choice, setChoice] = useState<ThemeChoice>(() => readThemeChoice(window.localStorage))
+  const [prefersDark, setPrefersDark] = useState<boolean>(() => osPrefersDark())
 
-  // Reconcile on mount: the pre-paint script in index.html has already applied
-  // the stored choice before first paint; this makes React state match DOM
-  // state even if that script ever changes (and covers HMR re-mounts).
-  //
-  // V22 slice 14 FIX: this must ALSO sync the browser-chrome meta, not just the
-  // attribute. The first version only set the meta inside `toggle()`, so a
-  // returning dark user got the LIGHT terracotta chrome (#e8552f) on every load
-  // until they touched the switch — the attribute said dark, the chrome said
-  // light, and nothing reconciled them. Found by
-  // scripts/theme-contract-check.mjs case 6.
+  // Keep the OS fact live so a 'system' choice repaints the moment the phone
+  // flips, without a reload.
   useEffect(() => {
-    applyTheme(dark ? 'dark' : 'light', document)
-    syncThemeColorMeta(dark ? 'dark' : 'light')
-  }, [dark])
+    const query = window.matchMedia('(prefers-color-scheme: dark)')
+    const onChange = (event: MediaQueryListEvent) => setPrefersDark(event.matches)
+    query.addEventListener('change', onChange)
+    return () => query.removeEventListener('change', onChange)
+  }, [])
 
-  function toggle() {
-    const next = nextTheme(dark ? 'dark' : 'light')
-    setDark(next === 'dark')
-    applyTheme(next, document)
-    writeTheme(next, window.localStorage)
-    syncThemeColorMeta(next)
+  const resolved = resolveTheme(choice, prefersDark)
+
+  // Reconcile on mount AND on every resolved change (HMR re-mounts included):
+  // the pre-paint script has already set the attribute before first paint, and
+  // this makes React state and the DOM agree. It must ALSO sync the
+  // browser-chrome meta — the first version only set the meta inside the
+  // toggle, so a returning dark user got the LIGHT terracotta chrome on every
+  // load until they touched the switch (found by
+  // scripts/theme-contract-check.mjs case 6).
+  useEffect(() => {
+    applyTheme(resolved, document)
+    syncThemeColorMeta(resolved)
+  }, [resolved])
+
+  function choose(next: ThemeChoice) {
+    setChoice(next)
+    writeThemeChoice(next, window.localStorage)
+    const theme = resolveTheme(next, osPrefersDark())
+    applyTheme(theme, document)
+    syncThemeColorMeta(theme)
   }
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <label htmlFor="theme-toggle" className="flex min-w-0 flex-col gap-1 text-sm">
-        <span className="font-medium text-slate-800">Dark mode</span>
-        <span className="text-xs text-slate-500">
-          Light is the default. Turn on to use the dark appearance.
-        </span>
-      </label>
-      {/* 44px tap target: the track's hit area is a 44x44 label (min-h-11);
-          the visible track is 26px tall inside it. */}
-      <label
-        htmlFor="theme-toggle"
-        className="relative flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center"
-      >
-        <input
-          id="theme-toggle"
-          data-testid="theme-toggle"
-          type="checkbox"
-          role="switch"
-          aria-checked={dark}
-          checked={dark}
-          onChange={toggle}
-          className="peer sr-only"
-        />
-        {/* Track + thumb drawn as siblings of the input (sr-only keeps the
-            native control fully keyboard-operable while the visuals are ours). */}
-        <span
-          aria-hidden="true"
-          className={`pointer-events-none absolute left-1/2 top-1/2 h-[26px] w-[46px] -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors ${
-            dark ? 'bg-indigo-600' : 'bg-slate-300'
-          }`}
-        />
-        <span
-          aria-hidden="true"
-          className={`pointer-events-none absolute left-1/2 top-1/2 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-            dark ? '-translate-x-[11px] -translate-y-1/2' : '-translate-x-[21px] -translate-y-1/2'
-          }`}
-        />
-      </label>
+    <div
+      role="radiogroup"
+      aria-label="Appearance"
+      className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+      data-testid="theme-toggle"
+    >
+      <p className="text-xs text-slate-500">
+        Light is the default. Choose dark, or let Drop In follow your phone.
+      </p>
+
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        {THEME_CHOICES.map((option) => (
+          <label
+            key={option}
+            className={`flex min-h-11 cursor-pointer items-center justify-center rounded-xl border px-2 text-center text-xs font-medium transition-colors focus-within:ring-2 focus-within:ring-indigo-500 focus-within:ring-offset-1 ${
+              choice === option
+                ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
+                : 'border-slate-300 bg-white text-slate-600'
+            }`}
+          >
+            <input
+              type="radio"
+              name="theme-choice"
+              value={option}
+              checked={choice === option}
+              onChange={() => choose(option)}
+              data-testid={CHOICE_TEST_ID[option]}
+              className="sr-only"
+            />
+            {THEME_CHOICE_COPY[option].label}
+          </label>
+        ))}
+      </div>
+
+      <p className="mt-2 text-xs text-slate-500" data-testid="theme-choice-detail">
+        {THEME_CHOICE_COPY[choice].detail}
+      </p>
     </div>
   )
 }

@@ -155,6 +155,28 @@ console.log('\n6. Browser chrome color follows the choice')
   )
 }
 
+// --- V27: the third choice, "Match my phone" -------------------------------
+console.log('\n7. Stored "system" -> follows the OS, and is flash-free')
+{
+  const withDarkOs = await load({ osDark: true, stored: 'system' })
+  check(
+    'OS dark + stored system -> page is DARK',
+    withDarkOs.settled.pageBg === DARK_PAGE,
+    `page ${withDarkOs.settled.pageBg}`,
+  )
+  check(
+    'system is resolved before the app bundle runs',
+    withDarkOs.firstFrame.attr === 'dark',
+    `first-frame attr: ${String(withDarkOs.firstFrame.attr)}`,
+  )
+  const withLightOs = await load({ osDark: false, stored: 'system' })
+  check(
+    'OS light + stored system -> page is LIGHT',
+    withLightOs.settled.pageBg === LIGHT_PAGE,
+    `page ${withLightOs.settled.pageBg}`,
+  )
+}
+
 await browser.close()
 
 if (failures.length > 0) {

@@ -41,6 +41,7 @@ import {
   rememberTriggerOffered,
   serializePushPrefs,
   setKindMuted,
+  setQuietHours,
   type BrowserPermission,
   type DeviceFacts,
   type InstallSurface,
@@ -48,6 +49,7 @@ import {
   type PermissionDecision,
   type PushPrefs,
   type PushPromptTrigger,
+  type QuietHours,
   type RotatedSubscriptionMessage,
   type ServiceWorkerMessage,
   type StorageLike,
@@ -283,6 +285,13 @@ export async function writePushPrefs(prefs: PushPrefs): Promise<void> {
 export function toggleKindMuted(kind: NotificationKind): PushPrefs {
   const current = readPushPrefs()
   const next = setKindMuted(current, kind, !isKindMuted(current, kind))
+  void writePushPrefs(next)
+  return next
+}
+
+/** Persist a new quiet-hours window (same storage + SW mirror as the mutes). */
+export function saveQuietHours(quiet: QuietHours): PushPrefs {
+  const next = setQuietHours(readPushPrefs(), quiet)
   void writePushPrefs(next)
   return next
 }

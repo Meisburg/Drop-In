@@ -31,15 +31,19 @@ import {
 const VIEWER_ZIP = '98007'
 const VIEWER_RADIUS_LABEL = '20 miles'
 
-test('the marker\'s /settings has no location card (V15 T07)', async ({ page }) => {
+test("the marker's /settings edits distance but not the home ZIP (V27)", async ({ page }) => {
   await page.goto('/settings')
   await settleOnRoute(page, '/settings')
 
-  // V15 T07: the location card was removed from /settings — no zip input and
-  // no radius select render on this page. The viewer's location step in spec
-  // (b) still uses the onboarding "e.g. 98107" placeholder (that one stays).
+  // V15 T07 removed the location CARD (the ZIP editor) from /settings, and that
+  // half stands: no zip input renders here and the onboarding "e.g. 98107"
+  // placeholder stays off this page. V27 re-opens the OTHER half deliberately:
+  // the saved discovery radius is now editable in the "Near you" section,
+  // writing through the same `updateHomeZipRadius` path the feed uses. This
+  // assertion is the pin for that reversal — a future slice that removes the
+  // radius control again must update this line, not silently pass.
   await expect(page.getByPlaceholder('e.g. 98107')).toHaveCount(0)
-  await expect(page.locator('select')).toHaveCount(0)
+  await expect(page.getByTestId('settings-radius')).toBeVisible()
 })
 
 test('a host marker\'s drop-in reaches a viewer\'s radius feed with an "N mi" label', async ({

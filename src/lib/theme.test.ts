@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { THEME_KEY, applyTheme, nextTheme, readTheme, themeColorFor, writeTheme } from './theme'
+import {
+  THEME_CHOICES,
+  THEME_KEY,
+  applyTheme,
+  nextTheme,
+  nextThemeChoice,
+  parseThemeChoice,
+  readTheme,
+  readThemeChoice,
+  resolveTheme,
+  themeColorFor,
+  writeTheme,
+  writeThemeChoice,
+} from './theme'
 
 /** A minimal in-memory Storage stand-in for the injected `Pick<Storage,...>` seams. */
 function fakeStorage(initial: Record<string, string> = {}): Pick<Storage, 'getItem' | 'setItem'> {
@@ -75,5 +88,56 @@ describe('themeColorFor', () => {
   it('maps each theme to its browser-chrome colour', () => {
     expect(themeColorFor('light')).toBe('#e8552f')
     expect(themeColorFor('dark')).toBe('#181412')
+  })
+})
+
+describe('parseThemeChoice', () => {
+  it('honors exactly dark and system', () => {
+    expect(parseThemeChoice('dark')).toBe('dark')
+    expect(parseThemeChoice('system')).toBe('system')
+  })
+
+  it('treats absent, empty, light and garbage as light', () => {
+    expect(parseThemeChoice(null)).toBe('light')
+    expect(parseThemeChoice(undefined)).toBe('light')
+    expect(parseThemeChoice('')).toBe('light')
+    expect(parseThemeChoice('light')).toBe('light')
+    expect(parseThemeChoice('SYSTEM')).toBe('light')
+    expect(parseThemeChoice('banana')).toBe('light')
+  })
+})
+
+describe('readThemeChoice / writeThemeChoice', () => {
+  it('round-trips all three choices', () => {
+    for (const choice of THEME_CHOICES) {
+      const storage = fakeStorage()
+      writeThemeChoice(choice, storage)
+      expect(storage.getItem(THEME_KEY)).toBe(choice)
+      expect(readThemeChoice(storage)).toBe(choice)
+    }
+  })
+
+  it('defaults an absent key to light', () => {
+    expect(readThemeChoice(fakeStorage())).toBe('light')
+  })
+})
+
+describe('resolveTheme', () => {
+  it('resolves an explicit choice regardless of the OS', () => {
+    expect(resolveTheme('light', true)).toBe('light')
+    expect(resolveTheme('dark', false)).toBe('dark')
+  })
+
+  it('follows the OS only for the system choice', () => {
+    expect(resolveTheme('system', true)).toBe('dark')
+    expect(resolveTheme('system', false)).toBe('light')
+  })
+})
+
+describe('nextThemeChoice', () => {
+  it('cycles light -> dark -> system -> light', () => {
+    expect(nextThemeChoice('light')).toBe('dark')
+    expect(nextThemeChoice('dark')).toBe('system')
+    expect(nextThemeChoice('system')).toBe('light')
   })
 })

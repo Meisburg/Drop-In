@@ -142,4 +142,8 @@ exists).
   and status text must be announced, not merely shown (see audit finding: this
   is currently a gap).
 - Respect system preferences: reduced motion, and the platform appearance
-  setting. No app-specific appearance toggle.
+  setting. Appearance is a parent's choice on `/settings` — **Light** (the
+  default), **Dark**, or **Match my phone** (follows `prefers-color-scheme`).
+  The V22 decision was light-default with dark opt-in and no OS-follow; V27
+  added the OS-follow option without changing the light default, because a
+  phone that switches at night should not require a per-app hunt.

@@ -67,6 +67,16 @@ const TITLE_PLACEHOLDER = 'e.g. Playground time at Green Lake'
 const PLACE_PLACEHOLDER = 'e.g. Green Lake playground, near the boathouse'
 const PLACE = 'E2E loop lot'
 
+/**
+ * The e2e base URL. Defaults to the shared 4173 lane. Override with
+ * `E2E_BASE_URL` when that port is owned by a SIBLING Orca worktree — the
+ * browser-lane rule is to run a targeted spec on a private port rather than kill
+ * a server you did not start. The contexts below are created by hand, so they do
+ * NOT inherit the config's `use.baseURL`; this is the one place the spec's
+ * origin lives.
+ */
+const E2E_BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:4173'
+
 /** A playdates row as PostgREST returns it. */
 interface MarkerPostRow {
   id: string
@@ -181,7 +191,7 @@ async function createOnboardedViewer(
   zip: string,
 ): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const page = await context.newPage()
@@ -678,7 +688,7 @@ test('a follow is a bookmark: the card says who you met, and an ended post offer
   await expect(bCard).toContainText('going')
 
   // (11) The PLACE: follow it from /place/:id, read the count through the
-  //      SECDEF function, unfollow from the /settings Following list.
+  //      SECDEF function, unfollow from the /settings "Following & saved" list.
   const places = await markerSelect<{ id: string; name: string }>('places?select=id,name&limit=1')
   const place = places[0]
   if (place === undefined) throw new Error('the places directory is empty — is 0029 applied?')
@@ -699,7 +709,9 @@ test('a follow is a bookmark: the card says who you met, and an ended post offer
   expect(await selectWithToken('follows?select=id', tokenA)).toHaveLength(2)
 
   await a.page.goto('/settings')
-  await expect(a.page.getByRole('heading', { name: 'Following' })).toBeVisible()
+  await expect(
+    a.page.getByRole('heading', { name: 'Following & saved', exact: true }),
+  ).toBeVisible()
   const familyRow = a.page.getByRole('link', { name: `@${viewerB.name}`, exact: true })
   await expect(familyRow).toHaveAttribute('href', `/u/${viewerB.name}`)
   await expect(a.page.getByRole('link', { name: place.name, exact: true })).toHaveAttribute(
@@ -714,7 +726,7 @@ test('a follow is a bookmark: the card says who you met, and an ended post offer
   //      the documented decision (the SECDEF count is authenticated-only, so
   //      anon fails closed and the page never issues the call).
   const anon = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const anonPage = await anon.newPage()

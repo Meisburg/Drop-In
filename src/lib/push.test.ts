@@ -69,6 +69,7 @@ import {
   parseOfferedTriggers,
   parsePermissionDecision,
   parsePushPrefs,
+  parseQuietHours,
   promptReasonFor,
   pushOptInGate,
   readArmedOrigin,
@@ -81,7 +82,12 @@ import {
   serializeOfferedTriggers,
   serializePushPrefs,
   setKindMuted,
+  setQuietHours,
+  shouldSuppressForQuietHours,
   shouldSpendPushPoint,
+  isQuietAt,
+  type PushPrefs,
+  type QuietHours,
   type StorageLike,
 } from './push'
 
@@ -1615,10 +1621,10 @@ describe('push prefs', () => {
 
   it('round-trips muted kinds and drops unknown ones', () => {
     const prefs = setKindMuted(DEFAULT_PUSH_PREFS, 'starting_soon', true)
-    expect(parsePushPrefs(serializePushPrefs(prefs))).toEqual({ muted: ['starting_soon'] })
-    expect(parsePushPrefs('{"muted":["starting_soon","nonsense"]}')).toEqual({
-      muted: ['starting_soon'],
-    })
+    expect(parsePushPrefs(serializePushPrefs(prefs)).muted).toEqual(['starting_soon'])
+    expect(parsePushPrefs('{"muted":["starting_soon","nonsense"]}').muted).toEqual([
+      'starting_soon',
+    ])
   })
 
   it('fails OPEN on garbage, so a storage problem cannot swallow a cancellation', () => {
@@ -1641,5 +1647,126 @@ describe('push prefs', () => {
     const prefs = setKindMuted(DEFAULT_PUSH_PREFS, 'cancelled', true)
     expect(DEFAULT_PUSH_PREFS.muted).toEqual([])
     expect(prefs).not.toBe(DEFAULT_PUSH_PREFS)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Quiet hours (V27) — a device-level window, enforced by the service worker.
+// ---------------------------------------------------------------------------
+
+describe('parseQuietHours', () => {
+  it('returns the default for a non-object', () => {
+    expect(parseQuietHours(null)).toEqual({ enabled: false, start: '21:00', end: '07:00' })
+    expect(parseQuietHours('nonsense')).toEqual({ enabled: false, start: '21:00', end: '07:00' })
+  })
+
+  it('keeps a well-formed window and enabled flag', () => {
+    expect(parseQuietHours({ enabled: true, start: '20:30', end: '06:15' })).toEqual({
+      enabled: true,
+      start: '20:30',
+      end: '06:15',
+    })
+  })
+
+  it('falls back per field on an invalid time', () => {
+    expect(parseQuietHours({ enabled: true, start: '25:00', end: '9:00' })).toEqual({
+      enabled: true,
+      start: '21:00',
+      end: '07:00',
+    })
+  })
+
+  it('treats a non-true enabled as off', () => {
+    expect(parseQuietHours({ enabled: 'yes', start: '21:00', end: '07:00' }).enabled).toBe(false)
+  })
+})
+
+describe('isQuietAt', () => {
+  const withinDay: QuietHours = { enabled: true, start: '13:00', end: '15:00' }
+  const overnight: QuietHours = { enabled: true, start: '21:00', end: '07:00' }
+  const at = (hours: number, minutes: number) => new Date(2025, 0, 1, hours, minutes)
+
+  it('is never quiet when disabled', () => {
+    expect(isQuietAt({ ...overnight, enabled: false }, at(23, 0))).toBe(false)
+  })
+
+  it('handles a same-day window with inclusive start and exclusive end', () => {
+    expect(isQuietAt(withinDay, at(12, 59))).toBe(false)
+    expect(isQuietAt(withinDay, at(13, 0))).toBe(true)
+    expect(isQuietAt(withinDay, at(14, 59))).toBe(true)
+    expect(isQuietAt(withinDay, at(15, 0))).toBe(false)
+  })
+
+  it('handles an overnight window that wraps midnight', () => {
+    expect(isQuietAt(overnight, at(20, 59))).toBe(false)
+    expect(isQuietAt(overnight, at(21, 0))).toBe(true)
+    expect(isQuietAt(overnight, at(23, 59))).toBe(true)
+    expect(isQuietAt(overnight, at(0, 30))).toBe(true)
+    expect(isQuietAt(overnight, at(6, 59))).toBe(true)
+    expect(isQuietAt(overnight, at(7, 0))).toBe(false)
+  })
+
+  it('treats a zero-length window as no window, not all-day silence', () => {
+    expect(isQuietAt({ enabled: true, start: '09:00', end: '09:00' }, at(9, 0))).toBe(false)
+  })
+
+  it('ignores a malformed stored time', () => {
+    expect(isQuietAt({ enabled: true, start: 'oops', end: '07:00' }, at(23, 0))).toBe(false)
+  })
+})
+
+describe('shouldSuppressForQuietHours', () => {
+  const quiet: PushPrefs = {
+    muted: [],
+    quietHours: { enabled: true, start: '21:00', end: '07:00' },
+  }
+  const night = new Date(2025, 0, 1, 23, 0)
+
+  it('drops a chatter kind inside the window', () => {
+    expect(shouldSuppressForQuietHours(quiet, 'starting_soon', night)).toBe(true)
+    expect(shouldSuppressForQuietHours(quiet, 'new_comment', night)).toBe(true)
+  })
+
+  it('never drops a cancellation or an early end — those stop a drive-out', () => {
+    expect(shouldSuppressForQuietHours(quiet, 'cancelled', night)).toBe(false)
+    expect(shouldSuppressForQuietHours(quiet, 'ended', night)).toBe(false)
+  })
+
+  it('never drops an unclassifiable push (fail open)', () => {
+    expect(shouldSuppressForQuietHours(quiet, null, night)).toBe(false)
+  })
+
+  it('drops nothing outside the window', () => {
+    const noon = new Date(2025, 0, 1, 12, 0)
+    expect(shouldSuppressForQuietHours(quiet, 'starting_soon', noon)).toBe(false)
+  })
+})
+
+describe('quiet-hours persistence', () => {
+  it('round-trips the window through serialize/parse', () => {
+    const prefs = setQuietHours(DEFAULT_PUSH_PREFS, {
+      enabled: true,
+      start: '22:15',
+      end: '06:45',
+    })
+    expect(parsePushPrefs(serializePushPrefs(prefs)).quietHours).toEqual({
+      enabled: true,
+      start: '22:15',
+      end: '06:45',
+    })
+  })
+
+  it('defaults quiet hours when the stored JSON predates V27', () => {
+    expect(parsePushPrefs('{"muted":["starting_soon"]}').quietHours).toEqual({
+      enabled: false,
+      start: '21:00',
+      end: '07:00',
+    })
+  })
+
+  it('does not mutate the prefs it is given', () => {
+    const next = setQuietHours(DEFAULT_PUSH_PREFS, { enabled: true, start: '20:00', end: '08:00' })
+    expect(DEFAULT_PUSH_PREFS.quietHours.enabled).toBe(false)
+    expect(next).not.toBe(DEFAULT_PUSH_PREFS)
   })
 })
