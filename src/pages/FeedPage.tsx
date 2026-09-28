@@ -1000,8 +1000,23 @@ export function FeedPage() {
           className="flex min-h-11 w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
         >
           <span className="text-sm font-medium text-slate-700">Drop-ins near you</span>
-          <span className="text-xs text-slate-500">
+          <span className="flex items-center gap-1 text-xs text-slate-500">
             {feedLocationSummary(profile.home_zip, profile.radius_miles ?? DEFAULT_RADIUS_MILES)}
+            {/* V27 slice 1: a decorative chevron so the row reads as a control
+                that opens something, not as a status label. aria-hidden keeps
+                the button's accessible name exactly its two text spans. */}
+            <svg
+              viewBox="0 0 24 24"
+              className="h-4 w-4 shrink-0 text-slate-400"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M9 6l6 6-6 6" />
+            </svg>
           </span>
         </button>
       </div>
@@ -1091,15 +1106,18 @@ export function FeedPage() {
            shared state — it is the quiet line UNDER the day sections below,
            which only exists when there IS something to list.
 
-           V16 t06 item 1: the escapes still render HERE, and only here. The
-           picker above is the persistent surface; the escapes are the
-           empty-state's own copy and vanish the moment there is something to
-           list, so the two never sit on screen together and nothing looks
-           duplicated. RadiusEmptyState stays prop-compatible (its Browse
-           caller is untouched) — the suppression is this call site's. */
+           V16 t06 item 1 used to suppress the escapes HERE because a persistent
+           radius picker sat directly above this state.
+           V23 slice 1 removed that picker, so the feed's ONLY location control
+           is now the button that opens the shared LocationModal — the escapes
+           are the feed's one-tap widen path inside this empty state, and
+           suppressing them was the dead end the bug report names. V27 slice 1
+           therefore lets the component render its default escapes (its Browse
+           caller is untouched). showPostCta stays false: the raised nav "+" is
+           the persistent post action, so a second "Post a drop-in" link here is
+           the duplication V23 removed. */
         <RadiusEmptyState
           radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES}
-          showEscapes={false}
           showPostCta={false}
         />
       ) : feedViewShowsMap(feedView) ? (

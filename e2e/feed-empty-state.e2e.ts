@@ -150,6 +150,16 @@ test('the feed\'s empty state names the real radius, never claims "today", and o
   // …and it never claims "today": the feed is today AND LATER.
   await expect(empty).not.toContainText(/today/i)
 
+  // V27 slice 1: the feed's empty state now renders the escape buttons again.
+  // V16 suppressed them behind a persistent radius picker that V23 removed, so
+  // the state had NO widen path of its own — the dead end the bug report names.
+  // Mirror the /browse assertions; the feed keeps its post CTA suppressed (the
+  // raised nav "+" is the persistent post action), so no "Post a drop-in" link
+  // may appear inside this empty state.
+  await expect(empty.getByRole('button', { name: 'Widen to 20 miles' })).toBeEnabled()
+  await expect(empty.getByRole('button', { name: 'See everything in Seattle' })).toBeEnabled()
+  await expect(empty.getByRole('link', { name: 'Post a drop-in' })).toHaveCount(0)
+
   // V23 slice 1: the feed's empty state no longer renders its own "Post a drop-in"
   // link — the action row at the top of the page owns the ONE primary CTA. The
   // way out of an empty radius is now the secondary location control (the button
