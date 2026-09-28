@@ -682,14 +682,16 @@ test('the empty state offers the archive; the places directory does not', async 
   // The honest count is untouched by this ticket.
   await expect(empty).toContainText(`Nothing within ${marker.radiusMiles} miles yet.`)
   // V23 slice 1: the feed's ONE location control (the secondary button in the action
-  // row) opens the shared LocationModal. The empty state's escape buttons are
-  // suppressed HERE (they would have been a near-identical radius-button row one
-  // line apart — the two controls that look alike doing the same job). The
-  // escapes still render on Browse, which the later visit in this spec still
-  // asserts; on the feed the modal is the control, so that is what this block
-  // asserts.
+  // row) opens the shared LocationModal. V16 t06 item 1 used to suppress the empty
+  // state's escape buttons HERE, because a persistent radius picker sat directly above
+  // this state (a near-identical radius-button row one line apart — the two controls
+  // that look alike doing the same job). V23 removed that picker, and V27 slice 1
+  // stopped the feed opting out of the escapes: they are the feed's one-tap widen
+  // path now, and the modal button alongside them is not a duplicate (one opens a
+  // picker, the others widen inline). So this block asserts both render. Browse
+  // renders the same component and checks the escapes in its own visit below.
   await expect(page.getByTestId('feed-location-control')).toBeVisible()
-  await expect(empty.getByRole('button', { name: 'Widen to 20 miles' })).toHaveCount(0)
+  await expect(empty.getByRole('button', { name: 'Widen to 20 miles' })).toHaveCount(1)
   // V23 slice 1: the empty state no longer renders its own "Post a drop-in" link
   // — the action row at the top of the page owns the ONE primary CTA.
   await expect(empty.getByRole('link', { name: 'Post a drop-in' })).toHaveCount(0)
