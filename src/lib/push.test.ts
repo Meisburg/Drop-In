@@ -4,7 +4,7 @@
  * Three of these are pinned by the ticket and are the reason this file is not
  * a formality:
  *
- *  1. the PAYLOAD BUILDER — the wording of all six kinds, including the
+ *  1. the PAYLOAD BUILDER — the wording of all seven kinds, including the
  *     singular "1 family is going" (the plural template would say
  *     "1 families", the same broken English the while-away inbox already
  *     fixed). These literals are the spec the SQL twin
@@ -61,6 +61,7 @@ import {
   isRsvpDeferredAt,
   isPromptSuppressedPath,
   isStandalone,
+  messageThreadUrl,
   migrateLegacyDecision,
   migrateLegacyDecisionOnce,
   notificationDedupeKey,
@@ -233,6 +234,45 @@ describe('buildNotificationPayload', () => {
     ).toBe('How was "your drop-in"?')
   })
 
+  it('builds the new-message kind, pointed at the THREAD (V27 s1, migration 0056)', () => {
+    // The literal strings the SQL twin (public.notification_payload, the
+    // 0056-rewritten branch) must match char-for-char.
+    expect(
+      buildNotificationPayload({
+        kind: 'new_message',
+        playdateId: POST_ID,
+        postTitle: 'Saturday at Gas Works',
+        actorName: 'Jordan',
+      }),
+    ).toEqual({
+      title: 'Jordan messaged you',
+      body: 'Tap to reply in "Saturday at Gas Works"',
+      url: `/inbox?thread=${POST_ID}`,
+    })
+  })
+
+  it('ENCODES the thread id, so a hostile id cannot open a different route', () => {
+    expect(
+      buildNotificationPayload({
+        kind: 'new_message',
+        playdateId: 'a/b?x=1',
+        postTitle: 'Saturday at Gas Works',
+        actorName: 'Jordan',
+      }).url,
+    ).toBe('/inbox?thread=a%2Fb%3Fx%3D1')
+  })
+
+  it('uses the honest title fallback for an untitled new message', () => {
+    expect(
+      buildNotificationPayload({
+        kind: 'new_message',
+        playdateId: POST_ID,
+        postTitle: null,
+        actorName: 'Jordan',
+      }).body,
+    ).toBe('Tap to reply in "your drop-in"')
+  })
+
   it('builds starting_soon with the SINGULAR at exactly one family going', () => {
     expect(
       buildNotificationPayload({
@@ -383,17 +423,48 @@ describe('reviewPromptUrl', () => {
   })
 })
 
+describe('messageThreadUrl', () => {
+  it('points at the inbox thread route, not the drop-in route (V27 s1, migration 0056)', () => {
+    // The SIBLING of notificationUrl and reviewPromptUrl: a new message opens
+    // the conversation, not the post's detail page.
+    expect(messageThreadUrl('pd-1')).toBe('/inbox?thread=pd-1')
+    expect(messageThreadUrl('pd-1')).not.toContain('/playdate/')
+    // A real uuid is byte-identical to the unencoded spelling, so every
+    // uuid-based assertion elsewhere stays true.
+    const uuid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    expect(messageThreadUrl(uuid)).toBe(`/inbox?thread=${uuid}`)
+  })
+
+  it('ENCODES the id — one route, one encoding contract', () => {
+    // Unencoded, an id containing `?`, `#` or `&` would silently change which
+    // thread the push opens.
+    expect(messageThreadUrl('a/b')).toBe('/inbox?thread=a%2Fb')
+    expect(messageThreadUrl('a/b?x=1#y')).toBe('/inbox?thread=a%2Fb%3Fx%3D1%23y')
+    // The payload builder routes through this function, so the encoding holds
+    // on the notification's url too — not just on the helper.
+    expect(
+      buildNotificationPayload({
+        kind: 'new_message',
+        playdateId: 'a/b',
+        postTitle: 'Park',
+        actorName: 'Jordan',
+      }).url,
+    ).toBe('/inbox?thread=a%2Fb')
+  })
+})
+
 describe('isNotificationKind', () => {
-  it('accepts the six kinds and rejects anything else', () => {
-    // Iterating the one list is the point: a seventh kind added to
+  it('accepts the seven kinds and rejects anything else', () => {
+    // Iterating the one list is the point: an eighth kind added to
     // NOTIFICATION_KINDS without a thought for this guard still has to pass
     // (and every kind it names is accepted).
-    expect([...NOTIFICATION_KINDS]).toHaveLength(6)
+    expect([...NOTIFICATION_KINDS]).toHaveLength(7)
     for (const kind of NOTIFICATION_KINDS) expect(isNotificationKind(kind)).toBe(true)
     expect(isNotificationKind('ping_received')).toBe(true)
     expect(isNotificationKind('cancelled')).toBe(true)
     expect(isNotificationKind('ended')).toBe(true)
     expect(isNotificationKind('review_due')).toBe(true)
+    expect(isNotificationKind('new_message')).toBe(true)
     expect(isNotificationKind('reminder')).toBe(false)
     expect(isNotificationKind('review_prompt')).toBe(false)
     expect(isNotificationKind(null)).toBe(false)
