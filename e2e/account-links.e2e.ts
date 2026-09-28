@@ -527,13 +527,24 @@ test('the read surface shows both parents, and a linked name reaches that profil
     const names = page.getByTestId('parent-names')
     await expect(names).toBeVisible({ timeout: 20_000 })
 
-    // Both parents, by name: the marker's own card as plain text, the partner's
-    // as the ONE link.
-    await expect(page.getByTestId('parent-name')).toHaveCount(1)
-    await expect(page.getByTestId('parent-name')).toHaveText(markerHandle)
-    const nameLink = page.getByTestId('parent-name-link')
+    // Both parents, by name. V27 links BOTH: the marker's own card links to its
+    // own public profile (the founder's "you could link my name to this
+    // profile"), and the partner's card links through the accepted account link.
+    // The owner's self-link reveals no relationship — it is the page's own
+    // handle, already public in the identity block above.
+    const ownerLink = page
+      .getByTestId('parent-name-link')
+      .filter({ hasText: markerHandle })
+    await expect(ownerLink).toHaveCount(1)
+    await expect(ownerLink).toHaveText(markerHandle)
+    await expect(ownerLink).toHaveAttribute('href', `/u/${encodeURIComponent(markerHandle)}`)
+    const nameLink = page
+      .getByTestId('parent-name-link')
+      .filter({ hasText: partnerHandle })
     await expect(nameLink).toHaveCount(1)
     await expect(nameLink).toHaveText(partnerHandle)
+    // No plain-text name is left: both cards are links.
+    await expect(page.getByTestId('parent-name')).toHaveCount(0)
 
     // The names sit INSIDE the card that owns the "About the parents" heading —
     // walked on the DOM, so a name rendered anywhere else on the page fails.
@@ -615,11 +626,18 @@ test('the read surface shows both parents, and a linked name reaches that profil
 
       await strangerPage.goto(`${origin}/u/${encodeURIComponent(markerHandle)}`)
       await expect(strangerPage.getByTestId('parent-names')).toBeVisible({ timeout: 20_000 })
-      await expect(strangerPage.getByTestId('parent-name')).toHaveCount(2)
+      // V27: the page owner's own card is a self-link to the public profile on
+      // every view. The LINK relationship stays invisible to a third account:
+      // RLS hands them zero `account_links` rows, so the partner's card is plain
+      // text and the one link points at the page's own public handle.
+      const strangerLinks = strangerPage.getByTestId('parent-name-link')
       await expect(
-        strangerPage.getByTestId('parent-name-link'),
+        strangerLinks,
         'a third account must not learn which parent is account-linked',
-      ).toHaveCount(0)
+      ).toHaveCount(1)
+      await expect(strangerLinks).toHaveAttribute('href', `/u/${encodeURIComponent(markerHandle)}`)
+      await expect(strangerPage.getByTestId('parent-name')).toHaveCount(1)
+      await expect(strangerPage.getByTestId('parent-name')).toHaveText(partnerHandle)
     } finally {
       await strangerContext.close()
     }

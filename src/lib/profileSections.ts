@@ -21,23 +21,26 @@
  *  - 'user'    — the identity block: avatar + display name + "Here since"
  *                (read view) / "Your photo & name" card (edit surface).
  *  - 'kids'    — "About the kids" (read view) / the kids editor card (edit).
- *  - 'parents' — "About the parents" (bio + interests + family photo, read view)
- *                / "About the parents" bio card + "Family photos" + "The
- *                parents" parent cards, each carrying its own account-link
- *                control (edit surface — V24 11B; the standalone "Linked
- *                parent" section was removed, so all of it is the parents
- *                group, kept together between kids and… nothing; see below).
+ *  - 'parents' — "About the parents": the parent rows + interests + family photo
+ *                (read view; V27 dropped the read bio, so the rows are the
+ *                section's people content) / "Family photos" + "The parents"
+ *                parent cards (the owner's editable, a linked partner's
+ *                read-only, each carrying its own account-link control — edit
+ *                surface, V24 11B/V27; the standalone "Linked parent" section
+ *                was removed, so all of it is the parents group, kept together
+ *                between kids and… nothing; see below).
  *  - 'dropins' — the hosted drop-ins lists (Upcoming/Past, read view only; the
  *                edit surface intentionally has no drop-ins section — V16 t04
  *                removed the "Hosted drop-ins" card from /profile, and posts
  *                are managed from /new, not from the profile editor).
  *
- * NOTE ON 'parents': the read view folds the parents group into ONE card (bio +
- * interests + family photo); the edit surface splits it into three cards (bio,
- * family photo, parent cards — the last now holding the link control). They are
- * the SAME section for ordering purposes — the people who run the household,
- * between the kids and the hosted history — so both surfaces emit the single
- * token 'parents' and render their own shape of it in that slot.
+ * NOTE ON 'parents': the read view folds the parents group into ONE card (parent
+ * rows + interests + family photo; the bio is legacy data as of V27); the edit
+ * surface splits it into two cards (family photo, parent cards — the last now
+ * holding the link control). They are the SAME section for ordering
+ * purposes — the people who run the household, between the kids and the hosted
+ * history — so both surfaces emit the single token 'parents' and render their
+ * own shape of it in that slot.
  */
 
 /** The four profile sections, in the founder-pinned order. */

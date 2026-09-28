@@ -23,7 +23,7 @@ import type {
 // frame the user chose rather than computing one of its own, and refuses a frame
 // that could not be drawn.
 import { isDrawableRect, type CropRect } from './photoCrop'
-import { acceptedCounterpartyForProfile, type LinkRowForView } from './links'
+import { acceptedCounterpartyForProfile, normalizeHandle, type LinkRowForView } from './links'
 // V9 ticket 11: where a family's images live and who may fetch each kind. The
 // paths are the pure seams (photoStorage.ts) so this file never spells one out.
 import {
@@ -5503,8 +5503,13 @@ export async function unlinkAccounts(linkId: string): Promise<void> {
 
 /**
  * The other party's profile, for rendering a linked partner: their handle and
- * avatar. Deliberately narrow — a link shows WHO the partner is, not their
- * whole profile, which they already control the visibility of.
+ * their public avatar. Deliberately narrow — a link shows WHO the partner is,
+ * not their whole profile, which they already control the visibility of.
+ *
+ * V27: the partner's DESCRIPTION lives on her own parent card, not on this
+ * profile row; `getLinkedPartnerForProfileWithClient` reads that card and returns
+ * it as `about`. This read is unchanged from V24 11A — it is not the place for
+ * `bio`.
  *
  * Takes the client so it is injectable and testable like every other seam in
  * this section. `ocr` flagged the first version for hard-coding `supabase`,
@@ -5544,8 +5549,8 @@ export async function getProfileSummaryByIdWithClient(
  * That last line is the whole privacy posture of this seam, and it is the
  * DATABASE's answer, not this function's: there is no widening here, no
  * service-role client, and no second query that could dodge the policy. The
- * handle comes from `getProfileSummaryByIdWithClient`, a narrow three-column
- * read of a profile the caller can already open by that same handle.
+ * handle comes from `getProfileSummaryByIdWithClient`, a narrow read of a
+ * profile the caller can already open by that same handle.
  *
  * Never throws on the caller's side of a missing row: a profile with no readable
  * link returns null, which the read surface renders as plain text.
@@ -5555,14 +5560,25 @@ export async function getProfileSummaryByIdWithClient(
  * was the one function here that hard-coded `supabase` — the exact pattern this
  * file fixed a few lines above for `getProfileSummaryByIdWithClient`.
  *
- * V24 slice 11B (finding N3): the returned row carries the HANDLE alone. The
- * counterparty's `profileId` used to ride along and nothing ever read it (the
- * read surface renders the name and links by handle), so it was dead data in a
- * privacy-shaped seam — naming it implied a consumer that did not exist.
+ * V24 slice 11B (finding N3): the returned row carried the HANDLE alone. The
+ * counterparty's `profileId` rode along and nothing ever read it, so it was
+ * removed as dead data.
+ *
+ * V27 (the founder's model): the returned row carries the partner's public
+ * `avatarUrl` and her own parent card's `about` as well, because the linked row
+ * renders the same "picture · name · description" shape as the owner's row and
+ * the description must be the PARTNER's words, authored on her own account —
+ * never text the owner typed for her. Both are values any signed-in parent can
+ * already see on that partner's profile page, so this is not a widening of WHO
+ * may see them; and the `parent_cards` read is added only after the accepted
+ * link has already answered "this viewer is a party".
+ *
+ * Returns `about: null` when the partner has no self-card (or none matching her
+ * display name): a linked row with no description renders no paragraph.
  */
 export async function getLinkedPartnerForProfile(
   profileId: string,
-): Promise<{ handle: string } | null> {
+): Promise<{ handle: string; avatarUrl: string | null; about: string | null } | null> {
   return getLinkedPartnerForProfileWithClient(supabase, profileId)
 }
 
@@ -5576,13 +5592,30 @@ export async function getLinkedPartnerForProfile(
 export async function getLinkedPartnerForProfileWithClient(
   client: SupabaseClient,
   profileId: string,
-): Promise<{ handle: string } | null> {
+): Promise<{ handle: string; avatarUrl: string | null; about: string | null } | null> {
   const links = await listMyAccountLinksWithClient(client, profileId)
   const counterpartyId = acceptedCounterpartyForProfile(links, profileId)
   if (counterpartyId === null) return null
   const summary = await getProfileSummaryByIdWithClient(client, counterpartyId)
   if (summary === null) return null
-  return { handle: summary.display_name }
+  // V27: the description is the partner's OWN self-card `about` (her account's
+  // "About me"), not the viewed family's text and not her account blurb.
+  const cards = await listParentCardsWithClient(client, counterpartyId)
+  const selfCard =
+    cards.find((card) => normalizeHandle(card.name) === normalizeHandle(summary.display_name)) ??
+    null
+  return {
+    handle: summary.display_name,
+    avatarUrl: summary.avatar_url,
+    about: trimToNull(selfCard?.about ?? null),
+  }
+}
+
+/** Trim a stored string, or null when absent/blank (the `parentCardAboutText` rule). */
+function trimToNull(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null
+  const trimmed = value.trim()
+  return trimmed === '' ? null : trimmed
 }
 
 /**

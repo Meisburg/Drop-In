@@ -1,15 +1,16 @@
 /**
  * Spec (V2 ticket 02, re-homed by V13 ticket 01): the marker's rich profile.
- * On /profile the marker saves a bio (<= 500 chars) + a kid row (first name +
- * age ONLY — the privacy pin, max 5 app-enforced) and sees both on
- * /u/<handle>. V15 T07 removed the /settings nudge banner ("Finish your
- * profile" / "Still to add: ...") — this spec no longer asserts it.
+ * On /profile the marker saves their own parent card (name + a short "About me")
+ * + a kid row (first name + age ONLY — the privacy pin, max 5 app-enforced) and
+ * sees both on /u/<handle>. V15 T07 removed the /settings nudge banner ("Finish
+ * your profile" / "Still to add: ...") — this spec no longer asserts it.
+ * V27: the account-level bio field is gone; the parent card's "About me" is the
+ * one place a parent writes about themself, saved with the card's own button.
  *
  * Cleanup (best-effort per ticket, e2e-<epoch> marker prefix so the
- * orchestrator's sweep picks stragglers up): the marker's kid rows are
- * deleted and the bio nulled via REST with the marker's own JWT (the
- * owner-only kids DELETE + profiles UPDATE policies from 0011). A failure
- * here is logged, not fatal.
+ * orchestrator's sweep picks stragglers up): the marker's kid rows and parent
+ * cards are deleted via REST with the marker's own JWT. A failure here is
+ * logged, not fatal.
  */
 import { expect, test } from '@playwright/test'
 import { kidLabel } from '../src/lib/feed'
@@ -17,24 +18,44 @@ import { readMarkerMeta, readMarkerSession, readSupabaseEnv, settleOnRoute, open
 
 const KID_AGE = 7
 
-test('marker saves a bio + kid row, sees them on /u/<handle>', async ({ page }) => {
+async function markerRest(
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<Response> {
+  const { url, anonKey } = readSupabaseEnv()
+  const { accessToken } = readMarkerSession()
+  return fetch(`${url}/rest/v1/${path}`, {
+    method,
+    headers: {
+      apikey: anonKey,
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  })
+}
+
+test('marker saves a parent card + kid row, sees them on /u/<handle>', async ({ page }) => {
   const marker = readMarkerMeta()
-  const bio = `E2E bio — ${marker.displayName}, friendly family`
+  const about = `E2E about me — ${marker.displayName}, parks and snacks`
   const kidName = `e2e ${marker.displayName}`
 
-  // V13 ticket 01: the bio + kid editor MOVED from /settings to /profile
-  // (the now-editable "what other families see" view). The autosave machine
-  // is the same V12 t01 engine — no save control anywhere on /profile either,
-  // so the typed bio lands on its own after the debounce settles and the
-  // always-on indicator says "Saved."
+  // A deterministic starting point: no leftover parent cards from other specs.
+  await markerRest('DELETE', `parent_cards?profile_id=eq.${readMarkerSession().userId}`)
+
+  // V13 ticket 01: the profile editor MOVED from /settings to /profile (the
+  // now-editable "what other families see" view). V20 t01: /profile opens on the
+  // READ view, so the editor is behind the Edit profile toggle.
   await page.goto('/profile')
   await openProfileEditor(page)
 
-  // Bio: the /profile "About the parents" field (app-capped at 500 chars, the
-  // 0011 CHECK is the DB backstop). Located by its placeholder (the house
-  // pattern for a textarea with no testid).
-  await page.getByPlaceholder('Who’s in your family, and what are you into? (optional)').fill(bio)
-  await expect(page.getByTestId('profile-save-note')).toHaveText('Saved.')
+  // V27: the parent's own words are the CARD's "About me" (the account-level bio
+  // field is gone). The card saves with its own button — not autosave.
+  await page.getByTestId('parent-name-1').fill(marker.displayName)
+  await page.getByTestId('parent-about-1').fill(about)
+  await page.getByTestId('parent-save-1').click()
+  await expect(page.getByTestId('parent-save-1')).toHaveText('Saved')
 
   // Kid row: first name + age ONLY (no full names, no gender — privacy pin).
   await page.getByPlaceholder('First name').fill(kidName)
@@ -48,8 +69,11 @@ test('marker saves a bio + kid row, sees them on /u/<handle>', async ({ page }) 
   const kidRow = page.getByTestId('kid-row-editor').first()
   await expect(kidRow.getByTestId('kid-name')).toHaveValue(kidName)
   await expect(kidRow.getByTestId('kid-age')).toHaveValue(String(KID_AGE))
-  // The row's write rides the same autosave engine — wait for it to land so
-  // the /u/<handle> read below sees the new row (not a racing write).
+  // The row is editable IN PLACE, and editing a field rides the autosave engine.
+  // "Add kid" writes immediately, but the always-on note tracks the autosave
+  // pass, so nudge the likes line and wait for that pass to land before the
+  // /u/<handle> read below (no racing write).
+  await kidRow.getByTestId('kid-likes').fill('e2e likes: sand and slides')
   await expect(page.getByTestId('profile-save-note')).toHaveText('Saved.')
 
   // V15 T07: the /settings nudge banner ("Finish your profile" / "Still to add:
@@ -60,10 +84,10 @@ test('marker saves a bio + kid row, sees them on /u/<handle>', async ({ page }) 
   await expect(page.getByText('Still to add: a photo.')).toHaveCount(0)
   await expect(page.getByRole('link', { name: 'Add them on your profile page' })).toHaveCount(0)
 
-  // The public face (/u/<handle>) renders the bio + the kid (first name +
-  // age only).
+  // The public face (/u/<handle>) renders the parent row and the kid (first name
+  // + age only).
   await page.goto(`/u/${encodeURIComponent(marker.displayName)}`)
-  await expect(page.getByText(bio)).toBeVisible()
+  await expect(page.getByText(about)).toBeVisible()
   // V15.2 fix: V15 ticket 05 (A13) made `kidLabel` emit "Name · Age 7" — the
   // bare "Name · 7" this asserted is the OLD format, so it could never match.
   // The expectation is built from the app's own seam so it tracks the rule.
@@ -76,14 +100,20 @@ test('marker saves a bio + kid row, sees them on /u/<handle>', async ({ page }) 
   // it pins ("first name · Age 7", never "Name · 7") cannot drift with a styling
   // change.
   await expect(page.getByText(kidLabel(kidName, KID_AGE), { exact: true })).toBeVisible()
+
+  // The parent card persists into the editor, re-seeded from the saved row.
+  await page.goto('/profile')
+  await openProfileEditor(page)
+  await expect(page.getByTestId('parent-about-1')).toHaveValue(about)
 })
 
 test.afterEach(async () => {
-  // Best-effort cleanup (per ticket): the marker's kid rows + bio, via the
-  // marker's own JWT (owner policies). Logged, never fatal.
+  // Best-effort cleanup (per ticket): the marker's kid rows + parent cards, via
+  // the marker's own JWT (owner policies). Logged, never fatal.
   try {
+    const { userId } = readMarkerSession()
     const { url, anonKey } = readSupabaseEnv()
-    const { accessToken, userId } = readMarkerSession()
+    const { accessToken } = readMarkerSession()
     const headers: Record<string, string> = {
       apikey: anonKey,
       Authorization: `Bearer ${accessToken}`,
@@ -97,12 +127,11 @@ test.afterEach(async () => {
         headers,
       })
     }
-    await fetch(`${url}/rest/v1/profiles?id=eq.${userId}`, {
-      method: 'PATCH',
-      headers: { ...headers, 'Content-Type': 'application/json', Prefer: 'return=representation' },
-      body: JSON.stringify({ bio: null }),
+    await fetch(`${url}/rest/v1/parent_cards?profile_id=eq.${userId}`, {
+      method: 'DELETE',
+      headers,
     })
-    console.log(`[e2e cleanup] ok — deleted ${kids.length} marker kid row(s), bio nulled`)
+    console.log(`[e2e cleanup] ok — deleted ${kids.length} marker kid row(s) and parent cards`)
   } catch (err) {
     console.log(
       `[e2e cleanup] FAILED (logged, best-effort): ${

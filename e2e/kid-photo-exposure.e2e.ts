@@ -988,32 +988,41 @@ test('the family photo uploads through the crop dialog and renders on /profile a
 // ---------------------------------------------------------------------------
 // 5. "ABOUT THE PARENTS", and an empty profile.
 // ---------------------------------------------------------------------------
-test('“About the parents” saves and renders; a profile with none of the blocks still renders cleanly', async ({
+test('a parent card’s “About me” saves; a profile with none of the blocks still renders cleanly', async ({
   page,
 }) => {
   const e = env()
   const epoch = Math.floor(Date.now() / 1000)
   const about = `E2E about ${epoch} — two grown-ups, one small person, a lot of sand.`
 
-  // V13 ticket 01: the bio editor MOVED from /settings to /profile (the
-  // "About the parents" card). The autosave machine is the same V12 t01 engine
-  // — no Save button anywhere on /profile either, so the typed bio lands on its
-  // own once the debounce settles and the indicator says so.
-  // V20 t01: /profile opens on the READ view; the bio textarea lives behind
-  // the Edit profile toggle, so this spec taps in first.
+  // V13 ticket 01: the profile editor MOVED from /settings to /profile.
+  // V20 t01: /profile opens on the READ view; the editor is behind the Edit
+  // profile toggle, so this spec taps in first.
+  // V27: the about text is the parent CARD's "About me" (the account-level bio
+  // field is gone), and it saves with the card's own button.
   await page.goto('/profile')
   await settleOnRoute(page, '/profile')
   await page.getByTestId('edit-profile').click()
-  await expect(page.getByRole('heading', { name: 'About the parents', exact: true })).toBeVisible()
-  await page.getByPlaceholder('Who’s in your family, and what are you into? (optional)').fill(about)
-  await expect(page.getByTestId('profile-save-note')).toHaveText('Saved.')
-  await page.goto(`/u/${encodeURIComponent(e.markerHandle)}`)
-  await expect(page.getByText(about)).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'The parents', exact: true })).toBeVisible()
+  await page.getByTestId('parent-name-1').fill(e.markerHandle)
+  await page.getByTestId('parent-about-1').fill(about)
+  await page.getByTestId('parent-save-1').click()
+  await expect(page.getByTestId('parent-save-1')).toHaveText('Saved')
+  // Persistence is checked where the field lives: reopening the editor re-seeds
+  // the card from the saved row.
+  await page.goto('/profile')
+  await settleOnRoute(page, '/profile')
+  await page.getByTestId('edit-profile').click()
+  await expect(page.getByTestId('parent-about-1')).toHaveValue(about)
 
-  // EMPTY: clear the description and the kids, then both pages must still look
+  // EMPTY: clear the card and the kids, then both pages must still look
   // finished — no placeholder, no empty card, no "no photo yet".
   await markerDeleteKids(e)
   await markerPatchProfile(e, { bio: null, family_photo_url: null })
+  await fetch(`${e.url}/rest/v1/parent_cards?profile_id=eq.${e.markerUserId}`, {
+    method: 'DELETE',
+    headers: markerHeaders(e),
+  })
   // The object is deleted by `afterEach`; nulling the column here is what makes
   // the empty render real (and the marker's own row is the only one touched).
   if (created.familyPhotoUploaded) {

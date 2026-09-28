@@ -25,22 +25,25 @@ interface Recorded {
 }
 
 /**
- * A mock that answers BOTH reads this seam makes: `account_links` (by the
- * caller's own RLS, modelled as "whatever rows the test supplies") and
- * `profiles` (the counterparty summary).
+ * A mock that answers the three reads this seam makes: `account_links` (by the
+ * caller's own RLS, modelled as "whatever rows the test supplies"), the
+ * counterparty `profiles` summary, and the counterparty's `parent_cards` (V27 —
+ * her own self-card `about` is the linked row's description).
  */
 function makeLinkMockClient({
   links,
   profiles,
+  cards = [],
 }: {
   links: Array<Record<string, unknown>>
   profiles: Array<Record<string, unknown>>
+  cards?: Array<Record<string, unknown>>
 }): Recorded {
   const calls: string[] = []
   const client = {
     from: (table: string) => {
       calls.push(`from(${table})`)
-      const rows = table === 'account_links' ? links : profiles
+      const rows = table === 'account_links' ? links : table === 'parent_cards' ? cards : profiles
       const builder = {
         select: (cols: string) => {
           calls.push(`select(${table}:${cols})`)
@@ -52,6 +55,10 @@ function makeLinkMockClient({
         },
         eq: (col: string, value: string) => {
           calls.push(`eq(${table}:${col}=${value})`)
+          return builder
+        },
+        order: (col: string, opts: { ascending: boolean }) => {
+          calls.push(`order(${table}:${col},${opts.ascending})`)
           return builder
         },
         maybeSingle: () => Promise.resolve({ data: rows[0] ?? null, error: null }),
@@ -67,8 +74,8 @@ function makeLinkMockClient({
 const ME = 'profile-me'
 const THEM = 'profile-them'
 
-describe('getLinkedPartnerForProfileWithClient (V24 11A read seam; N2 test)', () => {
-  it('returns the accepted partner’s handle, and reads only two narrow rows', async () => {
+describe('getLinkedPartnerForProfileWithClient (V24 11A read seam; N2 test; V27 avatar + self-card about)', () => {
+  it('returns the partner’s handle, avatar and her own card about', async () => {
     const { client, calls } = makeLinkMockClient({
       links: [
         {
@@ -78,14 +85,27 @@ describe('getLinkedPartnerForProfileWithClient (V24 11A read seam; N2 test)', ()
           status: 'accepted',
         },
       ],
-      profiles: [{ id: THEM, display_name: 'Nicole', avatar_url: null }],
+      profiles: [
+        {
+          id: THEM,
+          display_name: 'Nicole',
+          avatar_url: 'https://example.test/nicole.jpg',
+        },
+      ],
+      cards: [{ id: 'c1', profile_id: THEM, name: 'Nicole', about: 'We like parks.', position: 1 }],
     })
-    expect(await getLinkedPartnerForProfileWithClient(client, ME)).toEqual({ handle: 'Nicole' })
+    expect(await getLinkedPartnerForProfileWithClient(client, ME)).toEqual({
+      handle: 'Nicole',
+      avatarUrl: 'https://example.test/nicole.jpg',
+      about: 'We like parks.',
+    })
     // The wiring, not just the answer: the links table anchored on the VIEWED
-    // profile, then ONE narrow profile read for the counterparty.
+    // profile, ONE narrow profile read for the counterparty, then HER cards for
+    // the words.
     expect(calls).toContain('from(account_links)')
     expect(calls).toContain(`or(requester_id.eq.${ME},addressee_id.eq.${ME})`)
     expect(calls).toContain(`eq(profiles:id=${THEM})`)
+    expect(calls).toContain(`eq(parent_cards:profile_id=${THEM})`)
   })
 
   it('finds the partner when the viewed profile is the ADDRESSEE', async () => {
@@ -93,15 +113,32 @@ describe('getLinkedPartnerForProfileWithClient (V24 11A read seam; N2 test)', ()
       links: [{ id: 'l1', requester_id: THEM, addressee_id: ME, status: 'accepted' }],
       profiles: [{ id: THEM, display_name: 'Nicole', avatar_url: null }],
     })
-    expect(await getLinkedPartnerForProfileWithClient(client, ME)).toEqual({ handle: 'Nicole' })
+    expect(await getLinkedPartnerForProfileWithClient(client, ME)).toEqual({
+      handle: 'Nicole',
+      avatarUrl: null,
+      about: null,
+    })
+  })
+
+  it('V27: about is null when she has no self-card, or one with a blank about', async () => {
+    const { client } = makeLinkMockClient({
+      links: [{ id: 'l1', requester_id: ME, addressee_id: THEM, status: 'accepted' }],
+      profiles: [{ id: THEM, display_name: 'Nicole', avatar_url: null }],
+      cards: [
+        { id: 'c1', profile_id: THEM, name: 'Someone else', about: 'Not hers', position: 1 },
+        { id: 'c2', profile_id: THEM, name: 'Nicole', about: '   ', position: 2 },
+      ],
+    })
+    expect((await getLinkedPartnerForProfileWithClient(client, ME))?.about).toBeNull()
   })
 
   it('is null for a THIRD account: RLS hands the caller zero rows', async () => {
     const { client, calls } = makeLinkMockClient({ links: [], profiles: [] })
     expect(await getLinkedPartnerForProfileWithClient(client, ME)).toBeNull()
-    // Nothing to resolve, so the second read never happens — no query per
-    // request, and no profile row is even in play.
+    // Nothing to resolve, so neither the profile nor the card read happens — no
+    // query per request, and no row is even in play.
     expect(calls).not.toContain('from(profiles)')
+    expect(calls).not.toContain('from(parent_cards)')
   })
 
   it('is null for pending and declined rows: only an accepted link is a partner', async () => {
@@ -125,12 +162,14 @@ describe('getLinkedPartnerForProfileWithClient (V24 11A read seam; N2 test)', ()
     expect(await getLinkedPartnerForProfileWithClient(client, ME)).toBeNull()
   })
 
-  it('carries the HANDLE alone — no dead profileId (finding N3)', async () => {
+  it('V27: carries exactly handle + avatarUrl + about — no dead profileId (finding N3)', async () => {
     const { client } = makeLinkMockClient({
       links: [{ id: 'l1', requester_id: ME, addressee_id: THEM, status: 'accepted' }],
       profiles: [{ id: THEM, display_name: 'Nicole', avatar_url: null }],
+      cards: [{ id: 'c1', profile_id: THEM, name: 'Nicole', about: 'A line about me.', position: 1 }],
     })
     const partner = await getLinkedPartnerForProfileWithClient(client, ME)
-    expect(Object.keys(partner ?? {})).toEqual(['handle'])
+    expect(partner).toEqual({ handle: 'Nicole', avatarUrl: null, about: 'A line about me.' })
+    expect(Object.keys(partner ?? {}).sort()).toEqual(['about', 'avatarUrl', 'handle'])
   })
 })
