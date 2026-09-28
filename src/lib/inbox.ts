@@ -17,7 +17,7 @@
  * Supabase client, no React — trivially testable, mock-free.
  */
 
-import { cardWhenLabel, localDayKey } from './feed'
+import { cardWhenLabel, formatStartDayLabel, localDayKey } from './feed'
 
 /** A normalized row of the merged inbox list (one per distinct counterpart). */
 export interface MergedConversation {
@@ -512,4 +512,78 @@ export function activeTodayLabel(
 ): string | null {
   if (lastSeenAtIso === null || lastSeenAtIso === undefined || lastSeenAtIso === '') return null
   return localDayKey(lastSeenAtIso) === localDayKey(nowIso) ? 'Active today' : null
+}
+
+/**
+ * V27 slice 5 — the one-tap meetup replies, pinned in order.
+ *
+ * The five phrases a parent actually sends while coordinating a drop-in. The
+ * LABEL is the chip's short text; the BODY is what lands in the composer when
+ * the chip is tapped — and therefore what is sent if the parent then taps Send.
+ * A chip NEVER sends on its own, so the body can be amended first. The list is
+ * `readonly` (callers cannot reorder or push); the exact five labels and the
+ * non-empty bodies are pinned by the sibling test.
+ */
+export const QUICK_REPLIES: readonly { label: string; body: string }[] = [
+  { label: 'On my way', body: 'On my way!' },
+  { label: 'Running late', body: 'Running about 10 minutes late.' },
+  { label: "We're here", body: "We're here!" },
+  { label: 'Still on?', body: 'Still on?' },
+  { label: "Can't make it", body: "Can't make it after all — sorry!" },
+]
+
+/**
+ * V27 slice 5 — the time-of-day under one message bubble, e.g. `3:04 PM`.
+ *
+ * Locale-independent by construction (fixed 12-hour + AM/PM wording), the same
+ * discipline as feed.ts's day tables: a screenshot or a test run must not move
+ * with the device locale. An empty or unparseable instant yields `''` rather
+ * than throwing or painting "Invalid Date", and the caller renders nothing.
+ *
+ * `nowIso` is accepted for call-site symmetry with `daySeparatorLabel` (both
+ * read one message instant against the current time); a clock time-of-day does
+ * not depend on it, which is why it is deliberately unused.
+ *
+ * Pure: no I/O, no clock read, no mutation, never throws.
+ */
+export function messageTimestampLabel(iso: string, nowIso: string): string {
+  void nowIso
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  const hour24 = date.getHours()
+  const meridiem = hour24 < 12 ? 'AM' : 'PM'
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12
+  return `${hour12}:${minutes} ${meridiem}`
+}
+
+/**
+ * V27 slice 5 — the label on a thread's day separator: `Today`, `Yesterday`,
+ * or an older local date such as `Sat, Sep 27`.
+ *
+ * The day BOUNDARY is `localDayKey` (feed.ts) — the app's ONE day rule — so a
+ * separator can only ever break a thread exactly where the feed would start a
+ * new day section. "Yesterday" is the local calendar day BEFORE `nowIso`, not
+ * "24 hours ago": a message at 11pm and one at 1am are different days however
+ * close they are.
+ *
+ * An older day reuses `formatStartDayLabel`'s fixed English day words, so the
+ * thread cannot grow a second date format beside the feed's. Deliberately never
+ * "Tomorrow": a past message must not be labelled with a future word. An empty
+ * or unparseable instant yields `''` (the caller renders no separator).
+ *
+ * Pure: no I/O, no clock read, no mutation, never throws.
+ */
+export function daySeparatorLabel(iso: string, nowIso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  const key = localDayKey(iso)
+  const now = new Date(nowIso)
+  if (!Number.isNaN(now.getTime())) {
+    if (key === localDayKey(nowIso)) return 'Today'
+    const yesterday = new Date(now)
+    yesterday.setDate(yesterday.getDate() - 1)
+    if (key === localDayKey(yesterday.toISOString())) return 'Yesterday'
+  }
+  return formatStartDayLabel(key)
 }

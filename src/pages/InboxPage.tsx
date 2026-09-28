@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { BackControl } from '../components/BackControl'
 // V24 slice 04: the row's FACE reuses the app's ONE avatar primitive (40px,
@@ -38,10 +38,13 @@ import type {
 import { REACTION_KINDS } from '../lib/db'
 import {
   activeTodayLabel,
+  daySeparatorLabel,
   firstNamedCounterpart,
   groupLabel,
   mergeConversations,
   messageSenderLabel,
+  messageTimestampLabel,
+  QUICK_REPLIES,
   singleSenderCounterpart,
   threadContextLine,
 } from '../lib/inbox'
@@ -51,6 +54,7 @@ import type {
   GroupParticipant,
   MergedConversation,
 } from '../lib/inbox'
+import { localDayKey } from '../lib/feed'
 
 /**
  * /inbox — parent↔parent messaging (V14 ticket 01, migration 0042).
@@ -248,8 +252,11 @@ function MessageBubble({
   message,
   isOwn,
   senderName,
+  timeLabel,
+  failed,
   reaction,
   onReact,
+  onRetry,
 }: {
   message: MessageRow
   isOwn: boolean
@@ -259,8 +266,21 @@ function MessageBubble({
    * "Unknown" (which reads as a broken person, the founder's report).
    */
   senderName: string | null
+  /**
+   * V27 slice 5: this message's local time-of-day (`messageTimestampLabel`).
+   * Computed by the page (one `now` per render) and rendered in the meta row at
+   * the 14px floor.
+   */
+  timeLabel: string
+  /**
+   * V27 slice 5: this optimistic bubble's send failed. It stays visible and
+   * wears the `Not sent · Retry` control; a successful send clears the flag.
+   */
+  failed: boolean
   reaction: ReactionState
   onReact: (messageId: string, kind: ReactionKind | null) => void
+  /** V27 slice 5: re-run the SAME send for a failed bubble. */
+  onRetry: (message: MessageRow) => void
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const countLabel = reactionCountLabel(reaction.count)
@@ -287,7 +307,13 @@ function MessageBubble({
         >
           {message.body}
         </p>
-        <div className={`relative mt-1 flex items-center gap-1.5 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+        <div className={`relative mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+          {/* V27 s5: the bubble's local time-of-day, at the 14px text floor. */}
+          {timeLabel !== '' ? (
+            <span data-testid={`message-time-${message.id}`} className="text-sm text-slate-500">
+              {timeLabel}
+            </span>
+          ) : null}
           {/* The summary pill: the viewer's glyph + count; opens the picker. */}
           <button
             type="button"
@@ -304,6 +330,20 @@ function MessageBubble({
               <span data-testid={`react-count-${message.id}`}>{countLabel}</span>
             ) : null}
           </button>
+          {/* V27 s5: a failed send KEEPS its bubble and offers this control
+              instead of vanishing. The 44px floor is on the control itself
+              (`min-h-11`), and the body it re-sends is the bubble's own. */}
+          {failed ? (
+            <button
+              type="button"
+              data-testid={`retry-${message.id}`}
+              aria-label="Not sent. Retry sending this message."
+              onClick={() => onRetry(message)}
+              className="inline-flex min-h-11 items-center rounded-lg px-2 text-sm font-semibold text-red-700 transition-colors motion-reduce:transition-none hover:bg-red-50"
+            >
+              Not sent · Retry
+            </button>
+          ) : null}
           {pickerOpen ? (
             <div
               data-testid={`react-picker-${message.id}`}
@@ -378,7 +418,14 @@ export function InboxPage() {
   const [draft, setDraft] = useState('')
   const [sendError, setSendError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
+  // V27 slice 5: the optimistic rows whose write FAILED. A failed row is kept
+  // (never filtered out) and its id lives here so the bubble can wear the
+  // `Not sent · Retry` control; the id is cleared when a retry succeeds.
+  const [failedIds, setFailedIds] = useState<string[]>([])
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
+  // V27 slice 5: a quick-reply chip fills the draft AND puts the caret back in
+  // the textarea so the parent can amend before Send (a chip never sends).
+  const composerRef = useRef<HTMLTextAreaElement | null>(null)
 
   // --- Reaction state (V15 ticket 08, A26) ---------------------------------
   // Keyed by message id: { count, mine }. Loaded in one batch when the thread
@@ -450,6 +497,8 @@ export function InboxPage() {
       setThread(null)
       setDraft('')
       setSendError(null)
+      // A failed-send marker belongs to the thread it was made in.
+      setFailedIds([])
       // Closing the thread drops the reaction state with it — a stale map
       // must never colour a bubble in the NEXT conversation.
       setReactions({})
@@ -459,6 +508,7 @@ export function InboxPage() {
     setThread({ status: 'loading' })
     setDraft('')
     setSendError(null)
+    setFailedIds([])
     setReactions({})
     // A counterpart resolved for the PREVIOUS thread must never name this one.
     setFallbackCounterpart({ id: '', name: '' })
@@ -849,7 +899,16 @@ export function InboxPage() {
     }
   }
 
-  /** Optimistic append + the real write; on failure the optimistic row is rolled back. */
+  /**
+   * Optimistic append + the real write.
+   *
+   * V27 slice 5: a FAILED write no longer deletes the optimistic row (the old
+   * behaviour made a parent's words disappear with no trace). The bubble stays
+   * visible, its id is recorded in `failedIds` so it wears `Not sent · Retry`,
+   * and the inline error line still explains why. Retry (`handleRetry`) re-runs
+   * the SAME body; the realtime echo then reconciles the `pending-` row via
+   * `reconcileOptimisticMessage` (sender+body match).
+   */
   async function handleSend(): Promise<void> {
     if (userId === null) return
     const validationError = validateMessageBody(draft)
@@ -881,15 +940,68 @@ export function InboxPage() {
         await sendMessage(threadId, draft)
       }
     } catch (err: unknown) {
-      // Roll back the optimistic row + say so honestly.
-      setThread((prev) =>
-        prev !== null && prev.status === 'ready'
-          ? { ...prev, messages: prev.messages.filter((m) => m.id !== optimistic.id) }
-          : prev,
-      )
+      // KEEP the optimistic row and flag it failed (never filter it out).
+      setFailedIds((ids) => (ids.includes(optimistic.id) ? ids : [...ids, optimistic.id]))
       setSendError(err instanceof Error ? err.message : 'Could not send your message.')
     } finally {
       setSending(false)
+    }
+  }
+
+  /**
+   * V27 slice 5: re-send a FAILED bubble.
+   *
+   * Deliberately uses `message.body` — the body the bubble was created with —
+   * NOT the composer draft, so retry re-sends exactly the message the parent
+   * wrote. The realtime echo reconciles the `pending-` row by sender+body.
+   *
+   * GUARD: if the `pending-` row is already gone (the echo landed and replaced
+   * it with the real uuid), there is nothing to retry — sending again would
+   * duplicate the message. The marker is simply cleared and no wire call fires.
+   */
+  async function handleRetry(message: MessageRow): Promise<void> {
+    if (userId === null) return
+    const stillPending =
+      thread !== null &&
+      thread.status === 'ready' &&
+      thread.messages.some((m) => m.id === message.id)
+    if (!stillPending) {
+      setFailedIds((ids) => ids.filter((id) => id !== message.id))
+      return
+    }
+    setSending(true)
+    setSendError(null)
+    try {
+      if (dmTargetId !== null) {
+        await sendDirectMessage(dmTargetId, message.body)
+      } else if (threadId !== null) {
+        await sendMessage(threadId, message.body)
+      } else {
+        return
+      }
+      // Success: drop the marker; the realtime echo reconciles the pending row.
+      setFailedIds((ids) => ids.filter((id) => id !== message.id))
+    } catch (err: unknown) {
+      // Put the marker back and say so honestly.
+      setFailedIds((ids) => (ids.includes(message.id) ? ids : [...ids, message.id]))
+      setSendError(err instanceof Error ? err.message : 'Could not send your message.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  /**
+   * V27 slice 5: a quick-reply chip fills the composer with its body and
+   * focuses the textarea. It NEVER sends — the parent may amend first, and Send
+   * (or Enter) is still an explicit act.
+   */
+  function applyQuickReply(body: string): void {
+    setDraft(body)
+    setSendError(null)
+    const el = composerRef.current
+    if (el !== null) {
+      el.style.height = 'auto'
+      el.focus()
     }
   }
 
@@ -1013,6 +1125,10 @@ export function InboxPage() {
         : threadContextLine(contextStartsAt, contextEndsAt, contextPlaceName),
     [threadId, contextStartsAt, contextEndsAt, contextPlaceName],
   )
+
+  // V27 s5: ONE `now` per render, so every bubble's time and every day
+  // separator in this frame are computed against the same instant.
+  const nowIso = new Date().toISOString()
 
   return (
     <div className="mx-auto max-w-md">
@@ -1209,31 +1325,81 @@ export function InboxPage() {
                     No messages yet — say hi below.
                   </p>
                 ) : (
-                  thread.messages.map((message) => (
-                    <MessageBubble
-                      key={message.id}
-                      message={message}
-                      isOwn={userId !== null && message.sender_id === userId}
-                      senderName={messageSenderLabel(message, {
-                        viewerId: userId,
-                        viewerDisplayName: profile?.display_name ?? null,
-                        // The thread-level name is a LAST resort, and only when
-                        // the ids match — a group thread can never attribute
-                        // one participant's message to another.
-                        counterpart,
-                      })}
-                      reaction={reactions[message.id] ?? { count: 0, mine: false, myKind: null }}
-                      onReact={(messageId, kind) => void handleReact(messageId, kind)}
-                    />
-                  ))
+                  thread.messages.map((message, index) => {
+                    // V27 s5: one separator per DAY — the app's ONE day rule
+                    // (localDayKey) decides the boundary, so the thread breaks
+                    // exactly where the feed would start a new day section.
+                    // The FIRST message always gets its day label.
+                    const dayKey = localDayKey(message.created_at)
+                    const previous = index > 0 ? thread.messages[index - 1] : null
+                    const separatorLabel =
+                      previous === null || localDayKey(previous.created_at) !== dayKey
+                        ? daySeparatorLabel(message.created_at, nowIso)
+                        : ''
+                    return (
+                      <Fragment key={message.id}>
+                        {separatorLabel !== '' ? (
+                          <p
+                            data-testid={`day-separator-${dayKey}`}
+                            className="mt-1 text-center text-sm font-medium text-slate-500"
+                          >
+                            {separatorLabel}
+                          </p>
+                        ) : null}
+                        <MessageBubble
+                          message={message}
+                          isOwn={userId !== null && message.sender_id === userId}
+                          senderName={messageSenderLabel(message, {
+                            viewerId: userId,
+                            viewerDisplayName: profile?.display_name ?? null,
+                            // The thread-level name is a LAST resort, and only when
+                            // the ids match — a group thread can never attribute
+                            // one participant's message to another.
+                            counterpart,
+                          })}
+                          timeLabel={messageTimestampLabel(message.created_at, nowIso)}
+                          failed={failedIds.includes(message.id)}
+                          reaction={reactions[message.id] ?? { count: 0, mine: false, myKind: null }}
+                          onReact={(messageId, kind) => void handleReact(messageId, kind)}
+                          onRetry={(failedMessage) => void handleRetry(failedMessage)}
+                        />
+                      </Fragment>
+                    )
+                  })
                 )}
                 <div ref={messagesEndRef} />
               </div>
+
+              {/* V27 s5: one-tap meetup replies, ABOVE the composer. A chip
+                  fills the draft and focuses the textarea; it never sends, so
+                  the parent can amend first. Hidden while a send is in flight.
+                  Every chip is a 44px (`min-h-11`) control at the 14px floor,
+                  and the row scrolls horizontally rather than wrapping at
+                  390px. */}
+              {!sending ? (
+                <div
+                  data-testid="quick-replies"
+                  className="mt-3 flex gap-2 overflow-x-auto pb-1"
+                >
+                  {QUICK_REPLIES.map((reply, index) => (
+                    <button
+                      key={reply.label}
+                      type="button"
+                      data-testid={`quick-reply-${index}`}
+                      onClick={() => applyQuickReply(reply.body)}
+                      className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
+                    >
+                      {reply.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
 
               {/* Composer: auto-grow textarea (max ~4 lines) + Send (disabled
                   when empty). Enter sends on desktop; Shift+Enter breaks. */}
               <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
                 <textarea
+                  ref={composerRef}
                   value={draft}
                   onChange={handleComposerChange}
                   onKeyDown={handleComposerKeyDown}

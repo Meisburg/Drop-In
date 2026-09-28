@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   activeTodayLabel,
+  daySeparatorLabel,
   firstNamedCounterpart,
   groupLabel,
   mergeConversations,
   mergeKeyFor,
   messageSenderLabel,
+  messageTimestampLabel,
+  QUICK_REPLIES,
   singleSenderCounterpart,
   sumUnread,
   threadContextLine,
@@ -708,5 +711,97 @@ describe('sumUnread (V27 s3 — the Inbox tab badge total)', () => {
     const total = sumUnread([{ unreadCount: Number.NaN }, { unreadCount: undefined }])
     expect(Number.isNaN(total)).toBe(false)
     expect(total).toBe(0)
+  })
+})
+
+describe('QUICK_REPLIES (V27 s5 — exactly five pinned label/body pairs)', () => {
+  it('is exactly five, in the pinned order', () => {
+    expect(QUICK_REPLIES).toHaveLength(5)
+    expect(QUICK_REPLIES.map((reply) => reply.label)).toEqual([
+      'On my way',
+      'Running late',
+      "We're here",
+      'Still on?',
+      "Can't make it",
+    ])
+  })
+
+  it('carries a non-empty label and body for every chip', () => {
+    for (const reply of QUICK_REPLIES) {
+      expect(reply.label.trim()).not.toBe('')
+      expect(reply.body.trim()).not.toBe('')
+    }
+  })
+
+  it('pins the two bodies the brief spells out verbatim', () => {
+    const runningLate = QUICK_REPLIES.find((reply) => reply.label === 'Running late')
+    const cantMakeIt = QUICK_REPLIES.find((reply) => reply.label === "Can't make it")
+    expect(runningLate?.body).toBe('Running about 10 minutes late.')
+    expect(cantMakeIt?.body).toBe("Can't make it after all — sorry!")
+  })
+})
+
+describe('messageTimestampLabel (V27 s5 — the local time-of-day)', () => {
+  it('formats a local clock time with AM/PM, zero-padded minutes', () => {
+    const iso = new Date(2026, 8, 27, 15, 4).toISOString()
+    expect(messageTimestampLabel(iso, iso)).toBe('3:04 PM')
+  })
+
+  it('handles midnight and noon as 12-hour clocks, not 0', () => {
+    expect(messageTimestampLabel(new Date(2026, 8, 27, 0, 5).toISOString(), 'now')).toBe('12:05 AM')
+    expect(messageTimestampLabel(new Date(2026, 8, 27, 12, 0).toISOString(), 'now')).toBe('12:00 PM')
+    expect(messageTimestampLabel(new Date(2026, 8, 27, 23, 59).toISOString(), 'now')).toBe('11:59 PM')
+  })
+
+  it('returns \'\' for empty or unparseable instants instead of throwing', () => {
+    expect(messageTimestampLabel('', 'now')).toBe('')
+    expect(messageTimestampLabel('not-a-date', 'now')).toBe('')
+    expect(messageTimestampLabel('nonsense', 'also-nonsense')).toBe('')
+  })
+
+  it('does not leak "NaN", "undefined" or "Invalid Date"', () => {
+    const label = messageTimestampLabel('', 'now')
+    expect(label).not.toMatch(/NaN|undefined|Invalid Date/)
+  })
+})
+
+describe('daySeparatorLabel (V27 s5 — Today / Yesterday / an older local date)', () => {
+  // Built from LOCAL Date components so the cases mean the same thing in every
+  // test-runner timezone (the helper is explicitly local-day based).
+  const now = new Date(2026, 8, 27, 18, 0).toISOString()
+  const todayIso = new Date(2026, 8, 27, 9, 30).toISOString()
+  const yesterdayIso = new Date(2026, 8, 26, 23, 30).toISOString()
+  const olderIso = new Date(2026, 8, 20, 9, 0).toISOString()
+
+  it('says Today for the same local day', () => {
+    expect(daySeparatorLabel(todayIso, now)).toBe('Today')
+  })
+
+  it('says Yesterday for the previous local day, however few hours apart', () => {
+    // 11:30pm the night before is still "Yesterday", not "hours ago".
+    expect(daySeparatorLabel(yesterdayIso, now)).toBe('Yesterday')
+  })
+
+  it('names an older local date with short weekday + month + day', () => {
+    const expected = new Date(2026, 8, 20).toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    })
+    expect(daySeparatorLabel(olderIso, now)).toBe(expected)
+    expect(daySeparatorLabel(olderIso, now)).toMatch(/^[A-Z][a-z]{2}, [A-Z][a-z]{2} \d{1,2}$/)
+  })
+
+  it('never says Tomorrow for a past instant, even across a midnight clock skew', () => {
+    const future = new Date(2026, 8, 28, 9, 0).toISOString()
+    expect(daySeparatorLabel(future, now)).not.toBe('Tomorrow')
+  })
+
+  it('returns \'\' for empty or unparseable instants instead of throwing', () => {
+    expect(daySeparatorLabel('', now)).toBe('')
+    expect(daySeparatorLabel('not-a-date', now)).toBe('')
+    // A broken `now` must not throw through `.toISOString()` either.
+    expect(daySeparatorLabel('not-a-date', 'also-not-a-date')).toBe('')
+    expect(daySeparatorLabel(todayIso, 'also-not-a-date')).not.toBe('Today')
   })
 })
