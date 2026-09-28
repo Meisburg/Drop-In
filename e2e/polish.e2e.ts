@@ -293,19 +293,25 @@ test('(b) a moderator unhides a hidden comment (the mod flag flipped by the live
   }
 })
 
-test('(c) typing on /profile saves itself — leaving the page loses nothing', async ({ page }) => {
+test('(c) editing a parent card saves itself — leaving the page loses nothing', async ({ page }) => {
+  const marker = readMarkerMeta()
+  const { url, headers, userId } = markerRest()
+  // Deterministic: a leftover card from another spec would change which slot is
+  // the owner's, so start clean (the afterEach repeats this defensively).
+  await fetch(`${url}/rest/v1/parent_cards?profile_id=eq.${userId}`, { method: 'DELETE', headers })
+
   await page.goto('/profile')
   await openProfileEditor(page)
 
-  // V12 t01: the unsaved-changes guard is gone. The typed text autosaves on
-  // its own (the debounce settles, the always-on indicator says so), and the
-  // in-app link goes straight through with no "leave without saving?" dialog.
-  // (Writes the marker's bio; the afterEach nulls it back.)
-  // V13 ticket 01: the bio editor moved from /settings to /profile.
-  const bio = page.getByPlaceholder('Who’s in your family, and what are you into? (optional)')
-  const typed = `e2e autosaved ${Math.floor(Date.now() / 1000)}`
-  await bio.fill(typed)
-  await expect(page.getByTestId('profile-save-note')).toHaveText('Saved.')
+  // V27: the account-level bio field is gone. The parent card's "About me" is
+  // the one place you write about yourself, and it saves with the card's own
+  // button. The unsaved-changes guard is still gone, so the in-app link goes
+  // straight through with no "leave without saving?" dialog.
+  const typed = `e2e saved ${Math.floor(Date.now() / 1000)}`
+  await page.getByTestId('parent-name-1').fill(marker.displayName)
+  await page.getByTestId('parent-about-1').fill(typed)
+  await page.getByTestId('parent-save-1').click()
+  await expect(page.getByTestId('parent-save-1')).toHaveText('Saved')
 
   // The in-app link goes through: no dialog at all, straight to / (Drop Ins).
   const dropIns = page.getByRole('link', { name: 'Drop Ins', exact: true })
@@ -314,14 +320,12 @@ test('(c) typing on /profile saves itself — leaving the page loses nothing', a
   await page.waitForURL('/')
   await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible()
 
-  // And the write persisted: a re-open of /profile re-seeds from the saved
-  // profile, so the typed text is still there (nothing was lost by the
-  // mid-edit navigation).
+  // And the write persisted: a re-open of /profile re-seeds from the saved card,
+  // so the typed text is still there (nothing was lost by the mid-edit
+  // navigation).
   await page.goto('/profile')
   await openProfileEditor(page)
-  await expect(
-    page.getByPlaceholder('Who’s in your family, and what are you into? (optional)'),
-  ).toHaveValue(typed)
+  await expect(page.getByTestId('parent-about-1')).toHaveValue(typed)
 })
 
 test('(d) a dismissed share sheet plus a failed copy says so, with the URL to select', async ({
@@ -403,8 +407,13 @@ test.afterEach(async () => {
     await fetch(postQuery, { method: 'DELETE', headers: { ...headers, Prefer: 'return=representation' } })
     const kidQuery = `${url}/rest/v1/kids?profile_id=eq.${userId}&select=id`
     await fetch(kidQuery, { method: 'DELETE', headers: { ...headers, Prefer: 'return=representation' } })
-    // V12 t01: test (c) writes the marker's bio now — null it back so the
-    // e2e- prefix sweep (and the next run's seed) starts clean.
+    // V12 t01: test (c) used to write the marker's bio; it writes a parent card
+    // now (V27). Clear both so the e2e- prefix sweep (and the next run's seed)
+    // starts clean.
+    await fetch(`${url}/rest/v1/parent_cards?profile_id=eq.${userId}`, {
+      method: 'DELETE',
+      headers,
+    })
     await fetch(`${url}/rest/v1/profiles?id=eq.${userId}`, {
       method: 'PATCH',
       headers,

@@ -11,7 +11,6 @@ import { ProfileView } from '../components/ProfileView'
 import { galleryPhotosFrom } from '../lib/photoGallery'
 import {
   addKid,
-  BIO_MAX_LENGTH,
   clearAvatar,
   HandleTakenError,
   listKids,
@@ -48,7 +47,7 @@ import {
   type LinkView,
   type ParentCardLinkState,
 } from '../lib/links'
-import { nextParentPosition, parentCardList, parentCardSaveLabel, PARENT_CARDS_BLURB } from '../lib/parentCards'
+import { parentCardList, parentCardSaveLabel, PARENT_CARDS_BLURB } from '../lib/parentCards'
 import type { AccountLink, Kid, ParentCard, ProfileWithKids } from '../lib/types'
 import {
   planProfileSave,
@@ -105,8 +104,8 @@ const AUTOSAVE_DEBOUNCE_MS = 400
  *
  *  - EDIT MODE (behind that button) is everything this page used to render
   *    unconditionally: the identity card, the family photo, "About the kids",
-  *    "About the parents" (the bio), "The parents" (parent cards), and "Linked
-  *    parent". Nothing about that machinery changed in the move — the same
+ *    and "The parents" (the owner’s card, plus a linked partner’s read-only
+ *    card). Nothing about that machinery changed in the move — the same
  *    debounced autosave machine (V12 t01), the same pure planner
  *    (planProfileSave, lib/profileSave.ts) writing only what changed, the same
  *    crop steps writing OBJECT PATHS rather than URLs.
@@ -127,12 +126,9 @@ const AUTOSAVE_DEBOUNCE_MS = 400
  *    useKidPhotoUrls — the EDITOR is the owner's own surface, so the render it
  *    drives here is the owner's; V25 t14 widened who may mint, not who edits),
  *    and Remove; plus the add-a-kid row and the five-kid cap)
- *  - "About the parents" (the bio, editable textarea; the display name renders
- *    as its OWN text node inside the photo card above, so a spec can match it
- *    exactly while the app-shell header shows the @-prefixed form)
  *  - "Family photos" (always-present card: the signed-URL image when
  *    set, plus the Add/Change control either way). V23 s16 placed it HERE, in
- *    the parents region right after the bio, matching the read view's sequence
+ *    the parents region, matching the read view's sequence
  *    (it used to sit 2nd, before the kids — the drift this slice kills). The
  *    heading is "Family photos" on BOTH surfaces (V24: the founder asked for a
  *    dedicated section heading; the read view gained its own h2 in the same
@@ -932,33 +928,11 @@ export function ProfilePage() {
   }
 
   /**
-   * THE AUTOSAVE'S DECISION, computed at render (the pure planProfileSave —
-   * the render-time plan feeds ONLY the bio field's inline "blocked" state
-   * below, so the input can show a validation error before the debounced
-   * write is even attempted; the write itself re-plans from the same inputs
-   * at write time, for the sections it actually attempts). The kid validator
-   * is the db layer's own (validateKid + validateKidLikes), so the inline
-   * message and the reason the write is skipped are one string, not two
-   * copies.
+   * V27: the render-time save plan that fed the bio field's inline "blocked"
+   * state is GONE with the field. The display name's own error still renders
+   * from `writeErrors.name` (and the planner's `name` validator runs at write
+   * time inside `runAutosave`), so nothing on screen loses a validation message.
    */
-  const savePlan =
-    draft === null || baseline === null
-      ? null
-      : planProfileSave({
-          baseline,
-          draft,
-          kidRows: (kids ?? []).map(toKidRowValues),
-          kidDrafts,
-          validators: {
-            // V15 ticket 06 (A20): the display name is now edited inline on this
-            // page — same validator /settings uses (the empty check; the db
-            // layer's own updateDisplayName handles the taken-handle case at
-            // write time).
-            name: (value) => (value.trim() === '' ? 'Your display name can’t be empty.' : null),
-            bio: validateBio,
-            kid: (kid) => validateKid(kid.firstName, kid.age) ?? validateKidLikes(kid.likes),
-          },
-        })
 
   /**
    * One text section's edit: the draft changes (the debounced autosave picks
@@ -1049,27 +1023,51 @@ export function ProfilePage() {
   const removingKidSubject = removingKidName === '' ? 'This kid' : removingKidName
 
   const kidsAtCap = (kids ?? []).length >= MAX_KIDS_PER_PROFILE
-  const liveBioError = writeErrors.bio ?? savePlan?.blockedSections.find((item) => item.section === 'bio')?.error ?? null
 
   /**
-   * V24 slice 11B: THE PARENT-CARD GRID AND ITS LINK CONTROL.
+   * V27 (the founder's model): A PROFILE IS ONE PARENT.
    *
-   * `parentCardEditors` is the rendered list — the saved cards in slot order,
-   * then the empty "add a parent" slot when there is room. It is built here
-   * rather than inline so the link control can be told each editor's INDEX (the
-   * first card is where an unmatched account-level link state lands — see
-   * `parentCardLinkState`) and the slot the page currently treats as open.
+   * `parentCardEditors` is the rendered list — the owner's OWN card (or an empty
+   * slot to create it), then any linked partner as a READ-ONLY entry. Nothing
+   * here offers a free-text second parent: the partner is an account you LINK,
+   * and her words live on her own profile.
    *
-   * `linkState` is null while the rows are still loading, and the card renders
-   * no control at all in that beat: rendering the invite form first and swapping
-   * it for "Linked to @partner" a moment later would offer an action the parent
-   * may not need.
+   * The owner's card is the one whose name IS this account's display name,
+   * falling back to the first card. A card matching the accepted partner's
+   * handle is that partner and renders read-only; any other legacy card is
+   * read-only too, so nothing can be typed into someone else's row. The read
+   * surface synthesizes the linked partner's row when no card exists for her.
+   *
+   * `linkState` is null while the link rows are still loading, and the card
+   * renders no control at all in that beat: rendering the invite form first and
+   * swapping it for "Linked to @partner" a moment later would offer an action
+   * the parent may not need.
    */
   const parentCardsList = parentCardList(parentCards)
-  const nextParentSlot = nextParentPosition(parentCards)
-  const parentCardEditors: Array<{ card: ParentCard | null; slot: number }> = [
-    ...parentCardsList.map((card) => ({ card, slot: card.position })),
-    ...(nextParentSlot === null ? [] : [{ card: null, slot: nextParentSlot }]),
+  const linkState: LinkView | null =
+    accountLinks === null ? null : linkView(accountLinks, userId ?? '')
+  const ownerCard =
+    parentCardsList.find(
+      (card) => normalizeHandle(card.name) === normalizeHandle(profile?.display_name ?? ''),
+    ) ??
+    parentCardsList[0] ??
+    null
+  const linkedHandle =
+    linkState === null || linkState.kind === 'none' ? '' : linkState.otherHandle
+  const linkedCard =
+    linkedHandle === '' || ownerCard === null
+      ? null
+      : parentCardsList.find(
+          (card) =>
+            card !== ownerCard && normalizeHandle(card.name) === normalizeHandle(linkedHandle),
+        ) ?? null
+  const otherCards = parentCardsList.filter((card) => card !== ownerCard && card !== linkedCard)
+  const parentCardEditors: Array<{ card: ParentCard | null; slot: number; readOnly: boolean }> = [
+    { card: ownerCard, slot: ownerCard?.position ?? 1, readOnly: false },
+    ...(linkedCard === null
+      ? []
+      : [{ card: linkedCard, slot: linkedCard.position, readOnly: true }]),
+    ...otherCards.map((card) => ({ card, slot: card.position, readOnly: true })),
   ]
   const firstEditorSlot = parentCardEditors[0]?.slot ?? 1
   /**
@@ -1088,8 +1086,6 @@ export function ProfilePage() {
    */
   const openSlotExists = parentCardEditors.some((entry) => entry.slot === linkOpenSlot)
   const activeLinkSlot = linkOpenSlot !== null && openSlotExists ? linkOpenSlot : firstEditorSlot
-  const linkState: LinkView | null =
-    accountLinks === null ? null : linkView(accountLinks, userId ?? '')
   /**
    * WHICH CARD CARRIES THE ACCOUNT-LEVEL STATE — decided over the WHOLE list
    * (`parentCardLinkOwnerIndex`), never per card: a per-card "match, else the
@@ -1505,38 +1501,19 @@ export function ProfilePage() {
         )}
       </div>
 
-      {/* "About the parents" — the bio (editable, autosaving). The display name
-          (the public handle) is NOT here: it renders as its OWN text node at
-          the BOTTOM of the page (the identity block), so a spec can match it
-          exactly while the app-shell header shows the @-prefixed form. */}
-      <div className="flex flex-col gap-3">
-        <h2 className="font-display text-lg font-semibold text-slate-900">About the parents</h2>
-        <label className="mt-2 flex flex-col gap-1 text-sm">
-          <span className="text-slate-700">Tell other families about yourselves</span>
-          <textarea
-            data-testid="about-family-input"
-            className={
-              'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
-              (liveBioError !== null ? 'border-red-400' : 'border-slate-300')
-            }
-            value={draft?.bio ?? ''}
-            onChange={(e) => editDraft({ bio: e.target.value }, 'bio')}
-            placeholder="Who’s in your family, and what are you into? (optional)"
-            maxLength={BIO_MAX_LENGTH}
-            rows={3}
-            disabled={draft === null}
-          />
-        </label>
-        <span className="mt-1 block text-xs text-slate-500">
-          {(draft?.bio ?? '').length}/{BIO_MAX_LENGTH}
-        </span>
-        {liveBioError !== null ? (
-          <p className="mt-1 text-sm text-red-600">{liveBioError}</p>
-        ) : null}
-      </div>
+      {/* V27 (the founder's model): THE "About the parents" BIO CARD THAT STOOD
+          HERE IS GONE. It was the account-level text ("Tell other families about
+          yourselves"), and it duplicated the parent card's own "About me" — the
+          one place a parent writes about themself. The owner's description now
+          lives on their card under "The parents" below, and the linked partner's
+          lives on HER card on her own account; nothing here asks the owner to
+          write anything about anyone else. `profiles.bio` remains in the save
+          machine as legacy data (the read surface still falls back to it for the
+          owner's row), but the editor no longer renders or edits it. */}
+
 
       {/* "Family photos" — V23 s16 MOVED IT HERE, into the parents
-          region right after the bio card, so the editor's on-screen sequence
+          region, so the editor's on-screen sequence
           matches the read view's (the read view folds the family photo into its
           "About the parents" card as the CLOSER). It used to sit as the 2nd
           card, before the kids. The card is unchanged: always present (add OR
@@ -1596,15 +1573,19 @@ export function ProfilePage() {
         ) : null}
       </div>
 
-      {/* V19 t05 (founder's ask): the PARENT CARDS — up to two parents, each
-          with a name, a photo and a few words about themselves.
-          V21 t08: these now sit AFTER the kids card (the page reads
-          user → kids → parents), matching the read view's pinned order.
+      {/* V19 t05 created this as "up to two parents, each with a name, a photo
+          and a few words about themselves". V27 (the founder's model) narrows it
+          to ONE parent: the account's own. You edit your card; your partner is
+          an account you LINK, and her info comes from her own profile. The card
+          carrying the accepted partner's handle renders READ-ONLY (name and
+          words are hers, not yours), and no empty "add a parent" slot is offered
+          — you cannot type a second person into your profile.
+          V21 t08: these sit AFTER the kids card (user → kids → parents),
+          matching the read view's pinned order.
           V24 slice 11B: EACH CARD CARRIES ITS OWN ACCOUNT-LINK CONTROL (the
           founder's annotation 9 — "an option to click on something to link an
           account to that person's name"). The standalone "Linked parent"
-          section that used to follow this group is GONE, copy and heading
-          included; the action now lives with the person it concerns. */}
+          section stays retired; the action lives with the person. */}
       <div className="flex flex-col gap-3">
         <h2 className="font-display text-lg font-semibold text-slate-900">The parents</h2>
         <p className="mt-1 text-sm text-slate-600">{PARENT_CARDS_BLURB}</p>
@@ -1618,6 +1599,7 @@ export function ProfilePage() {
                 key={entry.card?.id ?? `new-${entry.slot}`}
                 card={entry.card}
                 position={entry.slot}
+                readOnly={entry.readOnly}
                 busy={parentCardBusy}
                 status={parentCardStatus}
                 error={parentCardError}
@@ -1648,11 +1630,6 @@ export function ProfilePage() {
                 }
               />
             ))}
-            {nextParentSlot === null ? (
-              <p className="text-xs text-slate-500">
-                Two parents is the limit — remove one to add someone else.
-              </p>
-            ) : null}
           </div>
         )}
 
@@ -1816,6 +1793,7 @@ interface ParentCardLinkProps {
 function ParentCardEditor({
   card,
   position,
+  readOnly = false,
   busy,
   status,
   error,
@@ -1825,6 +1803,13 @@ function ParentCardEditor({
 }: {
   card: ParentCard | null
   position?: number
+  /**
+   * V27: this card is SOMEONE ELSE's — the linked partner's, or a legacy second
+   * parent's. Her name and words are hers (authored on her own profile), so the
+   * fields render as text: no name/about inputs, no Save, no Remove. The card
+   * still carries her link control, so Unlink stays reachable.
+   */
+  readOnly?: boolean
   busy: boolean
   /** V24 slice 02: the save-state machine ('idle' | 'saving' | 'saved' | 'error'). */
   status: 'idle' | 'saving' | 'saved' | 'error'
@@ -1848,6 +1833,29 @@ function ParentCardEditor({
     seedRef.current = seed
     setName(card?.name ?? '')
     setAbout(card?.about ?? '')
+  }
+
+  if (readOnly) {
+    return (
+      <div
+        data-testid={`parent-card-${slot}`}
+        className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3"
+      >
+        <p data-testid={`parent-name-${slot}`} className="text-base font-semibold text-slate-900">
+          {card?.name ?? ''}
+        </p>
+        {card?.about !== null && card?.about !== undefined && card.about.trim() !== '' ? (
+          <p data-testid={`parent-about-${slot}`} className="text-sm text-slate-700">
+            {card.about}
+          </p>
+        ) : null}
+        {/* V27: the partner's words live on HER profile; this card shows only
+            what she has published and the link control that ends the link. */}
+        {link === null ? null : (
+          <ParentCardLink slot={slot} name={card?.name ?? ''} {...link} />
+        )}
+      </div>
+    )
   }
 
   return (

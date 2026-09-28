@@ -169,6 +169,126 @@ describe('parentNameRows (V24 slice 11A — the names the READ surface shows; V2
     ])
   })
 
+  it('V27: the account avatar fills the picture slot on the card whose name IS the account', () => {
+    // The founder's /profile annotation: a parent row carries a picture the way
+    // a kid row does, and the account's own public avatar belongs to the person
+    // whose name matches the account. It is a FALLBACK, not an override.
+    const rows = parentNameRows(
+      [card({}), card({ id: 'c2', name: 'Nicole', position: 2 })],
+      null,
+      { displayName: 'Jon', avatarUrl: 'https://example.test/jon.jpg' },
+    )
+    expect(rows.map((row) => row.photo)).toEqual(['https://example.test/jon.jpg', null])
+  })
+
+  it('V27: the account’s own card LINKS to its public profile, even with no avatar', () => {
+    // The founder: "you could link my name to this profile." The link is the
+    // account's own display name, and it does not depend on there being a photo.
+    const rows = parentNameRows(
+      [card({ name: 'Jon Meisburg' })],
+      null,
+      { displayName: 'Jon Meisburg', avatarUrl: null },
+    )
+    expect(rows[0]).toMatchObject({ handle: 'Jon Meisburg', photo: null })
+    // ...and only the FIRST matching card claims it (one account, one link).
+    const twin = parentNameRows(
+      [card({ name: 'Jon Meisburg' }), card({ id: 'c2', name: 'Jon Meisburg', position: 2 })],
+      null,
+      { displayName: 'Jon Meisburg', avatarUrl: null },
+    )
+    expect(twin.map((row) => row.handle)).toEqual(['Jon Meisburg', null])
+  })
+
+  it('V27: a LINKED card borrows the partner’s public avatar and her own card about', () => {
+    const rows = parentNameRows(
+      [card({ name: 'Jon' }), card({ id: 'c2', name: 'Nicole', position: 2 })],
+      {
+        handle: 'Nicole',
+        avatarUrl: 'https://example.test/nicole.jpg',
+        about: '  We like parks.  ',
+      },
+    )
+    expect(rows[1]).toMatchObject({
+      handle: 'Nicole',
+      photo: 'https://example.test/nicole.jpg',
+      about: 'We like parks.',
+    })
+    // The non-linked card gets nothing from the partner.
+    expect(rows[0]).toMatchObject({ handle: null, photo: null, about: null })
+  })
+
+  it('V27: a card’s OWN about and photo beat the linked fallbacks', () => {
+    const rows = parentNameRows(
+      [
+        card({
+          name: 'Nicole',
+          about: 'My own line',
+          photo_url: 'https://example.test/card.jpg',
+        }),
+      ],
+      { handle: 'Nicole', avatarUrl: 'https://example.test/nicole.jpg', about: 'Her own words' },
+    )
+    expect(rows[0]).toMatchObject({
+      about: 'My own line',
+      photo: 'https://example.test/card.jpg',
+    })
+  })
+
+  it('V27: a handle-only `linked` (the pre-V27 shape) still works — no fallbacks', () => {
+    const rows = parentNameRows([card({ name: 'Nicole' })], { handle: 'Nicole' })
+    expect(rows[0]).toMatchObject({ handle: 'Nicole', about: null, photo: null })
+  })
+
+  it('V27: the account’s own card borrows the account bio when the card has none', () => {
+    // The founder's model: the profile text is the parent's own words ("About
+    // me"), so it fills that parent's row when their card carries no `about`.
+    const rows = parentNameRows(
+      [card({ name: 'Jon Meisburg' })],
+      null,
+      { displayName: 'Jon Meisburg', avatarUrl: null, bio: '  I’m the dada.  ' },
+    )
+    expect(rows[0]).toMatchObject({ handle: 'Jon Meisburg', about: 'I’m the dada.' })
+    // A card's own about still wins over the account bio.
+    const own = parentNameRows(
+      [card({ name: 'Jon Meisburg', about: 'My own line' })],
+      null,
+      { displayName: 'Jon Meisburg', avatarUrl: null, bio: 'Account line' },
+    )
+    expect(own[0]?.about).toBe('My own line')
+  })
+
+  it('V27: a card with its OWN photo keeps it over the account avatar', () => {
+    const rows = parentNameRows(
+      [card({ name: 'Jon', photo_url: 'https://example.test/card.jpg' })],
+      null,
+      { displayName: 'Jon', avatarUrl: 'https://example.test/jon.jpg' },
+    )
+    expect(rows[0]?.photo).toBe('https://example.test/card.jpg')
+  })
+
+  it('V27: the owner fallback refuses a near miss, a private path, and a missing avatar', () => {
+    const owner = { displayName: 'Jon Meisburg', avatarUrl: 'https://example.test/jon.jpg' }
+    // A prefix/partial name is a different person — the same refusal the link
+    // rule makes.
+    expect(parentNameRows([card({ name: 'Jon' })], null, owner)[0]?.photo).toBeNull()
+    // An account avatar that is a bare private-bucket path is not renderable.
+    expect(
+      parentNameRows([card({ name: 'Jon Meisburg' })], null, {
+        displayName: 'Jon Meisburg',
+        avatarUrl: 'avatars/private/me.jpg',
+      })[0]?.photo,
+    ).toBeNull()
+    // No owner at all (the pre-V27 calls) never adds a fallback.
+    expect(parentNameRows([card({ name: 'Jon Meisburg' })], null)[0]?.photo).toBeNull()
+    // And only the FIRST matching card wears the one face.
+    const twin = parentNameRows(
+      [card({ name: 'Jon Meisburg' }), card({ id: 'c2', name: 'Jon Meisburg', position: 2 })],
+      null,
+      owner,
+    )
+    expect(twin.map((row) => row.photo)).toEqual(['https://example.test/jon.jpg', null])
+  })
+
   it('matches case- and @-insensitively, the way the handshake compares handles', () => {
     const rows = parentNameRows([card({ name: '  @nicole ' })], { handle: 'Nicole' })
     expect(rows[0]?.handle).toBe('Nicole')
@@ -190,8 +310,14 @@ describe('parentNameRows (V24 slice 11A — the names the READ surface shows; V2
     expect(rows.map((row) => row.handle)).toEqual(['nicole', null])
   })
 
-  it('is empty for a family with no cards, and for the still-loading null', () => {
-    expect(parentNameRows([], { handle: 'Nicole' })).toEqual([])
+  it('V27: synthesizes the linked partner’s row when no card matches her', () => {
+    // The founder's model: the partner is an account you link, so her row must
+    // not depend on a card the owner typed. It appears once the card list has
+    // settled; while that read is still in flight (`null`) there is no row yet,
+    // so a slow load cannot flash a duplicate.
+    expect(parentNameRows([], { handle: 'Nicole', about: 'Hi' })).toEqual([
+      { key: 'linked-Nicole', name: 'Nicole', handle: 'Nicole', about: 'Hi', photo: null },
+    ])
     expect(parentNameRows(null, { handle: 'Nicole' })).toEqual([])
   })
 
@@ -208,7 +334,7 @@ describe('parentNameRows (V24 slice 11A — the names the READ surface shows; V2
   })
 
   it('drops a nameless card rather than rendering a blank name', () => {
-    expect(parentNameRows([card({ name: '   ' })], { handle: 'Jon' })).toEqual([])
+    expect(parentNameRows([card({ name: '   ' })], null)).toEqual([])
   })
 })
 

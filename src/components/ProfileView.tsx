@@ -21,7 +21,7 @@ import {
 import { cardAgeRangeLabel, kidHeading, partitionPostsByTime } from '../lib/feed'
 import { linkedNameTargetForViewer } from '../lib/links'
 import { parentNameRows } from '../lib/parentCards'
-import { profileBlurbOrder, profileHasBio } from '../lib/photoStorage'
+import { profileBlurbOrder } from '../lib/photoStorage'
 import type { ParentCard, PlaydateWithNeighborhood, ProfileWithKids } from '../lib/types'
 import type { ProfileSectionKey } from '../lib/profileSections'
 
@@ -144,6 +144,8 @@ export function ProfileView({
    */
   const [linkedParent, setLinkedParent] = useState<{
     handle: string
+    avatarUrl: string | null
+    about: string | null
   } | null>(null)
   // V21 t06: ref to the Past section so tapping "Hosted N drop-ins" can
   // scroll the user there. TAP (not hover) — this is a phone app; the
@@ -379,12 +381,12 @@ export function ProfileView({
     year: 'numeric',
   })
   // V24 slice 11A: the rows the "About the parents" card renders — one per
-  // parent card, each carrying the name, the handle of the accepted account
-  // link that name IS (or null), the card's own words and its picture. The rule
-  // is pure (`parentNameRows`, src/lib/parentCards.ts): a card alone is never a
-  // link, and a name that does not match the linked account renders as plain
-  // text. V25 t09 made each entry a whole ROW (photo + about) rather than a
-  // bare name; the naming/link rule itself is unchanged.
+  // parent card, each carrying the name, the handle of an account that name IS
+  // (or null), the description and the picture. The rule is pure
+  // (`parentNameRows`, src/lib/parentCards.ts): a card alone is never a link,
+  // and a name that matches no account renders as plain text. V25 t09 made each
+  // entry a whole ROW (photo + about) rather than a bare name; the naming/link
+  // rule itself is unchanged.
   //
   // V24 slice 11B (finding N4): the counterparty is suppressed when it is the
   // READER — a partner opening this page is the profile's accepted partner, and
@@ -393,6 +395,19 @@ export function ProfileView({
   const parentRows = parentNameRows(
     parentCards,
     linkedNameTargetForViewer(linkedParent, viewerProfile?.display_name ?? null),
+    // V27: the account being viewed supplies the FALLBACK picture, the
+    // self-link and the personal description on the one card whose name IS that
+    // account (the founder's /profile annotations: "you could link my name to
+    // this profile"; a parent row should carry a picture the way a kid row
+    // does; and the profile text is that parent's own words, not a family
+    // blurb). A card with its own photo/about keeps it, and a near-miss name
+    // gets nothing. The `linked` row above carries the counterparty's public
+    // avatar and personal bio for the same reason.
+    {
+      displayName: profile.display_name,
+      avatarUrl: profile.avatar_url ?? null,
+      bio: profile.bio ?? null,
+    },
   )
   // The pinned block order, single-sourced in the pure `profileBlurbOrder`
   // seam (src/lib/photoStorage.ts; V16 t05 re-pinned it, V23 s16 extended it to
@@ -413,20 +428,24 @@ export function ProfileView({
   // the heading does not move the block's position — the seam still emits it
   // last, and the cross-surface order guard sees the same block on each side.
   //
-  // V24 slice 11B (finding N1): the seam IS told about the parent names now.
-  // 11A left its 'about' block gated on the bio while the heading above it also
-  // rendered for names alone, so the seam named a block the page did not show.
-  // The ordering gate and the heading gate are now the same call.
+  // V24 slice 11B (finding N1): the seam IS told about the parent names now, so
+  // the ordering gate and the heading gate are the same call.
+  //
+  // V27 (the founder's /profile annotation): the read view's "About the parents"
+  // block is the PARENT ROWS ALONE. The bio is no longer its own block (the
+  // duplicate account avatar it carried is already drawn in the identity block
+  // above), so the seam pushes 'about' for `parentNamesVisible` only — a
+  // bio-only profile draws no about card at all rather than an empty one. The
+  // bio still reaches the screen as the account owner's ROW description when
+  // their card carries none (see `parentNameRows`).
   const blurb = profileBlurbOrder(
     profile,
     profile.kids.length > 0,
     'read',
     parentRows.length > 0,
   )
-  /** The "About the parents" block renders (bio and/or parent names). */
+  /** The "About the parents" block renders (the parent rows; V27). */
   const showsAbout = blurb.includes('about')
-  /** ...but the bio paragraph and avatar follow the BIO alone. */
-  const showsBio = profileHasBio(profile)
   const showsKids = blurb.includes('kids')
   // V20 t01: hoisted out of the JSX because the wrapper card's own existence is
   // the union of its contents (see the card's gate below).
@@ -667,21 +686,22 @@ export function ProfileView({
           same values they use so the card and its contents can never disagree.
           `showsInterests` is hoisted above rather than inlined below because the
           card's own existence now depends on it.
-          V24 slice 11A adds the fourth child, `parentNames`: a family with two
-          parent cards and no bio still shows its parents, under the same
-          "About the parents" heading — the names are the card's content.
-          (V25 t09 renamed that local to `parentRows` and gave each entry a
-          photo and an about: the reasoning above is unchanged.)
-          V24 slice 11B: `showsAbout` now comes from `profileBlurbOrder` and IS
-          the union of those two reasons, so this gate and the heading's below
-          are the same decision rather than two conditions that could drift. */}
+          V24 slice 11A adds the fourth child, `parentRows`: a family with parent
+          cards shows its parents, under the "About the parents" heading — the
+          rows are the card's content. (V25 t09 gave each entry a photo and an
+          about; V27 dropped the bio block from the read surface, so this child
+          is now the heading's ONLY reason to exist.)
+          V24 slice 11B: `showsAbout` now comes from `profileBlurbOrder`, so this
+          gate and the heading's below are the same decision rather than two
+          conditions that could drift. V27 moved the seam's read-side 'about'
+          gate to `parentNamesVisible` alone to match. */}
       {showsAbout || showsInterests || familyPhotoUrl !== null ? (
         <div className="flex flex-col gap-3">
           {/* V13 ticket 01: the identity row (avatar + @handle + "Here since" +
               "Hosted N drop-ins") is the page's identity block at the top (V15
               ticket 06, A20). This card carries the "About the parents" block
-              (the bio + interests + the parents' names, under a real heading)
-              and, after it, the family photo.
+              (the parent rows, under a real heading) and, after it, the family
+              photo.
 
               V9 ticket 11 (folded ticket 08) pinned these optional blocks; V16
               t05 RE-PINNED THE ORDER to kids → about → photo (the kids card now
@@ -690,74 +710,56 @@ export function ProfileView({
               identity block at the top and nothing else, no placeholder
               anywhere — which is what the wrapper's own gate above enforces.
 
-              V24 slice 11A: the heading's condition gained `parentNames.length`
-              — the SAME heading, in the SAME place, for a family whose only
-              "about" content is its parents. It stays inside the card and moves
-              no block. V24 slice 11B moved that condition INTO the seam
-              (`profileBlurbOrder(..., parentNamesVisible)`, finding N1), so the
-              seam's 'about' block is exactly the heading's own gate. A parent
-              name never renders without this heading above it. */}
+              V27 (the founder's /profile annotation): the bio block that used
+              to lead this card is GONE from the read surface. It drew the
+              account's own avatar again (the identity block above already shows
+              it) beside family-level text, so the card read as a person entry
+              with no name rather than as the two parents it is about. This card
+              is now exactly the parent rows, each modelled on a kid row: picture
+              on the left, the name as its heading (linked when the name IS the
+              linked account), and the parent's own words below. The bio stays
+              editable on the edit surface, where it is the "About the parents"
+              textarea — the read surface no longer draws it, so `showsAbout` is
+              the parent rows' gate and nothing else. */}
           {showsAbout ? (
           <div className="mt-3 first:mt-0">
             <h2 className="text-base font-semibold text-slate-900">About the parents</h2>
-            {/* V16 t05: the parent photo (the founder's item 3 — the one part of
-                "photo + description + Message" that was genuinely missing; the
-                Message button is the visitor-only action row below).
-                `profile.avatar_url` is the PUBLIC parent avatar — a plain URL
-                in the public `avatars` bucket (0011), the same value every
-                drop-in card renders — so this is not a signed-URL mint and
-                needs no hook; a family with no avatar simply gets no image.
-                V25 t09 KEEPS it as the FAMILY's description and avatar (the
-                whole-account "about us" text the editor still autosaves), and
-                the PARENT rows below are the people. Keeping the two legible is
-                the distinction the ticket's builder note asks for. */}
-            {showsBio ? (
-            <div className="mt-2 flex items-start gap-3">
-              {profile.avatar_url != null && profile.avatar_url !== '' ? (
-                <PhotoButton
-                  src={profile.avatar_url}
-                  alt={`@${profile.display_name}’s photo`}
-                  className="block shrink-0 overflow-hidden rounded-full"
-                >
-                  <img
-                    data-testid="parent-photo"
-                    src={profile.avatar_url}
-                    alt={`@${profile.display_name}’s photo`}
-                    className="h-12 w-12 rounded-full object-cover"
-                  />
-                </PhotoButton>
-              ) : null}
-              <p className="min-w-0 whitespace-pre-line text-sm text-slate-700">{profile.bio}</p>
-            </div>
-            ) : null}
-            {/* V24 slice 11A (the founder's annotation 10) + V25 t09 (annotation
-                4): THE FAMILY'S PARENTS as horizontal ROWS — photo · name ·
-                their own description — on the owner's own profile AND on
-                /u/:handle, because "the family profile reflects the family".
+            {/* V25 t09 (annotation 4) + V27: THE FAMILY'S PARENTS as horizontal
+                ROWS — picture · name · their own words — on the owner's own
+                profile AND on /u/:handle, because "the family profile reflects
+                the family". V27 restyled and re-documented them to model the
+                kids rows: the picture leads on the left, the name is the row's
+                heading (semibold; a link when it IS an account), and the
+                description sits below it.
 
-                V25 t09's change is STRUCTURAL: this used to be one bio block
-                plus a separate bare names list, so a parent's picture and words
-                had nowhere to stand and the names read as a run of text. Each
-                parent is now its own row, in slot order (`parentCardList`).
-
-                A name is a LINK only when it IS the accepted linked account
-                (matched by name, the only association the schema holds — see
-                `parentNameRows` in src/lib/parentCards.ts). Every other parent
-                renders as plain text: a card alone is not a link, and the link
-                row itself is readable only by the two parties
-                (`account_links_select_parties`, migration 0047), so a third
-                account opening this page sees names and no link — the
-                relationship is not theirs to see. The link is a real
+                A name is a LINK when it IS an account the viewer may name — the
+                accepted linked account, or the ACCOUNT BEING VIEWED itself
+                (V27: the founder's "you could link my name to this profile", a
+                self-link to this page's public profile that reveals no
+                relationship). Both are matched by name, the only association the
+                schema holds — see `parentNameRows` in src/lib/parentCards.ts.
+                Every other parent renders as plain text: a card alone is not a
+                link, and the LINKED row itself is readable only by the two
+                parties (`account_links_select_parties`, migration 0047), so a
+                third account opening this page sees no link for the partner —
+                the relationship is not theirs to see. The link is a real
                 react-router Link to `/u/<handle>`: a real href, the parent's
                 name as its accessible name, and `min-h-11` (44px) as its
                 target.
 
                 V24 slice 11B (finding N4): when the READER is a party to the
                 link, the counterparty the database returns IS the reader, so
-                the name that would link is the reader's own — suppressed above
-                (`linkedNameTargetForViewer`), and this page then shows both
-                parents as plain text. Nothing is lost: the reader is already
-                looking at the family they are linked to.
+                the partner's name is suppressed above
+                (`linkedNameTargetForViewer`). Nothing is lost: the reader is
+                already looking at the family they are linked to. V27 keeps that
+                for the linked row; the account's own self-link is unaffected.
+
+                V27: a row with no `about` of its own borrows the ACCOUNT's
+                personal `bio` — the linked account's on the partner's row, this
+                account's on the owner's row — and a row with no photo of its own
+                borrows a public account avatar (the linked account's, or this
+                account's). See `ParentNameRow` for why each source is the
+                honest one and when it refuses.
 
                 INTERESTS DO NOT APPEAR PER ROW, because the schema has no
                 per-parent interests column: `parent_cards` is
@@ -767,21 +769,22 @@ export function ProfileView({
                 data. Per-parent interests is a schema decision (a new column +
                 migration), not something this row may smuggle in. */}
             {parentRows.length > 0 ? (
-              <ul data-testid="parent-names" className="mt-2 flex flex-col gap-1">
+              <ul data-testid="parent-names" className="mt-2 flex flex-col gap-2">
                 {parentRows.map((row) => (
                   <li
                     key={row.key}
                     data-testid="parent-row"
-                    className="flex items-start gap-3 py-1"
+                    className="flex flex-wrap items-center gap-2"
                   >
-                    {/* The card's own picture, when the row has one it can
-                        actually load (`parentCardPhotoSrc` — a value the
-                        browser can fetch as given; a private-bucket PATH is
-                        deliberately not rendered as a broken image, and the
-                        mint for that is its own schema decision). No image
-                        when absent: `parentCardPhotoSrc` answers null. Alt is
-                        the parent's NAME, not the account handle — this is the
-                        person's picture. */}
+                    {/* The card's picture — its OWN when it has one the browser
+                        can fetch as given (`parentCardPhotoSrc`: a private-bucket
+                        PATH is deliberately not rendered as a broken image, and
+                        the mint for that is its own schema decision), otherwise
+                        (V27) a public account avatar: the LINKED account's when
+                        this row's name IS the linked partner, else this ACCOUNT's
+                        own when the row's name IS the account. No source, no
+                        image: the rule answers null. Alt is the parent's NAME,
+                        not the account handle — this is the person's picture. */}
                     {row.photo !== null ? (
                       <PhotoButton
                         src={row.photo}
@@ -801,14 +804,14 @@ export function ProfileView({
                         <Link
                           data-testid="parent-name-link"
                           to={`/u/${encodeURIComponent(row.handle)}`}
-                          className="inline-flex min-h-11 items-center text-base font-medium text-indigo-700 underline decoration-dotted underline-offset-2 transition-colors hover:text-indigo-800 motion-reduce:transition-none"
+                          className="inline-flex min-h-11 items-center text-base font-semibold text-indigo-700 underline decoration-dotted underline-offset-2 transition-colors hover:text-indigo-800 motion-reduce:transition-none"
                         >
                           {row.name}
                         </Link>
                       ) : (
                         <span
                           data-testid="parent-name"
-                          className="inline-flex min-h-11 items-center text-base font-medium text-slate-900"
+                          className="inline-flex min-h-11 items-center text-base font-semibold text-slate-900"
                         >
                           {row.name}
                         </span>
@@ -826,12 +829,12 @@ export function ProfileView({
         {/* V3 slice 6 (ticket 09, migration 0022): the family's interests line —
             hidden when empty/absent, and pre-0022-apply the column is undefined
             (the null-safe render, the pre-0016 discipline).
-            V9 ticket 11 groups it with the family description rather than leaving
-            it up in the header: /profile's editor copy pins it there ("Shown with
-            “About our family”"), and the ticket pins the three optional blocks
-            ahead of it. It is deliberately OUTSIDE the `showsAbout` gate — a
-            family that wrote interests and no description still shows its
-            interests (which is what this page has always done). */}
+            V9 ticket 11 groups it with the parents region rather than leaving it
+            up in the header — the interests stay ACCOUNT-level (the schema has
+            no per-parent interests column), and the ticket pins the three
+            optional blocks ahead of it. It is deliberately OUTSIDE the
+            `showsAbout` gate — a family that wrote interests and no parent rows
+            still shows its interests (which is what this page has always done). */}
         {showsInterests ? (
           <p className="mt-2 text-sm text-slate-600">
             Interests: {profile.interests}

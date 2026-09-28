@@ -304,25 +304,25 @@ describe('signedKidPhotoUrlsWithClient (V12 t04: batched, best-effort, keyed by 
   })
 })
 
-describe('profileBlurbOrder (V9 ticket 11; V16 t05 re-pinned the order; V23 s16 named every block)', () => {
+describe('profileBlurbOrder (V9 ticket 11; V16 t05 re-pinned the order; V23 s16 named every block; V27 made the read bio edit-only)', () => {
   it('returns EVERY present block in the pinned order: user, kids, about, photo', () => {
     expect(
-      profileBlurbOrder({ family_photo_url: `${UID}/family/photo.jpg`, bio: 'Hi' }, true),
+      profileBlurbOrder({ family_photo_url: `${UID}/family/photo.jpg`, bio: 'Hi' }, true, 'read', true),
     ).toEqual(['user', 'kids', 'about', 'familyPhoto'])
   })
 
   it('drops each optional block independently (the identity card is always there)', () => {
-    expect(profileBlurbOrder({ family_photo_url: null, bio: 'Hi' }, true)).toEqual([
-      'user',
-      'kids',
-      'about',
-    ])
+    expect(
+      profileBlurbOrder({ family_photo_url: null, bio: 'Hi' }, true, 'read', true),
+    ).toEqual(['user', 'kids', 'about'])
     expect(profileBlurbOrder({ family_photo_url: `${UID}/family/photo.jpg` }, true)).toEqual([
       'user',
       'kids',
       'familyPhoto',
     ])
-    expect(profileBlurbOrder({ bio: 'Hi' }, false)).toEqual(['user', 'about'])
+    // V27: a bio alone no longer produces a READ block — the read surface draws
+    // the parent rows, and the bio is the editor's card.
+    expect(profileBlurbOrder({ bio: 'Hi' }, false)).toEqual(['user'])
   })
 
   it('an empty profile still shows the identity card — "looks finished with none of them"', () => {
@@ -338,6 +338,8 @@ describe('profileBlurbOrder (V9 ticket 11; V16 t05 re-pinned the order; V23 s16 
     const blocks = profileBlurbOrder(
       { family_photo_url: `${UID}/family/photo.jpg`, bio: 'Hi' },
       true,
+      'read',
+      true,
     )
     expect(blocks[blocks.indexOf('kids')]).toBe('kids')
     expect(blocks[blocks.length - 1]).toBe('familyPhoto')
@@ -351,8 +353,18 @@ describe('profileBlurbOrder (V9 ticket 11; V16 t05 re-pinned the order; V23 s16 
   })
 
   it('V23 s16: the read surface omits the editor-only parent cards', () => {
+    // V27: the read 'about' block is the parent rows, so with no names visible
+    // the bio no longer produces one here.
     expect(
       profileBlurbOrder({ family_photo_url: `${UID}/family/photo.jpg`, bio: 'Hi' }, true, 'read'),
+    ).toEqual(['user', 'kids', 'familyPhoto'])
+    expect(
+      profileBlurbOrder(
+        { family_photo_url: `${UID}/family/photo.jpg`, bio: 'Hi' },
+        true,
+        'read',
+        true,
+      ),
     ).toEqual(['user', 'kids', 'about', 'familyPhoto'])
   })
 
@@ -365,16 +377,19 @@ describe('profileBlurbOrder (V9 ticket 11; V16 t05 re-pinned the order; V23 s16 
     expect(profileBlurbOrder(null, false, 'edit')).toEqual(['user', 'parentCards'])
   })
 
-  it('V24 11B: the "About the parents" block renders for parent NAMES alone (finding N1)', () => {
+  it('V24 11B + V27: the read "About the parents" block is the parent NAMES alone', () => {
     // 11A made the read surface render its heading for a family whose only
     // content there is the parent names, while this seam pushed 'about' only for
     // a bio — the seam said a block did not exist that the DOM showed. The
-    // fourth argument closes that gap: the read surface's heading gate is now
-    // this function's output, not a second condition beside it.
+    // fourth argument closed that gap, and V27 narrowed the read gate to it: the
+    // bio is edit-only, so a bio with no names pushes NOTHING on read.
     expect(profileBlurbOrder({ bio: null }, false, 'read', true)).toEqual(['user', 'about'])
     expect(profileBlurbOrder(null, false, 'read', true)).toEqual(['user', 'about'])
     // ...and it changes nothing when no names are visible (the default).
     expect(profileBlurbOrder({ bio: null }, false, 'read')).toEqual(['user'])
+    // V27: a bio is NOT a read block, even though it is a real edit block.
+    expect(profileBlurbOrder({ bio: 'Hi' }, false, 'read')).toEqual(['user'])
+    expect(profileBlurbOrder({ bio: 'Hi' }, false, 'edit')).toEqual(['user', 'about', 'parentCards'])
     // The photo still closes the block the names opened.
     expect(
       profileBlurbOrder({ bio: null, family_photo_url: `${UID}/family/photo.jpg` }, false, 'read', true),

@@ -307,10 +307,12 @@ export type ProfileBlurbBlock =
   | 'parentCards'
 
 /**
- * True when this profile carries a bio worth rendering — the ONE test behind the
- * 'about' block's text half. Exported because the read surface has to ask the
- * same question to gate the bio paragraph alone: the block renders for a bio OR
- * for parent names (V24 11B), and the paragraph must not follow the names.
+ * True when this profile carries a bio worth rendering.
+ *
+ * V27: the bio is no longer its own READ block — the read surface draws the
+ * parent rows, and the bio reaches the screen as the account owner's ROW
+ * description when their card carries none. So this test gates the editor's bio
+ * card and the seam's 'edit' branch, not a read block.
  */
 export function profileHasBio(profile: { bio?: string | null } | null): boolean {
   return (profile?.bio ?? '').trim() !== ''
@@ -318,8 +320,15 @@ export function profileHasBio(profile: { bio?: string | null } | null): boolean 
 
 /**
  * WHICH blocks a profile surface renders, in the order the ticket pins:
- * identity → kids list → "About the parents" (the bio and/or the parent names)
- * → family photo.
+ * identity → kids list → "About the parents" → family photo.
+ *
+ * V27: "About the parents" is the PARENT ROWS on the read surface and the BIO
+ * CARD on the edit surface. The read view no longer renders the bio (the
+ * founder's /profile annotation asked for the two parent rows and nothing
+ * else), so its 'about' is pushed by `parentNamesVisible` alone; the editor
+ * still draws its bio card, so 'edit' is pushed by a non-empty bio. A read
+ * profile with a bio and no parent cards therefore reports NO 'about' block —
+ * the seam matches the DOM rather than naming a card that is no longer drawn.
  *
  * V16 t05 RE-PINNED THIS ORDER for the optional blocks. It used to be family
  * photo → about → kids; the founder's own reading of the page put the people
@@ -352,14 +361,12 @@ export function profileHasBio(profile: { bio?: string | null } | null): boolean 
  *     linked NAME is read+edit and renders inside the 'about' block (the "About
  *     the parents" card), where 11A put it. Nothing rendered on the read surface
  *     was ever gated on this key.
- *   - 'about' is pushed when the bio is non-empty OR (V24 11B) the caller says
- *     the family's parent NAMES are visible. 11A made the read view render its
- *     "About the parents" heading for a family whose only content there is the
- *     parent names, while this seam pushed 'about' only for a bio — so the seam
- *     told the next reader that block did not exist while the DOM showed it
- *     (finding N1). `parentNamesVisible` closes that gap instead of documenting
- *     it: the seam stays the single source of truth the order guard's header
- *     claims it is.
+ *   - 'about' is pushed when the caller says the family's parent NAMES are
+ *     visible, and on the edit surface ALSO when the bio is non-empty (V24 11B
+ *     closed the gap where 11A's read view rendered its heading while this seam
+ *     said the block did not exist — finding N1). V27 reverses the read half of
+ *     that: the read view no longer draws the bio, so a bio alone pushes no
+ *     'about' there, and `parentNamesVisible` is the read gate.
  *
  * `kidsVisible` is the CALLER's decision, passed in rather than computed,
  * because the rule behind it is not about the profile at all: the `kids` embed
@@ -384,7 +391,12 @@ export function profileBlurbOrder(
 ): ProfileBlurbBlock[] {
   const blocks: ProfileBlurbBlock[] = ['user']
   if (kidsVisible) blocks.push('kids')
-  if (profileHasBio(profile) || parentNamesVisible) blocks.push('about')
+  // V27: on the READ surface the "About the parents" block is the PARENT ROWS
+  // alone — the founder's /profile annotation asked for two person rows and the
+  // bio (with its duplicate account avatar) is no longer rendered there, so a
+  // bio alone must not push a block the DOM does not draw. The EDIT surface
+  // still renders its bio card, so the bio keeps its 'about' push there.
+  if (parentNamesVisible || (surface === 'edit' && profileHasBio(profile))) blocks.push('about')
   if (familyPhotoObjectPath(profile?.family_photo_url) !== null) blocks.push('familyPhoto')
   if (surface === 'edit') {
     // The edit surface ALWAYS carries the parent cards — their empty states are

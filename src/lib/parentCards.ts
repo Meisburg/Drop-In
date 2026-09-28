@@ -127,19 +127,45 @@ export interface ParentNameRow {
   /** Stable key for React — the card's id. */
   key: string
   name: string
-  /** The linked account's handle when this name IS that account, else null. */
+  /**
+   * The profile handle this name links to, else null. Two sources:
+   *   - the accepted linked account, when this name IS that account (V24 11A);
+   *   - the ACCOUNT BEING VIEWED itself, when this name IS that account (V27,
+   *     the founder's annotation "you could link my name to this profile") —
+   *     a self-link to the page's own public `/u/:handle`, which reveals no
+   *     relationship and is public information already shown in the identity
+   *     block above it.
+   */
   handle: string | null
   /**
    * V25 t09: the card's own words — the DESCRIPTION half of the parent's row.
    * Trimmed; null when the card has none, so the row renders no empty
    * paragraph (the same "a decoration is never an error state" discipline the
    * photo follows).
+   *
+   * V27: on the LINKED parent's row, an empty `parent_cards.about` falls back to
+   * the linked account's own self-card `about`, and on the ACCOUNT's own row it
+   * falls back to that account's `bio`. The founder's model is that a profile's
+   * text is the PARENT's own words about themself ("About me"), so the linked
+   * row shows HER words, authored on her own account — never text the owner
+   * typed for her. A card's own `about` always wins.
    */
   about: string | null
   /**
    * V25 t09: the card's own picture, as a source an `<img>` can actually load
    * — or null. See `parentCardPhotoSrc` for what "actually load" means and
    * why an empty string is folded into null rather than rendered.
+   *
+   * V27 (the founder's /profile annotation): on the READ surface this is a
+   * FALLBACK, because there is no parent-photo upload and `parent_cards`
+   * `photo_url` is empty for every card. Two sources, each claimed by one card:
+   *   - the LINKED counterparty's public `profiles.avatar_url`, on the card
+   *     whose name IS that account;
+   *   - the ACCOUNT BEING VIEWED's own public `avatar_url`, on the card whose
+   *     name IS the account (the same conservative `normalizeHandle` name match
+   *     the link rule uses, with the same refusal: a near miss like "Jon"
+   *     against "Jon Meisburg" is a different person and gets no face).
+   * A card carrying its own photo always keeps it.
    */
   photo: string | null
 }
@@ -192,29 +218,78 @@ export function parentCardAboutText(stored: string | null | undefined): string |
 /**
  * V25 t09: THE ROWS THE READ SURFACE RENDERS — one per parent, in slot order,
  * each carrying everything its horizontal row shows: the photo, the name (and
- * the handle when that name IS the linked account), and the card's own words.
+ * the handle when that name IS an account), and the card's own words.
  *
  * The name/link rule is unchanged from V24 11A and is documented above; this
  * function simply grew the row's other two fields rather than making the JSX
  * reach back into `parentCards` for them. The component renders a row; it does
  * not decide one (the build law).
+ *
+ * V27 (the founder's /profile annotations): the row now fills itself from the
+ * ACCOUNT a name belongs to, because `parent_cards` has neither a photo upload
+ * nor, often, any `about` text:
+ *   - `owner` is the account being viewed (its display name, public avatar and
+ *     personal `bio`), and the one card whose name IS that account links to its
+ *     own public profile and borrows its picture and description.
+ *   - `linked` carries the accepted counterparty's public `avatarUrl` and
+ *     personal `bio` as well as their handle, and the one card whose name IS
+ *     that account falls back to them for its picture and description.
+ * Both extra arguments are optional so every pre-V27 caller and test keeps its
+ * exact meaning — no owner and a handle-only `linked` mean no fallbacks.
  */
 export function parentNameRows(
   cards: ReadonlyArray<ParentCard> | null,
-  linked: { handle: string } | null,
+  linked: { handle: string; avatarUrl?: string | null; about?: string | null } | null,
+  owner: { displayName: string; avatarUrl: string | null; bio?: string | null } | null = null,
 ): ParentNameRow[] {
   const linkedHandle = linked === null ? '' : normalizeHandle(linked.handle)
+  const linkedAvatar = linked === null ? null : parentCardPhotoSrc(linked.avatarUrl ?? null)
+  const linkedAbout = linked === null ? null : parentCardAboutText(linked.about ?? null)
+  // V27: the account owner's own face, self-link and personal description,
+  // offered to the one card whose name IS that account. `ownerClaimed` mirrors
+  // `claimed` for the link rule: two cards bearing the same name must not both
+  // wear one person's face.
+  const ownerName = owner === null ? '' : normalizeHandle(owner.displayName)
+  const ownerAvatar = owner === null ? null : parentCardPhotoSrc(owner.avatarUrl)
+  const ownerAbout = owner === null ? null : parentCardAboutText(owner.bio ?? null)
   let claimed = false
-  return parentCardList(cards).map((card) => {
+  let ownerClaimed = false
+  const rows = parentCardList(cards).map((card) => {
     const isLinked =
       !claimed && linkedHandle !== '' && normalizeHandle(card.name) === linkedHandle
     if (isLinked) claimed = true
+    const ownPhoto = parentCardPhotoSrc(card.photo_url)
+    const cardAbout = parentCardAboutText(card.about)
+    const isOwner =
+      !ownerClaimed && ownerName !== '' && normalizeHandle(card.name) === ownerName
+    if (isOwner) ownerClaimed = true
     return {
       key: card.id,
       name: card.name,
-      handle: isLinked && linked !== null ? linked.handle : null,
-      about: parentCardAboutText(card.about),
-      photo: parentCardPhotoSrc(card.photo_url),
+      handle: isLinked
+        ? linked?.handle ?? null
+        : isOwner && owner !== null
+          ? owner.displayName
+          : null,
+      about: cardAbout ?? (isLinked ? linkedAbout : isOwner ? ownerAbout : null),
+      photo: ownPhoto ?? (isLinked ? linkedAvatar : isOwner ? ownerAvatar : null),
     }
   })
+  // V27: a linked partner who has no card on THIS profile still gets her row —
+  // her name, picture and words come from her own account. The synthesized row
+  // appears only when the link is readable (the two parties), so a third account
+  // never learns the relationship; a legacy card with the same name has already
+  // claimed the link above and wins, so nothing renders twice. It waits for the
+  // card list to settle (`cards !== null`) so a slow load cannot paint the row
+  // twice — once synthesized, once from the matching card.
+  if (cards !== null && linked !== null && linkedHandle !== '' && !claimed) {
+    rows.push({
+      key: `linked-${linked.handle}`,
+      name: linked.handle,
+      handle: linked.handle,
+      about: linkedAbout,
+      photo: linkedAvatar,
+    })
+  }
+  return rows
 }

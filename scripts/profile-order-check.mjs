@@ -35,7 +35,8 @@
  *                                         the legacy "A photo of your family"
  *                                         form still maps for older builds).
  *   /about the kids/i        -> 'kids'
- *   /about the parents/i     -> 'parents' the bio card
+ *   /about the parents/i     -> 'parents' the parent rows (read) / the bio card
+ *                                         (edit); V27 made the read bio edit-only
  *   /^the parents$/i         -> 'parents' the parent-cards group
  *   /linked parent/i         -> 'parents' the account-link control
  * The read view has NO "Hosted drop-ins" heading issue here (that heading exists
@@ -46,7 +47,9 @@
  * with none of them gets no placeholder), so the read-view probe may legitimately
  * measure fewer headings than the pinned sequence — the subsequence assertion
  * still holds, and the cross-surface comparison below uses the SHARED-block
- * projection, which stays comparable even when one surface shows more.
+ * projection, which stays comparable even when one surface shows more. V27: the
+ * read "About the parents" block renders for the parent ROWS alone (the bio is
+ * edit-only), which is why the seeding below writes a card as well as a bio.
  *
  * Usage: node scripts/profile-order-check.mjs [baseURL]
  *   Needs a running server on :4173 (`npm run build && npm run preview`) and the
@@ -151,12 +154,14 @@ function check(label, ok, detail) {
 // injecting `readShared = []` and watching both checks print `ok`. A guard whose
 // subject is absent is not a guard.
 //
-// So the check now SETS a bio (which makes the read view render its "About the
-// parents" block and pushes `parents` into the projection) and a family photo
-// (which is the block whose POSITION the V23 s16 fix moves), measures, then
-// RESTORES the prior values. It is self-cleaning because this is a live database
-// holding real family data — a check that leaves a bio behind would be editing
-// someone's profile.
+// So the check now SETS the content that makes the read view draw its shared
+// blocks: a PARENT CARD, which is what the read "About the parents" block
+// renders (V27 — before that a bio did it, but the read bio is now edit-only),
+// and a family photo (the block whose POSITION the V23 s16 fix moves). It also
+// still seeds a bio so the EDIT surface's bio card has content. It measures,
+// then RESTORES the prior profile values and deletes any card it inserted. It is
+// self-cleaning because this is a live database holding real family data — a
+// check that leaves a card or a bio behind would be editing someone's profile.
 //
 // WHAT IT DOES NOT SEED, and why: KIDS. The kids block is gated on
 // `isOwnProfile && kids.length > 0` and adding a kid row means inserting into
@@ -307,10 +312,56 @@ async function restoreProfile(env, jwt, userId, patch) {
   }
 }
 
+/**
+ * V27: seed a PARENT CARD so the READ view renders its "About the parents"
+ * block. Before V27 a bio made the read view draw that block; the read view now
+ * draws the parent ROWS alone, so the block needs a row to exist.
+ *
+ * The card is inserted ONLY when the marker has none: when the account already
+ * carries a (named) card the read view renders 'parents' without help, and
+ * touching a real row for no reason would be an edit this check does not need to
+ * make. Returns the inserted card's id for cleanup, or null when nothing was
+ * inserted. A failure is reported, never thrown — a seeding problem must not
+ * read as an ordering defect.
+ */
+async function seedParentCard(env, jwt, userId, name) {
+  const headers = { apikey: env.anonKey, Authorization: `Bearer ${jwt}` }
+  const readRes = await fetch(
+    `${env.url}/rest/v1/parent_cards?profile_id=eq.${userId}&select=id,name`,
+    { headers },
+  )
+  const rows = readRes.ok ? await readRes.json() : []
+  if (Array.isArray(rows) && rows.some((row) => (row.name ?? '').trim() !== '')) {
+    return null
+  }
+  const res = await fetch(`${env.url}/rest/v1/parent_cards`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+    body: JSON.stringify({ profile_id: userId, name, position: 1 }),
+  })
+  if (!res.ok) {
+    console.log(
+      `  NOTE: parent-card seed failed HTTP ${res.status} - ${(await res.text()).slice(0, 120)}`,
+    )
+    return null
+  }
+  const inserted = await res.json()
+  return inserted[0]?.id ?? null
+}
+
+/** DELETE only the card this check inserted, by id. Best-effort. */
+async function deleteParentCard(env, jwt, id) {
+  await fetch(`${env.url}/rest/v1/parent_cards?id=eq.${id}`, {
+    method: 'DELETE',
+    headers: { apikey: env.anonKey, Authorization: `Bearer ${jwt}` },
+  })
+}
+
 const browser = await chromium.launch()
 let seeded = false
 let prior = null
 let fixtureObjectPath = null
+let fixtureParentCardId = null
 let markerJwt = null
 let markerUserId = null
 let env
@@ -335,6 +386,7 @@ await page
 // --- SEED the content whose ORDER this check is about (see the block above). ---
 env = await readSupabaseEnv()
 const SEED_BIO = 'Order-check fixture: we like parks and snacks.'
+const SEED_PARENT = 'Order-check fixture parent'
 const SEED_PHOTO = 'order-check-fixture/family.jpg'
 if (env.url !== undefined && env.anonKey !== undefined) {
   const creds = await markerCredentials(page)
@@ -345,6 +397,11 @@ if (env.url !== undefined && env.anonKey !== undefined) {
   if (creds !== null && creds.jwt !== null && creds.userId !== null) {
     fixtureObjectPath = await uploadFixturePhoto(page, env, creds.jwt, creds.userId)
   }
+  // V27: the read "About the parents" block needs a parent ROW now (the bio no
+  // longer renders there), so seed the card before the reload.
+  if (creds !== null && creds.jwt !== null && creds.userId !== null) {
+    fixtureParentCardId = await seedParentCard(env, creds.jwt, creds.userId, SEED_PARENT)
+  }
   prior = await seedProfile(page, env, {
     bio: SEED_BIO,
     family_photo_url: fixtureObjectPath ?? SEED_PHOTO,
@@ -352,8 +409,8 @@ if (env.url !== undefined && env.anonKey !== undefined) {
   seeded = prior !== null
   if (seeded) {
     console.log(
-      `seeded: bio + family photo (object uploaded=${fixtureObjectPath !== null}, ` +
-        `prior bio=${JSON.stringify(prior.bio ?? null)})`,
+      `seeded: bio + family photo + parent card (object uploaded=${fixtureObjectPath !== null}, ` +
+        `card inserted=${fixtureParentCardId !== null}, prior bio=${JSON.stringify(prior.bio ?? null)})`,
     )
     // Reload so the read view renders the seeded blocks.
     await page.reload({ waitUntil: 'networkidle' })
@@ -449,7 +506,7 @@ check(
 // legal only when every block it shows sits where the editor's does. Concretely:
 // the read projection must be a SUBSEQUENCE of the edit projection (same
 // relative order, no block out of place) AND the family photo must sit in the
-// same RELATIVE position on both surfaces (after the bio on each).
+// same RELATIVE position on both surfaces (after the parents region on each).
 //
 // V23 REVIEW — THE VACUITY THIS CHECK USED TO HAVE, AND HOW IT WAS PROVEN.
 // The marker account has no bio, kids, or family photo, so the read view
@@ -499,7 +556,8 @@ check(
 
 // (2) THE VACUITY FLOOR. An empty read projection must be explained by the
 //     PROFILE, not accepted as agreement. `readFamilyPhotoPresent` is already
-//     measured; the bio/kids presence is what the other two blocks depend on.
+//     measured; the parent-name/kids presence is what the other two blocks
+//     depend on (V27: the read 'about' block renders for the parent rows).
 //     If the page renders none of them while the editor says they exist, the
 //     read view has stopped rendering its own content — the failure this check
 //     would otherwise report as a pass.
@@ -512,8 +570,9 @@ check(
     : `read view showed ${readShared.length} shared block(s)`,
 )
 
-// The family photo's RELATIVE position: it must sit AFTER the bio ('parents'
-// first occurrence) on BOTH surfaces — the exact mismatch this slice fixes.
+// The family photo's RELATIVE position: it must sit AFTER the parents region
+// ('parents' first occurrence) on BOTH surfaces — the exact mismatch this slice
+// fixes.
 // When the read view does NOT show the photo, that is legal ONLY because the
 // profile has none (the marker account's state, asserted by the vacuity floor
 // above); the check no longer silently returns true on `-1` alone, it reports
@@ -577,7 +636,19 @@ if (failures.length > 0) {
         await deleteFixturePhoto(env, markerJwt, fixtureObjectPath)
       }
     } finally {
-      await browser.close()
+      try {
+        if (fixtureParentCardId !== null && markerJwt !== null && env !== undefined) {
+          await deleteParentCard(env, markerJwt, fixtureParentCardId)
+          console.log('removed: seeded parent card')
+        }
+      } catch (cardError) {
+        console.log(
+          `  WARNING: seeded parent-card cleanup FAILED - remove parent_cards id ${fixtureParentCardId} by hand.`,
+        )
+        console.log(`  delete error: ${cardError}`)
+      } finally {
+        await browser.close()
+      }
     }
   }
 }
