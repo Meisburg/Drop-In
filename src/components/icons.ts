@@ -28,6 +28,22 @@ export const NAV_ICONS = {
   // parent" picker) — a lens circle + handle in the same stroked family, so it
   // matches the rest of the icon set rather than being a pasted-in glyph.
   search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14Z M16.2 16.2 21 21',
+  // V27: the browse controls' dropdown chevron — a single down caret in the
+  // stroked family. Decorative only (the trigger button carries the label).
+  'chevron-down': 'M6 9l6 6 6-6',
+  // V27: the "Filter & sort" trigger — three slider rails with knobs, so it
+  // reads as tuning rather than as the hamburger menu it replaced.
+  sliders: 'M4 7h11 M18 7h2 M15 4v6 M4 12h5 M12 12h8 M9 9v6 M4 17h10 M17 17h3 M14 14v6',
+  // V27: the "When" dropdown's clock face + hand.
+  clock: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Z M12 8v4l3 2',
+  // V27: the "Type" dropdown's price-tag silhouette (a category mark).
+  tag: 'M4 4h7l9 9-7 7-9-9Z M8.5 8.5h.01',
+  // V27: the search overlay's dismiss ✕ — the same stroked family rather than a
+  // pasted-in text character.
+  close: 'M6 6l12 12 M18 6L6 18',
+  // V27: a small flame for the search overlay's suggestion rows — the reference
+  // screenshot's "popular" mark, decorative beside the word.
+  flame: 'M12 3c1 3 4 4.2 4 8a4 4 0 0 1-8 0c0-1.4.6-2.4 1.4-3.3C10.6 6 12 5 12 3Z M12 21a6 6 0 0 1-6-6c0-2 .8-3.6 2-5',
 } as const
 
 /**

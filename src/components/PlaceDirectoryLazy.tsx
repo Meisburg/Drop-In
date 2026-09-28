@@ -1,18 +1,19 @@
 /**
  * V22 slice 10 — code-split the places directory out of the initial chunk.
  *
- * PlaceDirectory renders the map band (PlacesMap → Leaflet), so statically
- * importing it pulled leaflet + its CSS into every page that embeds the
+ * PlaceDirectory pulls in PlacesMap → Leaflet, so statically importing it would
+ * put leaflet + its CSS in the initial chunk of every page that embeds the
  * directory (/browse, /new). This wrapper moves the module behind `React.lazy`:
  * the dynamic import makes Vite emit PlaceDirectory (and, through it, the lazy
  * PlaceMap chunk) only when a directory surface mounts.
  *
- * The fallback matches the directory's own shape: the map card at its real band
- * height (`h-[45dvh] min-h-[240px]`) with a centred "Loading map…" line, plus a
- * fixed-height placeholder for the list card, so the swap in is invisible and
- * nothing shifts layout while the chunk downloads.
+ * The fallback matches the directory's own list-first shape: the controls card
+ * (search pill + dropdown rows) at its real height, plus a fixed-height list
+ * placeholder, so the swap in is invisible and nothing shifts layout while the
+ * chunk downloads.
  */
 import { Suspense, lazy } from 'react'
+import type { PlaceDropInProof, PlaceReviewHighlight } from '../lib/placeSocial'
 
 // The dynamic import IS the split: everything PlaceDirectory.tsx pulls in
 // (the lazy PlaceMap chunk, the directory's own logic) rides with THIS chunk,
@@ -37,6 +38,25 @@ interface DirectoryProps {
    * Optional: hosts that do not load ratings omit it entirely (same effect).
    */
   ratings?: ReadonlyMap<string, ReviewSummary> | null
+  /**
+   * V27: per-place review highlight (the newest review with a body), keyed by
+   * place id. `null`/omitted while the read is in flight OR when it failed —
+   * then no card shows a quote. Optional: hosts that do not load highlights
+   * omit it entirely (same effect).
+   */
+  reviewHighlights?: ReadonlyMap<string, PlaceReviewHighlight> | null
+  /**
+   * V27: per-place past-drop-in activity, keyed by place id. `null`/omitted
+   * while the read is in flight OR when it failed — then no card shows an
+   * activity line (never a fabricated "0 drop-ins hosted here").
+   */
+  dropInProofs?: ReadonlyMap<string, PlaceDropInProof> | null
+  /**
+   * V27: the single clock the activity line is measured against. Hosts that
+   * load proofs pass the SAME instant they read with, so every card's "last one
+   * X ago" agrees within one render.
+   */
+  nowIso?: string
   /** The caller's own followed place ids (the batched read; empty set default). */
   followedPlaceIds: ReadonlySet<string>
   /** Signed in? Signed out renders no heart at all (the /browse rule). */
@@ -49,6 +69,12 @@ interface DirectoryProps {
   viewerRadius: number
   /** The viewer's stored home zip (the distance seam measures from it; null = none). */
   homeZip: string | null
+  /**
+   * V27: the place-name shown on the search pill / location row. Defaults to the
+   * app's city, so /new's picker sheet keeps the reference's "Places · Seattle,
+   * WA" shape without passing one.
+   */
+  locationLabel?: string
   /** When true, taps select into the host instead of navigating away. */
   selectable?: boolean
   /** V23 slice 3: when true, the search + filter card pins to the top of the scroll area. */
@@ -58,30 +84,32 @@ interface DirectoryProps {
 }
 
 /**
- * The Suspense fallback: the two cards the directory leads with, at their real
- * sizes — the map card at the band's own height (the same rounded border the
- * map draws) and a fixed-height list placeholder — so the layout never reflows
- * while the chunk arrives. A centred line says what is happening.
+ * The Suspense fallback: the new list-first shape at its real sizes — the
+ * controls card (search pill + dropdown rows) and a fixed-height list
+ * placeholder — so the layout does not reflow when the chunk arrives and the
+ * loading state does not promise a map band that no longer exists.
  */
 function DirectoryFallback() {
   return (
-    <div className="flex flex-col gap-4 md:grid md:grid-cols-2 md:items-start">
-      <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm md:sticky md:top-16">
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-xs font-medium text-slate-500">Nearby places</span>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="h-11 rounded-full bg-slate-100" />
+        <div className="flex gap-2">
+          <div className="h-11 flex-1 rounded-full bg-slate-100" />
+          <div className="h-11 flex-1 rounded-full bg-slate-100" />
+          <div className="h-11 flex-1 rounded-full bg-slate-100" />
         </div>
-        <div
-          role="status"
-          aria-label="Loading map…"
-          className="flex h-[45dvh] min-h-[240px] w-full items-center justify-center rounded-xl border border-slate-200 bg-white text-sm text-slate-500"
-        >
-          Loading map…
+        <div className="flex gap-2">
+          <div className="h-12 w-16 rounded-xl bg-slate-100" />
+          <div className="h-12 w-16 rounded-xl bg-slate-100" />
+          <div className="h-12 w-16 rounded-xl bg-slate-100" />
+          <div className="h-12 w-16 rounded-xl bg-slate-100" />
         </div>
       </div>
       <div
         role="status"
         aria-label="Loading places…"
-        className="flex h-48 items-center justify-center rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-500 shadow-sm md:col-start-2"
+        className="flex h-48 items-center justify-center rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-500 shadow-sm"
       >
         Loading places…
       </div>

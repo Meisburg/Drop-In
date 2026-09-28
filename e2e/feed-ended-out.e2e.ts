@@ -710,7 +710,9 @@ test('the empty state offers the archive; the places directory does not', async 
   // CONTROL for the stub: the far place is really there — switching the distance
   // filter to "Any distance" renders it, which proves the empty state above was
   // the radius's doing and not a page that failed to load its directory.
-  await page.getByTestId('places-distance-filter').selectOption('any')
+  // V27: the distance filter is a dropdown button + bottom sheet now.
+  await page.getByTestId('places-distance-filter-btn').click()
+  await page.getByTestId('places-distance-sheet-option-any').click()
   await expect(page.getByTestId('place-row')).toHaveCount(1)
   await expect(page.getByText(farPlace.name)).toBeVisible()
 })

@@ -4,7 +4,7 @@
  *
  * What this spec proves, in the order a parent would meet it:
  * (1) the Places tab IS the directory (nav label changed, rows render, the
- *     "N upcoming" line is the real count) and an ANON read of `places`
+ *     "N drop-ins planned here" line is the real count) and an ANON read of `places`
  *     succeeds — the 0029 SELECT policy's whole reason for existing;
  * (2) a row opens its place page, which renders the SEEDED data (name, kind,
  *     indoor/outdoor, the address as the existing tappable Maps link) and NO
@@ -94,35 +94,12 @@ import {
 import {
   BROWSE_LIST_LEAD_LIMIT,
   PLACE_KIND_CHIP_KINDS,
-  PLACE_KINDS,
   placeKindLabel,
 } from '../src/lib/places'
 
 /** A real seeded playground (Play Areas -> kind 'playground', 0029's seed). */
 const PLACE_NAME = 'Green Lake Park'
 const PLACE_ADDRESS = '7201 East Green Lake Dr N'
-
-/**
- * Every kind-group heading the browse list can render, built from the APP'S OWN
- * seam rather than hand-typed.
- *
- * WHY THIS EXISTS (V17 t01, found by the `ocr` review lane): this list was a
- * hand-written regex covering 8 of the 10 `PLACE_KINDS`. It omitted "Trail" and
- * "Other" — and the seed's Community Centers are kind `other`, so an "Other"
- * group can legitimately be the lead group. The assertion would then either
- * match a DIFFERENT group (`.first()` silently succeeding on the wrong thing)
- * or time out, depending on the seed's lead composition.
- *
- * Deriving it from `placeKindLabel` over `PLACE_KINDS` means a kind added to the
- * DB's allowed set can never drift out of this assertion again — the same
- * discipline as the V15 specs that import `TIME_STEP_MINUTES` and
- * `PAST_DROP_INS_LABEL` from `src/lib` instead of re-typing them.
- */
-const KIND_GROUP_LABEL = new RegExp(
-  PLACE_KINDS.map((kind) => placeKindLabel(kind))
-    .map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('|'),
-)
 
 /**
  * The marker-tap spec's place: a name that matches EXACTLY ONE seeded place and
@@ -185,7 +162,10 @@ async function openPlacesTab(page: Page): Promise<void> {
  * — and exercises the control itself.
  */
 async function useAnyDistance(page: Page): Promise<void> {
-  await page.getByTestId('places-distance-filter').selectOption('any')
+  // V27: the distance filter is a dropdown button + bottom sheet now, not a
+  // `<select>`. Open the dropdown, tap "Any distance", and the sheet closes.
+  await page.getByTestId('places-distance-filter-btn').click()
+  await page.getByTestId('places-distance-sheet-option-any').click()
 }
 
 /** The seeded place row for `name` (the row is a link to the place page). */
@@ -194,18 +174,30 @@ function placeRow(page: Page, name: string) {
 }
 
 /**
- * V25 t01: ENTER MAP MODE. The directory is list-first now, and the ONLY map on
- * the page is the map view's own (`places-map-view-map`) — the list-view band
- * is gone. So every spec about a map marker, a popup or the radius circle goes
- * through this door first.
+ * V25 t01 / V27: ENTER MAP MODE. The directory is list-first now, and the ONLY
+ * map on the page is the map view's own (`places-map-view-map`) — the list-view
+ * band is gone. So every spec about a map marker, a popup or the radius circle
+ * goes through this door first.
  *
- * The door is the in-card "See map" button (`places-see-map`), which is the one
- * entry point that exists whether or not the floating toggle is on screen; the
- * floating toggle opens the same mode and is asserted by its own spec.
+ * V27: the in-card "See map" button is REMOVED. The only door is the floating
+ * `places-view-toggle`, and on /browse it is not rendered until the page is
+ * scrolled past the controls (~220px). A short result set leaves the page
+ * un-scrollable at Playwright's viewport, so a temporary spacer guarantees a
+ * scroll range (the technique the map-view round-trip spec already uses); it is
+ * removed once the map view is up.
  */
 async function openMapMode(page: Page): Promise<void> {
-  await page.getByTestId('places-see-map').click()
+  await page.evaluate(() => {
+    if (document.getElementById('scroll-range-probe') !== null) return
+    const spacer = document.createElement('div')
+    spacer.id = 'scroll-range-probe'
+    spacer.style.height = '1800px'
+    document.body.appendChild(spacer)
+  })
+  await page.evaluate(() => window.scrollTo(0, 400))
+  await page.getByTestId('places-view-toggle').click()
   await expect(page.getByTestId('places-map-view-map')).toBeVisible()
+  await page.evaluate(() => document.getElementById('scroll-range-probe')?.remove())
 }
 
 /**
@@ -320,15 +312,17 @@ test('the Places tab is the seeded directory, and anon can read it (RED pre-0029
   // claim belongs to THAT row — asserting it page-wide was testing more than
   // the step meant to test.
   await useAnyDistance(page)
+  // V27: the search input is an always-visible inline field in the controls
+  // card, and typing filters the list live.
   await page.getByTestId('places-search').fill(PLACE_NAME)
   const greenLakeRow = placeRow(page, PLACE_NAME)
   await expect(greenLakeRow).toBeVisible()
   await expect(greenLakeRow.getByText(PLACE_ADDRESS, { exact: true })).toBeVisible()
-  // Clear the search so step (8) can assert the collapsed grouped state.
+  // Clear the search so step (8) can assert the full flat list.
   await page.getByTestId('places-search').fill('')
 
   // Every row carries a kind · indoor/outdoor line, and the counts line is
-  // either a real count or absent (never an invented "0 upcoming").
+  // either a real count or absent (never an invented "0 drop-ins planned here").
   await expect(page.getByTestId('place-row').first()).toContainText(
     /Playground|Splash pad|Pool|Beach|Library|Museum|Indoor play|Park|Place/,
   )
@@ -382,6 +376,8 @@ test('the Places tab is the seeded directory, and anon can read it (RED pre-0029
   // the mode is up: the map view spans both columns at md+, so it is never a
   // narrow column pinned beside the list it replaced.
   const wideMapBox = await overviewMap.boundingBox()
+  // V27: the controls card has no testid of its own; the inline search input
+  // is in its top row, so it is the representative width for the comparison.
   const wideControlsBox = await page.getByTestId('places-search').boundingBox()
   expect(
     wideMapBox !== null && wideControlsBox !== null,
@@ -398,17 +394,12 @@ test('the Places tab is the seeded directory, and anon can read it (RED pre-0029
   await page.getByTestId('places-back-to-list').click()
   await expect(page.getByTestId('place-row').first()).toBeVisible()
 
-  // (8) V25 t01: the list below the filters IS the whole matching set, grouped
-  // by kind (alphabetical by default, V15 t03), with no "See all" door and no
-  // lead to expand. At least one group header (a kind chip as an h2 section
-  // header) is visible, and the rows still carry the row testid (the existing
-  // helpers keep working against the layout).
-  await expect(
-    page
-      .locator('h2')
-      .filter({ hasText: KIND_GROUP_LABEL })
-      .first(),
-  ).toBeVisible()
+  // (8) V27: the list is FLAT — every matching row renders once with no kind
+  // group headings — and there is no "See all" door.
+  expect(
+    await page.getByTestId('place-row').count(),
+    'the flat list renders its rows',
+  ).toBeGreaterThan(0)
   await expect(page.getByTestId('places-see-all')).toHaveCount(0)
 })
 
@@ -431,6 +422,8 @@ test('tapping an overview map marker shows the place info + "Start a drop-in" (V
   // real coordinates, so the canvas holds a single indigo marker and the tap is
   // unambiguous. This is the same AC ("tapping a marker shows that place's
   // info"), driven at a place the map can actually represent.
+  // V27: the search input is an always-visible inline field; type to narrow
+  // the list before entering map mode (the next step taps the toggle).
   await page.getByTestId('places-search').fill(MARKER_PLACE_NAME)
   await expect(exactPlaceName(page, MARKER_PLACE_NAME)).toBeVisible()
 
@@ -788,6 +781,7 @@ test('a marker\'s tooltip is hit-testable, and tapping opens the place panel (V2
 }) => {
   await openPlacesTab(page)
   await useAnyDistance(page)
+  // V27: type in the always-visible inline search field before map mode.
   await page.getByTestId('places-search').fill(MARKER_PLACE_NAME)
   await expect(exactPlaceName(page, MARKER_PLACE_NAME)).toBeVisible()
 
@@ -1059,6 +1053,8 @@ test('list view is FILTERS FIRST and the list below, with no map mounted (V25 t0
   // page. I want to see the search filters at the very top with the list of all
   // the different places below it." Measured, not asserted from class names: the
   // filters card's top edge is above the first row's top edge.
+  // V27: the card's inline search input is in its top row, so it is the
+  // representative top edge.
   const controls = page.getByTestId('places-search')
   await expect(controls).toBeVisible()
   const firstRow = page.getByTestId('place-row').first()
@@ -1165,15 +1161,8 @@ test('list view is FILTERS FIRST and the list below, with no map mounted (V25 t0
     'the heart shares a row with the place name',
   ).toBeLessThan(24)
 
-  // AC (V25 t01): the kind grouping is KEPT — grouping was never the
-  // complaint — and the overflow door is GONE: every matching row renders on
-  // the first paint, with no second tap.
-  await expect(
-    page
-      .locator('h2')
-      .filter({ hasText: KIND_GROUP_LABEL })
-      .first(),
-  ).toBeVisible()
+  // AC (V27): the kind grouping is GONE — the list is FLAT — and the overflow
+  // door is GONE: every matching row renders on the first paint, no second tap.
   expect(
     await page.getByTestId('places-see-all').count(),
     'the overflow door is retired — the list is the whole list',
@@ -1185,8 +1174,8 @@ test('list view is FILTERS FIRST and the list below, with no map mounted (V25 t0
     BROWSE_LIST_LEAD_LIMIT,
   )
   const renderedRows = await page.getByTestId('place-row').count()
-  // The list's rows PLUS the "Not on the map yet" rows: `data-matched-rows` is
-  // the directory's own total, and the unplaced section renders rows too.
+  // V27: the flat list renders EVERY matching row once — placed or not. There
+  // is no separate "Not on the map yet" section any more.
   expect(
     renderedRows,
     `every matching row must render without a second tap (rendered ${renderedRows} for ${matched} matched)`,
@@ -1221,6 +1210,10 @@ test('the floating control toggles list and map, and its label follows (V25 t01)
   await useAnyDistance(page)
 
   const toggle = page.getByTestId('places-view-toggle')
+  // V27: in list view the toggle is withheld until the parent scrolls past the
+  // controls (~220px), so it is not attached at the top of the page.
+  await expect(toggle).toHaveCount(0)
+  await page.evaluate(() => window.scrollTo(0, 400))
   await expect(toggle).toBeVisible()
   await expect(toggle).toHaveText('Map')
   // The accessible name IS the visible label — the old control's
@@ -1288,9 +1281,11 @@ test('the floating control toggles list and map, and its label follows (V25 t01)
   await expect(toggle).toHaveText('Map')
   await expect(toggle).toHaveAttribute('aria-label', 'Map')
 
-  // AC: the controls card and the in-card door survived the round trip.
+  // AC: the controls card and the map door survived the round trip. (V27: the
+  // in-card "See map" button is gone; the floating toggle is the one door, and
+  // the inline search input stands for the controls card.)
   await expect(page.getByTestId('places-search')).toBeVisible()
-  await expect(page.getByTestId('places-see-map')).toBeVisible()
+  await expect(page.getByTestId('places-view-toggle')).toBeVisible()
   await expect(page.getByTestId('place-card-photo')).toHaveCount(0)
   await expect(page.locator('[data-testid^="row-learn-more-"]').first()).toBeVisible()
 })
@@ -1334,7 +1329,8 @@ test('an active search narrows the WHOLE list, and no map is drawn (V25 t01)', a
   await expect(page.getByTestId('places-map-view')).toHaveCount(0)
   await expect(page.locator('.leaflet-container')).toHaveCount(0)
 
-  // The plan's MEASURED case: `pool` narrows the list hard.
+  // The plan's MEASURED case: `pool` narrows the list hard. V27: the inline
+  // search input filters the list LIVE as it is typed.
   await page.getByTestId('places-search').fill('pool')
   await expect
     .poll(() => list.getByTestId('place-row').count(), {
@@ -1367,15 +1363,22 @@ test('an active search narrows the WHOLE list, and no map is drawn (V25 t01)', a
    * the map would be an empty pane — so the control must RETIRE rather than
    * offer a switch between two empty surfaces. The parent's way forward is the
    * message that is already on screen and the search box above it.
+   *
+   * V27: the toggle only renders once the page is scrolled, so scroll first —
+   * otherwise "not rendered" would be true because of the scroll gate rather
+   * than because there is nothing to switch to.
    */
+  await page.evaluate(() => window.scrollTo(0, 400))
   await expect(
     page.getByTestId('places-view-toggle'),
     'with nothing to show in either mode the toggle must not render',
   ).toHaveCount(0)
 
-  // …and it comes back the moment there is something to switch to.
+  // …and it comes back the moment there is something to switch to. Scroll
+  // again: the restored list makes the page tall enough for the gate to trip.
   await page.getByTestId('places-search').fill('park')
   await expect(page.getByTestId('place-row').first()).toBeVisible()
+  await page.evaluate(() => window.scrollTo(0, 400))
   await expect(page.getByTestId('places-view-toggle')).toBeVisible()
 })
 
@@ -1400,18 +1403,24 @@ test('the distance control narrows and widens the LIST, and still draws no map (
   await page.setViewportSize({ width: 390, height: 844 })
   await openPlacesTab(page)
 
-  const radiusControl = page.getByTestId('places-distance-filter')
+  const radiusControl = page.getByTestId('places-distance-filter-btn')
   await expect(radiusControl).toBeVisible()
 
   async function listRowCount(): Promise<number> {
     return page.getByTestId('places-list').getByTestId('place-row').count()
   }
 
-  await radiusControl.selectOption('1')
+  /** V27: a distance choice is a dropdown button + bottom sheet now. */
+  async function chooseDistance(miles: string): Promise<void> {
+    await page.getByTestId('places-distance-filter-btn').click()
+    await page.getByTestId(`places-distance-sheet-option-${miles}`).click()
+  }
+
+  await chooseDistance('1')
   await page.waitForTimeout(2200)
   const atOneMile = await listRowCount()
 
-  await radiusControl.selectOption('35')
+  await chooseDistance('35')
   await page.waitForTimeout(2200)
   const atThirtyFive = await listRowCount()
 
@@ -1432,8 +1441,9 @@ test('the distance control narrows and widens the LIST, and still draws no map (
   await expect(page.locator('.leaflet-container')).toHaveCount(0)
   await expect(page.getByTestId('places-map-band')).toHaveCount(0)
 
-  // The radius's own modal still works from its relocated home in the controls
-  // card, and its label tracks the slider.
+  // The radius's own modal still works from its relocated home, and its label
+  // tracks the slider. V27: "Set location" is an inline icon button in the
+  // controls card; tapping it hands off to the shared modal.
   await page.getByTestId('set-location-btn').click()
   await expect(page.getByTestId('location-modal')).toBeVisible()
   const slider = page.getByTestId('location-radius-slider')
@@ -1459,17 +1469,14 @@ test('the list is the WHOLE list — every matching row renders with no second t
    * make a matching place unreachable.
    *
    * THE COUNTS ARE THE APP'S OWN (the list publishes `data-matched-rows` = every
-   * matching row and `data-placed-rows` = the subset it renders), so this
-   * measures the RENDER against the app's decision rather than against today's
-   * seed size.
+   * matching row and `data-placed-rows` = the subset with a known distance), so
+   * this measures the RENDER against the app's decision rather than against
+   * today's seed size.
    *
-   * AND IT PINS THE PARTITION, which is what the first version of this spec
-   * missed (found in review): the unplaced rows (the seed has three, with no
-   * resolvable coordinates) render in the "Not on the map yet" section BELOW the
-   * list, so the list container must hold the PLACED rows and the two surfaces
-   * together must account for every matching row exactly once. A grouped list
-   * built from the full row set — the bug this now catches — renders each
-   * unplaced place twice, under two different headings.
+   * V27: THE LIST IS FLAT. The "Not on the map yet" section is gone, and every
+   * matching row — placed or coordinate-less — renders once inside `places-list`
+   * in sort order. So the container's row count must EQUAL `data-matched-rows`,
+   * and no place may render twice.
    */
   await openPlacesTab(page)
   await useAnyDistance(page)
@@ -1490,41 +1497,31 @@ test('the list is the WHOLE list — every matching row renders with no second t
   // AC: no door, and no "See all"/"Hide" toggle anywhere on the page.
   await expect(page.getByTestId('places-see-all')).toHaveCount(0)
 
-  // AC: EVERY PLACED ROW renders in the list on the first paint — the point.
+  // AC: EVERY MATCHING ROW — placed or coordinate-less — renders in the flat
+  // list on the first paint, with no second tap.
   const renderedListRows = await list.getByTestId('place-row').count()
   expect(
     renderedListRows,
-    `every placed row must render in the list without a tap (declared ${placed}, got ${renderedListRows})`,
-  ).toBe(placed)
-
-  // AC: THE UNPLACED ROWS RENDER EXACTLY ONCE, in their own section.
-  const unplacedSection = page.getByTestId('places-unplaced')
-  const unplacedCount =
-    (await unplacedSection.count()) === 0
-      ? 0
-      : await unplacedSection.getByTestId('place-row').count()
-  expect(
-    unplacedCount,
-    'the seed carries coordinate-less places, so this check must have something to count',
-  ).toBeGreaterThan(0)
-
-  // AC: THE PARTITION. List rows + unplaced rows = every matching row, and no
-  // row is rendered in both places.
-  expect(
-    renderedListRows + unplacedCount,
-    `the list (${renderedListRows}) and the "Not on the map yet" section (${unplacedCount}) ` +
-      `must account for every matching row (${matched}) exactly once`,
+    `every matching row must render in the flat list without a tap (declared ${matched}, got ${renderedListRows})`,
   ).toBe(matched)
 
-  // AC: no place name appears under both headings — the defect stated as the
-  // thing a parent would see.
+  // AC: no row is rendered twice. The coordinate-less places now sit inline
+  // rather than in a second section. Uniqueness is asserted by PLACE ID (the
+  // row's href), not by NAME: the seed legitimately holds distinct places that
+  // share a name (two "Madison Park" rows and four more pairs), so a name-based
+  // set undercounts and reads as a duplicate render that is not one.
   const listNames = await list.getByTestId('place-card-name').allInnerTexts()
-  const unplacedNames =
-    (await unplacedSection.count()) === 0
-      ? []
-      : await unplacedSection.getByTestId('place-card-name').allInnerTexts()
-  const doubled = unplacedNames.filter((name) => listNames.includes(name))
-  expect(doubled, 'a place must not render in the list AND in the unplaced section').toEqual([])
+  expect(
+    listNames.length,
+    `every matching row must render exactly one card name (declared ${matched}, got ${listNames.length})`,
+  ).toBe(matched)
+  const listHrefs = await list
+    .getByTestId('place-row')
+    .evaluateAll((rows) => rows.map((row) => (row as HTMLAnchorElement).getAttribute('href') ?? ''))
+  expect(
+    new Set(listHrefs).size,
+    'a place must not render twice in the flat list (one row per place id)',
+  ).toBe(listHrefs.length)
 
   // AC: a row that used to live behind the fold is reachable without any
   // interaction. `INDOOR_PLACE` sorts well past the old six-row lead.
@@ -1658,6 +1655,8 @@ test('one tap on a picker pin writes both fields (V25 t02)', async ({ page }) =>
 test('a place page renders the seeded data with the existing Maps link', async ({ page }) => {
   await openPlacesTab(page)
   await useAnyDistance(page)
+  // V27: the search input is an always-visible inline field; type to narrow
+  // the list to the row under test.
   await page.getByTestId('places-search').fill(PLACE_NAME)
   await exactPlaceName(page, PLACE_NAME).click()
 
@@ -1822,6 +1821,8 @@ test('the place page reads name → description → the two actions → the map 
 }) => {
   await openPlacesTab(page)
   await useAnyDistance(page)
+  // V27: the search input is an always-visible inline field; type to narrow
+  // the list to the row under test.
   await page.getByTestId('places-search').fill(PLACE_NAME)
   await exactPlaceName(page, PLACE_NAME).click()
   await page.waitForURL(/\/place\//)
@@ -2019,6 +2020,8 @@ test('picking a place on /new posts a drop-in that links to its place page, whic
 test('"Start a drop-in here" prefills the post form with that place', async ({ page }) => {
   await openPlacesTab(page)
   await useAnyDistance(page)
+  // V27: the search input is an always-visible inline field; type to narrow
+  // the list to the row under test.
   await page.getByTestId('places-search').fill(PLACE_NAME)
   await exactPlaceName(page, PLACE_NAME).click()
   await page.waitForURL(/\/place\//)
@@ -2054,12 +2057,15 @@ test('the Places tab filters by indoor and outdoor', async ({ page }) => {
   // need to expand the overflow door for this assertion.
 
   // Indoor: the indoor library branch stays, outdoor playgrounds go.
-  await page.getByTestId('places-indoor-filter').click()
+  // V27: the type filter is a dropdown button + bottom sheet.
+  await page.getByTestId('places-type-filter').click()
+  await page.getByTestId('places-type-sheet-option-indoor').click()
   await expect(placeRow(page, INDOOR_PLACE)).toBeVisible()
 
-  // Outdoor: the reverse. (Two separate buttons, so picking Outdoor does not
+  // Outdoor: the reverse. (One choice at a time, so picking Outdoor does not
   // mean "not Indoor" by accident.)
-  await page.getByTestId('places-outdoor-filter').click()
+  await page.getByTestId('places-type-filter').click()
+  await page.getByTestId('places-type-sheet-option-outdoor').click()
   await expect(placeRow(page, INDOOR_PLACE)).toHaveCount(0)
 })
 
@@ -2078,47 +2084,25 @@ test('the browse list defaults to alphabetical and the Filter & sort modal filte
   // matched nothing and asserted over an empty list: a passing test that tested
   // nothing.
   //
-  // Reading the real names then revealed what the old version got right only by
-  // accident. The lead is rendered GROUPED BY KIND (`groupPlacesByKind`), so
-  // the rows are alphabetical WITHIN a kind group, and the groups themselves
-  // follow PLACE_KINDS order — not one global A–Z run. The old assertion passed
-  // only because the first BROWSE_LIST_LEAD_LIMIT rows happened to fall inside
-  // a single kind group ("Playground"); the moment the seed's data shifted so a
-  // second kind entered the lead, it would have failed against correct code.
-  //
-  // So this asserts the ordering rule the page actually implements: within each
-  // group section, the names ascend. Asserting a global sort would be testing a
-  // rule nobody wrote.
-  //
-  // `locator('section:has(h2)')` rather than `filter({ has: page.locator('h2') })`:
-  // a locator passed to `has:` is resolved against the PAGE, not against the
-  // outer locator, so the filter matched nothing here. Every card group is a
-  // `section` whose first child is its kind `h2`, which is what the CSS
-  // `:has()` says directly.
+  // V27: the list is FLAT — the per-kind `section`/`h2` groups are gone — so
+  // the default A–Z sort is a single GLOBAL run (`sortPlaces(rows, 'alpha')`).
+  // This asserts the rendered names ascend globally.
   //
   // The explicit `first` wait is load-bearing, not decoration. `count()` and
   // `allTextContents()` are NON-WAITING snapshots, so without it this read the
   // DOM before the directory's async read had rendered anything and swept zero
-  // groups. (The original assertion survived that only by accident: it ended in
-  // `.first()`, which auto-waits.) The `checkedGroups` guard below is what
-  // turned that silent vacuity into a loud failure — keep both.
+  // names. The length guard below is what turns that silent vacuity into a
+  // loud failure — keep both.
   await expect(page.getByTestId('place-card-name').first()).toBeVisible()
-  const groups = page.locator('section:has(h2)')
-  let checkedGroups = 0
-  for (const section of await groups.all()) {
-    const names = await section.getByTestId('place-card-name').allTextContents()
-    if (names.length < 2) continue
-    checkedGroups++
-    for (let i = 1; i < names.length; i++) {
-      expect(
-        names[i].localeCompare(names[i - 1]),
-        `within one kind group, names must ascend A–Z ("${names[i - 1]}" then "${names[i]}")`,
-      ).toBeGreaterThanOrEqual(0)
-    }
+  const names = await page.getByTestId('place-card-name').allTextContents()
+  // A sweep over zero (or one) name would pass vacuously.
+  expect(names.length, 'the seed guarantees more than one rendered row').toBeGreaterThan(1)
+  for (let i = 1; i < names.length; i++) {
+    expect(
+      names[i].localeCompare(names[i - 1]),
+      `the flat list must ascend A–Z ("${names[i - 1]}" then "${names[i]}")`,
+    ).toBeGreaterThanOrEqual(0)
   }
-  // A sweep over zero groups would pass vacuously, which is the failure this
-  // whole repair exists to remove: the seed guarantees multi-row kind groups.
-  expect(checkedGroups).toBeGreaterThan(0)
 
   // AC2: the "Filter & sort" button opens the modal with kind chips, a sort
   // dropdown, and a radius input.
@@ -2171,6 +2155,7 @@ test('a signed-in parent hearts a place — the existing follow row, filled from
   // search so the assertion is about ONE unambiguous `place-heart-<id>`.
   await openPlacesTab(page)
   await useAnyDistance(page)
+  // V27: the query is typed into the always-visible inline search field.
   await page.getByTestId('places-search').fill(MARKER_PLACE_NAME)
   await expect(exactPlaceName(page, MARKER_PLACE_NAME)).toBeVisible()
 
@@ -2208,6 +2193,7 @@ test('a signed-in parent hearts a place — the existing follow row, filled from
   // narrowed place can fall out of the list — re-apply it (the same control the
   // rest of this spec drives) before searching again.
   await useAnyDistance(page)
+  // V27: the query is typed into the always-visible inline search field.
   await page.getByTestId('places-search').fill(MARKER_PLACE_NAME)
   await expect(exactPlaceName(page, MARKER_PLACE_NAME)).toBeVisible()
   await expect(page.getByTestId(`place-heart-${placeId}`)).toHaveAttribute(
@@ -2234,6 +2220,7 @@ test('a signed-in parent hearts a place — the existing follow row, filled from
   // narrowed place can fall out of the list — re-apply it (the same control the
   // rest of this spec drives) before searching again.
   await useAnyDistance(page)
+  // V27: the query is typed into the always-visible inline search field.
   await page.getByTestId('places-search').fill(MARKER_PLACE_NAME)
   await expect(exactPlaceName(page, MARKER_PLACE_NAME)).toBeVisible()
   await expect(page.getByTestId(`place-heart-${placeId}`)).toHaveAttribute(
@@ -2460,17 +2447,23 @@ test('the neighbourhood frame is a MODE, and the radius only widens the list (V2
     return page.getByTestId('places-list').getByTestId('place-row').count()
   }
 
-  const radiusControl = page.getByTestId('places-distance-filter')
+  const radiusControl = page.getByTestId('places-distance-filter-btn')
   await expect(radiusControl).toBeVisible()
 
+  /** V27: a distance choice is a dropdown button + bottom sheet now. */
+  async function chooseDistance(miles: string): Promise<void> {
+    await page.getByTestId('places-distance-filter-btn').click()
+    await page.getByTestId(`places-distance-sheet-option-${miles}`).click()
+  }
+
   // ---- radius = 1 mile -----------------------------------------------------
-  await radiusControl.selectOption('1')
+  await chooseDistance('1')
   await page.waitForTimeout(2200)
   const d1 = await maxListMiles()
   const n1 = await listRowCount()
 
   // ---- radius = 35 miles (the widest) --------------------------------------
-  await radiusControl.selectOption('35')
+  await chooseDistance('35')
   await page.waitForTimeout(2200)
   const d35 = await maxListMiles()
   const n35 = await listRowCount()
@@ -2494,8 +2487,10 @@ test('the neighbourhood frame is a MODE, and the radius only widens the list (V2
   await expect(page.locator('.leaflet-container')).toHaveCount(0)
 
   // …and the frame the parent asked for is what the map view shows when they
-  // open it: every matching place pinned, on one map.
-  await page.getByTestId('places-see-map').click()
+  // open it: every matching place pinned, on one map. V27: the only door is the
+  // floating toggle, which needs a scroll before it renders on /browse.
+  await page.evaluate(() => window.scrollTo(0, 400))
+  await page.getByTestId('places-view-toggle').click()
   await expect(page.getByTestId('places-map-view-map')).toBeVisible()
   await expect(page.locator('.leaflet-container')).toHaveCount(1)
   expect(
@@ -3058,10 +3053,11 @@ test('a tapped feed pin names the drop-in happening there, and says when it stan
  *      and dark.
  *
  * THE DATA WALL, pinned here rather than papered over: `food`, `zoo` and the
- * founder's "coffee shop nearby" have NO chip, because the directory has no such
- * kind and no amenity data at all (live: 0 rows for coffee/cafe/food/zoo). The
- * step-2 exact-set assertion is what would fail if someone later added a chip
- * for a category the schema cannot express.
+ * founder's "coffee shop nearby" have NO filter chip, because the directory has
+ * no such kind and no amenity data at all (live: 0 rows for coffee/cafe/food/zoo).
+ * V27: food and zoo ship as non-filtering PLACEHOLDER pills that open a
+ * "coming soon" line; the step-2 exact-set assertion is what would fail if
+ * someone later added a real chip for a category the schema cannot express.
  */
 test('the category chips are one row over the real kinds, agree with the sheet, and say so when a kind is empty (V25 t03)', async ({
   page,
@@ -3079,15 +3075,17 @@ test('the category chips are one row over the real kinds, agree with the sheet, 
   // binding decision is that a chip which can only ever return an empty list does
   // not ship — so their absence is asserted here, together with their KIND values
   // still being real (the sheet below still lists them).
+  // V27: the row also carries the two "coming soon" placeholder pills, which are
+  // buttons but not kind chips.
   const chipButtons = row.getByRole('button')
-  await expect(chipButtons).toHaveCount(PLACE_KIND_CHIP_KINDS.length)
+  await expect(chipButtons).toHaveCount(PLACE_KIND_CHIP_KINDS.length + 2)
   expect(PLACE_KIND_CHIP_KINDS.length, 'the row ships eight kinds with rows').toBe(8)
   for (const kind of PLACE_KIND_CHIP_KINDS) {
     const chip = page.getByTestId(`place-kind-chip-${kind}`)
     await expect(chip, `every chip kind needs a chip`).toBeVisible()
     const label = placeKindLabel(kind)
-    // The accessible name is the chip's word — the same word the list's group
-    // headings and the filter sheet render.
+    // The accessible name is the chip's word — the same word the filter sheet
+    // renders.
     await expect(row.getByRole('button', { name: label, exact: true })).toBeVisible()
     // The founder asked for "interesting icons": the glyph is DECORATION
     // (aria-hidden) and must be a real path, not an empty box.
@@ -3111,16 +3109,28 @@ test('the category chips are one row over the real kinds, agree with the sheet, 
   await page.getByTestId('filter-apply-btn').click()
   await expect(page.getByTestId('filter-sort-modal')).toHaveCount(0)
 
-  // --- 1b. The unshippable categories are NAMED IN RENDERED COPY. -------------
-  // The decision requires the withholding to be visible to the parent, not only
-  // in a commit or a source comment: one quiet line under the row, not a button.
-  const missingNote = page.getByTestId('place-kind-missing-note')
-  await expect(missingNote).toBeVisible()
-  for (const named of ['food', 'zoo', 'coffee']) {
-    await expect(missingNote).toContainText(named)
-  }
-  await expect(missingNote).toContainText('We don’t have that data yet.')
-  await expect(missingNote.getByRole('button')).toHaveCount(0)
+  // --- 1b. The unshippable categories are REAL placeholder pills. -------------
+  // V27: the static disclaimer sentence is gone. Two placeholder pills name the
+  // categories the schema cannot express (food/cafe, zoo/animal); tapping one
+  // opens an honest "coming soon" line instead of a chip that could only ever
+  // return an empty list.
+  const foodPlaceholder = page.getByTestId('place-kind-placeholder-food')
+  const zooPlaceholder = page.getByTestId('place-kind-placeholder-zoo')
+  await expect(foodPlaceholder).toBeVisible()
+  await expect(zooPlaceholder).toBeVisible()
+  await expect(page.getByTestId('place-kind-placeholder-coffee')).toHaveCount(0)
+  // The pills are NAMED to the parent — the copy says what is not covered yet.
+  await expect(foodPlaceholder).toContainText('Food')
+  await expect(zooPlaceholder).toContainText('Zoo')
+  // Tapping one shows the "coming soon" status line with the honest copy…
+  await foodPlaceholder.click()
+  const comingSoon = page.getByTestId('place-kind-coming-soon')
+  await expect(comingSoon).toBeVisible()
+  await expect(comingSoon).toContainText('Coming soon!')
+  await expect(comingSoon).toContainText('food')
+  // …and it toggles back off, so the rest of the spec runs on the default surface.
+  await foodPlaceholder.click()
+  await expect(comingSoon).toHaveCount(0)
 
   // --- 2. 44px targets + the row scrolls instead of wrapping. -----------------
   for (const kind of PLACE_KIND_CHIP_KINDS) {
@@ -3198,11 +3208,11 @@ test('the category chips are one row over the real kinds, agree with the sheet, 
   // THE ASSERTION IS DIFFERENTIAL ON PURPOSE, and the first version of this
   // spec that asserted an absolute `overflow === 0` at 320px was WRONG about
   // this app (it failed, and the failure was a fact, not a flake). MEASURED at
-  // 320px on this bundle: the page overflows by 3px, and the culprit is the
-  // PRE-EXISTING Distance `<select>` (`places-distance-filter`, right edge 323
-  // at a 320px viewport — its `<label class="flex …">` box), which this slice
-  // does not touch. Hiding the chip row's whole block leaves that 3px IDENTICAL,
-  // so the row's own contribution is exactly 0 at 320 and 390, light and dark.
+  // 320px on this bundle: the page overflows by 3px, from an unrelated
+  // pre-existing control (the old Distance `<select>`, since replaced by the
+  // `places-distance-filter-btn` dropdown). Hiding the chip row's whole block
+  // leaves that 3px IDENTICAL, so the row's own contribution is exactly 0 at
+  // 320 and 390, light and dark.
   //
   // So this asserts the property the ticket actually needs — the horizontally
   // scrolling row does not force page-level scroll — without claiming a clean

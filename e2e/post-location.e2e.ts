@@ -312,8 +312,8 @@ test('/new leads with the place picker and never asks for a neighbourhood', asyn
   await expect(browse).toHaveAttribute('aria-expanded', 'true')
   const sheet = page.getByTestId('place-directory-sheet')
   await expect(sheet).toBeVisible()
-  // The directory really is in there: the search field and at least one row.
-  await expect(page.getByTestId('places-search')).toBeVisible()
+  // The directory really is in there: the inline search field and at least one row.
+  await expect(sheet.getByTestId('places-search')).toBeVisible()
   expect(await page.getByTestId('place-row').count()).toBeGreaterThan(0)
   // Escape is the sheet's own dismissal (V23 slice 3); the button's
   // aria-expanded must follow it back to false.
