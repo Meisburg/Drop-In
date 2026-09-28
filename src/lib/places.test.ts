@@ -23,6 +23,7 @@ import {
   placeDistanceMiles,
   placeIdField,
   placeIndoorLabel,
+  placeTrustLine,
   placeInDateWindow,
   placeKindLabel,
   placeKindChips,
@@ -655,6 +656,17 @@ describe('the small place label seams', () => {
   it('says Indoor or Outdoor', () => {
     expect(placeIndoorLabel({ indoor: true })).toBe('Indoor')
     expect(placeIndoorLabel({ indoor: false })).toBe('Outdoor')
+  })
+
+  it('joins the kind and the indoor word into one trust line', () => {
+    expect(placeTrustLine({ kind: 'playground', indoor: false })).toBe('Playground · Outdoor')
+    expect(placeTrustLine({ kind: 'indoor_play', indoor: true })).toBe('Indoor play · Indoor')
+  })
+
+  it('is null for no place or a blank kind (never a dangling " · ")', () => {
+    expect(placeTrustLine(null)).toBeNull()
+    expect(placeTrustLine(undefined)).toBeNull()
+    expect(placeTrustLine({ kind: '', indoor: false })).toBeNull()
   })
 
   it('builds /place/:id, escaping the id', () => {

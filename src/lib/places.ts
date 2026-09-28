@@ -124,6 +124,24 @@ export function placeIndoorLabel(place: { indoor: boolean }): string {
 }
 
 /**
+ * V27 slice 3 — the one-line place trust statement a feed card renders under
+ * its place name: "Playground · Outdoor" (kind · indoor). Composed from the
+ * two label seams above, so the card and the place page cannot word a kind
+ * differently.
+ *
+ * NULL when there is no directory place at all (the ordinary typed-address
+ * post, or a degraded embed) or when the row's `kind` is blank — the card then
+ * renders no trust line rather than a dangling " · Outdoor". The caller tests
+ * `!== null`, never the truthiness of a half-built string.
+ */
+export function placeTrustLine(
+  place: { kind: string; indoor: boolean } | null | undefined,
+): string | null {
+  if (place === null || place === undefined || place.kind === '') return null
+  return `${placeKindLabel(place.kind)} · ${placeIndoorLabel({ indoor: place.indoor })}`
+}
+
+/**
  * V25 t03 — ONE CHIP IN THE CATEGORY ROW: a place kind, its word, and whether
  * the loaded directory has anything at all behind it.
  */

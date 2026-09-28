@@ -810,7 +810,13 @@ export async function queryUpcomingFeedWithClient(
     .select(
       // V9 ticket 01: NO `!inner` on the neighborhood embed (see the note
       // above) — an inner join would drop every post that has no neighbourhood.
-      '*, neighborhood:neighborhoods ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip, radius_miles )',
+      // V27 slice 3: the place-trust embed — the feed card's source for
+      // "Playground · Outdoor". Aliased `place_ref` (never `place`) because a
+      // playdate already has a scalar `place` (the free-text name the parent
+      // typed, which the directory does not always know); the `places!` hint
+      // pins the `playdates_place_id_fkey` FK (the PGRST201 lesson), and the
+      // embed is a LEFT JOIN, so a free-text post yields null (no trust line).
+      '*, neighborhood:neighborhoods ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip, radius_miles ), place_ref:places!playdates_place_id_fkey ( id, kind, indoor )',
     )
     .gt('ends_at', cutoffIso)
     // V12 ticket 03 (0041): a host-early-ended post leaves the feed immediately.

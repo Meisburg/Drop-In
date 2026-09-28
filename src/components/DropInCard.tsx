@@ -17,6 +17,9 @@ import {
   type CardCountdown,
   type GoingPinger,
 } from '../lib/feed'
+// V27 slice 3: the place-trust line ("Playground · Outdoor") — the card only
+// renders the pure seam's decision.
+import { placeTrustLine } from '../lib/places'
 import { weeklyMetaSuffix } from '../lib/series'
 import type { DailyForecast } from '../lib/weather'
 import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
@@ -321,6 +324,11 @@ export function DropInCard({
   // V25 ticket 05: the Maps row's href, or null when the post has no address —
   // the SAME pure seam the detail page links with (feed.mapsHref).
   const maps = mapsHref(playdate.place, playdate.address)
+  // V27 slice 3: what kind of place this is and whether it is indoor/outdoor,
+  // from the feed's `place_ref` embed. null for a post that names no directory
+  // place (the ordinary typed-address post) or a degraded embed — and the card
+  // then renders no trust line at all.
+  const placeTrustLabel = placeTrustLine(playdate.place_ref)
   return (
     <div data-testid="dropin-card" className={cardClasses}>
       {/* The card body: still ONE anchor, so the whole-card tap target, the
@@ -424,6 +432,15 @@ export function DropInCard({
         <p data-testid="card-place" className="text-sm text-slate-700">
           {playdate.place}
         </p>
+        {/* V27 slice 3: the place trust line — the directory row's kind and
+            indoor/outdoor ("Playground · Outdoor"), stated without a tap. It
+            renders ONLY when `place_ref` resolved; a free-text post (no
+            directory place) shows nothing rather than a guess. */}
+        {placeTrustLabel !== null ? (
+          <p data-testid="card-place-trust" className="text-xs text-slate-500">
+            {placeTrustLabel}
+          </p>
+        ) : null}
         {/* V9 ticket 01, narrowed by V25 ticket 05: the QUIET line — the
             neighbourhood and the distance, each dropping out when the post has
             none, joined by ` · ` with nothing to dangle (the WINDOW used to
