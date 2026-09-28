@@ -41,7 +41,7 @@ import {
 } from '../lib/feed'
 import type { LastOwnPlaydate, PlaydateFormErrors, PlaydateFormValues, TimePreset, ZipCoords } from '../lib/feed'
 import type { PlaydateStatus } from '../lib/types'
-import { addressAfterPlaceTextEdit, generatedTitle, stickyPostLine } from '../lib/postSummary'
+import { addressAfterPlaceTextEdit, generatedTitle, privacyPreview, stickyPostLine } from '../lib/postSummary'
 // V27 slice 2: the pure seam behind the Details chips — the page renders the
 // list and the tap goes through `applyVibeChip`, never an inline rule here.
 import { VIBE_CHIPS, applyVibeChip } from '../lib/vibeChips'
@@ -1089,6 +1089,29 @@ export function NewPlaydatePage({
     </div>
   )
 
+  /**
+   * V27 slice 3: the PRIVACY PREVIEW + trust line — shown at the point of
+   * posting, directly above the submit area. The wording is the PURE seam
+   * (`lib/postSummary.privacyPreview`, unit-tested): the selected kids by
+   * `kidLabel` (first name + age), the place, the day and the start, plus the
+   * fixed "Only nearby parents can see this. Kids show as first name + age."
+   * note. The page only supplies the selected kids' labels — the rule lives in
+   * lib, never here.
+   *
+   * A slot, not props on the form (the `detailsChipsSlot` pattern): `/edit`
+   * passes nothing, so no privacy block renders there.
+   */
+  const selectedKidLabels = (kids ?? [])
+    .filter((k) => selectedKidIds.includes(k.id))
+    .map((k) => kidLabel(k.first_name, k.age))
+  const { preview, note } = privacyPreview(values, selectedKidLabels)
+  const privacySlot = (
+    <div data-testid="privacy-preview" className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+      <p data-testid="privacy-preview-line" className="min-w-0 text-sm font-medium text-slate-700">{preview}</p>
+      <p data-testid="privacy-preview-note" className="mt-1 text-xs text-slate-600">{note}</p>
+    </div>
+  )
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     // V9 ticket 01: the place the app will actually write — the field's text
@@ -1314,7 +1337,12 @@ export function NewPlaydatePage({
         /* V27 slice 2: the Details chips — the one-tap starters for the optional
            Details field, written through the pure `applyVibeChip`. /edit passes
            nothing, so no chips appear there. */
-        detailsChipsSlot={detailsChipsSlot}        /* V8 ticket 07: the place autocomplete. It stays CLOSED while the
+        detailsChipsSlot={detailsChipsSlot}
+        /* V27 slice 3: the privacy preview + trust line — built from the pure
+           `privacyPreview` seam above and rendered by the form directly above
+           its submit area. /edit passes nothing, so no block appears there. */
+        privacySlot={privacySlot}
+        /* V8 ticket 07: the place autocomplete. It stays CLOSED while the
            directory is unavailable (null), so a pre-0029-apply /new renders
            exactly the form it rendered yesterday.
            V9 ticket 01: the list is whatever `placePickerMatches` decides for

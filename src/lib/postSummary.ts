@@ -276,3 +276,52 @@ export function stickyPostLine(values: PlaydateFormValues): string {
   ].filter((part) => part !== '')
   return parts.length === 0 ? 'Add a place' : parts.join(' · ')
 }
+
+/**
+ * V27 slice 3 — the trust line the /new privacy preview carries, VERBATIM. It
+ * is a fixed promise, not a computed claim: the block appears at the point of
+ * posting and says who can see the post without inventing a radius or a number
+ * (`/new` does not load the profile's radius — plan.md Risks).
+ */
+export const PRIVACY_PREVIEW_NOTE =
+  'Only nearby parents can see this. Kids show as first name + age.'
+
+/**
+ * V27 slice 3 — what /new's PRIVACY PREVIEW says, as one line plus the fixed
+ * trust note.
+ *
+ * The preview is the compact "here is what the world will see" read-back, in
+ * the order a parent scans it: WHO (the selected kids, each already in
+ * `kidLabel` form — first name + age, the one seam every kid label goes
+ * through), WHERE (the place as typed), then WHEN (the day and the start). The
+ * same two formatters the rest of the app reads a plan back with
+ * (`formatStartDayLabel`, `formatTimeLabel`) are reused, so the preview cannot
+ * disagree with the summary or the sticky bar.
+ *
+ * The empty states are the sticky bar's, deliberately: an unanswered place
+ * reads "Add a place" (the gentle prompt, not the form's "no place picked"),
+ * kids with nothing selected drop out entirely rather than leaving a dangling
+ * separator, and an unanswered date is dropped the same way. A preview with
+ * nothing at all — no kids, no day, and (impossibly, since the place slot
+ * always yields a word) no place — still says "Add a place" rather than an
+ * empty line, so the block never renders blank.
+ *
+ * `kidLabels` arrives pre-formatted (the page derives them from the selected
+ * kids) so this seam stays pure and knows nothing about the kids table.
+ */
+export function privacyPreview(
+  values: PlaydateFormValues,
+  kidLabels: readonly string[],
+): { preview: string; note: string } {
+  const place = values.place.trim()
+  const parts = [
+    kidLabels.join(', '),
+    place === '' ? 'Add a place' : place,
+    formatStartDayLabel(values.startDate),
+    formatTimeLabel(values.startMinutes),
+  ].filter((part) => part !== '')
+  return {
+    preview: parts.length === 0 ? 'Add a place' : parts.join(' · '),
+    note: PRIVACY_PREVIEW_NOTE,
+  }
+}

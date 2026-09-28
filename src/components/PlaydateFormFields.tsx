@@ -200,6 +200,14 @@ export interface PlaydateFormFieldsProps {
    * its Details block renders exactly the markup it always has — no chips.
    */
   detailsChipsSlot?: ReactNode
+  /**
+   * V27 slice 3: the /new-only PRIVACY PREVIEW + trust line — a stateless slot
+   * (the `detailsChipsSlot` pattern) the page builds from the pure
+   * `privacyPreview` seam. It renders directly ABOVE the submit button/error
+   * block, at the point of posting. `/edit` passes nothing, so its markup is
+   * unchanged and no privacy block appears there.
+   */
+  privacySlot?: ReactNode
   /** /new only: the quick-fill preset card, rendered inside the form first. */
   preset?: ReactNode
   /**
@@ -263,6 +271,7 @@ export function PlaydateFormFields({
   mapSlot,
   timePresetsSlot,
   detailsChipsSlot,
+  privacySlot,
   preset,
   kidsSectionSlot,
   formId = 'playdate-form',
@@ -824,6 +833,11 @@ line. No kids yet → the designed empty state + the /settings link (the
           {detailsBlock}
         </>
       )}
+
+      {/* V27 slice 3: the page's privacy preview + trust line, immediately
+          above the submit area — the point of posting. `/edit` passes nothing
+          (`undefined`), so this renders no node and its markup is unchanged. */}
+      {privacySlot}
 
       <div className="flex flex-col gap-2">
         {hideSubmit ? null : (
