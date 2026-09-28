@@ -192,6 +192,14 @@ export interface PlaydateFormFieldsProps {
    * so no shortcut appears there.
    */
   timePresetsSlot?: ReactNode
+  /**
+   * V27 slice 2: the /new-only VIBE CHIPS — a stateless slot like `preset` and
+   * `timePresetsSlot`, rendered inside the Details block between its label and
+   * its textarea. The PAGE owns the chip list (`lib/vibeChips`) and the write
+   * (`applyVibeChip`); this component owns no state. `/edit` passes nothing, so
+   * its Details block renders exactly the markup it always has — no chips.
+   */
+  detailsChipsSlot?: ReactNode
   /** /new only: the quick-fill preset card, rendered inside the form first. */
   preset?: ReactNode
   /**
@@ -254,6 +262,7 @@ export function PlaydateFormFields({
   onSomewhereElse,
   mapSlot,
   timePresetsSlot,
+  detailsChipsSlot,
   preset,
   kidsSectionSlot,
   formId = 'playdate-form',
@@ -678,6 +687,10 @@ line. No kids yet → the designed empty state + the /settings link (the
       <span className="text-slate-700">
         Details <span className="text-slate-500">(optional)</span>
       </span>
+      {/* V27 slice 2: the one-tap starters, right under the label and above the
+          box they fill. A slot the PAGE passes (/new builds it from
+          `lib/vibeChips`); `/edit` passes nothing, so no chips appear there. */}
+      {detailsChipsSlot}
       <textarea
         className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
         rows={3}
