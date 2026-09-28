@@ -16,15 +16,16 @@
  * `public.notification_payload` (migration 0032) — the same
  * "one pure seam + one SQL function" pairing as `src/lib/series.ts` ↔
  * `public.ensure_series_occurrences` (0028). Keep the two in step: the vitest
- * spec pins the wording of all six kinds and the SQL header names this file.
+ * spec pins the wording of all seven kinds and the SQL header names this file.
  *
  * Everything here is deliberately string/number in, string out, so it can be
  * unit-tested without a DOM and evaluated identically in Deno and the browser.
  */
 
-/** The six kinds — the app-side twin of 0032's CHECK constraint (widened to
+/** The seven kinds — the app-side twin of 0032's CHECK constraint (widened to
  * five by V12 t03, migration 0041: 'ended' joins the four; widened to six by
- * V26 slice 1, migration 0055: 'review_due' joins the five). */
+ * V26 slice 1, migration 0055: 'review_due' joins the five; widened to seven by
+ * V27 slice 1, migration 0056: 'new_message' joins the six). */
 export const NOTIFICATION_KINDS = [
   'ping_received',
   'starting_soon',
@@ -32,6 +33,7 @@ export const NOTIFICATION_KINDS = [
   'new_comment',
   'ended',
   'review_due',
+  'new_message',
 ] as const
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
@@ -73,6 +75,26 @@ export function notificationUrl(playdateId: string): string {
  */
 export function reviewPromptUrl(placeId: string): string {
   return `/place/${encodeURIComponent(placeId)}/details`
+}
+
+/**
+ * The route a new-message notification opens — the drop-in's THREAD, not its
+ * detail page (V27 slice 1, migration 0056). A SIBLING of `notificationUrl`
+ * and `reviewPromptUrl`, for the same reason: the parent's job is to reply, and
+ * the conversation lives at `/inbox?thread=<playdate id>`. `notificationUrl`'s
+ * `/playdate/:id` output is pinned by `src/lib/push.test.ts` (a URL form five
+ * KINDS already depend on — it has exactly ONE call site,
+ * `buildNotificationPayload` below), so the new kind gets its own rule rather
+ * than widening the old one's contract.
+ *
+ * THE ID IS ENCODED, matching `reviewPromptUrl` and the canonical
+ * `placeDetailsPath` (src/lib/places.ts). ONE route, ONE encoding contract:
+ * unencoded, an id containing `?`, `#` or `&` would silently change which
+ * thread the push opens. For a real uuid the output is byte-identical either
+ * way.
+ */
+export function messageThreadUrl(playdateId: string): string {
+  return `/inbox?thread=${encodeURIComponent(playdateId)}`
 }
 
 export interface NotificationPayloadInput {
@@ -136,7 +158,7 @@ export function familiesGoingLabel(count: number | null | undefined): string {
  * The full title/body/url for one notification — the exact strings the
  * producers write into `notification_log` and the sender posts.
  *
- * The `switch` is exhaustive over NotificationKind, so a seventh kind is a
+ * The `switch` is exhaustive over NotificationKind, so an eighth kind is a
  * compile error here rather than a silent default at runtime.
  */
 export function buildNotificationPayload(input: NotificationPayloadInput): NotificationPayload {
@@ -187,6 +209,15 @@ export function buildNotificationPayload(input: NotificationPayloadInput): Notif
         // char-for-char.
         body: 'You said you were going — rate the place.',
         url: reviewUrl,
+      }
+    case 'new_message':
+      return {
+        title: `${actor} messaged you`,
+        // The message BODY is never carried (V27 slice 1's privacy pin): the
+        // subject is the post's title, and the sentence points at the thread.
+        // The SQL twin (0056 section 2) carries this string char-for-char.
+        body: `Tap to reply in ${subject}`,
+        url: messageThreadUrl(input.playdateId),
       }
   }
 }

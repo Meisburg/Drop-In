@@ -17,7 +17,7 @@
  * Supabase client, no React — trivially testable, mock-free.
  */
 
-import { localDayKey } from './feed'
+import { cardWhenLabel, formatStartDayLabel, localDayKey } from './feed'
 
 /** A normalized row of the merged inbox list (one per distinct counterpart). */
 export interface MergedConversation {
@@ -260,6 +260,32 @@ export function mergeConversations(
 }
 
 /**
+ * V27 slice 3 — the Inbox tab's unread TOTAL.
+ *
+ * The two conversation seams (`listConversations`,
+ * `listDirectConversations`) each carry a per-row `unreadCount`. The bottom
+ * nav's badge needs ONE number across both kinds, computed in a pure place so
+ * the provider that fetches has no decision of its own to make.
+ *
+ * Deliberately total: a non-finite (`NaN`/`Infinity`), negative, missing, or
+ * non-number count contributes ZERO rather than poisoning the sum — a badge
+ * reading `NaN` is worse than no badge, and a realtime/refetch race must never
+ * be able to produce one. No I/O, no clock, no mutation, never throws.
+ */
+export function sumUnread(
+  rows: ReadonlyArray<{ unreadCount?: number | null }>,
+): number {
+  let total = 0
+  for (const row of rows) {
+    const value = row?.unreadCount
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      total += value
+    }
+  }
+  return total
+}
+
+/**
  * V25 ticket 11 — the thread's per-MESSAGE identity.
  *
  * THE DEFECT THIS EXISTS FOR. The bubble label used to be a THREAD-level value:
@@ -311,6 +337,99 @@ export function firstNamedCounterpart(
     }
   }
   return { id: '', name: '' }
+}
+
+/**
+ * V27 slice 4 — one participant of a thread's CONTEXT read (the drop-in's host
+ * plus its `going_pings` profiles), the input every group label is built from.
+ */
+export interface GroupParticipant {
+  /** The profile PK. The ONLY thing that tells two parents apart. */
+  id: string
+  /** The display name ('' or blank when the profile has none). */
+  name: string
+}
+
+/**
+ * V27 slice 4 — the thread header's GROUP name, or `null` when the thread is
+ * not a group.
+ *
+ * THE DEFECT THIS EXISTS FOR. The header was a single counterpart name, so a
+ * playdate thread shared by a host + several pingers rendered as if it were
+ * 1:1 — the header named one parent while three were in the room. The honest
+ * label for a group is "the first named parent + N more", computed from the
+ * participants the drop-in actually has.
+ *
+ * THE RULE. Drop the viewer (by id — never by name: two parents can share a
+ * display name, and a name match would erase a real participant), dedupe the
+ * rest by id, and:
+ *   - 0 or 1 other → `null`: a 1:1 has no group label, so the existing
+ *     counterpart header stands unchanged (the t11 priority chain is untouched);
+ *   - ≥2 others → `` `${firstName} + ${n - 1} more` `` using the FIRST
+ *     participant whose name is non-blank; when nobody has a name, the honest
+ *     count is `` `${n} parents` `` rather than an empty or invented name.
+ * The viewer's own name is never returned, however the rows are ordered.
+ *
+ * Pure: reads two fields per participant, no I/O, no clock, no mutation.
+ */
+export function groupLabel(
+  participants: ReadonlyArray<GroupParticipant>,
+  viewerId: string | null,
+): string | null {
+  // Drop the viewer and dedupe by id; the first sighting of an id wins, so a
+  // second row for the same parent can never pad the count.
+  const seen = new Set<string>()
+  const others: GroupParticipant[] = []
+  for (const participant of participants) {
+    if (viewerId !== null && participant.id === viewerId) continue
+    if (seen.has(participant.id)) continue
+    seen.add(participant.id)
+    others.push(participant)
+  }
+  if (others.length < 2) return null
+  const firstNamed = others.find((participant) => nameOrEmpty(participant.name) !== '')
+  if (firstNamed === undefined) return `${others.length} parents`
+  return `${nameOrEmpty(firstNamed.name)} + ${others.length - 1} more`
+}
+
+/**
+ * V27 slice 4 — the thread header's drop-in context line: `when · place`, or
+ * `null` when neither half is known.
+ *
+ * THE FORMAT IS NOT DECIDED HERE. `when` is `cardWhenLabel` (feed.ts) — the
+ * app's ONE card date/window wording — so the thread cannot grow a second date
+ * format beside the card's. `place` is the place's own name, trimmed.
+ *
+ * EITHER HALF MAY BE MISSING, AND A MISSING HALF RENDERS NOTHING: a known place
+ * with no window renders just the place, a known window with no place renders
+ * just the window, and neither yields `null` so the caller renders no line at
+ * all. A separator (`·`), the literal string "null"/"undefined", or an "Invalid
+ * Date" can never appear in the result.
+ *
+ * Pure: no I/O, no clock, no mutation, never throws.
+ */
+export function threadContextLine(
+  startsAt: string | null | undefined,
+  endsAt: string | null | undefined,
+  placeName: string | null | undefined,
+): string | null {
+  const start = typeof startsAt === 'string' && startsAt !== '' ? startsAt : null
+  const end = typeof endsAt === 'string' && endsAt !== '' ? endsAt : null
+  const place =
+    typeof placeName === 'string' && placeName.trim() !== '' ? placeName.trim() : null
+  // Only a window whose BOTH ends parse is a window; a half-window is not
+  // rendered (never "Invalid Date", never a dangling dash).
+  const when =
+    start !== null &&
+    end !== null &&
+    Number.isFinite(Date.parse(start)) &&
+    Number.isFinite(Date.parse(end))
+      ? cardWhenLabel(start, end)
+      : null
+  if (when === null && place === null) return null
+  if (when === null) return place
+  if (place === null) return when
+  return `${when} · ${place}`
 }
 
 /**
@@ -393,4 +512,78 @@ export function activeTodayLabel(
 ): string | null {
   if (lastSeenAtIso === null || lastSeenAtIso === undefined || lastSeenAtIso === '') return null
   return localDayKey(lastSeenAtIso) === localDayKey(nowIso) ? 'Active today' : null
+}
+
+/**
+ * V27 slice 5 — the one-tap meetup replies, pinned in order.
+ *
+ * The five phrases a parent actually sends while coordinating a drop-in. The
+ * LABEL is the chip's short text; the BODY is what lands in the composer when
+ * the chip is tapped — and therefore what is sent if the parent then taps Send.
+ * A chip NEVER sends on its own, so the body can be amended first. The list is
+ * `readonly` (callers cannot reorder or push); the exact five labels and the
+ * non-empty bodies are pinned by the sibling test.
+ */
+export const QUICK_REPLIES: readonly { label: string; body: string }[] = [
+  { label: 'On my way', body: 'On my way!' },
+  { label: 'Running late', body: 'Running about 10 minutes late.' },
+  { label: "We're here", body: "We're here!" },
+  { label: 'Still on?', body: 'Still on?' },
+  { label: "Can't make it", body: "Can't make it after all — sorry!" },
+]
+
+/**
+ * V27 slice 5 — the time-of-day under one message bubble, e.g. `3:04 PM`.
+ *
+ * Locale-independent by construction (fixed 12-hour + AM/PM wording), the same
+ * discipline as feed.ts's day tables: a screenshot or a test run must not move
+ * with the device locale. An empty or unparseable instant yields `''` rather
+ * than throwing or painting "Invalid Date", and the caller renders nothing.
+ *
+ * `nowIso` is accepted for call-site symmetry with `daySeparatorLabel` (both
+ * read one message instant against the current time); a clock time-of-day does
+ * not depend on it, which is why it is deliberately unused.
+ *
+ * Pure: no I/O, no clock read, no mutation, never throws.
+ */
+export function messageTimestampLabel(iso: string, nowIso: string): string {
+  void nowIso
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  const hour24 = date.getHours()
+  const meridiem = hour24 < 12 ? 'AM' : 'PM'
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12
+  return `${hour12}:${minutes} ${meridiem}`
+}
+
+/**
+ * V27 slice 5 — the label on a thread's day separator: `Today`, `Yesterday`,
+ * or an older local date such as `Sat, Sep 27`.
+ *
+ * The day BOUNDARY is `localDayKey` (feed.ts) — the app's ONE day rule — so a
+ * separator can only ever break a thread exactly where the feed would start a
+ * new day section. "Yesterday" is the local calendar day BEFORE `nowIso`, not
+ * "24 hours ago": a message at 11pm and one at 1am are different days however
+ * close they are.
+ *
+ * An older day reuses `formatStartDayLabel`'s fixed English day words, so the
+ * thread cannot grow a second date format beside the feed's. Deliberately never
+ * "Tomorrow": a past message must not be labelled with a future word. An empty
+ * or unparseable instant yields `''` (the caller renders no separator).
+ *
+ * Pure: no I/O, no clock read, no mutation, never throws.
+ */
+export function daySeparatorLabel(iso: string, nowIso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  const key = localDayKey(iso)
+  const now = new Date(nowIso)
+  if (!Number.isNaN(now.getTime())) {
+    if (key === localDayKey(nowIso)) return 'Today'
+    const yesterday = new Date(now)
+    yesterday.setDate(yesterday.getDate() - 1)
+    if (key === localDayKey(yesterday.toISOString())) return 'Yesterday'
+  }
+  return formatStartDayLabel(key)
 }

@@ -26,6 +26,7 @@ import {
   notificationDedupeKey,
   notificationUrl,
   reviewPromptUrl,
+  messageThreadUrl,
 } from '../../supabase/functions/_shared/pushCopy.ts'
 
 export {
@@ -37,6 +38,7 @@ export {
   notificationDedupeKey,
   notificationUrl,
   reviewPromptUrl,
+  messageThreadUrl,
 }
 export type {
   NotificationDedupeInput,
@@ -46,7 +48,7 @@ export type {
 }
 
 // ---------------------------------------------------------------------------
-// What the app calls the six kinds (the /settings toggle rows).
+// What the app calls the seven kinds (the /settings toggle rows).
 //
 // Derived from the same NOTIFICATION_KINDS list as the payload builder, so the
 // UI cannot drift into describing a kind that no producer can create.
@@ -82,6 +84,10 @@ export const NOTIFICATION_KIND_COPY: Record<NotificationKind, NotificationKindCo
   review_due: {
     label: 'How was it?',
     when: 'A drop-in you said you were going to has finished — rate the place.',
+  },
+  new_message: {
+    label: 'New messages',
+    when: 'Someone in a drop-in you joined sends a message in its thread.',
   },
 }
 

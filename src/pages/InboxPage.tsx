@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { BackControl } from '../components/BackControl'
 // V24 slice 04: the row's FACE reuses the app's ONE avatar primitive (40px,
@@ -38,12 +38,23 @@ import type {
 import { REACTION_KINDS } from '../lib/db'
 import {
   activeTodayLabel,
+  daySeparatorLabel,
   firstNamedCounterpart,
+  groupLabel,
   mergeConversations,
   messageSenderLabel,
+  messageTimestampLabel,
+  QUICK_REPLIES,
   singleSenderCounterpart,
+  threadContextLine,
 } from '../lib/inbox'
-import type { Counterpart, DmConversationRow, MergedConversation } from '../lib/inbox'
+import type {
+  Counterpart,
+  DmConversationRow,
+  GroupParticipant,
+  MergedConversation,
+} from '../lib/inbox'
+import { localDayKey } from '../lib/feed'
 
 /**
  * /inbox — parent↔parent messaging (V14 ticket 01, migration 0042).
@@ -241,8 +252,11 @@ function MessageBubble({
   message,
   isOwn,
   senderName,
+  timeLabel,
+  failed,
   reaction,
   onReact,
+  onRetry,
 }: {
   message: MessageRow
   isOwn: boolean
@@ -252,8 +266,21 @@ function MessageBubble({
    * "Unknown" (which reads as a broken person, the founder's report).
    */
   senderName: string | null
+  /**
+   * V27 slice 5: this message's local time-of-day (`messageTimestampLabel`).
+   * Computed by the page (one `now` per render) and rendered in the meta row at
+   * the 14px floor.
+   */
+  timeLabel: string
+  /**
+   * V27 slice 5: this optimistic bubble's send failed. It stays visible and
+   * wears the `Not sent · Retry` control; a successful send clears the flag.
+   */
+  failed: boolean
   reaction: ReactionState
   onReact: (messageId: string, kind: ReactionKind | null) => void
+  /** V27 slice 5: re-run the SAME send for a failed bubble. */
+  onRetry: (message: MessageRow) => void
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const countLabel = reactionCountLabel(reaction.count)
@@ -280,7 +307,13 @@ function MessageBubble({
         >
           {message.body}
         </p>
-        <div className={`relative mt-1 flex items-center gap-1.5 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+        <div className={`relative mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+          {/* V27 s5: the bubble's local time-of-day, at the 14px text floor. */}
+          {timeLabel !== '' ? (
+            <span data-testid={`message-time-${message.id}`} className="text-sm text-slate-500">
+              {timeLabel}
+            </span>
+          ) : null}
           {/* The summary pill: the viewer's glyph + count; opens the picker. */}
           <button
             type="button"
@@ -297,6 +330,20 @@ function MessageBubble({
               <span data-testid={`react-count-${message.id}`}>{countLabel}</span>
             ) : null}
           </button>
+          {/* V27 s5: a failed send KEEPS its bubble and offers this control
+              instead of vanishing. The 44px floor is on the control itself
+              (`min-h-11`), and the body it re-sends is the bubble's own. */}
+          {failed ? (
+            <button
+              type="button"
+              data-testid={`retry-${message.id}`}
+              aria-label="Not sent. Retry sending this message."
+              onClick={() => onRetry(message)}
+              className="inline-flex min-h-11 items-center rounded-lg px-2 text-sm font-semibold text-red-700 transition-colors motion-reduce:transition-none hover:bg-red-50"
+            >
+              Not sent · Retry
+            </button>
+          ) : null}
           {pickerOpen ? (
             <div
               data-testid={`react-picker-${message.id}`}
@@ -359,10 +406,26 @@ export function InboxPage() {
   // below) reads this state, so it cannot be clobbered by load ordering.
   const [fallbackCounterpart, setFallbackCounterpart] = useState<Counterpart>({ id: '', name: '' })
   const [fallbackTitle, setFallbackTitle] = useState('')
+  // V27 slice 4: the playdate thread's CONTEXT — the drop-in's window/place and
+  // its participant set — resolved by the read below. Deliberately its OWN state:
+  // routing it through `fallbackCounterpart`/`fallbackTitle` would feed the t11
+  // counterpart priority chain and could change a 1:1's header. `?dm=` threads
+  // never fill these (the read only runs for a `?thread=` id).
+  const [contextStartsAt, setContextStartsAt] = useState<string | null>(null)
+  const [contextEndsAt, setContextEndsAt] = useState<string | null>(null)
+  const [contextPlaceName, setContextPlaceName] = useState<string | null>(null)
+  const [contextParticipants, setContextParticipants] = useState<GroupParticipant[]>([])
   const [draft, setDraft] = useState('')
   const [sendError, setSendError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
+  // V27 slice 5: the optimistic rows whose write FAILED. A failed row is kept
+  // (never filtered out) and its id lives here so the bubble can wear the
+  // `Not sent · Retry` control; the id is cleared when a retry succeeds.
+  const [failedIds, setFailedIds] = useState<string[]>([])
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
+  // V27 slice 5: a quick-reply chip fills the draft AND puts the caret back in
+  // the textarea so the parent can amend before Send (a chip never sends).
+  const composerRef = useRef<HTMLTextAreaElement | null>(null)
 
   // --- Reaction state (V15 ticket 08, A26) ---------------------------------
   // Keyed by message id: { count, mine }. Loaded in one batch when the thread
@@ -434,6 +497,8 @@ export function InboxPage() {
       setThread(null)
       setDraft('')
       setSendError(null)
+      // A failed-send marker belongs to the thread it was made in.
+      setFailedIds([])
       // Closing the thread drops the reaction state with it — a stale map
       // must never colour a bubble in the NEXT conversation.
       setReactions({})
@@ -443,10 +508,16 @@ export function InboxPage() {
     setThread({ status: 'loading' })
     setDraft('')
     setSendError(null)
+    setFailedIds([])
     setReactions({})
     // A counterpart resolved for the PREVIOUS thread must never name this one.
     setFallbackCounterpart({ id: '', name: '' })
     setFallbackTitle('')
+    // V27 s4: neither must the previous thread's drop-in context paint this one.
+    setContextStartsAt(null)
+    setContextEndsAt(null)
+    setContextPlaceName(null)
+    setContextParticipants([])
 
     /**
      * The thread's starting reaction state, in ONE bounded request for all of
@@ -540,15 +611,19 @@ export function InboxPage() {
   // from data at render time cannot lose that race: there is no writer left to
   // wipe it.
   //
-  // Fallback read: when the conversation list has no named row for this
-  // playdate (e.g. the thread was opened directly via ?thread=<id>, or the row
-  // is not free-form-visible), resolve the counterpart from the playdates
-  // table. Its result lands in its OWN state and is never guarded on the
+  // Fallback read (V25 t11 counterpart + V27 s4 context): resolve the playdate
+  // from the `playdates` table for this `?thread=` id.
+  //
+  // V27 slice 4: this read now ALWAYS runs for a playdate thread — the header
+  // needs the drop-in's window/place and participant set even when the
+  // conversation-list row already carries a name — and its context lands in the
+  // separate `context*` state so it cannot touch the t11 counterpart chain. The
+  // counterpart-name fallback keeps its ORIGINAL gate exactly (the list must be
+  // ready and must have no named row for this playdate), and a `?dm=` thread
+  // never reaches here (`threadId` is null). Its result is never guarded on the
   // thread's readiness.
   useEffect(() => {
-    if (threadId === null || list.status !== 'ready') return
-    const conv = list.conversations.find((c) => c.playdateId === threadId)
-    if (conv !== undefined && conv.otherPartyDisplayName !== '') return
+    if (threadId === null) return
     let cancelled = false
     ;(async () => {
       try {
@@ -557,7 +632,9 @@ export function InboxPage() {
         const { data, error } = await supabase
           .from('playdates')
           .select(
-            'title, host_profile_id, host:profiles!playdates_host_profile_id_fkey ( id, display_name ), ' +
+            'title, starts_at, ends_at, host_profile_id, ' +
+              'place:places!playdates_place_id_fkey ( name ), ' +
+              'host:profiles!playdates_host_profile_id_fkey ( id, display_name ), ' +
               'pings:going_pings ( profile:profiles!going_pings_profile_id_fkey ( id, display_name ) )',
           )
           .eq('id', threadId)
@@ -565,10 +642,32 @@ export function InboxPage() {
         if (error || cancelled || data === null || data.length === 0) return
         const row = data[0] as unknown as {
           title: string | null
+          starts_at: string | null
+          ends_at: string | null
           host_profile_id: string
+          place: { name: string | null } | null
           host: { id: string; display_name: string } | null
           pings: Array<{ profile: { id: string; display_name: string } | null }>
         }
+        // V27 s4: the drop-in context, into its OWN state.
+        setContextStartsAt(row.starts_at ?? null)
+        setContextEndsAt(row.ends_at ?? null)
+        setContextPlaceName(row.place?.name ?? null)
+        const participants: GroupParticipant[] = []
+        if (row.host !== null) {
+          participants.push({ id: row.host.id, name: row.host.display_name })
+        }
+        for (const ping of row.pings) {
+          if (ping.profile !== null) {
+            participants.push({ id: ping.profile.id, name: ping.profile.display_name })
+          }
+        }
+        setContextParticipants(participants)
+        // The pre-t11 counterpart fallback, unchanged: only when the list is
+        // ready AND it has no named row for this playdate.
+        if (list.status !== 'ready') return
+        const conv = list.conversations.find((c) => c.playdateId === threadId)
+        if (conv !== undefined && conv.otherPartyDisplayName !== '') return
         setFallbackTitle(row.title ?? '')
         if (row.host_profile_id !== userId) {
           // The caller is a pinger; the other party is the host.
@@ -594,11 +693,14 @@ export function InboxPage() {
     }
   }, [list, threadId, session])
 
-  // Real-time: append INSERTs for the open thread without a reload. The
-  // channel is rebuilt on every thread change (and torn down on unmount) so
-  // a stale filter can never deliver into the wrong conversation. For
-  // free-form DMs, we subscribe to messages where sender_id = me OR the
-  // other party (filtered client-side by playdate_id IS NULL).
+  // Real-time: live UPDATE of whichever view is open. The channel is rebuilt
+  // on every view change (and torn down on unmount) so a stale filter can
+  // never deliver into the wrong conversation. Two shapes:
+  //   - thread open — append INSERTs for the open thread without a reload.
+  //     For free-form DMs, we subscribe to messages where sender_id = me OR
+  //     the other party (filtered client-side by playdate_id IS NULL);
+  //   - list view — subscribe to ALL message INSERTs with NO server filter and
+  //     bump `reloadToken`, which the list-load effect above keys on.
   //
   // V15 ticket 08 (A26) adds a SECOND table to the SAME channel: every
   // message_reactions INSERT/DELETE, filtered CLIENT-SIDE to the ids in the
@@ -609,7 +711,23 @@ export function InboxPage() {
   // a reaction in some other conversation is dropped before it can touch this
   // one's counters.
   useEffect(() => {
-    if (threadId === null && dmTargetId === null) return
+    // List view: no thread is open. Subscribe to ALL message INSERTs with NO
+    // server-side filter — Supabase Realtime applies the caller's RLS, so only
+    // rows this parent may read are delivered. Each one bumps `reloadToken`,
+    // which the list-load effect above keys on (listConversations +
+    // listDirectConversations, hence the unread counts). This subscription
+    // never writes into `thread` state.
+    if (threadId === null && dmTargetId === null) {
+      const listChannel = supabase
+        .channel('inbox-list')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
+          setReloadToken((token) => token + 1)
+        })
+        .subscribe()
+      return () => {
+        void supabase.removeChannel(listChannel)
+      }
+    }
     const channelName = dmTargetId !== null ? `dm-${dmTargetId}` : `messages-${threadId}`
     const channel = supabase.channel(channelName)
 
@@ -730,6 +848,22 @@ export function InboxPage() {
     }
   }, [threadId, dmTargetId, session])
 
+  // Returning to the tab refetches the list. A background tab throttles
+  // realtime delivery, so on the next visible moment bump `reloadToken` once to
+  // reconcile previews/times/unread counts with the server. The listener is
+  // removed on unmount.
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        setReloadToken((token) => token + 1)
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [])
+
   // Keep the newest message in view as the thread grows.
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: 'end' })
@@ -765,7 +899,16 @@ export function InboxPage() {
     }
   }
 
-  /** Optimistic append + the real write; on failure the optimistic row is rolled back. */
+  /**
+   * Optimistic append + the real write.
+   *
+   * V27 slice 5: a FAILED write no longer deletes the optimistic row (the old
+   * behaviour made a parent's words disappear with no trace). The bubble stays
+   * visible, its id is recorded in `failedIds` so it wears `Not sent · Retry`,
+   * and the inline error line still explains why. Retry (`handleRetry`) re-runs
+   * the SAME body; the realtime echo then reconciles the `pending-` row via
+   * `reconcileOptimisticMessage` (sender+body match).
+   */
   async function handleSend(): Promise<void> {
     if (userId === null) return
     const validationError = validateMessageBody(draft)
@@ -797,15 +940,68 @@ export function InboxPage() {
         await sendMessage(threadId, draft)
       }
     } catch (err: unknown) {
-      // Roll back the optimistic row + say so honestly.
-      setThread((prev) =>
-        prev !== null && prev.status === 'ready'
-          ? { ...prev, messages: prev.messages.filter((m) => m.id !== optimistic.id) }
-          : prev,
-      )
+      // KEEP the optimistic row and flag it failed (never filter it out).
+      setFailedIds((ids) => (ids.includes(optimistic.id) ? ids : [...ids, optimistic.id]))
       setSendError(err instanceof Error ? err.message : 'Could not send your message.')
     } finally {
       setSending(false)
+    }
+  }
+
+  /**
+   * V27 slice 5: re-send a FAILED bubble.
+   *
+   * Deliberately uses `message.body` — the body the bubble was created with —
+   * NOT the composer draft, so retry re-sends exactly the message the parent
+   * wrote. The realtime echo reconciles the `pending-` row by sender+body.
+   *
+   * GUARD: if the `pending-` row is already gone (the echo landed and replaced
+   * it with the real uuid), there is nothing to retry — sending again would
+   * duplicate the message. The marker is simply cleared and no wire call fires.
+   */
+  async function handleRetry(message: MessageRow): Promise<void> {
+    if (userId === null) return
+    const stillPending =
+      thread !== null &&
+      thread.status === 'ready' &&
+      thread.messages.some((m) => m.id === message.id)
+    if (!stillPending) {
+      setFailedIds((ids) => ids.filter((id) => id !== message.id))
+      return
+    }
+    setSending(true)
+    setSendError(null)
+    try {
+      if (dmTargetId !== null) {
+        await sendDirectMessage(dmTargetId, message.body)
+      } else if (threadId !== null) {
+        await sendMessage(threadId, message.body)
+      } else {
+        return
+      }
+      // Success: drop the marker; the realtime echo reconciles the pending row.
+      setFailedIds((ids) => ids.filter((id) => id !== message.id))
+    } catch (err: unknown) {
+      // Put the marker back and say so honestly.
+      setFailedIds((ids) => (ids.includes(message.id) ? ids : [...ids, message.id]))
+      setSendError(err instanceof Error ? err.message : 'Could not send your message.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  /**
+   * V27 slice 5: a quick-reply chip fills the composer with its body and
+   * focuses the textarea. It NEVER sends — the parent may amend first, and Send
+   * (or Enter) is still an explicit act.
+   */
+  function applyQuickReply(body: string): void {
+    setDraft(body)
+    setSendError(null)
+    const el = composerRef.current
+    if (el !== null) {
+      el.style.height = 'auto'
+      el.focus()
     }
   }
 
@@ -910,6 +1106,29 @@ export function InboxPage() {
     }
     return fallbackTitle
   }, [threadId, list, fallbackTitle])
+
+  // V27 slice 4: the header's GROUP label, derived from the context read. `null`
+  // for a 1:1 (0–1 others) or a DM, so the counterpart name stands unchanged.
+  const threadHeaderGroupLabel = useMemo(
+    () => groupLabel(contextParticipants, userId),
+    [contextParticipants, userId],
+  )
+
+  // V27 slice 4: the drop-in context line — `when · place`, decided by the pure
+  // `threadContextLine` (inbox.ts). A DM thread has no playdate context, so the
+  // line is suppressed outright; a missing half is omitted by the helper, never
+  // rendered as `null`/`undefined`/a dangling `·`.
+  const threadDropInLine = useMemo(
+    () =>
+      threadId === null
+        ? null
+        : threadContextLine(contextStartsAt, contextEndsAt, contextPlaceName),
+    [threadId, contextStartsAt, contextEndsAt, contextPlaceName],
+  )
+
+  // V27 s5: ONE `now` per render, so every bubble's time and every day
+  // separator in this frame are computed against the same instant.
+  const nowIso = new Date().toISOString()
 
   return (
     <div className="mx-auto max-w-md">
@@ -1039,13 +1258,44 @@ export function InboxPage() {
           {/* Thread header: the shared back control + the post's title + the other party.
               V24 slice 02: the ad-hoc bordered "←" square became BackControl (one
               circular control app-wide); the destination ("conversations") lives in
-              the heading below, not inside the control. */}
+              the heading below, not inside the control.
+
+              V27 slice 4: a playdate thread's identity block is a LINK back to
+              the post (/playdate/:id) and names the group + the drop-in's
+              window/place. The link is a SIBLING of BackControl — never an
+              ancestor — so it cannot swallow the back tap, and the inner
+              `div.min-w-0` is kept so the e2e header selector
+              (`div.min-w-0 > p`) still resolves. A DM thread has no playdate to
+              link to, so it keeps the plain block. */}
           <div className="flex items-center gap-2">
             <BackControl onClick={closeThread} testId="inbox-back-to-conversations" />
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-slate-900">{threadHeaderName}</p>
-              <p className="truncate text-xs text-slate-500">{threadHeaderTitle}</p>
-            </div>
+            {threadId !== null ? (
+              <Link
+                to={`/playdate/${threadId}`}
+                data-testid="inbox-thread-playdate-link"
+                className="min-w-0 flex-1 rounded-lg transition-colors motion-reduce:transition-none hover:bg-slate-50"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-900">
+                    {threadHeaderGroupLabel ?? threadHeaderName}
+                  </p>
+                  <p className="truncate text-xs text-slate-500">{threadHeaderTitle}</p>
+                  {threadDropInLine !== null ? (
+                    <p
+                      data-testid="inbox-thread-context"
+                      className="truncate text-xs text-slate-500"
+                    >
+                      {threadDropInLine}
+                    </p>
+                  ) : null}
+                </div>
+              </Link>
+            ) : (
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-900">{threadHeaderName}</p>
+                <p className="truncate text-xs text-slate-500">{threadHeaderTitle}</p>
+              </div>
+            )}
           </div>
 
           {list.status === 'error' ? (
@@ -1075,31 +1325,81 @@ export function InboxPage() {
                     No messages yet — say hi below.
                   </p>
                 ) : (
-                  thread.messages.map((message) => (
-                    <MessageBubble
-                      key={message.id}
-                      message={message}
-                      isOwn={userId !== null && message.sender_id === userId}
-                      senderName={messageSenderLabel(message, {
-                        viewerId: userId,
-                        viewerDisplayName: profile?.display_name ?? null,
-                        // The thread-level name is a LAST resort, and only when
-                        // the ids match — a group thread can never attribute
-                        // one participant's message to another.
-                        counterpart,
-                      })}
-                      reaction={reactions[message.id] ?? { count: 0, mine: false, myKind: null }}
-                      onReact={(messageId, kind) => void handleReact(messageId, kind)}
-                    />
-                  ))
+                  thread.messages.map((message, index) => {
+                    // V27 s5: one separator per DAY — the app's ONE day rule
+                    // (localDayKey) decides the boundary, so the thread breaks
+                    // exactly where the feed would start a new day section.
+                    // The FIRST message always gets its day label.
+                    const dayKey = localDayKey(message.created_at)
+                    const previous = index > 0 ? thread.messages[index - 1] : null
+                    const separatorLabel =
+                      previous === null || localDayKey(previous.created_at) !== dayKey
+                        ? daySeparatorLabel(message.created_at, nowIso)
+                        : ''
+                    return (
+                      <Fragment key={message.id}>
+                        {separatorLabel !== '' ? (
+                          <p
+                            data-testid={`day-separator-${dayKey}`}
+                            className="mt-1 text-center text-sm font-medium text-slate-500"
+                          >
+                            {separatorLabel}
+                          </p>
+                        ) : null}
+                        <MessageBubble
+                          message={message}
+                          isOwn={userId !== null && message.sender_id === userId}
+                          senderName={messageSenderLabel(message, {
+                            viewerId: userId,
+                            viewerDisplayName: profile?.display_name ?? null,
+                            // The thread-level name is a LAST resort, and only when
+                            // the ids match — a group thread can never attribute
+                            // one participant's message to another.
+                            counterpart,
+                          })}
+                          timeLabel={messageTimestampLabel(message.created_at, nowIso)}
+                          failed={failedIds.includes(message.id)}
+                          reaction={reactions[message.id] ?? { count: 0, mine: false, myKind: null }}
+                          onReact={(messageId, kind) => void handleReact(messageId, kind)}
+                          onRetry={(failedMessage) => void handleRetry(failedMessage)}
+                        />
+                      </Fragment>
+                    )
+                  })
                 )}
                 <div ref={messagesEndRef} />
               </div>
+
+              {/* V27 s5: one-tap meetup replies, ABOVE the composer. A chip
+                  fills the draft and focuses the textarea; it never sends, so
+                  the parent can amend first. Hidden while a send is in flight.
+                  Every chip is a 44px (`min-h-11`) control at the 14px floor,
+                  and the row scrolls horizontally rather than wrapping at
+                  390px. */}
+              {!sending ? (
+                <div
+                  data-testid="quick-replies"
+                  className="mt-3 flex gap-2 overflow-x-auto pb-1"
+                >
+                  {QUICK_REPLIES.map((reply, index) => (
+                    <button
+                      key={reply.label}
+                      type="button"
+                      data-testid={`quick-reply-${index}`}
+                      onClick={() => applyQuickReply(reply.body)}
+                      className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
+                    >
+                      {reply.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
 
               {/* Composer: auto-grow textarea (max ~4 lines) + Send (disabled
                   when empty). Enter sends on desktop; Shift+Enter breaks. */}
               <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
                 <textarea
+                  ref={composerRef}
                   value={draft}
                   onChange={handleComposerChange}
                   onKeyDown={handleComposerKeyDown}

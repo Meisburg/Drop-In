@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import {
   activeTodayLabel,
+  daySeparatorLabel,
   firstNamedCounterpart,
+  groupLabel,
   mergeConversations,
   mergeKeyFor,
   messageSenderLabel,
+  messageTimestampLabel,
+  QUICK_REPLIES,
   singleSenderCounterpart,
+  sumUnread,
+  threadContextLine,
 } from './inbox'
+import { cardWhenLabel } from './feed'
 import type { DmConversationRow, MessageSenderFields, PlaydateConversationRow } from './inbox'
 
 /**
@@ -535,5 +542,266 @@ describe('firstNamedCounterpart (V25 t11 — first real name wins, blanks are un
   it('skips null/undefined candidates and returns an unnamed counterpart when none carry a name', () => {
     expect(firstNamedCounterpart([null, undefined, { id: 'a', name: '  ' }])).toEqual({ id: '', name: '' })
     expect(firstNamedCounterpart([])).toEqual({ id: '', name: '' })
+  })
+})
+
+describe('groupLabel (V27 s4 — the thread names the group, never the viewer)', () => {
+  it('returns null for no other participants or exactly one (a 1:1 keeps today\'s header)', () => {
+    expect(groupLabel([], 'me')).toBeNull()
+    expect(groupLabel([{ id: 'me', name: 'Jon' }], 'me')).toBeNull()
+    expect(groupLabel([{ id: 'a', name: 'Nicole' }], 'me')).toBeNull()
+  })
+
+  it('drops the viewer by id and names the first named other, with the count', () => {
+    expect(
+      groupLabel(
+        [
+          { id: 'me', name: 'Jon Meisburg' },
+          { id: 'a', name: 'Nicole Meisburg' },
+          { id: 'b', name: 'Priya Patel' },
+        ],
+        'me',
+      ),
+    ).toBe('Nicole Meisburg + 1 more')
+  })
+
+  it('dedupes repeated participants by id so a duplicate cannot pad the count', () => {
+    expect(
+      groupLabel(
+        [
+          { id: 'a', name: 'Nicole Meisburg' },
+          { id: 'a', name: 'Nicole Meisburg' },
+          { id: 'b', name: 'Priya Patel' },
+        ],
+        'me',
+      ),
+    ).toBe('Nicole Meisburg + 1 more')
+  })
+
+  it('uses the FIRST participant with a non-blank name, never a blank one', () => {
+    expect(
+      groupLabel(
+        [
+          { id: 'a', name: '   ' },
+          { id: 'b', name: '' },
+          { id: 'c', name: 'Priya Patel' },
+          { id: 'd', name: 'Nicole Meisburg' },
+        ],
+        'me',
+      ),
+    ).toBe('Priya Patel + 3 more')
+  })
+
+  it('falls back to the honest count when nobody has a name (never an invented name)', () => {
+    expect(
+      groupLabel(
+        [
+          { id: 'a', name: '' },
+          { id: 'b', name: '  ' },
+          { id: 'c', name: '' },
+        ],
+        'me',
+      ),
+    ).toBe('3 parents')
+  })
+
+  it('never names the viewer, even when the viewer is the first named row', () => {
+    // The viewer is dropped before the "first named" pick, so their name cannot
+    // leak into the label however the participants are ordered.
+    const label = groupLabel(
+      [
+        { id: 'me', name: 'Jon Meisburg' },
+        { id: 'a', name: '' },
+        { id: 'b', name: 'Priya Patel' },
+      ],
+      'me',
+    )
+    expect(label).toBe('Priya Patel + 1 more')
+    expect(label ?? '').not.toContain('Jon')
+  })
+
+  it('keeps everyone when the viewer id is unknown (null)', () => {
+    expect(
+      groupLabel(
+        [
+          { id: 'a', name: 'Nicole Meisburg' },
+          { id: 'b', name: 'Priya Patel' },
+        ],
+        null,
+      ),
+    ).toBe('Nicole Meisburg + 1 more')
+  })
+})
+
+describe('threadContextLine (V27 s4 — when · place, and a missing half renders nothing)', () => {
+  const start = '2026-09-27T15:00:00.000Z'
+  const end = '2026-09-27T16:00:00.000Z'
+
+  it('joins the app\'s ONE card window formatter with the place name', () => {
+    // The exact window wording is `cardWhenLabel`'s (feed.ts); this pins the
+    // COMPOSITION, so a second date format cannot grow here.
+    expect(threadContextLine(start, end, 'Gas Works Park')).toBe(
+      `${cardWhenLabel(start, end)} · Gas Works Park`,
+    )
+  })
+
+  it('renders just the place when the window is missing', () => {
+    expect(threadContextLine(null, null, 'Gas Works Park')).toBe('Gas Works Park')
+    expect(threadContextLine('', '', 'Gas Works Park')).toBe('Gas Works Park')
+    expect(threadContextLine(undefined, undefined, 'Gas Works Park')).toBe('Gas Works Park')
+  })
+
+  it('renders just the window (no dangling separator) when the place is missing', () => {
+    const when = cardWhenLabel(start, end)
+    for (const place of [null, undefined, '', '   ']) {
+      const line = threadContextLine(start, end, place)
+      expect(line).toBe(when)
+      // The card formatter's own day · window separator is fine; what must not
+      // appear is a trailing/leading separator for the missing place half.
+      expect((line ?? '').endsWith(' ·') || (line ?? '').startsWith('· ')).toBe(false)
+    }
+  })
+
+  it('returns null when neither half is known', () => {
+    expect(threadContextLine(null, null, null)).toBeNull()
+    expect(threadContextLine('', '', '   ')).toBeNull()
+  })
+
+  it('never leaks "null", "undefined", "Invalid Date" or a stray separator', () => {
+    const lines = [
+      threadContextLine(null, null, 'Gas Works Park'),
+      threadContextLine(start, end, null),
+      threadContextLine('not-a-date', 'also-not', 'Gas Works Park'),
+      threadContextLine(start, 'not-a-date', 'Gas Works Park'),
+    ]
+    for (const line of lines) {
+      expect(line).not.toBeNull()
+      expect(line ?? '').not.toMatch(/null|undefined|Invalid Date/)
+      expect((line ?? '').startsWith(' · ') || (line ?? '').endsWith(' · ')).toBe(false)
+    }
+    // A half-window is not a window: with no place, it renders nothing at all.
+    expect(threadContextLine('not-a-date', end, null)).toBeNull()
+  })
+})
+
+describe('sumUnread (V27 s3 — the Inbox tab badge total)', () => {
+  it('returns 0 for no rows', () => {
+    expect(sumUnread([])).toBe(0)
+  })
+
+  it('sums both conversation kinds', () => {
+    expect(sumUnread([dm({ unreadCount: 2 }), pd({ unreadCount: 3 })])).toBe(5)
+  })
+
+  it('clamps NaN, negative, undefined/null and non-numbers to 0 instead of poisoning the sum', () => {
+    expect(
+      sumUnread([
+        { unreadCount: Number.NaN },
+        { unreadCount: -4 },
+        { unreadCount: undefined },
+        { unreadCount: null },
+        { unreadCount: 'lots' } as unknown as { unreadCount: number },
+        { unreadCount: Number.POSITIVE_INFINITY },
+        dm({ unreadCount: 7 }),
+      ]),
+    ).toBe(7)
+  })
+
+  it('never returns NaN, even when every row is nonsense', () => {
+    const total = sumUnread([{ unreadCount: Number.NaN }, { unreadCount: undefined }])
+    expect(Number.isNaN(total)).toBe(false)
+    expect(total).toBe(0)
+  })
+})
+
+describe('QUICK_REPLIES (V27 s5 — exactly five pinned label/body pairs)', () => {
+  it('is exactly five, in the pinned order', () => {
+    expect(QUICK_REPLIES).toHaveLength(5)
+    expect(QUICK_REPLIES.map((reply) => reply.label)).toEqual([
+      'On my way',
+      'Running late',
+      "We're here",
+      'Still on?',
+      "Can't make it",
+    ])
+  })
+
+  it('carries a non-empty label and body for every chip', () => {
+    for (const reply of QUICK_REPLIES) {
+      expect(reply.label.trim()).not.toBe('')
+      expect(reply.body.trim()).not.toBe('')
+    }
+  })
+
+  it('pins the two bodies the brief spells out verbatim', () => {
+    const runningLate = QUICK_REPLIES.find((reply) => reply.label === 'Running late')
+    const cantMakeIt = QUICK_REPLIES.find((reply) => reply.label === "Can't make it")
+    expect(runningLate?.body).toBe('Running about 10 minutes late.')
+    expect(cantMakeIt?.body).toBe("Can't make it after all — sorry!")
+  })
+})
+
+describe('messageTimestampLabel (V27 s5 — the local time-of-day)', () => {
+  it('formats a local clock time with AM/PM, zero-padded minutes', () => {
+    const iso = new Date(2026, 8, 27, 15, 4).toISOString()
+    expect(messageTimestampLabel(iso, iso)).toBe('3:04 PM')
+  })
+
+  it('handles midnight and noon as 12-hour clocks, not 0', () => {
+    expect(messageTimestampLabel(new Date(2026, 8, 27, 0, 5).toISOString(), 'now')).toBe('12:05 AM')
+    expect(messageTimestampLabel(new Date(2026, 8, 27, 12, 0).toISOString(), 'now')).toBe('12:00 PM')
+    expect(messageTimestampLabel(new Date(2026, 8, 27, 23, 59).toISOString(), 'now')).toBe('11:59 PM')
+  })
+
+  it('returns \'\' for empty or unparseable instants instead of throwing', () => {
+    expect(messageTimestampLabel('', 'now')).toBe('')
+    expect(messageTimestampLabel('not-a-date', 'now')).toBe('')
+    expect(messageTimestampLabel('nonsense', 'also-nonsense')).toBe('')
+  })
+
+  it('does not leak "NaN", "undefined" or "Invalid Date"', () => {
+    const label = messageTimestampLabel('', 'now')
+    expect(label).not.toMatch(/NaN|undefined|Invalid Date/)
+  })
+})
+
+describe('daySeparatorLabel (V27 s5 — Today / Yesterday / an older local date)', () => {
+  // Built from LOCAL Date components so the cases mean the same thing in every
+  // test-runner timezone (the helper is explicitly local-day based).
+  const now = new Date(2026, 8, 27, 18, 0).toISOString()
+  const todayIso = new Date(2026, 8, 27, 9, 30).toISOString()
+  const yesterdayIso = new Date(2026, 8, 26, 23, 30).toISOString()
+  const olderIso = new Date(2026, 8, 20, 9, 0).toISOString()
+
+  it('says Today for the same local day', () => {
+    expect(daySeparatorLabel(todayIso, now)).toBe('Today')
+  })
+
+  it('says Yesterday for the previous local day, however few hours apart', () => {
+    // 11:30pm the night before is still "Yesterday", not "hours ago".
+    expect(daySeparatorLabel(yesterdayIso, now)).toBe('Yesterday')
+  })
+
+  it('names an older local date with short weekday + month + day', () => {
+    const expected = new Date(2026, 8, 20).toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    })
+    expect(daySeparatorLabel(olderIso, now)).toBe(expected)
+    expect(daySeparatorLabel(olderIso, now)).toMatch(/^[A-Z][a-z]{2}, [A-Z][a-z]{2} \d{1,2}$/)
+  })
+
+  it('never says Tomorrow for a past instant, even across a midnight clock skew', () => {
+    const future = new Date(2026, 8, 28, 9, 0).toISOString()
+    expect(daySeparatorLabel(future, now)).not.toBe('Tomorrow')
+  })
+
+  it('returns \'\' for empty or unparseable instants instead of throwing', () => {
+    expect(daySeparatorLabel('', now)).toBe('')
+    expect(daySeparatorLabel('not-a-date', now)).toBe('')
+    // A broken `now` must not throw through `.toISOString()` either.
+    expect(daySeparatorLabel('not-a-date', 'also-not-a-date')).toBe('')
+    expect(daySeparatorLabel(todayIso, 'also-not-a-date')).not.toBe('Today')
   })
 })
