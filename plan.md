@@ -937,4 +937,14 @@ one-tap sentence (Slice 2), the page says what is public and reassures them
 
 - 2026-09-27 — V27 batch planned (4 slices); baseline feedback work committed;
   Slice 1 dispatched.
+- 2026-09-27 — **V27 BATCH COMPLETE.** Baseline feedback work `63c49ae`
+  (duplicate affordance, row `shrink-0` overflow fix, time presets). Slices:
+  **1 `8e7f474`** sticky Post bar + `stickyPostLine`; **2 `76f2778`** vibe chips
+  + `lib/vibeChips`; **3 `ef9aac1`** privacy preview + trust line; **4
+  `9073c2b`** share prompt after posting. Every slice: `npm run verify` EXIT=0
+  (final tip **1806 unit tests**, GUARDS PASS) and its targeted Playwright lane
+  green. The shared `:4173` preview was held by the `places` worktree, so all
+  e2e ran on a private `:4174` with `reuseExistingServer: false` (untracked
+  `playwright.noreuse.config.ts`, deleted after the tip gate). `/edit` remains
+  byte-identical throughout. No push — branch `Meisburg/post-drop-in` only.
 
