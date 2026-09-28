@@ -1,5 +1,5 @@
 -- ===========================================================================
--- (migration 0056): the parent's OWN delete-account call — delete_my_account().
+-- (migration 0058): the parent's OWN delete-account call — delete_my_account().
 -- ===========================================================================
 --
 -- WHAT THIS ADDS: ONE SECURITY DEFINER function, callable by a signed-in parent,
