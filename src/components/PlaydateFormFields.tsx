@@ -184,6 +184,30 @@ export interface PlaydateFormFieldsProps {
    * state and /edit passes nothing, so no map appears there.
    */
   mapSlot?: ReactNode
+  /**
+   * /new only: the quick-start row ("Now", "In an hour", "Tomorrow 10am",
+   * "Sat 10am") — a stateless slot like `preset`, rendered under the "When"
+   * label and above the date/start steppers it fills. The PAGE owns both the
+   * preset values (lib/feed `timePresets`) and the write; /edit passes nothing,
+   * so no shortcut appears there.
+   */
+  timePresetsSlot?: ReactNode
+  /**
+   * V27 slice 2: the /new-only VIBE CHIPS — a stateless slot like `preset` and
+   * `timePresetsSlot`, rendered inside the Details block between its label and
+   * its textarea. The PAGE owns the chip list (`lib/vibeChips`) and the write
+   * (`applyVibeChip`); this component owns no state. `/edit` passes nothing, so
+   * its Details block renders exactly the markup it always has — no chips.
+   */
+  detailsChipsSlot?: ReactNode
+  /**
+   * V27 slice 3: the /new-only PRIVACY PREVIEW + trust line — a stateless slot
+   * (the `detailsChipsSlot` pattern) the page builds from the pure
+   * `privacyPreview` seam. It renders directly ABOVE the submit button/error
+   * block, at the point of posting. `/edit` passes nothing, so its markup is
+   * unchanged and no privacy block appears there.
+   */
+  privacySlot?: ReactNode
   /** /new only: the quick-fill preset card, rendered inside the form first. */
   preset?: ReactNode
   /**
@@ -195,6 +219,24 @@ export interface PlaydateFormFieldsProps {
    * owns no state, and /edit passes nothing, so no dead control appears there.
    */
   kidsSectionSlot?: ReactNode
+  /**
+   * V27 slice 1: the form's DOM `id`. Defaults to `'playdate-form'` — the id
+   * this form has always been addressable by through its `data-testid`, now
+   * made explicit. `/edit` passes nothing, so it keeps the default and its
+   * markup. `/new` passes `'new-playdate-form'` so its sticky bar (which sits
+   * OUTSIDE this form, above the bottom nav) can submit it through the HTML
+   * `form` attribute.
+   */
+  formId?: string
+  /**
+   * V27 slice 1: render the in-form submit button at all? Default FALSE —
+   * `/edit` renders exactly the submit it always has. `/new` sets this true so
+   * the sticky bar's button is the ONE control named "Post drop-in" on that
+   * page (a second would be a strict-mode violation for every posting spec).
+   * The `submitError` paragraph below is rendered either way, so a failed
+   * create still surfaces where it always did.
+   */
+  hideSubmit?: boolean
   submitLabel: string
   submittingLabel: string
   submitBusy: boolean
@@ -227,8 +269,13 @@ export function PlaydateFormFields({
   onPickPlace,
   onSomewhereElse,
   mapSlot,
+  timePresetsSlot,
+  detailsChipsSlot,
+  privacySlot,
   preset,
   kidsSectionSlot,
+  formId = 'playdate-form',
+  hideSubmit = false,
   submitLabel,
   submittingLabel,
   submitBusy,
@@ -492,6 +539,9 @@ export function PlaydateFormFields({
   const whenBlock = (
     <div className="flex flex-col gap-1">
       <span className="text-sm font-semibold text-slate-700">When</span>
+      {/* /new's quick-start row (a stateless slot the page owns); branches 2/3
+          pass nothing, so /edit keeps its exact markup. */}
+      {timePresetsSlot}
       {startBlock}
     </div>
   )
@@ -646,6 +696,10 @@ line. No kids yet → the designed empty state + the /settings link (the
       <span className="text-slate-700">
         Details <span className="text-slate-500">(optional)</span>
       </span>
+      {/* V27 slice 2: the one-tap starters, right under the label and above the
+          box they fill. A slot the PAGE passes (/new builds it from
+          `lib/vibeChips`); `/edit` passes nothing, so no chips appear there. */}
+      {detailsChipsSlot}
       <textarea
         className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
         rows={3}
@@ -714,6 +768,7 @@ line. No kids yet → the designed empty state + the /settings link (the
 
   return (
     <form
+      id={formId}
       className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
       data-testid="playdate-form"
       onSubmit={onSubmit}
@@ -779,17 +834,24 @@ line. No kids yet → the designed empty state + the /settings link (the
         </>
       )}
 
+      {/* V27 slice 3: the page's privacy preview + trust line, immediately
+          above the submit area — the point of posting. `/edit` passes nothing
+          (`undefined`), so this renders no node and its markup is unchanged. */}
+      {privacySlot}
+
       <div className="flex flex-col gap-2">
-        <button
-          type="submit"
-          disabled={submitBusy || submitDisabled}
-          className={touch(
-            'rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50',
-          )}
-          {...fieldA11y('submit', submitError)}
-        >
-          {submitBusy ? submittingLabel : submitLabel}
-        </button>
+        {hideSubmit ? null : (
+          <button
+            type="submit"
+            disabled={submitBusy || submitDisabled}
+            className={touch(
+              'rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50',
+            )}
+            {...fieldA11y('submit', submitError)}
+          >
+            {submitBusy ? submittingLabel : submitLabel}
+          </button>
+        )}
         {/* V8 ticket 06: a stable handle for the submit's error line — the
             weekly-series e2e reads it to report the documented pre-0028-apply
             failure (PGRST205 on the missing table) instead of racing the

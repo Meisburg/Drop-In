@@ -608,8 +608,9 @@ test('a remembered neighbourhood cannot survive a place pick (review cycle 1, F1
   // stamps the OLD place's neighbourhood onto the new post.
   //
   // The DUPLICATE path is the surviving carrier of that hidden value: /new's
-  // "Duplicate existing" picker clones a past post INCLUDING its neighborhood_id
-  // (NewPlaydatePage applyDuplicate), and /new still renders no field for it.
+  // "Duplicate a previous drop-in" control clones a past post INCLUDING its
+  // neighborhood_id (NewPlaydatePage applyLastPost), and /new still renders no
+  // field for it.
   // So the sequence is: duplicate a post that carries a real neighbourhood, then
   // pick a directory place, then post — and assert the pick won.
   const marker = readMarkerMeta()

@@ -36,11 +36,15 @@ import {
   nextSlotMinutes,
   pastPostStatusLabel,
   suggestedDurationMinutes,
+  timePresets,
   validatePlaydateForm,
 } from '../lib/feed'
-import type { LastOwnPlaydate, PlaydateFormErrors, PlaydateFormValues, ZipCoords } from '../lib/feed'
+import type { LastOwnPlaydate, PlaydateFormErrors, PlaydateFormValues, TimePreset, ZipCoords } from '../lib/feed'
 import type { PlaydateStatus } from '../lib/types'
-import { addressAfterPlaceTextEdit, generatedTitle } from '../lib/postSummary'
+import { addressAfterPlaceTextEdit, generatedTitle, privacyPreview, stickyPostLine } from '../lib/postSummary'
+// V27 slice 2: the pure seam behind the Details chips — the page renders the
+// list and the tap goes through `applyVibeChip`, never an inline rule here.
+import { VIBE_CHIPS, applyVibeChip } from '../lib/vibeChips'
 import {
   MAP_FOCUS_RADIUS_MILES,
   PLACE_BROWSE_LIMIT,
@@ -725,6 +729,18 @@ export function NewPlaydatePage({
   }
 
   /**
+   * /new quick-start (founder pick, 2026-09-27): one tap writes the preset's
+   * WHEN (date + 30-minute slot). It goes through `update`, not a direct
+   * `setValues`, so every existing rule applies — the start-slot duration
+   * derivation, the error clearing, the submit-error reset. The preset owns
+   * only the time; place, kids, and title are untouched.
+   */
+  function applyTimePreset(preset: TimePreset) {
+    update('startDate', preset.startDate)
+    update('startMinutes', preset.startMinutes)
+  }
+
+  /**
    * V9 ticket 03 (review cycle 1, F1): the address's ONE writer. Typing it (or
    * correcting a picked one) is what makes it the parent's own — from then on a
    * place-text edit never clears it.
@@ -947,10 +963,20 @@ export function NewPlaydatePage({
   // The text wraps at word boundaries (the label always carries a space); the
   // floor is the one case that cannot wrap, and min-w-0 lets it clip rather
   // than overflow. The 44px tap floor (`min-h-11`) is untouched.
+  //
+  // V26 founder follow-up (screenshot, 2026-09-27): the text STILL spilled, and
+  // `w-full`/`min-h-11` could never have fixed it — the overflow is VERTICAL.
+  // The list is `flex flex-col max-h-64 overflow-y-auto` (:1150), and a flex
+  // child defaults to `flex-shrink: 1`: once the rows' natural height exceeded
+  // 256px, the container SHRANK each row toward its `min-h-11` floor, so a
+  // two-line label was painted into a 44px box and the second line landed
+  // outside the pill. `min-h-11` is a floor, not a guard against shrinking.
+  // `shrink-0` (flex-shrink: 0) makes each row keep its content height; the
+  // container then overflows and scrolls, which is the intended behavior.
   const lastPostClassName =
-    'min-h-11 min-w-0 w-full rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-left text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100'
+    'min-h-11 min-w-0 w-full shrink-0 rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-left text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100'
 
-  // V15 T05 (A10): the top-of-page duplicate picker state.
+  // The quiet "Duplicate a previous drop-in" disclosure state.
   const [dupPickerOpen, setDupPickerOpen] = useState(false)
   /**
    * V10 ticket 02: the SURFACED kids section — the picker as its own block
@@ -994,6 +1020,97 @@ export function NewPlaydatePage({
         </div>
       </div>
     ) : null
+
+  /**
+   * /new quick-start row (founder pick, 2026-09-27): the four times a
+   * spontaneous drop-in usually means — Now, In an hour, Tomorrow 10am,
+   * Sat 10am — rendered under the "When" label, above the date/start steppers
+   * they fill. The values come from the pure `timePresets` seam on the
+   * MOUNT-time now (the same `mountedNowIso` the defaults use), so the row does
+   * not move under the parent's finger. The write goes through
+   * `applyTimePreset` (which goes through `update`); `aria-pressed` mirrors the
+   * current start so the parent can see which preset is in effect — at mount
+   * that is "Now", which is exactly the form's default.
+   *
+   * A slot, not props on the form (the mapSlot/kidsSectionSlot pattern): /edit
+   * passes nothing, so no shortcut appears there.
+   */
+  const timePresetsSlot = (
+    <div className="flex flex-wrap gap-2" data-testid="time-presets">
+      {timePresets(mountedNowIso).map((preset) => {
+        const selected =
+          values.startDate === preset.startDate && values.startMinutes === preset.startMinutes
+        return (
+          <button
+            key={preset.id}
+            type="button"
+            data-testid="time-preset"
+            aria-pressed={selected}
+            onClick={() => applyTimePreset(preset)}
+            className={
+              'min-h-11 rounded-full border px-3 text-sm font-medium transition-colors motion-reduce:transition-none ' +
+              (selected
+                ? 'border-indigo-600 bg-indigo-600 text-white'
+                : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')
+            }
+          >
+            {preset.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+
+  /**
+   * V27 slice 2: the Details VIBE CHIPS — one row of starters that turns the
+   * optional description into an inviting sentence with no typing. A slot, not
+   * props on the form (the timePresetsSlot pattern): the form renders it inside
+   * the Details block, and `/edit` passes nothing, so no chips appear there.
+   *
+   * The row WRAPS (`flex-wrap`) so four chips never push a 320px phone
+   * sideways, and every chip is `min-h-11` (the 44px tap floor this page
+   * enforces). The write is the PURE `applyVibeChip` — empty becomes the
+   * sentence, the same chip again is a no-op, a different one appends on a new
+   * line.
+   */
+  const detailsChipsSlot = (
+    <div className="flex flex-wrap gap-2" data-testid="vibe-chips">
+      {VIBE_CHIPS.map((chip) => (
+        <button
+          key={chip.id}
+          type="button"
+          data-testid="vibe-chip"
+          onClick={() => update('details', applyVibeChip(values.details, chip))}
+          className="min-h-11 rounded-full border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
+        >
+          {chip.label}
+        </button>
+      ))}
+    </div>
+  )
+
+  /**
+   * V27 slice 3: the PRIVACY PREVIEW + trust line — shown at the point of
+   * posting, directly above the submit area. The wording is the PURE seam
+   * (`lib/postSummary.privacyPreview`, unit-tested): the selected kids by
+   * `kidLabel` (first name + age), the place, the day and the start, plus the
+   * fixed "Only nearby parents can see this. Kids show as first name + age."
+   * note. The page only supplies the selected kids' labels — the rule lives in
+   * lib, never here.
+   *
+   * A slot, not props on the form (the `detailsChipsSlot` pattern): `/edit`
+   * passes nothing, so no privacy block renders there.
+   */
+  const selectedKidLabels = (kids ?? [])
+    .filter((k) => selectedKidIds.includes(k.id))
+    .map((k) => kidLabel(k.first_name, k.age))
+  const { preview, note } = privacyPreview(values, selectedKidLabels)
+  const privacySlot = (
+    <div data-testid="privacy-preview" className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+      <p data-testid="privacy-preview-line" className="min-w-0 text-sm font-medium text-slate-700">{preview}</p>
+      <p data-testid="privacy-preview-note" className="mt-1 text-xs text-slate-600">{note}</p>
+    </div>
+  )
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -1079,7 +1196,13 @@ export function NewPlaydatePage({
       // allowed is the pure decidePermissionPrompt seam's decision.
       armPushPromptForAction('post_created')
       // The feed re-fetches on mount, so the new post appears immediately.
-      navigate('/', { replace: true })
+      // V27 slice 4: the URL stays exactly `/` (router STATE, never a query —
+      // every existing `waitForURL('/')` spec must still match); the state
+      // carries the just-posted post so the feed can offer a one-tap share.
+      navigate('/', {
+        replace: true,
+        state: { justPosted: { id: createdPlaydate.id, title: createdPlaydate.title } },
+      })
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not post your drop-in. Try again.')
     } finally {
@@ -1096,7 +1219,10 @@ export function NewPlaydatePage({
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    /* V27 slice 1: `pb-24 md:pb-10` keeps the sticky Post bar (below) from
+       covering the last field or the submit error while the parent scrolls to
+       the bottom of the form. */
+    <div className="flex flex-col gap-4 pb-24 md:pb-10">
       {/* V3 slice 3 (ticket 06, feedback #8): the "We'll be at the park
           3–5, come by if you like." + "Open invitation, zero pressure."
           helper line is out (the ticket's quick-feedback batch). */}
@@ -1113,61 +1239,50 @@ export function NewPlaydatePage({
         </div>
       ) : null}
 
-      {/* V15 T05 (A10): the top-of-page duplicate picker — a two-choice header
-          ("Create new" | "Duplicate existing") that sits ABOVE the form.
-          Selecting "Duplicate existing" opens a lightbox listing all past posts;
-          selecting one calls applyLastPost(row.post). */}
-      <div className="flex flex-col gap-2">
-        <span className="text-sm font-medium text-slate-700">Start from</span>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            data-testid="dup-create"
-            onClick={() => setDupPickerOpen(false)}
-            className={
-              'min-h-11 flex-1 rounded-xl border px-3 text-base font-medium transition-colors motion-reduce:transition-none ' +
-              (!dupPickerOpen
-                ? 'border-indigo-600 bg-indigo-600 text-white'
-                : 'border-slate-300 bg-white text-slate-700')
-            }
-          >
-            Create new
-          </button>
+      {/* Founder feedback (post-drop-in): the top-of-page two-choice header
+          ("Create new" | "Duplicate existing") is GONE. You are already on the
+          page that creates a new drop-in, so a "Create new" button was a no-op
+          choice — and the loud button pair made duplicating look like a primary
+          path. What remains is a single SECONDARY button (the app's outlined
+          "Browse places" / "Add to calendar" style) that opens the same list of
+          past posts, rendered ONLY for a parent who has one (nothing to
+          duplicate is not a control worth showing, disabled or otherwise).
+          Founder follow-up: the first cut was a bare text link and read as
+          plain text, so it now carries a border, background, and indigo label
+          like every other secondary action. Selecting a row calls
+          applyLastPost(row.post); tapping the control again collapses the list. */}
+      {pastPosts.length > 0 ? (
+        <div className="flex flex-col gap-1">
           <button
             type="button"
             data-testid="dup-duplicate"
-            onClick={() => setDupPickerOpen(true)}
-            disabled={pastPosts.length === 0}
-            className={
-              'min-h-11 flex-1 rounded-xl border px-3 text-base font-medium transition-colors motion-reduce:transition-none disabled:opacity-40 ' +
-              (dupPickerOpen
-                ? 'border-indigo-600 bg-indigo-600 text-white'
-                : 'border-slate-300 bg-white text-slate-700')
-            }
+            aria-expanded={dupPickerOpen}
+            onClick={() => setDupPickerOpen((open) => !open)}
+            className="min-h-11 self-start rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-indigo-700 shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-50"
           >
-            Duplicate existing
+            {dupPickerOpen ? 'Hide previous drop-ins' : 'Duplicate a previous drop-in'}
           </button>
+          {dupPickerOpen ? (
+            <div className="flex max-h-64 flex-col gap-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
+              {pastPostRows.map((row) => (
+                <button
+                  key={row.post.id}
+                  type="button"
+                  data-testid="post-again"
+                  onClick={() => {
+                    applyLastPost(row.post)
+                    setDupPickerOpen(false)
+                  }}
+                  className={`min-w-0 ${lastPostClassName}`}
+                >
+                  {row.label}
+                  {row.statusLabel !== null ? ` · ${row.statusLabel}` : ''}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
-        {dupPickerOpen && pastPosts.length > 0 ? (
-          <div className="flex max-h-64 flex-col gap-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
-            {pastPostRows.map((row) => (
-              <button
-                key={row.post.id}
-                type="button"
-                data-testid="post-again"
-                onClick={() => {
-                  applyLastPost(row.post)
-                  setDupPickerOpen(false)
-                }}
-                className={`min-w-0 ${lastPostClassName}`}
-              >
-                {row.label}
-                {row.statusLabel !== null ? ` · ${row.statusLabel}` : ''}
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
+      ) : null}
 
       {/* V9 ticket 01 (T7): the `loadError` wall is GONE. It existed because
           the neighbourhood select was REQUIRED and its options had to load —
@@ -1220,7 +1335,20 @@ export function NewPlaydatePage({
         /* V10 ticket 02: the kids picker SURFACES above the disclosure when
            this parent has kids (the slot renders the section); null/loading
            keeps the picker inside the disclosure — today's exact form. */
-        kidsSectionSlot={kidsSectionSlot ?? undefined}        /* V8 ticket 07: the place autocomplete. It stays CLOSED while the
+        kidsSectionSlot={kidsSectionSlot ?? undefined}
+        /* /new quick-start time presets (founder pick, 2026-09-27): the slot
+           fills the "When" section above the date/start steppers. /edit passes
+           nothing, so no shortcut appears there. */
+        timePresetsSlot={timePresetsSlot}
+        /* V27 slice 2: the Details chips — the one-tap starters for the optional
+           Details field, written through the pure `applyVibeChip`. /edit passes
+           nothing, so no chips appear there. */
+        detailsChipsSlot={detailsChipsSlot}
+        /* V27 slice 3: the privacy preview + trust line — built from the pure
+           `privacyPreview` seam above and rendered by the form directly above
+           its submit area. /edit passes nothing, so no block appears there. */
+        privacySlot={privacySlot}
+        /* V8 ticket 07: the place autocomplete. It stays CLOSED while the
            directory is unavailable (null), so a pre-0029-apply /new renders
            exactly the form it rendered yesterday.
            V9 ticket 01: the list is whatever `placePickerMatches` decides for
@@ -1276,6 +1404,12 @@ export function NewPlaydatePage({
            by construction. With no kids selected, nothing is written at all
            (db.createPlaydate's ageRangeFields — the keys are absent, not null,
            so a kidless post is byte-identical to a pre-0037 post). */
+        /* V27 slice 1: /new's form carries a stable id and NO in-form submit —
+           the sticky bar below owns the ONE "Post drop-in" control, submitting
+           this form through the HTML `form` attribute. The submit error line is
+           still rendered inside the form either way. */
+        formId="new-playdate-form"
+        hideSubmit
         submitLabel="Post drop-in"
         submittingLabel="Posting…"
         submitBusy={submitting}
@@ -1286,6 +1420,44 @@ export function NewPlaydatePage({
         submitError={submitError}
         onSubmit={handleSubmit}
       />
+
+      {/* V27 slice 1: THE STICKY POST BAR — the plan read back and a Post
+          button, pinned above the app's fixed bottom nav while the parent
+          scrolls the form. It renders ONLY on /new (this page): /edit keeps its
+          own in-form submit and renders no bar.
+
+          It sits OUTSIDE the form, so its button submits through the HTML
+          `form` attribute (the form's `formId`). That is what keeps the page's
+          ONE accessible name "Post drop-in" on this control — many existing
+          specs click `getByRole('button', { name: 'Post drop-in' })`, which
+          strict mode fails on a second match, so the in-form button is hidden
+          by `hideSubmit`.
+
+          The read-back is the PURE seam `stickyPostLine(values)` (lib, with unit
+          tests) — never an inline rule here. The bar is only reachable once the
+          page is past its `loading` early return, so it is visible on the real
+          form and never on the loading shell. */}
+      <div
+        data-testid="sticky-post-bar"
+        className="fixed inset-x-0 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-20 px-4 md:bottom-[calc(2rem+env(safe-area-inset-bottom))]"
+      >
+        <div className="mx-auto flex max-w-md items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-lg md:max-w-3xl">
+          <p
+            data-testid="sticky-post-line"
+            className="min-w-0 truncate text-sm text-slate-700"
+          >
+            {stickyPostLine(values)}
+          </p>
+          <button
+            type="submit"
+            form="new-playdate-form"
+            disabled={submitting}
+            className="min-h-11 shrink-0 rounded-xl bg-indigo-600 px-4 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {submitting ? 'Posting…' : 'Post drop-in'}
+          </button>
+        </div>
+      </div>
 
       {/* V23 slice 3: the bottom "Browse all N places" door is GONE. The field's own
           "Browse places" button (above) opens this same sheet — a door at the

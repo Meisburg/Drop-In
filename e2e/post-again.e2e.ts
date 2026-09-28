@@ -129,9 +129,9 @@ test('the Post-again picker clones the whole last post and posts it with the tim
   await page.goto('/new')
   await settleOnRoute(page, '/new')
 
-  // V15 T05 (A10): the "Post again" picker moved to the top of the page as a
-  // two-choice header ("Create new" | "Duplicate existing"). Selecting
-  // "Duplicate existing" opens a lightbox listing all past posts.
+  // Founder feedback (post-drop-in): the duplicate picker is a single quiet
+  // "Duplicate a previous drop-in" text control (the two-choice "Start from"
+  // header is gone). Tapping it opens the list of past posts.
   const dupButton = page.getByTestId('dup-duplicate')
   await expect(dupButton).toBeVisible()
   await dupButton.click()
@@ -196,9 +196,10 @@ test('a parent with no posts sees no Post-again picker', async ({ page }) => {
 
   await page.goto('/new')
   await settleOnRoute(page, '/new')
-  // V15 T05 (A10): the picker is now behind the "Duplicate existing" button.
-  // With no posts, the button is disabled and the lightbox never opens.
-  await expect(page.getByTestId('dup-duplicate')).toBeDisabled()
+  // Founder feedback (post-drop-in): with no past drop-ins there is nothing to
+  // duplicate, so the quiet duplicate control is not rendered at all (it used
+  // to be a disabled half of the two-choice "Start from" header).
+  await expect(page.getByTestId('dup-duplicate')).toHaveCount(0)
   await expect(page.getByTestId('post-again')).toHaveCount(0)
   // The form is otherwise exactly today's form: the summary opens, the
   // recent-places row is absent (no posts), and nothing crashed.

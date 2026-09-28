@@ -240,3 +240,88 @@ export function postSummaryLines(
   }
   return lines
 }
+
+/**
+ * V27 slice 1 — the sticky Post bar's ONE-LINE read-back ("Sat, Aug 29 ·
+ * 3:30 PM · Green Lake Park"). The bar pins this line above the bottom nav on
+ * /new so the plan is always legible while the parent scrolls the form.
+ *
+ * The words are the SAME seams the rest of the app reads the plan back with:
+ * `feed.formatStartDayLabel` (the day words the summary and the feed use) and
+ * `feed.formatTimeLabel` (the stepper's own "3:30 PM"). Nothing is recomputed
+ * here, so the bar cannot promise one time while the form writes another.
+ *
+ * ONE LINE, not the full `postSummaryLines`: the bar has a phone's width and a
+ * button beside it. The three facts a parent glancing up needs are the day,
+ * the start and the place — the duration and the address stay on the form.
+ *
+ * The empty states are the read-back's own: an unanswered date is simply
+ * dropped (the filter below — the time seam always yields a label, so the line
+ * never dangles a separator), and an unanswered place reads "Add a place",
+ * which is the bar's gently-worded prompt rather than the form's
+ * `SUMMARY_NO_PLACE` ("no place picked"). A line with nothing at all falls
+ * back to "Add a place" too — one honest instruction, never an empty bar.
+ *
+ * `values.place` is TRIMMED but NOT alias-stripped: this is the bar's read-back
+ * of the field as the parent is typing it, and the field is never rewritten
+ * while they type (the `@` alias is dropped on the way to the database by the
+ * submit, not by a read-back).
+ */
+export function stickyPostLine(values: PlaydateFormValues): string {
+  const place = values.place.trim()
+  const parts = [
+    formatStartDayLabel(values.startDate),
+    formatTimeLabel(values.startMinutes),
+    place === '' ? 'Add a place' : place,
+  ].filter((part) => part !== '')
+  return parts.length === 0 ? 'Add a place' : parts.join(' · ')
+}
+
+/**
+ * V27 slice 3 — the trust line the /new privacy preview carries, VERBATIM. It
+ * is a fixed promise, not a computed claim: the block appears at the point of
+ * posting and says who can see the post without inventing a radius or a number
+ * (`/new` does not load the profile's radius — plan.md Risks).
+ */
+export const PRIVACY_PREVIEW_NOTE =
+  'Only nearby parents can see this. Kids show as first name + age.'
+
+/**
+ * V27 slice 3 — what /new's PRIVACY PREVIEW says, as one line plus the fixed
+ * trust note.
+ *
+ * The preview is the compact "here is what the world will see" read-back, in
+ * the order a parent scans it: WHO (the selected kids, each already in
+ * `kidLabel` form — first name + age, the one seam every kid label goes
+ * through), WHERE (the place as typed), then WHEN (the day and the start). The
+ * same two formatters the rest of the app reads a plan back with
+ * (`formatStartDayLabel`, `formatTimeLabel`) are reused, so the preview cannot
+ * disagree with the summary or the sticky bar.
+ *
+ * The empty states are the sticky bar's, deliberately: an unanswered place
+ * reads "Add a place" (the gentle prompt, not the form's "no place picked"),
+ * kids with nothing selected drop out entirely rather than leaving a dangling
+ * separator, and an unanswered date is dropped the same way. A preview with
+ * nothing at all — no kids, no day, and (impossibly, since the place slot
+ * always yields a word) no place — still says "Add a place" rather than an
+ * empty line, so the block never renders blank.
+ *
+ * `kidLabels` arrives pre-formatted (the page derives them from the selected
+ * kids) so this seam stays pure and knows nothing about the kids table.
+ */
+export function privacyPreview(
+  values: PlaydateFormValues,
+  kidLabels: readonly string[],
+): { preview: string; note: string } {
+  const place = values.place.trim()
+  const parts = [
+    kidLabels.join(', '),
+    place === '' ? 'Add a place' : place,
+    formatStartDayLabel(values.startDate),
+    formatTimeLabel(values.startMinutes),
+  ].filter((part) => part !== '')
+  return {
+    preview: parts.length === 0 ? 'Add a place' : parts.join(' · '),
+    note: PRIVACY_PREVIEW_NOTE,
+  }
+}

@@ -960,3 +960,166 @@ all history forever. Reuse the existing `MAX_SCAN_POSTS = 500` cap (`:142`).
   leftover `e2e ` fixtures' sweep (drives the human's Chrome), and the
   24h-window / copy product calls.
 
+---
+
+# Implementation Plan: V27 — the /new posting experience (Meisburg/post-drop-in)
+
+> Owned by the orchestrator. This batch answers the founder's 2026-09-27 review
+> of `/new`: posting a drop-in must be quick, and the post should attract
+> friendly, like-minded families. **Time presets shipped first** (base of this
+> batch, not a slice here). The four slices below are the remaining
+> recommendations, in order.
+>
+> The default gate is `npm run verify`. Every slice also pins a targeted
+> Playwright run for its own surface. **Branch `Meisburg/post-drop-in`
+> (staging). DO NOT PUSH — the coordinator serializes merges to master.**
+
+## Goal
+
+A parent posts a drop-in faster and with more confidence: they can always see
+and submit the plan (Slice 1), the optional details becomes an inviting
+one-tap sentence (Slice 2), the page says what is public and reassures them
+(Slice 3), and a posted drop-in is easy to share at the moment of intent
+(Slice 4). `/edit` renders byte-identically to today throughout.
+
+## Non-goals
+
+- No new route, table, or migration.
+- No change to `/edit`'s rendered markup — every new form affordance is an
+  optional slot the page passes and `/edit` does not.
+- No new REQUIRED field or step; nothing added may block Post.
+- No analytics, no invented social proof (PRODUCT.md, Evidence on Hand).
+
+## Interfaces
+
+- `PlaydateFormFields` (`src/components/PlaydateFormFields.tsx`) gains OPTIONAL
+  props, each defaulted so `/edit` is unchanged: `formId?: string` (default
+  `'playdate-form'`), `hideSubmit?: boolean` (default false),
+  `timePresetsSlot?: ReactNode` (shipped with time presets),
+  `detailsChipsSlot?: ReactNode`, `privacySlot?: ReactNode`.
+- Pure seams live in `src/lib/` with a sibling `*.test.ts` (the build law):
+  Slice 1 `stickyPostLine` (in `src/lib/postSummary.ts`); Slice 2
+  `src/lib/vibeChips.ts`; Slice 3 `privacyPreview` (in
+  `src/lib/postSummary.ts`); Slice 4 reuses `buildShareUrl` (`src/lib/trust.ts`).
+- `src/pages/NewPlaydatePage.tsx` owns the wires; the form component owns no
+  state. `src/pages/FeedPage.tsx` is touched only by Slice 4.
+
+## Slices
+
+### Slice 1: the sticky Post bar with a live read-back
+
+- **Objective:** on `/new`, a bar pinned above the bottom nav shows a one-line
+  read-back of the current plan and a Post button that submits the same form.
+- **Files in scope:** `src/pages/NewPlaydatePage.tsx`,
+  `src/components/PlaydateFormFields.tsx`, `src/lib/postSummary.ts`,
+  `src/lib/postSummary.test.ts`, new `e2e/sticky-post.e2e.ts`.
+- **Approach:** add `formId` (becomes the `<form id>`) and `hideSubmit` to the
+  form. `/new` passes `hideSubmit` and renders a `fixed` bar at
+  `bottom-[calc(5.5rem+env(safe-area-inset-bottom))]` (the PlaceDirectory
+  offset, above the app's fixed bottom nav) containing `stickyPostLine(values)`
+  and a `type="submit" form={formId}` button. `/edit` passes neither. Add
+  bottom padding on `/new` so the bar cannot cover the submit error.
+- **Acceptance criteria:**
+  - On `/new` exactly ONE control is named "Post drop-in" (the bar's), and
+    clicking it submits and lands on `/`.
+  - The bar's read-back is `stickyPostLine(values)` (day + start + place), a
+    pure seam with unit tests for the empty/full cases.
+  - `/edit` renders no bar and keeps its in-form submit byte-identically.
+  - The bar shows no horizontal overflow at 320px and its button is ≥44px.
+- **Verification command:** `npm run verify` (exit 0), then
+  `npx playwright test e2e/sticky-post.e2e.ts e2e/post-fast.e2e.ts`.
+- **Depends on:** nothing.
+
+### Slice 2: vibe chips — the optional details becomes the invitation
+
+- **Objective:** under the Details field, one row of tappable starters turns a
+  blank description into an inviting sentence with no typing.
+- **Files in scope:** new `src/lib/vibeChips.ts` + `vibeChips.test.ts`;
+  `src/components/PlaydateFormFields.tsx` (a `detailsChipsSlot`);
+  `src/pages/NewPlaydatePage.tsx`; new `e2e/vibe-chips.e2e.ts`.
+- **Approach:** `VIBE_CHIPS` (id, label, text) and a pure
+  `applyVibeChip(current, chip)`: empty field → the chip's sentence; text that
+  already contains it → unchanged; otherwise append on a new line. The page
+  renders the chip row as a slot into the Details block; `/edit` passes none.
+- **Acceptance criteria:**
+  - Tapping a chip on an empty Details writes that chip's sentence; the
+    resulting post carries it (a submit writes `values.details`).
+  - Tapping the same chip again is a no-op (no duplicated sentence); tapping a
+    second chip appends it.
+  - `/edit` shows no chips.
+  - Every chip is ≥44px and the row wraps with no overflow at 320px.
+- **Verification command:** `npm run verify` (exit 0), then
+  `npx playwright test e2e/vibe-chips.e2e.ts`.
+- **Depends on:** Slice 1 (the form slot pattern), not its commit.
+
+### Slice 3: the privacy preview + trust line
+
+- **Objective:** at the point of posting, show what is public and state the
+  privacy promise in one line.
+- **Files in scope:** `src/lib/postSummary.ts` + test;
+  `src/components/PlaydateFormFields.tsx` (a `privacySlot`);
+  `src/pages/NewPlaydatePage.tsx`; new `e2e/privacy-preview.e2e.ts`.
+- **Approach:** pure `privacyPreview(values, kidLabels)` returns the compact
+  preview line (kids by first name + age, place, day, start) and a fixed note
+  ("Only nearby parents can see this. Kids show as first name + age."). The
+  page passes it as the slot the form renders directly above its submit area;
+  `/edit` passes none.
+- **Acceptance criteria:**
+  - On `/new` the note is visible and the preview names the selected kids by
+    `kidLabel` (first name + age), the place, and the start.
+  - `/edit` shows neither.
+  - The block adds no horizontal overflow at 320px.
+- **Verification command:** `npm run verify` (exit 0), then
+  `npx playwright test e2e/privacy-preview.e2e.ts`.
+- **Depends on:** Slice 1.
+
+### Slice 4: the share prompt after posting
+
+- **Objective:** immediately after a post succeeds, the parent gets a one-tap
+  way to share it — at the moment of intent, without losing the existing
+  "Post → feed" flow.
+- **Files in scope:** `src/pages/NewPlaydatePage.tsx`,
+  `src/pages/FeedPage.tsx`, `src/lib/postSummary.ts` + test (if a pure
+  `justPostedBanner` seam is needed), new `e2e/share-after-post.e2e.ts`.
+- **Approach:** after `createPlaydate`, `navigate('/', { replace: true, state:
+  { justPosted: { id, title, place } } })` (URL stays `/`, so `waitForURL('/')`
+  in every existing spec still matches). `FeedPage` reads
+  `useLocation().state`, keeps it in local state, and renders a dismissible
+  banner naming the post with a Share button (`buildShareUrl` + Web Share,
+  clipboard fallback — the same seam the detail page uses) and a dismiss.
+- **Acceptance criteria:**
+  - Posting on `/new` lands on `/` and shows the "Posted" banner with a Share
+    control; Share copies/uses `buildShareUrl(post.id, VITE_PUBLIC_BASE_URL ||
+    origin)`.
+  - Dismissing removes the banner; a later plain load of `/` shows no banner.
+  - Every existing `/new`→`/` spec still passes unchanged (no strict-mode or
+    URL change).
+- **Verification command:** `npm run verify` (exit 0), then
+  `npx playwright test e2e/share-after-post.e2e.ts e2e/post-again.e2e.ts`.
+- **Depends on:** Slice 1.
+
+## Risks / open questions
+
+- The sticky bar must not double the "Post drop-in" accessible name (Slice 1
+  hides the in-form submit on `/new`) — a strict-mode violation would break
+  every existing post spec.
+- Slice 3's note says "nearby", not a specific radius: `/new` does not load
+  the profile radius, and inventing a number would be a false claim. RULING.
+- Slice 4 must keep the post URL exactly `/` (router state, not a query), or
+  the existing `waitForURL('/')` specs break.
+
+## Status log (orchestrator appends after every phase transition)
+
+- 2026-09-27 — V27 batch planned (4 slices); baseline feedback work committed;
+  Slice 1 dispatched.
+- 2026-09-27 — **V27 BATCH COMPLETE.** Baseline feedback work `63c49ae`
+  (duplicate affordance, row `shrink-0` overflow fix, time presets). Slices:
+  **1 `8e7f474`** sticky Post bar + `stickyPostLine`; **2 `76f2778`** vibe chips
+  + `lib/vibeChips`; **3 `ef9aac1`** privacy preview + trust line; **4
+  `9073c2b`** share prompt after posting. Every slice: `npm run verify` EXIT=0
+  (final tip **1806 unit tests**, GUARDS PASS) and its targeted Playwright lane
+  green. The shared `:4173` preview was held by the `places` worktree, so all
+  e2e ran on a private `:4174` with `reuseExistingServer: false` (untracked
+  `playwright.noreuse.config.ts`, deleted after the tip gate). `/edit` remains
+  byte-identical throughout. No push — branch `Meisburg/post-drop-in` only.
+

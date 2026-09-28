@@ -17,6 +17,9 @@ import {
   GENERATED_TITLE_PREFIX,
   generatedTitle,
   postSummaryLines,
+  privacyPreview,
+  PRIVACY_PREVIEW_NOTE,
+  stickyPostLine,
   SUMMARY_NO_DAY,
   SUMMARY_NO_DURATION,
   SUMMARY_NO_PLACE,
@@ -252,5 +255,59 @@ describe('addressAfterPlaceTextEdit (V9 ticket 03, review cycle 1 F1)', () => {
   it('is a no-op on an empty address, either way', () => {
     expect(addressAfterPlaceTextEdit('', false)).toBe('')
     expect(addressAfterPlaceTextEdit('', true)).toBe('')
+  })
+})
+
+describe('stickyPostLine (V27 slice 1 — the sticky bar read-back)', () => {
+  it('reads back the day, the start and the place, joined by " · "', () => {
+    // The bar's whole line: the same day words and time label the form's
+    // summary and steppers use, plus the place as typed.
+    expect(stickyPostLine(answered)).toBe('Sat, Aug 29 · 3:30 PM · Green Lake Park')
+  })
+
+  it('says "Add a place" when the place is unanswered (or whitespace)', () => {
+    expect(stickyPostLine({ ...answered, place: '' })).toBe('Sat, Aug 29 · 3:30 PM · Add a place')
+    expect(stickyPostLine({ ...answered, place: '   ' })).toBe('Sat, Aug 29 · 3:30 PM · Add a place')
+  })
+
+  it('drops an unanswered day rather than leaving a dangling separator', () => {
+    // formatStartDayLabel('') is '' — the filter removes it, so the line opens
+    // on the time rather than on a bare " · ".
+    expect(stickyPostLine({ ...answered, startDate: '' })).toBe('3:30 PM · Green Lake Park')
+  })
+})
+
+describe('privacyPreview (V27 slice 3 — the /new privacy preview + trust line)', () => {
+  it('reads back the kids, the place, the day and the time, in that order', () => {
+    // The kids arrive pre-formatted (kidLabel's "first name + Age N"), joined
+    // by ", "; the four parts are then joined by " · ".
+    expect(privacyPreview(answered, ['Bernie · Age 6', 'Ada · Age 9'])).toEqual({
+      preview: 'Bernie · Age 6, Ada · Age 9 · Green Lake Park · Sat, Aug 29 · 3:30 PM',
+      note: PRIVACY_PREVIEW_NOTE,
+    })
+  })
+
+  it('starts with the place (no leading separator) when no kids are selected', () => {
+    const { preview } = privacyPreview(answered, [])
+    expect(preview).toBe('Green Lake Park · Sat, Aug 29 · 3:30 PM')
+    expect(preview.startsWith('Green Lake Park')).toBe(true)
+    // The filter dropped the empty kids part, so no part is empty and nothing
+    // opens on a bare " · ".
+    expect(preview.startsWith(' ')).toBe(false)
+  })
+
+  it('says "Add a place" when the place is unanswered (or whitespace)', () => {
+    expect(privacyPreview({ ...answered, place: '' }, []).preview).toContain('Add a place')
+    expect(privacyPreview({ ...answered, place: '   ' }, []).preview).toContain('Add a place')
+    // With kids, the prompt keeps its slot after them.
+    expect(privacyPreview({ ...answered, place: '' }, ['Bernie · Age 6']).preview).toBe(
+      'Bernie · Age 6 · Add a place · Sat, Aug 29 · 3:30 PM',
+    )
+  })
+
+  it('carries the EXACT fixed trust note, byte for byte', () => {
+    const expected = 'Only nearby parents can see this. Kids show as first name + age.'
+    expect(privacyPreview(answered, []).note).toBe(expected)
+    expect(PRIVACY_PREVIEW_NOTE).toBe(expected)
   })
 })

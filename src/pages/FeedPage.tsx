@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import { DropInCard } from '../components/DropInCard'
 import { LocationModal } from '../components/LocationModal'
 import { NAV_ICONS } from '../components/icons'
@@ -14,6 +14,7 @@ import { armPushPromptForAction } from '../lib/pushClient'
 import {
   countKidsGoingForPosts,
   fetchDailyForecastForZip,
+  getShareUrl,
   kidAgeBandsGoingForPosts,
   kidAgesByPostForPosts,
   listCommentsOnPosts,
@@ -209,6 +210,20 @@ const FEED_REFRESH_WINDOW_MS = 60_000
 export function FeedPage() {
   const { session, loading, profile, refresh } = useSessionContext()
   const navigate = useNavigate()
+  const location = useLocation()
+  /**
+   * V27 slice 4: the just-posted share prompt. `/new` navigates here with
+   * router state (`{ justPosted: { id, title } }`) and the URL stays exactly
+   * `/`; this reads that one-shot state and offers a one-tap Share. It is
+   * NEVER persisted: a plain load of `/` carries no state and shows nothing,
+   * and dismissing clears the state (a replace) so back/forward cannot
+   * resurrect it.
+   */
+  const justPosted =
+    (location.state as { justPosted?: { id: string; title: string } } | null)?.justPosted ?? null
+  const [shareDismissed, setShareDismissed] = useState(false)
+  const [shareCopied, setShareCopied] = useState(false)
+  const showJustPosted = justPosted !== null && !shareDismissed
   const [posts, setPosts] = useState<PlaydateWithNeighborhood[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   /**
@@ -1027,9 +1042,61 @@ export function FeedPage() {
     return metBeforeLine(pingFamiliesByPostId?.[post.id] ?? [], followeeIds)
   }
 
+  /**
+   * V27 slice 4: Dismiss the just-posted banner. Clearing the router state
+   * with a replace means the prompt cannot come back via history — the banner
+   * is one-shot, never a persisted notice.
+   */
+  function dismissJustPosted() {
+    setShareDismissed(true)
+    navigate('/', { replace: true, state: null })
+  }
+
+  /**
+   * V27 slice 4: Share the just-posted drop-in. The Web Share API where
+   * supported, otherwise the clipboard fallback with a transient "Copied" —
+   * the same two-step shape PlaydateDetailPage uses, via db.getShareUrl (the
+   * VITE_PUBLIC_BASE_URL / window-origin wrapper over the pure buildShareUrl).
+   * A cancelled sheet or a denied clipboard stays silent: the parent is never
+   * scolded for declining to share.
+   */
+  async function shareJustPosted() {
+    if (justPosted === null) return
+    const url = getShareUrl(justPosted.id)
+    setShareCopied(false)
+    try {
+      if (navigator.share !== undefined) {
+        await navigator.share({ title: justPosted.title, url })
+        return
+      }
+      if (navigator.clipboard !== undefined) {
+        await navigator.clipboard.writeText(url)
+        setShareCopied(true)
+        window.setTimeout(() => setShareCopied(false), 2000)
+      }
+    } catch {
+      // the share sheet was cancelled, or the clipboard was denied: stay silent
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader icon={NAV_ICONS.nearby} title="Near you" tagline="Drop-ins around your area" />
+
+      {/* V27 slice 4: the one-tap share prompt, immediately after a successful
+          post. Router-state-driven and one-shot — a plain load of `/` (no
+          state) renders nothing, and dismissing clears the state. */}
+      {showJustPosted ? (
+        <div data-testid="just-posted-banner" className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+          <p className="min-w-0 text-sm text-slate-700"><span className="font-medium">Posted!</span> {justPosted.title}</p>
+          <div className="flex shrink-0 items-center gap-2">
+            <button type="button" onClick={() => void shareJustPosted()} className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50">
+              {shareCopied ? 'Copied' : 'Share'}
+            </button>
+            <button type="button" onClick={dismissJustPosted} aria-label="Dismiss" className="min-h-11 min-w-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50">Dismiss</button>
+          </div>
+        </div>
+      ) : null}
 
       {/* V24 slice 05: the Post action moved OFF the feed into the nav's centre
           (the raised circular "+" in App.tsx, PostActionButton) after the founder

@@ -140,7 +140,7 @@ const AUTOSAVE_DEBOUNCE_MS = 400
  *
  * V16 t04 REMOVED the "Hosted drop-ins" card (and with it this page's own-posts
  * load — see the removal note at its old position). Duplicating a past post
- * lives on /new's "Duplicate existing" picker and on a drop-in's host panel.
+ * lives on /new's "Duplicate a previous drop-in" control and on a drop-in's host panel.
  *
  * The family photo's signed URL comes from the same batched, best-effort hook
  * /settings used (never persisted; null while in flight or when the mint
@@ -435,7 +435,7 @@ export function ProfilePage() {
   // V16 t04: the owner's own-posts load used to sit here. It fed only the
   // removed "Hosted drop-ins" card, so it is gone with it — /profile no longer
   // issues the query my-playdates request at all. The duplicate path lives on
-  // /new (the "Duplicate existing" picker), which does its own load.
+  // /new (the "Duplicate a previous drop-in" control), which does its own load.
 
   // THE TWO CROP STEPS (photo-crop ticket 03, re-homed here): the family photo
   // and the per-kid photo. The family photo's step is declared HERE (one
@@ -1689,8 +1689,8 @@ export function ProfilePage() {
           request, no dead state.
 
           DUPLICATING A PAST POST IS STILL REACHABLE, checked before deleting:
-          /new owns the "Duplicate existing" picker (NewPlaydatePage, the
-          V15 T05 A10 two-choice header → the `post-again` lightbox), and the
+          /new owns the duplicate picker (NewPlaydatePage, the quiet
+          "Duplicate a previous drop-in" disclosure → the `post-again` list), and the
           drop-in detail page's host panel keeps its own Duplicate button. The
           e2e specs that pin both (post-again.e2e.ts, post-location.e2e.ts) are
           the ones that ran before this change and still pass; only
