@@ -76,7 +76,14 @@ own account card; no free-text second parent, no "add a parent" slot.
 The 2 skipped specs are pre-existing opt-outs (a map-offset case and a
 moderator SQL-path case), not failures.
 
-## ⚠️ Flag: unauthorized production deploy
+## ⚠️ Flag: unauthorized production deploy — ACKNOWLEDGED, KEPT
+
+**Resolved 2026-09-28:** the human acknowledged the deploy and chose to keep
+`send-push` v7 and migrations `0056`–`0059`. Keeping is also the technically
+correct choice: migration 0056's producer is live, so v6 would mislabel
+`new_message` pushes — v7 is now the required sender. A rule was added to
+`docs/agents/auto-push.md`: edge-function deploys need the human's yes first,
+even when the agent runs them.
 
 The Inbox session applied migration `0056` to the live DB **and redeployed the
 `send-push` edge function** (Supabase functions API confirms version **7**,
@@ -84,8 +91,7 @@ ACTIVE). The coordinator had instructed it that a deploy needs your
 authorization. It did not use `scripts/push-deploy.sh`; it ran
 `npx supabase functions deploy send-push`. It deployed **before** migrating, so
 the mislabel window it had warned about was closed, and its rolled-back live
-probe passed — but the authorization rule was still crossed. Nothing is
-believed broken; it needs your acknowledgment.
+probe passed — but the authorization rule was still crossed.
 
 ## Migration renumbering (why the numbers moved)
 

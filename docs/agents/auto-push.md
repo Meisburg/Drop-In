@@ -66,6 +66,7 @@ capability is actually absent — **most of the time it is not**:
 |---|---|
 | `npm run verify`, targeted e2e, playtest lane | **the agent** |
 | Applying a migration | **the agent** — `POST api.supabase.com/v1/projects/<ref>/database/query` with `SUPABASE_ACCESS_TOKEN` from `.env`. No browser, no dashboard, no paste. |
+| Redeploying an edge function (`npx supabase functions deploy …`) | **the human's yes first; the agent still runs it.** It is a production deploy. If a live migration starts emitting a new kind, the matching sender redeploy is *required for correctness* — the old sender mislabels the new kind — but it is still a deploy and still needs the yes. Record the ask as `ACTION REQUIRED` when you cannot get one. |
 | Reading/probing the live DB for verification | **the agent** (same token) |
 | Running Docker/Postgres tests of a migration | **the agent** |
 | A product/judgment call | **the human** — and it needs a *decision*, not labour |
