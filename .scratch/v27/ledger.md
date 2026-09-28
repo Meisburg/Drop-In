@@ -1,0 +1,21 @@
+# V27 ledger — the inbox for drop-in coordination
+
+Append-only. One line per event. Trust the ledger + `git log` over recollection.
+
+- 2026-09-27 — plan written: `plan-v27.md`, 5 slices (push / live list / tab badge / thread context / composer+resilience).
+- 2026-09-27 — baseline `npm run verify` exit 1 (missing `.env` in this worktree); copied the real `/home/jmeisburg/Projects/playdate-app/.env` in (gitignored). Re-baseline exit 0: 1785 tests, 0 lint errors / 78 warnings, guards PASS.
+- 2026-09-27 — NOTE (second writer): sibling worktree `/home/jmeisburg/orca/workspaces/playdate-app/v27` (branch `Meisburg/v27`, same base 5258395) has uncommitted profile/account-links/parentCards/photoStorage changes and edits `src/lib/db.ts`. Not inbox; flag as a merge-conflict risk, do not touch it.
+- 2026-09-27 — Slice 1 COMPLETE. Commit `1d53c29` ("V27 s1: a new message notifies the other participants"), 6 files, `npm run verify` exit 0, 56 files / 1790 tests. No separate reviewer subagent was dispatched (orchestrator inspected the full diff + the live rolled-back probe + the test additions); recorded as a deviation — the human is the final reviewer.
+- 2026-09-27 — Slice 1 live steps PARKED as ONE PAIRED ACTION REQUIRED (do NOT do half): (a) apply `0056` (`bash scripts/db-sql.sh --file supabase/migrations/0056_messages_push.sql`), then (b) redeploy `send-push` (`bash scripts/push-deploy.sh`). Reason: the DEPLOYED send-push still has the 6-kind table and falls back to `isNotificationKind(row.kind) ? row.kind : 'starting_soon'` (`send-push/index.ts:627`), so applying 0056 alone would mislabel every new_message push as `starting_soon` (wrong notification tag + wrong per-kind mute). This worktree has NO supabase CLI and no `.env.push.local`, so neither step can run here.
+- 2026-09-27 — Slice 2: dispatched (builder subagent).
+- 2026-09-27 — Slice 1 INDEPENDENTLY VERIFIED by the orchestrator in a detached worktree at `1d53c29` (`git worktree add --detach`): `npm run build && npm run test && npm run lint` → EXIT 0, **56 files / 1790 tests passed**, 0 lint errors / 78 warnings. Temp worktree removed.
+- 2026-09-27 — Slice 2 COMPLETE (`39c41a0`, `src/pages/InboxPage.tsx` only, +41/-6). Diff reviewed: list-view `inbox-list` channel with no server filter bumps `reloadToken`; `visibilitychange`→visible bumps it; open-thread path unchanged.
+- 2026-09-27 — Slice 2 INDEPENDENTLY VERIFIED in a detached worktree at `39c41a0`: build+test+lint EXIT 0, 1790 tests, 0 lint errors. Temp worktree removed.
+- 2026-09-27 — Slice 3: dispatched (builder subagent).
+- 2026-09-27 — Slice 3 COMPLETE (`f9faac2` + fix `e829ec8`). New `InboxUnreadProvider` + pure `sumUnread` + `NavTab` badge. FIX ROUND 1/5: the badge was `text-[0.625rem]` (10px), which violates `scripts/mobile-audit.mjs:119-130` ("nothing below 14px"); changed to `text-xs` (14px). 1794 tests.
+- 2026-09-27 — Slice 3 INDEPENDENTLY VERIFIED in a detached worktree at `e829ec8`: build+test+lint EXIT 0, 1794 tests, 0 lint errors. Temp worktree removed.
+- 2026-09-27 — Slice 4: dispatched (builder subagent).
+- 2026-09-27 — Slice 4 COMPLETE (`d525ca2`). Pure `groupLabel` + `threadContextLine`; the playdates fallback read now ALWAYS resolves a `?thread=` context (window/place/participants) into its own state; the header names the group and links to `/playdate/:id`. 1806 tests. Spec tension resolved by the orchestrator: the context line + link are additive for every playdate thread; a `?dm=` header stays byte-identical. Plan acceptance amended.
+- 2026-09-27 — Slice 4 INDEPENDENTLY VERIFIED in a detached worktree at `d525ca2`: build+test+lint EXIT 0, 1806 tests, 0 lint errors. Temp worktree removed.
+- 2026-09-27 — Slice 5: dispatched (builder subagent).
+- 2026-09-27 — Slice 1 EVIDENCE (orchestrator, before builder committed): migration `0056_messages_push.sql` run against the LIVE DB wrapped in `begin; … rollback;` (`scripts/db-sql.sh --file .scratch/v27/probe-0056.sql`) → HTTP 201, no exception, i.e. the read-back DO block PASSED. Post-probe read-back confirms ZERO persistence: live kind CHECK still 6 kinds (`…'review_due'`), `notification_new_message` trigger absent. Transaction-control sanity first proven with a sentinel `public.__v27_probe_test` that did not persist.
