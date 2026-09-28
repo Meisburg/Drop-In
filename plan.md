@@ -52,8 +52,9 @@
 - **Objective:** every card inside the 60-minute window is flagged, and the time
   to start/end is stated.
 - **Files in scope:** `src/lib/feed.ts`, `src/lib/feed.test.ts`,
-  `src/components/DropInCard.tsx`, `src/pages/FeedPage.tsx`, new
-  `e2e/feed-liveness.e2e.ts`.
+  `src/components/DropInCard.tsx`, `src/pages/FeedPage.tsx`,
+  `e2e/feed-ended-out.e2e.ts` (extended — it already posts a live drop-in;
+  a new spec would have duplicated that fixture).
 - **Approach:** add pure `feedCardCountdown(post, nowIso)` (→ `{ tone:'starting'|'ending', label }`
   or null) and `feedNowSummary(posts, nowIso)` (→ `"N happening now · M today"`
   or null). Replace the single-soonest `isStartingSoon` computation in
@@ -69,7 +70,9 @@
      are zero.
   4. Present-tense labels never claim a state the clock has not reached.
 - **Verification command:** `npm run verify`; then
-  `npx playwright test e2e/feed-liveness.e2e.ts` (blocked here).
+  `npx playwright test e2e/feed-ended-out.e2e.ts` (blocked here).
+- **As built:** the countdown rides its own `card-countdown` line; the live card
+  must contain `/ends in|ending/` (`e2e/feed-ended-out.e2e.ts:396`).
 - **Ruling:** the page is already soonest-first; the missing thing is telling the
   parent *how soon*, not re-sorting.
 
@@ -91,7 +94,11 @@
      seams — no new vocabulary.
   3. No migration.
 - **Verification command:** `npm run verify`; then
-  `npx playwright test e2e/places.e2e.ts` (blocked here).
+  `npx playwright test e2e/post-location.e2e.ts` (blocked here).
+- **As built:** `places.placeTrustLine` is the pure seam; the feed select
+  appends the `place_ref` embed; the assertion lives in `post-location.e2e.ts`
+  (it actually posts a picked place), not `place-directory-in-new.e2e.ts`
+  (that spec never submits).
 - **Named gaps (not silently skipped):** *rating on the card* needs a batched
   `review_summaries_for(uuid[])` (the 0052 RPC is per-place and the house rule is
   one call per feed); *open/closed* has **no data source at all** — no
@@ -109,24 +116,30 @@
 - **Files in scope:** new `supabase/migrations/0056_kid_age_band_going.sql`,
   `src/lib/db.ts`, `src/lib/feed.ts` (label seam), `src/lib/feed.test.ts`,
   `src/components/DropInCard.tsx`, `src/pages/FeedPage.tsx`,
-  `e2e/feed-ages.e2e.ts` (or the closest existing going-line spec).
+  `e2e/card-circles.e2e.ts` (the going-line spec; it pings without a kid, so the
+  band gets a documented TODO there — see As built).
 - **Approach:** mirror `0027`'s batched `count_kids_going_for` with a
   `kid_age_band_going_for(uuid[])` returning
-  `(playdate_id, min_age, max_age, kids_count)` from `ping_kids` join `kids`,
+  `(playdate_id, min_age, max_age)` from `ping_kids` join `kids`,
   SECURITY DEFINER, authenticated-only, DROP+CREATE idempotent. One batched read
   per feed; the card label is a pure seam. A single distinct age renders
-  `age 4`, two or more `ages 2–5`; a null age is dropped, never guessed.
+  `age 4`, two or more `ages 2–5`; a null age is dropped, never guessed. The
+  count is NOT returned: the existing 0027 count stays the one count source.
 - **Acceptance criteria:**
   1. The RPC returns exactly one row per post that has pinged kids with a
      non-null age, and no row for posts with none.
-  2. `db.ts` groups it to `Record<postId, {min, max, count}>`; a failed/pre-apply
+  2. `db.ts` groups it to `Record<postId, {min, max}>`; a failed/pre-apply
      read degrades to `{}` and every card simply omits the band.
   3. The going label reads `3 going · 2 kids (ages 2–5)`.
   4. No per-kid age or identity reaches the client; no per-card query.
 - **Verification command:** `npm run verify`; migration apply is **blocked —
   `SUPABASE_ACCESS_TOKEN` is empty and the live dashboard is locked out** (the
-  V26 note); targeted `npx playwright test e2e/feed-ages.e2e.ts` also blocked.
-  Code must degrade safely pre-apply.
+  V26 note); targeted `npx playwright test e2e/card-circles.e2e.ts` also
+  blocked, and the band's e2e fixture is a documented TODO. Code degrades
+  safely pre-apply.
+- **As built / GAP (named, not skipped):** migration `0056` is committed but
+  **not applied** (no token); the client settles to `{}` on the missing RPC, so
+  the band simply does not render live until a coordinator applies it.
 - **Ruling:** a count answers "is anyone going"; only a band answers "is anyone
   *my kid's* age" — and the band, never the age list, is what decision #2 can
   tolerate. This amends decision #2 for the aggregate band only, on the
@@ -134,25 +147,29 @@
 
 ### Slice 5: the host is a person, not a handle
 
-- **Objective:** the card states the common ground we already hold: a follow
-  relationship and the host's kids' ages.
+- **Objective:** the card states the common ground we already hold: whether the
+  viewer follows the host.
 - **Files in scope:** `src/components/DropInCard.tsx`, `src/pages/FeedPage.tsx`,
-  `src/lib/feed.ts` + `src/lib/feed.test.ts` (the pure line builders).
-- **Approach:** both inputs are already loaded once per feed — the viewer's
-  `followeeIds` and the host's `kidAgesByPostId` (the 0022 `playdate_kids` ages).
-  Add pure `hostCommonGroundLine(hostId, followeeIds, hostKidAges)` and render
+  `src/lib/feed.ts` + `src/lib/feed.test.ts` (the pure line builder),
+  `e2e/card-circles.e2e.ts`.
+- **Approach:** the only input is the already-loaded `followeeIds`. Add pure
+  `hostCommonGroundLine(hostId, viewerId, followeeIds)` and render
   `data-testid="card-host-common"`. No new query, no migration, no
   social-proof fabrication (`PRODUCT.md` principle 3).
 - **Acceptance criteria:**
-  1. `You follow this host` renders when the host id is in `followeeIds`.
-  2. `Host’s kids: ages 2, 4` renders from `kidAgesByPostId` when present.
-  3. Both hidden when the input is empty; the host's own posts never show the
-     follow line (a parent does not follow themselves).
-  4. No new network read is issued.
+  1. `You follow this host` renders when the host id is in `followeeIds` and the
+     post is not the viewer's own.
+  2. Hidden when the host is not followed, or the host is the viewer, or the set
+     is empty.
+  3. No new network read is issued.
 - **Verification command:** `npm run verify`; then
-  `npx playwright test e2e/feed-ages.e2e.ts` (blocked here).
-- **Ruling:** trust is structural and honest — name what we *know*, never a
-  verified/safety badge we cannot back.
+  `npx playwright test e2e/card-circles.e2e.ts` (blocked here).
+- **Ruling (as built):** the line carries ONLY the follow edge. The host's
+  picked kids' ages already ride the card's `card-age-range` line (the same
+  `kidAgesByPostId` source), so repeating them would print the same ages twice
+  on one card — the duplicate-line failure the design reviews reject. Trust is
+  structural and honest: name what we *know*, never a verified/safety badge we
+  cannot back.
 
 ---
 
