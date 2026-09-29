@@ -198,3 +198,31 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   the ledger is not evidence.
 - Slice 2a: fix round 1/5 dispatched. plan.md Slice 2a amended (objective, scope
   +3 files incl. FeedPage and src/lib/homeZip.ts, acceptance now grep-checkable).
+- Slice 2a: fix round 1/5 complete (commit fda9ccc). BOTH FINDINGS CLOSED, and
+  closed by the ORCHESTRATOR'S OWN GREPS rather than by the builder's word:
+  * GREP 1 (`togglePing(|createPlaydate(` in src/pages/) -> four call sites, each
+    guarded: PlaydateDetailPage:915 <- guard 904 (`wasGoing === false &&`, SET
+    only); :1085 <- guard 1070 (whole action); NewPlaydatePage:1180 <- 1131;
+    FeedPage:802 <- 794 (`willBeActive &&`, SET only). The SET/CLEAR nuance
+    survives on both toggles.
+  * GREP 2 (raw `home_zip ==/!= null|undefined|''` outside homeZip.ts) -> NO
+    matches. The predicate is genuinely defined once.
+  * `hasHomeZip(` has 19 call sites across 7 files, including db.ts:270 — so the
+    WALL and the guards now share one predicate, which was the whole defect.
+  * src/lib/homeZip.test.ts pins null/undefined/'' -> false and '98101' -> true,
+    with the '' case named as the reason the module exists.
+- RULING on the builder's `zip is string` deviation from the brief's `: boolean`:
+  ACCEPTED, no further round. The truth value is correct for every input; only
+  the TYPE-level negative branch over-narrows ('') and no site branches on the
+  false case for typing. Documented in the module's own doc comment. Recorded,
+  not discarded.
+- RULING: no second reviewer pass on this fix round. Its acceptance criteria were
+  deliberately grep-checkable, and the orchestrator ran both greps directly — so
+  the findings are closed by direct evidence rather than by opinion. A reviewer
+  here would re-derive the same two greps.
+- PROCESS LESSON #2 (same class as #1): the orchestrator's FIRST grep-2 attempt
+  printed "no matches" from the `||` fallback because `rg -E` errored ("unknown
+  encoding") — the command failed, and a failure's fallback text looked like a
+  clean result. A no-match produced by an error path is not a no-match. Re-ran
+  with correct flags. Same lesson as trusting a claim over its output.
+- Slice 2a: verifier lane dispatched as the closing check (claim -> output).
