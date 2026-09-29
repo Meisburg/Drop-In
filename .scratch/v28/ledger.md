@@ -488,3 +488,21 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   it is now evidenced rather than asserted.
 - Slice 3a dispatched: the card shell + the bare-render seam. This is the first
   slice that BUILDS the interview rather than moving a requirement.
+- PLAN DEFECT #9, found by measurement while grounding 3a BEFORE dispatch: the 3a
+  block claimed "one `isFirstRun = pathname === ONBOARDING_PATH` constant already
+  exists at App.tsx:~200 — reuse it." MEASURED: there is NO constant -- App.tsx:205
+  is an inline `pathname === ONBOARDING_PATH` inside the redirect branch and that
+  is the only occurrence. Corrected in plan.md; the brief tells the builder to
+  create it and use it in both places.
+- PLAN DEFECT #10, found by READING THE SHELL rather than trusting the plan's
+  "keep <main> and the grid wrapper": App.tsx:228-229 derives the two-column grid
+  (`md:grid-cols-[4.5rem_minmax(0,1fr)]`) from `session !== null`, and
+  App.tsx:306-311 derives <main>'s 6rem bottom padding the same way. On
+  /onboarding the session IS non-null, so suppressing the nav while leaving the
+  column definition alone leaves COLUMN 1 EMPTY -- precisely the V22 slice 9 bug
+  documented in App.tsx:213-225, which collapsed <main> to 72px on a 1024px
+  viewport. The plan's "keep the grid wrapper" would have re-introduced it. Ruling:
+  derive the grid column and the nav padding from whether the NAV renders (one
+  condition, three places) and give the first run its own padding. Both defects
+  are now named, checkable acceptance criteria in plan.md and the brief.
+- Slice 3a dispatched (the first slice that BUILDS the interview).

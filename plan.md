@@ -448,15 +448,27 @@ already claims to be "ONE implementation for the feed ("Near you") and Browse" �
   for social sign-in — generalize it, do not rewrite it. **Keep a
   `Continue`-matching primary label**: `finishSignup` and several specs locate
   it by `/^Continue/`.
-- **The bare-render seam (decision 16).** `ProtectedShell` already computes
-  `pathname === ONBOARDING_PATH` once, for its redirect branch (`App.tsx:~200`).
-  Reuse **that** as one `isFirstRun` constant and use it to suppress, for that
-  route only: the `<header>`, the `<nav>` bottom bar / rail, the `PushOptInPrompt`
-  mounted in `<main>` (this is decision 10's mechanism — do not add a second
-  flag for it), and the first-run resume nudge from Slice 3b. Keep `<main>` and
-  the grid wrapper; the card owns the page's own padding. **Do not reorder or
-  restructure any guard above this point** — the seam is a render decision, not a
-  routing one.
+- **The bare-render seam (decision 16).** ⚠️ **The plan used to claim an
+  `isFirstRun` constant "already exists" — it does not.** Measured: `App.tsx:205`
+  is an **inline** `pathname === ONBOARDING_PATH` inside the redirect branch and
+  nothing else. Create the constant and use it for the redirect branch too, so
+  there is still exactly one comparison.
+  Suppress, for that route only: the `<header>` (`App.tsx:232`), the `<nav>`
+  bottom bar / rail (`App.tsx:280-304`), and the `PushOptInPrompt` mounted in
+  `<main>` (`App.tsx:319` — this is decision 10's mechanism; do not add a second
+  flag for it), plus the first-run resume nudge from Slice 3b.
+  ⚠️ **AND THE TRAP — THE GRID AND THE PADDING MUST FOLLOW THE NAV, NOT
+  `session`.** `App.tsx:228-229` sets the two-column grid
+  (`md:grid-cols-[4.5rem_minmax(0,1fr)]`) from `session !== null`, and
+  `App.tsx:306-311` sets `<main>`'s bottom padding to `6rem` for the same reason.
+  On `/onboarding` the session IS non-null, so suppressing the nav without also
+  dropping the rail column leaves **column 1 empty** — which is exactly the V22
+  slice 9 FIX document at `App.tsx:213-225`: it collapsed `<main>` to 72px on a
+  1024px viewport. **Do not re-introduce it.** Derive the grid column and the
+  nav's bottom padding from whether the nav actually renders (one condition, used
+  three times), and give the first run its own padding.
+  **Do not reorder or restructure any guard above this point** — the seam is a
+  render decision, not a routing one.
 - **Acceptance criteria:**
   - The name card creates the profile row exactly as today
     (`createProfile(composeDisplayName(...))`), including the
