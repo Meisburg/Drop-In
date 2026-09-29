@@ -1733,3 +1733,42 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
   the standing rule. Observed in roughly half of recent runs; it has never once been a
   code signal, and the isolation re-run has settled it every time.
 - 2026-09-29 — Slice 6: verifier lane dispatched (`f910dd71`) as the closing check.
+
+- 2026-09-29 — **Slice 7a built at `1631939`** (8 files, +1061/−12): the two guards,
+  both behavior checks, the wiring, and **three cuts that prove Guard 1 fires**. Wired
+  at `run-all.sh:61` (the loop), `:101-102` (the behavior checks) and `:22-24` (the rule
+  list), so `npm run verify` carries them — and `verify` runs guards **last**.
+  **Guard 1** (`vacuous-absence-guard.mjs`): a route table derived from `App.tsx`, a
+  per-route reachable-file set, per-block route tracking; template-literal navigations →
+  **UNKNOWN** and click-invalidated routes → **UNCERTAIN**, both notes and never
+  findings. Green at **25 assertions, 0 findings.** **Guard 2**
+  (`stale-locator-guard.mjs`): every plain-string literal in the four locator forms must
+  still exist in `src/` — verbatim or as the output shape of a `src/` template literal —
+  and it is **one-directional by design**: missing + positive use = finding, missing +
+  `toHaveCount(0)`/`toBeHidden` = a legal pin-of-removal. Green at **1237 sites, 0
+  positive findings, 4 negative pins noted.** Each guard ships a `.check.mjs` that seeds
+  defect shapes into a throwaway copy and requires a non-zero exit — Guard 1's seeds
+  **four**.
+- 2026-09-29 — **⚠️ THE GUARDS FOUND MORE THAN THE HUMAN REVIEWS DID, ON THEIR FIRST
+  RUN — the strongest possible validation of the "a class that recurs gets a guard, not
+  another fix" decision.** Two real, previously-unknown defects:
+  1. **Guard 1 found a SECOND vacuous site that 5's reviewer never saw.**
+     `zip-radius.e2e.ts` pinned a ZIP placeholder **while standing on `/settings`**
+     (routes verified: `:35` = `/settings`, `:87` = `/new`), where the onboarding card's
+     placeholder cannot render. 5's reviewer reported exactly one instance of the class
+     (`signup-zip-fallback.e2e.ts:148-149`) and I recorded it as such — **the manual
+     lane's coverage was one file and the guard's was the whole suite.** All three sites
+     are now cut with their intent preserved as comments.
+  2. **Guard 2 found `places-map-view.e2e.ts` clicking `places-see-map`, a renamed
+     testid** — `places-view-toggle` is the live one (`PlaceDirectory.tsx:1234`, used at
+     `place-directory-in-new.e2e.ts:88`, `places.e2e.ts:198`/`:1212`) — a **stale locator
+     of exactly the class that cost three rounds**, found by scanning 1237 sites rather
+     than by memory.
+  **Recorded because it re-prices the strategy: two guards, built in one slice, found
+  two defects that four review rounds and a verifier pass had all missed.** That is the
+  argument for the deterministic lane stated in evidence rather than in principle.
+- 2026-09-29 — Slice 7a: reviewer lane dispatched (`15dce318`) with the two questions
+  that matter most: **can Guard 1's UNKNOWN/UNCERTAIN escapes swallow its own class**,
+  and — the single most important one — **were the two found defects REAL, or were they
+  false positives that got "fixed" by weakening tests?** A guard that did the latter is
+  worse than no guard.

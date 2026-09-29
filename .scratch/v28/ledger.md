@@ -1585,3 +1585,32 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   written down rather than smoothed over.
 - Slice 7a dispatched (run 70427583) with the existing guards as its explicit template
   and the "its failure mode is that it PASSES" doctrine stated up front.
+- Slice 7a: BUILT at 1631939 (8 files, +1061/-12). Reviewer dispatched (run 15dce318).
+  Wiring VERIFIED by grounding: run-all.sh:61 (the loop), :101-102 (the behavior
+  checks), :22-24 (the rule list) -- and npm run verify runs guards LAST, so they are
+  reached.
+- **⚠️ THE GUARDS FOUND MORE THAN THE HUMAN REVIEWS DID, ON THEIR FIRST RUN.** Two real,
+  previously-unknown defects:
+  * GUARD 1 FOUND A SECOND VACUOUS SITE THAT 5'S REVIEWER NEVER SAW: zip-radius.e2e.ts
+    pinned a ZIP placeholder WHILE STANDING ON /settings (routes verified at :35 =
+    /settings and :87 = /new), where the onboarding card's placeholder cannot render.
+    5's reviewer reported exactly ONE instance of the class (signup-zip-fallback:148-149)
+    and I recorded it as such -- THE MANUAL LANE'S COVERAGE WAS ONE FILE; THE GUARD'S
+    COVERAGE IS THE WHOLE SUITE. All three sites are now cut with intent preserved as
+    comments.
+  * GUARD 2 FOUND places-map-view.e2e.ts CLICKING places-see-map, A RENAMED TESTID --
+    places-view-toggle is the live one (PlaceDirectory.tsx:1234, used at
+    place-directory-in-new.e2e.ts:88 and places.e2e.ts:198/:1212) -- a STALE LOCATOR OF
+    EXACTLY THE CLASS THAT COST THREE ROUNDS, found by scanning 1237 sites rather than by
+    memory.
+  **THIS RE-PRICES THE STRATEGY AND IS WORTH THE LEDGER SPACE: two guards, built in one
+  slice, found two defects that four review rounds and a verifier pass had all missed.**
+  That is the deterministic lane's argument stated in evidence rather than in principle.
+- Guard coverage as reported: Guard 1 = 25 assertions, 0 findings; Guard 2 = 1237 sites,
+  0 positive findings, 4 negative pins. Both have a .check.mjs; Guard 1's seeds FOUR
+  defect shapes.
+- THE TWO REVIEW QUESTIONS THAT MATTER MOST, both sent: can Guard 1's UNKNOWN/UNCERTAIN
+  escapes swallow its own class (a guard whose escape hatch hides its own defect passes
+  while the bug ships), and -- the single most important -- WERE THE TWO FOUND DEFECTS
+  REAL, OR WERE THEY FALSE POSITIVES THAT GOT "FIXED" BY WEAKENING TESTS? A guard that
+  did the latter is worse than no guard.
