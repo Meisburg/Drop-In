@@ -54,17 +54,24 @@ export function OnboardingPage() {
   const navigate = useNavigate()
   const { session, loading, profile, homeZipSet, refresh } = useSessionContext()
 
-  // V4 slice 4 — the handle step (social sign-in only).
+  // V4 slice 4 — the handle step.
   //
   // V20 t06: TWO FIELDS, not one "Display name" box, matching /login's signup
   // form exactly (the same `composeDisplayName` / `displayNameFieldError`
   // seams). A social user's provider may hand us a full name, so the two halves
   // are SPLIT for the fields rather than dropped into one — see
   // `splitSuggestedName`.
-  const suggested = suggestedHandle(
-    session?.user.user_metadata ?? null,
-    session?.user.email ?? null,
-  )
+  //
+  // V28 slice 3c (regression fix): this step is reached by EVERY new account
+  // now (email signups since 3b, social sign-ins always), so the email's local
+  // part must not seed it — "nicole@x.com" is not a name, and prefilling
+  // "nicole" as a first name other parents will see is exactly the bug. So the
+  // email fallback is not passed HERE: splitSuggestedName's rule 1 keeps both
+  // fields blank when the suggestion is empty, and social sign-ins still
+  // prefill from the provider's name metadata (the earlier candidates).
+  // `suggestedHandle` itself keeps its email fallback — other callers and its
+  // tests pin it; the call site changes, not the helper.
+  const suggested = suggestedHandle(session?.user.user_metadata ?? null, null)
   const suggestedParts = splitSuggestedName(suggested)
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')

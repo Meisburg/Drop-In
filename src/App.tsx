@@ -1,5 +1,6 @@
-import { Suspense, lazy, useEffect } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
+import type { Session } from '@supabase/supabase-js'
 import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router'
 import { DropInMark } from './components/DropInMark'
 import { NAV_ICONS, NAV_ICONS_FILLED } from './components/icons'
@@ -9,9 +10,13 @@ import { PostActionButton } from './components/PostActionButton'
 import { PushOptInPrompt } from './components/PushOptInPrompt'
 import { SessionProvider, useSessionContext } from './components/SessionProvider'
 import { SplashScreen } from './components/SplashScreen'
-import { signOutUser } from './lib/db'
+import { listKids, signOutUser } from './lib/db'
+import { nextUnfinishedCard } from './lib/firstRun'
+import type { FirstRunCardId } from './lib/firstRun'
+import { FIRST_RUN_COPY } from './lib/firstRunCopy'
 import { canModerate } from './lib/moderation'
-import { setInstallCaptureEnabled, startPushSubscriptionRepair } from './lib/pushClient'
+import { armedPushTrigger, setInstallCaptureEnabled, startPushSubscriptionRepair, subscribePushArmed } from './lib/pushClient'
+import type { Profile } from './lib/types'
 import {
   HOME_PATH,
   ONBOARDING_PATH,
@@ -46,6 +51,176 @@ const LazyBrowsePage = lazy(() => import('./pages/BrowsePage'))
 
 /** The /mod route path (moderator tools, slice 5). */
 const MOD_PATH = '/mod'
+
+/**
+ * V28 slice 3c — the first-run resume nudge's dismissal, held per tab.
+ *
+ * "Stays dismissed for the session" (plan, slice 3c): a tab-lifetime
+ * dismissal survives the parent bouncing back onto /onboarding and leaving
+ * again, but a fresh tab (3a's reset semantics — session storage, not local
+ * storage) shows the nudge again. Read defensively like every other
+ * storage read in the shell: a locked-down browser degrades to "nudge
+ * shows", never a crash.
+ */
+const FIRST_RUN_NUDGE_DISMISSED_KEY = 'dropin.first-run.nudge-dismissed'
+
+function readNudgeDismissed(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return window.sessionStorage.getItem(FIRST_RUN_NUDGE_DISMISSED_KEY) !== null
+  } catch {
+    return false
+  }
+}
+
+/**
+ * V28 slice 3c — the resume nudge: one dismissible line for a signed-in
+ * parent whose first run is unfinished, offering the card nextUnfinishedCard
+ * (src/lib/firstRun.ts) says is next. No card is hard-coded here — the line
+ * renders ONLY when that function returns a card, so the moment the parent
+ * sets a home zip (the run's completion clause, plan V28 item 1) it stands
+ * down for good without a page reload.
+ *
+ * Fact sourcing (the slice's decision (a)): hasName / hasPhoto / hasZip come
+ * free off the shell's session — the profiles row + homeZipSet (3a feeds
+ * both, so the nudge needs no new fetch for them; a null profile row IS the
+ * name card, because display_name is NOT NULL, so any row is a name). hasKids
+ * is the one fact that is NOT free: the shell knows nothing about kids. The
+ * completeness seam does not save it — missingProfileItems (db.ts) takes a
+ * kidsCount it must be handed, and feeding it a null on a failed read would
+ * mean "kids is missing", i.e. it would GUESS hasKids=false, exactly the
+ * silent guessing the brief forbids. So: a lazy listKids read, and ONLY on
+ * the routes where the nudge is already eligible (parent signed in, has a
+ * profile, has no zip, is not on /onboarding, and the push prompt does not
+ * own the slot). The read is best-effort: if it fails, the nudge hides
+ * rather than name a card it cannot prove.
+ *
+ * Mutual exclusion (decision (b)): while a push prompt is ARMed the nudge
+ * stands down. The armed trigger is a sessionStorage fact
+ * (armPushPromptForAction, src/lib/pushClient.ts), readable via
+ * armedPushTrigger() and observable via subscribePushArmed — the same seam
+ * the prompt itself consumes, so no cross-component flag is invented. The
+ * ask card renders only while its trigger is armed, so the nudge never
+ * shares the feed with it.
+ *
+ * Mounted with the prompt's own seam (navRenders: signed in AND not the
+ * first run, so a first run shows neither — plan V28 item 1). The dismissal
+ * is announced through the sr-only live region, which exists from mount so a
+ * screen reader picks up the change when the line stands down.
+ */
+function FirstRunNudge({
+  session,
+  profile,
+  homeZipSet,
+}: {
+  session: Session | null
+  profile: Profile | null
+  homeZipSet: boolean
+}) {
+  const [dismissed, setDismissed] = useState(readNudgeDismissed)
+  const [pushArmed, setPushArmed] = useState(() => armedPushTrigger() !== null)
+  useEffect(() => subscribePushArmed(() => setPushArmed(armedPushTrigger() !== null)), [])
+  // The card nextUnfinishedCard will target — undefined means the lazy kids
+  // read has not settled yet, and null means "no nudge" (the run is done, or
+  // its facts could not be proved).
+  const [card, setCard] = useState<FirstRunCardId | null | undefined>(undefined)
+
+  useEffect(() => {
+    if (session === null) {
+      setCard(null)
+      return
+    }
+    // No profiles row (a first-run parent who left before the name card, or a
+    // failed profile read): the next card is the name card — a free fact, no
+    // query needed.
+    if (profile === null) {
+      setCard('name')
+      return
+    }
+    // The free facts say the run is done (a zip is set, and with a name the
+    // completion clause holds): nothing to offer.
+    if (homeZipSet) {
+      setCard(null)
+      return
+    }
+    // The parent has a name and no zip, so the run is unfinished and the
+    // answer is kids/photo/area — but only hasKids is unread, and it is not
+    // free. One lazy read, cancelled if the facts change mid-flight.
+    let cancelled = false
+    listKids(session.user.id)
+      .then((kids) => {
+        if (cancelled) return
+        setCard(
+          nextUnfinishedCard({
+            signedIn: true,
+            hasName: true,
+            hasKids: kids.length > 0,
+            hasPhoto:
+              profile.avatar_url !== undefined && profile.avatar_url !== null && profile.avatar_url !== '',
+            hasZip: false,
+          }),
+        )
+      })
+      .catch(() => {
+        // Best-effort: an unreadable kids fact must not make the nudge claim
+        // a card it cannot prove — hide it, never guess.
+        if (!cancelled) setCard(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [session, profile, homeZipSet])
+
+  const copy = card !== null && card !== undefined ? FIRST_RUN_COPY[card] : null
+  const show = copy !== null && !dismissed && !pushArmed && session !== null
+
+  return (
+    <>
+      {/* The dismissal is announced here: the region exists from mount, so a
+          screen reader hears the change when the line stands down. */}
+      <div aria-live="polite" className="sr-only">
+        {dismissed ? 'Setup reminder dismissed.' : ''}
+      </div>
+      {show ? (
+        <div
+          className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-slate-200 bg-white p-3"
+          data-testid="first-run-nudge"
+        >
+          <p className="min-w-0 flex-1 text-sm text-slate-700">
+            <span className="font-medium">Finish setting up</span>{' '}
+            <span className="text-slate-600">
+              — {copy.title.charAt(0).toLowerCase()}
+              {copy.title.slice(1)}
+            </span>
+          </p>
+          <div className="flex items-center gap-2">
+            <Link
+              to={ONBOARDING_PATH}
+              className="flex min-h-11 items-center rounded-md px-2 text-sm font-medium text-indigo-700 underline outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+            >
+              {copy.primaryLabel}
+            </Link>
+            <button
+              type="button"
+              className="flex min-h-11 items-center rounded-md px-2 text-sm font-medium text-slate-600 outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+              onClick={() => {
+                setDismissed(true)
+                try {
+                  window.sessionStorage.setItem(FIRST_RUN_NUDGE_DISMISSED_KEY, '1')
+                } catch {
+                  // The dismissal still applies to THIS mount — a locked-down
+                  // browser just does not carry it to the next one.
+                }
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </>
+  )
+}
 
 /**
  * All app routes (including /onboarding) require a session; there is NO
@@ -343,6 +518,13 @@ function ProtectedShell() {
               suppressed on /onboarding by the SAME route condition (decision
               10's mechanism — no second flag). */}
           {navRenders ? <PushOptInPrompt /> : null}
+          {/* V28 slice 3c: the resume nudge — the same seam (signed in AND
+              past the first run, so the first run shows neither), standing
+              down for the rest of the session while a push prompt is armed
+              (its own mutual-exclusion decision, inside the component). */}
+          {navRenders ? (
+            <FirstRunNudge session={session} profile={profile} homeZipSet={homeZipSet} />
+          ) : null}
           <div className="mx-auto max-w-md md:max-w-3xl">
             <Outlet />
           </div>
