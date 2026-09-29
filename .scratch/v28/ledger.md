@@ -264,3 +264,71 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   so the ordinary path never reaches it); a real fix is a design decision
   (draft persistence vs inline capture), not a one-liner; and inline capture would
   create a second place a home zip can be set, which 2a just consolidated.
+- Slice 2b: reviewer verdict NEEDS_CHANGES (run ad02d51c) at c6c1256. The
+  reviewer's own closing line: the runtime behaviour is correct and complete
+  against every acceptance criterion -- the verdict is purely about the slice
+  deleting a rule and leaving the sentences that justified it standing. FIVE
+  FINDINGS ACCEPTED (3 blocking), every citation verified by the orchestrator:
+  1. (blocking) src/App.tsx:50-58 -- the ProtectedShell docblock, i.e. the
+     docblock of the very function changed, still says a no-zip user is sent to
+     /onboarding first and is "never bounced through /onboarding -> /". It
+     CONTRADICTS the builder's own new comment 30 lines below at App.tsx:85-91.
+  2. (blocking) src/lib/onboarding.test.ts:15-18 -- the file header still says
+     the gate keys on the home zip.
+  3. (blocking) src/lib/onboarding.test.ts:95-96 -- the cold-load race test's
+     rationale ("a stale homeZipSet=false must NOT bounce...") justifies a
+     deleted rule; the test still passes, for a different reason (profileLoading).
+  4. src/App.tsx:245 -- "gated by the shell's auth + home-zip redirect".
+  5. THE ONE THAT MATTERS: the compiler said it and the builder silenced it.
+     Removing the bounce made resolveProtectedRedirect's homeZipSet dead -- tsc
+     reported 6133 "declared but its value is never read". The builder renamed it
+     `_homeZipSet` and documented why it is unused. But tsconfig.app.json:21 sets
+     noUnusedParameters: true -- THIS PROJECT'S OWN LAW IS THAT AN UNUSED
+     PARAMETER IS AN ERROR. Ruling: REMOVE the parameter (and shellRedirect's
+     forwarded copy at App.tsx:336) AND OnboardingGateState.homeZipSet
+     (onboarding.ts:83), which is likewise unread by the gate yet still fed at
+     App.tsx:88 -- the same class, found by the reviewer. Two honest
+     consequences accepted: the gate's with-zip/without-zip settled tests assert
+     the same thing now and must MERGE, and the race test loses its second
+     argument.
+- The reviewer CONFIRMED the added return-target pin is a REAL pin, not a
+  tautology: reintroduce the bounce and it fails. Recorded because the opposite
+  finding (a test that cannot fail) would have been worse than no test.
+- The reviewer's residual risk, now a named plan gap: NOTHING at the browser
+  level pins "a no-zip parent reaches every route" -- and e2e/onboarding-gate
+  .e2e.ts's fixture carries home_zip=98107 (e2e/auth.setup.ts), so it can NEVER
+  catch a reintroduced home-zip bounce. Its docblock overstates what it pins.
+  Assigned to Slice 7, along with a new no-zip e2e (the fixtures that can express
+  one arrive in 3b).
+- DEFERRAL RULING, and a principle adopted: THE SLICE THAT OWNS A FILE OWNS ITS
+  STALE CLAIMS. The reviewer's repo-wide sweep found the same stale claim in
+  files 2b does not own; each is assigned BY NAME in plan.md -- OnboardingPage
+  .tsx:40-41 -> 3a; FeedPage.tsx:491 -> 2c; db.ts:131,142,267,575,
+  ProfilePage.tsx:215, e2e/auth.setup.ts:7,67, e2e/fixtures.ts:237,385,
+  e2e/places-map-view.e2e.ts:119-120,1327-1328 + the onboarding-gate docblock
+  -> Slice 7. Nothing is deferred unspecifically -- an unnamed deferral is the
+  exact plan-defect class this batch has caught six times.
+- Slice 2b: fix round 1/5 dispatched (run d52ed967, resuming the slice's builder
+  per the rounds-1-3 rule).
+- Slice 2b: fix round 1/5 complete (commit f6bf406). ORCHESTRATOR-VERIFIED:
+  * `_homeZipSet` GONE; resolveProtectedRedirect is now 2-parameter
+    (signedIn, intendedPath); OnboardingGateState carries no zip field.
+  * every surviving `homeZipSet` is a LEGITIMATE READER, not dead signal:
+    App.tsx:77 -> :206 (resolveOnboardingRedirect, which keys on the zip by
+    design), OnboardingPage.tsx:48/157 (3a's file), db.ts (the state provider),
+    SessionProvider's doc, onboarding.ts:21 needsOnboarding and :55
+    resolveOnboardingRedirect. App.tsx:89 carries a comment explaining exactly
+    why the destructure survives -- honest, not accidental.
+  * Lint count finally GIVEN: **80 warnings / 0 errors, exit 0 -- exactly the
+    baseline.** The "pre-existing" claim now has a number.
+  * Test count 1977 -> 1975 = -2, the arithmetic of two MERGES, both honest:
+    the gate's with-zip/without-zip settled tests (named in the brief) and the
+    redirect's with-zip/without-zip keep-route tests (found by the builder, not
+    asked for). After the parameter removal each pair was byte-identical, so
+    keeping two would have been the same pretending-at-a-difference sin the
+    brief flagged. Accepted; the builder reported it rather than hiding it.
+- RULING: no second reviewer pass on this fix round. The change is deletion of
+  dead signal plus comment rewrites; the compiler and the tests pin the
+  signature, and the acceptance greps are checkable -- the orchestrator ran them.
+  The verifier lane closes the slice (claim -> output).
+- Slice 2b: verifier lane dispatched as the closing check.

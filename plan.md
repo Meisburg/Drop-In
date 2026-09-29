@@ -349,6 +349,24 @@ happening. The helpers are the blast radius here too.
     tapped "I'm coming" is routed out of the interview to that playdate.
     Deliberate (see Risks), not silent.
   - No route redirects a signed-in parent away from the app.
+  - **NO STALE CLAIM OF THE DELETED RULE SURVIVES IN A FILE THIS SLICE TOUCHES.**
+    Removing the bounce makes every sentence that justified it false. The
+    reviewer found three blocking examples inside the slice's own three files,
+    and they are the general shape: the *primary docblock* of the function that
+    changed (`App.tsx` ~50), the *file header* of the test file
+    (`onboarding.test.ts` ~16), and the *rationale comment* on the cold-load
+    race test (`onboarding.test.ts` ~95) which now passes for a different reason
+    (`profileLoading`, not a stale zip). Grep the slice's own files for
+    `home zip`, `/onboarding` and `onboard` before claiming done.
+  - **No dead parameter or field in the gate.** `resolveProtectedRedirect`'s
+    `homeZipSet` and `OnboardingGateState.homeZipSet` are both unread once the
+    bounce goes. The project sets `noUnusedParameters: true`
+    (`tsconfig.app.json:21`) — its own law is that an unused parameter is an
+    error. **Remove both** and update the callers (`shellRedirect` at
+    `App.tsx:336`, the gate call at `App.tsx:88`, and the tests) rather than
+    silencing the compiler with a `_` prefix. A signature that advertises a
+    dependency it does not have is exactly the defect the three review lanes
+    exist to catch.
 - **Verification command:** `npm run verify` and
   `npx playwright test e2e/onboarding-gate.e2e.ts`
 - **Budget:** one local builder context. Small — this is the pure part, and the
@@ -361,7 +379,9 @@ happening. The helpers are the blast radius here too.
   rather than empty, broken, or silently radius-zero.
 - **Files in scope:** `src/pages/FeedPage.tsx`,
   `src/components/RadiusEmptyState.tsx` — note the feed card's ping toggle is
-  **already guarded by 2a**; this slice is the no-zip *feed state* only.
+  **already guarded by 2a**; this slice is the no-zip *feed state* only. The
+  slice that owns a file owns its stale claims: fix `FeedPage.tsx:491`
+  ("The shell's onboarding gate keys on home_zip" — it no longer does).
 - **Approach:** distinguish "no home ZIP yet" from "no drop-ins in range". The
   former needs its own copy and its action is the area card; the latter keeps
   `RadiusEmptyState` as it is. `RadiusEmptyState` takes `radiusMiles` as a prop
@@ -385,7 +405,10 @@ happening. The helpers are the blast radius here too.
 - **Objective:** the card chrome exists, and `/onboarding`'s existing
   "what's your name" branch renders in it.
 - **Files in scope:** `src/components/FirstRunCard.tsx` (new),
-  `src/pages/OnboardingPage.tsx`, `src/App.tsx` (the bare-render seam only)
+  `src/pages/OnboardingPage.tsx`, `src/App.tsx` (the bare-render seam only).
+  Also fix `OnboardingPage.tsx`'s stale claim (~line 40) that a no-zip parent is
+  *gated* to this page — nobody is gated to it any more; it is voluntary
+  (ADR 0001). The slice that owns a file owns its stale claims.
 - **Approach:** build the presentational chrome first (progress, title, body,
   children slot, primary action, optional Skip, back). On `/onboarding`, replace
   the existing "no profiles row → What's your name?" branch (`OnboardingPage.tsx`
@@ -543,6 +566,27 @@ extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**
 - **Acceptance criteria:**
   - No spec asserts that signup collects a name or an address.
   - No spec asserts that a no-zip parent is redirected to `/onboarding`.
+  - **Every stale claim left by the deleted gate is gone.** Slice 2b's reviewer
+    swept `src/` and `e2e/` and found these still asserting a rule that no
+    longer exists; the slices that own the file fix their own, and this slice
+    catches the rest — `src/lib/db.ts:131,142,267,575`,
+    `src/pages/ProfilePage.tsx:215`, `e2e/auth.setup.ts:7,67`,
+    `e2e/fixtures.ts:237,385`. (`OnboardingPage.tsx` and `FeedPage.tsx` belong to
+    3a and 2c; do not re-open them.) **The test is a grep, not a read:** no file
+    under `src/` or `e2e/` may still say the gate keys on the home zip, or that
+    a no-zip parent is bounced to `/onboarding`.
+  - **`e2e/onboarding-gate.e2e.ts`'s docblock stops overstating what it pins.**
+    Its fixture gets `home_zip=98107` (`e2e/auth.setup.ts`), so it can never
+    catch a reintroduced home-zip bounce — it pins the cold-load behaviour only.
+    Say that, and keep the assertion.
+  - **`e2e/places-map-view.e2e.ts`'s "`00000` not NULL" rationale is rewritten.**
+    It justifies the choice by a null-zip bounce that no longer exists. The spec
+    still passes; the reason it gives is false.
+  - **A no-zip parent is pinned at the browser level.** Slice 2b's reviewer
+    flagged that *nothing* outside the unit tests pins "a no-zip parent reaches
+    every route" — the property has no e2e catch at all, and the fixtures that
+    could express it arrive in 3b. Add one. If it cannot be built, say why in the
+    report rather than leaving the gap unnamed.
   - The **full** e2e suite is green (not just targeted specs) — this is the one
     slice whose verification is the whole lane, because the card sequence is
     what changed.
