@@ -1621,3 +1621,44 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
   `OnboardingPage.tsx:262` (false since **2b**, already named) and
   **`docs/social-login-setup.md:77`**, which still calls the step "Set your location".
 - 2026-09-29 — Slice 5: verifier lane dispatched as the closing check.
+
+- 2026-09-29 — **Slice 6 built** — the last builder slice. The **finish card exists**
+  (`src/components/FinishRunCard.tsx`, with `finishRunPlaces` / `placeHasHours` /
+  `FINISH_RUN_PLACE_LIMIT` in `places.ts`, reusing `listPlaces`'s read) and
+  **`resolveOnboardingRedirect` is re-keyed to single-arg `signedIn`** — the
+  `homeZipSet → HOME_PATH` branch is **gone**, which is defect #19's fix and what
+  finally makes the ending reachable. Both call sites updated (`App.tsx:402`,
+  `OnboardingPage.tsx:357`); the area card's save **no longer navigates**; the finish
+  branch renders **before** the loadError/kids/photo gates. 8 new `places` tests and a
+  rewritten redirect describe (the latter now pins `(false) → '/login'` and
+  `(true) → null`).
+- 2026-09-29 — **⚠️ THE BUILDER REPORTED `DONE` WITHOUT COMMITTING, AND THE TELL WAS A
+  MISSING FIELD.** The run's work was complete and green **on disk**, but
+  `git status` showed 9 modified files plus an untracked `FinishRunCard.tsx`, **nothing
+  staged, and no commit anywhere** — and its structured report **omitted the `Commit:`
+  field the template asks for**. **A missing field in a structured report is evidence,
+  not formatting.** This is precisely why the batch's rule reads *a subagent's DONE is a
+  belief — the diff and the output are evidence*, and why `git status` is the system of
+  record. **The orchestrator committed the work verbatim as `437e33c`** (attributing it
+  to the builder and recording that the builder did not commit): committing preserves
+  ~400 lines and gives every lane a sha to reference. **Recorded as a deviation** —
+  committing is neither editing nor authoring, but "builders commit their own slices" is
+  the batch's norm, so it is written down rather than glossed. **The recovery cost
+  nothing only because the work was intact; had anything run `git checkout` first, 400
+  lines would have been gone.**
+- 2026-09-29 — **Two more things the builder caught itself, both by *running* rather
+  than by being told.** (1) Its first `finishRunPlaces` draft shipped an **INVERTED
+  hours comparator** (no-hours places ranked **first**), and the **new unit tests caught
+  it** — the second time this batch a test caught a builder's own defect before any lane
+  did (5's bounded-escape race was the first). (2) **`e2e/auth.setup.ts` broke a FOURTH
+  time**, and this time the **run found it, not the brief** — which is the
+  grep-your-own-breakages rule doing its job. That spec has now broken in 3b, 4a, 4b and
+  6.
+- 2026-09-29 — **`needsOnboarding` is now production-dead** (measured: only its
+  definition matches; the removed `HOME_PATH` branch was its last consumer). **The
+  FOURTH instance of the batch's "pinned by a test, read by nobody" class** — after
+  `FIRST_RUN_COPY` (which blocked 3c), `skipLabel` and `missingProfileItems`. Routed to
+  **Slice 7a**'s systematic wire-or-delete sweep rather than fixed here.
+- 2026-09-29 — Slice 6: reviewer lane dispatched (`d891aa8f`) over the recovered commit,
+  with the reachability trace and the hours-comparator decisiveness as its sharp
+  questions.

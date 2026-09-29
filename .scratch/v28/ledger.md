@@ -1454,3 +1454,33 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   WEAKENED A LOAD-BEARING RACE FIX** -- the first defect this batch whose damage would
   have come from following the plan faithfully.
 - Slice 6 dispatched (run 9629d182) -- the last builder slice before 7a/7b.
+- **SLICE 6 BUILT -- AND THE BUILDER DID NOT COMMIT. THE ORCHESTRATOR PRESERVED THE
+  WORK AS 437e33c.** The report said "Everything is green. Final evidence is fresh" and
+  listed 10 files, and the CONTENT was true -- but `git status` showed 9 modified files
+  plus an UNTRACKED src/components/FinishRunCard.tsx, NOTHING STAGED, and NO COMMIT
+  ANYWHERE, and the structured report **OMITTED THE `Commit:` FIELD**.
+  * **A MISSING FIELD IN A STRUCTURED REPORT IS EVIDENCE, NOT FORMATTING.** The
+  template asks for a sha; its absence was the tell. This is why the batch's rule is
+  *a subagent's DONE is a belief -- the diff and the output are evidence*, and why
+  `git status` is the system of record.
+  * THE ORCHESTRATOR COMMITTED IT VERBATIM, attributing it to the builder and recording
+  that the builder did not commit. RECORDED AS A DEVIATION: committing is neither
+  editing nor authoring, but "builders commit their own slices" is the norm.
+  * **The recovery cost nothing only because the work was intact. Had anything run
+  `git checkout` first, ~400 lines would have been gone** -- including a new component,
+  two new test blocks and the guard re-key.
+- GROUNDING VERIFIED THE SUBSTANCE: `resolveOnboardingRedirect(signedIn: boolean)` with
+  the HOME_PATH branch GONE (body is exactly `if (!signedIn) return LOGIN_PATH; return
+  null`); both call sites updated (App.tsx:402, OnboardingPage.tsx:357); the unit test
+  rewritten to (false) -> '/login' and (true) -> null. needsOnboarding IS
+  production-dead.
+- **needsOnboarding IS THE FOURTH INSTANCE OF "PINNED BY A TEST, READ BY NOBODY"** --
+  after FIRST_RUN_COPY (which BLOCKED 3c), skipLabel, and missingProfileItems. Routed to
+  Slice 7a's systematic wire-or-delete sweep.
+- **TWO MORE SELF-CAUGHT BUGS, BOTH BY RUNNING RATHER THAN BEING TOLD:** the first
+  finishRunPlaces draft shipped an INVERTED hours comparator (no-hours places ranked
+  first) and the NEW UNIT TESTS caught it -- the second time this batch a test caught a
+  builder's own defect before any lane did (5's bounded-escape race was the first); and
+  e2e/auth.setup.ts broke a FOURTH time (3b, 4a, 4b, 6) with the RUN finding it rather
+  than the brief, which is the grep-your-own-breakages rule working.
+- Slice 6: reviewer lane dispatched (d891aa8f) over the recovered commit.
