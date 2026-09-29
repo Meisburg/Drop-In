@@ -39,18 +39,25 @@ export function isSkippable(card: FirstRunCardId): boolean {
 /**
  * The card a returning parent should land on, or null when the run is done.
  *
- * THE RULE (pinned in plan.md → Interfaces): the first card in
- * `FIRST_RUN_CARDS` order that is unanswered AND is either required, or
- * optional with every required card before it already answered.
+ * THE RULE (pinned in plan.md → Interfaces — the plan text is authoritative,
+ * this comment restates it):
+ *   (a) If every required card is answered, the run is finished → null.
+ *   (b) Otherwise, the first card in `FIRST_RUN_CARDS` order that is
+ *       unanswered and is either required, or optional with every required
+ *       card before it already answered.
+ * `account` counts as answered exactly when `signedIn`. Clause (a) is not
+ * decoration: clause (b) alone NEVER returns null for a childless parent —
+ * a skipped `kids` is indistinguishable from a not-reached one — so the
+ * termination path is clause (a)'s early return, not clause (b).
  *
  * Consequences, both accepted and recorded:
- * - It terminates: `area` is required and last, so answering it ends the run —
- *   a parent who skipped kids or photo gets null, not a re-offer.
- * - A *skipped* optional card IS re-offered while the run is still unfinished
- *   (the required card behind it is still unanswered), because "skipped" and
- *   "not reached" are indistinguishable from derived facts. That is one extra
- *   tap on a card that still shows Skip — the price of not adding a step
- *   column. Do NOT add one.
+ * - It terminates, by clause (a). `area` is required and last, so a parent who
+ *   sets a zip ends the run even having skipped kids and photo.
+ * - A *skipped* optional card IS re-offered while the run is unfinished
+ *   (a required card is still unanswered), because "skipped" and "not
+ *   reached" are indistinguishable from derived facts. That is up to two extra
+ *   taps, on cards that still show Skip, and it is the price of not adding a
+ *   step column. Do NOT add one.
  */
 export function nextUnfinishedCard(facts: FirstRunFacts): FirstRunCardId | null {
   if (!facts.signedIn) return 'account'

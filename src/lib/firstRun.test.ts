@@ -90,6 +90,23 @@ describe('nextUnfinishedCard', () => {
     expect(nextUnfinishedCard(facts({ hasName: true, hasZip: false }))).not.toBeNull()
   })
 
+  it('pins guard order: the name guard runs before the clause-(a) zip early return', () => {
+    // {signedIn: true, hasName: false, hasZip: true} → 'name'. Unreachable in
+    // production (a zip implies a profile row implies a display name), but if
+    // the `if (facts.hasZip) return null` moved above the name guard this dies
+    // (it would return null instead of 'name').
+    expect(nextUnfinishedCard(facts({ signedIn: true, hasName: false, hasZip: true }))).toBe(
+      'name',
+    )
+  })
+
+  it('pins guard order: the signedIn guard runs first — even ahead of clause (a)', () => {
+    // {signedIn: false, hasZip: true} → 'account'. A signed-out visitor has no
+    // run to finish, no matter what a stale facts snapshot says about a zip;
+    // if the zip early return moved ahead of the signedIn guard this dies.
+    expect(nextUnfinishedCard(facts({ signedIn: false, hasZip: true }))).toBe('account')
+  })
+
   it('re-offers a skipped optional card while the run is unfinished', () => {
     // The parent skipped kids and photo and quit before area. "Skipped" and
     // "not reached" are indistinguishable from the derived facts, so they
@@ -120,8 +137,10 @@ describe('purity', () => {
     // drift from the code: it is the very file vitest executed above.
     for (const forbidden of [
       /\bDate\.now\b|\bnew Date\b/, // no clock
+      /\bDate\(/, // no bare Date() call form
       /\bperformance\b/, // no clock
       /\bwindow\b|\bdocument\b/, // no browser global
+      /\blocation\b|\bnavigator\b/, // no browser global — location is domain-relevant here
       /\blocalStorage\b|\bsessionStorage\b/, // no browser storage
       /\bfetch\b|\bXMLHttpRequest\b/, // no I/O
       /supabase/i, // no client
@@ -132,14 +151,20 @@ describe('purity', () => {
     expect(firstRunSource).not.toMatch(/^\s*import\s/m)
   })
 
-  it('never reads the clock — every function runs with Date.now spied', () => {
+  it('never reads the clock — every fact combination runs with Date.now spied', () => {
     const spy = vi.spyOn(Date, 'now')
     try {
       for (const card of FIRST_RUN_CARDS) progressLabel(card)
-      for (const sample of [facts(), facts({ hasName: true, hasZip: true })]) {
-        nextUnfinishedCard(sample)
-      }
       for (const card of FIRST_RUN_CARDS) isSkippable(card)
+      // All 32 fact combinations, so the spy walks every branch of
+      // nextUnfinishedCard — including the photo and area branches the old
+      // two-sample loop never traversed.
+      for (const signedIn of [false, true])
+        for (const hasName of [false, true])
+          for (const hasKids of [false, true])
+            for (const hasPhoto of [false, true])
+              for (const hasZip of [false, true])
+                nextUnfinishedCard({ signedIn, hasName, hasKids, hasPhoto, hasZip })
     } finally {
       spy.mockRestore()
     }
