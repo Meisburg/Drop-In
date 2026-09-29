@@ -1657,3 +1657,37 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   DEFECT OF MINE: MY BRIEF'S SCOPE LIST OMITTED e2e/places-map-view.e2e.ts, the commit's
   8th file.
 - Slice 7a: fix round 1 dispatched (d43cda80).
+- **THE BUILDER FOUND AN ERROR IN MY FIX BRIEF BY MEASURING IT, BEFORE WRITING ANYTHING,
+  AND THE RULING IS (B) WITH ZERO SPEC CHANGES.** Fix-1 asked for a gate whose shape half
+  must pin ">=1 alphanumeric static". Prototype: that WOULD catch places-see-map AND would
+  manufacture THREE FALSE POSITIVES on a legitimate pattern -- the Comments (1)/(2)
+  headings in e2e/comment-replies.e2e.ts render as plain JSX text `Comments` PLUS the
+  template `(${state.comments.length})` (PlaydateDetailPage.tsx:2550), statics " (" and
+  ")", ZERO alphanumeric -- so the guard would exit 1 ON A HEALTHY REPO and block a
+  legitimate pattern. THAT IS PRECISELY WHAT MY OWN BRIEF TOLD IT TO AVOID ("a guard that
+  blocks a legitimate pattern gets disabled"), so my instruction contradicted its own
+  doctrine.
+  * (A) REFUSED ON PRINCIPLE: editing tests so a guard stops complaining is the "weaken
+    the test to fit the tool" antipattern the review already called WORSE THAN NO GUARD,
+    and `getByRole('heading', {name: 'Comments (1)'})` is a MORE PRECISE assertion than
+    'Comments' plus a count. So the guard must be green on the healthy repo with ZERO
+    spec edits.
+  * (B) RULED: narrow the gate, and PREFER THE BOUNDED-PLAIN-HALF DISCRIMINATOR OVER ANY
+    SHAPE-LENGTH HEURISTIC -- the measured cause of the false acceptance was the PLAIN
+    half ("plac", a 4-char SUBSTRING of placePath, not a token), and tightening that kills
+    places-see-map (no split survives: "places" + "see-map" has one hyphen and cannot
+    match ["-","-"]) WHILE "Comments" stays a bounded token and keeps proving. MY PROPOSED
+    "< 4 pinned length" THRESHOLD WAS NOT MEASURED AND WAS NOT TO BE USED.
+  * FOUR PROOFS REQUIRED: the fixed guard REPORTS places-see-map against 1631939^;
+    run-all GREEN with comment-replies.e2e.ts BYTE-IDENTICAL to HEAD; both .check.mjs
+    STILL FAIL against a gutted guard; and the realistic hyphenated-dead-testid shape
+    SEEDED into the check.
+- **PROCESS RULE ADOPTED AFTER THE SECOND INSTANCE: WHEN A BRIEF SPECIFIES A MECHANISM I
+  HAVE NOT MEASURED, THE BRIEF IS THE DEFECT.** Instance 1: 4b's out-of-scope line named
+  auth.setup.ts nowhere and the builder had to change it and flag it. Instance 2: fix-1's
+  gate condition, which would have broken three legitimate assertions. BOTH TIMES THE
+  BUILDER'S MEASUREMENT WAS RIGHT AND MY INSTRUCTION WAS WRONG. RULE: **briefs specify the
+  PROPERTY required and the PROOF required; the MECHANISM is the builder's to measure and
+  justify**, with the measured basis written in the code comment. This is the batch's third
+  process rule, beside "find the specs your change breaks by grep" and "never grep a phrase
+  that can wrap" -- and the only one aimed at the orchestrator's own output.

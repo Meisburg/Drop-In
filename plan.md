@@ -1832,3 +1832,44 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
   the plan and the spec comment without inventing an explanation**, put `/browse` in the
   route table or note the skip, state Guard 1's real coverage, document the cross-route
   false positive, and run the Playwright lane for the changed spec.
+
+- 2026-09-29 — **⚠️ THE BUILDER FOUND AN ERROR IN MY FIX BRIEF, BY MEASURING IT — AND THE
+  RULING IS (B), ZERO SPEC CHANGES.** Fix-1 asked for a gate whose shape half must pin
+  "≥1 alphanumeric static". The builder's prototype confirmed that **would** catch
+  `places-see-map` — **and would also manufacture THREE FALSE POSITIVES on a legitimate
+  pattern**: the `Comments (1)` / `Comments (2)` headings in
+  `e2e/comment-replies.e2e.ts` render as plain JSX text `Comments` **plus** the template
+  `(${state.comments.length})` (`PlaydateDetailPage.tsx:2550`), whose statics are `" ("`
+  and `")"` — **zero alphanumeric** — so the guard would exit 1 on a **healthy** repo and
+  block a legitimate pattern. **That is precisely the failure mode my own brief told it to
+  avoid** (*"a guard that blocks a legitimate pattern gets disabled"*), so my instruction
+  contradicted its own stated doctrine, and the builder caught it before writing anything.
+- 2026-09-29 — **The ruling, and why (A) was refused.** Option (A) — implement the gate
+  exactly and change the three spec sites — was **refused on principle**: editing tests so
+  a guard stops complaining is the *"weaken the test to fit the tool"* antipattern the
+  review had already called **worse than no guard**, and
+  `getByRole('heading', { name: 'Comments (1)' })` is a **more precise** assertion than
+  `'Comments'` plus a separate count. **So the guard must be green on the healthy repo
+  with zero spec edits.** The ruling is **(B)**: narrow the gate, and **prefer the
+  bounded-plain-half discriminator over any shape-length heuristic** — because the
+  measured cause of the false acceptance was the **plain** half (`"plac"`, a 4-char
+  *substring* of `placePath`, not a token), and tightening *that* kills
+  `places-see-map` (no split survives: `"places" + "see-map"` has one hyphen and cannot
+  match `["-","-"]`) **while `"Comments"` remains a bounded token and keeps proving.** My
+  proposed `"< 4 pinned length"` threshold was **not measured** and was not to be used.
+  **The fix round must prove all four: the fixed guard reports `places-see-map` against
+  `1631939^`; run-all is green with `comment-replies.e2e.ts` BYTE-IDENTICAL to HEAD; both
+  `.check.mjs` still fail against a gutted guard; and the realistic hyphenated-dead-testid
+  shape is seeded into the check so the hole cannot silently reopen.**
+- 2026-09-29 — **⚠️ PROCESS RULE, ADOPTED AFTER THE SECOND INSTANCE: WHEN A BRIEF SPECIFIES
+  A MECHANISM I HAVE NOT MEASURED, THE BRIEF IS THE DEFECT.** Instance 1: **4b's
+  out-of-scope line** named `auth.setup.ts` nowhere, and the builder had to change it and
+  flag it. Instance 2: **fix-1's gate**, whose exact condition would have broken three
+  legitimate assertions — caught by the builder's prototype **before it wrote anything**.
+  Both times **the builder's measurement was right and my instruction was wrong.** So:
+  **briefs specify the PROPERTY required and the PROOF required; the MECHANISM is the
+  builder's to measure and justify.** State the property, state the falsification test,
+  and let the person with the file in front of them pick the condition — with the measured
+  basis written in the code comment. This is the third process rule of the batch, beside
+  *"find the specs your change breaks by grep"* and *"never grep a phrase that can wrap"*,
+  and it is the one aimed at the orchestrator's own output rather than at tooling.
