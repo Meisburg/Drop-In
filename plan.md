@@ -1453,3 +1453,34 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
   Slice 7a** (extract + a `firstRun`-adjacent unit test, keeping the e2e as the
   integration pin). The reviewer also correctly noted it **cannot** prove the e2e
   passed — it ran no gate — which is the verifier's lane.
+
+- 2026-09-29 — **Slice 4c: VERIFIED PASS** (verifier run `f5e2a358`) at `f8fe01d`.
+  Gate exit 0; **66 files / 1981 tests** with 4c adding **no** vitest test (it
+  touches a Playwright spec, a page and a fixture helper, and the repo has **zero
+  `.tsx` test files**); **lint 0/81 confirmed by counting 81 warning lines**, with the
+  precise reason no new warning appeared — OnboardingPage's lazy-read `setState` sits
+  inside an async `.then`, so the sync-in-effect rule does not fire there (a real
+  explanation, not a hope); **guards PASS, and the fixture-marker guard explicitly
+  accepted the new spec** (*"checked 58 spec file(s) … sweep matches the documented
+  account marker like 'e2e-%' … PASS"*); **no flake this run** (vitest 1981/1981
+  first try); golden-path 2 passed with the `[setup]` line **green in both runs**;
+  **both new resume tests passed individually (3.7s, 2.8s)** — the entire proof of
+  defect #22's fix, executed rather than reviewed; both gate clauses confirmed
+  verbatim from source. `readSessionFromBrowserPage` does **not** hard-code a storage
+  key (it iterates `Object.values(localStorage)`); no `console.log`/`writeFile`; the
+  new spec's fixtures are `e2e-` prefixed; the stale `App.tsx:88` docblock survives
+  untouched. **The reviewer's honest "I cannot prove the e2e passed" is now closed:
+  all 7 e2e tests executed and passed.**
+- 2026-09-29 — **GROUNDING SLICE 5, MEASURED.** The three fallback symbols are
+  **definitions with ZERO call sites**: `SIGNUP_ZIP_FALLBACK_KEY` /
+  `markSignupZipUnresolved` (`onboarding.ts:128`, `:138`), `addressFieldError`
+  (`account.ts:76`), `zipFromAddressQuery` (`geocode.ts:138`). The validators already
+  exist in **`feed.ts`** (`RADIUS_MILES_OPTIONS:69`, `DEFAULT_RADIUS_MILES:72`,
+  `validateHomeZip:137`) — **do not re-declare them**. `geocode.ts` already exposes
+  the **injected seam** (`type AddressLookup:39`, `geocodeAddress:82`,
+  `zipFromResult:123`), so the card's lookup can take its client rather than calling
+  `fetch` inline — the build law's shape, already present. And `geocode.ts:11`'s doc
+  comment still calls `zipFromAddressQuery` "the **signup form's** use of the same
+  service" — **stale, and Slice 5 owns that file this slice, so it owns the claim.**
+  Slice 5's brief carries the pending-state rule, names `e2e/auth.setup.ts`
+  explicitly, and states plainly that **the ending is Slice 6's** (defect #19).

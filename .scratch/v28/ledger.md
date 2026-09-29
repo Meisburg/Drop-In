@@ -1303,3 +1303,22 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   untouched (Slice 7's, as assigned); drivers untracked. **THE REVIEWER'S UNPROVABLE
   E2E CLAIM IS NOW CLOSED: all 7 e2e tests executed and passed.**
 - GROUNDING SLICE 5 to be recorded with its brief.
+- GROUNDING SLICE 5, MEASURED: the three fallback symbols are definitions with ZERO
+  call sites (SIGNUP_ZIP_FALLBACK_KEY / markSignupZipUnresolved at onboarding.ts:128
+  and :138; addressFieldError at account.ts:76; zipFromAddressQuery at geocode.ts:138).
+  The validators ALREADY EXIST in feed.ts (RADIUS_MILES_OPTIONS:69,
+  DEFAULT_RADIUS_MILES:72, validateHomeZip:137) -- do not re-declare them. geocode.ts
+  ALREADY exposes the injected seam (type AddressLookup:39, geocodeAddress:82,
+  zipFromResult:123), so the card's lookup takes its client rather than calling fetch
+  inline -- the build law's shape was already there to use. And geocode.ts:11's doc
+  comment still calls zipFromAddressQuery "the signup form's use of the same service":
+  stale, and Slice 5 owns that file this slice, so it owns the claim.
+- Slice 5's brief carries three rules that are each earned: (1) REUSE addressFieldError
+  rather than deleting it -- it only LOOKS dead after 3b; (2) THE PENDING-STATE RULE,
+  because the area card adds an async geocode that gates the next step and 4c's review
+  just proved that a pending state without a bounded escape is a wall; (3)
+  e2e/auth.setup.ts IN SCOPE BY NAME, because it has broken three times and my last
+  brief forgot to carry the exception forward. And it states plainly that the ending
+  is Slice 6's, so the builder does not touch the redirect guard that defect #19 says
+  makes the finish card unreachable.
+- Slice 5 dispatched (run 0d99a613).
