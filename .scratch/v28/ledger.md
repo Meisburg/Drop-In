@@ -856,3 +856,39 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   plausible -- so the race is not provable, with the caveat that this holds on the
   data.session path (an email-confirmation flow returns session: null and is a
   different path).
+- Slice 3c: FIX ROUND 1/5 DONE at 5485384 (4 files, +68/-18: src/App.tsx,
+  src/lib/firstRunCopy.ts, src/lib/firstRunCopy.test.ts,
+  src/pages/OnboardingPage.tsx). Builder resumed (rounds 1-3 resume the original
+  builder) as run 3f50042a. Reported: gate 65 files / 1978 tests (+3 from the new
+  describe), lint 81 warnings / 0 errors, golden-path 2 passed.
+- ORCHESTRATOR VERIFIED THE FIX, and the blocking finding IS gone:
+  * `rg -n "FIRST_RUN_COPY\[|copy\.title|card\.title" src/App.tsx` -> NO HITS.
+  * The nudge renders FIRST_RUN_NUDGE_COPY.title/.body/.actionLabel only
+    (App.tsx:197, :198, :205).
+  * The builder ALSO added a test that guards the exact defect -- a regression
+    guard against a per-card title leaking into the nudge line, not just an
+    assertion that the generic object is non-empty. Sent to the verifier to check
+    that the assertion really does what its name says.
+  * The stale comment is reworded ("its tests pin it", with an honest parenthetical
+    that this step WAS the only production call site).
+- **A SIDE EFFECT THE FIX CREATED, AND IT IS REAL: `FIRST_RUN_COPY` IS NOW
+  CONSUMED BY NOTHING IN THE APP.** `rg -n "FIRST_RUN_COPY" src/ --glob
+  '!*.test.ts'` returns ONLY its own definition and two COMMENTS describing it
+  (App.tsx:86, firstRunCopy.ts:61). The nudge was its only consumer and no longer
+  uses it, so the per-card export is ORPHANED IN THE APP until Slice 4 wires the
+  cards -- pinned only by its own test. RECORDED AS A FACT, NOT A DEFECT: it is
+  exactly what a later dead-code sweep would wrongly delete, so Slice 4's
+  obligation is now the only thing standing between this module and removal.
+- TWO PROCESS OBSERVATIONS, both worth the ledger:
+  * The builder's report names `e2e/golde-path.e2e.ts` -- A PATH THAT DOES NOT
+    EXIST (the real file is golden-path). It reported "2 passed", so the typo is
+    almost certainly in the prose, but A MISTYPED COMMAND IN A REPORT MEANS THAT
+    EVIDENCE IS NOT TRUSTWORTHY AS WRITTEN. The verifier is told to confirm the
+    real path and run it, rather than accepting the summary.
+  * The builder found a latent re-runnability bug in its OWN throwaway driver
+    (a hard-coded surname "V28" made the second run hit "already taken" and block
+    on the name card) and fixed it to be unique per run. That is the driver
+    telling the truth about itself -- and it is why the driver now passes twice in
+    a row. Noted because a verify driver that only works once is a driver that
+    silently proved only one run.
+- Slice 3c: verifier lane dispatched as the closing check.
