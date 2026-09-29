@@ -1356,3 +1356,25 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   earlier in the same session. A FABRICATED MATCH IS WORSE THAN A MISS because it reads
   as evidence. That is the third tooling trap of the batch, alongside the
   wrapping-phrase grep and the no-match-from-an-error-path rule.
+- Slice 5: FIX ROUND 1 DONE at 3f42c8f (2 files, +23/-14). **49/49 PLAYWRIGHT PASSED in
+  7.0m** -- the 17 finishSignup consumers PLUS onboarding-resume, EXECUTED RATHER THAN
+  ASSUMED, with the setup walk running first. That is the round's whole purpose: the
+  original report could only say 16 specs were "expected-green". The three waits now
+  pin the area card's first-run-area-card testid; "Set your location" survives in e2e/
+  ONLY as two comments; the load-error branch renders FIRST_RUN_COPY.area.title; the
+  redirect guard is UNTOUCHED (verified on changed lines only). Test count 1982 with
+  its arithmetic stated (1981 + 4 - 3).
+- **TOOLING LESSON, MINE, AND IT APPLIED TO THE GUARD CHECK ITSELF: A DIFF GREP MUST
+  FILTER TO CHANGED LINES.** Checking whether the fix round touched the redirect guard
+  I piped `git show ... | grep -c` and got **1**, which reads as "the guard was
+  touched". It was a CONTEXT LINE in the hunk. Re-run filtered to `^[+-]` it was ZERO
+  changed lines and the guard is intact. **A count over an unfiltered diff measures the
+  HUNK, not the CHANGE** -- the same shape as the wrapping-phrase grep and the `-r`
+  fabrication: three tooling traps this batch, every one of which produced a CONFIDENT
+  WRONG NUMBER rather than an obvious error.
+- NAMED FOR SLICE 7: OnboardingPage.tsx:262 -- "the shell applies the same gate one
+  level up" is FALSE since 2b removed the shell's bounce. A comment in a file this
+  slice owned, made false by ANOTHER slice's correct change: the same pattern as
+  App.tsx:86.
+- Slice 5: reviewer lane dispatched (run f6f28041) over both commits, with the vacuity
+  question for the rewritten signup-zip-fallback spec front and centre.

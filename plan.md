@@ -1529,3 +1529,31 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
   orchestrator had already been burned by the same flag once earlier. **A fabricated
   match is worse than a miss**, because it reads as evidence. Third tooling trap of the
   batch, alongside the wrapping-phrase grep and the no-match-from-an-error-path rule.
+
+- 2026-09-29 — **Slice 5 fix round 1 DONE at `3f42c8f`** (2 files, +23/−14), and
+  **49/49 Playwright PASSED in 7.0m** — the 17 `finishSignup` consumers **plus**
+  `onboarding-resume`, **executed rather than assumed**, with the setup walk running
+  first as a dependency. That closes the round's whole purpose: the builder's original
+  report could only say 16 specs were "expected-green", and the fix round replaced
+  expectation with output. The three waits now pin the area card's
+  `first-run-area-card` testid; `"Set your location"` survives in `e2e/` **only as two
+  comments**; and the gazetteer load-error branch renders
+  `FIRST_RUN_COPY.area.title` instead of a masthead that no longer exists on the happy
+  path. **The redirect guard is untouched** — verified on **changed lines only**
+  (`resolveOnboardingRedirect` `:263`, `<Navigate>` `:264`). Test count stated with its
+  arithmetic: 1981 + 4 − 3 = **1982**.
+- 2026-09-29 — **⚠️ TOOLING LESSON, MINE, AND IT APPLIED TO THE GUARD CHECK ITSELF: A
+  DIFF GREP MUST FILTER TO CHANGED LINES (`^[+-]`).** Checking whether the fix round
+  touched the redirect guard, the orchestrator piped `git show … | grep -c` and got
+  **1** — which reads as "the guard was touched". It was a **context line** in the
+  hunk, not a change. Re-run with `grep -E "^[+-]" | grep -v "^[+-][+-]"` it was
+  **zero changed lines**, and the guard is intact. **A count over an unfiltered diff
+  measures the hunk, not the change** — the same shape as the wrapping-phrase grep and
+  the `-r` fabrication: three tooling traps this batch, all of which produced a
+  *confident wrong number* rather than an obvious error.
+- 2026-09-29 — **Named for Slice 7: `OnboardingPage.tsx:262`.** The comment there still
+  reads *"…are bounced — the shell applies the same gate one level up"*, but **2b
+  removed the shell's bounce** (`resolveProtectedRedirect` lost its onboarding branch),
+  so the second clause is false. Recorded rather than fixed here: it is a comment in a
+  file this slice owned but a claim **2b** made false — the same "a correct comment
+  expired by someone else's correct change" pattern as `App.tsx:86`.
