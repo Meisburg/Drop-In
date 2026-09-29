@@ -937,3 +937,26 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   real lines are ~515/~548. Minor, but recorded because the plan's line numbers
   have been wrong before and a builder that trusts them measures nothing.
 - Slice 4a dispatched.
+- **SCOPE DECISION DURING 4a — ANSWERED YES, AND THE BUILDER WAS RIGHT TO ASK.**
+  The builder surfaced (rather than silently editing) that `e2e/auth.setup.ts`
+  **inlines the name-card -> location-step walk by hand and does NOT use
+  finishSignup**, so inserting the kids card breaks the SETUP PROJECT and every
+  chromium spec goes red. My brief's phrase "what a failure forces you to report"
+  was too loose, and the builder did not exploit it.
+  * RULING: YES, make the minimal faithful edit — a Skip tap after the name card,
+    the same hop finishSignup gets, plus a comment saying why the hop exists.
+    `e2e/auth.setup.ts` is now in 4a's scope BY NAME.
+  * NOT in this slice: refactoring it onto finishSignup (it onboards the marker
+    with a zip AND a radius which the helper may not do; and folding a refactor
+    into a walk-fix makes any failure ambiguous — the same reasoning that split 4a
+    from 4b).
+  * FORWARD QUESTION TO SLICE 7, asked and to be answered by the builder in its
+    report: can finishSignup cheaply subsume this walk? **auth.setup.ts has now
+    broken TWICE on the same class of change** (plan defect #11 — it filled the
+    fields 3b deleted — and now this), so twice is a pattern, not bad luck, and
+    Slice 7 decides whether the duplication is removed.
+  * Also a process note: this is the SECOND time this batch that an OUT-OF-SCOPE
+    line in one of my briefs was ambiguous at exactly the point a slice needed to
+    touch something real (the first was `e2e/fixtures.ts` being in no slice's
+    scope at all, plan defect #7). Ambiguity in a scope line gets resolved by a
+    builder's judgment call, which is precisely what scope lines exist to prevent.

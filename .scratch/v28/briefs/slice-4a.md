@@ -91,8 +91,21 @@ outcome: do not weaken it.
 The photo card and `useCropStep` (Slice 4b), `hasAvatarUrl` (4b), the area card
 (5), the finish card (6), `src/App.tsx`'s nudge, `src/lib/firstRun.ts`,
 `src/lib/firstRunCopy.ts`'s **other** cards' entries (only `name` and `kids`),
-`e2e/**` beyond `fixtures.ts` and what a failure forces you to report, `plan.md`,
+`e2e/**` beyond `fixtures.ts` **and `auth.setup.ts`** (see below), `plan.md`,
 `task-state.md`, `.scratch/**`.
+
+**⚠️ `e2e/auth.setup.ts` IS IN SCOPE BY NAME** — added after the builder surfaced
+the ambiguity, which was exactly right. It **inlines** the name-card →
+location-step walk by hand and does **not** use `finishSignup`, so the new kids
+card breaks it and **every chromium spec goes red**. Add the **Skip tap after the
+name card** — the same hop `finishSignup` gets — plus a comment saying why the hop
+exists, so the next reader sees a sequence rather than a mystery tap. **Do NOT**
+refactor it onto `finishSignup` in this slice: it onboards the marker with a zip
+**and** a radius which the helper may not do, and folding a refactor into a
+walk-fix makes any failure ambiguous (the same reasoning that split 4a from 4b).
+**But answer in your report whether `finishSignup` could cheaply subsume it** —
+`auth.setup.ts` has now broken **twice** on the same class of change, so Slice 7
+needs that answer to decide whether the duplication gets removed.
 
 ## Commit and report
 
