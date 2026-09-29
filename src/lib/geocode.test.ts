@@ -1,10 +1,12 @@
 /**
- * The geocode seam's sibling test (first-use audit, ticket 02).
+ * The geocode seam's sibling test (first-use audit, ticket 02; V28 slice 5).
  *
  * WHY THIS FILE EXISTS, beyond the build law's "every lib module ships a test":
- * the audit's second finding is that a parent whose signup address did not
- * resolve to a ZIP was moved to a ZIP screen with no explanation. The fix is
- * only worth anything if the UNRESOLVED path is real and testable, and it was
+ * the audit's second finding is that a parent whose address did not
+ * resolve to a ZIP was moved to a ZIP screen with no explanation — since V28
+ * slice 5 that note is the AREA CARD's own (its bounded lookup's "absent"
+ * outcome). The fix is only worth anything if the UNRESOLVED path is real and
+ * testable, and it was
  * not: `zipFromAddressQuery` hit Nominatim directly, so the only way to reach
  * the failure was for the network to fail. Nothing here touches the network —
  * every case injects the lookup, which is the one dependency this module has.
@@ -14,6 +16,7 @@ import {
   coordinatesFromResult,
   geocodeAddress,
   zipFromAddressQuery,
+  zipFromAddressQueryBounded,
   zipFromResult,
   type NominatimResult,
 } from './geocode'
@@ -44,7 +47,7 @@ describe('coordinatesFromResult', () => {
   })
 })
 
-describe('zipFromResult — the two outcomes the signup fallback depends on', () => {
+describe('zipFromResult — the two outcomes the area card\'s fallback note depends on', () => {
   it('RESOLVED: a street address with a recognised house number yields its ZIP', () => {
     expect(zipFromResult(SEATTLE, STREET_RESULT)).toBe('98105')
   })
@@ -124,5 +127,62 @@ describe('the async wrappers inject exactly one dependency', () => {
 
   it('geocodeAddress returns null when the lookup yields nothing', async () => {
     expect(await geocodeAddress(SEATTLE, async () => null)).toBe(null)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// V28 slice 5 — the bounded escape the pending-state rule requires for a
+// card-gating lookup. The area card (required, no Skip) races the injected
+// lookup against a timer: a Nominatim answer that stalls must settle to
+// "absent" and reveal the card's ZIP fallback, never stall the run.
+// ---------------------------------------------------------------------------
+
+describe('zipFromAddressQueryBounded (V28 slice 5 — the card-gating lookup\'s bounded escape)', () => {
+  it('a fast lookup wins the race and settles to its zip', async () => {
+    vi.useFakeTimers()
+    try {
+      const lookup = vi.fn(async () => STREET_RESULT)
+      const pending = zipFromAddressQueryBounded(SEATTLE, 10_000, lookup)
+      expect(await pending).toBe('98105')
+      expect(lookup).toHaveBeenCalledTimes(1)
+      // The pending deadline was cancelled: a fast lookup leaves no timer behind.
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a lookup that never settles settles to "absent" (null) at the deadline', async () => {
+    vi.useFakeTimers()
+    try {
+      // A stalled network: a promise that never settles (the rule\'s trap —
+      // a card awaiting it would stall the run, and the run is never a wall).
+      const neverSettled = new Promise<NominatimResult | null>(() => {})
+      const lookup = vi.fn(() => neverSettled)
+      const pending = zipFromAddressQueryBounded(SEATTLE, 10_000, lookup)
+      vi.advanceTimersByTime(10_000)
+      expect(await pending).toBe(null)
+      expect(lookup).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a failed lookup settles to null before the deadline (the fast fallback path)', async () => {
+    vi.useFakeTimers()
+    try {
+      const lookup = vi.fn(async () => null)
+      const pending = zipFromAddressQueryBounded(SEATTLE, 10_000, lookup)
+      expect(await pending).toBe(null)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('an empty query short-circuits without a lookup (and without a timer)', async () => {
+    const lookup = vi.fn(async () => STREET_RESULT)
+    expect(await zipFromAddressQueryBounded('   ', 10_000, lookup)).toBe(null)
+    expect(lookup).not.toHaveBeenCalled()
   })
 })

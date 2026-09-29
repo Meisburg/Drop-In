@@ -4,7 +4,7 @@ import { Navigate, useNavigate } from 'react-router'
 import { useSessionContext } from '../components/SessionProvider'
 import { FirstRunCard } from '../components/FirstRunCard'
 import { useCropStep } from '../components/useCropStep'
-import { composeDisplayName, displayNameFieldError } from '../lib/account'
+import { addressFieldError, composeDisplayName, displayNameFieldError } from '../lib/account'
 import { progressLabel } from '../lib/firstRun'
 import { FIRST_RUN_COPY } from '../lib/firstRunCopy'
 import {
@@ -27,7 +27,8 @@ import {
   validateHomeZip,
 } from '../lib/feed'
 import { splitSuggestedName, suggestedHandle } from '../lib/oauth'
-import { consumeSignupZipUnresolved, resolveOnboardingRedirect } from '../lib/onboarding'
+import { ADDRESS_LOOKUP_TIMEOUT_MS, zipFromAddressQueryBounded } from '../lib/geocode'
+import { resolveOnboardingRedirect } from '../lib/onboarding'
 import { errorId, fieldA11y } from '../lib/a11y'
 
 /**
@@ -50,6 +51,15 @@ import { errorId, fieldA11y } from '../lib/a11y'
  * (3 of 5) writes the kid rows and the photo card (4 of 5) uploads the
  * avatar, each before this page's final view — the location view's one
  * Continue button saves the location (always) and lands on the feed.
+ * V28 slice 5: that final view IS the area card (5 of 5, the run's last
+ * card) — address-first, ZIP as the fallback it reveals (decision 9): the
+ * address is the entry (its bounded lookup, lib/geocode's
+ * `zipFromAddressQueryBounded` — the pending-state rule's escape for a
+ * required card with no Skip — resolves it to the home zip without the
+ * parent typing a ZIP), an unresolvable address (or a timeout that settled
+ * to "absent") reveals the ZIP field + the in-card notice, and a typed ZIP
+ * always wins. The card's one primary button ("Finish") saves the location
+ * and lands on the feed.
  * V28 slice 4c (defect #22): both card gates are fact-aware — a parent who
  * re-enters resumes at the card they LEFT, never a restart: the kids gate
  * closes when the profile already has kids (the page's own lazy listKids
@@ -113,15 +123,16 @@ export function OnboardingPage() {
   const [radiusMiles, setRadiusMiles] = useState<number>(DEFAULT_RADIUS_MILES)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  /**
-   * Whether the signup address failed to resolve to a ZIP (first-use audit,
-   * ticket 02). Read lazily ONCE, in the initializer, because the read is
-   * destructive (one-shot): doing it in the render body would consume the flag
-   * on a throwaway render and then show nothing.
-   */
-  const [signupZipUnresolved] = useState(() =>
-    consumeSignupZipUnresolved(typeof window === 'undefined' ? null : window.sessionStorage),
-  )
+  // V28 slice 5 — the area card's fields: the address (the card's primary
+  // entry, decision 9) and the fallback's revealed state. The signup
+  // address's one-shot flag (first-use audit, ticket 02) is gone — its
+  // producer left /login in slice 3b and the note is now the card's own
+  // in-card notice, triggered by the card's bounded lookup, not a
+  // cross-screen flag.
+  const [areaAddress, setAreaAddress] = useState('')
+  const [areaAddressError, setAreaAddressError] = useState<string | null>(null)
+  const [geocoding, setGeocoding] = useState(false)
+  const [zipFallbackShown, setZipFallbackShown] = useState(false)
 
   // The optional completion items (V2 ticket 02).
   //
@@ -347,22 +358,62 @@ export function OnboardingPage() {
     if (!failed) setKidsCardDone(true)
   }
 
-  async function handleContinue() {
-    if (session === null || saving || knownZips === null) return
-    // The location step is the onboarding requirement (V2 slice 3): the
-    // zip must be a 5-digit code in the seeded gazetteer; the radius is
-    // always one of the pinned options (the select can't produce another).
-    const locationError = validateHomeZip(homeZip, knownZips)
-    if (locationError !== null) {
-      setZipError(locationError)
+  // V28 slice 5: the area card's (5 of 5) primary action — decision 9,
+  // address-first, ZIP as fallback. A TYPED ZIP always wins and needs no
+  // lookup: it is validated against the gazetteer (the same
+  // `validateHomeZip` gate the card has always had) and written. An ADDRESS
+  // runs the BOUNDED lookup — the pending-state rule's escape for this
+  // required, non-skippable card: a Nominatim answer that does not settle in
+  // time settles to "absent" instead of stalling the run. A resolved zip in
+  // the gazetteer is written WITHOUT the parent typing a ZIP; an
+  // unresolvable address (or the timeout) reveals the ZIP field + the
+  // in-card notice — never blocks, never loses the address (it stays in
+  // `areaAddress`).
+  async function handleAreaFinish() {
+    if (session === null || saving || geocoding || knownZips === null) return
+    const typedZip = homeZip.trim()
+    if (typedZip !== '') {
+      const zipProblem = validateHomeZip(homeZip, knownZips)
+      if (zipProblem !== null) {
+        setZipError(zipProblem)
+        return
+      }
+      await saveLocation(typedZip)
       return
     }
+    // No typed zip: the address is the entry. Only emptiness is judged here —
+    // whether it RESOLVES is the geocoder's answer (lib/account's
+    // addressFieldError seam, reused, not re-declared).
+    const addressProblem = addressFieldError(areaAddress)
+    if (addressProblem !== null) {
+      setAreaAddressError(addressProblem)
+      return
+    }
+    setAreaAddressError(null)
+    setGeocoding(true)
+    const resolvedZip = await zipFromAddressQueryBounded(areaAddress, ADDRESS_LOOKUP_TIMEOUT_MS)
+    setGeocoding(false)
+    if (resolvedZip !== null && validateHomeZip(resolvedZip, knownZips) === null) {
+      await saveLocation(resolvedZip)
+      return
+    }
+    // Unresolvable (or the bounded timeout settled to "absent"): the card
+    // reveals the ZIP fallback — the notice is the existing one, now
+    // re-triggered in-card; the typed address survives in state.
+    setZipFallbackShown(true)
+  }
+
+  // The location write (V2 ticket 02's radius picker, unchanged in kind):
+  // the zip + the radius the card chose, then the feed. Both the typed-zip and
+  // the address-resolved legs land here.
+  async function saveLocation(zip: string) {
+    if (session === null) return
     setSaving(true)
     setError(null)
     try {
-      await updateHomeZipRadius(session.user.id, homeZip.trim(), radiusMiles)
+      await updateHomeZipRadius(session.user.id, zip, radiusMiles)
       // V28 slices 4a/4b: the optional items no longer write from this
-      // handler — the kids card wrote its rows before this view (the photo
+      // handler — the kids card wrote its rows before this card (the photo
       // card's upload ran in its crop step; the bio left the first run
       // entirely). Only the location write remains here.
       // Refresh the shared session state before leaving: homeZipSet is what
@@ -375,11 +426,14 @@ export function OnboardingPage() {
       navigate('/', { replace: true })
     } catch (err) {
       // V16 t09 review: this write goes through updateHomeZipRadius too, and
-      // this picker renders RADIUS_MILES_OPTIONS (so it offers 1 mile). Its
-      // catch used to inline `err.message`, which renders the raw PostgREST
-      // CHECK text while migration 0045 is unapplied -- the same defect t09
-      // fixed on the three Feed/Browse surfaces. Routing it through the shared
-      // mapper makes all FOUR call sites say the same thing in English.
+      // the card's picker renders RADIUS_MILES_OPTIONS (so it offers 1 mile).
+      // Its catch used to inline `err.message`, which renders the raw
+      // PostgREST CHECK text while migration 0045 is unapplied -- the same
+      // defect t09 fixed on the three Feed/Browse surfaces. Routing it through
+      // the shared mapper makes all FOUR call sites say the same thing in
+      // English. The zip the card held (typed or resolved) is not re-derived
+      // here — a failed save stays on the card with its error, and the parent
+      // retries with what they still see.
       setError(radiusSaveErrorMessage(err))
     } finally {
       setSaving(false)
@@ -673,101 +727,119 @@ export function OnboardingPage() {
     )
   }
 
+  // V28 slice 5: the AREA card ("5 of 5") — the first run's last card,
+  // address-first (decision 9). The address is the entry: its bounded lookup
+  // (handleAreaFinish) resolves it to the home zip WITHOUT the parent typing
+  // a ZIP, or reveals the fallback below. The fallback — the ZIP field plus
+  // the notice — is the existing first-use-audit note, now the card's own
+  // in-card trigger (its bounded lookup settled to "absent": an unmatchable
+  // address, or a timeout that never settled — the pending-state rule's
+  // escape). The notice never blocks (a typed ZIP finishes the card) and
+  // never loses the address (it stays in the field above). A typed ZIP
+  // always wins, validated by the same validateHomeZip gate. The words are
+  // data from FIRST_RUN_COPY.area (the sibling cards read theirs the same
+  // way); the busy labels are transient state strings, not card copy.
+  const areaCopy = FIRST_RUN_COPY.area
   return (
-    <div className="flex flex-col gap-4">
-      {/* Frontend-design pass: the location masthead is a printed notice
-          heading (display-face h1, quiet tagline), and the zip + radius
-          fields stand on the page without their card kit. */}
-      <header className="flex flex-col gap-1">
-        <h1 className="font-display text-xl font-semibold text-slate-900">Set your location</h1>
-        <p className="text-sm text-slate-600">
-          You’ll see drop-ins near your home zip, within your radius. You can change both
-          anytime in your settings.
-        </p>
-      </header>
+    <FirstRunCard
+      progressLabel={progressLabel('area')}
+      title={areaCopy.title}
+      body={areaCopy.body}
+      primaryLabel={geocoding ? 'Checking your address…' : saving ? 'Saving…' : areaCopy.primaryLabel}
+      primaryDisabled={saving || geocoding || knownZips === null}
+      onPrimary={() => void handleAreaFinish()}
+      testId="first-run-area-card"
+    >
+      <div className="flex flex-col gap-2 text-sm">
+        <label className="flex flex-col gap-1">
+          <span className="text-slate-700">Home address</span>
+          <input
+            className={
+              'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+              (areaAddressError !== null ? 'border-red-400' : 'border-slate-300')
+            }
+            value={areaAddress}
+            onChange={(e) => {
+              setAreaAddress(e.target.value)
+              setAreaAddressError(null)
+            }}
+            placeholder="e.g. 1200 1st Ave S, Seattle"
+            autoComplete="street-address"
+            {...fieldA11y('area-address', areaAddressError)}
+          />
+        </label>
+        {areaAddressError !== null ? (
+          <p role="alert" id={errorId('area-address')} className="text-red-600">{areaAddressError}</p>
+        ) : null}
 
-      {/* FIRST-USE AUDIT (ticket 02): the parent JUST gave an address and was
-          told it would set their location. If the lookup could not match it,
-          this screen otherwise reads as "enter your location again" for no
-          stated reason. The flag is one-shot (consumed on read), so this note
-          belongs to THIS signup and never to a later visit. The copy keeps the
-          existing privacy promise and uses no implementation words. */}
-      {signupZipUnresolved ? (
-        <div
-          className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
-          data-testid="signup-zip-fallback-note"
-          role="status"
-        >
-          <p className="font-medium">Your account is ready — one thing left.</p>
-          <p className="mt-1">
-            We couldn’t match the address you entered to a ZIP code, so we need your ZIP to
-            show drop-ins near you. Your address is still private and never shown to other
-            parents.
-          </p>
-        </div>
-      ) : null}
-
-      {knownZips === null ? (
-        <p className="py-2 text-sm text-slate-600">
-          Loading the zip list…
-        </p>
-      ) : (
-        <div className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-slate-700">Home zip</span>
-            <input
-              className={
-                'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
-                (zipError !== null ? 'border-red-400' : 'border-slate-300')
-              }
-              value={homeZip}
-              onChange={(e) => {
-                setHomeZip(e.target.value)
-                setZipError(null)
-              }}
-              placeholder="e.g. 98107"
-              inputMode="numeric"
-              maxLength={5}
-              {...fieldA11y('zip', zipError)}
-            />
-          </label>
-          {zipError !== null ? <p role="alert" id={errorId('zip')} className="text-sm text-red-600">{zipError}</p> : null}
-
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-slate-700">Radius</span>
-            <select
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
-              value={radiusMiles}
-              onChange={(e) => setRadiusMiles(Number(e.target.value))}
+        {zipFallbackShown ? (
+          <>
+            {/* FIRST-USE AUDIT (ticket 02), now in-card (V28 slice 5): the
+                parent's address did not match a ZIP, so the card asks for the
+                ZIP by hand instead of reading as "enter your location again"
+                for no stated reason. The copy keeps the existing privacy
+                promise and uses no implementation words. */}
+            <div
+              className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-800"
+              data-testid="area-zip-fallback-note"
+              role="status"
             >
-              {RADIUS_MILES_OPTIONS.map((miles) => (
-                <option key={miles} value={miles}>
-                  {miles} {milesWord(miles)}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      )}
+              <p className="font-medium">Your account is ready — one thing left.</p>
+              <p className="mt-1">
+                We couldn’t match the address you entered to a ZIP code, so we need your ZIP to
+                show drop-ins near you. Your address is still private and never shown to other
+                parents.
+              </p>
+            </div>
+            <label className="flex flex-col gap-1">
+              <span className="text-slate-700">Home zip</span>
+              <input
+                className={
+                  'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+                  (zipError !== null ? 'border-red-400' : 'border-slate-300')
+                }
+                value={homeZip}
+                onChange={(e) => {
+                  setHomeZip(e.target.value)
+                  setZipError(null)
+                }}
+                placeholder="e.g. 98107"
+                inputMode="numeric"
+                maxLength={5}
+                {...fieldA11y('zip', zipError)}
+              />
+            </label>
+            {zipError !== null ? (
+              <p role="alert" id={errorId('zip')} className="text-red-600">{zipError}</p>
+            ) : null}
+          </>
+        ) : null}
 
-      {/* V2 ticket 02's optional completion items no longer live in this
-          view (V28 slices 4a/4b): the photo moved onto the photo card
-          (4 of 5), the kids onto the kids card (3 of 5), and the bio left
-          the first run entirely (decision 15 — /settings and the V27
-          parent-card editor keep it). Skipping a card is fine: the
-          /settings nudge banner keeps prompting until it is set. */}
-      <div className="flex flex-col gap-2">
-        <button
-          type="button"
-          disabled={saving || knownZips === null || homeZip.trim() === ''}
-          onClick={() => void handleContinue()}
-          className="min-h-11 rounded-xl bg-indigo-600 px-4 py-3 text-base font-medium text-white disabled:opacity-50"
-          {...fieldA11y('submit', error)}
-        >
-          {saving ? 'Saving…' : 'Continue'}
-        </button>
-        {error ? <p role="alert" id={errorId('submit')} className="text-sm text-red-600">{error}</p> : null}
+        {knownZips === null ? (
+          <p className="text-slate-600">
+            Loading the zip list…
+          </p>
+        ) : null}
+
+        <label className="flex flex-col gap-1">
+          <span className="text-slate-700">Radius</span>
+          <select
+            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
+            value={radiusMiles}
+            onChange={(e) => setRadiusMiles(Number(e.target.value))}
+          >
+            {RADIUS_MILES_OPTIONS.map((miles) => (
+              <option key={miles} value={miles}>
+                {miles} {milesWord(miles)}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {error !== null ? (
+          <p role="alert" id={errorId('submit')} className="text-red-600">{error}</p>
+        ) : null}
       </div>
-    </div>
+    </FirstRunCard>
   )
 }

@@ -22,10 +22,19 @@
  * through the real UI end to end — email + password on /login (the signup
  * form is email + password ONLY now; the name and address fields moved onto
  * the first run's cards), then the NAME card creates the profiles row, then
- * the LOCATION step sets the marker's home zip + radius. There is no more
+ * the AREA card sets the marker's home zip + radius. There is no more
  * geocode branch to settle: every new parent lands on /onboarding, so the
  * location step is deterministic. The REST PATCH below stays as the
  * marker's backstop.
+ *
+ * V28 slice 5: the location step IS the area card (5 of 5, decision 9 —
+ * address-first, ZIP as fallback). This walk types an address that never
+ * resolves (no such street exists), so the card's bounded lookup settles to
+ * "absent" and reveals the ZIP field + the in-card notice, and the typed
+ * marker zip + radius finish the card — the same deterministic outcome the
+ * old location step gave. (The RESOLVED-address path — home zip set with no
+ * typed zip — is exercised by e2e/signup-zip-fallback.e2e.ts, which
+ * intercepts the card's Nominatim lookup.)
  */
 import { expect, test as setup } from '@playwright/test'
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -36,6 +45,16 @@ const MARKER_NEIGHBORHOOD = 'Ballard'
 /** The marker's discovery location (V2 slice 3): a seeded WA zip + default radius. */
 const MARKER_HOME_ZIP = '98107'
 const MARKER_RADIUS_MILES = 5
+/**
+ * V28 slice 5 — the area card's address entry in THIS walk. It must never
+ * resolve to a seeded gazetteer zip: no such street exists anywhere, so the
+ * card's bounded lookup settles to "absent" (Nominatim answers empty, or
+ * the sandbox has no network at all) and reveals the ZIP fallback the walk
+ * fills. A REAL street here would make the marker's zip depend on the
+ * network's answer — exactly the non-determinism the deterministic zip below
+ * exists to avoid.
+ */
+const MARKER_ADDRESS = '1 E2E Loop, Nowhere'
 
 setup('sign up the marker, onboard it (zip + radius), save the signed-in state', async ({ page, context }) => {
   const epoch = Math.floor(Date.now() / 1000)
@@ -97,14 +116,22 @@ setup('sign up the marker, onboard it (zip + radius), save the signed-in state',
   // walk never opens), so the marker's walk stays deterministic.
   await page.getByRole('button', { name: 'Skip' }).click()
 
-  // The LOCATION step: home zip from the seeded gazetteer + the radius
-  // select (5 mi is the default — the pinned options are 1/2/5/10/20/35).
-  // Every new parent lands here now, so no branch-waiting: the step
-  // renders once the profile load settles, and the fill's auto-wait
-  // absorbs that.
+  // The AREA card ("5 of 5", V28 slice 5): address-first, ZIP as fallback.
+  // This walk types an address that never resolves (MARKER_ADDRESS above),
+  // so the card's bounded lookup settles to "absent" and reveals the ZIP
+  // field + the in-card notice; the typed marker zip + radius then finish
+  // the card. (The card's primary reads "Finish" — FIRST_RUN_COPY.area;
+  // while the lookup is in flight it reads "Checking your address…" and is
+  // disabled, so the second click below auto-waits for the settle.)
+  const addressField = page.getByPlaceholder('e.g. 1200 1st Ave S, Seattle')
+  await addressField.fill(MARKER_ADDRESS)
+  await page.getByRole('button', { name: 'Finish' }).click()
+  // The unresolvable address reveals the ZIP fallback (never blocks, never
+  // loses the address). The zip select renders its pinned options
+  // (1/2/5/10/20/35; 5 mi is the default).
   await page.getByPlaceholder('e.g. 98107').fill(MARKER_HOME_ZIP)
   await page.locator('select').first().selectOption({ label: `${MARKER_RADIUS_MILES} miles` })
-  await page.getByRole('button', { name: /^Continue/ }).click()
+  await page.getByRole('button', { name: 'Finish' }).click()
 
   // Back on the feed — signed in, onboarded (home zip set).
   await page.getByRole('heading', { name: 'Near you' }).waitFor()

@@ -1,37 +1,48 @@
 /**
- * Spec (V28 slice 3b): THE NEW SIGNUP PATH WALKS CARDS 2 → 5 OF THE FIRST
- * RUN, AND THE FEED IS ABOUT THE ZIP THE PARENT ENTERED THEMSELVES.
+ * Spec (V28 slice 5): THE AREA CARD — ADDRESS-FIRST, ZIP AS FALLBACK
+ * (decision 9).
  *
- * WHAT CHANGED. Before this slice the signup form collected a HOME ADDRESS,
- * geocoded it, and a resolved address skipped the location step entirely —
- * this spec intercepted Nominatim (both sides) to pin that. V28 decisions
- * 4–5 moved the location onto the first run's cards: the signup form is
- * EMAIL + PASSWORD ONLY (card 1 of 5), the name card (card 2) creates the
- * profile row, and the LOCATION step (before the area card) is where the
- * home zip is set by hand. There is no address to resolve and no geocode to
- * mock — the path is deterministic, which is why this spec needs no network
- * interception at all anymore.
+ * WHAT CHANGED. Before this slice the location step was a bare zip field +
+ * radius (V28 slice 3b moved location onto the first run, slice 4a/4b
+ * inserted the kids and photo cards before it) — and this spec pinned the
+ * now-removed promise that the signup path lands on that step with NO
+ * fallback note (the signup-time geocode flag had no producer left). Since
+ * slice 5 the step IS the area card (5 of 5): the ADDRESS is the entry, and
+ * its bounded Nominatim lookup (lib/geocode's zipFromAddressQueryBounded —
+ * the pending-state rule's escape for a required, non-skippable card)
+ * decides the card's shape. Two legs, both pinned HERE, because neither was
+ * reachable without intercepting the card's Nominatim request:
  *
- * THE FALLBACK NOTE. The one-shot "your account is ready, tell us your ZIP"
- * note was the explanation shown when the SIGNUP-TIME geocode did not
- * resolve (first-use audit, ticket 02). With the address gone from signup,
- * nothing sets that flag any more, so the note must not render at all:
- * test 2 pins its absence. (The area card's own zip-failure explanation is
- * covered by that card's own spec — slice 5.)
+ * 1. A RESOLVED address (the request answers with a 5-digit postcode the
+ *    gazetteer knows, and a house number — the precision rule's proof)
+ *    writes the home zip with NO typed zip: the parent never sees the ZIP
+ *    field or the fallback note, and the feed is about the resolved zip.
+ * 2. AN UNRESOLVED address (the request answers empty) reveals the fallback:
+ *    the in-card note (the first-use audit's "we couldn't match your
+ *    address" explanation, ticket 02 — now the card's own in-card trigger)
+ *    plus the ZIP field, with the parent's address preserved in its field.
+ *    The typed zip + radius then finish the card, and the feed is about the
+ *    typed zip.
  *
  * WHY A FRESH CONTEXT. The `chromium` project hands every spec the marker's
- * signed-in storage state, and this spec is about the SIGNED-OUT signup flow:
- * with that state, `/login` correctly redirects to the feed. So both tests open
- * their own signed-out context rather than fighting the inherited one.
+ * signed-in storage state, and this spec is about the SIGNED-OUT signup
+ * flow: with that state, `/login` correctly redirects to the feed. So both
+ * tests open their own signed-out context rather than fighting the
+ * inherited one.
  *
  * CLEANUP: this spec creates real accounts through the UI, so there is no
- * owner-scoped row for a spec-local REST delete to reach (the accounts ARE the
- * fixtures). Both are `e2e-`-prefixed, which is exactly the convention the sweep
- * deletes — see docs/agents/e2e-fixture-convention.md, and the fixture-marker
- * guard that keeps this spec inside it.
+ * owner-scoped row for a spec-local REST delete to reach (the accounts ARE
+ * the fixtures). Both are `e2e-`-prefixed, which is exactly the convention
+ * the sweep deletes — see docs/agents/e2e-fixture-convention.md, and the
+ * fixture-marker guard that keeps this spec inside it.
  */
 import { expect, test, type Browser, type Page } from '@playwright/test'
 import { readMarkerMeta } from './fixtures'
+
+/** The card's Nominatim request (lib/geocode's searchFirst, one URL shape). */
+const NOMINATIM_ROUTE = /https:\/\/nominatim\.openstreetmap\.org\/search\?/
+/** The address both legs type — the card's own placeholder, a real street. */
+const ADDRESS = '1200 1st Ave S, Seattle'
 
 async function signedOutPage(browser: Browser): Promise<{ page: Page; close: () => Promise<void> }> {
   const context = await browser.newContext({
@@ -42,18 +53,21 @@ async function signedOutPage(browser: Browser): Promise<{ page: Page; close: () 
 }
 
 /**
- * Sign up (email + password only) and walk the name card. Lands on /onboarding
- * with the location step next. The name card's Continue button sits OUTSIDE
- * its <form> and is joined to it only by the HTML form attribute
- * (FirstRunCard.tsx) — if that association breaks, the profile row is never
- * created, the location step never renders, and this helper hangs. That is
- * what makes it the pin for the association.
+ * Sign up (email + password only), walk the name card, and Skip the kids and
+ * photo cards. Lands on /onboarding with the AREA card ("5 of 5") next.
+ *
+ * The name card's Continue button sits OUTSIDE its <form> and is joined to
+ * it only by the HTML form attribute (FirstRunCard.tsx) — if that
+ * association breaks, the profile row is never created, the cards never
+ * render, and this helper hangs at its first wait. That is what makes it
+ * the pin for the association. The Skips write NOTHING (no kid rows, no
+ * avatar — the deterministic no-kids/no-photo path the 17-spec helper
+ * `finishSignup` uses).
  */
-async function signUpAndFinishNameCard(
+async function signUpToAreaCard(
   page: Page,
   options: { name: string; email: string; password: string },
 ): Promise<void> {
-  const space = options.name.indexOf(' ')
   await page.goto('/login')
   await page.getByRole('button', { name: 'New here? Create an account' }).click()
   await page.locator('input[type="email"]').fill(options.email)
@@ -61,88 +75,131 @@ async function signUpAndFinishNameCard(
   await page.getByRole('button', { name: 'Create account' }).click()
 
   // Card 2 of 5: the name card. Card 1 sent us here, and the card composes
-  // the two halves into the same handle the old signup form produced.
+  // the two halves into the same handle the old signup form produced (the
+  // helper splits at the first space, the fixtures' signUpViewer way).
   await expect(page).toHaveURL(/\/onboarding/, { timeout: 30_000 })
-  await page.locator('input[autocomplete="given-name"]').fill(options.name.slice(0, space))
-  await page.locator('input[autocomplete="family-name"]').fill(options.name.slice(space + 1))
+  const space = options.name.indexOf(' ')
+  const first = space === -1 ? options.name : options.name.slice(0, space)
+  const last = space === -1 ? '' : options.name.slice(space + 1)
+  await page.locator('input[autocomplete="given-name"]').fill(first)
+  if (last !== '') await page.locator('input[autocomplete="family-name"]').fill(last)
   await page.getByRole('button', { name: /^Continue/ }).click()
+
+  // Card 3 of 5: the kids card — Skip (writes nothing). Card 4 of 5: the
+  // photo card — Skip again (the same chrome control re-resolves onto it).
+  // Each wait absorbs the profile-load settle beat.
+  const skip = page.getByRole('button', { name: 'Skip' })
+  await skip.waitFor({ timeout: 30_000 })
+  await skip.click()
+  await skip.waitFor({ timeout: 30_000 })
+  await skip.click()
+
+  // Card 5 of 5: the area card (required — no Skip control on it).
+  await page.getByTestId('first-run-area-card').waitFor({ timeout: 30_000 })
 }
 
-test('the signup path lands on the location step, and the feed is about the entered zip', async ({
+test('a resolved address writes the home zip with no typed zip (the address-first leg)', async ({
   browser,
 }) => {
   const marker = readMarkerMeta()
   const epoch = Math.floor(Date.now() / 1000)
   const { page, close } = await signedOutPage(browser)
   try {
-    await signUpAndFinishNameCard(page, {
-      name: `e2e-z-${epoch} Marker`,
-      email: `e2e-z-${epoch}@gmail.com`,
-      password: `e2e-z-pw-${epoch}`,
+    // The card's ONE Nominatim request: answer it RESOLVED — a 5-digit
+    // postcode (the marker's seeded zip, so the gazetteer accepts it) plus a
+    // house number (the precision rule's proof this is the parent's street,
+    // not its city's centre).
+    await page.route(NOMINATIM_ROUTE, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            lat: '47.6205',
+            lon: '-122.3414',
+            address: { postcode: marker.homeZip, house_number: '1200' },
+          },
+        ]),
+      }),
+    )
+
+    await signUpToAreaCard(page, {
+      name: `e2e-az-${epoch} Marker`,
+      email: `e2e-az-${epoch}@gmail.com`,
+      password: `e2e-az-pw-${epoch}`,
     })
 
-    // The location step is deterministically next: there is no address to
-    // resolve that could skip it (V28 slice 3b removed the geocode branch).
-    await expect(page.getByRole('heading', { name: 'Set your location' })).toBeVisible({
-      timeout: 30_000,
-    })
+    // The address is the entry — no ZIP is typed anywhere on this leg.
+    await page.getByPlaceholder('e.g. 1200 1st Ave S, Seattle').fill(ADDRESS)
+    // The card's primary reads "Finish" (FIRST_RUN_COPY.area); while the
+    // lookup is in flight it reads "Checking your address…" and is
+    // disabled, so the click auto-waits for the (intercepted, instant)
+    // settle, then the save, then the navigation.
+    await page.getByRole('button', { name: 'Finish' }).click()
 
-    // The parent enters their own home zip — the same value the marker uses,
-    // so the feed assertion below checks the entered zip, not a geocode.
-    await page.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
-    await page
-      .locator('select')
-      .first()
-      .selectOption({ label: `${marker.radiusMiles} miles` })
-    await page.getByRole('button', { name: /^Continue/ }).click()
-
-    // Straight to discovery.
+    // Straight to discovery — the feed is about the RESOLVED zip.
     await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible({
       timeout: 30_000,
     })
     expect(new URL(page.url()).pathname).toBe('/')
-    // And no fallback note anywhere — there is no signup-time geocode any
-    // more, so the failure-path explanation must not borrow into this one.
-    await expect(page.getByTestId('signup-zip-fallback-note')).toHaveCount(0)
-    // The feed is about the zip the parent entered (the marker's zip, 98107)
-    // — which is the whole point of the location step owning the location.
     await expect(page.getByTestId('feed-location-control')).toContainText(marker.homeZip)
+    // The fallback never revealed itself on the resolved leg: no ZIP field
+    // (not even on the feed) and no in-card note.
+    await expect(page.getByPlaceholder('e.g. 98107')).toHaveCount(0)
+    await expect(page.getByTestId('area-zip-fallback-note')).toHaveCount(0)
   } finally {
     await close()
   }
 })
 
-test('no fallback note renders on the location step: nothing at signup can fail a lookup', async ({
+test('an unresolvable address reveals the ZIP fallback (the note + the field, address preserved)', async ({
   browser,
 }) => {
+  const marker = readMarkerMeta()
   const epoch = Math.floor(Date.now() / 1000)
   const { page, close } = await signedOutPage(browser)
   try {
-    await signUpAndFinishNameCard(page, {
-      name: `e2e-zu-${epoch} Marker`,
-      email: `e2e-zu-${epoch}@gmail.com`,
-      password: `e2e-zu-pw-${epoch}`,
+    // The card's ONE Nominatim request: answer it EMPTY — the address does
+    // not match a ZIP, so the card reveals its fallback instead of
+    // blocking.
+    await page.route(NOMINATIM_ROUTE, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: '[]',
+      }),
+    )
+
+    await signUpToAreaCard(page, {
+      name: `e2e-au-${epoch} Marker`,
+      email: `e2e-au-${epoch}@gmail.com`,
+      password: `e2e-au-pw-${epoch}`,
     })
 
-    await expect(page.getByRole('heading', { name: 'Set your location' })).toBeVisible({
-      timeout: 30_000,
-    })
+    await page.getByPlaceholder('e.g. 1200 1st Ave S, Seattle').fill(ADDRESS)
+    await page.getByRole('button', { name: 'Finish' }).click()
 
-    // THE PIN: the one-shot "your account is ready, tell us your ZIP" note
-    // existed to explain a FAILED SIGNUP-TIME geocode (ticket 02). The signup
-    // form no longer carries an address, so nothing sets that flag — the note
-    // must not render, not even for a parent who was bounced to this step
-    // with nothing to explain.
-    await expect(page.getByTestId('signup-zip-fallback-note')).toHaveCount(0)
-
-    // No dead end: the ZIP field is right there, and the inline validation
-    // the page already had still answers a bad ZIP with its own accessible
-    // error.
+    // THE FALLBACK, REVEALED IN-CARD: the note (the existing first-use
+    // audit copy, now the card's own trigger) and the ZIP field — and the
+    // address the parent typed is PRESERVED in its field, never lost.
+    await expect(page.getByTestId('area-zip-fallback-note')).toBeVisible()
     const zip = page.getByPlaceholder('e.g. 98107')
     await expect(zip).toBeVisible()
-    await zip.fill('00000')
-    await page.getByRole('button', { name: /^Continue/ }).click()
-    await expect(page.getByRole('alert')).toBeVisible()
+    await expect(page.getByPlaceholder('e.g. 1200 1st Ave S, Seattle')).toHaveValue(ADDRESS)
+
+    // No dead end: the typed zip + radius finish the card, and the feed is
+    // about the TYPED zip (the same value the marker uses).
+    await zip.fill(marker.homeZip)
+    await page
+      .locator('select')
+      .first()
+      .selectOption({ label: `${marker.radiusMiles} miles` })
+    await page.getByRole('button', { name: 'Finish' }).click()
+    await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible({
+      timeout: 30_000,
+    })
+    expect(new URL(page.url()).pathname).toBe('/')
+    await expect(page.getByTestId('feed-location-control')).toContainText(marker.homeZip)
   } finally {
     await close()
   }

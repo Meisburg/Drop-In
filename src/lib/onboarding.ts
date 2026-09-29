@@ -9,6 +9,15 @@ import { LOGIN_PATH, resolveAuthRedirect } from './auth'
  * wall. It lives at the write paths (the guarded ping/post/zip writes,
  * keyed on hasHomeZip in lib/homeZip.ts) — see
  * docs/adr/0001-home-zip-stops-being-a-gate.md.
+ *
+ * V28 slice 5 retires the signup→onboarding handoff that used to live in
+ * this file (`SIGNUP_ZIP_FALLBACK_KEY` + `markSignupZipUnresolved` /
+ * `consumeSignupZipUnresolved`): the signup form's address left /login in
+ * slice 3b, so the flag's producer (LoginPage's failed geocode) and its
+ * consumer (OnboardingPage's one-shot note) were both dead code, and the
+ * fallback note is now the AREA CARD's OWN in-card notice, triggered by the
+ * card's bounded address lookup (lib/geocode's `zipFromAddressQueryBounded`)
+ * — never a cross-screen flag.
  */
 
 /** Pinned route path for the post-signup location (zip + radius) step. */
@@ -101,61 +110,4 @@ export function resolveOnboardingGate(state: OnboardingGateState): OnboardingGat
   if (state.sessionLoading || (state.signedIn && state.profileLoading)) return 'loading'
   if (!state.signedIn) return 'pass'
   return 'pass'
-}
-
-// ---------------------------------------------------------------------------
-// The signup→onboarding handoff (first-use audit, ticket 02)
-//
-// The audit found the ZIP step asking for a location the parent believed they
-// had already given. The address IS the location input (`LoginPage` geocodes it
-// and writes `home_zip`); the ZIP step exists for the case where that lookup
-// did not resolve. Nothing told the parent which case they were in, so the
-// screen read as "enter your location again".
-//
-// This keeps the ZIP step and makes the FALLBACK legible: when the signup
-// lookup fails, that fact is carried across one route change — and only that
-// far. It is deliberately ONE-SHOT and cleared on read, because a note about a
-// signup from days ago is worse than no note: it invents a cause for a screen
-// the parent may be on for an entirely different reason (a cleared home zip,
-// say).
-//
-// It says nothing about implementation. No "geocode", no "home_zip" — the
-// parent typed an address and it could not be matched, which is the whole truth
-// they need (the ticket's own acceptance criterion).
-// ---------------------------------------------------------------------------
-
-/** sessionStorage key: the signup address could not be matched to a ZIP. */
-export const SIGNUP_ZIP_FALLBACK_KEY = 'dropin.signup.zip-unresolved'
-
-/** The smallest storage surface this needs (sessionStorage in the app). */
-export interface FlagStorage {
-  getItem(key: string): string | null
-  setItem(key: string, value: string): void
-  removeItem(key: string): void
-}
-
-/** Record that the signup lookup failed, so the ZIP step can explain itself. */
-export function markSignupZipUnresolved(storage: FlagStorage | null): void {
-  if (storage === null) return
-  try {
-    storage.setItem(SIGNUP_ZIP_FALLBACK_KEY, '1')
-  } catch {
-    // Storage that refuses writes only costs the explanatory note; the ZIP step
-    // still works and still validates. Never throw into a signup.
-  }
-}
-
-/**
- * Read AND clear the flag. One shot by construction: the first render of the
- * ZIP step consumes it, so a later visit is not told a stale story.
- */
-export function consumeSignupZipUnresolved(storage: FlagStorage | null): boolean {
-  if (storage === null) return false
-  try {
-    const present = storage.getItem(SIGNUP_ZIP_FALLBACK_KEY) !== null
-    if (present) storage.removeItem(SIGNUP_ZIP_FALLBACK_KEY)
-    return present
-  } catch {
-    return false
-  }
 }

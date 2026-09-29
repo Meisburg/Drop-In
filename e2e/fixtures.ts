@@ -349,9 +349,9 @@ export function runLiveSql(sql: string): { ok: boolean; output: string } {
  * THE NAME CARD'S CONTINUE IS THE FORM-ASSOCIATION PIN: the card's primary
  * button sits OUTSIDE its `<form>` and is joined to it only by the HTML
  * `form` attribute (FirstRunCard.tsx). If the id and the attribute drift, the
- * click submits nothing — the profile row is never created, "Set your
- * location" never renders, and the caller's `finishSignup` hangs at its
- * first wait. That failure is the pin for the association.
+ * click submits nothing — the profile row is never created, the area card
+ * never renders, and the caller's `finishSignup` hangs at its area-card
+ * wait. That failure is the pin for the association.
  *
  * The password is whatever the caller already generated; it is only typed
  * here. The home location is set by the caller's `finishSignup` on the
@@ -380,18 +380,25 @@ export async function signUpViewer(
 }
 
 /**
- * FINISH SIGNUP — walk the kids card and the photo card, then complete the
- * location step. (V28 slice 3b; first-use audit, ticket 02; V28 slice 4a:
- * the kids hop; V28 slice 4b: the photo hop.)
+ * FINISH SIGNUP — walk the kids card, the photo card, then complete the
+ * AREA card. (V28 slice 3b; first-use audit, ticket 02; V28 slice 4a:
+ * the kids hop; V28 slice 4b: the photo hop; V28 slice 5: the area card.)
  *
- * The signup form no longer carries an address, so there is no geocode and no
- * branching: `signUpViewer` lands the new parent on /onboarding ALWAYS, the
- * name card comes next (signUpViewer completes it), then the KIDS card
- * ("3 of 5", V28 slice 4a), then the PHOTO card ("4 of 5", V28 slice 4b),
- * and then the location step. The feed-or-location
- * race this helper used to settle (ticket 02: a RESOLVED address wrote
- * home_zip at signup and the parent landed on the feed with no location step
- * at all) is gone with the address field.
+ * The signup form no longer carries an address, so `signUpViewer` lands the
+ * new parent on /onboarding ALWAYS: the name card comes next
+ * (signUpViewer completes it), then the KIDS card ("3 of 5", V28 slice 4a),
+ * then the PHOTO card ("4 of 5", V28 slice 4b), and then the AREA card
+ * ("5 of 5", V28 slice 5 — address-first, decision 9).
+ *
+ * THE AREA CARD: the card's bounded address lookup must not hang this
+ * 17-spec helper on a network answer, so the helper types an address that
+ * NEVER resolves (no such street exists anywhere): the lookup settles to
+ * "absent" (Nominatim answers empty — or the sandbox has no network at
+ * all), the card reveals the ZIP field + the in-card notice, and the
+ * caller's own zip + radius finish the card. The RESOLVED-address path
+ * (home zip set with no typed zip) is exercised by
+ * e2e/signup-zip-fallback.e2e.ts, which intercepts the card's Nominatim
+ * lookup.
  *
  * THE KIDS HOP: the kids card is skippable, so this helper taps its Skip
  * control — writing NOTHING (no kid rows) — and proceeds to the photo
@@ -418,15 +425,14 @@ export async function finishSignup(
   options: { homeZip: string; radiusMiles?: number | string },
 ): Promise<void> {
   const feed = page.getByRole('heading', { name: 'Near you' })
-  const locationStep = page.getByRole('heading', { name: 'Set your location' })
 
   // V28 slice 4a: the kids card (3 of 5) sits between the name card and the
   // next view. It is the ONLY view that renders the card's Skip control
-  // (the location view has none), so waiting for it is the hop itself — and
-  // it absorbs the same profile-load settle beat the location wait absorbs.
-  // V28 slice 4b: the photo card (4 of 5) now sits between the kids card
-  // and the location step, and it shows the same Skip control — the
-  // locator re-resolves onto it after the kids card is replaced, so the
+  // (the area card has none — it is required), so waiting for it is the hop
+  // itself — and it absorbs the same profile-load settle beat the area-card
+  // wait absorbs. V28 slice 4b: the photo card (4 of 5) now sits between
+  // the kids card and the area card, and it shows the same Skip control —
+  // the locator re-resolves onto it after the kids card is replaced, so the
   // walk is: wait, click (kids), wait, click (photo).
   const skip = page.getByRole('button', { name: 'Skip' })
   await skip.waitFor({ timeout: 30_000 })
@@ -434,10 +440,20 @@ export async function finishSignup(
   await skip.waitFor({ timeout: 30_000 })
   await skip.click()
 
-  // The location step always comes next (see the doc above). Waiting on a
-  // settled heading rather than the DOM keeps a cold-load beat harmless: the
-  // step renders once the profile load settles, and the wait absorbs that.
-  await locationStep.waitFor({ timeout: 30_000 })
+  // V28 slice 5: the AREA card ("5 of 5") is the last view — address-first
+  // (decision 9). The helper types an address that never resolves (see the
+  // doc above), so the card's bounded lookup reveals the ZIP fallback and
+  // the caller's zip + radius finish the card. Waiting on the card's
+  // testid rather than the DOM keeps a cold-load beat harmless: the card
+  // renders once the profile load settles, and the wait absorbs that. The
+  // fill below auto-waits for the revealed ZIP field.
+  const areaCard = page.getByTestId('first-run-area-card')
+  await areaCard.waitFor({ timeout: 30_000 })
+  await page.getByPlaceholder('e.g. 1200 1st Ave S, Seattle').fill('1 E2E Loop, Nowhere')
+  // The card's primary reads "Finish" (FIRST_RUN_COPY.area; the busy label
+  // "Checking your address…" is disabled while the lookup is in flight, so
+  // the click auto-waits for the settle).
+  await page.getByRole('button', { name: 'Finish' }).click()
   await page.getByPlaceholder('e.g. 98107').fill(options.homeZip)
   // The radius only matters to specs that assert on distance; anything else
   // takes the app's own default (5 mi) rather than restating it. The select's
@@ -457,7 +473,7 @@ export async function finishSignup(
     .locator('select')
     .first()
     .selectOption({ label: radiusLabel })
-  await page.getByRole('button', { name: /^Continue/ }).click()
+  await page.getByRole('button', { name: 'Finish' }).click()
 
   // A signed-in, onboarded parent now stands on the feed.
   await feed.waitFor({ timeout: 30_000 })
