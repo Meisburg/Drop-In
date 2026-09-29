@@ -1322,3 +1322,37 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   is Slice 6's, so the builder does not touch the redirect guard that defect #19 says
   makes the finish card unreachable.
 - Slice 5 dispatched (run 0d99a613).
+- Slice 5: BUILT at 45fe1a9 (8 files, +560/-367). Fix round 1/5 dispatched (resumed
+  the original builder as run a75a96b0).
+- **THE BUILDER CAUGHT ITS OWN BUG, AND IT IS THE PENDING-STATE RULE WORKING AS
+  DESIGNED.** Its first `zipFromAddressQueryBounded` armed the deadline and then
+  cancelled the timer immediately, which would have SILENTLY DISABLED THE TIMEOUT --
+  so a never-settling lookup would have stalled forever, EXACTLY THE WALL THE RULE
+  FORBIDS. A NEVER-SETTLING UNIT TEST caught it, not the page. That is the rule
+  paying for itself within one slice of being named.
+- TEST-COUNT ARITHMETIC VERIFIED, AND THE REPORT DID NOT EXPLAIN IT: 1981 -> 1982 is
+  +4 added (geocode.test.ts) -3 removed (onboarding.test.ts, the dead machinery's own
+  tests) = +1 net. Checked by counting the diff's it( lines rather than reading the
+  summary. The removed symbols are gone properly -- the only surviving mentions are
+  retirement notes in comments.
+- **e2e/onboarding-resume.e2e.ts IS RED, AND DEFERRING IT WAS WRONG.** Verified by
+  reading the page: its three "Set your location" waits (:95, :128, :179) can only hit
+  the gazetteer LOAD-ERROR branch now (:556-560); the happy path falls through to the
+  area card (:743-751). The builder FLAGGED it rather than hiding it. RULING: a fix
+  round, because that spec is the ONLY regression guard for defect #22 and would be
+  DARK while Slice 6 changes the ending again. A stale comment can ride to Slice 7; a
+  broken test cannot.
+- **PROCESS RULE ADOPTED AFTER THE THIRD IDENTICAL FAILURE OF MY OWN BRIEFS.** My
+  out-of-scope lines have been wrong the same way three times: e2e/fixtures.ts was in
+  NO slice's scope (defect #7); auth.setup.ts was unnamed in 4b; onboarding-resume was
+  unnamed in 5. Each time the slice's own change broke a spec I had not thought of.
+  RULE: **EVERY BRIEF'S SCOPE LINE MUST INSTRUCT THE BUILDER TO FIND THE SPECS ITS
+  CHANGE BREAKS BY GREP** (`rg -l "finishSignup|Set your location|first-run-"
+  e2e/*.e2e.ts`) and fix them in that slice. The orchestrator cannot enumerate what it
+  has not measured; a grep can.
+- **HARD TOOLING RULE: NEVER PASS `-r` TO `rg`.** `rg -rn "..."` parses as `-r n` and
+  FABRICATES output -- it turned a real `<h1>Set your location</h1>` into `<h1>n</h1>`
+  in this session, AFTER the orchestrator had already been burned by the same flag
+  earlier in the same session. A FABRICATED MATCH IS WORSE THAN A MISS because it reads
+  as evidence. That is the third tooling trap of the batch, alongside the
+  wrapping-phrase grep and the no-match-from-an-error-path rule.

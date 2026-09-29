@@ -1484,3 +1484,48 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
   service" — **stale, and Slice 5 owns that file this slice, so it owns the claim.**
   Slice 5's brief carries the pending-state rule, names `e2e/auth.setup.ts`
   explicitly, and states plainly that **the ending is Slice 6's** (defect #19).
+
+- 2026-09-29 — **Slice 5 built at `45fe1a9`** (8 files, +560/−367): the area card
+  (5 of 5), address-first with the ZIP as the revealed fallback, and the signup
+  fallback machinery deleted. **⚠️ AND THE BUILDER CAUGHT ITS OWN BUG, WHICH IS THE
+  PENDING-STATE RULE WORKING AS DESIGNED:** the first `zipFromAddressQueryBounded`
+  armed the deadline and then **cancelled the timer immediately**, which would have
+  **silently disabled the timeout** — so a never-settling lookup would have stalled
+  forever, **exactly the wall the rule forbids** — and a **never-settling unit test
+  caught it**, not the page. The escape is `ADDRESS_LOOKUP_TIMEOUT_MS = 10_000`
+  (`geocode.ts:170`, `:172`), with 4 new tests pinning fast-win, never-settling →
+  null-at-deadline, failed lookup and empty short-circuit.
+- 2026-09-29 — **The test-count arithmetic is VERIFIED, and the report did not explain
+  it.** 1981 → **1982** is **+4 added** (`geocode.test.ts`) **−3 removed**
+  (`onboarding.test.ts`, the dead machinery's own tests) = **+1 net**. Checked by
+  counting the diff's `it(` lines, not by reading the summary. The builder reported
+  "+4 new tests" beside "+1 net" without the subtraction, which reads as a
+  contradiction until someone measures it. **The removed symbols are gone properly** —
+  the only surviving mentions are retirement notes in comments.
+- 2026-09-29 — **⚠️ `e2e/onboarding-resume.e2e.ts` IS RED, AND DEFERRING IT WAS
+  WRONG.** It waits three times for a `"Set your location"` heading (`:95`, `:128`,
+  `:179`); verified by reading the page, **that heading now survives only in the
+  gazetteer load-error branch** (`:556-560`), while the happy path falls through to the
+  area card (`:743-751`). The builder **flagged this rather than hiding it** — correct
+  behaviour — and reported it as Slice 7's. **Ruling: a fix round, because that spec is
+  the ONLY regression guard for defect #22**, written two slices ago *because* the
+  resume-is-a-restart bug was found late; leaving it red means the guard is **dark
+  while Slice 6 changes the ending again.** **A stale comment can ride to Slice 7; a
+  broken test cannot.**
+- 2026-09-29 — **⚠️ PROCESS RULE, ADOPTED AFTER THE THIRD IDENTICAL FAILURE OF MY OWN
+  BRIEFS.** My out-of-scope lines have now been wrong in the same way three times:
+  `e2e/fixtures.ts` was in **no slice's scope at all** (defect #7); `auth.setup.ts` was
+  unnamed in **4b**; `onboarding-resume.e2e.ts` was unnamed in **5**. Each time the
+  slice's own change broke a spec I had not thought of, and each time a builder either
+  had to ask (4a, 4b) or flag it (5). **Naming files one at a time has failed three
+  times, so it stops being the mechanism: EVERY BRIEF'S SCOPE LINE MUST INSTRUCT THE
+  BUILDER TO FIND THE SPECS ITS CHANGE BREAKS BY GREP** —
+  `rg -l "finishSignup|Set your location|first-run-" e2e/*.e2e.ts` — **and fix them in
+  that slice.** The orchestrator cannot enumerate what it has not measured, and a grep
+  can.
+- 2026-09-29 — **⚠️ HARD TOOLING RULE: NEVER PASS `-r` TO `rg`.** `rg -rn "…"` parses as
+  `-r n` — "replace matches with the literal n" — and **fabricates output**: it turned
+  a real `<h1>Set your location</h1>` into `<h1>n</h1>` in this very session, after the
+  orchestrator had already been burned by the same flag once earlier. **A fabricated
+  match is worse than a miss**, because it reads as evidence. Third tooling trap of the
+  batch, alongside the wrapping-phrase grep and the no-match-from-an-error-path rule.
