@@ -614,6 +614,14 @@ already claims to be "ONE implementation for the feed ("Near you") and Browse" �
 - **Acceptance criteria:**
   - The line renders only for a signed-in parent with an unfinished run, and its
     target comes from `nextUnfinishedCard` — **not a hard-coded card**.
+  - **THE LINE MUST NOT NAME A CARD THE LANDING DOES NOT RENDER.** 3c's first
+    build rendered `FIRST_RUN_COPY[card].title` (`App.tsx:190-193`) and named
+    questions the app does not ask — the kids/photo/area cards are unbuilt until
+    4/5/6 — while also **mis-naming the one card that does exist**
+    (`FIRST_RUN_COPY.name.title` says "What should we call you?" while the card
+    renders "What’s your name?"). The reviewer **blocked** on it. **Until a card
+    renders, the line stays generic**; the slice that builds a card may add that
+    card's title in the same slice.
   - **It never renders at the same time as `PushOptInPrompt`**, and by decision 16
     it does not render on `/onboarding` at all (the first run shows neither).
   - Dismissible, and stays dismissed for the session. Never blocks, never modals,
@@ -648,7 +656,9 @@ already claims to be "ONE implementation for the feed ("Near you") and Browse" �
   with a working Skip.
 - **Files in scope:** `src/pages/OnboardingPage.tsx`,
   `src/components/useCropStep.tsx` (reused, not rebuilt — **note the `.tsx`
-extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**
+extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**,
+  **`src/lib/firstRunCopy.ts` and its test**, **a new `src/lib/` predicate for
+  "has an avatar" and its sibling test**
 - **Approach:** lift the existing kid-rows and avatar-upload logic into the card
   chrome. The crop step is **reused as-is** — it already validates size and type
   before decoding. Skipping advances without writing. **Note this is a
@@ -664,6 +674,29 @@ extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**
   - A failure writing kids or photo is surfaced and does not block Continue.
   - Cards read `3 of 5` and `4 of 5`.
   - `finishSignup` walks the new kids and photo hops.
+  - **⚠️ ADOPT THE COPY MODULE — THIS IS DEFECT #20'S FIX, AND IT IS LOAD-BEARING.**
+    Measured: **`FIRST_RUN_COPY` (`src/lib/firstRunCopy.ts`) has exactly ONE
+    consumer — the resume nudge — and NO card reads it.**
+    (`rg -n "FIRST_RUN_COPY" src/ --glob '!*.test.ts'` returns only `App.tsx` and
+    the module.) The name card **hard-codes** its own words:
+    `OnboardingPage.tsx:347` is `title="What’s your name?"`, while the module says
+    `"What should we call you?"` — **two sources of truth for one card, already
+    drifted on day one.** So: **your two cards render their title, body and
+    primary label from `FIRST_RUN_COPY`**, and you **reconcile the name card's
+    hard-coded strings to the module** (pick the module's wording — it is the
+    tested artifact — or change the module and its test; do not leave both). Then
+    a card's title is true in the nudge **by construction**, because the nudge and
+    the card read the same module. **Then re-enable that card's title in the
+    nudge** (`src/App.tsx`) for the cards you have built — and only those.
+  - **⚠️ EXTRACT THE AVATAR PREDICATE (reviewer finding).** `src/App.tsx:158-159`
+    inlines `avatar_url !== undefined && !== null && !== ''`, **duplicating the
+    same rule already inlined at `db.ts:2521`** — two inline copies that can
+    drift, and no exported predicate exists (the only other is a local, unexported
+    const at `places.ts:1068`). The build law and this repo's own precedent
+    (`src/lib/homeZip.ts`'s `hasHomeZip`, created for exactly this) say this
+    belongs in `src/lib/` as a **tested pure function**. Extract it, give it a
+    sibling test, and use it in the nudge. **Reconciling `db.ts:2521` onto it is
+    Slice 7's** (Slice 7 owns `db.ts`) — just note it for that slice.
 - **Verification command:** `npm run verify` and
   `npx playwright test e2e/avatar.e2e.ts`
 - **Budget:** one local builder context.
@@ -710,6 +743,9 @@ extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**
     `DEFAULT_RADIUS_MILES`.
   - `validateHomeZip` gates the ZIP against the seeded gazetteer, inline.
   - The card reads `5 of 5` and writes the zip.
+  - **When this card renders, its title may be added to the resume nudge** — the
+    nudge may name only cards that actually exist (defect #20). Until then the
+    nudge stays generic.
   - **The ending it lands on is Slice 6's, not this slice's.** Do **not** build a
     finish card here and do **not** touch the redirect guard. Completing the area
     card still lands on the day-1 end state (the feed) until Slice 6 re-keys the
@@ -1025,3 +1061,30 @@ extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**
   agree; the defect lands only on Slice 5's final landing and Slice 6's whole
   reason to exist. Found by reading the page rather than the plan, which is now
   the nineteenth defect this batch has caught that way.
+
+- 2026-09-29 — **3c's review found the batch's first BLOCKING finding, and
+  grounding its root cause produced plan defect #20.** The nudge rendered
+  `FIRST_RUN_COPY[card].title`, so it named questions the app **does not ask** —
+  the kids/photo/area cards are unbuilt until Slices 4/5/6 — and it **mis-named
+  the one card that does exist** (`FIRST_RUN_COPY.name.title` = "What should we
+  call you?" while the card renders "What’s your name?"). Root cause, measured:
+  **`FIRST_RUN_COPY` has exactly ONE consumer, the nudge, and NO card reads it.**
+  The cards hard-code their own words, so the nudge speaks **a second voice that
+  had already drifted on day one**. The plan pinned the module in Interfaces but
+  never said **who consumes it**, and the answer was nobody. Fixed in place: 3c's
+  acceptance forbids naming a card the landing does not render; **Slice 4 gains
+  the copy-module adoption** (its cards render from `FIRST_RUN_COPY`, the name
+  card's hard-coded title is reconciled, and the nudge re-enables a title only for
+  cards that exist); **Slice 5 gains the same nudge note**; and Slice 4 also gains
+  the **extracted avatar predicate** (`hasAvatarUrl` in `src/lib/` with a sibling
+  test) because `App.tsx:158-159` inlines a rule already inlined at `db.ts:2521`.
+  **Also recorded:** the new `react(set-state-in-effect)` warning took lint 80 → 81
+  and is **accepted as recorded baseline movement** (the reviewer ruled it not
+  worth blocking; the repo carries 80 of that class); the held-push-note
+  co-render is **an accepted residual filed as `issues/03`** (its fix needs
+  `PushOptInPrompt.tsx`, which **no slice owns**); and the orchestrator's own
+  greps produced **two false negatives in one turn** — `rg -rn` parsed as `-r n`
+  and *fabricated* output, then an **ASCII apostrophe** in a pattern missed the
+  card's **typographic** `’`. **The reviewer's citations were right and mine were
+  wrong, twice.** Third and fourth instance of the batch's recurring lesson that a
+  no-match from a broken search is not a no-match.

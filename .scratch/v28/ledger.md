@@ -798,3 +798,61 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   supabase-js's internals (signUp awaits _notifyAllSubscribers before resolving)
   rather than a measurement in this repo -- sent to the reviewer to judge sound
   vs merely plausible.
+- SLICE 3c REVIEW: **NEEDS_CHANGES** (run 0362cb7c) with ONE BLOCKING finding --
+  the batch's first. BLOCKING: App.tsx:190-193 rendered FIRST_RUN_COPY[card].title,
+  so the nudge named questions the app does not ask (kids/photo/area unbuilt) and
+  MIS-NAMED the one card that exists (module "What should we call you?" vs card
+  "What's your name?"). VERIFIED BY THE ORCHESTRATOR: the card really does render
+  "What's your name?" at OnboardingPage.tsx:347.
+- **PLAN DEFECT #20 -- THE ROOT CAUSE, AND IT IS STRUCTURAL.** `FIRST_RUN_COPY`
+  HAS EXACTLY ONE CONSUMER: THE NUDGE. NO CARD READS IT.
+  (`rg -n "FIRST_RUN_COPY" src/ --glob '!*.test.ts'` -> only App.tsx + the module.)
+  The cards hard-code their own words (OnboardingPage.tsx:347
+  title="What's your name?"). So the nudge speaks A SECOND VOICE THAT HAD ALREADY
+  DRIFTED ON DAY ONE. The plan pinned the module in Interfaces but never said WHO
+  CONSUMES IT -- and the answer was nobody. Note `progressLabel` (firstRun.ts) IS
+  wired (OnboardingPage:346, LoginPage:231, FirstRunCard) -- so the module was
+  half-consumed, which is why nobody noticed.
+- **THE REVIEWER'S CITATIONS WERE RIGHT AND MINE WERE WRONG -- TWICE IN ONE TURN.**
+  My first grep, `rg -rn "FIRST_RUN_COPY"`, parsed as `-r n` (replace with "n") and
+  FABRICATED `import { n }` -- I nearly filed a false claim about the codebase. My
+  second grep, `rg "What's your name"` with an ASCII apostrophe, returned NO
+  MATCHES against a file using a TYPOGRAPHIC ’ -- a false negative that would have
+  rejected a correct finding. Recorded as the third and fourth instance of "a
+  no-match from a broken search is not a no-match" (process lesson #2), and as the
+  reason a reviewer's line reference gets verified BEFORE adjudication, in BOTH
+  directions.
+- THE PLAN NEVER ASKED THE NUDGE TO NAME THE CARD. Slice 3c's acceptance says only
+  "its target comes from nextUnfinishedCard -- not a hard-coded card". The builder
+  INVENTED the title, so the generic fix is squarely inside the plan's intent.
+- ADJUDICATION -- BLOCKING, one fix round (round 1, resume the original builder):
+  the nudge line goes GENERIC (no card title) with its copy in firstRunCopy.ts +
+  test. Explicitly NOT to do: touch FIRST_RUN_COPY's per-card wording (Slice 4
+  reconciles it against the cards) or chase the new lint warning.
+- ASSIGNED BY NAME, so nothing is lost:
+  * **Slice 4** -- adopt FIRST_RUN_COPY as the single source for the cards'
+    title/body/primary label AND reconcile the name card's hard-coded title; then
+    re-enable the nudge's title for the cards that now exist. Also **extract the
+    avatar predicate** (`hasAvatarUrl` in src/lib/ + sibling test): App.tsx:158-159
+    inlines a rule ALREADY inlined at db.ts:2521, against the build law and the
+    hasHomeZip precedent. Reconciling db.ts:2521 onto it -> Slice 7 (owns db.ts).
+  * **Slice 5** -- may add its card's title to the nudge once that card renders.
+  * **Fix round 1** (same file, tiny) -- the stale "other callers" comment
+    (OnboardingPage.tsx:72 -- there is NO other caller; the tests are the only
+    thing pinning the fallback) and one word at App.tsx:366 ("slice 3b" -> "3c").
+  * **ACCEPTED, recorded:** lint 80 -> 81 (one new react(set-state-in-effect) at
+    App.tsx:130; the reviewer ruled it not worth blocking, the repo carries 80 of
+    that class, and the effect IS the right home for an async read) -- recorded as
+    baseline movement rather than waved. And the `profile === null` failed-read
+    case mis-targeting 'name' -- acknowledged by the comment, best-effort, safe.
+  * **FILED AS ISSUES/03**: the held-push-note co-render (real, bounded, OUTSIDE
+    the interview -- both mount on navRenders so neither exists during the first
+    run, so decision 10's actual concern is fully met; the denied variant fails
+    safe). Its fix needs PushOptInPrompt.tsx, WHICH NO SLICE OWNS, so it is an
+    issue with a proposal, not unowned scope creep.
+- 3c's SIGNED_IN watch item is CLOSED: the reviewer verified the builder's claim
+  against the INSTALLED library (@supabase/auth-js GoTrueClient: signUp awaits
+  _notifyAllSubscribers('SIGNED_IN') before returning) rather than accepting it as
+  plausible -- so the race is not provable, with the caveat that this holds on the
+  data.session path (an email-confirmation flow returns session: null and is a
+  different path).
