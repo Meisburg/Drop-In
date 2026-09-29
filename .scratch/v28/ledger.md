@@ -644,3 +644,46 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   full re-run, with the same tree. Recorded so a future red on that guard is read
   as the machine, not as the code -- and so it is NOT used to excuse a real red.
 - Slice 3b: reviewer lane dispatched.
+- Slice 3b: reviewer verdict PASS (run 95bea5e6) at 3080c65. FIVE non-blocking
+  findings. The orchestrator VERIFIED four; THE FIFTH'S LINE REFERENCE WAS WRONG,
+  and checking it found more: the stale "V20 t06: signup is first + last name +
+  address" comment is at kid-names-privacy.e2e.ts:148 (the reviewer said :138) and
+  ALSO at zip-radius.e2e.ts:68, while-away.e2e.ts:105 and reactions.e2e.ts:83.
+  THIRD instance this batch of "a sweep named one, so there is one" being false
+  (feed.ts:49 was another). Assigned to Slice 7 WITH A GREP, NOT A LIST -- because
+  the list is provably incomplete.
+- WHAT THE REVIEW ESTABLISHED, all with citations:
+  * `justSignedUp` is set BEFORE the await and the guard is `!loading &&
+    session !== null && !justSignedUp`; `navigate(ONBOARDING_PATH)` runs in the
+    SAME TASK as the signUp resolution (no await between), so the session update
+    and the route change land in one render batch and /onboarding renders with a
+    session -- no bounce to / and none to /login.
+  * `createProfile` is IDEMPOTENT (db.ts:357-359 catches the profiles_pkey
+    violation and returns the existing row), so even a double-submit cannot make
+    two rows; HandleTakenError survives; the button disables on handleBusy.
+  * THE WIPE BUG IS GENUINELY FIXED, not masked: per-field flags, each field's
+    value is `touched ? typed : prefill`, and what is shown is what is written.
+    Social prefill still works.
+  * The two Continue buttons can NEVER co-render -- the name card is the only
+    thing rendered when `profile === null` -- so `getByRole(/^Continue/)` is
+    unambiguous in every state the specs drive.
+  * The spec rewrite is FAITHFUL, and the relocation of the fallback coverage is
+    RECORDED in the new spec's header, pointing at Slice 5. The dropped assertions
+    describe a branch that no longer exists rather than coverage lost.
+  * NO other spec visits /login expecting the removed fields (17 spec files
+    consume the moved helpers and follow automatically).
+- RESIDUAL CARRIED TO 3c AS A WATCH ITEM, not a fix: if supabase-js ever emits
+  SIGNED_IN AFTER the first /onboarding commit, the chain is /onboarding bounces to
+  /login -> fresh mount with justSignedUp=false -> its guard sends the parent to /
+  -> STRANDED on the feed with no profile row and no nudge. Not provable from the
+  diff; supabase-js emits synchronously during signUp. 3c must CHECK it and REPORT
+  if it can prove it, not fix it silently. Also recorded: pre-card-completion
+  abandonment now leaves email accounts row-less (recoverable by visiting
+  /onboarding; 3c's nudge is the planned fix).
+- 3b's nits assigned to Slice 7 BY NAME. One is worth a note: the missing trailing
+  newline is REAL (verified with `xxd` -- the file ends `)`), so it must not be
+  dismissed by pattern-match against the FALSE newline finding a reviewer once made
+  against src/lib/a11y.ts. A real instance of a previously-bogus complaint is
+  exactly when pattern-matching bites.
+- Slice 3b: verifier lane dispatched as the closing check -- its gate output and
+  the three-spec run are still pasted NOWHERE.

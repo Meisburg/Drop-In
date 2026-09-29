@@ -609,6 +609,17 @@ already claims to be "ONE implementation for the feed ("Near you") and Browse" �
   - Tap target ≥44px, visible focus cue, dismissal announced.
   - **A new email signup's name card no longer pre-fills the email's local part**,
     and a social sign-in with real name metadata still pre-fills as it does today.
+- **⚠️ WATCH ITEM FROM 3B'S REVIEWER — CHECK IT, DO NOT ASSUME IT.** If
+  supabase-js ever delivered its `SIGNED_IN` event *after* the first `/onboarding`
+  commit, the chain would be: `/onboarding` bounces to `/login`
+  (`OnboardingPage.tsx:174-175`), the fresh `/login` mount has
+  `justSignedUp = false`, so its guard sends the parent to `/`
+  (`LoginPage.tsx:68-69`) — **stranded on the feed with no profile row and no
+  nudge.** The reviewer could not prove it from the diff and believes supabase-js
+  emits the event synchronously during `signUp`, so it is **not** a 3b defect:
+  read the flow, and if your nudge is what makes that state survivable, say so in
+  the report. **If you can prove the race is real, report it as a finding rather
+  than fixing it silently.**
 - **Verification command:** `npm run verify`, then
   `npx playwright test e2e/golden-path.e2e.ts`
 - **Budget:** one local builder context. Small — the decision logic is already
@@ -781,6 +792,29 @@ extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**
     parent's feed renders `location-required-notice` and **not**
     `empty-radius-state`. If it cannot be built, say why in the report rather
     than leaving the gap unnamed.
+  - **THE STALE "signup is first + last name + address" COMMENT IS GONE FROM
+    `e2e/`.** 3b's reviewer found it once (`kid-names-privacy.e2e.ts:148`) and the
+    orchestrator found it in **four** files — `kid-names-privacy.e2e.ts:148`,
+    `zip-radius.e2e.ts:68`, `while-away.e2e.ts:105`, `reactions.e2e.ts:83`.
+    **THE LIST IS PROVABLY INCOMPLETE, so do not work from it: run
+    `rg -n "V20 t06" e2e/` and `rg -n "first \+ last" e2e/` and fix every hit that
+    describes the signup form.** This is the third time this batch that "a sweep
+    named one" turned out to mean "there are more" (`feed.ts:49` was another).
+  - **3b's review nits**, each cited so none is a judgment call on the day:
+    - `e2e/signup-zip-fallback.e2e.ts:106` — the `toHaveCount(0)` runs on the
+      **feed**, where `signup-zip-fallback-note` can never render, so it is a
+      weak leak-check whose comment ("no fallback note anywhere") overclaims. The
+      real pin is `:136`. Either strengthen or re-word the comment.
+    - `e2e/signup-zip-fallback.e2e.ts` — **no trailing newline** (verified with
+      `xxd`: the file ends `)`). Repo style is mixed, so this is cosmetic — but
+      unlike the *false* newline finding a reviewer once made against
+      `src/lib/a11y.ts`, this one is real, so do not dismiss it by pattern.
+    - `src/lib/geocode.ts:11` — "V20 t06 adds `zipFromAddressQuery`, the **signup
+      form's** use of the same service" is stale: the signup form no longer
+      collects an address, and this slice re-homes it on the area card. Reword.
+    - `src/pages/LoginPage.tsx:116-117` — "A signed-in caller (the 'signed out on
+      /login' case) already has the account" describes a state the page's own
+      guard makes unrenderable. Cosmetic; reword or delete.
   - **THE BATCH-END MARKER SWEEP RUNS.** Any run that created `e2e-` accounts is
     required by `docs/agents/e2e-fixture-convention.md` to end with the
     documented operational sweep. 3a's builder created two
