@@ -556,7 +556,13 @@ export function OnboardingPage() {
   if (loadError !== null) {
     return (
       <div className="flex flex-col items-start gap-1 pt-0.5">
-        <h1 className="font-display text-xl font-semibold text-slate-900">Set your location</h1>
+        {/* V28 slice 5 (fix 1): the step is the AREA card now, so the error
+            state says the card's own title (the same FIRST_RUN_COPY.area data
+            the card below reads) — not the old bare "Set your location"
+            masthead the card replaced. */}
+        <h1 className="font-display text-xl font-semibold text-slate-900">
+          {FIRST_RUN_COPY.area.title}
+        </h1>
         <p className="text-sm text-red-600">{loadError}</p>
       </div>
     )

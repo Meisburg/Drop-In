@@ -10,9 +10,10 @@
  * WHAT THIS SPEC PROVES, precisely:
  *
  * (1) RE-ENTRY RESUMES. A parent who wrote a kid row on the kids card,
- *     skipped the photo card, and abandoned at the location view (the
- *     run's last card — the most likely abandonment point) re-enters
- *     /onboarding and lands on the LOCATION VIEW, not the kids card. The
+ *     skipped the photo card, and abandoned at the AREA card — the run's
+ *     last card (5 of 5, V28 slice 5; before that slice it was the bare
+ *     "Set your location" view, the most likely abandonment point)
+ *     re-enters /onboarding and lands on the AREA CARD, not the kids card. The
  *     photo fact is seeded the way the /profile editor would set it
  *     (REST, the owner's own JWT — the gate's rule is hasAvatarUrl, a
  *     string predicate, so the seeded URL is never fetched by this flow);
@@ -32,7 +33,7 @@
  *     the card after its own Skip, forever), but the session flag
  *     (kidsCardDone) points past it, so the Skip advances to the photo
  *     card and the kids card never re-appears. The photo card's Skip
- *     advances the same way, onto the location view.
+ *     advances the same way, onto the AREA card (5 of 5, V28 slice 5).
  *
  * Viewer pattern (the zip-radius one): each test signs up a SECOND
  * deterministic viewer (`e2e-r1-<epoch>` / `e2e-r2-<epoch>` prefix,
@@ -89,11 +90,12 @@ test('a returning parent with kids and a photo (and no zip) re-enters at the loc
   // clicking it would leave the kids card the wrong way for this test.
   await expect(page.getByTestId('first-run-photo-card')).toBeVisible()
 
-  // PHOTO CARD (4 of 5): Skip — writes nothing, advances to the location
-  // view (the run's last card). This is the most likely abandonment point.
+  // PHOTO CARD (4 of 5): Skip — writes nothing, advances to the AREA card
+  // (5 of 5, the run's last card; V28 slice 5 turned the old "Set your
+  // location" view into this card). The most likely abandonment point.
   await page.getByRole('button', { name: 'Skip' }).click()
-  await page.getByRole('heading', { name: 'Set your location' }).waitFor()
-  // ABANDON at the location card: leave, and come back COLD (a fresh mount —
+  await page.getByTestId('first-run-area-card').waitFor()
+  // ABANDON at the area card: leave, and come back COLD (a fresh mount —
   // the flags reset to false, which is what a restart would show again).
   await page.goto('/')
 
@@ -122,10 +124,10 @@ test('a returning parent with kids and a photo (and no zip) re-enters at the loc
 
   // --- RE-ENTER, cold. ---
   // The facts: kids (1 row, written above), photo (seeded above), no zip.
-  // The page must land on the LOCATION VIEW — and must NOT offer the kids
-  // card again (defect #22's restart) nor the photo card (its fact is true).
+  // The page must land on the AREA CARD — and must NOT offer the kids card
+  // again (defect #22's restart) nor the photo card (its fact is true).
   await page.goto('/onboarding')
-  await page.getByRole('heading', { name: 'Set your location' }).waitFor()
+  await page.getByTestId('first-run-area-card').waitFor()
   expect(await page.getByTestId('first-run-kids-card').count()).toBe(0)
   expect(await page.getByTestId('first-run-photo-card').count()).toBe(0)
 
@@ -174,9 +176,10 @@ test('a fresh parent (all flags false) starts at nextUnfinishedCard(facts), and 
   expect(await page.getByTestId('first-run-kids-card').count()).toBe(0)
 
   // The photo card's Skip advances the same way (its fact still says
-  // "no photo" — same trap, same flag), onto the location view.
+  // "no photo" — same trap, same flag), onto the AREA card (5 of 5, V28
+  // slice 5 — the old "Set your location" view is the card now).
   await page.getByRole('button', { name: 'Skip' }).click()
-  await expect(page.getByRole('heading', { name: 'Set your location' })).toBeVisible()
+  await expect(page.getByTestId('first-run-area-card')).toBeVisible()
   expect(await page.getByTestId('first-run-photo-card').count()).toBe(0)
 
   await context.close()
