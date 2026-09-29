@@ -41,7 +41,7 @@ locked app.
 | 12 | The ending | Its own "places near you" finish card, not `/browse` |
 | 13 | Scope | One batch, sliced; playtest once the cards exist |
 | 14 | Seeding | The human plants real drop-ins by hand, in the app |
-| 15 | Bio | **Drops out of the first run.** Stays on the existing `/settings` nudge and V27's parent-card editor |
+| 15 | Bio | **Drops out of the first run.** Stays editable in **V27's `/profile` parent-card editor** (verified: `updateBio` at `ProfilePage.tsx:814`). ⚠️ This row used to say it also "stays on the existing `/settings` nudge" — **that nudge does not exist** and never did in this tree: see defect #23. The "and" is what kept the decision true |
 | 16 | The interview's chrome | **The first run renders bare** — no header, no bottom nav, no push prompt, no resume nudge. **The route does NOT move out of `ProtectedShell`**; the shell suppresses its chrome for `ONBOARDING_PATH` |
 
 **Why 16 is implemented as chrome suppression, not as a route move.** Moving
@@ -1310,3 +1310,58 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
   explicitly** — it adds the area card and would otherwise repeat my mistake of
   copying a stale out-of-scope line. **The orchestrator's scope line was the defect
   here, not the builder's edit.**
+
+- 2026-09-29 — **Slice 4b: REVIEW PASS** (`397d2f18`), no blocking findings. The
+  reviewer verified every claim: the photo card reuses `useCropStep` untouched
+  (the hook is not in the diff), Skip writes nothing, a rejected file and a failed
+  upload both leave the card live, and the copy comes from the module. **The bio
+  removal is complete** — `rg "bio"` in the page returns 4 hits, **all comments** —
+  and no e2e spec filled the removed input. `hasAvatarUrl` is `url != null && url !== ''`
+  with a test that **fails if the empty-string clause is dropped** (proven, not
+  asserted), used correctly as a type guard. **Its ProfilePage answer was fully
+  verified, both halves**: the only writers of `profiles.avatar_url` are
+  `uploadAvatar` (a `?v=`-bearing URL) and `clearAvatar` (null), and the column is
+  plain nullable `text` with no CHECK — so an out-of-band REST `{avatar_url: ''}`
+  **would** render `<img src="">`. **Latent, not live; accepted as its own
+  obligation.** `auth.setup.ts` added **exactly one non-comment line** and touched
+  **zero `expect(` lines** — verified, not taken on trust. F3, F4 (17 at `:399`) and
+  F6 all confirmed. **And my defect #22 claim was verified on every point, including
+  the likelihood argument** (the location view is the run's last view, so it is the
+  most likely abandonment point).
+- 2026-09-29 — **⚠️ PLAN DEFECT #23 FOUND IN 4b'S REVIEW: AN EIGHT-SITE PHANTOM
+  FEATURE, AND A THIRD "PINNED BY A TEST, READ BY NOBODY".** The reviewer noticed
+  4b's new comments repeat "the `/settings` nudge banner keeps the prompt". Checked:
+  **`missingProfileItems` (`db.ts:2513`) has NO production callers** — only its own
+  definition, its own test (`db-v2.test.ts:18`), and a doc comment (`App.tsx:98`) —
+  and **`SettingsPage.tsx` renders no such banner.** Yet the phrase appears in
+  **EIGHT** production comments (`OnboardingPage.tsx:143,:206,:257,:482,:555,:577,:683`
+  and `ProfilePage.tsx:473`) plus the test's describe-title (`db-v2.test.ts:108`) and
+  the function's own docblock (`db.ts:2506`). **V27's `/profile` parent-card editor
+  superseded the V2-ticket-02 `/settings` nudge, and the vocabulary never followed.**
+  **Good news, checked rather than assumed: there is NO product gap** — bio is
+  genuinely editable on `/profile` (`updateBio` at `ProfilePage.tsx:814`,
+  `validateBio` at `:783`, the "About the parents" card), so decision 15's substance
+  holds and **4b did not remove the only bio prompt.** Decision 15's *named
+  destination* is corrected above; the vocabulary is Slice 7's.
+- 2026-09-29 — **A PATTERN NAMED, AFTER ITS THIRD INSTANCE: "PINNED BY A TEST, READ
+  BY NOBODY."** 1) `FIRST_RUN_COPY` — orphaned until 4a wired the cards (defect
+  #20, which **blocked** 3c). 2) `skipLabel: 'Skip for now'` — read only by its own
+  test (4a's F5). 3) `missingProfileItems` — same shape (defect #23). Three
+  instances means it is a **class**, not three accidents, so **Slice 7 gets a
+  systematic instruction rather than three named items: find every exported symbol
+  whose only consumer is a test and decide, for each, whether to wire it or delete
+  it.** That is a greppable sweep, and it is the generalization of a defect that
+  already cost this batch one blocking round.
+- 2026-09-29 — **4b's two comment findings adjudicated: BOTH to Slice 7, and the
+  reason is recorded rather than the recommendation dismissed.** The reviewer
+  recommended pulling `App.tsx:90-92` (the stale `FirstRunNudge` docblock, the twin
+  of F1) into a 4b fix round, on the fairness ground that 4b edited `:167` **inside
+  the same function** that docblock describes. **Ruling: keep it in Slice 7.**
+  A fix round costs a full builder context (~98k tokens) for a three-line comment
+  that Slice 7 will grep anyway — that is round-inflation by definition, and the
+  batch's own rule prefers assigning a small finding to the slice that owns the file.
+  **But the reviewer's observation is folded into Slice 7's instruction**, because it
+  is the useful part: **a comment sitting next to freshly-edited code reads as
+  current, so the sweep must grep inside recently-changed functions, not only the
+  ones a slice deleted from.** The second finding — the "/settings nudge banner"
+  vocabulary — is defect #23's sweep.

@@ -1128,3 +1128,49 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   ''), BUT an out-of-band REST `{avatar_url: ''}` WOULD render an `<img src="">`
   because the column is a plain nullable text with no CHECK. A LATENT gap, recorded
   as its own obligation. Sent to the reviewer to verify both halves.
+- **SLICE 4B: REVIEW PASS (run 397d2f18), no blocking findings.** Verified by the
+  reviewer: useCropStep is genuinely reused (NOT in the diff); Skip writes nothing;
+  a rejected file AND a failed upload both leave the card live; the copy comes from
+  the module; THE BIO REMOVAL IS COMPLETE (rg "bio" in the page returns 4 hits, ALL
+  COMMENTS) with no e2e spec filling the removed input; hasAvatarUrl's test really
+  FAILS if the empty-string clause is dropped (proven, not asserted); auth.setup.ts
+  added EXACTLY ONE NON-COMMENT LINE and touched ZERO expect( lines; F3/F4/F6
+  confirmed (F4 is at fixtures.ts:399 -- my brief said :397, off by two, immaterial);
+  and **MY DEFECT #22 CLAIM WAS VERIFIED ON EVERY POINT, INCLUDING THE LIKELIHOOD
+  ARGUMENT** (the location view is the run's last view, so it is the most likely
+  abandonment point).
+- **PLAN DEFECT #23 -- AN EIGHT-SITE PHANTOM FEATURE, AND A THIRD INSTANCE OF A
+  PATTERN.** 4b's own new comments repeat "the /settings nudge banner keeps the
+  prompt". CHECKED: `missingProfileItems` (db.ts:2513) HAS NO PRODUCTION CALLERS --
+  only its definition, its own test (db-v2.test.ts:18) and a doc comment
+  (App.tsx:98) -- and SettingsPage.tsx renders NO SUCH BANNER. Yet the phrase is in
+  EIGHT production comments (OnboardingPage.tsx :143,:206,:257,:482,:555,:577,:683
+  plus ProfilePage.tsx:473) + the test's describe-title + the function's docblock.
+  V27's /profile parent-card editor SUPERSEDED the V2-ticket-02 /settings nudge and
+  the vocabulary never followed.
+  * **CHECKED RATHER THAN ASSUMED, AND THE NEWS IS GOOD: THERE IS NO PRODUCT GAP.**
+    Bio is genuinely editable on /profile -- updateBio at ProfilePage.tsx:814,
+    validateBio at :783, the "About the parents" card. So decision 15's SUBSTANCE
+    holds and **4b did not remove the only bio prompt.** Only its NAMED DESTINATION
+    was half-phantom, corrected in the decision table now.
+  * ASSIGNED TO SLICE 7: the vocabulary sweep BY PHRASE (not by file), and a
+    decision on missingProfileItems' fate (delete it + its test, or wire it --
+    deletion looks right, since /profile's cards superseded it).
+- **PATTERN NAMED AFTER ITS THIRD INSTANCE: "PINNED BY A TEST, READ BY NOBODY."**
+  (1) FIRST_RUN_COPY -- orphaned until 4a wired the cards, defect #20, which BLOCKED
+  3c. (2) skipLabel -- read only by its own test (4a F5). (3) missingProfileItems --
+  the same shape (defect #23). Three instances makes it a CLASS, so **Slice 7 gets a
+  SYSTEMATIC INSTRUCTION, not three named items: find every exported symbol whose
+  only consumer is a test, and decide wire-or-delete for each.** That is the
+  generalization of a defect that already cost this batch a blocking round.
+- **4b's TWO COMMENT FINDINGS ADJUDICATED, WITH THE REASONING RECORDED RATHER THAN
+  THE RECOMMENDATION DISMISSED.** The reviewer recommended pulling App.tsx:90-92
+  (the stale FirstRunNudge docblock, F1's twin) into a 4b fix round because 4b
+  edited :167 INSIDE THE SAME FUNCTION that docblock describes. RULING: keep it in
+  Slice 7 -- a fix round costs ~98k tokens for a three-line comment Slice 7 will grep
+  anyway, which is round-inflation by the batch's own rule. BUT THE REVIEWER'S
+  OBSERVATION IS FOLDED IN, because it is the useful part: **a comment next to
+  freshly-edited code reads as current, so the sweep must grep inside
+  recently-changed functions, not only files a slice deleted from.**
+- 4b: verifier lane dispatched as the closing check (the reviewer ran no gate and
+  recorded that the raw output tail is still owed).
