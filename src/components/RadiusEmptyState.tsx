@@ -93,14 +93,17 @@ export function RadiusEmptyState({
    * definition. V28 slice 2c (fix 1/5 correction): this guard covers BOTH the
    * in-flight `session === null` case AND the in-flight PROFILE window — while
    * the profile is in flight `homeZip` is `profile?.home_zip ?? ''`, and
-   * `!hasHomeZip('')` is true, so the `!hasHomeZip` clause is live there too.
-   * (Slice 2c's first draft said "only the `session === null` case" — that was
-   * wrong: settled no-zip parents are diverted away by the early return below,
-   * but in-flight ones still fall through to this guard, where the clause is
-   * load-bearing (the in-flight window is real on these pages) — as the
-   * early return's note records, it only becomes belt-and-braces for a
-   * settled no-zip parent.
-   */
+   * `!hasHomeZip('')` is true, so the clause EVALUATES true there too (the
+   * guard is not wrong — but it is UNREACHABLE there: no current caller
+   * renders this component while the profile is in flight, so nothing can
+   * actually hit this state with a null profile — the early return's note
+   * below carries the three caller citations; cross-referenced here, not
+   * restated, so the two comments cannot drift apart). (Slice 2c's first
+   * draft said "only the `session === null` case" — that was wrong — and fix
+   * 1/5's "the in-flight window is real on these pages" contradicted the early
+   * return's note, which fix 2/5 corrects. The settled no-zip parent — the
+   * case that matters — is diverted by the early return before the guard is
+   * ever consulted. */
   const escapesDisabled = busyRadius !== null || session === null || !hasHomeZip(homeZip)
 
   /**
