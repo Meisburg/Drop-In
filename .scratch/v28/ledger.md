@@ -1282,3 +1282,24 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   integration pin. Recorded because "the law says so" is not a cost argument, and this
   time the law lost -- correctly.
 - Slice 4c: verifier lane dispatched as the closing check.
+- **SLICE 4C COMPLETE AND VERIFIED (PASS, run f5e2a358) at f8fe01d.** Verifier
+  evidence: gate exit 0; 66 files / 1981 tests with 4c adding NO vitest test (it
+  touches only a Playwright spec, a page and a fixture helper, and the repo has zero
+  .tsx test files); lint 0/81 CONFIRMED BY COUNTING 81 warning lines with zero error
+  findings -- and with the precise explanation that the accepted
+  react(set-state-in-effect) lands in the EXISTING population because OnboardingPage's
+  lazy-read setState sits inside an async .then, so the sync-in-effect rule does not
+  fire there (a real explanation, not a hope); guards PASS AND THE FIXTURE-MARKER
+  GUARD EXPLICITLY ACCEPTED THE NEW SPEC -- "checked 58 spec file(s) ... sweep matches
+  the documented account marker like 'e2e-%' ... PASS -- the fixture convention holds
+  and the sweep still covers it"; NO FLAKE this run (vitest 1981/1981 first try);
+  golden-path 2 passed with the [setup] line green in BOTH runs; **BOTH NEW RESUME
+  TESTS PASSED INDIVIDUALLY (3.7s and 2.8s)** -- the entire proof of defect #22's fix,
+  executed rather than reviewed; zip-radius 2 passed. Both gate clauses confirmed
+  verbatim from source (:539, :635) plus the kidsFactPending state at :531.
+  readSessionFromBrowserPage does NOT hard-code a storage key (it iterates
+  Object.values(localStorage), fixtures.ts:479); no console.log/writeFile; the new
+  spec's fixtures are all e2e- prefixed; the stale App.tsx:88 docblock survives
+  untouched (Slice 7's, as assigned); drivers untracked. **THE REVIEWER'S UNPROVABLE
+  E2E CLAIM IS NOW CLOSED: all 7 e2e tests executed and passed.**
+- GROUNDING SLICE 5 to be recorded with its brief.
