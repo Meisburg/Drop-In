@@ -157,3 +157,23 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   the host action is `handleSubmit()` at NewPlaydatePage.tsx:1115 -> `createPlaydate()`
   at 1162. Also pinned a nuance: the guard blocks SETTING a ping, not CLEARING
   one, so a zip-less parent can always withdraw.
+- Slice 2a: DONE (commit 418ed10, 3 files +79). Builder reports gate green and
+  golden-path 2 passed. Orchestrator read the whole diff (79 lines) — clean, and
+  the SET/CLEAR nuance is implemented as pinned (clearing never blocked).
+- ORCHESTRATOR FINDING on 2a (the builder's risk (b) is HALF-RIGHT): the guard
+  uses `profile?.home_zip == null`, which treats the EMPTY STRING as "has a zip".
+  The authoritative derivation does not — `db.ts:266` is
+  `setHomeZipSet(nextProfile?.home_zip != null && nextProfile.home_zip !== '')`,
+  i.e. the WALL treats '' as unset. The builder cited NewPlaydatePage:905 /
+  FeedPage:399 as precedent, and those two DO share the loose form — but they are
+  map-pin checks, not the gate. So the guards are consistent with the map pin and
+  INCONSISTENT with the gate they are about to replace. Slice 2b removes the
+  stricter check and hands the requirement to these guards, so this is a narrow
+  weakening at exactly the handover point.
+  Empirical scope checked, not assumed: the live DB has **0 empty-string
+  home_zip** (10 null, 379 real, 389 total), and `validateHomeZip` (feed.ts:134)
+  rejects '' and whitespace, so the app cannot write one. Not reachable today —
+  but the predicate should be stated once anyway. Cheap fix: match the gate.
+- Slice 2a: reviewer dispatched with a NEUTRAL question ("is 'has a home zip'
+  defined once — find every place, report any that disagree") rather than my
+  hypothesis, so it confirms or refutes independently.
