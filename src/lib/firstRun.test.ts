@@ -30,6 +30,74 @@ function facts(over: Partial<FirstRunFacts> = {}): FirstRunFacts {
   }
 }
 
+/**
+ * The forbidden tokens, every one kept from the slice-1 contract: the
+ * clocks, the browser globals (location is domain-relevant for this
+ * module), storage, I/O, the client. Matched against code only — comments
+ * are stripped first, so prose can never fail a purity test.
+ */
+const FORBIDDEN_TOKENS: readonly { pattern: RegExp; name: string }[] = [
+  { pattern: /\bDate\.now\b|\bnew Date\b/, name: 'Date.now / new Date (clock)' },
+  { pattern: /\bDate\(/, name: 'bare Date( call (clock)' },
+  { pattern: /\bperformance\b/, name: 'performance (clock)' },
+  { pattern: /\bwindow\b|\bdocument\b/, name: 'window / document (browser global)' },
+  { pattern: /\blocation\b|\bnavigator\b/, name: 'location / navigator (browser global)' },
+  { pattern: /\blocalStorage\b|\bsessionStorage\b/, name: 'localStorage / sessionStorage (browser storage)' },
+  { pattern: /\bfetch\b|\bXMLHttpRequest\b/, name: 'fetch / XMLHttpRequest (I/O)' },
+  { pattern: /supabase/i, name: 'supabase (client)' },
+]
+
+/**
+ * Remove line and block comments from a TypeScript source string, leaving
+ * the code (including string literals) intact, so a token scan proves the
+ * CODE is pure rather than the prose. Scope: the strings this scanner sees
+ * (quoted literals, backticks without nested quotes, line and block
+ * comments); it does not parse template interpolation or regex literals.
+ */
+function stripComments(source: string): string {
+  let out = ''
+  let i = 0
+  while (i < source.length) {
+    const ch = source[i]
+    const next = source[i + 1]
+    if (ch === "'" || ch === '"' || ch === '`') {
+      // Copy a string or template literal verbatim.
+      out += ch
+      i += 1
+      while (i < source.length && source[i] !== ch) {
+        if (source[i] === '\\') i += 1
+        out += source[i]
+        i += 1
+      }
+      out += source[i] // the closing quote (or EOF)
+      i += 1
+      continue
+    }
+    if (ch === '/' && next === '/') {
+      while (i < source.length && source[i] !== '\n') i += 1 // drop the line comment
+      continue
+    }
+    if (ch === '/' && next === '*') {
+      i += 2
+      while (i < source.length && (source[i] !== '*' || source[i + 1] !== '/')) i += 1
+      i += 2 // drop the block comment including the closing `*/`
+      continue
+    }
+    out += ch
+    i += 1
+  }
+  return out
+}
+
+/** The first forbidden token found in the CODE of `source`, or null. */
+function firstForbidden(source: string): string | null {
+  const code = stripComments(source)
+  for (const token of FORBIDDEN_TOKENS) {
+    if (token.pattern.test(code)) return token.name
+  }
+  return null
+}
+
 describe('FIRST_RUN_CARDS', () => {
   it('is exactly the five cards, in order', () => {
     expect(FIRST_RUN_CARDS).toEqual(['account', 'name', 'kids', 'photo', 'area'])
@@ -128,27 +196,37 @@ describe('progressLabel', () => {
   })
 })
 
+describe('the purity scanner — stripComments + firstForbidden', () => {
+  // The scanner's own contract, proven on samples rather than assumed
+  // through the real file: prose is out of scope, code is in scope.
+  it('a source whose comments mention location and window yields no finding', () => {
+    const prose = [
+      '// The area card sets the home location before the run ends.',
+      '/* window.location and navigator are browser globals this module never touches. */',
+      "const label = '2 of 5'",
+    ].join('\n')
+    expect(firstForbidden(prose)).toBeNull()
+  })
+
+  it('a source whose code mentions location yields a finding', () => {
+    const code = ['function whereAmI() {', '  return window.location.href', '}'].join('\n')
+    expect(firstForbidden(code)).not.toBeNull()
+  })
+})
+
 describe('purity', () => {
   // Acceptance criterion: "the module imports no client, reads no clock, and
   // touches no browser global." Two proofs: a source scan (absence) and a
   // clock spy (behaviour).
-  it('firstRun.ts imports nothing and names no clock, client, or browser global', () => {
+  it('firstRun.ts code imports nothing and names no clock, client, or browser global', () => {
     // `?raw` pulls in the module's own source as a string, so the scan cannot
     // drift from the code: it is the very file vitest executed above.
-    for (const forbidden of [
-      /\bDate\.now\b|\bnew Date\b/, // no clock
-      /\bDate\(/, // no bare Date() call form
-      /\bperformance\b/, // no clock
-      /\bwindow\b|\bdocument\b/, // no browser global
-      /\blocation\b|\bnavigator\b/, // no browser global — location is domain-relevant here
-      /\blocalStorage\b|\bsessionStorage\b/, // no browser storage
-      /\bfetch\b|\bXMLHttpRequest\b/, // no I/O
-      /supabase/i, // no client
-    ]) {
-      expect(firstRunSource, `firstRun.ts must not match ${forbidden}`).not.toMatch(forbidden)
-    }
+    // Comments are stripped first, so the scan proves the CODE is pure — a
+    // doc comment saying "the area card sets the home location" must not
+    // fail a purity test.
+    expect(firstForbidden(firstRunSource)).toBeNull()
     // The model has no dependencies at all — no import statements whatsoever.
-    expect(firstRunSource).not.toMatch(/^\s*import\s/m)
+    expect(stripComments(firstRunSource)).not.toMatch(/^\s*import\s/m)
   })
 
   it('never reads the clock — every fact combination runs with Date.now spied', () => {
