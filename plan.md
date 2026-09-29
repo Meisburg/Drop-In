@@ -868,8 +868,10 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
   feed.
 - **Files in scope:** `src/pages/OnboardingPage.tsx`, `src/lib/places.ts`
   (reused read path), the finish card's presentational component,
-  **`src/lib/onboarding.ts` and its test**, **`e2e/onboarding-gate.e2e.ts`**,
-  **`e2e/fixtures.ts`**
+  **`src/lib/onboarding.ts` and its test**, **`e2e/fixtures.ts`** — and **NOT
+  `e2e/onboarding-gate.e2e.ts`** (defect #24: that spec pins
+  `resolveOnboardingGate`'s `'loading'` outcome, i.e. 2b's cold-load race fix, and
+  names `resolveOnboardingRedirect` nowhere))
 - **Approach:** reuse the places read the directory already uses — do not add a
   query shape. Prefer places with hours. Each place offers a path into hosting a
   drop-in there; the CTA must not be a dead end for a parent with no location.

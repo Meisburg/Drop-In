@@ -1427,3 +1427,30 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   OnboardingPage.tsx:262 (false since 2b) and docs/social-login-setup.md:77 (still says
   "Set your location").
 - Slice 5: verifier lane dispatched.
+- **SLICE 5 COMPLETE AND VERIFIED (PASS, run cf117a61) at 3f42c8f.** Verifier evidence:
+  HEAD 15d3bf9 with the 10 covered files BYTE-IDENTICAL to 3f42c8f; gate **EXIT=0 RUN
+  TWICE**; **66 files / 1982 tests**; lint **EXACTLY 81 oxlint warning lines** -- AND
+  THE SHARPEST SINGLE OBSERVATION OF THE LANE: **the 82nd "warning" in the log is
+  VITE'S CHUNK-SIZE BUILD ADVISORY, NOT OXLINT**, so a naive count would have reported
+  82 and looked like a new warning. That is the third time this batch that a count had
+  to be interpreted rather than read. Guards PASS; e2e subset **8/8 in 27.4s**
+  (onboarding-resume 2/2, signup-zip-fallback 2/2, zip-radius 2/2, golden-path 1/1) with
+  the **[setup] line verbatim** and the REST marker line "home_zip=98107,
+  radius_miles=5"; the three fix claims all TRUE with the guard confirmed at :263-264;
+  the arithmetic verified by counting `it(` lines (+4 in geocode.test.ts, -3 in
+  onboarding.test.ts = 1982); the VACUITY LINES still present and correctly deferred to
+  7a; the removals are **2 hits, both inside a retirement-note block comment**;
+  `zip-unresolved` has ZERO matches; drivers untracked; no environment failures.
+- **PLAN DEFECT #24 -- MY SLICE 6 FILE LIST NAMED A SPEC ON A FALSE PREMISE.**
+  It listed `e2e/onboarding-gate.e2e.ts` as Slice 6's to update. MEASURED: that spec
+  contains **ONE** test ("a cold full-page /profile load lands on /profile (no
+  onboarding-gate bounce)") and pins **resolveOnboardingGate's 'loading' OUTCOME** --
+  which is **2b's COLD-LOAD RACE FIX** -- and `rg` finds **NO reference to
+  `resolveOnboardingRedirect` in it at all**. **The only pin on that function is the
+  unit test** (`onboarding.test.ts:56-67`). So the plan now says the opposite, in
+  place: Slice 6 updates the unit test and **leaves the gate spec alone**, and the
+  brief says that if the spec breaks, **STOP and report** rather than "update the pin".
+  **Recorded because a builder doing the reasonable thing my plan asked for could have
+  WEAKENED A LOAD-BEARING RACE FIX** -- the first defect this batch whose damage would
+  have come from following the plan faithfully.
+- Slice 6 dispatched (run 9629d182) -- the last builder slice before 7a/7b.
