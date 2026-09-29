@@ -40,3 +40,26 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
 - Slice 1: reviewer dispatched (run 15e1f9cd, fresh context). Open question
   still unanswered by the human: should /onboarding render outside
   ProtectedShell's chrome? Proceeding as written.
+- Slice 1: review returned NEEDS_CHANGES (run 15e1f9cd). Reviewer independently
+  enumerated all 32 fact combinations and found the CODE correct everywhere —
+  every finding was doc/test quality, not logic. Adjudicated: 4 accepted, 1
+  rejected.
+  - ACCEPTED (blocking): firstRun.ts:42-53 doc block still quotes the
+    pre-correction (b)-only rule and claims termination.
+  - ACCEPTED (minor): stale "one extra tap" figure (plan says up to two).
+  - ACCEPTED (minor): guard order covered but not pinned — add the two
+    unreachable-but-contractual states.
+  - ACCEPTED (minor): purity scan misses location/navigator/`Date(`; clock spy
+    only traverses 2 of 32 paths.
+  - REJECTED: "no trailing newline, against repo convention, e.g. a11y.ts ends in
+    \n". The cited evidence is FALSE — a11y.ts has no trailing newline, and a
+    40-file src/lib sample is 25 with / 15 without. No convention exists, so no
+    deviation. Ruling: the code stands; EOF newlines are an optional tidy, not a
+    finding. (Lesson: the reviewer's factual citations need adjudication too.)
+  - Note: the reviewer's third residual risk ("could not audit the builder's
+    verify output") was already discharged by the orchestrator running
+    `npm run verify` directly — green end-to-end.
+- Slice 1: fix round 1/5 dispatched (revived original builder a4f27dcc ->
+  run 510ba2e5), findings verbatim via
+  .scratch/v28/briefs/slice-1-fix-1.md. Hard constraint: doc comment + tests
+  only, NO production behaviour change.
