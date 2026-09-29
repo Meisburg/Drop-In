@@ -779,13 +779,23 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
     whose real consequence is this.
   - The plan accepted **"up to two extra taps"** for resume. It did **not** accept
     a **restart**, and decision 6 says "never a restart" explicitly.
-- **Approach:** gate each card on the **same fact the nudge uses**, so the page and
-  the nudge cannot disagree: the name card on `profile === null` (already true),
-  the kids card on "not done **and** no kids yet", the photo card on "not done
-  **and** no avatar" — **`hasAvatarUrl` is now free** (`src/lib/avatarUrl.ts`, built
-  by 4b), and the kids fact needs the same `listKids` read the shell already does.
-  Use `nextUnfinishedCard(facts)` as the single arbiter if it fits; otherwise keep
-  the page's order and make each gate fact-aware. **Do not re-key the nudge.**
+- **Approach:** keep the page's linear order, but make **each gate fact-aware**:
+  the name card on `profile === null` (already true), the kids card on
+  **`!kidsCardDone && !hasKids`**, the photo card on
+  **`!photoCardDone && !hasAvatarUrl(profile.avatar_url)`** (free as of 4b), then
+  the location view. The kids fact needs the same `listKids` read the shell already
+  does — the page currently holds only local `kidRows` (`:127`) and **never reads**.
+  **Do not re-key the nudge.**
+- **⚠️ THE FLAG *AND* THE FACT ARE BOTH REQUIRED — GATING ON THE FACT ALONE CAUSES A
+  SKIP LOOP.** `nextUnfinishedCard` returns `'kids'` whenever `hasKids` is false,
+  **including for a parent who deliberately skipped** — its own docblock says so
+  (*"a skipped optional card IS re-offered … do NOT add [a step column]"*,
+  `firstRun.ts:56-60`). So a gate of `!hasKids` **alone** would re-render the kids
+  card the instant Skip is tapped, forever. **The flag advances the session; the fact
+  handles the re-entry.** Both clauses, every card, and prove Skip still advances.
+- **Acceptance note:** agreement with `nextUnfinishedCard` is asserted for a
+  **fresh** parent (all flags false) — within a session a flag may legitimately
+  point further along, because Skip is a session-level "seen it".
 - **Acceptance criteria:**
   - A parent who already has kids and a photo and no zip lands **on the area card**
     (or the location view), **not** on the kids card.
@@ -1365,3 +1375,38 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
   current, so the sweep must grep inside recently-changed functions, not only the
   ones a slice deleted from.** The second finding — the "/settings nudge banner"
   vocabulary — is defect #23's sweep.
+
+- 2026-09-29 — **Slice 4b: VERIFIED PASS** (verifier run `b409a2e9`) at `2828952`.
+  Gate exit 0; **66 files / 1981 tests** — the +1 file / +3 tests **fully explained
+  by reading the new test (`avatarUrl.test.ts` has exactly 3 `it(` blocks)**; lint
+  **0 errors / 81 warnings — confirmed 81 and not 82 by counting** (72
+  `eslint(`/`react(` + 9 `react-hooks(`), not by trusting the claim; guards PASS with
+  **no flake this run**; `avatar` 2 passed; `golden-path` 2 passed with the `[setup]`
+  line pasted. **The bio field is gone** — 4 hits in the page, all comments, and
+  `updateBio|BIO_MAX_LENGTH` absent. `hasAvatarUrl` present at definition, test and
+  use. **Defect #22's evidence confirmed independently**: `nextUnfinishedCard` has
+  **zero** hits in the page, and the flags/gates are where I said. **Defect #23 sized
+  at 8 hits with 0 production callers.** `auth.setup.ts` added exactly **1
+  non-comment line** and **no `expect(` was touched**. Throwaway drivers untracked.
+- 2026-09-29 — **⚠️ A THIRD TOOLING TRAP, AND IT IS NOW A BATCH RULE: A MULTI-LINE
+  PHRASE DEFEATS A SINGLE-LINE GREP.** The verifier measured **8** hits of
+  `"settings nudge"` where I recorded **10**, and reported the discrepancy honestly.
+  **Both were right.** `rg "settings nudge"` → 8; `rg "nudge banner"` → **10**. The
+  two I saw (`OnboardingPage.tsx:143`, `:577`) are **continuation lines carrying only
+  "nudge banner"**, so a full-phrase grep **silently misses them**. This is the third
+  instance in one session (`rg -c "STAYS GENERIC PERMANENTLY"` returned 2 of 3 for
+  the same reason). **RULE ADOPTED: grep the shortest stable fragment and read the
+  context — never a phrase that can wrap. Slice 7's phantom sweep uses
+  `"nudge banner"`, not `"settings nudge"`, or it will leave two behind.**
+- 2026-09-29 — **⚠️ GROUNDING 4c CAUGHT A TRAP IN MY OWN 4c DESIGN, BEFORE IT WAS
+  DISPATCHED.** I had written the gates as "not done **and** no kids/avatar" without
+  checking what `nextUnfinishedCard` actually does. It returns `'kids'` whenever
+  `hasKids` is false — **including for a parent who deliberately SKIPPED** — and its
+  own docblock (`firstRun.ts:56-60`) says so and explicitly refuses a step column.
+  **So a gate of `!hasKids` alone would re-render the kids card the instant Skip is
+  tapped, forever — an infinite Skip loop.** The gate needs **both** clauses: the
+  **flag advances the session**, the **fact handles the re-entry**. Corrected in the
+  plan and stated as a trap in 4c's brief, with a test required. Also measured: the
+  page holds only local `kidRows` (`:127`) and **never reads kids**, so 4c adds that
+  read.
+- 2026-09-29 — Slice 4c dispatched.

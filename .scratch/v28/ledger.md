@@ -1174,3 +1174,36 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   recently-changed functions, not only files a slice deleted from.**
 - 4b: verifier lane dispatched as the closing check (the reviewer ran no gate and
   recorded that the raw output tail is still owed).
+- **SLICE 4B COMPLETE AND VERIFIED (PASS, run b409a2e9) at 2828952.** Verifier
+  evidence: gate exit 0; 66 files / 1981 tests with the +1 file/+3 tests FULLY
+  EXPLAINED by READING the new test (exactly 3 `it(` blocks); lint 0/81 CONFIRMED BY
+  COUNTING (72 eslint/react + 9 react-hooks) rather than by trusting the claim, and it
+  is 81 not 82; guards PASS with NO flake this run; avatar 2 passed; golden-path 2
+  passed with the [setup] line pasted; the bio field gone (4 page hits, all comments;
+  updateBio/BIO_MAX_LENGTH absent); hasAvatarUrl at all three sites; defect #22's
+  evidence independently confirmed (nextUnfinishedCard ZERO hits in the page, flags
+  and gates exactly as recorded); defect #23 sized at 8 hits with 0 production
+  callers; auth.setup.ts = 1 non-comment line and NO expect( touched; drivers
+  untracked.
+- **⚠️ THIRD TOOLING TRAP, NOW A BATCH RULE: A MULTI-LINE PHRASE DEFEATS A
+  SINGLE-LINE GREP.** The verifier measured 8 hits of "settings nudge" where I
+  recorded 10, and reported it honestly. BOTH RIGHT: `rg "settings nudge"` -> 8,
+  `rg "nudge banner"` -> 10; the two I saw (:143, :577) are CONTINUATION LINES
+  carrying only "nudge banner", so the full-phrase grep SILENTLY MISSES THEM. Third
+  instance in one session (rg -c "STAYS GENERIC PERMANENTLY" returned 2 of 3 for the
+  same reason). RULE: **grep the shortest stable fragment and read the context, never
+  a phrase that can wrap.** Slice 7's phantom sweep must use "nudge banner", not
+  "settings nudge", or it leaves two behind.
+- **⚠️ GROUNDING 4c CAUGHT A TRAP IN MY OWN DESIGN BEFORE DISPATCH.** I had written
+  the gates as "not done AND no kids/avatar" without checking nextUnfinishedCard's
+  real semantics. It returns 'kids' whenever hasKids is false -- INCLUDING FOR A
+  PARENT WHO DELIBERATELY SKIPPED -- and its docblock (firstRun.ts:56-60) says so and
+  explicitly refuses a step column. **So a gate of !hasKids ALONE would re-render the
+  kids card the instant Skip is tapped, forever: an infinite Skip loop.** The gate
+  needs BOTH clauses -- the flag advances the session, the fact handles the re-entry.
+  Corrected in the plan and stated as a trap in 4c's brief with a test required. Also
+  measured: the page holds only local kidRows (:127) and NEVER READS KIDS, so 4c adds
+  that read. This is the second time grounding a brief caught my own error before a
+  builder inherited it (the first was 3c's prefill, where the one-argument fix turned
+  out to be documented in the code already).
+- Slice 4c dispatched.
