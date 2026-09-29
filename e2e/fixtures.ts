@@ -380,26 +380,43 @@ export async function signUpViewer(
 }
 
 /**
- * FINISH SIGNUP — complete the location step. (V28 slice 3b; first-use audit,
- * ticket 02.)
+ * FINISH SIGNUP — walk the kids card, then complete the location step.
+ * (V28 slice 3b; first-use audit, ticket 02; V28 slice 4a: the kids hop.)
  *
  * The signup form no longer carries an address, so there is no geocode and no
  * branching: `signUpViewer` lands the new parent on /onboarding ALWAYS, the
- * name card comes next (signUpViewer completes it), and then the location
- * step is deterministically next. The feed-or-location race this helper used
- * to settle (ticket 02: a RESOLVED address wrote home_zip at signup and the
- * parent landed on the feed with no location step at all) is gone with the
- * address field.
+ * name card comes next (signUpViewer completes it), then the KIDS card
+ * ("3 of 5", V28 slice 4a) and then the location step. The feed-or-location
+ * race this helper used to settle (ticket 02: a RESOLVED address wrote
+ * home_zip at signup and the parent landed on the feed with no location step
+ * at all) is gone with the address field.
+ *
+ * THE KIDS HOP: the kids card is skippable, so this helper taps its Skip
+ * control — writing NOTHING (no kid rows) — and proceeds to the location
+ * step. The Skip button (FirstRunCard's chrome) is the card's only control
+ * that advances without touching the DB, which keeps the 18 specs that
+ * consume this helper on the deterministic no-kids path: their assertions
+ * about kids (kid-names-privacy and friends) create their kids through the
+ * /profile editor or REST, never through onboarding. A spec that wants the
+ * kids WRITE is one that should not be using this helper.
  *
  * It NEVER forces a reload: a spec that counts requests during the cold load
  * still counts only the cold load's.
  */
 export async function finishSignup(
   page: Page,
-  options: { homeZip: string; radiusMiles?: number },
+  options: { homeZip: string; radiusMiles?: number | string },
 ): Promise<void> {
   const feed = page.getByRole('heading', { name: 'Near you' })
   const locationStep = page.getByRole('heading', { name: 'Set your location' })
+
+  // V28 slice 4a: the kids card (3 of 5) sits between the name card and the
+  // location step. It is the ONLY view that renders the card's Skip control
+  // (the location view has none), so waiting for it is the hop itself — and
+  // it absorbs the same profile-load settle beat the location wait absorbs.
+  const skipKids = page.getByRole('button', { name: 'Skip' })
+  await skipKids.waitFor({ timeout: 30_000 })
+  await skipKids.click()
 
   // The location step always comes next (see the doc above). Waiting on a
   // settled heading rather than the DOM keeps a cold-load beat harmless: the
@@ -407,12 +424,23 @@ export async function finishSignup(
   await locationStep.waitFor({ timeout: 30_000 })
   await page.getByPlaceholder('e.g. 98107').fill(options.homeZip)
   // The radius only matters to specs that assert on distance; anything else
-  // takes the app's own default (5 mi) rather than restating it.
-  const radius = options.radiusMiles ?? 5
+  // takes the app's own default (5 mi) rather than restating it. The select's
+  // options are LABELS ("20 miles"), so the option may be given as one of
+  // those labels verbatim or as a number of miles; V28 slice 4a widens the
+  // type to `number | string` because zip-radius.e2e.ts has always passed
+  // the full label ('20 miles') and the number-form would have produced
+  // "20 miles miles" (a latent defect predating V28, surfaced when 4a ran
+  // the spec for the first time).
+  const radiusLabel =
+    options.radiusMiles === undefined
+      ? '5 miles'
+      : typeof options.radiusMiles === 'string'
+        ? options.radiusMiles
+        : `${options.radiusMiles} miles`
   await page
     .locator('select')
     .first()
-    .selectOption({ label: `${radius} miles` })
+    .selectOption({ label: radiusLabel })
   await page.getByRole('button', { name: /^Continue/ }).click()
 
   // A signed-in, onboarded parent now stands on the feed.

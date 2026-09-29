@@ -6,6 +6,7 @@ import { FirstRunCard } from '../components/FirstRunCard'
 import { useCropStep } from '../components/useCropStep'
 import { composeDisplayName, displayNameFieldError } from '../lib/account'
 import { progressLabel } from '../lib/firstRun'
+import { FIRST_RUN_COPY } from '../lib/firstRunCopy'
 import {
   addKid,
   BIO_MAX_LENGTH,
@@ -125,6 +126,13 @@ export function OnboardingPage() {
   const [bioError, setBioError] = useState<string | null>(null)
   const [kidRows, setKidRows] = useState<Array<{ name: string; age: string }>>([])
   const [kidsError, setKidsError] = useState<string | null>(null)
+  // V28 slice 4a: the kids card (3 of 5) is its OWN step, between the name
+  // card and the location page — the kid rows moved off this page into the
+  // card. `kidsCardDone` is set by the card's Continue (after the write) or
+  // its Skip (without writing anything). The card's primary control is the
+  // one that writes, so it gets its own busy flag distinct from `saving`.
+  const [kidsCardDone, setKidsCardDone] = useState(false)
+  const [kidsSaving, setKidsSaving] = useState(false)
 
   /**
    * The crop step (photo-crop ticket 03). Declared HERE, with the other hooks and
@@ -228,13 +236,57 @@ export function OnboardingPage() {
     return bad
   }
 
-  async function handleContinue() {
-    if (session === null || saving || knownZips === null) return
+  /**
+   * V28 slice 4a: the kids card's Continue. Validates the rows with the same
+   * pure seam the page always used (`invalidKidRows` → `validateKid`,
+   * blank rows skipped), writes ONLY the filled rows through `addKid`
+   * (which enforces the `MAX_KIDS_PER_PROFILE` cap itself — the card's
+   * "Add another kid" button hides at the cap, this is the defense in
+   * depth), and advances the card only after the write succeeds. A write
+   * failure is surfaced in the card (`kidsError`, role="alert") and never
+   * traps the run: the parent retries Continue, or Skip advances without
+   * writing anything (the items are optional — the /settings nudge banner
+   * keeps the prompt alive).
+   */
+  async function handleKidsContinue() {
+    if (session === null || kidsSaving) return
     const badKidRows = invalidKidRows()
     if (badKidRows.length > 0) {
       setKidsError(badKidRows.map((bad) => bad.message).join(' '))
       return
     }
+    const filledKidRows = kidRows.filter(
+      (row) => row.name.trim() !== '' || row.age.trim() !== '',
+    )
+    if (filledKidRows.length === 0) {
+      // Nothing to write — advancing is exactly what Skip does.
+      setKidsCardDone(true)
+      return
+    }
+    setKidsSaving(true)
+    setKidsError(null)
+    let failed = false
+    for (const row of filledKidRows) {
+      try {
+        await addKid(session.user.id, row.name, Number(row.age))
+      } catch (err) {
+        setKidsError(
+          err instanceof Error
+            ? `${err.message} You can add your kids later in your settings.`
+            : 'Could not add your kids. You can add them later in your settings.',
+        )
+        failed = true
+        break
+      }
+    }
+    setKidsSaving(false)
+    // A failed write stays on the card with its error shown (see above);
+    // a clean write — or nothing to write — advances to the next view.
+    if (!failed) setKidsCardDone(true)
+  }
+
+  async function handleContinue() {
+    if (session === null || saving || knownZips === null) return
     // The location step is the onboarding requirement (V2 slice 3): the
     // zip must be a 5-digit code in the seeded gazetteer; the radius is
     // always one of the pinned options (the select can't produce another).
@@ -246,7 +298,6 @@ export function OnboardingPage() {
     setSaving(true)
     setError(null)
     setBioError(null)
-    setKidsError(null)
     try {
       await updateHomeZipRadius(session.user.id, homeZip.trim(), radiusMiles)
       // The optional items (V2 ticket 02): only what was actually entered.
@@ -263,20 +314,8 @@ export function OnboardingPage() {
           )
         }
       }
-      const filledKidRows = kidRows.filter((row) => row.name.trim() !== '' || row.age.trim() !== '')
-      for (const row of filledKidRows) {
-        const age = Number(row.age)
-        try {
-          await addKid(session.user.id, row.name, age)
-        } catch (err) {
-          setKidsError(
-            err instanceof Error
-              ? `${err.message} You can add your kids later in your settings.`
-              : 'Could not add your kids. You can add them later in your settings.',
-          )
-          break
-        }
-      }
+      // V28 slice 4a: the kids write moved onto the kids card (3 of 5),
+      // which sits BEFORE this view — handleContinue no longer touches it.
       // Refresh the shared session state before leaving: homeZipSet is what
       // this page's own guard (and every other route's) re-checks, and the
       // feed reads the profile from the same state. Since V28 slice 2b the
@@ -341,13 +380,20 @@ export function OnboardingPage() {
   // role="alert" + fieldA11y/errorId error surface behave exactly as before;
   // the primary control submits it through the HTML `form` attribute
   // (the button renders in the chrome, outside the form element).
+  // V28 slice 4a: the card's words come from FIRST_RUN_COPY.name, not
+  // hard-coded props — the module is the single source of truth (defect
+  // #20's fix). This card used to hard-code "What's your name?" while the
+  // module said "What should we call you?"; the MODULE's wording wins (it
+  // is the tested artifact pinned by firstRunCopy.test.ts), and the
+  // hard-coded title/body are gone. Only the busy-state label stays inline:
+  // it is a state, not card copy.
   if (profile === null) {
     return (
       <FirstRunCard
         progressLabel={progressLabel('name')}
-        title="What’s your name?"
-        body="This is how other parents find you in their inbox. It isn’t your email, and you can change it later in your settings."
-        primaryLabel={handleBusy ? 'Please wait…' : 'Continue'}
+        title={FIRST_RUN_COPY.name.title}
+        body={FIRST_RUN_COPY.name.body}
+        primaryLabel={handleBusy ? 'Please wait…' : FIRST_RUN_COPY.name.primaryLabel}
         primaryForm="name"
         primaryDisabled={handleBusy}
         testId="first-run-name-card"
@@ -413,7 +459,92 @@ export function OnboardingPage() {
     )
   }
 
+  // V28 slice 4a: the kids card ("3 of 5") — the first run's card 3, BETWEEN
+  // the name card and the location view below. This is a REORDER, not a
+  // verbatim lift: the page used to render the photo block before the kids
+  // block, and the chosen card order is kids then photo — so the kid rows
+  // moved UP into this card (the photo block stays where it is for slice 4b,
+  // which turns it into card 4). The words are data from FIRST_RUN_COPY.kids,
+  // never hard-coded (the name card above reads its entry the same way).
+  // Skip advances without writing anything; Continue writes the filled rows
+  // (handleKidsContinue) and only then advances. The kids section below in
+  // the family block is gone — this card is the only kids surface on the
+  // page, and `kidsAtCap` / the row UI live here now.
   const kidsAtCap = kidRows.length >= MAX_KIDS_PER_PROFILE
+  if (!kidsCardDone) {
+    const kidsCopy = FIRST_RUN_COPY.kids
+    return (
+      <FirstRunCard
+        progressLabel={progressLabel('kids')}
+        title={kidsCopy.title}
+        body={kidsCopy.body}
+        primaryLabel={kidsSaving ? 'Saving…' : kidsCopy.primaryLabel}
+        primaryDisabled={kidsSaving}
+        onPrimary={() => void handleKidsContinue()}
+        onSkip={() => {
+          // Skippable (lib/firstRun's isSkippable('kids')): advance and
+          // write nothing — the /settings nudge banner keeps the prompt.
+          setKidsCardDone(true)
+        }}
+        testId="first-run-kids-card"
+      >
+        <div className="flex flex-col gap-2 text-sm">
+          <span className="text-slate-700">Kids (first name + age only)</span>
+          {kidRows.length === 0 ? (
+            <button
+              type="button"
+              onClick={() => addKidRow()}
+              className="self-start inline-flex min-h-11 items-center rounded-md bg-slate-100 px-3 text-sm font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-200"
+            >
+              Add a kid
+            </button>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {kidRows.map((row, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <input
+                    className="min-w-0 flex-1 rounded-xl border border-slate-300 px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                    value={row.name}
+                    onChange={(e) => updateKidRow(index, { name: e.target.value })}
+                    placeholder="First name"
+                    maxLength={30}
+                    {...fieldA11y('kids', kidsError)}
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    max={17}
+                    className="w-20 shrink-0 rounded-xl border border-slate-300 px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                    value={row.age}
+                    onChange={(e) => updateKidRow(index, { age: e.target.value })}
+                    placeholder="Age"
+                    {...fieldA11y('kids', kidsError)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeKidRow(index)}
+                    className="inline-flex min-h-11 shrink-0 items-center rounded-md bg-slate-100 px-3 text-sm font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-200"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              {kidsAtCap ? null : (
+                <button
+                  type="button"
+                  onClick={() => addKidRow()}
+                  className="self-start inline-flex min-h-11 items-center rounded-md bg-slate-100 px-3 text-sm font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-200"
+                >
+                  Add another kid
+                </button>
+              )}
+            </div>
+          )}
+          {kidsError !== null ? <p role="alert" id={errorId('kids')} className="text-sm text-red-600">{kidsError}</p> : null}
+        </div>
+      </FirstRunCard>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -492,9 +623,12 @@ export function OnboardingPage() {
         </div>
       )}
 
-      {/* V2 ticket 02: the optional completion step — photo + bio + kids
-          (first name + age only, the privacy pin). Skipping is fine: the
-          /settings nudge banner keeps prompting until all three are there.
+      {/* V2 ticket 02: the optional completion step — photo + bio
+          (first name + age only, the privacy pin). V28 slice 4a: the kids
+          moved onto the kids card (3 of 5), which renders BEFORE this view —
+          the family block now holds photo + bio only (slice 4b turns photo
+          into card 4). Skipping is fine: the /settings nudge banner keeps
+          prompting until all three are there.
           Frontend-design pass: this block loses its card chrome and reads as
           a titled section of the same notice. */}
       <div className="flex flex-col gap-3">
@@ -539,61 +673,6 @@ export function OnboardingPage() {
             />
             {bioError !== null ? <span role="alert" id={errorId('bio')} className="text-sm text-red-600">{bioError}</span> : null}
           </label>
-
-          <div className="flex flex-col gap-2 text-sm">
-            <span className="text-slate-700">Kids (first name + age only)</span>
-            {kidRows.length === 0 ? (
-              <button
-                type="button"
-                onClick={() => addKidRow()}
-                className="self-start inline-flex min-h-11 items-center rounded-md bg-slate-100 px-3 text-sm font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-200"
-              >
-                Add a kid
-              </button>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {kidRows.map((row, index) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <input
-                      className="min-w-0 flex-1 rounded-xl border border-slate-300 px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                      value={row.name}
-                      onChange={(e) => updateKidRow(index, { name: e.target.value })}
-                      placeholder="First name"
-                      maxLength={30}
-                      {...fieldA11y('kids', kidsError)}
-                    />
-                    <input
-                      type="number"
-                      min={0}
-                      max={17}
-                      className="w-20 shrink-0 rounded-xl border border-slate-300 px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                      value={row.age}
-                      onChange={(e) => updateKidRow(index, { age: e.target.value })}
-                      placeholder="Age"
-                      {...fieldA11y('kids', kidsError)}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeKidRow(index)}
-                      className="inline-flex min-h-11 shrink-0 items-center rounded-md bg-slate-100 px-3 text-sm font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-200"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-                {kidsAtCap ? null : (
-                  <button
-                    type="button"
-                    onClick={() => addKidRow()}
-                    className="self-start inline-flex min-h-11 items-center rounded-md bg-slate-100 px-3 text-sm font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-200"
-                  >
-                    Add another kid
-                  </button>
-                )}
-              </div>
-            )}
-            {kidsError !== null ? <p role="alert" id={errorId('kids')} className="text-sm text-red-600">{kidsError}</p> : null}
-          </div>
         </div>
       </div>
 

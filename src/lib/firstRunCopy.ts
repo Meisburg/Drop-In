@@ -55,16 +55,18 @@ export const FIRST_RUN_COPY: Record<FirstRunCardId, FirstRunCardCopy> = {
 }
 
 /**
- * V28 slice 3c (fix 1) — the resume nudge's GENERIC line (src/App.tsx).
+ * V28 slice 3c (fix 1) → slice 4a — the resume nudge's GENERIC line
+ * (src/App.tsx).
  *
- * The nudge must not name the card it points at: today NO card reads
- * FIRST_RUN_COPY — the cards hard-code their own titles (the name card
- * renders "What's your name?", while the name entry above says "What should
- * we call you?") — so a card-named line would claim words the landing page
- * does not actually say, and the kids/photo/area cards do not exist at all
- * yet (slices 4/5). The line is card-agnostic instead; slice 4 wires the
- * cards to this module and can then swap the nudge onto card-specific
- * titles as each card starts rendering.
+ * The nudge must not name the card it points at — PERMANENTLY (ruling after
+ * defect #20): the generic line is never wrong, and naming a card couples
+ * the shell to the card inventory — the exact coupling that caused the
+ * blocking finding. Since slice 4a the name and kids cards DO read
+ * FIRST_RUN_COPY (their words come from this module, not from hard-coded
+ * strings), but the nudge still speaks FIRST_RUN_NUDGE_COPY and does not
+ * swap onto card-specific titles; the card inventory keeps growing (photo,
+ * area), and a card-named line would have to track it. The line is
+ * card-agnostic by construction.
  */
 export const FIRST_RUN_NUDGE_COPY = {
   /** The line's lead, rendered medium-weight. */

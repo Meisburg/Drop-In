@@ -81,6 +81,16 @@ setup('sign up the marker, onboard it (zip + radius), save the signed-in state',
   await page.locator('input[autocomplete="family-name"]').fill(lastName)
   await page.getByRole('button', { name: /^Continue/ }).click()
 
+  // V28 slice 4a: the KIDS card ("3 of 5") now sits between the name card and
+  // the location step — the new parent's first run is account → name → kids
+  // → photo → area. This spec's walk predates the card and used to land
+  // straight on the location step, so it taps the card's Skip control (the
+  // card is skippable and Skip writes NOTHING — the marker gets its kids, if
+  // any, via the /profile editor or REST, never through onboarding). The
+  // Skip button is the kids card's only advance-without-writing control, and
+  // it is the only Skip on this route (the location view has none).
+  await page.getByRole('button', { name: 'Skip' }).click()
+
   // The LOCATION step: home zip from the seeded gazetteer + the radius
   // select (5 mi is the default — the pinned options are 1/2/5/10/20/35).
   // Every new parent lands here now, so no branch-waiting: the step
