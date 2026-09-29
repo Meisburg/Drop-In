@@ -1207,3 +1207,41 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   builder inherited it (the first was 3c's prefill, where the one-argument fix turned
   out to be documented in the code already).
 - Slice 4c dispatched.
+- Slice 4c: BUILT at f8fe01d (3 files, +307/-3: src/pages/OnboardingPage.tsx,
+  e2e/onboarding-resume.e2e.ts NEW, e2e/fixtures.ts). Reviewer dispatched (run
+  93123748).
+- **ORCHESTRATOR-VERIFIED BY GROUNDING: THE FIX IS CORRECTLY BUILT, AND THE TRAP WAS
+  AVOIDED.** `if (!kidsCardDone && !hasKids)` at :539 and
+  `if (!photoCardDone && !hasAvatarUrl(profile.avatar_url))` at :635 -- BOTH CLAUSES
+  PRESENT. There is a designed `kidsFactPending = !kidsCardDone && hasKids === null`
+  state (:531) so the card's addKid writes cannot run before the fact lands, and the
+  builder's own comment at :157 states the trap back: "so `!hasKids` alone would
+  re-render the card after its own Skip". The lazy read is guarded
+  (`if (session === null || profile === null || kidsCardDone) return`, deps
+  [session, profile, kidsCardDone]) so it is INERT AFTER SKIP, and a failed read
+  renders a skippable error line rather than a wall.
+- **THE NEW SPEC WAS NECESSARY, NOT SCOPE CREEP -- AND THE REASON IS STRUCTURAL.**
+  Measured: **0 `.tsx` test files exist; all 64 test files are `.ts`.** So a React
+  gating decision CANNOT be pinned by a unit test in this repo -- it can only be
+  pinned by an expensive e2e spec, or moved into `lib/` where it becomes unit-
+  testable. My brief required "prove Skip still advances in a test", so the builder
+  had exactly one option available. **This is the clearest argument yet for the build
+  law's "React renders and does not decide": with no component-test lane, every
+  decision left in a .tsx is a decision that can only be proved at Playwright
+  prices.** Sent to the reviewer as a structural question (require the `resolveCard`
+  extraction, recommend it, or judge the inline gates acceptable) rather than
+  asserted -- because refactoring code that now has passing e2e proof is itself a
+  cost, and the law is not free.
+- The new spec respects the marker convention (fixtures prefixed `e2e-r1-<epoch>` /
+  `e2e-r2-<epoch>` with `@gmail.com`, since the project rejects example.com), and the
+  guards passed. `readSessionFromBrowserPage` (fixtures.ts:475) is reported as the
+  in-browser twin of `readMarkerSession`; sent to the reviewer with the question that
+  actually matters -- **does it hard-code localStorage key internals that would break
+  SILENTLY when supabase-js changes its key**, and is the JWT ever logged or written.
+- TWO THINGS SENT AS THE SHARP QUESTIONS, because the builder's own report cannot
+  settle them: (a) **the double-firing kids read** -- it fires twice as the profile
+  identity settles; the count is not the issue, **a STALE `hasKids` overwriting a
+  newer one is** (a race where the second response is older); (b) whether the resume
+  spec proves the gate's BEHAVIOUR or only fakes its INPUT (it seeds the photo fact
+  via an owner-scoped REST PATCH rather than a real upload -- acceptable for the
+  string-predicate gate, but worth stating).
