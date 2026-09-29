@@ -1847,3 +1847,15 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   * **THE SECRET IS DELIBERATELY NOT WRITTEN INTO THIS FILE, OR ANY OTHER.** It is a
     credential; the repo is pushed. It was handed to the human in chat only. Rotating it
     revokes the link.
+- **CI PASSED ON THE PUSHED BRANCH: `npm run verify` = completed / success**, alongside
+  "Vercel Preview Comments: completed / success". **That is a SECOND INDEPENDENT GATE on
+  top of the local one** -- the repo's GitHub Actions ran the same `verify` chain against
+  the pushed commit and agreed. Worth recording because it was not planned: pushing the
+  branch for the preview incidentally armed CI, and it is green.
+- **AND THE BYPASSED RESPONSE IS REALLY THE BUILT APP**, checked rather than assumed from
+  the 200: the served HTML carries `<meta name="viewport">`, `assets/index-PPYl4FQ9.js`,
+  `assets/places-BwOzxjAJ.js` and a `manifest` -- the V28 build, not an error page.
+- **THE BATCH IS BUILT AND GATED. The next step is the HUMAN's, and it is recorded as
+  `ACTION REQUIRED` in this file so `scripts/remind-human.sh` surfaces it:** the seeding
+  (decision 14, their hands, in the app) and Nicole's unassisted playtest on her phone.
+  AFTER it: the hygiene slice, then launch.
