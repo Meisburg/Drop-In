@@ -11,12 +11,14 @@ import {
   addKid,
   createProfile,
   HandleTakenError,
+  listKids,
   loadZipCodes,
   MAX_KIDS_PER_PROFILE,
   updateHomeZipRadius,
   uploadAvatar,
   validateKid,
 } from '../lib/db'
+import { hasAvatarUrl } from '../lib/avatarUrl'
 import {
   DEFAULT_RADIUS_MILES,
   milesWord,
@@ -48,6 +50,12 @@ import { errorId, fieldA11y } from '../lib/a11y'
  * (3 of 5) writes the kid rows and the photo card (4 of 5) uploads the
  * avatar, each before this page's final view — the location view's one
  * Continue button saves the location (always) and lands on the feed.
+ * V28 slice 4c (defect #22): both card gates are fact-aware — a parent who
+ * re-enters resumes at the card they LEFT, never a restart: the kids gate
+ * closes when the profile already has kids (the page's own lazy listKids
+ * read, the same seam as the shell's nudge) and the photo gate closes when
+ * the profile has an avatar (lib/avatarUrl's hasAvatarUrl). The session
+ * flags (kidsCardDone / photoCardDone) keep a Skip advancing within a run.
  * The optional items that were once collected HERE (V2 ticket 02:
  * photo/bio/kids) are gone from this view: kids and photo moved onto
  * their cards, and the bio left the first run entirely (V28 decision 15 —
@@ -133,6 +141,51 @@ export function OnboardingPage() {
   // one that writes, so it gets its own busy flag distinct from `saving`.
   const [kidsCardDone, setKidsCardDone] = useState(false)
   const [kidsSaving, setKidsSaving] = useState(false)
+  // V28 slice 4c: the kids FACT (plan defect #22) — the card sequence must
+  // resume from what the profile already has, not from flags that reset on
+  // every mount. The page held only local `kidRows` and never read the kids
+  // table, so the fact needs its own lazy read: the same seam the shell's
+  // resume nudge uses (src/App.tsx — one best-effort listKids read,
+  // cancelled on unmount). `null` = the read has not settled, and the kids
+  // card must NOT render in that gap — a returning parent with kids would be
+  // offered the card (and could re-answer it, calling addKid again)
+  // before the fact lands: defect #22's exact write path. Both clauses on
+  // the gate are required: the FACT handles the re-entry (a parent who
+  // already has kids skips straight past the card); the SESSION flag
+  // advances the run (a Skip must move on even though the fact still says
+  // "offer again" — firstRun's documented rule for a skipped optional card,
+  // so `!hasKids` alone would re-render the card after its own Skip,
+  // forever).
+  const [hasKids, setHasKids] = useState<boolean | null>(null)
+  const [kidsFactError, setKidsFactError] = useState<string | null>(null)
+
+  // V28 slice 4c: the lazy kids read (the shell's nudge uses the same seam,
+  // src/App.tsx). It fires once the profile exists — before that the name
+  // card owns the screen — and stands down when the session flag has
+  // advanced past the card. Best-effort, like the nudge's read: a failed
+  // read must never claim the fact, but the card stays skippable, so the
+  // failure is a designed error line on the card (Skip advances past it),
+  // never a wall.
+  useEffect(() => {
+    if (session === null || profile === null || kidsCardDone) return
+    let cancelled = false
+    listKids(session.user.id)
+      .then((kids) => {
+        if (!cancelled) setHasKids(kids.length > 0)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setHasKids(false)
+        setKidsFactError(
+          err instanceof Error
+            ? `${err.message} You can add your kids later in your settings.`
+            : 'Could not check your kids. You can add them later in your settings.',
+        )
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [session, profile, kidsCardDone])
   // V28 slice 4b: the photo card (4 of 5) sits between the kids card and
   // the location view. The upload itself runs in the crop step's confirm
   // (uploadAvatar — see `photoCrop` above), not on Continue: by the time
@@ -455,6 +508,7 @@ export function OnboardingPage() {
     )
   }
 
+  const kidsAtCap = kidRows.length >= MAX_KIDS_PER_PROFILE
   // V28 slice 4a: the kids card ("3 of 5") — the first run's card 3, BETWEEN
   // the name card and the location view below. This is a REORDER, not a
   // verbatim lift: the page used to render the photo block before the kids
@@ -466,8 +520,23 @@ export function OnboardingPage() {
   // (handleKidsContinue) and only then advances. The kids section below in
   // the family block is gone — this card is the only kids surface on the
   // page, and `kidsAtCap` / the row UI live here now.
-  const kidsAtCap = kidRows.length >= MAX_KIDS_PER_PROFILE
-  if (!kidsCardDone) {
+  //
+  // V28 slice 4c: the gate is FACT-AWARE (plan defect #22) — while the lazy
+  // read is in flight the card must not render: a returning parent with kids
+  // would be offered the card (and its addKid writes) in the gap, which is
+  // the defect's exact write path. A settled `hasKids === true` closes the
+  // gate instead — the parent already has kids, so resume at the card they
+  // LEFT (the photo card or the location view), never a restart. The flag
+  // keeps advancing a Skip within the session (see `hasKids` above).
+  const kidsFactPending = !kidsCardDone && hasKids === null
+  if (kidsFactPending) {
+    return (
+      <div className="flex min-h-64 items-center justify-center text-base text-slate-600">
+        Checking your kids…
+      </div>
+    )
+  }
+  if (!kidsCardDone && !hasKids) {
     const kidsCopy = FIRST_RUN_COPY.kids
     return (
       <FirstRunCard
@@ -536,6 +605,7 @@ export function OnboardingPage() {
               )}
             </div>
           )}
+          {kidsFactError !== null ? <p role="alert" className="text-sm text-red-600">{kidsFactError}</p> : null}
           {kidsError !== null ? <p role="alert" id={errorId('kids')} className="text-sm text-red-600">{kidsError}</p> : null}
         </div>
       </FirstRunCard>
@@ -557,7 +627,12 @@ export function OnboardingPage() {
   // name and kids cards read their entries the same way). The busy-state
   // label ("Saving…" while the confirmed upload is in flight) is one of
   // the two transient strings the sibling cards share, not card copy.
-  if (!photoCardDone) {
+  // V28 slice 4c: the gate is fact-aware too — a parent re-entering with an
+  // avatar already on the profile skips straight past the card (the fact
+  // handles the re-entry); the session flag still advances a Skip within
+  // the run (a skipped photo is re-offered by firstRun's documented rule,
+  // so both clauses are required).
+  if (!photoCardDone && !hasAvatarUrl(profile.avatar_url)) {
     const photoCopy = FIRST_RUN_COPY.photo
     return (
       <FirstRunCard

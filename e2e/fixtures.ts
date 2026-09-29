@@ -464,6 +464,52 @@ export async function finishSignup(
 }
 
 /**
+ * V28 slice 4c — read the Supabase session (access token + user id) OUT of a
+ * browser page's localStorage, the in-browser twin of readMarkerSession (the
+ * setup spec's markerCreds block is the same parse, run in-page). Specs that
+ * sign a SECOND viewer up in a fresh context (the zip-radius pattern) get
+ * their OWN JWT this way — the owner-scoped policies (PATCH profiles, SELECT
+ * own kids) only accept the owner's own token. Returns null when the page
+ * holds no session blob (the caller decides: skip, or fail).
+ */
+export async function readSessionFromBrowserPage(
+  page: Page,
+): Promise<{ accessToken: string; userId: string } | null> {
+  return page.evaluate((): { accessToken: string; userId: string } | null => {
+    for (const raw of Object.values(localStorage)) {
+      let blob:
+        | {
+            access_token?: string
+            user?: { id?: string }
+            currentSession?: { access_token?: string; user?: { id?: string } }
+            allSessions?: Array<{ access_token?: string; user?: { id?: string } }>
+            sessions?: Array<{ access_token?: string; user?: { id?: string } }>
+          }
+        | null
+      try {
+        blob = JSON.parse(String(raw))
+      } catch {
+        continue
+      }
+      const session =
+        (typeof blob?.access_token === 'string' ? blob : undefined) ??
+        blob?.currentSession ??
+        blob?.allSessions?.[0] ??
+        blob?.sessions?.[0]
+      if (
+        session !== null &&
+        session !== undefined &&
+        typeof session.access_token === 'string' &&
+        typeof session.user?.id === 'string'
+      ) {
+        return { accessToken: session.access_token, userId: session.user.id }
+      }
+    }
+    return null
+  })
+}
+
+/**
  * V25 ticket 13 — DISMISS THE RSVP CONFIRMATION LIGHTBOX IF IT IS OPEN.
  *
  * A ping on a drop-in's detail page raises the confirmation dialog, whose
