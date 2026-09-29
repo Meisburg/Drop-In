@@ -5,6 +5,7 @@ import { DeletePlaydateDialog } from '../components/DeletePlaydateDialog'
 import { HostAvatar } from '../components/DropInCard'
 import { PhotoButton } from '../components/ImageLightbox'
 import { KidsComingPicker } from '../components/KidsComingPicker'
+import { LocationRequiredNotice } from '../components/LocationRequiredNotice'
 import { ReportDialog } from '../components/ReportDialog'
 import { RsvpConfirmationDialog } from '../components/RsvpConfirmationDialog'
 import { useSessionContext } from '../components/SessionProvider'
@@ -377,6 +378,11 @@ export function PlaydateDetailPage() {
   const [reporting, setReporting] = useState(false)
   const [pingBusy, setPingBusy] = useState(false)
   const [pingError, setPingError] = useState<string | null>(null)
+  // V28 slice 2a: the no-home-zip notice under the ping button — raised when a
+  // SETTING tap is blocked by the location guard (handlePingToggle). The
+  // render site re-checks `profile?.home_zip == null`, so the notice clears
+  // itself the moment a zip lands (a refresh) — no second dismissal path.
+  const [pingLocationNotice, setPingLocationNotice] = useState(false)
   // V25 ticket 13: the RSVP confirmation lightbox's state. The RULES live in
   // `lib/rsvpConfirmation.ts` (pure, table-tested): only a ping's false→true
   // result may raise it, at most once per yes, and an un-ping forgets the yes so
@@ -880,6 +886,16 @@ export function PlaydateDetailPage() {
     // every load of a post the parent already said yes to, and the lightbox must
     // not greet a returning parent (the ticket says so explicitly).
     const wasGoing = state.going
+    // V28 slice 2a: SETTING a ping requires a home zip at the point of action
+    // (slice 2b takes the app-wide wall down only because this guard exists).
+    // The guard blocks *setting* only — if the toggle is already on, this tap
+    // CLEARS the ping, and it is never blocked: a zip-less parent must always
+    // be able to withdraw a ping they somehow hold. The render site below
+    // re-checks the zip, so the notice never lingers once one is set.
+    if (wasGoing === false && profile?.home_zip == null) {
+      setPingLocationNotice(true)
+      return
+    }
     // V2 slice 5: the explicit tap happened — clear the stored ping intent
     // (the "Tap to confirm" highlight was its whole job).
     window.sessionStorage.removeItem(PLAYDATE_PING_INTENT_KEY)
@@ -2113,6 +2129,12 @@ export function PlaydateDetailPage() {
                   ? '✓ Going'
                   : 'I’m going'}
           </button>
+          {/* V28 slice 2a: the no-home-zip notice — shown only after a blocked
+              SETTING tap AND while the zip is still unset (a zip landing via
+              refresh clears it); clearing a ping never raises it. */}
+          {pingLocationNotice && profile?.home_zip == null ? (
+            <LocationRequiredNotice />
+          ) : null}
           {count !== null ? (
             <p className="mt-2 text-sm text-slate-600">{goingCountLine(count)}</p>
           ) : (

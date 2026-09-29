@@ -5,6 +5,7 @@ import {
   ADDRESS_MAX_LENGTH,
   PlaydateFormFields,
 } from '../components/PlaydateFormFields'
+import { LocationRequiredNotice } from '../components/LocationRequiredNotice'
 import { PlaceDirectory } from '../components/PlaceDirectoryLazy'
 import { PlacePickerMap } from '../components/PlaceMapLazy'
 import { NAV_ICONS } from '../components/icons'
@@ -403,6 +404,11 @@ export function NewPlaydatePage({
   const [errors, setErrors] = useState<PlaydateFormErrors>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  // V28 slice 2a: the no-home-zip notice — raised when the submit's location
+  // guard blocks the post. The render site re-checks `profile?.home_zip ==
+  // null`, so the notice clears itself the moment a zip lands (a refresh) —
+  // no second dismissal path.
+  const [locationNotice, setLocationNotice] = useState(false)
   // V3 slice 5 (ticket 08): the optional address (kept out of
   // PlaydateFormValues — the /new form's pinned field set stays
   // untouched; the address is the page-local field below).
@@ -1114,6 +1120,15 @@ export function NewPlaydatePage({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    // V28 slice 2a: hosting requires a home zip at the point of action (slice
+    // 2b takes the app-wide wall down only because this guard exists). Without
+    // one: no createPlaydate, show the notice, and leave the form's values
+    // exactly as they are (page state — never discarded), so the parent can
+    // set a location at /onboarding and come back to finish.
+    if (profile?.home_zip == null) {
+      setLocationNotice(true)
+      return
+    }
     // V9 ticket 01: the place the app will actually write — the field's text
     // with its `@` ALIAS removed (places.stripPlaceAlias). The alias is a
     // gesture for opening the picker, so a parent who typed `@` and picked
@@ -1420,6 +1435,11 @@ export function NewPlaydatePage({
         submitError={submitError}
         onSubmit={handleSubmit}
       />
+
+      {/* V28 slice 2a: the no-home-zip notice — rendered right above the sticky
+          Post bar (the action it blocks) after a blocked submit, and only
+          while the zip is still unset (a zip landing via refresh clears it). */}
+      {locationNotice && profile?.home_zip == null ? <LocationRequiredNotice /> : null}
 
       {/* V27 slice 1: THE STICKY POST BAR — the plan read back and a Post
           button, pinned above the app's fixed bottom nav while the parent
