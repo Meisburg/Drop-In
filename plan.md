@@ -619,9 +619,11 @@ already claims to be "ONE implementation for the feed ("Near you") and Browse" �
     questions the app does not ask — the kids/photo/area cards are unbuilt until
     4/5/6 — while also **mis-naming the one card that does exist**
     (`FIRST_RUN_COPY.name.title` says "What should we call you?" while the card
-    renders "What’s your name?"). The reviewer **blocked** on it. **Until a card
-    renders, the line stays generic**; the slice that builds a card may add that
-    card's title in the same slice.
+    renders "What’s your name?"). **The reviewer blocked on it. THE LINE STAYS
+    GENERIC PERMANENTLY** (ruling after the fix round): it is
+    **never wrong**, and naming a card couples the shell to the card inventory —
+    the exact coupling that produced this finding. **`FIRST_RUN_COPY` is for the
+    CARD; the nudge speaks `FIRST_RUN_NUDGE_COPY`.**
   - **It never renders at the same time as `PushOptInPrompt`**, and by decision 16
     it does not render on `/onboarding` at all (the first run shows neither).
   - Dismissible, and stays dismissed for the session. Never blocks, never modals,
@@ -729,8 +731,11 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
     belongs in `src/lib/` as a **tested pure function**. Extract it, give it a
     sibling test, and use it in the nudge. **Reconciling `db.ts:2521` onto it is
     Slice 7's** (Slice 7 owns `db.ts`) — just note it for that slice.
-  - **Then re-enable this card's title in the resume nudge** (`src/App.tsx`) — the
-    nudge may name only cards that exist (defect #20).
+  - **The nudge stays GENERIC — do NOT add this card's title to it.** Ruling
+    (orchestrator, after defect #20): the generic line is **never wrong**, and
+    naming a card couples the shell to the card inventory, which is precisely how
+    the blocking finding happened. `FIRST_RUN_COPY` is for the CARD; the nudge
+    speaks `FIRST_RUN_NUDGE_COPY`.
   - `finishSignup` walks the new photo hop.
 - **Verification command:** `npm run verify` and
   `npx playwright test e2e/avatar.e2e.ts`
@@ -778,9 +783,8 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
     `DEFAULT_RADIUS_MILES`.
   - `validateHomeZip` gates the ZIP against the seeded gazetteer, inline.
   - The card reads `5 of 5` and writes the zip.
-  - **When this card renders, its title may be added to the resume nudge** — the
-    nudge may name only cards that actually exist (defect #20). Until then the
-    nudge stays generic.
+  - **Do NOT add this card's title to the resume nudge** — it stays generic
+    (defect #20's ruling).
   - **The ending it lands on is Slice 6's, not this slice's.** Do **not** build a
     finish card here and do **not** touch the redirect guard. Completing the area
     card still lands on the day-1 end state (the feed) until Slice 6 re-keys the
