@@ -1909,3 +1909,37 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
   note, and the **cross-route-absence false positive still has no tolerance mechanism** —
   a future redirect/gate spec asserting absence across routes will read as a finding.
   (c) One **pre-existing** platform skip in the `places-map-view` lane.
+
+- 2026-09-29 — **⚠️ Slice 7b's BUILDER TIMED OUT AT THE 30-MINUTE DEADLINE** (94 turns,
+  4.75M tokens — by far the largest run of the batch), mid-lane. **Assessment, measured
+  rather than assumed:**
+  - **Job 1 was DONE and passing but UNCOMMITTED** — `e2e/no-zip-notice.e2e.ts`, whose
+    test reads *"a no-zip parent sees the location notice on the feed AND on browse,
+    never the radius empty state"* (4.6s). It pins the honesty gap 2c closed **on both
+    callers, including Browse** — the one that was nearly missed — and uses the `e2e-nz-`
+    marker prefix so the sweep covers the viewer it creates. **The orchestrator committed
+    it as `7d1ab83`**, attributed to the builder, for the same reason as Slice 6: verified
+    work, untracked, at risk, and with no sha for a lane to reference.
+  - **Job 2 RAN: `1 failed, 2 skipped, 160 passed (13.4m)`.** **So the batch-end sweep
+    takes 13.4 MINUTES, not the 8–10 the docs assume** — a measured correction that
+    matters, because it means one full sweep plus the marker sweep plus `verify` **cannot
+    fit a 30-minute builder deadline.** **That is why 7b is now split** (below).
+  - **The one failure is `e2e/places.e2e.ts:2759`** — *"a tapped feed pin names the drop-in
+    happening there, and says when it stands for more than one (V25 t07)"*. **V28 has NOT
+    touched that spec, `PlaceDirectory.tsx` or `FeedPage.tsx`** (the diff over
+    `e2570c9..HEAD` on all four paths is empty except `src/lib/places.ts` +77, which is
+    purely **additive** — `FINISH_RUN_PLACE_LIMIT`/`FinishRunPlace`/`placeHasHours`/
+    `finishRunPlaces`). **So a flake is the leading hypothesis, and the builder started a
+    RE-RUN before it died** (`/tmp/e2e-full2.log`) which is live as this is written. **The
+    verdict comes from that run, not from reasoning.**
+  - **⚠️ NO DESTRUCTIVE OPERATION HAPPENED.** The marker sweep reached only its
+    **read-only pre-flight** (1084 marker rows, `founder_overlap: 0`). Verified after the
+    timeout: marker users went **536 → 616** — **UP, not down**, because the full sweep
+    created accounts. **So nothing was deleted, and the sweep still owes its two tails.**
+    Had it died after the delete, the "zero removals would be a finding" check would have
+    been inverted and I would have had to say so.
+- 2026-09-29 — **7b IS SPLIT, ON THE MEASURED 13.4-MINUTE SWEEP AND THE 30-MINUTE
+  DEADLINE.** **7b-1** = the failing `places.e2e.ts` case (re-run verdict first; do not
+  "fix" a flake) plus `npm run verify`. **7b-2** = the marker sweep (`delete` then
+  `verify`) with both tails — a short, bounded run of its own. **The two cannot share a
+  context: one full sweep alone is ~45% of the entire budget.**

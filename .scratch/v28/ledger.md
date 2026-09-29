@@ -1751,3 +1751,31 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
     failures.
 - Slice 7b: the batch-end lanes to be dispatched -- the no-zip e2e (the plan's named
   item), the FULL e2e sweep, and the marker sweep with both tails pasted.
+- **⚠️ SLICE 7B'S BUILDER TIMED OUT AT THE 30-MINUTE DEADLINE** (94 turns, 4.75M tokens --
+  the largest run of the batch), mid-lane. ASSESSMENT, MEASURED:
+  * JOB 1 DONE AND PASSING BUT UNCOMMITTED: e2e/no-zip-notice.e2e.ts -- "a no-zip parent
+    sees the location notice on the feed AND on browse, never the radius empty state"
+    (4.6s), pinning 2c's honesty gap ON BOTH CALLERS including Browse (the one nearly
+    missed), with the e2e-nz- marker prefix. THE ORCHESTRATOR COMMITTED IT AS 7d1ab83,
+    attributed to the builder, for the same reason as Slice 6: verified work, untracked,
+    at risk, no sha for a lane.
+  * JOB 2 RAN: **1 failed, 2 skipped, 160 passed (13.4m)**. THE BATCH-END SWEEP TAKES 13.4
+    MINUTES, NOT THE 8-10 THE DOCS ASSUME -- so one full sweep plus the marker sweep plus
+    verify CANNOT FIT A 30-MINUTE BUILDER DEADLINE. That is why 7b is split now.
+  * THE ONE FAILURE: e2e/places.e2e.ts:2759 "a tapped feed pin names the drop-in happening
+    there, and says when it stands for more than one (V25 t07)". V28 HAS NOT TOUCHED that
+    spec, PlaceDirectory.tsx or FeedPage.tsx -- the diff e2570c9..HEAD over all four paths
+    is EMPTY except src/lib/places.ts +77, which is purely ADDITIVE
+    (FINISH_RUN_PLACE_LIMIT / FinishRunPlace / placeHasHours / finishRunPlaces). SO A FLAKE
+    IS THE LEADING HYPOTHESIS, and the builder started a RE-RUN before it died
+    (/tmp/e2e-full2.log, live). THE VERDICT COMES FROM THAT RUN, NOT FROM REASONING.
+  * **NO DESTRUCTIVE OPERATION HAPPENED.** The marker sweep reached only its READ-ONLY
+    pre-flight (1084 marker rows, founder_overlap: 0). Verified after the timeout: marker
+    users went **536 -> 616, UP NOT DOWN**, because the full sweep created accounts. So
+    nothing was deleted and the sweep still owes its two tails. Had it died AFTER the
+    delete, the "zero removals would be a finding" check would have been INVERTED and I
+    would have had to say so rather than report a clean sweep.
+- **7B IS SPLIT ON THE MEASURED NUMBERS: 7b-1** = the failing places.e2e.ts case (re-run
+  verdict FIRST; do not "fix" a flake) plus npm run verify; **7b-2** = the marker sweep
+  (delete then verify) with both tails, its own short bounded run. They cannot share a
+  context: one full sweep alone is ~45% of the budget.
