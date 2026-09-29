@@ -181,13 +181,21 @@ calls `resolveOnboardingGate`.
   that `e2e/onboarding-gate.e2e.ts` pins (a signed-in parent cold-loading
   `/profile` must not bounce through `/onboarding` and lose the requested
   route), and `'suspended'` is the banned-profile screen.
-- `resolveOnboardingRedirect(signedIn, homeZipSet)` **keeps its exact signature
-  and loses nothing.** Its "already has a zip → `/`" behaviour is *already* the
-  right behaviour: a profile row requires a `display_name` and a zip requires a
-  profile row, so `finished ⟺ homeZipSet` in practice. **Do not re-key this
-  function on `FirstRunFacts`** — it would add a dependency and change no
-  behaviour, while forcing the builder to redesign a signature this plan does
-  not authorize.
+- `resolveOnboardingRedirect(signedIn, homeZipSet)` **keeps its signature in
+  Slice 2** — this slice does not re-key it, and its `(true, false) → null`
+  behaviour is load-bearing for `e2e/onboarding-gate.e2e.ts` right up until the
+  ending exists. **⚠️ BUT ITS `(true, true) → HOME_PATH` BRANCH BECOMES WRONG THE
+  MOMENT THE FINISH CARD EXISTS, and Slice 6 is the slice that removes it.** The
+  claim this bullet used to make — "a profile row requires a `display_name` and a
+  zip requires a profile row, so `finished ⟺ homeZipSet` in practice, so do not
+  re-key it" — is **FALSE under decision 5's order**: `finished` means every
+  *required* card is answered, and the area card is **card 5 of 5**, so writing
+  the zip sets `homeZipSet` true **while the run is still going**, and
+  `OnboardingPage.tsx:174-175`'s `<Navigate>` fires before the next card can
+  render. **Nothing in Slices 1–3 is affected** (a parent cannot hold a zip
+  without a name, so the guard's done-set and `nextUnfinishedCard`'s still
+  agree); the defect lands on Slice 5's final landing and on Slice 6's whole
+  reason to exist. See Slice 6.
 - `needsOnboarding(homeZipSet)` stays as the shared predicate for the **write**
   gates. It stops being a route gate.
 - The location requirement moves onto the **going-ping** and **host-a-drop-in**
@@ -332,9 +340,13 @@ happening. The helpers are the blast radius here too.
   `'onboard'` outcome from `resolveOnboardingGate`. **Do not touch `'loading'` or
   `'suspended'`** — `'loading'` is the cold-load race fix that
   `e2e/onboarding-gate.e2e.ts` pins. Leave `resolveOnboardingRedirect`'s
-  signature and body alone; its "already has a zip → `/`" behaviour is already
-  the right behaviour, because a profile row requires a `display_name` and a zip
-  requires a profile row, so `finished ⟺ homeZipSet`.
+  signature and body alone **in this slice**. **⚠️ The reason this slice was
+  given was WRONG (defect #19), corrected here so no later builder inherits it:**
+  it read "a profile row requires a `display_name` and a zip requires a profile
+  row, so `finished ⟺ homeZipSet`". That is false under decision 5's order — the
+  area card is **card 5 of 5**, so a zip arrives mid-run. Leaving the function
+  alone was still correct **for 2b**; the `(true, true) → HOME_PATH` branch is
+  **Slice 6's to remove.**
 - **Acceptance criteria:**
   - `resolveProtectedRedirect(true, false, '/inbox')` returns `'/inbox'` — a
     no-zip parent is not redirected.
@@ -697,7 +709,13 @@ extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**
   - The radius picker offers exactly `RADIUS_MILES_OPTIONS` and defaults to
     `DEFAULT_RADIUS_MILES`.
   - `validateHomeZip` gates the ZIP against the seeded gazetteer, inline.
-  - The card reads `5 of 5`, and finishing it lands on the finish card.
+  - The card reads `5 of 5` and writes the zip.
+  - **The ending it lands on is Slice 6's, not this slice's.** Do **not** build a
+    finish card here and do **not** touch the redirect guard. Completing the area
+    card still lands on the day-1 end state (the feed) until Slice 6 re-keys the
+    guard — an accepted, recorded sequencing cost. **The plan previously claimed
+    this card "lands on the finish card", which was unimplementable (defect
+    #19); that criterion belongs to Slice 6.**
 - **Verification command:** `npm run verify` and
   `npx playwright test e2e/address-maps.e2e.ts e2e/zip-radius.e2e.ts e2e/signup-zip-fallback.e2e.ts`
 - **Budget:** one local builder context.
@@ -709,10 +727,28 @@ extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**
   feed.
 - **Files in scope:** `src/pages/OnboardingPage.tsx`, `src/lib/places.ts`
   (reused read path), the finish card's presentational component,
+  **`src/lib/onboarding.ts` and its test**, **`e2e/onboarding-gate.e2e.ts`**,
   **`e2e/fixtures.ts`**
 - **Approach:** reuse the places read the directory already uses — do not add a
   query shape. Prefer places with hours. Each place offers a path into hosting a
   drop-in there; the CTA must not be a dead end for a parent with no location.
+- **⚠️ THE GUARD RE-KEY IS THIS SLICE'S, AND THE ENDING IS UNREACHABLE WITHOUT
+  IT (plan defect #19).** Measured: `OnboardingPage.tsx:174-175` calls
+  `resolveOnboardingRedirect(session !== null, homeZipSet)` and renders
+  `<Navigate>` on a non-null answer; `src/lib/onboarding.ts:53-60` returns
+  `HOME_PATH` whenever `homeZipSet` is true. **Slice 5's area card is card 5 of
+  5, so it creates exactly that state** — the parent is bounced to the feed
+  before this card can render, and `finishSignup` can never pass through it.
+  **Re-key it in this slice:** signed out → `LOGIN_PATH`; otherwise `null`
+  (render). `/onboarding` then renders the card `nextUnfinishedCard(facts)
+  names, and **the finish card when it returns `null`** — which is what this
+  slice's "reaching this card ends the run" criterion already assumes. A parent
+  who already finished and re-visits `/onboarding` lands on the finish card;
+  that is the intended ending, not a bug. **Update the unit test and
+  `e2e/onboarding-gate.e2e.ts`'s pin in this same slice** — a spec that pins
+  behaviour you change is your obligation (the batch's own invariant). If the
+  card, the re-key and the spec cannot fit one context, **STOP and report with
+  the partial diff rather than committing a half-moved ending.**
 - **Acceptance criteria:**
   - With places near the parent, the card shows at most three, each linking to a
     real place.
@@ -721,8 +757,10 @@ extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**
   - The card makes no claim about upcoming drop-ins — there are none.
   - Reaching this card ends the run: `nextUnfinishedCard` is `null` afterwards.
   - `finishSignup` passes through the finish card to reach the feed.
-- **Verification command:** `npm run verify`
-- **Budget:** one local builder context.
+- **Verification command:** `npm run verify` and
+  `npx playwright test e2e/onboarding-gate.e2e.ts`
+- **Budget:** one local builder context — **now carrying the guard re-key and its
+  spec, so watch the window; report rather than overrun.**
 - **Depends on:** Slices 1, 5
 
 ### Slice 7: The lane cleanup — specs, docs, and the last no-zip gaps
@@ -965,3 +1003,25 @@ extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**
   Left open for the human: **whether the interview belongs inside
   `ProtectedShell`'s chrome** — cards 2–5 currently render with the bottom nav,
   which competes with the cards and leaks the finished app early.
+
+- 2026-09-29 — **Grounding the NEXT slices found plan defect #19, and it is
+  load-bearing: the finish card was unreachable by construction.** The plan
+  asserted in three places that `finished ⟺ homeZipSet` and forbade re-keying
+  `resolveOnboardingRedirect`. MEASURED: `OnboardingPage.tsx:174-175` renders
+  `<Navigate>` when `resolveOnboardingRedirect` returns non-null, and
+  `src/lib/onboarding.ts:53-60` returns `HOME_PATH` whenever `homeZipSet` is
+  true. The area card is **card 5 of 5** (decision 5), so Slice 5's own success
+  writes exactly that state — the parent would be **bounced to the feed before
+  the next card could render**. Consequences: Slice 5's criterion "finishing it
+  lands on the finish card" was **unimplementable**, Slice 6's card was
+  **unreachable**, and `finishSignup` could never pass through it. Corrected in
+  place: the `resolveOnboardingRedirect` bullet, Slice 2b's now-false *reason*
+  (kept because 2b's instruction was still right for 2b), Slice 5's criterion
+  (the ending is Slice 6's, and this slice must not build a finish card or touch
+  the guard), and **Slice 6 gains the guard re-key as a named item** with its
+  scope (`src/lib/onboarding.ts` + test, `e2e/onboarding-gate.e2e.ts`) and its
+  verification command. **Slices 1–3 are unaffected** — a parent cannot hold a
+  zip without a name, so the guard's done-set and `nextUnfinishedCard`'s still
+  agree; the defect lands only on Slice 5's final landing and Slice 6's whole
+  reason to exist. Found by reading the page rather than the plan, which is now
+  the nineteenth defect this batch has caught that way.

@@ -729,3 +729,30 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   sessionStorage. The brief says CHECK FOR A READABLE SEAM before inventing one,
   and to report with a proposal rather than adding a cross-component flag.
 - Slice 3c dispatched.
+- PLAN DEFECT #19 FOUND BY GROUNDING SLICES 4-6 WHILE 3c RAN -- and it is
+  load-bearing: THE FINISH CARD WAS UNREACHABLE BY CONSTRUCTION.
+  * `OnboardingPage.tsx:174-175` renders `<Navigate>` when
+    `resolveOnboardingRedirect` is non-null; `src/lib/onboarding.ts:53-60` returns
+    HOME_PATH whenever `homeZipSet` is true.
+  * THE AREA CARD IS CARD 5 OF 5 (decision 5), so Slice 5's own success creates
+    exactly that state -- THE PARENT WOULD BE BOUNCED TO THE FEED BEFORE THE NEXT
+    CARD COULD RENDER.
+  * Slice 5's criterion "finishing it lands on the finish card" was therefore
+    UNIMPLEMENTABLE; Slice 6's card was UNREACHABLE; finishSignup could never
+    pass through it. Slice 6 would have been built and dead on arrival.
+  * THE PLAN ASSERTED `finished <=> homeZipSet` IN THREE PLACES AND FORBADE
+    RE-KEYING. Corrected in all three: the resolveOnboardingRedirect bullet,
+    Slice 2b's now-false REASON (2b's instruction was still right for 2b, so the
+    instruction stands and only the reason is marked wrong), and Slice 5's
+    criterion. SLICE 6 gains the guard re-key as a NAMED ITEM with its scope
+    (src/lib/onboarding.ts + test, e2e/onboarding-gate.e2e.ts) and its own
+    verification command.
+  * SLICES 1-3 ARE UNAFFECTED -- a parent cannot hold a zip without a name, so
+    the guard's done-set and nextUnfinishedCard's still agree. The defect lands
+    only on Slice 5's final landing and Slice 6's whole reason to exist. 3c was
+    NOT interrupted, because its nudge targets nextUnfinishedCard(null = no
+    nudge), which never fires for the bounced set.
+  * Note the shape of the error: the plan reasoned "a profile row requires a
+    display_name and a zip requires a profile row, so finished <=> homeZipSet" --
+    a TRUE premise chain whose conclusion stopped being true when decision 5
+    moved the area card to the END. The plan was self-consistent and wrong.
