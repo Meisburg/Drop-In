@@ -488,9 +488,12 @@ export function FeedPage() {
   })
 
   // The viewer side of the radius filter: the profile's home zip + radius.
-  // The shell's onboarding gate keys on home_zip, so a settled signed-in
-  // session here has a zip; a null profile is the in-flight load state
-  // (ticket 06 cold-load race — never query before the profile settles).
+  // V28 slice 2b removed the shell's onboarding gate, so a settled signed-in
+  // session may have NO zip: listRadiusFeed then returns [] and the empty
+  // state renders the location notice (RadiusEmptyState's slice-2c early
+  // return), not a wall and not a dead end. A null profile is the in-flight
+  // load state (ticket 06 cold-load race — never query before the profile
+  // settles).
   useEffect(() => {
     if (loading || session === null || profile === null) return
     let cancelled = false
