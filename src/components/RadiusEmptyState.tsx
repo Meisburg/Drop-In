@@ -90,10 +90,16 @@ export function RadiusEmptyState({
    * swallows its own tap is the "second dead end wearing a control's clothes"
    * this component exists to remove. V28 slice 2a fix 1/5: the zip half of the
    * test goes through the ONE predicate (hasHomeZip) — same rule, one
-   * definition. V28 slice 2c: the no-zip state is a FLOW, not belt-and-braces
-   * — 2b removed the shell's onboarding wall, so the early return below hands
-   * a settled no-zip parent to the location notice and this disabled-escape
-   * guard now remains only for the in-flight `session === null` case.
+   * definition. V28 slice 2c (fix 1/5 correction): this guard covers BOTH the
+   * in-flight `session === null` case AND the in-flight PROFILE window — while
+   * the profile is in flight `homeZip` is `profile?.home_zip ?? ''`, and
+   * `!hasHomeZip('')` is true, so the `!hasHomeZip` clause is live there too.
+   * (Slice 2c's first draft said "only the `session === null` case" — that was
+   * wrong: settled no-zip parents are diverted away by the early return below,
+   * but in-flight ones still fall through to this guard, where the clause is
+   * load-bearing (the in-flight window is real on these pages) — as the
+   * early return's note records, it only becomes belt-and-braces for a
+   * settled no-zip parent.
    */
   const escapesDisabled = busyRadius !== null || session === null || !hasHomeZip(homeZip)
 
@@ -103,9 +109,18 @@ export function RadiusEmptyState({
    * false (the query returned [] because there is no zip to distance from) and
    * every escape would be disabled above. Both callers (FeedPage, and Browse
    * via radiusReason, whose null distances make the radius "the reason")
-   * render through this ONE component, so one early return fixes both. The
-   * `profile !== null` half keeps an in-flight profile — which renders exactly
-   * what it rendered before, escapes disabled — off the notice.
+   * render through this ONE component, so one early return fixes both.
+   * V28 slice 2c fix 1/5: the `profile !== null` half is deliberate
+   * belt-and-braces, not a hole a caller falls into — no surface renders this
+   * component while the profile is in flight: FeedPage renders "Loading…"
+   * while `posts === null` and its feed effect never runs before the profile
+   * settles (`FeedPage.tsx` feed effect's `profile === null` gate, ~line 495,
+   * empty-state branch ~1248), BrowsePage returns "Loading…" on a null profile
+   * (`BrowsePage.tsx` ~313), and NewPlaydatePage's embedded sheet sits behind
+   * its own `loading` guard (`NewPlaydatePage.tsx` ~1231). So the notice fires
+   * exactly when the state settles; the half only matters if a FUTURE caller
+   * forgets to guard on the profile — then it renders what this state always
+   * rendered (escapes disabled), never the notice.
    */
   if (profile !== null && !hasHomeZip(profile.home_zip)) {
     return <LocationRequiredNotice />
