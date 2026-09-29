@@ -1,21 +1,23 @@
 /**
- * Spec (first-use audit, ticket 02): THE ZIP FALLBACK EXPLAINS ITSELF.
+ * Spec (V28 slice 3b): THE NEW SIGNUP PATH WALKS CARDS 2 → 5 OF THE FIRST
+ * RUN, AND THE FEED IS ABOUT THE ZIP THE PARENT ENTERED THEMSELVES.
  *
- * THE FINDING, in the audit's words: the signup form correctly says the address
- * is used to show nearby drop-ins — and when that address did not resolve to a
- * ZIP, the account was created and the parent was routed to a ZIP screen with
- * nothing explaining why. It read as "enter your location again".
+ * WHAT CHANGED. Before this slice the signup form collected a HOME ADDRESS,
+ * geocoded it, and a resolved address skipped the location step entirely —
+ * this spec intercepted Nominatim (both sides) to pin that. V28 decisions
+ * 4–5 moved the location onto the first run's cards: the signup form is
+ * EMAIL + PASSWORD ONLY (card 1 of 5), the name card (card 2) creates the
+ * profile row, and the LOCATION step (before the area card) is where the
+ * home zip is set by hand. There is no address to resolve and no geocode to
+ * mock — the path is deterministic, which is why this spec needs no network
+ * interception at all anymore.
  *
- * THE PRODUCT RULE THIS PINS: account creation stays non-blocking, the address
- * is still the location input, and the ZIP step is what happens when the lookup
- * did not resolve — now saying so.
- *
- * WHY THE NETWORK IS INTERCEPTED RATHER THAN CRAFTING A "BAD" ADDRESS. Waiting
- * on a live geocoder to fail is not a test, it is weather: a flaky Nominatim, a
- * rate limit, or an address that happens to resolve in six months all change
- * the result. Aborting the request makes the unresolved branch EXACTLY the
- * branch the app already handles (the lookup's own "null on ANY failure"
- * contract), so the spec is deterministic and it tests the real code path.
+ * THE FALLBACK NOTE. The one-shot "your account is ready, tell us your ZIP"
+ * note was the explanation shown when the SIGNUP-TIME geocode did not
+ * resolve (first-use audit, ticket 02). With the address gone from signup,
+ * nothing sets that flag any more, so the note must not render at all:
+ * test 2 pins its absence. (The area card's own zip-failure explanation is
+ * covered by that card's own spec — slice 5.)
  *
  * WHY A FRESH CONTEXT. The `chromium` project hands every spec the marker's
  * signed-in storage state, and this spec is about the SIGNED-OUT signup flow:
@@ -31,8 +33,6 @@
 import { expect, test, type Browser, type Page } from '@playwright/test'
 import { readMarkerMeta } from './fixtures'
 
-const ADDRESS_INPUT = 'input[autocomplete="street-address"]'
-
 async function signedOutPage(browser: Browser): Promise<{ page: Page; close: () => Promise<void> }> {
   const context = await browser.newContext({
     baseURL: 'http://localhost:4173',
@@ -41,118 +41,108 @@ async function signedOutPage(browser: Browser): Promise<{ page: Page; close: () 
   return { page: await context.newPage(), close: () => context.close() }
 }
 
-async function fillSignupForm(
+/**
+ * Sign up (email + password only) and walk the name card. Lands on /onboarding
+ * with the location step next. The name card's Continue button sits OUTSIDE
+ * its <form> and is joined to it only by the HTML form attribute
+ * (FirstRunCard.tsx) — if that association breaks, the profile row is never
+ * created, the location step never renders, and this helper hangs. That is
+ * what makes it the pin for the association.
+ */
+async function signUpAndFinishNameCard(
   page: Page,
-  options: { name: string; email: string; password: string; address: string },
+  options: { name: string; email: string; password: string },
 ): Promise<void> {
   const space = options.name.indexOf(' ')
   await page.goto('/login')
   await page.getByRole('button', { name: 'New here? Create an account' }).click()
-  await page.locator('input[autocomplete="given-name"]').fill(options.name.slice(0, space))
-  await page.locator('input[autocomplete="family-name"]').fill(options.name.slice(space + 1))
-  await page.locator(ADDRESS_INPUT).fill(options.address)
   await page.locator('input[type="email"]').fill(options.email)
   await page.locator('input[type="password"]').fill(options.password)
+  await page.getByRole('button', { name: 'Create account' }).click()
+
+  // Card 2 of 5: the name card. Card 1 sent us here, and the card composes
+  // the two halves into the same handle the old signup form produced.
+  await expect(page).toHaveURL(/\/onboarding/, { timeout: 30_000 })
+  await page.locator('input[autocomplete="given-name"]').fill(options.name.slice(0, space))
+  await page.locator('input[autocomplete="family-name"]').fill(options.name.slice(space + 1))
+  await page.getByRole('button', { name: /^Continue/ }).click()
 }
 
-test('an address that resolves to a ZIP sends the new parent straight to a nearby feed', async ({
+test('the signup path lands on the location step, and the feed is about the entered zip', async ({
   browser,
 }) => {
   const marker = readMarkerMeta()
   const epoch = Math.floor(Date.now() / 1000)
   const { page, close } = await signedOutPage(browser)
   try {
-    // The RESOLVED side is mocked too, and for the same reason as the failure
-    // side: asserting the happy path against a live third-party geocoder makes
-    // this spec a weather report. The mock is a real Nominatim response shape
-    // (a street address with a house number and its postcode) so the app's own
-    // precision rule is what decides, not the mock's convenience.
-    await page.route('**/nominatim.openstreetmap.org/**', (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify([
-          {
-            lat: '47.6687',
-            lon: '-122.3847',
-            address: { postcode: marker.homeZip, house_number: '7349' },
-          },
-        ]),
-      }),
-    )
-
-    await fillSignupForm(page, {
+    await signUpAndFinishNameCard(page, {
       name: `e2e-z-${epoch} Marker`,
       email: `e2e-z-${epoch}@gmail.com`,
       password: `e2e-z-pw-${epoch}`,
-      address: '7349 15th Ave NW, Seattle, WA 98107',
     })
 
-    await page.getByRole('button', { name: 'Create account' }).click()
+    // The location step is deterministically next: there is no address to
+    // resolve that could skip it (V28 slice 3b removed the geocode branch).
+    await expect(page.getByRole('heading', { name: 'Set your location' })).toBeVisible({
+      timeout: 30_000,
+    })
 
-    // Straight to discovery: no ZIP screen at all.
-    await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible({ timeout: 30_000 })
+    // The parent enters their own home zip — the same value the marker uses,
+    // so the feed assertion below checks the entered zip, not a geocode.
+    await page.getByPlaceholder('e.g. 98107').fill(marker.homeZip)
+    await page
+      .locator('select')
+      .first()
+      .selectOption({ label: `${marker.radiusMiles} miles` })
+    await page.getByRole('button', { name: /^Continue/ }).click()
+
+    // Straight to discovery.
+    await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible({
+      timeout: 30_000,
+    })
     expect(new URL(page.url()).pathname).toBe('/')
-    // And no fallback note anywhere — the happy path must not borrow the
-    // failure's explanation.
+    // And no fallback note anywhere — there is no signup-time geocode any
+    // more, so the failure-path explanation must not borrow into this one.
     await expect(page.getByTestId('signup-zip-fallback-note')).toHaveCount(0)
-    // The feed is about the address's own neighbourhood (Ballard, 98107 — the
-    // marker's ZIP), which is the whole point of deriving it at signup.
+    // The feed is about the zip the parent entered (the marker's zip, 98107)
+    // — which is the whole point of the location step owning the location.
     await expect(page.getByTestId('feed-location-control')).toContainText(marker.homeZip)
   } finally {
     await close()
   }
 })
 
-test('an address that cannot be matched still creates the account, and the ZIP step says why', async ({
+test('no fallback note renders on the location step: nothing at signup can fail a lookup', async ({
   browser,
 }) => {
   const epoch = Math.floor(Date.now() / 1000)
   const { page, close } = await signedOutPage(browser)
   try {
-    // Make the lookup fail the way the app already models failure: the request
-    // never completes. `searchFirst` returns null on ANY failure by contract.
-    await page.route('**/nominatim.openstreetmap.org/**', (route) => route.abort())
-
-    await fillSignupForm(page, {
+    await signUpAndFinishNameCard(page, {
       name: `e2e-zu-${epoch} Marker`,
       email: `e2e-zu-${epoch}@gmail.com`,
       password: `e2e-zu-pw-${epoch}`,
-      address: '7349 15th Ave NW, Seattle, WA 98107',
     })
 
-    await page.getByRole('button', { name: 'Create account' }).click()
-
-    // The account EXISTS — a third-party lookup failure must never block it —
-    // and the parent lands on the one location step that is still needed.
     await expect(page.getByRole('heading', { name: 'Set your location' })).toBeVisible({
       timeout: 30_000,
     })
 
-    // THE FINDING, FIXED: the screen explains the transition instead of silently
-    // asking for a location that was already given.
-    const note = page.getByTestId('signup-zip-fallback-note')
-    await expect(note).toBeVisible()
-    await expect(note).toContainText('Your account is ready')
-    await expect(note).toContainText('ZIP')
-    // It keeps the address-privacy promise the signup form made.
-    await expect(note).toContainText('private')
-    // And it never leaks implementation words at the parent.
-    await expect(note).not.toContainText('geocod')
-    await expect(note).not.toContainText('home_zip')
+    // THE PIN: the one-shot "your account is ready, tell us your ZIP" note
+    // existed to explain a FAILED SIGNUP-TIME geocode (ticket 02). The signup
+    // form no longer carries an address, so nothing sets that flag — the note
+    // must not render, not even for a parent who was bounced to this step
+    // with nothing to explain.
+    await expect(page.getByTestId('signup-zip-fallback-note')).toHaveCount(0)
 
-    // No dead end: the ZIP field is right there, and the inline validation the
-    // page already had still answers a bad ZIP with its own accessible error.
+    // No dead end: the ZIP field is right there, and the inline validation
+    // the page already had still answers a bad ZIP with its own accessible
+    // error.
     const zip = page.getByPlaceholder('e.g. 98107')
     await expect(zip).toBeVisible()
     await zip.fill('00000')
     await page.getByRole('button', { name: /^Continue/ }).click()
     await expect(page.getByRole('alert')).toBeVisible()
-
-    // The note is ONE-SHOT: it described this signup, so it must not follow the
-    // parent around. A reload is a new visit to the step.
-    await page.reload()
-    await expect(page.getByTestId('signup-zip-fallback-note')).toHaveCount(0)
   } finally {
     await close()
   }

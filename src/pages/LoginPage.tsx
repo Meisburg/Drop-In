@@ -3,25 +3,16 @@ import type { FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router'
 import { DropInMark } from '../components/DropInMark'
 import { useSessionContext } from '../components/SessionProvider'
-import {
-  addressFieldError,
-  composeDisplayName,
-  displayNameFieldError,
-} from '../lib/account'
 import { LOGIN_PATH, resolveAuthRedirect } from '../lib/auth'
-import { markSignupZipUnresolved } from '../lib/onboarding'
+import { ONBOARDING_PATH } from '../lib/onboarding'
+import { progressLabel } from '../lib/firstRun'
 import { armPushPromptForAction } from '../lib/pushClient'
 import {
-  createProfile,
-  HandleTakenError,
   sendPasswordReset,
   signInWithOAuthProvider,
   signOutUser,
   supabase,
-  updateHomeZipRadius,
 } from '../lib/db'
-import { DEFAULT_RADIUS_MILES } from '../lib/feed'
-import { zipFromAddressQuery } from '../lib/geocode'
 import {
   RESET_REQUEST_NOTICE,
   resetRequestErrorMessage,
@@ -35,60 +26,46 @@ const OAUTH_PROVIDERS = resolveOAuthProviders(import.meta.env.VITE_OAUTH_PROVIDE
 /**
  * Login + signup.
  *
- * V20 t06 — SIGNUP ASKS FOR A PERSON, NOT A HANDLE. The form used to collect
- * one field, `display_name`, labelled "Display name" and explained as "your
- * persistent public handle". The founder's report on the live app:
+ * V28 slice 3b — CARD 1 OF 5 IS THE ACCOUNT, NOT THE PERSON. Signup collects
+ * EMAIL + PASSWORD ONLY (decision 4: account first), carries the first run's
+ * "1 of 5" label, and sends the new parent to /onboarding — the name card
+ * (card 2, V28 slice 3a) creates the profiles row with the same
+ * displayNameFieldError / composeDisplayName / createProfile /
+ * HandleTakenError seams this page used to run, and the location card
+ * (card 5) sets the home zip.
  *
- *   *"when you create your account originally, it should ask not only for your
- *   name, your email and your password, but also your address so that it can
- *   automatically show you results close to you… and also on that Create an
- *   Account page, it shouldn't be your display name. It should say your first
- *   name and last name (2 fields) so that when people search for you in the
- *   Inbox if they want to message you it's really easy to find you."*
+ * (V20 t06, since superseded here: the form collected FIRST NAME + LAST NAME
+ * + a HOME ADDRESS, geocoded it, and wrote home_zip on this page. The name
+ * and the location have both moved onto the first run's cards; the account
+ * stays email + password.)
  *
- * So: FIRST NAME + LAST NAME (two fields, composed into the public handle by
- * `composeDisplayName`) and a required HOME ADDRESS. The address is what makes
- * the first thing a new parent sees already local — it geocodes (Nominatim,
- * the same seam the browse map's "Set location" uses) and writes `home_zip`,
- * which is exactly the value /onboarding's location step collects by hand.
- *
- * WHAT HAPPENS WHEN THE ADDRESS DOES NOT RESOLVE is the interesting half, and
- * it is deliberately non-blocking: the account IS created, and the parent is
- * sent to /onboarding's zip step with the generic notice telling them to add
- * their zip there. Blocking account creation on a third-party geocoder being
- * reachable — or on Nominatim recognising "Apt 3, 123 Main St" — would fail
- * closed on someone else's downtime, and the fallback path already exists and
- * is already required by the onboarding gate.
- *
- * A taken handle is still surfaced inline: the parent stays on the page, fixes
- * the name, and resubmits (the account and session already exist, so the retry
- * re-runs profile creation only).
+ * A signed-in user still bounces off /login (resolveAuthRedirect), except
+ * while this page's own signup is in flight — the `justSignedUp` guard
+ * below keeps the fresh session from unmounting the page mid-handler and
+ * sending the new parent to / instead of /onboarding.
  */
 export function LoginPage() {
-  const { session, loading, refresh } = useSessionContext()
+  const { session, loading } = useSessionContext()
   const navigate = useNavigate()
 
   const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
-  const [signupAddress, setSignupAddress] = useState('')
-  const [nameError, setNameError] = useState<string | null>(null)
-  const [addressError, setAddressError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   /**
-   * True while an account created on this page is still missing its
-   * profiles row (a taken handle). Keeps the "signed-in users bounce off
-   * /login" guard from unmounting the form mid-retry.
+   * True from the moment this page's own signup establishes the session, until
+   * the navigate below unmounts the page. The shared session subscription
+   * re-renders this component the moment the session exists; without the
+   * guard, the bounce-off below would send the new parent to / (the pre-V28
+   * default) instead of the first run at /onboarding.
    */
-  const [awaitingProfile, setAwaitingProfile] = useState(false)
+  const [justSignedUp, setJustSignedUp] = useState(false)
 
-  // Signed-in users don't need the auth screen — unless we just signed them
-  // up and the profile row still needs (re)creation on this page.
-  if (!loading && session !== null && !awaitingProfile) {
+  // Signed-in users don't need the auth screen — unless THIS page just signed
+  // them up (the bounce would steal the /onboarding navigation).
+  if (!loading && session !== null && !justSignedUp) {
     return <Navigate to={resolveAuthRedirect(LOGIN_PATH, true) ?? '/'} replace />
   }
 
@@ -97,8 +74,6 @@ export function LoginPage() {
     setBusy(true)
     setError(null)
     setNotice(null)
-    setNameError(null)
-    setAddressError(null)
     try {
       // V5: request a reset link. The notice is deliberately neutral — the
       // endpoint answers the same way whether or not the address exists.
@@ -127,108 +102,43 @@ export function LoginPage() {
       }
 
       // --- signup ---------------------------------------------------------
-      // Both validations run BEFORE the account is created, so a missing name
-      // or address never leaves a half-made account behind. (The handle's
-      // AVAILABILITY is the one thing that can only be judged after creation —
-      // that is the retry path below.)
-      const nameProblem = displayNameFieldError(firstName, lastName)
-      if (nameProblem !== null) {
-        setNameError(nameProblem)
-        return
-      }
-      const addressProblem = addressFieldError(signupAddress)
-      if (addressProblem !== null) {
-        setAddressError(addressProblem)
-        return
-      }
-      const name = composeDisplayName(firstName, lastName)
-
-      // Set before the awaits below so the bounce-off guard above can't
-      // unmount the page while a session appears mid-signup.
-      setAwaitingProfile(true)
-
-      // First submit only: create the account. Retries after a taken
-      // handle skip this — the account (and session) already exist.
+      // V28 slice 3b: the account is card 1 of 5 — email + password only.
+      // This page creates NOTHING but the auth account: the name (and its
+      // taken-handle retry) now lives on the name card at /onboarding, and
+      // the location lives on the area card, so there is no profile row to
+      // create and no zip to geocode here.
       //
-      // The new session's user id is read from THIS response, not from the
-      // `session` this render closed over: a signup that just happened has not
-      // re-rendered yet, and the geocode write below needs a real uuid.
-      let justSignedUpUserId: string | null = session?.user.id ?? null
+      // Arm the guard BEFORE the session exists: the shared subscription
+      // picks the session up the moment supabase-js establishes it, and the
+      // bounce-off guard above must not fire in the same handler.
+      setJustSignedUp(true)
+
+      // First submit only: create the account. A signed-in caller (the
+      // "signed out on /login" case) already has the account.
+      //
+      // The signUp response's session is what the shared state picks up;
+      // this page never reads a user id off it (the profile row is created
+      // by the name card, not here).
       if (session === null) {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
         })
         if (signUpError) {
-          setAwaitingProfile(false)
           throw signUpError
         }
         if (data.session === null) {
           // Defensive: if the project ever turns email confirmation on,
           // there is no session yet (it is OFF for V1 — see decisions log).
-          setAwaitingProfile(false)
+          setJustSignedUp(false)
           setNotice('Account created. Check your email to confirm, then sign in.')
           return
         }
-        justSignedUpUserId = data.session.user.id
       }
 
-      try {
-        await createProfile(name)
-      } catch (err) {
-        if (err instanceof HandleTakenError) {
-          // Stay on the page: the user fixes the name and resubmits.
-          setNameError(`“${name}” is already taken — try adding a middle name or initial.`)
-          return
-        }
-        setAwaitingProfile(false)
-        throw err
-      }
-
-      /**
-       * V20 t06: the ADDRESS becomes the home zip, so a brand-new parent lands
-       * on a feed that is already about their neighbourhood instead of on
-       * /onboarding's "set your location" wall.
-       *
-       * This runs AFTER the profile row exists — `updateHomeZipRadius` requires
-       * it. A geocode failure is NOT an error the parent sees here: it means
-       * the zip is still unset, the onboarding gate sends them to /onboarding,
-       * and that step asks for the zip by hand. That fallback is the whole
-       * reason this is allowed to fail quietly, and it is why nothing below can
-       * block the account.
-       *
-       * FIRST-USE AUDIT (ticket 02): failing quietly is not the same as failing
-       * SILENTLY. The parent gave an address believing it was their location, so
-       * a ZIP screen with no explanation reads as "enter it again". The flag
-       * below carries the fact across one route change so /onboarding can say
-       * what happened; it is one-shot and says nothing about implementation.
-       */
-      // The id the geocode write targets. `session` is the value this render
-      // closed over, and a brand-new signup has NOT re-rendered with its session
-      // yet — so `session?.user.id ?? ''` resolved to '' and PostgREST answered
-      // `profiles?id=eq.` with a 400 (an empty string is not a uuid). The effect
-      // was the audit's exact finding: the address looked accepted, and the
-      // parent was sent to a ZIP screen anyway. The id from the signUp response
-      // is the one that exists.
-      const ownerId = session?.user.id ?? justSignedUpUserId
-      const zip = await zipFromAddressQuery(signupAddress)
-      if (zip !== null && ownerId !== null) {
-        try {
-          await updateHomeZipRadius(ownerId, zip, DEFAULT_RADIUS_MILES)
-        } catch {
-          // 0045's CHECK or a pre-0012 project: the onboarding step remains the
-          // path that tells the parent what to do. Never fatal here — and the
-          // ZIP step still asks, so the flag below stays off.
-        }
-      } else if (zip === null) {
-        markSignupZipUnresolved(window.sessionStorage)
-      }
-
-      // The shared session state fetched this user's profile BEFORE the row
-      // existed (a brand-new account settles as "no profile"), so re-read it
-      // now — otherwise the onboarding gate, and V4's handle step for
-      // social users, would see a stale null and ask for a name twice.
-      await refresh()
+      // The shared session state still holds the pre-signup read (no
+      // profile); /onboarding's first card loads the profile itself, so
+      // this page needs no refresh of its own.
       // V25 ticket 15, trigger point 1: the account exists, so the FIRST of the
       // three natural moments has arrived — the founder's "probably at signup".
       // This records the moment only; the shell's `PushOptInPrompt` owns every
@@ -237,8 +147,9 @@ export function LoginPage() {
       // handler — so no permission call ever depends on the transient
       // activation of the Create-account tap surviving the awaits above.
       armPushPromptForAction('signup')
-      setAwaitingProfile(false)
-      navigate('/', { replace: true })
+      // Card 1 of 5 is done: the first run continues at /onboarding (card 2,
+      // the name card, creates the profiles row this account is missing).
+      navigate(ONBOARDING_PATH, { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')
     } finally {
@@ -308,9 +219,17 @@ export function LoginPage() {
           {mode === 'login'
             ? 'Welcome back. Sign in to see drop-ins near you.'
             : mode === 'signup'
-              ? 'Your name is how other parents find you, and your address is how we know what is nearby.'
+              ? 'Just your email and password — your name and location come right after.'
               : 'Enter your email and we’ll send a link to set a new password.'}
         </p>
+
+        {/* V28 slice 3b: the account is card 1 of the five-card first run. The
+            label comes from the same pure source the /onboarding cards use
+            (lib/firstRun's progressLabel — "1 of 5", pinned in its test), in
+            the same small print FirstRunCard renders it in. */}
+        {mode === 'signup' ? (
+          <p className="text-xs font-medium text-slate-500">{progressLabel('account')}</p>
+        ) : null}
 
         {/* V4 slice 4: social sign-in first — it is one tap, and it is what a
             parent arriving from a shared link will reach for. The email form
@@ -344,97 +263,6 @@ export function LoginPage() {
           className={`flex flex-col gap-3 ${mode === 'reset' ? 'mt-4' : ''}`}
           onSubmit={(e) => void handleSubmit(e)}
         >
-          {/* V20 t06: FIRST NAME + LAST NAME, not one "Display name" box.
-              The founder's reason is discoverability in the Inbox: parents
-              search for each other by the name they know, and nobody knows
-              which handle their friend chose. The two are composed into the
-              public handle (`composeDisplayName`), which is still what every
-              `@handle` in the app renders.
-
-              `autoComplete` is the browser's own vocabulary — `given-name` and
-              `family-name` are what let a phone autofill both halves from the
-              contact card in one tap, which is the difference between a form a
-              parent finishes and one they abandon. */}
-          {mode === 'signup' ? (
-            <div className="flex gap-2">
-              <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
-                <span className="text-slate-700">First name</span>
-                <input
-                  className={
-                    inputClasses + (nameError !== null ? ' border-red-400' : '')
-                  }
-                  value={firstName}
-                  onChange={(e) => {
-                    setFirstName(e.target.value)
-                    setNameError(null)
-                  }}
-                  placeholder="Sam"
-                  required
-                  maxLength={40}
-                  autoComplete="given-name"
-                  {...fieldA11y('name', nameError)}
-                />
-              </label>
-              <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
-                <span className="text-slate-700">Last name</span>
-                <input
-                  className={
-                    inputClasses + (nameError !== null ? ' border-red-400' : '')
-                  }
-                  value={lastName}
-                  onChange={(e) => {
-                    setLastName(e.target.value)
-                    setNameError(null)
-                  }}
-                  placeholder="Rivera"
-                  maxLength={40}
-                  autoComplete="family-name"
-                  {...fieldA11y('name', nameError)}
-                />
-              </label>
-            </div>
-          ) : null}
-
-          {mode === 'signup' && nameError !== null ? (
-            <span role="alert" id={errorId('name')} className="text-sm text-red-600">{nameError}</span>
-          ) : null}
-
-          {mode === 'signup' ? (
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-slate-700">Home address</span>
-              <input
-                className={
-                  inputClasses + (addressError !== null ? ' border-red-400' : '')
-                }
-                value={signupAddress}
-                onChange={(e) => {
-                  setSignupAddress(e.target.value)
-                  setAddressError(null)
-                }}
-                placeholder="e.g. 7200 4th Ave NE, Seattle"
-                required
-                autoComplete="street-address"
-                {...fieldA11y('address', addressError)}
-              />
-              {addressError !== null ? (
-                <span role="alert" id={errorId('address')} className="text-sm text-red-600">{addressError}</span>
-              ) : null}
-              {/* Says what the address is FOR, because "why does a playdate app
-                  want my address" is the reasonable question at this exact
-                  point in the form. It is never shown to anyone: it resolves to
-                  a zip and the zip is all that is stored. */}
-              <span className="text-xs text-slate-500">
-                Used to show drop-ins near you. Other parents never see it.
-              </span>
-            </label>
-          ) : null}
-
-          {mode === 'signup' && session !== null ? (
-            <p className="text-sm text-slate-600">
-              Your account is created — pick a different name and continue.
-            </p>
-          ) : null}
-
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-slate-700">Email</span>
             <input
@@ -493,8 +321,6 @@ export function LoginPage() {
                   setMode('reset')
                   setError(null)
                   setNotice(null)
-                  setNameError(null)
-                  setAddressError(null)
                 }}
               >
                 Forgot password?
@@ -512,8 +338,6 @@ export function LoginPage() {
             setMode(mode === 'signup' ? 'login' : 'signup')
             setError(null)
             setNotice(null)
-            setNameError(null)
-            setAddressError(null)
           }}
         >
           {mode === 'login'

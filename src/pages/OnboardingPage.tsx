@@ -68,14 +68,24 @@ export function OnboardingPage() {
   const suggestedParts = splitSuggestedName(suggested)
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
-  const [nameTouched, setNameTouched] = useState(false)
+  // V28 slice 3b: ONE flag per field, not a shared one. With a shared flag,
+  // typing in the LAST name field switched the FIRST field over to its empty
+  // state and the prefill vanished from under the user (and, for a signup
+  // whose prefill equals the email's local part, a "fill with the same value"
+  // never registers a change at all — the required first-name field then
+  // blocks the submit with "Please fill out this field" on a value the user
+  // never saw disappear). Each field keeps ITS HALF of the suggestion until
+  // the user edits that field; what is shown is what `handleCreateProfile`
+  // composes, so validation, the error surface, and the write agree.
+  const [firstNameTouched, setFirstNameTouched] = useState(false)
+  const [lastNameTouched, setLastNameTouched] = useState(false)
   const [handleError, setHandleError] = useState<string | null>(null)
   const [handleBusy, setHandleBusy] = useState(false)
   // The provider's name is a SUGGESTION, not a value: it stays until the user
   // types, and the profiles_display_name_key constraint is what decides
   // whether a handle is actually available.
-  const firstNameValue = nameTouched ? firstName : suggestedParts.first
-  const lastNameValue = nameTouched ? lastName : suggestedParts.last
+  const firstNameValue = firstNameTouched ? firstName : suggestedParts.first
+  const lastNameValue = lastNameTouched ? lastName : suggestedParts.last
 
   const [knownZips, setKnownZips] = useState<ReadonlySet<string> | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -259,8 +269,12 @@ export function OnboardingPage() {
           break
         }
       }
-      // Refresh the shared session state before leaving so the shell's
-      // onboarding gate (and header) see the new home zip.
+      // Refresh the shared session state before leaving: homeZipSet is what
+      // this page's own guard (and every other route's) re-checks, and the
+      // feed reads the profile from the same state. Since V28 slice 2b the
+      // shell's onboarding gate no longer keys on the home zip, and the
+      // header shows no zip at all — this keeps the shared state, not the
+      // chrome, current.
       await refresh()
       navigate('/', { replace: true })
     } catch (err) {
@@ -277,9 +291,10 @@ export function OnboardingPage() {
   }
 
   /**
-   * Create the profiles row for a first-time social user. The email path does
-   * this on /login; an OAuth user comes back with a session and no row, and
-   * every write on this page (and everywhere else) assumes the row exists.
+   * Create the profiles row for a first-run parent. Since V28 slice 3b EVERY
+   * new account lands here with a session and no row (email signup no longer
+   * creates it on /login, and social sign-in never did), and every write on
+   * this page (and everywhere else) assumes the row exists.
    * refresh() re-reads the profile, so the location step below renders next.
    */
   async function handleCreateProfile(e: FormEvent) {
@@ -345,7 +360,7 @@ export function OnboardingPage() {
                 value={firstNameValue}
                 onChange={(e) => {
                   setFirstName(e.target.value)
-                  setNameTouched(true)
+                  setFirstNameTouched(true)
                   setHandleError(null)
                 }}
                 placeholder="Sam"
@@ -365,7 +380,7 @@ export function OnboardingPage() {
                 value={lastNameValue}
                 onChange={(e) => {
                   setLastName(e.target.value)
-                  setNameTouched(true)
+                  setLastNameTouched(true)
                   setHandleError(null)
                 }}
                 placeholder="Rivera"

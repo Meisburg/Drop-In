@@ -17,6 +17,15 @@
  * email + display name carry a deterministic `e2e-<epoch>` prefix so the
  * orchestrator can sweep stray rows later. The password is generated
  * in-memory here and never written anywhere (no secrets in specs).
+ *
+ * V28 slice 3b: the account is card 1 of 5, so the marker's first run goes
+ * through the real UI end to end — email + password on /login (the signup
+ * form is email + password ONLY now; the name and address fields moved onto
+ * the first run's cards), then the NAME card creates the profiles row, then
+ * the LOCATION step sets the marker's home zip + radius. There is no more
+ * geocode branch to settle: every new parent lands on /onboarding, so the
+ * location step is deterministic. The REST PATCH below stays as the
+ * marker's backstop.
  */
 import { expect, test as setup } from '@playwright/test'
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -34,71 +43,52 @@ setup('sign up the marker, onboard it (zip + radius), save the signed-in state',
 
   // --- Sign up through the real /login UI (signup mode). ---
   //
-  // V20 t06: the signup form is now FIRST NAME + LAST NAME + HOME ADDRESS, not
-  // one "Display name" box. The marker's handle is consequently COMPOSED —
-  // "e2e-<epoch> Marker" — and that composed string is what every downstream
-  // `@handle` assertion must look for, which is why `displayName` below is
-  // built from the same two halves the form joins.
-  //
-  // The ADDRESS is the marker's own home zip written as a street address, so the
-  // signup path's geocode resolves to the SAME zip the location step would set
-  // by hand. If Nominatim does not resolve it (offline, rate-limited, a
-  // city-level match — any of which returns null by design), the account is
-  // still created and the onboarding gate sends us to the location step below,
-  // which sets the zip explicitly. So this spec passes either way, and the
-  // marker's final state is identical — the REST PATCH at the end is the
-  // backstop that makes that true.
+  // V28 slice 3b: the form is EMAIL + PASSWORD ONLY (the account is card 1
+  // of 5). The marker's handle is still COMPOSED — "e2e-<epoch> Marker" —
+  // but now by the NAME CARD on /onboarding (card 2, V28 slice 3a): same
+  // two halves, same composeDisplayName join, so every downstream
+  // `@handle` assertion that looks for `${displayName}` keeps holding.
+  // The address field is gone from the signup flow entirely (the location
+  // card owns it), so there is nothing to geocode and no branch to settle.
   const firstName = `e2e-${epoch}`
   const lastName = 'Marker'
   const displayName = `${firstName} ${lastName}`
-  const signupAddress = '7349 15th Ave NW, Seattle, WA 98107'
   const password = `e2e-pw-${epoch}` // in-memory only — never written, never committed
 
   await page.goto('/login')
   await page.getByRole('button', { name: 'New here? Create an account' }).click()
-  await page.locator('input[autocomplete="given-name"]').fill(firstName)
-  await page.locator('input[autocomplete="family-name"]').fill(lastName)
-  await page.locator('input[autocomplete="street-address"]').fill(signupAddress)
   await page.locator('input[type="email"]').fill(email)
   await page.locator('input[type="password"]').fill(password)
   await page.getByRole('button', { name: 'Create account' }).click()
 
-  // Signup lands on /, and the shell's onboarding gate decides what happens
-  // next (V2 slice 3: the gate keys on the home zip being unset):
-  //   - the geocode RESOLVED the address → home_zip is already written, so the
-  //     gate passes and the feed renders immediately; or
-  //   - it did NOT resolve → the gate bounces to the location step, which asks
-  //     for the zip.
+  // Signup lands on /onboarding (V28 slice 3b: card 1 of 5 is done, card 2
+  // is next). The NAME card creates the profiles row — the first use of the
+  // card's form-attribute association in a spec file (its Continue button
+  // lives outside the <form> and is joined to it by the HTML form
+  // attribute; if the two drift, the profile row is never created and the
+  // location step below never renders).
   //
-  // FIRST-USE AUDIT (ticket 02) FIXED the first branch, which had silently
-  // never worked: the geocode write targeted `session?.user.id ?? ''` from the
-  // pre-signup render, so it 400'd against an empty uuid and the marker ALWAYS
-  // took the second branch. That is why this spec could previously assume the
-  // location step came next — and this spec is what caught the fix, by timing
-  // out while waiting for a screen the parent should never have seen.
-  //
-  // Both outcomes are now genuinely reachable, and both are valid. The REST
-  // PATCH at the end stays the backstop either way, which is what keeps the
-  // marker's final state identical.
-  const deadline = Date.now() + 30_000
-  let landedOnOnboarding = false
-  while (Date.now() < deadline) {
-    if (new URL(page.url()).pathname === '/onboarding') {
-      landedOnOnboarding = true
-      break
-    }
-    if (await page.getByRole('heading', { name: 'Near you' }).isVisible().catch(() => false)) break
-    await page.waitForTimeout(400)
-  }
+  // NOTE (V28 slice 3b): `firstName` here EQUALS the card's prefill — the
+  // email's local part (suggestedHandle's fallback) — so this fill is a no-op
+  // change and the field's VISIBLE value comes from the prefill, not from
+  // this line. The name card keeps each prefill half until THAT field is
+  // edited (per-field touched flags in OnboardingPage); with the old shared
+  // flag the family-name fill wiped the first-name prefill and the required
+  // field silently blocked this submit. If the card's touched handling ever
+  // regresses, this is the line that breaks — and it breaks as a 120s
+  // timeout waiting for the location step below, not an assertion.
+  await page.locator('input[autocomplete="given-name"]').fill(firstName)
+  await page.locator('input[autocomplete="family-name"]').fill(lastName)
+  await page.getByRole('button', { name: /^Continue/ }).click()
 
-  // The location step (V2 slice 3: replaces the neighborhood picker): home
-  // zip from the seeded gazetteer + the radius select (5 mi is the
-  // default — the pinned options are 1/2/5/10/20/35).
-  if (landedOnOnboarding) {
-    await page.getByPlaceholder('e.g. 98107').fill(MARKER_HOME_ZIP)
-    await page.locator('select').first().selectOption({ label: `${MARKER_RADIUS_MILES} miles` })
-    await page.getByRole('button', { name: /^Continue/ }).click()
-  }
+  // The LOCATION step: home zip from the seeded gazetteer + the radius
+  // select (5 mi is the default — the pinned options are 1/2/5/10/20/35).
+  // Every new parent lands here now, so no branch-waiting: the step
+  // renders once the profile load settles, and the fill's auto-wait
+  // absorbs that.
+  await page.getByPlaceholder('e.g. 98107').fill(MARKER_HOME_ZIP)
+  await page.locator('select').first().selectOption({ label: `${MARKER_RADIUS_MILES} miles` })
+  await page.getByRole('button', { name: /^Continue/ }).click()
 
   // Back on the feed — signed in, onboarded (home zip set).
   await page.getByRole('heading', { name: 'Near you' }).waitFor()

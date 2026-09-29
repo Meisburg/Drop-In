@@ -328,30 +328,34 @@ export function runLiveSql(sql: string): { ok: boolean; output: string } {
 
 
 /**
- * V20 t06 — fill the signup form and submit it.
+ * V20 t06 → V28 slice 3b — fill the signup form, submit it, and complete the
+ * name card.
  *
- * WHY THIS IS A SHARED HELPER AND NOT 20 INLINE COPIES. The form changed shape:
- * it used to be `input[autocomplete="nickname"]` (one "Display name" box) and
- * every spec that created a throwaway viewer drove that one selector. It is now
- * FIRST NAME + LAST NAME + HOME ADDRESS, so all 20 call sites had to change at
- * once — and the next change to this form would otherwise have to touch 20
- * files again. One helper means the specs say "sign this viewer up" and the
- * form's field list lives in exactly one place.
+ * WHY THIS IS A SHARED HELPER AND NOT 20 INLINE COPIES. The form changed shape
+ * twice: it used to be `input[autocomplete="nickname"]` (one "Display name"
+ * box), then FIRST NAME + LAST NAME + HOME ADDRESS on /login, and since V28
+ * slice 3b it is EMAIL + PASSWORD ONLY (the account is card 1 of 5). One
+ * helper means the specs say "sign this viewer up" and the form's field list
+ * lives in exactly one place.
  *
- * `name` is the handle the caller expects the account to end up with — it is
- * what other assertions in those specs look for as `@name` — so the helper
- * splits it the way the form joins it (`composeDisplayName` puts a single space
- * between the halves). A single-word name goes entirely into the first field,
- * which composes back to the same string.
+ * The name moved onto the name card at /onboarding (card 2 of 5, V28 slice
+ * 3a) — the SAME `autoComplete="given-name"` / `"family-name"` selectors the
+ * old /login form carried. `name` is the handle the caller expects the
+ * account to end up with, so the helper splits it the way the card composes
+ * it (`composeDisplayName` puts a single space between the halves). A
+ * single-word name goes entirely into the first field, which composes back
+ * to the same string.
  *
- * The ADDRESS is a fixed real Seattle street address, not a per-caller value:
- * signup uses it to derive a home zip, and these specs set their own location
- * on the onboarding step immediately afterwards regardless (they all wait for
- * "Set your location" and fill the zip), so a failed geocode changes nothing
- * about what the spec goes on to assert. Making it a parameter would be a knob
- * no caller needs.
+ * THE NAME CARD'S CONTINUE IS THE FORM-ASSOCIATION PIN: the card's primary
+ * button sits OUTSIDE its `<form>` and is joined to it only by the HTML
+ * `form` attribute (FirstRunCard.tsx). If the id and the attribute drift, the
+ * click submits nothing — the profile row is never created, "Set your
+ * location" never renders, and the caller's `finishSignup` hangs at its
+ * first wait. That failure is the pin for the association.
  *
- * The password is whatever the caller already generated; it is only typed here.
+ * The password is whatever the caller already generated; it is only typed
+ * here. The home location is set by the caller's `finishSignup` on the
+ * location step that follows the name card.
  */
 export async function signUpViewer(
   page: Page,
@@ -364,36 +368,31 @@ export async function signUpViewer(
 
   await page.goto('/login')
   await page.getByRole('button', { name: 'New here? Create an account' }).click()
-  await page.locator('input[autocomplete="given-name"]').fill(first)
-  if (last !== '') await page.locator('input[autocomplete="family-name"]').fill(last)
-  // The same street address every time — see the doc above.
-  await page.locator('input[autocomplete="street-address"]').fill('7349 15th Ave NW, Seattle, WA 98107')
   await page.locator('input[type="email"]').fill(email)
   await page.locator('input[type="password"]').fill(password)
   await page.getByRole('button', { name: 'Create account' }).click()
+
+  // V28 slice 3b: signup lands on /onboarding, where the name card (card 2)
+  // creates the profile row. Its Continue is the pin described above.
+  await page.locator('input[autocomplete="given-name"]').fill(first)
+  if (last !== '') await page.locator('input[autocomplete="family-name"]').fill(last)
+  await page.getByRole('button', { name: /^Continue/ }).click()
 }
 
 /**
- * FINISH SIGNUP — however it actually ended. (First-use audit, ticket 02.)
+ * FINISH SIGNUP — complete the location step. (V28 slice 3b; first-use audit,
+ * ticket 02.)
  *
- * `signUpViewer` types a REAL Seattle street address, and the signup form
- * derives the home ZIP from it. So there are two legitimate endings, and which
- * one you get depends on whether the geocode resolved:
+ * The signup form no longer carries an address, so there is no geocode and no
+ * branching: `signUpViewer` lands the new parent on /onboarding ALWAYS, the
+ * name card comes next (signUpViewer completes it), and then the location
+ * step is deterministically next. The feed-or-location race this helper used
+ * to settle (ticket 02: a RESOLVED address wrote home_zip at signup and the
+ * parent landed on the feed with no location step at all) is gone with the
+ * address field.
  *
- *   - RESOLVED → `home_zip` is written at signup, the onboarding gate passes,
- *     and the new parent lands on the feed. No location step at all.
- *   - UNRESOLVED → the gate bounces to /onboarding, which asks for the ZIP.
- *
- * Before ticket 02 the first branch never happened: the geocode write targeted
- * an empty uuid and 400'd, so signup ALWAYS took the second branch and ~19
- * specs could safely assume the location step came next. Fixing the write made
- * the happy path real, and every one of those specs then hung for two minutes
- * waiting for a screen the parent should never see. This helper is the fix once
- * instead of nineteen times.
- *
- * It NEVER forces a reload: the branch we are already on is the branch we keep,
- * so a spec that counts requests during the cold load still counts only the
- * cold load's.
+ * It NEVER forces a reload: a spec that counts requests during the cold load
+ * still counts only the cold load's.
  */
 export async function finishSignup(
   page: Page,
@@ -402,23 +401,21 @@ export async function finishSignup(
   const feed = page.getByRole('heading', { name: 'Near you' })
   const locationStep = page.getByRole('heading', { name: 'Set your location' })
 
-  // Whichever settles first wins. Awaiting them in sequence would burn a full
-  // `expect` timeout on the branch this signup did not take.
-  await expect(feed.or(locationStep)).toBeVisible({ timeout: 30_000 })
+  // The location step always comes next (see the doc above). Waiting on a
+  // settled heading rather than the DOM keeps a cold-load beat harmless: the
+  // step renders once the profile load settles, and the wait absorbs that.
+  await locationStep.waitFor({ timeout: 30_000 })
+  await page.getByPlaceholder('e.g. 98107').fill(options.homeZip)
+  // The radius only matters to specs that assert on distance; anything else
+  // takes the app's own default (5 mi) rather than restating it.
+  const radius = options.radiusMiles ?? 5
+  await page
+    .locator('select')
+    .first()
+    .selectOption({ label: `${radius} miles` })
+  await page.getByRole('button', { name: /^Continue/ }).click()
 
-  if (await locationStep.isVisible().catch(() => false)) {
-    await page.getByPlaceholder('e.g. 98107').fill(options.homeZip)
-    // The radius only matters to specs that assert on distance; anything else
-    // takes the app's own default (5 mi) rather than restating it.
-    const radius = options.radiusMiles ?? 5
-    await page
-      .locator('select')
-      .first()
-      .selectOption({ label: `${radius} miles` })
-    await page.getByRole('button', { name: /^Continue/ }).click()
-  }
-
-  // Either way, a signed-in, onboarded parent now stands on the feed.
+  // A signed-in, onboarded parent now stands on the feed.
   await feed.waitFor({ timeout: 30_000 })
 }
 
