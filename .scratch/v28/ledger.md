@@ -1801,3 +1801,33 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   A DESTRUCTIVE STEP MATTERS TO THE MEANING OF ITS EVIDENCE, NOT ONLY TO ITS RISK.
 - Slice 7b-2 dispatched (f8bbd27f): the marker sweep only, with the explicit instruction
   NOT to re-run the full suite.
+- **SLICE 7B COMPLETE AND VERIFIED (PASS, run 5e91f2d9).** The batch-end lanes all close
+  green:
+  * THE PLAYTEST LANE PASSES: 9 routes, **0 JS errors**, a screenshot per route, verdict
+    EXIT=0. /onboarding is CORRECTLY ABSENT from routes.json -- the doc's TRAP section
+    explains that an auth-gated route yields a PASS whose screenshot is the LOGIN page,
+    which is WORSE than no coverage, and the verifier left it alone. Ports released BY
+    PORT (never pkill -f), both 4173 and 9444 confirmed free.
+  * THE SWEEP IS INDEPENDENTLY CONFIRMED: `marker_users = 0` AND `marker_profiles = 0`,
+    joining on the e2e-% prefix. The builder's 1287-row removal across 13 tables holds.
+  * THE FULL SWEEP: run 1 `1 failed / 2 skipped / 160 passed (13.4m)`, run 2 `2 skipped /
+    161 passed (13.2m)`, and the SAME spec was the single failure (e2e/places.e2e.ts:2759,
+    run 1 17.1s fail -> run 2 3.4s pass). GREEN, with ONE NAMED FLAKY SPEC.
+  * Tree clean; no tracked file changed by the sweep; drivers untracked.
+  * THE VERIFIER ALSO FIXED AN ENVIRONMENT PROBLEM RATHER THAN REPORTING IT AS A FAILURE:
+    a stale `node` held [::1]:4173 (IPv6-only, so IPv4 curl returned 000) and `npx serve`
+    silently fell back to :35597; it killed the stale pid and re-served on 4173. **That is
+    the second stale dev server this batch has had to clear** (the V27 cleanup item names
+    them too).
+- **⚠️ THE VERCEL PREVIEW IS PROTECTED AND THEREFORE NOT USABLE BY A TESTER.** The branch
+  push produced a Preview deployment (`drop-kuaj6dzze-jonmeisburgs-projects.vercel.app`,
+  status Ready) -- and every request returns **302 to `vercel.com/sso-api`**, i.e. **Vercel
+  Deployment Protection (SSO) is ON for previews**, so a tester needs a Vercel login.
+  PRODUCTION IS PUBLIC (`drop-in-mu.vercel.app` -> 200). **So the option chosen -- a
+  preview, to keep production untouched -- does not by itself produce a shareable URL, and
+  making it shareable means changing a project protection setting, which is a security
+  posture decision rather than part of "make a preview".** Surfaced to the human with the
+  options rather than decided here.
+- Worth recording: **the local range check PASSED (94 files, no forbidden artifacts)** and
+  **V28 contains ZERO migrations**, so a preview deploy implied no production schema change
+  -- checked before pushing, not after.
