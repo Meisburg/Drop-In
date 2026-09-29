@@ -13,9 +13,11 @@ import {
 } from './onboarding'
 
 /**
- * Onboarding-gate tests (V2 slice 3: the gate keys on the home zip, not
- * memberships — neighborhoods are display labels only, discovery is
- * radius-based).
+ * Onboarding-gate tests. V28 slice 2b: the gate no longer keys on the home
+ * zip — the location requirement moved off the gate and onto the write
+ * paths (hasHomeZip, lib/homeZip.ts). What survives here: the signed-out
+ * /login leg, the cold-load 'loading' race, the suspended screen, and the
+ * /onboarding route's own redirect (which still keys on the zip).
  */
 
 describe('needsOnboarding', () => {
@@ -30,32 +32,28 @@ describe('needsOnboarding', () => {
 
 describe('resolveProtectedRedirect (protected routes)', () => {
   it('sends signed-out users to /login', () => {
-    expect(resolveProtectedRedirect(false, false, '/')).toBe('/login')
-    expect(resolveProtectedRedirect(false, true, '/browse')).toBe('/login')
-    expect(resolveProtectedRedirect(false, true, '/u/jamie')).toBe('/login')
+    expect(resolveProtectedRedirect(false, '/')).toBe('/login')
+    expect(resolveProtectedRedirect(false, '/browse')).toBe('/login')
+    expect(resolveProtectedRedirect(false, '/u/jamie')).toBe('/login')
   })
 
-  it('lets signed-out visitors keep a public detail route (V2 slice 5 — no /onboarding detour)', () => {
-    // A signed-out visitor has no home zip — the onboarding bounce must NOT
-    // fire (it would detour through /onboarding, which bounces to /login —
-    // a redirect loop; the public detail page is the route's point).
-    expect(resolveProtectedRedirect(false, false, '/playdate/abc')).toBe('/playdate/abc')
+  it('lets signed-out visitors keep a public detail route (V2 slice 5 — no /login detour)', () => {
+    // The public detail page is the route's point: resolveAuthRedirect
+    // allows it signed-out, and the function above it never sends a
+    // signed-out visitor anywhere but /login (no location rule exists
+    // that could detour them at all).
+    expect(resolveProtectedRedirect(false, '/playdate/abc')).toBe('/playdate/abc')
   })
 
-  it('lets signed-in users without a home zip keep the intended route (V28 slice 2b — the location requirement lives at the writes, not a wall)', () => {
-    expect(resolveProtectedRedirect(true, false, '/')).toBe(HOME_PATH)
-    expect(resolveProtectedRedirect(true, false, '/browse')).toBe('/browse')
-    expect(resolveProtectedRedirect(true, false, '/profile')).toBe('/profile')
+  it('lets signed-in users keep the intended route (V28 slice 2b — the location requirement lives at the writes, not a wall)', () => {
+    expect(resolveProtectedRedirect(true, '/')).toBe(HOME_PATH)
+    expect(resolveProtectedRedirect(true, '/browse')).toBe('/browse')
+    expect(resolveProtectedRedirect(true, '/profile')).toBe('/profile')
+    expect(resolveProtectedRedirect(true, '/u/jamie')).toBe('/u/jamie')
   })
 
   it("does not bounce a no-zip parent out of an \"I'm coming\" return target", () => {
-    expect(resolveProtectedRedirect(true, false, '/playdate/abc123')).toBe('/playdate/abc123')
-  })
-
-  it('lets signed-in users with a home zip keep the intended route', () => {
-    expect(resolveProtectedRedirect(true, true, '/')).toBe(HOME_PATH)
-    expect(resolveProtectedRedirect(true, true, '/browse')).toBe('/browse')
-    expect(resolveProtectedRedirect(true, true, '/u/jamie')).toBe('/u/jamie')
+    expect(resolveProtectedRedirect(true, '/playdate/abc123')).toBe('/playdate/abc123')
   })
 })
 
@@ -80,7 +78,6 @@ function gateState(over: Partial<OnboardingGateState> = {}): OnboardingGateState
     sessionLoading: false,
     profileLoading: false,
     signedIn: true,
-    homeZipSet: true,
     suspended: false,
     ...over,
   }
@@ -92,19 +89,14 @@ describe('resolveOnboardingGate (the shell gate, ticket 06 cold-load race)', () 
   })
 
   it('renders the loading state while a signed-in user\'s profile fetch is in flight (the race)', () => {
-    // A stale homeZipSet=false must NOT bounce the user to /onboarding
-    // mid-load — that is the cold-load race this gate fixes.
-    expect(
-      resolveOnboardingGate(gateState({ profileLoading: true, homeZipSet: false })),
-    ).toBe('loading')
+    // profileLoading makes the gate render 'loading' instead of a route —
+    // that is the cold-load race this gate fixes (a stale session/profile
+    // read must never decide routing mid-load).
+    expect(resolveOnboardingGate(gateState({ profileLoading: true }))).toBe('loading')
   })
 
-  it('passes a settled signed-in user with a home zip', () => {
+  it('passes a settled signed-in user (V28 slice 2b — the gate no longer keys on the home zip)', () => {
     expect(resolveOnboardingGate(gateState({}))).toBe('pass')
-  })
-
-  it('passes a settled signed-in user without a home zip (V28 slice 2b — no /onboarding decision)', () => {
-    expect(resolveOnboardingGate(gateState({ homeZipSet: false }))).toBe('pass')
   })
 
   it('passes a settled signed-out user (the signed-out gate sends /login)', () => {

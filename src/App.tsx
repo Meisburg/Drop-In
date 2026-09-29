@@ -48,22 +48,20 @@ const LazyBrowsePage = lazy(() => import('./pages/BrowsePage'))
 const MOD_PATH = '/mod'
 
 /**
- * All app routes (including /onboarding) require a session; a signed-in
- * user without a home zip is sent to /onboarding first (V2 slice 3: the
- * gate keys on home_zip — neighborhoods are display labels only) — but
- * only once the profile load has settled: while any load is in flight (the
- * cold-load race, ticket 06) the shell renders its loading state instead,
- * so a signed-in, zipped user cold-loading a route is never bounced
- * through /onboarding → / and loses the requested route. The gate decision
- * itself lives in lib/onboarding.ts (resolveOnboardingGate, unit-tested).
+ * All app routes (including /onboarding) require a session; there is NO
+ * location bounce (V28 slice 2b — the home-zip requirement moved off the
+ * shell and onto the write paths, see
+ * docs/adr/0001-home-zip-stops-being-a-gate.md). While any load is in
+ * flight (the cold-load race, ticket 06) the shell renders its loading
+ * state instead of a route. The gate decision itself lives in
+ * lib/onboarding.ts (resolveOnboardingGate, unit-tested).
  *
  * V2 slice 5 (ticket 05): /playdate/:id is the ONE public route — a
  * signed-out visitor may open a drop-in's public surface (the page itself
- * renders it; resolveAuthRedirect allows the path, the onboarding bounce
- * is signed-in-only). The signed-out "I'm coming" flow stores a return
- * target in session storage before the /login hop; this shell applies it
- * only once the gate has settled ('pass' — after a new signup's
- * /onboarding step, never during the ticket-06 loading state).
+ * renders it; resolveAuthRedirect allows the path). The signed-out "I'm
+ * coming" flow stores a return target in session storage before the /login
+ * hop; this shell applies it only once the gate has settled ('pass' —
+ * never during the ticket-06 loading state).
  *
  * Two slice-5 gates sit on top: a banned user (profile.banned_at set) is
  * rendered the suspended screen instead of any route (no app access), and
@@ -88,12 +86,13 @@ function ProtectedShell() {
   // session (no app access), 'pass' otherwise. V28 slice 2b dropped the
   // onboard decision — a settled signed-in parent passes whether or not
   // their home zip is set; the location requirement now lives at the write
-  // paths (lib/homeZip.ts's hasHomeZip).
+  // paths (lib/homeZip.ts's hasHomeZip). homeZipSet still feeds
+  // resolveOnboardingRedirect on the /onboarding route itself, which keys
+  // on the zip (its signature was deliberately left alone).
   const gate = resolveOnboardingGate({
     sessionLoading: loading,
     profileLoading,
     signedIn: session !== null,
-    homeZipSet,
     suspended,
   })
 
@@ -205,7 +204,7 @@ function ProtectedShell() {
   const redirect =
     pathname === ONBOARDING_PATH
       ? resolveOnboardingRedirect(signedIn, homeZipSet)
-      : shellRedirect(signedIn, homeZipSet, pathname)
+      : shellRedirect(signedIn, pathname)
   if (redirect !== null) return <Navigate to={redirect} replace />
 
   return (
@@ -241,8 +240,8 @@ function ProtectedShell() {
             </Link>
             <div className="flex min-w-0 items-center gap-3">
               {/* V11 ticket 06: the settings entry point — a gear to the
-                  family's editor. Signed-in only (the route is gated by the
-                  shell's auth + home-zip redirect), next to the sign-out control. */}
+                  family's editor. Signed-in only (the route is auth-gated by
+                  the shell), next to the sign-out control. */}
               {session !== null ? (
                 <Link
                   to="/settings"
@@ -330,10 +329,9 @@ function ProtectedShell() {
 /** A protected route bounces to its gate target unless it may render as-is. */
 function shellRedirect(
   signedIn: boolean,
-  homeZipSet: boolean,
   pathname: string,
 ): string | null {
-  const target = resolveProtectedRedirect(signedIn, homeZipSet, pathname)
+  const target = resolveProtectedRedirect(signedIn, pathname)
   return target === pathname ? null : target
 }
 
