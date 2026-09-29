@@ -332,3 +332,44 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   signature, and the acceptance greps are checkable -- the orchestrator ran them.
   The verifier lane closes the slice (claim -> output).
 - Slice 2b: verifier lane dispatched as the closing check.
+- Slice 2b: VERIFIER PASS (run 2c81c40e) at f6bf406. RAW OUTPUT: gate exit 0;
+  build ok; TEST 65 files / 1975 tests; LINT 0 errors / 80 warnings == EXACTLY the
+  baseline; a11y:focus PASS; steering-lint PASS; "GUARDS: PASS -- all
+  deterministic rules hold." Slice tests: onboarding.test.ts 18 tests exit 0, and
+  the verifier NAMED the two that matter -- the merged settled-gate test (line 98)
+  and the return-target pin (line 55) -- so their existence is observed, not
+  assumed. e2e onboarding-gate: 2 passed / 8.4s. Greps: _homeZipSet EMPTY; all 10
+  homeZipSet survivors individually CLASSIFIED as legitimate readers (none reads a
+  value nothing consumes); 'onboard' EMPTY; signature verbatim 2-parameter.
+  Test-count check: observed 1975 vs claimed, consistent -- and verified BY DIFF,
+  with the verifier openly stating it did NOT re-run the suite at the earlier
+  commit. Scope: f6bf406 = exactly the 3 declared files. Verdict PASS.
+  **SLICE 2B COMPLETE AND VERIFIED.**
+- PLAN DEFECT #8, FOUND BY MEASUREMENT while grounding 2c BEFORE dispatch (so no
+  builder was misled). The 2c block said "the no-zip case must be branched BEFORE
+  RadiusEmptyState, not inside it" -- written when the plan believed there was one
+  caller. MEASURED:
+  * TWO callers: FeedPage.tsx:1269 and PlaceDirectory.tsx:1117 (Browse, via
+    `radiusReason`, which FIRES for a no-zip parent precisely because every
+    place's distance is null). Branching in FeedPage would have fixed the feed and
+    left Browse's identical dead end standing.
+  * WHAT A NO-ZIP PARENT SEES TODAY: db.ts:582 `if (viewer.homeZip === null)
+    return []` -> posts.length === 0 -> RadiusEmptyState renders with copy derived
+    from the radius, EVERY escape button DISABLED (escapesDisabled) and the post
+    CTA suppressed. A lie ("Nothing within N miles yet.") whose only controls are
+    inert -- the exact "second dead end wearing a control's clothes" that
+    component's own doc exists to prevent. 2b is what made it reachable.
+  RULING: branch INSIDE RadiusEmptyState as an early return rendering the
+  LocationRequiredNotice built in 2a -- reuse, no new copy -- so both callers are
+  fixed by construction and no future caller can miss it. plan.md's 2c block
+  rewritten; three stale claims added to its scope.
+- A NEWLY FOUND STALE CLAIM THE REVIEWER'S SWEEP MISSED: src/lib/feed.ts:49
+  ("the onboarding gate keeps that state out of the feed"). Found by the
+  orchestrator's own grounding, not by the reviewer. Lesson: the recorded rule
+  "a reviewer's citations need checking" extends to its COVERAGE -- a sweep that
+  names nine files has not proven there are only nine.
+- A COVERAGE GAP NAMED, NOT PAPERED OVER: 2c ships a user-visible branch with NO
+  unit lane -- 60 test files, ALL `.ts`, ZERO `.tsx` -- and no no-zip e2e fixture
+  exists until 3b. Assigned rather than shrugged: Slice 7's no-zip e2e must now
+  assert `location-required-notice` renders and `empty-radius-state` does not.
+- Slice 2c dispatched.

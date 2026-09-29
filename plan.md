@@ -377,24 +377,56 @@ happening. The helpers are the blast radius here too.
 
 - **Objective:** a no-zip parent's feed is honest — stated, with a way out —
   rather than empty, broken, or silently radius-zero.
-- **Files in scope:** `src/pages/FeedPage.tsx`,
-  `src/components/RadiusEmptyState.tsx` — note the feed card's ping toggle is
-  **already guarded by 2a**; this slice is the no-zip *feed state* only. The
-  slice that owns a file owns its stale claims: fix `FeedPage.tsx:491`
-  ("The shell's onboarding gate keys on home_zip" — it no longer does).
-- **Approach:** distinguish "no home ZIP yet" from "no drop-ins in range". The
-  former needs its own copy and its action is the area card; the latter keeps
-  `RadiusEmptyState` as it is. `RadiusEmptyState` takes `radiusMiles` as a prop
-  and reads `profile?.home_zip ?? ''`, so the no-zip case must be branched
-  *before* it, not inside it.
+- **Files in scope:** `src/components/RadiusEmptyState.tsx`,
+  `src/pages/FeedPage.tsx`, and `src/lib/feed.ts` (**comment only** — its
+  `RadiusViewer` doc at ~line 49 still says "the onboarding gate keeps that state
+  out of the feed"). The feed card's ping toggle is **already guarded by 2a**;
+  this slice is the no-zip *state* only. The slice that owns a file owns its
+  stale claims: fix `FeedPage.tsx:491` ("The shell's onboarding gate keys on
+  home_zip" — it no longer does) and `RadiusEmptyState.tsx:79-86`, whose
+  belt-and-braces comment says "the shell's onboarding gate keeps that state off
+  these pages" — **2b is what made it reachable, so it is a flow now, not
+  belt-and-braces.**
+- **⚠️ THE MEASURED BEHAVIOUR (this corrects the plan's own first draft).**
+  `db.ts:582` — `if (viewer.homeZip === null) return []`. So a no-zip parent's
+  feed query returns an **empty list**, `posts.length === 0` fires, and
+  **`RadiusEmptyState` renders today** with copy derived from the radius, every
+  escape button **disabled** (`escapesDisabled`) and the post CTA suppressed. A
+  lie ("Nothing within N miles yet.") whose only controls are inert — precisely
+  the "second dead end wearing a control's clothes" this component's own doc
+  exists to prevent. **2b is what made it reachable; before 2b the wall kept a
+  no-zip parent off the feed entirely.**
+- **⚠️ THE BRANCH GOES *INSIDE* `RadiusEmptyState`, NOT BEFORE IT.** The plan
+  first said "branch before it" when it believed there was one caller. There are
+  **two**: `FeedPage.tsx:1269` and `PlaceDirectory.tsx:1117` (Browse, via
+  `radiusReason` — which fires for a no-zip parent precisely because every place
+  has a null distance). Branching in `FeedPage` alone would fix one surface and
+  leave **Browse's identical dead end** standing. `RadiusEmptyState`'s doc
+already claims to be "ONE implementation for the feed ("Near you") and Browse" —
+  and the component already reads `profile.home_zip` for `escapesDisabled`, so
+  the no-zip case is already its business. **One early return fixes both callers
+  and no future caller can miss it.**
+- **Approach:** when `!hasHomeZip(profile?.home_zip)`, `RadiusEmptyState`
+  early-returns **`<LocationRequiredNotice />`** — the component 2a already built
+  for exactly this message (presentational, one definition, a real `/onboarding`
+  link, 44px floor, focus cue). **Reuse it; do not write new copy and do not
+  invent a second notice.** With a zip present, render exactly what it renders
+  today.
 - **Acceptance criteria:**
-  - A no-zip parent opening the feed sees a stated "we don't know where you are
-    yet" message with a path to set a location — not an error, and not the
-    radius empty state.
-  - A parent WITH a zip sees exactly today's feed and today's radius empty
-    state, byte-identical.
-  - No location-required *wall* on the feed: it stays readable and ignorable
-    (decision 3), and the message is never a modal or a redirect.
+  - A no-zip parent opening the feed sees a stated "we need a home location"
+    message with a real path to set one — **not** the radius empty state, not an
+    error, and **not a disabled control**.
+  - **The same is true on Browse**, by construction rather than by a second
+    branch — and the slice must verify that, not assume it: name how you checked
+    `PlaceDirectory`'s path.
+  - A parent WITH a zip sees today's feed and today's radius empty state
+    **byte-identical**, including the escape buttons and their busy/error states.
+  - The `LocationRequiredNotice` data-testid is what renders in the no-zip case,
+    and `empty-radius-state` is **not** rendered then.
+  - No location-required *wall*: the state stays readable and ignorable
+    (decision 3), never a modal, never a redirect. The feed itself is still
+    reachable and the header/nav still work.
+  - `feed.ts`'s change is comment-only — no behaviour line moves.
 - **Verification command:** `npm run verify` and
   `npx playwright test e2e/zip-radius.e2e.ts`
 - **Budget:** one local builder context.
@@ -585,8 +617,13 @@ extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**
   - **A no-zip parent is pinned at the browser level.** Slice 2b's reviewer
     flagged that *nothing* outside the unit tests pins "a no-zip parent reaches
     every route" — the property has no e2e catch at all, and the fixtures that
-    could express it arrive in 3b. Add one. If it cannot be built, say why in the
-    report rather than leaving the gap unnamed.
+    could express it arrive in 3b. Add one. **It must also assert Slice 2c's
+    branch**, because 2c cannot test it otherwise: the repo unit-tests only
+    `.ts` (there are **zero `.tsx` test files** in 60 test files), so a
+    component-level branch has no unit lane. The e2e must check that a no-zip
+    parent's feed renders `location-required-notice` and **not**
+    `empty-radius-state`. If it cannot be built, say why in the report rather
+    than leaving the gap unnamed.
   - The **full** e2e suite is green (not just targeted specs) — this is the one
     slice whose verification is the whole lane, because the card sequence is
     what changed.
