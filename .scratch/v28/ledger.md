@@ -1378,3 +1378,52 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   App.tsx:86.
 - Slice 5: reviewer lane dispatched (run f6f28041) over both commits, with the vacuity
   question for the rewritten signup-zip-fallback spec front and centre.
+- **SLICE 5: REVIEW PASS (run f6f28041)** over 45fe1a9 + 3f42c8f, no blocking
+  findings. Verified: both legs behave per decision 9; the radius picker maps exactly
+  RADIUS_MILES_OPTIONS and defaults to DEFAULT_RADIUS_MILES; validateHomeZip gates
+  inline in BOTH paths; the card reads 5 of 5 from the module; TYPED-ZIP-WINS has a
+  precise verified meaning (typing a zip short-circuits the lookup entirely at
+  :374-381, so a later resolution cannot displace it); addressFieldError is reused not
+  orphaned; the four dead symbols are gone with only permitted retirement notes;
+  geocode.ts:11 WAS fixed; nothing references dropin.signup.zip-unresolved in shipped
+  code/docs/specs/config; scope exactly 8 + 2 files; no stray console.log/TODO.
+- **THE VACUITY CLASS HAS A SECOND OCCURRENCE, SO THE REMEDY IS A GUARD, NOT ANOTHER
+  FIX.** signup-zip-fallback.e2e.ts:148-149 asserts toHaveCount(0) for the ZIP
+  placeholder and the fallback-note testid ON THE FEED, where neither can render
+  (OnboardingPage.tsx:812, :790) -- structurally guaranteed counts, i.e. DECORATION,
+  the same class as the batch's first vacuous assertion (the old :106). The spec's REAL
+  pin is :141-145 (the feed, pathname /, feed-location-control showing the marker zip
+  with NO ZIP TYPED ANYWHERE IN THE TEST) plus test 2, so the spec still means what it
+  claims and the two lines are CUT rather than patched. But the class recurring is the
+  signal: the repo's own doctrine (docs/agents/borrowed-guards.md) says a rule that
+  parses source ships a .check.mjs proving the checker fires -- so SLICE 7a BUILDS A
+  GUARD against vacuous count-0 assertions. scripts/guards/ already holds
+  fixture-marker-guard.mjs + .check.mjs and no-bypass-guard.sh, so the pattern exists.
+- **A SECOND GUARD, FOR A CLASS THAT HAS NOW COST THREE ROUNDS.** The reviewer notes it
+  is the THIRD time a renamed UI string left a spec waiting on a heading that no longer
+  renders (fixtures.ts, auth.setup.ts, onboarding-resume.e2e.ts). THAT CLASS IS EXACTLY
+  THE ORCHESTRATOR'S OWN SCOPE-LINE FAILURE -- three times it named files instead of
+  telling the builder to grep. SLICE 7a BUILDS THE GUARD: check the string literals
+  used in e2e/ locators (getByRole heading names, getByText, getByPlaceholder) against
+  the strings that still exist in src/, and report the ones that do not.
+- **THE REVIEWER CITED A DOCUMENT THAT DOES NOT EXIST.** It prefixed two findings with
+  `ladder:` and cited **docs/ladder.md**. VERIFIED: there is no docs/ladder.md, and the
+  word is defined NOWHERE in docs/ or .opencode/agents/ -- the only source hits are
+  ordinary English ("the option ladder" in feed.ts:2237; "one long if ladder" in
+  plan.md:53, which I wrote). THE SUBSTANCE OF BOTH PROPOSALS IS SOUND and is assigned
+  to Slice 7a on its merits; THE CITATION IS INVENTED AND MUST NOT BE PROPAGATED into a
+  brief, or a builder spends a context hunting a file that isn't there. The batch's
+  FIFTH "verify the citation" instance and the first from a reviewer that would have
+  cost a builder real work.
+- Assignments: SLICE 7a gains the two guards, the two decorative lines cut, a comment
+  marking the never-settling bounded-escape test load-bearing (ONLY 1 OF THE 4 TESTS is
+  decisive against the re-introduced up-front cancel -- the other three pass with the
+  bug present, so deleting the one unpins the regression), and a pre-resolved-zip
+  option for finishSignup (its current default injects a REAL Nominatim request into
+  all 17 consumers, bounded at 10s and ~170s suite-wide worst case, with a small tail
+  risk that the fake address resolves into the seeded gazetteer; the fix is
+  fixture-level route interception fulfilling the caller's zip, which
+  signup-zip-fallback.e2e.ts:95-103 already demonstrates). SLICE 7 gains
+  OnboardingPage.tsx:262 (false since 2b) and docs/social-login-setup.md:77 (still says
+  "Set your location").
+- Slice 5: verifier lane dispatched.

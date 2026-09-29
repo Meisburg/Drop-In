@@ -1557,3 +1557,65 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
   so the second clause is false. Recorded rather than fixed here: it is a comment in a
   file this slice owned but a claim **2b** made false — the same "a correct comment
   expired by someone else's correct change" pattern as `App.tsx:86`.
+
+- 2026-09-29 — **Slice 5: REVIEW PASS** (run `f6f28041`) over `45fe1a9` + `3f42c8f`,
+  no blocking findings. Verified: **the card's behaviour is real in both legs** — a
+  resolvable address writes `home_zip` with **no typed ZIP**, an unresolvable one
+  reveals the field + notice and **never blocks and never clears the typed address**,
+  the radius picker maps exactly `RADIUS_MILES_OPTIONS` and defaults to
+  `DEFAULT_RADIUS_MILES`, `validateHomeZip` gates **inline in both** the typed and the
+  resolved path, and the card reads `5 of 5` plus `FIRST_RUN_COPY.area` (with the field
+  labels and the notice accepted as pre-existing carry-overs). **Typed-ZIP-wins has a
+  precise, verified meaning**: typing a ZIP short-circuits the lookup entirely
+  (`:374-381`), so a later resolution cannot displace it. `addressFieldError` is
+  **reused, not orphaned**; the four dead symbols are gone with only permitted
+  retirement notes; **`geocode.ts:11` was fixed**; no `dropin.signup.zip-unresolved`
+  reference survives in shipped code, docs, specs or config; scope is exactly 8 + 2
+  files; no stray `console.log`/TODO.
+- 2026-09-29 — **⚠️ THE VACUITY CLASS HAS A SECOND OCCURRENCE — SO THE REMEDY IS A
+  GUARD, NOT ANOTHER FIX.** `e2e/signup-zip-fallback.e2e.ts:148-149` asserts
+  `toHaveCount(0)` for the ZIP placeholder and the fallback-note testid **on the feed**,
+  where neither element can ever render (`OnboardingPage.tsx:812`, `:790`) — so both
+  counts are **structurally guaranteed**, i.e. **decoration** — the **same class as the
+  old `:106`, the batch's first vacuous assertion.** The spec's *real* pin is
+  `:141-145` (the feed, pathname `/`, `feed-location-control` showing the marker zip
+  with **no ZIP typed anywhere in the test**), plus test 2 which is fully reachable, so
+  **the spec still means what it claims** and the two lines are cut rather than
+  patched. **BUT the class recurring is the signal: the repo's own doctrine
+  (`docs/agents/borrowed-guards.md`) says a rule that parses source ships a `.check.mjs`
+  proving the checker fires. So Slice 7a builds a GUARD against vacuous count-0
+  assertions** — `scripts/guards/` already holds `fixture-marker-guard.mjs` +
+  `.check.mjs` and `no-bypass-guard.sh`, so the pattern and the runner exist.
+- 2026-09-29 — **⚠️ AND A SECOND GUARD, FOR A CLASS THAT HAS NOW COST THIS BATCH THREE
+  ROUNDS.** The reviewer notes it is the **third** time a renamed UI string left a spec
+  waiting on a heading that no longer renders (`fixtures.ts`, `auth.setup.ts`,
+  `onboarding-resume.e2e.ts`). **That class is exactly the orchestrator's own
+  scope-line failure** — three times it named files instead of telling the builder to
+  grep. **Slice 7a builds the guard**: check the string literals used in `e2e/`
+  locators (`getByRole('heading', { name: … })`, `getByText(…)`, `getByPlaceholder(…)`)
+  against the strings that still exist in `src/`, and report the ones that do not. A
+  heuristic with a documented false-positive story is still worth far more than a
+  fourth round of the same bug.
+- 2026-09-29 — **⚠️ THE REVIEWER CITED A DOCUMENT THAT DOES NOT EXIST, AND IT TOOK A
+  GREP TO CATCH.** It prefixed two findings with `ladder:` and cited
+  **`docs/ladder.md`**. Verified: **there is no `docs/ladder.md`**, and the word is
+  defined **nowhere** in `docs/` or `.opencode/agents/` — the only source hits are
+  ordinary English ("the option ladder" in `feed.ts:2237`, "one long, carefully-ordered
+  `if` ladder" in this plan). **The substance of both proposals is sound and is
+  assigned to Slice 7a on its merits; the citation is invented and must NOT be
+  propagated into a brief**, or a builder will spend a context hunting a file that
+  isn't there. Recorded because it is the batch's **fifth** "verify the citation"
+  instance and the **first from a reviewer that would have cost a builder real work.**
+- 2026-09-29 — **Assignments from 5's review.** **Slice 7a** gains: cut
+  `signup-zip-fallback.e2e.ts:148-149`; **the two guards** above; a **comment marking
+  the never-settling bounded-escape test as load-bearing** (only **1 of the 4** tests
+  is decisive against the re-introduced up-front cancel — the other three pass with the
+  bug present, so deleting the one would unpin the regression); and a
+  **pre-resolved-zip option for `finishSignup`**, because its current default injects a
+  **real Nominatim request into all 17 consumers** (bounded at 10 s, ≈170 s suite-wide
+  worst case) with a small tail risk that the fake address resolves into the seeded
+  gazetteer — the fix is fixture-level route interception fulfilling the caller's zip,
+  which `signup-zip-fallback.e2e.ts:95-103` already demonstrates. **Slice 7** gains
+  `OnboardingPage.tsx:262` (false since **2b**, already named) and
+  **`docs/social-login-setup.md:77`**, which still calls the step "Set your location".
+- 2026-09-29 — Slice 5: verifier lane dispatched as the closing check.
