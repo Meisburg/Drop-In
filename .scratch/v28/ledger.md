@@ -756,3 +756,45 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
     display_name and a zip requires a profile row, so finished <=> homeZipSet" --
     a TRUE premise chain whose conclusion stopped being true when decision 5
     moved the area card to the END. The plan was self-consistent and wrong.
+- Slice 3c: BUILT at 0b0ad3d (2 files, +197/-8: src/App.tsx, src/pages/OnboardingPage.tsx --
+  scope exactly as declared). Reviewer dispatched (run 0362cb7c).
+- ORCHESTRATOR PRE-CHECKS, all verified against the tree rather than the report:
+  * `suggestedHandle(session?.user.user_metadata ?? null, null)` -- the one-argument
+    fix exactly as specified, with the helper's contract intact and a comment
+    saying WHY the caller changes rather than the helper.
+  * `src/lib/oauth.ts` is NOT in the diff, so suggestedHandle/splitSuggestedName
+    are untouched as required.
+  * THE NUDGE IS MOUNTED ON THE navRenders SEAM (App.tsx:525-526,
+    `{navRenders ? (<FirstRunNudge .../>) : null}`), so a first run shows NEITHER
+    the push prompt nor the nudge -- decisions 10 and 16 both hold.
+  * `.scratch/v28/verify-nudge-3c.mjs` is genuinely uncommitted (.gitignore:50).
+    NOTE: `grep -c` counted 1 because the COMMIT MESSAGE names the file --
+    the `--stat` file list is the evidence, not the grep. Recorded because a
+    positive grep on a commit is not proof a file is in it.
+  * The lazy read is honest: one `listKids` fired only when the nudge is otherwise
+    eligible, and a FAILED read sets null (hide) rather than guessing a card --
+    exactly what the brief demanded.
+- FOUR THINGS SENT TO THE REVIEWER AS THE SHARP QUESTIONS, because they are the
+  ones a builder's own report cannot settle:
+  1. **THE NUDGE LINKS INTO CARDS THAT DO NOT EXIST YET.** Slices 4 (kids,
+     photo), 5 (area) and 6 (finish) are unbuilt, so today nextUnfinishedCard
+     returns 'kids'/'photo'/'area' and the link goes to /onboarding, which still
+     renders the OLD page. Whether FIRST_RUN_COPY names a specific card (a claim
+     about a step that does not exist) or is generic decides whether this is a
+     LIE, a harmless invite, or a DEAD END. This batch exists to kill exactly
+     that class.
+  2. **`hasPhoto` IS AN INLINE PREDICATE** -- `avatar_url !== undefined && !==
+     null && !== ''` -- in React, when this repo already set the precedent for
+     exactly this shape in src/lib/homeZip.ts's `hasHomeZip`. Build-law question.
+  3. **THE NEW LINT WARNING IS BASELINE MOVEMENT** (80 -> 81,
+     react(set-state-in-effect)). The builder called it "consistent with the
+     codebase's pattern", which may be true and is NOT the same as acceptable --
+     my own rule is that the count is adjudicated, not waved.
+  4. **The mutual-exclusion residual** (the held push note can co-render with the
+     nudge after "Not now"): verified real by the builder's own account, bounded,
+     and OUTSIDE the interview -- but the criterion says "never". Judged by a
+     fresh reader, not by me.
+- Also noted: the builder's SIGNED_IN watch-item answer is a citation of
+  supabase-js's internals (signUp awaits _notifyAllSubscribers before resolving)
+  rather than a measurement in this repo -- sent to the reviewer to judge sound
+  vs merely plausible.
