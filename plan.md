@@ -142,11 +142,28 @@ not invent one.**
 
 ### The gate (pinned)
 
-- `resolveProtectedRedirect` **loses its onboarding bounce.** The ZIP no longer
-  redirects anyone away from any route.
-- `resolveOnboardingRedirect` keeps its signed-out → `/login` behaviour and
-  **loses** its "already has a zip → `/`" behaviour, which becomes "already
-  finished → `/`" (i.e. `nextUnfinishedCard(facts) === null`).
+**There are THREE gate functions, all in `src/lib/onboarding.ts`. Miss one and
+the app half-gates.** The shell does not call `resolveProtectedRedirect`; it
+calls `resolveOnboardingGate`.
+
+- `resolveProtectedRedirect(signedIn, homeZipSet, intendedPath)` **loses its
+  onboarding bounce** — the `if (signedIn && needsOnboarding(...)) return
+  ONBOARDING_PATH` branch goes. A no-zip parent renders every protected route.
+- `resolveOnboardingGate(state)` **loses its `'onboard'` outcome** — that branch
+  becomes `'pass'`. **Its `'loading'` and `'suspended'` outcomes are
+  load-bearing and must not be touched:** `'loading'` is the cold-load race fix
+  that `e2e/onboarding-gate.e2e.ts` pins (a signed-in parent cold-loading
+  `/profile` must not bounce through `/onboarding` and lose the requested
+  route), and `'suspended'` is the banned-profile screen.
+- `resolveOnboardingRedirect(signedIn, homeZipSet)` **keeps its exact signature
+  and loses nothing.** Its "already has a zip → `/`" behaviour is *already* the
+  right behaviour: a profile row requires a `display_name` and a zip requires a
+  profile row, so `finished ⟺ homeZipSet` in practice. **Do not re-key this
+  function on `FirstRunFacts`** — it would add a dependency and change no
+  behaviour, while forcing the builder to redesign a signature this plan does
+  not authorize.
+- `needsOnboarding(homeZipSet)` stays as the shared predicate for the **write**
+  gates. It stops being a route gate.
 - The location requirement moves onto the **going-ping** and **host-a-drop-in**
   actions, which ask for it in place.
 
@@ -163,6 +180,27 @@ parent (places with hours preferred), each offering a path to host a drop-in
 there. When there are no nearby places at all, it falls back to the flow's
 honest empty state — never a blank screen and never a claim about drop-ins that
 do not exist.
+
+### Batch invariant: `e2e/fixtures.ts` is a PER-SLICE obligation
+
+`e2e/fixtures.ts` owns the two shared helpers that every viewer-based spec
+depends on — **18 spec files call `signUpViewer` and 18 call `finishSignup`**:
+
+- `signUpViewer` drives `input[autocomplete="given-name"]`,
+  `[autocomplete="family-name"]` and `[autocomplete="street-address"]`.
+  **All three fields die in this batch.** It must be rewritten in the slice that
+  removes them, not at the end.
+- `finishSignup` waits for the feed **or** the `Set your location` heading, and
+  its own doc says those are the only two legitimate endings. **Every card this
+  batch adds sits between signup and the location step**, so the helper must
+  learn each new hop *in the same slice that adds it*.
+
+**Therefore: every slice that changes the card sequence updates
+`e2e/fixtures.ts` inside that same slice, and its verification includes the
+specs it affects.** A slice that leaves the suite red is not done. This is the
+V20 ticket 06 lesson repeating — fixing the signup write broke ~19 specs with
+two-minute hangs because the helpers assumed a branch that had stopped
+happening. The helpers are the blast radius here too.
 
 ## Slices
 
@@ -202,15 +240,18 @@ do not exist.
   `src/pages/FeedPage.tsx`, `src/pages/PlaydateDetailPage.tsx`,
   `src/pages/NewPlaydatePage.tsx`, `src/components/RadiusEmptyState.tsx` (or the
   file that owns the empty-feed copy)
-- **Approach:** delete the bounce from `resolveProtectedRedirect`; change
-  `resolveOnboardingRedirect` to key on the finished run rather than the zip;
-  add a location-required prompt at the two write sites. The no-zip feed state
-  must be honest ("we don't know where you are yet") and offer the area card.
+- **Approach:** delete the bounce from `resolveProtectedRedirect`; drop the
+  `'onboard'` outcome from `resolveOnboardingGate`; add a location-required
+  prompt at the two write sites. The no-zip feed state must be honest ("we don't
+  know where you are yet") and offer the area card.
 - **Acceptance criteria:**
   - `resolveProtectedRedirect(true, false, '/inbox')` returns `'/inbox'` — a
     no-zip parent is not redirected.
-  - `resolveOnboardingRedirect(true, finished=false)` is `null`; with
-    `finished=true` it is `'/'`; signed out it is `LOGIN_PATH`.
+  - `resolveOnboardingGate` never returns `'onboard'`: `'pass'` for a settled
+    signed-in parent, `'loading'` while a load is in flight, `'suspended'` for a
+    banned profile.
+  - `resolveOnboardingRedirect`'s signature is unchanged — `(true, false)` →
+    `null`, `(true, true)` → `'/'`, `(false, true)` → `LOGIN_PATH`.
   - A no-zip parent opening the feed sees a stated "we don't know where you are
     yet" state with a path to set it — not an empty radius state and not an
     error.
@@ -222,36 +263,58 @@ do not exist.
   cleanly in one, split the feed state from the write gates.
 - **Depends on:** Slice 1 (consumes `nextUnfinishedCard`)
 
-### Slice 3: The card shell, the account card, and the name card
+### Slice 3a: The card shell and the name card
 
-- **Objective:** a new parent creates an account with email + password and is
-  asked their name on the next card — the same card chrome, in one flow.
+- **Objective:** the card chrome exists, and `/onboarding`'s existing
+  "what's your name" branch renders in it.
 - **Files in scope:** `src/components/FirstRunCard.tsx` (new),
-  `src/pages/LoginPage.tsx`, `src/pages/OnboardingPage.tsx`, `src/App.tsx`
-  (the resume nudge lands in `ProtectedShell`, which is defined in
-  `src/App.tsx` — **there is no `AppShell.tsx`**)
-- **Approach:** build the presentational card chrome first (progress, title,
-  body, children slot, primary action, optional Skip, back). Trim `/login`'s
-  signup form to email + password and label it `1 of 5`. On `/onboarding`,
-  replace the existing "no profiles row → What's your name?" branch with the same
-  card, labelled `2 of 5`. That branch **already exists** for social sign-in —
-  generalize it, do not rewrite it. Add the shell's resume nudge.
+  `src/pages/OnboardingPage.tsx`
+- **Approach:** build the presentational chrome first (progress, title, body,
+  children slot, primary action, optional Skip, back). On `/onboarding`, replace
+  the existing "no profiles row → What's your name?" branch (`OnboardingPage.tsx`
+  ~line 312) with the same card, labelled `2 of 5`. That branch **already exists**
+  for social sign-in — generalize it, do not rewrite it. **Keep a
+  `Continue`-matching primary label**: `finishSignup` and several specs locate
+  it by `/^Continue/`.
 - **Acceptance criteria:**
-  - Signup collects email + password only; the first-name, last-name and address
-    fields are gone from `/login`.
-  - Signup success lands on `/onboarding`, not `/`.
   - The name card creates the profile row exactly as today
     (`createProfile(composeDisplayName(...))`), including the
     `HandleTakenError` message on a taken name.
-  - The name card is labelled `2 of 5`; signup is labelled `1 of 5`.
-  - The shell shows a dismissible "finish setting up" line for an unfinished
-    run, and dismissing it does not hide it forever within the session.
+  - The name card is labelled `2 of 5`.
+  - The chrome carries no domain logic — no zip/handle/kid rules inside
+    `FirstRunCard.tsx`.
   - Tap targets are ≥44px, inputs ≥16px, errors use `role="alert"` with the
     shared `fieldA11y`/`errorId` seams.
-- **Verification command:** `npm run verify` and
-  `npx playwright test e2e/golden-path.e2e.ts`
-- **Budget:** one local builder context, possibly two (shell, then cards).
-- **Depends on:** Slices 1–2
+- **Verification command:** `npm run verify`
+- **Budget:** one local builder context.
+- **Depends on:** Slice 1
+
+### Slice 3b: The account card, the trimmed signup, and the resume nudge
+
+- **Objective:** a new parent creates an account with email + password and lands
+  on the name card — and the shared spec helpers move with them.
+- **Files in scope:** `src/pages/LoginPage.tsx`, `src/App.tsx` (the resume nudge
+  lands in `ProtectedShell`, which is defined in `src/App.tsx` — **there is no
+  `AppShell.tsx`**), `src/pages/OnboardingPage.tsx`, **`e2e/fixtures.ts`**
+- **Approach:** trim `/login`'s signup to email + password, label it `1 of 5`,
+  and navigate to `/onboarding` on success. Add the shell's dismissible
+  "finish setting up" nudge. Rewrite `signUpViewer` to drop the three now-absent
+  fields and walk to the name card; teach `finishSignup` the name hop.
+- **Acceptance criteria:**
+  - Signup collects email + password only; the given-name, family-name and
+    street-address fields are gone from `/login`.
+  - Signup success lands on `/onboarding`, not `/`.
+  - Signup is labelled `1 of 5`; the name card is `2 of 5`.
+  - `/login` no longer imports `composeDisplayName`.
+  - `signUpViewer` no longer touches any removed selector, and `finishSignup`
+    reaches the feed from the new sequence.
+  - The shell's "finish setting up" line **never renders at the same time as
+    `PushOptInPrompt`** (decision 10 has teeth: both live in the shell now), and
+    dismissing it does not hide it forever within the session.
+- **Verification command:** `npm run verify`, then
+  `npx playwright test e2e/golden-path.e2e.ts e2e/onboarding-gate.e2e.ts`
+- **Budget:** one local builder context.
+- **Depends on:** Slices 1–2, 3a
 
 ### Slice 4: The kids card and the photo card
 
@@ -259,10 +322,12 @@ do not exist.
   with a working Skip.
 - **Files in scope:** `src/pages/OnboardingPage.tsx`,
   `src/components/useCropStep.tsx` (reused, not rebuilt — **note the `.tsx`
-extension; there is no `useCropStep.ts`**)
-- **Approach:** lift the existing kid-rows and avatar-upload logic verbatim into
-  the card chrome. The crop step is **reused as-is** — it already validates size
-  and type before decoding. Skipping advances without writing.
+extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**
+- **Approach:** lift the existing kid-rows and avatar-upload logic into the card
+  chrome. The crop step is **reused as-is** — it already validates size and type
+  before decoding. Skipping advances without writing. **Note this is a
+  reorder, not a verbatim lift:** the existing page runs photo (`~line 470`)
+  before kids (`~line 532`); the chosen card order is kids then photo.
 - **Acceptance criteria:**
   - The kids card accepts multiple kids (first name + age), enforces
     `MAX_KIDS_PER_PROFILE`, and reuses the existing `validateKid` rules
@@ -272,22 +337,35 @@ extension; there is no `useCropStep.ts`**)
     shows the existing error and does not trap the card.
   - A failure writing kids or photo is surfaced and does not block Continue.
   - Cards read `3 of 5` and `4 of 5`.
+  - `finishSignup` walks the new kids and photo hops.
 - **Verification command:** `npm run verify` and
   `npx playwright test e2e/avatar.e2e.ts`
 - **Budget:** one local builder context.
-- **Depends on:** Slice 3
+- **Depends on:** Slice 3b
 
 ### Slice 5: The area card
 
 - **Objective:** card 5 collects a location by address first, ZIP as fallback,
   plus a radius.
 - **Files in scope:** `src/pages/OnboardingPage.tsx`, `src/lib/geocode.ts`
-  (reused), `src/lib/feed.ts` (reused)
+  (reused), `src/lib/feed.ts` (reused), `src/lib/onboarding.ts` +
+  `src/lib/onboarding.test.ts` (retiring the fallback flag),
+  `e2e/signup-zip-fallback.e2e.ts`, **`e2e/fixtures.ts`**
 - **Approach:** move the address field and its `zipFromAddressQuery` geocode out
   of `/login` and into this card. An address that does not resolve reveals the
   ZIP field with the existing unresolved-address notice. Radius keeps
   `RADIUS_MILES_OPTIONS` and `DEFAULT_RADIUS_MILES`.
+  **This slice retires the signup-ZIP-fallback mechanism.**
+  `SIGNUP_ZIP_FALLBACK_KEY`, `markSignupZipUnresolved` and
+  `consumeSignupZipUnresolved` exist for exactly one purpose: carrying "your
+  signup address didn't resolve" across the `/login` → `/onboarding` route
+  change. **The address and its failure now live on the same card, so the
+  crossing is gone.** Remove all three symbols and their tests, and repurpose
+  `e2e/signup-zip-fallback.e2e.ts` to assert the in-card notice — *update, never
+  delete*.
 - **Acceptance criteria:**
+  - The three fallback symbols are gone, and nothing references
+    `dropin.signup.zip-unresolved`.
   - Entering a resolvable address sets `home_zip` without the parent typing a
     ZIP.
   - An unresolvable address reveals the ZIP field and the existing notice; it
@@ -297,16 +375,17 @@ extension; there is no `useCropStep.ts`**)
   - `validateHomeZip` gates the ZIP against the seeded gazetteer, inline.
   - The card reads `5 of 5`, and finishing it lands on the finish card.
 - **Verification command:** `npm run verify` and
-  `npx playwright test e2e/address-maps.e2e.ts e2e/zip-radius.e2e.ts`
+  `npx playwright test e2e/address-maps.e2e.ts e2e/zip-radius.e2e.ts e2e/signup-zip-fallback.e2e.ts`
 - **Budget:** one local builder context.
-- **Depends on:** Slice 3
+- **Depends on:** Slice 3b
 
 ### Slice 6: The finish card — places near you
 
 - **Objective:** the flow ends on up to three real nearby places, not an empty
   feed.
 - **Files in scope:** `src/pages/OnboardingPage.tsx`, `src/lib/places.ts`
-  (reused read path), the finish card's presentational component
+  (reused read path), the finish card's presentational component,
+  **`e2e/fixtures.ts`**
 - **Approach:** reuse the places read the directory already uses — do not add a
   query shape. Prefer places with hours. Each place offers a path into hosting a
   drop-in there; the CTA must not be a dead end for a parent with no location.
@@ -317,32 +396,34 @@ extension; there is no `useCropStep.ts`**)
     empty state and still offers a next step.
   - The card makes no claim about upcoming drop-ins — there are none.
   - Reaching this card ends the run: `nextUnfinishedCard` is `null` afterwards.
+  - `finishSignup` passes through the finish card to reach the feed.
 - **Verification command:** `npm run verify`
 - **Budget:** one local builder context.
 - **Depends on:** Slices 1, 5
 
-### Slice 7: The lane cleanup — specs, playtest, docs
+### Slice 7: The lane cleanup — specs and docs
 
-- **Objective:** every lane that pinned the old behaviour is updated in the same
-  batch, so nothing is left asserting a flow that no longer exists.
-- **Files in scope:** `e2e/onboarding-gate.e2e.ts` and
-  `e2e/signup-zip-fallback.e2e.ts` (both pin behaviour this batch changes),
-  `e2e/zip-radius.e2e.ts`, `e2e/golden-path.e2e.ts`, `e2e/avatar.e2e.ts`, plus
-  any other spec that pins signup's fields or the ZIP redirect;
-  `.scratch/playtest/routes.json` only if reachability changed; `docs/`,
-  `task-state.md`
-- **Approach:** find every spec that pins signup's name/address fields or the
-  ZIP redirect and update it to the new contract — **update, never delete**. The
-  `ocr` rules file expects new routes in the playtest list; `/onboarding` is not
-  a new route, so leave `routes.json` alone unless reachability genuinely moved.
+- **Objective:** every remaining lane that pinned the old behaviour is updated,
+  so nothing is left asserting a flow that no longer exists.
+- **Files in scope:** the specs that assert signup's fields or the ZIP redirect
+  beyond what `e2e/fixtures.ts` already covers, `docs/`, `task-state.md`,
+  `.scratch/v28/ledger.md`
+- **Approach:** grep `e2e/` for specs that assert the old field list or the
+  bounce, and update them to the new contract — **update, never delete**. The
+  bulk of this work belongs to the slices that caused it (see the batch
+  invariant); this slice catches only what those missed.
 - **Acceptance criteria:**
   - No spec asserts that signup collects a name or an address.
   - No spec asserts that a no-zip parent is redirected to `/onboarding`.
+  - The **full** e2e suite is green (not just targeted specs) — this is the one
+    slice whose verification is the whole lane, because the card sequence is
+    what changed.
   - `npm run verify` green, including `a11y:focus`, `steering-lint` and GUARDS.
   - The batch's decisions are recorded in `task-state.md` and the ledger.
-- **Verification command:** `npm run verify`
-- **Budget:** one local builder context.
-- **Depends on:** Slices 2–6
+- **Verification command:** `npm run verify` and `npx playwright test`
+- **Budget:** one local builder context, plus one full e2e run (~8–10 min under
+  `nice -n 19`).
+- **Depends on:** Slices 3b–6
 
 ### Slice 8 (human, not a builder): seed real drop-ins, then playtest
 
@@ -360,16 +441,34 @@ extension; there is no `useCropStep.ts`**)
 
 ## Risks / open questions
 
+- **The playtest lane cannot reach this flow, so decision 13's checkpoint rests
+  entirely on the human.** `/onboarding` is not in `.scratch/playtest/routes.json`
+  and cannot be: a signed-out visitor to it is redirected to `/login`, so the
+  routes sweep can never see the cards. Leave `routes.json` alone — but be clear
+  that **Slice 8's human playtest is the only lane that verifies the flow**, and
+  decision 13 is weaker than it looks.
+- **Open (not yet decided): does the interview belong inside `ProtectedShell`?**
+  `/onboarding` is mounted inside `ProtectedShell`, so cards 2–5 render with the
+  app's bottom navigation and header. For an interview that is chrome leaking in
+  early — and now that a no-zip parent can browse (decision 3), the nav actively
+  competes with the cards. Moving `/onboarding` outside the shell's chrome (keeping
+  only the auth guard) is the cleaner shape, at the cost of re-implementing the
+  gate. **Recommendation: worth doing, but it is a design call for the human, not
+  a builder.**
 - **The ending depends on content that does not exist yet.** Slice 6 is
   verifiable with a fixture, but the *payoff* is only real after Slice 8. Do not
   let a green Slice 6 read as "the cold start is solved."
 - **Slice 2 is cross-cutting.** Moving the gate touches the feed, the detail
   page and the host page. If a builder cannot land all three inside one context,
   it must stop and report rather than half-move the gate — a half-moved gate is
-  worse than the wall.
+  worse than the wall. **A half-moved gate is now defined precisely: any code
+  path that still returns `'onboard'` or `ONBOARDING_PATH` as a *route* redirect.**
 - **Derived resume re-offers skipped optional cards.** Accepted in decision 6's
-  implementation; recorded in Interfaces. Reversing it means adding a step
-  column, which is explicitly out of scope.
+  implementation; recorded in Interfaces. **The plan previously understated the
+  cost as "one extra tap": a parent who abandoned on card 5 (area) after
+  skipping kids and photo is returned to card 3 and must skip twice to get back
+  — up to two extra taps and two extra screens.** Reversing it means adding a
+  step column, which is explicitly out of scope.
 - **Signup losing its name field changes `/login`'s error surface.** The
   `HandleTakenError` path moves to card 2; make sure `/login` no longer imports
   `composeDisplayName` for a field it no longer has.
@@ -401,3 +500,37 @@ extension; there is no `useCropStep.ts`**)
   **Lesson, recorded:** the plan's factual claims were recollection, not
   measurement. A doc that says "no interpretation required" must be grepped
   into existence, not remembered. Next: dispatch Slice 1.
+- 2026-09-29 — **High-effort review against the real code. Six defects found,
+  two serious. All corrected in place.**
+  1. **`e2e/fixtures.ts` was in no slice's scope.** `signUpViewer` drives
+     given-name/family-name/street-address — all three of which this batch
+     deletes — and `finishSignup` asserts the feed-or-location binary, which
+     every new card breaks. **18 spec files call each helper.** Added as a
+     batch-level invariant: the helpers are updated *inside the slice that
+     changes the sequence*, not cleaned up at the end.
+  2. **The plan named two of the three gate functions.** The shell calls
+     `resolveOnboardingGate`, whose `'loading'` branch is the cold-load race fix
+     pinned by `e2e/onboarding-gate.e2e.ts`. A builder following the old text
+     would have missed the function that actually gates.
+  3. **`resolveOnboardingRedirect`'s pinned acceptance criterion was
+     unimplementable** — it invented a `finished` parameter the function does
+     not have. Verified the re-keying is a **near no-op** (a profile row
+     requires a `display_name`, so `finished ⟺ homeZipSet`), and pinned the
+     signature as unchanged.
+  4. **Decision 10 had no carrying slice.** `PushOptInPrompt` renders on
+     `/login` *and* in the shell, and Slice 3 adds a second shell banner — the
+     collision decision 10 forbids was unaddressed. Added a mutual-exclusion
+     acceptance criterion.
+  5. **The signup-ZIP-fallback mechanism becomes dead code.**
+     `SIGNUP_ZIP_FALLBACK_KEY`, `markSignupZipUnresolved`,
+     `consumeSignupZipUnresolved` exist only to carry a failure across the
+     `/login` → `/onboarding` route change, which the area card eliminates. It
+     was named nowhere; Slice 5 now retires it.
+  6. **Slice 3 was too big for one context** (new component + login rewrite +
+     name branch + shell nudge), against the template's own rule. Split into 3a
+     (shell + name card) and 3b (signup + nudge + helpers). Also corrected: the
+     kids/photo cards are a **reorder** of the existing page, not a verbatim
+     lift; and the resume cost is up to two extra taps, not one.
+  Left open for the human: **whether the interview belongs inside
+  `ProtectedShell`'s chrome** — cards 2–5 currently render with the bottom nav,
+  which competes with the cards and leaks the finished app early.
