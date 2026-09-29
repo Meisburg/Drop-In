@@ -467,3 +467,24 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   NEVER been confirmed by any lane** -- the builder's verify output is not
   recorded anywhere -- so this is the first independent confirmation, not a
   formality.
+- Slice 2c: VERIFIER PASS (run 9b869c8f) at 420c274. RAW OUTPUT: gate exit 0;
+  build ok; TEST 65 files / 1975 tests; LINT 0 errors / 80 warnings, UNCHANGED
+  from baseline; a11y:focus PASS; steering-lint PASS; "GUARDS: PASS -- all
+  deterministic rules hold." zip-radius e2e 3 passed / 14.7s. Both comment-only
+  fix rounds proven by diff filter (printed nothing). HOOK ORDER OBSERVED BY LINE
+  NUMBER rather than assumed: hooks at 82-84, early return at 128. Early-return
+  condition verbatim. Stale-claim grep: 2 hits, BOTH classified TRUE (they
+  describe the removal, not the deleted rule) -- no surviving false claims. Scope:
+  420c274 = RadiusEmptyState.tsx only; the range adds only the three declared
+  files. Environment failures: none. Verdict PASS.
+  The verifier also caught a FALSE POSITIVE IN ITS OWN GREP -- one hit on the word
+  "error" was inside a no-useless-catch warning's help text. That is the referee
+  standard the lane is supposed to hold, and it is worth recording that it held.
+  **SLICE 2C COMPLETE. THE ENTIRE `2` FAMILY IS CLOSED AND VERIFIED.**
+- THE BATCH'S CORE INVARIANT HELD ACROSS THE GATE MOVE: the location requirement
+  was never absent at a slice boundary. 2a put guards on all four write paths
+  BEFORE 2b removed the app-wide wall, and every verifier confirmed the write
+  paths still carry it. This is the single most important claim in the batch and
+  it is now evidenced rather than asserted.
+- Slice 3a dispatched: the card shell + the bare-render seam. This is the first
+  slice that BUILDS the interview rather than moving a requirement.
