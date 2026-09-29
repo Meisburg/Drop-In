@@ -960,3 +960,46 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
     touch something real (the first was `e2e/fixtures.ts` being in no slice's
     scope at all, plan defect #7). Ambiguity in a scope line gets resolved by a
     builder's judgment call, which is precisely what scope lines exist to prevent.
+- Slice 4a: BUILT at 83f4f58 (4 files, +217/-98: src/pages/OnboardingPage.tsx,
+  e2e/fixtures.ts, e2e/auth.setup.ts, src/lib/firstRunCopy.ts -- firstRunCopy
+  comment-only). Reviewer dispatched (run d265785c).
+- **DEFECT #20 IS FIXED -- A CARD NOW READS THE MODULE.** Verified by grep:
+  OnboardingPage.tsx:9 imports FIRST_RUN_COPY; :394-396 is the NAME card's
+  title/body/primaryLabel and :475 is the KIDS card's. The hard-coded
+  title="What's your name?" is GONE (only a history comment at :385 remains). The
+  module is no longer orphaned, so the answer to "who consumes FIRST_RUN_COPY" is
+  finally "the cards" -- which is what the plan should have said in the first place.
+- THE KIDS CARD EXISTS: an early-return FirstRunCard at :474 gated on kidsCardDone
+  (:134), validating through invalidKidRows (:228) which reuses validateKid
+  (:241/:253), with the progress chrome. Skip advances without writing.
+- **I FOUND A NEW STALE COMMENT, AND IT IS A NEW CLASS OF STALENESS.**
+  `src/App.tsx:86` says "today no card reads FIRST_RUN_COPY -- the cards hard-code
+  their own". That sentence was TRUE when 3c's fix round wrote it and became FALSE
+  the moment 4a landed. **This is not a careless comment: it is a CORRECT comment
+  invalidated by someone else's correct change.** It matters because the batch's
+  principle "the slice that owns a file owns its stale claims" CANNOT CATCH THIS --
+  App.tsx was OUT OF 4a'S SCOPE, and 4a did nothing wrong. So Slice 7's sweep must
+  work by PHRASE across the repo, not by file ownership. Assigned to Slice 7 with
+  the phrase, not the line number. Sent to the reviewer to verify IN BOTH
+  DIRECTIONS (a false finding from the orchestrator must be rejected as readily as
+  one from a builder).
+- THE BUILDER FIXED A PRE-EXISTING DEFECT ON ITS OWN INITIATIVE, and it earned its
+  keep by RUNNING A SPEC: zip-radius.e2e.ts has always passed the full label
+  '20 miles' while finishSignup interpolated `${radius} miles`, producing
+  "20 miles miles". It widened radiusMiles to `number | string` with a comment
+  explaining both the union and the history. **Sent to the reviewer to rule whether
+  that is a legitimate documented union or a loosening that masks a misuse, and
+  whether the fix belongs in the helper or the caller** -- a type widening in a
+  shared test helper is exactly the kind of thing that looks additive and quietly
+  removes a check.
+- **SLICE 7's auth.setup.ts QUESTION IS ANSWERED: YES**, finishSignup could cheaply
+  subsume the setup walk -- the marker uses 98107 + 5mi, which are the helper's
+  defaults, and only the REST backstop and the state-save stay spec-local. So Slice
+  7 should REMOVE THE DUPLICATION rather than leave a second hand-maintained walk
+  that has now broken twice.
+- TWO FORWARD OBLIGATIONS ASSIGNED TO SLICE 7, by name:
+  * the stale App.tsx:86 phrase (grep, not a line), AND
+  * **THE KIDS WRITE PATH HAS NO E2E.** Every spec walks SKIP, so filling kid rows
+    and tapping Continue through the interview is proven only by the unit-tested
+    seams it reuses. Reported by the builder as a risk; recorded as a named Slice 7
+    gap rather than left as prose.
