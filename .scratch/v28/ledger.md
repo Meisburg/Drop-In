@@ -1550,3 +1550,38 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   small changes whose correctness is checkable by grep (the body is conditional; no spec
   asserts it), so the verifier is the right closing lane rather than another reviewer
   round.
+- **SLICE 6 COMPLETE AND VERIFIED (PASS, run f910dd71) at 90ad122.** Verifier evidence:
+  HEAD exactly 90ad122, tree clean; gate exit 0 with build PASS, test **66 files / 1989
+  tests**, lint **0 errors / 81 warnings COUNTED ONLY as `file:line:col: warning` lines
+  with the VITE CHUNK-SIZE ADVISORY EXPLICITLY EXCLUDED** (the third time this batch a
+  count needed interpreting, and the second time that specific advisory was named), a11y
+  and steering PASS, **GUARDS: PASS -- all deterministic rules hold**. The /tmp flake
+  did NOT fire this run (reported explicitly). THE BLOCKING FIX VERIFIED: the constant
+  with both variants, the selection at :78, and ONE hit for the string -- in the
+  component only -- so no spec asserts it, and with picks empty the card renders NO
+  claim that places exist. The reword is accurate; the guard is single-arg at
+  onboarding.ts:73 with both call sites and a test whose NAME cites defect #19.
+  **e2e/onboarding-gate.e2e.ts: last touched at 790dca7 (V21) and `git diff
+  f929e09..HEAD` on it is EMPTY -- defect #24 safe.** e2e subset 8/8 in 27.0s with the
+  [setup] line verbatim; drivers untracked; no environment failures.
+- **ALL 12 BUILDER SLICES ARE DONE AND VERIFIED: 1, 2a, 2b, 2c, 3a, 3b, 3c, 4a, 4b, 4c,
+  5, 6.** The whole first-run flow is BUILT -- signup, name, kids, photo, area, the
+  finish card -- and a returning parent resumes where they left off.
+- **SLICE ORDER DECIDED (a real decision, not a hedge): 7a (the two guards) -> 7b (the
+  batch-end lanes: full e2e, marker sweep, the no-zip e2e) -> 8 THE HUMAN (seeding +
+  Nicole's unassisted playtest) -> THEN a hygiene slice** for the dead-export sweep, the
+  phrase-based stale-claim sweep, the resolveCard extraction, ProfilePage.tsx:1218, the
+  finishSignup pre-resolved-zip option, and the auth.setup.ts dedup. **WHY: THE HUMAN'S
+  PLAYTEST IS THE ONLY LANE THAT CAN FALSIFY THE FLOW** -- `/onboarding` cannot appear in
+  the routes sweep (a signed-out visitor is redirected to /login), so no automated lane
+  can ever see the cards. Hygiene is reader-facing cost; a broken flow is the batch's
+  whole risk. The playtest runs first, and its findings fold into the hygiene slice.
+- **The verifier offered a HYPOTHESIS about the /tmp flake, recorded as a hypothesis and
+  not a fact:** it observed that `no-bypass-guard` here is a STATIC + HISTORY audit, and
+  that the 26/26 clone-based run the earlier builder saw "appears to come from the
+  pre-push hook's environment, not this guard script". If that is right, the isolation
+  re-run has been testing a slightly different thing than the failure -- which matters
+  for whoever finally chases it, and is exactly the kind of distinction that should be
+  written down rather than smoothed over.
+- Slice 7a dispatched (run 70427583) with the existing guards as its explicit template
+  and the "its failure mode is that it PASSES" doctrine stated up front.
