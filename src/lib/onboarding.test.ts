@@ -4,7 +4,6 @@ import {
   HOME_PATH,
   markSignupZipUnresolved,
   needsOnboarding,
-  ONBOARDING_PATH,
   resolveOnboardingGate,
   resolveOnboardingRedirect,
   resolveProtectedRedirect,
@@ -43,10 +42,14 @@ describe('resolveProtectedRedirect (protected routes)', () => {
     expect(resolveProtectedRedirect(false, false, '/playdate/abc')).toBe('/playdate/abc')
   })
 
-  it('sends signed-in users without a home zip to /onboarding', () => {
-    expect(resolveProtectedRedirect(true, false, '/')).toBe(ONBOARDING_PATH)
-    expect(resolveProtectedRedirect(true, false, '/browse')).toBe(ONBOARDING_PATH)
-    expect(resolveProtectedRedirect(true, false, '/profile')).toBe(ONBOARDING_PATH)
+  it('lets signed-in users without a home zip keep the intended route (V28 slice 2b — the location requirement lives at the writes, not a wall)', () => {
+    expect(resolveProtectedRedirect(true, false, '/')).toBe(HOME_PATH)
+    expect(resolveProtectedRedirect(true, false, '/browse')).toBe('/browse')
+    expect(resolveProtectedRedirect(true, false, '/profile')).toBe('/profile')
+  })
+
+  it("does not bounce a no-zip parent out of an \"I'm coming\" return target", () => {
+    expect(resolveProtectedRedirect(true, false, '/playdate/abc123')).toBe('/playdate/abc123')
   })
 
   it('lets signed-in users with a home zip keep the intended route', () => {
@@ -100,8 +103,8 @@ describe('resolveOnboardingGate (the shell gate, ticket 06 cold-load race)', () 
     expect(resolveOnboardingGate(gateState({}))).toBe('pass')
   })
 
-  it('sends a settled signed-in user without a home zip to /onboarding', () => {
-    expect(resolveOnboardingGate(gateState({ homeZipSet: false }))).toBe('onboard')
+  it('passes a settled signed-in user without a home zip (V28 slice 2b — no /onboarding decision)', () => {
+    expect(resolveOnboardingGate(gateState({ homeZipSet: false }))).toBe('pass')
   })
 
   it('passes a settled signed-out user (the signed-out gate sends /login)', () => {

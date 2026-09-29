@@ -82,11 +82,13 @@ function ProtectedShell() {
   const { unreadCount } = useInboxUnread()
   const { pathname } = useLocation()
 
-  // The onboarding-gate decision (ticket 06, V2 slice 3: keys on the home
-  // zip, pure + unit-tested in lib/onboarding.ts): 'loading' while the
-  // session/profile loads are in flight, 'onboard' only once settled AND
-  // the user's home zip is unset, 'suspended' for a banned session (no app
-  // access).
+  // The onboarding-gate decision (ticket 06, pure + unit-tested in
+  // lib/onboarding.ts): 'loading' while the session/profile loads are in
+  // flight (routes must not render mid-load), 'suspended' for a banned
+  // session (no app access), 'pass' otherwise. V28 slice 2b dropped the
+  // onboard decision — a settled signed-in parent passes whether or not
+  // their home zip is set; the location requirement now lives at the write
+  // paths (lib/homeZip.ts's hasHomeZip).
   const gate = resolveOnboardingGate({
     sessionLoading: loading,
     profileLoading,
@@ -180,14 +182,16 @@ function ProtectedShell() {
   const editFallback = session === null ? playdateDetailPathFromEditPath(pathname) : null
   if (editFallback !== null) return <Navigate to={editFallback} replace />
 
-  // V2 slice 5: apply the signed-out "I'm coming" return target — ONLY
-  // once the gate has SETTLED ('pass'), so a new signup's /onboarding
-  // step (the 'onboard' redirect) and the ticket-06 'loading' state are
-  // never navigated past (the pinned decision: the return lands AFTER the
-  // onboarding gate settles, with the ping still an explicit tap). The
-  // target is validated (isPlaydateReturnTarget — a tampered value is
-  // ignored, never navigated to); the effect above clears the one-shot
-  // key on landing.
+  // V2 slice 5: apply the "I'm coming" return target — ONLY once the gate
+  // has SETTLED ('pass'), so the ticket-06 'loading' state is never
+  // navigated past (the pinned decision: the return lands AFTER the gate
+  // settles, with the ping still an explicit tap). V28 slice 2b note:
+  // 'pass' no longer implies a home zip (there is no onboard decision),
+  // so this line ALSO fires for a signed-in no-zip parent who tapped
+  // "I'm coming" — deliberate: it honours the explicit tap, and the
+  // resume nudge (slice 3b) covers the rest. The target is validated
+  // (isPlaydateReturnTarget — a tampered value is ignored, never navigated
+  // to); the effect above clears the one-shot key on landing.
   const storedReturn = gate === 'pass' ? window.sessionStorage.getItem(PLAYDATE_RETURN_KEY) : null
   if (
     storedReturn !== null &&

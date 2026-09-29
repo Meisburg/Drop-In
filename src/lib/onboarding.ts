@@ -1,13 +1,14 @@
 import { LOGIN_PATH, resolveAuthRedirect } from './auth'
 
 /**
- * Pure, unit-testable onboarding-gating logic (slice 2; V2 slice 3).
+ * Pure, unit-testable onboarding-gating logic (slice 2; V2 slice 3; V28
+ * slice 2b). Decisions live here so they can be tested without
+ * React/browser (see onboarding.test.ts).
  *
- * A signed-in user without a home zip must finish onboarding (set home
- * zip + radius) before any protected route renders (V2 slice 3: the gate
- * moved from "0 memberships" to "home_zip unset" — neighborhoods are
- * display labels only, discovery is radius-based). Decisions live here so
- * they can be tested without React/browser (see onboarding.test.ts).
+ * V28 slice 2b: the home-zip requirement no longer lives at an app-wide
+ * wall. It lives at the write paths (the guarded ping/post/zip writes,
+ * keyed on hasHomeZip in lib/homeZip.ts) — see
+ * docs/adr/0001-home-zip-stops-being-a-gate.md.
  */
 
 /** Pinned route path for the post-signup location (zip + radius) step. */
@@ -28,20 +29,19 @@ export function needsOnboarding(homeZipSet: boolean): boolean {
  * - signed out → /login (delegates to resolveAuthRedirect; not duplicated)
  *   — EXCEPT the public detail route (V2 slice 5), which resolveAuthRedirect
  *   already allows signed-out
- * - signed in + home zip unset → /onboarding
- * - signed in + home zip set → intendedPath
+ * - signed in → intendedPath. There is NO location bounce (V28 slice 2b):
+ *   the home-zip requirement moved off this app-wide wall and onto the
+ *   write paths — see docs/adr/0001-home-zip-stops-being-a-gate.md. The
+ *   homeZipSet parameter is kept (underscored, unused) so callers keep a
+ *   stable shape; the decision no longer reads it.
  */
 export function resolveProtectedRedirect(
   signedIn: boolean,
-  homeZipSet: boolean,
+  _homeZipSet: boolean,
   intendedPath: string,
 ): string {
   const authRedirect = resolveAuthRedirect(intendedPath, signedIn)
   if (authRedirect !== null) return authRedirect
-  // The onboarding bounce is for SIGNED-IN users only (V2 slice 5): a
-  // signed-out visitor on a public detail route must not detour through
-  // /onboarding — which itself bounces to /login (a redirect loop).
-  if (signedIn && needsOnboarding(homeZipSet)) return ONBOARDING_PATH
   return intendedPath
 }
 
@@ -63,7 +63,7 @@ export function resolveOnboardingRedirect(
 }
 
 /** The app-shell's onboarding-gate decision (ticket 06: wait for the loads). */
-export type OnboardingGateDecision = 'suspended' | 'loading' | 'onboard' | 'pass'
+export type OnboardingGateDecision = 'suspended' | 'loading' | 'pass'
 
 /** The session-layer state the onboarding gate decides from (useSession's shape). */
 export interface OnboardingGateState {
@@ -87,27 +87,28 @@ export interface OnboardingGateState {
 
 /**
  * The app-shell's onboarding-gate decision (ticket 06: cold-load race fix;
- * V2 slice 3: the gate keys on the home zip, not memberships).
+ * V28 slice 2b: no '/onboard' decision — the location requirement moved
+ * off the gate and onto the write paths, so a settled signed-in parent
+ * passes whether or not their home zip is set). 'loading' is still
+ * load-bearing: it is what stops routes RENDERING before the session and
+ * profile have settled (a stale homeZipSet must never change a routing
+ * decision mid-load).
  *
  * On a full page load, the persisted session (localStorage) is ready long
  * before the profile fetch lands, so the gate must render the shell's
- * loading state while any load is in flight and only redirect to
- * /onboarding once the load has settled AND the user's home zip is unset —
- * otherwise a signed-in, zipped user cold-loading /profile bounces through
- * /onboarding → / and loses the requested route.
+ * loading state while any load is in flight — otherwise a cold load
+ * paints the app shell mid-fetch.
  *
  * - suspended (banned profile) → the suspended screen (no app access;
  *   wins even while a load is in flight)
- * - any load in flight → the loading state (never redirect mid-load)
+ * - any load in flight → the loading state (never render routes mid-load)
  * - settled + signed out → pass (the signed-out gate sends /login)
- * - settled + signed in + home zip unset → /onboarding
- * - settled + signed in + home zip set → pass
+ * - settled + signed in → pass, with or without a home zip
  */
 export function resolveOnboardingGate(state: OnboardingGateState): OnboardingGateDecision {
   if (state.suspended) return 'suspended'
   if (state.sessionLoading || (state.signedIn && state.profileLoading)) return 'loading'
   if (!state.signedIn) return 'pass'
-  if (needsOnboarding(state.homeZipSet)) return 'onboard'
   return 'pass'
 }
 
