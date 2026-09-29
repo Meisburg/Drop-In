@@ -23,6 +23,10 @@ import type {
 // frame the user chose rather than computing one of its own, and refuses a frame
 // that could not be drawn.
 import { isDrawableRect, type CropRect } from './photoCrop'
+// V28 slice 2a fix 1/5: the ONE home-zip presence predicate (lib/homeZip.ts) —
+// the gate's derivation below is built on it, so the guards in the pages can
+// never drift looser than the wall they replace.
+import { hasHomeZip } from './homeZip'
 import { acceptedCounterpartyForProfile, normalizeHandle, type LinkRowForView } from './links'
 // V9 ticket 11: where a family's images live and who may fetch each kind. The
 // paths are the pure seams (photoStorage.ts) so this file never spells one out.
@@ -263,7 +267,7 @@ export function useSession(): SessionState {
     // V2 slice 3: the onboarding gate keys on home_zip (off the same
     // profile row — no separate query; a failed/absent column settles as
     // unset, the documented DB-not-applied behavior).
-    setHomeZipSet(nextProfile?.home_zip != null && nextProfile.home_zip !== '')
+    setHomeZipSet(hasHomeZip(nextProfile?.home_zip))
     // Ticket 06: the profile load has settled for THIS user — the shell
     // gate may now redirect.
     setProfileSettledFor(uid)

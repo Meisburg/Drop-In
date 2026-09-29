@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { updateHomeZipRadius } from '../lib/db'
+import { hasHomeZip } from '../lib/homeZip'
 import { emptyRadiusCopy, radiusEscapes, radiusSaveErrorMessage } from '../lib/feed'
 import { useSessionContext } from './SessionProvider'
 
@@ -80,14 +81,16 @@ export function RadiusEmptyState({
    * swallows its own tap is the "second dead end wearing a control's clothes"
    * this component exists to remove. The shell's onboarding gate keeps that
    * state off these pages, so this is a belt-and-braces guard, not a flow.
+   * V28 slice 2a fix 1/5: the zip half of the test goes through the ONE
+   * predicate (hasHomeZip) — same rule, one definition.
    */
-  const escapesDisabled = busyRadius !== null || session === null || homeZip === ''
+  const escapesDisabled = busyRadius !== null || session === null || !hasHomeZip(homeZip)
 
   async function handleEscape(target: number) {
     // One write at a time. An empty home zip cannot be widened FROM (the
     // validator would reject it) — the onboarding gate keeps that state off
     // these pages, and the button stays inert rather than inventing a zip.
-    if (session === null || homeZip === '' || busyRadius !== null) return
+    if (session === null || !hasHomeZip(homeZip) || busyRadius !== null) return
     setBusyRadius(target)
     setEscapeError(null)
     try {

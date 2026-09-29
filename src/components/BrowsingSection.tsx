@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getProfile, updateHomeZipRadius } from '../lib/db'
+// V28 slice 2a fix 1/5: the ONE home-zip presence predicate (lib/homeZip.ts).
+import { hasHomeZip } from '../lib/homeZip'
 import { DEFAULT_RADIUS_MILES, RADIUS_MILES_OPTIONS, milesWord } from '../lib/feed'
 import { settingsErrorMessage } from '../lib/settingsError'
 import type { Profile } from '../lib/types'
@@ -55,8 +57,9 @@ export function BrowsingSection({ userId }: { userId: string }) {
 
   async function handleRadiusChange(miles: number) {
     if (state.status !== 'ready' || savingMiles !== null) return
-    const zip = state.value.home_zip ?? ''
-    if (zip === '') {
+    // V28 slice 2a fix 1/5: the zip-presence test goes through the ONE
+    // predicate (same rule as the gate and the write-site guards).
+    if (!hasHomeZip(state.value.home_zip)) {
       setError('Set your home ZIP first — use the location control on your feed.')
       return
     }
@@ -65,7 +68,7 @@ export function BrowsingSection({ userId }: { userId: string }) {
     setError(null)
     setNotice(null)
     try {
-      await updateHomeZipRadius(userId, zip, miles)
+      await updateHomeZipRadius(userId, state.value.home_zip, miles)
       setState((prev) =>
         prev.status === 'ready'
           ? { status: 'ready', value: { ...prev.value, radius_miles: miles } }
@@ -117,7 +120,7 @@ export function BrowsingSection({ userId }: { userId: string }) {
       </select>
 
       <p className="text-sm text-slate-600">
-        {zip === ''
+        {!hasHomeZip(state.value.home_zip)
           ? 'Your home ZIP is not set yet.'
           : `Your home ZIP is ${zip}. Other parents see distance, not the ZIP.`}
       </p>

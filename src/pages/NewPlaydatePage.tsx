@@ -61,6 +61,8 @@ import {
 // V8 ticket 08: recording the meaningful action that may precede the
 // notification opt-in (this page arms it; the shell's PushOptInPrompt decides).
 import { armPushPromptForAction } from '../lib/pushClient'
+// V28 slice 2a fix 1/5: the ONE home-zip presence predicate (lib/homeZip.ts).
+import { hasHomeZip } from '../lib/homeZip'
 // V25 t08: the SAME pure seam /browse uses for the saved-id read shape
 // (`placeFollowIdSet`) plus the confirmed-toggle set rule
 // (`savedPlaceIdSetAfterToggle`), so the picker's collection cannot drift from
@@ -405,8 +407,8 @@ export function NewPlaydatePage({
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   // V28 slice 2a: the no-home-zip notice — raised when the submit's location
-  // guard blocks the post. The render site re-checks `profile?.home_zip ==
-  // null`, so the notice clears itself the moment a zip lands (a refresh) —
+  // guard blocks the post. The render site re-checks through hasHomeZip,
+  // so the notice clears itself the moment a zip lands (a refresh) —
   // no second dismissal path.
   const [locationNotice, setLocationNotice] = useState(false)
   // V3 slice 5 (ticket 08): the optional address (kept out of
@@ -908,7 +910,7 @@ export function NewPlaydatePage({
    */
   const pickerHomePin = (() => {
     if (profile === null) return null
-    if (profile.home_zip === null || profile.home_zip === undefined) return null
+    if (!hasHomeZip(profile.home_zip)) return null
     if (zipCoords === null) return null
     const found = zipCoords.get(profile.home_zip)
     return found === undefined ? null : { lat: found.lat, lng: found.lng }
@@ -1122,10 +1124,11 @@ export function NewPlaydatePage({
     e.preventDefault()
     // V28 slice 2a: hosting requires a home zip at the point of action (slice
     // 2b takes the app-wide wall down only because this guard exists). Without
-    // one: no createPlaydate, show the notice, and leave the form's values
-    // exactly as they are (page state — never discarded), so the parent can
-    // set a location at /onboarding and come back to finish.
-    if (profile?.home_zip == null) {
+    // one — the ONE predicate (hasHomeZip), never a looser inline check —:
+    // no createPlaydate, show the notice, and leave the form's values exactly
+    // as they are (page state — never discarded), so the parent can set a
+    // location at /onboarding and come back to finish.
+    if (!hasHomeZip(profile?.home_zip)) {
       setLocationNotice(true)
       return
     }
@@ -1439,7 +1442,7 @@ export function NewPlaydatePage({
       {/* V28 slice 2a: the no-home-zip notice — rendered right above the sticky
           Post bar (the action it blocks) after a blocked submit, and only
           while the zip is still unset (a zip landing via refresh clears it). */}
-      {locationNotice && profile?.home_zip == null ? <LocationRequiredNotice /> : null}
+      {locationNotice && !hasHomeZip(profile?.home_zip) ? <LocationRequiredNotice /> : null}
 
       {/* V27 slice 1: THE STICKY POST BAR — the plan read back and a Post
           button, pinned above the app's fixed bottom nav while the parent

@@ -67,6 +67,10 @@ import { canModerate } from '../lib/moderation'
 // (the 13th public field is a bare id; the place page reads the directory
 // itself).
 import { placePath } from '../lib/places'
+// V28 slice 2a fix 1/5: the ONE home-zip presence predicate (lib/homeZip.ts) —
+// every presence test on this page goes through it, so a guard can never be
+// looser than the onboarding wall it replaces.
+import { hasHomeZip } from '../lib/homeZip'
 // V8 ticket 09 (migration 0033): "Same time next week" — the pure
 // ended-window gate, the next-occurrence chooser and its copy builder.
 import {
@@ -380,9 +384,13 @@ export function PlaydateDetailPage() {
   const [pingError, setPingError] = useState<string | null>(null)
   // V28 slice 2a: the no-home-zip notice under the ping button — raised when a
   // SETTING tap is blocked by the location guard (handlePingToggle). The
-  // render site re-checks `profile?.home_zip == null`, so the notice clears
+  // render site re-checks the zip through hasHomeZip, so the notice clears
   // itself the moment a zip lands (a refresh) — no second dismissal path.
   const [pingLocationNotice, setPingLocationNotice] = useState(false)
+  // V28 slice 2a fix 1/5: the same notice for the "Same time next week" SET
+  // write path (handleSameTimeNextWeek) — same flag discipline, rendered
+  // under that block's button, self-clearing once a zip lands.
+  const [sameNextWeekLocationNotice, setSameNextWeekLocationNotice] = useState(false)
   // V25 ticket 13: the RSVP confirmation lightbox's state. The RULES live in
   // `lib/rsvpConfirmation.ts` (pure, table-tested): only a ping's false→true
   // result may raise it, at most once per yes, and an un-ping forgets the yes so
@@ -891,8 +899,9 @@ export function PlaydateDetailPage() {
     // The guard blocks *setting* only — if the toggle is already on, this tap
     // CLEARS the ping, and it is never blocked: a zip-less parent must always
     // be able to withdraw a ping they somehow hold. The render site below
-    // re-checks the zip, so the notice never lingers once one is set.
-    if (wasGoing === false && profile?.home_zip == null) {
+    // re-checks the zip through hasHomeZip, so the notice never lingers once
+    // one is set.
+    if (wasGoing === false && !hasHomeZip(profile?.home_zip)) {
       setPingLocationNotice(true)
       return
     }
@@ -1054,6 +1063,14 @@ export function PlaydateDetailPage() {
       return
     }
     if (sameNextWeek.kind !== 'occurrence' || sameNextWeek.alreadyGoing) return
+    // V28 slice 2a fix 1/5: this branch only ever SETS a ping (the one-off
+    // branch goes to /new, where the host guard lives; already-going never
+    // writes), so a missing home zip blocks the whole action — same notice,
+    // same one-predicate discipline as the detail-page ping guard.
+    if (!hasHomeZip(profile?.home_zip)) {
+      setSameNextWeekLocationNotice(true)
+      return
+    }
     // The host of this post is the host of the next occurrence too (an
     // occurrence inherits its series' host), and the app never lets a parent
     // ping their own post (db.togglePing's client guard + the 0010 trigger).
@@ -2132,7 +2149,7 @@ export function PlaydateDetailPage() {
           {/* V28 slice 2a: the no-home-zip notice — shown only after a blocked
               SETTING tap AND while the zip is still unset (a zip landing via
               refresh clears it); clearing a ping never raises it. */}
-          {pingLocationNotice && profile?.home_zip == null ? (
+          {pingLocationNotice && !hasHomeZip(profile?.home_zip) ? (
             <LocationRequiredNotice />
           ) : null}
           {count !== null ? (
@@ -2373,6 +2390,12 @@ export function PlaydateDetailPage() {
                 >
                   {nextWeekBusy ? 'Adding you…' : 'Same time next week'}
                 </button>
+                {/* V28 slice 2a fix 1/5: the no-home-zip notice for this
+                    block's write path — raised by a blocked SET, self-clearing
+                    once a zip lands (the re-check uses the one predicate). */}
+                {sameNextWeekLocationNotice && !hasHomeZip(profile?.home_zip) ? (
+                  <LocationRequiredNotice />
+                ) : null}
               </>
             )
           ) : sameNextWeek.kind === 'one-off' ? (
