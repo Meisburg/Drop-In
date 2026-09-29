@@ -1484,3 +1484,39 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   e2e/auth.setup.ts broke a FOURTH time (3b, 4a, 4b, 6) with the RUN finding it rather
   than the brief, which is the grep-your-own-breakages rule working.
 - Slice 6: reviewer lane dispatched (d891aa8f) over the recovered commit.
+- **SLICE 6: NEEDS_CHANGES (run d891aa8f) -- ONE BLOCKING FINDING, AND IT IS THE
+  BATCH'S OWN THESIS.** FinishRunCard.tsx:33 defines "Here are a few real places near
+  you to host a drop-in. Pick one and start from its page." and passes it
+  UNCONDITIONALLY (:59); FirstRunCard.tsx:92-94 renders any non-null body ALWAYS. So when
+  picks is EMPTY the card renders that sentence DIRECTLY ABOVE the shared empty state's
+  "Nothing within N miles yet." -- THE SCREEN CLAIMS "here are a few real places near
+  you" AND THEN SAYS THERE ARE NONE. It renders while LOADING too. The plan's own pinned
+  bullet forbids "a claim about drop-ins that do not exist" in the no-places fallback.
+  VERIFIED BY THE ORCHESTRATOR against the source before ruling. FIX ROUND 1 DISPATCHED
+  (run 15f020d6): branch the body on the picks state in the component.
+- **⚠️ THE BATCH'S TWO BLOCKING FINDINGS ARE BOTH HONESTY DEFECTS, NOT LOGIC ERRORS, AND
+  BOTH ARE IN NEW COPY-BEARING UI.** (1) 3c's nudge NAMED CARDS THE APP DOES NOT ASK
+  ("who's coming?" before the kids card existed, and the wrong words for the one card
+  that did). (2) 6's finish card CLAIMED PLACES IT DOES NOT HAVE. Everything the batch
+  found in PURE LOGIC was either a plan defect caught before dispatch or a risk caught
+  by a test -- THE BLOCKING ROUNDS BOTH CAME FROM COPY THAT ASSERTS STATE. Carry
+  forward: **the highest-risk surface in this codebase is a string describing what the
+  app is about to do or already has**, so new copy-bearing UI deserves a reviewer
+  question that QUOTES THE STRINGS against the state machine that renders them.
+- WHAT THE REVIEWER VERIFIED IN 6'S FAVOUR: the guard re-key is right and its unit test
+  GENUINELY PINS defect #19 (caveat: the pin leans on tsc -b being in verify -- it is,
+  package.json:27 -- because a revived two-arg branch with un-updated callers would pass
+  undefined -> needsOnboarding(undefined) === true -> branch skipped -> test passes;
+  recorded as an ACCEPTED RESIDUAL WITH ITS REASONING); the finish card is REACHABLE END
+  TO END for both a zip-having parent and a re-visitor (the guard returns null for any
+  signed-in user, onboarding.ts:72-75, and runOver sits BEFORE the loadError/kids/photo
+  gates); the ranking contract is correct AND the ordering test WOULD FAIL on the
+  inverted first draft; placeHasHours is exported/tested/used; the empty state REUSES
+  RadiusEmptyState; scope is exactly 10 files; and e2e/onboarding-gate.e2e.ts has a
+  ZERO-LINE DIFF (defect #24 safe, 2b's 'loading' pin intact).
+- The builder's "the RUN found the fourth auth.setup break" is recorded as a CLAIM, not
+  evidence -- the reviewer says it is unprovable from the commit, and it is right. The
+  landed hop is verified sound. Also routed: e2e/places-map-view.e2e.ts:119's "THE
+  ONBOARDING GATE keys on it" is stale since 2b -> Slice 7's stale-claim sweep.
+- NO other fix-round items were bundled: needsOnboarding stays routed to 7a (four
+  members now), and e2e/onboarding-gate.e2e.ts stays untouched per defect #24.

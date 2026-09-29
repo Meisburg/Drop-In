@@ -1662,3 +1662,43 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
 - 2026-09-29 — Slice 6: reviewer lane dispatched (`d891aa8f`) over the recovered commit,
   with the reachability trace and the hours-comparator decisiveness as its sharp
   questions.
+
+- 2026-09-29 — **Slice 6: NEEDS_CHANGES** (run `d891aa8f`) — **one blocking finding**,
+  and it is the batch's own thesis. `FinishRunCard.tsx:33` defines *"Here are a few real
+  places near you to host a drop-in. Pick one and start from its page."* and passes it
+  **unconditionally** (`:59`); `FirstRunCard.tsx:92-94` renders any non-null `body`
+  **always**. So when `picks` is **empty** the card renders that sentence **directly
+  above** the shared empty state's *"Nothing within N miles yet."* — **the screen claims
+  "here are a few real places near you" and then says there are none.** It also renders
+  while **loading**. The plan's own pinned bullet forbids *"a claim about drop-ins that
+  do not exist"* in the no-places fallback. **Fix round 1 dispatched**: branch the body
+  on the picks state in the component (presentation branching, build-law-compliant).
+- 2026-09-29 — **⚠️ THE BATCH'S TWO BLOCKING FINDINGS ARE BOTH HONESTY DEFECTS, NOT
+  LOGIC ERRORS, AND BOTH ARE IN NEW COPY-BEARING UI.** (1) 3c's nudge **named cards the
+  app does not ask** ("who's coming?" before the kids card existed, and the wrong words
+  for the one card that did). (2) 6's finish card **claimed places it does not have**.
+  Everything the batch has found in *pure logic* has been a plan defect caught before
+  dispatch or a risk caught by a test — **the blocking rounds both came from copy that
+  asserts state.** Worth carrying forward: **the highest-risk surface in this codebase is
+  a string that describes what the app is about to do or already has**, so new
+  copy-bearing UI deserves a reviewer question that quotes the strings against the state
+  machine that renders them.
+- 2026-09-29 — **What the reviewer verified in 6's favour, so the record is not
+  one-sided.** The **guard re-key is right and its unit test genuinely pins defect #19**
+  — with the honest caveat that the pin leans on `tsc -b` being in the verify path (it
+  is, `package.json:27`), because a revived two-arg branch with un-updated callers would
+  pass `undefined` → `needsOnboarding(undefined) === true` → branch skipped → test
+  passes; **recorded as an accepted residual with its reasoning rather than a defect.**
+  The finish card is **reachable end to end** for both a zip-having parent and a
+  re-visitor (the guard returns `null` for any signed-in user, `onboarding.ts:72-75`, and
+  `runOver` sits **before** the loadError/kids/photo gates). The ranking contract is
+  correct **and the ordering test would fail on the inverted first draft**. `placeHasHours`
+  is exported, tested and used. The empty state **reuses `RadiusEmptyState`**. Scope is
+  exactly 10 files, and **`e2e/onboarding-gate.e2e.ts` has a zero-line diff** (defect #24
+  safe, 2b's `'loading'` pin intact).
+- 2026-09-29 — **The builder's claim that "the RUN found the fourth auth.setup break,
+  not the brief" is recorded as a CLAIM, not evidence** — the reviewer says it is
+  unprovable from the commit, and it is right. The landed hop itself is verified sound.
+  Also noted: `e2e/places-map-view.e2e.ts:119`'s *"THE ONBOARDING GATE keys on it"* is
+  stale (2b un-keyed it) → Slice 7's stale-claim sweep, alongside `needsOnboarding`
+  itself going to 7a.
