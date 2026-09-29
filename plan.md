@@ -572,15 +572,30 @@ already claims to be "ONE implementation for the feed ("Near you") and Browse" �
   half-moved signup; a signup that lands nowhere is worse than an unfinished one.
 - **Depends on:** Slices 2b, 3a
 
-### Slice 3c: The resume nudge
+### Slice 3c: The resume nudge, and the name card's prefill
 
 - **Objective:** an unfinished run is **never a wall** — a dismissible "finish
   setting up" line whose action is the card the parent left off on, ignorable
-  forever.
+  forever. **And a brand-new parent is not shown their email address as their
+  name.**
 - **Files in scope:** `src/App.tsx` (the nudge lives in `ProtectedShell` — there
-  is **no `AppShell.tsx`**)
-- **Approach:** render the line for a signed-in parent whose first run is
-  unfinished — **`nextUnfinishedCard(facts)` from `src/lib/firstRun.ts` decides
+  is **no `AppShell.tsx`**), `src/pages/OnboardingPage.tsx` (item 2)
+- **⚠️ ITEM 2 — A REAL REGRESSION SLICE 3B INTRODUCED, AND IT WOULD SHIP TO THE
+  FIRST COHORT.** Before 3b the name card was reachable only for first-time
+  social sign-in, where `suggestedHandle` (`src/lib/oauth.ts:121`) derives a real
+  name from the provider's metadata. **3b routes every email signup through that
+  same card**, and for an email signup with no OAuth metadata `suggestedHandle`
+  falls back to **the email's local part** — its own test pins it:
+  `suggestedHandle({}, 'nicole@x.com')` → `'nicole'` (`oauth.test.ts:58`). So every
+  new parent now sees their email fragment pre-filled as their **first name**
+  (`OnboardingPage.tsx:64`, used at `:87-88`). Left alone, the first cohort's
+  display names become lowercase email fragments, visible to other parents — and
+  3b's own builder flagged it against its own diff. **Decide and implement:**
+  either stop pre-filling a name for email signups at all, or derive one only from
+  real name metadata. **State which, and why.** Do not change `suggestedHandle`'s
+  contract for OAuth — its tests pin it, and it is right for that caller.
+- **Approach (the nudge):** render the line for a signed-in parent whose first run
+  is unfinished — **`nextUnfinishedCard(facts)` from `src/lib/firstRun.ts` decides
   which card the action points at**; `null` means the run is finished, so nothing
   renders. The facts are **read** from the session (`signedIn`, name, kids, photo,
   zip) and **never stored**.
@@ -592,6 +607,8 @@ already claims to be "ONE implementation for the feed ("Near you") and Browse" �
   - Dismissible, and stays dismissed for the session. Never blocks, never modals,
     never redirects (decision 3, ADR 0001).
   - Tap target ≥44px, visible focus cue, dismissal announced.
+  - **A new email signup's name card no longer pre-fills the email's local part**,
+    and a social sign-in with real name metadata still pre-fills as it does today.
 - **Verification command:** `npm run verify`, then
   `npx playwright test e2e/golden-path.e2e.ts`
 - **Budget:** one local builder context. Small — the decision logic is already
@@ -637,6 +654,13 @@ extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**
   (reused), `src/lib/feed.ts` (reused), `src/lib/onboarding.ts` +
   `src/lib/onboarding.test.ts` (retiring the fallback flag),
   `e2e/signup-zip-fallback.e2e.ts`, **`e2e/fixtures.ts`**
+- **⚠️ `src/lib/account.ts`'s `addressFieldError` is NOT dead — it is this slice's
+  to reuse.** Slice 3b removed the signup address and left `addressFieldError`
+  with **zero non-test callers**; it now looks like dead code and a tidy-minded
+  builder would delete it. **Do not.** This card asks for an address, so the
+  validator that already exists and is already tested is exactly what it should
+  call. If you decide not to reuse it, say why in the report rather than deleting
+  it silently.
 - **Approach:** **the address ALREADY left `/login` in slice 3b — do not remove
   it a second time.** This card is where it lands: reuse `zipFromAddressQuery`
   from `src/lib/geocode.ts`. An address that does not resolve reveals the ZIP

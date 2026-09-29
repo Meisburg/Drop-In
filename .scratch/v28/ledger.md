@@ -605,3 +605,42 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   STOP and report with the partial diff rather than committing a half-moved
   signup -- a signup that lands nowhere is worse than an unfinished one.
 - Slice 3b dispatched.
+- Slice 3b: fix... no -- BUILT at 3080c65 (5 files, +252/-436; the net deletion is
+  what a good trim looks like). ORCHESTRATOR-VERIFIED:
+  * `rg -n street-address e2e/ src/pages/LoginPage.tsx` -> NO HITS. **PLAN DEFECT
+    #11's whole-suite landmine is fully cleared.**
+  * The lint COUNT IS STILL MISSING from the report -- it says "all pre-existing
+    warnings in other spec files; none in my five" (a targeted grep, which is
+    useful) but gives no total against the 80 baseline. Second time a builder has
+    omitted the number; the verifier lane gets it, and the rule stands.
+- THE BUILDER FOUND A ROOT CAUSE DEEPER THAN THE BRIEF ASKED FOR -- and it was a
+  REAL PRODUCT BUG, not a spec problem. The marker setup was hanging because the
+  name card's given-name prefill EQUALS the email's local part (suggestedHandle's
+  fallback), so the setup's fill of the SAME value was a React no-op; the old
+  SHARED nameTouched flag then wiped the prefill when the FAMILY field was
+  touched, and the `required` field silently blocked the submit. Diagnosed by
+  trace + live repro, fixed in-scope with per-field touched flags
+  (firstNameTouched/lastNameTouched) and a comment documenting the wipe
+  regression. This is exactly what the lane is for: the timeout looked like a spec
+  problem and was a card bug.
+- TWO BUILDER-FLAGGED RISKS, BOTH VERIFIED REAL BY THE ORCHESTRATOR AND ASSIGNED:
+  1. `suggestedHandle({}, 'nicole@x.com')` -> 'nicole' -- pinned by
+     oauth.test.ts:58 -- and OnboardingPage.tsx:64/87-88 uses it. So EVERY email
+     signup now sees their email's LOCAL PART pre-filled as their FIRST NAME.
+     Before 3b the name card was reachable only for first-time social sign-in,
+     where the provider metadata yields a real name. 3b introduced the
+     reachability of a bad prefill, and left alone the first cohort's display
+     names become lowercase email fragments VISIBLE TO OTHER PARENTS. Assigned to
+     3c as a named item with a decision required (stop pre-filling for email, or
+     derive only from real name metadata). Do NOT change suggestedHandle's
+     contract for OAuth -- its tests pin it and it is right for that caller.
+  2. `addressFieldError` (lib/account.ts:76) now has ZERO non-test callers, so it
+     LOOKS like dead code a tidy builder would delete. It is not: it is the
+     validator the AREA CARD needs. Recorded as an explicit "do not delete, reuse
+     this" item in Slice 5's scope.
+- THIRD RISK, RECORDED AS ENVIRONMENTAL WITH ITS EVIDENCE: one `npm run verify`
+  run went red on a git hardlink-clone error in /tmp inside
+  scripts/guards/no-bypass-guard.test.mjs. Green on isolated re-run AND on the
+  full re-run, with the same tree. Recorded so a future red on that guard is read
+  as the machine, not as the code -- and so it is NOT used to excuse a real red.
+- Slice 3b: reviewer lane dispatched.
