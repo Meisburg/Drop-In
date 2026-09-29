@@ -373,3 +373,48 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   exists until 3b. Assigned rather than shrugged: Slice 7's no-zip e2e must now
   assert `location-required-notice` renders and `empty-radius-state` does not.
 - Slice 2c dispatched.
+- Slice 2c: reviewer verdict PASS (run 6f63c578) at 549c2e9. It verified the
+  early return (all hooks above it), the zipped path BYTE-IDENTICAL against
+  655b59b, both callers reaching it, and that the two declared "comment-only"
+  files moved zero behaviour lines. THREE non-blocking findings, all verified:
+  1. MY PLAN REGRESSED A LINE REFERENCE. The stale db.ts claim sits at 575-576;
+     the builder cited 577-578 and the orchestrator copied that into plan.md
+     WITHOUT COUNTING, overwriting a reference that had been RIGHT at 575. Fixed
+     back to 575-576. Lesson (third of this shape): a line reference from a
+     subagent needs the same verification as its reasoning -- and this one was
+     worse than usual because it replaced a correct value with a wrong one.
+  2. RadiusEmptyState.tsx:95-97 (the builder's OWN new comment) claims the
+     disabled-escape guard "remains only for the in-flight session === null
+     case". False: the !hasHomeZip clause is live during the in-flight PROFILE
+     window too (homeZip = '' there). Fix round 1 dispatched.
+  3. "60 test files" is 63 under src/ -- the material claim (zero .tsx, no unit
+     lane) is TRUE and verified.
+- THE REVIEWER PROVED THE THING I MOST WANTED ANSWERED, with citations: no
+  surface can show the radius lie to a no-zip parent in flight -- FeedPage gates
+  on profile === null and renders "Loading..." (495, 1248-1276), BrowsePage
+  returns "Loading..." on a null profile (313-314), and NewPlaydatePage's
+  embedded sheet is behind its own loading guard (1231). So the early return's
+  `profile !== null` half is belt-and-braces, not a hole. A THIRD caller the plan
+  and brief both missed -- NewPlaydatePage.tsx:1538-1561 embeds the same
+  PlaceDirectory in the /new "Pick a place" sheet -- is covered by the same early
+  return because it is the same component.
+- SLICE-OWNER PRINCIPLE APPLIED WITH A TWIST: the reused LocationRequiredNotice
+  copy was written for WRITE sites (2a) and the reviewer judged it correct on a
+  browse surface -- "we need a place to know which drop-ins are near you" IS the
+  browse case, and nothing in it presumes a write. So no forked copy.
+- NEW DEFECT FOUND BY THE REVIEWER, now a NAMED SLICE 7 ITEM: a no-zip parent on
+  Browse ALSO gets the "Not on the map yet" section (places.ts:2284 --
+  `const unplaced = listRows.filter((row) => row.distanceMiles === null)`), and
+  for a no-zip viewer EVERY row's distance is null, so the WHOLE directory is
+  labelled "not on the map" -- misattributing the VIEWER's missing location to
+  the PLACES, directly under a notice that says the opposite. Slice 7 must
+  either suppress that section for a no-zip viewer or re-word it to blame the
+  location, and must say which and why.
+- ALSO CORRECTED IN plan.md: Slice 7's "the test is a grep" criterion was WRONG
+  AS WRITTEN -- the db.ts claim spans two source lines, so a single-line grep
+  misses it (this planning session just missed it). The criterion now requires
+  short fragments and a read of the hits.
+- RESIDUAL RISK CARRIED, per the reviewer: gate-green for 2c is UNCONFIRMED --
+  the builder's verify output is not recorded anywhere. That is exactly what the
+  verifier lane exists for; it closes 2c after the fix round.
+- Slice 2c: fix round 1/5 dispatched.

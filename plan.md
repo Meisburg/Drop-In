@@ -584,13 +584,16 @@ extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**
 - **Budget:** one local builder context.
 - **Depends on:** Slices 1, 5
 
-### Slice 7: The lane cleanup — specs and docs
+### Slice 7: The lane cleanup — specs, docs, and the last no-zip gaps
 
 - **Objective:** every remaining lane that pinned the old behaviour is updated,
-  so nothing is left asserting a flow that no longer exists.
+  **and the batch's remaining no-zip honesty gaps on Browse are closed**, so
+  nothing is left asserting or showing a flow that no longer exists.
 - **Files in scope:** the specs that assert signup's fields or the ZIP redirect
   beyond what `e2e/fixtures.ts` already covers, `docs/`, `task-state.md`,
-  `.scratch/v28/ledger.md`
+  `.scratch/v28/ledger.md`, **`src/lib/places.ts` / `src/components/PlaceDirectory.tsx`**
+  (the unplaced-section item below), and the stale-claim files listed under
+  acceptance.
 - **Approach:** grep `e2e/` for specs that assert the old field list or the
   bounce, and update them to the new contract — **update, never delete**. The
   bulk of this work belongs to the slices that caused it (see the batch
@@ -601,12 +604,36 @@ extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**
   - **Every stale claim left by the deleted gate is gone.** Slice 2b's reviewer
     swept `src/` and `e2e/` and found these still asserting a rule that no
     longer exists; the slices that own the file fix their own, and this slice
-    catches the rest — `src/lib/db.ts:131,142,267,575`,
+    catches the rest — `src/lib/db.ts:131,142,267,575-576`,
     `src/pages/ProfilePage.tsx:215`, `e2e/auth.setup.ts:7,67`,
-    `e2e/fixtures.ts:237,385`. (`OnboardingPage.tsx` and `FeedPage.tsx` belong to
-    3a and 2c; do not re-open them.) **The test is a grep, not a read:** no file
-    under `src/` or `e2e/` may still say the gate keys on the home zip, or that
-    a no-zip parent is bounced to `/onboarding`.
+    `e2e/fixtures.ts:237,385`. (The `db.ts` one — `listRadiusFeed`'s doc saying
+    "the onboarding gate keeps that state out of the routes" — sits at **575-576**;
+    line 577 is `*/` and 578 the signature. Slice 2c's builder cited 577-578 and
+    the orchestrator copied that into this plan without counting, **regressing a
+    reference that had been right at 575** — the reviewer caught it. Its first
+    half, "a viewer with no home zip gets an empty feed", stays true. The
+    `return []` on line 582 does **not** move.)
+    (`OnboardingPage.tsx` and `FeedPage.tsx` belong to
+    3a and 2c; do not re-open them.)
+  - **The stale-claim test is a grep — and it must be a MULTI-LINE-aware one.**
+    The claim above spans two source lines (`… (the onboarding` / `* gate keeps
+    that state out of the routes …`), so a single-line grep for the sentence
+    **misses it** — as this slice's own planning just did. Grep short fragments
+    (`onboarding gate`, `keys on home_zip`, `bounces? to /onboarding`) and read
+    the hits. No file under `src/` or `e2e/` may still say the gate keys on the
+    home zip, or that a no-zip parent is bounced to `/onboarding`.
+  - **THE SECOND NO-ZIP LIE ON BROWSE IS CLOSED.** Slice 2c's reviewer found a
+    real one below the notice: `src/lib/places.ts:2284`,
+    `const unplaced = listRows.filter((row) => row.distanceMiles === null)`. For a
+    no-zip viewer **every** row's distance is null (`placeDistanceMiles` returns
+    null when the viewer has no zip), so the whole directory lands in the
+    "Not on the map yet" section — **misattributing the viewer's missing location
+    to the places.** It also sits directly under the location notice, saying two
+    different things at once. Decide and implement: either do not render that
+    section for a no-zip viewer (the notice already explains the state), or
+    re-word it so it blames the missing location rather than the places. **State
+    which you chose and why.** `placeDistanceMiles`'s null must not change — the
+    distance really is unknown.
   - **`e2e/onboarding-gate.e2e.ts`'s docblock stops overstating what it pins.**
     Its fixture gets `home_zip=98107` (`e2e/auth.setup.ts`), so it can never
     catch a reintroduced home-zip bounce — it pins the cold-load behaviour only.
