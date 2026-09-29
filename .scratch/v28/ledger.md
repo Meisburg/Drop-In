@@ -1520,3 +1520,33 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   ONBOARDING GATE keys on it" is stale since 2b -> Slice 7's stale-claim sweep.
 - NO other fix-round items were bundled: needsOnboarding stays routed to 7a (four
   members now), and e2e/onboarding-gate.e2e.ts stays untouched per defect #24.
+- **SLICE 6 FIX ROUND 1 DONE at 90ad122 (2 files, +28/-5) -- AND THE BUILDER COMMITTED
+  AND STATED THE SHA.** The previous round's failure was reporting DONE with the work
+  uncommitted; the fix-round message repeated the instruction and it took. The blocking
+  finding is FIXED AND GROUNDING-VERIFIED: FINISH_RUN_CARD_BODY holds withPicks (the
+  sentence, true when the list is on screen) and withoutPicks: undefined, selected at
+  :78 by `picks.length > 0 ? ... : ...`. So for LOADING, EMPTY and ERROR the body is
+  OMITTED ENTIRELY ("the state's own line is the truth") and the screen can no longer
+  claim places it does not have. NO spec asserted the string (one hit, in the
+  component). Trailing newline fixed (7d0a). The docblock now reads accurately: the
+  protected ROUTES do not key on the zip any more (2b) -- the requirement lives at the
+  WRITE PATHS (hasHomeZip).
+- **THE BUILDER DECLINED TO OVERCLAIM, AND THAT IS THE RIGHT BEHAVIOUR TO RECORD.** Asked
+  to evidence that "the run, not the brief" surfaced the fourth auth.setup break, it
+  said: "What I can prove from the repo is that the hop is inside 437e33c and that the
+  [setup] line is green with the hop present. WHAT I CANNOT PROVE FROM THE COMMIT IS
+  THAT THE RUN (NOT THE BRIEF) SURFACED IT -- THAT STAYS A CLAIM." That is the
+  discipline this batch runs on, stated by a builder AGAINST ITS OWN INTEREST, and it is
+  the exact opposite of the reviewer that invented docs/ladder.md. Recorded together
+  because the contrast is the lesson.
+- **THE /tmp GIT-CLONE FLAKE APPEARED AGAIN -- the batch's most persistent environmental
+  cost.** no-bypass-guard failed once with "fatal: failed to copy file to
+  '/tmp/nb-plain-*/clone/.git/objects/info/commit-graphs/commit-graph-chain.lock'", then
+  passed 26/26 IN ISOLATION, and npm run verify then returned EXIT 0 with 66 files /
+  1989 tests and GUARDS PASS. The builder reported BOTH outcomes, which is the standing
+  rule. Seen in roughly half of recent runs; never once a code signal; the isolation
+  re-run has settled it every time.
+- Slice 6: verifier lane dispatched (f910dd71). NO re-review was ordered: the fix is two
+  small changes whose correctness is checkable by grep (the body is conditional; no spec
+  asserts it), so the verifier is the right closing lane rather than another reviewer
+  round.

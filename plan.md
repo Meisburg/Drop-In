@@ -1702,3 +1702,34 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
   Also noted: `e2e/places-map-view.e2e.ts:119`'s *"THE ONBOARDING GATE keys on it"* is
   stale (2b un-keyed it) → Slice 7's stale-claim sweep, alongside `needsOnboarding`
   itself going to 7a.
+
+- 2026-09-29 — **Slice 6 fix round 1 DONE at `90ad122`** (2 files, +28/−5), **and this
+  time the builder committed and stated the sha** — the previous round's failure was
+  exactly that it reported DONE with the work uncommitted, so the instruction was
+  repeated in the fix-round message and it took. **The blocking finding is fixed and
+  verified by grounding:** `FINISH_RUN_CARD_BODY` now holds both variants —
+  `withPicks` (the sentence, true when the list is on screen) and `withoutPicks:
+  undefined` — selected at `:78` by `picks.length > 0 ? … : …`. So for **loading, empty
+  and error** the body is **omitted entirely** (*"the state's own line is the truth"*),
+  and the screen can no longer claim places it does not have. **No spec asserted the
+  string** (one hit, in the component), so nothing needed updating. The trailing newline
+  is fixed (`7d0a`), and the docblock now reads accurately: *"The protected ROUTES do not
+  key on the zip any more (V28 slice 2b) — the requirement lives at the WRITE PATHS
+  (hasHomeZip, lib/homeZip.ts)"*.
+- 2026-09-29 — **⚠️ THE BUILDER DECLINED TO OVERCLAIM, AND THAT IS THE RIGHT BEHAVIOUR
+  TO RECORD.** Asked to evidence that "the run, not the brief" surfaced the fourth
+  `auth.setup.ts` break, it answered: *"What I can prove from the repo is that the hop
+  is inside `437e33c` and that the `[setup]` line is green with the hop present. **What
+  I cannot prove from the commit is that the run (not the brief) surfaced it — that
+  stays a claim.**"* **That is the discipline this batch runs on, stated by a builder
+  against its own interest**, and it is the exact opposite of the reviewer that invented
+  `docs/ladder.md`. Both are recorded together because the contrast is the lesson.
+- 2026-09-29 — **The `/tmp` git-clone flake appeared AGAIN, and is now the batch's most
+  persistent environmental cost.** This round `no-bypass-guard` failed once with
+  *"fatal: failed to copy file to
+  '/tmp/nb-plain-*/clone/.git/objects/info/commit-graphs/commit-graph-chain.lock'"*, then
+  passed **26/26 in isolation**, and `npm run verify` then returned **exit 0** with 66
+  files / 1989 tests and GUARDS PASS. **The builder reported BOTH outcomes**, which is
+  the standing rule. Observed in roughly half of recent runs; it has never once been a
+  code signal, and the isolation re-run has settled it every time.
+- 2026-09-29 — Slice 6: verifier lane dispatched (`f910dd71`) as the closing check.
