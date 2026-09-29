@@ -1410,3 +1410,46 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
   page holds only local `kidRows` (`:127`) and **never reads kids**, so 4c adds that
   read.
 - 2026-09-29 — Slice 4c dispatched.
+
+- 2026-09-29 — **Slice 4c: REVIEW PASS** (run `93123748`), no blocking findings.
+  Verified by the reviewer, with evidence: **both gate clauses present** and **Skip
+  still advances in-session**; the **double-firing lazy read is harmless** — and this
+  is the answer the orchestrator actually wanted, reasoned rather than asserted: each
+  effect instance carries its own `cancelled` flag and React runs the **previous
+  cleanup before the new effect**, so an older in-flight `listKids` promise is already
+  dead and **a stale `hasKids` cannot overwrite a newer one**. **Both new spec tests
+  are non-vacuous**, which matters because this batch has already caught one vacuous
+  assertion: test 1 would **fail** if a second `addKid` ran (`toHaveLength(1)` plus the
+  decisive `first-run-kids-card` count === 0), and test 2 would **fail** if a gate
+  dropped the flag clause — the **inverse** of the vacuity class. The new
+  `readSessionFromBrowserPage` helper **does not hard-code a storage key** (it scans
+  all `localStorage` values for supabase-js session shapes), so it will not break
+  silently when supabase-js renames its key, and the JWT is in-memory only — never
+  logged, written, or committed. The photo fact's REST seeding is a **correct division
+  of labour**: the gate's **behaviour** is proven and only its **input** is faked,
+  while the real upload path stays pinned in `avatar.e2e.ts`. The flaky unit test
+  **cannot** have come from this diff (no changed file has a vitest test).
+- 2026-09-29 — **⚠️ THE PENDING-STATE RULE — NAMED, AND ASSIGNED TO SLICE 5.** The
+  reviewer found a real **edge hang**: `OnboardingPage.tsx:531-536` renders a bare
+  "Checking your kids…" div for `!kidsCardDone && hasKids === null`, with **no Skip,
+  no retry, no timeout**. The designed **reject** path is fine (it settles to
+  `hasKids = false` plus a skippable error line) — **the stall is a promise that
+  *never settles* at all**, e.g. a wedged network, and then the run sits there
+  indefinitely. **That is a wall, and decision 6 says the run is never a wall.**
+  Non-blocking (genuinely edge-case), but **Slice 5 is the right owner** because it
+  adds the area card and with it **another async path — geocoding**. **THE RULE: any
+  async fact or step that gates a card must have a bounded escape — a timeout that
+  settles to \"absent\" plus a skippable error line, or a Skip on the pending state
+  itself.** Applied to the kids read now, and to the area card's geocode when it lands.
+- 2026-09-29 — **The structural extraction is RECOMMENDED, NOT REQUIRED, and the
+  reasoning is recorded rather than the law asserted.** The reviewer ruled the inline
+  "flag OR fact" gates **acceptable as landed** and recommended `resolveCard(facts,
+  skippedCards)` in `lib/` for a later slice, weighing three measured costs: the delta
+  this slice adds is only the two session short-circuits (a small, commented,
+  e2e-proven condition — not a new business invariant); **churning e2e-proven code
+  mid-batch risks a regression for a testability gain the e2e already covers**; and
+  `resolveCard` would need the **facts threaded in** (hasKids comes from a read, not a
+  snapshot), which is a real design seam rather than a one-line move. **Assigned to
+  Slice 7a** (extract + a `firstRun`-adjacent unit test, keeping the e2e as the
+  integration pin). The reviewer also correctly noted it **cannot** prove the e2e
+  passed — it ran no gate — which is the verifier's lane.

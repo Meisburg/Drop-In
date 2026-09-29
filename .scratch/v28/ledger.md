@@ -1245,3 +1245,40 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   spec proves the gate's BEHAVIOUR or only fakes its INPUT (it seeds the photo fact
   via an owner-scoped REST PATCH rather than a real upload -- acceptable for the
   string-predicate gate, but worth stating).
+- **SLICE 4C: REVIEW PASS (run 93123748), no blocking findings.** The reviewer
+  verified with citations: both gate clauses present; Skip advances in-session; THE
+  DOUBLE-FIRE IS HARMLESS and the reasoning is the one that matters -- each effect
+  instance has its own `cancelled` flag and React runs the PREVIOUS CLEANUP BEFORE
+  THE NEW EFFECT, so an older in-flight listKids promise is already dead and A STALE
+  hasKids CANNOT OVERWRITE A NEWER ONE; BOTH NEW SPEC TESTS ARE NON-VACUOUS (test 1
+  would fail if a second addKid ran -- toHaveLength(1) plus the decisive kids-card
+  count === 0 -- and test 2 would fail if a gate dropped the flag clause: the INVERSE
+  of the vacuity class this batch caught once); readSessionFromBrowserPage DOES NOT
+  HARD-CODE A STORAGE KEY (it scans all localStorage values for supabase-js session
+  shapes), so it will not break silently on a supabase-js rename, and the JWT is
+  in-memory only; the photo fact's REST seeding is a CORRECT DIVISION OF LABOUR (the
+  gate's BEHAVIOUR is proven, only its INPUT is faked; the real upload stays pinned in
+  avatar.e2e.ts); the flaky vitest CANNOT have come from this diff (no changed file
+  has a vitest test); scope exactly 3 files and App.tsx untouched (Slice 7 owns the
+  stale docblocks). The reviewer also stated plainly that it CANNOT prove the e2e
+  passed, having run no gate.
+- **⚠️ NEW RULE, NAMED AND ASSIGNED: THE PENDING-STATE RULE.** The reviewer found a
+  real edge hang -- OnboardingPage.tsx:531-536 renders a bare "Checking your kids…"
+  div with NO Skip, NO retry and NO timeout. The DESIGNED reject path is fine (it
+  settles to hasKids = false plus a skippable error line); the stall is a promise
+  that NEVER SETTLES AT ALL (a wedged network), and then the run sits there
+  indefinitely. **THAT IS A WALL, AND DECISION 6 SAYS THE RUN IS NEVER A WALL.**
+  Non-blocking (genuinely edge-case) but assigned to SLICE 5, because Slice 5 adds the
+  area card and with it ANOTHER ASYNC PATH (geocoding). RULE: any async fact or step
+  that gates a card must have a BOUNDED ESCAPE -- a timeout settling to "absent" plus
+  a skippable error line, or a Skip on the pending state itself.
+- THE STRUCTURAL EXTRACTION IS RECOMMENDED, NOT REQUIRED, WITH THE REASONING
+  RECORDED: the reviewer ruled the inline gates ACCEPTABLE AS LANDED and recommended
+  resolveCard(facts, skippedCards) later, weighing three measured costs -- the delta is
+  only two session short-circuits (not a new business invariant); churning e2e-proven
+  code mid-batch risks a regression for a testability gain the e2e already covers; and
+  resolveCard would need the facts THREADED IN (hasKids comes from a read, not a
+  snapshot), a real design seam. Assigned to SLICE 7a with the e2e kept as the
+  integration pin. Recorded because "the law says so" is not a cost argument, and this
+  time the law lost -- correctly.
+- Slice 4c: verifier lane dispatched as the closing check.
