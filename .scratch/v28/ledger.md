@@ -418,3 +418,52 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   the builder's verify output is not recorded anywhere. That is exactly what the
   verifier lane exists for; it closes 2c after the fix round.
 - Slice 2c: fix round 1/5 dispatched.
+- Slice 2c: fix round 1/5 complete (commit a6a74a4). VERIFIED MECHANICALLY, not
+  by reading: every changed line in the diff is a comment (`git show | grep -E
+  '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -vE '^[+-][[:space:]]*(\*|//|/\*)'`
+  printed nothing), one file, +22/-7. The early-return comment is now genuinely
+  good: belt-and-braces, why it is safe, all three citations, and what happens if
+  a future caller forgets to guard on the profile.
+- BUT FIX ROUND 1 INTRODUCED A SELF-CONTRADICTION, found by the orchestrator
+  reading the two blocks side by side. The escapesDisabled comment (~line 96)
+  says the in-flight clause is "load-bearing (the in-flight window is real on
+  these pages)"; the early-return comment fifteen lines below (~113) correctly
+  says "no surface renders this component while the profile is in flight". Both
+  cannot be true, and the second is right. TRUTH: the clause `!hasHomeZip(homeZip)`
+  DOES evaluate true when profile is null (homeZip = profile?.home_zip ?? ''), so
+  the guard is not wrong — but no current caller renders this component in that
+  window, so the clause is UNREACHABLE there, not real. Round 2 dispatched.
+- ROUND-INFLATION RISK NAMED RATHER THAN IGNORED: this is the third consecutive
+  comment-only dispatch on one file. The brief therefore (a) tells the builder to
+  REPORT a third inconsistency rather than iterate on it, (b) states this is the
+  last comment round, and (c) asks for a diff filter proving zero non-comment
+  lines changed. Rigor that keeps dispatching subagents over single clauses stops
+  being rigor -- the repo's loop escalates by MODEL, not by count, and a fourth
+  round here would be count.
+- The reviewer's proof, recorded so it is not re-derived: FeedPage.tsx:~495 gate
+  and ~1248 empty-state branch, BrowsePage.tsx:~313, NewPlaydatePage.tsx:~1231.
+- CARRIED RESIDUAL RISK: 2c's gate-green is still UNCONFIRMED -- the builder's
+  verify output is not recorded anywhere. The verifier lane closes 2c after this
+  round; that is what it is for.
+- Slice 2c: fix round 2/5 complete (commit 420c274). VERIFIED MECHANICALLY: zero
+  non-comment lines changed (diff filter printed nothing), one file, +11/-8. The
+  two comments now agree in the same direction, with the citations living in
+  exactly ONE place and cross-referenced from the other -- so they cannot drift
+  apart again. THE ORCHESTRATOR RE-RESOLVED ALL THREE CITATIONS to real lines:
+  FeedPage.tsx:1248 (`{posts === null ?` -> the Loading div),
+  BrowsePage.tsx:313-314 (`if (loading || profile === null) { return (` -> Loading),
+  NewPlaydatePage.tsx:1231 (`if (loading) {` -> the sheet's guard). Two rounds of
+  comment churn now close with a claim set that is checkable and checked.
+- No third inconsistency: the builder read the whole file and reports the header
+  doc and the handleEscape comment agree with the corrected pair.
+- HONEST NOTE ON ROUND COUNT: 2c's fix rounds were three consecutive comment-only
+  dispatches on one file (a6a74a4, 420c274). The round-inflation risk was named
+  in round 2's brief rather than ignored, it did not grow, and the last round
+  produced a strictly better artifact -- but the orchestrator records that it
+  spent two rounds on comments where one dispatch would have been the norm, and
+  that the alternative (accepting a self-contradiction between adjacent comments)
+  was weighed rather than assumed.
+- Slice 2c: verifier lane dispatched as the closing check. **2c's gate-green has
+  NEVER been confirmed by any lane** -- the builder's verify output is not
+  recorded anywhere -- so this is the first independent confirmation, not a
+  formality.
