@@ -201,8 +201,25 @@ function ProtectedShell() {
   }
 
   const signedIn = session !== null
+  // V28 slice 3a (decision 16): the first run renders BARE — no header,
+  // no rail / bottom nav, no push prompt. The `pathname === ONBOARDING_PATH`
+  // comparison that used to sit inline in the redirect branch below now
+  // lives here as a constant, read by BOTH consumers, so there is still
+  // exactly one comparison. The seam is shaped so slice 3b's resume nudge
+  // hangs off the same constant (on the first run it — and the interview
+  // cards — are all that ever shows).
+  const isFirstRun = pathname === ONBOARDING_PATH
+  // V28 slice 3a: whether the rail / bottom nav ACTUALLY renders — signed-in
+  // and not the first-run route. The grid below and <main>'s bottom padding
+  // derive from THIS, not from `session`: on /onboarding the session IS
+  // non-null, and keeping the two-column grid after suppressing the rail
+  // leaves column 1 EMPTY — the exact collapse the V22 slice 9 FIX
+  // documents just above (72px <main> on a 1024px viewport). One
+  // condition, used in all three places; the first run gets the
+  // no-rail padding instead of 6rem of nothing.
+  const navRenders = signedIn && !isFirstRun
   const redirect =
-    pathname === ONBOARDING_PATH
+    isFirstRun
       ? resolveOnboardingRedirect(signedIn, homeZipSet)
       : shellRedirect(signedIn, pathname)
   if (redirect !== null) return <Navigate to={redirect} replace />
@@ -214,69 +231,76 @@ function ProtectedShell() {
           rail beside the content. The header spans both columns; the rail is
           sticky so it stays in view while the content scrolls. */}
       {/* V22 slice 9 FIX: the two-column grid is only correct when there IS a
-          rail to put in column 1. The rail renders only for a signed-in session
-          (`session !== null`), so applying `md:grid-cols-[4.5rem_...]`
+          rail to put in column 1. Applying `md:grid-cols-[4.5rem_...]`
           unconditionally left column 1 EMPTY on the public surfaces
           (/playdate/:id, /login, /reset-password) — and `minmax(0,1fr)` then
           gave the content a 1fr of the LEFTOVER width, collapsing <main> to
           72px on a 1024px viewport. The public detail page is the app's share
           surface, so that was the worst possible place to break.
-          The column definition is now conditional on the same `session` check
-          that renders the rail: signed-out pages keep a single full-width
-          column at every size, which is also what they had before this slice. */}
+          The column definition is now conditional on whether the rail renders
+          (`navRenders` — signed-in AND not the first run: V28 slice 3a keeps
+          /onboarding's bare render single-column, so its card is never an
+          orphaned 1fr beside an empty column): signed-out pages keep a
+          single full-width column at every size, which is also what they
+          had before this slice. */}
       <div
         className={`flex flex-col md:items-start ${
-          session !== null ? 'md:grid md:grid-cols-[4.5rem_minmax(0,1fr)]' : 'md:grid'
+          navRenders ? 'md:grid md:grid-cols-[4.5rem_minmax(0,1fr)]' : 'md:grid'
         }`}
       >
-        <header className="pt-safe sticky top-0 z-10 border-b border-slate-200 bg-white md:col-span-2">
-          <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-1 md:max-w-none">
-            <Link
-              to="/"
-              className="font-display flex min-h-11 items-center gap-2 text-lg font-bold text-indigo-600"
-            >
-              <DropInMark className="h-7 w-7" />
-              Drop In
-            </Link>
-            <div className="flex min-w-0 items-center gap-3">
-              {/* V11 ticket 06: the settings entry point — a gear to the
-                  family's editor. Signed-in only (the route is auth-gated by
-                  the shell), next to the sign-out control. */}
-              {session !== null ? (
-                <Link
-                  to="/settings"
-                  className="flex min-h-11 min-w-11 items-center justify-center text-slate-600"
-                  aria-label="Settings"
-                >
-                  <NavIcon path={NAV_ICONS.gear} />
-                </Link>
-              ) : null}
-              {session !== null ? (
-                <button
-                  type="button"
-                  className="flex min-h-11 items-center text-sm text-slate-600"
-                  onClick={() => void signOutUser()}
-                >
-                  Sign out
-                </button>
-              ) : (
-                // V2 slice 5: the only route a signed-out visitor renders is
-                // the public detail page — a "Sign in" entry point instead of
-                // a sign-out control.
-                <Link to="/login" className="flex min-h-11 items-center text-sm font-medium text-indigo-600">
-                  Sign in
-                </Link>
-              )}
+        {/* V28 slice 3a (decision 16): the first run renders bare — no header. */}
+        {!isFirstRun ? (
+          <header className="pt-safe sticky top-0 z-10 border-b border-slate-200 bg-white md:col-span-2">
+            <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-1 md:max-w-none">
+              <Link
+                to="/"
+                className="font-display flex min-h-11 items-center gap-2 text-lg font-bold text-indigo-600"
+              >
+                <DropInMark className="h-7 w-7" />
+                Drop In
+              </Link>
+              <div className="flex min-w-0 items-center gap-3">
+                {/* V11 ticket 06: the settings entry point — a gear to the
+                    family's editor. Signed-in only (the route is auth-gated by
+                    the shell), next to the sign-out control. */}
+                {session !== null ? (
+                  <Link
+                    to="/settings"
+                    className="flex min-h-11 min-w-11 items-center justify-center text-slate-600"
+                    aria-label="Settings"
+                  >
+                    <NavIcon path={NAV_ICONS.gear} />
+                  </Link>
+                ) : null}
+                {session !== null ? (
+                  <button
+                    type="button"
+                    className="flex min-h-11 items-center text-sm text-slate-600"
+                    onClick={() => void signOutUser()}
+                  >
+                    Sign out
+                  </button>
+                ) : (
+                  // V2 slice 5: the only route a signed-out visitor renders is
+                  // the public detail page — a "Sign in" entry point instead of
+                  // a sign-out control.
+                  <Link to="/login" className="flex min-h-11 items-center text-sm font-medium text-indigo-600">
+                    Sign in
+                  </Link>
+                )}
+              </div>
             </div>
-          </div>
-        </header>
+          </header>
+        ) : null}
 
         {/* V2 slice 5: the bottom nav is app chrome — signed-out visitors
           (public detail page only) see the sign-up CTAs in the page instead.
           At md+ the same four destinations move into a LEFT RAIL (a vertical
           <nav>, sticky under the full-width header); below md it stays the
-          fixed bottom bar, byte for byte. */}
-        {session !== null ? (
+          fixed bottom bar, byte for byte. V28 slice 3a: it renders for
+          `navRenders` (signed-in AND not the first run) — /onboarding
+          renders the interview bare. */}
+        {navRenders ? (
           <nav
             aria-label="Primary"
             className="pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white md:sticky md:top-16 md:z-0 md:h-[calc(100dvh-4rem)] md:border-r md:border-slate-200 md:border-t-0"
@@ -306,7 +330,7 @@ function ProtectedShell() {
 
         <main
           className={`w-full px-4 py-4 ${
-            session !== null
+            navRenders
               ? 'pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-[calc(2rem+env(safe-area-inset-bottom))]'
               : 'pb-[calc(2rem+env(safe-area-inset-bottom))]'
           }`}
@@ -315,8 +339,10 @@ function ProtectedShell() {
               authed shell. It renders nothing unless a meaningful action was
               just recorded in this tab (a post created, or a ping saved) — see
               src/components/PushOptInPrompt.tsx. Signed-out visitors never see
-              it, and /profile owns its own copy of the control. */}
-          {session !== null ? <PushOptInPrompt /> : null}
+              it, and /profile owns its own copy of the control. V28 slice 3a:
+              suppressed on /onboarding by the SAME route condition (decision
+              10's mechanism — no second flag). */}
+          {navRenders ? <PushOptInPrompt /> : null}
           <div className="mx-auto max-w-md md:max-w-3xl">
             <Outlet />
           </div>

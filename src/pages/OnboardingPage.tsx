@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router'
 import { useSessionContext } from '../components/SessionProvider'
+import { FirstRunCard } from '../components/FirstRunCard'
 import { useCropStep } from '../components/useCropStep'
 import { composeDisplayName, displayNameFieldError } from '../lib/account'
+import { progressLabel } from '../lib/firstRun'
 import {
   addKid,
   BIO_MAX_LENGTH,
@@ -37,8 +39,13 @@ import { errorId, fieldA11y } from '../lib/a11y'
  * discovery is radius-based. Memberships stay in the schema but stop being
  * created here.
  *
- * The step is REQUIRED: a signed-in user without a home zip is gated to
- * this page (the shell's onboarding gate keys on home_zip). One Continue
+ * The location step is REQUIRED to finish the first run — it is the run's
+ * last card and its home_zip is the requirement that ends it — but it is
+ * NO LONGER A GATE on the app: since V28 slice 2b a signed-in user
+ * without a home zip is not bounced to this page (the shell's gate stopped
+ * keying on home_zip; the requirement lives at the write paths, see
+ * docs/adr/0001-home-zip-stops-being-a-gate.md). Visiting /onboarding is
+ * voluntary; finishing the run is not. One Continue
  * button saves the location (always) + the V2 ticket-02 optional
  * completion items (photo/bio/kids — only what was entered) and lands on
  * the feed.
@@ -303,19 +310,27 @@ export function OnboardingPage() {
 
   // V4 slice 4: no profiles row yet (a first-time social sign-in) → the handle
   // step comes FIRST; the location step below can only write to an existing row.
+  // V28 slice 3a: this branch is the first run's "name" card ("2 of 5" via
+  // progressLabel) rendered in FirstRunCard — the chrome (progress label,
+  // masthead, primary action) now lives in the card. The form itself is
+  // generalized, not rewritten: the same displayNameFieldError /
+  // composeDisplayName / createProfile / HandleTakenError seams and the same
+  // role="alert" + fieldA11y/errorId error surface behave exactly as before;
+  // the primary control submits it through the HTML `form` attribute
+  // (the button renders in the chrome, outside the form element).
   if (profile === null) {
     return (
-      <div className="flex flex-col gap-4">
-        {/* Frontend-design pass: a printed notice heading, not a boxed card —
-            the same masthead the feed pass established. */}
-        <header className="flex flex-col gap-1">
-          <h1 className="font-display text-xl font-semibold text-slate-900">What’s your name?</h1>
-          <p className="text-sm text-slate-600">
-            This is how other parents find you in their inbox. It isn’t your email, and you can
-            change it later in your settings.
-          </p>
-        </header>
+      <FirstRunCard
+        progressLabel={progressLabel('name')}
+        title="What’s your name?"
+        body="This is how other parents find you in their inbox. It isn’t your email, and you can change it later in your settings."
+        primaryLabel={handleBusy ? 'Please wait…' : 'Continue'}
+        primaryForm="name"
+        primaryDisabled={handleBusy}
+        testId="first-run-name-card"
+      >
         <form
+          id="name"
           className="flex flex-col gap-3"
           onSubmit={(e) => void handleCreateProfile(e)}
         >
@@ -361,15 +376,8 @@ export function OnboardingPage() {
             </label>
           </div>
           {handleError ? <p role="alert" id={errorId('name')} className="text-sm text-red-600">{handleError}</p> : null}
-          <button
-            type="submit"
-            disabled={handleBusy}
-            className="min-h-11 rounded-xl bg-indigo-600 px-4 py-3 text-base font-medium text-white disabled:opacity-50"
-          >
-            {handleBusy ? 'Please wait…' : 'Continue'}
-          </button>
         </form>
-      </div>
+      </FirstRunCard>
     )
   }
 
