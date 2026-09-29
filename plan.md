@@ -258,41 +258,97 @@ happening. The helpers are the blast radius here too.
 - **Budget:** one local builder context. Small.
 - **Depends on:** nothing
 
-### Slice 2: The gate moves off the app and onto the writes
+### Slice 2a: The write sites ask for a location in place
 
-- **Objective:** a signed-in parent with no home ZIP can see the feed; only
-  pinging and hosting require a location.
+- **Objective:** the ping and the host action require a home ZIP at the point of
+  action — so the requirement exists **before** the app-wide wall comes down.
+- **Files in scope:** `src/pages/PlaydateDetailPage.tsx` (the going-ping action),
+  `src/pages/NewPlaydatePage.tsx` (`handleSubmit`, ~line 1115), a new shared
+  presentational `src/components/LocationRequiredNotice.tsx`
+- **Why this is FIRST and not last — the ordering is the whole point.** Removing
+  the gate's bounce *before* the write sites guard would mean the location
+  requirement is **removed, not moved**: a no-zip parent could ping or host with
+  no location. Guards first, while the wall still stands (harmless there — the
+  prompt is simply unreachable until 2b), *then* the wall comes down. **The
+  requirement must never be absent at any slice boundary.**
+- **Approach:** build the notice component first — a short "we need a place to
+  show you nearby drop-ins" line whose action is the area card at `/onboarding`
+  — then wire it at both actions. Each checks `profile?.home_zip`; unset means
+  the action does not proceed and the notice appears. `NewPlaydatePage.tsx:905`
+  and `FeedPage.tsx:399` already handle an unset `home_zip` defensively for the
+  map pin — follow that pattern, do not invent one.
+- **Acceptance criteria:**
+  - With `profile.home_zip` unset, the ping action writes no going ping and
+    shows the notice; with it set, behaviour is unchanged.
+  - With `profile.home_zip` unset, `handleSubmit` does not call
+    `createPlaydate` and shows the notice; with it set, unchanged.
+  - The notice's action reaches `/onboarding`, and it is a real control with a
+    ≥44px tap target and a focus cue — not a bare string.
+  - No other page changes. `useSessionContext()`'s surface is unchanged.
+- **Verification command:** `npm run verify` and
+  `npx playwright test e2e/golden-path.e2e.ts`
+- **Budget:** one local builder context. All six Slice-2 files total **6,243
+  lines** — do not read them whole; this brief names the functions, so read
+  around them. If both sites will not land cleanly, **land the ping site, stop,
+  and report which site is unfinished** rather than half-wiring both.
+- **Depends on:** Slice 1
+
+### Slice 2b: The gate stops bouncing
+
+- **Objective:** a signed-in parent with no home ZIP reaches every route,
+  because the writes now carry the requirement (2a).
 - **Files in scope:** `src/lib/onboarding.ts`, `src/lib/onboarding.test.ts`,
-  `src/pages/FeedPage.tsx`, `src/pages/PlaydateDetailPage.tsx`,
-  `src/pages/NewPlaydatePage.tsx`, `src/components/RadiusEmptyState.tsx` (or the
-  file that owns the empty-feed copy)
+  `src/App.tsx`
 - **Approach:** delete the bounce from `resolveProtectedRedirect`; drop the
-  `'onboard'` outcome from `resolveOnboardingGate`; add a location-required
-  prompt at the two write sites. The no-zip feed state must be honest ("we don't
-  know where you are yet") and offer the area card.
+  `'onboard'` outcome from `resolveOnboardingGate`. **Do not touch `'loading'` or
+  `'suspended'`** — `'loading'` is the cold-load race fix that
+  `e2e/onboarding-gate.e2e.ts` pins. Leave `resolveOnboardingRedirect`'s
+  signature and body alone; its "already has a zip → `/`" behaviour is already
+  the right behaviour, because a profile row requires a `display_name` and a zip
+  requires a profile row, so `finished ⟺ homeZipSet`.
 - **Acceptance criteria:**
   - `resolveProtectedRedirect(true, false, '/inbox')` returns `'/inbox'` — a
     no-zip parent is not redirected.
   - `resolveOnboardingGate` never returns `'onboard'`: `'pass'` for a settled
     signed-in parent, `'loading'` while a load is in flight, `'suspended'` for a
     banned profile.
-  - `resolveOnboardingRedirect`'s signature is unchanged — `(true, false)` →
-    `null`, `(true, true)` → `'/'`, `(false, true)` → `LOGIN_PATH`.
+  - `resolveOnboardingRedirect` is unchanged — `(true, false)` → `null`,
+    `(true, true)` → `'/'`, `(false, true)` → `LOGIN_PATH`.
   - **The `I'm coming` return target still fires for a no-zip parent.** Today
-    `'pass'` implies a zip, so this was true by construction; removing
-    `'onboard'` makes it a real decision. Pin it with a test, because it means a
-    new signup who tapped "I'm coming" is routed out of the interview to that
-    playdate — deliberate (see Risks), not silent.
-  - A no-zip parent opening the feed sees a stated "we don't know where you are
-    yet" state with a path to set it — not an empty radius state and not an
-    error.
-  - Pinging and hosting surface the location requirement at the point of action.
+    `'pass'` implies a zip, so this held by construction; removing `'onboard'`
+    makes it a real decision. Pin it with a test — it means a new signup who
+    tapped "I'm coming" is routed out of the interview to that playdate.
+    Deliberate (see Risks), not silent.
   - No route redirects a signed-in parent away from the app.
 - **Verification command:** `npm run verify` and
+  `npx playwright test e2e/onboarding-gate.e2e.ts`
+- **Budget:** one local builder context. Small — this is the pure part, and the
+  risk is a careless edit to `'loading'`, not size.
+- **Depends on:** Slice 2a
+
+### Slice 2c: The no-zip feed state
+
+- **Objective:** a no-zip parent's feed is honest — stated, with a way out —
+  rather than empty, broken, or silently radius-zero.
+- **Files in scope:** `src/pages/FeedPage.tsx`,
+  `src/components/RadiusEmptyState.tsx`
+- **Approach:** distinguish "no home ZIP yet" from "no drop-ins in range". The
+  former needs its own copy and its action is the area card; the latter keeps
+  `RadiusEmptyState` as it is. `RadiusEmptyState` takes `radiusMiles` as a prop
+  and reads `profile?.home_zip ?? ''`, so the no-zip case must be branched
+  *before* it, not inside it.
+- **Acceptance criteria:**
+  - A no-zip parent opening the feed sees a stated "we don't know where you are
+    yet" message with a path to set a location — not an error, and not the
+    radius empty state.
+  - A parent WITH a zip sees exactly today's feed and today's radius empty
+    state, byte-identical.
+  - No location-required *wall* on the feed: it stays readable and ignorable
+    (decision 3), and the message is never a modal or a redirect.
+- **Verification command:** `npm run verify` and
   `npx playwright test e2e/zip-radius.e2e.ts`
-- **Budget:** one local builder context. If the two write sites cannot be done
-  cleanly in one, split the feed state from the write gates.
-- **Depends on:** Slice 1 (consumes `nextUnfinishedCard`)
+- **Budget:** one local builder context.
+- **Depends on:** Slice 2b
 
 ### Slice 3a: The card shell and the name card
 
@@ -356,7 +412,7 @@ happening. The helpers are the blast radius here too.
 - **Verification command:** `npm run verify`, then
   `npx playwright test e2e/golden-path.e2e.ts e2e/onboarding-gate.e2e.ts`
 - **Budget:** one local builder context.
-- **Depends on:** Slices 1–2, 3a
+- **Depends on:** Slices 2b, 3a
 
 ### Slice 4: The kids card and the photo card
 
@@ -500,11 +556,18 @@ extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**
 - **The ending depends on content that does not exist yet.** Slice 6 is
   verifiable with a fixture, but the *payoff* is only real after Slice 8. Do not
   let a green Slice 6 read as "the cold start is solved."
-- **Slice 2 is cross-cutting.** Moving the gate touches the feed, the detail
-  page and the host page. If a builder cannot land all three inside one context,
-  it must stop and report rather than half-move the gate — a half-moved gate is
-  worse than the wall. **A half-moved gate is now defined precisely: any code
-  path that still returns `'onboard'` or `ONBOARDING_PATH` as a *route* redirect.**
+- **Slice 2 was split into 2a/2b/2c on measurement, not taste.** As first
+  written it handed one builder context six files totalling **6,243 lines**
+  (`PlaydateDetailPage.tsx` alone is 2,803) and hedged with "if the two write
+  sites cannot be done cleanly in one, split…" — a hedge is not a decision. The
+  split also fixes an ordering hole: **the write-site guards must land before the
+  wall comes down**, or the location requirement is removed rather than moved.
+  So 2a (write sites) → 2b (the gate) → 2c (the feed state). **A builder that
+  cannot land the feed, the detail page and the host page is no longer asked to
+  guess: the slices are sized so it never has to.** If a half-moved gate ever
+  appears anyway, the test is precise — any code path that still returns
+  `'onboard'` or `ONBOARDING_PATH` as a *route* redirect, or any write path that
+  proceeds with `home_zip` unset.
 - **Derived resume re-offers skipped optional cards.** Accepted in decision 6's
   implementation; recorded in Interfaces. **The plan previously understated the
   cost as "one extra tap": a parent who abandoned on card 5 (area) after

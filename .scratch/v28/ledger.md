@@ -129,3 +129,31 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   dispatched as the closing lane for slice 1 (run 1186400b) and will run the gate
   independently at e175714. Going forward the orchestrator inspects lane reports,
   and runs the gate itself only when a lane fails and the failure needs triage.
+- Slice 1: verifier lane VERDICTED "FAIL" (run 1186400b) — ADJUDICATED PASS.
+  The verifier was right and honest: gate exit 0 with every stage reported
+  independently (build ok, 64 files / 1973 tests, 0 lint errors / 80 pre-existing
+  warnings, a11y:focus ok, steering-lint ok, GUARDS PASS), slice tests 24/24,
+  HEAD matched. Its only failing check was the brief's item 5 ("nothing outside
+  the slice moved") — 7 out-of-scope files in 15ada15..e175714. Ruling: PASS.
+  The 3 SOURCE commits (4660a1b, 7619057, e175714) touch ONLY the four slice
+  files; the 7 files are plan.md, task-state.md, the ledger and four briefs —
+  the orchestrator's own records, which must live on the same branch. A range
+  check that includes orchestrator record commits can never pass. THE BRIEF WAS
+  WRONG, NOT THE SLICE. Lesson for future verifier briefs: scope the
+  out-of-scope check to source/test/script/config paths, or to per-commit
+  attribution, never to the whole branch range.
+- SLICE 1 COMPLETE AND VERIFIED.
+- PLAN AMENDED: Slice 2 split into 2a/2b/2c on MEASUREMENT, not taste.
+  PlaydateDetailPage.tsx is 2803 lines, NewPlaydatePage 1547, FeedPage 1408 —
+  the original Slice 2 handed one 98k builder context SIX files / 6,243 lines and
+  hedged ("if the two write sites cannot be done cleanly in one, split") instead
+  of deciding. New order: 2a write sites -> 2b the gate stops bouncing -> 2c the
+  no-zip feed state. The order is load-bearing: removing the wall before the
+  write guards exist means the location requirement is REMOVED, not MOVED.
+  Invariant pinned: the location requirement must never be absent at any slice
+  boundary. Later slices' depends-on updated (3b now depends on 2b).
+- Slice 2a: dispatched. Grounded by grep, not memory: the ping action is
+  `handlePingToggle()` at PlaydateDetailPage.tsx:875 -> `togglePing()` (db.ts:1622);
+  the host action is `handleSubmit()` at NewPlaydatePage.tsx:1115 -> `createPlaydate()`
+  at 1162. Also pinned a nuance: the guard blocks SETTING a ping, not CLEARING
+  one, so a zip-less parent can always withdraw.
