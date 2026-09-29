@@ -558,3 +558,50 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   every slice's e2e run adds to that pile. `node scripts/sweep-e2e-markers.mjs
   delete` then `verify`, with both tails pasted.
 - Slice 3a: verifier lane dispatched as the closing check.
+- Slice 3a: VERIFIER PASS (run f81d7466) at 71e2b6b. RAW OUTPUT: gate exit 0;
+  build ok; TEST 65 files / 1975 tests; LINT 0 errors / 80 warnings -- unchanged;
+  a11y:focus PASS; steering-lint PASS; GUARDS PASS. golden-path e2e 2 passed /
+  10.6s. It found the false positive in its own grep and classified ALL SIX
+  `session !== null` hits in App.tsx (FOUR more than the reviewer had listed:
+  L95 the route-gate input, L127 the push-repair side effect, L169 the composite
+  /mod guard, L203 the intermediate var feeding navRenders) -- none is a chrome
+  decision keyed on session alone. Exactly ONE `pathname === ONBOARDING_PATH`
+  comparison (211; 205 is a comment). The grid expression's FALSE BRANCH carries
+  no `grid-cols-` -- the structural proof, observed in the raw string. Hooks at
+  69-150 vs early returns at 154/165. Guard-order diff grep: zero matches. Marker
+  sweep covers the e2e- addresses (`email like 'e2e-%'`). Scope = the three
+  declared files. **SLICE 3A COMPLETE AND VERIFIED -- and its review was the
+  batch's first with ZERO findings.**
+- PLAN DEFECT #11, found by grounding 3b: **`e2e/auth.setup.ts` is in no slice's
+  scope and 3b breaks it.** Lines 54-61 fill given-name, family-name and
+  street-address ON /login -- all three fields 3b deletes. This is the SETUP
+  PROJECT every spec depends on, so the break is a WHOLE-SUITE failure, not one
+  spec's -- the worst instance yet of the class the batch's first plan defect
+  named. GOOD NEWS, MEASURED: the name card carries the SAME two selectors
+  (OnboardingPage.tsx:374,391 autoComplete given-name/family-name), so the fix is
+  an ORDER change, not a rewrite, and the REST PATCH backstop keeps the marker's
+  final location identical either way. Added to 3b's scope.
+- PLAN DEFECT #12: **`e2e/signup-zip-fallback.e2e.ts` dies in 3b, NOT Slice 5.**
+  Both its tests fill street-address on /login (line 53) and assert the fallback
+  note at the location step. The flag's PRODUCER is LoginPage.tsx:224
+  (markSignupZipUnresolved after a failed geocode) -- delete the address and the
+  producer is gone. The plan scheduled this spec's retirement for Slice 5, by
+  which time it would have been failing for two slices. Moved to 3b (updated,
+  never deleted); Slice 5 re-establishes the in-card coverage, and 3b must say so
+  in a comment so the coverage is visibly RELOCATED rather than lost.
+- PLAN DEFECT #13: **THE PLAN CONTRADICTED ITSELF.** 3b's acceptance says the
+  address leaves /login; Slice 5's approach said "move the address field and its
+  zipFromAddressQuery geocode out of /login and into this card". Both cannot be
+  true. Decision 4 (account first, email + password only) is the one that happens,
+  so the removal is 3b's; Slice 5 builds the card the address lands ON. Corrected
+  in both blocks.
+- PLAN DEFECT #14, sizing found by measurement: with auth.setup.ts and
+  signup-zip-fallback.e2e.ts added, 3b became TWO production files plus THREE spec
+  files -- the batch's busiest slice. SPLIT: the resume nudge moves to a new
+  **Slice 3c**. Rationale: 3b's job is load-bearing (the flow plus every shared
+  helper); mixing in a new shell UI element makes a failure ambiguous -- you could
+  not tell a broken flow from a nudge bug. Same reasoning that split 3a from 3b.
+  3b also now carries an explicit instruction: if the context runs out mid-slice,
+  STOP and report with the partial diff rather than committing a half-moved
+  signup -- a signup that lands nowhere is worse than an unfinished one.
+- Slice 3b dispatched.

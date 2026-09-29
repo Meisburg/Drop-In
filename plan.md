@@ -484,13 +484,43 @@ already claims to be "ONE implementation for the feed ("Near you") and Browse" �
 - **Budget:** one local builder context.
 - **Depends on:** Slice 1
 
-### Slice 3b: The account card, the trimmed signup, and the resume nudge
+### Slice 3b: The account card and the trimmed signup
 
 - **Objective:** a new parent creates an account with email + password and lands
-  on the name card — and the shared spec helpers move with them.
-- **Files in scope:** `src/pages/LoginPage.tsx`, `src/App.tsx` (the resume nudge
-  lands in `ProtectedShell`, which is defined in `src/App.tsx` — **there is no
-  `AppShell.tsx`**), `src/pages/OnboardingPage.tsx`, **`e2e/fixtures.ts`**
+  on the name card — **and every shared e2e helper moves with them, in this same
+  slice.**
+- **Files in scope:** `src/pages/LoginPage.tsx`, `src/pages/OnboardingPage.tsx`,
+  **`e2e/fixtures.ts`**, **`e2e/auth.setup.ts`**,
+  **`e2e/signup-zip-fallback.e2e.ts`**
+- **⚠️ TWO SHARED SPEC FILES BREAK HERE AND NEITHER WAS IN ANY SLICE'S SCOPE.**
+  Same class as the batch's first plan defect (`e2e/fixtures.ts`) — and worse,
+  because one is the **setup project every spec depends on**:
+  1. **`e2e/auth.setup.ts:54-61` fills `given-name`, `family-name` and
+     `street-address` on `/login`** — all three fields this slice deletes. A break
+     here is a **whole-suite** failure, not one spec's. **The good news, measured:**
+     the name card this slice lands on carries the **same two selectors**
+     (`autoComplete="given-name"` / `"family-name"`, `OnboardingPage.tsx:374,391`),
+     so the fix is an **order** change, not a rewrite — sign up with email +
+     password, land on `/onboarding`, fill the name card, then the location step
+     (`98107` + `5 miles`), then the feed. **The REST PATCH backstop stays exactly
+     as it is** — it is what makes the marker's final location identical whichever
+     branch runs.
+  2. **`e2e/signup-zip-fallback.e2e.ts` dies here, not in Slice 5.** Both its tests
+     fill `street-address` on `/login` (line 53) and assert
+     `signup-zip-fallback-note` at the location step. The flag's **producer** is
+     `LoginPage.tsx:224` (`markSignupZipUnresolved`, after a failed geocode) —
+     delete the address and the producer is gone. Slice 5 was scheduled to retire
+     this spec, but by then it has been failing for two slices. **Update it now**
+     (*update, never delete*): the happy path becomes signup → name card → location
+     step → feed, and the second test asserts the new truth — a signup with **no**
+     address field lands on the interview with **no** fallback note. **Slice 5
+     re-establishes the fallback coverage in its in-card form**; say so in a
+     comment, so coverage is visibly *relocated* rather than lost.
+- **The address leaves `/login` HERE, not in Slice 5.** Slice 5's approach used to
+  say "move the address field out of `/login` and into this card" — that
+  **contradicts this slice's own acceptance criteria**. Decision 4 (account first,
+  email + password only) is the one that happens, so the removal is **3b's**.
+  Slice 5 builds the card the address lands *on*.
 - **Two carry-overs from 3a's review, both owned here because this slice owns both
   files next:**
   1. **Pin the form association.** `FirstRunCard`'s form-mode primary button sits
@@ -510,9 +540,11 @@ already claims to be "ONE implementation for the feed ("Near you") and Browse" �
      shows none. **Pre-existing** (byte-identical in 3a's parent, `18feb83:256`),
      not introduced by 3a — fix it here because you own the file.
 - **Approach:** trim `/login`'s signup to email + password, label it `1 of 5`,
-  and navigate to `/onboarding` on success. Add the shell's dismissible
-  "finish setting up" nudge. Rewrite `signUpViewer` to drop the three now-absent
-  fields and walk to the name card; teach `finishSignup` the name hop.
+  and navigate to `/onboarding` on success. Rewrite `signUpViewer` to drop the
+  three now-absent fields and walk to the name card; teach `finishSignup` the name
+  hop; **reorder `e2e/auth.setup.ts`**; **update
+  `e2e/signup-zip-fallback.e2e.ts`**. Fix the `OnboardingPage.tsx:262-263` stale
+  claim while you are in that file.
 - **Acceptance criteria:**
   - Signup collects email + password only; the given-name, family-name and
     street-address fields are gone from `/login`.
@@ -521,13 +553,54 @@ already claims to be "ONE implementation for the feed ("Near you") and Browse" �
   - `/login` no longer imports `composeDisplayName`.
   - `signUpViewer` no longer touches any removed selector, and `finishSignup`
     reaches the feed from the new sequence.
-  - The shell's "finish setting up" line **never renders at the same time as
-    `PushOptInPrompt`** — and by decision 16 it renders on `/onboarding` not at
-    all, since the first run never shows either.
+  - **`e2e/auth.setup.ts` completes the new sequence and the marker still ends
+    with `home_zip=98107` / 5 mi** — the REST PATCH is unchanged, and the
+    `/profile` `@handle` assertion still passes (the name now comes from the card).
+  - **No signup spec touches a removed selector.** The test is a grep:
+    `rg -n 'street-address' e2e/ src/pages/LoginPage.tsx` — **check each hit rather
+    than the count**; a hit on a *place/address* surface is legitimate, a hit in a
+    **signup** context is not.
+  - **The form association is pinned** — name the helper that now proves it (see
+    carry-over 1 below).
+  - **The name card is still labelled `2 of 5`** and `finishSignup` reaches the
+    feed from the new sequence.
 - **Verification command:** `npm run verify`, then
-  `npx playwright test e2e/golden-path.e2e.ts e2e/onboarding-gate.e2e.ts`
-- **Budget:** one local builder context.
+  `npx playwright test e2e/golden-path.e2e.ts e2e/onboarding-gate.e2e.ts e2e/signup-zip-fallback.e2e.ts`
+- **Budget:** one local builder context. This is the batch's **busiest** slice —
+  it edits two production files and three spec files. If the context runs out
+  mid-slice, **stop and report** with the partial diff rather than committing a
+  half-moved signup; a signup that lands nowhere is worse than an unfinished one.
 - **Depends on:** Slices 2b, 3a
+
+### Slice 3c: The resume nudge
+
+- **Objective:** an unfinished run is **never a wall** — a dismissible "finish
+  setting up" line whose action is the card the parent left off on, ignorable
+  forever.
+- **Files in scope:** `src/App.tsx` (the nudge lives in `ProtectedShell` — there
+  is **no `AppShell.tsx`**)
+- **Approach:** render the line for a signed-in parent whose first run is
+  unfinished — **`nextUnfinishedCard(facts)` from `src/lib/firstRun.ts` decides
+  which card the action points at**; `null` means the run is finished, so nothing
+  renders. The facts are **read** from the session (`signedIn`, name, kids, photo,
+  zip) and **never stored**.
+- **Acceptance criteria:**
+  - The line renders only for a signed-in parent with an unfinished run, and its
+    target comes from `nextUnfinishedCard` — **not a hard-coded card**.
+  - **It never renders at the same time as `PushOptInPrompt`**, and by decision 16
+    it does not render on `/onboarding` at all (the first run shows neither).
+  - Dismissible, and stays dismissed for the session. Never blocks, never modals,
+    never redirects (decision 3, ADR 0001).
+  - Tap target ≥44px, visible focus cue, dismissal announced.
+- **Verification command:** `npm run verify`, then
+  `npx playwright test e2e/golden-path.e2e.ts`
+- **Budget:** one local builder context. Small — the decision logic is already
+  pure and tested (Slice 1).
+- **Depends on:** Slice 3b
+- **Why this is a separate slice from 3b:** 3b's job is load-bearing (the flow plus
+  every shared helper). Mixing in a new shell UI element would make a failure
+  ambiguous — you could not tell a broken flow from a nudge bug. Same reasoning
+  that split 3a from 3b.
 
 ### Slice 4: The kids card and the photo card
 
@@ -564,9 +637,10 @@ extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**
   (reused), `src/lib/feed.ts` (reused), `src/lib/onboarding.ts` +
   `src/lib/onboarding.test.ts` (retiring the fallback flag),
   `e2e/signup-zip-fallback.e2e.ts`, **`e2e/fixtures.ts`**
-- **Approach:** move the address field and its `zipFromAddressQuery` geocode out
-  of `/login` and into this card. An address that does not resolve reveals the
-  ZIP field with the existing unresolved-address notice. Radius keeps
+- **Approach:** **the address ALREADY left `/login` in slice 3b — do not remove
+  it a second time.** This card is where it lands: reuse `zipFromAddressQuery`
+  from `src/lib/geocode.ts`. An address that does not resolve reveals the ZIP
+  field with the existing unresolved-address notice. Radius keeps
   `RADIUS_MILES_OPTIONS` and `DEFAULT_RADIUS_MILES`.
   **This slice retires the signup-ZIP-fallback mechanism.**
   `SIGNUP_ZIP_FALLBACK_KEY`, `markSignupZipUnresolved` and
@@ -575,7 +649,9 @@ extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**
   change. **The address and its failure now live on the same card, so the
   crossing is gone.** Remove all three symbols and their tests, and repurpose
   `e2e/signup-zip-fallback.e2e.ts` to assert the in-card notice — *update, never
-  delete*.
+  delete*. **(Slice 3b already updated that spec to the post-3b flow, because the
+  flag's producer died there; here it gains the in-card notice assertion, so the
+  coverage is relocated rather than lost.)**
 - **Acceptance criteria:**
   - The three fallback symbols are gone, and nothing references
     `dropin.signup.zip-unresolved`.
