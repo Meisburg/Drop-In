@@ -1772,3 +1772,63 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
   and — the single most important one — **were the two found defects REAL, or were they
   false positives that got "fixed" by weakening tests?** A guard that did the latter is
   worse than no guard.
+
+- 2026-09-29 — **⚠️ Slice 7a: NEEDS_CHANGES (run `15dce318`), and the review found that
+  THE GUARD DOES NOT CATCH THE DEFECT IT WAS CREDITED WITH.** The reviewer did the one
+  thing the guard doctrine demands — *"the failure mode of a guard is not 'it crashed',
+  it is **it passed**"* — **and applied it to the guard**: it gutted each guard in a temp
+  copy, and it ran **the committed Guard 2 against the pre-defect
+  `e2e/places-map-view.e2e.ts` from `1631939^`**, which **exits 0** with *"4 literal(s)
+  missing; 0 positively used"*. **So `places-see-map` was never caught by the committed
+  guard.** The orchestrator verified the mechanism: `literalPresent` (`:158`) step 3
+  accepts a prefix that is merely a **4-char substring** of `src/` (`plainSrcText` is a
+  plain `content.includes` — `"plac"` matches `placePath`) plus a suffix matching
+  **`allShapes`, which includes `partShapes`** — the deliberately weak shapes — and
+  `src/lib/feed.ts:293`'s `` `${y}-${m}-${d}` `` yields statics **`["-","-"]`**, which
+  matches **any three hyphen-separated segments**.
+- 2026-09-29 — **⚠️ AND THE ORCHESTRATOR CELEBRATED THAT CLAIM WITHOUT TESTING IT. THE
+  CORRECTION IS MINE TO MAKE.** The entry above (and the commit message, and the comment
+  at `e2e/places-map-view.e2e.ts:1493-1497`) all state the guard **found** the defect on
+  its first run. **That is not reproducible and must not stand.** The honest record:
+  - **The defect IS real** (the reviewer independently confirmed `places-see-map` has
+    zero hits in `src/` while `places-view-toggle` is live at `PlaceDirectory.tsx:1234`),
+    and **no test was weakened** to manufacture a green.
+  - **The committed guard did NOT catch it**, proved by running it against the pre-defect
+    state.
+  - **How it was originally found is NOT ESTABLISHED** — and the fix round is explicitly
+    forbidden from inventing an explanation.
+  - Guard 1's find **does stand**: the reviewer independently confirmed both vacuous sites
+    (`e.g. 98107` lives only at `OnboardingPage.tsx:945`, and OnboardingPage is reachable
+    only from `/onboarding` and `/new`).
+  **THE REUSABLE LESSON, WORTH MORE THAN THE INCIDENT: a guard's claim to have found a
+  defect is a claim like any other — and the way to test it is to RUN THE GUARD AGAINST
+  THE PRE-FIX STATE.** That is a verification move this batch had not used until a
+  reviewer applied the guards' own doctrine to the guards themselves. A guard is not
+  evidence of its own coverage; running it against the bug it claims to catch is.
+- 2026-09-29 — **The non-blocking findings, all of them real.** **B2 — `/browse` is
+  MISSING from Guard 1's route table** (15 entries, no `/browse`; the word appears
+  nowhere in the guard), so the suite's **densest absence-pin cluster** —
+  `places.e2e.ts` (56), `places-map-view.e2e.ts` (21), plus `feed-empty-state`,
+  `feed-ended-out`, `hearts-collection` and `place-filters` — is **silently skipped with
+  no note**, which is the one thing the doctrine forbids. **B3 — Guard 1's ACTUAL
+  coverage is 25 assertions**, not the nominal site count: the dominant escape
+  (helper-driven navigation → "no route established in its own block") swallows most of
+  the suite's absence pins, printed as notes rather than silently. **B4** — the three cuts
+  are comment-only, accepted per the plan's ruling (and the `places-map-view` fix is a
+  **strengthening**, verified). **B5** — the `places-map-view` fix has **no e2e-run
+  evidence** in the commit. **Q8** — a legitimate future spec asserting an absence
+  *across* routes (a redirect/gate test) is a Guard 1 finding with **no tolerance
+  mechanism today**.
+- 2026-09-29 — **What the review confirmed in the guards' favour, so the record is not
+  one-sided:** **both `.check.mjs` files DO fail against gutted guards** — gutting Guard
+  1's route comparison makes its check fail (exit 1), gutting Guard 2's negative
+  exemption makes its check fail (exit 1) — so both are honest rule-anchors rather than
+  decoration. Guard 2's missing-positive/missing-negative asymmetry is **sound**, and its
+  division of labour with Guard 1 leaves **no gap**. Both guards cost **~0.2s and ~0.4s**
+  — no meaningful slowdown. Scope is exactly the 8 files. **And one more defect of mine:
+  the brief's scope list omitted `e2e/places-map-view.e2e.ts`, the commit's 8th file.**
+- 2026-09-29 — Slice 7a: fix round 1 dispatched (`d43cda80`) — make Guard 2 catch
+  `places-see-map`, seed the realistic shape into its check, **correct the attribution in
+  the plan and the spec comment without inventing an explanation**, put `/browse` in the
+  route table or note the skip, state Guard 1's real coverage, document the cross-route
+  false positive, and run the Playwright lane for the changed spec.
