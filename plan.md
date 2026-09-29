@@ -1943,3 +1943,32 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
   "fix" a flake) plus `npm run verify`. **7b-2** = the marker sweep (`delete` then
   `verify`) with both tails — a short, bounded run of its own. **The two cannot share a
   context: one full sweep alone is ~45% of the entire budget.**
+
+- 2026-09-29 — **THE FULL E2E SWEEP IS CLEAN: `2 skipped, 161 passed (13.2m)`, ZERO
+  failures.** The first attempt's single failure — `e2e/places.e2e.ts:2759`, *"a tapped
+  feed pin names the drop-in happening there, and says when it stands for more than one
+  (V25 t07)"* — was **a FLAKE, confirmed by an identical re-run passing all 161**, not
+  reasoned away. **So 7b-1 needed no work: the correct instruction was "do not fix a
+  flake", and the correct evidence was a second run.** This is the batch-end gate passing.
+- 2026-09-29 — **A NEW NAMED FLAKE, FOR THE RECORD, BESIDE THE `/tmp` GIT-CLONE ONE:**
+  `e2e/places.e2e.ts:2759` ("a tapped feed pin names the drop-in happening there…", V25
+  t07). It failed once in a 161-test sweep and passed in an identical re-run.
+  **Recorded as a flake rather than as a regression, on evidence** — the diff over
+  `e2570c9..HEAD` on that spec, `PlaceDirectory.tsx` and `FeedPage.tsx` is **empty**, and
+  V28's only change to `places.ts` is **purely additive**. **A future red here should be
+  re-run before it is investigated.**
+- 2026-09-29 — **⚠️ MEASURED CORRECTION TO A DOCUMENTED ASSUMPTION: THE FULL SUITE TAKES
+  ~13.2–13.4 MINUTES, NOT THE 8–10 THE BATCH'S DOCS ASSUME.** Two full runs, 13.4m and
+  13.2m. That measurement is what forced **7b's split** — a single sweep is ~45% of a
+  30-minute builder deadline, so the lanes cannot share a context with anything else.
+  **Worth carrying forward as the real number for batch-end planning.**
+- 2026-09-29 — **And the negative worth stating: NOTHING DESTRUCTIVE HAPPENED WHILE THE
+  BUILDER WAS DYING.** The marker sweep had reached only its read-only pre-flight
+  (1084 marker rows, `founder_overlap: 0`). Verified after the timeout: marker users went
+  **536 → 616 — up, because the full sweep created accounts.** Had the run died *after*
+  the delete, the "zero removals would be a finding" check would have been **inverted**,
+  and the honest report would have been that a clean sweep proves nothing. **The order of
+  a destructive step matters to the meaning of its evidence, not only to its risk.**
+- 2026-09-29 — Slice 7b-2 dispatched (`f8bbd27f`): **the marker sweep only** —
+  `delete` then `verify`, both tails — with the explicit instruction **not** to re-run the
+  full suite (13.2m would waste the context and prove nothing new).

@@ -1779,3 +1779,25 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   verdict FIRST; do not "fix" a flake) plus npm run verify; **7b-2** = the marker sweep
   (delete then verify) with both tails, its own short bounded run. They cannot share a
   context: one full sweep alone is ~45% of the budget.
+- **THE FULL E2E SWEEP IS CLEAN: 2 skipped, 161 passed (13.2m), ZERO FAILURES.** The first
+  attempt's single failure -- e2e/places.e2e.ts:2759 "a tapped feed pin names the drop-in
+  happening there, and says when it stands for more than one (V25 t07)" -- WAS A FLAKE,
+  CONFIRMED BY AN IDENTICAL RE-RUN PASSING ALL 161, not reasoned away. So 7b-1 needed NO
+  work: the right instruction was "do not fix a flake" and the right evidence was a second
+  run. THIS IS THE BATCH-END GATE PASSING.
+- **NEW NAMED FLAKE, BESIDE THE /tmp GIT-CLONE ONE: e2e/places.e2e.ts:2759.** Failed once
+  in a 161-test sweep, passed in an identical re-run. Recorded on EVIDENCE: the diff over
+  e2570c9..HEAD on that spec, PlaceDirectory.tsx and FeedPage.tsx is EMPTY, and V28's only
+  change to places.ts is purely additive. A future red here should be RE-RUN before it is
+  investigated.
+- **MEASURED CORRECTION TO A DOCUMENTED ASSUMPTION: THE FULL SUITE TAKES ~13.2-13.4
+  MINUTES, NOT THE 8-10 THE DOCS ASSUME.** Two full runs: 13.4m and 13.2m. That number is
+  what forced 7b's split -- one sweep is ~45% of a 30-minute deadline.
+- **THE NEGATIVE WORTH STATING: NOTHING DESTRUCTIVE HAPPENED WHILE THE BUILDER WAS DYING.**
+  The marker sweep had reached only its read-only pre-flight (1084 marker rows,
+  founder_overlap 0), and marker users went 536 -> 616, UP because the full sweep created
+  accounts. HAD THE RUN DIED AFTER THE DELETE, THE "ZERO REMOVALS WOULD BE A FINDING"
+  CHECK WOULD HAVE BEEN INVERTED and a clean sweep would have proved nothing. THE ORDER OF
+  A DESTRUCTIVE STEP MATTERS TO THE MEANING OF ITS EVIDENCE, NOT ONLY TO ITS RISK.
+- Slice 7b-2 dispatched (f8bbd27f): the marker sweep only, with the explicit instruction
+  NOT to re-run the full suite.
