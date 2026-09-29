@@ -65,8 +65,9 @@ export function resolveProtectedRedirect(
  * existed to reveal could render, and it re-bounced any re-visit to
  * /onboarding out of the run's own ending. A finished parent now lands on
  * the finish card (OnboardingPage), whose primary CTA carries them to the
- * feed. The protected ROUTES still key on the zip where the write paths
- * require it (resolveProtectedRedirect is unchanged); only this route's own
+ * feed. The protected ROUTES do not key on the zip any more (V28 slice
+ * 2b) — the requirement lives at the WRITE PATHS (hasHomeZip, lib/homeZip
+ * .ts), and resolveProtectedRedirect is unchanged; only this route's own
  * bounce is re-keyed.
  */
 export function resolveOnboardingRedirect(signedIn: boolean): string | null {

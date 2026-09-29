@@ -30,8 +30,24 @@ import { RadiusEmptyState } from './RadiusEmptyState'
 const FINISH_RUN_CARD_COPY = {
   progressLabel: 'All done',
   title: 'You’re all set',
-  body: 'Here are a few real places near you to host a drop-in. Pick one and start from its page.',
   primaryLabel: 'Go to your feed',
+} as const
+
+/**
+ * The card's body, keyed by the PICKS STATE (fix 1, the batch's honesty
+ * ruling): the places claim is true only when the list actually renders.
+ * The other states each show their OWN honest line below (the loading
+ * line, the shared RadiusEmptyState, the error line) and pass NO body —
+ * a claim above them would say "here are a few real places near you"
+ * and then say there are none (the plan's pinned bullet: the no-places
+ * fallback makes no claim about places that do not exist).
+ */
+const FINISH_RUN_CARD_BODY = {
+  /** picks non-empty — the list is on screen; the sentence is true. */
+  withPicks:
+    'Here are a few real places near you to host a drop-in. Pick one and start from its page.',
+  /** loading / empty / error — no body: the state's own line is the truth. */
+  withoutPicks: undefined,
 } as const
 
 export function FinishRunCard({
@@ -54,11 +70,17 @@ export function FinishRunCard({
   onGoToFeed: () => void
   testId?: string
 }) {
+  // Fix 1: the body branches on the picks state IN THE component (the
+  // build law — presentation branching, not a lib decision): the places
+  // claim renders only when there ARE picks; loading, empty, and error
+  // each carry their own honest line and no claim above it.
+  const body =
+    picks.length > 0 ? FINISH_RUN_CARD_BODY.withPicks : FINISH_RUN_CARD_BODY.withoutPicks
   return (
     <FirstRunCard
       progressLabel={FINISH_RUN_CARD_COPY.progressLabel}
       title={FINISH_RUN_CARD_COPY.title}
-      body={FINISH_RUN_CARD_COPY.body}
+      body={body}
       primaryLabel={FINISH_RUN_CARD_COPY.primaryLabel}
       onPrimary={onGoToFeed}
       testId={testId}
