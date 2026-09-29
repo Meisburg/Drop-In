@@ -650,15 +650,19 @@ already claims to be "ONE implementation for the feed ("Near you") and Browse" �
   ambiguous — you could not tell a broken flow from a nudge bug. Same reasoning
   that split 3a from 3b.
 
-### Slice 4: The kids card and the photo card
+### Slice 4a: The kids card — and the cards start reading the copy module
 
-- **Objective:** cards 3 and 4 collect kids (first name + age) and a photo, each
-  with a working Skip.
+- **Objective:** card 3 collects kids (first name + age) with a working Skip, and
+  **the cards begin rendering their words from `FIRST_RUN_COPY`** so no card
+  carries a second voice.
+- **⚠️ SLICE 4 IS SPLIT — a measurement decision, not a hedge.** As written it was
+  two cards **plus** a cross-cutting copy adoption **plus** a `lib/` extraction.
+  Mixing a refactor with two new cards makes any failure ambiguous — the same
+  reasoning that split 3a from 3b and 3b from 3c. **4a = the kids card + the copy
+  adoption. 4b = the photo card + the `hasAvatarUrl` extraction + that card's
+  nudge title.**
 - **Files in scope:** `src/pages/OnboardingPage.tsx`,
-  `src/components/useCropStep.tsx` (reused, not rebuilt — **note the `.tsx`
-extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**,
-  **`src/lib/firstRunCopy.ts` and its test**, **a new `src/lib/` predicate for
-  "has an avatar" and its sibling test**
+  `src/lib/firstRunCopy.ts` and its test, **`e2e/fixtures.ts`**
 - **Approach:** lift the existing kid-rows and avatar-upload logic into the card
   chrome. The crop step is **reused as-is** — it already validates size and type
   before decoding. Skipping advances without writing. **Note this is a
@@ -688,19 +692,50 @@ extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**,
     a card's title is true in the nudge **by construction**, because the nudge and
     the card read the same module. **Then re-enable that card's title in the
     nudge** (`src/App.tsx`) for the cards you have built — and only those.
-  - **⚠️ EXTRACT THE AVATAR PREDICATE (reviewer finding).** `src/App.tsx:158-159`
-    inlines `avatar_url !== undefined && !== null && !== ''`, **duplicating the
-    same rule already inlined at `db.ts:2521`** — two inline copies that can
-    drift, and no exported predicate exists (the only other is a local, unexported
-    const at `places.ts:1068`). The build law and this repo's own precedent
+- **Verification command:** `npm run verify` and
+  `npx playwright test e2e/golden-path.e2e.ts`
+- **Budget:** one local builder context.
+- **Depends on:** Slice 3c
+
+### Slice 4b: The photo card, and the avatar predicate
+
+- **Objective:** card 4 collects a photo (reusing the crop step) with a working
+  Skip, and the "has an avatar" rule stops being written inline in three places.
+- **Files in scope:** `src/pages/OnboardingPage.tsx`,
+  `src/components/useCropStep.tsx` (reused, not rebuilt — **note the `.tsx`
+extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "has
+  an avatar" and its sibling test**, `src/App.tsx` (the nudge uses it),
+  **`e2e/fixtures.ts`**
+- **Approach:** lift the existing avatar-upload logic into the card chrome. The
+  crop step is **reused as-is** — it already validates size and type before
+  decoding (`useCropStep(onConfirm, validateFile) → { beginCrop, dialog, busy }`,
+  `src/components/useCropStep.tsx:26-45`). Skipping advances without writing. **This
+  is a reorder, not a verbatim lift:** the existing page runs photo
+  (`OnboardingPage.tsx:~515`) before kids (`:~548`); the chosen card order is kids
+  then photo — and 4a already moved kids ahead.
+- **Acceptance criteria:**
+  - The photo card reuses `useCropStep` and `uploadAvatar`; a rejected file shows
+    the existing error and does not trap the card.
+  - Skip advances past the card without writing anything.
+  - A failure writing the photo is surfaced and does not block Continue.
+  - The card reads `4 of 5`, **rendering its title, body and primary label from
+    `FIRST_RUN_COPY`** (4a established the pattern — follow it, do not hard-code).
+  - **⚠️ EXTRACT THE AVATAR PREDICATE (reviewer finding).** `src/App.tsx` inlines
+    `avatar_url !== undefined && !== null && !== ''`, **duplicating the same rule
+    already inlined at `db.ts:2521`** — two inline copies that can drift, and no
+    exported predicate exists (the only other is a local, unexported const at
+    `places.ts:1068`). The build law and this repo's own precedent
     (`src/lib/homeZip.ts`'s `hasHomeZip`, created for exactly this) say this
     belongs in `src/lib/` as a **tested pure function**. Extract it, give it a
     sibling test, and use it in the nudge. **Reconciling `db.ts:2521` onto it is
     Slice 7's** (Slice 7 owns `db.ts`) — just note it for that slice.
+  - **Then re-enable this card's title in the resume nudge** (`src/App.tsx`) — the
+    nudge may name only cards that exist (defect #20).
+  - `finishSignup` walks the new photo hop.
 - **Verification command:** `npm run verify` and
   `npx playwright test e2e/avatar.e2e.ts`
 - **Budget:** one local builder context.
-- **Depends on:** Slice 3b
+- **Depends on:** Slice 4a
 
 ### Slice 5: The area card
 
@@ -1088,3 +1123,37 @@ extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**,
   card's **typographic** `’`. **The reviewer's citations were right and mine were
   wrong, twice.** Third and fourth instance of the batch's recurring lesson that a
   no-match from a broken search is not a no-match.
+
+- 2026-09-29 — **Slice 3c CLOSED: VERIFIED PASS** (verifier run `bbf62344`) at
+  `5485384`. Gate exit 0, **65 files / 1978 tests** (the +3 fully explained by the
+  new `FIRST_RUN_NUDGE_COPY` describe), **lint 0 errors / 81 warnings — 81, not
+  82**, the single accepted warning moved to `App.tsx:138` as the fix's diff
+  shifted it. The blocking finding is **provably gone**: no card-title reference
+  survives in `App.tsx`, and the new test genuinely asserts the nudge's text
+  contains **none of the five per-card titles** (verified by reading the assertion,
+  not its name — with the honest caveat that it covers title+body, not
+  `actionLabel`, and guards the copy object rather than the render site, which the
+  empty grep covers). `FIRST_RUN_COPY`'s orphan status is confirmed. Scope = 4
+  files; the throwaway driver is untracked.
+- 2026-09-29 — **Slice 4 SPLIT INTO 4a AND 4b ON MEASUREMENT.** As written it was
+  two cards **plus** the cross-cutting copy-module adoption **plus** the
+  `hasAvatarUrl` extraction — and mixing a refactor with two new cards is what made
+  3a/3b and 3b/3c ambiguous under failure. **4a** = the kids card + the copy
+  adoption + `e2e/fixtures.ts`. **4b** = the photo card + the `hasAvatarUrl`
+  extraction + that card's nudge title.
+- 2026-09-29 — **The verifier caught TWO FALSE EXPECTATIONS IN THE ORCHESTRATOR'S
+  OWN BRIEF** — the first time this batch that a bad claim came from the brief
+  rather than the code. It said the accepted lint warning was at `App.tsx:130`
+  (it is at `:138`; same single warning, count 81, moved by the fix's diff) and
+  asserted `rg "other callers" src/` would be empty (**it is not** — two hits
+  predating the commit, in the unrelated map components). **A brief's expected
+  values are themselves claims, and a verifier that only checks what it was told
+  to check would have "confirmed" both.** Also recorded: the known `/tmp`
+  git-clone flake **reproduced** this time (hardlink error, 1/1978 in the test
+  stage) and passed 26/26 in isolation — a reproduction is a stronger datum than
+  the previous non-reproduction, and the guard's isolation pass is what keeps it
+  environmental. And **the fix round fixed one stale "slice 3b" comment and MISSED
+  A SECOND** (`App.tsx:387`, "slice 3b's resume nudge" — the nudge is 3c): the
+  fifth instance this batch of "the sweep named one, so there is one". **Named
+  obligation for Slice 7: `App.tsx:387`, found by grepping, not by trusting a line
+  number — the earlier fix fixed `:367`, a different line in the same file.**

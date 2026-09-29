@@ -892,3 +892,48 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
     a row. Noted because a verify driver that only works once is a driver that
     silently proved only one run.
 - Slice 3c: verifier lane dispatched as the closing check.
+- **SLICE 3C COMPLETE AND VERIFIED (PASS, run bbf62344) at 5485384.** Closing
+  evidence: gate exit 0; 65 files / 1978 tests (+3 explained by the new describe);
+  lint 0 errors / 81 warnings (81, NOT 82 -- the one accepted warning moved to
+  App.tsx:138 as the fix's diff shifted it); guards PASS; golden-path 2 passed.
+  The blocking finding is PROVABLY GONE (empty card-title grep in App.tsx, and the
+  new test asserts the nudge's text contains NONE of the five per-card titles --
+  checked by reading the assertion, not its name). FIRST_RUN_COPY's orphan status
+  confirmed. Scope 4 files; driver untracked.
+- **THE VERIFIER CAUGHT TWO FALSE EXPECTATIONS IN MY OWN BRIEF** -- the first time
+  this batch a bad claim came from the brief rather than the code:
+  * I wrote that the accepted lint warning was at App.tsx:130; it is at :138 (same
+    single warning, count 81, moved by the fix's diff).
+  * I asserted `rg "other callers" src/` would be EMPTY; it is NOT -- two hits,
+    confirmed present in the parent commit, in the unrelated map components
+    (PlaceMapLazy.tsx:155, PlacesMapView.tsx:396). The fix round's own comment IS
+    gone from OnboardingPage.
+  **A BRIEF'S EXPECTED VALUES ARE THEMSELVES CLAIMS.** A verifier that only checks
+  what it is told to check would have "confirmed" both of mine. This is the batch's
+  lesson #5 ("a reviewer's line reference needs the same verification as its
+  reasoning") extended to the orchestrator's own briefs.
+- **THE `/tmp` GIT-CLONE FLAKE REPRODUCED** this time: run 2's test stage failed
+  1/1978 in scripts/guards/no-bypass-guard.test.mjs on a hardlink error, and passed
+  26/26 in isolation (8.27s). A REPRODUCTION is a stronger datum than the earlier
+  non-reproduction, and the isolation pass is what keeps it environmental.
+- **THE FIX ROUND FIXED ONE STALE "slice 3b" COMMENT AND MISSED A SECOND.**
+  App.tsx:367 was fixed; App.tsx:387 still reads "slice 3b's resume nudge" (the
+  nudge is 3c). FIFTH instance this batch of "the sweep named one, so there is
+  one". NAMED OBLIGATION FOR SLICE 7, recorded with the instruction that finds it
+  (grep, not a line number -- the earlier fix was at a DIFFERENT line in the SAME
+  file, which is exactly how a one-line fix reads as complete).
+- **SLICE 4 SPLIT INTO 4a AND 4b ON MEASUREMENT.** As written: two cards PLUS a
+  cross-cutting copy-module adoption PLUS the hasAvatarUrl extraction. Mixing a
+  refactor with two new cards is what made 3a/3b and 3b/3c ambiguous under failure.
+  4a = the kids card + the copy adoption + e2e/fixtures.ts. 4b = the photo card +
+  the hasAvatarUrl extraction + that card's nudge title.
+- GROUNDING 4a, measured: useCropStep's API is
+  `useCropStep(onConfirm, validateFile) -> { beginCrop, dialog, busy }`
+  (src/components/useCropStep.tsx:26-45); the kid rules are MAX_KIDS_PER_PROFILE = 5
+  (db.ts:2364), validateKid (db.ts:2501), validateKidName (2482), validateKidAge
+  (2490); uploadAvatar is db.ts:2657; and the page currently runs photo
+  (~OnboardingPage.tsx:515) BEFORE kids (~:548), confirming the plan's "reorder,
+  not a verbatim lift". NOTED DRIFT: the plan cited "photo ~470, kids ~532" -- the
+  real lines are ~515/~548. Minor, but recorded because the plan's line numbers
+  have been wrong before and a builder that trusts them measures nothing.
+- Slice 4a dispatched.
