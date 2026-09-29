@@ -506,3 +506,55 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   condition, three places) and give the first run its own padding. Both defects
   are now named, checkable acceptance criteria in plan.md and the brief.
 - Slice 3a dispatched (the first slice that BUILDS the interview).
+- Slice 3a: reviewer verdict PASS (run 136c1792) at 71e2b6b -- **ZERO findings**,
+  which is the first clean review of the batch. What it established, with
+  citations:
+  * The seam is complete and SINGLE-SOURCED: `isFirstRun` (App.tsx:211) is the
+    ONLY pathname comparison in the shell, `navRenders` (217) is the only chrome
+    condition, and it enumerated all FIVE chrome sites (grid ~244, header ~249,
+    nav ~293, padding ~332, PushOptInPrompt ~342). The two remaining
+    `session !== null` checks (266, 275) render the header's CONTENTS, not a
+    chrome decision, and are unreachable while the header is suppressed. NO
+    chrome element is keyed on session alone.
+  * EVERY OTHER ROUTE BYTE-IDENTICAL -- walked all three states. `navRenders`
+    reduces to the old `session !== null` on every route but /onboarding.
+  * THE V22 COLLAPSE IS STRUCTURALLY IMPOSSIBLE TO RECUR, and this is the point
+    worth keeping: with `navRenders` false the wrapper is `md:grid` with NO
+    grid-template-columns -- one auto column -- and <main> is its only child, so
+    column 1 CANNOT be empty. Two columns now imply the rail is present. The
+    builder's 1280px runtime figure is consistent with that but *not needed* to
+    reach the conclusion.
+  * The name card is a faithful generalization: handleCreateProfile
+    byte-identical, same validation, same role="alert"/fieldA11y/errorId surface,
+    same HandleCreateProfile/HandleTakenError message, still exactly one
+    type="submit" button, still disabled={handleBusy}. ONE class delta: the
+    button trades the UA outline for the repo's `focus-visible:ring-2` idiom.
+  * Guard order untouched, PROVEN by grepping the diff hunk for guard names
+    (zero matches) -- the new constant was inserted after the return-target guard
+    and moved nothing.
+- NON-BLOCKING, both assigned to Slice 3b rather than fixed here (3b owns both
+  files next, and a fix round would be the round inflation already recorded on
+  2c):
+  1. THE FORM ATTRIBUTE IS UNPINNED. FirstRunCard's form-mode primary sits outside
+     the <form> and is joined only by the HTML `form` attribute. The reviewer
+     judged it the RIGHT structure (and says so with a reason: the card's contract
+     puts the action in its footer while the caller's form is in `children`) --
+     but nothing pins it: no unit test renders form mode, and all three
+     /^Continue/ helpers (e2e/fixtures.ts:418, e2e/auth.setup.ts:100,
+     e2e/signup-zip-fallback.e2e.ts:149) resolve to the LOCATION step's button
+     today. If the id and the attribute drift, Continue SILENTLY SUBMITS NOTHING --
+     a dead step, no error, no console output. 3b's spec-helper move onto the name
+     card pins it; 3b must now say which helper proves it.
+  2. OnboardingPage.tsx:262-263 -- "so the shell's onboarding gate (and header)
+     see the new home zip" -- stale since 2b. PRE-EXISTING (byte-identical in
+     parent 18feb83:256), not introduced by 3a. Assigned to 3b.
+- PROCESS CORRECTION THE REVIEWER ASKED FOR AND THE ORCHESTRATOR ACCEPTS: the
+  ledger had no 3a completion entry carrying the runtime-check output tails, so
+  the builder's 1280px / grid-class claim rested on the .scratch scripts alone.
+  Recording it now, and recording that the STRUCTURAL proof (code-verified) is
+  the stronger one -- the runtime figure is supporting evidence, not the basis.
+- Slice 7 gains the BATCH-END MARKER SWEEP as a named acceptance criterion: 3a's
+  builder created two e2e-seam3a accounts plus a "Seam Check" profile row, and
+  every slice's e2e run adds to that pile. `node scripts/sweep-e2e-markers.mjs
+  delete` then `verify`, with both tails pasted.
+- Slice 3a: verifier lane dispatched as the closing check.

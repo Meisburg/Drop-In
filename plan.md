@@ -491,6 +491,24 @@ already claims to be "ONE implementation for the feed ("Near you") and Browse" �
 - **Files in scope:** `src/pages/LoginPage.tsx`, `src/App.tsx` (the resume nudge
   lands in `ProtectedShell`, which is defined in `src/App.tsx` — **there is no
   `AppShell.tsx`**), `src/pages/OnboardingPage.tsx`, **`e2e/fixtures.ts`**
+- **Two carry-overs from 3a's review, both owned here because this slice owns both
+  files next:**
+  1. **Pin the form association.** `FirstRunCard`'s form-mode primary button sits
+     *outside* the `<form>` and is joined to it purely by the HTML `form`
+     attribute (`FirstRunCard.tsx:100-101` → `<form id="name">`). 3a's reviewer
+     verified it is the right structure, and that **nothing pins it**: if the id
+     and the attribute drift, **"Continue" silently submits nothing** — a dead
+     step with no error and no console output. The three `/^Continue/` helpers
+     (`e2e/fixtures.ts:418`, `e2e/auth.setup.ts:100`,
+     `e2e/signup-zip-fallback.e2e.ts:149`) currently all resolve to the location
+     step's button; once you move them onto the name card they exercise the
+     association through a real spec. **Say in the report which helper now proves
+     it**, because that is the only pin this surface will have.
+  2. **`OnboardingPage.tsx:262-263` is stale** — "Refresh the shared session state
+     before leaving so the shell's onboarding gate (and header) see the new home
+     zip." Since slice 2b the gate does not key on the home zip and the header
+     shows none. **Pre-existing** (byte-identical in 3a's parent, `18feb83:256`),
+     not introduced by 3a — fix it here because you own the file.
 - **Approach:** trim `/login`'s signup to email + password, label it `1 of 5`,
   and navigate to `/onboarding` on success. Add the shell's dismissible
   "finish setting up" nudge. Rewrite `signUpViewer` to drop the three now-absent
@@ -658,11 +676,21 @@ extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**
     every route" — the property has no e2e catch at all, and the fixtures that
     could express it arrive in 3b. Add one. **It must also assert Slice 2c's
     branch**, because 2c cannot test it otherwise: the repo unit-tests only
-    `.ts` (there are **zero `.tsx` test files** in 60 test files), so a
+    `.ts` (there are **zero `.tsx` test files**), so a
     component-level branch has no unit lane. The e2e must check that a no-zip
     parent's feed renders `location-required-notice` and **not**
     `empty-radius-state`. If it cannot be built, say why in the report rather
     than leaving the gap unnamed.
+  - **THE BATCH-END MARKER SWEEP RUNS.** Any run that created `e2e-` accounts is
+    required by `docs/agents/e2e-fixture-convention.md` to end with the
+    documented operational sweep. 3a's builder created two
+    `e2e-seam3a-…@gmail.com` accounts (plus one `Seam Check` profile row) during
+    its own runtime checks; 3a's reviewer confirmed both match the sweep's
+    `email like 'e2e-%'` set and that the profile row cascades. **Run
+    `node scripts/sweep-e2e-markers.mjs delete` then
+    `node scripts/sweep-e2e-markers.mjs verify` and paste both tails.** Every
+    other slice's e2e runs add to this pile too, so this is the last word on it,
+    not a tidy-up.
   - The **full** e2e suite is green (not just targeted specs) — this is the one
     slice whose verification is the whole lane, because the card sequence is
     what changed.
