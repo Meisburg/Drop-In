@@ -19,10 +19,35 @@
  *       page.getByPlaceholder('x')
  *       page.getByText('x')
  *       page.getByRole('role', { name: 'x' })
- *   the literal must still be PRESENT in the src/ tree, either as a
- *   substring of some source file (covers data-testid="x",
- *   placeholder="x", and rendered text) or as the OUTPUT SHAPE of a src
- *   template literal (covers `` `parent-card-${slot}` `` and friends).
+ *   the literal must still be PRESENT in the src/ tree, any of:
+ *     1. a substring of some source file (covers data-testid="x",
+ *        placeholder="x", and rendered text);
+ *     2. the OUTPUT SHAPE of a src template literal (covers
+ *        `` `parent-card-${slot}` `` and friends);
+ *     3. TWO PARTS spliced at render time: a BOUNDED TOKEN from src spliced
+ *        to a template's output. The comment heading renders as the JSX text
+ *        `Comments` + ` (${state.comments.length})`, so `Comments (1)` is
+ *        provable although no single string or template emits it.
+ *
+ *   The two-part rule is the loosest proof, so it is the one that is gated —
+ *   the gate is measured against the live corpus, not a guess:
+ *     - the plain half must be a BOUNDED TOKEN in src: it appears there as a
+ *       whole token (both neighbors non-identifier), not as a short substring
+ *       of a longer identifier. Measured: the pre-fix rule accepted `plac`
+ *       as the plain half because it is a 4-char substring of `placePath` —
+ *       it is never a token anywhere in src. `Comments` IS a token (the
+ *       `<h2>` heading), and stays a proof.
+ *     - the template half must be DISCRIMINATING: its statics pin at least
+ *       one alphanumeric character, OR the template is a single-hole shape
+ *       pinned on BOTH sides (the `` ` (${n})` `` count shape — measured: the
+ *       only zero-alnum shape in the corpus that proves a live literal).
+ *       Every multi-hole zero-alnum shape is a pure separator pattern —
+ *       `` `${y}-${m}-${d}` `` yields statics `[-, -]` and matches ANY three
+ *       hyphen-separated segments. That was exactly the false proof that let
+ *       the dead testid `places-see-map` through the pre-fix guard (a
+ *       reviewer proved it: the committed guard exited 0 against the
+ *       pre-defect spec). The gate closes it: no split of `places-see-map`
+ *       has a bounded-token plain half AND a discriminating template half.
  *
  *   PRESENT (literal or shape)  -> pass.
  *   MISSING + only NEGATIVE use -> pass. A `toHaveCount(0)` / `toBeHidden()`
@@ -48,6 +73,9 @@
  *     CSS is not judged and is never silently passed as safe — it is
  *     simply outside the rule (reported as a note when it is the only
  *     evidence for a missing-looking literal, never as a finding).
+ *   - String-literal escapes are honored when capturing a site: the spec
+ *     writes `getByText('Kids you\'re bringing')`; the literal the app sees
+ *     is `Kids you're bringing`, and that is what gets checked against src.
  *   - A template shape with NO static text (`` `${id}` `` -> `^.*$`) is
  *     degenerate and cannot prove presence: it is excluded, so a literal
  *     matches only a shape that actually pins some of the string down.
@@ -111,26 +139,36 @@ function templateStatics(template) {
  * matches `parent-card-${slot}` whether or not `slot` is ever `1`.
  */
 const shapes = []
-const partShapes = []
+const gatedShapes = []
 for (const [, content] of srcContents) {
   for (const match of content.matchAll(/`([^`\n]*)`/g)) {
     const template = match[1]
     if (!template.includes('${')) continue
     const statics = templateStatics(template)
     if (statics.length === 0) continue
-    // A FULL shape proves presence only when its statics pin down real text:
-    // `@${handle}` and `%${trimmed}%` pin down just punctuation, and those
-    // shapes match nearly every string — they would make the check vacuous,
-    // so a full shape needs several alphanumeric characters of static text.
-    // The weaker shapes are still usable as the DYNAMIC HALF of a two-part
-    // match (below), where a plain src string on the other side carries the
-    // real evidence. ` (${n})` is exactly that case.
-    const pinned = (statics.join('').match(/[A-Za-z0-9]/g) ?? []).length
-    if (pinned >= 4) shapes.push({ statics })
-    else partShapes.push({ statics })
+    const holes = template.split('${').length - 1
+    const alnum = (statics.join('').match(/[A-Za-z0-9]/g) ?? []).length
+    // FULL-shape pool: a whole literal is one template's output only when the
+    // statics pin down real text. `@${handle}` and `%${trimmed}%` pin just
+    // punctuation and would match nearly every string — a full shape needs
+    // several alphanumeric characters of static text.
+    if (alnum >= 4) shapes.push({ statics })
+    // TWO-PART pool (the gated one): the template half must be DISCRIMINATING.
+    //  G1 — the statics pin at least one alphanumeric character: the static
+    //       text itself carries the evidence.
+    //  G2 — a zero-alnum template is usable only as a single hole pinned on
+    //       BOTH sides (the ` (${n})` count shape). Measured on the live
+    //       corpus: that is the only zero-alnum shape that proves a live
+    //       literal; every multi-hole zero-alnum shape is a separator
+    //       pattern (`${y}-${m}-${d}` -> [-, -] matches any three hyphen-
+    //       separated segments — the false proof behind the `places-see-map`
+    //       hole this guard was credited with and the committed version
+    //       failed to close).
+    const flankedSingle =
+      holes === 1 && alnum === 0 && statics.length === 2 && statics[0] !== '' && statics[1] !== ''
+    if (alnum >= 1 || flankedSingle) gatedShapes.push({ statics, flankedSingle })
   }
 }
-const allShapes = shapes.concat(partShapes)
 
 function matchesStatics(literal, statics) {
   // statics must occur in order inside the literal
@@ -147,12 +185,54 @@ function matchesAnyShape(literal, pool) {
   return pool.some(({ statics }) => matchesStatics(literal, statics))
 }
 
-/** Is this text a plain string that appears verbatim in src? A rendered text
- *  node (JSX content, an attribute value, a testid) all count. Shorter than
- *  4 characters it is too short to be evidence on its own. */
-function plainSrcText(text) {
-  if (text.length < 4) return false
-  return [...srcContents.values()].some((content) => content.includes(text))
+/** Is this text a BOUNDED TOKEN in src? It must occur in some source file
+ *  as a whole token — both neighbors (if any) non-identifier — not as a short
+ *  substring of a longer identifier or string. `plac` fails everywhere (it
+ *  only occurs inside `placePath`/`places`); `Comments` occurs as a token in
+ *  the `<h2>` heading. Shorter than 4 characters it is too short to be
+ *  evidence on its own. Memoized — the two-part rule asks per split. */
+const boundedTokenCache = new Map()
+function isBoundedToken(text) {
+  const hit = boundedTokenCache.get(text)
+  if (hit !== undefined) return hit
+  if (text.length < 4) {
+    boundedTokenCache.set(text, false)
+    return false
+  }
+  const escaped = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const re = new RegExp(escaped, 'g')
+  let found = false
+  for (const content of srcContents.values()) {
+    re.lastIndex = 0
+    let m
+    while ((m = re.exec(content)) !== null) {
+      const before = m.index === 0 ? '' : content[m.index - 1]
+      const after = content[m.index + m[0].length] ?? ''
+      if (!/[A-Za-z0-9_]/.test(before) && !/[A-Za-z0-9_]/.test(after)) {
+        found = true
+        break
+      }
+    }
+    if (found) break
+  }
+  boundedTokenCache.set(text, found)
+  return found
+}
+
+/** The template half of a two-part match. `isSuffixHalf`: the template's
+ *  output sits AFTER the plain token (the seam is the prefix's end); the
+ *  mirror case sits before it (the seam is the suffix's start). */
+function shapeHalf(text, isSuffixHalf) {
+  return gatedShapes.some(({ statics, flankedSingle }) => {
+    if (flankedSingle) {
+      // a single-hole both-sides shape must match anchored at both ends:
+      // ` (1)` starts with ` (` and ends with `)`. Un-anchored, ` (X)`-class
+      // shapes would swallow `X(anything)Y`-class strings.
+      return text.startsWith(statics[0]) && text.endsWith(statics[1])
+    }
+    if (isSuffixHalf) return matchesStatics(text, statics)
+    return matchesStatics(text, statics) && text.endsWith(statics[statics.length - 1])
+  })
 }
 
 function literalPresent(literal) {
@@ -161,15 +241,16 @@ function literalPresent(literal) {
   if ([...srcContents.values()].some((content) => content.includes(literal))) return true
   // 2. the output of one src template literal (`parent-card-${slot}`).
   if (matchesAnyShape(literal, shapes)) return true
-  // 3. TWO PARTS: a plain src string spliced to a template's output. The
-  //    comment heading renders as the JSX text `Comments` + ` (${n})`, so
-  //    `Comments (1)` is provable even though no single template emits it.
-  //    (Over-approximation by design: the plain half must be real src text.)
+  // 3. TWO PARTS: a bounded src token spliced to a discriminating template's
+  //    output. The comment heading renders as the JSX text `Comments` +
+  //    ` (${n})`, so `Comments (1)` is provable even though no single string
+  //    or template emits it. Both halves are gated — see the header — because
+  //    this is the proof that once let `places-see-map` through.
   for (let i = 1; i < literal.length; i++) {
     const prefix = literal.slice(0, i)
     const suffix = literal.slice(i)
-    if (plainSrcText(prefix) && matchesAnyShape(suffix, allShapes)) return true
-    if (plainSrcText(suffix) && matchesAnyShape(prefix, allShapes)) return true
+    if (isBoundedToken(prefix) && shapeHalf(suffix, true)) return true
+    if (isBoundedToken(suffix) && shapeHalf(prefix, false)) return true
   }
   return false
 }
@@ -178,23 +259,28 @@ function literalPresent(literal) {
 // 2. Where the specs point — the four locator forms, plain strings only.
 // ---------------------------------------------------------------------------
 
-/** Every plain-string literal in the four locator forms, per file. */
+/** Every plain-string literal in the four locator forms, per file. The
+ *  string capture honors JS escapes (`'Kids you\'re bringing'`) and the
+ *  literal is unescaped — the app sees the unescaped string, and that is
+ *  what must still exist in src. */
+const STR = String.raw`(["'])((?:\\.|(?!\1)[^\\])*)\1`
+const unescapeLit = (raw) =>
+  raw.replace(/\\(.)/gs, (_, ch) => ({ '\\': '\\', n: '\n', t: '\t', r: '\r' }[ch] ?? ch))
 function locatorLiterals(source) {
   const sites = []
-  const push = (re, literalGroup, usage) => {
+  const push = (re, usage) => {
     for (const match of source.matchAll(re)) {
-      const literal = match[literalGroup]
-      if (literal === undefined) continue
+      const literal = unescapeLit(match[2])
       const line = source.slice(0, match.index).split('\n').length
       sites.push({ literal, line, usage, match })
     }
   }
-  push(/\bgetByTestId\(\s*(['"])([^'"]+)\1\s*\)/g, 2, 'testid')
-  push(/\bgetByPlaceholder\(\s*(['"])([^'"]+)\1\s*\)/g, 2, 'placeholder')
-  push(/\bgetByText\(\s*(['"])([^'"]+)\1\s*[,)]/g, 2, 'text')
+  push(new RegExp(`\\bgetByTestId\\(\\s*${STR}\\s*\\)`, 'g'), 'testid')
+  push(new RegExp(`\\bgetByPlaceholder\\(\\s*${STR}\\s*\\)`, 'g'), 'placeholder')
+  push(new RegExp(`\\bgetByText\\(\\s*${STR}\\s*[,)]`, 'g'), 'text')
   // getByRole('role', { name: 'x' }) — name only, so a `name` that is a
   // variable is out of the rule by construction.
-  push(/\bgetByRole\(\s*['"][a-z]+['"]\s*,\s*\{[^{}]*?\bname:\s*(['"])([^'"]+)\1/g, 2, 'role-name')
+  push(new RegExp(`\\bgetByRole\\(\\s*["'][a-z]+["']\\s*,\\s*\\{[^{}]*?\\bname:\\s*${STR}`, 'g'), 'role-name')
   return sites
 }
 

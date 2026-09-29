@@ -1490,12 +1490,14 @@ test('a second "See map" activation does not disturb the saved list offset (V24 
     spacer.style.height = '1800px'
     document.body.appendChild(spacer)
   })
-  // V28 slice 7a: the control's testid is `places-view-toggle` (the old
-  // `places-see-map` died with the map-band strip; the stale-locator guard's
-  // first positive-usage finding). In LIST view the toggle only RENDERS after
-  // the parent scrolls past the controls (`showMapToggle`), so the 250px park
-  // comes first and the scroll-into-view is the nudge that lands the button
-  // on screen before the click flips the view to the map.
+  // V28 slice 7a: the control's testid is `places-view-toggle` — the old
+  // `places-see-map` died with the map-band strip. The rename defect was real
+  // but the committed stale-locator guard provably did NOT catch it; the fixed
+  // guard + its check seed 5 now anchor that shape (plan.md, 7a fix-1). In
+  // LIST view the toggle only RENDERS after the parent scrolls past the
+  // controls (`showMapToggle`), so the 250px park comes first and the
+  // scroll-into-view is the nudge that lands the button on screen before the
+  // click flips the view to the map.
   await page.evaluate(() => window.scrollBy(0, 250))
   await page.waitForTimeout(200)
   const seeMap = page.getByTestId('places-view-toggle')

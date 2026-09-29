@@ -26,6 +26,11 @@
  *      pair, each page component resolved to its source file through
  *      App.tsx's own imports (lazy routes through their `import('...')`
  *      specifier; components defined inside App.tsx fall back to App.tsx).
+ *      Code-split routes wrap their page in `<Suspense fallback={...}>` with
+ *      a JSX comment between `element={` and the wrapper (the `/browse`
+ *      shape) — the derivation skips the comment and, for a wrapper element,
+ *      resolves the wrapper's first child (the lazy component), not the
+ *      wrapper itself.
  *   2. Build each route's REACHABLE FILE SET: the page file's transitive
  *      static-import closure, unioned with the shared chrome (App.tsx plus
  *      its non-page imports — providers, header, lightbox). Files under
@@ -67,6 +72,21 @@
  *   - If a subject's route is never established IN THE SAME BLOCK, or the
  *     literal is not found anywhere in src, the site is reported as a NOTE
  *     (the latter is the stale-locator guard's turf) — never a finding.
+ *   - CROSS-ROUTE ABSENCE IS NOT DISTINGUISHED FROM VACUOUS ABSENCE. A
+ *     redirect/gate test that stands on route B, follows a redirect to route
+ *     A, and asserts that a route-B-only element is now ABSENT is a
+ *     legitimate test — but to this guard it looks exactly like a finding
+ *     (route known = A, renderable routes = B, absence asserted on A).
+ *     There is no tolerance mechanism for it today; the sanctioned response
+ *     is the one this slice's own cuts used: cut the assertion and keep the
+ *     intent in a comment, or move the assertion to a spec that stands on
+ *     the route where the target renders.
+ *   - ACTUAL COVERAGE IS THE PRINTED COUNT, NOT THE NOMINAL SCOPE. Of the
+ *     suite's 289 toHaveCount(0) sites (as of the 7a fix round), this
+ *     judges 25: the dominant escape is helper-driven navigation — the
+ *     subject's route is established in a helper's block, not the spec's
+ *     own, so the site is a "not judged" note. A 0-finding exit does NOT
+ *     mean every absence pin was examined; read the notes and the count.
  *
  * Exit 0 when clean, 1 when findings are printed.
  */
@@ -152,11 +172,52 @@ function closure(seedFile, seen = new Set()) {
 const appRel = 'src/App.tsx'
 if (!srcContent.has(appRel)) fail('src/App.tsx not found — the route table moved; re-derive this guard')
 const appContent = srcContent.get(appRel)
+/**
+ * The first JSX child element of a wrapper tag (`<Suspense fallback={...}>`):
+ * skip the wrapper's OPENING TAG with a brace/paren/bracket-depth scan — the
+ * fallback is JSX inside an attribute, so its `>` never closes the opening
+ * tag — then take the next element name. Deterministic for the shapes App.tsx
+ * actually uses; returns null if the shape is unfamiliar (the route then
+ * falls back to App.tsx reachability: conservative, never a false positive).
+ */
+function firstJsxChild(source, from) {
+  let i = from
+  let depth = 0
+  while (i < source.length) {
+    const c = source[i]
+    if (c === '{' || c === '(' || c === '[') depth++
+    else if (c === '}' || c === ')' || c === ']') {
+      if (depth === 0) return null // run past the balanced region without a tag close
+      depth--
+    } else if (c === '>' && depth === 0) break
+    i++
+  }
+  if (i >= source.length) return null
+  const after = source.slice(i + 1)
+  const m = after.match(/^\s*(?:\/\*[\s\S]*?\*\/\s*)*<([A-Za-z][\w$]*)/)
+  return m ? m[1] : null
+}
+
 const routeTable = []
-for (const m of appContent.matchAll(
-  /<Route\s+[^>]*?\bpath\s*=\s*["']([^"']+)["'][^>]*?\belement\s*=\s*\{?\s*<([A-Za-z][\w$]*)/g,
-)) {
-  const [, pattern, component] = m
+for (const m of appContent.matchAll(/<Route\b/g)) {
+  const start = m.index
+  const next = appContent.indexOf('<Route', start + 1)
+  const region = appContent.slice(start, next === -1 ? undefined : next)
+  const pathM = region.match(/\bpath\s*=\s*["']([^"']+)["']/)
+  if (!pathM) continue // <Route element={...}> — no own path; the parent owns it.
+  const pattern = pathM[1]
+  const elAt = region.indexOf('element=')
+  if (elAt === -1) continue
+  const afterEl = region.slice(elAt + 8)
+  const compM = afterEl.match(/^\s*\{?\s*(?:\/\*[\s\S]*?\*\/\s*)?<([A-Za-z][\w$]*)/)
+  if (!compM) continue // element shape unfamiliar — fall back, do not guess.
+  let component = compM[1]
+  // A code-split route's element is the WRAPPER (<Suspense>), not the page:
+  // resolve the wrapper's first child (the lazy component) instead.
+  if (component === 'Suspense' || component === 'ErrorBoundary') {
+    const child = firstJsxChild(region, elAt + 8 + compM[0].length)
+    if (child) component = child
+  }
   let file = appRel
   const importRe = new RegExp(
     `import\\s+(?:\\{[^}]*\\b${component}\\b[^}]*\\}\\s*from|${component}\\s+from)\\s+["'](\\.[^"']+)["']`,
@@ -413,10 +474,20 @@ for (const file of SPEC_FILES) {
       notes.push(`${rel}:${line} — '${literal}': not found anywhere in src/; the stale-locator guard owns this.`)
       continue
     }
-    checked += 1
-    // The current route must match a table pattern to be known.
+    // The current route must match a table pattern to be known. A route that
+    // matches NO pattern is a safety net, not a skip: print it so a route
+    // that silently fell out of the derived table can never be judged (or
+    // not judged) without a line in the output.
     const matchedPattern = routeTable.find((r) => routeMatcher(r.pattern)(currentRoute))
-    if (matchedPattern && !routes.includes(matchedPattern.pattern)) {
+    if (!matchedPattern) {
+      notes.push(
+        `${rel}:${line} — '${literal}': route \`${currentRoute}\` matches no pattern in the derived route table; not judged. ` +
+          `If that route exists in src/App.tsx, the table derivation is stale — re-derive the guard.`,
+      )
+      continue
+    }
+    checked += 1
+    if (!routes.includes(matchedPattern.pattern)) {
       findings.push(
         `${rel}:${line} — \`expect(${subject}.${locatorKind}('${literal}')).toHaveCount(0)\` while on route \`${currentRoute}\`, ` +
           `but \`${literal}\` can only render on: ${routes.join(', ')}. ` +

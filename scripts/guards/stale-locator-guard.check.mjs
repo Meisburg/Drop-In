@@ -14,7 +14,15 @@
  *      pins of removal are the repo's convention, not a bug;
  *   4. a composed testid that is the output of a src template literal
  *      (`parent-card-${slot}`) passes even positively used — the shape
- *      over-approximation the rule is built on.
+ *      over-approximation the rule is built on;
+ *   5. the realistic hole-closing shape passes: a DEAD hyphenated testid
+ *      whose prefix is a real word in src (`places-see-map` — "places" is a
+ *      live route/word) must be CAUGHT when positively used. The pre-fix
+ *      two-part rule let this exact literal through (bounded word + the
+ *      date template's `[-, -]` separator statics); the gate — bounded
+ *      token plain half AND discriminating template half — closes it while
+ *      leaving the `Comments (1)` count-heading pattern (seed 1's clean
+ *      repo) green. Seeding it keeps the hole from silently reopening.
  *
  * Run: node scripts/guards/stale-locator-guard.check.mjs
  * Exit 0 = check passes, 1 = the guard is not doing its job.
@@ -128,6 +136,33 @@ try {
     'template-shaped literal passes positively used (no false positive)',
     result.exit === 0,
     `exit ${result.exit}: ${result.out.split('\n').find((l) => l.startsWith('  -')) ?? ''}`,
+  )
+
+  // 5. The shape that once slipped through: a dead hyphenated testid whose
+  //    plain half is a real word in src. Pre-fix, `places` (a substring
+  //    match via `placePath`/`places`) + the `${y}-${m}-${d}` statics
+  //    `[-, -]` proved `places-see-map` present and the guard exited 0
+  //    against the pre-defect spec. Post-fix: no split has a bounded-token
+  //    plain half AND a discriminating template half, so the positive use
+  //    is a finding. This is the regression anchor for the gate itself.
+  seed([
+    "import { test, expect } from './fixtures'",
+    '',
+    "test('seeded: dead hyphenated testid with a real prefix', async ({ page }) => {",
+    "  await expect(page.getByTestId('places-see-map')).toBeVisible()",
+    '})',
+    '',
+  ])
+  result = run()
+  check(
+    'seeded hyphenated dead testid is caught (the places-see-map regression)',
+    result.exit !== 0,
+    `exit ${result.exit}`,
+  )
+  check(
+    'finding names the seeded site and literal',
+    result.out.includes('e2e/zz-seeded.e2e.ts') && result.out.includes('places-see-map'),
+    result.out.split('\n').filter((l) => l.startsWith('  -')).join(' | '),
   )
 } finally {
   rmSync(sandbox, { recursive: true, force: true })
