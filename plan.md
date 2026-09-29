@@ -122,9 +122,11 @@ mutation-checked (flip the rule, watch a named test die).
 
 ### Copy seam
 
-Card titles, bodies and button labels live as data beside the model, not inline
-in JSX, so the words are reviewable in one place and a test can pin the required
-ones. Follow the existing `src/lib/*Copy.ts` precedent.
+Card titles, bodies and button labels live as data in `firstRunCopy.ts`, not
+inline in JSX, so the words are reviewable in one place and a test can pin the
+required ones. The honest precedent is `src/lib/vibeChips.ts` — a small, tested
+module of labels-as-data. **There is no `*Copy.ts` convention in this repo; do
+not invent one.**
 
 ### Routing (pinned)
 
@@ -225,8 +227,9 @@ do not exist.
 - **Objective:** a new parent creates an account with email + password and is
   asked their name on the next card — the same card chrome, in one flow.
 - **Files in scope:** `src/components/FirstRunCard.tsx` (new),
-  `src/pages/LoginPage.tsx`, `src/pages/OnboardingPage.tsx`,
-  `src/components/AppShell.tsx` (the resume nudge)
+  `src/pages/LoginPage.tsx`, `src/pages/OnboardingPage.tsx`, `src/App.tsx`
+  (the resume nudge lands in `ProtectedShell`, which is defined in
+  `src/App.tsx` — **there is no `AppShell.tsx`**)
 - **Approach:** build the presentational card chrome first (progress, title,
   body, children slot, primary action, optional Skip, back). Trim `/login`'s
   signup form to email + password and label it `1 of 5`. On `/onboarding`,
@@ -255,7 +258,8 @@ do not exist.
 - **Objective:** cards 3 and 4 collect kids (first name + age) and a photo, each
   with a working Skip.
 - **Files in scope:** `src/pages/OnboardingPage.tsx`,
-  `src/components/useCropStep.ts` (reused, not rebuilt)
+  `src/components/useCropStep.tsx` (reused, not rebuilt — **note the `.tsx`
+extension; there is no `useCropStep.ts`**)
 - **Approach:** lift the existing kid-rows and avatar-upload logic verbatim into
   the card chrome. The crop step is **reused as-is** — it already validates size
   and type before decoding. Skipping advances without writing.
@@ -321,8 +325,12 @@ do not exist.
 
 - **Objective:** every lane that pinned the old behaviour is updated in the same
   batch, so nothing is left asserting a flow that no longer exists.
-- **Files in scope:** the e2e specs named below, `.scratch/playtest/routes.json`
-  if reachability changed, `docs/`, `task-state.md`
+- **Files in scope:** `e2e/onboarding-gate.e2e.ts` and
+  `e2e/signup-zip-fallback.e2e.ts` (both pin behaviour this batch changes),
+  `e2e/zip-radius.e2e.ts`, `e2e/golden-path.e2e.ts`, `e2e/avatar.e2e.ts`, plus
+  any other spec that pins signup's fields or the ZIP redirect;
+  `.scratch/playtest/routes.json` only if reachability changed; `docs/`,
+  `task-state.md`
 - **Approach:** find every spec that pins signup's name/address fields or the
   ZIP redirect and update it to the new contract — **update, never delete**. The
   `ocr` rules file expects new routes in the playtest list; `/onboarding` is not
@@ -375,4 +383,21 @@ do not exist.
 - 2026-09-29 — Grilled to an empty frontier. 15 decisions settled, `CONTEXT.md`
   and `docs/adr/0001-home-zip-stops-being-a-gate.md` written. Facts measured
   against the live DB (2 human accounts, 0 upcoming drop-ins, 7/54 bios). Plan
-  written; **no slice dispatched yet.** Next: dispatch Slice 1.
+  written; **no slice dispatched yet.**
+- 2026-09-29 — Plan audited against the tree before dispatch. **Five defects
+  corrected in place:** `src/components/AppShell.tsx` (the shell is
+  `ProtectedShell`, in `src/App.tsx`); `useCropStep.ts` → `useCropStep.tsx`; the
+  **invented** `src/lib/*Copy.ts` precedent → the real `src/lib/vibeChips.ts`;
+  and `e2e/onboarding-gate.e2e.ts` + `e2e/signup-zip-fallback.e2e.ts` added to
+  Slice 7 — both pin behaviour this batch changes and neither had been named.
+  **Verified accurate:** `npm run verify`'s exact composition
+  (`build && test && lint && a11y:focus && steering-lint && guards`),
+  `firstRun.ts` genuinely absent, `zip-radius`/`address-maps`/`avatar`/
+  `golden-path` e2e specs all real, and every named symbol resolving in `src/`
+  (`resolveProtectedRedirect`, `resolveOnboardingRedirect`,
+  `RADIUS_MILES_OPTIONS`, `DEFAULT_RADIUS_MILES`, `MAX_KIDS_PER_PROFILE`,
+  `validateKid`, `uploadAvatar`, `fieldA11y`, `composeDisplayName`,
+  `zipFromAddressQuery`, `validateHomeZip`, `HandleTakenError`).
+  **Lesson, recorded:** the plan's factual claims were recollection, not
+  measurement. A doc that says "no interpretation required" must be grepped
+  into existence, not remembered. Next: dispatch Slice 1.
