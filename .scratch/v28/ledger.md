@@ -687,3 +687,45 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   exactly when pattern-matching bites.
 - Slice 3b: verifier lane dispatched as the closing check -- its gate output and
   the three-spec run are still pasted NOWHERE.
+- Slice 3b: VERIFIER PASS (run 5300ffde) at 3080c65. THE EVIDENCE GAP IS CLOSED:
+  * LINT 0 errors / 80 warnings -- **the missing number, now on record, unchanged
+    from the baseline.** TEST 65 files / 1975 tests.
+  * THE EARLIER /tmp GIT-CLONE RED DID NOT REPRODUCE: every guard stage passed on
+    the FIRST run, so no isolation re-run was needed. (Recorded as environmental
+    with evidence, and now recorded as not reproducing.)
+  * ALL FIVE PLAYWRIGHT TESTS PASSED, including the auth.setup.ts SETUP PROJECT --
+    its REST PATCH printed "marker location set + verified via REST: home_zip=98107,
+    radius_miles=5" and the @handle assertion ran. The setup reorder (defect #11)
+    is proven live, not just by reading.
+  * `street-address` grep EMPTY. Every named identifier (markSignupZipUnresolved,
+    addressFieldError, zipFromAddressQuery) is a DEFINITION with NO call sites --
+    exactly the pre-Slice-5 state.
+  * `justSignedUp` set at LoginPage.tsx:114, BEFORE the await at :123. createProfile
+    has EXACTLY ONE page call site (OnboardingPage.tsx:311). Scope = the five.
+  **SLICE 3B COMPLETE AND VERIFIED. A NEW PARENT CAN NOW SIGN UP AND LAND IN THE
+  INTERVIEW -- the flow is reachable end to end for the first time.**
+- GROUNDING 3c FOUND THE PREFILL FIX IS ONE ARGUMENT, AND THE INTENT WAS ALREADY
+  DOCUMENTED. OnboardingPage.tsx:64 passes session?.user.email to suggestedHandle,
+  whose candidate list ends with `email?.split('@')[0]` -- so an email signup
+  pre-fills "nicole" as a first name. But `splitSuggestedName`'s RULE 1, in the
+  very next helper, already says: "No name at all -> both empty. The fields stay
+  blank rather than prefilled with the email's local part: sam.rivera@gmail.com is
+  not a name." **THE CALLER DEFEATS ITS OWN HELPER'S DOCUMENTED INTENT BY PASSING
+  THE EMAIL.** So the fix is to pass null at that call site -- and NOT to change
+  suggestedHandle, whose email fallback is right for the caller it was written for
+  and whose tests pin it. Recorded because "the fix is one argument and the code
+  already says why" is the best possible shape for a finding.
+- GROUNDING 3c ALSO FOUND A REAL DESIGN QUESTION IN THE NUDGE: `hasName`/`hasZip`/
+  `hasPhoto` are free from the session row, but `hasKids` is NOT -- listKids is a
+  separate query (db.ts:2924) and NOTHING IN THE SHELL KNOWS ABOUT KIDS. Also
+  found an existing completeness seam to read first: db.ts:2511's
+  `MissingProfileItem = 'photo' | 'bio' | 'kids'` with a kids-count branch at
+  :2522. The brief now requires 3c to CHOOSE and REPORT (a lazy kids read, reuse
+  the completeness read, or report that neither is acceptable) and explicitly
+  forbids silently feeding nextUnfinishedCard a guessed hasKids, because a guessed
+  fact makes its answer wrong INVISIBLY.
+- And a second mechanism question for the nudge: PushOptInPrompt decides internally
+  (several useStates + a suppressed guard) and its trigger is armed into
+  sessionStorage. The brief says CHECK FOR A READABLE SEAM before inventing one,
+  and to report with a proposal rather than adding a cross-component flag.
+- Slice 3c dispatched.
