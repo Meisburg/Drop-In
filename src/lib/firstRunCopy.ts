@@ -53,3 +53,24 @@ export const FIRST_RUN_COPY: Record<FirstRunCardId, FirstRunCardCopy> = {
     primaryLabel: 'Finish',
   },
 }
+
+/**
+ * V28 slice 3c (fix 1) — the resume nudge's GENERIC line (src/App.tsx).
+ *
+ * The nudge must not name the card it points at: today NO card reads
+ * FIRST_RUN_COPY — the cards hard-code their own titles (the name card
+ * renders "What's your name?", while the name entry above says "What should
+ * we call you?") — so a card-named line would claim words the landing page
+ * does not actually say, and the kids/photo/area cards do not exist at all
+ * yet (slices 4/5). The line is card-agnostic instead; slice 4 wires the
+ * cards to this module and can then swap the nudge onto card-specific
+ * titles as each card starts rendering.
+ */
+export const FIRST_RUN_NUDGE_COPY = {
+  /** The line's lead, rendered medium-weight. */
+  title: 'Finish setting up',
+  /** Card-agnostic: names no card and claims nothing the app does not ask. */
+  body: 'You stopped in the middle of setup — a minute or two finishes it.',
+  /** The generic action label; it routes to /onboarding, wherever the next card is. */
+  actionLabel: 'Continue',
+}

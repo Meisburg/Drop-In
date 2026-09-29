@@ -69,8 +69,9 @@ export function OnboardingPage() {
   // email fallback is not passed HERE: splitSuggestedName's rule 1 keeps both
   // fields blank when the suggestion is empty, and social sign-ins still
   // prefill from the provider's name metadata (the earlier candidates).
-  // `suggestedHandle` itself keeps its email fallback — other callers and its
-  // tests pin it; the call site changes, not the helper.
+  // `suggestedHandle` itself keeps its email fallback — its tests pin it
+  // (this step was its only production call site, and it now passes null);
+  // the call site changes, not the helper.
   const suggested = suggestedHandle(session?.user.user_metadata ?? null, null)
   const suggestedParts = splitSuggestedName(suggested)
   const [firstName, setFirstName] = useState('')

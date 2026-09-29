@@ -13,7 +13,7 @@ import { SplashScreen } from './components/SplashScreen'
 import { listKids, signOutUser } from './lib/db'
 import { nextUnfinishedCard } from './lib/firstRun'
 import type { FirstRunCardId } from './lib/firstRun'
-import { FIRST_RUN_COPY } from './lib/firstRunCopy'
+import { FIRST_RUN_NUDGE_COPY } from './lib/firstRunCopy'
 import { canModerate } from './lib/moderation'
 import { armedPushTrigger, setInstallCaptureEnabled, startPushSubscriptionRepair, subscribePushArmed } from './lib/pushClient'
 import type { Profile } from './lib/types'
@@ -75,11 +75,19 @@ function readNudgeDismissed(): boolean {
 
 /**
  * V28 slice 3c — the resume nudge: one dismissible line for a signed-in
- * parent whose first run is unfinished, offering the card nextUnfinishedCard
- * (src/lib/firstRun.ts) says is next. No card is hard-coded here — the line
- * renders ONLY when that function returns a card, so the moment the parent
- * sets a home zip (the run's completion clause, plan V28 item 1) it stands
- * down for good without a page reload.
+ * parent whose first run is unfinished. The line renders ONLY when
+ * nextUnfinishedCard (src/lib/firstRun.ts) returns a card — no card is
+ * hard-coded here — so the moment the parent sets a home zip (the run's
+ * completion clause, plan V28 item 1) it stands down for good without a
+ * page reload.
+ *
+ * The line itself is GENERIC by design (fix round 1): it says "Finish
+ * setting up" + a card-agnostic body and never names the card it points at,
+ * because today no card reads FIRST_RUN_COPY — the cards hard-code their own
+ * titles — and the kids/photo/area cards do not exist yet (slices 4/5).
+ * Naming one would tell the parent a question the app does not actually
+ * ask. FIRST_RUN_NUDGE_COPY (src/lib/firstRunCopy.ts) holds the words; slice
+ * 4 can swap in card-specific titles as the cards start rendering.
  *
  * Fact sourcing (the slice's decision (a)): hasName / hasPhoto / hasZip come
  * free off the shell's session — the profiles row + homeZipSet (3a feeds
@@ -171,8 +179,7 @@ function FirstRunNudge({
     }
   }, [session, profile, homeZipSet])
 
-  const copy = card !== null && card !== undefined ? FIRST_RUN_COPY[card] : null
-  const show = copy !== null && !dismissed && !pushArmed && session !== null
+  const show = card !== null && card !== undefined && !dismissed && !pushArmed && session !== null
 
   return (
     <>
@@ -187,18 +194,15 @@ function FirstRunNudge({
           data-testid="first-run-nudge"
         >
           <p className="min-w-0 flex-1 text-sm text-slate-700">
-            <span className="font-medium">Finish setting up</span>{' '}
-            <span className="text-slate-600">
-              — {copy.title.charAt(0).toLowerCase()}
-              {copy.title.slice(1)}
-            </span>
+            <span className="font-medium">{FIRST_RUN_NUDGE_COPY.title}</span>{' '}
+            <span className="text-slate-600">{FIRST_RUN_NUDGE_COPY.body}</span>
           </p>
           <div className="flex items-center gap-2">
             <Link
               to={ONBOARDING_PATH}
               className="flex min-h-11 items-center rounded-md px-2 text-sm font-medium text-indigo-700 underline outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
             >
-              {copy.primaryLabel}
+              {FIRST_RUN_NUDGE_COPY.actionLabel}
             </Link>
             <button
               type="button"
@@ -363,7 +367,7 @@ function ProtectedShell() {
   // 'pass' no longer implies a home zip (there is no onboard decision),
   // so this line ALSO fires for a signed-in no-zip parent who tapped
   // "I'm coming" — deliberate: it honours the explicit tap, and the
-  // resume nudge (slice 3b) covers the rest. The target is validated
+  // resume nudge (slice 3c) covers the rest. The target is validated
   // (isPlaydateReturnTarget — a tampered value is ignored, never navigated
   // to); the effect above clears the one-shot key on landing.
   const storedReturn = gate === 'pass' ? window.sessionStorage.getItem(PLAYDATE_RETURN_KEY) : null

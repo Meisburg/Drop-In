@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { FIRST_RUN_CARDS } from './firstRun'
-import { FIRST_RUN_COPY } from './firstRunCopy'
+import { FIRST_RUN_COPY, FIRST_RUN_NUDGE_COPY } from './firstRunCopy'
 
 describe('FIRST_RUN_COPY', () => {
   it('covers exactly the five first-run cards, in card order', () => {
@@ -42,5 +42,29 @@ describe('FIRST_RUN_COPY', () => {
   // it so the trimmed signup (slice 3b) does not change a working label.
   it('the account card keeps the signup form\u2019s "Create account" label', () => {
     expect(FIRST_RUN_COPY.account.primaryLabel).toBe('Create account')
+  })
+})
+
+describe('FIRST_RUN_NUDGE_COPY (the resume nudge\u2019s generic line)', () => {
+  // The nudge's lead is the one word the verify lane (the slice's drive
+  // script) locates by, so it is pinned exactly.
+  it('keeps the "Finish setting up" lead', () => {
+    expect(FIRST_RUN_NUDGE_COPY.title).toBe('Finish setting up')
+  })
+
+  it('has a card-agnostic body and a Continue-matching generic action label', () => {
+    expect(FIRST_RUN_NUDGE_COPY.body.length).toBeGreaterThan(0)
+    expect(FIRST_RUN_NUDGE_COPY.actionLabel).toMatch(/^Continue/)
+  })
+
+  // The fix round's whole point: the line must not name a card — no per-card
+  // title may leak into it (slice 4 may swap in card-specific wording then).
+  it('does not duplicate any per-card title', () => {
+    const words = `${FIRST_RUN_NUDGE_COPY.title} ${FIRST_RUN_NUDGE_COPY.body}`.toLowerCase()
+    for (const card of FIRST_RUN_CARDS) {
+      expect(words, `${card} title leaked into the nudge line`).not.toContain(
+        FIRST_RUN_COPY[card].title.toLowerCase(),
+      )
+    }
   })
 })
