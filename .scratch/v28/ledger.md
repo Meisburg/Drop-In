@@ -1003,3 +1003,47 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
     and tapping Continue through the interview is proven only by the unit-tested
     seams it reuses. Reported by the builder as a risk; recorded as a named Slice 7
     gap rather than left as prose.
+- **SLICE 4A: REVIEW PASS** (run d265785c), no fix round. Six non-blocking findings,
+  four accepted residuals, all assigned by name.
+  * VERIFIED BY THE REVIEWER, all with citations: Skip writes NOTHING (:484-488, the
+    only effect is the local done flag); the blank-row skip is correct and a
+    name-only or age-only row is VALIDATED rather than silently written
+    (:211-221 -> validateKid, db.ts:2501); the cap is enforced by addKid ITSELF
+    (db.ts:2946-2951); a write failure stays on the card with role="alert" (:543)
+    and Skip (:484) is independent of the error state, so the run can always
+    advance; and **THERE IS EXACTLY ONE KIDS WRITER** -- :271 is the sole DB write,
+    handleContinue (:287-330) is kids-free, and the row helpers
+    (:212-226) mutate local state only. **This is 2a's lesson applied: the grep ran
+    over the WRITE FUNCTION'S CALL SITES, not the handler names.**
+  * The radiusMiles union was ruled a LEGITIMATE DOCUMENTED UNION, NOT A LOOSENING
+    (both forms preserved; a misuse fails LOUDLY at selectOption, so nothing passes
+    silently), and the "predates V28" claim was VERIFIED against a0e93f2.
+  * **MY App.tsx:86 FINDING IS CONFIRMED, quoted verbatim, false on every "today"
+    clause** -- and the reviewer went further than I asked, finding TWO MORE
+    comments this change expired: OnboardingPage.tsx:49-52 and :627 (the latter
+    INSIDE the diff's own rewrite).
+  * **F5 IS A NEW INSTANCE OF DEFECT #20'S EXACT SHAPE**: `skipLabel: 'Skip for
+    now'` in firstRunCopy.ts is read by NOTHING in production -- only its own test
+    pins it -- while FirstRunCard hard-codes 'Skip'. A module field no card reads.
+    The reviewer found it by checking what the module declares against what renders,
+    which is the check that would have caught #20 before it blocked.
+- **⚠️ THE ORCHESTRATOR'S UNVERIFIED NUMBER REACHED CODE.** plan.md said 18 spec
+  files call signUpViewer/finishSignup (twice, since the batch began) and my 4a
+  brief repeated it, so the BUILDER WROTE "the 18 specs that consume this helper"
+  INTO A COMMENT in e2e/fixtures.ts. THE REAL COUNT IS 17 (rg -l). Corretted in all
+  three places; the code comment is assigned to 4b (F4). **This is the batch's
+  fifth "a count is a claim" instance and the first where the ORCHESTRATOR was the
+  source.** The lesson generalises past comments: a number in a brief has exactly
+  the same evidentiary status as a builder's report, and propagates further because
+  everybody downstream trusts it.
+- ASSIGNMENTS: to 4b -> F3 (the dangling parenthetical at :627), F4 (the count),
+  F6 (the inconsistent busy strings). To Slice 7 -> F1 (App.tsx:86), F2
+  (OnboardingPage.tsx:49-52), F5 (the dead skipLabel), R1 (no e2e on the kids write
+  path), R2 (duplicate-kid re-entry, which PREDATES 4a and is a decision, not a
+  regression).
+- **SLICE 7 IS SPLIT NOW, ON THE MEASURED LIST, NOT WHEN DISPATCHED** -- 7a = the
+  code/hygiene fixes; 7b = the batch-end lanes (full e2e, marker sweep, docs, the
+  no-zip e2e). The accumulated obligations plainly exceed one builder context, and
+  deciding at dispatch time is how a hedge gets written instead of a decision.
+- Slice 4a: verifier lane dispatched as the closing check (the reviewer explicitly
+  did not run the gate, and recorded that gate evidence is a separate obligation).

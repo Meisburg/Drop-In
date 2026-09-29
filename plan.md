@@ -218,7 +218,9 @@ do not exist.
 ### Batch invariant: `e2e/fixtures.ts` is a PER-SLICE obligation
 
 `e2e/fixtures.ts` owns the two shared helpers that every viewer-based spec
-depends on — **18 spec files call `signUpViewer` and 18 call `finishSignup`**:
+depends on — **17 spec files call `signUpViewer` and 17 call `finishSignup`**
+*(corrected from 18 by the 4a reviewer and verified by grep — the wrong number had
+propagated out of this plan into a code comment)*:
 
 - `signUpViewer` drives `input[autocomplete="given-name"]`,
   `[autocomplete="family-name"]` and `[autocomplete="street-address"]`.
@@ -1049,7 +1051,8 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
   1. **`e2e/fixtures.ts` was in no slice's scope.** `signUpViewer` drives
      given-name/family-name/street-address — all three of which this batch
      deletes — and `finishSignup` asserts the feed-or-location binary, which
-     every new card breaks. **18 spec files call each helper.** Added as a
+     every new card breaks. **17 spec files call each helper** (18 was wrong — see the
+4a note). Added as a
      batch-level invariant: the helpers are updated *inside the slice that
      changes the sequence*, not cleaned up at the end.
   2. **The plan named two of the three gate functions.** The shell calls
@@ -1161,3 +1164,50 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
   fifth instance this batch of "the sweep named one, so there is one". **Named
   obligation for Slice 7: `App.tsx:387`, found by grepping, not by trusting a line
   number — the earlier fix fixed `:367`, a different line in the same file.**
+
+- 2026-09-29 — **Slice 4a: REVIEW PASS** (`d265785c`), no fix round. Six
+  non-blocking findings and four accepted residuals, every one assigned by name
+  below. Verified by the reviewer: Skip writes nothing; the blank-row skip is
+  correct (a name-only or age-only row is **validated, not silently written**); the
+  cap is enforced by `addKid` itself; a write failure stays on the card with
+  `role="alert"` and Skip remains available, so **the run can always advance**; and
+  there is **exactly one kids writer** — the whole point of 2a's lesson, now
+  confirmed by grepping the write function's call sites rather than its handler
+  names. The `radiusMiles` union was ruled a **legitimate documented union, not a
+  loosening** (both forms preserved, a misuse fails loudly at `selectOption`), and
+  its "predates V28" claim was **verified against `a0e93f2`**.
+- 2026-09-29 — **⚠️ THE ORCHESTRATOR PUBLISHED A WRONG NUMBER, AND IT REACHED CODE.**
+  This plan said **18** spec files call `signUpViewer`/`finishSignup` (twice), and
+  the 4a brief repeated it — so the builder wrote **"the 18 specs that consume this
+  helper"** into a comment in `e2e/fixtures.ts`. **The real count is 17**, verified
+  by `rg -l`. The number has been wrong in this plan since the batch began, which
+  makes it the batch's fifth "a count is a claim" instance and the first where the
+  **orchestrator was the source**. Corrected in all three places; the code comment
+  is assigned to 4b (F4). **A number in a brief is a claim with exactly the same
+  status as a builder's — it must be grepped, not recalled.**
+- 2026-09-29 — **4a's findings assigned by name.** To **4b**: **F3** the dangling
+  parenthetical the diff itself left at `OnboardingPage.tsx:627`; **F4** the
+  `fixtures.ts:397` count; **F6** the two sibling cards' inconsistent busy strings
+  (`'Please wait…'` vs `'Saving…'`) — pick one. To **Slice 7**: **F1** the confirmed
+  stale `App.tsx:86-87`; **F2** `OnboardingPage.tsx:49-52` (the location Continue
+  no longer writes kids); **F5** **`skipLabel: 'Skip for now'` is read by nothing
+  in production** (only pinned by its test, while `FirstRunCard` hard-codes
+  `'Skip'`) — **a new instance of defect #20's exact shape: a module field no card
+  reads** — either wire the chrome to it or delete the field, and update the `Skip`
+  locators in `e2e/fixtures.ts` and `e2e/auth.setup.ts` if wiring; **R1** the kids
+  write path still has **no e2e** (every spec walks Skip — close with one spec that
+  fills a row, continues, and sees the kid on `/profile`); and **R2**
+  **duplicate-kid re-entry** — the card starts from empty rows and does not pre-fill
+  existing kids, so a pre-zip re-entry can rewrite the same kids, and a partial
+  write failure (row 1 ok, row 2 fails) lets a retry duplicate row 1. **R2 predates
+  4a** (the removed location-view loop had identical semantics), so it is a
+  decision to make, not a regression to blame.
+- 2026-09-29 — **SLICE 7 IS SPLIT (decided now, on the accumulated list, not when
+  it is dispatched).** Its obligations are now a code/hygiene set plus a lane set:
+  **7a = the code and hygiene fixes** (F1, F2, F5, R1, R2, `App.tsx:387`, the
+  `db.ts:2521` avatar-predicate reconciliation, and removing `auth.setup.ts`'s
+  duplicated walk now that the builder **answered the question: yes, `finishSignup`
+  can cheaply subsume it** — the marker uses 98107 + 5mi, the helper's defaults, so
+  only the REST backstop and the state-save stay spec-local). **7b = the batch-end
+  lanes** (the full e2e sweep, the marker sweep, docs, and the no-zip e2e). The
+  plan's single Slice 7 block gets restructured into 7a/7b before 7a is dispatched.
