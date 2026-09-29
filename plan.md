@@ -760,6 +760,44 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
 - **Budget:** one local builder context.
 - **Depends on:** Slice 4a
 
+### Slice 4c: The sequence is driven by the facts, not by flags
+
+- **Objective:** a parent who re-enters the interview **resumes at the card they
+  left** instead of restarting the sequence — decision 6's "never a restart",
+  which nothing implemented.
+- **⚠️ PLAN DEFECT #22, MEASURED.** The page's card order is driven by **local
+  flags** — `kidsCardDone` (`OnboardingPage.tsx:134` → `if (!kidsCardDone)` at
+  `:470`) and `photoCardDone` (`:144` → `:560`) — and the flags start `false` on
+  every mount. **`nextUnfinishedCard` is not used in the page at all.** So:
+  - The **nudge** chooses its target from **FACTS** (`App.tsx`), and the **page**
+    chooses its card from **FLAGS**. The two disagree by construction.
+  - A parent who finished the kids and photo cards and abandoned **at the area
+    card** — the **last** card, so the most likely abandonment point — re-enters
+    and is shown the **kids card again**, then the photo card again.
+  - Re-answering the kids card with rows calls `addKid` again → **duplicate kids
+    rows** (the cap of 5 limits it but does not dedupe). That is 4a's residual R2,
+    whose real consequence is this.
+  - The plan accepted **"up to two extra taps"** for resume. It did **not** accept
+    a **restart**, and decision 6 says "never a restart" explicitly.
+- **Approach:** gate each card on the **same fact the nudge uses**, so the page and
+  the nudge cannot disagree: the name card on `profile === null` (already true),
+  the kids card on "not done **and** no kids yet", the photo card on "not done
+  **and** no avatar" — **`hasAvatarUrl` is now free** (`src/lib/avatarUrl.ts`, built
+  by 4b), and the kids fact needs the same `listKids` read the shell already does.
+  Use `nextUnfinishedCard(facts)` as the single arbiter if it fits; otherwise keep
+  the page's order and make each gate fact-aware. **Do not re-key the nudge.**
+- **Acceptance criteria:**
+  - A parent who already has kids and a photo and no zip lands **on the area card**
+    (or the location view), **not** on the kids card.
+  - A parent re-entering the interview **cannot write duplicate kids**.
+  - The page's chosen card agrees with `nextUnfinishedCard(facts)` for every fact
+    combination the existing tests cover.
+  - `finishSignup` (17 consumers) still walks the flow for a **brand-new** parent.
+- **Verification command:** `npm run verify` and
+  `npx playwright test e2e/golden-path.e2e.ts`
+- **Budget:** one local builder context.
+- **Depends on:** Slice 4b
+
 ### Slice 5: The area card
 
 - **Objective:** card 5 collects a location by address first, ZIP as fallback,
@@ -1227,3 +1265,48 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
   only the REST backstop and the state-save stay spec-local). **7b = the batch-end
   lanes** (the full e2e sweep, the marker sweep, docs, and the no-zip e2e). The
   plan's single Slice 7 block gets restructured into 7a/7b before 7a is dispatched.
+
+- 2026-09-29 — **Slice 4b built at `2828952`** (6 files, +172/−97, including a new
+  `src/lib/avatarUrl.ts` + its sibling test). Reported: gate exit 0, **66 files /
+  1981 tests** (+1 file, +3 tests — the new module's test), **lint 0 errors / 81
+  warnings — exactly the baseline, zero new warnings**, `avatar.e2e.ts` 2 passed,
+  `golden-path` 2 passed with `finishSignup`'s new photo hop proven. The bio field
+  is deleted (state, validation, write, imports, markup), and the e2e grep found
+  **no** spec that fills bio through the signup walk. `hasAvatarUrl` is
+  `url != null && url !== ''` with a sibling test. **Its answer to the ProfilePage
+  question is the distinction worth having:** not a live bug — the only writers are
+  `uploadAvatar` (a `?v=`-bearing URL, structurally non-empty) and `clearAvatar`
+  (null) — but an **out-of-band REST `{avatar_url: ''}` WOULD render
+  `<img src="">`**, because the column is a plain nullable `text` with no CHECK. So
+  a **latent** gap, recorded as its own obligation, not changed.
+- 2026-09-29 — **⚠️ PLAN DEFECT #22 FOUND GROUNDING 4b's REPORT: THE CARD SEQUENCE
+  IS FLAG-DRIVEN, SO RESUME IS A RESTART.** Measured: the page gates its cards on
+  **local flags** — `kidsCardDone` (`OnboardingPage.tsx:134` → `:470`) and
+  `photoCardDone` (`:144` → `:560`) — both starting `false` on every mount, and
+  **`nextUnfinishedCard` is not used in the page at all.** Meanwhile the **nudge**
+  picks its target from **facts**. So the two halves of decision 6 disagree by
+  construction. The consequence is **not** the plan's accepted "up to two extra
+  taps": a parent who finished kids + photo and abandoned **at the area card** —
+  **the last card, therefore the MOST LIKELY abandonment point** — re-enters and is
+  shown the **kids card again**, and re-answering it calls `addKid` again →
+  **duplicate kids rows**. That is 4a's residual R2, whose real consequence this is.
+  **Decision 6 says "never a restart." This is a restart.** Added as **Slice 4c**
+  (before 5 and 6, because both add cards to the same sequence and a wrong
+  sequencing model would be replicated): each gate becomes fact-aware, using
+  `hasAvatarUrl` (free as of 4b) and the same `listKids` read the shell already
+  does, so the page and the nudge cannot disagree. **Recorded as the batch's second
+  "the two halves each look right alone" defect** — #19 was the finish card being
+  unreachable, this is the resume being a restart.
+- 2026-09-29 — **4b changed `e2e/auth.setup.ts`, which 4b's brief left OUT of
+  scope, and flagged it rather than hiding it — and the builder is right.** That
+  spec is a **second, independent walk of the onboarding flow**, so it breaks on
+  every new card; it has now done so in **3b (defect #11), 4a, and 4b — three
+  times.** The fix each time is one Skip tap, and the change added **no assertion**.
+  **Ruling: accepted**, and **the dedup stays Slice 7's** (the builder already
+  confirmed `finishSignup` can subsume the walk) — because the walks still differ
+  today (the setup spec onboards the marker **with a zip and a radius** plus a REST
+  backstop and a state save), so the dedup is not a one-liner, whereas a Skip tap
+  per card is bounded and verified. **Slice 5's brief must name `auth.setup.ts`
+  explicitly** — it adds the area card and would otherwise repeat my mistake of
+  copying a stale out-of-scope line. **The orchestrator's scope line was the defect
+  here, not the builder's edit.**

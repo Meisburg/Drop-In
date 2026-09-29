@@ -1081,3 +1081,50 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   ProfilePage is live-broken; FIXING it is Slice 7's.
 - Slice 4b dispatched with all four jobs ordered (the photo card first, so a
   context-overrun leaves something coherent).
+- Slice 4b: BUILT at 2828952 (6 files, +172/-97: OnboardingPage.tsx, App.tsx,
+  src/lib/avatarUrl.ts NEW, src/lib/avatarUrl.test.ts NEW, e2e/fixtures.ts,
+  e2e/auth.setup.ts). Reported gate exit 0, 66 files / 1981 tests (+1 file, +3
+  tests = the new module's test), lint 0/81 = EXACTLY the baseline with ZERO new
+  warnings, avatar.e2e 2 passed, golden-path 2 passed. Reviewer dispatched
+  (run b5e2... see below).
+- **PLAN DEFECT #22 -- THE CARD SEQUENCE IS FLAG-DRIVEN, SO RESUME IS A RESTART.**
+  MEASURED: OnboardingPage gates its cards on LOCAL FLAGS -- `kidsCardDone` (:134
+  -> `if (!kidsCardDone)` at :470) and `photoCardDone` (:144 -> :560), both false on
+  every mount -- and `nextUnfinishedCard` IS NOT USED IN THE PAGE AT ALL (zero
+  hits). The NUDGE picks its target from FACTS; the PAGE picks its card from FLAGS.
+  * CONSEQUENCE, AND IT IS NOT THE ACCEPTED COST: a parent who finished kids+photo
+    and abandoned AT THE AREA CARD -- **the LAST card, so the MOST LIKELY
+    abandonment point** -- re-enters and is shown THE KIDS CARD AGAIN, and
+    re-answering it calls addKid AGAIN -> DUPLICATE KIDS ROWS. That is 4a's
+    residual R2, whose real consequence this is.
+  * Decision 6 says "resume at the card they left. Never a wall, NEVER A RESTART."
+    THIS IS A RESTART. The plan accepted "up to two extra taps"; it never accepted
+    a restart, and it never priced the duplicate write.
+  * FIX: **NEW SLICE 4c**, added BEFORE 5 and 6 -- both add cards to the same
+    sequence, so a wrong sequencing model would be replicated twice. Each gate
+    becomes fact-aware, using hasAvatarUrl (FREE as of 4b) and the same listKids
+    read the shell already does, so the page and the nudge cannot disagree.
+  * **This is the batch's SECOND "the two halves each look right alone" defect.**
+    #19 was the finish card being unreachable by construction; #22 is the resume
+    being a restart by construction. Both were found by reading the code the plan
+    described rather than the plan.
+- **4b CHANGED e2e/auth.setup.ts, WHICH 4b's BRIEF LEFT OUT OF SCOPE, AND FLAGGED
+  IT RATHER THAN HIDING IT -- AND THE BUILDER IS RIGHT. THE ORCHESTRATOR'S SCOPE
+  LINE WAS THE DEFECT.** That spec is a SECOND, INDEPENDENT WALK of the onboarding
+  flow, so it breaks on EVERY new card: 3b (defect #11), 4a, 4b -- **THREE times**.
+  Each fix is one Skip tap, and the change added NO assertion (verified: the diff
+  is comments + the walk).
+  * RULING: accepted. The dedup STAYS Slice 7's (the builder already answered that
+    finishSignup can subsume it) because the walks still differ today -- the setup
+    spec onboards the marker WITH a zip and a radius plus a REST backstop and a
+    state save -- so the dedup is not a one-liner, whereas a Skip tap per card is
+    bounded and verified.
+  * PROCESS: I copied a stale out-of-scope line from 4a's brief into 4b's without
+    carrying the by-name exception forward. **Slice 5's brief MUST name
+    e2e/auth.setup.ts explicitly**, since it adds the area card.
+- 4b's ProfilePage ANSWER IS THE DISTINCTION THAT WAS ASKED FOR: NOT a live bug
+  (the only writers are uploadAvatar, whose URL carries a ?v= cache-buster and is
+  structurally non-empty, and clearAvatar -> null; nothing in src/ or e2e/ writes
+  ''), BUT an out-of-band REST `{avatar_url: ''}` WOULD render an `<img src="">`
+  because the column is a plain nullable text with no CHECK. A LATENT gap, recorded
+  as its own obligation. Sent to the reviewer to verify both halves.
