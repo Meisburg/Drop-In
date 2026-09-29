@@ -177,3 +177,24 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
 - Slice 2a: reviewer dispatched with a NEUTRAL question ("is 'has a home zip'
   defined once — find every place, report any that disagree") rather than my
   hypothesis, so it confirms or refutes independently.
+- Slice 2a: reviewer verdict PASS with 2 findings (run 5e3afdca). Both
+  ORCHESTRATOR-VERIFIED. Finding 2 is substantively blocking despite the "minor"
+  label: TWO MORE going-ping write paths had no guard —
+  PlaydateDetailPage.tsx:1068 (handleSameTimeNextWeek) and FeedPage.tsx:786
+  (handleCardPingToggle). Confirmed by `rg 'togglePing\('`: three call sites in
+  pages, not one. After 2b, 2 of the 4 write paths would proceed with no location.
+  ROOT CAUSE IS THE ORCHESTRATOR'S GROUNDING: the brief said "the going-ping
+  action" because it grepped HANDLER NAMES. A guard is only as complete as your
+  grep for the CALL SITES of the function being guarded. Recorded in plan.md as a
+  checkable instruction and as a report requirement (paste the grep).
+  Finding 1 (the '' predicate) independently CONFIRMED: the gate derives
+  `home_zip != null && home_zip !== ''` (db.ts:266) while the new guards used
+  `== null`, so the guards were LOOSER than the wall they replace. Fix: define
+  `hasHomeZip` ONCE in src/lib/homeZip.ts (pure + sibling test, per the build
+  law) and use it at every presence-test site.
+- PROCESS LESSON (from the reviewer's residual risk (a)): "the ledger records the
+  builder's claim, not the output". From here the ledger carries the actual
+  output tails for gate claims, or the claim goes to a verifier lane. A claim in
+  the ledger is not evidence.
+- Slice 2a: fix round 1/5 dispatched. plan.md Slice 2a amended (objective, scope
+  +3 files incl. FeedPage and src/lib/homeZip.ts, acceptance now grep-checkable).

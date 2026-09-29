@@ -260,11 +260,36 @@ happening. The helpers are the blast radius here too.
 
 ### Slice 2a: The write sites ask for a location in place
 
-- **Objective:** the ping and the host action require a home ZIP at the point of
-  action — so the requirement exists **before** the app-wide wall comes down.
-- **Files in scope:** `src/pages/PlaydateDetailPage.tsx` (the going-ping action),
-  `src/pages/NewPlaydatePage.tsx` (`handleSubmit`, ~line 1115), a new shared
-  presentational `src/components/LocationRequiredNotice.tsx`
+- **Objective:** **every** write path that sets a going ping or creates a post
+  requires a home ZIP at the point of action — so the requirement holds at the
+  writes **before** the app-wide wall comes down.
+- **Files in scope:** `src/pages/PlaydateDetailPage.tsx` (**three** write
+  paths: `handlePingToggle` ~875, `handleSameTimeNextWeek` ~1068),
+  `src/pages/NewPlaydatePage.tsx` (`handleSubmit`, ~1115),
+  `src/pages/FeedPage.tsx` (`handleCardPingToggle`, ~786 — **the feed card's ping
+  toggle, which 2c does NOT cover**), `src/components/LocationRequiredNotice.tsx`
+  (new), `src/lib/homeZip.ts` (new) + `src/lib/homeZip.test.ts` (new)
+- **⚠️ THERE ARE FOUR WRITE PATHS, NOT ONE — the first attempt at this slice
+  guarded one of them and the reviewer caught the other two.** Verified by
+  grepping the *write functions*, not the handler names:
+  `togglePing(` has three call sites — `PlaydateDetailPage.tsx:906` (guarded),
+  `:1068` (unguarded), `FeedPage.tsx:786` (unguarded) — and `createPlaydate(`
+  has one, `NewPlaydatePage.tsx:1177` (guarded).
+  **The lesson is a checkable instruction: a guard is only as complete as your
+  grep for the CALL SITES of the thing being guarded.** Grepping for a handler
+  name finds one path by construction. Re-grep `togglePing(|createPlaydate(`
+  before claiming this slice is done.
+- **⚠️ "HAS A HOME ZIP" MUST BE DEFINED ONCE.** The first attempt used
+  `profile?.home_zip == null`, which treats the empty string as *set*; the gate's
+  own derivation (`db.ts:266`) is `home_zip != null && home_zip !== ''`, which
+  treats it as *unset*. So the guards were **looser than the wall they replace**.
+  Fix by defining the predicate once — `hasHomeZip(zip: string | null |
+  undefined): boolean` in `src/lib/homeZip.ts`, a pure function with a sibling
+  test per the build law — and using it **at every site that tests a home zip
+  for presence**, including the display-only map-pin checks
+  (`FeedPage.tsx:399`, `NewPlaydatePage.tsx:911`, `BrowsePage.tsx:324`) and the
+  gate derivation itself (`db.ts:266`). One predicate, one test, no class of
+  drift.
 - **Why this is FIRST and not last — the ordering is the whole point.** Removing
   the gate's bounce *before* the write sites guard would mean the location
   requirement is **removed, not moved**: a no-zip parent could ping or host with
@@ -278,13 +303,17 @@ happening. The helpers are the blast radius here too.
   and `FeedPage.tsx:399` already handle an unset `home_zip` defensively for the
   map pin — follow that pattern, do not invent one.
 - **Acceptance criteria:**
-  - With `profile.home_zip` unset, the ping action writes no going ping and
-    shows the notice; with it set, behaviour is unchanged.
-  - With `profile.home_zip` unset, `handleSubmit` does not call
-    `createPlaydate` and shows the notice; with it set, unchanged.
+  - With `home_zip` unset, **no** write path sets a ping or creates a post, and
+    each shows the notice; with a zip set, behaviour is unchanged.
+  - **The check that would have caught the miss:** `rg -n 'togglePing\(|createPlaydate\(' src/pages/` returns four call sites, and **every one sits
+    inside a `hasHomeZip` guard**. State this in the report as a grep result, not
+    as a belief.
+  - `src/lib/homeZip.ts`'s `hasHomeZip` is the only place the predicate is
+    written; `rg -n "home_zip == null|home_zip != null|home_zip !== ''" src/`
+    returns no hits outside that module and its test.
   - The notice's action reaches `/onboarding`, and it is a real control with a
     ≥44px tap target and a focus cue — not a bare string.
-  - No other page changes. `useSessionContext()`'s surface is unchanged.
+  - `useSessionContext()`'s surface is unchanged.
 - **Verification command:** `npm run verify` and
   `npx playwright test e2e/golden-path.e2e.ts`
 - **Budget:** one local builder context. All six Slice-2 files total **6,243
@@ -331,7 +360,8 @@ happening. The helpers are the blast radius here too.
 - **Objective:** a no-zip parent's feed is honest — stated, with a way out —
   rather than empty, broken, or silently radius-zero.
 - **Files in scope:** `src/pages/FeedPage.tsx`,
-  `src/components/RadiusEmptyState.tsx`
+  `src/components/RadiusEmptyState.tsx` — note the feed card's ping toggle is
+  **already guarded by 2a**; this slice is the no-zip *feed state* only.
 - **Approach:** distinguish "no home ZIP yet" from "no drop-ins in range". The
   former needs its own copy and its action is the area card; the latter keeps
   `RadiusEmptyState` as it is. `RadiusEmptyState` takes `radiusMiles` as a prop
