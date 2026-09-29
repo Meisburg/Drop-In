@@ -380,25 +380,35 @@ export async function signUpViewer(
 }
 
 /**
- * FINISH SIGNUP — walk the kids card, then complete the location step.
- * (V28 slice 3b; first-use audit, ticket 02; V28 slice 4a: the kids hop.)
+ * FINISH SIGNUP — walk the kids card and the photo card, then complete the
+ * location step. (V28 slice 3b; first-use audit, ticket 02; V28 slice 4a:
+ * the kids hop; V28 slice 4b: the photo hop.)
  *
  * The signup form no longer carries an address, so there is no geocode and no
  * branching: `signUpViewer` lands the new parent on /onboarding ALWAYS, the
  * name card comes next (signUpViewer completes it), then the KIDS card
- * ("3 of 5", V28 slice 4a) and then the location step. The feed-or-location
+ * ("3 of 5", V28 slice 4a), then the PHOTO card ("4 of 5", V28 slice 4b),
+ * and then the location step. The feed-or-location
  * race this helper used to settle (ticket 02: a RESOLVED address wrote
  * home_zip at signup and the parent landed on the feed with no location step
  * at all) is gone with the address field.
  *
  * THE KIDS HOP: the kids card is skippable, so this helper taps its Skip
- * control — writing NOTHING (no kid rows) — and proceeds to the location
- * step. The Skip button (FirstRunCard's chrome) is the card's only control
- * that advances without touching the DB, which keeps the 18 specs that
+ * control — writing NOTHING (no kid rows) — and proceeds to the photo
+ * card. The Skip button (FirstRunCard's chrome) is the card's only control
+ * that advances without touching the DB, which keeps the 17 specs that
  * consume this helper on the deterministic no-kids path: their assertions
  * about kids (kid-names-privacy and friends) create their kids through the
  * /profile editor or REST, never through onboarding. A spec that wants the
  * kids WRITE is one that should not be using this helper.
+ *
+ * THE PHOTO HOP: the photo card (V28 slice 4b) is skippable too, and its
+ * Skip is the SAME chrome control — after the kids card's Skip the card is
+ * replaced by the photo card, so the same locator re-resolves onto the
+ * photo card's Skip and a second click advances. Skipping writes nothing
+ * (the avatar upload only ever runs inside the card's crop step, which this
+ * walk never opens), so the helper stays on the deterministic no-photo
+ * path for every consumer.
  *
  * It NEVER forces a reload: a spec that counts requests during the cold load
  * still counts only the cold load's.
@@ -411,12 +421,18 @@ export async function finishSignup(
   const locationStep = page.getByRole('heading', { name: 'Set your location' })
 
   // V28 slice 4a: the kids card (3 of 5) sits between the name card and the
-  // location step. It is the ONLY view that renders the card's Skip control
+  // next view. It is the ONLY view that renders the card's Skip control
   // (the location view has none), so waiting for it is the hop itself — and
   // it absorbs the same profile-load settle beat the location wait absorbs.
-  const skipKids = page.getByRole('button', { name: 'Skip' })
-  await skipKids.waitFor({ timeout: 30_000 })
-  await skipKids.click()
+  // V28 slice 4b: the photo card (4 of 5) now sits between the kids card
+  // and the location step, and it shows the same Skip control — the
+  // locator re-resolves onto it after the kids card is replaced, so the
+  // walk is: wait, click (kids), wait, click (photo).
+  const skip = page.getByRole('button', { name: 'Skip' })
+  await skip.waitFor({ timeout: 30_000 })
+  await skip.click()
+  await skip.waitFor({ timeout: 30_000 })
+  await skip.click()
 
   // The location step always comes next (see the doc above). Waiting on a
   // settled heading rather than the DOM keeps a cold-load beat harmless: the

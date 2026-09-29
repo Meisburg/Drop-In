@@ -11,6 +11,7 @@ import { PushOptInPrompt } from './components/PushOptInPrompt'
 import { SessionProvider, useSessionContext } from './components/SessionProvider'
 import { SplashScreen } from './components/SplashScreen'
 import { listKids, signOutUser } from './lib/db'
+import { hasAvatarUrl } from './lib/avatarUrl'
 import { nextUnfinishedCard } from './lib/firstRun'
 import type { FirstRunCardId } from './lib/firstRun'
 import { FIRST_RUN_NUDGE_COPY } from './lib/firstRunCopy'
@@ -163,8 +164,7 @@ function FirstRunNudge({
             signedIn: true,
             hasName: true,
             hasKids: kids.length > 0,
-            hasPhoto:
-              profile.avatar_url !== undefined && profile.avatar_url !== null && profile.avatar_url !== '',
+            hasPhoto: hasAvatarUrl(profile.avatar_url),
             hasZip: false,
           }),
         )

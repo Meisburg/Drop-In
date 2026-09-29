@@ -9,12 +9,10 @@ import { progressLabel } from '../lib/firstRun'
 import { FIRST_RUN_COPY } from '../lib/firstRunCopy'
 import {
   addKid,
-  BIO_MAX_LENGTH,
   createProfile,
   HandleTakenError,
   loadZipCodes,
   MAX_KIDS_PER_PROFILE,
-  updateBio,
   updateHomeZipRadius,
   uploadAvatar,
   validateKid,
@@ -46,10 +44,14 @@ import { errorId, fieldA11y } from '../lib/a11y'
  * without a home zip is not bounced to this page (the shell's gate stopped
  * keying on home_zip; the requirement lives at the write paths, see
  * docs/adr/0001-home-zip-stops-being-a-gate.md). Visiting /onboarding is
- * voluntary; finishing the run is not. One Continue
- * button saves the location (always) + the V2 ticket-02 optional
- * completion items (photo/bio/kids — only what was entered) and lands on
- * the feed.
+ * voluntary; finishing the run is not. V28 slices 4a/4b: the kids card
+ * (3 of 5) writes the kid rows and the photo card (4 of 5) uploads the
+ * avatar, each before this page's final view — the location view's one
+ * Continue button saves the location (always) and lands on the feed.
+ * The optional items that were once collected HERE (V2 ticket 02:
+ * photo/bio/kids) are gone from this view: kids and photo moved onto
+ * their cards, and the bio left the first run entirely (V28 decision 15 —
+ * it stays on /settings and the V27 parent-card editor, never a column).
  */
 export function OnboardingPage() {
   const navigate = useNavigate()
@@ -122,8 +124,6 @@ export function OnboardingPage() {
   const [photoAdded, setPhotoAdded] = useState(false)
   const [photoUploading, setPhotoUploading] = useState(false)
   const [photoError, setPhotoError] = useState<string | null>(null)
-  const [bio, setBio] = useState('')
-  const [bioError, setBioError] = useState<string | null>(null)
   const [kidRows, setKidRows] = useState<Array<{ name: string; age: string }>>([])
   const [kidsError, setKidsError] = useState<string | null>(null)
   // V28 slice 4a: the kids card (3 of 5) is its OWN step, between the name
@@ -133,6 +133,15 @@ export function OnboardingPage() {
   // one that writes, so it gets its own busy flag distinct from `saving`.
   const [kidsCardDone, setKidsCardDone] = useState(false)
   const [kidsSaving, setKidsSaving] = useState(false)
+  // V28 slice 4b: the photo card (4 of 5) sits between the kids card and
+  // the location view. The upload itself runs in the crop step's confirm
+  // (uploadAvatar — see `photoCrop` above), not on Continue: by the time
+  // the parent reaches the card's primary control the photo is either
+  // uploaded or not, so Continue and Skip both only advance. `photoCardDone`
+  // is set by the card's Continue or its Skip (skippable — lib/firstRun's
+  // isSkippable('photo'); a skipped photo is kept alive by the /settings
+  // nudge banner).
+  const [photoCardDone, setPhotoCardDone] = useState(false)
 
   /**
    * The crop step (photo-crop ticket 03). Declared HERE, with the other hooks and
@@ -297,25 +306,12 @@ export function OnboardingPage() {
     }
     setSaving(true)
     setError(null)
-    setBioError(null)
     try {
       await updateHomeZipRadius(session.user.id, homeZip.trim(), radiusMiles)
-      // The optional items (V2 ticket 02): only what was actually entered.
-      // A failure here never traps onboarding (the items are optional —
-      // the /settings nudge banner keeps the prompt) — but it is surfaced.
-      if (bio.trim() !== '') {
-        try {
-          await updateBio(session.user.id, bio)
-        } catch (err) {
-          setBioError(
-            err instanceof Error
-              ? `${err.message} You can add it later in your settings.`
-              : 'Could not save your bio. You can add it later in your settings.',
-          )
-        }
-      }
-      // V28 slice 4a: the kids write moved onto the kids card (3 of 5),
-      // which sits BEFORE this view — handleContinue no longer touches it.
+      // V28 slices 4a/4b: the optional items no longer write from this
+      // handler — the kids card wrote its rows before this view (the photo
+      // card's upload ran in its crop step; the bio left the first run
+      // entirely). Only the location write remains here.
       // Refresh the shared session state before leaving: homeZipSet is what
       // this page's own guard (and every other route's) re-checks, and the
       // feed reads the profile from the same state. Since V28 slice 2b the
@@ -393,7 +389,7 @@ export function OnboardingPage() {
         progressLabel={progressLabel('name')}
         title={FIRST_RUN_COPY.name.title}
         body={FIRST_RUN_COPY.name.body}
-        primaryLabel={handleBusy ? 'Please wait…' : FIRST_RUN_COPY.name.primaryLabel}
+        primaryLabel={handleBusy ? 'Saving…' : FIRST_RUN_COPY.name.primaryLabel}
         primaryForm="name"
         primaryDisabled={handleBusy}
         testId="first-run-name-card"
@@ -546,6 +542,62 @@ export function OnboardingPage() {
     )
   }
 
+  // V28 slice 4b: the photo card ("4 of 5") — the first run's card 4,
+  // between the kids card and the location view. The picker and the crop
+  // step are the existing avatar pipeline lifted into the card chrome
+  // (`photoCrop` above, reused as-is — it validates size and type before
+  // decoding): a rejected file shows its existing error (a gate hit in
+  // beginCrop, or a failed upload) and never traps the card — Continue
+  // stays live and so does Skip. The upload runs on the crop step's
+  // confirm, not on Continue; by the time the parent reaches the card's
+  // controls the photo is either uploaded or not, so Continue and Skip
+  // both only advance (a failed upload leaves `photoError` shown and
+  // `photoAdded` false, and the /settings nudge banner keeps the prompt).
+  // The words are data from FIRST_RUN_COPY.photo, never hard-coded (the
+  // name and kids cards read their entries the same way). The busy-state
+  // label ("Saving…" while the confirmed upload is in flight) is one of
+  // the two transient strings the sibling cards share, not card copy.
+  if (!photoCardDone) {
+    const photoCopy = FIRST_RUN_COPY.photo
+    return (
+      <FirstRunCard
+        progressLabel={progressLabel('photo')}
+        title={photoCopy.title}
+        body={photoCopy.body}
+        primaryLabel={photoUploading ? 'Saving…' : photoCopy.primaryLabel}
+        primaryDisabled={photoUploading}
+        onPrimary={() => {
+          // The photo write already ran in the crop step — Continue just
+          // advances to the location view (skippable, lib/firstRun's
+          // isSkippable('photo')).
+          setPhotoCardDone(true)
+        }}
+        onSkip={() => {
+          // Skippable: advance without writing anything — the /settings
+          // nudge banner keeps the prompt.
+          setPhotoCardDone(true)
+        }}
+        testId="first-run-photo-card"
+      >
+        <div className="flex flex-col gap-1 text-sm">
+          <label className="inline-flex min-h-11 cursor-pointer items-center self-start rounded-xl border border-slate-300 bg-white px-3 text-base font-medium text-slate-700">
+            {photoUploading ? 'Uploading…' : photoAdded ? 'Photo added' : 'Add a photo'}
+            <input
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              disabled={photoUploading}
+              onChange={(e) => void handlePhotoChange(e)}
+              {...fieldA11y('photo', photoError)}
+            />
+          </label>
+          {photoError !== null ? <p role="alert" id={errorId('photo')} className="text-sm text-red-600">{photoError}</p> : null}
+          {photoCrop.dialog}
+        </div>
+      </FirstRunCard>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {/* Frontend-design pass: the location masthead is a printed notice
@@ -623,59 +675,12 @@ export function OnboardingPage() {
         </div>
       )}
 
-      {/* V2 ticket 02: the optional completion step — photo + bio
-          (first name + age only, the privacy pin). V28 slice 4a: the kids
-          moved onto the kids card (3 of 5), which renders BEFORE this view —
-          the family block now holds photo + bio only (slice 4b turns photo
-          into card 4). Skipping is fine: the /settings nudge banner keeps
-          prompting until all three are there.
-          Frontend-design pass: this block loses its card chrome and reads as
-          a titled section of the same notice. */}
-      <div className="flex flex-col gap-3">
-        <h2 className="font-display text-lg font-semibold text-slate-900">
-          Tell parents about your family <span className="font-normal text-slate-500">(optional)</span>
-        </h2>
-
-        <div className="mt-3 flex flex-col gap-3">
-          <div className="flex flex-col gap-1 text-sm">
-            <span className="text-slate-700">Photo</span>
-            <label className="inline-flex min-h-11 cursor-pointer items-center self-start rounded-xl border border-slate-300 bg-white px-3 text-base font-medium text-slate-700">
-              {photoUploading ? 'Uploading…' : photoAdded ? 'Photo added' : 'Add a photo'}
-              <input
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                disabled={photoUploading}
-                onChange={(e) => void handlePhotoChange(e)}
-                {...fieldA11y('photo', photoError)}
-              />
-            </label>
-            {photoError !== null ? <p role="alert" id={errorId('photo')} className="text-sm text-red-600">{photoError}</p> : null}
-            {photoCrop.dialog}
-          </div>
-
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-slate-700">Bio</span>
-            <textarea
-              className={
-                'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
-                (bioError !== null ? 'border-red-400' : 'border-slate-300')
-              }
-              value={bio}
-              onChange={(e) => {
-                setBio(e.target.value)
-                setBioError(null)
-              }}
-              placeholder="A few words about your family (optional)"
-              maxLength={BIO_MAX_LENGTH}
-              rows={2}
-              {...fieldA11y('bio', bioError)}
-            />
-            {bioError !== null ? <span role="alert" id={errorId('bio')} className="text-sm text-red-600">{bioError}</span> : null}
-          </label>
-        </div>
-      </div>
-
+      {/* V2 ticket 02's optional completion items no longer live in this
+          view (V28 slices 4a/4b): the photo moved onto the photo card
+          (4 of 5), the kids onto the kids card (3 of 5), and the bio left
+          the first run entirely (decision 15 — /settings and the V27
+          parent-card editor keep it). Skipping a card is fine: the
+          /settings nudge banner keeps prompting until it is set. */}
       <div className="flex flex-col gap-2">
         <button
           type="button"

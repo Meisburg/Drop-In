@@ -83,12 +83,18 @@ setup('sign up the marker, onboard it (zip + radius), save the signed-in state',
 
   // V28 slice 4a: the KIDS card ("3 of 5") now sits between the name card and
   // the location step — the new parent's first run is account → name → kids
-  // → photo → area. This spec's walk predates the card and used to land
-  // straight on the location step, so it taps the card's Skip control (the
-  // card is skippable and Skip writes NOTHING — the marker gets its kids, if
-  // any, via the /profile editor or REST, never through onboarding). The
-  // Skip button is the kids card's only advance-without-writing control, and
-  // it is the only Skip on this route (the location view has none).
+  // → photo → area. This spec's walk predates the cards and used to land
+  // straight on the location step, so it taps each skippable card's Skip
+  // control (Skip writes NOTHING — the marker gets its kids, if any, via
+  // the /profile editor or REST, never through onboarding). The Skip button
+  // is FirstRunCard's chrome control, and the location view has none.
+  await page.getByRole('button', { name: 'Skip' }).click()
+  // V28 slice 4b: the PHOTO card ("4 of 5") now sits between the kids card
+  // and the location step, showing the same chrome Skip control — after the
+  // kids card's Skip the photo card replaces it, so the same locator
+  // re-resolves onto the photo card's Skip. Its Skip writes nothing too (the
+  // avatar upload only ever runs inside the card's crop step, which this
+  // walk never opens), so the marker's walk stays deterministic.
   await page.getByRole('button', { name: 'Skip' }).click()
 
   // The LOCATION step: home zip from the seeded gazetteer + the radius
