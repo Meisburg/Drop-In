@@ -226,3 +226,41 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   clean result. A no-match produced by an error path is not a no-match. Re-ran
   with correct flags. Same lesson as trusting a claim over its output.
 - Slice 2a: verifier lane dispatched as the closing check (claim -> output).
+- Slice 2a: VERIFIED PASS by the verifier lane (run 2cd6bd7e) at fda9ccc. RAW
+  OUTPUT RECORDED (per the adopted rule -- a claim is not evidence):
+  * gate exit 0; build ok (169 modules); TEST 65 files / 1976 tests passed;
+    LINT 0 errors / 80 warnings -- IDENTICAL to the slice-1 baseline, so NO new
+    warnings; a11y:focus PASS; steering-lint PASS;
+    "GUARDS: PASS -- all deterministic rules hold."
+  * slice tests: src/lib/homeZip.test.ts 1 file / 3 tests, exit 0.
+  * golden-path e2e: 2 passed / 0 failed, 11.0s, exit 0 (.env present).
+  * GREP 1: exactly 4 write call sites. GREP 2: empty, exit 1 (no matches, no -E
+    flag used -- the verifier explicitly distinguished "no matches" from an error,
+    so LESSON #2 propagated into the lane).
+  * SCOPE: fda9ccc changes exactly 9 source files (136 insertions / 25 deletions)
+    -- the files the fix brief authorized; no other source/test/script/config path
+    moved across 8047a28..fda9ccc.
+  * environment failures: none.
+- Slice 2a: COMPLETE AND VERIFIED. Full lane: builder -> reviewer -> adjudication
+  -> fix round -> orchestrator grep-verification -> verifier PASS.
+- Slice 2b brief written and grounded (read-only prep while 2a's verifier ran),
+  at .scratch/v28/briefs/slice-2b.md. Two findings from the grounding, both new:
+  (1) 'onboard' as a DECISION STRING appears in only 5 places and one is a test --
+     onboarding.ts:66 (type), :110 (return), onboarding.test.ts:104, App.tsx:87
+     and :185 (comments). No code anywhere switches on it, so the removal is
+     type-level only.
+  (2) A SUBTLETY THE PLAN'S PROSE GETS WRONG: after 2b, e2e/onboarding-gate.e2e.ts
+     can no longer UNIQUELY pin the 'loading' outcome -- removing the bounce makes
+     its assertion (a cold /profile load lands on /profile) pass anyway, since an
+     in-flight load's homeZipSet is false and 'pass' no longer bounces. 'loading'
+     stays because it now governs what RENDERS during a cold load, not what
+     redirects. The durable pin is onboarding.test.ts:87 and :91 -- the brief tells
+     the builder not to touch them and to report if it finds itself editing them.
+- Issue filed: .scratch/v28/issues/02-new-form-loses-values-across-the-onboarding-hop.md
+  -- the /new form re-seeds empty across the /onboarding hop. Filed as an ACCEPTED
+  KNOWN LIMITATION because the question went unanswered across a compaction, and
+  the orchestrator said it would take that default. Reversible. Reasoning recorded:
+  the blocked state is the RECOVERY path (a new signup's zip is set by the cards,
+  so the ordinary path never reaches it); a real fix is a design decision
+  (draft persistence vs inline capture), not a one-liner; and inline capture would
+  create a second place a home zip can be set, which 2a just consolidated.
