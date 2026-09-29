@@ -1047,3 +1047,37 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   deciding at dispatch time is how a hedge gets written instead of a decision.
 - Slice 4a: verifier lane dispatched as the closing check (the reviewer explicitly
   did not run the gate, and recorded that gate evidence is a separate obligation).
+- **SLICE 4A COMPLETE AND VERIFIED (PASS, run 0e33dc00) at 83f4f58.** Verifier
+  evidence: gate exit 0; **65 files / 1978 tests**; lint **0 errors / 81 warnings**
+  (81, NOT 82, with **ZERO warnings in 4a's four changed files** -- the accepted
+  App.tsx warning is not one of them); guards PASS with **NO FLAKE THIS RUN** (so
+  the flake has appeared in 2 of 4 recent runs -- recurring, environmental, and
+  caught by the isolation re-run); `a11y:focus` and `steering-lint` ok. **THE
+  `[setup]` WALK IS GREEN** (auth.setup.ts 4.2s) after the Skip hop -- the whole
+  reason the builder was given that file by name. **zip-radius 3 passed** with the
+  helper selecting the label `'20 miles'` VERBATIM, so the pre-existing
+  "20 miles miles" defect is genuinely gone. **Number of kids DB writes: 1.** The
+  17-and-17 counts are confirmed against my wrong 18. `skipLabel` confirmed dead
+  (declaration + 2 values + test-only reads). The stale App.tsx:86 comment is
+  confirmed still present and correctly NOT fixed in this commit. "What's your
+  name" survives only as a history comment.
+- **PLAN DEFECT #21 FOUND WHILE GROUNDING 4b: DECISION 15 HAS NO CARRYING SLICE.**
+  Decision 15 is settled -- "Bio drops out of the first run. Stays on the existing
+  /settings nudge and V27's parent-card editor." -- and **NOTHING IMPLEMENTED IT**:
+  the bio field is still RENDERED AND STILL WRITTEN from OnboardingPage.tsx --
+  `bio`/`bioError` (:125/:126), the `updateBio` call inside handleContinue
+  (:306-313), and the field itself (:662-664). This is NOT a deliberate deferral:
+  the plan said "Not a `profiles.bio` cleanup -- that is V28 ticket
+  01-retire-profiles-bio.md", meaning THE COLUMN, so **THE FIELD FELL BETWEEN THE
+  TWO AND NOBODY OWNED IT.** It is the same shape as defect #10 (a settled decision
+  with no carrying slice). Assigned to 4b, which is dismantling that exact block.
+- **AND GROUNDING FOUND THE AVATAR PREDICATE IS WORSE THAN THE REVIEWER SAID.**
+  The plan said "inlined twice"; measured, the "is this URL set" rule exists in
+  THREE DIFFERENT FORMS: App.tsx:167 (`!== undefined && !== null && !== ''`),
+  ProfilePage.tsx:1218 (**`!== null && !== undefined` -- NO empty-string clause**),
+  and places.ts:1068 (`photo_url !== null && !== ''` -- a DIFFERENT FIELD and no
+  undefined clause). So one of the three is arguably a live bug that would render an
+  `<img src="">`. 4b extracts `hasAvatarUrl` and is asked to REPORT whether
+  ProfilePage is live-broken; FIXING it is Slice 7's.
+- Slice 4b dispatched with all four jobs ordered (the photo card first, so a
+  context-overrun leaves something coherent).

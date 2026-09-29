@@ -724,15 +724,31 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
   - A failure writing the photo is surfaced and does not block Continue.
   - The card reads `4 of 5`, **rendering its title, body and primary label from
     `FIRST_RUN_COPY`** (4a established the pattern — follow it, do not hard-code).
-  - **⚠️ EXTRACT THE AVATAR PREDICATE (reviewer finding).** `src/App.tsx` inlines
-    `avatar_url !== undefined && !== null && !== ''`, **duplicating the same rule
-    already inlined at `db.ts:2521`** — two inline copies that can drift, and no
-    exported predicate exists (the only other is a local, unexported const at
-    `places.ts:1068`). The build law and this repo's own precedent
-    (`src/lib/homeZip.ts`'s `hasHomeZip`, created for exactly this) say this
-    belongs in `src/lib/` as a **tested pure function**. Extract it, give it a
-    sibling test, and use it in the nudge. **Reconciling `db.ts:2521` onto it is
-    Slice 7's** (Slice 7 owns `db.ts`) — just note it for that slice.
+  - **⚠️ EXTRACT THE AVATAR PREDICATE — IT EXISTS IN THREE DIFFERENT FORMS
+    (measured, not assumed).** The plan first said "inlined twice"; the real picture
+    is worse: `src/App.tsx:167` checks
+    `avatar_url !== undefined && !== null && !== ''`;
+    `src/pages/ProfilePage.tsx:1218` checks only `!== null && !== undefined` (**no
+    empty-string clause** — it would render an `<img src="">` if `''` is reachable);
+    and `src/lib/places.ts:1068` checks `photo_url !== null && !== ''` (a **different
+    field**, and no `undefined` clause). The build law and this repo's own precedent
+    (`src/lib/homeZip.ts`'s `hasHomeZip`, whose `zip != null && zip !== ''` covers
+    both null-ish values in one clause) say this belongs in `src/lib/` as a **tested
+    pure function**. Extract `hasAvatarUrl(url: string | null | undefined): url is
+    string`, give it a sibling test, use it in the nudge, and **report whether
+    `ProfilePage.tsx:1218` is a live bug** — fixing ProfilePage is **Slice 7's**, not
+    4b's.
+  - **⚠️ REMOVE THE BIO FIELD FROM THE FIRST RUN (decision 15 — plan defect #21).**
+    Decision 15 is settled: "Bio drops out of the first run. Stays on the existing
+    `/settings` nudge and V27's parent-card editor." **Nothing implemented it.** The
+    bio field is still rendered **and still written** from this page: `bio`/`bioError`
+    (`:125`/`:126`), the `updateBio` call in `handleContinue` (`:306-313`), and the
+    field itself (`:662-664`). This was **not** a deliberate deferral — the plan said
+    "not a `profiles.bio` cleanup (ticket 01)", meaning **the column**, so the
+    **field** fell between the two and nobody owned it. Delete the field, its state,
+    its validation surface and its write; leave `/settings` and the column alone.
+    **Then grep, not assume:** `rg -n "bio" e2e/` — a spec that fills bio through the
+    signup walk would break, and `finishSignup` has 17 consumers.
   - **The nudge stays GENERIC — do NOT add this card's title to it.** Ruling
     (orchestrator, after defect #20): the generic line is **never wrong**, and
     naming a card couples the shell to the card inventory, which is precisely how
