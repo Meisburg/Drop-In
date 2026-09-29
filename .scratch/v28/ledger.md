@@ -1722,3 +1722,32 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   suite's 289 toHaveCount(0) sites, the helper-navigation escape is by design and printed,
   and the cross-route-absence false positive STILL HAS NO TOLERANCE MECHANISM; (c) one
   PRE-EXISTING platform skip.
+- **SLICE 7A COMPLETE AND VERIFIED (PASS, run 0484465c) at b32595e.** ALL FOUR PROOFS PASSED:
+  * **PROOF 1, THE CRUX**: the prescribed swap was run and THE FIXED GUARD REPORTS
+    places-see-map WITH THE SPEC PATH (e2e/places-map-view.e2e.ts:1493) AND EXITS 1 --
+    exactly the outcome the committed guard at 1631939 failed to produce. Restore
+    confirmed clean. The unhealthy state is genuinely detected now, by the same test the
+    reviewer invented.
+  * **PROOF 2**: GUARDS PASS; the e2e diff lists ONLY places-map-view.e2e.ts;
+    comment-replies.e2e.ts is BYTE-IDENTICAL across both 1631939..HEAD and the wider
+    range, with the Comments (1)/(2) assertions intact at 182/218/267. ZERO SPECS WERE
+    CHANGED TO FIT THE GUARD.
+  * **PROOF 3**: gutting Guard 1's route comparison makes its check fail (2 checks, exit
+    1); gutting Guard 2's negative exemption makes its check fail (3 checks, exit 1).
+    Unmodified they are 4 and 7 checks, all green. SO THE CHECKS ARE HONEST RULE-ANCHORS.
+  * **PROOF 4**: seed 5 runs and its assertion REQUIRES the guard to NAME
+    places-see-map; both seed-5 checks green.
+  * **/browse**: the guard examined 25 route-checkable sites and produced NO
+    unmatched-route note -- meaningful because the specs ACTIVELY DRIVE /browse
+    (hearts-collection, feed-ended-out, feed-empty-state, places, places-map-view) WITH
+    absence pins, so a missing entry would have named itself. AND THE VERIFIER
+    INDEPENDENTLY COUNTED THE DENOMINATOR: toHaveCount(0) sums to EXACTLY 289, matching
+    the header's "25 of 289". That is verification of a claim by measurement rather than
+    by reading the claim.
+  * Gate exit 0; 66 files / 1989 tests; lint EXACTLY 81 with ZERO vite advisory lines
+    this run (so nothing to exclude, unlike the run where the advisory caused the
+    82-vs-81 confusion); e2e lane 12 passed / 1 skipped with the skip PROVEN a
+    pre-existing test.fixme present in b32595e^; drivers untracked; no environment
+    failures.
+- Slice 7b: the batch-end lanes to be dispatched -- the no-zip e2e (the plan's named
+  item), the FULL e2e sweep, and the marker sweep with both tails pasted.
