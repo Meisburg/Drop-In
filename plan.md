@@ -36,12 +36,25 @@ locked app.
 | 7 | Cold start | Real places nearby **+** real drop-ins seeded by hand before invites |
 | 8 | Required cards | **Name + area required**; kids + photo skippable. Account is not skippable |
 | 9 | The address | The **area card** asks the address, ZIP as fallback |
-| 10 | Notifications | V25's prompt keeps owning it. The first run must not fight it |
+| 10 | Notifications | V25's prompt keeps owning it. The first run must not fight it — mechanically: the shell suppresses `PushOptInPrompt` for `ONBOARDING_PATH` (see 16) |
 | 11 | Kids card | Names + ages, as today (a kid's name is gated, and labels "who's coming") |
 | 12 | The ending | Its own "places near you" finish card, not `/browse` |
 | 13 | Scope | One batch, sliced; playtest once the cards exist |
 | 14 | Seeding | The human plants real drop-ins by hand, in the app |
 | 15 | Bio | **Drops out of the first run.** Stays on the existing `/settings` nudge and V27's parent-card editor |
+| 16 | The interview's chrome | **The first run renders bare** — no header, no bottom nav, no push prompt, no resume nudge. **The route does NOT move out of `ProtectedShell`**; the shell suppresses its chrome for `ONBOARDING_PATH` |
+
+**Why 16 is implemented as chrome suppression, not as a route move.** Moving
+`/onboarding` outside `ProtectedShell` was the obvious reading, and it is the
+wrong one. `ProtectedShell` is not chrome with a guard attached — it *is* the
+guard, and its ordering is load-bearing and comment-documented: the `/mod` guard
+and the post-edit fallback must both sit **before** the signed-out gate, and the
+`I'm coming` return target may only apply on `gate === 'pass'`. Re-mounting that
+logic elsewhere re-creates one long, carefully-ordered `if` ladder, and a
+reordering bug there is worse than the nav it would remove. Suppressing the
+chrome is a **local render change inside the guard that already runs**, so the
+ordering is untouched and `e2e/onboarding-gate.e2e.ts` keeps testing the same
+tree. The observable result is identical: the interview has no app chrome.
 
 ### Measured facts this plan rests on (evidence, not assumption)
 
@@ -265,6 +278,11 @@ happening. The helpers are the blast radius here too.
     banned profile.
   - `resolveOnboardingRedirect`'s signature is unchanged — `(true, false)` →
     `null`, `(true, true)` → `'/'`, `(false, true)` → `LOGIN_PATH`.
+  - **The `I'm coming` return target still fires for a no-zip parent.** Today
+    `'pass'` implies a zip, so this was true by construction; removing
+    `'onboard'` makes it a real decision. Pin it with a test, because it means a
+    new signup who tapped "I'm coming" is routed out of the interview to that
+    playdate — deliberate (see Risks), not silent.
   - A no-zip parent opening the feed sees a stated "we don't know where you are
     yet" state with a path to set it — not an empty radius state and not an
     error.
@@ -281,7 +299,7 @@ happening. The helpers are the blast radius here too.
 - **Objective:** the card chrome exists, and `/onboarding`'s existing
   "what's your name" branch renders in it.
 - **Files in scope:** `src/components/FirstRunCard.tsx` (new),
-  `src/pages/OnboardingPage.tsx`
+  `src/pages/OnboardingPage.tsx`, `src/App.tsx` (the bare-render seam only)
 - **Approach:** build the presentational chrome first (progress, title, body,
   children slot, primary action, optional Skip, back). On `/onboarding`, replace
   the existing "no profiles row → What's your name?" branch (`OnboardingPage.tsx`
@@ -289,6 +307,15 @@ happening. The helpers are the blast radius here too.
   for social sign-in — generalize it, do not rewrite it. **Keep a
   `Continue`-matching primary label**: `finishSignup` and several specs locate
   it by `/^Continue/`.
+- **The bare-render seam (decision 16).** `ProtectedShell` already computes
+  `pathname === ONBOARDING_PATH` once, for its redirect branch (`App.tsx:~200`).
+  Reuse **that** as one `isFirstRun` constant and use it to suppress, for that
+  route only: the `<header>`, the `<nav>` bottom bar / rail, the `PushOptInPrompt`
+  mounted in `<main>` (this is decision 10's mechanism — do not add a second
+  flag for it), and the first-run resume nudge from Slice 3b. Keep `<main>` and
+  the grid wrapper; the card owns the page's own padding. **Do not reorder or
+  restructure any guard above this point** — the seam is a render decision, not a
+  routing one.
 - **Acceptance criteria:**
   - The name card creates the profile row exactly as today
     (`createProfile(composeDisplayName(...))`), including the
@@ -296,6 +323,8 @@ happening. The helpers are the blast radius here too.
   - The name card is labelled `2 of 5`.
   - The chrome carries no domain logic — no zip/handle/kid rules inside
     `FirstRunCard.tsx`.
+  - `/onboarding` renders with **no header, no bottom nav and no push prompt**,
+    and every other route's chrome is byte-identical to before (decision 16).
   - Tap targets are ≥44px, inputs ≥16px, errors use `role="alert"` with the
     shared `fieldA11y`/`errorId` seams.
 - **Verification command:** `npm run verify`
@@ -322,8 +351,8 @@ happening. The helpers are the blast radius here too.
   - `signUpViewer` no longer touches any removed selector, and `finishSignup`
     reaches the feed from the new sequence.
   - The shell's "finish setting up" line **never renders at the same time as
-    `PushOptInPrompt`** (decision 10 has teeth: both live in the shell now), and
-    dismissing it does not hide it forever within the session.
+    `PushOptInPrompt`** — and by decision 16 it renders on `/onboarding` not at
+    all, since the first run never shows either.
 - **Verification command:** `npm run verify`, then
   `npx playwright test e2e/golden-path.e2e.ts e2e/onboarding-gate.e2e.ts`
 - **Budget:** one local builder context.
@@ -487,6 +516,20 @@ extension; there is no `useCropStep.ts`**), **`e2e/fixtures.ts`**
   `composeDisplayName` for a field it no longer has.
 - **A no-zip parent can now hold an account indefinitely.** Discovery surfaces
   must treat a missing home zip as normal, never an error (ADR 0001).
+- **A NEW interaction Slice 2 creates: the `I'm coming` return target can now
+  fire mid-interview.** `ProtectedShell` applies the stored
+  `PLAYDATE_RETURN_KEY` target only on `gate === 'pass'` (`App.tsx:~195`), and
+  today `'pass'` requires a home zip — so the return lands *after* onboarding by
+  construction. **Slice 2 removes `'onboard'`, so `'pass'` becomes true for a
+  no-zip parent**, and a brand-new signup who tapped "I'm coming" on a public
+  page can be redirected out of the interview to that playdate's detail page —
+  skipping cards 3–5. **Ruling: this is acceptable and even desirable** (it
+  honours an explicit tap, and the resume nudge covers the rest), but it is an
+  unintended consequence that must be **recorded, not discovered**. Slice 2's
+  acceptance includes one test pinning that the return target still fires for a
+  no-zip parent, so the behaviour is chosen rather than accidental.
+- **The plan's own NOTE about `firstRun.ts`'s doc comment is now closed:** fix
+  round 1 restated the corrected two-clause rule in the module itself.
 - **`ALLOW_CONFIG_CHANGE` may be needed** if a slice touches check config; state
   the reason in the command when it is.
 

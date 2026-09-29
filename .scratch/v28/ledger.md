@@ -63,3 +63,42 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   run 510ba2e5), findings verbatim via
   .scratch/v28/briefs/slice-1-fix-1.md. Hard constraint: doc comment + tests
   only, NO production behaviour change.
+- DECISION 16 (human answered "yes"): the interview renders BARE — no header,
+  no bottom nav, no push prompt, no resume nudge. Implementation pinned as CHROME
+  SUPPRESSION inside ProtectedShell, not a route move. Grounded by reading
+  src/App.tsx: ProtectedShell is not chrome-with-a-guard, it IS the guard, and
+  its order is load-bearing (/mod guard and post-edit fallback must precede the
+  signed-out gate; the return target only on gate==='pass'). Re-mounting that
+  ladder outside the shell risks a reordering bug worse than the nav it removes.
+  One `isFirstRun = pathname === ONBOARDING_PATH` constant already exists at
+  App.tsx:~200 for the redirect branch — reuse it for the chrome seam. This also
+  gives DECISION 10 its mechanism: the same flag suppresses PushOptInPrompt,
+  which `App.tsx:~313` mounts "once for the whole authed shell" (so it DOES
+  currently render on /onboarding — the collision is real, now confirmed by
+  reading, not assumed).
+- NEW CONSEQUENCE OF SLICE 2, recorded not discovered: the `I'm coming` return
+  target applies only on gate==='pass', and today 'pass' implies a zip. Removing
+  'onboard' makes 'pass' true for a no-zip parent, so a new signup who tapped
+  "I'm coming" can be routed OUT of the interview to that playdate, skipping
+  cards 3-5. Ruling: acceptable (honours an explicit tap; the nudge covers the
+  rest), but Slice 2 now pins it with a test.
+- plan.md updated: decision 16 + its rationale, decision 10's mechanism, Slice 3a
+  scope/approach/acceptance (src/App.tsx bare-render seam), Slice 2 acceptance
+  (return-target test), Risks rewritten.
+- Slice 1: fix round 1/5 complete (commit 7619057, 4 files +50/-18). Verified by
+  the orchestrator, not taken on report: `git diff` proves firstRun.ts's only
+  non-comment change is the EOF newline (logic byte-identical), the two new
+  guard-order tests pin exactly the mutations they name, the scan gained
+  location/navigator/`Date(`, and the clock spy now walks all 32 fact
+  combinations. Gate re-run by the orchestrator: 64 files, 1971 tests,
+  GUARDS PASS. Findings 1-4 CLOSED. Finding 5 stays rejected (false evidence).
+- Slice 1: fix round 2/5 dispatched — ONE item, and it is the builder's own risk
+  flag, caused by the ORCHESTRATOR's instruction: adding `location`/`navigator`
+  to a scan that runs over the whole file *including comments* makes a PURITY
+  test fail on PROSE. The module is about places, so a future comment saying
+  "location" would trip it. Ruling: fix, don't document — the proof is both
+  weaker than it claims and a false-failure generator, and false failures burn a
+  future builder's context. Fix: strip comments, scan the code, and PROVE the
+  strip with a two-sample unit test (comment-with-token = no finding,
+  code-with-token = finding). firstRun.ts's logic and comment are frozen this
+  round.
