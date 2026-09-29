@@ -153,10 +153,11 @@ test('a resolved address writes the home zip with no typed zip (the address-firs
     })
     expect(new URL(page.url()).pathname).toBe('/')
     await expect(page.getByTestId('feed-location-control')).toContainText(marker.homeZip)
-    // The fallback never revealed itself on the resolved leg: no ZIP field
-    // (not even on the feed) and no in-card note.
-    await expect(page.getByPlaceholder('e.g. 98107')).toHaveCount(0)
-    await expect(page.getByTestId('area-zip-fallback-note')).toHaveCount(0)
+    // The fallback never revealed itself on the resolved leg (V28 slice 7a):
+    // the ZIP input and the area-card note live ONLY inside the onboarding
+    // card (src/pages/OnboardingPage.tsx), which cannot render on the feed at
+    // all — asserting their absence here was structurally guaranteed true, so
+    // the two toHaveCount(0) pins were cut and their intent documented here.
   } finally {
     await close()
   }

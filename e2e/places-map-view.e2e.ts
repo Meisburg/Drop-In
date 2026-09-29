@@ -1490,10 +1490,16 @@ test('a second "See map" activation does not disturb the saved list offset (V24 
     spacer.style.height = '1800px'
     document.body.appendChild(spacer)
   })
-  const seeMap = page.getByTestId('places-see-map')
-  await seeMap.scrollIntoViewIfNeeded()
+  // V28 slice 7a: the control's testid is `places-view-toggle` (the old
+  // `places-see-map` died with the map-band strip; the stale-locator guard's
+  // first positive-usage finding). In LIST view the toggle only RENDERS after
+  // the parent scrolls past the controls (`showMapToggle`), so the 250px park
+  // comes first and the scroll-into-view is the nudge that lands the button
+  // on screen before the click flips the view to the map.
   await page.evaluate(() => window.scrollBy(0, 250))
   await page.waitForTimeout(200)
+  const seeMap = page.getByTestId('places-view-toggle')
+  await seeMap.scrollIntoViewIfNeeded()
   const savedBefore = await page.evaluate(() => window.scrollY)
   expect(savedBefore, 'the list must be parked away from the top').toBeGreaterThan(0)
 
@@ -1532,7 +1538,7 @@ test('a second "See map" activation does not disturb the saved list offset (V24 
   ).toBeGreaterThan(1000)
 
   /**
-   * NOW THE CORRUPTION PATH: with the map view up, activate "See map" AGAIN.
+   * NOW THE CORRUPTION PATH: with the map view up, activate the toggle AGAIN.
    *
    * The activation is dispatched on the DOM, not clicked, and that is MEASURED
    * rather than convenient: the button lives far above this offset, so a real
@@ -1543,12 +1549,12 @@ test('a second "See map" activation does not disturb the saved list offset (V24 
    * clicks this control normally.)
    */
   const activated = await page.evaluate(() => {
-    const button = document.querySelector('[data-testid="places-see-map"]')
+    const button = document.querySelector('[data-testid="places-view-toggle"]')
     if (button === null) return false
     button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     return true
   })
-  expect(activated, 'the See map control must still be mounted in the map view').toBe(true)
+  expect(activated, 'the view toggle must still be mounted in the map view').toBe(true)
   // The guard makes that a no-op, so the view is still the map view...
   await expect(page.getByTestId('places-map-view-map')).toBeVisible()
   // ...and the page did not jump.

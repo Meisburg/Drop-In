@@ -19,6 +19,10 @@
 #   config          (build law, unwritten)                 — checks cannot be weakened
 #   no-bypass       docs/agents/auto-push.md               — git hooks cannot be skipped
 #   fixture-marker  docs/agents/e2e-fixture-convention.md  — fixtures cannot escape the sweep
+#   vacuous-absence scripts/guards/vacuous-absence-guard.mjs — toHaveCount(0) of a
+#                     route-unreachable target is structurally vacuous
+#   stale-locator   scripts/guards/stale-locator-guard.mjs — a positively-used
+#                     locator literal must still exist somewhere in src
 #
 # PROVENANCE: the first two are borrowed patterns from affaan-m/ECC's
 # PostToolUse / PreToolUse hook set, reimplemented as batch gates suited to
@@ -54,7 +58,7 @@ guard_run() {
   esac
 }
 
-for guard in lib-sibling-guard config-guard no-bypass-guard fixture-marker-guard; do
+for guard in lib-sibling-guard config-guard no-bypass-guard fixture-marker-guard vacuous-absence-guard stale-locator-guard; do
   script="$(guard_script "$guard")"
   echo
   if [ -z "$script" ]; then
@@ -94,6 +98,8 @@ run_check() {
 }
 
 run_check "fixture-marker-guard (behavior)" scripts/guards/fixture-marker-guard.check.mjs
+run_check "vacuous-absence-guard (behavior)" scripts/guards/vacuous-absence-guard.check.mjs
+run_check "stale-locator-guard (behavior)" scripts/guards/stale-locator-guard.check.mjs
 run_check "sweep-e2e (decision logic)" scripts/lib/sweep-e2e.check.mjs
 
 echo
