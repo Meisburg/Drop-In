@@ -1691,3 +1691,34 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   justify**, with the measured basis written in the code comment. This is the batch's third
   process rule, beside "find the specs your change breaks by grep" and "never grep a phrase
   that can wrap" -- and the only one aimed at the orchestrator's own output.
+- Slice 7a: FIX ROUND 1 DONE at b32595e (4 files, +244/-50). Verifier dispatched
+  (0484465c) for THE FOUR PROOFS, with the procedure written out including the reviewer's
+  own test reproduced.
+- **WHAT THE ORCHESTRATOR VERIFIED BY READING (and what it deliberately did NOT assert):**
+  * The gate is REAL: isBoundedToken (:195) requires >=4 chars AND A BOUNDED-TOKEN MATCH,
+    so "plac" (a substring of placePath) dies; literalPresent step 3 (:244-248) gates BOTH
+    halves, and the code comment NAMES THE EXACT DEFECT -- "this is the proof that once let
+    places-see-map through".
+  * SEED 5 EXISTS (stale-locator-guard.check.mjs:141-164): it seeds places-see-map ITSELF
+    as a positively-used dead testid and asserts the guard NAMES the literal -- the
+    realistic shape, not the synthetic zzgonezz-button one.
+  * THE ATTRIBUTION IS HONESTLY CORRECTED WITH NO INVENTED ORIGIN: "the rename defect was
+    real but the committed stale-locator guard provably did NOT catch it; the fixed guard
+    + its check seed 5 now anchor that shape".
+  * GUARD 1's ROUTE TABLE IS DERIVED (vacuous-absence-guard.mjs:201-235, :265), not
+    hard-coded -- the better design, and exactly why /browse's membership CANNOT BE
+    GREPPED.
+  * WHAT READING COULD NOT SETTLE -- whether /browse is genuinely in the derived table,
+    and all four proofs (the pre-defect run, the gutted-guard checks, green-with-zero-spec-
+    changes, the seed firing) -- requires RUNNING or MUTATING the tree, so it is DELEGATED
+    with the exact procedure RATHER THAN CLAIMED HERE. **That is the difference between
+    this round and the last: last time an attribution was repeated as fact, and it was
+    false.**
+- THE BUILDER'S RESIDUAL RISKS AS STATED: (a) the gate is a MEASURED FIT TO THE LIVE
+  CORPUS -- the only zero-alnum template that proves a live literal here is the single-hole
+  (${n}) count idiom and multi-hole separator templates (feed.ts's date shape) are now
+  rejected, SO A FUTURE SEPARATOR TEMPLATE WITH ALNUM STATICS WOULD AGAIN PROVE TOO MUCH,
+  with the 10-site cap and the check seeds as tripwires; (b) Guard 1 judges 25 of the
+  suite's 289 toHaveCount(0) sites, the helper-navigation escape is by design and printed,
+  and the cross-route-absence false positive STILL HAS NO TOLERANCE MECHANISM; (c) one
+  PRE-EXISTING platform skip.

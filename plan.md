@@ -1873,3 +1873,39 @@ extension; there is no `useCropStep.ts`**), **a new `src/lib/` predicate for "ha
   basis written in the code comment. This is the third process rule of the batch, beside
   *"find the specs your change breaks by grep"* and *"never grep a phrase that can wrap"*,
   and it is the one aimed at the orchestrator's own output rather than at tooling.
+
+- 2026-09-29 — **Slice 7a fix round 1 DONE at `b32595e`** (4 files, +244/−50). **The four
+  proofs are the verifier's to run and are dispatched (`0484465c`); the orchestrator
+  verified by READING what reading can settle, and delegated the rest rather than
+  asserting it** — the lesson from the round that produced this fix.
+- 2026-09-29 — **What reading settled.** (a) **The gate is real**: `isBoundedToken`
+  (`:195`) requires **≥4 characters AND a bounded-token match**, so `"plac"` (a substring
+  of `placePath`) now dies; and `literalPresent` step 3 (`:244-248`) gates **both halves**,
+  with the code comment naming the exact defect — *"this is the proof that once let
+  `places-see-map` through"*. (b) **Seed 5 exists** (`stale-locator-guard.check.mjs:141-164`):
+  it seeds **`places-see-map` itself** as a positively-used dead testid and asserts the
+  guard **names** the literal — the realistic shape, not the synthetic one. (c) **The
+  attribution is honestly corrected with no invented origin**: the spec comment now reads
+  *"the rename defect was real but the committed stale-locator guard provably did NOT
+  catch it; the fixed guard + its check seed 5 now anchor that shape"*. (d) **Guard 1's
+  route table is DERIVED** (`vacuous-absence-guard.mjs:201-235`, `:265`), not hard-coded —
+  which is the better design and is exactly why `/browse`'s membership **cannot be
+  grepped**.
+- 2026-09-29 — **What reading could NOT settle, and what was done about it.** Whether
+  `/browse` is genuinely in the derived table, and all four proofs (the pre-defect run,
+  the gutted-guard checks, the green-with-zero-spec-changes check, the seed firing) all
+  require **running** or **mutating the tree**. **They are delegated to the verifier with
+  the exact procedure — including the reviewer's own test, reproduced — rather than
+  claimed here.** This is the difference between the last round and this one: last time an
+  attribution was repeated as fact, and it was false.
+- 2026-09-29 — **The builder's own residual risks, recorded as stated.** (a) The gate is a
+  **measured fit to the live corpus**: the only zero-alnum template that proves a live
+  literal here is the single-hole `(${n})` count idiom, and multi-hole separator templates
+  (`feed.ts`'s date shape) are now rejected — **so a FUTURE separator template with
+  alphanumeric statics would again prove too much**, and the tripwires are the 10-site cap
+  plus the check seeds. That is an honest statement of a guard's boundary rather than a
+  claim of completeness. (b) Guard 1 judges **25 of the suite's 289** `toHaveCount(0)`
+  sites; the dominant escape (helper-driven navigation) is **by design** and printed as a
+  note, and the **cross-route-absence false positive still has no tolerance mechanism** —
+  a future redirect/gate spec asserting absence across routes will read as a finding.
+  (c) One **pre-existing** platform skip in the `places-map-view` lane.
