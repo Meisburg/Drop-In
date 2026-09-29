@@ -1831,3 +1831,19 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
 - Worth recording: **the local range check PASSED (94 files, no forbidden artifacts)** and
   **V28 contains ZERO migrations**, so a preview deploy implied no production schema change
   -- checked before pushing, not after.
+- **THE PREVIEW IS NOW REACHABLE BY A TESTER, WITHOUT WEAKENING PROTECTION.** Vercel's
+  `ssoProtection.deploymentType` is `all_except_custom_domains`, so the branch preview
+  302'd to a Vercel login. The human chose a BYPASS LINK over a production merge, and the
+  CLI supports exactly that (`--protection-bypass` / `--protection-bypass-secret`).
+  * FIRST ATTEMPT FAILED HARMLESSLY and the failure was informative: the API requires a
+    secret of **exactly 32 characters with no special characters**; a 48-char hex string
+    was rejected with `Invalid value for generate.secret`. **The safety check ran anyway
+    and proved protection was UNCHANGED after the failure** -- which is the reason the
+    check exists, since a wrong verb here could have disabled protection entirely rather
+    than adding a scoped secret.
+  * SECOND ATTEMPT SUCCEEDED: `protectionBypass: true`, `ssoProtection` STILL
+    `all_except_custom_domains`, `gitForkProtection: true` -- **the narrow change, not the
+    broad one.** Verified by observation: no bypass -> **302**, with bypass -> **200**.
+  * **THE SECRET IS DELIBERATELY NOT WRITTEN INTO THIS FILE, OR ANY OTHER.** It is a
+    credential; the repo is pushed. It was handed to the human in chat only. Rotating it
+    revokes the link.
