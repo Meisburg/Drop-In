@@ -55,16 +55,22 @@ export function resolveProtectedRedirect(
  * Where the /onboarding route itself should send a user, or null when
  * onboarding may render as-is.
  *
- * - signed out → /login
- * - signed in + home zip set → / (onboarding already done)
- * - signed in + home zip unset → null (show the location step)
+ * - signed out → /login (onboarding is a signed-in flow)
+ * - signed in → null: render the run — the first UNANSWERED card, or the
+ *   FINISH CARD when the run is complete.
+ *
+ * V28 slice 6 (plan defect #19): the `(signed in + home zip set) → /
+ * (HOME_PATH)` bounce is GONE. It sent a finished parent to the feed the
+ * instant the area card's save wrote the zip — before the card that save
+ * existed to reveal could render, and it re-bounced any re-visit to
+ * /onboarding out of the run's own ending. A finished parent now lands on
+ * the finish card (OnboardingPage), whose primary CTA carries them to the
+ * feed. The protected ROUTES still key on the zip where the write paths
+ * require it (resolveProtectedRedirect is unchanged); only this route's own
+ * bounce is re-keyed.
  */
-export function resolveOnboardingRedirect(
-  signedIn: boolean,
-  homeZipSet: boolean,
-): string | null {
+export function resolveOnboardingRedirect(signedIn: boolean): string | null {
   if (!signedIn) return LOGIN_PATH
-  if (!needsOnboarding(homeZipSet)) return HOME_PATH
   return null
 }
 

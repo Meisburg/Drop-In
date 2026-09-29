@@ -17,9 +17,11 @@ import {
   mapsHref,
   placeDistanceMiles,
   statedAgeRangeLine,
+  withinRadius,
 } from './feed'
 import type { DistanceChoice, ZipCoords } from './feed'
 import { isOpenNow } from './placeHours'
+import type { PlaceWeeklyHours } from './placeHours'
 import type { Place, PlaceKind } from './types'
 import type { ReviewSummary } from './reviews'
 
@@ -1624,6 +1626,81 @@ export function filterPlacesByRadius(
     if (distance <= radiusMiles) kept.push(place)
   }
   return kept
+}
+
+/**
+ * V28 slice 6 — the FINISH-RUN card's place selection: the "where you can
+ * host a drop-in" list that ends /onboarding. Up to `FINISH_RUN_PLACE_LIMIT`
+ * REAL places near the viewer's home zip, hours-published places preferred,
+ * each one linking into the place page (where hosting starts).
+ *
+ * Reused reads, no new query shape: the caller passes the directory
+ * (`listPlaces()` in db.ts — the same full read the browse surface issues)
+ * and the gazetteer (`loadZipCodes()` — already loaded on the page for the
+ * area card). Both the distance math and the radius predicate are the ones
+ * the feed already owns:
+ * - `placeDistanceMiles` measures viewer-home-zip → the place's OWN lat/lng.
+ *   A null (unknown) distance EXCLUDES the place — the card says "near
+ *   you", and it must not claim that for a place whose distance cannot be
+ *   measured (the never-invent-coordinates rule the radius feed pins).
+ * - `withinRadius` (feed.ts, the feed's own predicate) filters by the
+ *   viewer's radius — the parent just set that radius on the area card, and
+ *   the card's empty state ("Nothing within N miles yet.") speaks in that
+ *   same number.
+ *
+ * Ranking (pinned in places.test.ts): hours-published places first (a place
+ * that says when it is open is the safer hosting pick than one that does
+ * not), then nearest first, then name — a total deterministic order. The
+ * card makes NO claim about upcoming drop-ins: this list is where the parent
+ * CAN host, not what is already happening.
+ */
+export const FINISH_RUN_PLACE_LIMIT = 3
+
+/** A finish-card row: a real place plus its known distance from the viewer. */
+export interface FinishRunPlace {
+  place: Place
+  /** Miles from the viewer's home zip (always known — nulls are dropped). */
+  distanceMiles: number
+}
+
+/**
+ * Whether a place PUBLISHES hours, for the finish-card preference: a
+ * normalized weekly schedule with a non-empty display string. A null /
+ * missing / empty-hours row is UNKNOWN (never preferred, never shown).
+ */
+export function placeHasHours(place: { hours?: PlaceWeeklyHours | null }): boolean {
+  return place.hours !== null && place.hours !== undefined && place.hours.display.trim() !== ''
+}
+
+/**
+ * The finish-run selection itself (see FINISH_RUN_PLACE_LIMIT's docblock).
+ * Pure: `places` is the directory read, `viewer` the parent's home zip +
+ * radius (from their profile), `zipCoords` the seeded gazetteer.
+ */
+export function finishRunPlaces(
+  places: readonly Place[],
+  viewer: { homeZip: string | null; radiusMiles: number },
+  zipCoords: ReadonlyMap<string, ZipCoords>,
+  limit: number = FINISH_RUN_PLACE_LIMIT,
+): FinishRunPlace[] {
+  if (viewer.homeZip === null || limit <= 0) return []
+  const ranked: FinishRunPlace[] = []
+  for (const place of places) {
+    const distanceMiles = placeDistanceMiles(place, viewer, zipCoords)
+    if (distanceMiles === null) continue
+    if (!withinRadius(distanceMiles, viewer.radiusMiles)) continue
+    ranked.push({ place, distanceMiles })
+  }
+  ranked.sort((a, b) => {
+    // Hours-published FIRST: a place that says when it is open is the safer
+    // hosting pick than one that does not (the docblock's top key).
+    const hoursOrder =
+      (placeHasHours(a.place) ? 0 : 1) - (placeHasHours(b.place) ? 0 : 1)
+    if (hoursOrder !== 0) return hoursOrder
+    if (a.distanceMiles !== b.distanceMiles) return a.distanceMiles - b.distanceMiles
+    return a.place.name.localeCompare(b.place.name)
+  })
+  return ranked.slice(0, limit)
 }
 
 /** The circle a map should frame itself on: a center and a radius in miles. */

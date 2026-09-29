@@ -265,9 +265,10 @@ function ProtectedShell() {
   // session (no app access), 'pass' otherwise. V28 slice 2b dropped the
   // onboard decision — a settled signed-in parent passes whether or not
   // their home zip is set; the location requirement now lives at the write
-  // paths (lib/homeZip.ts's hasHomeZip). homeZipSet still feeds
-  // resolveOnboardingRedirect on the /onboarding route itself, which keys
-  // on the zip (its signature was deliberately left alone).
+  // paths (lib/homeZip.ts's hasHomeZip). V28 slice 6 (defect #19) re-keyed
+  // resolveOnboardingRedirect on the /onboarding route itself: it no longer
+  // keys on the zip (the finished parent's bounce to the feed is gone — the
+  // run's own finish card is the ending); it takes only signedIn.
   const gate = resolveOnboardingGate({
     sessionLoading: loading,
     profileLoading,
@@ -398,9 +399,7 @@ function ProtectedShell() {
   // no-rail padding instead of 6rem of nothing.
   const navRenders = signedIn && !isFirstRun
   const redirect =
-    isFirstRun
-      ? resolveOnboardingRedirect(signedIn, homeZipSet)
-      : shellRedirect(signedIn, pathname)
+    isFirstRun ? resolveOnboardingRedirect(signedIn) : shellRedirect(signedIn, pathname)
   if (redirect !== null) return <Navigate to={redirect} replace />
 
   return (

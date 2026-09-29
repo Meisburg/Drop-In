@@ -116,12 +116,12 @@ setup('sign up the marker, onboard it (zip + radius), save the signed-in state',
   // walk never opens), so the marker's walk stays deterministic.
   await page.getByRole('button', { name: 'Skip' }).click()
 
-  // The AREA card ("5 of 5", V28 slice 5): address-first, ZIP as fallback.
-  // This walk types an address that never resolves (MARKER_ADDRESS above),
-  // so the card's bounded lookup settles to "absent" and reveals the ZIP
-  // field + the in-card notice; the typed marker zip + radius then finish
-  // the card. (The card's primary reads "Finish" — FIRST_RUN_COPY.area;
-  // while the lookup is in flight it reads "Checking your address…" and is
+  // V28 slice 5: the AREA card ("5 of 5", decision 9): address-first, ZIP as
+  // fallback. This walk types an address that never resolves (MARKER_ADDRESS
+  // above), so the card's bounded lookup settles to "absent" and reveals the
+  // ZIP field + the in-card notice; the typed marker zip + radius then finish
+  // the card. (The card's primary reads "Finish" — FIRST_RUN_COPY.area; while
+  // the lookup is in flight it reads "Checking your address…" and is
   // disabled, so the second click below auto-waits for the settle.)
   const addressField = page.getByPlaceholder('e.g. 1200 1st Ave S, Seattle')
   await addressField.fill(MARKER_ADDRESS)
@@ -132,6 +132,12 @@ setup('sign up the marker, onboard it (zip + radius), save the signed-in state',
   await page.getByPlaceholder('e.g. 98107').fill(MARKER_HOME_ZIP)
   await page.locator('select').first().selectOption({ label: `${MARKER_RADIUS_MILES} miles` })
   await page.getByRole('button', { name: 'Finish' }).click()
+
+  // V28 slice 6 (defect #19): the area card's save renders the run's FINISH
+  // CARD on /onboarding (the re-keyed guard removed the feed bounce) — tap
+  // its CTA before the feed assertions below.
+  await page.getByTestId('first-run-finish-card').waitFor()
+  await page.getByRole('button', { name: 'Go to your feed' }).click()
 
   // Back on the feed — signed in, onboarded (home zip set).
   await page.getByRole('heading', { name: 'Near you' }).waitFor()

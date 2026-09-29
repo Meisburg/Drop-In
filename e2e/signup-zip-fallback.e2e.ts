@@ -23,6 +23,10 @@
  *    plus the ZIP field, with the parent's address preserved in its field.
  *    The typed zip + radius then finish the card, and the feed is about the
  *    typed zip.
+ * V28 slice 6 (plan defect #19): BOTH legs' area-card save now lands on the
+ * run's OWN finish card on /onboarding (the re-keyed guard removed the feed
+ * bounce) — each leg taps its "Go to your feed" CTA before asserting the
+ * feed, and the finish card is itself asserted (testid) on the way.
  *
  * WHY A FRESH CONTEXT. The `chromium` project hands every spec the marker's
  * signed-in storage state, and this spec is about the SIGNED-OUT signup
@@ -137,6 +141,12 @@ test('a resolved address writes the home zip with no typed zip (the address-firs
     // settle, then the save, then the navigation.
     await page.getByRole('button', { name: 'Finish' }).click()
 
+    // The re-keyed save (V28 slice 6, defect #19) renders the run's FINISH
+    // CARD on /onboarding, never a feed bounce — tap its CTA to land.
+    const finishCard = page.getByTestId('first-run-finish-card')
+    await finishCard.waitFor({ timeout: 30_000 })
+    await page.getByRole('button', { name: 'Go to your feed' }).click()
+
     // Straight to discovery — the feed is about the RESOLVED zip.
     await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible({
       timeout: 30_000,
@@ -187,14 +197,17 @@ test('an unresolvable address reveals the ZIP fallback (the note + the field, ad
     await expect(zip).toBeVisible()
     await expect(page.getByPlaceholder('e.g. 1200 1st Ave S, Seattle')).toHaveValue(ADDRESS)
 
-    // No dead end: the typed zip + radius finish the card, and the feed is
-    // about the TYPED zip (the same value the marker uses).
+    // No dead end: the typed zip + radius finish the card (landing on the
+    // run's finish card — V28 slice 6 — whose CTA lands the parent on the
+    // feed, about the TYPED zip, the same value the marker uses).
     await zip.fill(marker.homeZip)
     await page
       .locator('select')
       .first()
       .selectOption({ label: `${marker.radiusMiles} miles` })
     await page.getByRole('button', { name: 'Finish' }).click()
+    await page.getByTestId('first-run-finish-card').waitFor({ timeout: 30_000 })
+    await page.getByRole('button', { name: 'Go to your feed' }).click()
     await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible({
       timeout: 30_000,
     })

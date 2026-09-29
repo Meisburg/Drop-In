@@ -400,6 +400,12 @@ export async function signUpViewer(
  * e2e/signup-zip-fallback.e2e.ts, which intercepts the card's Nominatim
  * lookup.
  *
+ * THE FINISH CARD (V28 slice 6, plan defect #19): the area card's save no
+ * longer navigates — the re-keyed guard renders the run's OWN finish card
+ * on /onboarding (up to 3 real places near the parent, plus the one CTA to
+ * the feed). The helper taps that CTA ("Go to your feed") so every consumer
+ * still lands on the feed exactly as before.
+ *
  * THE KIDS HOP: the kids card is skippable, so this helper taps its Skip
  * control — writing NOTHING (no kid rows) — and proceeds to the photo
  * card. The Skip button (FirstRunCard's chrome) is the card's only control
@@ -474,6 +480,12 @@ export async function finishSignup(
     .first()
     .selectOption({ label: radiusLabel })
   await page.getByRole('button', { name: 'Finish' }).click()
+
+  // V28 slice 6 (defect #19): the area card's save renders the run's FINISH
+  // CARD on /onboarding (never a feed bounce) — tap its CTA to land.
+  const finishCard = page.getByTestId('first-run-finish-card')
+  await finishCard.waitFor({ timeout: 30_000 })
+  await page.getByRole('button', { name: 'Go to your feed' }).click()
 
   // A signed-in, onboarded parent now stands on the feed.
   await feed.waitFor({ timeout: 30_000 })

@@ -13,7 +13,9 @@ import {
  * zip — the location requirement moved off the gate and onto the write
  * paths (hasHomeZip, lib/homeZip.ts). What survives here: the signed-out
  * /login leg, the cold-load 'loading' race, the suspended screen, and the
- * /onboarding route's own redirect (which still keys on the zip).
+ * /onboarding route's own redirect (V28 slice 6, defect #19: re-keyed —
+ * signed out → /login, signed in → render, finished runs end on the
+ * page's own finish card, never a feed bounce).
  */
 
 describe('needsOnboarding', () => {
@@ -54,17 +56,16 @@ describe('resolveProtectedRedirect (protected routes)', () => {
 })
 
 describe('resolveOnboardingRedirect (the /onboarding route)', () => {
-  it('sends signed-out users to /login', () => {
-    expect(resolveOnboardingRedirect(false, false)).toBe('/login')
-    expect(resolveOnboardingRedirect(false, true)).toBe('/login')
+  it('sends a signed-out visitor to /login', () => {
+    expect(resolveOnboardingRedirect(false)).toBe('/login')
   })
 
-  it('sends signed-in users with a home zip back to /', () => {
-    expect(resolveOnboardingRedirect(true, true)).toBe(HOME_PATH)
-  })
-
-  it('lets signed-in users without a home zip stay on /onboarding', () => {
-    expect(resolveOnboardingRedirect(true, false)).toBeNull()
+  it('renders a signed-in user, zip set or not — the finished run shows its own finish card, never a feed bounce (V28 slice 6, defect #19)', () => {
+    // The old `(signed in + zip set) → HOME_PATH` leg is GONE: it bounced a
+    // finished parent off the area card's save (the zip write creates
+    // exactly the state that triggered the bounce) and re-bounced any
+    // re-visit to /onboarding out of the run's own ending.
+    expect(resolveOnboardingRedirect(true)).toBeNull()
   })
 })
 

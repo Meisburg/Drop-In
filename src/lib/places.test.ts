@@ -59,6 +59,9 @@ import {
   groupUpcomingStartTimesByPlace,
   usesPlaceAlias,
   zipFromAddress,
+  finishRunPlaces,
+  FINISH_RUN_PLACE_LIMIT,
+  placeHasHours,
 } from './places'
 import type { FeedMapPin, FeedMapPinEvent, PlaceListRow } from './places'
 import type { ReviewSummary } from './reviews'
@@ -1173,6 +1176,106 @@ describe('placeDistanceMiles re-exported from the place module', () => {
   it('is the same seam the feed uses (one implementation, two import sites)', () => {
     expect(placeDistanceMiles(NEAR, VIEWER, ZIP_COORDS)).not.toBeNull()
     expect(coordNumber('47.5')).toBe(47.5)
+  })
+})
+
+/**
+ * V28 slice 6: the finish-run selection (the "where you can host" list that
+ * ends /onboarding). Same discipline as this file: real geography against
+ * the seeded 98107 gazetteer entry, so the radius assertions mean something
+ * about the actual city rather than about made-up numbers.
+ */
+describe('finishRunPlaces (up to 3 real places near the viewer, hours-published first)', () => {
+  const viewer = { homeZip: '98107', radiusMiles: 5 }
+  /** ~0.5 mi from the viewer's 98107. */
+  const near = { lat: 47.675, lng: -122.375 }
+  /** ~4.5 mi from the viewer's 98107 (still inside the 5-mi radius). */
+  const mid = { lat: 47.63, lng: -122.3 }
+  /** ~20.6 mi from the viewer's 98107: outside the 5-mi radius, inside 35. */
+  const midFar = { lat: 47.42, lng: -122.12 }
+  const hours = { display: '6:00 AM – 9:00 PM', weekly: { '5': [['06:00', '21:00']] } }
+  const withHours = (name: string, coords: { lat: number; lng: number }) =>
+    place({ name, lat: coords.lat, lng: coords.lng, hours })
+  const withoutHours = (name: string, coords: { lat: number; lng: number }) =>
+    place({ name, lat: coords.lat, lng: coords.lng })
+
+  it('ranks an hours-published place above a nearer one without hours (the preference is the top key)', () => {
+    const picks = finishRunPlaces(
+      [withoutHours('Near Playground', near), withHours('Mid Park', mid)],
+      viewer,
+      ZIP_COORDS,
+    )
+    expect(picks.map((p) => p.place.name)).toEqual(['Mid Park', 'Near Playground'])
+  })
+
+  it('sorts nearest first within a hours status, and breaks exact ties by name (a total order)', () => {
+    // Limit 4 so the whole ranking shows (the default cap is 3).
+    const picks = finishRunPlaces(
+      [
+        withoutHours('Zeta Playground', near),
+        withHours('Beta Park', near),
+        withHours('Alpha Park', near),
+        withHours('Mid Park', mid),
+      ],
+      viewer,
+      ZIP_COORDS,
+      4,
+    )
+    expect(picks.map((p) => p.place.name)).toEqual([
+      'Alpha Park', // hours, nearest (tied with Beta) — name wins the tie
+      'Beta Park',
+      'Mid Park', // hours, farther
+      'Zeta Playground', // no hours — last group
+    ])
+  })
+
+  it('excludes places outside the viewer’s radius (the feed’s own withinRadius predicate)', () => {
+    // FAR is ~53 mi — outside every radius the app offers (max 35). MIDFAR
+    // is ~20.6 mi: outside the default 5-mi radius, inside the 35-mi one.
+    expect(finishRunPlaces([withHours('Far Park', FAR)], viewer, ZIP_COORDS)).toEqual([])
+    expect(finishRunPlaces([withHours('Mid-Far Park', midFar)], viewer, ZIP_COORDS)).toEqual([])
+    const in35 = finishRunPlaces(
+      [withHours('Mid-Far Park', midFar)],
+      { homeZip: '98107', radiusMiles: 35 },
+      ZIP_COORDS,
+    )
+    expect(in35.map((p) => p.place.name)).toEqual(['Mid-Far Park'])
+  })
+
+  it('excludes places with an UNKNOWN distance — no coordinates, or a viewer zip the gazetteer does not know (the card never claims “near” it cannot measure)', () => {
+    const coordless = place({ name: 'Mystery Park', lat: null, lng: null })
+    expect(finishRunPlaces([coordless], viewer, ZIP_COORDS)).toEqual([])
+    expect(finishRunPlaces([withHours('Near Playground', near)], { homeZip: '99999', radiusMiles: 5 }, ZIP_COORDS)).toEqual([])
+  })
+
+  it('caps the list at FINISH_RUN_PLACE_LIMIT (and honors a custom limit)', () => {
+    const four = [
+      withHours('Alpha Park', near),
+      withHours('Beta Park', near),
+      withHours('Mid Park', mid),
+      withoutHours('Near Playground', near),
+    ]
+    expect(finishRunPlaces(four, viewer, ZIP_COORDS)).toHaveLength(FINISH_RUN_PLACE_LIMIT)
+    expect(FINISH_RUN_PLACE_LIMIT).toBe(3)
+    expect(finishRunPlaces(four, viewer, ZIP_COORDS, 2)).toHaveLength(2)
+    expect(finishRunPlaces(four, viewer, ZIP_COORDS, 0)).toEqual([])
+  })
+
+  it('returns [] for an empty directory or a viewer with no home zip', () => {
+    expect(finishRunPlaces([], viewer, ZIP_COORDS)).toEqual([])
+    expect(finishRunPlaces([withHours('Near Playground', near)], { homeZip: null, radiusMiles: 5 }, ZIP_COORDS)).toEqual([])
+  })
+})
+
+describe('placeHasHours (the finish-card preference’s “published” test)', () => {
+  it('is true for a normalized schedule with a non-empty display string', () => {
+    expect(placeHasHours({ hours: { display: '6:00 AM – 9:00 PM', weekly: { '5': [['06:00', '21:00']] } } })).toBe(true)
+  })
+
+  it('is false for null, missing, or empty-display hours (UNKNOWN is never preferred, never shown)', () => {
+    expect(placeHasHours({ hours: null })).toBe(false)
+    expect(placeHasHours({})).toBe(false)
+    expect(placeHasHours({ hours: { display: '  ', weekly: {} } })).toBe(false)
   })
 })
 
