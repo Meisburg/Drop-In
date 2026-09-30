@@ -3761,3 +3761,48 @@ and only the rule.**
 
 **LANES OUT:** reviewer + verifier -- workflow `8c3543f4-58dc-4b75-a938-fcda5cf83f3c`, **the verifier told
 to run the failing spec THREE times and report each**; **`ocr`** -- pid 2630175 on `fc4ddeb..8183bd8`.
+
+## Slice 3 FIX ROUND 3 -- REVIEWER: **PASS**, no blocking findings. And it CORROBORATED the new flake mode.
+
+**Its best work was making the vacuity argument explicit in a form I had not:** at poll start the upsert has
+provably landed (a fresh mint can only fire through the `photoGen` bump, which lives only in the success
+branch); **each poll iteration mints a unique token, so its cache key has never been requested, cannot be a
+`HIT`, and goes to origin -- which already holds generation-2 bytes.** Expected time-to-visible is
+therefore ~0, and a genuine failure shows on the **first** iteration and persists to the bound. **"The bound
+is a failure-detection threshold, not a wait."** That is exactly right, and it is why 30s cannot absorb a
+real defect.
+
+**PRODUCT IMMUNITY, CONFIRMED BY GREP RATHER THAN BY ARGUMENT: there are ZERO plain
+`GET /storage/v1/object/<path>` reads anywhere in `src/`.** The only `object/` references are test files and
+one fixture. Kid photos render exclusively through `useKidPhotoUrls` -> `createSignedUrls`, a fresh unique
+token per mint. **So the stale cache entry is structurally unreachable from the UI** -- no product change is
+warranted, and that is now established by exhaustive search, not by my reasoning.
+
+**Its assessment of the residual is sharper than mine in a way that matters.** The round-2 defect was a
+**re-read of a primed path** (a `HIT`). The **baseline `objectA` read is the FIRST read of a path that has
+never existed in that run** (epoch-scoped email -> fresh uid -> fresh kid id) -- so there is no entry to
+`HIT`, it is a miss to origin, and it **cannot produce a false red**. Its actual risk is different and
+quieter: **if that read ever returned an error body, `objectB.equals(objectA)` would still be `false` and
+the test would PASS on a bogus baseline.** **A silently weakened baseline is worse than a flaky one** --
+a flake announces itself, this does not. One-line hardening in 8b.
+
+### ⚠️ NEW FINDING (reviewer, non-blocking): a THROWING poll fails immediately, it does not retry
+It verified in the **installed `playwright-core`** that `expect.poll`'s implementation races the promise and
+**propagates a rejection rather than retrying**: `Promise.race` means a one-off mint failure or fetch
+hiccup mid-poll **fails the test outright**. Its words: *"the one-sample class this batch has now paid for
+twice."* Suggested shape: `try/catch -> continue`, reporting the last error at timeout. **8b.**
+
+### ⚠️ AND IT CORROBORATED THE THIRD FLAKE MODE INDEPENDENTLY
+Its own probe attempt was **blocked by the same environmental failure the verifier hit**: *"the auth.setup
+project's environmental failure: trace-artifact ENOENT."* **Two independent lanes, same failure, same
+spec project.** That turns the verifier's "vite-4173/artifact flakes" from one lane's report into a
+**reproduced environment defect**, which is exactly the corroboration that lets me treat the setup reds as
+infrastructure rather than as product evidence. **It also means the reviewer could NOT run the suite at
+all** -- so its PASS is a reading-based verdict, and it says so.
+
+### The evidence gap it named, which is mine to close
+The 3-run acceptance evidence exists **only as a summary** ("6/6 four times" in the ledger and the commit
+message) -- **no raw run output is recorded in the repo.** The designated verifier lane is what closes this.
+**So when the verifier reports, its per-run table goes into the ledger verbatim** -- the batch's rule is
+that a claim in the ledger is not evidence, and "four green runs" has been exactly that kind of claim since
+it was written.
