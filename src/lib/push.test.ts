@@ -4,7 +4,7 @@
  * Three of these are pinned by the ticket and are the reason this file is not
  * a formality:
  *
- *  1. the PAYLOAD BUILDER — the wording of all seven kinds, including the
+ *  1. the PAYLOAD BUILDER — the wording of all eight kinds, including the
  *     singular "1 family is going" (the plural template would say
  *     "1 families", the same broken English the while-away inbox already
  *     fixed). These literals are the spec the SQL twin
@@ -279,6 +279,73 @@ describe('buildNotificationPayload', () => {
     ).toBe('Tap to reply in "your drop-in"')
   })
 
+  it('builds the followed-place kind: the PLACE, the subject, and the when-label (migration 0060)', () => {
+    // The literal strings the SQL twin (public.notification_payload, the
+    // 0060-restored branch) must match char-for-char. 2026-09-30T10:00:00Z is
+    // 3:00am in America/Los_Angeles — the same instant the migration's own
+    // read-back asserts.
+    expect(
+      buildNotificationPayload({
+        kind: 'followed_new_dropin',
+        playdateId: POST_ID,
+        postTitle: 'Drop-in at Green Lake Park',
+        actorName: 'Jordan',
+        placeLabel: 'Green Lake Park',
+        startsAt: '2026-09-30T10:00:00Z',
+      }),
+    ).toEqual({
+      title: 'New drop-in at Green Lake Park',
+      body: '"Drop-in at Green Lake Park" · Wed 3:00am',
+      url: `/playdate/${POST_ID}`,
+    })
+  })
+
+  it('falls back to the ACTOR when the post carries no place — never "New drop-in at "', () => {
+    for (const placeLabel of [null, undefined, '', '   ']) {
+      const payload = buildNotificationPayload({
+        kind: 'followed_new_dropin',
+        playdateId: POST_ID,
+        postTitle: 'Drop-in',
+        actorName: 'Jordan',
+        placeLabel,
+        startsAt: '2026-09-30T10:00:00Z',
+      })
+      expect(payload.title).toBe('New drop-in from Jordan')
+      expect(payload.title).not.toContain(' at ')
+    }
+  })
+
+  it('omits the when-label ENTIRELY when the post has no start — no trailing "· "', () => {
+    for (const startsAt of [null, undefined, '', '   ', 'not-a-date']) {
+      const payload = buildNotificationPayload({
+        kind: 'followed_new_dropin',
+        playdateId: POST_ID,
+        postTitle: 'Drop-in',
+        actorName: 'Jordan',
+        placeLabel: 'Green Lake Park',
+        startsAt,
+      })
+      expect(payload.body).toBe('"Drop-in"')
+      expect(payload.body).not.toContain('·')
+      expect(payload.body).not.toContain('Invalid')
+    }
+  })
+
+  it('renders the when-label in the APP zone, not the device zone', () => {
+    // The SQL twin pins `at time zone 'America/Los_Angeles'`, so the label must
+    // not move with the reader's device. 17:00Z is 10:00am Pacific and 1:00am
+    // in the next UTC day — a device-zone rendering could not produce 'Wed'.
+    const payload = buildNotificationPayload({
+      kind: 'followed_new_dropin',
+      playdateId: POST_ID,
+      postTitle: 'Drop-in',
+      actorName: 'Jordan',
+      placeLabel: 'Green Lake Park',
+      startsAt: '2026-09-30T17:00:00Z',
+    })
+    expect(payload.body).toBe('"Drop-in" · Wed 10:00am')
+  })
+
   it('builds starting_soon with the SINGULAR at exactly one family going', () => {
     expect(
       buildNotificationPayload({
@@ -460,17 +527,22 @@ describe('messageThreadUrl', () => {
 })
 
 describe('isNotificationKind', () => {
-  it('accepts the seven kinds and rejects anything else', () => {
-    // Iterating the one list is the point: an eighth kind added to
+  it('accepts the eight kinds and rejects anything else', () => {
+    // Iterating the one list is the point: a ninth kind added to
     // NOTIFICATION_KINDS without a thought for this guard still has to pass
     // (and every kind it names is accepted).
-    expect([...NOTIFICATION_KINDS]).toHaveLength(7)
+    expect([...NOTIFICATION_KINDS]).toHaveLength(8)
     for (const kind of NOTIFICATION_KINDS) expect(isNotificationKind(kind)).toBe(true)
     expect(isNotificationKind('ping_received')).toBe(true)
     expect(isNotificationKind('cancelled')).toBe(true)
     expect(isNotificationKind('ended')).toBe(true)
     expect(isNotificationKind('review_due')).toBe(true)
     expect(isNotificationKind('new_message')).toBe(true)
+    // `followed_new_dropin` (migration 0060). Until this list carried it, the
+    // SENDER could not name the kind: `isNotificationKind` returned false, and
+    // send-push falls back to `'starting_soon'` for an unrecognised row — which
+    // would have tagged a place-follow alert with another kind's dedupe key.
+    expect(isNotificationKind('followed_new_dropin')).toBe(true)
     expect(isNotificationKind('reminder')).toBe(false)
     expect(isNotificationKind('review_prompt')).toBe(false)
     expect(isNotificationKind(null)).toBe(false)

@@ -16,16 +16,19 @@
  * `public.notification_payload` (migration 0032) — the same
  * "one pure seam + one SQL function" pairing as `src/lib/series.ts` ↔
  * `public.ensure_series_occurrences` (0028). Keep the two in step: the vitest
- * spec pins the wording of all seven kinds and the SQL header names this file.
+ * spec pins the wording of all eight kinds and the SQL header names this file.
  *
  * Everything here is deliberately string/number in, string out, so it can be
  * unit-tested without a DOM and evaluated identically in Deno and the browser.
  */
 
-/** The seven kinds — the app-side twin of 0032's CHECK constraint (widened to
+/** The eight kinds — the app-side twin of 0032's CHECK constraint (widened to
  * five by V12 t03, migration 0041: 'ended' joins the four; widened to six by
  * V26 slice 1, migration 0055: 'review_due' joins the five; widened to seven by
- * V27 slice 1, migration 0056: 'new_message' joins the six). */
+ * V27 slice 1, migration 0056: 'new_message' joins the six; widened to EIGHT by
+ * migration 0060: 'followed_new_dropin' joins the seven — a kind whose producer
+ * had been live-only since a migration was applied to production and never
+ * committed, so this list lagged the database it twins). */
 export const NOTIFICATION_KINDS = [
   'ping_received',
   'starting_soon',
@@ -34,6 +37,7 @@ export const NOTIFICATION_KINDS = [
   'ended',
   'review_due',
   'new_message',
+  'followed_new_dropin',
 ] as const
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
@@ -108,6 +112,15 @@ export interface NotificationPayloadInput {
   goingCount?: number | null
   /** The place to review. Only `review_due` uses it; null falls back. */
   placeId?: string | null
+  /** The post's own TEXT place, as typed by the host. Only
+   *  `followed_new_dropin` uses it: the place label is what the alert names,
+   *  and a blank one falls back to the actor form rather than rendering
+   *  `New drop-in at `. */
+  placeLabel?: string | null
+  /** The post's start instant (ISO). Only `followed_new_dropin` uses it: the
+   *  body carries a `· Thu 3:00am` when-label, and NO label when the post has
+   *  no start. */
+  startsAt?: string | null
 }
 
 export interface NotificationPayload {
@@ -155,10 +168,60 @@ export function familiesGoingLabel(count: number | null | undefined): string {
 }
 
 /**
+ * The zone the when-label is rendered in. A CONSTANT, not the device's zone,
+ * because it must agree with the SQL twin, which pins it:
+ * `to_char(starts_at at time zone 'America/Los_Angeles', …)`. A label that
+ * moved with the reader's device would read differently on two phones looking
+ * at the same drop-in — and would stop being the same string in both runtimes.
+ */
+const LABEL_TIME_ZONE = 'America/Los_Angeles'
+
+/**
+ * `Thu 3:00am` — the when-label, char-for-char the SQL twin's
+ * `to_char(starts_at at time zone 'America/Los_Angeles', 'FMDy FMHH12:MIam')`
+ * (migration 0060).
+ *
+ * Built from PARTS rather than a locale string: `Intl` in the default 'en-US'
+ * shape yields `Wed, 3:00 AM` (a comma, an uppercase meridiem, and a padded
+ * hour), and none of those three match the SQL. Each part is composed here so
+ * the two spellings are the same string rather than merely both readable.
+ *
+ * A null/nonsense instant yields NULL — the caller then emits no label at all,
+ * which is the SQL's own `p_starts_at is null` branch. It never yields an
+ * empty segment or the literal `Invalid Date`.
+ */
+export function whenLabel(startsAt: string | null | undefined): string | null {
+  const trimmed = (startsAt ?? '').trim()
+  if (trimmed === '') return null
+  const parsed = new Date(trimmed)
+  if (Number.isNaN(parsed.getTime())) return null
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: LABEL_TIME_ZONE,
+  }).formatToParts(parsed)
+
+  const part = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((p) => p.type === type)?.value ?? ''
+
+  const weekday = part('weekday')
+  const hour = part('hour')
+  const minute = part('minute')
+  const meridiem = part('dayPeriod').toLowerCase()
+
+  if (weekday === '' || hour === '' || minute === '' || meridiem === '') return null
+
+  return `${weekday} ${hour}:${minute}${meridiem}`
+}
+
+/**
  * The full title/body/url for one notification — the exact strings the
  * producers write into `notification_log` and the sender posts.
  *
- * The `switch` is exhaustive over NotificationKind, so an eighth kind is a
+ * The `switch` is exhaustive over NotificationKind, so a ninth kind is a
  * compile error here rather than a silent default at runtime.
  */
 export function buildNotificationPayload(input: NotificationPayloadInput): NotificationPayload {
@@ -219,6 +282,22 @@ export function buildNotificationPayload(input: NotificationPayloadInput): Notif
         body: `Tap to reply in ${subject}`,
         url: messageThreadUrl(input.playdateId),
       }
+    case 'followed_new_dropin': {
+      // The place label wins over the actor; a blank one falls back rather
+      // than rendering `New drop-in at `. The `.trim()` matches the SQL's
+      // `nullif(btrim(p_place_label), '')`: whitespace-only is the same as
+      // absent.
+      const place = (input.placeLabel ?? '').trim()
+      const label = whenLabel(input.startsAt)
+      return {
+        title: place === '' ? `New drop-in from ${actor}` : `New drop-in at ${place}`,
+        // The subject, plus the when-label only when there IS a start — never
+        // a trailing `· ` with nothing after it. The SQL twin (0060 section 3)
+        // carries this branch char-for-char.
+        body: label === null ? subject : `${subject} · ${label}`,
+        url,
+      }
+    }
   }
 }
 

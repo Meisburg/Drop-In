@@ -48,10 +48,12 @@ export type {
 }
 
 // ---------------------------------------------------------------------------
-// What the app calls the seven kinds (the /settings toggle rows).
+// What the app calls the eight kinds (the /settings toggle rows).
 //
 // Derived from the same NOTIFICATION_KINDS list as the payload builder, so the
-// UI cannot drift into describing a kind that no producer can create.
+// UI cannot drift into describing a kind that no producer can create — and the
+// `Record<NotificationKind, …>` below turns a new kind into a COMPILE ERROR
+// here, which is how `followed_new_dropin` announced itself (migration 0060).
 // ---------------------------------------------------------------------------
 
 /** The one-line description of a kind, and an honest example of when it fires. */
@@ -88,6 +90,10 @@ export const NOTIFICATION_KIND_COPY: Record<NotificationKind, NotificationKindCo
   new_message: {
     label: 'New messages',
     when: 'Someone in a drop-in you joined sends a message in its thread.',
+  },
+  followed_new_dropin: {
+    label: 'New drop-ins at places you follow',
+    when: 'Someone posts a drop-in at a place you hearted — or by a family you follow.',
   },
 }
 

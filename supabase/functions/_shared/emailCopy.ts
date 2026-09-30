@@ -46,6 +46,7 @@ export const EMAIL_KINDS = [
   'ended',
   'review_due',
   'new_message',
+  'followed_new_dropin',
 ] as const
 
 export type EmailKind = (typeof EMAIL_KINDS)[number]

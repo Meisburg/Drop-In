@@ -47,6 +47,60 @@ parent's post.
    whose cleanup is broader than what it created.
 4. **It leaves nothing it cannot name.** Anonymous signs that cannot be deleted
    must not be created.
+5. **A fixture's action never NOTIFIES a real parent** — and this one is not the
+   spec's job, because a spec cannot un-send an email. It is enforced in the
+   database: every notification producer drops a fixture's action. See
+   "Side effects the sweep cannot undo" below.
+
+## Side effects the sweep cannot undo
+
+Markers make a fixture **removable**. They do not make it **harmless** — and a
+notification is the one side effect removal cannot fix: the sweep deletes the
+`notification_log` row with the account, but the email has already left.
+
+This was found the hard way on **2026-09-30**: the founder's inbox held **21**
+`followed_new_dropin` emails in two days, every one of them a fixture post at
+`Green Lake Park` — a place he follows, and the place three specs hardcode
+(`e2e/post-location.e2e.ts:85`, `e2e/places.e2e.ts:101`,
+`e2e/post-fast.e2e.ts:101`). `playwright.config.ts` drives the **live** project,
+so each fixture insert fanned out a real notification to a real parent, and the
+five-minute `send-push` cron drained it to his inbox because he has no push
+device registered.
+
+**The rule.** A fixture action produces no notification. It is enforced by
+`public.is_e2e_profile(uuid)` (migration `0060`), called by **every** producer
+that can reach a real parent:
+
+| Producer | The column that carries the marker |
+| --- | --- |
+| `notify_ping_received` | `new.profile_id` — the pinger |
+| `notify_new_comment` | `new.author_profile_id` — the commenter |
+| `notify_new_message` | `new.sender_id` — the sender |
+| `notify_playdate_cancelled` | the post's host |
+| `notify_followed_new_dropin` | the post's host |
+
+The marker checked is the **account** marker (`email like 'e2e-%'`) — the
+convention's primary handle, the same expression `scripts/lib/sweep-e2e.mjs`
+scopes its delete to. A fixture that posts from an account *outside* the prefix
+is already a violation of rule 1, so this guard and the sweep draw the same
+boundary.
+
+**It fails OPEN.** An unreadable `auth.users` (or a NULL actor) means "not a
+fixture" and the notification is sent — the same ruling `emailFallback` makes
+for an unreadable `email_optout`. A guard that failed closed on a read error
+would switch off **every** parent's alerts at once, which is worse than the
+noise it exists to stop.
+
+**Every producer, not just the one that fired.** The same log already held a
+fixture `ping_received` on a **real** post (2026-09-24) and a fixture
+`cancelled` (2026-09-20). Fixing one door would have left four open.
+
+**Proof, not assertion.** `0060`'s read-back asserts the predicate both ways
+(a real `e2e-%` account is recognised, a real account is not), and
+`.scratch/v28/probe-0060-live.sql` proves the trigger behaviour against the live
+database inside a transaction that is always rolled back: a fixture post at a
+followed place produces **0** notifications, a real-host control at the same
+place still produces **1**, and a fixture ping on a real post produces **0**.
 
 ## What the guard does NOT cover
 
@@ -58,6 +112,12 @@ parent's post.
   The rule the audit asks for is identifiability plus removal, not disguise.
 - **Live coverage.** The guard never contacts Supabase, by design: a check that
   needs credentials to pass is a check that gets skipped.
+- **Repo-vs-production drift.** Nothing here can see that a producer exists live
+  and not in the repo — which is exactly how the `followed_new_dropin` producer
+  ran for days with no migration committed for it (`0060` recovered it). The
+  notification guard's own tripwire is textual, inside `0060`'s read-back, so it
+  fires on a re-paste and not on a production change. Closing this class properly
+  needs a live drift check, which is a new lane and a deliberate decision.
 
 ## Changing the convention
 
@@ -65,8 +125,12 @@ Changing it is a deliberate act and needs both halves in one commit:
 
 1. the specs that create fixtures,
 2. `scripts/sweep-e2e-markers.mjs`,
-3. `scripts/guards/fixture-marker-guard.mjs`, and
-4. this document.
+3. `scripts/guards/fixture-marker-guard.mjs`,
+4. this document, and
+5. **`supabase/migrations/0060_…sql`** if the change touches the notification
+   guard: its read-back and the five producers' guard clauses are what make rule
+   5 true, and a convention change that silently weakens them would be invisible
+   here.
 
 The guard fails if the sweep and this document disagree, so a one-sided change
 cannot land quietly.
