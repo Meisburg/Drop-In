@@ -4153,3 +4153,60 @@ efficient and the efficiency is what forces the guess.**
 harder: THE LEDGER NO LONGER RECORDS RUN IDS.** They are not load-bearing -- the **brief path and the
 commit sha** identify the work, and a run id is only needed to steer, at which point it is in the tool
 output in front of me. **A record that stores a value I have to guess is a record that lies.**
+
+## Slice 4 FIX ROUND 1: DONE (`1d28f10`) -- and it found a THIRD bug that the fix itself would have introduced
+
+4 files, **+200/-7**. Verified by me: the `onChange` now invalidates **all three** pieces of state --
+`setAreaCoordinates(null)`, `areaLookupForRef.current = null`, `areaLookupPromiseRef.current = null` -- **plus
+`setGeocoding(false)`**; and the reuse branch's logic is **unchanged**, so B2 really was not added.
+
+### ✅ THE KEY QUESTION, ANSWERED WITH A PROOF (and the right outcome)
+I asked whether B2's republish-on-reuse was still reachable once B1's invalidation landed, and said I would
+rather have **one fix and a reason than two and a shrug.** The answer: **B1 alone restores the invariant, B2 is
+VACUOUS, and it was not added.** The proof holds up: the reuse branch is reachable only when
+`areaLookupForRef === trimmed`, and in that state the slot's promise has already settled and published; the
+only ways coordinates can be null are **(i) an edit, which now clears the slot, so the reuse branch cannot see
+it, and (ii) a rejection, where hidden IS correct.** *"A settled-but-unpublished resolved address -- B2's
+pre-state -- is unreachable post-B1."* **That is the answer I was fishing for, and it is a proof rather than a
+reassurance.**
+
+### ⚠️ AND IT FOUND A THIRD BUG *ITSELF*: B1 ALONE WOULD HAVE BUILT A WALL
+**Suppressing a stale settle means the early-return path never clears the `geocoding` flag** -- so without
+more, the card would sit on **"Checking your address…" with Continue DISABLED, permanently, over the edited
+text.** The suppression B1 adds is exactly what creates it, so **`ocr` could not have found this** (it
+prescribed the suppression) **and neither could I** (I relayed it): it only exists once the fix exists.
+
+The builder added `setGeocoding(false)` to the edit in the same stroke, **and flagged it as an explicit
+decision rather than a quiet extra.** **This is the best single piece of work in this batch**: it took a
+prescribed fix, found the defect the fix introduced, fixed both, and said so. **A stuck disabled button is a
+wall, and walls are this batch's signature failure.**
+
+### The proofs, which are the point
+- **Both new legs were run against the UNFIXED page first** -- (a) failed `expect(count()).toBe(0)` receiving
+  **1** (A's map republished over B's), (b) failed `toBeVisible` (the map never returned) -- **then B1 landed
+  and both went green.** *A claim that a test can fail is not a test you watched fail.*
+- **Leg (a)'s instrument is the right one:** a **held** `page.route` captures A's request and releases it only
+  after the edit to B, **so "late" becomes a controlled event instead of a race** -- the same hold-and-release
+  pattern slice 2's fix round had to invent.
+- **It added a `vi.getTimerCount()` instrument to the ZIP sibling's rejection test** because *"it had the fix
+  but no instrument."* **Nobody asked for that. It closed a vacuity gap in a sibling's test on its own
+  initiative.**
+
+### Numbers, named as the brief required
+`npm run verify` green; **unit 68 files / 2013 tests** (2012 + the one new instrument test); e2e across the
+three required specs **19 passed, 1 pre-existing skip, 0 failed**; port 4173 freed **by port**. **The trailing
+newline was left to 8b, as instructed** -- the fourth instance of the structural fix working without a brief
+edit.
+
+### Residual, reported honestly and NOT fixed
+**A REJECTED lookup poisons its slot until the address is edited**: a re-blur reuses the rejected promise, so
+the fallback persists even if the network recovered. **Pre-existing slot design, untouched by this round, and
+the builder flagged it for a future slice if retries are ever wanted** -- which is the right call: it is not a
+regression from this work, and the ZIP fallback still lets the parent proceed.
+
+### One thing for the lanes to judge (I am not ruling it myself)
+The reuse branch's comment still reads *"A settled promise publishes nothing new."* **That is true post-B1 and
+FALSE in general** -- it is precisely what made B2 a bug -- **and the comment does not state the condition.**
+The reviewer is asked to attack the B1-implies-B2 argument and to judge this comment, and I want its
+independent reading rather than mine, because the builder and I now agree and a fresh reader is the only test
+of a claim two people already believe.
