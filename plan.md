@@ -342,6 +342,11 @@ such — a red commit nobody explains is indistinguishable from a mistake.
 
 ### Slice 4 — a map on the area card
 
+> **SCOPE EXTENDED 2026-09-30 — plan defect #30, found by the builder's own measurement and ruled by the orchestrator.** `src/components/PlaceMap.tsx` joins this slice's files, **`PlacesMap`'s mount effect only**. `PlacePickerMap` is untouched: its callers always pass at least one place, and touching it would be the sweep-beyond-the-need this batch has ruled against twice.
+> **Why this is a defect fix and not scope creep:** `PlacesMap` already contradicts its own contract. Its render path early-returns only when **both** entries and `homePin` are empty, and its own doc says *"the home pin itself is what is being shown"* — but its mount guard returns early when `markers.length === 0`, so a pin-only mount created **no Leaflet instance at all** and the card rendered a blank bordered box. The ruled shape (home pin + radius circle, empty `places`) was therefore **unsatisfiable in scope**.
+> **Conditions:** prove every marker-dependent effect and derivation is correct with an empty array and a populated `homePin` — **the guard is not the only reader of `markers`**; confirm the radius circle actually paints once the instance exists, and that `HOME_PIN_ZOOM` is *right* rather than merely not-throwing; re-run `places-map-view` **and** every spec that mounts a `PlacesMap`; and the card's own proof must assert the `.leaflet-container`, the pin and the circle exist, because **a blank bordered box passes "no error" today.**
+> **Ruled OUT, and recorded as a deferred PRODUCT question rather than acted on:** feeding the gazetteer's nearby places into this map. The area card answers "where do I live, and how far will you look"; the tour card owns what is out there.
+
 - **Objective.** The radius stops being an abstraction.
 - **Files.** `src/pages/OnboardingPage.tsx`; `src/components/PlaceMapLazy.tsx` (the LAZY wrapper —
   `leaflet` is already a dependency, `package.json:31`); `src/components/PlacesMapView.tsx` for its
