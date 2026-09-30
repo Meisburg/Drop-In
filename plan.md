@@ -719,6 +719,9 @@ has a home rather than a hope.
 | The reuse-branch comment is true only under an unstated condition (slot consistency + the edit clearing the slot). | slice-4 fix-round-1 review | **slice 4 fix round 2**, with the condition stated | IN FLIGHT |
 | The kid-photo spec's flake windows, its missing status checks, its vacuous-if-`before===null` redraw assertion, and the spec-header overstatement. | slices 3 reviews | **8c** | brief pending |
 | The newline sweep + its guard, `slice-diff.sh`, the await guard, the `\| void` drop. | r2 planning | **8b** | briefed |
+| **The typed-zip field's own claim family** — (a) an invalid typed zip becomes INVISIBLE once the fallback note hides, so `handleAreaFinish` can set the error and return with **no visible feedback** (Finish silently no-ops); (b) `homeZip` is captured at tap and the zip input is not disabled during `await saveLocation`, a network write. **Two instances, one field — and a card that silently does nothing is the wall class.** | slice-4 fix-round-3 review | **8d** (NEW — split out of 8a) | recorded, not fixed |
+| **Turn the resolution-claims habit into a SITE**: one `invalidateResolutionClaims()` called by the edit handler, plus a lint rule banning those setters outside that function and the settle/reject legs. **The reviewer's honest finding is that the spec pin is a TEMPLATE for unknown future claims, not a guard; this is what would make it one** (a fully automatic guard is impossible while claims depend on async settles). | slice-4 fix-round-3 review | **8a** | recorded, needs its own brief slot |
+
 
 **And one habit of mine, recorded where it will be read: I have now produced four numbers I did not obtain** —
 two invented run ids, a computed test count (2014 for 2012), and a brief claim that a sibling test pinned

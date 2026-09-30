@@ -4493,3 +4493,68 @@ builder on cloud `deepseek-v4.1-flash:cloud`, not the local one** -- rounds 1-3 
 4-5 dispatch fresh. **Recorded now so nobody has to remember it under pressure.**
 
 **THREE LANES OUT** (a fix round re-runs all three): reviewer + verifier, and `ocr` on `512e673..cb6f125`.
+
+## Slice 4 FIX ROUND 3: reviewer **PASS** + verifier **PASS**. Only `ocr` outstanding.
+
+### ⚠️ THE REVIEWER GAVE ME THE HONEST ANSWER ON THE PIN, AND IT IS THE BEST OF ITS THREE
+I asked it to test the builder's central claim, because I thought it was generous. **It is, and the reviewer
+said so plainly: *"for unknown fourths it is a template, not a guard."***
+
+- **For THIS claim it is a real regression guard** -- the revert goes red, the red is pasted, and the second
+  face also guards over-clearing.
+- **But for a new claim it constrains nothing**: *"the leg asserts specific testids; a new fourth claim is not
+  constrained by it -- **nothing fails until the next developer writes a leg for it AND runs the red->green
+  ritual.** 'Buildable only visibly' is true only under that habit."*
+- **AND IT PROPOSED WHAT WOULD MAKE IT A REAL GUARD, concretely:** *"a single invalidation site -- one
+  `invalidateResolutionClaims()` called by the edit handler doing every `setX(false)`, plus **a lint rule
+  banning those setters outside that function and the settle/reject legs** -- **turning 'grep for readers' into
+  'one function to read'**."* It also stated the limit honestly: *"full derivation-from-text is impossible while
+  claims depend on async settles."* **-> 8a**, and it is a real, buildable structural answer.
+- **⚠️ AND IT CAUGHT MY OWN OVERCLAIM:** *"the commit message's 'unbuildable' phrasing inherits the brief's
+  framing."* **Correct** -- the phrase came from the round-2 reviewer and I repeated it in the brief and the
+  commit message, and **a spec leg does not make a fourth instance unbuildable.** Recorded here, where the
+  claim was made, because **a retraction that is not written where the false claim lives leaves the record
+  lying.**
+
+### The other two answers, both decisive
+- **The second face is stronger than I asked for, and the reviewer found the reason:** the leg also asserts
+  `nominatimCalls` goes **1 -> 2** on the re-blur -- *"the count check is what makes it more than 'the note can
+  appear again': B's fill issues no request, so the re-reveal can only be B's own settle."* **So the leg proves
+  the note was RE-DERIVED, not merely that it can reappear.** It also named the precise boundary: the leg does
+  **not** test the other half of the safety argument (the typed zip is untouched) because `homeZip` stays empty
+  in it -- a code-reading fact, correctly out of scope.
+- **The `zipError` boundary is right, and the reviewer enumerated the rest:** `homeZip` is user input (clearing
+  would destroy it), `radiusMiles` is a parent choice rather than a text claim, and both correctly **survive**
+  an address edit. **A correctness argument for NOT clearing things, audited.**
+
+### ⚠️ AND IT FOUND A TRAP MY FIX EXPOSED
+**The invisible invalid typed zip:** with the note now hidden, `zipError` and the zip input render **only
+inside the `zipFallbackShown` block**, so `handleAreaFinish`'s typed-zip branch can **set the error and return
+with NO VISIBLE FEEDBACK -- Finish silently no-ops.** Path: note shown for an unresolvable A -> type an invalid
+zip -> edit to a RESOLVABLE B -> Finish. *"Pre-fix the lingering note made this visible; post-fix it is a trap
+with an escape (re-reveal the note)."*
+
+**RULED: 8d, not blocking.** The parent DID see the error at the moment they made it -- the trap is that it
+becomes invisible, not that it was never shown -- and *"Finish silently no-ops"* is the wall class this batch
+keeps fixing, so it needs an owner rather than a shrug. **It is also the SECOND typed-zip item**, and two
+instances in one field is a family, not two bugs.
+
+### ⚠️ SLICE 8a IS OVERFLOWING FOR THE THIRD TIME, SO IT SPLITS AGAIN -- BY SUBJECT
+8a had accumulated: the wire-or-delete list, the stale-claim sweep, two slice-4 comment fixes, the
+rejected-slot residual, the typed-zip mid-save race, the invisible-zip trap, and now the invalidation-site
+proposal. **Seven-plus workstreams, which is the same defect I have now named twice and split twice.**
+
+**The split is by SUBJECT this time, not size:**
+- **8a** keeps code-and-record honesty: wire-or-delete, stale claims, the two comment fixes, the rejected-slot
+  residual, **and the invalidation-site proposal** (it is a *structure* change to the same file).
+- **8d** takes **the typed-zip family**: the invisible-error trap and the mid-save race. **One field, two
+  instances, one coherent job.**
+
+### The verifier, and one thing it did better than my brief asked
+**It ran the pinned spec THREE times, and said why:** *"the round-3 note pin is a pinning fix and the BOUND rule
+requires >=3 for a pin; **the brief's two-run count is the floor, and the rule governs.**"*
+**That is the rule-hierarchy line inside the brief doing exactly its job** -- and it is the second time a lane
+has corrected MY instruction by following the RULE I wrote. It also counted lint with the corrected pattern
+**and verified the pattern catches react-hooks warnings** (`PlaceMap.tsx` alone contributes 7), resolving the
+builder's self-disclosed under-count. And it settled the two lanes' line-number disagreement by **quoting the
+actual `test.fixme(true, 'V27: ...')` text** at `:1459`.
