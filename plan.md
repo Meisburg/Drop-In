@@ -657,3 +657,27 @@ Two pushes came back from the review. Both accepted:
   (`App.tsx:152`). The judgment was right, the description was not — which is exactly why the claim
   is checked against the diff instead of believed.
 - **Slice 1 is CLOSED. Slice 2 dispatched.**
+
+### Slice 2 — CLOSED (fix round 1), and the machine lane had one refuted finding
+
+- **Verifier: PASS twice.** Slice gate `npm run verify` exit 0 (66 files / 1988 tests) and fix gate
+  exit 0 (**67 files / 1993 tests** — the +1/+5 predicted exactly), 0 lint errors / 81 warnings; the
+  pinning spec and all four blast-radius specs green with **no timeouts**, which is what cleared the
+  risk that the new `Continue` gate could dead-disable the no-photo walk.
+- **Reviewer: PASS twice** — zero defects in the slice diff, and the fix round answered my sharpest
+  question (does the escape *move* the defect?) **with proof rather than agreement**: the gate opens,
+  the error surfaces as a real `role="alert"` line, the loss is recoverable in `ProfilePage`, and the
+  alternative is the wall the pending-state rule forbids.
+- **`ocr`: one REAL defect found (the in-flight race) and fixed; one `critical` REFUTED BY
+  MEASUREMENT; one `high` deferred; three cosmetic/hardening items to 8b.**
+  - The refutation: `ocr` claimed the spec held the wrong HTTP verb. Measured in the installed SDK —
+    `uploadOrUpdate("POST", …)` is `upload()` (`index.mjs:717`) and `("PUT", …)` is `update()`
+    (`:901`). **`upload()` sends POST, the spec is right**, and its four green runs are explained.
+  - The deferral: an unproven claim that Enter could bypass the disabled button. **Right about the
+    design point regardless — gating a form submission by disabling a button is fragile; the handler
+    is the true entry point.** Goes to 8b with an assertion that the guard can fire, which *measures*
+    the browser behaviour instead of arguing about it.
+
+**Slice 3 is dispatched.** Slice 8b additionally inherits: the Enter guard + its assertion, the
+route-abort spec for the failed-upload path, the un-cleared `escapeTimer`, the duplicated comment,
+the redundant `Uploading…` assertion, and `scripts/slice-diff.sh`.

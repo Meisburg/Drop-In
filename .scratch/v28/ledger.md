@@ -3045,3 +3045,66 @@ files and neither blocks the other:
 **A dumping ground is a plan defect that looks like tidiness.** Worth naming plainly: "one hygiene
 slice at the end" felt like good hygiene right up until the item count was measured. 8a's brief is
 written; 8b's follows.
+
+## Slice 2 -- OCR LANE ON THE FIX: 1 refuted, 1 unproven, 3 real-but-small
+
+### ⚠️ Its `critical` finding is REFUTED BY MEASUREMENT
+`ocr` claimed the spec's hold matches `POST` but supabase-js `upload()` issues a **PUT**, so the hold
+would never fire, the `expect.poll` would time out deterministically, and **the spec would fail on
+every run.** It even offered a "likely source of the mix-up".
+
+**The spec passed four times, which was the first clue. Then I measured the installed SDK:**
+
+- `node_modules/@supabase/storage-js/dist/index.mjs:615` -- `uploadOrUpdate(method, path, ...)`
+- **`:717` -- `return this.uploadOrUpdate("POST", path, fileBody, fileOptions)`** <- that is `upload()`
+- `:901` -- `return this.uploadOrUpdate("PUT", path, ...)` <- that is `update()`
+- `:620` -- the `x-upsert` header is sent **only when `method === "POST"`**, i.e. only for `upload()`
+
+**So `upload()` sends POST, the spec's check is correct, the hold fires, and the four green runs are
+explained. `ocr` confused `upload()` with `update()`.**
+
+**THE META-LESSON, and it cuts both ways: this is the second time this batch's "a finding is a claim
+like any other -- verify it" rule has caught a machine-lane finding, and the two outcomes were
+opposite.** The first `ocr` finding (the in-flight race) was **real**, and the reviewer and I had both
+missed it. This one is **false**, and a batch that accepted it would have sent a builder to "fix" a
+working spec. **Verification is not scepticism about the lane; it is the only thing that separates
+its real catches from its false ones.**
+
+### Its `high` finding is UNPROVEN, and I am not settling it by argument
+Claim: the Continue button is `type="submit"` with `form={primaryForm}`, so **Enter in the name
+inputs implicitly submits the form and bypasses the disabled button** -- re-opening the orphan window.
+
+**My reading of the HTML spec says it does not**: implicit submission with a submit button present is
+defined as firing a `click` at the form's **default button**, and a disabled button's click is
+ignored, so the form is not submitted. **But that is my recollection of a spec, not a measurement** --
+and this batch's rule is that an unmeasured mechanism is not evidence. **It also cannot be settled by
+reading:** it is a browser behaviour.
+
+**RULED, and the reasoning matters more than the verdict:**
+- **The finding is NOT accepted and NOT rejected -- it is deferred with a ruling, and the slice
+  closes.** Deferring is legitimate here because the claim is unproven and severity was inflated by
+  that.
+- **But it is right about something regardless: gating a FORM SUBMISSION by disabling a BUTTON is a
+  fragile pattern** -- the handler is the true entry point, and it should guard there. That design
+  point stands even if the Enter path turns out to be blocked.
+- **`ocr`'s own proposed fix is 2 lines and defensive**, so **slice 8b takes it -- together with an
+  assertion that the guard can actually fire.** A guard that cannot fail is the vacuity class; the
+  spec must prove the Enter path cannot bypass it, which also *measures* the browser behaviour instead
+  of arguing about it.
+
+### The three that are real but small (all to slice 8b)
+- **`src/lib/photoUpload.ts:48`** -- no trailing newline. **Already known** (I verified it myself and
+  ruled the class systematic: sweep then guard). `ocr` finding it independently corroborates the
+  count.
+- **`e2e/name-card-photo.e2e.ts:156`** -- the duplicated `releaseUpload` comment paragraph. **Already
+  found by the reviewer**, to 8b.
+- **`OnboardingPage.tsx:283` [low]** -- `escapeTimer` is cleared only in the callback's `finally`, so
+  an unmount during an in-flight upload leaves the timer to fire into an unmounted component. React
+  18.3 no-ops it, but **this page's other async work all guards post-unmount effects** (`cancelled`
+  flags, the crop step's `mountedRef`) -- so the new timer is the one unguarded side effect, for no
+  reason. Cheap fix (timer in a ref, cleared in a one-shot unmount effect). **To 8b.**
+
+## ✅ SLICE 2 IS CLOSED
+Gate green (verifier, both the slice and the fix), reviewer PASS (both rounds), `ocr` reviewed both
+the slice and the fix with **one real defect found and fixed**, one refuted, one deferred with a
+ruling, and three cosmetic/hardening items assigned to 8b. **Nothing is silently discarded.**
