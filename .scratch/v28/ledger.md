@@ -2802,3 +2802,43 @@ for this lane.
 ### Machine hygiene after the kill: clean
 Port 4173 **free** (Playwright tore down its own webServer); **no stray** `vite preview`, chromium or
 playwright processes; the tree holds only the reviewer's report as an untracked file.
+
+## Slice 2 -- OCR LANE: one REAL defect, and it earns the lane its keep
+
+`ocr` reviewed 6 files in 26m59s (1.31M tokens) and returned **4 findings**. One of them is a genuine
+defect that **the fresh-context reviewer and I both missed** -- which is precisely what the third lane
+exists for, and its own doc says so ("it found a real defect on its first run").
+
+### ⚠️ THE REAL ONE -- `OnboardingPage.tsx:563`, the IN-FLIGHT upload race (silent data loss)
+> *"In-flight upload race: the card's Continue is only disabled on `handleBusy`, so a parent who
+> confirms the crop and clicks Continue while `uploadAvatar` is still running creates the row with
+> `avatar_url` NULL ... The in-flight upload then resolves and calls `setPendingAvatarUrl(url)` --
+> but the name card has already advanced and nothing ever reads that state again, so the confirmed
+> photo becomes an orphaned object in the avatars bucket, silently lost with no error."*
+
+**Verified by reading the code path myself: real.** And it is the SAME failure the slice's scope
+ruling exists to prevent -- the object landing in the bucket while the column stays null, with every
+render surface reading the column. **The window is created by my own condition 5**, which said a
+*FAILED* upload must not block Continue -- and in-flight is a different state that the first cut, the
+reviewer, and I all collapsed into it.
+
+**RULING: distinguish them.** A **failed** upload must not block Continue; an **IN-FLIGHT** upload
+must -- and its gate carries the pending-state rule's **bounded escape**, so a hung upload cannot
+trap the parent on the name card. `ocr`'s own suggestion (reuse `useCropStep`'s `busy` flag) is the
+right mechanism, and it collapses two findings into one fix.
+
+### The other three
+2. **`:671` [medium] -- a nested ternary, which is a project RULE violation** ("Nested ternary
+   expressions are not allowed"). Machine-enforced law, so it must be fixed, not weighed.
+3. **`:240` [low] -- `photoUploading` duplicates the `busy` flag `useCropStep` already returns.**
+   Real single-source-of-truth duplication, and the fix is the same one as finding 1.
+4. **`e2e/name-card-photo.e2e.ts:218` -- the new file has no trailing newline.** ⚠️ **This one IS
+   attributable**, unlike the 7 pre-existing instances in slice 1b's files and the 74 repo-wide:
+   slice 2 CREATED this file. Trivially fixed; it does not change the repo-wide ruling (still no
+   sweep).
+
+### Verdict: slice 2 is NEEDS_CHANGES -- fix round 1/5
+The reviewer said PASS on the diff and ocr found a medium rule violation plus a real race. **The
+lanes disagree, and the machine lane wins on facts.** Per the escalating loop, rounds 1-3 resume the
+ORIGINAL builder with the findings verbatim. Dispatched after the bounded verifier finishes --
+**serialisation: a builder must not edit the tree while a Playwright lane is running it.**
