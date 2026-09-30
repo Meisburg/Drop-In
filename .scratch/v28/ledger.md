@@ -3295,3 +3295,86 @@ truncated stream is not a count.**
 is `--replace`, and reprinted every match as the replacement). **I apply heavy scepticism to the lanes'
 claims and had been applying almost none to my own tooling.** Both slips were caught only because
 something else contradicted them.
+
+## Slice 3 -- REVIEWER **NEEDS_CHANGES**, OCR 6 findings, verifier PASS. Fix round 1 dispatched (RESUME)
+
+**The three lanes, and the architecture's thesis validated in one shot:** the reviewer and `ocr`
+**independently found the same two defects** (F1, F2) -- and **each found things the other missed**.
+The reviewer found a **LIVE instance of the fire-and-forget class in shipped code** (N2); `ocr` found
+**four** the reviewer did not (F3, F4, F5 plus the newline). Neither lane was redundant, which is the
+entire claim for having three.
+
+### F1 -- BLOCKING, found by BOTH lanes, and I verified both legs
+The photo-confirm path prepares age as `Number(row.age)`, where **`Number('') === 0`** and **0 is a legal
+age** (`db.ts:2509`: `age < 0 || age > 17`) -- while the card's own `invalidKidRows` (`:583`) maps a blank
+age to `NaN`, which fails. So **the same row is invalid via Continue but writable via the photo confirm**,
+persisting a kid with a fabricated `age = 0`, and the row's name/age inputs are then **frozen**, so it
+cannot be corrected on the card. A fully blank row passes too.
+
+**AND I ALMOST TALKED MYSELF OUT OF THE SECOND LEG.** I predicted `validateKid('', 0)` would fail on the
+name and the blank-row leg would be false. **It does not:** `validateKidName` returns `null` for a blank
+name -- its own comment says *"No rule fires on a blank name any more"* -- which is **exactly why
+`invalidKidRows` needs its blank-row early-return at `:582`.** The reviewer was right; the code said so.
+**A prediction that the code then contradicts is the verification working, not failing.**
+
+### F2 -- found by BOTH lanes, via two different symptoms
+Index-based row identity. The reviewer's symptom: removing a row **above** an in-flight confirm re-indexes
+the array, so the post-`await` attach hits the wrong row or none -- the row stays `kid: null`, Continue
+**double-writes it**, and Remove leaves the real DB row orphaned. `ocr`'s symptom: two rapid removes
+filter already-shifted state and **keep a ghost row for a kid already deleted from the DB.** One root
+cause, two orphans in opposite directions. **Ruled: a stable client-generated per-row id**, which fixes
+the attach, the ghost, and the `key={index}` render key in one stroke.
+
+### F3-F5 -- `ocr` only, all verified by me, and I corrected one severity
+- **F3**: the signed-URL memo is keyed on `kidRows`, so **every keystroke re-mints** the kid photo URLs,
+  contradicting the comment claiming it only re-mints when the id set changes. **Verified real.**
+- **F4**: `void crop.beginCrop(file)` at `:134` **discards** the user-facing message for an oversized or
+  undecodable file -- a silent no-op -- while the name card above it handles the same call explicitly.
+  **A dead end for a parent on a phone.**
+- **F5**: the lock effect has **no unmount cleanup**, so removing a row whose dialog is open strands
+  `kidPhotoLockIndex` and **leaves Continue disabled for the rest of the mount**. `ocr` sharpened it:
+  the dialog's backdrop does not trap focus, so Tab reaches the covered Remove buttons.
+
+**⚠️ I REFUSED ONE INHERITED SEVERITY.** F3 also claims the re-mint **blanks the rendered photos**. I
+could not confirm it: the guard is `resolved.key !== mintKey`, and **`mintKey` is a string built from the
+id set, so it does not change when only the array identity does** -- the guard should hold. The re-mint is
+real; the blanking is unproven. **Ruled: fix the re-mint, and MEASURE the blanking rather than repeating
+the claim** -- inheriting a severity neither lane proved is how a false finding gets written into the
+record.
+
+### N2 -- the reviewer's best finding: a LIVE instance, outside the slice's diff
+`ProfilePage.tsx:2217/2223` types the upload callback `(...) => void` and `:1373` passes
+`void handleKidPhotoUpload(...)`: **the exact bug the slice-3 builder caught in its own first draft, still
+shipped in the profile screen**, unexercised by any e2e (the kid-photo specs upload objects through the
+storage API and never drive the crop UI). **Verified by me.** Ruled into the fix round -- 2 lines -- plus
+**the `void` -> `Promise<void>` typing, because the `void` type is what kept the floating call invisible
+to the type system.**
+
+### The guard question, answered by the reviewer, and it answered it WELL
+I asked whether a repo-level guard against the await class was warranted, **inviting "no" if it could not
+be made real.** It said: **warranted, as a class-shape net, and explicitly NOT total** -- scan every
+`useCropStep(` call site and **fail unless the wrapper body terminates in `await <expr>` or
+`return <expr>`** -- "a guard that cannot fail is worse than none, so the guard is scoped as a class-shape
+net, not a closure." Plus two companions: **type the callbacks `Promise<void>`**, and **make a closed
+`0×0` bitmap raise its own message** instead of the misleading *"the chosen area is outside the image"* --
+**which is precisely the misdiagnosis that hid the builder's bug for a whole build cycle.** All three go
+to 8b; 8b's brief is updated, and its guard item now requires proving the checker against the REAL
+`ProfilePage.tsx` instance (or a fixture of its exact shape, if fix round 1 has already landed).
+
+**The reviewer also refused to launder the verifier's work as its own:** asked about the gate, it said
+plainly *"I did not run the suite myself; the evidence exists in the batch record."*
+
+### RULING
+- **Fix round 1** (dispatched as a **RESUME** of the original builder per the loop's rounds 1-3 rule):
+  **F1** (blocking), **F2**, **F3**, **F4**, **F5**, **F6/N2**. All in one file the builder just wrote,
+  plus 2 lines in `ProfilePage.tsx`. **It is told: if six cannot be done well in one context, STOP and
+  report which.** A partial honest round beats a complete-looking one.
+- **Issue 04 filed** (`04-continue-retry-double-writes-after-partial-failure.md`): the Continue loop's
+  fail-and-break leaves already-written rows `kid: null`, so a retry **double-writes** them. Pre-existing,
+  a different code path, and adding a seventh finding to a round that already carries a data-shape
+  refactor would make the round harder to verify than the defect is to live with. **It is the same family
+  as F1/F2, so it is recorded as such rather than as a curiosity.**
+- **8b gains** the await guard + the `Promise<void>` typing + the loud encoder error. **The newline stays
+  in 8b's sweep** and was explicitly excluded from this fix round.
+
+**Run: `66cdc413-a6e0-4a6a-84ec-03f97952f102`** (resumed from `8d3bdc40`), base `0c08024`.

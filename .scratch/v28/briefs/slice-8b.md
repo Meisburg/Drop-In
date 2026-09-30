@@ -110,6 +110,34 @@ other async effect on this page guards it** (`cancelled` flags; the crop step's 
 this is the one place the pattern was dropped for no reason. Keep the timer in a ref and clear it in a
 one-shot unmount effect.
 
+## 6. The `useCropStep` await guard, and its own proof
+
+**Context: this class produced a real bug twice in one slice.** Slice 3's builder caught its own draft
+calling the confirm wrapper fire-and-forget -- the hook's `finally` then closed the `ImageBitmap` while
+the encoder was still reading it, and **the corruption disguised itself as "the chosen area is outside
+the image"**, pointing the diagnosis at the crop rect. Then the review found **the same shape still live
+in shipped code**: `ProfilePage.tsx:2217/2223` types the upload callback `(...) => void`, and the call
+site at `:1373` passes `void handleKidPhotoUpload(...)`. **(Slice 3's fix round is correcting that
+instance concurrently -- do not edit those two call sites. Your job is the guard that stops the next
+one.)**
+
+**Scope it as a class-shape net, not a closure.** A fresh-context reviewer proposed the guard and was
+explicit that it **cannot be total** -- a static check cannot see a lost `await` through arbitrary
+indirection. **That is the point: scope it to the shape that actually occurred.** Scan every
+`useCropStep(` call site in `src/` and **fail unless the `onConfirm` wrapper body terminates in
+`await <expr>` or `return <expr>`** -- a wrapper that merely calls a function (bare, or `void f(...)`)
+is the failure. House rules apply: `scripts/guards/`, registered in **both** hard-coded places in
+`run-all.sh`, with a `.check.mjs` that proves it fires, named `.check.mjs` and never `.test.mjs`.
+**Prove it against the real instance**: `ProfilePage.tsx` as it stands **before** fix round 1 is a true
+positive it must catch. If fix round 1 has already landed when you start, **build the fixture from the
+shape** rather than pointing at a file that no longer exists -- and say which you did.
+
+**And make the failure LOUD in the guard's blind spots** -- a diagnostic change in the crop step: a
+closed or `0×0` `ImageBitmap` reaching the encode should raise its own message naming the cause, e.g.
+*"the crop step released the bitmap before the upload finished -- the confirm wrapper did not await its
+work"*, **instead of the current "the chosen area is outside the image."** **That misdiagnosis is what
+hid the bug for a whole build cycle, and a wrong error message costs more than a missing one.**
+
 ## Acceptance
 
 1. Commit A touches **only trailing newlines** — prove it (`git diff --stat` plus a word-diff showing
@@ -119,7 +147,10 @@ one-shot unmount effect.
 3. `scripts/slice-diff.sh` refuses a slice with no recorded base, and its output names the range.
 4. Both specs: **each demonstrably able to fail** (say how you know), and phase 1 of the Enter spec
    passes.
-5. `npm run verify` exits 0; guard count increased by exactly one.
+5. `npm run verify` exits 0; guard count increased by **two** (the newline guard and the await guard).
+6. The await guard catches the real `ProfilePage.tsx` instance (or a fixture of its exact shape), and its
+   `.check.mjs` proves it can fail; the closed-bitmap path names its own cause instead of blaming the
+   crop rect.
 
 ## Verify
 
