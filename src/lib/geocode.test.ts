@@ -15,6 +15,9 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   coordinatesFromResult,
   geocodeAddress,
+  locationFromAddressQuery,
+  locationFromAddressQueryBounded,
+  locationFromResult,
   zipFromAddressQuery,
   zipFromAddressQueryBounded,
   zipFromResult,
@@ -183,6 +186,116 @@ describe('zipFromAddressQueryBounded (V28 slice 5 — the card-gating lookup\'s 
   it('an empty query short-circuits without a lookup (and without a timer)', async () => {
     const lookup = vi.fn(async () => STREET_RESULT)
     expect(await zipFromAddressQueryBounded('   ', 10_000, lookup)).toBe(null)
+    expect(lookup).not.toHaveBeenCalled()
+  })
+})
+
+/** A city-level answer: Nominatim found the CITY, not the house number. */
+const CITY_RESULT: NominatimResult = {
+  lat: '47.6062',
+  lon: '-122.3321',
+  address: { postcode: '98101' },
+}
+
+describe('locationFromResult (V28 slice 4 — one Nominatim result, two extractions)', () => {
+  it('yields BOTH the zip and the pin from one street-address result', () => {
+    expect(locationFromResult(SEATTLE, STREET_RESULT)).toEqual({
+      zip: '98105',
+      coordinates: { lat: 47.6612, lng: -122.3255 },
+    })
+  })
+
+  it('a city-level answer: no zip (the fallback is the escape) but the pin is real', () => {
+    // The map CAN show a pin for a city-level match while the ZIP fallback
+    // stays the way the card finishes — the two fields are independent.
+    expect(locationFromResult(SEATTLE, CITY_RESULT)).toEqual({
+      zip: null,
+      coordinates: { lat: 47.6062, lng: -122.3321 },
+    })
+  })
+
+  it('a null result yields both nulls (absent is the only honest value)', () => {
+    expect(locationFromResult(SEATTLE, null)).toEqual({ zip: null, coordinates: null })
+  })
+
+  it('an empty query yields both nulls', () => {
+    expect(locationFromResult('   ', STREET_RESULT)).toEqual({ zip: null, coordinates: null })
+  })
+})
+
+describe('locationFromAddressQuery (V28 slice 4 — the injectable, one-request seam)', () => {
+  it('runs exactly ONE lookup and reads both fields off that one result', async () => {
+    const lookup = vi.fn(async () => STREET_RESULT)
+    const result = await locationFromAddressQuery(SEATTLE, lookup)
+    expect(lookup).toHaveBeenCalledTimes(1)
+    expect(lookup).toHaveBeenCalledWith(SEATTLE)
+    expect(result).toEqual({ zip: '98105', coordinates: { lat: 47.6612, lng: -122.3255 } })
+  })
+
+  it('an empty query short-circuits without a lookup', async () => {
+    const lookup = vi.fn(async () => STREET_RESULT)
+    expect(await locationFromAddressQuery('   ', lookup)).toEqual({ zip: null, coordinates: null })
+    expect(lookup).not.toHaveBeenCalled()
+  })
+})
+
+describe('locationFromAddressQueryBounded (V28 slice 4 — the card-gating lookup\'s bounded escape)', () => {
+  it('a fast lookup wins the race and leaves no timer behind', async () => {
+    vi.useFakeTimers()
+    try {
+      const lookup = vi.fn(async () => STREET_RESULT)
+      const pending = locationFromAddressQueryBounded(SEATTLE, 10_000, lookup)
+      expect(await pending).toEqual({ zip: '98105', coordinates: { lat: 47.6612, lng: -122.3255 } })
+      expect(lookup).toHaveBeenCalledTimes(1)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a never-settling lookup settles to the null shape at the deadline (the pending-state escape)', async () => {
+    vi.useFakeTimers()
+    try {
+      const neverSettled = new Promise<NominatimResult | null>(() => {})
+      const lookup = vi.fn(() => neverSettled)
+      const pending = locationFromAddressQueryBounded(SEATTLE, 10_000, lookup)
+      vi.advanceTimersByTime(10_000)
+      expect(await pending).toEqual({ zip: null, coordinates: null })
+      expect(lookup).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a failed lookup settles to the null shape before the deadline (the fast fallback path)', async () => {
+    vi.useFakeTimers()
+    try {
+      const lookup = vi.fn(async () => null)
+      const pending = locationFromAddressQueryBounded(SEATTLE, 10_000, lookup)
+      expect(await pending).toEqual({ zip: null, coordinates: null })
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a rejecting lookup rethrows (a real failure the caller may see — the card catches it)', async () => {
+    vi.useFakeTimers()
+    try {
+      const lookup = vi.fn(() => Promise.reject(new Error('boom')))
+      const pending = locationFromAddressQueryBounded(SEATTLE, 10_000, lookup)
+      await expect(pending).rejects.toThrow('boom')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('an empty query short-circuits without a lookup (and without a timer)', async () => {
+    const lookup = vi.fn(async () => STREET_RESULT)
+    expect(await locationFromAddressQueryBounded('   ', 10_000, lookup)).toEqual({
+      zip: null,
+      coordinates: null,
+    })
     expect(lookup).not.toHaveBeenCalled()
   })
 })

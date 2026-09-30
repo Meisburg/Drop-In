@@ -204,3 +204,75 @@ export function zipFromAddressQueryBounded(
   // loser promise is ignored by the race.
   return Promise.race([resolved, deadline])
 }
+
+/**
+ * V28 slice 4 — ONE NOMINATIM RESULT, TWO EXTRACTIONS.
+ *
+ * The V28 area card resolves the address EARLY (on blur, debounced) so the same
+ * single request can yield BOTH the ZIP (for `saveLocation`) and the pin
+ * coordinates (for the card's own Leaflet map). `zipFromResult` and
+ * `coordinatesFromResult` are the two extractors this pairs; pairing them
+ * here — instead of letting the page fire two bounded lookups — is what keeps
+ * "one request per distinct address" a property of the seam rather than a
+ * discipline the caller has to remember.
+ */
+export interface AddressGeocodeResult {
+  /** The validated ZIP for the house number, else `null` (the ZIP fallback). */
+  zip: string | null
+  /** The geocoded position, else `null` (no map can be shown). */
+  coordinates: { lat: number; lng: number } | null
+}
+
+export function locationFromResult(
+  query: string,
+  result: NominatimResult | null,
+): AddressGeocodeResult {
+  // An empty query has no address to claim: a result handed in alongside it
+  // belongs to nothing the card showed, so BOTH fields are null (the zip
+  // extractor already agrees — coordinates must not outlive the address).
+  if (query.trim() === '') return { zip: null, coordinates: null }
+  return {
+    zip: zipFromResult(query, result),
+    coordinates: coordinatesFromResult(result),
+  }
+}
+
+export async function locationFromAddressQuery(
+  query: string,
+  lookup: AddressLookup = searchFirst,
+): Promise<AddressGeocodeResult> {
+  const trimmed = query.trim()
+  if (trimmed === '') return { zip: null, coordinates: null }
+  return locationFromResult(trimmed, await lookup(trimmed))
+}
+
+/**
+ * V28 slice 4 — the BOUNDED address geocode the onboarding area card runs on
+ * blur: one Nominatim request (the same seam the ZIP lookup used) racing
+ * against a deadline, returning BOTH the ZIP and the pin in one result.
+ *
+ * Same race discipline as `zipFromAddressQueryBounded` above: a lookup that
+ * does not settle within `timeoutMs` settles to the null shape (absent is the
+ * only honest value — there is no answer to decide from), a fast lookup wins
+ * the race, and a lookup that REJECTS still rethrows: a rejection before the
+ * deadline is a real failure the caller may see (the card catches it and
+ * reveals its ZIP fallback; it never stalls).
+ */
+export function locationFromAddressQueryBounded(
+  query: string,
+  timeoutMs: number,
+  lookup: AddressLookup = searchFirst,
+): Promise<AddressGeocodeResult> {
+  const trimmed = query.trim()
+  if (trimmed === '') return Promise.resolve({ zip: null, coordinates: null })
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const nullResult: AddressGeocodeResult = { zip: null, coordinates: null }
+  const deadline = new Promise<AddressGeocodeResult>((resolve) => {
+    timer = setTimeout(() => resolve(nullResult), timeoutMs)
+  })
+  const resolved = locationFromAddressQuery(trimmed, lookup).then((result) => {
+    if (timer !== undefined) clearTimeout(timer)
+    return result
+  })
+  return Promise.race([resolved, deadline])
+}

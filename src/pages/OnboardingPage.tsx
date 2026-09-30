@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router'
 import { useSessionContext } from '../components/SessionProvider'
@@ -36,11 +36,22 @@ import {
 import type { ZipCoords } from '../lib/feed'
 import { finishRunPlaces, type FinishRunPlace } from '../lib/places'
 import { splitSuggestedName, suggestedHandle } from '../lib/oauth'
-import { ADDRESS_LOOKUP_TIMEOUT_MS, zipFromAddressQueryBounded } from '../lib/geocode'
+import { ADDRESS_LOOKUP_TIMEOUT_MS, locationFromAddressQueryBounded, type AddressGeocodeResult } from '../lib/geocode'
+import { PlacesMap } from '../components/PlaceMapLazy'
+import { shouldRenderPlacesMap } from '../lib/mapStrip'
 import { PHOTO_UPLOAD_TIMEOUT_MS, photoUploadBlocksContinue } from '../lib/photoUpload'
 import { newKidRowKey } from '../lib/kidRowKey'
 import { resolveOnboardingRedirect } from '../lib/onboarding'
 import { errorId, fieldA11y } from '../lib/a11y'
+
+/**
+ * V28 slice 4 — the area card's early-resolution debounce: the address input's
+ * BLUR schedules the single lookup after this window, so a blur burst (tap
+ * the address, tap the radius picker, tap away) issues at most one request.
+ * Interaction timing, so it may live in the page (the build law: the page
+ * owns how it renders; the geocode seam itself stays in lib).
+ */
+const AREA_ADDRESS_LOOKUP_DEBOUNCE_MS = 500
 
 /**
  * The name card's photo-picker label (V28 r2 slice 2) — an if/else chain,
@@ -311,6 +322,31 @@ export function OnboardingPage() {
   const [areaAddressError, setAreaAddressError] = useState<string | null>(null)
   const [geocoding, setGeocoding] = useState(false)
   const [zipFallbackShown, setZipFallbackShown] = useState(false)
+  // V28 slice 4 — THE AREA CARD'S EARLY RESOLUTION. The address resolves on
+  // blur (debounced) so ONE Nominatim request yields both the ZIP (for
+  // saveLocation) and the pin coordinates below — the card's own map shows
+  // the pin + the radius circle the parent is choosing, and Finish reuses
+  // the same resolution instead of geocoding again. Editing the address
+  // invalidates the pin (a map-shaped claim for an address that no longer
+  // holds must not linger).
+  const [areaCoordinates, setAreaCoordinates] = useState<{ lat: number; lng: number } | null>(null)
+  // The bookkeeping that keeps "one request per distinct address" true
+  // (see ensureAddressLookup): which address the in-flight or settled
+  // promise belongs to, the promise itself, and the pending debounce timer.
+  const areaLookupForRef = useRef<string | null>(null)
+  const areaLookupPromiseRef = useRef<Promise<AddressGeocodeResult> | null>(null)
+  const areaLookupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    // Unmount cancels the debounce window: firing it afterwards would only
+    // call setState on an unmounted component. (Above the conditional
+    // return below — the rules of hooks, not just convention.)
+    return () => {
+      if (areaLookupTimerRef.current !== null) {
+        clearTimeout(areaLookupTimerRef.current)
+        areaLookupTimerRef.current = null
+      }
+    }
+  }, [])
 
   // The optional completion items (V2 ticket 02): the kid rows. (The photo
   // states photoError / photoGateEscaped now live above, with the crop step —
@@ -872,6 +908,13 @@ export function OnboardingPage() {
   // unresolvable address (or the timeout) reveals the ZIP field + the
   // in-card notice — never blocks, never loses the address (it stays in
   // `areaAddress`).
+  //
+  // V28 slice 4: the address's RESOLUTION IS THE EARLY ONE — the blur-debounced
+  // lookup the card scheduled is awaited HERE, never re-fired: Finish reuses
+  // the in-flight or settled promise (exactly one Nominatim request per
+  // distinct address), so a blur + Finish on the same address cannot
+  // double-fetch, and the card's map (the pin + radius circle) was already
+  // showing what this save will write.
   async function handleAreaFinish() {
     if (session === null || saving || geocoding || knownZips === null) return
     const typedZip = homeZip.trim()
@@ -893,17 +936,110 @@ export function OnboardingPage() {
       return
     }
     setAreaAddressError(null)
-    setGeocoding(true)
-    const resolvedZip = await zipFromAddressQueryBounded(areaAddress, ADDRESS_LOOKUP_TIMEOUT_MS)
-    setGeocoding(false)
-    if (resolvedZip !== null && validateHomeZip(resolvedZip, knownZips) === null) {
-      await saveLocation(resolvedZip)
+    // Reuse the early resolution: the promise the blur path scheduled (or a
+    // fresh single one, if the address changed since the last lookup). A
+    // rejected lookup settles to the null shape here (the seam's
+    // real-failure path) — the fallback below is still the escape.
+    const resolution = await ensureAddressLookup(areaAddress)
+    if (resolution.zip !== null && validateHomeZip(resolution.zip, knownZips) === null) {
+      await saveLocation(resolution.zip)
       return
     }
     // Unresolvable (or the bounded timeout settled to "absent"): the card
     // reveals the ZIP fallback — the notice is the existing one, now
     // re-triggered in-card; the typed address survives in state.
     setZipFallbackShown(true)
+  }
+
+  /**
+   * V28 slice 4 — THE AREA CARD'S SINGLE RESOLUTION PER ADDRESS (the early,
+   * blur-scheduled geocode the card's map and Finish both consume).
+   *
+   * ONE DOOR TO THE LOOKUP, which is what makes "exactly one Nominatim
+   * request per distinct address" hold:
+   *
+   *   - the address input's blur handler schedules it debounced
+   *     (`scheduleAddressLookup`), so the card shows the pin + radius
+   *     circle while the parent still looks at it, not only at Finish;
+   *   - `handleAreaFinish` awaits it for the SAME address: an in-flight or
+   *     already-settled promise is returned as-is, never a second request
+   *     (the acceptance's blur + Finish non-double-fire);
+   *   - an EDITED address is a distinct address and gets its own single
+   *     request; the older promise's settle is suppressed by the ownership
+   *     check (`areaLookupForRef`), so its coordinates — for an address the
+   *     card no longer shows — are never published.
+   *
+   * A settled null zip (an unresolvable address, or the bounded deadline)
+   * reveals the ZIP fallback; a resolved zip hides it again (the address
+   * WILL finish the card without one typed). Rejection settles to the null
+   * shape too — a failed lookup is a failed lookup, not a stall: the card's
+   * pending state is bounded by `ADDRESS_LOOKUP_TIMEOUT_MS` and its escape
+   * is the fallback, the pending-state rule's first form.
+   */
+  function ensureAddressLookup(query: string): Promise<AddressGeocodeResult> {
+    const trimmed = query.trim()
+    const existing = areaLookupPromiseRef.current
+    if (existing !== null && areaLookupForRef.current === trimmed) {
+      // Already asked for THIS address (in flight or settled): the single
+      // request is the one in the slot. A settled promise publishes nothing
+      // new, so re-reading it here is the reuse, not a second fetch.
+      return existing
+    }
+    if (trimmed === '') {
+      // No address to resolve: clear the slot (a later, non-empty address
+      // must get its own request) and settle to absent immediately.
+      areaLookupForRef.current = null
+      areaLookupPromiseRef.current = null
+      return Promise.resolve({ zip: null, coordinates: null })
+    }
+    const owned = trimmed
+    const promise = locationFromAddressQueryBounded(owned, ADDRESS_LOOKUP_TIMEOUT_MS)
+      .then((result) => {
+        if (areaLookupForRef.current !== owned) return result
+        setAreaCoordinates(result.coordinates)
+        setGeocoding(false)
+        setZipFallbackShown(result.zip === null)
+        return result
+      })
+      .catch(() => {
+        const absent: AddressGeocodeResult = { zip: null, coordinates: null }
+        if (areaLookupForRef.current !== owned) return absent
+        setAreaCoordinates(null)
+        setGeocoding(false)
+        setZipFallbackShown(true)
+        return absent
+      })
+    areaLookupForRef.current = trimmed
+    areaLookupPromiseRef.current = promise
+    // Only a FRESH promise puts the card in its pending state; reusing the
+    // slot (above) must never re-enable the disabled button.
+    setGeocoding(true)
+    return promise
+  }
+
+  /**
+   * V28 slice 4 — the blur-side of the early resolution: DEBOUNCED, so a
+   * blur burst (tap the address, tap the radius picker, tap away) issues at
+   * most one request; the focus handler cancels the pending window (the
+   * value at the last blur is stale the moment the parent goes back into
+   * the field). `ensureAddressLookup` is the no-op when the address was
+   * already looked up, so the per-address single request is its invariant,
+   * not this handler's.
+   */
+  function scheduleAddressLookup() {
+    const query = areaAddress
+    if (areaLookupTimerRef.current !== null) clearTimeout(areaLookupTimerRef.current)
+    areaLookupTimerRef.current = setTimeout(() => {
+      areaLookupTimerRef.current = null
+      void ensureAddressLookup(query)
+    }, AREA_ADDRESS_LOOKUP_DEBOUNCE_MS)
+  }
+
+  function cancelScheduledAddressLookup() {
+    if (areaLookupTimerRef.current !== null) {
+      clearTimeout(areaLookupTimerRef.current)
+      areaLookupTimerRef.current = null
+    }
   }
 
   // The location write (V2 ticket 02's radius picker, unchanged in kind):
@@ -1349,6 +1485,17 @@ export function OnboardingPage() {
             onChange={(e) => {
               setAreaAddress(e.target.value)
               setAreaAddressError(null)
+              // V28 slice 4: an edited address invalidates the resolved pin —
+              // the map (the pin + radius circle) is a claim about the address
+              // as it was, and it hides until the edited address resolves.
+              setAreaCoordinates(null)
+            }}
+            onFocus={cancelScheduledAddressLookup}
+            onBlur={() => {
+              // V28 slice 4: the EARLY resolution — one bounded Nominatim
+              // request yields the ZIP and the pin; the card's map shows the
+              // pin + the radius circle while the parent still looks at it.
+              if (areaAddress.trim() !== '') scheduleAddressLookup()
             }}
             placeholder="e.g. 1200 1st Ave S, Seattle"
             autoComplete="street-address"
@@ -1357,6 +1504,24 @@ export function OnboardingPage() {
         </label>
         {areaAddressError !== null ? (
           <p role="alert" id={errorId('area-address')} className="text-red-600">{areaAddressError}</p>
+        ) : null}
+
+        {/* V28 slice 4 — THE CARD'S OWN MAP: the resolved pin and the radius
+            circle the parent is choosing. Rendered ONLY once the address has
+            resolved to coordinates (`shouldRenderPlacesMap` with zero pins —
+            the plan's render condition, never a second predicate); before
+            that, no map-shaped claim. A radius change redraws the circle
+            client-side (PlacesMap's overlay re-key) — no new request. */}
+        {shouldRenderPlacesMap(0, areaCoordinates) ? (
+          <PlacesMap
+            places={[]}
+            zipCoords={zipCoords}
+            homePin={areaCoordinates}
+            radiusCircle={areaCoordinates !== null ? { center: areaCoordinates, radiusMiles } : null}
+            placeActions={false}
+            className="h-64"
+            testId="onboarding-area-map"
+          />
         ) : null}
 
         {zipFallbackShown ? (

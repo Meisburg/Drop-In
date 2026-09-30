@@ -372,7 +372,28 @@ export function PlacesMap({
 
   useEffect(() => {
     const el = containerRef.current
-    if (el === null || markers.length === 0) return
+    /**
+     * V28 slice 4 — THE GUARD ADMITS A PIN-ALONE MOUNT.
+     *
+     * The render path below already promised it: the early return only fires
+     * when BOTH the entries and `homePin` are empty, so a caller with zero
+     * places and a home pin (the V28 onboarding area card) reached a
+     * container div that this effect skipped — `markers.length === 0` —
+     * leaving a blank bordered box instead of a map. With the guard widened,
+     * the same `initialAnchorRef` (`homePin ?? markers[0]`) and `hasHomePinRef`
+     * zoom rule frame the pin alone: a pin-only mount is a home-pin mount.
+     *
+     * EVERY MARKER-DEPENDENT READER IN THIS COMPONENT WAS AUDITED for the
+     * `markers: []` + `homePin` set before this guard ships (the measurement
+     * the plan requires): the overlay effect (home pin + radius circle —
+     * independent of `markers`), the marker-group effect (re-keys to the
+     * empty key and adds an empty layer group; its camera never ran here —
+     * the V16 rule frames by the circle, and `fitBounds` does not exist on
+     * this path), the focus-pair + controlled-focus effects (no-ops with no
+     * focus id), and the radius-circle framing effect (guards on
+     * `radiusCircle` and `map` only, reads nothing from `markers`). All hold.
+     */
+    if (el === null || (markers.length === 0 && !hasHomePinRef.current)) return
     const anchor = initialAnchorRef.current
     const zoom = hasHomePinRef.current ? HOME_PIN_ZOOM : anchor === undefined ? 11 : DETAIL_ZOOM
     /**

@@ -10,7 +10,7 @@
  * that step with NO fallback note (the signup-time geocode flag had no
  * producer left). Since
  * slice 5 the step IS the area card (4 of 4): the ADDRESS is the entry, and
- * its bounded Nominatim lookup (lib/geocode's zipFromAddressQueryBounded —
+ * its bounded Nominatim lookup (lib/geocode's locationFromAddressQueryBounded —
  * the pending-state rule's escape for a required, non-skippable card)
  * decides the card's shape. Two legs, both pinned HERE, because neither was
  * reachable without intercepting the card's Nominatim request:
@@ -25,6 +25,14 @@
  *    plus the ZIP field, with the parent's address preserved in its field.
  *    The typed zip + radius then finish the card, and the feed is about the
  *    typed zip.
+ * 3. V28 slice 4 — THE CARD'S OWN MAP: the address resolves EARLY (on blur,
+ *    debounced) through the same single request, so the card shows its pin
+ *    + the radius circle while the parent still looks at it. This leg pins
+ *    the three things a "no error" assertion cannot: the container is a
+ *    live Leaflet map with BOTH overlays painted (not a blank bordered
+ *    box), a radius change redraws the circle client-side with NO second
+ *    request, and blur + Finish on the same address issue EXACTLY ONE
+ *    Nominatim request (counted into the seam's route).
  * V28 slice 6 (plan defect #19): BOTH legs' area-card save now lands on the
  * run's OWN finish card on /onboarding (the re-keyed guard removed the feed
  * bounce) — each leg taps its "Go to your feed" CTA before asserting the
@@ -218,3 +226,90 @@ test('an unresolvable address reveals the ZIP fallback (the note + the field, ad
     await close()
   }
 })
+
+test(
+  'blur + Finish on the same address issues exactly ONE request, and the card shows its pin + radius circle (V28 slice 4)',
+  async ({ browser }) => {
+    const marker = readMarkerMeta()
+    const epoch = Math.floor(Date.now() / 1000)
+    const { page, close } = await signedOutPage(browser)
+    // The seam's count: EVERY Nominatim request this card's page issues is
+    // routed through this handler, so "exactly one per distinct address"
+    // is asserted on the number, not on the absence of a duplicate.
+    let nominatimCalls = 0
+    try {
+      await page.route(NOMINATIM_ROUTE, (route) => {
+        nominatimCalls++
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([
+            {
+              lat: '47.6205',
+              lon: '-122.3414',
+              address: { postcode: marker.homeZip, house_number: '1200' },
+            },
+          ]),
+        })
+      })
+
+      await signUpToAreaCard(page, {
+        name: `e2e-av-${epoch} Marker`,
+        email: `e2e-av-${epoch}@gmail.com`,
+        password: `e2e-av-pw-${epoch}`,
+      })
+
+      // No map-shaped claim BEFORE the address resolves: the card holds the
+      // address field and nothing map-shaped at all.
+      expect(await page.getByTestId('onboarding-area-map').count()).toBe(0)
+
+      const address = page.getByPlaceholder('e.g. 1200 1st Ave S, Seattle')
+      await address.fill(ADDRESS)
+      // BLUR (not Finish) schedules the early resolution (debounced): the
+      // one request yields the pin, and the card draws it with the radius
+      // circle the parent is about to choose.
+      await address.blur()
+      const areaMap = page.getByTestId('onboarding-area-map')
+      await expect(areaMap).toBeVisible({ timeout: 30_000 })
+
+      // NON-VACUOUS: the container is a LIVE Leaflet map and BOTH overlays
+      // are painted — a blank bordered box also "has no error", so the
+      // spec asserts the elements, not the throw's absence. Pin and disc are
+      // BOTH red `#dc2626` paths, so each is identified by fill-opacity
+      // (pin 0.85, disc 0.08 — the identification places-map-view uses at
+      // its lines 1610/1665; there the disc is absent by context, here it is
+      // not, so the opacity is what disambiguates).
+      await expect(areaMap).toHaveClass(/leaflet-container/)
+      const homePin = areaMap.locator('path.leaflet-interactive[fill="#dc2626"][fill-opacity="0.85"]')
+      await expect(homePin).toHaveCount(1)
+      const radiusCircle = areaMap.locator('path.leaflet-interactive[stroke="#dc2626"][fill-opacity="0.08"]')
+      await expect(radiusCircle).toHaveCount(1)
+      expect(nominatimCalls).toBe(1)
+
+      // A radius change redraws the circle CLIENT-SIDE (the map's overlay
+      // re-key) — a bigger disc, the same camera framing rule — and NO
+      // second Nominatim request.
+      const before = await radiusCircle.getAttribute('d')
+      await page.locator('select').first().selectOption({ label: '1 mile' })
+      if (before !== null) {
+        await expect(async () => {
+          expect(await radiusCircle.getAttribute('d')).not.toBe(before)
+        }).toPass({ timeout: 30_000 })
+      }
+      expect(nominatimCalls).toBe(1)
+
+      // Finish REUSES the settled resolution — the single request stands.
+      await page.getByRole('button', { name: 'Finish' }).click()
+      await page.getByTestId('first-run-finish-card').waitFor({ timeout: 30_000 })
+      expect(nominatimCalls).toBe(1)
+      await page.getByRole('button', { name: 'Go to your feed' }).click()
+      await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible({
+        timeout: 30_000,
+      })
+      expect(new URL(page.url()).pathname).toBe('/')
+      await expect(page.getByTestId('feed-location-control')).toContainText(marker.homeZip)
+    } finally {
+      await close()
+    }
+  },
+)
