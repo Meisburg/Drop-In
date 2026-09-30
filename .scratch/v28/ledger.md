@@ -1888,3 +1888,21 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   a boot splash is *designed* to look like "still loading", so "did the page load?" passes
   while the app never runs. **A screenshot from the human was the only thing in this batch
   that caught it** -- no gate, guard, reviewer or verifier could see it.
+- **A PRODUCT-FACING SUMMARY NOW EXISTS: `V28-BATCH-SUMMARY.md`** (repo root, matching the
+  `V27-BATCH-SUMMARY.md` convention the repo already keeps). Written because the human
+  asked for something to show a product agent, and the honest answer was that nothing
+  suitable existed: `plan.md` is EXECUTOR-grade (1974 lines of file paths, acceptance
+  criteria and gates -- a product reader drowns, and worse, may act on implementation
+  detail), and `PRODUCT.md` **has zero mentions of onboarding or the first run**, so it
+  predates this batch entirely. The summary states the journey, what shipped, the evidence,
+  the decisions with their rationale, what the playtest changed, what is decided but NOT
+  built, the five open product questions, the gaps, and how to review.
+  * **It carries NO secrets.** The Vercel bypass link is described as "ask Jon" rather than
+    written down -- the repo is pushed, and a credential in a pushed file is a leak with a
+    commit history.
+  * Every number in it is measured, not recalled: 86 commits, 96 files, +14561/-2158, zero
+    migrations, 66 files / 1989 tests, lint 0/81, 161 e2e passed, 9/9 playtest routes,
+    1287 marker rows swept to zero, CI green.
+  * It names the batch's **main open verification** rather than burying it: the resume fix
+    is covered by two non-vacuous tests but **no human has ever exercised it**, because the
+    person who walked the flow went straight through.
