@@ -24,6 +24,15 @@ Do not edit them** — with exactly one exception, below.
   `hasPhoto` (`:300`), the two comments that describe `photoCardDone` (`:72`, `:233`), and the
   measured comment sweep (`:55,58,177,229,455,573,705,808,869`)
 - `src/lib/avatarUrl.test.ts` — a comment that refers to "the … hasPhoto fact today" (`:7`)
+- **`src/lib/firstRunCopy.ts` + `src/lib/firstRunCopy.test.ts`** — ⚠️ **added to this slice after
+  1a's builder proved the slice cannot go green without them**, and I re-measured it myself.
+  `FIRST_RUN_COPY` is typed `Record<FirstRunCardId, FirstRunCardCopy>` and still carries a `photo`
+  entry (`firstRunCopy.ts:44`), read at `OnboardingPage.tsx:819,829`; `firstRunCopy.test.ts:29`
+  reads `.photo.skipLabel`. Delete the `photo` entry and fix that test's card list.
+  **Slice 2 owns the copy *wording*; you own the entry's removal** — a mechanical consequence of
+  the model change. **Quote the deleted `photo` wording verbatim in your report**: slice 2 will
+  want that sentence when it puts a photo control on the name card, and quoting it saves someone
+  digging through git history for it.
 - `src/pages/LoginPage.tsx` — comment sweep only (`:31,105,150,228`)
 - `src/components/FirstRunCard.tsx` — doc comment (`:37`)
 - `e2e/fixtures.ts` (`:337,341,389,390,391,435,439,449`), `e2e/auth.setup.ts`
@@ -90,8 +99,15 @@ npm run verify
 npx playwright test e2e/onboarding-resume.e2e.ts e2e/signup-zip-fallback.e2e.ts
 ```
 
-Report both **exit codes** and the **test counts** verbatim (baseline: 66 test files / 1989
-tests, 0 lint errors / 81 warnings). If a count moved for a reason outside this slice, say so.
+⚠️ **`npm run verify` is RED at your base commit and closing it is your job.** Slice 1a removed
+`'photo'` from the card union; **six `tsc` errors and one failing test remain, all of them in
+files that are now in your scope.** The measured errors are: `App.tsx:167`, `OnboardingPage.tsx:300`,
+`OnboardingPage.tsx:829`, `OnboardingPage.tsx:832`, `firstRunCopy.ts:44`, `firstRunCopy.test.ts:29`.
+
+**This slice's gate is the pair 1a + 1b: `npm run verify` must exit 0 when you are done.** Report
+both **exit codes** and the **test counts** verbatim (baseline: 66 test files / 1989 tests, 0 lint
+errors / 81 warnings — note 1a removed exactly one test, the deleted photo-card test, so 1988 is
+the honest expectation). If a count moved for a reason outside this slice, say so.
 
 ## Budget
 
@@ -103,3 +119,8 @@ tests, 0 lint errors / 81 warnings). If a count moved for a reason outside this 
 Structured: what changed, both verification output tails, the acceptance criteria **one by one**
 with the grep output pasted, anything you could not satisfy, and **any fact in this brief you
 found to be wrong** — a wrong brief is a finding, not your failure.
+
+**And one mandatory field: `Committed as: <sha7>`** — or, if you did not commit, say so plainly
+and say why. A missing commit is not a formality: **two builders in this batch have reported DONE
+on an uncommitted tree** and the orchestrator had to commit their work by hand. Your report is
+what tells me which world I am in.

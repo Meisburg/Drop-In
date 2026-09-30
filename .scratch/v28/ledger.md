@@ -2174,3 +2174,44 @@ mechanism I have not measured. Both times the grep took ten seconds.
   never deleted. Deleting them would quietly turn the resume tests into tests of nothing, which is
   the vacuity class already found three times in this batch. Slice 1b's brief now says so and
   requires the builder to say which card it picked and why.
+
+## Slice 1a ACCEPTED -- and it found a plan defect of mine
+
+Report: `.scratch/v28/reports/slice-1a-r2.md`. In-scope work VERIFIED, not taken on trust:
+
+- 2 files, +24/-37: `firstRun.ts` and its test. Nothing else touched. Human-readable diff.
+- **The non-vacuity proof, run in BOTH directions** -- the strongest evidence in this batch so far:
+  (a) a scratch removal of a card from `FIRST_RUN_CARDS` made `progressLabel` read **"1 of 3"**,
+  proving the denominator is genuinely derived from the array and not a literal;
+  (b) restoring the **OLD** source against the **NEW** test produced **3 failures**, proving the
+  assertions can actually fail. This batch has found the vacuity class three times; a builder that
+  proves its own tests can fail is the fix for it.
+- 1a's lib test 18/18; lint 0 errors, warnings at baseline.
+- Test count 1989 -> 1988: **exactly the deleted photo-card test.** No count moved for a reason
+  outside the slice, and the builder said so -- which is what made it checkable.
+
+### THE PLAN DEFECT (mine, #25): the 1a/1b split was not a split
+
+The brief claimed "the build stays green in 1b." **False, and the builder measured it.** Removing
+`'photo'` from `FirstRunCardId` is a TYPE-LEVEL change: `FIRST_RUN_COPY` is declared
+`Record<FirstRunCardId, FirstRunCardCopy>` and still carries a `photo` entry
+(`firstRunCopy.ts:44`), read at `OnboardingPage.tsx:829`, with a test on `.photo.skipLabel`
+(`firstRunCopy.test.ts:29`). Six `tsc` errors, none of them in 1a's files.
+
+**RULING: 1a and 1b are ONE slice in two builder contexts, and the gate applies to the pair.**
+1a's commit `0f745af` is therefore RED BY DESIGN and says so in its own message -- committing red
+is tolerable; doing it silently is not. **1b's scope now absorbs `firstRunCopy.ts` +
+`firstRunCopy.test.ts`** for the *entry removal only*; the copy *wording* stays slice 2's.
+
+### THE THIRD "DONE WITHOUT A COMMIT"
+
+The builder reported DONE with both files still ` M` in the tree. Caught by running `git status`
+**before** believing the report -- the batch's rule that a claim is not evidence. Occurrence #3
+(slice 6, 7b Job 1, now 1a), so per the project's own rule it gets more than a resolution to be
+careful:
+
+- **Every builder brief now requires a mandatory `Committed as: <sha7>` field**, with
+  "not committed" as an explicitly permitted answer -- so a missing field is evidence rather than
+  silence. Added to slice 1b's report contract; every brief after it inherits it.
+- **The orchestrator checks `git log`/`git status` before treating any DONE as done.** Done this
+  time, which is the only reason 1a's verified work is in git at all.

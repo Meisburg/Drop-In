@@ -177,6 +177,20 @@ Each slice: objective → files → approach → acceptance → verify → depen
 **`e2e/fixtures.ts` is a per-slice obligation** — 17 spec files call `finishSignup`, so a slice
 that changes the card sequence must keep them walking it.
 
+### ⚠️ Slice 1 is ONE slice dispatched in two builder contexts: 1a + 1b
+
+**Measured defect in this plan, found by 1a's builder and confirmed by me:** removing `'photo'`
+from `FirstRunCardId` is a **type-level** change. `FIRST_RUN_COPY` is declared
+`Record<FirstRunCardId, FirstRunCardCopy>` and still carries a `photo` entry
+(`src/lib/firstRunCopy.ts:44`), read at `src/pages/OnboardingPage.tsx:829`; one test reads
+`.photo.skipLabel` (`firstRunCopy.test.ts:29`). So **1a cannot satisfy the gate alone** — it
+leaves six `tsc` errors in files it does not own. The split was made for token budget, not for
+independence, and the brief's claim that "the build stays green in 1b" was simply false.
+
+**Ruling:** 1a and 1b are **one slice in two parts**, and **the gate applies to the pair**
+(`npm run verify` must exit 0 at the end of 1b). 1a's commit is red by design and is labelled as
+such — a red commit nobody explains is indistinguishable from a mistake.
+
 ### Slice 1a — the model loses `photo`, the denominator becomes 4
 
 - **Objective.** `firstRun.ts` and its test describe four cards.
@@ -194,10 +208,14 @@ that changes the card sequence must keep them walking it.
 
 ### Slice 1b — every call site and every stale "of 5" tells the truth
 
-- **Objective.** The app and its specs stop saying five.
-- **Files.** `src/App.tsx` (`:163`), `src/pages/OnboardingPage.tsx` (gate `:828`, state `:237`,
-  card JSX `:848`, comment sweep per fact 3), `src/pages/LoginPage.tsx` (comment sweep),
-  the four e2e files in fact 3.
+- **Objective.** The app and its specs stop saying five, and `npm run verify` goes green.
+- **Files.** `src/App.tsx` (`:167`, plus the comment at `:93`), `src/pages/OnboardingPage.tsx`
+  (gate `:828`, state `:237`, card JSX `:848`, the facts object `:300`, the `photoCardDone`
+  comments `:72,233`, the copy read `:819,829`, comment sweep per fact 3),
+  `src/pages/LoginPage.tsx` (comment sweep), **`src/lib/firstRunCopy.ts` +
+  `src/lib/firstRunCopy.test.ts` (delete the `photo` entry — see the ruling above; the copy
+  *wording* stays slice 2's)**, `src/lib/avatarUrl.test.ts` (`:7`), and the four e2e files in
+  fact 3.
 - **Approach.** Delete the photo card's gate, state, JSX and testid; stop passing `hasPhoto`;
   reword every measured "of 5" occurrence — **the list in fact 3 is the scope, and a grep for
   `of 5` afterwards must come back empty in `src/`**.
