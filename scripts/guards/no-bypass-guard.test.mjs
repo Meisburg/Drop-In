@@ -101,14 +101,37 @@ function externalCopy() {
 }
 
 // An ordinary, non-linked checkout.
+//
+// NO HARDLINKS — a gate must not go red on a race.
+// `git clone` of a LOCAL path hardlinks the source's objects instead of copying
+// them, and git then verifies each hardlink against the source it came from. If
+// that source changes while the clone is copying, the clone dies with
+// `fatal: hardlink different from source at '/tmp/…/commit-graphs/tmp_graph_…'`
+// and the WHOLE gate fails on a test that has nothing to do with the slice. This
+// was observed once and recorded in task-state.md as a known flake (`1 failed |
+// 1783 passed`), and it bites hardest exactly where it hurts most: the tracked
+// pre-push hook runs this suite WHILE `git push` is running.
+//
+// `--no-hardlinks` removes the mechanism rather than the symptom: measured on
+// this repo, the pack file's link count at the clone goes from 2 (shared inode,
+// verified against the source) to 1 (an independent copy, nothing to verify).
+// 16 MiB of objects, so the copy costs ~nothing.
+//
+// The two `gc` lines below are BELT AND BRACES, not a confirmed cause: I could
+// not identify the concurrent commit-graph writer (a fresh bare does not gain a
+// commit-graph from the seed push — checked). They make this test's own bare
+// incapable of spawning one, which is cheap even though the hardlink fix alone
+// already covers the failure.
 function plainClone() {
   const root = tmp('nb-plain-')
   const bare = path.join(root, 'plain.git')
   must('init bare', git(root, ['init', '--bare', '-q', bare]))
   must('set bare HEAD', git(bare, ['symbolic-ref', 'HEAD', 'refs/heads/master']))
+  must('no auto-gc', git(bare, ['config', 'gc.auto', '0']))
+  must('no commit-graph', git(bare, ['config', 'gc.writeCommitGraph', 'false']))
   must('push seed', git(REPO_ROOT, ['push', '--no-verify', '-q', bare, 'HEAD:refs/heads/master']))
   const clone = path.join(root, 'clone')
-  must('clone', git(root, ['clone', '-q', bare, clone]))
+  must('clone', git(root, ['clone', '-q', '--no-hardlinks', bare, clone]))
   copyFileSync(GUARD_ABS, path.join(clone, ...GUARD_REL.split('/')))
   must('repo layer', git(clone, ['config', 'core.hooksPath', 'scripts/git-hooks']))
   return { root, bare, clone }
