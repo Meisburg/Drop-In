@@ -3620,3 +3620,59 @@ file**, one of them the regression pin.
 The reviewer is told the previous reviewer's reasoning error explicitly, so a plausible-sounding argument
 is not mistaken for evidence; it is asked whether the generation could move in the wrong place, and whether
 the described mutation failure is the RIGHT failure.
+
+## Slice 3 FIX ROUND 2 VERDICT: reviewer **PASS**, verifier **FAIL** -- and the FAIL is a RACE in the pin
+
+**The verifier failed check 2 on the regression pin itself:**
+```
+✘  6 fix round 2 (R1): a re-picked photo on a persisted row re-mints and the card shows the NEW image
+   Error: the re-pick overwrote the canonical path with DIFFERENT bytes (photo B, not photo A)
+   expect(received).toBe(false)  Received: true
+```
+Checks 1 and 3 were green and exact (**68 files / 2001 tests / 0 errors / 81 warnings**); only the pin failed.
+
+### ⚠️ THE PRODUCT IS CORRECT. THE TEST READ ONCE AND DID NOT WAIT. Here is the chain.
+1. `uploadKidPhoto` -> `uploadPrivatePhotoObject`, which writes with **`upsert: true`** (`db.ts:2748`).
+   **An overwrite of an existing object is supported.**
+2. `photoGen` is bumped **only inside the success branch** of the re-pick; the `catch` does not bump.
+3. **The verifier watched the fresh mint FIRE** -- and the key can only change through that bump, which can
+   only happen on success.
+4. **Therefore the upload succeeded and the object WAS overwritten.**
+So the byte fetch happened **before the overwrite was visible to that read**. **This is a test-race, not a
+product defect, and "fixing" the product in response would break something that works.**
+
+### ⚠️ THE REVIEWER PASSED THAT SAME TEST *BY READING IT* -- and described the assertion that then failed
+Its report says test 5 pins *"different object bytes at the UNCHANGED canonical path"* -- it read the test,
+checked that the assertion existed, and passed it. **It never ran it. The verifier ran it and it failed.**
+**Reading a test is not running it.** That is the third time in this slice that a lane which *executed*
+something caught what a lane that *reasoned* about it could not.
+
+### AND BOTH REPORTS WERE TRUE -- which is the whole lesson
+The builder reported 6/6 passing; the verifier reported 1 failed. **Both are accurate, because it is a
+race.** **So the builder did not make a false claim, and it must not now "fix" a defect the evidence says
+is not there** -- its brief says that twice, in bold, at the top.
+
+### ⚠️ MY BRIEF WAS THE DEFECT THIS TIME
+My verify brief named the two known flakes and said *"re-run once before reporting either."* The verifier
+applied exactly that rule, correctly: it checked, found this was **not** either named flake, and therefore
+**did not re-run it** -- so **a single red sample stood as a verdict.**
+
+**PROCESS RULE (new, and it cuts in both directions): ONE SAMPLE IS NOT EVIDENCE, GREEN OR RED.**
+- **A red sample must be re-run once before it is reported as a failure** -- one red run cannot distinguish
+  a flake from a defect, **and the two demand opposite responses** (fix code vs fix test).
+- **A green sample must not be reported as proof a fix works** -- the builder's single green run is exactly
+  what produced this round.
+
+**Both halves are the same mistake: treating one observation as a property.** It is also the second time I
+have written a brief that enumerated the acceptable cases instead of stating the general rule -- the first
+was the unbounded "confirm this yourself" that killed a verifier lane at 30 minutes. **Enumerate examples
+if you like, but state the RULE, because a lane will follow the rule exactly and only the rule.**
+
+### Credit where it is due: the verifier caught its OWN masking
+It reported that *"the exit code of this run was masked by the `| tail` pipe in my invocation"* and named
+the raw `1 failed` summary as the authority. **A lane that flags the weakness in its own evidence is worth
+more than a lane that reports a clean number.**
+
+**FIX ROUND 3 DISPATCHED** (resume, run `f0e6c9f0`) -- bounded to the test: make the byte assertion poll,
+do the same for the src assertion if equally immediate, **change no product code**, run the spec **at least
+three times**, and re-prove the mutation so the wait cannot be so generous it can never fail.
