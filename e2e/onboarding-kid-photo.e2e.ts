@@ -694,11 +694,54 @@ test(
     expect(srcAfter, 'the swapped src must be a fresh signed URL').toContain('token=')
 
     // New bytes at the SAME canonical path: the object's bytes changed.
-    const objectB = Buffer.from(await (await fetch(`${url}/storage/v1/object/${storedRef}`, { headers })).arrayBuffer())
-    expect(
-      objectB.equals(objectA),
-      'the re-pick overwrote the canonical path with DIFFERENT bytes (photo B, not photo A)',
-    ).toBe(false)
+    // READ THROUGH A FRESH SIGNED URL, not the plain object URL (fix round 3):
+    // the storage edge caches the object's read response per PATH for up to an
+    // hour — measured live: a poll of the plain read served the FIRST
+    // generation's bytes for 90+ seconds with `cf-cache-status: HIT, cc=
+    // public, max-age=3600`, while a freshly minted signed URL (unique token,
+    // therefore a unique cache key) served the re-pick's bytes immediately. A
+    // cache-busting query string does NOT bypass it (measured: a `?cb=` read
+    // answered `cf-cache-status: HIT` off the same entry), so the only fresh
+    // read is a per-poll MINT — the same path the browser's <img> uses. The
+    // poll stays bounded (30s): the upsert already landed before the mint the
+    // test just watched, so a write-visibility lag of that size would itself
+    // be a failure worth surfacing, not a wait to absorb.
+    const mintKidPhotoUrl = async () => {
+      const mr = await fetch(
+        `${url}/storage/v1/object/sign/kid-photos/${viewerSession!.userId}/kids/${row.id}`, {
+          method: 'POST',
+          headers: {
+            apikey: anonKey,
+            Authorization: `Bearer ${viewerSession!.accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ expiresIn: 60 }),
+        },
+      )
+      const mj = await mr.json()
+      const rel: unknown = (mj as { signedURL?: unknown; signedUrl?: unknown }).signedURL ??
+        (mj as { signedURL?: unknown; signedUrl?: unknown }).signedUrl
+      if (typeof rel !== 'string') throw new Error(`sign mint failed: HTTP ${mr.status}`)
+      return rel.startsWith('http') ? rel : `${url}/storage/v1${rel}`
+    }
+    await expect
+      .poll(
+        async () => {
+          const signedUrl = await mintKidPhotoUrl()
+          const objectB = Buffer.from(await (await fetch(signedUrl)).arrayBuffer())
+          return objectB.equals(objectA)
+        },
+        {
+          message:
+            `waits for the re-pick's OVERWRITE to become visible at the canonical path (${storedRef}): ` +
+            `the bytes must stop matching photo A's ${objectA.length} bytes ` +
+            '(the upsert already landed — the fresh mint above proves the success branch ran; ' +
+            'each poll mints its own signed URL, because the edge caches the plain read per path for an hour)',
+          timeout: 30_000,
+          intervals: [500],
+        },
+      )
+      .toBe(false)
 
     // The DB row is unchanged in shape: a re-pick re-attaches the SAME
     // deterministic ref (the generation is client-side state, not a column).
