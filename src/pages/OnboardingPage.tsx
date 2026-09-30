@@ -13,6 +13,7 @@ import {
   addKid,
   createProfile,
   HandleTakenError,
+  kidAgeFromInput,
   listKids,
   listPlaces,
   loadZipCodes,
@@ -37,6 +38,7 @@ import { finishRunPlaces, type FinishRunPlace } from '../lib/places'
 import { splitSuggestedName, suggestedHandle } from '../lib/oauth'
 import { ADDRESS_LOOKUP_TIMEOUT_MS, zipFromAddressQueryBounded } from '../lib/geocode'
 import { PHOTO_UPLOAD_TIMEOUT_MS, photoUploadBlocksContinue } from '../lib/photoUpload'
+import { newKidRowKey } from '../lib/kidRowKey'
 import { resolveOnboardingRedirect } from '../lib/onboarding'
 import { errorId, fieldA11y } from '../lib/a11y'
 
@@ -73,6 +75,7 @@ function KidRowPhoto({
   storedPhoto,
   locked,
   onBeginError,
+  onPickStart,
   onConfirm,
   onLockChange,
 }: {
@@ -94,9 +97,18 @@ function KidRowPhoto({
       two rows never race the shared bitmap's release. */
   locked: boolean
   /** A rejected file (the ≤5MB / image-only gate, an unreadable decode):
-      surfaced on the card, never a silent no-op (fix round 1, F4 — the
-      name card's picker does the same). */
+      SET on the card, never a silent no-op (fix round 1, F4). Only the SET
+      half lives here — the CLEAR half is `onPickStart` below (fix round 2,
+      R5): without it a rejected file's message outlived a subsequent valid
+      pick, and on a persisted row the name/age inputs are disabled, so
+      `updateKidRow` could not clear it either. The name card's parity is in
+      the clear-before-each-attempt, not the set. */
   onBeginError: (message: string) => void
+  /** A pick attempt STARTED (a file was chosen, before `beginCrop`): the
+      page clears the card's error, so a rejected file's message never
+      survives the next pick — the same clear-before-each-attempt the name
+      card's picker does with `photoError` (fix round 2, R5). */
+  onPickStart: () => void
   /** `Promise<void>` on purpose (fix round 1, F6): the hook's `finally`
       closes the bitmap the moment this resolves. A `void`-typed prop is
       what let a fire-and-forget call stay invisible to the type system
@@ -155,6 +167,10 @@ function KidRowPhoto({
             const file = e.target.files?.[0]
             e.target.value = ''
             if (file === undefined || file === null) return
+            // R5: clear the card's error BEFORE the attempt (the name card's
+            // parity) — a stale rejection must not sit next to the photo a
+            // subsequent valid pick + confirm adds.
+            onPickStart()
             const error = await crop.beginCrop(file)
             if (error !== null) onBeginError(error)
           }}
@@ -304,14 +320,26 @@ export function OnboardingPage() {
   // photo's crop-confirm writes it — handleKidPhotoConfirm below). A row
   // with a kid is never re-written by Continue, and its Remove removes the
   // REAL row, not just the local state. Fix round 1 (F2): `key` is the
-  // row's STABLE client identity (crypto.randomUUID at add) — every write
-  // after an `await` attaches to it, never the array index (a row removed
-  // above an in-flight confirm re-indexes the array; index-attached maps
-  // then land on the wrong row, or none).
+  // row's STABLE client identity (minted OUTSIDE the state updater, via
+  // lib/kidRowKey's newKidRowKey — fix round 2 R2: updaters are pure,
+  // StrictMode double-invokes them, and a `crypto.randomUUID()` inside
+  // would mint a different key per invocation; R3: the helper carries the
+  // non-secure-context fallback, since a phone on a plain-HTTP LAN address
+  // has no `crypto.randomUUID`) — every write after an `await` attaches to
+  // it, never the array index (a row removed above an in-flight confirm
+  // re-indexes the array; index-attached maps then land on the wrong row,
+  // or none). `photoGen` is how many times this row's photo has been
+  // (re-)uploaded (fix round 2, R1): a re-pick writes the DETERMINISTIC
+  // stored ref `kidPhotoStoredRef(uid, kidId)` — same id, same marker,
+  // same `avatar_url` STRING — so the id set alone cannot see NEW BYTES
+  // at the same path; only the generation moves. It is folded into
+  // `persistedKidKey` below, which is what makes a re-pick re-mint and
+  // the `<img>` re-fetch.
   const [kidRows, setKidRows] = useState<Array<{
     key: string
     name: string
     age: string
+    photoGen: number
     kid: Kid | null
   }>>([])
   const [kidsError, setKidsError] = useState<string | null>(null)
@@ -384,23 +412,31 @@ export function OnboardingPage() {
   // V28 r2 slice 3: the persisted rows (written by the photo's crop-confirm)
   // — the signed-URL read keys on them (kid photos are private: they render
   // through useKidPhotoUrls, never the raw avatar_url column). Fix round 1
-  // (F3): key the memo on the id set + photo marker, NOT on `kidRows` — a
+  // (F3): key the memo on the rows' PERSISTED FACTS, NOT on `kidRows` — a
   // keystroke in a non-persisted row's inputs yields a fresh `kidRows`
   // array, and `useKidPhotoUrls`'s minting effect is keyed on the passed
   // array's IDENTITY, so a per-keystroke array re-minted the signed URLs
-  // every time. The key below only changes when a row's persisted kid (or
-  // its photo marker) changes, so typing never re-mints. Soundness of the
-  // key: between two renders with the same key the only difference a row's
-  // `kid` object can have is a re-pick's re-attached `avatar_url` — the
-  // same canonical ref string, same non-empty marker — which is all the
-  // hook consumes (ids + "claims a photo"). Measured (fix round 1): with
-  // the memo keyed on `kidRows`, a keystroke in a non-persisted row re-minted
-  // and the settled photo's src SWAPPED to the fresh URL on every keystroke
+  // every time. Fix round 2 (R1): the key must change when the IMAGE
+  // changes, not just when the id set does. `uploadKidPhoto` writes the
+  // DETERMINISTIC ref `kidPhotoStoredRef(uid, kidId)`, so a re-pick on a
+  // persisted row leaves the id, the photo marker, AND the `avatar_url`
+  // string all unchanged — and a hook that consumes only the id set cannot
+  // see NEW BYTES at the same path: without a change signal the memo keeps
+  // its identity, the hook never re-mints, and the freshly uploaded photo
+  // (which OVERWROTE the canonical path) stays invisible for the rest of
+  // the mount — the card shows the OLD image while lying about a re-pick
+  // that succeeded. The per-row `photoGen` (bumped by
+  // handleKidPhotoConfirm's re-pick branch) is that signal: it moves only
+  // when new bytes land at the path. Measured (fix round 1): with the memo
+  // keyed on `kidRows`, a keystroke in a non-persisted row re-minted and
+  // the settled photo's src SWAPPED to the fresh URL on every keystroke
   // (the render never blanked — the new URL is valid for the same object —
   // but the <img> reloaded every time, and every keystroke paid a batched
   // sign round-trip).
   const persistedKidKey = kidRows
-    .map((row) => (row.kid === null ? '' : `${row.kid.id}:${row.kid.avatar_url ? 1 : 0}`))
+    .map((row) =>
+      row.kid === null ? '' : `${row.kid.id}:${row.kid.avatar_url ? 1 : 0}:${row.photoGen}`,
+    )
     .join('|')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const persistedKids = useMemo(
@@ -589,10 +625,11 @@ export function OnboardingPage() {
 
   function addKidRow() {
     setKidsError(null)
-    setKidRows((rows) => [
-      ...rows,
-      { key: crypto.randomUUID(), name: '', age: '', kid: null },
-    ])
+    // R2: minted OUTSIDE the updater (it is pure — see the state's comment);
+    // R3: the lib helper (the non-secure-context fallback a bare
+    // `crypto.randomUUID()` would throw on a phone at a LAN address).
+    const key = newKidRowKey()
+    setKidRows((rows) => [...rows, { key, name: '', age: '', photoGen: 0, kid: null }])
   }
 
   /** Fix round 1 (F2): keyed on the row's stable identity, never the array
@@ -651,7 +688,9 @@ export function OnboardingPage() {
     const bad: Array<{ key: string; message: string }> = []
     for (const row of kidRows) {
       if (row.name.trim() === '' && row.age.trim() === '') continue
-      const age = row.age.trim() === '' ? NaN : Number(row.age)
+      // R4: the blank-age rule in its one domain home (kidAgeFromInput,
+      // next to validateKidAge in lib/db) — blank → NaN, never 0.
+      const age = kidAgeFromInput(row.age)
       const kidError = validateKid(row.name, age)
       if (kidError !== null) bad.push({ key: row.key, message: kidError })
     }
@@ -693,7 +732,17 @@ export function OnboardingPage() {
         setKidRows((rows) =>
           rows.map((r) =>
             r.key === rowKey && r.kid !== null
-              ? { ...r, kid: { ...r.kid, avatar_url: storedRef } }
+              ? {
+                  ...r,
+                  kid: { ...r.kid, avatar_url: storedRef },
+                  // R1: the re-pick just overwrote the canonical path with
+                  // NEW bytes. `storedRef` is the SAME deterministic string
+                  // it already was, so the id set + photo marker would not
+                  // have seen this — the generation bump is the move that
+                  // carries "the image changed" into `persistedKidKey` and
+                  // re-mints (the <img> re-fetches the fresh URL).
+                  photoGen: r.photoGen + 1,
+                }
               : r,
           ),
         )
@@ -707,8 +756,10 @@ export function OnboardingPage() {
     //    written — same as Continue's blank-row rule.
     if (row.name.trim() === '' && row.age.trim() === '') return
     // 1. The same pure seam the card has always used — with the SAME
-    //    blank-age mirror (F1): blank age → NaN, never `Number('')` === 0.
-    const age = row.age.trim() === '' ? NaN : Number(row.age)
+    //    blank-age mirror (F1) in its ONE domain home (R4: kidAgeFromInput
+    //    next to validateKidAge in lib/db): blank age → NaN, never
+    //    `Number('')` === 0.
+    const age = kidAgeFromInput(row.age)
     const kidError = validateKid(row.name, age)
     if (kidError !== null) {
       // Not written, not uploaded — the card stays usable with the same
@@ -788,7 +839,12 @@ export function OnboardingPage() {
     let failed = false
     for (const row of pendingKidRows) {
       try {
-        await addKid(session.user.id, row.name, Number(row.age))
+        // R4: the SAME helper as the other two sites — pre-R4 this write
+        // used a bare `Number(row.age)` (blank → 0, a fabricated age-0 kid)
+        // that was safe only because invalidKidRows ran first, and that
+        // order of two unrelated statements is what a future edit could
+        // delete. The helper makes the rule order-independent.
+        await addKid(session.user.id, row.name, kidAgeFromInput(row.age))
       } catch (err) {
         setKidsError(
           err instanceof Error
@@ -1199,6 +1255,7 @@ export function OnboardingPage() {
                     storedPhoto={row.kid !== null && row.kid.avatar_url !== null && row.kid.avatar_url !== ''}
                     locked={kidPhotoLockKey !== null && kidPhotoLockKey !== row.key}
                     onBeginError={setKidsError}
+                    onPickStart={() => setKidsError(null)}
                     onConfirm={(k, source, rect) => handleKidPhotoConfirm(k, source, rect)}
                     onLockChange={handleKidPhotoLockChange}
                   />

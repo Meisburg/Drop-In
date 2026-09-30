@@ -18,6 +18,7 @@ import {
   missingProfileItems,
   validateAvatarFile,
   validateBio,
+  kidAgeFromInput,
   validateKid,
 } from './db'
 
@@ -102,6 +103,32 @@ describe('validateKid (V2 ticket 02 — first name + age only, the privacy pin)'
 
   it('rejects non-integer ages', () => {
     expect(validateKid('Ava', NaN)).toMatch(/0 to 17/)
+  })
+})
+
+describe('kidAgeFromInput (the blank-age rule, V28 r2 fix round 2 R4)', () => {
+  it('a blank age input is NaN, never 0 (0 is a LEGAL age, so a name-only row must be refused)', () => {
+    expect(kidAgeFromInput('')).toBeNaN()
+    expect(kidAgeFromInput('   ')).toBeNaN()
+    // The trap this exists for: the bare `Number('')` the Continue write used
+    // pre-R4 is 0, and `validateKid` passes 0 — a fabricated age-0 kid.
+    expect(Number('')).toBe(0)
+    expect(kidAgeFromInput('')).not.toBe(Number(''))
+  })
+
+  it('a filled age input is Number-parsed (whitespace-trimmed)', () => {
+    expect(kidAgeFromInput('6')).toBe(6)
+    expect(kidAgeFromInput('  12 ')).toBe(12)
+  })
+
+  it('a non-numeric age input is NaN (the same refusal, not a crash)', () => {
+    expect(kidAgeFromInput('abc')).toBeNaN()
+  })
+
+  it('feeds the age seam: blank is refused by validateKid, a real 0 is legal', () => {
+    expect(validateKid('Ava', kidAgeFromInput(''))).toMatch(/0 to 17/)
+    expect(validateKid('Ava', kidAgeFromInput('0'))).toBeNull()
+    expect(validateKid('Ava', kidAgeFromInput('7'))).toBeNull()
   })
 })
 

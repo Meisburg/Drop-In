@@ -39,6 +39,19 @@
  *        the row array) — test 1 counts the sign requests around a typed
  *        row and asserts the settled photo never blanks.
  *
+ * Fix round 2 (the regression round — fix round 1's keying was reviewed by
+ * `ocr` and found to have killed a refresh):
+ *   R1 — a re-pick on a PERSISTED row must re-mint and the card must show
+ *        the NEW image. `uploadKidPhoto` writes the DETERMINISTIC stored ref
+ *        (`kidPhotoStoredRef(uid, kidId)`), so a re-pick leaves the id, the
+ *        photo marker, AND the `avatar_url` string all unchanged — a key
+ *        that stopped at the id set cannot see NEW BYTES at the same path,
+ *        and the freshly uploaded photo (which OVERWROTE the canonical
+ *        path) would stay invisible for the rest of the mount. The key now
+ *        carries a per-row `photoGen` (bumped on the re-pick), and test 5
+ *        pins the fresh mint + the src swap. (8b also owns the F3 test's
+ *        flake window and the inert eslint-disable — not this round.)
+ *
  * WHAT THIS SPEC PROVES, precisely:
  *   test 1 — a kid WITH a photo + a kid WITHOUT one, Continue → the DB holds
  *            EXACTLY those two rows (no double-write of the persisted row),
@@ -56,7 +69,13 @@
  *   test 4 — F2/F5: a persisted row removed from a NON-EMPTY list (the row
  *            beneath it re-indexes) → the survivor is intact, Continue is
  *            enabled (the lock is not stranded), and the DB holds exactly
- *            the survivor.
+ *            the survivor;
+ *   test 5 — R1: a re-picked photo on a PERSISTED row (photo B over photo
+ *            A, same canonical path) → a FRESH signed-URL mint fires, the
+ *            card's src swaps to the new URL (the <img> re-fetches), and
+ *            the object's BYTES at the unchanged path are the new image —
+ *            the regression the fix round 1 keying introduced, pinned so it
+ *            cannot come back silently.
  *
  * Viewer pattern (the onboarding-resume one): one DETERMINISTIC viewer
  * (`e2e-okp-<epoch>` prefix, sweepable by the orchestrator) in a FRESH
@@ -576,3 +595,130 @@ test(
   },
 )
 
+
+test(
+  'fix round 2 (R1): a re-picked photo on a persisted row re-mints and the card shows the NEW image',
+  async ({ browser }) => {
+    const context = await freshViewer(browser)
+    const page = await context.newPage()
+
+    const epoch = Math.floor(Date.now() / 1000)
+    const viewerEmail = `e2e-okp-repick-${epoch}@gmail.com`
+    const viewerPassword = `e2e-okp-repick-pw-${epoch}`
+
+    await createAccountToKidsCard(page, {
+      email: viewerEmail,
+      password: viewerPassword,
+      givenName: `e2e-okp-repick-${epoch}`,
+    })
+    await page.getByRole('button', { name: 'Add a kid' }).click()
+    await page.locator('input[placeholder="First name"]').first().fill('Avery')
+    await page.locator('input[placeholder="Age"]').first().fill('8')
+
+    // First pick (photo A) — the row is PERSISTED at its confirm (the
+    // re-pick branch the regression hit requires a persisted row).
+    const pngA = makePng(400, 300, 79, 70, 229)
+    await page.getByTestId('kid-row-photo-input-0').setInputFiles({
+      name: 'avery.png',
+      mimeType: 'image/png',
+      buffer: pngA,
+    })
+    await page.getByRole('button', { name: 'Use this photo' }).click()
+    const img = page.getByTestId('kid-row-photo-img-0')
+    await expect(img, 'the confirmed photo must render on the row').toBeVisible()
+    const srcBefore = (await img.getAttribute('src')) ?? ''
+    expect(srcBefore, 'the photo must render from a signed URL').toContain('token=')
+
+    // Session + DB: the row is persisted at the DETERMINISTIC canonical
+    // path — the ref the re-pick will overwrite in place.
+    const viewerSession = await readSessionFromBrowserPage(page)
+    expect(viewerSession, 'the onboarding page must have a live session').not.toBeNull()
+    const { url, anonKey } = readSupabaseEnv()
+    const headers = ownerHeaders(viewerSession!.accessToken, anonKey)
+    const rows = await readKidsDb(url, headers, viewerSession!.userId)
+    expect(rows).toHaveLength(1)
+    const row = rows[0]
+    const storedRef = row.avatar_url
+    expect(storedRef, 'the stored ref is the deterministic canonical path (kidPhotoStoredRef)').toBe(
+      `kid-photos/${viewerSession!.userId}/kids/${row.id}`,
+    )
+    // The object's FIRST bytes — the re-pick OVERWRITES this exact path, so
+    // "new bytes at the same path" is proven by the AFTER read.
+    const objectA = Buffer.from(await (await fetch(`${url}/storage/v1/object/${storedRef}`, { headers })).arrayBuffer())
+
+    // --- THE RE-PICK (photo B, different pixels) on the SAME persisted row.
+    // The stored ref is deterministic, so the write lands at the SAME
+    // canonical path — only the per-row generation can carry "the image
+    // changed" to the minting hook. ---
+    const signRequests: string[] = []
+    page.on('request', (req) => {
+      if (req.url().includes('/object/sign/')) signRequests.push(req.url())
+    })
+    const pngB = makePng(400, 300, 229, 79, 70)
+    await page.getByTestId('kid-row-photo-input-0').setInputFiles({
+      name: 'avery-v2.png',
+      mimeType: 'image/png',
+      buffer: pngB,
+    })
+    const mintsBeforeConfirm = signRequests.length
+    await page.getByRole('button', { name: 'Use this photo' }).click()
+
+    // THE PIN: a re-pick must fire a FRESH signed-URL mint (a new sign
+    // request) and the card must swap to the NEW image (the <img> re-fetches
+    // under the fresh URL). If the key went back to ignoring the re-pick —
+    // id set + photo marker only, no generation — the `avatar_url` string
+    // is byte-identical, the memo keeps its identity, the hook's effect
+    // never re-runs, no sign request fires, and the src never swaps: the
+    // freshly uploaded photo (which overwrote the canonical path) stays
+    // invisible for the rest of the mount. Both assertions below would
+    // fail against the regressed key.
+    await expect(
+      async () => {
+        expect(
+          signRequests.length,
+          'a re-pick on a persisted row must trigger a fresh signed-URL mint',
+        ).toBeGreaterThan(mintsBeforeConfirm)
+      },
+      'the fresh mint (the one the regressed keying never fires) must land',
+    ).toPass()
+    await expect(
+      async () => {
+        expect(
+          (await img.getAttribute('src')) ?? '',
+          'the card must show the NEW image — the src swaps to the fresh URL',
+        ).not.toBe(srcBefore)
+      },
+      'the img must re-fetch under the fresh URL',
+    ).toPass()
+    const srcAfter = (await img.getAttribute('src')) ?? ''
+    expect(srcAfter, 'the swapped src must be a fresh signed URL').toContain('token=')
+
+    // New bytes at the SAME canonical path: the object's bytes changed.
+    const objectB = Buffer.from(await (await fetch(`${url}/storage/v1/object/${storedRef}`, { headers })).arrayBuffer())
+    expect(
+      objectB.equals(objectA),
+      'the re-pick overwrote the canonical path with DIFFERENT bytes (photo B, not photo A)',
+    ).toBe(false)
+
+    // The DB row is unchanged in shape: a re-pick re-attaches the SAME
+    // deterministic ref (the generation is client-side state, not a column).
+    const rowsAfter = await readKidsDb(url, headers, viewerSession!.userId)
+    expect(rowsAfter).toHaveLength(1)
+    expect(rowsAfter[0].avatar_url, 'a re-pick re-attaches the SAME deterministic ref').toBe(storedRef)
+
+    // --- Best-effort cleanup: the row + the (now second-generation) object.
+    try {
+      await fetch(`${url}/storage/v1/object/${storedRef}`, { method: 'DELETE', headers })
+      await fetch(`${url}/rest/v1/kids?id=eq.${row.id}`, { method: 'DELETE', headers })
+      console.log(`[e2e cleanup] ok — deleted ${viewerSession!.userId}'s kid row + kid-photo object (re-pick generation)`)
+    } catch (err) {
+      console.log(
+        `[e2e cleanup] FAILED (logged, best-effort): ${
+          err instanceof Error ? err.message : err
+        } — orchestrator sweep (e2e- prefix) will pick stragglers up`,
+      )
+    }
+
+    await context.close()
+  },
+)

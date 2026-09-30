@@ -2513,6 +2513,21 @@ export function validateKidAge(age: number): string | null {
 }
 
 /**
+ * The blank-age rule in ONE place (V28 r2 fix round 2, R4): a blank age
+ * INPUT maps to NaN, never `Number('')` === 0 — 0 is a LEGAL age
+ * (`validateKidAge` passes it), so a blank age must be REFUSED, not
+ * fabricated into an age-0 kid. NaN fails `validateKidAge`'s
+ * `Number.isInteger` check, which is the refusal. The onboarding kids card
+ * calls this at all three of its sites (the blank-row mirror, the photo
+ * confirm's write, and the Continue write — which pre-R4 used a bare
+ * `Number(row.age)` that was safe only because `invalidKidRows` ran first,
+ * an order of two unrelated statements that any future edit could delete).
+ */
+export function kidAgeFromInput(ageInput: string): number {
+  return ageInput.trim() === '' ? NaN : Number(ageInput)
+}
+
+/**
  * Pure kid-row validation (first name + age only — the privacy pin). Age is
  * a whole number in 0–17: these are kids.
  */
