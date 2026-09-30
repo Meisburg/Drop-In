@@ -82,10 +82,20 @@ rather than trust.
    `progressLabel` emits `"N of 5"` (`:74`).
 2. **Pinned by tests** — the array equality (`src/lib/firstRun.test.ts:103`), `progressLabel`
    1..5 (`:191-195`), the photo branch (`:133-135`). These must change *with* the model.
-3. **The "of 5" text sweep is measured**: `OnboardingPage.tsx:55,58,177,229,455,573,705,808,869`;
-   `LoginPage.tsx:31,105,150,228`; `e2e/fixtures.ts:337,341,389,390,391,435,439,449`;
-   `e2e/auth.setup.ts:21,30,66,83,103,111,119`; `e2e/onboarding-resume.e2e.ts:6,14,36,81,93,94,179`;
-   `e2e/signup-zip-fallback.e2e.ts:10,61,81,92,101`.
+3. **The onboarding "of 5" sweep is measured, and it has TRAPS.** There are **32** `of 5` hits
+   in `src/`, and only **21** are the label:
+   - **The label (change these):** `OnboardingPage.tsx:55,58,177,229,455,573,705,808,869`;
+     `LoginPage.tsx:31,105,150,228`; `FirstRunCard.tsx:37`; `firstRun.ts:73`;
+     `firstRun.test.ts:191,192,193,194,195`. Plus e2e: `fixtures.ts:337,341,389,390,391,435,439,449`;
+     `auth.setup.ts:21,30,66,83,103,111,119`; `onboarding-resume.e2e.ts:6,14,36,81,93,94,179`;
+     `signup-zip-fallback.e2e.ts:10,61,81,92,101`.
+   - ⚠️ **NOT the label — do not touch:** `reviews.ts:198`, `reviews.test.ts:194,195,199,205,206`,
+     `PlaceDirectory.tsx:1419,1425,1534`, `PlaceDetailsPage.tsx:197` — these are **star ratings**
+     ("4.3 out of 5"); and `InboxPage.tsx:607`, an unrelated live-data note. **11 of the 32 hits
+     are these.** A blanket `rg "of 5"` sweep would rewrite review copy — that is the trap.
+   - ⚠️ **Also not the label:** `firstRun.test.ts:206` (`"const label = '2 of 5'"`) is a **fixture
+     string fed to the purity scanner** to prove prose is out of scope. Changing it breaks a
+     different test's premise.
 4. **The parent photo is a MOVE, not new plumbing.** Reuse `useCropStep`
    (`src/components/useCropStep.tsx`) and `uploadAvatar(profileId, source, rect)`
    (`src/lib/db.ts:2657`) exactly as the photo card does today.
@@ -172,8 +182,10 @@ that changes the card sequence must keep them walking it.
 - **Objective.** `firstRun.ts` and its test describe four cards.
 - **Files.** `src/lib/firstRun.ts`, `src/lib/firstRun.test.ts`.
 - **Approach.** Remove `'photo'` from the union and the array; drop `hasPhoto` from the facts and
-  the photo branch from `nextUnfinishedCard`; `isSkippable` true for `kids` only; derive the
-  denominator from `FIRST_RUN_CARDS.length`.
+  the photo branch from `nextUnfinishedCard`; `isSkippable` true for `kids` only. **The
+  denominator is ALREADY derived** — `progressLabel` reads `FIRST_RUN_CARDS.length`
+  (`firstRun.ts:74`), so this slice does not add that; it must simply **stay** that way, and the
+  acceptance proves it does.
 - **Acceptance.** `progressLabel('area') === '4 of 4'`; no `'photo'` in the union, array, or
   facts; the test pins the new array **and** that a skippable-vs-required decision survives for
   the remaining cards; zero references to `hasPhoto` remain in the module.
@@ -189,9 +201,12 @@ that changes the card sequence must keep them walking it.
 - **Approach.** Delete the photo card's gate, state, JSX and testid; stop passing `hasPhoto`;
   reword every measured "of 5" occurrence — **the list in fact 3 is the scope, and a grep for
   `of 5` afterwards must come back empty in `src/`**.
-- **Acceptance.** `rg -n "of 5" src/` → **0 hits**; `rg -n "first-run-photo-card" src/ e2e/` →
-  **0 hits**; the run reaches `area` and the ending without a photo card; the three walking
-  specs (`onboarding-resume`, `signup-zip-fallback`, `auth.setup`) pass.
+- **Acceptance.** The label is gone from the app: `rg -n "of 5" src/pages/OnboardingPage.tsx
+  src/pages/LoginPage.tsx src/components/FirstRunCard.tsx src/lib/firstRun.ts` → **0 hits**, and
+  `rg -n "first-run-photo-card" src/ e2e/` → **0 hits**. ⚠️ **A blanket `rg "of 5" src/` is NOT
+  the check** — see fact 3: 11 hits are star ratings and one is a scanner fixture. Sweeping
+  those would be a new defect, not a fix. The run reaches `area` and the ending without a photo
+  card; the three walking specs (`onboarding-resume`, `signup-zip-fallback`, `auth.setup`) pass.
 - **Verify.** `npm run verify` **and** `npx playwright test e2e/onboarding-resume.e2e.ts e2e/signup-zip-fallback.e2e.ts`.
 - **Depends on.** 1a. **Budget.** medium — mechanical but wide.
 
