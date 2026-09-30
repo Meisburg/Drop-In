@@ -3928,3 +3928,44 @@ the baseline read, the false-green, the throwing-poll measurement, the `mr.json(
 spec-header overstatement. **One file, one coherent job, one context.**
 
 **SLICE 4 IS DISPATCHED.**
+
+## ⚠️ THE SELF-MATCHING pgrep TRAP, SECOND OCCURRENCE -- and a builder lost 4 minutes to it
+
+Slice 4's builder ran:
+
+    while pgrep -f "playwright test" >/dev/null; do sleep 15; done; tail -6 /tmp/e2e-slice4.log
+
+**It can never exit.** `pgrep -f` matches against the **full command line**, and that bash process's own
+argv contains the literal string `playwright test` -- **so pgrep matches ITSELF**, the condition is true
+forever, and the loop spins until the run is killed. The watchdog caught it at 240s; I interrupted.
+
+**This is the SECOND time today the class has fired, and the first was MINE:** my
+`pgrep -a -f "playwright|vitest|vite"` matched its own command line and I reported the match as evidence
+about the machine. **I knew the fix -- I used the bracket trick in the very next command -- and the brief I
+wrote for this slice did not pass it on.**
+
+**STRUCTURAL FIX, not another resolution: the convention goes where builders actually read it** -- the
+plan's process rules -- because a rule that lives only in my head has now cost two agents time in one day:
+
+    pgrep -f "[p]laywright test"     # the bracket trick: a pattern that cannot match itself
+
+**And the deeper half, which is not about pgrep at all: DO NOT POLL FOR A BACKGROUND JOB.** Run it in the
+**foreground** and read the tail; or start it, keep the **PID**, and `wait $PID`.
+**A poll loop watching for its own pattern is an infinite loop wearing patience as a costume.**
+
+### This is the FIFTH instrument-lying-to-itself today, and I am naming the pattern properly now
+1. `rg -r` (**twice**) -- `-r` is `--replace`, so rg reprinted every match as the replacement **and the
+   output looked like plausible code.**
+2. My newline count reported **8** -- `head` truncated the loop, SIGPIPE killed it, and the number was an
+   artifact of my own display choice.
+3. My `pgrep` matched its own command line.
+4. The builder's `pgrep` matched its own command line (this entry).
+
+**Four of the five are "the measuring command included itself". The common fix is one idea: make the
+instrument incapable of matching the thing it is measuring.** For pgrep that is the bracket trick; for a
+count it is not piping the counter through a pager; for `rg` it is **never `-r`**.
+
+**AND THE BUILDER'S WORK WAS REAL AND IS NOT LOST** -- before the interrupt the tree held changes to
+`PlaceMap.tsx`, `geocode.ts`, `geocode.test.ts`, `OnboardingPage.tsx` and `signup-zip-fallback.e2e.ts`, and
+it had gone looking for the genuine CSS selectors for the home pin and the circle. **The hang was only in
+the verification loop, not in the work.**

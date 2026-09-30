@@ -686,3 +686,22 @@ Two pushes came back from the review. Both accepted:
 **Slice 3 is dispatched.** Slice 8b additionally inherits: the Enter guard + its assertion, the
 route-abort spec for the failed-upload path, the un-cleared `escapeTimer`, the duplicated comment,
 the redundant `Uploading…` assertion, and `scripts/slice-diff.sh`.
+
+## PROCESS RULE — shell commands that cannot match themselves (added 2026-09-30 after two occurrences in one day)
+
+**Every brief dispatched from here on carries this, and builders are expected to follow it without being told.**
+
+- **`pgrep -f "<pattern>"` matches the SHELL THAT IS RUNNING IT**, because the pattern appears in that
+  shell's own argv. **Use the bracket trick so the pattern cannot match itself:** `pgrep -f "[p]laywright test"`.
+- **Do not poll for a background job.** Run it in the **foreground** and read the tail; or start it, keep
+  the **PID**, and `wait $PID`. **A poll loop watching for its own pattern is an infinite loop wearing
+  patience as a costume** — it does not fail, it does not finish, it just burns the run's clock until
+  something kills it. One builder lost four minutes to exactly this and had to be interrupted.
+- **Never pipe a counting loop through a pager** (`\| head`) — the pager exits, the pipe closes, SIGPIPE
+  kills the loop, **and the count you print is a property of your display choice, not of the tree.** A
+  count of 8 where the truth was 79 was produced this way.
+- **Never pass `-r` to `rg`.** `-r` is `--replace`; rg will reprint every match as your replacement string
+  **and the result looks like real code.** This has happened twice.
+
+**The one idea behind all four: make the instrument incapable of matching the thing it is measuring.**
+Every one of these mistakes produced a plausible, wrong number that looked like a finding.
