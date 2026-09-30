@@ -13,15 +13,18 @@ the guard. Another split is cheaper than a bad guard.
 
 ## 1. The trailing-newline sweep, THEN the guard — in that order, in two commits
 
-**Measured 2026-09-30: 79 tracked files have no trailing newline** — `src/` 44, `e2e/` 22,
-`scripts/` 13 (`.ts` 48, `.tsx` 18, `.mjs` 9, `.sh` 2, `.py` 2). **All 79 were verified to be text, so
-appending a newline cannot corrupt a binary** — re-check that before you sweep anyway, and if a binary
-is in your list, stop and ask rather than appending.
+**⚠️ MEASURE THIS YOURSELF WHEN YOU START — do not trust a number in a document.** This count has
+**moved four times during planning** (65 → 66 → 79 → 78) because slices kept adding files and fixing
+them, including one file this very round was told not to touch. **When this brief was written it was 78:
+`src/` 44, `e2e/` 21, `scripts/` 13.** Run the measurement, use **your** number, and if it disagrees with
+mine, **yours is right.**
 
-**An earlier count said 65.** That was `src/` + `e2e/` before slice 3 added `e2e/onboarding-kid-photo.e2e.ts`
-without one. **Which is the whole point: the class has now recurred FOUR times in this batch**, including
-**twice inside a fix that was itself curing an earlier instance** — and that is what promoted it from "a
-nit" to "a guard."
+**All of them were verified to be text, so appending a newline cannot corrupt a binary** — re-check that
+before you sweep anyway, and if a binary is in your list, **stop and ask** rather than appending.
+
+**And note the whole point: the class has now recurred FOUR times in this batch**, including **twice
+inside a fix that was itself curing an earlier instance** — which is what promoted it from "a nit" to "a
+guard."
 
 **Order is load-bearing: sweep first, guard second.** A full-repo guard added first cannot go green
 without either diff-scoping or an allowlist, and both of those defeat it. So:
@@ -138,6 +141,32 @@ closed or `0×0` `ImageBitmap` reaching the encode should raise its own message 
 work"*, **instead of the current "the chosen area is outside the image."** **That misdiagnosis is what
 hid the bug for a whole build cycle, and a wrong error message costs more than a missing one.**
 
+## 7. Five small honesty fixes slice 3's fix round left behind
+
+A fresh-context reviewer passed the fix round and named these. **All five are comment/test-honesty items,
+which is this half's business.**
+
+- **The spec header overstates what its tests prove.** `e2e/onboarding-kid-photo.e2e.ts`'s header
+  attributes an in-flight-attach guarantee to test 4. **Measured: test 4 PASSES ON THE PRE-FIX CODE** —
+  in the driven sequence the dialog is closed and the lock released before the single removal, so no write
+  is in flight then, and the old index-keyed filter landed correctly anyway. It is a **state-invariant
+  pin, not a discriminator**. Correct the header to say what the test actually pins — the commit message
+  already says it honestly, so this is the last place the claim is overstated. **Do not delete the test**;
+  it can still fail on a regression.
+- **`useCropStep`'s `onConfirm` param still admits `| void`** (`src/components/useCropStep.tsx:27`).
+  **Drop the `| void`.** This is the reviewer's "one increment worth having" instead of a signature
+  rework. *(The reviewer also established that a signature change CANNOT work: `async (s, r) => { onUpload(id, s, r) }` is TYPE-IDENTICAL to the awaited version — both return `Promise<void>` — so no signature can force an internal `await`. The guard is the only mechanism that can fail. **Do not rework the signature.**)*
+- **A spurious `eslint-disable-next-line react-hooks/exhaustive-deps`** sits above the plain `const
+  persistedKidKey` at `src/pages/OnboardingPage.tsx:410`, where there is no hook; only the disable above
+  the `useMemo` is load-bearing. Remove the spurious one **and leave the warning count at the 81 baseline**
+  — if removing it moves the count, you removed the wrong one.
+- **`e2e/onboarding-kid-photo.e2e.ts` now ends `)\n\n`** (an extra blank line): the fix round repaired a
+  newline it had been told not to touch. Normalise it as part of the sweep.
+- **A flake window in the F3 test:** after its fixed 800 ms sleep, the final `src`-equality assertion can
+  race a late-settling post-add mint on a slow machine. **Wait for the `src` to change (or for stability)
+  before opening the keystroke window.** A new spec that can flake is worth closing now, before the
+  batch-end full sweep is the thing that discovers it.
+
 ## Acceptance
 
 1. Commit A touches **only trailing newlines** — prove it (`git diff --stat` plus a word-diff showing
@@ -151,6 +180,8 @@ hid the bug for a whole build cycle, and a wrong error message costs more than a
 6. The await guard catches the real `ProfilePage.tsx` instance (or a fixture of its exact shape), and its
    `.check.mjs` proves it can fail; the closed-bitmap path names its own cause instead of blaming the
    crop rect.
+7. Item 7's five honesty fixes land, **and the warning count is still 81** — removing the spurious
+   disable must not move it in either direction.
 
 ## Verify
 

@@ -3440,3 +3440,76 @@ to the reviewer: is a signature change warranted on top, or does the guard plus 
 - **`ocr`** -- pid 2495270, range `0c08024..3f51d53`.
 The reviewer is asked to confirm F3's measurement independently, to judge the one-mint residual, and to
 rule on the signature change; the verifier is bounded to its three checks plus provenance.
+
+## Slice 3 FIX ROUND 1 -- reviewer **PASS**, verifier **PASS**. Only `ocr` outstanding.
+
+**VERIFIER (closes the record gap the reviewer explicitly refused to paper over):** `npm run verify`
+**exit 0**, **67 files / 1993 tests**, **0 errors / 81 warnings**, `a11y:focus` PASS, `steering-lint`
+PASS, **all guards PASS with no-bypass on its first run**. The spec: **5 tests (1 setup + 4 spec)** --
+and the verifier printed their names, so the two new ones are visible in the record as the fix-round
+tests. The three risk specs: **7 passed**, including both `profile-kid-photos` tests, which matters
+because `ProfilePage` is now in the diff. Provenance: the only commit beyond `3f51d53` is my ledger
+commit, and it added the belt-and-braces proof -- `git diff --stat 3f51d53..HEAD -- ':!.scratch'
+':!task-state.md'` is **empty**. Listeners enumerated before and after; **no 4173/5173 left behind**;
+Playwright spawned and tore down its own preview.
+
+**REVIEWER: PASS.** All six landed as real fixes at the decision points, **none a relocation**; its own
+grep for an index-based identity across both pages is empty; the lock lifecycle is correct across
+add / remove / unmount / re-pick. It verified the other three `useCropStep` call sites already await
+internally, so **the kid-photo wrappers were the only fire-and-forget instances in the repo**.
+
+**AND IT REFUSED TO LAUNDER THE SPEC'S OWN CLAIM.** The commit's header attributes an in-flight-attach
+guarantee to test 4. The reviewer measured it as a **state-invariant pin, not a discriminator** -- it
+**passes on the pre-fix code** -- and said so, in its opening paragraph, rather than letting the spec's
+header stand. **Its recommended next action: "let the lanes close; no fix round needed."**
+
+**AND IT REFUSED TO TREAT MY WORK AS EVIDENCE FOR A CLAIM IT WAS NOT EVIDENCE FOR.** Record gap 5: the
+fix round's raw gate output was not yet in the ledger, and "the orchestrator's anchor verification of
+F1-F6 is recorded, but the count claim is not yet evidence until that lane lands." **Exactly right. My
+anchor greps prove the fixes exist; they say nothing about 67/1993. That lane has now landed and the gap
+is closed with its raw numbers above.**
+
+### The three questions it was asked, answered
+- **F3 -- `ocr`'s "blanking" is refuted, and the builder's measurement is confirmed independently.**
+  The render guard is `if (resolved.key !== mintKey) return {}`, and **`mintKey` is a STRING built from
+  the owner id and the id set** -- so it does not change when only the array identity does, and the old
+  URL keeps rendering. Pre-fix the effect re-ran per keystroke: **src swap, `<img>` reload, wasted
+  round-trips, never a blank.** *"ocr overstated; the builder did not inherit the unproven half."*
+- **The one-mint residual -- confirmed, and explained better than I had it.** "Add another kid" appends a
+  `kid: null` row, so **`persistedKidKey` goes from `"id:1"` to `"id:1|"` -- the key DOES change** (an
+  empty entry is appended), the memo recomputes, and one re-mint follows. **Bounded at ≤4 wasted sign
+  requests per first run, once per row ADD, never per keystroke.** My "recorded, not fixed" ruling upheld.
+- **The signature change -- NOT warranted, and my question contained a false choice.** The reviewer
+  established that **the defective shape is TYPE-IDENTICAL to the correct one**:
+  `async (s, r) => { onUpload(id, s, r) }` still returns `Promise<void>`, so **no signature can force an
+  internal `await`** -- *"the type system is structurally blind to the missing await in the body."* The
+  `Promise<void>` boundary typing plus 8b's guard (which CAN fail) is the whole answer; a signature rework
+  would churn five call sites in a shared hook for zero extra enforcement, and fight 8b on the same file.
+  **The one increment worth taking is dropping `| void` from `useCropStep`'s `onConfirm` param** -- now in
+  8b.
+
+### ⚠️ RECORDED DEVIATION: the fix round touched something its brief forbade
+The brief said, twice and in bold: **do not sweep the newline; that is 8b's and a sweep belongs in its own
+commit.** The fix round repaired it anyway. **Benign in direction and harmless in effect** -- the file now
+ends `)\n\n`, which is untidy rather than wrong -- but **an explicit instruction was not followed, and the
+honest report is that it was a deviation, not a tidy-up.** It is also why the sweep's count moved a
+**third** time. Recorded as a deviation, and the file's `)\n\n` goes to 8b to normalise.
+
+### PROCESS RULE (new): a document that quotes a MOVING measurement must instruct the reader to measure
+The newline count has now moved **four times** while I was writing it down: **65 → 66 → 79 → 78** -- every
+move caused by the system changing under the document, not by the numbers being wrong when written.
+**A frozen number in a brief is a bug in the brief.** 8b's brief now leads with *"MEASURE THIS YOURSELF
+WHEN YOU START -- do not trust a number in a document... if it disagrees with mine, yours is right."*
+
+**This is the SECOND instance of one insight today.** The first was *"a line number in a brief is a hint,
+not a location -- the identifier is the location."* Both are the same mistake in different clothing:
+**quoting a value that moves, instead of pointing at how to obtain it.** The fix is identical both times:
+**name the symbol, or name the command.**
+
+### 8b's brief updated (five more items, all from this round)
+The spec-header overstatement (correct it, do not delete the test), **the `| void` drop**, the spurious
+`eslint-disable` above a non-hook line, the `)\n\n` normalisation, and **the F3 test's flake window**
+(after its fixed 800 ms sleep the final `src`-equality assertion can race a late mint). Plus: the guard's
+proof must now be run against the REAL `ProfilePage.tsx` pre-fix shape.
+
+**SLICE 3 STATUS: reviewer PASS, verifier PASS, `ocr` outstanding.** Closes when `ocr` reports.
