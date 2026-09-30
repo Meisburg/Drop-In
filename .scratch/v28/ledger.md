@@ -2056,3 +2056,43 @@ table at the top of section 6, reframes the linking question as POLICY (what sho
 MEAN -- kids? drop-ins? messages? unlink?) since the MECHANISM is already built, and adds
 "two built features are effectively invisible" as the first gap. **A document handed to a
 reviewer is a claim, and this one was wrong for about twenty minutes.**
+
+## r2 scope SETTLED (three product answers, the moment they were given)
+
+The human answered the three questions the explorer findings forced. **These are the
+authority for r2; nothing else in r2 contradicts them.**
+
+- **r2-D5 -- LINKING STAYS AS-IS.** "Leave it as-is." The mechanism is built; its purpose is
+  deliberately NOT expanded. **No schema work, no policy work, no shared kids, no shared
+  drop-ins.** The tour card TELLS PARENTS IT EXISTS -- that is the entire remedy, and it is
+  the cheapest possible answer to a feature nobody can find.
+- **r2-D6 -- NAME SEARCH KEEPS ITS REACH.** "Keep as-is." It searches ANY parent by name
+  prefix and that stays true. **No change.** (Noted for the record: narrowing it later is a
+  REMOVAL of a shipped, e2e-covered capability, and therefore its own decision -- it cannot
+  ride along inside a UI slice.)
+- **r2-D7 -- BUILD THE EMAIL INVITE.** "Build email invite." This is the ONE piece of the
+  human's original partner-linking ask with **no existing seam** (0 hits for email-based
+  invite in `0047` and in the partner-link functions). A parent invites a partner who is NOT
+  YET ON Drop In, by email, so the invitee's eventual signup completes the link.
+  * **NOT YET SLICED -- DELIBERATELY.** Nothing in the codebase has been measured for this
+    yet, and the batch's own rule is that a brief specifying an unmeasured mechanism IS the
+    defect. A bounded explorer is measuring the email capability, the `0047` constraints
+    (whether an un-joined invitee can even be represented), the accept-on-signup seam, and
+    the opt-out field. **The slice is written when those answers exist, not before.**
+
+### What r2 is now, in full
+
+1. **The restructure** -- the standalone photo card is DELETED and the parent's photo moves
+   onto the name card; the kids card gains optional kid photos; the area card gains a map;
+   the "of 5" denominator becomes "of 4". Mechanism fully measured by explorer A.
+2. **The "How Drop In works" ending card** -- replacing the finish card's place list, and
+   **explicitly naming the two built-but-invisible capabilities** (find a parent by name;
+   link a partner). This card is now doing double duty: it is the tour AND the discoverability
+   fix, which is what the human's two separate asks actually turned out to be.
+3. **Three copy defects** -- the phantom "middle name or initial" hint
+   (`OnboardingPage.tsx:561`), "A first name is plenty" above a Last name field
+   (`firstRunCopy.ts:35`), and `skipLabel` dead-and-wrong (`firstRunCopy.ts:42,48` says
+   "Skip for now"; `FirstRunCard.tsx:119` renders a hard-coded `Skip`; 0 render sites).
+4. **The email partner invite** -- pending measurement.
+5. **7c hygiene folds in** (dead exports `missingProfileItems`/`needsOnboarding` are
+   test-only -- 0 production callers, confirmed by explorer B and by me).
