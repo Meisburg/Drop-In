@@ -3969,3 +3969,59 @@ count it is not piping the counter through a pager; for `rg` it is **never `-r`*
 `PlaceMap.tsx`, `geocode.ts`, `geocode.test.ts`, `OnboardingPage.tsx` and `signup-zip-fallback.e2e.ts`, and
 it had gone looking for the genuine CSS selectors for the home pin and the circle. **The hang was only in
 the verification loop, not in the work.**
+
+## Slice 4: BUILT (`e109152`) -> MY GREP-VERIFICATION -> three lanes out
+
+5 files, **+476/-10**. **The crux is met** (plan defect #29): `areaCoordinates` state, `ensureAddressLookup`
+as the single door to the lookup with a per-address promise, a blur-debounced `scheduleAddressLookup`
+(500ms, cancelled on focus/unmount), the card's map gated by `shouldRenderPlacesMap(0, areaCoordinates)`,
+and **`handleAreaFinish` awaiting THAT SAME promise** -- so it never re-geocodes and the map is rendered
+while the card still exists.
+
+**Plan defect #30's grant is honoured, and the spec's proof is genuinely non-vacuous:** the assertions
+locate the pin and the disc as **painted Leaflet vector layers** (`path.leaflet-interactive[fill="#dc2626"]
+[fill-opacity="0.85"]`, `... [stroke="#dc2626"][fill-opacity="0.08"]`), not as a container div. **A blank
+bordered box cannot pass those**, which was the whole point of the condition.
+
+### ⚠️ TWO DEFECTS I FOUND BY READING CLAIMS AGAINST THE CODE THEY DESCRIBE -- both to 8a
+1. **`PlaceMap.tsx`'s slice-4 audit comment misdescribes the marker-group effect.** It says that effect
+   *"re-keys to the empty key and adds an empty layer group"* for a `markers: []` mount. **It does neither
+   -- its first statement is `if (map === null || markers.length === 0) return`.** The **OUTCOME is
+   correct** (the home pin and circle come from the separate overlay effect, which is why the pin-only spec
+   sees the disc), so **no behaviour changes**; the comment does.
+2. **`zipFromAddressQueryBounded` is production-orphaned and `src/lib/onboarding.ts:16-20` is stale** --
+   the comment still credits the card with that lookup, which slice 4 replaced. The function survives only
+   through its own unit tests, and the builder **reported the orphan rather than silently deleting it
+   because the file was out of scope.** That is the right instinct and it is exactly 8a's work.
+
+### THE SHAPE OF FINDING 1 IS WORTH NAMING, because it is the hardest kind to notice
+**A TRUE CONCLUSION DRAWN FROM A FALSE PREMISE.** The audit's verdict -- *"every marker-dependent reader
+holds; all hold"* -- is **right**, and one of the clauses supporting it is **wrong**. Nothing in the running
+system would ever reveal that, because **the code does not do what the sentence says and works anyway.**
+
+**And this is the mirror of the round-2 review error**, where the reviewer had a **true premise and drew a
+false conclusion** (*"the hook only consumes the id set"* -> so a re-pick needs no re-mint). **Both
+directions defeat a reader who checks only the conclusion, or only the premise.** The only test that catches
+either is **checking the sentence against the code**, which is what this batch keeps having to do.
+
+### The builder's own honesty, worth recording
+- It **reported the orphan it created** instead of deleting out of scope.
+- It answered *"is `HOME_PIN_ZOOM` the right zoom"* with **a reason rather than a reassurance**: *"a pin-only
+  mount IS a home-pin mount, so it gets the home-pin zoom rule; the radius framing effect (zoomSnap: 0) then
+  re-frames to fit the circle."*
+- It **adopted the pgrep convention and said so**: *"the self-matching `pgrep -f` polling loop was the
+  run-killing trap... I used `pgrep -f \"[p]laywright\"` once to check for strays and polled nothing -- all
+  long jobs ran in the foreground."* **A rule written into the plan one turn earlier was followed in the
+  very next run, and reported as followed.**
+
+### Cost, recorded as the plan requires
+The interrupted run alone reached **82 turns / ~3.9M tokens** -- well past "one local builder context".
+**Slice 4 is the largest spend in the batch**, and the self-matching-pgrep hang is part of why (four minutes
+of dead spinning plus the interrupt and the revive). **A hang does not just cost time; it costs the context
+that would have finished the slice.** That belongs beside the gate result in `task-state.md`.
+
+### THREE LANES OUT
+- **reviewer + verifier** -- workflow `448cf735-fa2c-4d4b-94c7-724f98e9230c`, the reviewer asked to attempt
+  to FIND A READER THE AUDIT MISSED (which is how I found #1 above) and the verifier given the expected
+  **68 files / 2014 tests** with an instruction to name any difference.
+- **`ocr`** -- pid 2694391 on `896df51..e109152`.

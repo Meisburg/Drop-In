@@ -40,6 +40,26 @@ as it was before r2 (the five-card sequence, the photo card as a step, `hasPhoto
 Report what you found and what you left, **with the reason** — a comment you judged still true is a
 decision worth recording.
 
+## 2b. Two more from slice 4 (both found by reading a claim against the code it describes)
+
+- **`src/components/PlaceMap.tsx` — the V28 slice 4 audit comment misdescribes the marker-group effect.**
+  It says the marker-group effect *"re-keys to the empty key and adds an empty layer group"* for a
+  `markers: []` mount. **It does neither:** that effect's first statement is
+  `if (map === null || markers.length === 0) return`, so with no markers it returns immediately.
+  **The OUTCOME is correct** — the home pin and the radius circle are drawn by the separate overlay
+  effect, which is why the pin-only spec sees the disc — so **do not change any behaviour.** Correct the
+  comment to say the effect **early-returns** and that a pin-only mount needs nothing from it. **This is
+  the batch's recurring class: a comment that describes a mechanism the code does not run.**
+- **`zipFromAddressQueryBounded` is now production-orphaned, and the comment that names it is stale.**
+  Slice 4 replaced the card's call with `locationFromAddressQueryBounded`, so the zip-only sibling has
+  **no production caller left** — only its own unit tests (`src/lib/geocode.test.ts`), which do keep it
+  alive so it is not dead code in the strict sense. **But `src/lib/onboarding.ts:16-20` still says the
+  fallback note is "triggered by the card's bounded address lookup (`lib/geocode`'s
+  `zipFromAddressQueryBounded`)" — which is no longer true.** Decide and report: **wire it back or delete
+  it**, and either way **fix the comment**, because right now it points the next reader at the wrong
+  function. *(Slice 4 deliberately left both alone: the file was out of its scope, and reporting an
+  orphan beats silently deleting something on a guess.)*
+
 ## 3. The deferred 7c items
 
 - **Extract `resolveCard(facts, skippedCards)`** — the card-resolution decision, pulled out of its
