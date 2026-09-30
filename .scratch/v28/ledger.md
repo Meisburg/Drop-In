@@ -3264,3 +3264,34 @@ the places spec is **partial** -- recorded as partial rather than rounded up to 
 **REVIEWER NOT STUCK:** the run flagged "no observed activity for 60s" at 345s elapsed and 63s quiet.
 **That is a normal reading window for a diff review, not a stall, so I did NOT steer.** A watchdog
 threshold is a prompt to look, not a verdict -- and steering a healthy reviewer costs its context.
+
+## 8b's brief corrected from 65 to 79 -- and MY MEASUREMENT LIED TO ME TWICE WHILE I CORRECTED IT
+
+`slice-8b.md` said **65 tracked files** lack a trailing newline. That number was stale, and getting the
+right one took three attempts because **my own measurement commands produced two false results**.
+
+**Attempt 1 -- "TOTAL: 8".** I piped the counting loop through `tee | head -8`. **`head` exited after 8
+lines, the pipe closed, and SIGPIPE killed the loop.** The count was an artifact of my own display
+choice, not a property of the tree. It was also **impossible**: I had *just* read
+`e2e/onboarding-kid-photo.e2e.ts`'s last byte as `0x29`, and that file was not among the 8.
+
+**Attempt 2 -- 79, and this one holds.** `src/` 44, `e2e/` 22, `scripts/` 13 (`.ts` 48, `.tsx` 18,
+`.mjs` 9, `.sh` 2, `.py` 2). **All 79 verified to be text**, so appending a newline cannot corrupt a
+binary -- recorded in the brief as a caveat the builder must re-check rather than a promise it can trust.
+
+**This reconciles the old number exactly**: 65 was `src/` + `e2e/` before slice 3 added a file without a
+newline, so 66 there, plus 13 in `scripts/` = 79. **The brief now says 79, dated, with the breakdown** --
+and says plainly that **the class has recurred FOUR times**, twice inside a fix that was itself curing an
+earlier instance. That is the argument for the guard, so it belongs in the brief rather than only here.
+
+**PROCESS RULE (new): when a measurement contradicts a fact you already hold, suspect the measurement
+first.** What caught attempt 1 was not scepticism about my loop -- it was the collision with the
+`0x29` I had already read. **A suspiciously small or suspiciously round result is not a finding; it is a
+reason to re-run the command a different way.** This is the same family as the batch's existing rule that
+*a no-match produced by an error path is not a no-match* -- now extended: **a count produced by a
+truncated stream is not a count.**
+
+**And note this is the SECOND instrument that lied to me in this session**, the first being `rg -r` (which
+is `--replace`, and reprinted every match as the replacement). **I apply heavy scepticism to the lanes'
+claims and had been applying almost none to my own tooling.** Both slips were caught only because
+something else contradicted them.

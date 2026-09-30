@@ -13,9 +13,15 @@ the guard. Another split is cheaper than a bad guard.
 
 ## 1. The trailing-newline sweep, THEN the guard — in that order, in two commits
 
-**Measured: 65 tracked files under `src/` and `e2e/` have no trailing newline**, and the class has
-recurred **three times** in this batch — including once in the very fix that cured an earlier
-instance, which is what promoted it from "a nit" to "a guard."
+**Measured 2026-09-30: 79 tracked files have no trailing newline** — `src/` 44, `e2e/` 22,
+`scripts/` 13 (`.ts` 48, `.tsx` 18, `.mjs` 9, `.sh` 2, `.py` 2). **All 79 were verified to be text, so
+appending a newline cannot corrupt a binary** — re-check that before you sweep anyway, and if a binary
+is in your list, stop and ask rather than appending.
+
+**An earlier count said 65.** That was `src/` + `e2e/` before slice 3 added `e2e/onboarding-kid-photo.e2e.ts`
+without one. **Which is the whole point: the class has now recurred FOUR times in this batch**, including
+**twice inside a fix that was itself curing an earlier instance** — and that is what promoted it from "a
+nit" to "a guard."
 
 **Order is load-bearing: sweep first, guard second.** A full-repo guard added first cannot go green
 without either diff-scoping or an allowlist, and both of those defeat it. So:
