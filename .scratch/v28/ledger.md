@@ -2697,3 +2697,69 @@ The watchdog raised "needs attention" on BOTH the reviewer and the verifier agai
 obeyed: both transcripts had grown (276 KB and 170 KB, updated within the minute) -- **false alarms
 a second time**, and steering a live reviewer mid-diff would inject noise into the one lane whose
 value is freshness. `ocr` running on slice 2 (`--from aac2bab`).
+
+## ⚠️ RETRACTION — my own adjudication error, and a rule I should not have written
+
+The slice-2 reviewer corrected me, and it is right. **Verified myself before accepting the
+correction** (a claim is a claim, even a correction's):
+
+- `git diff aac2bab 2e784d3 -- src/lib/avatarUrl.test.ts` -> **EMPTY.** The file is not in slice 2's
+  diff. Slice 2's file list is exactly the six the report named.
+- The 4/-3 docblock hunk landed in **`525fdcf` ("V28 r2 slice 1b")**.
+- The base I swept against, **`e252f01`, is 1b's PARENT** -- and `525fdcf` is an ancestor of
+  `aac2bab`, i.e. **slice-2-EXTERNAL**.
+
+**So the builder's "Untouched" was CORRECT, both literally and substantively.** And I took a slice-1b
+comment edit, saw it inside `e252f01..2e784d3`, and attributed it to SLICE 2 -- then generalised it
+into a ledger rule ("a builder's 'untouched' is a claim about what it means; comment-only edits are
+still edits"), announced it to the reviewer as "the second occurrence", and asked the reviewer to
+judge whether it merited a guard.
+
+### RETRACTED
+**The "second occurrence" finding is withdrawn, and the rule that came with it is withdrawn** -- it
+was derived from a sample that does not exist. It was never a second instance of 1b's Risk 3 class.
+The reviewer's judgment is right on all three counts: no correction is owed to the builder, and
+**hardening a guard against a phantom second sample would codify my mistake.** Recorded as the
+reviewer asked, because a retraction that is not written down leaves a false rule in the record.
+
+### The real defect was MINE, and it is the batch's own lesson turned inward
+**I diffed against the wrong base.** For asking "did slice 2 sweep the traps?", the correct base is
+slice 2's own base (`aac2bab`) -- I used `e252f01`, a slice-1-era commit, which silently folded 1b's
+edits into slice 2's. Every builder, reviewer and verifier in this batch has been held to
+"check a finding against the PRE-FIX state before accepting it"; **the orchestrator is not exempt,
+and this is the first time the check has caught ME.**
+
+**CORRECTED RULE (replacing the retracted one): a pre-slice-state check must diff against the
+SLICE'S OWN BASE -- `git diff <slice-base> <slice-tip> -- <file>` -- never an arbitrary older
+commit.** An older commit answers a different question, and the difference is invisible unless you
+name the range.
+
+**This is the SECOND occurrence of the base-selection class** (the first was the slice-1 verifier
+choosing to verify at `ce77c80` rather than the brief's `525fdcf` -- handled well there, but it was
+the same ambiguity). **Per the batch's own rule, the second occurrence means build a tool, not
+another careful patch: a `scripts/slice-diff.sh <base> <tip>` that prints the file list, the +/-
+counts, and the known-trap files' status in one command, so the base is right BY CONSTRUCTION.**
+Filed to slice 8.
+
+## Slice 2 -- REVIEWER LANE: PASS
+
+No defects in the diff. All six acceptance criteria met on direct inspection of `aac2bab..2e784d3`.
+Findings, all non-blocking:
+1. **Verify gate open** -- no green `npm run verify` recorded at `2e784d3`. **Already in flight:** the
+   verifier lane is running against this exact commit; the reviewer, being fresh-context, could not
+   know that. Slice 2 closes when it reports.
+2. **The transient `'Uploading…'` assertion** (`e2e/name-card-photo.e2e.ts:150`) is **redundant and
+   flake-prone**: a tiny PNG can finish uploading before the poll and the text flips to "Photo added"
+   -- and the spec's DURABLE assertions (`:183-195`: the row's `avatar_url` read back over REST, the
+   object read off the storage API) are the actual proof. It matches a pre-existing convention
+   (`e2e/avatar.e2e.ts:112`), so it is inherited rather than new. **RULED: non-blocking, assigned to
+   slice 8** -- an assertion that adds flake risk without adding proof is worth deleting, not
+   tolerating. If the verifier's run flakes there, it stops being non-blocking.
+3. **Residual, from my own condition 5:** "a failed upload must not gate Continue" is proven
+   **structurally** -- the reviewer confirmed `handleCreateProfile` reads neither `photoError` nor
+   `photoUploading`, and the card's only `primaryDisabled` is `handleBusy` -- but **no test
+   simulates a storage failure.** The reviewer called that "not cheaply simulatable"; it is: a
+   `page.route('**/storage/v1/object/**', r => r.abort())`. **RULED: accepted for this slice on the
+   structural argument, and assigned to slice 8 to pin with a route-abort spec.** A rule with no
+   failing test is the vacuity class.
+4. **Ledger hygiene** -- this entry is that correction.
