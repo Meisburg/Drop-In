@@ -4432,3 +4432,64 @@ that reports a green number.** It also caught HEAD advancing mid-run **and prove
 result describes `512e673`'s tree.
 
 **FIX ROUND 3 DISPATCHED** (resume; brief `slice-4-fix-3.md`).
+
+## Slice 4 FIX ROUND 3: DONE (`cb6f125`) -- the third claim closed, and the PIN HAS TWO FACES
+
+2 files, **+111/-3**. **My verification:** the edit block clears `zipFallbackShown` **with `ocr`'s safety
+reasoning in the comment** -- the settle and catch legs both re-derive it, and *"a TYPED ZIP IS UNAFFECTED: it
+lives in `homeZip`, which handleAreaFinish prefers over the address's resolution REGARDLESS of note
+visibility"* -- and the new 7th leg asserts **both** faces.
+
+### The pin is better than I asked for: it proves the clear does not OVER-clear
+I asked for a leg that reveals the note, edits, and asserts the note is hidden. **It added a second face:
+re-blur the new address and assert the note RETURNS, re-derived for the new text.** So the leg proves the flag
+is not merely cleared but **correctly re-derived** -- i.e. that clearing it **cost nothing**. **A one-faced leg
+would have passed just as well against a fix that permanently disabled the note**, which is the "fix by
+deletion" version of the same class. **The builder closed that door without being asked.**
+
+### The red was PASTED this time, and it is decisive
+```
+Locator:  getByTestId('area-zip-fallback-note')
+    Expected: not visible      Received: visible
+> 648 |       await expect(note).not.toBeVisible()
+```
+*"The note was visible 34/34 poll samples -- it lingered over B's text exactly as both lanes described."*
+Restored the clear -> the same leg passed in **5.3s**. **A discriminating assertion with a pasted red, which
+is what the reviewer correctly said was missing last round.**
+
+### And it answered the "sixth claim" question the right way
+*"I can't name a LIVE sixth -- and I'd rather say that plainly than invent one."* **That is exactly the answer
+this batch has been training for all session**, and it went further: it named the candidate it **checked and
+rejected** -- `zipError` is a claim about the **typed zip**, not the address text, so an address edit
+**correctly does not** invalidate it. **A correctness argument for NOT clearing something** is worth more than
+another clear.
+
+### ⚠️ BUT ITS CENTRAL CLAIM IS SLIGHTLY GENEROUS, and I have asked the reviewer to test it
+It says a fourth instance is now *"buildable only visibly -- it fails its own red->green before merge."*
+**That is true only if the next developer WRITES the leg.** The pin is a **template plus a habit**, not an
+enforcer -- unless something makes the absence of a leg visible. **So the reviewer is asked plainly: is it a
+template or a real guard, and what would make it a guard -- or is a real guard even possible here?** **I would
+rather have an honest "it is a template" than a comfortable overclaim**, and this is the same family as *"a
+guard that cannot fail is worse than none."*
+
+### ⚠️ AND I FOUND A SECOND INSTANCE OF A CLASS THIS ROUND WAS FIXING
+`e2e/signup-zip-fallback.e2e.ts:514` still carries a **`waitForTimeout(300)`** -- the fix-2 leg's beat --
+**which has exactly the false-pass risk `ocr` identified for leg (a)'s beat**: on a slow runner the assertions
+can pass before the settle runs, so the leg can false-pass against pre-fix code and lose its reason to exist.
+**This is the SECOND occurrence of the timing-beat class**, so by the batch's own rule the remedy is the
+**class** (every fixed beat in this spec gets a rationale and a size that survives a slow runner, or a
+comment saying why it cannot), **not a third one-off raise. -> 8c.**
+
+### The builder disclosed its own instrument failure, unprompted
+Its fix-2 lint count used the pattern `warning eslint|warning react`, **which under-counted: it missed the
+nine `react-hooks(exhaustive-deps)` warnings in `PlaceMap.tsx`.** Correct pattern:
+`warning (eslint|react|react-hooks)` -> **81, the baseline.** **That is the sixth instrument to lie in this
+session, and the first one a lane caught in its OWN earlier work and volunteered.** The number was right
+anyway; the method was wrong; it said so.
+
+### Process note for the next round
+**Slice 4 has now had THREE fix rounds. Per the loop's escalation table, a fourth round goes to a FRESH
+builder on cloud `deepseek-v4.1-flash:cloud`, not the local one** -- rounds 1-3 resume the original builder,
+4-5 dispatch fresh. **Recorded now so nobody has to remember it under pressure.**
+
+**THREE LANES OUT** (a fix round re-runs all three): reviewer + verifier, and `ocr` on `512e673..cb6f125`.
