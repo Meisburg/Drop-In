@@ -1370,7 +1370,7 @@ export function ProfilePage() {
                           kidId={kid.id}
                           photoUrl={kidPhoto}
                           busy={kidPhotoBusyId === kid.id}
-                          onUpload={(k, source, rect) => void handleKidPhotoUpload(k, source, rect)}
+                          onUpload={(k, source, rect) => handleKidPhotoUpload(k, source, rect)}
                           onRemove={() => void handleKidPhotoRemove(kid.id)}
                           onError={() => setKidPhotoErrors((prev) => ({ ...prev, [kid.id]: true }))}
                         />
@@ -2214,13 +2214,22 @@ function KidPhotoControl({
       it); undefined when the row has no photo yet. */
   photoUrl?: string
   busy: boolean
-  onUpload: (kidId: string, source: ImageBitmap, rect: CropRect) => void
+  /** `Promise<void>` on purpose (V28 r2 fix round 1, F6): the caller is the
+      crop step's `onConfirm`, whose `finally` closes the bitmap the moment
+      this resolves — the upload must finish BEFORE that close. A `void`
+      return type is what let the fire-and-forget call stay invisible to
+      the type system (handing the encoder a closed 0×0 bitmap). */
+  onUpload: (kidId: string, source: ImageBitmap, rect: CropRect) => Promise<void>
   onRemove: () => void
   /** Called when the photo image fails to load (the parent hides the control). */
   onError?: () => void
 }) {
   const crop = useCropStep(async (source, rect) => {
-    onUpload(kidId, source, rect)
+    // AWAITED, not fire-and-forget (V28 r2 fix round 1, F6): the hook's
+    // `finally` closes the bitmap the moment this returns, and the upload
+    // must finish BEFORE that close — the OnboardingPage bug that this
+    // await is the guard against.
+    await onUpload(kidId, source, rect)
   })
   return (
     <>

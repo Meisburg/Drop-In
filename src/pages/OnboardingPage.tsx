@@ -68,13 +68,21 @@ function photoPickerLabel(uploading: boolean, photoAdded: boolean): string {
  */
 function KidRowPhoto({
   index,
+  rowKey,
   photoUrl,
   storedPhoto,
   locked,
+  onBeginError,
   onConfirm,
   onLockChange,
 }: {
   index: number
+  /** The row's STABLE identity (fix round 1, F2): every post-`await` write
+      attaches to this, never the array index — a row removed above an
+      in-flight confirm re-indexes the array, and an index-attached attach
+      would land on the wrong row (or none), re-opening the double-write.
+      `index` survives only as the DISPLAY position (the testids). */
+  rowKey: string
   /** The signed URL of the row's photo; undefined while the row has no photo
       or until its mint settles (the best-effort read degrades to no image, never an error). */
   photoUrl?: string
@@ -85,23 +93,37 @@ function KidRowPhoto({
   /** Another row holds the crop-step lock — this row's control is gated so
       two rows never race the shared bitmap's release. */
   locked: boolean
-  onConfirm: (index: number, source: ImageBitmap, rect: CropRect) => Promise<void> | void
-  onLockChange: (index: number, locked: boolean) => void
+  /** A rejected file (the ≤5MB / image-only gate, an unreadable decode):
+      surfaced on the card, never a silent no-op (fix round 1, F4 — the
+      name card's picker does the same). */
+  onBeginError: (message: string) => void
+  /** `Promise<void>` on purpose (fix round 1, F6): the hook's `finally`
+      closes the bitmap the moment this resolves. A `void`-typed prop is
+      what let a fire-and-forget call stay invisible to the type system
+      (and hand the encoder a closed 0×0 bitmap) — the ProfilePage bug
+      that this typing now makes un-typeable. */
+  onConfirm: (rowKey: string, source: ImageBitmap, rect: CropRect) => Promise<void>
+  onLockChange: (rowKey: string, locked: boolean) => void
 }) {
   const crop = useCropStep(async (source, rect) => {
     // AWAITED, not fire-and-forget: the hook's `finally` closes the bitmap
     // the moment this returns, and the upload must finish BEFORE that close
-    // (the hook's own contract). A `void` wrapper here would hand the
-    // encoder a closed (0×0) bitmap mid-upload.
-    await onConfirm(index, source, rect)
+    // (the hook's own contract).
+    await onConfirm(rowKey, source, rect)
   })
   const dialogOpen = crop.dialog !== null
   // Report this row's lock state to the page (its shared flag): open dialog
   // OR in-flight confirm — that is the whole window in which the other
-  // rows' controls must stand down.
+  // rows' controls must stand down. The UNMOUNT cleanup releases it (fix
+  // round 1, F5): a row that vanishes (removed above, list shrinks) must
+  // not strand the lock — a stranded key would leave the card's Continue
+  // disabled for the rest of the mount.
   useEffect(() => {
-    onLockChange(index, dialogOpen || crop.busy)
-  }, [index, dialogOpen, crop.busy, onLockChange])
+    onLockChange(rowKey, dialogOpen || crop.busy)
+    return () => {
+      onLockChange(rowKey, false)
+    }
+  }, [rowKey, dialogOpen, crop.busy, onLockChange])
   return (
     <>
       <label
@@ -129,10 +151,12 @@ function KidRowPhoto({
           className="hidden"
           data-testid={`kid-row-photo-input-${index}`}
           disabled={locked || crop.busy}
-          onChange={(e) => {
+          onChange={async (e) => {
             const file = e.target.files?.[0]
-            if (file !== undefined && file !== null) void crop.beginCrop(file)
             e.target.value = ''
+            if (file === undefined || file === null) return
+            const error = await crop.beginCrop(file)
+            if (error !== null) onBeginError(error)
           }}
         />
       </label>
@@ -279,8 +303,17 @@ export function OnboardingPage() {
   // V28 r2 slice 3: `kid` remembers the PERSISTED row (null until the
   // photo's crop-confirm writes it — handleKidPhotoConfirm below). A row
   // with a kid is never re-written by Continue, and its Remove removes the
-  // REAL row, not just the local state.
-  const [kidRows, setKidRows] = useState<Array<{ name: string; age: string; kid: Kid | null }>>([])
+  // REAL row, not just the local state. Fix round 1 (F2): `key` is the
+  // row's STABLE client identity (crypto.randomUUID at add) — every write
+  // after an `await` attaches to it, never the array index (a row removed
+  // above an in-flight confirm re-indexes the array; index-attached maps
+  // then land on the wrong row, or none).
+  const [kidRows, setKidRows] = useState<Array<{
+    key: string
+    name: string
+    age: string
+    kid: Kid | null
+  }>>([])
   const [kidsError, setKidsError] = useState<string | null>(null)
   // V28 slice 4a: the kids card (3 of 4) is its OWN step, between the name
   // card and the location page — the kid rows moved off this page into the
@@ -336,24 +369,46 @@ export function OnboardingPage() {
   }, [session, profile, kidsCardDone])
   // V28 r2 slice 3: the shared crop-step lock — one row's crop dialog (or
   // in-flight confirm) at a time, so two rows never race the bitmap's
-  // release. Each row's KidRowPhoto reports its own state here; the other
-  // rows gate their controls on it.
-  const [kidPhotoLockIndex, setKidPhotoLockIndex] = useState<number | null>(null)
-  const handleKidPhotoLockChange = useCallback((index: number, isLocked: boolean) => {
-    setKidPhotoLockIndex((prev) => {
-      if (isLocked) return index
-      if (prev === index) return null
+  // release. Keyed on the row's STABLE identity (fix round 1, F2), and
+  // released on the holder's unmount (F5), so the lock can never strand
+  // on a nonexistent index. Each row's KidRowPhoto reports its own state
+  // here; the other rows gate their controls on it.
+  const [kidPhotoLockKey, setKidPhotoLockKey] = useState<string | null>(null)
+  const handleKidPhotoLockChange = useCallback((rowKey: string, isLocked: boolean) => {
+    setKidPhotoLockKey((prev) => {
+      if (isLocked) return rowKey
+      if (prev === rowKey) return null
       return prev
     })
   }, [])
-  // V28 r2 slice 3: the persisted rows (written by the photo's crop-confirm) —
-  // the signed-URL read keys on them (kid photos are private: they render
-  // through useKidPhotoUrls, never the raw avatar_url column). Memoised so
-  // the hook only re-mints when the id set actually changes, not on every
-  // render of the page.
+  // V28 r2 slice 3: the persisted rows (written by the photo's crop-confirm)
+  // — the signed-URL read keys on them (kid photos are private: they render
+  // through useKidPhotoUrls, never the raw avatar_url column). Fix round 1
+  // (F3): key the memo on the id set + photo marker, NOT on `kidRows` — a
+  // keystroke in a non-persisted row's inputs yields a fresh `kidRows`
+  // array, and `useKidPhotoUrls`'s minting effect is keyed on the passed
+  // array's IDENTITY, so a per-keystroke array re-minted the signed URLs
+  // every time. The key below only changes when a row's persisted kid (or
+  // its photo marker) changes, so typing never re-mints. Soundness of the
+  // key: between two renders with the same key the only difference a row's
+  // `kid` object can have is a re-pick's re-attached `avatar_url` — the
+  // same canonical ref string, same non-empty marker — which is all the
+  // hook consumes (ids + "claims a photo"). Measured (fix round 1): with
+  // the memo keyed on `kidRows`, a keystroke in a non-persisted row re-minted
+  // and the settled photo's src SWAPPED to the fresh URL on every keystroke
+  // (the render never blanked — the new URL is valid for the same object —
+  // but the <img> reloaded every time, and every keystroke paid a batched
+  // sign round-trip).
+  const persistedKidKey = kidRows
+    .map((row) => (row.kid === null ? '' : `${row.kid.id}:${row.kid.avatar_url ? 1 : 0}`))
+    .join('|')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const persistedKids = useMemo(
     () => kidRows.map((row) => row.kid).filter((kid): kid is Kid => kid !== null),
-    [kidRows],
+    // The array must keep its identity across keystrokes (F3); the key
+    // above is the memo's honest input (see its comment).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [persistedKidKey],
   )
   const kidPhotoUrls = useKidPhotoUrls(session?.user.id ?? null, persistedKids)
 
@@ -534,12 +589,20 @@ export function OnboardingPage() {
 
   function addKidRow() {
     setKidsError(null)
-    setKidRows((rows) => [...rows, { name: '', age: '', kid: null }])
+    setKidRows((rows) => [
+      ...rows,
+      { key: crypto.randomUUID(), name: '', age: '', kid: null },
+    ])
   }
 
-  function updateKidRow(index: number, patch: { name?: string; age?: string }) {
+  /** Fix round 1 (F2): keyed on the row's stable identity, never the array
+      index — a row removed above an in-flight confirm re-indexes the
+      array, and an index-attached update would land on the wrong row. */
+  function updateKidRow(rowKey: string, patch: { name?: string; age?: string }) {
     setKidsError(null)
-    setKidRows((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)))
+    setKidRows((rows) =>
+      rows.map((row) => (row.key === rowKey ? { ...row, ...patch } : row)),
+    )
   }
 
   /**
@@ -550,20 +613,21 @@ export function OnboardingPage() {
    * would "delete" a kid that still exists. The local state drops only
    * AFTER the delete lands, so a failed removal keeps the row and shows an
    * error — never a silent success. A local-only row (never persisted)
-   * still just drops state, as before.
+   * still just drops state, as before. Fix round 1 (F2): keyed on the row's
+   * stable identity; the drop is a functional filter (no captured index).
    */
-  async function removeKidRow(index: number) {
+  async function removeKidRow(rowKey: string) {
     setKidsError(null)
-    const row = kidRows[index]
+    const row = kidRows.find((r) => r.key === rowKey)
     if (row === undefined) return
     if (row.kid === null) {
-      setKidRows((rows) => rows.filter((_, i) => i !== index))
+      setKidRows((rows) => rows.filter((r) => r.key !== rowKey))
       return
     }
     if (session === null) return
     try {
       await removeKid(session.user.id, row.kid.id)
-      setKidRows((rows) => rows.filter((_, i) => i !== index))
+      setKidRows((rows) => rows.filter((r) => r.key !== rowKey))
     } catch (err) {
       // The real row still exists — keep the local row (do not pretend it
       // is gone) and surface the error.
@@ -575,15 +639,22 @@ export function OnboardingPage() {
     }
   }
 
-  /** A filled-in kid row must validate (pure); blank rows are skipped. */
-  function invalidKidRows(): Array<{ index: number; message: string }> {
-    const bad: Array<{ index: number; message: string }> = []
-    kidRows.forEach((row, index) => {
-      if (row.name.trim() === '' && row.age.trim() === '') return
+  /**
+   * Filled-in kid rows must validate (pure, `src/lib/db.ts`); blank rows
+   * are skipped, not written (the pre-slice behavior). Fix round 1 (F1):
+   * the blank-age mirror — `Number('')` is 0, and 0 is a LEGAL age
+   * (`validateKidAge` passes it), so a blank age maps to NaN: a name-only
+   * row is refused, never fabricated into an age-0 kid. Fix round 1 (F2):
+   * the key names the failing row (only the message is consumed today).
+   */
+  function invalidKidRows(): Array<{ key: string; message: string }> {
+    const bad: Array<{ key: string; message: string }> = []
+    for (const row of kidRows) {
+      if (row.name.trim() === '' && row.age.trim() === '') continue
       const age = row.age.trim() === '' ? NaN : Number(row.age)
       const kidError = validateKid(row.name, age)
-      if (kidError !== null) bad.push({ index, message: kidError })
-    })
+      if (kidError !== null) bad.push({ key: row.key, message: kidError })
+    }
     return bad
   }
 
@@ -600,11 +671,18 @@ export function OnboardingPage() {
    * it (`kid` set) — so Continue never writes it twice, and Remove removes
    * the real row. An upload failure still keeps the row (it exists):
    * Continue skips it, Remove deletes it, and the photo stays optional
-   * (the /profile control can add it later).
+   * (the /profile control can add it later). Fix round 1 (F1): the
+   * validation mirrors `invalidKidRows` EXACTLY — a fully-blank row is
+   * skipped (never written), and a blank age is NaN, never `Number('')`
+   * === 0 (0 is a legal age, so a name-only row is refused, not
+   * fabricated into an age-0 kid). Fix round 1 (F2): keyed on the row's
+   * stable identity — every post-`await` attach below finds the row by
+   * `key`, so a row removed above an in-flight confirm cannot re-index the
+   * array out from under it.
    */
-  async function handleKidPhotoConfirm(index: number, source: ImageBitmap, rect: CropRect) {
+  async function handleKidPhotoConfirm(rowKey: string, source: ImageBitmap, rect: CropRect) {
     if (session === null) return
-    const row = kidRows[index]
+    const row = kidRows.find((r) => r.key === rowKey)
     if (row === undefined) return
     if (row.kid !== null) {
       // A re-pick on a row that is ALREADY persisted: the row exists, so
@@ -613,8 +691,10 @@ export function OnboardingPage() {
       try {
         const storedRef = await uploadKidPhoto(session.user.id, row.kid.id, source, rect)
         setKidRows((rows) =>
-          rows.map((r, i) =>
-            i === index && r.kid !== null ? { ...r, kid: { ...r.kid, avatar_url: storedRef } } : r,
+          rows.map((r) =>
+            r.key === rowKey && r.kid !== null
+              ? { ...r, kid: { ...r.kid, avatar_url: storedRef } }
+              : r,
           ),
         )
       } catch {
@@ -623,8 +703,12 @@ export function OnboardingPage() {
       }
       return
     }
-    // 1. The same pure seam the card has always used.
-    const age = Number(row.age)
+    // 0. Mirror `invalidKidRows` (F1): a fully-blank row is skipped, not
+    //    written — same as Continue's blank-row rule.
+    if (row.name.trim() === '' && row.age.trim() === '') return
+    // 1. The same pure seam the card has always used — with the SAME
+    //    blank-age mirror (F1): blank age → NaN, never `Number('')` === 0.
+    const age = row.age.trim() === '' ? NaN : Number(row.age)
     const kidError = validateKid(row.name, age)
     if (kidError !== null) {
       // Not written, not uploaded — the card stays usable with the same
@@ -652,13 +736,13 @@ export function OnboardingPage() {
     try {
       const storedRef = await uploadKidPhoto(session.user.id, kid.id, source, rect)
       setKidRows((rows) =>
-        rows.map((r, i) => (i === index ? { ...r, kid: { ...kid, avatar_url: storedRef } } : r)),
+        rows.map((r) => (r.key === rowKey ? { ...r, kid: { ...kid, avatar_url: storedRef } } : r)),
       )
     } catch {
       // The upload failed but the row was just written — keep it in local
       // state so Continue never writes it twice and Remove can remove the
       // real row. The photo stays optional.
-      setKidRows((rows) => rows.map((r, i) => (i === index ? { ...r, kid } : r)))
+      setKidRows((rows) => rows.map((r) => (r.key === rowKey ? { ...r, kid } : r)))
       setKidsError('Your kid was added, but their photo could not be uploaded. You can add it later in settings.')
     }
   }
@@ -1077,7 +1161,7 @@ export function OnboardingPage() {
         // photo write: the row lands at confirm, so the card's own write must
         // stand down until it has).
         primaryLabel={kidsSaving ? 'Saving…' : kidsCopy.primaryLabel}
-        primaryDisabled={kidsSaving || kidPhotoLockIndex !== null}
+        primaryDisabled={kidsSaving || kidPhotoLockKey !== null}
         onPrimary={() => void handleKidsContinue()}
         onSkip={() => {
           // Skippable (lib/firstRun's isSkippable('kids')): advance and
@@ -1099,7 +1183,7 @@ export function OnboardingPage() {
           ) : (
             <div className="flex flex-col gap-2">
               {kidRows.map((row, index) => (
-                <div key={index} className="flex items-center gap-2">
+                <div key={row.key} className="flex items-center gap-2">
                   {/* V28 r2 slice 3: the photo control. The photo is
                       OPTIONAL (never blocks Continue) and PRIVATE — it
                       renders through the signed URL (`kidPhotoUrls`,
@@ -1110,16 +1194,18 @@ export function OnboardingPage() {
                       DB), while Remove removes the real row. */}
                   <KidRowPhoto
                     index={index}
+                    rowKey={row.key}
                     photoUrl={row.kid !== null ? kidPhotoUrls[row.kid.id] : undefined}
                     storedPhoto={row.kid !== null && row.kid.avatar_url !== null && row.kid.avatar_url !== ''}
-                    locked={kidPhotoLockIndex !== null && kidPhotoLockIndex !== index}
-                    onConfirm={(i, source, rect) => handleKidPhotoConfirm(i, source, rect)}
+                    locked={kidPhotoLockKey !== null && kidPhotoLockKey !== row.key}
+                    onBeginError={setKidsError}
+                    onConfirm={(k, source, rect) => handleKidPhotoConfirm(k, source, rect)}
                     onLockChange={handleKidPhotoLockChange}
                   />
                   <input
                     className="min-w-0 flex-1 rounded-xl border border-slate-300 px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
                     value={row.name}
-                    onChange={(e) => updateKidRow(index, { name: e.target.value })}
+                    onChange={(e) => updateKidRow(row.key, { name: e.target.value })}
                     placeholder="First name"
                     maxLength={30}
                     disabled={row.kid !== null}
@@ -1131,15 +1217,15 @@ export function OnboardingPage() {
                     max={17}
                     className="w-20 shrink-0 rounded-xl border border-slate-300 px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
                     value={row.age}
-                    onChange={(e) => updateKidRow(index, { age: e.target.value })}
+                    onChange={(e) => updateKidRow(row.key, { age: e.target.value })}
                     placeholder="Age"
                     disabled={row.kid !== null}
                     {...fieldA11y('kids', kidsError)}
                   />
                   <button
                     type="button"
-                    onClick={() => void removeKidRow(index)}
-                    disabled={kidPhotoLockIndex === index}
+                    onClick={() => void removeKidRow(row.key)}
+                    disabled={kidPhotoLockKey === row.key}
                     className="inline-flex min-h-11 shrink-0 items-center rounded-md bg-slate-100 px-3 text-sm font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-200"
                   >
                     Remove

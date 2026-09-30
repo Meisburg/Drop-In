@@ -22,15 +22,41 @@
  * (4) a failed UPLOAD still keeps the written row (Continue skips it, Remove
  *     deletes it) — the error is honest and the card stays usable.
  *
+ * Fix round 1 (this spec grew to pin the fixes):
+ *   F1 — a name-only row (blank age) with a confirmed photo is REFUSED, not
+ *        fabricated into an age-0 kid (`Number('')` is 0, and 0 is a legal
+ *        age), and a fully-blank row with a photo is skipped (mirrored from
+ *        the card's own blank-row rule). Neither writes anything.
+ *   F2/F5 — a persisted row removed from a NON-empty list re-indexes the
+ *        rows beneath it; the writes are keyed on the row's STABLE identity
+ *        (never the array index) and the crop-step lock is released on a
+ *        row's unmount, so Continue can never be stranded. (The literal
+ *        "remove while the crop dialog is open" click is UI-unreachable —
+ *        the dialog is a full-viewport overlay — so these tests pin the
+ *        reachable consequence: the state after the list shrinks.)
+ *   F3 — typing in a non-persisted row must not re-mint the other rows'
+ *        signed URLs (the `persistedKids` memo is keyed on the id set, not
+ *        the row array) — test 1 counts the sign requests around a typed
+ *        row and asserts the settled photo never blanks.
+ *
  * WHAT THIS SPEC PROVES, precisely:
  *   test 1 — a kid WITH a photo + a kid WITHOUT one, Continue → the DB holds
  *            EXACTLY those two rows (no double-write of the persisted row),
  *            the photo kid's `avatar_url` is the stored ref and the object
  *            EXISTS in `kid-photos`, the no-photo kid's column is NULL, and
- *            the photo rendered on the card from a SIGNED URL;
+ *            the photo rendered on the card from a SIGNED URL that stays
+ *            put (no blank, no re-mint) while a second row is typed;
  *   test 2 — the CONVERSE: a photo-confirmed row, then Remove → the DB row
  *            is gone (the local-state-only removal this slice replaces would
- *            have left it behind).
+ *            have left it behind);
+ *   test 3 — F1: a BLANK row's photo is skipped (no error, no write) and a
+ *            NAME-ONLY row's photo is refused with the card's own
+ *            validation message (no write) — Continue is held by the same
+ *            error, and the DB stays empty;
+ *   test 4 — F2/F5: a persisted row removed from a NON-EMPTY list (the row
+ *            beneath it re-indexes) → the survivor is intact, Continue is
+ *            enabled (the lock is not stranded), and the DB holds exactly
+ *            the survivor.
  *
  * Viewer pattern (the onboarding-resume one): one DETERMINISTIC viewer
  * (`e2e-okp-<epoch>` prefix, sweepable by the orchestrator) in a FRESH
@@ -197,12 +223,52 @@ test('a kid added with a photo lands in kid-photos and Continue never double-wri
   expect(fetched.status, `the signed kid-photo URL must be fetchable (HTTP ${fetched.status})`).toBe(
     200,
   )
-
   // --- The no-photo kid (row 1): the photo stays OPTIONAL, the row walks
-  //     the card exactly as before. ---
+  //     the card exactly as before. Fix round 1 (F3): count the signed-URL
+  //     mints DURING THE KEYSTROKES — the kids mint hits /object/sign/
+  //     kid-photos. Pre-fix (the memo keyed on `kidRows`) every keystroke
+  //     re-minted and the settled photo's src swapped to the fresh URL each
+  //     time (measured: it never BLANKED — the new URL is valid for the
+  //     same object — but the <img> reloaded on every keystroke). Post-fix
+  //     keystrokes produce ZERO mints and the src stays put. (The "Add
+  //     another kid" click itself still triggers ONE mint — the shared
+  //     hook's effect is keyed on the ids array's identity, which a row add
+  //     changes even though the id SET is unchanged; that is the residual,
+  //     not the keystroke path.) ---
+  const signRequests: string[] = []
+  page.on('request', (req) => {
+    if (req.url().includes('/object/sign/')) signRequests.push(req.url())
+  })
   await page.getByRole('button', { name: 'Add another kid' }).click()
-  await page.locator('input[placeholder="First name"]').nth(1).fill('Blair')
-  await page.locator('input[placeholder="Age"]').nth(1).fill('6')
+  // Let the post-add mint settle (post-fix: exactly one) and the src
+  // re-settle to the post-mint URL, so the window below measures KEYSTROKES
+  // only.
+  await page.waitForTimeout(800)
+  await expect(img, 'the persisted photo must not blank when a second row is added').toBeVisible()
+  const srcAfterAdd = (await img.getAttribute('src')) ?? ''
+
+  // Type one character at a time: each keystroke is a fresh `kidRows`
+  // array — exactly the re-mint vector the F3 memo-keying fix removes.
+  const mintsBeforeKeystrokes = signRequests.length
+  const noPhotoName = page.locator('input[placeholder="First name"]').nth(1)
+  await noPhotoName.click()
+  for (const ch of ['B', 'l', 'a', 'i', 'r']) await page.keyboard.press(ch)
+  const noPhotoAge = page.locator('input[placeholder="Age"]').nth(1)
+  await noPhotoAge.click()
+  await page.keyboard.press('6')
+
+  expect(
+    signRequests.length - mintsBeforeKeystrokes,
+    'keystrokes must not re-mint the other rows’ signed URLs (F3: the memo is keyed on the id set, not the row array)',
+  ).toBe(0)
+  await expect(
+    img,
+    'the persisted photo must not blank while a second row is typed (measured: pre-fix it never blanked either — the swap was the symptom)',
+  ).toBeVisible()
+  expect(
+    (await img.getAttribute('src')) ?? '',
+    'the settled signed URL must stay put across keystrokes (no re-mint => no swap)',
+  ).toBe(srcAfterAdd)
 
   // --- Continue: lands on the area card, writing ONLY the row that has no
   //     persisted id (the photo kid was written at its confirm). ---
@@ -330,3 +396,183 @@ test('removing a photo-confirmed row removes the REAL row (not just the local st
 
   await context.close()
 })
+
+test(
+  'fix round 1 (F1): a blank row’s photo is skipped and a name-only row’s is refused — neither writes anything',
+  async ({ browser }) => {
+    const context = await freshViewer(browser)
+    const page = await context.newPage()
+
+    const epoch = Math.floor(Date.now() / 1000)
+    const viewerEmail = `e2e-okp-blank-${epoch}@gmail.com`
+    const viewerPassword = `e2e-okp-blank-pw-${epoch}`
+
+    // --- Land on the KIDS card; row 0 is left FULLY BLANK, then given a
+    //     photo. Mirrored from the card’s own rule (invalidKidRows): a
+    //     blank row is SKIPPED, not written, not errored. ---
+    await createAccountToKidsCard(page, {
+      email: viewerEmail,
+      password: viewerPassword,
+      givenName: `e2e-okp-blank-${epoch}`,
+    })
+    await page.getByRole('button', { name: 'Add a kid' }).click()
+    await page.getByTestId('kid-row-photo-input-0').setInputFiles({
+      name: 'blank.png',
+      mimeType: 'image/png',
+      buffer: makePng(400, 300, 79, 229, 70),
+    })
+    await page.getByRole('button', { name: 'Use this photo' }).click()
+    // The confirm silently skipped the blank row: no error, and the row is
+    // NOT frozen (nothing was persisted for it).
+    await expect(page.getByTestId('first-run-kids-card').getByRole('alert')).toHaveCount(0)
+    await expect(page.locator('input[placeholder="First name"]').first()).toBeEnabled()
+    await expect(
+      page.getByTestId('kid-row-photo-img-0'),
+      'a skipped row renders no photo (nothing was written, nothing to mint)',
+    ).toBeHidden()
+
+    // --- Row 1: NAME ONLY (the F1 trap — `Number('')` is 0, and 0 is a
+    //     LEGAL age, so a photo-confirmed name-only row must be REFUSED,
+    //     not fabricated into an age-0 kid). ---
+    await page.getByRole('button', { name: 'Add another kid' }).click()
+    await page.locator('input[placeholder="First name"]').nth(1).fill('Dana')
+    await page.getByTestId('kid-row-photo-input-1').setInputFiles({
+      name: 'dana.png',
+      mimeType: 'image/png',
+      buffer: makePng(400, 300, 229, 79, 70),
+    })
+    await page.getByRole('button', { name: 'Use this photo' }).click()
+    await expect(
+      page.getByTestId('first-run-kids-card').getByRole('alert'),
+      'the name-only row must be refused with the card’s own validation message',
+    ).toHaveText(/Age must be a whole number from 0 to 17/)
+
+    // --- Continue is held by the SAME error (the pure seam the card
+    //     always used), and the card stays on screen. ---
+    await page.getByRole('button', { name: /^Continue/ }).click()
+    await expect(page.getByTestId('first-run-kids-card')).toBeVisible()
+    await expect(page.getByTestId('first-run-area-card')).toBeHidden()
+
+    // --- The database: NEITHER row was written (the uploads never ran —
+    //     validation precedes addKid, and addKid precedes the upload). ---
+    const viewerSession = await readSessionFromBrowserPage(page)
+    expect(viewerSession).not.toBeNull()
+    const { url, anonKey } = readSupabaseEnv()
+    const headers = ownerHeaders(viewerSession!.accessToken, anonKey)
+    const kids = await readKidsDb(url, headers, viewerSession!.userId)
+    expect(kids, 'the blank row and the name-only row must not be written').toHaveLength(0)
+
+    // Nothing to clean up (no rows, no objects) — the viewer account is
+    // left for the e2e- prefix sweep, as always.
+    console.log(`[e2e cleanup] nothing written — ${viewerSession!.userId} left for the sweep`)
+
+    await context.close()
+  },
+)
+
+test(
+  'fix round 1 (F2/F5): a persisted row removed from a non-empty list leaves the survivor intact and Continue un-stranded',
+  async ({ browser }) => {
+    const context = await freshViewer(browser)
+    const page = await context.newPage()
+
+    const epoch = Math.floor(Date.now() / 1000)
+    const viewerEmail = `e2e-okp-shift-${epoch}@gmail.com`
+    const viewerPassword = `e2e-okp-shift-pw-${epoch}`
+
+    // --- Land on the KIDS card: row 0 PERSISTED (photo-confirmed), row 1
+    //     plain. (The literal "remove while the crop dialog is open" click
+    //     is UI-unreachable — the dialog is a full-viewport overlay and the
+    //     holder’s own Remove is disabled — so this pins the reachable
+    //     consequence: the list shrinks with a persisted row above a plain
+    //     one, the survivor re-indexes, and the lock must not strand.) ---
+    await createAccountToKidsCard(page, {
+      email: viewerEmail,
+      password: viewerPassword,
+      givenName: `e2e-okp-shift-${epoch}`,
+    })
+    await page.getByRole('button', { name: 'Add a kid' }).click()
+    await page.locator('input[placeholder="First name"]').first().fill('Faye')
+    await page.locator('input[placeholder="Age"]').first().fill('7')
+    await page.getByTestId('kid-row-photo-input-0').setInputFiles({
+      name: 'faye.png',
+      mimeType: 'image/png',
+      buffer: makePng(400, 300, 70, 229, 79),
+    })
+    await page.getByRole('button', { name: 'Use this photo' }).click()
+    const fayeImg = page.getByTestId('kid-row-photo-img-0')
+    await expect(fayeImg, 'the confirmed photo must render on the row').toBeVisible()
+
+    // Capture Faye’s row BEFORE her removal (test 2’s convention): the
+    // stored ref is how the best-effort cleanup reaches her ORPHANED
+    // object later — once her row is deleted, the column is gone with it.
+    const viewerSession = await readSessionFromBrowserPage(page)
+    expect(viewerSession).not.toBeNull()
+    const { url, anonKey } = readSupabaseEnv()
+    const headers = ownerHeaders(viewerSession!.accessToken, anonKey)
+    const fayeBefore = await readKidsDb(url, headers, viewerSession!.userId)
+    expect(fayeBefore, 'the photo-confirmed row must be a real DB row').toHaveLength(1)
+    const fayeRef = fayeBefore[0].avatar_url
+
+    // The plain row beneath it.
+    await page.getByRole('button', { name: 'Add another kid' }).click()
+    await page.locator('input[placeholder="First name"]').nth(1).fill('Eli')
+    await page.locator('input[placeholder="Age"]').nth(1).fill('4')
+
+    // --- Remove the PERSISTED row (row 0) — a real `removeKid`, and Eli
+    //     re-indexes from 1 to 0. The F2 writes are keyed on the row’s
+    //     stable identity (never the array index), and F5’s unmount
+    //     cleanup releases Faye’s lock as her row leaves the tree. ---
+    await page.getByRole('button', { name: 'Remove' }).first().click()
+    await expect(
+      page.locator('input[placeholder="First name"]').first(),
+      'the survivor must be intact at its new (re-indexed) position',
+    ).toHaveValue('Eli')
+
+    // --- THE PIN: Continue is enabled — the crop-step lock did not strand
+    //     (a stranded key would leave the card’s Continue disabled for
+    //     the rest of the mount, with no dialog open to release it). ---
+    await expect(
+      page.getByRole('button', { name: /^Continue/ }),
+      'the lock must not strand Continue after a persisted row is removed',
+    ).toBeEnabled()
+
+    // Continue writes ONLY the plain row (Faye was persisted at her
+    // confirm, and she was just removed).
+    await page.getByRole('button', { name: /^Continue/ }).click()
+    await expect(page.getByTestId('first-run-area-card')).toBeVisible()
+
+    // --- The database: EXACTLY the survivor. Faye is gone (the real row
+    //     was deleted, not just dropped from local state), Eli was written
+    //     exactly once (no double-write of the removed row’s id, no
+    //     stray write of a re-indexed index). ---
+    const kids = await readKidsDb(url, headers, viewerSession!.userId)
+    expect(kids, 'the DB must hold exactly the survivor').toHaveLength(1)
+    expect(kids[0].first_name).toBe('Eli')
+    expect(kids[0].avatar_url, 'the plain survivor carries a NULL column').toBeNull()
+
+    // --- Best-effort cleanup: delete Faye’s ORPHANED object (her row is
+    //     gone; the object outlives it) + the survivor’s row. Logged,
+    //     never fatal. ---
+    try {
+      if (fayeRef !== null && fayeRef !== '') {
+        await fetch(`${url}/storage/v1/object/${fayeRef}`, { method: 'DELETE', headers })
+      }
+      for (const kid of kids) {
+        await fetch(`${url}/rest/v1/kids?id=eq.${kid.id}`, { method: 'DELETE', headers })
+      }
+      console.log(
+        `[e2e cleanup] ok — deleted ${viewerSession!.userId}’s survivor kid row + Faye’s orphaned object`,
+      )
+    } catch (err) {
+      console.log(
+        `[e2e cleanup] FAILED (logged, best-effort): ${
+          err instanceof Error ? err.message : err
+        } — orchestrator sweep (e2e- prefix) will pick stragglers up`,
+      )
+    }
+
+    await context.close()
+  },
+)
+
