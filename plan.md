@@ -705,3 +705,23 @@ the redundant `Uploading…` assertion, and `scripts/slice-diff.sh`.
 
 **The one idea behind all four: make the instrument incapable of matching the thing it is measuring.**
 Every one of these mistakes produced a plausible, wrong number that looked like a finding.
+
+## RECORDED ITEMS WITH NAMED OWNERS (added 2026-09-30 — the fix-round-1 reviewer's finding, and it was right to insist)
+
+**The reviewer's words: an unowned deferral is a deferral by the batch's own rule.** Every one of these now
+has a home rather than a hope.
+
+| Item | Found by | Owner | State |
+|---|---|---|---|
+| **A rejected lookup poisons its slot until the address is edited** — a re-blur reuses the rejected promise, so the ZIP fallback persists even if the network recovered. **Not an invariant break** (the reviewer showed a republish could not fix it, since republishing `absent` is still null); a UX residual, and the fallback still lets the parent proceed. | slice-4 review | **8a** | recorded, not fixed |
+| **A Finish tap inside the debounce window, then an edit, saves the OLD address's zip** — a suppressed settle still returns the result value to its caller. Breaks the invariant the slice documents (*"the card's map was already showing what this save will write"*) on the SAVE path after the DISPLAY path was fixed. | slice-4 fix-round-1 review | **slice 4 fix round 2** | IN FLIGHT |
+| The reuse-branch comment is true only under an unstated condition (slot consistency + the edit clearing the slot). | slice-4 fix-round-1 review | **slice 4 fix round 2**, with the condition stated | IN FLIGHT |
+| The kid-photo spec's flake windows, its missing status checks, its vacuous-if-`before===null` redraw assertion, and the spec-header overstatement. | slices 3 reviews | **8c** | brief pending |
+| The newline sweep + its guard, `slice-diff.sh`, the await guard, the `\| void` drop. | r2 planning | **8b** | briefed |
+
+**And one habit of mine, recorded where it will be read: I have now produced four numbers I did not obtain** —
+two invented run ids, a computed test count (2014 for 2012), and a brief claim that a sibling test pinned
+something it did not. **Every one was caught, and every one was caught by a lane rather than by me.** The
+remedies that worked were structural, not resolutions: the run-id field is **deleted** from the ledger, counts
+are stated as **checks** that a lane must confirm or name a difference for, and a claim about "the sibling test
+already pins this" is now something a brief asserts only after grepping it.

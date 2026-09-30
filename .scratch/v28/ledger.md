@@ -4210,3 +4210,59 @@ FALSE in general** -- it is precisely what made B2 a bug -- **and the comment do
 The reviewer is asked to attack the B1-implies-B2 argument and to judge this comment, and I want its
 independent reading rather than mine, because the builder and I now agree and a fresh reader is the only test
 of a claim two people already believe.
+
+## Slice 4 FIX ROUND 1 -- REVIEWER: **PASS**, no blocking findings, and it INDEPENDENTLY RE-DERIVED the B2 proof
+
+**It attacked the argument exactly as asked and the conclusion survived.** Its derivation found an invariant
+neither the builder nor I had stated:
+
+> **`areaLookupForRef` and `areaLookupPromiseRef` are only ever mutated TOGETHER** -- the fresh branch sets
+> both, the `''` branch clears both, and post-B1 the edit clears both. **So the slot can never hold
+> (name-of-X, promise-of-Y).**
+
+It then walked **five** paths (rejected-then-recovered, re-blur with no edit, a one-keystroke edit back to the
+original, unmount/remount, and a late stale settle over a repopulated slot) and reported: **"I could not
+construct any reachable 'coordinates null + address resolved' state at the reuse branch."** It also confirmed
+the diff's mechanical fact -- the reuse branch is **byte-unchanged** -- so B2 was rightly not added.
+
+**It verified the `geocoding` flag in all six paths** (edit, fresh, suppressed settle, Finish, rejection,
+unmount) and confirmed the builder's self-found bug was real: *"B1's suppression alone would leave `geocoding`
+true forever (no live path clears it once the slot is orphaned), i.e. a permanent 'Checking your address…'
+disabled button."*
+
+**⚠️ AND IT CAUGHT A FALSE CLAIM IN MY BRIEF.** I wrote that B3's sibling test *already pinned* the rejection
+leg. **It did not** -- the sibling implementation had the two-arg `.then` and its describe block held **four
+tests with no rejection leg at all**. The builder's note (*"it had the fix but no instrument"*) was the correct
+observation, and the reviewer put it precisely: *"the instruction presupposed the pin existed; the builder made
+it true."* **A builder that makes a brief's false premise true is doing better than one that obeys it.**
+
+### ⚠️ AND IT FOUND THE SAME BUG ONE LAYER DOWN -- the SAVE path has the staleness the DISPLAY path just lost
+**A Finish tap inside the 500 ms debounce starts a fresh lookup; if the address is then edited while it is in
+flight, `handleAreaFinish`'s continuation SAVES THE OLD ADDRESS'S ZIP** -- because a **suppressed** settle still
+**returns the result value** to its caller (`:998`). **That breaks the invariant this slice itself documents**
+(*"the card's map … was already showing what this save will write"*): after fix round 1 the **display** path
+honours it and the **save** path does not.
+
+**SO THE INVARIANT GENERALISES, and that is how fix round 2 is framed:**
+
+> **Every claim the card makes -- what the map shows AND what Finish writes -- corresponds to the CURRENT field
+> text, or to nothing.**
+
+**The map invariant was one instance; the save is the other.** Fix round 2's brief says to fix it as the
+**general rule** and explicitly forbids a second special case, offers two acceptable shapes (re-check at the
+point of use, or prevent the interleaving), and warns that the second shape is a **wall** if done carelessly --
+with the bounded escape required if it is chosen.
+
+**Plus F2:** the reuse-branch comment is **now TRUE but under a condition it does not state** (slot consistency
+plus the edit clearing the slot), and the reviewer named it as *"the exact 'premise true in isolation, false in
+context' class that produced B2"* -- **the third instance in this batch.**
+
+**An evidence nit, and I am taking it:** the last round's ledger entry named the tests and **not** the lint
+warning count against the 81 baseline. *"A missing field in a structured report reads as evidence"* -- **the
+fix-round-2 brief requires it.**
+
+**AND THE DEFERRALS NOW HAVE OWNERS** -- the reviewer's closing finding (*"an unowned deferral is a deferral by
+the batch's own rule"*) is now a table in `plan.md`: the rejected-slot poisoning to **8a**, the save-path bug and
+the comment condition to **fix round 2**, 8c and 8b as briefed. **No item is a hope.**
+
+**FIX ROUND 2 DISPATCHED** (resume; brief `slice-4-fix-2.md`). Verifier and `ocr` on fix round 1 are still out.
