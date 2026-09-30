@@ -2135,3 +2135,42 @@ auth mail, and there is no sending domain -- so invites to people who have never
 are a deliverability problem no amount of correct code fixes. **That is a human decision plus a
 DNS change with lead time.** Surfaced now rather than at the end of the batch, because it is the
 one part of this feature that cannot be delegated.
+
+## The `hasPhoto` trap -- the same planning defect, one file over (THE SECOND OCCURRENCE)
+
+Writing slice 1b's brief I wrote an acceptance line: `rg -n "hasPhoto" src/` -> 0 hits. Then I ran
+it, which is the rule, and it CANNOT be satisfied:
+
+- `src/App.tsx:93,167` -- the fact's real home (the plan said `:163`; measured is `:167`)
+- `src/pages/OnboardingPage.tsx:300` -- the facts object
+- `e2e/onboarding-resume.e2e.ts:28,159` -- comments naming the fact
+- `src/lib/avatarUrl.test.ts:7` -- a comment referring to "the hasPhoto fact"
+- **`src/lib/places.ts:1070-1071` -- AN UNRELATED LOCAL NAMED `hasPhoto`** (`place.photo_url`, a
+  place's photo, not a parent's). Renaming it to make a grep pass would be vandalism.
+
+**This is the identical shape as the `of 5` plan defect caught one hour earlier** (32 hits, 11 of
+them star ratings). Twice, same class, same author, same hour. **The project rule is explicit: the
+second occurrence of a defect class means BUILD A GUARD, not another one-off fix.** So slice 6 now
+ships a second guard, `scripts/check-acceptance-greps.mjs`, with the checkable rule:
+
+> **A zero-hit claim must not match in a file the document never mentions.**
+
+Both real cases fail that rule (neither document mentioned `reviews.ts` or `places.ts`); the
+legitimate bare-root claim (`first-run-photo-card` over `src/ e2e/`) passes it, because all five
+of its hit sites are named in that same brief. The two defects become the guard's `.check.mjs`
+fixtures -- the pre-fix text is in git, so the guard can be run against the state that produced it.
+
+**The general lesson, which is the batch's own rule applied to planning rather than code:** an
+acceptance criterion is a CLAIM, and a claim I have not measured is exactly as defective as a
+mechanism I have not measured. Both times the grep took ten seconds.
+
+### 1b's measured call sites (so the next builder does not have to rediscover them)
+
+- `photoCardDone`: `OnboardingPage.tsx:72,233` (comments), `:237` (state), `:828` (gate)
+- `first-run-photo-card`: `OnboardingPage.tsx:848` (JSX), `onboarding-resume.e2e.ts:91,132,175,183`
+- **THE RESUME CHECKPOINT PROBLEM:** `onboarding-resume.e2e.ts:91`/`:175` assert the PHOTO card
+  becomes visible and `:132`/`:183` assert it is gone -- the photo card IS the resume checkpoint.
+  With the card deleted those four assertions must be REWRITTEN against a card that still exists,
+  never deleted. Deleting them would quietly turn the resume tests into tests of nothing, which is
+  the vacuity class already found three times in this batch. Slice 1b's brief now says so and
+  requires the builder to say which card it picked and why.

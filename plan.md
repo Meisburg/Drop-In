@@ -290,9 +290,24 @@ that changes the card sequence must keep them walking it.
   **fourth** instance of this class in the batch: a check that every field of `FIRST_RUN_COPY`
   is either consumed somewhere in `src/` or explicitly allowlisted. Ship it with its
   `.check.mjs` proving it fires on the pre-fix state (the batch's guard rule).
+- **A SECOND guard, because the same *planning* defect was made twice within the hour.** Two
+  acceptance criteria out of my own pen claimed a **zero over an unscoped directory**, and each
+  would have sent a builder to rewrite something it must not touch:
+  - `rg "of 5" src/` — **32 hits, 11 of them star ratings** (`reviews.ts`, `reviews.test.ts`,
+    `PlaceDirectory.tsx`, `PlaceDetailsPage.tsx`).
+  - `rg "hasPhoto" src/` — `src/lib/places.ts:1070` has an **unrelated local of the same name**
+    (a *place's* photo).
+
+  The checkable rule: **a zero-hit claim must not match in a file the document never mentions.**
+  Ship `scripts/check-acceptance-greps.mjs`: it extracts every acceptance grep line from
+  `plan.md` and `.scratch/v28/briefs/*.md`, runs it against the tree, and fails when a zero-claim's
+  pattern matches in an unreferenced file. **Its `.check.mjs` uses the two real defects above as
+  fixtures** — the pre-fix text is in this repo's history, so the guard can be run against the
+  state that produced it, which is this project's standing guard rule.
 - **Acceptance.** The rendered label and the module agree; `rg -n "skipLabel" src/` shows a
   **render** site, not just the module; the new guard passes on HEAD **and** fails when run
-  against the pre-fix state; `run-all.sh` includes it.
+  against the pre-fix state; `check-acceptance-greps.mjs` passes on the corrected `plan.md` and
+  briefs **and** fails on the two recorded pre-fix fixtures; `run-all.sh` includes both.
 - **Verify.** `npm run verify` (guards run last) **and** the guard's own `.check.mjs`.
 - **Depends on.** 1b. **Budget.** medium.
 
