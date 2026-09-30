@@ -270,9 +270,21 @@ export function locationFromAddressQueryBounded(
   const deadline = new Promise<AddressGeocodeResult>((resolve) => {
     timer = setTimeout(() => resolve(nullResult), timeoutMs)
   })
-  const resolved = locationFromAddressQuery(trimmed, lookup).then((result) => {
-    if (timer !== undefined) clearTimeout(timer)
-    return result
-  })
+  const resolved = locationFromAddressQuery(trimmed, lookup).then(
+    (result) => {
+      if (timer !== undefined) clearTimeout(timer)
+      return result
+    },
+    // THE REJECTION LEG CLEANS UP TOO — mirroring the two-arg `.then` the
+    // zip sibling above has: a lookup that rejects before the deadline still
+    // clears its deadline timer (a dangling timer is an invisible defect, the
+    // sibling's `vi.getTimerCount()` pin exists for exactly this), and it
+    // still rethrows — a rejection before the deadline is a real failure the
+    // caller may see.
+    (err) => {
+      if (timer !== undefined) clearTimeout(timer)
+      throw err
+    },
+  )
   return Promise.race([resolved, deadline])
 }

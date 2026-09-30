@@ -188,6 +188,18 @@ describe('zipFromAddressQueryBounded (V28 slice 5 — the card-gating lookup\'s 
     expect(await zipFromAddressQueryBounded('   ', 10_000, lookup)).toBe(null)
     expect(lookup).not.toHaveBeenCalled()
   })
+
+  it('a rejecting lookup clears its deadline timer and rethrows (the sibling\'s instrument, pinned here too)', async () => {
+    vi.useFakeTimers()
+    try {
+      const lookup = vi.fn(() => Promise.reject(new Error('boom')))
+      const pending = zipFromAddressQueryBounded(SEATTLE, 10_000, lookup)
+      await expect(pending).rejects.toThrow('boom')
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 /** A city-level answer: Nominatim found the CITY, not the house number. */
@@ -285,6 +297,10 @@ describe('locationFromAddressQueryBounded (V28 slice 4 — the card-gating looku
       const lookup = vi.fn(() => Promise.reject(new Error('boom')))
       const pending = locationFromAddressQueryBounded(SEATTLE, 10_000, lookup)
       await expect(pending).rejects.toThrow('boom')
+      // B3 (slice 4 fix 1): the REJECTION leg clears the deadline timer too —
+      // the same `vi.getTimerCount()` instrument the sibling's legs use, so
+      // "the timer was cleared" is pinned, not asserted in a comment.
+      expect(vi.getTimerCount()).toBe(0)
     } finally {
       vi.useRealTimers()
     }

@@ -33,6 +33,11 @@
  *    box), a radius change redraws the circle client-side with NO second
  *    request, and blur + Finish on the same address issue EXACTLY ONE
  *    Nominatim request (counted into the seam's route).
+ * 4. V28 slice 4 fix 1 — THE CARD'S MAP SHOWS THE CURRENT ADDRESS'S
+ *    RESOLUTION, OR NOTHING. Two legs pin the two faces of that invariant:
+ *    a stale settle (an in-flight lookup for a PREVIOUS address) can never
+ *    republish its pin over the edited text, and editing an address and
+ *    back re-resolves it — a resolved address never leaves the map hidden.
  * V28 slice 6 (plan defect #19): BOTH legs' area-card save now lands on the
  * run's OWN finish card on /onboarding (the re-keyed guard removed the feed
  * bounce) — each leg taps its "Go to your feed" CTA before asserting the
@@ -308,6 +313,145 @@ test(
       })
       expect(new URL(page.url()).pathname).toBe('/')
       await expect(page.getByTestId('feed-location-control')).toContainText(marker.homeZip)
+    } finally {
+      await close()
+    }
+  },
+)
+
+test(
+  'a stale settle cannot republish: editing the address hides the map, and the previous address’s late result settles suppressed (V28 slice 4 fix 1)',
+  async ({ browser }) => {
+    const marker = readMarkerMeta()
+    const epoch = Math.floor(Date.now() / 1000)
+    const { page, close } = await signedOutPage(browser)
+    // THE DEFERRED SETTLE: every Nominatim request this leg issues is HELD —
+    // the leg decides when the "late" half of "late" happens, so the stale
+    // settle is a controlled event, not a timing hope. Also the seam's
+    // count: exactly one request for the one distinct address this leg
+    // looked up.
+    let nominatimCalls = 0
+    const heldRoutes: Array<(body: string) => void> = []
+    try {
+      await page.route(NOMINATIM_ROUTE, (route) => {
+        nominatimCalls++
+        heldRoutes.push((body) => {
+          void route.fulfill({ status: 200, contentType: 'application/json', body })
+        })
+      })
+
+      await signUpToAreaCard(page, {
+        name: `e2e-as-${epoch} Marker`,
+        email: `e2e-as-${epoch}@gmail.com`,
+        password: `e2e-as-pw-${epoch}`,
+      })
+
+      const address = page.getByPlaceholder('e.g. 1200 1st Ave S, Seattle')
+      const A = '1200 1st Ave S, Seattle'
+      const B = '4139 1st Ave NE, Seattle'
+      await address.fill(A)
+      await address.blur()
+      // The blur's debounce fires A's single request; it is HELD in the
+      // route, so the card is in its pending state with no result yet.
+      await expect
+        .poll(() => heldRoutes.length, {
+          message: "A's lookup request fires from the blur debounce and is held",
+        })
+        .toBe(1)
+
+      // EDIT TO B: the map hides (A has not settled, so it was never shown —
+      // this leg's assertion is what the LATE settle does, not the edit).
+      await address.fill(B)
+
+      // A's LATE result arrives (RESOLVED, for A's house number). Pre-fix
+      // the ownership guard reads 'A' !== 'A' and republishes A's pin over
+      // B's text; post-fix the edit invalidated the slot, so the settle
+      // settles suppressed and the card stays map-less about B.
+      heldRoutes[0](
+        JSON.stringify([
+          {
+            lat: '47.6205',
+            lon: '-122.3414',
+            address: { postcode: marker.homeZip, house_number: '1200' },
+          },
+        ]),
+      )
+      // Give the settle's promise chain a beat to be PROCESSED (it is
+      // synchronous after the in-process fulfill); a suppressed settle
+      // changes nothing, so the pin's ABSENCE is what the beat proves.
+      await page.waitForTimeout(300)
+      await expect(address).toHaveValue(B)
+      // THE INVARIANT'S FIRST FACE: B's text, NO map. Pre-fix the map is
+      // here, painted with A's pin and radius circle.
+      expect(await page.getByTestId('onboarding-area-map').count()).toBe(0)
+      expect(nominatimCalls).toBe(1)
+      // AND THE CARD IS NOT STUCK: the pending state belongs to the address
+      // the field no longer shows, so the primary reads "Finish" and is
+      // tappable (the edited address's lookup, if it runs, re-enters the
+      // pending state itself). Pre-fix the button is still
+      // "Checking your address…" for A — disabled — over B's text.
+      await expect(page.getByRole('button', { name: 'Finish' })).toBeEnabled()
+    } finally {
+      await close()
+    }
+  },
+)
+
+test(
+  'editing an address and back re-resolves it: the map reappears for a resolved address (V28 slice 4 fix 1)',
+  async ({ browser }) => {
+    const marker = readMarkerMeta()
+    const epoch = Math.floor(Date.now() / 1000)
+    const { page, close } = await signedOutPage(browser)
+    // The seam's count: the re-typed address is a DISTINCT address (the edit
+    // invalidated the slot), so its blur issues its own single request —
+    // two requests for two distinct lookups, never a third.
+    let nominatimCalls = 0
+    try {
+      await page.route(NOMINATIM_ROUTE, (route) => {
+        nominatimCalls++
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([
+            {
+              lat: '47.6205',
+              lon: '-122.3414',
+              address: { postcode: marker.homeZip, house_number: '1200' },
+            },
+          ]),
+        })
+      })
+
+      await signUpToAreaCard(page, {
+        name: `e2e-ar-${epoch} Marker`,
+        email: `e2e-ar-${epoch}@gmail.com`,
+        password: `e2e-ar-pw-${epoch}`,
+      })
+
+      const address = page.getByPlaceholder('e.g. 1200 1st Ave S, Seattle')
+      const A = '1200 1st Ave S, Seattle'
+      const B = '4139 1st Ave NE, Seattle'
+      await address.fill(A)
+      await address.blur()
+      const areaMap = page.getByTestId('onboarding-area-map')
+      await expect(areaMap).toBeVisible({ timeout: 30_000 })
+      expect(nominatimCalls).toBe(1)
+
+      // Edit to B: the pin was a claim about A, so the map hides.
+      await address.fill(B)
+      await expect(areaMap).toHaveCount(0)
+
+      // Edit BACK to A and blur: the same address resolves again. THE
+      // INVARIANT'S SECOND FACE — a RESOLVED address never leaves the map
+      // hidden. Pre-fix the reuse branch returns A's settled promise without
+      // republishing (the edit nulled the coordinates, the slot never
+      // noticed), and the map stays hidden forever; post-fix the edit
+      // cleared the slot, so the blur issues A's own single fresh request.
+      await address.fill(A)
+      await address.blur()
+      await expect(areaMap).toBeVisible({ timeout: 30_000 })
+      expect(nominatimCalls).toBe(2)
     } finally {
       await close()
     }

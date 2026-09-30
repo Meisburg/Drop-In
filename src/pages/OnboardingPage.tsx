@@ -1485,10 +1485,31 @@ export function OnboardingPage() {
             onChange={(e) => {
               setAreaAddress(e.target.value)
               setAreaAddressError(null)
-              // V28 slice 4: an edited address invalidates the resolved pin —
-              // the map (the pin + radius circle) is a claim about the address
-              // as it was, and it hides until the edited address resolves.
+              // V28 slice 4 fix 1: an edited address invalidates the card's
+              // whole resolution — the published pin AND the lookup slot.
+              // The map (the pin + radius circle) is a claim about the
+              // address as it was, and it hides until the edited address
+              // resolves. Clearing the slot is what makes the invariant
+              // hold: an in-flight lookup for the OLD address now settles
+              // SUPPRESSED (its ownership check `areaLookupForRef !== owned`
+              // fails, because the edit moved the owner), so it can never
+              // republish a previous address's pin over the current text —
+              // the card shows the CURRENT address's resolution, or nothing.
+              // (Pre-fix the slot outlived the edit, the stale settle passed
+              // its own guard, and republished A's pin over B's field — the
+              // two spec legs in signup-zip-fallback pin both faces of this
+              // invariant, and they fail pre-fix.)
               setAreaCoordinates(null)
+              areaLookupForRef.current = null
+              areaLookupPromiseRef.current = null
+              // The pending state is the current address's to own, too: the
+              // lookup still in flight belongs to the address the field no
+              // longer shows, so the card stops reading "Checking your
+              // address…" (without this, a suppressed settle can never clear
+              // the flag — the card is stuck disabled over the edited text).
+              // The edited address's own lookup, if one runs, is a fresh
+              // promise and re-enters the pending state itself.
+              setGeocoding(false)
             }}
             onFocus={cancelScheduledAddressLookup}
             onBlur={() => {
