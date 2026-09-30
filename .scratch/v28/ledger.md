@@ -4085,3 +4085,59 @@ nobody asked about.**
    circle has no `d`. Mitigated by the preceding `toHaveCount(1)`, but it is the vacuity class. **-> 8c.**
 
 **`ocr` is running (17m).** Slice 4 closes when it reports.
+
+## Slice 4 -- OCR: 4 findings, **TWO MEDIUM BUGS**, both missed by the reviewer AND by me
+
+**Slice 4 does NOT close.** `ocr` traced the *edit lifecycles* of the resolution slot and found two medium
+bugs in the crux. **The reviewer read that same code for design and even described the ownership suppression
+as correct** -- it did not trace what happens when the address changes twice.
+
+### ⚠️ THE TWO BUGS ARE ONE INVARIANT WEARING TWO FACES -- and both verified by me
+> **The card's map shows the CURRENT address's resolution, or nothing. Never a previous address's, and never
+> nothing for an address that IS resolved.**
+
+- **B1 (`:1485`): `onChange` nulls `areaCoordinates` but NEVER invalidates the lookup slot.** So blur **A**
+  (lookup in flight, slot `'A'`) -> type **B** (map hides, slot still `'A'`) -> **A settles before B is
+  blurred** -> the ownership guard `if (areaLookupForRef.current !== owned) return` reads `'A' !== 'A'` =
+  **false** -> **it republishes A's coordinates and ZIP-fallback state OVER B's text.** The card shows A's pin
+  while the field reads B. **Verified: the guard cannot fire when the slot still holds the same address.**
+- **B2 (`:982`): the reuse branch returns `existing` WITHOUT republishing**, on the premise *"a settled
+  promise publishes nothing new."* **That premise is false the moment an edit nulled the state.** A -> blur ->
+  edit B -> edit back to A -> blur = **the map never reappears for a fully resolved address**, and Finish can
+  save A's zip with no pin and no circle -- **violating the invariant the slice itself documents** in
+  `handleAreaFinish`.
+
+**⚠️ AND THE COMMENT AT `:1487-1489` ALREADY CLAIMS THE OPPOSITE OF WHAT THE CODE DOES:** *"it hides until the
+edited address resolves."* It does not. **That is this batch's most-repeated class -- a sentence describing
+behaviour the code does not have -- and this time the code is wrong too, not just the sentence.**
+
+**AND B2'S COMMENT IS THE THIRD "TRUE PREMISE, WRONG CONCLUSION" IN THIS BATCH.** *"A settled promise
+publishes nothing new"* is true in isolation and false in the state it is actually read in. **The round-2
+reviewer did the same with "the hook only consumes the id set"; the slice-4 audit comment did it with "the
+marker group re-keys".** Three times now, a clause that is correct about the thing it names and wrong about
+the world around it. **A reader checking only the clause agrees with it; a reader checking only the conclusion
+accepts it. Both halves have to meet the code.**
+
+- **B3 (`geocode.ts:273`, low):** the new bounded seam documents *"same race discipline as
+  `zipFromAddressQueryBounded`"*, **but only handles fulfilment** -- the sibling's two-arg `.then` clears the
+  deadline timer on the **rejection** leg too, and its test pins that with `vi.getTimerCount()`. **Verified as
+  a real deviation from the pattern the comment claims.**
+- **B4: the spec still has no trailing newline.** **Covered by 8b's sweep without a brief edit** -- the
+  instruction to MEASURE the set rather than trust a count absorbed this third instance automatically. **The
+  structural fix has now worked three times.**
+
+### RULED: fix round 1, as THE INVARIANT
+The brief states the invariant and asks for **two new spec legs, each proven able to fail** (a: the map stays
+hidden while a stale A settles; b: the map reappears when the address is edited away and back). **And it asks
+the one question I care about more than the patch: if B1's slot invalidation lands, is B2's republish still
+reachable?** If B1 alone restores the invariant, **B2's change must not be added** -- a fix that cannot fire is
+the vacuity class this batch has ruled on three times. **One fix and a reason beats two and a shrug.**
+
+### THE PATTERN THAT NOW MATTERS MOST FOR THIS BATCH'S PREMISE
+**`ocr` has found state-lifecycle defects in slice 3 (the re-pick regression) and slice 4 (both of these)
+that reading-based review did not.** The reviewer's own verdicts were PASS both times, and both times it had
+*read* the same code and reasoned about it correctly **in the case it considered** -- the case it did not
+consider was the second edit. **The three-lane architecture's whole claim is that lanes ask different
+questions. It is now demonstrated three times, and never once has the machine lane been redundant.**
+
+**Fix round 1 dispatched** (resume, run `b6e6a1c4`).
