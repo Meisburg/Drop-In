@@ -4373,3 +4373,62 @@ fixes.
 **`ocr` on fix round 1 is STILL out.** Per the rule recorded one entry above, **its findings will be adjudicated
 against THIS state, not the state it reviewed** -- anything the save-path work already fixed gets recorded as
 *"fixed by `512e673`"* rather than dropped.
+
+## Slice 4 FIX ROUND 2 -- REVIEWER **NEEDS_CHANGES**, and TWO LANES FOUND THE THIRD INSTANCE INDEPENDENTLY
+
+**`ocr` on fix round 2: ZERO findings.** The save-path work is clean, and that lane says so by finding nothing.
+
+### ⚠️ THE THIRD INSTANCE, FOUND TWICE, AND BOTH LANES PRESCRIBED THE SAME FIX
+**The reviewer found it by ENUMERATING every claim the card makes** -- which is the completeness question I
+asked it, and the reason I asked -- **and `ocr` found it independently on its own pass.**
+**`zipFallbackShown` is NOT cleared by an address edit.**
+
+- **Reviewer:** *"the edit block (`:1543-1558`) invalidates the pin, the slot, and the pending flag, yet not the
+  fallback claim"* -- so the note *"We couldn't match the address you entered to a ZIP code"* **sits over the NEW
+  text, asserting the OLD address's answer**, until B settles **or indefinitely if B is never blurred** (the
+  rejected-lookup path). **It quotes the edit block's own comment against it**: an edited address invalidates
+  *"the card's **whole** resolution."*
+- **`ocr` sharpened it beyond what the reviewer saw: during the new lookup's pending window the stale note
+  CO-RENDERS WITH THE "Checking your address…" LABEL** -- the card says *we could not match this* and *we are
+  checking this* simultaneously. **A card contradicting itself is the sharpest form of this defect class**, and
+  a reader who saw it live would have found it instantly.
+- **And `ocr` supplied the safety argument for the fix, which matters because the fix deletes state:** the
+  edited address's own settle **re-derives** the flag, and **a TYPED ZIP IS UNAFFECTED because it lives in
+  `homeZip`, which `handleAreaFinish` prefers regardless of note visibility.** **Clearing the note cannot lose
+  anyone's zip -- that is the sentence a future reader will doubt, so it goes in the comment.**
+
+**THE REMEDY IS THE REVIEWER'S, AND IT IS THE BATCH'S OWN RULE APPLIED BY A LANE:** the third instance
+*"belongs one rung down -- **a pin in the spec that makes the fourth instance unbuildable**."* So fix round 3 =
+the one-line clear **plus the pin**, and the brief asks the builder the question worth more than the fix:
+**can it name a SIXTH claim the card makes?** (The list is now the pin, the save, the pending flag, the error
+messages, and this note.)
+
+### ⚠️ ITS SECOND BLOCKING FINDING IS OVERRULED, and the distinction is one the briefs should have made
+It filed the **commit message's** omission of the gate counts as blocking -- *"a missing field in a structured
+report reads as evidence."* **But the builder's REPORT carried both counts, and the verifier confirmed them
+exactly.** The objection was about the *commit message*, which is a defensible preference and **not evidence
+that is missing**. **OVERRULED** -- and recorded as an improvement rather than a blocker: **a brief should say
+WHERE the evidence goes** (the report) **and whether the commit message needs it too**, because a lane will
+follow the distinction exactly as written and only as written.
+
+### The other findings, each placed
+- **A typed-zip mid-save race** (`:935` captures `homeZip` at tap; the zip input is not disabled during
+  `await saveLocation`, a network write) -- **a real one, same class, different field, far smaller window** ->
+  **8a**, with a row in the plan's owner table.
+- The **300 ms fixed beat** in leg (a) -- **the reviewer called it acceptable; `ocr` showed it can let the leg
+  FALSE-PASS against pre-fix code on a slow runner**, weakening its entire reason to exist. **-> fix round 3,
+  raise it to 1000 ms** (`ocr`'s own advice: raise, do not remove).
+- The **pre-fix red was asserted, not pasted** -- fair, and fix round 3 requires the paste.
+- The two lanes **disagreed on a line number** for the `places-map-view` skip (`:1459` vs `:1473`), and the
+  second verifier honestly flagged it as *"an observation, not a defect"* rather than guessing. **The
+  line-number fragility again** -- which is why every brief now names identifiers.
+
+### And the verifier's boundary discipline, worth recording one more time
+Told to verify the gate, it **restated the lint count** (the field that went missing last round), **ran the
+spec twice**, and then refused to verify a claim in my own commit message: *"the new planning commit's message
+claims 'its spec leg caught its own fix being wrong'; which timeline that refers to is **unanswerable by these
+checks** -- the ledger is outside my mandate."* **A lane that says what it cannot check is worth more than one
+that reports a green number.** It also caught HEAD advancing mid-run **and proved by timestamps** that every
+result describes `512e673`'s tree.
+
+**FIX ROUND 3 DISPATCHED** (resume; brief `slice-4-fix-3.md`).
