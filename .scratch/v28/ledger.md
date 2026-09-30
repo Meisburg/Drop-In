@@ -3154,3 +3154,36 @@ the current measurement.
 treatments.** Striking a correct-at-the-time record is its own kind of dishonesty -- it tells the next
 reader that the earlier work was sloppy when it was not. **The test is not "does this match today?" but
 "was it true when it was written?"** -- and the way to tell is to ask what changed in between.
+
+## Slice 3's brief, re-measured while its builder runs -- the claims hold, the LINE NUMBERS drifted
+
+I checked every line-number claim in `slice-3.md` against the current tree, because the brief was written
+several turns ago and slices 1b and 2 have landed since. **That drift is exactly what bit slice 2** (the
+hint at `:561` had moved to `:515`).
+
+**Result: every claim is TRUE. The arithmetic moved.**
+
+| Brief cites | Actually at | Drift |
+|---|---|---|
+| `addKid` `db.ts:2946` | **`db.ts:2964`** -- `addKid(profileId, firstName, age): Promise<Kid>` | +18 |
+| `uploadKidPhoto` `db.ts:3092` | **`db.ts:3110`** -- `(profileId, kidId, source: CanvasImageSource, rect: CropRect)` | +18 |
+| `MAX_KIDS_PER_PROFILE` `db.ts:2364` | **`db.ts:2382`** | +18 |
+| `prepareAvatarFile` `db.ts:2559` | **`db.ts:2577`** | +18 |
+| the discard `OnboardingPage.tsx:391` | **`:473`** -- `await addKid(session.user.id, row.name, Number(row.age))`, **return discarded** | +82 |
+
+**The +18 is slice 2's own `createProfile` change; the +82 is 1b's and 2's deletions.** The exact hits --
+`useKidPhotoUrls.ts:43`, `ProfilePage.tsx:2204`, `:716`, `:1750-1762` -- are all still exact, because
+those files were not touched.
+
+**THE CRUX IS CONFIRMED AGAINST THE CURRENT TREE, not against the brief:** `addKid` **does** return a
+`Kid`, and **`OnboardingPage.tsx:473` does discard it.** The slice's whole shape rests on that pair.
+
+**RULED: do NOT steer the builder.** The substance is sound, the drift is uniform and explained, and
+every claim is anchored to an identifier that greps cleanly -- which is why the builder will find them
+anyway. Steering mid-flight is a cost, and paying it to correct arithmetic the builder is already
+immune to would be a waste of its context.
+
+**PROCESS RULE (new, and general): a line number in a brief is a HINT, not a location -- the identifier
+is the location.** Five citations in this one brief drifted by a constant offset and none of them
+mattered, because each named a symbol. A brief that cited `db.ts:2946` **without** naming `addKid` would
+have sent a builder somewhere wrong. **Cite the symbol; add the number as a courtesy.**
