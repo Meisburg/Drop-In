@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router'
 import { useSessionContext } from '../components/SessionProvider'
 import { FinishRunCard } from '../components/FinishRunCard'
 import { FirstRunCard } from '../components/FirstRunCard'
 import { useCropStep } from '../components/useCropStep'
+import { useKidPhotoUrls } from '../components/useKidPhotoUrls'
 import { addressFieldError, composeDisplayName, displayNameFieldError } from '../lib/account'
 import { progressLabel, nextUnfinishedCard } from '../lib/firstRun'
 import { FIRST_RUN_COPY } from '../lib/firstRunCopy'
@@ -16,10 +17,14 @@ import {
   listPlaces,
   loadZipCodes,
   MAX_KIDS_PER_PROFILE,
+  removeKid,
   updateHomeZipRadius,
   uploadAvatar,
+  uploadKidPhoto,
   validateKid,
 } from '../lib/db'
+import type { CropRect } from '../lib/photoCrop'
+import type { Kid } from '../lib/types'
 import {
   DEFAULT_RADIUS_MILES,
   milesWord,
@@ -45,6 +50,95 @@ function photoPickerLabel(uploading: boolean, photoAdded: boolean): string {
   if (uploading) return 'Uploading…'
   if (photoAdded) return 'Photo added'
   return 'Add a photo'
+}
+
+/**
+ * One kids-card row's photo control (V28 r2 slice 3) — a small component
+ * rather than a hook-in-a-loop, because `useCropStep` cannot be called inside
+ * the `kidRows.map` callback (hooks must run at a component's top level — the
+ * same reason ProfilePage's `KidPhotoControl` exists, which this reuses the
+ * shape of, not the component: that one requires a persisted `kidId`, which
+ * a row this card is still building cannot satisfy). The page owns the
+ * shared lock (one row's crop step at a time — `onLockChange`) and the write
+ * (`onConfirm`); this component owns only this row's crop step.
+ *
+ * Kid photos are PRIVATE (the `kid-photos` bucket): `photoUrl` is the SIGNED
+ * URL the page mints through `useKidPhotoUrls` — never the raw
+ * `kids.avatar_url` column (a post-0038 object path, not a URL).
+ */
+function KidRowPhoto({
+  index,
+  photoUrl,
+  storedPhoto,
+  locked,
+  onConfirm,
+  onLockChange,
+}: {
+  index: number
+  /** The signed URL of the row's photo; undefined while the row has no photo
+      or until its mint settles (the best-effort read degrades to no image, never an error). */
+  photoUrl?: string
+  /** The persisted row claims a photo (its `avatar_url` is set) even when
+      no signed URL is on hand yet — the control then reads "Photo added"
+      rather than offering the pick again as if nothing were there. */
+  storedPhoto: boolean
+  /** Another row holds the crop-step lock — this row's control is gated so
+      two rows never race the shared bitmap's release. */
+  locked: boolean
+  onConfirm: (index: number, source: ImageBitmap, rect: CropRect) => Promise<void> | void
+  onLockChange: (index: number, locked: boolean) => void
+}) {
+  const crop = useCropStep(async (source, rect) => {
+    // AWAITED, not fire-and-forget: the hook's `finally` closes the bitmap
+    // the moment this returns, and the upload must finish BEFORE that close
+    // (the hook's own contract). A `void` wrapper here would hand the
+    // encoder a closed (0×0) bitmap mid-upload.
+    await onConfirm(index, source, rect)
+  })
+  const dialogOpen = crop.dialog !== null
+  // Report this row's lock state to the page (its shared flag): open dialog
+  // OR in-flight confirm — that is the whole window in which the other
+  // rows' controls must stand down.
+  useEffect(() => {
+    onLockChange(index, dialogOpen || crop.busy)
+  }, [index, dialogOpen, crop.busy, onLockChange])
+  return (
+    <>
+      <label
+        data-testid={`kid-row-photo-${index}`}
+        className={
+          'flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md bg-slate-100 text-sm font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-200 ' +
+          (locked || crop.busy ? 'cursor-not-allowed opacity-50' : 'cursor-pointer')
+        }
+      >
+        {photoUrl !== undefined ? (
+          <img
+            data-testid={`kid-row-photo-img-${index}`}
+            src={photoUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="h-9 w-9 rounded-full object-cover"
+          />
+        ) : (
+          <span>{storedPhoto ? 'Photo added' : 'Add photo'}</span>
+        )}
+        <input
+          type="file"
+          accept="image/*"
+          className="hidden"
+          data-testid={`kid-row-photo-input-${index}`}
+          disabled={locked || crop.busy}
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file !== undefined && file !== null) void crop.beginCrop(file)
+            e.target.value = ''
+          }}
+        />
+      </label>
+      {crop.dialog}
+    </>
+  )
 }
 
 /**
@@ -182,7 +276,11 @@ export function OnboardingPage() {
   // states photoError / photoGateEscaped now live above, with the crop step —
   // V28 r2 slice 2 moved the photo onto the name card; the in-flight state
   // is the crop step's own `busy` flag, fix round 1.)
-  const [kidRows, setKidRows] = useState<Array<{ name: string; age: string }>>([])
+  // V28 r2 slice 3: `kid` remembers the PERSISTED row (null until the
+  // photo's crop-confirm writes it — handleKidPhotoConfirm below). A row
+  // with a kid is never re-written by Continue, and its Remove removes the
+  // REAL row, not just the local state.
+  const [kidRows, setKidRows] = useState<Array<{ name: string; age: string; kid: Kid | null }>>([])
   const [kidsError, setKidsError] = useState<string | null>(null)
   // V28 slice 4a: the kids card (3 of 4) is its OWN step, between the name
   // card and the location page — the kid rows moved off this page into the
@@ -236,6 +334,29 @@ export function OnboardingPage() {
       cancelled = true
     }
   }, [session, profile, kidsCardDone])
+  // V28 r2 slice 3: the shared crop-step lock — one row's crop dialog (or
+  // in-flight confirm) at a time, so two rows never race the bitmap's
+  // release. Each row's KidRowPhoto reports its own state here; the other
+  // rows gate their controls on it.
+  const [kidPhotoLockIndex, setKidPhotoLockIndex] = useState<number | null>(null)
+  const handleKidPhotoLockChange = useCallback((index: number, isLocked: boolean) => {
+    setKidPhotoLockIndex((prev) => {
+      if (isLocked) return index
+      if (prev === index) return null
+      return prev
+    })
+  }, [])
+  // V28 r2 slice 3: the persisted rows (written by the photo's crop-confirm) —
+  // the signed-URL read keys on them (kid photos are private: they render
+  // through useKidPhotoUrls, never the raw avatar_url column). Memoised so
+  // the hook only re-mints when the id set actually changes, not on every
+  // render of the page.
+  const persistedKids = useMemo(
+    () => kidRows.map((row) => row.kid).filter((kid): kid is Kid => kid !== null),
+    [kidRows],
+  )
+  const kidPhotoUrls = useKidPhotoUrls(session?.user.id ?? null, persistedKids)
+
   // V28 r2 slice 2: the photo card is GONE — the parent's photo now lives on
   // the NAME card, which is also the card that CREATES the profiles row. So
   // the crop step runs BEFORE the row exists: `uploadAvatar`'s storage-object
@@ -413,7 +534,7 @@ export function OnboardingPage() {
 
   function addKidRow() {
     setKidsError(null)
-    setKidRows((rows) => [...rows, { name: '', age: '' }])
+    setKidRows((rows) => [...rows, { name: '', age: '', kid: null }])
   }
 
   function updateKidRow(index: number, patch: { name?: string; age?: string }) {
@@ -421,9 +542,37 @@ export function OnboardingPage() {
     setKidRows((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)))
   }
 
-  function removeKidRow(index: number) {
+  /**
+   * Remove a kid row (V28 r2 slice 3 made removal a real thing for
+   * photo-confirmed rows). A row the photo's crop-confirm persisted (its
+   * `kid` is set) is a REAL DB row: removing it must delete the row
+   * (`removeKid`), not just drop the local state — otherwise the parent
+   * would "delete" a kid that still exists. The local state drops only
+   * AFTER the delete lands, so a failed removal keeps the row and shows an
+   * error — never a silent success. A local-only row (never persisted)
+   * still just drops state, as before.
+   */
+  async function removeKidRow(index: number) {
     setKidsError(null)
-    setKidRows((rows) => rows.filter((_, i) => i !== index))
+    const row = kidRows[index]
+    if (row === undefined) return
+    if (row.kid === null) {
+      setKidRows((rows) => rows.filter((_, i) => i !== index))
+      return
+    }
+    if (session === null) return
+    try {
+      await removeKid(session.user.id, row.kid.id)
+      setKidRows((rows) => rows.filter((_, i) => i !== index))
+    } catch (err) {
+      // The real row still exists — keep the local row (do not pretend it
+      // is gone) and surface the error.
+      setKidsError(
+        err instanceof Error
+          ? `${err.message} You can manage your kids later in settings.`
+          : 'Could not remove your kid. You can manage them later in settings.',
+      )
+    }
   }
 
   /** A filled-in kid row must validate (pure); blank rows are skipped. */
@@ -439,6 +588,82 @@ export function OnboardingPage() {
   }
 
   /**
+   * V28 r2 slice 3: the kid-photo write, run at the crop step's confirm
+   * (the shape the ordering decided). `useCropStep` closes the bitmap in
+   * its `finally` the moment `onConfirm` resolves — there is no "crop now,
+   * upload later" — and `uploadKidPhoto` needs a persisted kid id. So the
+   * ROW is written here: validate (the same pure seam Continue uses) →
+   * `addKid` (the id is KEPT this time) → `uploadKidPhoto`, in that
+   * order, before the bitmap is released. Neither direction orphans
+   * anything (acceptance 4): the photo is never attached to a row that
+   * does not exist (addKid first), and a row written here is remembered on
+   * it (`kid` set) — so Continue never writes it twice, and Remove removes
+   * the real row. An upload failure still keeps the row (it exists):
+   * Continue skips it, Remove deletes it, and the photo stays optional
+   * (the /profile control can add it later).
+   */
+  async function handleKidPhotoConfirm(index: number, source: ImageBitmap, rect: CropRect) {
+    if (session === null) return
+    const row = kidRows[index]
+    if (row === undefined) return
+    if (row.kid !== null) {
+      // A re-pick on a row that is ALREADY persisted: the row exists, so
+      // this is only the upload (the object is overwritten at its stable
+      // canonical path).
+      try {
+        const storedRef = await uploadKidPhoto(session.user.id, row.kid.id, source, rect)
+        setKidRows((rows) =>
+          rows.map((r, i) =>
+            i === index && r.kid !== null ? { ...r, kid: { ...r.kid, avatar_url: storedRef } } : r,
+          ),
+        )
+      } catch {
+        // Honest, card-usable: the row and its existing photo are intact.
+        setKidsError('Could not upload your kid’s photo. You can try again later in settings.')
+      }
+      return
+    }
+    // 1. The same pure seam the card has always used.
+    const age = Number(row.age)
+    const kidError = validateKid(row.name, age)
+    if (kidError !== null) {
+      // Not written, not uploaded — the card stays usable with the same
+      // message Continue would show.
+      setKidsError(kidError)
+      return
+    }
+    // 2. Write the row and KEEP its id (the part the card used to throw
+    // away, which made the photo write impossible).
+    let kid: Kid
+    try {
+      kid = await addKid(session.user.id, row.name, age)
+    } catch (err) {
+      // The cap surfaces here (addKid enforces MAX_KIDS_PER_PROFILE), as
+      // an honest card error — never a stuck run. Nothing was written.
+      setKidsError(
+        err instanceof Error
+          ? `${err.message} You can add your kids later in settings.`
+          : 'Could not add your kids. You can add them later in settings.',
+      )
+      return
+    }
+    // 3. Upload the photo onto THAT row — before the hook's `finally`
+    // releases the bitmap.
+    try {
+      const storedRef = await uploadKidPhoto(session.user.id, kid.id, source, rect)
+      setKidRows((rows) =>
+        rows.map((r, i) => (i === index ? { ...r, kid: { ...kid, avatar_url: storedRef } } : r)),
+      )
+    } catch {
+      // The upload failed but the row was just written — keep it in local
+      // state so Continue never writes it twice and Remove can remove the
+      // real row. The photo stays optional.
+      setKidRows((rows) => rows.map((r, i) => (i === index ? { ...r, kid } : r)))
+      setKidsError('Your kid was added, but their photo could not be uploaded. You can add it later in settings.')
+    }
+  }
+
+  /**
    * V28 slice 4a: the kids card's Continue. Validates the rows with the same
    * pure seam the page always used (`invalidKidRows` → `validateKid`,
    * blank rows skipped), writes ONLY the filled rows through `addKid`
@@ -449,6 +674,11 @@ export function OnboardingPage() {
    * traps the run: the parent retries Continue, or Skip advances without
    * writing anything (the items are optional — the /settings nudge banner
    * keeps the prompt alive).
+   *
+   * V28 r2 slice 3: rows the photo's crop-confirm already persisted
+   * (`row.kid` set) are NOT written again — writing them would add the same
+   * kid twice. A card whose filled rows are all persisted advances having
+   * written nothing, which is what advancing means.
    */
   async function handleKidsContinue() {
     if (session === null || kidsSaving) return
@@ -457,18 +687,22 @@ export function OnboardingPage() {
       setKidsError(badKidRows.map((bad) => bad.message).join(' '))
       return
     }
-    const filledKidRows = kidRows.filter(
-      (row) => row.name.trim() !== '' || row.age.trim() !== '',
+    // Only the filled rows WITHOUT a persisted id — those are the only
+    // rows that still need a write.
+    const pendingKidRows = kidRows.filter(
+      (row) =>
+        row.kid === null && (row.name.trim() !== '' || row.age.trim() !== ''),
     )
-    if (filledKidRows.length === 0) {
-      // Nothing to write — advancing is exactly what Skip does.
+    if (pendingKidRows.length === 0) {
+      // Nothing to write — advancing is exactly what Skip does (this also
+      // covers a card whose filled rows are all already persisted).
       setKidsCardDone(true)
       return
     }
     setKidsSaving(true)
     setKidsError(null)
     let failed = false
-    for (const row of filledKidRows) {
+    for (const row of pendingKidRows) {
       try {
         await addKid(session.user.id, row.name, Number(row.age))
       } catch (err) {
@@ -837,8 +1071,13 @@ export function OnboardingPage() {
         progressLabel={progressLabel('kids')}
         title={kidsCopy.title}
         body={kidsCopy.body}
+        // V28 r2 slice 3: Continue is also held while a row's photo confirm is
+        // in flight (the lock) — a Continue tapped mid-confirm would write the
+        // row a second time (the slice-2 in-flight ruling, applied to the kid
+        // photo write: the row lands at confirm, so the card's own write must
+        // stand down until it has).
         primaryLabel={kidsSaving ? 'Saving…' : kidsCopy.primaryLabel}
-        primaryDisabled={kidsSaving}
+        primaryDisabled={kidsSaving || kidPhotoLockIndex !== null}
         onPrimary={() => void handleKidsContinue()}
         onSkip={() => {
           // Skippable (lib/firstRun's isSkippable('kids')): advance and
@@ -861,12 +1100,29 @@ export function OnboardingPage() {
             <div className="flex flex-col gap-2">
               {kidRows.map((row, index) => (
                 <div key={index} className="flex items-center gap-2">
+                  {/* V28 r2 slice 3: the photo control. The photo is
+                      OPTIONAL (never blocks Continue) and PRIVATE — it
+                      renders through the signed URL (`kidPhotoUrls`,
+                      minted by useKidPhotoUrls), never the raw
+                      avatar_url column. A persisted row's name/age are
+                      frozen (its values were written at the photo's
+                      crop-confirm — editing them here could not reach the
+                      DB), while Remove removes the real row. */}
+                  <KidRowPhoto
+                    index={index}
+                    photoUrl={row.kid !== null ? kidPhotoUrls[row.kid.id] : undefined}
+                    storedPhoto={row.kid !== null && row.kid.avatar_url !== null && row.kid.avatar_url !== ''}
+                    locked={kidPhotoLockIndex !== null && kidPhotoLockIndex !== index}
+                    onConfirm={(i, source, rect) => handleKidPhotoConfirm(i, source, rect)}
+                    onLockChange={handleKidPhotoLockChange}
+                  />
                   <input
                     className="min-w-0 flex-1 rounded-xl border border-slate-300 px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
                     value={row.name}
                     onChange={(e) => updateKidRow(index, { name: e.target.value })}
                     placeholder="First name"
                     maxLength={30}
+                    disabled={row.kid !== null}
                     {...fieldA11y('kids', kidsError)}
                   />
                   <input
@@ -877,11 +1133,13 @@ export function OnboardingPage() {
                     value={row.age}
                     onChange={(e) => updateKidRow(index, { age: e.target.value })}
                     placeholder="Age"
+                    disabled={row.kid !== null}
                     {...fieldA11y('kids', kidsError)}
                   />
                   <button
                     type="button"
-                    onClick={() => removeKidRow(index)}
+                    onClick={() => void removeKidRow(index)}
+                    disabled={kidPhotoLockIndex === index}
                     className="inline-flex min-h-11 shrink-0 items-center rounded-md bg-slate-100 px-3 text-sm font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:bg-slate-200"
                   >
                     Remove
