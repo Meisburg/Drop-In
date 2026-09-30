@@ -2381,3 +2381,51 @@ on:** the reviewer's transcript was still growing (270 KB, updated the same minu
 verifier's own status read "no activity for 1s". Both were working. **Steering a live reviewer
 mid-diff would inject noise into the one lane whose value is its freshness** -- so the nudges were
 recorded as false alarms and the runs left alone.
+
+## Slice 3 brief written (grounded, NOT dispatched)
+
+The plan called the ordering "the whole risk", so I measured the mechanism instead of assuming it
+-- and it changes the design, which is exactly why the plan flagged it.
+
+### The hard constraint, measured in `useCropStep.tsx`
+`onConfirm(source, rect)` is awaited, and then the hook's `finally` does `setPending(null);
+source.close()`. Its own comment says why: "Awaited BEFORE the close: the encoder reads this
+bitmap, so closing it first would blank the upload." **So there is no crop-now-upload-later** -- an
+ImageBitmap is ~48MB decoded and dies with that `finally`. Anything wanting those pixels must finish
+inside `onConfirm`.
+
+### The crux is confirmed exactly as fact 5 said
+`uploadKidPhoto(profileId, kidId, ...)` (`db.ts:3092`) writes to `kidPhotoPath(profileId, kidId)`
+and then points that row's `avatar_url` at it -- it needs an id that already exists. `addKid`
+(`db.ts:2946`) **does** return the full `Kid` (`.select().single()`), and the kids card throws it
+away at `OnboardingPage.tsx:391`.
+
+### The ruling: the row is written inside the photo's `onConfirm`
+`validateKid` -> `addKid` -> keep `kid.id` -> `uploadKidPhoto`, all inside the one handler; then
+`handleKidsContinue` writes only rows that still have no id. Two alternatives were **measured** and
+rejected, and the reasons are recorded so nobody rediscovers them:
+- **Encode-at-confirm + upload on Continue**: `prepareAvatarFile(source, rect) -> Promise<Blob>`
+  **is** exported (`db.ts:2559`), so this is *possible* -- but **no blob-taking upload seam exists**
+  (`uploadKidPhoto` takes source+rect), so it needs a new `db.ts` function plus its sibling test
+  under the build law, to buy nothing the ruled shape lacks.
+- **Two-phase card** (Continue writes the kids, then the rows grow photo controls re-using
+  `KidPhotoControl` verbatim): the lowest-risk mechanics, and tempting -- but it puts a second
+  Continue in front of the parent and separates the photo from "adding the kid", which is the
+  opposite of the slice's objective.
+The brief tells the builder to **stop and report rather than switch silently** if a measurement
+contradicts the ruling -- a plan defect is worth hearing about.
+
+### Also measured, and load-bearing
+- **`useCropStep` cannot be called inside a `kids.map`** (hooks run at a component's top level).
+  The repo already solved it: `KidPhotoControl` (`ProfilePage.tsx:2204`) is "a small component
+  rather than a hook-in-a-loop" (`:1750-1762`). **But it requires a `kidId`** -- precisely what the
+  onboarding card cannot supply today. That gap is the slice.
+- **Kid photos are PRIVATE** (`uploadKidPhoto` -> `uploadPrivatePhotoObject`), so they render only
+  via `useKidPhotoUrls` (`:43`) -- never the raw column. A builder that reads `avatar_url` directly
+  would ship a broken image.
+- `MAX_KIDS_PER_PROFILE = 5` (`db.ts:2364`), enforced inside `addKid` itself.
+- **I widened the acceptance to the converse direction**, which the plan did not have: a row written
+  at photo-confirm time must **stay** saved, Continue must not write it twice, and **removing it must
+  remove the REAL row** -- `removeKidRow` today only drops local state, so a parent could "delete" a
+  kid that still exists in the database. That is the defect the ruled shape can cause, and the plan
+  was silent on it.

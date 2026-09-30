@@ -293,9 +293,25 @@ such — a red commit nobody explains is indistinguishable from a mistake.
   of discarding it, then call `uploadKidPhoto(profileId, kid.id, …)` through the shared
   `useCropStep`, and display via `useKidPhotoUrls`. A kid saved without a photo is normal, not an
   error. Respect `MAX_KIDS_PER_PROFILE`.
+  ⚠️ **The ordering is DECIDED, and this is why.** `useCropStep` closes the bitmap in a `finally`
+  the moment `onConfirm` resolves (`useCropStep.tsx` — *“Awaited BEFORE the close: the encoder reads
+  this bitmap, so closing it first would blank the upload”*), so **there is no
+  crop-now-upload-later**; and `uploadKidPhoto` (`db.ts:3092`) needs an id that exists. **Ruled: the
+  row is written inside the photo's `onConfirm`** — `validateKid` → `addKid` → keep `kid.id` →
+  `uploadKidPhoto` — and `handleKidsContinue` then writes **only rows that still have no id**.
+  Two alternatives were measured and rejected: **encode-at-confirm + upload on Continue** needs a
+  **new blob-taking upload seam plus its sibling test** (no such seam exists) to buy nothing this
+  shape lacks; and a **two-phase card** (Continue writes, then the rows grow photo controls re-using
+  `KidPhotoControl` verbatim) has the lowest-risk mechanics but hides them behind a second Continue
+  and separates the photo from "adding the kid" — the opposite of this slice's objective.
+  **If a measurement makes the ruled shape unsafe, the builder STOPS and reports: that is a plan
+  defect, not a licence to switch silently.**
 - **Acceptance.** Adding a kid **with** a photo stores it (bucket `kid-photos`) and it renders;
   adding one **without** is unaffected; the row's write still validates as today; the photo is
-  never attached to a kid row that does not exist.
+  never attached to a kid row that does not exist — **and the converse: a row written at
+  photo-confirm time stays saved, Continue does not write it twice, and removing it removes the
+  REAL row** (`removeKidRow` today only drops local state, which would leak a kid the parent
+  believed they deleted).
 - **Verify.** `npm run verify`.
 - **Depends on.** 1b. **Budget.** medium — the ordering is the whole risk.
 
