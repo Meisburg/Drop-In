@@ -3235,3 +3235,32 @@ fail is worse than none.
 **The verify brief is explicitly BOUNDED** (three named checks, once each, plus provenance; no probe
 scripts, no polling, no bespoke tests) **because an unbounded "confirm this yourself" killed a verifier
 lane at 30 minutes earlier in this batch. An unanswerable question is answered by saying so.**
+
+## Slice 3 VERIFIER: **VERIFIED PASS** -- all three checks, and it caught an imprecision in my brief
+
+`npm run verify` **exit 0**, **67 files / 1993 tests** (exactly as the builder claimed -- so no delta
+finding), **0 lint errors / 81 warnings**, `a11y:focus` PASS, `steering-lint` PASS, and **all guards PASS
+including no-bypass on its first run**, so no flake re-run was needed. The slice's own spec: **3 passed**
+(setup + both tests). The two risk specs: **5 passed** (`onboarding-resume` 2, `signup-zip-fallback` 2).
+
+**Provenance was verified per-commit with `git show --stat` rather than assumed**, and the lane reported
+a precision error **of mine**: my brief said "planning records touch `.scratch/` only", but `f813882`
+also touches **`task-state.md`** -- a root-level planning document, not a source file. It declined to
+call that a finding, because the brief's actual criterion was "a SOURCE file appearing there is the
+finding". **Correct call, and worth keeping: a brief's claim that is nearly right is still a claim, and
+the lane noticed rather than passing over it.**
+
+**Housekeeping, and this lane was better at it than any before:** it snapshotted the machine's listeners
+BEFORE and AFTER and confirmed the set is identical -- `ninfer-serve` :18080, `python` :18081,
+`node-MainThread` :3080/:3100, `orca-ide`, `hermes`, `opendeck`, `postgres` :54329, and others -- and
+touched none of them. **Those are the human's; a lane that kills them is a worse failure than a red
+gate.**
+
+**Residual, named honestly by the lane:** the 81 lint warnings are pre-existing and neither the page nor
+the new spec contributes any; the two named flakes were not exercised under adverse conditions; and
+`e2e/places.e2e.ts:2759` was **not in the bounded set**, so coverage of the rewritten kids card against
+the places spec is **partial** -- recorded as partial rather than rounded up to covered.
+
+**REVIEWER NOT STUCK:** the run flagged "no observed activity for 60s" at 345s elapsed and 63s quiet.
+**That is a normal reading window for a diff review, not a stall, so I did NOT steer.** A watchdog
+threshold is a prompt to look, not a verdict -- and steering a healthy reviewer costs its context.
