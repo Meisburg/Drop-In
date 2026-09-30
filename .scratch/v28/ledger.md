@@ -2919,3 +2919,55 @@ second rule that IS the defect class: a zero-hit claim's scope must name a path,
 directory.** Both deterministic; a prose parser is not.
 Also corrected: the plan wrote the guard's path as `scripts/check-acceptance-greps.mjs`; it must live
 in **`scripts/guards/`**, because anything outside `run-all.sh`'s list never runs.
+
+## Slice 2 -- FIX ROUND 1/5 returned DONE, `Committed as: 2280f01`
+
+4 files, +238/-24: `src/lib/photoUpload.ts` (new), `src/lib/photoUpload.test.ts` (new),
+`src/pages/OnboardingPage.tsx`, `e2e/name-card-photo.e2e.ts`.
+
+### My own grep-verification -- all four findings genuinely fixed
+1. **Nested ternary gone**: `photoPickerLabel(uploading, photoAdded)` at module scope (`:44`), called
+   at `:732`. Project rule satisfied.
+2. **`photoUploading` gone**: `rg photoUploading src/` -> **0 hits**. The crop step's `busy` is now
+   the single source of truth, exactly as `ocr` suggested.
+3. **Trailing newline restored**: `tail -c 1` -> `0a`.
+4. **The in-flight race is closed**: `primaryDisabled={handleBusy || photoUploadBlocksContinue(
+   photoCrop.busy, photoGateEscaped)}` (`:673`), with `PHOTO_UPLOAD_TIMEOUT_MS` and the escape state.
+   **And the fix went further than asked**: the lib test pins
+   **`PHOTO_UPLOAD_TIMEOUT_MS === ADDRESS_LOOKUP_TIMEOUT_MS`** -- it pins the *idiom*, not just a
+   number, so the two bounded waits cannot drift apart silently.
+
+Build law honoured: `lib/photoUpload.ts` ships `lib/photoUpload.test.ts`, and the decision is pure
+(`photoUploadBlocksContinue(inFlight, waitExpired)`, 4-case table) with the page composing it.
+
+### The spec now genuinely pins the race -- better than I asked for
+`e2e/name-card-photo.e2e.ts` holds the upload's storage POST behind a `page.route`,
+`expect.poll`s until the hold exists, asserts Continue is **disabled** in flight, releases, asserts
+re-enable, then completes and asserts the row carries the `?v=` URL. **Browser-level proof of the
+defect `ocr` found**, not just a unit-table.
+
+### Two lessons the builder self-caught, both worth keeping
+- **`ladder:` a release that lands before the POST exists is a no-op, so the upload is held
+  forever.** Fixed with `expect.poll(() => uploadHeld)` before releasing, and documented inline.
+  **Reusable: future held-request specs in this repo should copy that poll.**
+- **It dismissed a real `tsc -b` error as LSP noise.** An unescaped apostrophe in a single-quoted
+  test name was flagged, initially written off as the known node-type noise on e2e files, and turned
+  out real. **A known-noisy channel must not become a channel you stop reading** -- the reviewer is
+  asked to check the remaining claims against the diff, since the report describes some things
+  loosely.
+
+### Declared residual, put to the reviewer rather than accepted quietly
+The **10 s escape itself** (timer fires -> error surfaces -> gate opens -> Continue without the
+photo) is pinned by the **lib test only**, not e2e: the builder judged a 10 s wait too slow for a
+per-gate spec and offered a clock-override or a shorter-constant variant if required. **And I flagged
+the sharper version of the question to the reviewer: does the escape MOVE the defect rather than
+close it?** After the escape, the upload may still be in flight, so a parent tapping Continue then
+still writes a row without the photo and the late resolution still lands on unread state. My
+reasoning -- which the reviewer may overturn -- is that **the silence was the defect, not the loss**:
+the escape surfaces a photo error first, so the parent is told. The reviewer answers it explicitly.
+
+### A note on my own commit timing
+The builder reported that its `npm run verify` ran on top of my concurrent slice-6 commit `bf0740a`.
+That is within the rule -- **the rule is against SWEEPING in-flight work, and scoped `git add` is the
+mechanism** -- and it held: my commit carried only `plan.md`, the brief and the ledger, and the
+builder's commit carried none of them.
