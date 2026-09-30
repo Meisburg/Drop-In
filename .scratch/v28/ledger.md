@@ -4309,3 +4309,67 @@ dropped, because "we already did that" is a claim someone will have to check lat
 
 **SLICE 4 IS NOT CLOSED YET:** fix round 2 is in flight, and `ocr` on round 1 is still out. Slice 4 closes when
 fix round 2's three lanes report.
+
+## Slice 4 FIX ROUND 2: DONE (`512e673`) -- and its SPEC LEG CAUGHT ITS OWN FIX BEING WRONG
+
+2 files, **+187/-1**. **My verification:** `areaAddressRef` has **exactly ONE writer** (`:1547`, at the input's
+own change site), `addressAtTap` is captured **before** the await (`:952-953`), and the re-check
+**`if (addressAtTap !== areaAddressRef.current) return`** (`:981`) sits **before both the save AND the fallback
+reveal** -- so **one early return guards two of the card's claims.**
+
+### ⚠️ THE BEST SELF-CATCH OF THE BATCH: the test caught the fix
+Its **first** draft captured the closure's `areaAddress` and compared it against itself after the await --
+**`A !== A`, which never fires, because STATE READS ARE NOT LIVE ACROSS AN `await`.** It reports the leg stayed
+red with the finish card still visible over B's text, and it says so plainly: *"the first draft compared the
+closure's `areaAddress` against itself"*.
+
+**Then it ran the leg against the DRAFT fix and it failed again** -- *"same assertion failed with step markers
+showing the beat elapse and the card still appearing, which is what exposed the stale-closure defect."*
+**The new test found the new fix's bug before any lane saw it.** That is a first for this batch: until now the
+*lanes* caught the mistakes, and here the *artifact* did.
+
+### It answered my wall warning by naming my own walls back at me
+I warned that the un-editable-field shape was a wall if done carelessly. Its rejection of that shape:
+*"it is a new stuck-state surface -- a wall if the lookup hangs or the parent navigates away -- **and this batch
+has found three walls already (edit-cleared pin, rejection-poisoned slot, pending-state without escape)**."*
+**Those are three things this batch itself established, cited accurately against the decision.** And it took the
+re-check for six lines instead, costing one wasted request in the interleaving case -- **which it justified from
+the invariant itself: one request per DISTINCT address.**
+
+### The leg's design is the reason it can fail for the RIGHT reason
+It holds A's request, taps Finish inside the debounce window, edits to B, then releases A **with a zip distinct
+from B's and SEEDED IN THE GAZETTEER so that a stale save PASSES VALIDATION.** Without that seeding the old zip
+might have been rejected by an unrelated validation rule and the test would have gone red for a reason that had
+nothing to do with the defect. **A test that fails for the wrong reason is the vacuity class in a different
+costume**, and this one closes that door deliberately.
+
+**Its reported reds:** pre-fix (re-check reverted) it fails **exactly** at the finish-card assertion
+(`Expected: not visible / Received: visible` -- the stale save had already swapped the card); against the
+closure draft, the same assertion; post-fix, green in 2.9s. **Three states, three runs, one discriminating
+assertion.**
+
+### Counts, named as demanded (including the field that was missing last round)
+`npm run verify` **exit 0**; **68 files / 2013 tests** (no new vitest tests -- the new leg is Playwright and does
+not count, which the builder explained rather than leaving me to infer); **lint 81 warnings, EXACTLY the
+baseline, 0 new, and NONE in either changed file**; a11y, steering-lint and guards PASS. E2E across the three
+specs: **20 passed, 1 pre-existing skip, 0 failed**, port freed **by port**, `--trace=off`. **No flake mode
+fired.**
+
+### Residuals, both honest and both correctly scoped out
+- **The rejected-slot poisoning** (a re-blur reuses a rejected promise) -- *"out of scope for F1 (that's the
+  FAILURE path, not the stale-claim path)."* **That distinction is the right one**, and the item already has an
+  owner (**8a**) in the plan's table.
+- **A trailing-space-only edit counts as a moved field**, costing one extra request. *"Correct semantics for
+  'the field moved' but does cost one extra request in that contrived case."* **Named rather than hidden.**
+
+### THE OPEN QUESTION IS COMPLETENESS, and it is the reviewer's #3
+**The invariant is general and only TWO instances have been fixed** (the map and the saved zip). I have asked
+the reviewer to **enumerate EVERY claim the card makes and check each against the current field text** -- and I
+can now see that the ZIP-fallback reveal is guarded by the same early return, so the obvious third is covered.
+**The batch's recurring trap is "a guard is only as complete as your grep for its readers", and it has produced
+defects in this very slice three times.** So the enumeration is what slice 4's closing rests on, not the two
+fixes.
+
+**`ocr` on fix round 1 is STILL out.** Per the rule recorded one entry above, **its findings will be adjudicated
+against THIS state, not the state it reviewed** -- anything the save-path work already fixed gets recorded as
+*"fixed by `512e673`"* rather than dropped.
