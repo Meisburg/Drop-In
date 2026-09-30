@@ -168,6 +168,23 @@ which is this half's business.**
   race a late-settling post-add mint on a slow machine. **Wait for the `src` to change (or for stability)
   before opening the keystroke window.** A new spec that can flake is worth closing now, before the
   batch-end full sweep is the thing that discovers it.
+- **A SECOND timing flake in the same spec, with a different cause** (`ocr`, fix-2 review): the `src`-swap
+  assertion can fail even when the fix works, because **storage signed-URL tokens are second-granular** —
+  if the first mint and the re-mint land in the same wall-clock second, the two URLs are byte-identical,
+  `src` never changes, and the `toPass()` times out. The gap involved (session read -> DB read -> storage
+  GET -> file pick -> crop -> upload) is easily sub-second on a fast machine. **Cross a second boundary
+  before the re-pick** (capture `Math.floor(Date.now() / 1000)` right after reading the earlier `src`, then
+  wait for it to change) — the spec's existing convention of managing mint windows explicitly.
+- **The object reads must assert their HTTP status before comparing bytes.** Neither the before nor the
+  after read checks it, so a refused or 404 read returns the **same error JSON body** for both, `equals`
+  reports `true`, and the test fails with *"the re-pick overwrote the canonical path with DIFFERENT
+  bytes"* — **a misleading message that points at the product instead of at the read.** Test 1 in this
+  same file already does it right (`expect(objectRes.status, …).toBe(200)` before consuming the body).
+  **Do both reads.**
+
+  *(That message is not hypothetical: it is exactly what a verifier lane reported earlier in this slice,
+  which sent me to trace the product first. A read failure wearing the costume of a data defect costs a
+  lane's worth of time.)*
 
 ## Acceptance
 

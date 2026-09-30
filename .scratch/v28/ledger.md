@@ -3694,3 +3694,70 @@ given a mechanism and one left to willpower, and the difference is not the sever
 because `head` truncated the loop, and my `pgrep` matched its own command line. **Four instruments this
 session have reported something about themselves rather than about the target.** The rule I keep needing:
 **a measurement that contradicts a fact you already hold is measuring the wrong thing.**)*
+
+## Slice 3 FIX ROUND 3: DONE (`8183bd8`, TEST-ONLY) -- and the cause was an EDGE CACHE
+
+**Verified by me: `git diff HEAD~1 --stat -- src/` is EMPTY.** One file changed:
+`e2e/onboarding-kid-photo.e2e.ts` (+48/-5). The commit's own comment records the investigation.
+
+### The measured cause, and it is not the one I deduced
+`ocr`'s later review of round 2 came at this from a different angle, but round 3's builder settled it with
+**live probes**: the plain read `GET /storage/v1/object/kid-photos/<uid>/kids/<kidId>` is served through an
+edge cache **keyed per PATH**. The test's own baseline read **primes that entry**, and every later plain
+read of the path answers **`cf-cache-status: HIT, cc=public, max-age=3600`** with the FIRST generation's
+bytes -- for 90+ seconds in the instrumented run, while the fresh-mint and src-swap pins passed, **which
+itself proves the upsert landed.** A cache-busting `?cb=<ts>` query string **does not** bypass it (still
+`HIT`). **A freshly minted signed URL -- unique token, therefore unique cache key -- served the new bytes
+immediately, in every probe.**
+
+### ⚠️ AND THE PRODUCT IS IMMUNE TO THIS -- record that before someone panics
+The app renders kid photos through **minted signed URLs**, never the plain object path, so the unique token
+gives a unique cache key every time and **the stale path is unreachable from the UI.** A future reader who
+sees "a private object is edge-cached public for an hour" should read this paragraph rather than filing a
+security defect: **the caching is real, and the product never reads through it.**
+
+### ⚠️ MY DEDUCTION WAS RIGHT IN CLASS AND WRONG IN MECHANISM
+I said **"a read-after-write race"**. The truth is **a per-path edge cache**. Same class -- *the read is
+the problem, not the write* -- and a different, more specific cause. **I got the direction right by
+reasoning from `upsert: true` and the success-only `photoGen` bump, and I would have been wrong about what
+to fix if I had stopped there.** *"The read, not the write"* would have led a builder to add a retry; the
+measured cause is a cache that ignores retries of the same plain URL. **This is the fourth time today that
+a plausible mechanism was not the mechanism.**
+
+### The fix, and its vacuity argument, which I think holds
+The poll now **mints its own signed URL per iteration** and compares bytes through it -- **the same read
+path the browser uses**, which is the right choice for a test claiming to prove what a user sees. Bounded
+at 30s / 500ms, and the builder argues the bound cannot absorb a real failure because **the upsert provably
+landed before the mint the test itself watched.** That reasoning is sound: the mint it gates on is
+generated *after* the write it is waiting for.
+
+**Evidence: the spec ran 6/6 four times (three requested + one post-restore), the mutation re-proved
+red-then-green** (dropping `photoGen` fails at the fresh-mint pin, `Expected: > 0, Received: 0`), **and
+`npm run verify` exited 0 at 68 files / 2001 tests / 0 errors / 81 warnings.**
+
+## `ocr` ON FIX-2 (unadjudicated until now): 4 findings, ALL LOW, and NO PRODUCT FINDINGS
+That absence is itself evidence -- the lane that found the round-2 regression and four defects in round 1
+found nothing wrong with the product code this time. **All four go to 8b:**
+1. **A SECOND timing flake in the same spec** (`:684`): **signed-URL tokens are second-granular**, so if
+   the first mint and the re-mint land in the same wall-clock second the two URLs are byte-identical, `src`
+   never changes, and the assertion times out **even though the fix works.** Fix: cross a second boundary
+   before the re-pick. **Real, and a low-hit sub-second window -- 8b, with the cause recorded so a
+   batch-end sweep flake is not a mystery.**
+2. + 3. **The two object reads do not assert their HTTP status** (`:647`, `:697`). A refused or 404 read
+   returns the **same error JSON body** for both, `equals` reports `true`, and the test fails with
+   *"the re-pick overwrote the canonical path with DIFFERENT bytes"* -- **a message that blames the product
+   for a read failure.** Test 1 in the same file already asserts the status before consuming the body.
+   **⚠️ THAT IS EXACTLY THE MESSAGE THE VERIFIER REPORTED**, and it sent me to trace the product first. **A
+   read failure wearing the costume of a data defect cost a lane's worth of time.**
+4. `src/lib/kidRowKey.ts` has **no trailing newline** -- **the class again, in a file round 2 created.**
+   **I did NOT have to edit 8b's brief for this one**, because the brief now says *"MEASURE THIS YOURSELF
+   when you start"* instead of quoting my count. **The structural fix absorbed the new instance
+   automatically, the first time it was tested.** *That is what fixing the artifact rather than the
+   instance looks like.*
+
+**The verify brief now states the rule the missing rule cost us:** *"ONE SAMPLE IS NOT EVIDENCE, GREEN OR
+RED"* -- with the examples explicitly marked as examples and not limits, because **a lane follows the rule,
+and only the rule.**
+
+**LANES OUT:** reviewer + verifier -- workflow `8c3543f4-58dc-4b75-a938-fcda5cf83f3c`, **the verifier told
+to run the failing spec THREE times and report each**; **`ocr`** -- pid 2630175 on `fc4ddeb..8183bd8`.
