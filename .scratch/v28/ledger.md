@@ -2471,3 +2471,51 @@ printed every match **substituted with the letter `n`**. The output looked like 
 to `rg` (it FABRICATES output)".** I broke a rule I had written down, caught it because the results
 were nonsensical, and re-ran correctly. **Lesson: the rule is not about tidiness, it is about silent
 fabrication that reads as data.**
+
+## Slice 1 (pair 1a+1b) -- VERIFIER LANE: VERIFIED PASS
+
+The deterministic referee ran both brief commands. Recorded here because the report itself was
+written into the subagent artifact dir (`/tmp/pi-subagents-uid-1000/...`, retention-managed) rather
+than the worktree -- the durable record is this ledger.
+
+### Gate
+`npm run verify` -- **exit 0.** Verbatim: `Test Files 66 passed (66)`, `Tests 1988 passed (1988)`;
+lint **0 error lines / 81 warning lines**. **All four numbers exactly match the recorded baseline**
+(66 files, 1988 tests, 0 errors, 81 warnings). Guards all pass, including
+`no-bypass-guard` -- **the known flake did not reproduce**, so the re-run-once rule never triggered.
+
+### Browser lane
+`14 passed (1.2m)` -- **0 failed, 0 flaky, 0 retried**, across the five named specs plus setup:
+`account-links` 5, `dm` 3, `onboarding-resume` 2, `signup-zip-fallback` 2, `no-zip-notice` 1.
+Port 4173 was free before the run and released after; nothing was released by hand, `pkill -f` was
+never used, the human's Chrome was untouched. `e2e/places.e2e.ts:2759` was deliberately out of
+scope, so the second known flake had no chance to fire.
+
+### The deviation, and why it was the RIGHT call
+The brief recorded the tree at `525fdcf`; HEAD was `ce77c80`. The verifier did not silently proceed
+and did not refuse -- it **proved the difference was inert**: `git merge-base --is-ancestor 525fdcf
+HEAD` (yes, both `0f745af` and `525fdcf` in history), then `git show --stat ce77c80` = 6 files, all
+planning/scratch, **no source code touched**. Verifying at `ce77c80` therefore tested a tree
+strictly MORE recent than the brief named, with the gate's code byte-identical. That is better than
+what the brief asked for, and it is the behaviour I want from this lane.
+
+### Residual risks it named itself (kept, not smoothed over)
+1. Verified at `ce77c80`, one planning-only commit past the brief's `525fdcf` (proof above).
+2. **The Playwright exit code was not captured** -- the launch was backgrounded, so 14/0 is the
+   output's statement of results rather than a captured exit code. Honest, and acceptable: the
+   counts are verbatim and 0 failed.
+3. Both known flakes are intermittent and simply did not manifest; their nature is unchanged.
+
+### My own independent check of the builder's claims (grep, not memory)
+1b reported that the rewritten resume spec pins "no Skip control on the area card". **Verified in
+the spec, not taken on trust:** `onboarding-resume.e2e.ts:171` is
+`expect(await page.getByRole('button', { name: 'Skip' }).count()).toBe(0)`, and the post-kids
+checkpoint is real at `:91` (`first-run-area-card` visible) and `:164` (`first-run-kids-card` count
+0). So the rewritten test is non-vacuous in the direction 1b claimed, and the verifier's 14/14 was
+earned against assertions that can actually fail.
+
+### Process note for later briefs
+The lane wrote its report to the artifact dir, so **`.scratch/v28/reports/` in the worktree stays
+empty.** That is consistent with "files are the system of record" meaning plan/ledger/task-state --
+but any future lane whose report must SURVIVE retention has to be told explicitly to write inside
+the worktree.
