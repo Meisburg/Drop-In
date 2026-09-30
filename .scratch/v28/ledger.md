@@ -4266,3 +4266,46 @@ the batch's own rule"*) is now a table in `plan.md`: the rejected-slot poisoning
 the comment condition to **fix round 2**, 8c and 8b as briefed. **No item is a hope.**
 
 **FIX ROUND 2 DISPATCHED** (resume; brief `slice-4-fix-2.md`). Verifier and `ocr` on fix round 1 are still out.
+
+## Slice 4 FIX ROUND 1: reviewer **PASS** + verifier **PASS**. Fix round 2 already in flight on top.
+
+**Verifier, exact:** `npm run verify` **exit 0**, **68 files / 2013 tests / 0 errors / 81 warnings** --
+*"nothing differed"* -- with **the lint count restated**, which closes the evidence nit the reviewer raised.
+It counted warnings **by line-shape**, because oxlint printed no "Found N" summary to trust. `a11y:focus`,
+`steering-lint` and all guards PASS.
+
+**It ran the pinned spec TWICE** (6 passed 28.6s; 6 passed 27.4s) **and refused to over-claim**: *"I do not
+offer these green runs as proof the fix works -- they are the pinned proof requested, run twice as directed,
+nothing more."* **That is the rule applied verbatim rather than paraphrased.**
+
+**`places-map-view`: 12 passed, 1 skipped -- and it checked the skip instead of assuming:** a **documented
+`test.fixme` at :1473** (the in-card "See map" was removed in V27; the re-entrancy path is gone and the spec is
+kept for the future). `onboarding-resume`: 3 passed. None of the three named flake modes fired, and it said so
+**and** that it therefore needed neither the port-free nor the `--trace=off` mitigation.
+
+### ⚠️ IT CAUGHT THE TREE MOVING UNDER IT, AND PROVED IT DID NOT MATTER
+*"HEAD moved from `1d28f10` to `84dc85a` mid-lane -- two orchestrator planning-record commits landed on top
+while I ran. Both touch `.scratch/v28/` and `plan.md` only (verified by `git show --stat`), so the tree state I
+tested is still what the results describe."*
+
+**This is the hazard the "never commit while a builder edits" rule exists for, caught by a lane instead of by
+me** -- and correctly *resolved* rather than just noticed: it **verified the delta was non-source** and said what
+its results therefore describe. **A verification lane that watches the tree move and states its provenance is
+worth more than one that reports a green number.**
+
+### ⚠️ NEW RULE, because I created this situation: A LATE FINDING IS ADJUDICATED AGAINST THE CURRENT STATE
+I dispatched **fix round 2 while fix round 1's verifier and `ocr` were still running.** That was the right call
+-- the reviewer's finding was a real data bug and waiting would only have serialized -- **but it means `ocr` is
+reviewing a state that round 2 is about to change.**
+
+**So: when a lane's findings arrive on a superseded state, adjudicate each one against the state it will LAND
+on, not the one it reviewed.** A finding whose code round 2 rewrites may already be gone; a finding about code
+round 2 does not touch still stands. **Applying an already-fixed finding is the base-selection mistake wearing
+different clothes** -- and this batch has made that mistake once already (diffing slice 2 against slice 1b's
+parent).
+
+**Nothing is discarded**: an already-fixed late finding gets recorded as *"fixed by <commit>"* rather than
+dropped, because "we already did that" is a claim someone will have to check later.
+
+**SLICE 4 IS NOT CLOSED YET:** fix round 2 is in flight, and `ocr` on round 1 is still out. Slice 4 closes when
+fix round 2's three lanes report.
