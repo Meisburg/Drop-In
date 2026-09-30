@@ -3568,3 +3568,55 @@ self-verifying. **That is the third time today that naming the mechanism beat na
 **FIX ROUND 2 DISPATCHED** (resume, run `6eb4b41d` -- *corrected: this line first said `1f0d9f74`, which I typed from memory instead of reading. **The very mistake the rule two entries above forbids: I quoted a value instead of obtaining it.***) with R1 as its head: the key must change **when the
 IMAGE changes, not when the id set changes**, and R1 must be pinned by a test that fails if the key goes
 back to ignoring the re-pick.
+
+## Slice 3 FIX ROUND 2: DONE (`fc4ddeb`), all five landed, MUTATION-PROVED, three lanes out
+
+6 files, **+346/-26**: a new lib module + its sibling test, a new `kidAgeFromInput` in `db.ts` with tests,
+`OnboardingPage.tsx`, and the spec.
+
+**MY VERIFICATION -- all five by their anchors:**
+- **R1, the regression:** `photoGen: number` joins the row shape (`:342`), the key is now
+  `${kid.id}:${avatar_url ? 1 : 0}:${photoGen}` (`:438`), a new row starts at `photoGen: 0` (`:632`), and
+  **the re-pick branch bumps it (`:744`)**. **The mechanism is coherent:** a NEW row's key changes because
+  the kid id goes from absent to present, and a RE-PICK's key changes because the generation moves -- so
+  both paths re-mint, and neither moves on a keystroke.
+- **R2/R3:** `src/lib/kidRowKey.ts` + `kidRowKey.test.ts`, and `const key = newKidRowKey()` is minted
+  **outside** the updater (`:631`). Its doc names the non-secure-context reason explicitly.
+- **R4:** all three sites call `kidAgeFromInput` (`:693`, `:762`, `:847`).
+- **R5:** `onPickStart`, with the comment now saying *"the CLEAR half is `onPickStart`"* -- parity named in
+  the right half.
+- **8b's two items were left alone**, as instructed: the F3 flake window (`waitForTimeout(800)`) and both
+  `eslint-disable` comments are untouched.
+
+**⚠️ ONE GREP LOOKED LIKE A DEFECT AND WAS NOT -- and the exemption is why it was not.** A count of
+`Number(row.age)` in the page returned **1**, after the builder reported the write site migrated. It is a
+**comment that describes the removal**: *"pre-R4 this write used a bare `Number(row.age)` (blank -> 0, a
+fabricated age-0 kid) that was safe only because invalidKidRows ran first."* **Ruling F1 already exempts
+comments that describe a removal, and this is exactly what that exemption is for** -- the alternative is a
+rule that punishes the one piece of documentation that explains WHY the trap existed. **The builder's
+report was also precise: it claimed the write site was migrated, not that the string was gone.**
+
+### ⚠️ THE MUTATION PROOF, which is the direct answer to acceptance 1
+I asked how the new test would fail if the key went back to ignoring the re-pick. **The builder did not
+answer with an argument -- it BROKE THE CODE:** it temporarily removed `photoGen` from the key and watched
+test 5 **fail** at the fresh-mint assertion (`signRequests.length` never grew), then restored it and
+watched it pass.
+
+**That matters more than it looks, given what happened one round earlier.** The previous reviewer
+considered the re-pick case and concluded it was fine, *in writing*, from a true premise. **A soundness
+argument is not evidence, and this is the counter-example: the same case was settled here by performing the
+mutation and observing the failure.** It is the same discipline as slice 1a's revert proof, and it is the
+pattern I want for any test whose vacuity is in question.
+
+### The other numbers
+`npm run verify` **exit 0** -- **68 files / 2001 tests** (**+1 file, +8 tests**: 4 for `kidRowKey`, 4 for
+`kidAgeFromInput`, exactly as predicted), lint **0 errors / 81 warnings** (baseline held), a11y / steering
+/ guards PASS. The three specs: **10/10 passed** (52.4s). The spec grew to **6 tests in the kid-photo
+file**, one of them the regression pin.
+
+### THREE LANES OUT (round 2 re-runs all three)
+- **reviewer + verifier** -- workflow `ef7acee4-79c6-4044-b8e8-f1a23eeb4b6e`.
+- **`ocr`** -- pid 2576227, range `3f51d53..fc4ddeb`.
+The reviewer is told the previous reviewer's reasoning error explicitly, so a plausible-sounding argument
+is not mistaken for evidence; it is asked whether the generation could move in the wrong place, and whether
+the described mutation failure is the RIGHT failure.
