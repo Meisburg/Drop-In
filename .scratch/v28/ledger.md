@@ -2763,3 +2763,42 @@ Findings, all non-blocking:
    structural argument, and assigned to slice 8 to pin with a route-abort spec.** A rule with no
    failing test is the vacuity class.
 4. **Ledger hygiene** -- this entry is that correction.
+
+## ⚠️ SLICE 2 VERIFIER LANE TIMED OUT AT 30 MINUTES -- and the cause was MY brief
+
+Killed at 1,799,542 ms with "The operation was aborted" (exitCode 1), after 1,030,178 input /
+18,252 output tokens. **It did not finish its report. It DID do most of the work**, and its partial
+output is real tool output -- evidence rather than a claim -- so it is recorded here.
+
+### Salvaged evidence (verbatim from its output)
+- **`npm run verify` -> exit code 0, `Test Files 66 passed (66)`, `Tests 1988 passed (1988)`** -- an
+  exact match to the baseline on both counts. **The gate's main half is GREEN at `2e784d3`.**
+- **The new spec PASSES**: `e2e/name-card-photo.e2e.ts:117 › the name card photo lands on the
+  profiles row (object in the bucket + avatar_url set)`, `2 passed (15.2s)`, `LANE3_EXIT=0`.
+- **It independently confirmed the headline claim instead of taking the spec's word for it**: it
+  uploaded its own probe, read it back, saw `BYTE-IDENTICAL to uploaded probe`, and an owner-JWT GET
+  returned `200 image/jpeg`. It also verified the DELETE path (`200`) and that a public GET afterwards
+  is a 404 -- i.e. it checked the storage semantics *around* the assertion, not just the assertion.
+
+### NOT covered, and therefore NOT claimed
+- `npm run typecheck` -- no output seen.
+- **The `finishSignup` blast radius**: only the setup spec and `name-card-photo` ran in that lane, so
+  `onboarding-resume`, `signup-zip-fallback`, `avatar`, and the three consumers (`no-zip-notice`,
+  `dm`, `kids-v3`) **did not run**.
+- The fixture-marker convention check.
+
+### The cause was MY brief, and the class is worth naming
+I wrote: *"Independently confirm the slice's headline claim -- do not take the new spec's word for
+it... if you can read the row back and the object independently, do it and show the output."*
+**That is an open-ended invitation with no bound.** The lane answered it by authoring its own probe
+scripts and a polling script (`/tmp/poll3.sh`): a million input tokens of thoroughness, and it died
+composing the report. **An unbounded "confirm this yourself" is a brief defect -- it must name the
+command or cap the effort.** The re-dispatch is bounded, and the bound is now a standing instruction
+for this lane.
+
+**This is the SECOND lane timeout in the batch** (the first was 7b Job 1's builder). Both were
+"thorough, not stuck" -- neither was a defect in the work, both were budget failures.
+
+### Machine hygiene after the kill: clean
+Port 4173 **free** (Playwright tore down its own webServer); **no stray** `vite preview`, chromium or
+playwright processes; the tree holds only the reviewer's report as an untracked file.
