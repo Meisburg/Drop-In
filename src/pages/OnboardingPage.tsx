@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router'
 import { useSessionContext } from '../components/SessionProvider'
 import { FinishRunCard } from '../components/FinishRunCard'
 import { FirstRunCard } from '../components/FirstRunCard'
+import { useCropStep } from '../components/useCropStep'
 import { addressFieldError, composeDisplayName, displayNameFieldError } from '../lib/account'
 import { progressLabel, nextUnfinishedCard } from '../lib/firstRun'
 import { FIRST_RUN_COPY } from '../lib/firstRunCopy'
@@ -16,6 +17,7 @@ import {
   loadZipCodes,
   MAX_KIDS_PER_PROFILE,
   updateHomeZipRadius,
+  uploadAvatar,
   validateKid,
 } from '../lib/db'
 import {
@@ -50,8 +52,8 @@ import { errorId, fieldA11y } from '../lib/a11y'
  * docs/adr/0001-home-zip-stops-being-a-gate.md). Visiting /onboarding is
  * voluntary; finishing the run is not. V28 slices 4a/4b: the kids card
  * (3 of 4) writes the kid rows before this page's final view (V28 r2 slice 1b
- * deleted the photo card — the parent's photo now joins the name card, slice
- * 2). The location view's one Continue button saves the location (always)
+ * deleted the photo card — the parent's photo now lives on the name card,
+ * V28 r2 slice 2). The location view's one Continue button saves the location (always)
  * and lands on the feed.
  * V28 slice 5: that final view IS the area card (4 of 4, the run's last
  * card) — address-first, ZIP as the fallback it reveals (decision 9): the
@@ -66,12 +68,12 @@ import { errorId, fieldA11y } from '../lib/a11y'
  * re-enters resumes at the card they LEFT, never a restart: the kids gate
  * closes when the profile already has kids (the page's own lazy listKids
  * read, the same seam as the shell's nudge); the photo gate is gone with
- * the photo card (V28 r2 slice 1b — the photo moves onto the name card in
- * slice 2). The session flag (kidsCardDone) keeps a Skip advancing within
+ * the photo card (V28 r2 slice 1b — the photo now lives on the name card,
+ * V28 r2 slice 2). The session flag (kidsCardDone) keeps a Skip advancing within
  * a run.
  * The optional items that were once collected HERE (V2 ticket 02:
- * photo/bio/kids) are gone from this view: kids moved onto its card (photo
- * joins the name card in slice 2), and the bio left the first run entirely
+ * photo/bio/kids) are gone from this view: kids moved onto its card (the
+ * photo now lives on the name card, V28 r2 slice 2), and the bio left the first run entirely
  * (V28 decision 15 —
  * it stays on /settings and the V27 parent-card editor, never a column).
  *
@@ -164,9 +166,8 @@ export function OnboardingPage() {
   const [zipFallbackShown, setZipFallbackShown] = useState(false)
 
   // The optional completion items (V2 ticket 02): the kid rows. (The photo
-  // states photoAdded / photoUploading / photoError lived here — V28 r2
-  // slice 1b deleted them with the photo card; the photo now joins the
-  // name card, slice 2.)
+  // states photoUploading / photoError now live above, with the crop step —
+  // V28 r2 slice 2 moved the photo onto the name card.)
   const [kidRows, setKidRows] = useState<Array<{ name: string; age: string }>>([])
   const [kidsError, setKidsError] = useState<string | null>(null)
   // V28 slice 4a: the kids card (3 of 4) is its OWN step, between the name
@@ -221,11 +222,43 @@ export function OnboardingPage() {
       cancelled = true
     }
   }, [session, profile, kidsCardDone])
-  // V28 slice 4b added the photo card — the first run's fourth card — and
-  // its session flag
-  // photoCardDone; V28 r2 slice 1b removed the card, the flag, and the
-  // crop-step hook (useCropStep) with it — the photo now joins the name
-  // card (slice 2), and only the kids session flag remains.
+  // V28 r2 slice 2: the photo card is GONE — the parent's photo now lives on
+  // the NAME card, which is also the card that CREATES the profiles row. So
+  // the crop step runs BEFORE the row exists: `uploadAvatar`'s storage-object
+  // write lands anyway (the owner-scoped policy keys on auth.uid, not the
+  // row), but its profiles.avatar_url UPDATE matches zero rows and PostgREST
+  // no-ops a 0-row update SILENTLY — that no-op is load-bearing here, and if
+  // `uploadAvatar` is ever hardened to throw on a 0-row update, this call
+  // site breaks first. The returned public URL is held in `pendingAvatarUrl`
+  // and handed to `createProfile`'s insert, which links it to the new row.
+  //
+  // The upload itself runs on the crop step's CONFIRM — the shape the
+  // deleted photo card had: by the time the parent reaches the card's
+  // Continue the photo is either uploaded or not, so Continue never waits on
+  // an upload, and a failed one (the `photoError` below) never blocks it —
+  // the photo is optional and the profile write stands on its own.
+  const [photoUploading, setPhotoUploading] = useState(false)
+  const [photoError, setPhotoError] = useState<string | null>(null)
+  // The public URL the confirmed crop returned, held until the name card's
+  // Continue creates the row it belongs to. It survives a FAILED Continue
+  // (a taken handle) so the retry links the same upload — nothing is
+  // re-encoded or re-uploaded.
+  const [pendingAvatarUrl, setPendingAvatarUrl] = useState<string | null>(null)
+  const photoCrop = useCropStep(async (source, rect) => {
+    if (session === null) return
+    setPhotoUploading(true)
+    setPhotoError(null)
+    try {
+      const url = await uploadAvatar(session.user.id, source, rect)
+      setPendingAvatarUrl(url)
+    } catch (err) {
+      setPhotoError(
+        err instanceof Error ? err.message : 'Could not upload the photo. You can add it later.',
+      )
+    } finally {
+      setPhotoUploading(false)
+    }
+  })
 
   // The seeded gazetteer (zip_codes, migration 0012): the zip input is
   // validated against it — an unknown zip shows an inline error instead of
@@ -327,7 +360,7 @@ export function OnboardingPage() {
   // The avatar upload (V2 ticket 02; the crop step added by photo-crop
   // ticket 03) ran in the photo card's crop step (handlePhotoChange →
   // photoCrop.beginCrop → uploadAvatar). V28 r2 slice 1b deleted the card
-  // and that handler; the photo now joins the name card (slice 2).
+  // and that handler; the photo now lives on the name card (V28 r2 slice 2).
 
   function addKidRow() {
     setKidsError(null)
@@ -464,8 +497,8 @@ export function OnboardingPage() {
       await updateHomeZipRadius(session.user.id, zip, radiusMiles)
       // V28 slices 4a/4b: the optional items no longer write from this
       // handler — the kids card wrote its rows before this card (the photo
-      // left the card sequence in V28 r2 — it joins the name card in slice
-      // 2; the bio left the first run entirely). Only the location write
+      // left the card sequence in V28 r2 — it now lives on the name card,
+      // V28 r2 slice 2; the bio left the first run entirely). Only the location write
       // remains here.
       // Refresh the shared session state before the card swap: homeZipSet
       // is what the page's own finish-card branch (and every other
@@ -490,6 +523,22 @@ export function OnboardingPage() {
   }
 
   /**
+   * The name card's photo picker (V28 r2 slice 2 — the deleted photo
+   * card's `handlePhotoChange`, re-homed onto the card): the ≤5MB /
+   * image-only gate and the decode run inside the crop step (beginCrop),
+   * and the upload runs on the dialog's confirm (`photoCrop` above). A
+   * rejected file shows its error and the picker stays live for a retry.
+   */
+  async function handleNameCardPhotoChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null
+    e.target.value = '' // allow re-picking the same file
+    if (file === null) return
+    setPhotoError(null)
+    const error = await photoCrop.beginCrop(file)
+    if (error !== null) setPhotoError(error)
+  }
+
+  /**
    * Create the profiles row for a first-run parent. Since V28 slice 3b EVERY
    * new account lands here with a session and no row (email signup no longer
    * creates it on /login, and social sign-in never did), and every write on
@@ -507,12 +556,17 @@ export function OnboardingPage() {
     setHandleBusy(true)
     setHandleError(null)
     try {
-      await createProfile(name)
+      // The confirmed crop's URL (if the parent picked a photo) links into
+      // the row this write creates — see the crop step above for why the
+      // upload ran before the row existed. Cleared only on SUCCESS: a
+      // failed write keeps the URL so the retry links the same upload.
+      await createProfile(name, pendingAvatarUrl ?? undefined)
+      setPendingAvatarUrl(null)
       await refresh()
     } catch (err) {
       setHandleError(
         err instanceof HandleTakenError
-          ? `“${name}” is already taken — try adding a middle name or initial.`
+          ? `“${name}” is already taken — try a different first or last name.`
           : err instanceof Error
             ? err.message
             : 'Could not save your name. Try again.',
@@ -539,6 +593,14 @@ export function OnboardingPage() {
   // is the tested artifact pinned by firstRunCopy.test.ts), and the
   // hard-coded title/body are gone. Only the busy-state label stays inline:
   // it is a state, not card copy.
+  // V28 r2 slice 2: the parent's PHOTO JOINS THE CARD (the standalone photo
+  // card was deleted in 1b): the picker sits under the two name fields,
+  // OUTSIDE the form (the photo is not form data — Continue submits the
+  // form alone). The photo never gates Continue: the upload runs on the
+  // crop confirm (see `photoCrop` above) and its URL links into the row
+  // this card's Continue creates; a parent who skips the photo walks the
+  // hop exactly as before (e2e/fixtures' signUpViewer fills the two name
+  // fields and clicks Continue with no photo at all).
   if (profile === null) {
     return (
       <FirstRunCard
@@ -550,54 +612,77 @@ export function OnboardingPage() {
         primaryDisabled={handleBusy}
         testId="first-run-name-card"
       >
-        <form
-          id="name"
-          className="flex flex-col gap-3"
-          onSubmit={(e) => void handleCreateProfile(e)}
-        >
-          <div className="flex gap-2">
-            <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
-              <span className="text-slate-700">First name</span>
+        <div className="flex flex-col gap-3">
+          <form
+            id="name"
+            className="flex flex-col gap-3"
+            onSubmit={(e) => void handleCreateProfile(e)}
+          >
+            <div className="flex gap-2">
+              <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
+                <span className="text-slate-700">First name</span>
+                <input
+                  className={
+                    'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+                    (handleError !== null ? 'border-red-400' : 'border-slate-300')
+                  }
+                  value={firstNameValue}
+                  onChange={(e) => {
+                    setFirstName(e.target.value)
+                    setFirstNameTouched(true)
+                    setHandleError(null)
+                  }}
+                  placeholder="Sam"
+                  required
+                  maxLength={40}
+                  autoComplete="given-name"
+                  {...fieldA11y('name', handleError)}
+                />
+              </label>
+              <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
+                <span className="text-slate-700">Last name</span>
+                <input
+                  className={
+                    'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+                    (handleError !== null ? 'border-red-400' : 'border-slate-300')
+                  }
+                  value={lastNameValue}
+                  onChange={(e) => {
+                    setLastName(e.target.value)
+                    setLastNameTouched(true)
+                    setHandleError(null)
+                  }}
+                  placeholder="Rivera"
+                  maxLength={40}
+                  autoComplete="family-name"
+                  {...fieldA11y('name', handleError)}
+                />
+              </label>
+            </div>
+            {handleError ? <p role="alert" id={errorId('name')} className="text-sm text-red-600">{handleError}</p> : null}
+          </form>
+          {/* V28 r2 slice 2: the photo block (the deleted card's picker,
+              re-homed). "Add a photo" reuses the deleted card's title
+              verbatim — a parent already saw it in the playtest; the card
+              is not skippable, so there is no Skip control here (the
+              photo is simply optional: Continue walks without it). */}
+          <div className="flex flex-col gap-1 text-sm">
+            <label className="inline-flex min-h-11 cursor-pointer items-center self-start rounded-xl border border-slate-300 bg-white px-3 text-base font-medium text-slate-700">
+              {photoUploading ? 'Uploading…' : pendingAvatarUrl !== null ? 'Photo added' : 'Add a photo'}
               <input
-                className={
-                  'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
-                  (handleError !== null ? 'border-red-400' : 'border-slate-300')
-                }
-                value={firstNameValue}
-                onChange={(e) => {
-                  setFirstName(e.target.value)
-                  setFirstNameTouched(true)
-                  setHandleError(null)
-                }}
-                placeholder="Sam"
-                required
-                maxLength={40}
-                autoComplete="given-name"
-                {...fieldA11y('name', handleError)}
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                data-testid="name-card-photo-input"
+                disabled={photoUploading}
+                onChange={(e) => void handleNameCardPhotoChange(e)}
+                {...fieldA11y('name-photo', photoError)}
               />
             </label>
-            <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
-              <span className="text-slate-700">Last name</span>
-              <input
-                className={
-                  'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
-                  (handleError !== null ? 'border-red-400' : 'border-slate-300')
-                }
-                value={lastNameValue}
-                onChange={(e) => {
-                  setLastName(e.target.value)
-                  setLastNameTouched(true)
-                  setHandleError(null)
-                }}
-                placeholder="Rivera"
-                maxLength={40}
-                autoComplete="family-name"
-                {...fieldA11y('name', handleError)}
-              />
-            </label>
+            {photoError !== null ? <p role="alert" id={errorId('name-photo')} className="text-sm text-red-600">{photoError}</p> : null}
+            {photoCrop.dialog}
           </div>
-          {handleError ? <p role="alert" id={errorId('name')} className="text-sm text-red-600">{handleError}</p> : null}
-        </form>
+        </div>
       </FirstRunCard>
     )
   }
@@ -661,7 +746,7 @@ export function OnboardingPage() {
   // verbatim lift: the page used to render the photo block before the kids
   // block, and the chosen card order was kids then photo — so the kid rows
   // moved UP into this card. (V28 r2 slice 1b deleted the photo card;
-  // the photo now joins the name card, slice 2.) The words are data from
+  // the photo now lives on the name card, V28 r2 slice 2.) The words are data from
   // FIRST_RUN_COPY.kids,
   // never hard-coded (the name card above reads its entry the same way).
   // Skip advances without writing anything; Continue writes the filled rows
@@ -763,7 +848,7 @@ export function OnboardingPage() {
   // V28 r2 slice 1b: the photo card (the first run's fourth card, while it
   // existed) was DELETED here — its gate,
   // state, picker, crop step, and upload all left this page; the parent's
-  // photo now joins the NAME card (slice 2). The area card below is the
+  // photo now lives on the NAME card (V28 r2 slice 2). The area card below is the
   // run's last card again, and the run is account → name → kids → area.
 
   // V28 slice 5: the AREA card ("4 of 4") — the first run's last card,

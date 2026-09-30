@@ -32,7 +32,13 @@ export const FIRST_RUN_COPY: Record<FirstRunCardId, FirstRunCardCopy> = {
   },
   name: {
     title: "What should we call you?",
-    body: 'This is how other parents see you. A first name is plenty — you can change it later in settings.',
+    // V28 r2 slice 2: the body says what the name IS FOR — it is how other
+    // parents find and recognize you (the public handle) — and names only
+    // fields the card renders: the first/last name pair and the photo block
+    // this same slice moved onto the card. The old body's "A first name is
+    // plenty" sat under the LAST NAME field and read like a suggestion to
+    // leave it empty. No privacy lecture — this card is a name step.
+    body: 'This is how other parents find and recognize you — a first and last name, and a picture if you have one. That is your public handle, and you can change it later in settings.',
     primaryLabel: 'Continue',
   },
   kids: {

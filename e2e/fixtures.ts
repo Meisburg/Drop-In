@@ -383,8 +383,10 @@ export async function signUpViewer(
  * FINISH SIGNUP — walk the kids card, then complete the AREA card.
  * (V28 slice 3b; first-use audit, ticket 02; V28 slice 4a: the kids hop;
  * V28 slice 5: the area card; V28 r2 slice 1b deleted the photo card from
- * the first run, so the old photo hop is gone — the photo now joins the
- * name card in slice 2.)
+ * the first run, so the old photo hop is gone — the photo now lives on the
+ * name card, V28 r2 slice 2, and this helper's name hop skips it: the
+ * photo is optional, so filling the two name fields and clicking Continue
+ * walks the card exactly as before.)
  *
  * The signup form no longer carries an address, so `signUpViewer` lands the
  * new parent on /onboarding ALWAYS: the name card comes next

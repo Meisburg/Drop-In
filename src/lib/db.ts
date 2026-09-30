@@ -337,8 +337,22 @@ export async function signInWithOAuthProvider(provider: OAuthProvider): Promise<
  * Idempotent: if the caller's row already exists (unique on id), returns it.
  * Throws HandleTakenError when the chosen display_name is already used by
  * another profile (unique on display_name, slice 2 migration 0004).
+ *
+ * V28 r2 slice 2: the optional `avatarUrl`. The parent's photo now lives on
+ * the NAME card — the card that CREATES this row — so the crop step runs
+ * BEFORE the row exists: `uploadAvatar`'s storage-object write lands anyway
+ * (the owner-scoped policy keys on auth.uid, not the row) but its
+ * profiles.avatar_url UPDATE matches zero rows, and PostgREST no-ops a
+ * 0-row update silently. The crop step hands its returned public URL in here
+ * so the INSERT carries the column — without this the confirmed photo would
+ * be an orphaned object in the avatars bucket (the column NULL on the new
+ * row, and every render surface reads the column). Omitted (or the caller
+ * picked no photo) inserts with avatar_url NULL exactly as before.
  */
-export async function createProfile(displayName: string): Promise<Profile> {
+export async function createProfile(
+  displayName: string,
+  avatarUrl?: string,
+): Promise<Profile> {
   const {
     data: { user },
     error: userError,
@@ -348,7 +362,11 @@ export async function createProfile(displayName: string): Promise<Profile> {
 
   const { data, error } = await supabase
     .from('profiles')
-    .insert({ id: user.id, display_name: displayName })
+    .insert({
+      id: user.id,
+      display_name: displayName,
+      ...(avatarUrl !== undefined ? { avatar_url: avatarUrl } : {}),
+    })
     .select()
     .single()
 

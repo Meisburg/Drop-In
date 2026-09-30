@@ -1,8 +1,9 @@
 /**
  * Spec (V2 ticket 02; the crop step added by photo-crop ticket 03): the avatar.
  * The marker uploads a photo via the /profile page (V13 ticket 01 moved the
- * avatar editor off /settings; the onboarding "Add a photo" step is only
- * reachable for users without a home zip, and the marker is already onboarded),
+ * avatar editor off /settings; the first run's photo now lives on the NAME
+ * card — V28 r2 slice 2 — which renders only for a parent WITHOUT a profiles
+ * row yet, and the marker already has one, so the marker drives /profile),
  * confirms the crop dialog, and the encoder produces a square JPEG stored at
  * avatars/<uid>/avatar under the owner-scoped write policy; it then posts a
  * drop-in, and the 40px round avatar renders on the feed card and on /u/<handle>.
