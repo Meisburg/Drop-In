@@ -91,8 +91,9 @@ rather than trust.
      `signup-zip-fallback.e2e.ts:10,61,81,92,101`.
    - ⚠️ **NOT the label — do not touch:** `reviews.ts:198`, `reviews.test.ts:194,195,199,205,206`,
      `PlaceDirectory.tsx:1419,1425,1534`, `PlaceDetailsPage.tsx:197` — these are **star ratings**
-     ("4.3 out of 5"); and `InboxPage.tsx:607`, an unrelated live-data note. **11 of the 32 hits
-     are these.** A blanket `rg "of 5"` sweep would rewrite review copy — that is the trap.
+     ("4.3 out of 5"); and `InboxPage.tsx:607`, an unrelated live-data note. **So the honest
+     decomposition of the 32 is: 21 label + 1 note + 10 ratings.** A blanket `rg "of 5"` sweep
+     would rewrite review copy — that is the trap.
    - ⚠️ **Also not the label:** `firstRun.test.ts:206` (`"const label = '2 of 5'"`) is a **fixture
      string fed to the purity scanner** to prove prose is out of scope. Changing it breaks a
      different test's premise.
@@ -222,7 +223,8 @@ such — a red commit nobody explains is indistinguishable from a mistake.
 - **Acceptance.** The label is gone from the app: `rg -n "of 5" src/pages/OnboardingPage.tsx
   src/pages/LoginPage.tsx src/components/FirstRunCard.tsx src/lib/firstRun.ts` → **0 hits**, and
   `rg -n "first-run-photo-card" src/ e2e/` → **0 hits**. ⚠️ **A blanket `rg "of 5" src/` is NOT
-  the check** — see fact 3: 11 hits are star ratings and one is a scanner fixture. Sweeping
+  the check** — see fact 3: 10 hits are star ratings, one is an unrelated live-data note, and one
+  is a scanner fixture. Sweeping
   those would be a new defect, not a fix. The run reaches `area` and the ending without a photo
   card; the three walking specs (`onboarding-resume`, `signup-zip-fallback`, `auth.setup`) pass.
 - **Verify.** `npm run verify` **and** `npx playwright test e2e/onboarding-resume.e2e.ts e2e/signup-zip-fallback.e2e.ts`.
@@ -311,8 +313,9 @@ such — a red commit nobody explains is indistinguishable from a mistake.
 - **A SECOND guard, because the same *planning* defect was made twice within the hour.** Two
   acceptance criteria out of my own pen claimed a **zero over an unscoped directory**, and each
   would have sent a builder to rewrite something it must not touch:
-  - `rg "of 5" src/` — **32 hits, 11 of them star ratings** (`reviews.ts`, `reviews.test.ts`,
-    `PlaceDirectory.tsx`, `PlaceDetailsPage.tsx`).
+  - `rg "of 5" src/` — **32 hits, of which only 21 are the label.** 10 are star ratings
+    (`reviews.ts`, `reviews.test.ts`, `PlaceDirectory.tsx`, `PlaceDetailsPage.tsx`) and 1 is an
+    unrelated live-data note (`InboxPage.tsx:607`).
   - `rg "hasPhoto" src/` — `src/lib/places.ts:1070` has an **unrelated local of the same name**
     (a *place's* photo).
 
@@ -370,7 +373,11 @@ it is the only part of this feature that cannot be delegated.
 
 Its items touch the same files this revision rewrites, so running it earlier would mean doing
 part of it twice. Wire-or-delete `missingProfileItems` / `MissingProfileItem` /
-`needsOnboarding` (fact 11: **0 production callers each**); the phrase-based stale-claim sweep;
+`needsOnboarding` (fact 11: **0 production callers each**); the phrase-based stale-claim sweep —
+**which slice 1b's builder has already found three new members of, and reported rather than
+silently fixed**: `e2e/no-zip-notice.e2e.ts:24` ("stops BEFORE the photo and area cards"),
+`e2e/avatar.e2e.ts:4` ("the onboarding 'Add a photo' step"), and `src/App.tsx:93` (a nudge-banner
+comment still saying the kids/area cards "do not exist yet", which shipped in slices 4/5);
 extract `resolveCard(facts, skippedCards)`; `ProfilePage.tsx:1218`'s missing empty-string
 clause; the `finishSignup` pre-resolved-zip option; remove `e2e/auth.setup.ts`'s duplicated walk.
 - **Verify.** `npm run verify`. **Depends on.** 1b–6.

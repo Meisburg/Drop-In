@@ -1,0 +1,118 @@
+{
+  "base": "http://127.0.0.1:4173",
+  "browser": "Chrome/154.0.8037.57",
+  "pass": true,
+  "routes": [
+    {
+      "path": "/",
+      "url": "http://127.0.0.1:4173/",
+      "loaded": true,
+      "mounted": 201,
+      "must_contain": [
+        "Drop In",
+        "Sign in"
+      ],
+      "missing": [],
+      "errors": [],
+      "screenshot": ".scratch/playtest/route_.png"
+    },
+    {
+      "path": "/login",
+      "url": "http://127.0.0.1:4173/login",
+      "loaded": true,
+      "mounted": 201,
+      "must_contain": [
+        "Drop In",
+        "Sign in",
+        "Password"
+      ],
+      "missing": [],
+      "errors": [],
+      "screenshot": ".scratch/playtest/route_login.png"
+    },
+    {
+      "path": "/reset-password",
+      "url": "http://127.0.0.1:4173/reset-password",
+      "loaded": true,
+      "mounted": 154,
+      "must_contain": [
+        "didn\u2019t work"
+      ],
+      "missing": [],
+      "errors": [],
+      "screenshot": ".scratch/playtest/route_reset-password.png"
+    },
+    {
+      "path": "/new",
+      "url": "http://127.0.0.1:4173/new",
+      "loaded": true,
+      "mounted": 201,
+      "must_contain": [
+        "Sign in"
+      ],
+      "missing": [],
+      "errors": [],
+      "screenshot": ".scratch/playtest/route_new.png"
+    },
+    {
+      "path": "/browse",
+      "url": "http://127.0.0.1:4173/browse",
+      "loaded": true,
+      "mounted": 201,
+      "must_contain": [
+        "Sign in"
+      ],
+      "missing": [],
+      "errors": [],
+      "screenshot": ".scratch/playtest/route_browse.png"
+    },
+    {
+      "path": "/inbox",
+      "url": "http://127.0.0.1:4173/inbox",
+      "loaded": true,
+      "mounted": 201,
+      "must_contain": [
+        "Sign in"
+      ],
+      "missing": [],
+      "errors": [],
+      "screenshot": ".scratch/playtest/route_inbox.png"
+    },
+    {
+      "path": "/profile",
+      "url": "http://127.0.0.1:4173/profile",
+      "loaded": true,
+      "mounted": 201,
+      "must_contain": [
+        "Sign in"
+      ],
+      "missing": [],
+      "errors": [],
+      "screenshot": ".scratch/playtest/route_profile.png"
+    },
+    {
+      "path": "/settings",
+      "url": "http://127.0.0.1:4173/settings",
+      "loaded": true,
+      "mounted": 201,
+      "must_contain": [
+        "Sign in"
+      ],
+      "missing": [],
+      "errors": [],
+      "screenshot": ".scratch/playtest/route_settings.png"
+    },
+    {
+      "path": "/place/:id/details",
+      "url": "http://127.0.0.1:4173/place/:id/details",
+      "loaded": true,
+      "mounted": 201,
+      "must_contain": [
+        "Sign in"
+      ],
+      "missing": [],
+      "errors": [],
+      "screenshot": ".scratch/playtest/route_place_:id_details.png"
+    }
+  ]
+}

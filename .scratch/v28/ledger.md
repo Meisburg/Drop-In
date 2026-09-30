@@ -2215,3 +2215,55 @@ careful:
   silence. Added to slice 1b's report contract; every brief after it inherits it.
 - **The orchestrator checks `git log`/`git status` before treating any DONE as done.** Done this
   time, which is the only reason 1a's verified work is in git at all.
+
+## Slice 1 (1a + 1b) committed -- pending the three lanes
+
+`525fdcf` ("first run is four cards now (photo card deleted)"), parent `e252f01`. The pair's
+diff: **12 files, +165/-296**. The builder declared **`Committed as: 525fdcf`** -- the new
+required report field, and it worked: the first builder in three to make the orchestrator's git
+check a formality instead of a rescue.
+
+### My own grep verification (the orchestrator's job, before any lane is believed)
+
+- onboarding `of 5` in the four named files: **0 hits**
+- `first-run-photo-card`: **0 hits** in src/ and e2e/
+- the copy module's `photo` entry: **gone**
+- star ratings in reviews.ts / reviews.test.ts / PlaceDirectory.tsx / PlaceDetailsPage.tsx:
+  **10, unchanged** -- not swept
+- 1b did **not** touch `firstRun.ts` / `firstRun.test.ts` (1a's files)
+- tree clean, at `525fdcf`
+
+### Three adjudications
+
+1. **`hasPhoto` still appears three times -- in COMMENTS THAT EXPLAIN THE REMOVAL**
+   (`onboarding-resume.e2e.ts:21,99`; `avatarUrl.test.ts:6`). My acceptance said "0 hits" and was
+   **too strict**: a comment saying "r2 slice 1b removed the photo card and its hasPhoto fact" is
+   *good* -- it stops the next reader thinking the fact was lost. **RULING: the builder's judgment
+   beats my criterion. Accepted.** Note that the guard's rule survives this: those hits are in
+   files the brief *names*, so `check-acceptance-greps` passes them. **My zero-claims have now
+   been wrong in three directions** -- too broad (`of 5`), a name collision (`hasPhoto` in
+   `places.ts`), and now too strict (comments). That is the argument for `check-acceptance-greps`
+   being a real check rather than a note to be careful.
+2. **`FinishRunCard.tsx` was edited although it is not in 1b's declared file list** -- a stale
+   "5-card inventory" doc comment, honestly reported rather than slipped in. **Accepted**: it is a
+   stale claim *this slice's change made stale*, and the standing rule is that the slice which
+   breaks a claim owns it.
+3. **MY OWN NUMBER WAS WRONG.** I asserted "11 of the 32 `of 5` hits are star ratings" -- in the
+   plan, in the ledger, and in a brief. Measured: **10 ratings + 1 unrelated live-data note.**
+   `32 = 21 label + 1 note + 10 ratings`. Corrected in the plan. **A number asserted in a record
+   is a claim like any other**, and this one was never measured, only eyeballed.
+
+### Three stale claims the builder found and reported instead of silently fixing
+
+Assigned to slice 8's stale-claim sweep, now named in the plan: `e2e/no-zip-notice.e2e.ts:24`,
+`e2e/avatar.e2e.ts:4`, and `src/App.tsx:93` (which still says the kids/area cards "do not exist
+yet" -- they shipped in slices 4/5).
+
+### Still open on this slice, deliberately
+
+- The **reviewer**, **verifier** and **ocr** lanes are running. Slice 1 is NOT complete until they
+  report. A builder's DONE is a belief; the diff and the output are evidence.
+- **The e2e walk was never driven in a browser** by the builder (`verify` does not include
+  Playwright). That is in the verifier's brief, with `dm` and `account-links` included because
+  they are heavy `finishSignup` consumers -- if the shared walk broke, that is where it shows.
+- No push yet. The branch is ahead of origin and that is intended until the slice closes.
