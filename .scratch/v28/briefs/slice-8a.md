@@ -60,6 +60,31 @@ decision worth recording.
   function. *(Slice 4 deliberately left both alone: the file was out of its scope, and reporting an
   orphan beats silently deleting something on a guess.)*
 
+## 2c. Three more from slice 4's review (the reviewer found the first one I missed)
+
+- **⚠️ `src/pages/OnboardingPage.tsx:219` -- the page's header doc still names the ORPHANED
+  `zipFromAddressQueryBounded` as the card's bounded lookup**, while the card now runs
+  `locationFromAddressQueryBounded`. **The damning part is that the slice's OWN new comments elsewhere in
+  this same file name the pair correctly** -- so one file now contradicts itself, and a reader trusts
+  whichever sentence they hit first. The reviewer's reasoning is worth keeping: *"this instance is in the
+  file the slice itself touched -- the slice owner owns stale claims in its own files."* **Fix it here,
+  with the `src/lib/onboarding.ts` instance above, so all three land in one commit.**
+- **`OnboardingPage.tsx` -- the ZIP-fallback reveal is now EARLIER than it was, and no comment says so.**
+  `ensureAddressLookup`'s settle does `setZipFallbackShown(result.zip === null)`, so the note + field appear
+  **when the blur lookup settles to null**, not only after a Finish tap. **This is ACCEPTED, not a defect**
+  -- it never blocks, never loses input, and leg 2's flow is unaffected because a Finish tap beats the 500ms
+  debounce -- and `signup-zip-fallback.e2e.ts` passed with **4 passed** on the verifier lane. **But the
+  brief required behaviour changes to be called out loudly and no comment does.** Add a one-line comment at
+  the reveal naming the early trigger and why it is deliberate; a future reader should not have to infer
+  intent from timing.
+
+*(A note for whoever writes the 8c brief: the reviewer also filed two TEST-honesty items on
+`e2e/signup-zip-fallback.e2e.ts` -- the radius-redraw assertion can pass vacuously when `before === null`
+because of the `before !== null &&` guard, and the "exactly ONE request per distinct address" acceptance
+has only the no-double-fire direction pinned; a SECOND distinct address firing exactly one more is
+inference, not evidence. **Those belong in 8c's list, not here**, and they are recorded in the ledger so
+this note is a pointer rather than the record.)*
+
 ## 3. The deferred 7c items
 
 - **Extract `resolveCard(facts, skippedCards)`** — the card-resolution decision, pulled out of its

@@ -4025,3 +4025,63 @@ that would have finished the slice.** That belongs beside the gate result in `ta
   to FIND A READER THE AUDIT MISSED (which is how I found #1 above) and the verifier given the expected
   **68 files / 2014 tests** with an instruction to name any difference.
 - **`ocr`** -- pid 2694391 on `896df51..e109152`.
+
+## Slice 4: reviewer **PASS**, verifier **PASS**. Only `ocr` outstanding.
+
+**VERIFIER (this closes criterion 6, which both the reviewer and I had flagged as pending):**
+`npm run verify` **exit 0** -- **68 files / 2012 tests / 0 errors / 81 warnings**; a11y and steering-lint
+PASS; **all guards PASS with no-bypass on its first run**. The new leg passed (**4 passed, 21.0s**, including
+*"blur + Finish on the same address issues exactly ONE request, and the card shows its pin + radius
+circle"*). **`places-map-view.e2e.ts`: 12 passed, 1 pre-existing skip** -- so the widened `PlacesMap` guard
+**did not** break the map spec, which was the risk I named when I granted the scope. Provenance: 5 commits,
+only `e109152` is source, every planning record verified with `git show --stat`. **And it applied the new
+rule explicitly: "Green -- reported as one sample, not as proof."**
+
+### ⚠️ MY "2014 TESTS" WAS WRONG, AND THE PROCESS IS WHAT CAUGHT IT
+I predicted **2014** (2001 + the builder's claimed 13). Reality is **2012**. The verifier named the cause
+exactly: the commit adds **11 unit tests** (vitest counts them) **+ 1 e2e test** (vitest does not) = 12
+blocks -- and I confirmed it myself: `git diff 89651 e109152 -- src/lib/geocode.test.ts | grep -c "it("`
+returns **11**.
+
+**I produced that number by ARITHMETIC ON A CLAIM instead of by measuring** -- the same family as inventing a
+run id twice and quoting drifted line numbers. **The third face of one habit: writing a value I did not
+obtain.**
+
+**But the brief hedged it -- "if it differs, say by how much and name what differs" -- so a wrong prediction
+became a verified measurement instead of a false record.** That hedge is the mechanism that saved it, and it
+is worth keeping: **state an expected number as a CHECK, never as an assertion.** The verifier also refused
+to guess the cause (*"these checks cannot answer which -- that is the orchestrator's question"*), which is
+the boundary discipline that makes a lane's report trustworthy.
+
+### THE REVIEWER'S FINDINGS, and it found something I missed
+**It independently reached my marker-group conclusion** -- its audit table row reads *"Marker-group effect
+(L532) -- **early-returns** (`markers.length === 0`) -- no group"* -- so the audit comment's misdescription
+is now confirmed by two independent readers.
+
+**AND IT ADDED TWO ROWS THE BUILDER'S AUDIT DID NOT STATE, and they matter:** the widened guard **also fixes
+pre-existing pin-only surfaces in `PlacesMapView` (L410) and `FeedPage` (L1297)**, whose own
+`shouldRenderPlacesMap` gate was **already** mounting `PlacesMap` in the zero-pins + homePin case. **So
+defect #30 was a blank box on THREE surfaces, not one** -- my "a defect the slice exposed" framing was right,
+and the defect was broader than the slice's own need. **That is the granted scope paying out in a place
+nobody asked about.**
+
+**Its four non-blocking findings, each adjudicated:**
+1. **`OnboardingPage.tsx:219` -- the page's header doc STILL names the orphaned `zipFromAddressQueryBounded`,
+   while the card now runs `locationFromAddressQueryBounded`.** ⚠️ **The damning part is that the slice's own
+   new comments elsewhere in this very file name the pair correctly** -- one file contradicting itself, and a
+   reader trusts whichever sentence they hit first. **The reviewer's principle is one to keep: the slice
+   owner owns stale claims in its own files.** **-> 8a**, with the `onboarding.ts` instance, in one commit.
+2. **⚠️ AN UNCALLED-OUT BEHAVIOUR CHANGE, and the brief had demanded such changes be loud:**
+   `ensureAddressLookup`'s settle does `setZipFallbackShown(result.zip === null)`, so the ZIP fallback note +
+   field now appear **when the blur lookup settles to null**, not only after a Finish tap. **RULED: ACCEPTED,
+   not a defect** -- it never blocks, never loses input, and leg 2 is unaffected because a Finish tap beats
+   the 500ms debounce; **the verifier's `4 passed` on that spec is the evidence.** But a one-line comment
+   naming the early trigger and why it is deliberate **-> 8a**, because a future reader should not have to
+   infer intent from timing.
+3. **A directional gap in the acceptance:** the new leg pins `nominatimCalls === 1` for **one** address (the
+   no-double-fire direction). The other half -- *a second, distinct address fires exactly one MORE* -- **holds
+   by code but is inference, not evidence.** **-> 8c.**
+4. **Vacuity nit:** `before !== null &&` can make the radius-redraw assertion **pass silently** when the
+   circle has no `d`. Mitigated by the preceding `toHaveCount(1)`, but it is the vacuity class. **-> 8c.**
+
+**`ocr` is running (17m).** Slice 4 closes when it reports.
