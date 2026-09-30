@@ -283,6 +283,14 @@ such — a red commit nobody explains is indistinguishable from a mistake.
   - Uploading on card 2 stores the avatar, and the card still advances — and **a FAILED upload must
     not block Continue**: the photo is optional, so the parent must still be able to create the
     profile (the pending-state rule, which every async step gating a card must satisfy).
+  - ⚠️ **Distinguish the two states — the first cut did not, and `ocr` found the gap.** A **failed**
+    upload must not block Continue, but an **IN-FLIGHT** upload must, or a parent who taps Continue
+    between the crop confirm and the upload's resolution gets a row written with `avatar_url` NULL
+    while the resolution sets state the advanced card no longer reads — **a photo silently orphaned,
+    which is the very failure the scope ruling above exists to prevent.** So Continue is disabled
+    while the upload is in flight (the same `busy` flag `useCropStep` already returns, which also
+    removes the duplicated `photoUploading` state) — **and it carries the pending-state rule's
+    bounded escape**, so a hung upload can never trap the parent on the name card.
   - **The photo does NOT gate Continue.** `signUpViewer` (`e2e/fixtures.ts:360-380`) fills
     given-name/family-name and clicks Continue **with no photo at all**, and **17 spec files** ride
     that hop — a gated Continue hangs all of them.

@@ -2842,3 +2842,44 @@ The reviewer said PASS on the diff and ocr found a medium rule violation plus a 
 lanes disagree, and the machine lane wins on facts.** Per the escalating loop, rounds 1-3 resume the
 ORIGINAL builder with the findings verbatim. Dispatched after the bounded verifier finishes --
 **serialisation: a builder must not edit the tree while a Playwright lane is running it.**
+
+## Slice 2 -- BOUNDED VERIFIER LANE: PASS on the pre-fix tree, and it caught a race of mine
+
+All four sections in ~8 minutes -- **the cap worked**, which is the whole point of the re-run.
+
+1. `npm run typecheck` -> **exit 0**, no diagnostics.
+2. `onboarding-resume` + `signup-zip-fallback` + `avatar` -> **6 passed (26.6s), 0 failed, 0 skipped**.
+3. `no-zip-notice` + `dm` + `kids-v3` -> **6 passed (42.9s), 0 failed** (dm 3, kids-v3 1, no-zip 1,
+   setup 1). **So the `finishSignup` blast radius is clear: 17 spec files ride that helper and none
+   of the sampled consumers hung** -- which was the specific way this slice could have broken the
+   suite.
+4. Fixture markers -> **sweepable** under the convention: one `e2e-ncp-${epoch}` account, the `e2e-`
+   email prefix the sweep greps for, no record markers needed, owner-scoped cleanup.
+
+It also proved provenance the way the earlier lane did: HEAD was `f0a71ba`, ahead of both the brief's
+`9ba9480` and its task's `dede16e`, and **`9ba9480..f0a71ba` touches only `.scratch/v28/` -- no
+source** -- so the results stand for slice commit `2e784d3`. **That check is now habitual**, which is
+exactly what I wanted out of the base-selection lesson.
+
+### ⚠️ IT CAUGHT A RACE OF MINE
+It reported: *"Working tree carries one pre-existing uncommitted 8-line change to `plan.md`."*
+**Verified -- that hunk is my in-flight ruling, and the cause was mine.** I issued the `edit` on
+`plan.md` and a `bash` doing `git add plan.md && git commit` **in the same tool block**, so they ran
+concurrently: the edit landed after the index was staged, the commit captured the pre-edit file, and
+the working tree kept the edit. **Committed now.**
+**This is the same class as "do not commit while a builder is editing the tree" -- and I did it to
+myself.** RULE: never pair an `edit` with a `git add`/`commit` in one block; a commit must read the
+file after the edit, not beside it.
+
+### Residual risks it named itself (kept, not smoothed)
+1. **Stale-baseline, and it is the one that matters:** these greens prove the **PRE-FIX** tree. The
+   fix round changes `OnboardingPage.tsx`, so sections 2-3 **must be re-run against the fixed
+   commit** -- the verifier said so itself, unprompted.
+2. The new spec's fixtures are convention-compliant but **not swept**; a straggler account may persist
+   until the batch-end sweep.
+3. The uncommitted `plan.md` hunk -- now committed.
+
+### Slice 2 status
+**Gate green on the pre-fix tree; the slice stays OPEN.** Fix round 1/5 is dispatched -- resuming the
+ORIGINAL builder with `ocr`'s findings verbatim, per the escalating loop, and only now that no
+Playwright lane is running against the tree.
