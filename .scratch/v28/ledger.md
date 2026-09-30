@@ -1906,3 +1906,46 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   * It names the batch's **main open verification** rather than burying it: the resume fix
     is covered by two non-vacuous tests but **no human has ever exercised it**, because the
     person who walked the flow went straight through.
+
+## r2 (the post-playtest revision) — the decisions, recorded the moment they were made
+
+Compaction is a real hazard and these exist only in conversation until written down. The
+human answered four questions; this is the authority for the next batch. **Supersedes r1
+where they conflict; the rest of r1 stands.**
+
+- **r2-D1 — RESUME: "she went straight through."** Nicole walked cards 1->5 in one sitting.
+  Therefore the resume fix (defect #22) has **two non-vacuous e2e tests and NO human
+  confirmation.** Recorded as the batch's **main open verification**, never as done. Do not
+  let this round into a "verified by playtest" claim -- the playtest exercised the happy
+  path, not the abandonment path.
+- **r2-D2 — THE RUN BECOMES 4 CARDS + A HOW-IT-WORKS ENDING.**
+  `account -> name (first, last, YOUR photo) -> kids (kid name + age, kid photo OPTIONAL)
+  -> area (address + radius + MAP) -> "How Drop In works" -> into the app`.
+  The standalone **photo card (r1's card 4 of 5) IS DELETED**, and the parent's photo folds
+  onto the name card.
+- **r2-D3 — THE TOUR IS THE LAST CARD IN THE RUN**, four lines, one per tab, with the `+`
+  called out: Drop Ins = what's near you; `+` = post your own; Places = where you could
+  host; Inbox = message other parents; Profile = you. It **REPLACES the finish card's
+  "pick a place" list** -- i.e. **r2 REVERSES r1's decision 12** (its own "places near you"
+  finish card). Stated plainly because a reversal hidden in a plan is how a batch re-litigates
+  itself.
+- **r2-D4 — ALL FOUR NEW-SCOPE ITEMS ARE IN THIS BATCH**, not deferred: kid photos on the
+  kids card, a map on the area card, **find-a-parent search by name**, and **partner
+  linking**. Partner linking is the biggest and carries product questions that are NOT
+  settled (what linking shares; unlink semantics) -- those go to the human WITH the plan,
+  not into a builder.
+
+### Two consequences worth recording before they are forgotten
+
+- **The two copy defects belong to the NAME-CARD slice, and are deliberately not fixed
+  now.** `OnboardingPage.tsx:561` (a taken display name advises "adding a middle name or
+  initial" -- a field that does not exist) and `firstRunCopy.ts:35` ("A first name is
+  plenty" sitting directly above a Last name field). Both strings live on the name card,
+  and r2-D2 rewrites that card anyway. **Fixing them in a standalone slice would mean
+  writing them twice** and would put two writers on one file -- so they are folded in, and
+  recorded here so a later reader does not think they were forgotten.
+- **7c (the deferred hygiene slice) FOLDS INTO r2 rather than running before it.** Its
+  items overlap r2's files: the `resolveCard(facts, skippedCards)` extraction and the
+  `skipLabel` wire-or-delete both touch `firstRun.ts`, whose card list r2-D2 changes; the
+  stale-claim sweep and the `finishSignup` fixture option touch the same specs. **Running
+  7c first would mean doing part of it twice.** It runs after, or inside, the restructure.
