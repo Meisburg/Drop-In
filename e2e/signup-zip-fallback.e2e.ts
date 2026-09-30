@@ -48,6 +48,15 @@
  *    post-fix the card refuses to consume the stale result — it stays for
  *    B's text, a second Finish writes B's own zip, and the feed is about the
  *    NEW zip, never the old one.
+ * 6. V28 slice 4 fix 3 — THE SAME INVARIANT ON THE FALLBACK NOTE, and the
+ *    PIN the round exists for: the note ("We couldn't match the address you
+ *    entered to a ZIP code") is a direct claim about the field's text, and
+ *    it is the third derived claim the card makes that an edit must
+ *    invalidate (after the pin and the save). The leg reveals the note for
+ *    an unresolvable A, edits to B, and asserts the note is HIDDEN — then
+ *    re-blurs B and asserts the note returns RE-DERIVED for B's own text
+ *    (clearing it on edit cost nothing: the edited address's own settle
+ *    owns the flag again).
  * V28 slice 6 (plan defect #19): BOTH legs' area-card save now lands on the
  * run's OWN finish card on /onboarding (the re-keyed guard removed the feed
  * bounce) — each leg taps its "Go to your feed" CTA before asserting the
@@ -387,9 +396,18 @@ test(
         ]),
       )
       // Give the settle's promise chain a beat to be PROCESSED (it is
-      // synchronous after the in-process fulfill); a suppressed settle
-      // changes nothing, so the pin's ABSENCE is what the beat proves.
-      await page.waitForTimeout(300)
+      // synchronous after the in-process fulfill). A suppressed settle
+      // changes NOTHING — so there is no state to poll instead: a poll
+      // of "the pin is absent" is true both BEFORE the settle runs and
+      // after it is processed, and cannot tell the two apart. The BEAT is
+      // what proves "the late settle was processed and changed nothing."
+      // 1000 ms (V28 slice 4 fix 3, C2, ocr): on a slow runner the 300 ms
+      // beat let the assertions pass BEFORE the settle ran, letting this
+      // leg false-pass against pre-fix code — which is the whole reason it
+      // exists. Post-fix the leg cannot flake: a late settle simply leaves
+      // the map absent, so the longer beat trades a little runtime for a
+      // stronger discriminator.
+      await page.waitForTimeout(1000)
       await expect(address).toHaveValue(B)
       // THE INVARIANT'S FIRST FACE: B's text, NO map. Pre-fix the map is
       // here, painted with A's pin and radius circle.
@@ -576,6 +594,76 @@ test(
       await address.fill(A)
       await address.blur()
       await expect(areaMap).toBeVisible({ timeout: 30_000 })
+      expect(nominatimCalls).toBe(2)
+    } finally {
+      await close()
+    }
+  },
+)
+
+test(
+  'the ZIP fallback note does not outlive its address: editing the field hides it, and the note returns only re-derived for its own text (V28 slice 4 fix 3)',
+  async ({ browser }) => {
+    const epoch = Math.floor(Date.now() / 1000)
+    const { page, close } = await signedOutPage(browser)
+    // The seam's count: one request per distinct address — A (the blur),
+    // then B (the final blur). B's fill alone schedules no request.
+    let nominatimCalls = 0
+    try {
+      await page.route(NOMINATIM_ROUTE, (route) => {
+        nominatimCalls++
+        // Answer EMPTY for every address in this leg: each settle
+        // (result.zip === null) is what REVEALS the in-card fallback note.
+        void route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+      })
+
+      await signUpToAreaCard(page, {
+        name: `e2e-ax-${epoch} Marker`,
+        email: `e2e-ax-${epoch}@gmail.com`,
+        password: `e2e-ax-pw-${epoch}`,
+      })
+
+      const address = page.getByPlaceholder('e.g. 1200 1st Ave S, Seattle')
+      const note = page.getByTestId('area-zip-fallback-note')
+      const A = '1200 1st Ave S, Seattle'
+      const B = '4139 1st Ave NE, Seattle'
+      await address.fill(A)
+      await address.blur()
+      // A's early (blur-debounced) lookup settles empty: the card reveals
+      // the fallback note — a direct claim about A ("We couldn't match the
+      // address YOU ENTERED to a ZIP code").
+      await expect(note).toBeVisible({ timeout: 30_000 })
+      expect(nominatimCalls).toBe(1)
+
+      // EDIT TO B: the note is a claim about the text, and the text moved,
+      // so the card must stop making it (fix 3, C1 — the edit block clears
+      // it alongside the pin, the slot, and the pending flag). Pre-fix the
+      // note OUTLIVES the edit: nothing on the edit path clears the flag,
+      // so it lingers over B's text — indefinitely, because B has not been
+      // blurred, so B's own settle (the only thing that re-derives the
+      // flag) never runs — and whenever B's pending window opens it
+      // CO-RENDERS with "Checking your address…", the card simultaneously
+      // saying "we couldn't match this" and "we are checking this".
+      await address.fill(B)
+      await expect(note).not.toBeVisible()
+      await expect(address).toHaveValue(B)
+      // GONE FOR GOOD, not mid-repaint: B issued no request (fill does not
+      // blur), so no B settle can re-reveal the note. The beat is what
+      // proves it — as in leg 4's fix-1 beat: a settle that changes
+      // nothing is unobservable by design, and the beat is the proof.
+      await page.waitForTimeout(1000)
+      await expect(note).not.toBeVisible()
+      expect(nominatimCalls).toBe(1)
+
+      // AND THE NOTE IS NOT LOST FOR B: blur B and its own lookup asks
+      // B's own question — B also resolves empty here, so the settle
+      // RE-DERIVES the note for ITS OWN text (hidden on a resolved zip,
+      // re-revealed on an empty answer — the settle leg of
+      // ensureAddressLookup). This is the safety the C1 comment states:
+      // clearing the note on edit costs nothing, because the edited
+      // address's own settle owns the flag again.
+      await address.blur()
+      await expect(note).toBeVisible({ timeout: 30_000 })
       expect(nominatimCalls).toBe(2)
     } finally {
       await close()

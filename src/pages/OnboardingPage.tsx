@@ -1571,6 +1571,26 @@ export function OnboardingPage() {
               // The edited address's own lookup, if one runs, is a fresh
               // promise and re-enters the pending state itself.
               setGeocoding(false)
+              // V28 slice 4 fix 3 (C1): the ZIP-fallback NOTE is this
+              // class's THIRD instance — the pin (fix 1), the save (fix 2),
+              // and the note. It is a direct claim about the text: "We
+              // couldn't match the ADDRESS YOU ENTERED" — so an edit
+              // invalidates it exactly as it invalidates the pin. Pre-fix
+              // it outlived the edit: revealed for an unresolvable A, it
+              // lingered over B's text (indefinitely, if B was never
+              // blurred — B's settle never re-derives it) and CO-RENDERED
+              // with B's own "Checking your address…" pending window, which
+              // also contradicted this block's own "whole resolution" comment.
+              // Clearing it is SAFE, and that is the thing a future reader
+              // will doubt: the EDITED address's own settle RE-DERIVES the
+              // flag — hidden on a resolved zip, re-revealed on failure or
+              // rejection (the settle and catch legs of ensureAddressLookup
+              // both write it) — and a TYPED ZIP IS UNAFFECTED: it lives in
+              // `homeZip`, which handleAreaFinish prefers over the address's
+              // resolution REGARDLESS of note visibility, so clearing the
+              // note cannot lose anyone's typed zip. The fix-3 pin leg in
+              // signup-zip-fallback asserts the hide AND the re-derive.
+              setZipFallbackShown(false)
             }}
             onFocus={cancelScheduledAddressLookup}
             onBlur={() => {
