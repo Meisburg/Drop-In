@@ -3565,6 +3565,6 @@ comment above `useMemo` is the inert one. **8b's brief now names the MECHANISM i
 ("determine which by removing, and the warning count must stay at 81"), which is location-independent and
 self-verifying. **That is the third time today that naming the mechanism beat naming a location.**
 
-**FIX ROUND 2 DISPATCHED** (resume, run `1f0d9f74`) with R1 as its head: the key must change **when the
+**FIX ROUND 2 DISPATCHED** (resume, run `6eb4b41d` -- *corrected: this line first said `1f0d9f74`, which I typed from memory instead of reading. **The very mistake the rule two entries above forbids: I quoted a value instead of obtaining it.***) with R1 as its head: the key must change **when the
 IMAGE changes, not when the id set changes**, and R1 must be pinned by a test that fails if the key goes
 back to ignoring the re-pick.
