@@ -2971,3 +2971,56 @@ The builder reported that its `npm run verify` ran on top of my concurrent slice
 That is within the rule -- **the rule is against SWEEPING in-flight work, and scoped `git add` is the
 mechanism** -- and it held: my commit carried only `plan.md`, the brief and the ledger, and the
 builder's commit carried none of them.
+
+## Slice 2 -- FIX ROUND 1 REVIEW: PASS
+
+All four findings fixed, and **Q3 answered in my favour with proof rather than agreement** -- which is
+the only kind of answer that counts:
+- **The gate genuinely opens** after the escape: `photoUploadBlocksContinue(true, true)` -> `false`
+  (table + lib test), and the timer flips `photoGateEscaped` and sets `photoError` in one shot.
+- **The error genuinely surfaces**: a visible `<p role="alert">` under the photo block with
+  `aria-invalid`/`aria-describedby` wired -- *"Your photo is still uploading -- continue without it
+  for now."* **The silence was the defect, and the fix removes exactly that.**
+- **The residual loss is recoverable, so the copy is not a bluff**: `ProfilePage.tsx:213-214` owns a
+  live avatar editor ("The avatar editor moved here from /onboarding in V13") writing the same
+  owner-scoped key -- and success arriving after the escape clears the error, sets `pendingAvatarUrl`,
+  and the next Continue carries the photo.
+- **And the alternative is the wall the pending-state rule forbids.** "Storage write hung for 10s" is
+  already a degraded-storage signal.
+
+**Q4, the latch risk: no latch -- triple-armed.** Reset on success, on failure, and re-armed on a new
+crop confirm; and even a hypothetical latch would be inert because the gate reads `photoCrop.busy`
+first and the hook's `finally` drops it.
+
+**Q6, the 17-spec risk, cleared by mechanism:** `useCropStep` initialises `busy` to `false` and only
+flips it inside `confirm`; `signUpViewer` never opens the crop dialog, so the gate degenerates to the
+pre-fix `handleBusy`. **The fix cannot break the no-photo walk.** All six load-bearing identifiers
+verified intact.
+
+**Q7, the lib-pinned escape: acceptable, and the reviewer costed it rather than hand-waving** -- the
+decision table covers the escape case, the e2e covers the mechanical half (hold -> disabled ->
+settle -> enabled), the constant is idiom-pinned; only the timer->flag wiring in the page is
+unpinned, and a `page.clock` fake would close it at a cost a per-gate spec does not justify.
+
+### Findings, both non-blocking, both to slice 8
+1. ⚠️ **`src/lib/photoUpload.ts:49` and `src/lib/photoUpload.test.ts:50` -- no trailing newline.**
+   **Verified myself** (`7d`, `29`). **The fix round cured the e2e instance and re-introduced the
+   class in the two files it created** -- the third occurrence in the batch, and the pattern is now
+   clear: **this is how files get written here, not randomness.** Per the batch's own rule a third
+   occurrence is a guard, not a one-off fix, so **the ruling is refined in the plan: a whitespace-only
+   SWEEP in its own commit (65 tracked `src/`+`e2e/` files, the marker-sweep precedent) and THEN a
+   full-repo guard + `.check.mjs`** -- which is the only order in which a full guard can go green
+   without the diff-scoping or allowlisting a guard-before-sweep would force. **The earlier ruling's
+   WHERE stands: never inside a product slice.**
+2. **`e2e/name-card-photo.e2e.ts:155-161` -- a duplicated comment paragraph** (verified, an edit
+   leftover). Cosmetic; sweeps in slice 8.
+
+### Residuals the reviewer named itself (kept)
+(a) the timer->flag wiring is lib-pinned, not browser-level; (b) a hung upload that never settles
+leaves its `escapeTimer` pending past unmount if the parent escapes and navigates within 10s -- React
+no-ops the setState, negligible; (c) the held-POST route also intercepts any OTHER page-originated
+storage POST during the test -- currently only the upload, and the spec says so.
+
+### Slice 2 status
+Reviewer PASS on BOTH rounds (the slice round and the fix round). **The gate is the remaining half:
+the bounded verifier and `ocr` are running on `2280f01`.** The slice closes when they report.

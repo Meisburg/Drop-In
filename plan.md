@@ -513,13 +513,25 @@ that still says the kids/area cards "do not exist yet", which shipped in slices 
 claim, not just the line: the plan first wrote that last one as `App.tsx:93` and measurement puts
 the text at `:87`** — the same drift that made the slice-2 brief wrong twice.
 
-**Trailing newlines — measured, pre-existing, and deliberately NOT swept.** `ocr` flagged one file;
-a sweep found **seven of the twelve** files slice 1b touched, and **all seven were already missing
-it at `e252f01`** — i.e. none is this slice's doing. Repo-wide: **74 of 289 tracked source files.**
-**Ruling: not fixed inside any product slice.** A 74-file whitespace rewrite bundled into a feature
-diff is exactly the blanket-sweep defect this batch has now hit three times (`of 5`, `hasPhoto`,
-`middle name`), so it is either **its own commit** (the marker-sweep precedent) or **a deterministic
-guard**, and it is **optional hygiene with zero user value** — ranked last.
+**Trailing newlines — measured three times, now a systematic class, so the ruling changes.** `ocr`
+flagged one; a sweep found **seven of the twelve** files slice 1b touched (all already missing it at
+`e252f01`, so not 1b's doing). Then slice 2's **fix round created two brand-new lib files and omitted
+it in both** (`src/lib/photoUpload.ts`, `src/lib/photoUpload.test.ts` — verified, last bytes `}` and
+`)`). **Measured repo-wide: 65 tracked `src/`+`e2e/` files.**
+**The pattern is the point: this is not randomness, it is how files get written here, so it will
+keep recurring and a third one-off fix is the wrong answer.** **RULED — both halves, in this order,
+inside slice 8:**
+1. **A whitespace-only sweep in its OWN commit** (65 files, the marker-sweep precedent — the same
+   7b job removed 1287 rows in one isolated commit). Whitespace-only, no semantic change.
+2. **Then a full-repo `trailing-newline-guard` + its `.check.mjs`**, which can only be green after
+the sweep — and which removes the need for the diff-scoping or allowlisting that a guard-before-sweep
+would have forced. **The earlier ruling about WHERE still stands: never inside a product slice.** A
+65-file rewrite bundled into a feature diff is the blanket-sweep defect this batch has hit four times
+(`of 5`, `hasPhoto`, `middle name`, and now this).
+
+**`e2e/name-card-photo.e2e.ts:155-161`** — the `releaseUpload` comment paragraph is **duplicated
+verbatim** (two consecutive blocks opening "`releaseUpload` starts as a no-op…"), an edit leftover
+from the fix round. Cosmetic; sweeps here.
 
 Also here: extract `resolveCard(facts, skippedCards)`; `ProfilePage.tsx:1218`'s missing empty-string
 clause; the `finishSignup` pre-resolved-zip option; remove `e2e/auth.setup.ts`'s duplicated walk.
