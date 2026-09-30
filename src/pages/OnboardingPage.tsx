@@ -336,6 +336,15 @@ export function OnboardingPage() {
   const areaLookupForRef = useRef<string | null>(null)
   const areaLookupPromiseRef = useRef<Promise<AddressGeocodeResult> | null>(null)
   const areaLookupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // V28 slice 4 fix 2 — the CURRENT field text, readable from a STALE
+  // closure. handleAreaFinish is the handler of the render that owned the
+  // Finish tap; after its `await` resumes, the `areaAddress` state binding
+  // in that closure is the text as it was at tap time, not the text the
+  // field shows now (React state reads are not live across an await). The
+  // re-check at the point of use therefore compares against THIS ref, not
+  // the closure's binding. One write site keeps it complete: the address
+  // input's onChange (the only setAreaAddress caller) writes both.
+  const areaAddressRef = useRef('')
   useEffect(() => {
     // Unmount cancels the debounce window: firing it afterwards would only
     // call setState on an unmounted component. (Above the conditional
@@ -940,7 +949,36 @@ export function OnboardingPage() {
     // fresh single one, if the address changed since the last lookup). A
     // rejected lookup settles to the null shape here (the seam's
     // real-failure path) — the fallback below is still the escape.
-    const resolution = await ensureAddressLookup(areaAddress)
+    const addressAtTap = areaAddress
+    const resolution = await ensureAddressLookup(addressAtTap)
+    // V28 slice 4 fix 2 (F1): RE-CHECK AT THE POINT OF USE. The await above
+    // was a lookup for the address the field held when Finish was TAPPED.
+    // The edit handler may have moved the field mid-flight: its slot
+    // invalidation makes the stale settle settle SUPPRESSED (the display
+    // invariant — no pin over the edited text), but a suppressed settle
+    // still returns its (unpublished) result value to THIS caller.
+    // Consuming it would write the OLD address's zip while the card shows
+    // the new text — the save-path face of this slice's invariant:
+    // every claim the card makes, what the map shows AND what Finish
+    // writes, corresponds to the CURRENT field text, or to nothing. So if
+    // the field moved, refuse to consume — no save, and no fallback reveal
+    // (the new text owns its own resolution, via its blur lookup or the
+    // next Finish tap). The card stays exactly where the parent left it:
+    // usable, not a wall. (The chosen shape is re-check, not
+    // prevent-interleaving: locking the field for the duration of a
+    // Finish-initiated lookup is a new stuck-state surface — this batch
+    // has found three walls, and the pending-state rule's escape would
+    // need its own six-path audit. The re-check is six lines and leaves
+    // the field editable on every path.)
+    //
+    // The comparison reads the REF, not the closure's `areaAddress`:
+    // this handler is the render that owned the tap, and state reads do
+    // not go live across the await — comparing the closure's binding
+    // against itself would be `A !== A`, a re-check that can never fire
+    // (the first draft of this fix had exactly that defect, and the
+    // spec leg stayed red for it). The ref is written by the one
+    // setAreaAddress site (the onChange below), so it is the current text.
+    if (addressAtTap !== areaAddressRef.current) return
     if (resolution.zip !== null && validateHomeZip(resolution.zip, knownZips) === null) {
       await saveLocation(resolution.zip)
       return
@@ -983,6 +1021,25 @@ export function OnboardingPage() {
       // Already asked for THIS address (in flight or settled): the single
       // request is the one in the slot. A settled promise publishes nothing
       // new, so re-reading it here is the reuse, not a second fetch.
+      //
+      // F2 (slice 4 fix 2): THAT sentence is true only under a condition it
+      // does not state, and the condition lives in the edit handler's
+      // comment below (the V28 slice 4 fix 1 block on `onChange`) —
+      // SLOT CONSISTENCY: the two lookup refs are only ever mutated TOGETHER
+      // (the edit and the empty-query leg null both; a fresh lookup sets
+      // both), so the slot can never hold one address's name with another's
+      // promise, AND the edit clears the slot, so a settled promise whose
+      // published coordinates were nulled cannot linger under a stale owner.
+      // Under that condition a settled slot promise has already published
+      // (its settle ran with the owner still matching), so reuse is safe
+      // and a resolved address never leaves the map hidden (the second
+      // fix-1 leg pins it). Read in isolation — "a settled promise
+      // publishes nothing new" — the premise is false in context: the
+      // promise may have settled SUPPRESSED (owner moved), in which case it
+      // published nothing at all. That is the same "premise true in
+      // isolation, false in context" class that produced B2; the
+      // cross-reference is what keeps this sentence from being read as a
+      // general truth.
       return existing
     }
     if (trimmed === '') {
@@ -1484,6 +1541,10 @@ export function OnboardingPage() {
             value={areaAddress}
             onChange={(e) => {
               setAreaAddress(e.target.value)
+              // Keep the ref the re-check reads (see handleAreaFinish's
+              // F1 block) — the one setAreaAddress site writes both, so
+              // the ref can never lag the state.
+              areaAddressRef.current = e.target.value
               setAreaAddressError(null)
               // V28 slice 4 fix 1: an edited address invalidates the card's
               // whole resolution — the published pin AND the lookup slot.

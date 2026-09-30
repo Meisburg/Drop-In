@@ -38,6 +38,16 @@
  *    a stale settle (an in-flight lookup for a PREVIOUS address) can never
  *    republish its pin over the edited text, and editing an address and
  *    back re-resolves it — a resolved address never leaves the map hidden.
+ * 5. V28 slice 4 fix 2 — THE SAME INVARIANT ON THE SAVE PATH: what Finish
+ *    WRITES also corresponds to the current field text, or to nothing. The
+ *    display face (4) suppresses a stale settle's PUBLISH, but a suppressed
+ *    settle still returns its result value to the CALLER — so a Finish tap
+ *    inside the debounce window, followed by an edit mid-flight, could save
+ *    the OLD address's zip. This leg holds A's request, taps Finish for A,
+ *    edits to B, then releases A's answer (a KNOWN zip, distinct from B's):
+ *    post-fix the card refuses to consume the stale result — it stays for
+ *    B's text, a second Finish writes B's own zip, and the feed is about the
+ *    NEW zip, never the old one.
  * V28 slice 6 (plan defect #19): BOTH legs' area-card save now lands on the
  * run's OWN finish card on /onboarding (the re-keyed guard removed the feed
  * bounce) — each leg taps its "Go to your feed" CTA before asserting the
@@ -391,6 +401,121 @@ test(
       // pending state itself). Pre-fix the button is still
       // "Checking your address…" for A — disabled — over B's text.
       await expect(page.getByRole('button', { name: 'Finish' })).toBeEnabled()
+    } finally {
+      await close()
+    }
+  },
+)
+
+test(
+  "Finish cannot save the OLD address's zip: an edit mid-flight leaves the card for the new text, and the second Finish writes the new zip (V28 slice 4 fix 2)",
+  async ({ browser }) => {
+    const marker = readMarkerMeta()
+    const epoch = Math.floor(Date.now() / 1000)
+    const { page, close } = await signedOutPage(browser)
+    // THE SPLIT ANSWERS: A's request is HELD (the leg decides when the "late"
+    // half of "late" happens — the fix-1 instrument) and answers with a
+    // KNOWN zip DISTINCT from B's. 98103 is seeded in the gazetteer
+    // (migration 0012), so a stale save would pass the card's own
+    // validateHomeZip gate — without the distinct zip, "never the old one"
+    // would be unprovable (both addresses would resolve to the same value).
+    const A = '1200 1st Ave S, Seattle'
+    const B = '4139 1st Ave NE, Seattle'
+    const OLD_ZIP = '98103'
+    let nominatimCalls = 0
+    const heldRoutes: Array<(body: string) => void> = []
+    try {
+      await page.route(NOMINATIM_ROUTE, (route) => {
+        nominatimCalls++
+        const q = new URL(route.request().url()).searchParams.get('q')
+        if (q === A) {
+          heldRoutes.push((body) => {
+            void route.fulfill({ status: 200, contentType: 'application/json', body })
+          })
+          return
+        }
+        // B's own request (the distinct address's own single request): the
+        // NEW zip, answered instantly.
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([
+            {
+              lat: '47.6205',
+              lon: '-122.3200',
+              address: { postcode: marker.homeZip, house_number: '4139' },
+            },
+          ]),
+        })
+      })
+
+      await signUpToAreaCard(page, {
+        name: `e2e-af-${epoch} Marker`,
+        email: `e2e-af-${epoch}@gmail.com`,
+        password: `e2e-af-pw-${epoch}`,
+      })
+
+      const address = page.getByPlaceholder('e.g. 1200 1st Ave S, Seattle')
+      await address.fill(A)
+      await address.blur()
+      // THE INTERLEAVING: Finish is tapped INSIDE the 500 ms debounce
+      // window — the debounce has not fired, so the tap starts A's own
+      // lookup (held in the route, no request yet) and awaits it. The
+      // button is still "Finish" (the pending state has not entered —
+      // that is what makes the tap land where the bug needs it).
+      await page.getByRole('button', { name: 'Finish' }).click()
+
+      // Edit to B mid-flight: the focus cancels the pending blur timer, and
+      // the edit's slot invalidation suppresses A's (still in-flight) settle
+      // from publishing. A's request is now the only one on the wire.
+      await address.fill(B)
+      await expect
+        .poll(() => heldRoutes.length, {
+          message: "A's lookup request fires from the Finish tap and is held",
+        })
+        .toBe(1)
+
+      // Release A's LATE answer: RESOLVED, with a valid KNOWN zip that is
+      // NOT the marker's. Pre-fix the Finish continuation consumes it —
+      // validateHomeZip passes and the OLD zip is saved while the field
+      // shows B; the card swaps to its finish card. Post-fix the
+      // point-of-use re-check sees the field moved and refuses to consume:
+      // no save, no fallback — the card stays for B's text, usable.
+      heldRoutes[0](
+        JSON.stringify([
+          {
+            lat: '47.6188',
+            lon: '-122.3250',
+            address: { postcode: OLD_ZIP, house_number: '1200' },
+          },
+        ]),
+      )
+      // A beat for the settle's promise chain to be processed (synchronous
+      // after the in-process fulfill), then the fast discriminator: a stale
+      // save would have rendered the finish card already.
+      await page.waitForTimeout(300)
+      await expect(page.getByTestId('first-run-finish-card')).not.toBeVisible()
+      await expect(page.getByTestId('first-run-area-card')).toBeVisible()
+      await expect(address).toHaveValue(B)
+      expect(nominatimCalls).toBe(1)
+
+      // NO WALL: the card is usable for the new text. A second Finish
+      // issues B's OWN single request (the distinct-address rule — two
+      // requests for two distinct addresses, never a third) and saves the
+      // NEW zip.
+      await page.getByRole('button', { name: 'Finish' }).click()
+      const finishCard = page.getByTestId('first-run-finish-card')
+      await finishCard.waitFor({ timeout: 30_000 })
+      await page.getByRole('button', { name: 'Go to your feed' }).click()
+      // THE DB-LEVEL CLAIM: the feed is about the NEW address's zip — and
+      // NEVER the old one (pre-fix the save had already landed on the old
+      // zip's finish card, and the feed would be about 98103).
+      await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible({
+        timeout: 30_000,
+      })
+      expect(new URL(page.url()).pathname).toBe('/')
+      await expect(page.getByTestId('feed-location-control')).toContainText(marker.homeZip)
+      expect(nominatimCalls).toBe(2)
     } finally {
       await close()
     }
