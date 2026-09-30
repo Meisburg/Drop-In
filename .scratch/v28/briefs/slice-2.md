@@ -75,6 +75,28 @@ which is why slice 6 ships a guard for it.
    name field. Say what the name **is for**: it is how other parents find and recognise you, i.e.
    the public handle. **Do not** turn this into a lecture about privacy.
 
+## Two things the review lanes handed you
+
+**1. The deleted photo card's copy, recovered verbatim** — the reviewer read the deleted hunk so you
+do not have to dig through git history. A parent already saw these words in the playtest:
+
+- title: `Add a photo`
+- body: `A picture helps parents spot you at the drop-in. Add one whenever you are ready.`
+- primaryLabel: `Continue`
+- skipLabel: `Skip for now`
+
+**You are not obliged to reuse it** — the name card's photo is a different context (no separate
+card, no Skip control, the photo sits beside the name fields) — **but prefer it where it fits**, and
+say in your report if you changed it and why. Do not resurrect the `skipLabel`: the name card is not
+skippable (that is the `skipLabel` lie slice 6 is fixing).
+
+**2. `hasAvatarUrl` is now a dead export — you get first refusal on it.** At `525fdcf`,
+`src/lib/avatarUrl.ts:19` has **zero non-test consumers**: `App.tsx` and this page both dropped
+their imports when the photo card went. If the name card's photo control has a legitimate use for it
+(the obvious one: deciding whether to show "Add a photo" or the existing photo), **consume it and
+say so in your report.** If it does not, **say that too** — it then joins slice 8's wire-or-delete
+list rather than lingering as a third dead export (fact 11 already tracks two).
+
 ## Acceptance criteria (all must be demonstrated, not asserted)
 
 1. Uploading a photo on card 2 stores the avatar (the crop confirm writes it) **and the card still

@@ -2519,3 +2519,51 @@ The lane wrote its report to the artifact dir, so **`.scratch/v28/reports/` in t
 empty.** That is consistent with "files are the system of record" meaning plan/ledger/task-state --
 but any future lane whose report must SURVIVE retention has to be told explicitly to write inside
 the worktree.
+
+## Slice 1 (pair 1a+1b) -- ALL THREE LANES IN. Slice CLOSED.
+
+### Reviewer: PASS (no code change required)
+Five non-blocking findings, each adjudicated:
+- **F1 -- the `hasPhoto` "0 hits" criterion literally fails (3 hits).** All three are past-tense
+  comments describing the deletion. **RULING: overruled -- comments that describe a removal are
+  EXEMPT.** A zero-hit grep that forbids the sentence explaining the deletion punishes good
+  documentation, and this is the same "too strict" direction I already hit and accepted once. Now
+  written into the plan so it is not re-litigated a third time.
+- **F2 -- `FinishRunCard.tsx:27` is off the declared file list.** Already accepted: a doc comment
+  this slice made stale. The slice that breaks a claim owns it.
+- **F3 -- two stale photo-card comments now owned by NOBODY** (`no-zip-notice.e2e.ts:24`,
+  `avatar.e2e.ts:4`). The reviewer is right that an unassigned deferral is its own defect class --
+  both are in slice 8, and slice 2 additionally owns `avatar.e2e.ts` because slice 2 is what
+  rewrites the photo step.
+- **F4 -- `App.tsx:87` (not :93) carries a pre-existing stale docblock**, and **the builder's Risk 3
+  mis-describes what it fixed**: it says "the photo word on that line", but the diff fixed a
+  different comment (`App.tsx:152`). The judgment was correct, the description was not. **This is
+  the honesty check earning its place** -- a report's self-description is a claim like any other.
+- **F5 -- verification debt (the browser lane).** Already CLOSED by the verifier's 14/14; the
+  reviewer wrote it before that lane finished. No action.
+
+**Value the reviewer added that no other lane would have:** it recovered the deleted photo card's
+copy **verbatim** (title/body/primaryLabel/skipLabel) and flagged that `hasAvatarUrl` is now a dead
+export. Both went straight into slice 2's brief, and both are things only a fresh reader of the
+deleted hunk produces.
+
+### ocr: 4 findings, all `low`, no project-rule violations
+**And I verified every one of them against the pre-fix state rather than accepting them as the
+slice's** -- which is the rule, and it paid off, because **three of the four are pre-existing:**
+- trailing newline: `ocr` flagged ONE file. A sweep of 1b's twelve found **SEVEN**, and **all seven
+  were already missing it at `e252f01`** -- none is 1b's doing. Repo-wide: **74 of 289 tracked
+  source files.** **RULED: not swept. A 74-file whitespace rewrite inside a feature diff is the
+  blanket-sweep defect this batch has hit three times** (`of 5`, `hasPhoto`, `middle name`). It is
+  its own commit (the marker-sweep precedent) or a guard, and it is optional.
+- the two JSDoc rewrap strandings ("Since", "straight"): **both byte-identical at `e252f01`** --
+  pre-existing prose, in blocks 1b happened to edit nearby.
+- **`restHeaders`' dead write-only headers -- THE ONE FINDING ATTRIBUTABLE to 1b**, and non-blocking:
+  the avatar-seed PATCH was the only writer of `Content-Type`/`Prefer`, and 1b deleted it. It is the
+  same class as the reviewer's `hasAvatarUrl`, and both go to slice 8's wire-or-delete list.
+
+**The rule this teaches, recorded because it generalises: the slice that DELETES something owns
+what it orphans.** Two of the three lanes independently found the same class in the same diff.
+
+### Slice 1 is CLOSED
+Gate green (verifier), intent right (reviewer PASS), no rule violations (ocr). One low, cosmetic,
+attributable nit recorded and assigned -- not blocking. **Slice 2 dispatched.**

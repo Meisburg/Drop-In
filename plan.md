@@ -439,13 +439,34 @@ it is the only part of this feature that cannot be delegated.
 ### Slice 8 — hygiene (r1's deferred 7c), folded in rather than run first
 
 Its items touch the same files this revision rewrites, so running it earlier would mean doing
-part of it twice. Wire-or-delete `missingProfileItems` / `MissingProfileItem` /
-`needsOnboarding` (fact 11: **0 production callers each**); the phrase-based stale-claim sweep —
-**which slice 1b's builder has already found three new members of, and reported rather than
-silently fixed**: `e2e/no-zip-notice.e2e.ts:24` ("stops BEFORE the photo and area cards"),
-`e2e/avatar.e2e.ts:4` ("the onboarding 'Add a photo' step"), and `src/App.tsx:93` (a nudge-banner
-comment still saying the kids/area cards "do not exist yet", which shipped in slices 4/5);
-extract `resolveCard(facts, skippedCards)`; `ProfilePage.tsx:1218`'s missing empty-string
+part of it twice.
+
+**Wire-or-delete** (fact 11's class — a deletion leaves orphans): `missingProfileItems` /
+`MissingProfileItem` / `needsOnboarding` (**0 production callers each**), **plus two the three
+review lanes found in slice 1** — `hasAvatarUrl` (`src/lib/avatarUrl.ts:19`; zero non-test
+consumers at `525fdcf`, because `App.tsx` and `OnboardingPage.tsx` both dropped their imports —
+**slice 2 gets first refusal, since the name card's photo control may legitimately consume it**),
+and **`restHeaders` in `e2e/onboarding-resume.e2e.ts:109`** — write-only headers
+(`Content-Type`, `Prefer: return=representation`) whose only writer, the avatar-seed PATCH, slice
+1b deleted. **Only the second is attributable to this batch**; the rule it teaches is worth more
+than the fix: **the slice that deletes something owns what it orphans.**
+
+**The phrase-based stale-claim sweep** — slice 1b's builder found three members and reported rather
+than silently fixing them: `e2e/no-zip-notice.e2e.ts:24` ("stops BEFORE the photo and area
+cards"), `e2e/avatar.e2e.ts:4` ("the onboarding 'Add a photo' step"), and the nudge-banner comment
+that still says the kids/area cards "do not exist yet", which shipped in slices 4/5. **Name the
+claim, not just the line: the plan first wrote that last one as `App.tsx:93` and measurement puts
+the text at `:87`** — the same drift that made the slice-2 brief wrong twice.
+
+**Trailing newlines — measured, pre-existing, and deliberately NOT swept.** `ocr` flagged one file;
+a sweep found **seven of the twelve** files slice 1b touched, and **all seven were already missing
+it at `e252f01`** — i.e. none is this slice's doing. Repo-wide: **74 of 289 tracked source files.**
+**Ruling: not fixed inside any product slice.** A 74-file whitespace rewrite bundled into a feature
+diff is exactly the blanket-sweep defect this batch has now hit three times (`of 5`, `hasPhoto`,
+`middle name`), so it is either **its own commit** (the marker-sweep precedent) or **a deterministic
+guard**, and it is **optional hygiene with zero user value** — ranked last.
+
+Also here: extract `resolveCard(facts, skippedCards)`; `ProfilePage.tsx:1218`'s missing empty-string
 clause; the `finishSignup` pre-resolved-zip option; remove `e2e/auth.setup.ts`'s duplicated walk.
 - **Verify.** `npm run verify`. **Depends on.** 1b–6.
 
@@ -523,3 +544,30 @@ Two pushes came back from the review. Both accepted:
   was its implication that `progressLabel` needed deriving when it already does.
 - The email explorer returned: **the invite is its own batch, blocked on a sending domain.**
   Slice 7 rewritten from measurement rather than left as a placeholder.
+
+### Slice 1 (pair 1a + 1b) — CLOSED, all three lanes in
+
+- **Verifier: VERIFIED PASS.** `npm run verify` exit 0; 66 files / 1988 tests / 0 lint errors /
+  81 warnings — an exact baseline match on all four numbers; every guard passes and the
+  `no-bypass` flake did not reproduce. Browser lane **14 passed, 0 failed, 0 flaky, 0 retried**
+  across the five named specs + setup. It verified at `ce77c80` rather than the brief's `525fdcf`
+  and **proved the difference inert** (six planning files, no source touched) — better than the
+  brief asked for.
+- **Reviewer: PASS**, no code change required, five non-blocking findings, each adjudicated below.
+- **`ocr`: 4 findings, all `low`, no rule violations.** Three are **pre-existing**, verified against
+  `e252f01`: the missing trailing newline (7 of the twelve files — all already missing it; **74 of
+  289 tracked source files repo-wide**) and two JSDoc rewrap strandings. **One is attributable to
+  1b**, non-blocking: `restHeaders`' write-only headers lost their only writer when the avatar-seed
+  PATCH was deleted.
+- **RULING (F1 — recorded so it is not re-litigated):** the `hasPhoto` "0 hits" criterion is **too
+  strict and is OVERRULED — comments that describe a removal are EXEMPT.** A zero-hit grep that
+  forbids the sentence explaining the deletion punishes good documentation. The builder's judgment
+  stands.
+- **F2 accepted** (`FinishRunCard.tsx:27` — a doc comment *this slice* made stale; the slice that
+  breaks a claim owns it). **F5 closed** by the verifier lane. **F3/F4 assigned to slice 8**, and
+  the plan's own `App.tsx:93` was drift — the text sits at `:87`.
+- **The reviewer's honesty check caught a report inaccuracy worth keeping:** 1b's Risk 3 says it
+  fixed "the photo word" on the nudge docblock; the diff shows a *different* comment
+  (`App.tsx:152`). The judgment was right, the description was not — which is exactly why the claim
+  is checked against the diff instead of believed.
+- **Slice 1 is CLOSED. Slice 2 dispatched.**
