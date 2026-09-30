@@ -3513,3 +3513,58 @@ The spec-header overstatement (correct it, do not delete the test), **the `| voi
 proof must now be run against the REAL `ProfilePage.tsx` pre-fix shape.
 
 **SLICE 3 STATUS: reviewer PASS, verifier PASS, `ocr` outstanding.** Closes when `ocr` reports.
+
+## Slice 3 -- OCR ON THE FIX DIFF: 7 findings, ONE IS A REGRESSION FIX ROUND 1 INTRODUCED
+
+**So slice 3 does NOT close.** The reviewer passed the fix; `ocr` then found a user-visible regression the
+reviewer **explicitly reasoned about and got wrong**. 2 of the 7 were already assigned to 8b; **5 go to
+fix round 2.**
+
+### ⚠️ R1 -- THE REGRESSION, verified link by link by me
+`uploadKidPhoto` returns a **deterministic** ref (`kidPhotoStoredRef(uid, kidId)`), and the new
+`persistedKidKey` is only **`${kid.id}:${avatar_url ? 1 : 0}`**. So **a re-pick on a persisted row writes
+the SAME `avatar_url` string** -> the key does not move -> the memo keeps its identity -> the hook never
+re-mints -> the signed URL stays byte-identical -> **the `<img>` never re-fetches, and the newly uploaded
+photo is invisible for the rest of the mount.** Before F3 the memo was keyed on `kidRows` identity, so the
+re-pick's `setKidRows` re-minted as a side effect **and the image refreshed**. **The fix killed the refresh
+along with the keystroke churn.** The upload itself is correct, so the card simply lies about it -- the
+worst version of this bug for a parent who re-picked *because the first photo was wrong.*
+
+### ⚠️ AND THE REVIEWER'S ERROR IS THE MOST INSTRUCTIVE THING IN THIS SLICE
+It did not miss the re-pick. **It considered it and rejected it**, in writing: *"the only possible `kid`
+delta is a re-pick's re-attached `avatar_url` -- same canonical ref, same non-empty marker -- and that is
+all the hook consumes."* **The premise is true and the conclusion is backwards: a hook that consumes only
+the id SET is precisely a hook that cannot see new BYTES at the same path.** Same id, same path, new
+content -- and the key was built to be blind to exactly that.
+
+**This is the THIRD time in this slice that `ocr` caught what the reviewer did not** (the re-mint, the
+ghost row, and now the re-pick staleness), and the first time the reviewer had *explicitly reasoned* about
+the case and been wrong. Both lanes are still earning their place: the reviewer's own best findings (the
+live `ProfilePage` instance, the spec-header overstatement, the refusal to count my anchors as gate
+evidence) are things `ocr` did not produce.
+
+### R2-R5, all verified by me
+- **R2** `crypto.randomUUID()` is called **inside** the `setKidRows` updater (`:594`) -- **impure under
+  StrictMode**, so the committed key depends on which invocation React settles. Hoist it.
+- **R3** `crypto.randomUUID` **does not exist in a non-secure context**. Lower severity than it sounds
+  (production, preview and `localhost` are all secure) **but a phone testing against a LAN address is NOT
+  one, and the human playtests on her phone.** Needs a `src/lib/` helper with a fallback + sibling test.
+- **R4** the blank-age rule now exists in **three page-local forms**, and the third -- `:791`
+  `addKid(session.user.id, row.name, Number(row.age))` -- **still fabricates age 0**, safe only because
+  `invalidKidRows` happens to run first. **"Safe because something else runs first" is a fact a future
+  edit can delete.** Extract `kidAgeFromInput` next to `validateKidAge` and call it from all three.
+- **R5** F4 only ever SETS `kidsError` and never clears it, **while its own doc comment claims parity with
+  the name card** (which clears at `:449`, `:472`, `:903`). A stale rejection message then sits beside a
+  successfully added photo. **The comment is the part that matters: a comment claiming parity tells the
+  next reader to stop checking.**
+
+### Two lanes DISAGREED on the inert eslint-disable, and `ocr` is right
+The reviewer said the spurious comment sits above the plain `const persistedKidKey`; `ocr` said it is the
+one above `useMemo`. **`ocr` is correct** -- the rule reports on the **dependency-array** line, so the
+comment above `useMemo` is the inert one. **8b's brief now names the MECHANISM instead of a line number**
+("determine which by removing, and the warning count must stay at 81"), which is location-independent and
+self-verifying. **That is the third time today that naming the mechanism beat naming a location.**
+
+**FIX ROUND 2 DISPATCHED** (resume, run `1f0d9f74`) with R1 as its head: the key must change **when the
+IMAGE changes, not when the id set changes**, and R1 must be pinned by a test that fails if the key goes
+back to ignoring the re-pick.

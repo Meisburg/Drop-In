@@ -156,10 +156,12 @@ which is this half's business.**
 - **`useCropStep`'s `onConfirm` param still admits `| void`** (`src/components/useCropStep.tsx:27`).
   **Drop the `| void`.** This is the reviewer's "one increment worth having" instead of a signature
   rework. *(The reviewer also established that a signature change CANNOT work: `async (s, r) => { onUpload(id, s, r) }` is TYPE-IDENTICAL to the awaited version — both return `Promise<void>` — so no signature can force an internal `await`. The guard is the only mechanism that can fail. **Do not rework the signature.**)*
-- **A spurious `eslint-disable-next-line react-hooks/exhaustive-deps`** sits above the plain `const
-  persistedKidKey` at `src/pages/OnboardingPage.tsx:410`, where there is no hook; only the disable above
-  the `useMemo` is load-bearing. Remove the spurious one **and leave the warning count at the 81 baseline**
-  — if removing it moves the count, you removed the wrong one.
+- **TWO `eslint-disable-next-line react-hooks/exhaustive-deps` comments guard ONE memo**, and one is
+  inert. **Determine which by removing, not by line number** — the two lanes disagreed about the location
+  and one of them was wrong. The rule reports on the **dependency-array line**, so the disable **above
+  `useMemo`** is the inert one and the one **above the deps array** is load-bearing. Remove the inert one
+  **and leave the warning count at the 81 baseline** — if removing it moves the count, you removed the
+  wrong one.
 - **`e2e/onboarding-kid-photo.e2e.ts` now ends `)\n\n`** (an extra blank line): the fix round repaired a
   newline it had been told not to touch. Normalise it as part of the sweep.
 - **A flake window in the F3 test:** after its fixed 800 ms sleep, the final `src`-equality assertion can
