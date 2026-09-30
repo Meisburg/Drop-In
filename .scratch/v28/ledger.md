@@ -2332,3 +2332,52 @@ of the feature to a nervous parent. **Their advice is right and I am following i
 blind.** Ask the human explicitly during the walk and watch for a flinch; that answer decides it.
 Guessing here would be exactly the unmeasured change this batch has spent its budget learning
 to avoid.
+
+## Slice 2 brief written (grounded, NOT dispatched -- slice 1 is still in its lanes)
+
+While the three lanes ran on slice 1 I did slice 2's grounding, because that is where the last two
+plan defects came from: **written from memory instead of measured.** Three corrections, one of them
+the batch's third instance of the same defect class.
+
+### 1. A stale line reference, again
+The plan said the handle-taken hint was at `OnboardingPage.tsx:561`. **Measured: `:515`** -- 1b's
+deletions moved it by 46 lines. Exactly the mechanism that put `hasPhoto` and `of 5` wrong.
+
+### 2. ⚠️ THE ACCEPTANCE CRITERION WAS ITSELF THE DEFECT -- third instance, third guard fixture
+The plan's slice-2 acceptance was a blanket **`rg -n "middle name" src/` -> 0 hits.** Measured, it
+matches **three** files and only one is the defect:
+- `src/pages/OnboardingPage.tsx:515` -- **the defect** (advises a middle name/initial, which the card
+  cannot accept)
+- `src/lib/oauth.ts:154` -- a comment about an OAuth provider losing middle names
+- `src/lib/oauth.test.ts:163` -- a test name, "middle names survive"
+
+**Obeying that criterion means rewriting unrelated OAuth code and its test -- a new defect, not a
+fix.** Same class as `of 5` (21 hits were the label, 10 were star ratings) and `hasPhoto` (an
+unrelated local in `places.ts`). **Third occurrence -> it becomes slice 6's third guard fixture**,
+and slice 2's criterion is now scoped to a single file with the other two required byte-identical.
+
+### 3. The photo machinery survived 1b -- this is a re-import, not a rebuild
+1b deleted the photo *card* from `OnboardingPage.tsx`, and the plan said the hook was "possibly"
+still around. **Measured: `src/components/useCropStep.tsx:26` is shared and `ProfilePage.tsx`
+still calls it three times (`:447, :475, :2222`)**, the avatar one ending in
+`uploadAvatar(userId, source, rect)` (`db.ts:2657`). So slice 2 re-imports a hook that already
+works -- a much smaller slice than the plan implied.
+
+### Also measured, and it shapes the acceptance
+- **`signUpViewer` (`e2e/fixtures.ts:360-380`) clicks Continue with NO photo, and 17 spec files ride
+  that hop.** So the new criterion: **the photo must not gate Continue.** A gated Continue hangs all
+  of them -- the single highest-risk way to get this slice wrong.
+- **`firstRunCopy.test.ts` does NOT pin the body wording** (it asserts only non-empty, `:22`) -- so
+  the copy rewrite needs **no test edit**, but the builder must not weaken its three real pins: body
+  non-empty, name card has no `skipLabel` (`:30`), `primaryLabel` matches `/^Continue/` (`:37`).
+- **The honest version of the offending hint already exists** at `ProfilePage.tsx:835`: "is already
+  taken -- pick a different display name." The onboarding one is the odd one out.
+- `1b` already left two forward references to this slice (`e2e/fixtures.ts:385-387` and the comment
+  at the deleted card's old site), so the brief tells the builder they are waiting to be right.
+
+### Lane status, adjudicated rather than assumed
+The watchdog raised "needs attention" on both the reviewer and the verifier. **Checked, not acted
+on:** the reviewer's transcript was still growing (270 KB, updated the same minute) and the
+verifier's own status read "no activity for 1s". Both were working. **Steering a live reviewer
+mid-diff would inject noise into the one lane whose value is its freshness** -- so the nudges were
+recorded as false alarms and the runs left alone.

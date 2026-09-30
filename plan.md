@@ -252,13 +252,35 @@ such — a red commit nobody explains is indistinguishable from a mistake.
   possibly `src/components/FirstRunCard.tsx`.
 - **Approach.** Move the photo block (crop + `uploadAvatar`) from the deleted card into the name
   card, keeping the existing behaviour: the write happens on the crop step, so Continue and a
-  skip-free advance only advance. Then fix **both r2-D4 defects**: the duplicate-name hint must
-  stop advising a middle name or initial (no such field — `OnboardingPage.tsx:561`), and the
-  body must stop saying *"A first name is plenty"* directly above a Last name field
-  (`firstRunCopy.ts:35`) — say what the name IS for (how other parents find and recognise you),
-  because it is the public handle.
-- **Acceptance.** Uploading on card 2 stores the avatar and the card still advances; the name
-  copy matches the fields shown; **`rg -n "middle name" src/` → 0 hits**.
+  skip-free advance only advance. **Measured: the hook survived 1b — `src/components/useCropStep.tsx`
+  is shared and `ProfilePage.tsx:447,475,2222` still calls it, so this is a re-import, not a
+  rebuild.** Then fix **both r2-D4 defects**:
+  - **The handle-taken hint** (`OnboardingPage.tsx:515` — **not the `:561` this plan first said;
+    1b's deletions moved it, and a stale line reference is how the last two briefs went wrong**)
+    advises *“try adding a middle name or initial”"* while the card renders only First and Last.
+    **The honest version already exists one page over:** `ProfilePage.tsx:835` says *“pick a
+    different display name”* — actionable, no phantom field. Advise something the card can
+    actually do.
+  - **The body** says *"A first name is plenty"* (`firstRunCopy.ts:35`) directly above a Last name
+    field. Say what the name IS for (how other parents find and recognise you) — it is the public
+    handle.
+- **Acceptance.**
+  - Uploading on card 2 stores the avatar, and the card still advances.
+  - **The photo does NOT gate Continue.** `signUpViewer` (`e2e/fixtures.ts:360-380`) fills
+    given-name/family-name and clicks Continue **with no photo at all**, and **17 spec files** ride
+    that hop — a gated Continue hangs all of them.
+  - The name copy names only fields the card actually renders, and the handle-taken hint is
+    actionable.
+  - **The zero-hit claim is SCOPED, because the blanket form is itself a defect** — the third
+    instance of the class slice 6's guard exists for. Measured today, `rg -n "middle name" src/`
+    matches **three** files and only one is the defect: `OnboardingPage.tsx:515` (**the defect**) +
+    `src/lib/oauth.ts:154` (a comment about OAuth name parsing) + `src/lib/oauth.test.ts:163` (a test
+    name). **Correct criterion:** `rg -n "middle name|middle initial"
+    src/pages/OnboardingPage.tsx` → **0 hits**, with those other two files **untouched**. **A third
+    fixture for slice 6's guard.**
+  - Any comment left false by the photo no longer being a *step* (start with
+    `e2e/avatar.e2e.ts:3-5`, which explains why the spec drives `/profile` instead) is fixed here —
+    **the slice that breaks a claim owns it.**
 - **Verify.** `npm run verify`.
 - **Depends on.** 1b. **Budget.** medium.
 
