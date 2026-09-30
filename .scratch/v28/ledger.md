@@ -3108,3 +3108,27 @@ reading:** it is a browser behaviour.
 Gate green (verifier, both the slice and the fix), reviewer PASS (both rounds), `ocr` reviewed both
 the slice and the fix with **one real defect found and fixed**, one refuted, one deferred with a
 ruling, and three cosmetic/hardening items assigned to 8b. **Nothing is silently discarded.**
+
+## ALL BRIEFS ARE NOW WRITTEN (slice 8b was the last)
+
+`slice-8b.md` written. It is the mechanical half: the trailing-newline sweep **then** its guard (that
+order, two commits, because a full-repo guard added first cannot go green without diff-scoping or an
+allowlist, which defeats it), `scripts/slice-diff.sh`, the two specs that could currently lie, the
+guarded unmount timer, and the two small honesty fixes.
+
+**Two designs in it are worth naming, because both came from a mistake I made:**
+
+- **`slice-diff.sh` must take a SLICE NAME, not a base SHA.** I diffed slice 2 against `e252f01` --
+  slice 1b's *parent* rather than its tip -- and attributed 1b's comment edit to slice 2. **Both SHAs
+  were legitimate ancestors**, so an ancestry check would NOT have caught it; the failure was
+  *choosing*. Reading the base from the ledger's `dispatched (base <sha7>)` line -- written at
+  dispatch time -- makes it right by construction, and refusing to guess when there is no such line
+  keeps the tool from inventing one.
+- **The Enter spec is a PAIR, and the pairing is the whole point.** `ocr`'s claim (Enter bypasses the
+  disabled button) is unproven and unsettleable by reading code. So phase 1 asserts that Enter **does**
+  create the row when nothing is in flight -- proving the path exists -- and only then does phase 2
+  assert that Enter creates no row while the upload is held. **Without phase 1 the spec would pass
+  just as well if Enter did nothing at all**, which is the vacuity class. The pair turns an argument
+  about a browser into a measurement of one.
+
+With 8b's brief, **every brief for r2 exists**: 2, 3, 4, 5, 6, 8a, 8b.
