@@ -3132,3 +3132,25 @@ guarded unmount timer, and the two small honesty fixes.
   about a browser into a measurement of one.
 
 With 8b's brief, **every brief for r2 exists**: 2, 3, 4, 5, 6, 8a, 8b.
+
+## task-state.md BROUGHT FORWARD TO r2 (it was the file that survived the compaction, and it was stale)
+
+The batch's rule is that the orchestrator updates `task-state.md` after every phase transition. r1 -> r2
+was one, and I had been writing the ledger only. The top block still described r1: **five** cards, the
+playtest as **slice 8** (r1's numbering), **24** plan defects, and 4 guards.
+
+**Fixed by adding, not overwriting**: a new r2 block above the r1 entry with the seven decisions, the
+slice states, the re-measured cold start, the new process rules, and the machine-lane-in-both-directions
+note.
+
+**And one near-miss worth recording: I nearly "corrected" a record that was right.** r1's entry says
+*16 drop-ins, latest 2026-09-26, zero upcoming.* I had this on my list as a **wrong fact**. Before
+editing it I noticed the human was hand-seeding drop-ins for the playtest (decision 14) around exactly
+that date -- so **16 -> 20 across a day is expected, and the entry was accurate when written.** The
+count moved; the record did not lie. **So it was dated in place rather than struck**, with a pointer to
+the current measurement.
+
+**The general lesson: a stale number and a false number look identical in a file and need opposite
+treatments.** Striking a correct-at-the-time record is its own kind of dishonesty -- it tells the next
+reader that the earlier work was sloppy when it was not. **The test is not "does this match today?" but
+"was it true when it was written?"** -- and the way to tell is to ask what changed in between.
