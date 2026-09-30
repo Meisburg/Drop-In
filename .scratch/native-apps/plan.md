@@ -1,5 +1,15 @@
 # Implementation Plan: DropIn as a native app (App Store + Google Play)
 
+> **⏸️ PARKED 2026-09-30 — NOT STARTED, AND DELIBERATELY SO.** The app is not
+> feature-complete, and a native shell is one of the LAST things to add: every
+> feature built after it means re-syncing the shell and re-testing on device.
+> **Before executing anything here, read `docs/handoff-native-apps.md`** — it
+> carries the decision and its reasoning, four code hazards with line numbers,
+> the risks that decide success, and **a "what will have rotted" table to
+> re-verify first** (this repo moved 86 commits while the session that wrote this
+> was away). Do not buy the Mac or start the Apple/Play enrolment until the app is
+> near submission — see the handoff's §7.
+>
 > Owned by the orchestrator. Written BEFORE any builder dispatch, against the
 > tree at `5be6bc5` (2026-09-30), not against recollection — this session came
 > back after 86 commits and V27/V28 had landed.
