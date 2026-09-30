@@ -372,6 +372,21 @@ such — a red commit nobody explains is indistinguishable from a mistake.
   function nobody calls. **And `RadiusEmptyState`'s no-zip escape must stay reachable** (it is
   shared with the feed) — verify its other consumers before removing this render site. The tour
   copy must name both built capabilities (§5).
+  **Measured, so the card describes the app that actually exists:** the four tabs are **Drop Ins**
+  (`/`), **Inbox** (`/inbox`), **Places** (`/browse`), **Profile** (`/profile`) — and the centre
+  control is **`<PostActionButton />`, an ACTION, not a fifth tab** (`App.tsx:486-506`; V24 slice 05
+  deliberately reversed V22 slice 12 and the founder overruled the Apple-HIG objection on
+  2026-09-25, with the comment reading **“Do NOT ‘fix’ the nav back to the V22 shape”** — so the
+  tour describes it as posting, never as a tab). **The nav does not render during the run at all**
+  (`navRenders`: signed-in AND not the first run) — which is exactly why this card is the bridge:
+  the parent meets the four tabs for the first time when this card's CTA fires.
+  **The orphan set is a CHAIN, measured:** `placeHasHours`'s only production caller is *inside*
+  `finishRunPlaces` (`places.ts:1698`), so deleting the selection orphans it **second-order**, and
+  `FINISH_RUN_PLACE_LIMIT` (`:1657`) is then left with only `places.test.ts`. **Not orphans — keep:**
+  `placeKindLabel` and `formatDistanceLabel` have real consumers on `PlacePage` /
+  `PlaceDetailsPage`. Both named capabilities live in the **Profile** tab — the name search
+  (`ProfilePage.tsx:362`) and the parent-card link control — so the Profile line carries both, and
+  per r2-D5 the card only *names* linking; that flow is unchanged.
 - **Acceptance.** The ending shows the four tabs + the `+`, one line each, plus a line naming
   **finding a parent by name** and **linking a partner**, and a CTA into the feed; **no claim
   about places anywhere on it**; and **every line describes what the tab DOES, never what is IN

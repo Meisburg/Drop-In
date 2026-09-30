@@ -2653,3 +2653,47 @@ Risk 3 was the first, caught by the reviewer's honesty check).
 **Recorded as a rule: a builder's "untouched" is a claim about what it MEANS -- comment-only edits to
 the same file are still edits, and must be named.** Flagged to the reviewer to judge whether it
 merits a guard.
+
+## Slice 5 brief written (grounded, NOT dispatched)
+
+### ⚠️ A landmine found by grep, not by reading: the finish CTA is a pinned identifier
+`e2e/auth.setup.ts:135` and `e2e/fixtures.ts:483` locate the finish card's CTA by
+**`getByRole('button', { name: 'Go to your feed' })`** -- that is **every spec's setup**, plus 17
+`finishSignup` consumers, plus `signup-zip-fallback.e2e.ts:148,211`. And `testId =
+'first-run-finish-card'` is asserted at four sites. **Both are now pinned in the brief**, with the
+note that a CTA rename here would break the entire e2e suite's setup -- an absurd price for a
+wording change, so the copy does not get to have it.
+**This is the third pinned-identifier discovery of the batch** (after the name card's `/^Continue/`
+and its `given-name`/`family-name` selectors, then slice 1's `of 5`). The pattern is consistent: the
+thing a slice wants to reword is usually the thing the suite navigates by.
+
+### The nav, measured -- and it changes what the tour may say
+- The four tabs are **Drop Ins** (`/`), **Inbox** (`/inbox`), **Places** (`/browse`), **Profile**
+  (`/profile`).
+- **The centre control is `<PostActionButton />` -- an ACTION, not a fifth tab.** `App.tsx:486-506`
+  records that V24 slice 05 deliberately reversed V22 slice 12, that the founder overruled the
+  Apple-HIG objection on 2026-09-25, and in capitals: **"Do NOT 'fix' the nav back to the V22
+  shape."** So the tour must describe it as **posting**, never as a tab -- a tour that calls it a
+  tab would be the fifth instance of the honesty class.
+- **The nav does not render during the run at all** (`navRenders` = signed-in AND not the first
+  run), which is exactly why this card is the bridge: the parent meets the four tabs when the CTA
+  fires.
+- **Both "hidden" capabilities live in the Profile tab** -- name search (`ProfilePage.tsx:362`) and
+  the parent-card link control -- so the Profile line carries both, and per r2-D5 the card only
+  *names* linking.
+
+### The orphan set is a CHAIN, measured
+`placeHasHours`'s only production caller is **inside `finishRunPlaces`** (`places.ts:1698`), so
+deleting the selection orphans it **second-order**; `FINISH_RUN_PLACE_LIMIT` (`:1657`) is then left
+with only `places.test.ts`. The page's read goes too: `listPlaces` (`:16`), `finishPicks` (`:149`),
+`finishPicksReadError` (`:150`), the effect at `:304-320`, the `picksKey` logic at `:708-719`, and
+the `finish-run-places*` testids.
+**NOT orphans (checked, or the brief would have caused a deletion):** `placeKindLabel` and
+`formatDistanceLabel` have real consumers on `PlacePage` / `PlaceDetailsPage`.
+`RadiusEmptyState` keeps `FeedPage.tsx:1272` and `PlaceDirectory.tsx:1117`.
+
+### Lanes (slice 2)
+The watchdog raised "needs attention" on BOTH the reviewer and the verifier again. Checked, not
+obeyed: both transcripts had grown (276 KB and 170 KB, updated within the minute) -- **false alarms
+a second time**, and steering a live reviewer mid-diff would inject noise into the one lane whose
+value is freshness. `ocr` running on slice 2 (`--from aac2bab`).
