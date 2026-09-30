@@ -3806,3 +3806,125 @@ message) -- **no raw run output is recorded in the repo.** The designated verifi
 **So when the verifier reports, its per-run table goes into the ledger verbatim** -- the batch's rule is
 that a claim in the ledger is not evidence, and "four green runs" has been exactly that kind of claim since
 it was written.
+
+### NEW NAMED FLAKE MODE #3 (verifier, slice 3 fix-3 round, 8183bd8): vite-4173 / trace-artifact-ENOENT setup reds
+
+The verifier hit four consecutive SETUP reds on `e2e/onboarding-kid-photo.e2e.ts` that are neither of the two
+known named flakes (`no-bypass-guard` under parallel load, `e2e/places.e2e.ts:2759`):
+
+- `page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:4173/login` (the vite webServer was not up —
+  the recorded 4173-wrong-worktree hazard symptom),
+- `browserContext.close/_wrapApiCall: ENOENT ... test-results/.playwright-artifacts-*/traces/*.network`
+  and `ENOENT ... *.zip` (trace-artifact files missing at context close, aborting the test after it passed).
+
+This is **environment/infrastructure, not product**. The reviewer independently hit the same
+trace-artifact ENOENT (see entry above), so it is reproduced across two lanes. Mitigation that worked:
+free 4173 by port before running, and run with `--trace=off` so artifact ENOENTs cannot mask assertions.
+
+#### Per-run table (verifier, raw — the rule: every run, not a summary)
+
+Mandated 3-run check (default reporter, traces on):
+
+| Run | Result | Detail |
+|-----|--------|--------|
+| 1 | PASS | 6 passed (34.6s), exit 0 |
+| 2 | PASS | 6 passed (33.6s), exit 0 |
+| 3 | RED | 1 failed — R1 test `e2e/onboarding-kid-photo.e2e.ts:599:1` red; visible errors were
+  trace-artifact ENOENTs (`recording8.network`, artifact zip); assertion text not captured,
+  `test-results/` since cleaned. Test-level red UNCHARACTERIZED but the test's cleanup ran ("deleted
+  ...'s kid row + kid-photo object (re-pick generation)"), i.e. the assertion had passed before the
+  context-close ENOENT aborted the run — consistent with flake mode #3, not a product defect |
+
+Re-runs forced by the "one red sample is not a verdict" rule:
+
+| Run | Result | Detail |
+|-----|--------|--------|
+| 4 | RED (setup) | `ENOENT ... .playwright-artifacts-0/traces/*.network` at browserContext.close; 5 did not run |
+| 5 | RED (setup) | `auth.setup.ts:77` `page.goto('/login')` failed; 5 did not run |
+| 6 | RED (setup) | `net::ERR_CONNECTION_REFUSED at http://localhost:4173/login`; 5 did not run |
+| 7 | RED (setup) | setup red (error text not captured in that run); 5 did not run |
+| 8 | PASS | 6 passed, exit 0 |
+
+Characterization window (supervisor decision (d): free 4173 by port, `--trace=off`, line reporter,
+exactly 5 runs; port verified empty before AND after, no listeners killed — none were ours):
+
+| Run | Result | Detail |
+|-----|--------|--------|
+| C1 | PASS | 6 passed (34.4s), exit 0 |
+| C2 | PASS | 6 passed (32.8s), exit 0 |
+| C3 | PASS | 6 passed (33.4s), exit 0 |
+| C4 | PASS | 6 passed (33.2s), exit 0 |
+| C5 | PASS | 6 passed (34.1s), exit 0 |
+
+Total: 8 greens (incl. the R1 test green in every run where it actually executed: runs 1, 2, 3, 8, C1–C5),
+7 reds — all 7 in setup/artifact infrastructure (mode #3), zero unexplained, zero product-assertion
+failures captured. The known second-granularity src-swap flake (slice 8b) was NOT observed in this
+window; none of the reds matched its signature (toPass timeout on the src assertion).
+
+Verdict per the batch standard (greens + zero UNEXPLAINED reds): the reds are explained by the newly
+named mode #3; the R1 fix stands. Residual: the 8b second-granularity flake remains live and can still
+produce an R1 red in a future run; 8b is scheduled.
+
+## ✅ SLICE 3 IS CLOSED -- verdicts: reviewer PASS, verifier PASS, ocr no product findings
+
+**The tally that closes it, in the verifier's words: "8 green, 7 red; every red is setup/artifact
+infrastructure (mode #3); zero unexplained reds; the R1 test was green in every run in which it executed."**
+Plus `npm run verify` exit 0 at **68/2001/0/81 exactly**, the two risk specs green, and provenance proven
+twice over (`git diff fc4ddeb..HEAD --stat -- src/` empty, `git diff HEAD~1 --stat -- src/` empty).
+
+**Its per-run table is now in this ledger, verbatim, above** -- which closes the evidence gap the reviewer
+named: *"four green runs"* had been a **summary** since it was written, and a claim in the ledger is not
+evidence. **The named flake mode #3 it wrote is the artifact of a lane that was asked to characterize
+rather than repeat.**
+
+### The two lanes CONTRADICT each other, and I am not settling it by argument
+- **Reviewer:** a **throwing** poll callback **rejects `expect.poll` immediately, with no retry** -- verified
+  in the installed `playwright-core` (`Promise.race` propagates the rejection). Therefore a transient hiccup
+  mid-poll fails the test outright.
+- **`ocr`:** *"Throw on a non-200 so the poll retries (Playwright re-runs the callback on thrown
+  errors)."*
+
+**These are incompatible, and the fix depends on which is true.** One likely reconciliation: `expect.poll`
+propagates a throw while `expect(...).toPass()` retries on one -- **two different APIs, and this spec uses
+both.** But that is a hypothesis, not a measurement, **and this batch has now produced five plausible
+mechanisms that were not the mechanism.**
+
+**RULED: the fix must be correct under EITHER reading.** Do not lean on the throw/retry semantics at all --
+inside the poll callback, treat a non-200 as *"not yet"* (keep polling) rather than as an error, and compare
+bytes **only on a 200**. That removes the false-green whether a throw retries or kills the poll. **And the
+builder must MEASURE which semantics actually apply and say which**, because the answer belongs in the
+record for every future spec in this repo.
+
+### `ocr` on round 3: 3 findings, all test-honesty, NO product findings
+1. **MEDIUM, and the important one -- a FALSE GREEN in the assertion round 3 added** (`:730`). The poll
+   asserts the bytes **stop matching**, so **any non-200 read -- a transient 502, a 4xx error JSON, an empty
+   body -- differs from photo A and the poll passes immediately**, "proving" an overwrite that may not have
+   landed. **The sibling spec asserts 200 before trusting bytes; this read does not.**
+2. **LOW** (`:721`): `mr.json()` has no status/shape guard, so a non-JSON error body (an HTML 502 from a
+   proxy) throws *"Unexpected token <"* **with no HTTP context** -- an opaque error where the status was
+   right there.
+3. **LOW** (`:722`): a duplicated type cast, where the sibling spec parses once into a typed variable **and
+   checks the shape** (`includes('token=')`), which fails fast on a non-URL.
+
+**⚠️ NOTE WHAT DID *NOT* BREAK:** the false-green does not undermine round 3's proof, because **a
+false-green cannot produce the RED the mutation showed.** The test is sound when it goes red; it has a hole
+in going green. **Both facts belong in the record.**
+
+**⚠️ AND THE STATUS-CHECK CLASS IS NOW AT ITS THIRD INSTANCE** (ocr's fix-2 findings on both plain reads,
+and now this one on the signed-URL read). **Per the batch's own rule -- the second occurrence of a defect
+class means build a guard, not another one-off -- the fix must be the CLASS, applied to every read in the
+file, with a count of how many were found.** Not three patches.
+
+### ⚠️ SLICE 8 IS SPLIT AGAIN, because I am repeating my own named mistake
+8b started with two items. It now carries the newline sweep, its guard, `slice-diff.sh`, the F3 flake
+window, the second-granularity flake, the status-check class, the un-polled baseline read, the
+throwing-poll question, the `mr.json()` guard, the false-green, the duplicated cast, and the spec-header
+overstatement. **That is not one builder context, and "a dumping ground is a plan defect that looks like
+tidiness" is a sentence I wrote myself two days ago.**
+
+**8b keeps:** the sweep, its guard, `slice-diff.sh`, the await guard, and the `| void` drop.
+**8c takes:** EVERYTHING in `e2e/onboarding-kid-photo.e2e.ts` -- the timing flakes, the status-check class,
+the baseline read, the false-green, the throwing-poll measurement, the `mr.json()` guard, the cast, and the
+spec-header overstatement. **One file, one coherent job, one context.**
+
+**SLICE 4 IS DISPATCHED.**
