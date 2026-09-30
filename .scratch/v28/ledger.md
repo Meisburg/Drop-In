@@ -2615,3 +2615,41 @@ site, idempotent `23505` path untouched.
 4. A sibling test for the new param, per the build law.
 5. **A failed upload must not block Continue** -- the photo is optional, and the parent must still be
    able to create the profile. (Folded into the plan's slice-2 acceptance as a standing invariant.)
+
+## Slice 2 -- MY OWN GREP-VERIFICATION before believing the report
+
+Builder returned DONE with `Committed as: 2e784d3` (the field worked, as intended). Checked rather
+than believed -- a DONE is a belief, the diff is evidence:
+
+- **Tree clean at `2e784d3`; 6 files, +404/-73.** Matches the report.
+- **The SCOPED zero-hit criterion PASSES, both halves**: `middle name|middle initial` in
+  `OnboardingPage.tsx` -> **0 hits**, AND `src/lib/oauth.ts` + `src/lib/oauth.test.ts` are
+  **byte-identical** to the pre-slice state. This is the criterion whose *blanket* form I found to
+  be a defect, so the second half matters as much as the first.
+- **Every trap intact**: `reviews.ts`, `reviews.test.ts`, `PlaceDirectory.tsx`,
+  `PlaceDetailsPage.tsx`, `InboxPage.tsx`, `places.ts` -- all untouched. The fourth blanket-grep
+  disaster did not happen.
+- **Load-bearing selectors intact**: `first-run-name-card` (`:613`), `given-name` (`:638`),
+  `family-name` (`:657`) -- what 17 spec files ride.
+- **`createProfile(displayName: string, avatarUrl?: string)`** -- optional, as ruled, idempotent
+  path untouched.
+- **The builder's claim that `createProfile` has no unit coverage is TRUE**
+  (`rg -ln createProfile src/lib/*.test.ts` -> nothing), so e2e really is its only test home and its
+  choice of an e2e spec as the sibling test is sound, not a dodge around the build law.
+- **Condition 2 honoured, and better than I asked**: the call-site comment
+  (`OnboardingPage.tsx:225-233`) explains why the storage write lands anyway (uid-keyed policy), that
+  the 0-row UPDATE no-ops silently, that the no-op is **load-bearing**, and that **hardening
+  `uploadAvatar` breaks this call site first**.
+- **Condition 5 honoured**: `pendingAvatarUrl` is state (`:246`), the upload failure path only sets
+  `photoError` (`:254`), and `createProfile(name, pendingAvatarUrl ?? undefined)` is `:563` -- so a
+  failed upload cannot gate Continue, and a failed profile write keeps the URL for the retry.
+
+### One imprecision, and it is now a PATTERN (second occurrence)
+The report calls `hasAvatarUrl` "**Untouched**". `src/lib/avatarUrl.test.ts` changed 4/-3 -- a
+docblock rewrite recording that the `hasPhoto` fact died with the photo card. **Substantively correct**
+(the export is untouched, nothing consumes it, every assertion identical) and the edit is legitimate.
+But it is the **second slice in a row whose report under-describes a comment-only edit** (slice 1b's
+Risk 3 was the first, caught by the reviewer's honesty check).
+**Recorded as a rule: a builder's "untouched" is a claim about what it MEANS -- comment-only edits to
+the same file are still edits, and must be named.** Flagged to the reviewer to judge whether it
+merits a guard.
