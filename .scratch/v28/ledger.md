@@ -2883,3 +2883,39 @@ file after the edit, not beside it.
 **Gate green on the pre-fix tree; the slice stays OPEN.** Fix round 1/5 is dispatched -- resuming the
 ORIGINAL builder with `ocr`'s findings verbatim, per the escalating loop, and only now that no
 Playwright lane is running against the tree.
+
+## Slice 6 brief written (grounded, NOT dispatched) -- and the guard had a trap
+
+### Part 1, the lie: measured
+`skipLabel: 'Skip for now'` (`firstRunCopy.ts:48`); the test pins only **non-empty**
+(`firstRunCopy.test.ts:28`), so the wording is unguarded; and the UI renders the hard-coded word
+`Skip`. **The module's field is read by nobody and describes words that never appear.**
+
+**The mechanism is decided by `FirstRunCard.tsx`'s OWN documented design**: its header says the
+primary label *"is a PROP, so the caller keeps its own copy ("Continue") -- the chrome renders it, it
+never composes it."* So `skipLabel` becomes **a prop, symmetrically** -- the same shape for the same
+problem, rather than the chrome reaching into the copy module.
+
+### Part 2, the copy-field guard: registered the way `run-all.sh` actually works
+Measured from `scripts/guards/run-all.sh`: guards are named in a **hard-coded `for guard in …` list**,
+so **a guard not in that list does not run**; checkers are registered separately in the `run_check`
+block; and the naming rule is **`.check.mjs`, never `.test.mjs`**, because `npm test` discovers
+`*.test.mjs` and a top-level `process.exit()` inside vitest kills the run. The file's own bar:
+*"A rule whose own behavior is unchecked is a rule that can silently stop holding -- a checker that
+matches nothing looks exactly like a clean repo."*
+
+### ⚠️ Part 3, THE TRAP THE PLAN DID NOT SEE: the guard would fire on its own documentation
+The plan's mechanism was "extract every acceptance grep line from `plan.md` and the briefs" -- but
+**those docs QUOTE the bad greps as defects**, measured:
+- `plan.md:239` -- "⚠️ A blanket `rg \"of 5\" src/` is NOT [scoped]"
+- `plan.md:300` -- "Measured today, `rg -n \"middle name\" src/` matches three files"
+- `.scratch/v28/briefs/slice-2.md:49` -- "That criterion is itself a defect"
+- `.scratch/v28/briefs/explore-r2-restructure.md:65` -- `rg -n "of 5" src/ e2e/`
+
+**A naive prose parser fails on the brief that exists to explain the defect**, which is the
+difference between a guard and a nuisance. **RULED: tagged claims only** (an explicit convention the
+guard documents in its own header), with the real claims retrofitted -- **plus a purely syntactic
+second rule that IS the defect class: a zero-hit claim's scope must name a path, not a bare
+directory.** Both deterministic; a prose parser is not.
+Also corrected: the plan wrote the guard's path as `scripts/check-acceptance-greps.mjs`; it must live
+in **`scripts/guards/`**, because anything outside `run-all.sh`'s list never runs.

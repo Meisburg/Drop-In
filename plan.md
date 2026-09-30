@@ -427,11 +427,26 @@ such — a red commit nobody explains is indistinguishable from a mistake.
     (a *place's* photo).
 
   The checkable rule: **a zero-hit claim must not match in a file the document never mentions.**
-  Ship `scripts/check-acceptance-greps.mjs`: it extracts every acceptance grep line from
-  `plan.md` and `.scratch/v28/briefs/*.md`, runs it against the tree, and fails when a zero-claim's
-  pattern matches in an unreferenced file. **Its `.check.mjs` uses the two real defects above as
-  fixtures** — the pre-fix text is in this repo's history, so the guard can be run against the
-  state that produced it, which is this project's standing guard rule.
+  ⚠️ **AND THE MECHANISM AS FIRST WRITTEN WOULD FIRE ON ITS OWN DOCUMENTATION — measured.**
+  "Extract every acceptance grep line from `plan.md` and the briefs" fails, because those docs
+  **quote the bad greps as defects**: `plan.md:239` ("⚠️ A blanket `rg "of 5" src/` is NOT
+  [scoped]"), `plan.md:300` ("Measured today, `rg -n "middle name" src/` matches three files"),
+  `.scratch/v28/briefs/slice-2.md:49` ("That criterion is itself a defect") and
+  `explore-r2-restructure.md:65`. **A prose parser that cannot tell a CLAIM from a QUOTATION of a
+  bad claim fires on the brief that exists to explain the defect** — which is the difference between
+  a guard and a nuisance. **Ruled: the guard reads TAGGED claims only** (an explicit convention it
+  documents in its own header, e.g. `ACCEPTANCE-GREP:`), with the real claims in `plan.md` and the
+  slice briefs retrofitted — **plus a purely syntactic second rule that IS the defect class: a
+  zero-hit claim's scope must name a path, not a bare directory.** Both deterministic; a prose
+  parser is not.
+  **Home: `scripts/guards/`, NOT `scripts/`** — because a guard absent from `run-all.sh`'s
+  hard-coded list does not run at all, as that file says itself: *"a guard that does not exist
+  cannot guard."* Register it in the `for guard in …` loop **and** its `.check.mjs` in the
+  `run_check` block. **The `.check.mjs` uses the two real defects above as fixtures** — the pre-fix
+  text is in this repo's history, so the guard can be run against the state that produced it, which
+  is this project's standing guard rule. Name it `.check.mjs`, **never `.test.mjs`**: `npm test`
+  discovers `*.test.mjs` and a top-level `process.exit()` inside vitest kills the run — the reason is
+  written in `run-all.sh`, and it is load-bearing.
 - **Acceptance.** The rendered label and the module agree; `rg -n "skipLabel" src/` shows a
   **render** site, not just the module; the new guard passes on HEAD **and** fails when run
   against the pre-fix state; `check-acceptance-greps.mjs` passes on the corrected `plan.md` and
