@@ -2,7 +2,7 @@
  * V28 slice 1 — the pure first-run model.
  *
  * The first run interviews a new parent one card at a time:
- * account → name → kids → photo → area. A later slice renders the cards; this
+ * account → name → kids → area. A later slice renders the cards; this
  * module owns the card sequence and the resume rule.
  *
  * Purity is a requirement, not a preference: this file has no dependencies at
@@ -11,14 +11,13 @@
  * never stored here. Both properties are pinned by firstRun.test.ts.
  */
 
-/** The five cards of the first run, in order. */
-export type FirstRunCardId = 'account' | 'name' | 'kids' | 'photo' | 'area'
+/** The four cards of the first run, in order. */
+export type FirstRunCardId = 'account' | 'name' | 'kids' | 'area'
 
 export const FIRST_RUN_CARDS: readonly FirstRunCardId[] = [
   'account',
   'name',
   'kids',
-  'photo',
   'area',
 ]
 
@@ -27,13 +26,12 @@ export interface FirstRunFacts {
   signedIn: boolean
   hasName: boolean // a profiles row exists with a display_name
   hasKids: boolean // at least one kids row
-  hasPhoto: boolean // avatar_url is set
   hasZip: boolean // home_zip is set
 }
 
 /** Which cards may be left unanswered. account/name/area = false. */
 export function isSkippable(card: FirstRunCardId): boolean {
-  return card === 'kids' || card === 'photo'
+  return card === 'kids'
 }
 
 /**
@@ -52,7 +50,7 @@ export function isSkippable(card: FirstRunCardId): boolean {
  *
  * Consequences, both accepted and recorded:
  * - It terminates, by clause (a). `area` is required and last, so a parent who
- *   sets a zip ends the run even having skipped kids and photo.
+ *   sets a zip ends the run even having skipped kids.
  * - A *skipped* optional card IS re-offered while the run is unfinished
  *   (a required card is still unanswered), because "skipped" and "not
  *   reached" are indistinguishable from derived facts. That is up to two extra
@@ -63,14 +61,13 @@ export function nextUnfinishedCard(facts: FirstRunFacts): FirstRunCardId | null 
   if (!facts.signedIn) return 'account'
   if (!facts.hasName) return 'name'
   // `area` is required and last: once the zip is set the run is done, so a
-  // skipped kids or photo card is finished too — null, no re-offer.
+  // skipped kids card is finished too — null, no re-offer.
   if (facts.hasZip) return null
   if (!facts.hasKids) return 'kids'
-  if (!facts.hasPhoto) return 'photo'
   return 'area'
 }
 
-/** "2 of 5" — 1-based position within `FIRST_RUN_CARDS`. */
+/** "2 of 4" — 1-based position within `FIRST_RUN_CARDS`. */
 export function progressLabel(card: FirstRunCardId): string {
   return `${FIRST_RUN_CARDS.indexOf(card) + 1} of ${FIRST_RUN_CARDS.length}`
 }

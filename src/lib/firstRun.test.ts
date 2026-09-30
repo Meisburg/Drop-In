@@ -24,7 +24,6 @@ function facts(over: Partial<FirstRunFacts> = {}): FirstRunFacts {
     signedIn: true,
     hasName: false,
     hasKids: false,
-    hasPhoto: false,
     hasZip: false,
     ...over,
   }
@@ -99,8 +98,8 @@ function firstForbidden(source: string): string | null {
 }
 
 describe('FIRST_RUN_CARDS', () => {
-  it('is exactly the five cards, in order', () => {
-    expect(FIRST_RUN_CARDS).toEqual(['account', 'name', 'kids', 'photo', 'area'])
+  it('is exactly the four cards, in order', () => {
+    expect(FIRST_RUN_CARDS).toEqual(['account', 'name', 'kids', 'area'])
   })
 })
 
@@ -111,9 +110,8 @@ describe('isSkippable', () => {
     expect(isSkippable('area')).toBe(false)
   })
 
-  it('kids and photo are skippable', () => {
+  it('kids is the only skippable card', () => {
     expect(isSkippable('kids')).toBe(true)
-    expect(isSkippable('photo')).toBe(true)
   })
 })
 
@@ -130,25 +128,19 @@ describe('nextUnfinishedCard', () => {
     expect(nextUnfinishedCard(facts({ hasName: true, hasKids: false }))).toBe('kids')
   })
 
-  it('a parent with kids but no photo lands on the photo card', () => {
-    expect(nextUnfinishedCard(facts({ hasName: true, hasKids: true, hasPhoto: false }))).toBe(
-      'photo',
-    )
-  })
-
   it('a parent who has everything but a zip lands on the area card', () => {
     expect(
-      nextUnfinishedCard(facts({ hasName: true, hasKids: true, hasPhoto: true, hasZip: false })),
+      nextUnfinishedCard(facts({ hasName: true, hasKids: true, hasZip: false })),
     ).toBe('area')
   })
 
-  it('is null when name and zip are both set — even with kids and photo skipped', () => {
+  it('is null when name and zip are both set — even with kids skipped', () => {
     expect(nextUnfinishedCard(facts({ hasName: true, hasZip: true }))).toBeNull()
   })
 
   it('terminates for a parent who never sets hasKids: name and zip set is null', () => {
     expect(
-      nextUnfinishedCard(facts({ hasName: true, hasKids: false, hasPhoto: false, hasZip: true })),
+      nextUnfinishedCard(facts({ hasName: true, hasKids: false, hasZip: true })),
     ).toBeNull()
   })
 
@@ -176,23 +168,22 @@ describe('nextUnfinishedCard', () => {
   })
 
   it('re-offers a skipped optional card while the run is unfinished', () => {
-    // The parent skipped kids and photo and quit before area. "Skipped" and
+    // The parent skipped kids and quit before area. "Skipped" and
     // "not reached" are indistinguishable from the derived facts, so they
     // resume on the kids card and tap Skip again — the accepted price of not
     // adding a step column (plan.md, slice 1).
     expect(
-      nextUnfinishedCard(facts({ hasName: true, hasKids: false, hasPhoto: false, hasZip: false })),
+      nextUnfinishedCard(facts({ hasName: true, hasKids: false, hasZip: false })),
     ).toBe('kids')
   })
 })
 
 describe('progressLabel', () => {
-  it('is the 1-based position within the five cards', () => {
-    expect(progressLabel('account')).toBe('1 of 5')
-    expect(progressLabel('name')).toBe('2 of 5')
-    expect(progressLabel('kids')).toBe('3 of 5')
-    expect(progressLabel('photo')).toBe('4 of 5')
-    expect(progressLabel('area')).toBe('5 of 5')
+  it('is the 1-based position within the four cards', () => {
+    expect(progressLabel('account')).toBe('1 of 4')
+    expect(progressLabel('name')).toBe('2 of 4')
+    expect(progressLabel('kids')).toBe('3 of 4')
+    expect(progressLabel('area')).toBe('4 of 4')
   })
 })
 
@@ -234,15 +225,14 @@ describe('purity', () => {
     try {
       for (const card of FIRST_RUN_CARDS) progressLabel(card)
       for (const card of FIRST_RUN_CARDS) isSkippable(card)
-      // All 32 fact combinations, so the spy walks every branch of
-      // nextUnfinishedCard — including the photo and area branches the old
+      // All 16 fact combinations, so the spy walks every branch of
+      // nextUnfinishedCard — including the kids and area branches the old
       // two-sample loop never traversed.
       for (const signedIn of [false, true])
         for (const hasName of [false, true])
           for (const hasKids of [false, true])
-            for (const hasPhoto of [false, true])
-              for (const hasZip of [false, true])
-                nextUnfinishedCard({ signedIn, hasName, hasKids, hasPhoto, hasZip })
+            for (const hasZip of [false, true])
+              nextUnfinishedCard({ signedIn, hasName, hasKids, hasZip })
     } finally {
       spy.mockRestore()
     }
