@@ -34,7 +34,7 @@ import { BackControl } from './BackControl'
  * a11y:focus).
  */
 export type FirstRunCardProps = {
-  /** "2 of 5" — the caller's label (lib/firstRun's `progressLabel`). */
+  /** "2 of 4" — the caller's label (lib/firstRun's `progressLabel`). */
   progressLabel: string
   /** The card's masthead. */
   title: string

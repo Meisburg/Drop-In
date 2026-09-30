@@ -11,7 +11,7 @@ import { FIRST_RUN_CARDS } from './firstRun'
 import { FIRST_RUN_COPY, FIRST_RUN_NUDGE_COPY } from './firstRunCopy'
 
 describe('FIRST_RUN_COPY', () => {
-  it('covers exactly the five first-run cards, in card order', () => {
+  it('covers exactly the four first-run cards, in card order', () => {
     expect(Object.keys(FIRST_RUN_COPY)).toEqual([...FIRST_RUN_CARDS])
   })
 
@@ -26,7 +26,6 @@ describe('FIRST_RUN_COPY', () => {
 
   it('reserves a skip label for the skippable cards only', () => {
     expect(FIRST_RUN_COPY.kids.skipLabel?.length).toBeGreaterThan(0)
-    expect(FIRST_RUN_COPY.photo.skipLabel?.length).toBeGreaterThan(0)
     expect(FIRST_RUN_COPY.account.skipLabel).toBeUndefined()
     expect(FIRST_RUN_COPY.name.skipLabel).toBeUndefined()
     expect(FIRST_RUN_COPY.area.skipLabel).toBeUndefined()

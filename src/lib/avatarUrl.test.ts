@@ -3,9 +3,10 @@ import { hasAvatarUrl } from './avatarUrl'
 
 /**
  * V28 slice 4b: the presence predicate is defined ONCE here and used at
- * every "does the profile have an avatar" site (the resume nudge's
- * hasPhoto fact today), so no class of drift can recur. The table below
- * pins the nudge's exact existing semantics
+ * every "does the profile have an avatar" site (the first run's hasPhoto
+ * fact ran it, until V28 r2 slice 1b deleted the photo card and the
+ * fact with it), so no class of drift can recur. The table below pins
+ * the exact existing semantics
  * (`avatar_url !== undefined && !== null && !== ''`).
  */
 describe('hasAvatarUrl (the one avatar presence predicate)', () => {

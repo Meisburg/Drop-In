@@ -334,11 +334,11 @@ export function runLiveSql(sql: string): { ok: boolean; output: string } {
  * WHY THIS IS A SHARED HELPER AND NOT 20 INLINE COPIES. The form changed shape
  * twice: it used to be `input[autocomplete="nickname"]` (one "Display name"
  * box), then FIRST NAME + LAST NAME + HOME ADDRESS on /login, and since V28
- * slice 3b it is EMAIL + PASSWORD ONLY (the account is card 1 of 5). One
+ * slice 3b it is EMAIL + PASSWORD ONLY (the account is card 1 of 4). One
  * helper means the specs say "sign this viewer up" and the form's field list
  * lives in exactly one place.
  *
- * The name moved onto the name card at /onboarding (card 2 of 5, V28 slice
+ * The name moved onto the name card at /onboarding (card 2 of 4, V28 slice
  * 3a) — the SAME `autoComplete="given-name"` / `"family-name"` selectors the
  * old /login form carried. `name` is the handle the caller expects the
  * account to end up with, so the helper splits it the way the card composes
@@ -380,15 +380,17 @@ export async function signUpViewer(
 }
 
 /**
- * FINISH SIGNUP — walk the kids card, the photo card, then complete the
- * AREA card. (V28 slice 3b; first-use audit, ticket 02; V28 slice 4a:
- * the kids hop; V28 slice 4b: the photo hop; V28 slice 5: the area card.)
+ * FINISH SIGNUP — walk the kids card, then complete the AREA card.
+ * (V28 slice 3b; first-use audit, ticket 02; V28 slice 4a: the kids hop;
+ * V28 slice 5: the area card; V28 r2 slice 1b deleted the photo card from
+ * the first run, so the old photo hop is gone — the photo now joins the
+ * name card in slice 2.)
  *
  * The signup form no longer carries an address, so `signUpViewer` lands the
  * new parent on /onboarding ALWAYS: the name card comes next
- * (signUpViewer completes it), then the KIDS card ("3 of 5", V28 slice 4a),
- * then the PHOTO card ("4 of 5", V28 slice 4b), and then the AREA card
- * ("5 of 5", V28 slice 5 — address-first, decision 9).
+ * (signUpViewer completes it), then the KIDS card ("3 of 4", V28 slice 4a),
+ * and then the AREA card ("4 of 4", V28 slice 5 — address-first,
+ * decision 9).
  *
  * THE AREA CARD: the card's bounded address lookup must not hang this
  * 17-spec helper on a network answer, so the helper types an address that
@@ -407,21 +409,15 @@ export async function signUpViewer(
  * still lands on the feed exactly as before.
  *
  * THE KIDS HOP: the kids card is skippable, so this helper taps its Skip
- * control — writing NOTHING (no kid rows) — and proceeds to the photo
- * card. The Skip button (FirstRunCard's chrome) is the card's only control
+ * control — writing NOTHING (no kid rows) — and proceeds to the AREA card.
+ * (The photo card that used to sit between them was deleted in V28 r2
+ * slice 1b; the photo now joins the name card in slice 2.) The Skip
+ * button (FirstRunCard's chrome) is the card's only control
  * that advances without touching the DB, which keeps the 17 specs that
  * consume this helper on the deterministic no-kids path: their assertions
  * about kids (kid-names-privacy and friends) create their kids through the
  * /profile editor or REST, never through onboarding. A spec that wants the
  * kids WRITE is one that should not be using this helper.
- *
- * THE PHOTO HOP: the photo card (V28 slice 4b) is skippable too, and its
- * Skip is the SAME chrome control — after the kids card's Skip the card is
- * replaced by the photo card, so the same locator re-resolves onto the
- * photo card's Skip and a second click advances. Skipping writes nothing
- * (the avatar upload only ever runs inside the card's crop step, which this
- * walk never opens), so the helper stays on the deterministic no-photo
- * path for every consumer.
  *
  * It NEVER forces a reload: a spec that counts requests during the cold load
  * still counts only the cold load's.
@@ -432,21 +428,18 @@ export async function finishSignup(
 ): Promise<void> {
   const feed = page.getByRole('heading', { name: 'Near you' })
 
-  // V28 slice 4a: the kids card (3 of 5) sits between the name card and the
-  // next view. It is the ONLY view that renders the card's Skip control
+  // V28 slice 4a: the kids card (3 of 4) sits between the name card and the
+  // area card. It is the ONLY view that renders the card's Skip control
   // (the area card has none — it is required), so waiting for it is the hop
   // itself — and it absorbs the same profile-load settle beat the area-card
-  // wait absorbs. V28 slice 4b: the photo card (4 of 5) now sits between
-  // the kids card and the area card, and it shows the same Skip control —
-  // the locator re-resolves onto it after the kids card is replaced, so the
-  // walk is: wait, click (kids), wait, click (photo).
+  // wait absorbs. (V28 slice 4b's photo card used to sit between them with
+  // a second Skip; V28 r2 slice 1b deleted it, so the walk is: wait,
+  // click — one hop.)
   const skip = page.getByRole('button', { name: 'Skip' })
   await skip.waitFor({ timeout: 30_000 })
   await skip.click()
-  await skip.waitFor({ timeout: 30_000 })
-  await skip.click()
 
-  // V28 slice 5: the AREA card ("5 of 5") is the last view — address-first
+  // V28 slice 5: the AREA card ("4 of 4") is the last view — address-first
   // (decision 9). The helper types an address that never resolves (see the
   // doc above), so the card's bounded lookup reveals the ZIP fallback and
   // the caller's zip + radius finish the card. Waiting on the card's

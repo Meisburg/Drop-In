@@ -11,7 +11,6 @@ import { PushOptInPrompt } from './components/PushOptInPrompt'
 import { SessionProvider, useSessionContext } from './components/SessionProvider'
 import { SplashScreen } from './components/SplashScreen'
 import { listKids, signOutUser } from './lib/db'
-import { hasAvatarUrl } from './lib/avatarUrl'
 import { nextUnfinishedCard } from './lib/firstRun'
 import type { FirstRunCardId } from './lib/firstRun'
 import { FIRST_RUN_NUDGE_COPY } from './lib/firstRunCopy'
@@ -90,8 +89,8 @@ function readNudgeDismissed(): boolean {
  * ask. FIRST_RUN_NUDGE_COPY (src/lib/firstRunCopy.ts) holds the words; slice
  * 4 can swap in card-specific titles as the cards start rendering.
  *
- * Fact sourcing (the slice's decision (a)): hasName / hasPhoto / hasZip come
- * free off the shell's session — the profiles row + homeZipSet (3a feeds
+ * Fact sourcing (the slice's decision (a)): hasName / hasZip come free off
+ * the shell's session — the profiles row + homeZipSet (3a feeds
  * both, so the nudge needs no new fetch for them; a null profile row IS the
  * name card, because display_name is NOT NULL, so any row is a name). hasKids
  * is the one fact that is NOT free: the shell knows nothing about kids. The
@@ -153,7 +152,7 @@ function FirstRunNudge({
       return
     }
     // The parent has a name and no zip, so the run is unfinished and the
-    // answer is kids/photo/area — but only hasKids is unread, and it is not
+    // answer is kids/area — but only hasKids is unread, and it is not
     // free. One lazy read, cancelled if the facts change mid-flight.
     let cancelled = false
     listKids(session.user.id)
@@ -164,7 +163,6 @@ function FirstRunNudge({
             signedIn: true,
             hasName: true,
             hasKids: kids.length > 0,
-            hasPhoto: hasAvatarUrl(profile.avatar_url),
             hasZip: false,
           }),
         )

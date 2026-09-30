@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
-import type { ChangeEvent, FormEvent } from 'react'
+import type { FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router'
 import { useSessionContext } from '../components/SessionProvider'
 import { FinishRunCard } from '../components/FinishRunCard'
 import { FirstRunCard } from '../components/FirstRunCard'
-import { useCropStep } from '../components/useCropStep'
 import { addressFieldError, composeDisplayName, displayNameFieldError } from '../lib/account'
 import { progressLabel, nextUnfinishedCard } from '../lib/firstRun'
 import { FIRST_RUN_COPY } from '../lib/firstRunCopy'
@@ -17,10 +16,8 @@ import {
   loadZipCodes,
   MAX_KIDS_PER_PROFILE,
   updateHomeZipRadius,
-  uploadAvatar,
   validateKid,
 } from '../lib/db'
-import { hasAvatarUrl } from '../lib/avatarUrl'
 import {
   DEFAULT_RADIUS_MILES,
   milesWord,
@@ -52,10 +49,11 @@ import { errorId, fieldA11y } from '../lib/a11y'
  * keying on home_zip; the requirement lives at the write paths, see
  * docs/adr/0001-home-zip-stops-being-a-gate.md). Visiting /onboarding is
  * voluntary; finishing the run is not. V28 slices 4a/4b: the kids card
- * (3 of 5) writes the kid rows and the photo card (4 of 5) uploads the
- * avatar, each before this page's final view — the location view's one
- * Continue button saves the location (always) and lands on the feed.
- * V28 slice 5: that final view IS the area card (5 of 5, the run's last
+ * (3 of 4) writes the kid rows before this page's final view (V28 r2 slice 1b
+ * deleted the photo card — the parent's photo now joins the name card, slice
+ * 2). The location view's one Continue button saves the location (always)
+ * and lands on the feed.
+ * V28 slice 5: that final view IS the area card (4 of 4, the run's last
  * card) — address-first, ZIP as the fallback it reveals (decision 9): the
  * address is the entry (its bounded lookup, lib/geocode's
  * `zipFromAddressQueryBounded` — the pending-state rule's escape for a
@@ -64,15 +62,17 @@ import { errorId, fieldA11y } from '../lib/a11y'
  * to "absent") reveals the ZIP field + the in-card notice, and a typed ZIP
  * always wins. The card's one primary button ("Finish") saves the location
  * and the run lands on its FINISH CARD (V28 slice 6 — see below).
- * V28 slice 4c (defect #22): both card gates are fact-aware — a parent who
+ * V28 slice 4c (defect #22): the card gate is fact-aware — a parent who
  * re-enters resumes at the card they LEFT, never a restart: the kids gate
  * closes when the profile already has kids (the page's own lazy listKids
- * read, the same seam as the shell's nudge) and the photo gate closes when
- * the profile has an avatar (lib/avatarUrl's hasAvatarUrl). The session
- * flags (kidsCardDone / photoCardDone) keep a Skip advancing within a run.
+ * read, the same seam as the shell's nudge); the photo gate is gone with
+ * the photo card (V28 r2 slice 1b — the photo moves onto the name card in
+ * slice 2). The session flag (kidsCardDone) keeps a Skip advancing within
+ * a run.
  * The optional items that were once collected HERE (V2 ticket 02:
- * photo/bio/kids) are gone from this view: kids and photo moved onto
- * their cards, and the bio left the first run entirely (V28 decision 15 —
+ * photo/bio/kids) are gone from this view: kids moved onto its card (photo
+ * joins the name card in slice 2), and the bio left the first run entirely
+ * (V28 decision 15 —
  * it stays on /settings and the V27 parent-card editor, never a column).
  *
  * V28 slice 6 (plan defect #19): the run's OWN ending. When the required
@@ -163,18 +163,13 @@ export function OnboardingPage() {
   const [geocoding, setGeocoding] = useState(false)
   const [zipFallbackShown, setZipFallbackShown] = useState(false)
 
-  // The optional completion items (V2 ticket 02).
-  //
-  // photoAdded is a boolean, not the File: since the crop step (photo-crop ticket
-  // 03) the File is decoded on pick and never needed again — the bitmap is what
-  // both the preview and the encoder use — so keeping a reference to it would
-  // only be a way to hold a 12MP original in memory for no reason.
-  const [photoAdded, setPhotoAdded] = useState(false)
-  const [photoUploading, setPhotoUploading] = useState(false)
-  const [photoError, setPhotoError] = useState<string | null>(null)
+  // The optional completion items (V2 ticket 02): the kid rows. (The photo
+  // states photoAdded / photoUploading / photoError lived here — V28 r2
+  // slice 1b deleted them with the photo card; the photo now joins the
+  // name card, slice 2.)
   const [kidRows, setKidRows] = useState<Array<{ name: string; age: string }>>([])
   const [kidsError, setKidsError] = useState<string | null>(null)
-  // V28 slice 4a: the kids card (3 of 5) is its OWN step, between the name
+  // V28 slice 4a: the kids card (3 of 4) is its OWN step, between the name
   // card and the location page — the kid rows moved off this page into the
   // card. `kidsCardDone` is set by the card's Continue (after the write) or
   // its Skip (without writing anything). The card's primary control is the
@@ -226,38 +221,11 @@ export function OnboardingPage() {
       cancelled = true
     }
   }, [session, profile, kidsCardDone])
-  // V28 slice 4b: the photo card (4 of 5) sits between the kids card and
-  // the location view. The upload itself runs in the crop step's confirm
-  // (uploadAvatar — see `photoCrop` above), not on Continue: by the time
-  // the parent reaches the card's primary control the photo is either
-  // uploaded or not, so Continue and Skip both only advance. `photoCardDone`
-  // is set by the card's Continue or its Skip (skippable — lib/firstRun's
-  // isSkippable('photo'); a skipped photo is kept alive by the /settings
-  // nudge banner).
-  const [photoCardDone, setPhotoCardDone] = useState(false)
-
-  /**
-   * The crop step (photo-crop ticket 03). Declared HERE, with the other hooks and
-   * above every early return — the V6 regression that blanked the detail page was
-   * exactly this: hooks landing below a conditional return, which React reports as
-   * "rendered more hooks than during the previous render".
-   */
-  const photoCrop = useCropStep(async (source, rect) => {
-    if (session === null) return
-    setPhotoUploading(true)
-    setPhotoError(null)
-    try {
-      await uploadAvatar(session.user.id, source, rect)
-      setPhotoAdded(true)
-    } catch (err) {
-      setPhotoAdded(false)
-      setPhotoError(
-        err instanceof Error ? err.message : 'Could not upload the photo. You can add it later.',
-      )
-    } finally {
-      setPhotoUploading(false)
-    }
-  })
+  // V28 slice 4b added the photo card — the first run's fourth card — and
+  // its session flag
+  // photoCardDone; V28 r2 slice 1b removed the card, the flag, and the
+  // crop-step hook (useCropStep) with it — the photo now joins the name
+  // card (slice 2), and only the kids session flag remains.
 
   // The seeded gazetteer (zip_codes, migration 0012): the zip input is
   // validated against it — an unknown zip shows an inline error instead of
@@ -286,7 +254,7 @@ export function OnboardingPage() {
 
   // V28 slice 6 (defect #19): the run is OVER when the required cards are
   // answered — lib/firstRun's own null rule is the single source of truth
-  // (signed in + named + zip set; the kids/photo facts cannot block it
+  // (signed in + named + zip set; the kids fact cannot block it
   // once the zip is set). While it is, the page ends on the FINISH CARD
   // (rendered below), never a feed bounce.
   const runOver =
@@ -297,7 +265,6 @@ export function OnboardingPage() {
       signedIn: true,
       hasName: true,
       hasKids: hasKids === true,
-      hasPhoto: hasAvatarUrl(profile.avatar_url),
       hasZip: true,
     }) === null
 
@@ -357,24 +324,10 @@ export function OnboardingPage() {
   const redirect = resolveOnboardingRedirect(session !== null)
   if (redirect !== null) return <Navigate to={redirect} replace />
 
-  // The avatar upload (V2 ticket 02; the crop step added by photo-crop ticket 03):
-  // validated and decoded inside the crop step, framed by the user, then encoded
-  // client-side and stored at avatars/<uid>/avatar. A failed upload (0011 not
-  // applied yet) surfaces the error but never traps onboarding — the items are
-  // optional, and the /settings nudge banner keeps the prompt alive.
-  async function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0] ?? null
-    e.target.value = '' // allow re-picking the same file
-    if (file === null || session === null) return
-    setPhotoError(null)
-    // The ≤5MB / image-only gate runs inside beginCrop, before the decode and
-    // before the dialog — a rejected file costs nothing.
-    const error = await photoCrop.beginCrop(file)
-    if (error !== null) {
-      setPhotoAdded(false)
-      setPhotoError(error)
-    }
-  }
+  // The avatar upload (V2 ticket 02; the crop step added by photo-crop
+  // ticket 03) ran in the photo card's crop step (handlePhotoChange →
+  // photoCrop.beginCrop → uploadAvatar). V28 r2 slice 1b deleted the card
+  // and that handler; the photo now joins the name card (slice 2).
 
   function addKidRow() {
     setKidsError(null)
@@ -452,7 +405,7 @@ export function OnboardingPage() {
     if (!failed) setKidsCardDone(true)
   }
 
-  // V28 slice 5: the area card's (5 of 5) primary action — decision 9,
+  // V28 slice 5: the area card's (4 of 4) primary action — decision 9,
   // address-first, ZIP as fallback. A TYPED ZIP always wins and needs no
   // lookup: it is validated against the gazetteer (the same
   // `validateHomeZip` gate the card has always had) and written. An ADDRESS
@@ -511,8 +464,9 @@ export function OnboardingPage() {
       await updateHomeZipRadius(session.user.id, zip, radiusMiles)
       // V28 slices 4a/4b: the optional items no longer write from this
       // handler — the kids card wrote its rows before this card (the photo
-      // card's upload ran in its crop step; the bio left the first run
-      // entirely). Only the location write remains here.
+      // left the card sequence in V28 r2 — it joins the name card in slice
+      // 2; the bio left the first run entirely). Only the location write
+      // remains here.
       // Refresh the shared session state before the card swap: homeZipSet
       // is what the page's own finish-card branch (and every other
       // route's) re-checks. Since V28 slice 2b the shell's onboarding gate
@@ -570,7 +524,7 @@ export function OnboardingPage() {
 
   // V4 slice 4: no profiles row yet (a first-time social sign-in) → the handle
   // step comes FIRST; the location step below can only write to an existing row.
-  // V28 slice 3a: this branch is the first run's "name" card ("2 of 5" via
+  // V28 slice 3a: this branch is the first run's "name" card ("2 of 4" via
   // progressLabel) rendered in FirstRunCard — the chrome (progress label,
   // masthead, primary action) now lives in the card. The form itself is
   // generalized, not rewritten: the same displayNameFieldError /
@@ -649,9 +603,9 @@ export function OnboardingPage() {
   }
 
   // V28 slice 6 (defect #19): the run is OVER → the FINISH CARD is the
-  // run's ending, rendered IN PLACE (before the kids-fact and photo gates
-  // so a finished parent never sees "Checking your kids…" or gets the
-  // optional cards re-offered after a completed run). The re-keyed guard
+  // run's ending, rendered IN PLACE (before the kids-fact gate so a
+  // finished parent never sees "Checking your kids…" or gets the kids card
+  // re-offered after a completed run). The re-keyed guard
   // above no longer bounces this parent to the feed, so this card is the
   // landing — its picks come from the effect above (or its honest
   // loading/empty/error states; the empty state is the shared
@@ -702,12 +656,13 @@ export function OnboardingPage() {
   }
 
   const kidsAtCap = kidRows.length >= MAX_KIDS_PER_PROFILE
-  // V28 slice 4a: the kids card ("3 of 5") — the first run's card 3, BETWEEN
+  // V28 slice 4a: the kids card ("3 of 4") — the first run's card 3, BETWEEN
   // the name card and the location view below. This is a REORDER, not a
   // verbatim lift: the page used to render the photo block before the kids
-  // block, and the chosen card order is kids then photo — so the kid rows
-  // moved UP into this card (the photo block stays where it is for slice 4b,
-  // which turns it into card 4). The words are data from FIRST_RUN_COPY.kids,
+  // block, and the chosen card order was kids then photo — so the kid rows
+  // moved UP into this card. (V28 r2 slice 1b deleted the photo card;
+  // the photo now joins the name card, slice 2.) The words are data from
+  // FIRST_RUN_COPY.kids,
   // never hard-coded (the name card above reads its entry the same way).
   // Skip advances without writing anything; Continue writes the filled rows
   // (handleKidsContinue) and only then advances. The kids section below in
@@ -719,7 +674,7 @@ export function OnboardingPage() {
   // would be offered the card (and its addKid writes) in the gap, which is
   // the defect's exact write path. A settled `hasKids === true` closes the
   // gate instead — the parent already has kids, so resume at the card they
-  // LEFT (the photo card or the location view), never a restart. The flag
+  // LEFT (the area card — the run's last card), never a restart. The flag
   // keeps advancing a Skip within the session (see `hasKids` above).
   const kidsFactPending = !kidsCardDone && hasKids === null
   if (kidsFactPending) {
@@ -805,68 +760,14 @@ export function OnboardingPage() {
     )
   }
 
-  // V28 slice 4b: the photo card ("4 of 5") — the first run's card 4,
-  // between the kids card and the location view. The picker and the crop
-  // step are the existing avatar pipeline lifted into the card chrome
-  // (`photoCrop` above, reused as-is — it validates size and type before
-  // decoding): a rejected file shows its existing error (a gate hit in
-  // beginCrop, or a failed upload) and never traps the card — Continue
-  // stays live and so does Skip. The upload runs on the crop step's
-  // confirm, not on Continue; by the time the parent reaches the card's
-  // controls the photo is either uploaded or not, so Continue and Skip
-  // both only advance (a failed upload leaves `photoError` shown and
-  // `photoAdded` false, and the /settings nudge banner keeps the prompt).
-  // The words are data from FIRST_RUN_COPY.photo, never hard-coded (the
-  // name and kids cards read their entries the same way). The busy-state
-  // label ("Saving…" while the confirmed upload is in flight) is one of
-  // the two transient strings the sibling cards share, not card copy.
-  // V28 slice 4c: the gate is fact-aware too — a parent re-entering with an
-  // avatar already on the profile skips straight past the card (the fact
-  // handles the re-entry); the session flag still advances a Skip within
-  // the run (a skipped photo is re-offered by firstRun's documented rule,
-  // so both clauses are required).
-  if (!photoCardDone && !hasAvatarUrl(profile.avatar_url)) {
-    const photoCopy = FIRST_RUN_COPY.photo
-    return (
-      <FirstRunCard
-        progressLabel={progressLabel('photo')}
-        title={photoCopy.title}
-        body={photoCopy.body}
-        primaryLabel={photoUploading ? 'Saving…' : photoCopy.primaryLabel}
-        primaryDisabled={photoUploading}
-        onPrimary={() => {
-          // The photo write already ran in the crop step — Continue just
-          // advances to the location view (skippable, lib/firstRun's
-          // isSkippable('photo')).
-          setPhotoCardDone(true)
-        }}
-        onSkip={() => {
-          // Skippable: advance without writing anything — the /settings
-          // nudge banner keeps the prompt.
-          setPhotoCardDone(true)
-        }}
-        testId="first-run-photo-card"
-      >
-        <div className="flex flex-col gap-1 text-sm">
-          <label className="inline-flex min-h-11 cursor-pointer items-center self-start rounded-xl border border-slate-300 bg-white px-3 text-base font-medium text-slate-700">
-            {photoUploading ? 'Uploading…' : photoAdded ? 'Photo added' : 'Add a photo'}
-            <input
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              disabled={photoUploading}
-              onChange={(e) => void handlePhotoChange(e)}
-              {...fieldA11y('photo', photoError)}
-            />
-          </label>
-          {photoError !== null ? <p role="alert" id={errorId('photo')} className="text-sm text-red-600">{photoError}</p> : null}
-          {photoCrop.dialog}
-        </div>
-      </FirstRunCard>
-    )
-  }
+  // V28 r2 slice 1b: the photo card (the first run's fourth card, while it
+  // existed) was DELETED here — its gate,
+  // state, picker, crop step, and upload all left this page; the parent's
+  // photo now joins the NAME card (slice 2). The area card below is the
+  // run's last card again, and the run is account → name → kids → area.
 
-  // V28 slice 5: the AREA card ("5 of 5") — the first run's last card,
+  // V28 slice 5: the AREA card ("4 of 4") — the first run's last card,
+
   // address-first (decision 9). The address is the entry: its bounded lookup
   // (handleAreaFinish) resolves it to the home zip WITHOUT the parent typing
   // a ZIP, or reveals the fallback below. The fallback — the ZIP field plus

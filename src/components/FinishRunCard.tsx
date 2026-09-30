@@ -24,7 +24,7 @@ import { RadiusEmptyState } from './RadiusEmptyState'
  * It makes NO claim about upcoming drop-ins — the list is where the parent
  * CAN host, not what is already happening. The card's words are module
  * constants (data, not JSX — the 4a precedent) and live HERE: not in
- * FIRST_RUN_COPY (whose key set its test pins to the 5-card inventory) and
+ * FIRST_RUN_COPY (whose key set its test pins to the 4-card inventory) and
  * not in the nudge copy (the nudge stays generic, per the plan).
  */
 const FINISH_RUN_CARD_COPY = {

@@ -15,12 +15,12 @@ export interface FirstRunCardCopy {
   body: string
   /** The primary action button. */
   primaryLabel: string
-  /** Present only on the skippable cards (kids, photo). */
+  /** Present only on the skippable card (kids). */
   skipLabel?: string
 }
 
 /**
- * The copy for all five cards, keyed by card id. `primaryLabel` on the name
+ * The copy for all four cards, keyed by card id. `primaryLabel` on the name
  * card must keep matching /^Continue/ — the e2e helpers locate it by that
  * (plan.md, slice 3a).
  */
@@ -41,12 +41,6 @@ export const FIRST_RUN_COPY: Record<FirstRunCardId, FirstRunCardCopy> = {
     primaryLabel: 'Continue',
     skipLabel: 'Skip for now',
   },
-  photo: {
-    title: 'Add a photo',
-    body: 'A picture helps parents spot you at the drop-in. Add one whenever you are ready.',
-    primaryLabel: 'Continue',
-    skipLabel: 'Skip for now',
-  },
   area: {
     title: 'Where do you live?',
     body: 'We use your neighborhood to show nearby drop-ins. An address works best; a ZIP code works too.',
@@ -64,8 +58,8 @@ export const FIRST_RUN_COPY: Record<FirstRunCardId, FirstRunCardCopy> = {
  * blocking finding. Since slice 4a the name and kids cards DO read
  * FIRST_RUN_COPY (their words come from this module, not from hard-coded
  * strings), but the nudge still speaks FIRST_RUN_NUDGE_COPY and does not
- * swap onto card-specific titles; the card inventory keeps growing (photo,
- * area), and a card-named line would have to track it. The line is
+ * swap onto card-specific titles; the card inventory keeps growing (area),
+ * and a card-named line would have to track it. The line is
  * card-agnostic by construction.
  */
 export const FIRST_RUN_NUDGE_COPY = {

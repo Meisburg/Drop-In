@@ -18,7 +18,7 @@
  * orchestrator can sweep stray rows later. The password is generated
  * in-memory here and never written anywhere (no secrets in specs).
  *
- * V28 slice 3b: the account is card 1 of 5, so the marker's first run goes
+ * V28 slice 3b: the account is card 1 of 4, so the marker's first run goes
  * through the real UI end to end — email + password on /login (the signup
  * form is email + password ONLY now; the name and address fields moved onto
  * the first run's cards), then the NAME card creates the profiles row, then
@@ -27,7 +27,7 @@
  * location step is deterministic. The REST PATCH below stays as the
  * marker's backstop.
  *
- * V28 slice 5: the location step IS the area card (5 of 5, decision 9 —
+ * V28 slice 5: the location step IS the area card (4 of 4, decision 9 —
  * address-first, ZIP as fallback). This walk types an address that never
  * resolves (no such street exists), so the card's bounded lookup settles to
  * "absent" and reveals the ZIP field + the in-card notice, and the typed
@@ -63,7 +63,7 @@ setup('sign up the marker, onboard it (zip + radius), save the signed-in state',
   // --- Sign up through the real /login UI (signup mode). ---
   //
   // V28 slice 3b: the form is EMAIL + PASSWORD ONLY (the account is card 1
-  // of 5). The marker's handle is still COMPOSED — "e2e-<epoch> Marker" —
+  // of 4). The marker's handle is still COMPOSED — "e2e-<epoch> Marker" —
   // but now by the NAME CARD on /onboarding (card 2, V28 slice 3a): same
   // two halves, same composeDisplayName join, so every downstream
   // `@handle` assertion that looks for `${displayName}` keeps holding.
@@ -80,7 +80,7 @@ setup('sign up the marker, onboard it (zip + radius), save the signed-in state',
   await page.locator('input[type="password"]').fill(password)
   await page.getByRole('button', { name: 'Create account' }).click()
 
-  // Signup lands on /onboarding (V28 slice 3b: card 1 of 5 is done, card 2
+  // Signup lands on /onboarding (V28 slice 3b: card 1 of 4 is done, card 2
   // is next). The NAME card creates the profiles row — the first use of the
   // card's form-attribute association in a spec file (its Continue button
   // lives outside the <form> and is joined to it by the HTML form
@@ -100,23 +100,18 @@ setup('sign up the marker, onboard it (zip + radius), save the signed-in state',
   await page.locator('input[autocomplete="family-name"]').fill(lastName)
   await page.getByRole('button', { name: /^Continue/ }).click()
 
-  // V28 slice 4a: the KIDS card ("3 of 5") now sits between the name card and
-  // the location step — the new parent's first run is account → name → kids
-  // → photo → area. This spec's walk predates the cards and used to land
-  // straight on the location step, so it taps each skippable card's Skip
+  // V28 slice 4a: the KIDS card ("3 of 4") now sits between the name card
+  // and the location step — the new parent's first run is account → name →
+  // kids → area (V28 r2 slice 1b deleted the photo card, which used to sit
+  // fourth; the photo now joins the name card in slice 2). This spec's
+  // walk predates the cards and used to land
+  // straight on the location step, so it taps the skippable card's Skip
   // control (Skip writes NOTHING — the marker gets its kids, if any, via
   // the /profile editor or REST, never through onboarding). The Skip button
   // is FirstRunCard's chrome control, and the location view has none.
   await page.getByRole('button', { name: 'Skip' }).click()
-  // V28 slice 4b: the PHOTO card ("4 of 5") now sits between the kids card
-  // and the location step, showing the same chrome Skip control — after the
-  // kids card's Skip the photo card replaces it, so the same locator
-  // re-resolves onto the photo card's Skip. Its Skip writes nothing too (the
-  // avatar upload only ever runs inside the card's crop step, which this
-  // walk never opens), so the marker's walk stays deterministic.
-  await page.getByRole('button', { name: 'Skip' }).click()
 
-  // V28 slice 5: the AREA card ("5 of 5", decision 9): address-first, ZIP as
+  // V28 slice 5: the AREA card ("4 of 4", decision 9): address-first, ZIP as
   // fallback. This walk types an address that never resolves (MARKER_ADDRESS
   // above), so the card's bounded lookup settles to "absent" and reveals the
   // ZIP field + the in-card notice; the typed marker zip + radius then finish

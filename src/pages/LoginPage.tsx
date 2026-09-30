@@ -26,13 +26,13 @@ const OAUTH_PROVIDERS = resolveOAuthProviders(import.meta.env.VITE_OAUTH_PROVIDE
 /**
  * Login + signup.
  *
- * V28 slice 3b — CARD 1 OF 5 IS THE ACCOUNT, NOT THE PERSON. Signup collects
+ * V28 slice 3b — CARD 1 OF 4 IS THE ACCOUNT, NOT THE PERSON. Signup collects
  * EMAIL + PASSWORD ONLY (decision 4: account first), carries the first run's
- * "1 of 5" label, and sends the new parent to /onboarding — the name card
+ * "1 of 4" label, and sends the new parent to /onboarding — the name card
  * (card 2, V28 slice 3a) creates the profiles row with the same
  * displayNameFieldError / composeDisplayName / createProfile /
  * HandleTakenError seams this page used to run, and the location card
- * (card 5) sets the home zip.
+ * (card 4) sets the home zip.
  *
  * (V20 t06, since superseded here: the form collected FIRST NAME + LAST NAME
  * + a HOME ADDRESS, geocoded it, and wrote home_zip on this page. The name
@@ -102,7 +102,7 @@ export function LoginPage() {
       }
 
       // --- signup ---------------------------------------------------------
-      // V28 slice 3b: the account is card 1 of 5 — email + password only.
+      // V28 slice 3b: the account is card 1 of 4 — email + password only.
       // This page creates NOTHING but the auth account: the name (and its
       // taken-handle retry) now lives on the name card at /onboarding, and
       // the location lives on the area card, so there is no profile row to
@@ -147,7 +147,7 @@ export function LoginPage() {
       // handler — so no permission call ever depends on the transient
       // activation of the Create-account tap surviving the awaits above.
       armPushPromptForAction('signup')
-      // Card 1 of 5 is done: the first run continues at /onboarding (card 2,
+      // Card 1 of 4 is done: the first run continues at /onboarding (card 2,
       // the name card, creates the profiles row this account is missing).
       navigate(ONBOARDING_PATH, { replace: true })
     } catch (err) {
@@ -223,9 +223,9 @@ export function LoginPage() {
               : 'Enter your email and we’ll send a link to set a new password.'}
         </p>
 
-        {/* V28 slice 3b: the account is card 1 of the five-card first run. The
+        {/* V28 slice 3b: the account is card 1 of the four-card first run. The
             label comes from the same pure source the /onboarding cards use
-            (lib/firstRun's progressLabel — "1 of 5", pinned in its test), in
+            (lib/firstRun's progressLabel — "1 of 4", pinned in its test), in
             the same small print FirstRunCard renders it in. */}
         {mode === 'signup' ? (
           <p className="text-xs font-medium text-slate-500">{progressLabel('account')}</p>

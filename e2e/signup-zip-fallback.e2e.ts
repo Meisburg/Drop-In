@@ -3,11 +3,13 @@
  * (decision 9).
  *
  * WHAT CHANGED. Before this slice the location step was a bare zip field +
- * radius (V28 slice 3b moved location onto the first run, slice 4a/4b
- * inserted the kids and photo cards before it) — and this spec pinned the
- * now-removed promise that the signup path lands on that step with NO
- * fallback note (the signup-time geocode flag had no producer left). Since
- * slice 5 the step IS the area card (5 of 5): the ADDRESS is the entry, and
+ * radius (V28 slice 3b moved location onto the first run, slice 4a inserted
+ * the kids card before it — the photo card slice 4b added and V28 r2 slice
+ * 1b deleted, with the photo moving onto the name card in slice 2) — and
+ * this spec pinned the now-removed promise that the signup path lands on
+ * that step with NO fallback note (the signup-time geocode flag had no
+ * producer left). Since
+ * slice 5 the step IS the area card (4 of 4): the ADDRESS is the entry, and
  * its bounded Nominatim lookup (lib/geocode's zipFromAddressQueryBounded —
  * the pending-state rule's escape for a required, non-skippable card)
  * decides the card's shape. Two legs, both pinned HERE, because neither was
@@ -57,15 +59,15 @@ async function signedOutPage(browser: Browser): Promise<{ page: Page; close: () 
 }
 
 /**
- * Sign up (email + password only), walk the name card, and Skip the kids and
- * photo cards. Lands on /onboarding with the AREA card ("5 of 5") next.
+ * Sign up (email + password only), walk the name card, and Skip the kids
+ * card. Lands on /onboarding with the AREA card ("4 of 4") next.
  *
  * The name card's Continue button sits OUTSIDE its <form> and is joined to
  * it only by the HTML form attribute (FirstRunCard.tsx) — if that
  * association breaks, the profile row is never created, the cards never
  * render, and this helper hangs at its first wait. That is what makes it
- * the pin for the association. The Skips write NOTHING (no kid rows, no
- * avatar — the deterministic no-kids/no-photo path the 17-spec helper
+ * the pin for the association. The Skip writes NOTHING (no kid rows — the
+ * deterministic no-kids path the 17-spec helper
  * `finishSignup` uses).
  */
 async function signUpToAreaCard(
@@ -78,7 +80,7 @@ async function signUpToAreaCard(
   await page.locator('input[type="password"]').fill(options.password)
   await page.getByRole('button', { name: 'Create account' }).click()
 
-  // Card 2 of 5: the name card. Card 1 sent us here, and the card composes
+  // Card 2 of 4: the name card. Card 1 sent us here, and the card composes
   // the two halves into the same handle the old signup form produced (the
   // helper splits at the first space, the fixtures' signUpViewer way).
   await expect(page).toHaveURL(/\/onboarding/, { timeout: 30_000 })
@@ -89,16 +91,14 @@ async function signUpToAreaCard(
   if (last !== '') await page.locator('input[autocomplete="family-name"]').fill(last)
   await page.getByRole('button', { name: /^Continue/ }).click()
 
-  // Card 3 of 5: the kids card — Skip (writes nothing). Card 4 of 5: the
-  // photo card — Skip again (the same chrome control re-resolves onto it).
-  // Each wait absorbs the profile-load settle beat.
+  // Card 3 of 4: the kids card — Skip (writes nothing). (Card 4 was the
+  // photo card, which V28 r2 slice 1b deleted; the skip below is the run's
+  // only one.) The wait absorbs the profile-load settle beat.
   const skip = page.getByRole('button', { name: 'Skip' })
   await skip.waitFor({ timeout: 30_000 })
   await skip.click()
-  await skip.waitFor({ timeout: 30_000 })
-  await skip.click()
 
-  // Card 5 of 5: the area card (required — no Skip control on it).
+  // Card 4 of 4: the area card (required — no Skip control on it).
   await page.getByTestId('first-run-area-card').waitFor({ timeout: 30_000 })
 }
 
