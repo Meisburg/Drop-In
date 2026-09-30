@@ -1976,3 +1976,83 @@ where they conflict; the rest of r1 stands.**
   * It also sharpens the batch's named pattern: the highest-risk surface is a string that
     describes what the app does -- and a string no code renders is the purest form of that,
     because nothing can contradict it at runtime.
+
+## The explorers return, and the headline CHANGES THE BATCH
+
+### Explorer B's headline is TRUE, and I verified it myself before acting on it
+
+**BOTH requested "new" features ALREADY EXIST.** I did not take this on faith -- a headline
+that cancels two slices is a headline worth measuring, so I re-ran the greps:
+
+- **Partner linking is built in full.** `requestAccountLink(handle)` `db.ts:5561`,
+  `respondToAccountLink` `:5584`, `unlinkAccounts` `:5602`, `getLinkedPartnerForProfile`
+  `:5682`, `listMyAccountLinks` `:5490`, `listMyAccountLinksWithHandles` `:5739`; migration
+  `0047_parent_cards_account_links.sql` (`account_links` with pending/accepted/declined, a
+  not-self check, one-pending-per-pair, and a one-active-partner trigger; `parent_cards` =
+  TWO parents per profile with name/photo/about), plus a surfaced invite form on the Profile
+  page (`linkView`, `linkHandleInput`, `linkNameQuery`).
+- **Name search is built AND reachable.** `searchProfilesByName` `db.ts:5954` ->
+  `searchProfilesByNameWithClient` `:5933` (prefix, min 2 chars, cap 8), called at
+  `ProfilePage.tsx:362`; and the Inbox's own picker `searchProfiles` `db.ts:4763` ->
+  `searchProfilesWithClient` `:4747`, called at `InboxPage.tsx:478`, surfaced as a
+  **"New message" modal with `placeholder="Search by name…"`** (`InboxPage.tsx:1174`).
+- **And the founder already asked for it once**: `ProfilePage.tsx:309` reads
+  *"V21 t07: the NAME search beside the @handle field. The founder's ask --"*.
+
+**CONSEQUENCE: I was about to build two features that already exist.** The human's two
+premises ("you can't search a name to message someone"; "partner linking is new scope") are
+both FALSE, and the corrections were only available by measuring the code.
+
+**THE REAL GAP IS DISCOVERABILITY, NOT FEATURE ABSENCE** -- and that is the SAME gap as the
+tour card the human asked for in the same breath. Both asks collapse into one: *the app does
+not explain itself.* Two built capabilities are invisible unless someone tells you they are
+there.
+- **The one genuine seam that does NOT exist: invite by EMAIL.** 0 hits in `0047` and in the
+  partner-link functions -- the existing invite is by **handle** or name-prefix search. That
+  is the only part of the partner ask with no existing code.
+
+### Explorer A's crux answer: a kid photo CANNOT attach to an unsaved kid
+
+`uploadKidPhoto(profileId, kidId, source, rect)` (`db.ts:3092`) **requires a persisted
+`kidId`**. `addKid(profileId, firstName, age)` (`db.ts:2946`) RETURNS that id -- and the
+onboarding kids card **throws it away** (its local `kidRows` are plain `{name,age}`). So the
+kids-photo slice must capture the returned id and upload after the write. ProfilePage proves
+the ordering: `handleKidPhotoUpload(kidId, ...)` (`ProfilePage.tsx:669`) is only reachable
+from `KidPhotoControl`, which holds a persisted id (`ProfilePage.tsx:2205+`).
+**This single fact decides the slice's shape, and no amount of plan-writing would have found
+it.**
+
+Other reuse points, now measured: the parent photo is a **MOVE, not new plumbing** (reuse
+`useCropStep` + `uploadAvatar` `db.ts:2657`); the map already accepts what the area card
+needs (`PlacesMap` `PlaceMap.tsx:195` takes `homePin`, `radiusCircle`, and an optional
+`places` array that may be empty); `MAX_KIDS_PER_PROFILE=5` (`db.ts:2364`).
+**The "of 5" -> "of 4" blast radius is measured, not guessed:** `firstRun.ts:15,17,26,35,62,74`
+and pinned tests `firstRun.test.ts:103,133-135,191-195`; `OnboardingPage.tsx:237,828,848` and
+the comment sweep at `:55,58,177,229,455,573,705,808,869`; `LoginPage.tsx:31,105,150,228`;
+e2e `fixtures.ts:337,341,389,390,391,435,439,449`, `auth.setup.ts:21,30,66,83,103,111,119`,
+`onboarding-resume.e2e.ts:6,14,36,81,93,94,179`, `signup-zip-fallback.e2e.ts:10,61,81,92,101`.
+
+### Explorer B was WRONG on one claim, and it was the one I had already measured
+
+Its section H asserted *"`skipLabel` IS consumed: `OnboardingPage.tsx:733` (kidsCopy) and
+`:829` (photoCopy)"*. **FALSE.** `rg -n "skipLabel" src/` returns the module and its test and
+**nothing else**; the cited lines are `const kidsCopy = FIRST_RUN_COPY.kids` and `photoCopy`
+-- the copy OBJECTS, not the field -- and the button renders a **hard-coded literal `Skip`**
+(`FirstRunCard.tsx:117-120`). So my defect stands: the module says "Skip for now", the app
+says "Skip", and `firstRunCopy.test.ts:28-32` pins the lie.
+**Process lesson, second vindication this batch: A SUBAGENT'S LINE REFERENCE IS A CLAIM, NOT
+EVIDENCE.** The agent got the large structural claim right (both features exist) and invented
+citations for a small one. Verify the line, not the verdict -- and note that it was caught
+only because I had already measured this exact string myself.
+**Also worth noting: B independently re-ran `npm run verify` and got the SAME numbers I hold
+(66 files / 1989 tests, lint 0 errors / 81 warnings, guards PASS) -- so that baseline is now
+corroborated by a second lane.**
+
+### The packet was CORRECTED before it reached a product reviewer
+
+`docs/product/onboarding-first-run.md` carried MY false premise -- "there is no way to find a
+page unless someone sends you the link". It now states the verified truth in a correction
+table at the top of section 6, reframes the linking question as POLICY (what should linking
+MEAN -- kids? drop-ins? messages? unlink?) since the MECHANISM is already built, and adds
+"two built features are effectively invisible" as the first gap. **A document handed to a
+reviewer is a claim, and this one was wrong for about twenty minutes.**

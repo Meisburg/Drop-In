@@ -221,19 +221,32 @@ verification, and it is stated here rather than rounded up to "verified."
 
 ## 6. Open questions — where your opinion is worth the most
 
-1. **What does linking a partner actually share?**
-   The request: a parent should be able to invite a partner by email, or find a partner
-   already on the app and link the two accounts as one family. **This is much bigger than
-   the screen that triggers it.** If two accounts are linked, do they share kids? Do their
-   drop-ins become one family's? Can they see each other's messages? And **what happens on
-   unlink — who keeps the kids?** We should decide this before we build the button.
+> **Correction, and it is the most useful finding in this document.** An earlier draft of
+> this packet assumed two capabilities were missing. **Both already exist and are in the
+> shipped app:**
+>
+> | Capability | Status | Where it lives today |
+> |---|---|---|
+> | **Find a parent by name** | **Exists** | Inbox → **New message** → a field reading *"Search by name…"*. You can search any parent by name and message them. |
+> | **Partner linking** | **Exists, in full** | Profile page: invite a partner by name search or by `@handle`, they accept or decline, and either side can unlink. Includes a rule limiting an account to one active partner. |
+>
+> Neither is discoverable. A parent who has not been told will not find either one. **That is
+> the actual gap** — and it is the same gap as the tour card in §3, not a missing feature.
 
-2. **Should parents be able to find each other by name — and how openly?**
-   Today you can message a parent, but only from their page, and there is no way to *find*
-   a page unless someone sends you the link. Options range from **"people at this drop-in"**
-   (narrow, safe, still solves the real use case) to **a global search of every parent by
-   name** (a much larger privacy surface for a product whose whole promise is that kids are
-   private). Where should this live — the Inbox, or a general search?
+1. **So the real question about partner linking is a policy one.** The mechanism is built;
+   what was never decided is **what linking is *for***. If two accounts are linked, do they
+   share kids? Do their drop-ins become one family's? Can they see each other's messages?
+   And on unlink — who keeps the kids? Today linking changes the *profile page* (both parents
+   appear); it does not obviously merge anything else. **Decide what linking should mean
+   before exposing it more widely** — a discoverable feature with undefined semantics is
+   worse than a hidden one.
+
+2. **Should name search stay as open as it is?** It currently searches **every parent on the
+   app** by name prefix. Options range from leaving that as-is, to narrowing it to **"people
+   at this drop-in"** (much smaller privacy surface, still solves the real use case), to
+   making people opt in to being findable. This is a real trade-off for a product whose
+   promise is that children are private — and it is the parent's name that makes them
+   findable, which is exactly why "a first name is plenty" (§7) is the wrong instinct.
 
 3. **A parent's name is their public identity.**
    The name is unique and is what their public profile link is built from. So it is an
@@ -263,6 +276,9 @@ are fixed; three are open:
 | 6 | Some automated tests asserted things that could not fail | Fixed — plus a guard so that class of test cannot recur. | Fixed |
 
 **Gaps:**
+- **Two built features are effectively invisible.** Finding a parent by name and linking a
+  partner both work today and are not discoverable (§6). Nothing new needs building for
+  either one to be *usable* — it needs surfacing and explaining.
 - **The resume behaviour is unconfirmed by a human** (§5).
 - **Nothing is live.** Production runs an earlier version with no first-run flow.
 - **No app tour exists today** — the "How Drop In works" card is decided but unbuilt, so the
