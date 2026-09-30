@@ -249,7 +249,8 @@ such — a red commit nobody explains is indistinguishable from a mistake.
 - **Objective.** Card 2 has first name, last name, and the parent's photo; the strings on it are
   true.
 - **Files.** `src/pages/OnboardingPage.tsx`, `src/lib/firstRunCopy.ts` (+ its test),
-  possibly `src/components/FirstRunCard.tsx`.
+  possibly `src/components/FirstRunCard.tsx`, and — **added mid-flight when the builder proved this
+  list could not produce a correct slice** — **`src/lib/db.ts`** (see the scope ruling below).
 - **Approach.** Move the photo block (crop + `uploadAvatar`) from the deleted card into the name
   card, keeping the existing behaviour: the write happens on the crop step, so Continue and a
   skip-free advance only advance. **Measured: the hook survived 1b — `src/components/useCropStep.tsx`
@@ -264,8 +265,24 @@ such — a red commit nobody explains is indistinguishable from a mistake.
   - **The body** says *"A first name is plenty"* (`firstRunCopy.ts:35`) directly above a Last name
     field. Say what the name IS for (how other parents find and recognise you) — it is the public
     handle.
+  ⚠️ **SCOPE RULING — builder-found, measured, and correct.** The name card renders **only when
+  `profile === null`** (`OnboardingPage.tsx:542`), so the row does not exist when the photo is
+  cropped; `uploadAvatar`'s `avatar_url` UPDATE then matches **0 rows and is SILENT**
+  (`db.ts:2663-2666` checks only `profileError`), which would leave the object orphaned and
+  acceptance 1 unmet while looking like success.
+  **Ruled: `createProfile(displayName, pendingAvatarUrl?)` gains an OPTIONAL second parameter** —
+  one param, one existing call site (`:510`), the idempotent `23505` path untouched. Crop confirm
+  calls `uploadAvatar` (so the object write happens there and Continue never waits on an upload),
+  the returned URL is held in page state, and Continue passes it to `createProfile`.
+  **Rejected:** holding a `File` + `CropRect` and re-decoding inside Continue — a second ~48MB decode
+  that `uploadAvatar`'s own doc says the `source`+`rect` seam exists to avoid, plus Continue waiting
+  on an upload — and re-scoping the slice. **The plan's own file list was the defect here: it forbade
+  the minimal correct change.** A builder that asks once instead of silently crossing it is behaving
+  exactly right, and this is the second time this batch has grown a slice's file list mid-flight.
 - **Acceptance.**
-  - Uploading on card 2 stores the avatar, and the card still advances.
+  - Uploading on card 2 stores the avatar, and the card still advances — and **a FAILED upload must
+    not block Continue**: the photo is optional, so the parent must still be able to create the
+    profile (the pending-state rule, which every async step gating a card must satisfy).
   - **The photo does NOT gate Continue.** `signUpViewer` (`e2e/fixtures.ts:360-380`) fills
     given-name/family-name and clicks Continue **with no photo at all**, and **17 spec files** ride
     that hop — a gated Continue hangs all of them.

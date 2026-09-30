@@ -2567,3 +2567,51 @@ what it orphans.** Two of the three lanes independently found the same class in 
 ### Slice 1 is CLOSED
 Gate green (verifier), intent right (reviewer PASS), no rule violations (ocr). One low, cosmetic,
 attributable nit recorded and assigned -- not blocking. **Slice 2 dispatched.**
+
+## Slice 2: the builder STOPPED on a scope decision -- and it was right to
+
+The builder found a gap the plan did not anticipate and refused to cross the brief's file list
+without an answer. That is the behaviour I want, and this is the second time in the batch a
+slice's file list has had to grow mid-flight (1a/1b was the first).
+
+### The gap, measured
+The name card renders **only when `profile === null`** (`OnboardingPage.tsx:542`) and creates the
+row on Continue. The deleted photo card sat *after* the name card, so a row already existed there --
+which is why "write on crop confirm" worked then. On the name card it cannot: at crop confirm there
+is no row. And if `uploadAvatar` is called anyway, **its `avatar_url` UPDATE matches 0 rows and
+PostgREST returns no error** (`db.ts:2663-2666` checks only `profileError`) -- so the object lands in
+the bucket, the column stays null, and **every render surface reads the column**: an orphan that
+LOOKS like success, with acceptance 1 unmet.
+
+### I verified all four of its claims myself before ruling (a claim is a claim)
+- `createProfile(displayName)` inserts `{ id: user.id, display_name }` only (`db.ts:346`) -- confirm.
+- It has exactly **ONE** production call site, `OnboardingPage.tsx:510` -- confirm.
+- `uploadAvatar` checks `profileError` only, with no row-count check -- confirm.
+- The only `avatar_url` writers are `uploadAvatar` (`:2665`) and `clearAvatar` (`:2681`, to null); no
+  seam sets it to a given URL -- confirm.
+- The fourth, which decides whether the fix can work at all: **the storage write is uid-keyed, not
+  profiles-row-dependent** (`0054:88` -- "0011 `avatars_owner_*` pattern: a caller can only write
+  under their own uid"). So the object write succeeds before the row exists. **Confirm.**
+
+### RULING: option A -- and the plan's file list was the defect
+**`createProfile(displayName, pendingAvatarUrl?)` gains an OPTIONAL second parameter.** Crop confirm
+calls `uploadAvatar` (the object write happens there, so Continue never waits on an upload), the
+returned URL is held in page state, and Continue passes it to `createProfile`. One param, one call
+site, idempotent `23505` path untouched.
+
+- **B rejected**: holding `File` + `CropRect` and re-decoding inside Continue is a second ~48MB
+  decode that `uploadAvatar`'s OWN doc says the `source`+`rect` seam exists to avoid -- and it makes
+  Continue wait on an upload, breaking the brief's stated shape and the pending-state rule.
+- **C rejected**: a slice that cannot be built correctly without one optional parameter is a *plan*
+  defect, not grounds to re-scope. **The file list forbade the minimal correct change.** Growing it
+  is the orchestrator's call, and it is made.
+
+### Conditions handed back (all must appear in the report)
+1. The param stays optional; the idempotent path is untouched.
+2. **`uploadAvatar`'s silent 0-row UPDATE is now LOAD-BEARING** -- comment the call site, so that a
+   future hardening (reasonably deciding a 0-row update should throw) is not a silent trap.
+3. Acceptance 1 demonstrated **end to end**: object at `<uid>/avatar` AND the created row carrying
+   the `?v=` URL `uploadAvatar` returned.
+4. A sibling test for the new param, per the build law.
+5. **A failed upload must not block Continue** -- the photo is optional, and the parent must still be
+   able to create the profile. (Folded into the plan's slice-2 acceptance as a standing invariant.)
