@@ -2267,3 +2267,68 @@ yet" -- they shipped in slices 4/5).
   Playwright). That is in the verifier's brief, with `dm` and `account-links` included because
   they are heavy `finishSignup` consumers -- if the shared walk broke, that is where it shows.
 - No push yet. The branch is ahead of origin and that is intended until the slice closes.
+
+## Three-agent review of the r2 plan (research + product + Hermes)
+
+Verdict: **the plan is good, and the structure stays.** Their words: every decision traces to a
+measured fact, and the two calls that look boring are the right ones -- folding the parent's photo
+onto the name card, and pulling the email invite out as its own batch rather than pretending a DNS
+decision is a slice. No changes to the structure were requested.
+
+### Push A -- the sending domain. ACCEPTED IN PART, AND ITS PREMISE CORRECTED
+
+They said: the domain is the longest-lead-time item in the product, on nobody's critical path;
+register it, point DNS at Resend, start the warm-up, or the next batch opens with the same human
+blocker. **I went to check rather than relay it, and found `docs/email-fallback-ops.md:237`: a
+founder ruling dated 2026-09-26 that the Resend path and a sending domain are NO LONGER THE
+BLOCKER.** Three agents read that line as "settled, nothing waits on it."
+
+**Both sides were partly wrong, and the record was the reason:**
+- The ruling was about **mail to EXISTING users** (auth + notification email). It is true there.
+- It is **silent on a partner invite** -- the first message this product would send to someone who
+  has never heard of Drop In, i.e. cold delivery to an arbitrary typed address, which is exactly
+  where a shared Gmail sending identity is weakest.
+- **So the invite batch is NOT gated on the domain** (real mail to a real inbox, not spam, is
+  already proven on Gmail SMTP), **but the domain is still the longest lead-time item involved** --
+  which is the agents' real point, and it survives.
+- **The ruling has been AMENDED IN PLACE** rather than left to mislead the next reader.
+
+**Lesson, and it is the batch's own rule pointed at the documentation: a document can hold a stale
+ruling just as surely as code holds a stale claim. The agents were not wrong to push -- they were
+reading the record I keep.** The fix was to the record, not to the agents.
+
+### Push B -- close r2-D1 with a human walk before this merges. ACCEPTED
+
+The resume fix has two non-vacuous e2e tests and **no human confirmation**; the playtest walked the
+happy path. Their instruction is sharper than mine: **have the human bounce out of an ALREADY
+FINISHED profile first** -- clause (b) of the resume rule is the half e2e cannot feel. Recorded as
+the batch-closing gate in the plan, next to the domain item.
+
+### The cold-start flag -- and I corrected it twice, including their own framing
+
+Product and research measured it, and I re-measured on the live DB:
+- `playdates`: **20 rows, 19 `status='on'`, 20 not hidden, `starts_at > now()` = ZERO.** Newest is
+  `2026-09-30 15:00:00+00` -- already started when I looked.
+- **All 20 are hosted by people whose `home_zip` is `98103`** -- one ZIP, confirmed by grouping on
+  the host's profile. Their headline holds.
+- `profiles` 97 / 89 with a zip and `going_pings` 4 -- both confirmed.
+- ⚠️ **The record was wrong:** `task-state.md` says 16 drop-ins, latest 2026-09-26. Measured: **20**
+  and **2026-09-30**.
+- ⚠️ **And their own framing was too narrow.** They said a parent *outside 98103* gets an empty
+  feed. Measured: **everyone does, because nothing is upcoming.** The cold start is **temporal as
+  well as geographic**, so the post-batch question is not just "who plants the second ZIP" but
+  "who plants something **in the future**."
+
+**Scope ruling, per their own advice: this does NOT become work in r2.** Recorded in the plan as
+the post-batch question (a person, not plumbing). The one thing it changes *inside* r2 is slice 5's
+acceptance: the tour card's lines must describe **what each tab DOES, never what is IN it** --
+because with zero upcoming drop-ins, a line promising content would be the fourth instance of this
+batch's honesty class.
+
+### The watch item -- recorded, NOT acted on
+
+"search a parent by name" on the tour card is truthful but may read as the surveillance-y direction
+of the feature to a nervous parent. **Their advice is right and I am following it: do not reword
+blind.** Ask the human explicitly during the walk and watch for a flinch; that answer decides it.
+Guessing here would be exactly the unmeasured change this batch has spent its budget learning
+to avoid.

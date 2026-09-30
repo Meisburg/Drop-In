@@ -122,6 +122,20 @@ rather than trust.
 11. **Dead exports, confirmed by two independent lanes**: `missingProfileItems` +
     `MissingProfileItem` (`db.ts:2513,2511`) — **0 production callers**;
     `needsOnboarding` (`src/lib/onboarding.ts:30`) — **0 production callers**.
+12. **THE COLD START, measured on the live database this turn.** The product and research agents
+    raised it; the numbers are mine, and they corrected two of the record's own:
+    - **`playdates`: 20 rows, 19 with `status='on'`, 20 not hidden, and `starts_at > now()` = ZERO.**
+      The newest is `2026-09-30 15:00:00+00` — already started when I looked.
+    - **Every one of the 20 is hosted by someone whose `home_zip` is `98103`** — a single ZIP,
+      verified by grouping the drop-ins on their host's profile.
+    - **`profiles`: 97 total, 89 with a `home_zip`. `going_pings`: 4.**
+    - ⚠️ **This corrects the record.** `task-state.md` says 16 drop-ins, latest 2026-09-26. Measured:
+      **20** and **2026-09-30**.
+    - ⚠️ **And it sharpens the agents' own framing.** They said a parent *outside 98103* gets an
+      empty feed. Measured, **everyone gets an empty feed, because nothing is upcoming** — the seed
+      drop-ins were planted for the playtest and have passed. **The cold start is temporal as well
+      as geographic**, so the post-batch question is not only "who plants the second ZIP" but
+      "who plants something **in the future**."
 
 ---
 
@@ -292,8 +306,10 @@ such — a red commit nobody explains is indistinguishable from a mistake.
   copy must name both built capabilities (§5).
 - **Acceptance.** The ending shows the four tabs + the `+`, one line each, plus a line naming
   **finding a parent by name** and **linking a partner**, and a CTA into the feed; **no claim
-  about places anywhere on it**; every export it orphaned is either still called somewhere or
-  deleted with its test; `RadiusEmptyState` still has a reachable render path.
+  about places anywhere on it**; and **every line describes what the tab DOES, never what is IN
+  it** — with fact 12 measured (zero upcoming drop-ins, one ZIP), a line promising content would be
+  the fourth instance of this batch's honesty class; every export it orphaned is either still
+  called somewhere or deleted with its test; `RadiusEmptyState` still has a reachable render path.
 - **Verify.** `npm run verify`.
 - **Depends on.** 1b. **Budget.** medium.
 
@@ -384,7 +400,45 @@ clause; the `finishSignup` pre-resolved-zip option; remove `e2e/auth.setup.ts`'s
 
 ---
 
-## 7. Risks / open questions
+## 7. After this batch — explicitly NOT this batch
+
+The three reviewing agents (research, product, Hermes) converged on one flag, and it is recorded
+here **rather than turned into scope**:
+
+- **The tour card will say "Drop Ins — what's happening near you," and with fact 12 measured that
+  promise is thin**: zero upcoming drop-ins, all of them in one ZIP. The line describes what the
+  *tab does*, not what is *in it* — which is exactly why slice 5's acceptance forbids a claim about
+  places. **The promise is not a lie; the product behind it is empty**, and no amount of onboarding
+  polish fixes that.
+- **The agreed post-batch question is a person, not plumbing:** who plants the second ZIP — in
+  practice, recruiting parents outside 98103. **Deliberately not a growth project inside r2.**
+- **Watch item for the human walk — do not reword blind:** "search a parent by name" is truthful on
+  the tour card, but to a nervous parent it may read as the surveillance-y direction of the
+  feature. **Ask the human explicitly and watch for a flinch.** That answer decides whether it gets
+  softened, and guessing at it now would be exactly the kind of unmeasured change this batch has
+  spent its budget learning to avoid.
+
+### The batch-closing human gate (not a builder slice)
+
+Two pushes came back from the review. Both accepted:
+
+1. **The sending domain: start it in parallel — but measurement says it does NOT gate the invite
+   batch.** The agents called it a NOW decision; I went and checked, and
+   `docs/email-fallback-ops.md:237` records a **founder ruling (2026-09-26) that the domain is no
+   longer a blocker** — true *for mail to existing users*, and silent on a partner invite, the
+   first message to someone who has never heard of Drop In (cold delivery, where a shared Gmail
+   identity is weakest). **So the invite batch can ship on Gmail SMTP at beta volume — real mail,
+   real inbox, not spam, is already proven — while the domain is nonetheless the longest lead-time
+   item involved (register → DNS → SPF/DKIM → warm-up), which is the argument for starting it now
+   rather than when it is needed.** The ruling has been amended in place so the next reader is not
+   misled the way three agents were.
+2. **r2-D1 must be closed by a human before this merges.** The resume fix has two non-vacuous e2e
+   tests and **no human confirmation** — the playtest walked the happy path. **Two minutes closes
+   the batch's biggest open verification item instead of carrying it forward.** Per the agents, the
+   human should **bounce out of an already-finished profile first**: clause (b) of the resume rule is
+   the half e2e cannot feel.
+
+## 8. Risks / open questions
 
 1. **The resume behaviour has no human confirmation** (r2-D1). This batch must not let it round
    up. Two non-vacuous e2e tests is the strongest claim we can honestly make.
@@ -404,7 +458,7 @@ clause; the `finishSignup` pre-resolved-zip option; remove `e2e/auth.setup.ts`'s
 
 ---
 
-## 8. Status log (orchestrator appends after every phase transition)
+## 9. Status log (orchestrator appends after every phase transition)
 
 - r2 planning opened after the human playtest; four decisions recorded (r2-D1…D4).
 - Two explorers returned measured facts; explorer B's headline (both "new features" already
