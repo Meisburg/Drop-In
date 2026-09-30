@@ -2096,3 +2096,42 @@ authority for r2; nothing else in r2 contradicts them.**
 4. **The email partner invite** -- pending measurement.
 5. **7c hygiene folds in** (dead exports `missingProfileItems`/`needsOnboarding` are
    test-only -- 0 production callers, confirmed by explorer B and by me).
+
+## The email explorer returns: slice 7 is NOT a slice
+
+Measured (`.scratch/v28/research/explore-r2-email-invite.md`). Five facts decide it:
+
+1. **Email can be sent today, but never to a chosen address.** The only sender is `send-push` --
+   service-role only, pg_cron-driven, draining `notification_log`, and it mails a recipient's
+   **own auth email** (`send-push/index.ts:546-548`). **Explicit zero** for any path that mails
+   an address a user types.
+2. **The transport is already proven**: `_shared/smtp.ts` + `smtpDeno.ts` over Gmail SMTP,
+   live-delivered 2026-09-26 (`docs/email-fallback-ops.md:211-218`). Resend exists but is
+   **unselected -- no API key and NO SENDING DOMAIN** (`:9-17,154`). SendGrid/Postmark/Mailgun/
+   SES: **0 hits each**.
+3. **The token/claim/redeem pattern has ZERO prior art** (0 hits: token, nonce, claim, redeem,
+   pending_email, accept_url).
+4. **`account_links` cannot represent an un-joined invitee**: both id columns are NOT NULL FKs to
+   `profiles` (`0047:186-187`), and both invariants the invite must respect are keyed on profile
+   ids (`account_links_one_pending_per_pair` `:225`; the one-active-partner trigger `:260-311`).
+   So it needs **a new table + a token**, with the claim step creating the real `account_links`
+   row at signup.
+5. **An invite link does NOT survive signup today**: `LoginPage.tsx:152` navigates to a bare
+   `ONBOARDING_PATH` after `signUp`, `:100` to `/` after login, OAuth leaves the SPA entirely
+   (`db.ts:332-333`), and `createProfile` (`db.ts:341`) takes no token. **The token must be
+   captured before that navigate** -- session storage or a server row. Nothing does this.
+
+Plus: opt-out already exists and must be respected (`profiles.email_optout` `0053:52`, read as
+`decideEmailFallback({emailEnabled, optout, email})` `send-push/index.ts:531-554`, with a
+`List-Unsubscribe` header `_shared/emailCopy.ts:133`).
+
+**RULING: the email invite is a new subsystem -- schema + token + a sender seam + a signup-path
+change -- not one builder context. It becomes its own batch AFTER the restructure.** Writing it
+as a slice would have produced a brief that a builder could not finish, which is the failure mode
+the slice-budget rule exists to prevent.
+
+**AND ITS CRITICAL PATH IS NOT CODE.** The only working transport is the Gmail account carrying
+auth mail, and there is no sending domain -- so invites to people who have never heard of Drop In
+are a deliverability problem no amount of correct code fixes. **That is a human decision plus a
+DNS change with lead time.** Surfaced now rather than at the end of the batch, because it is the
+one part of this feature that cannot be delegated.

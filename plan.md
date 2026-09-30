@@ -296,13 +296,42 @@ that changes the card sequence must keep them walking it.
 - **Verify.** `npm run verify` (guards run last) **and** the guard's own `.check.mjs`.
 - **Depends on.** 1b. **Budget.** medium.
 
-### Slice 7 — the email partner invite *(NOT YET WRITTEN — deliberately)*
+### Slice 7 — the email partner invite → **NOT a slice. Its own batch, with a non-code critical path.**
 
-The mechanism has not been measured. A bounded explorer is establishing: whether the app can
-send transactional email at all; whether `0047`'s `account_links` can even represent an invitee
-with no profile (its id columns are foreign keys to `profiles`); whether a `?invite=` param
-survives signup and the first run; and which opt-out field the send must respect. **This slice
-is written from those answers, and no builder is dispatched before it is.**
+Measured by a bounded explorer (`.scratch/v28/research/explore-r2-email-invite.md`). It is
+bigger than it looked, in four ways:
+
+- **Email can be sent today — but not to a chosen address.** The only sender is the `send-push`
+  edge function: service-role only, pg_cron-driven, draining `notification_log`, and it mails a
+  recipient's **own auth email** (`supabase/functions/send-push/index.ts:546-548`). **No
+  endpoint, RLS policy or code path mails an address a user types — an explicit zero.**
+- **The transport is already proven.** `_shared/smtp.ts` + `smtpDeno.ts` over Gmail SMTP,
+  live-delivered 2026-09-26 (`docs/email-fallback-ops.md:211-218`). Resend exists but is
+  **unselected — no API key, and no sending domain** (`:9-17,154`). SendGrid / Postmark /
+  Mailgun / SES: **0 hits each**.
+- **The token/claim/redeem pattern has ZERO prior art** — 0 hits for token, nonce, claim,
+  redeem, pending_email, accept_url.
+- **`account_links` cannot hold an un-joined invitee.** `requester_id` / `addressee_id` are
+  **NOT NULL FKs to `profiles`** (`0047:186-187`), and both invariants it must respect
+  (`account_links_one_pending_per_pair` `:225`; the one-active-partner trigger `:260-311`) are
+  keyed on profile ids. → **a new table plus a token**, with the claim step creating the real
+  `account_links` row at signup.
+- **⚠️ An invite link does NOT survive signup today.** `LoginPage.tsx:152` navigates to a bare
+  `ONBOARDING_PATH` after `signUp`; `:100` navigates to `/` after login; OAuth leaves the SPA
+  entirely (`db.ts:332-333`); and `createProfile` (`db.ts:341`) takes no token. **The token must
+  be captured *before* that navigate** — session storage or a server row. No existing seam does it.
+- **Opt-out already exists and must be respected:** `profiles.email_optout` (`0053:52`), read by
+  the sender as `decideEmailFallback({ emailEnabled, optout, email })`
+  (`send-push/index.ts:531-554`), with a `List-Unsubscribe` header (`_shared/emailCopy.ts:133`).
+
+**Therefore: schema + token + a sender seam + a signup-path change — not one builder context.**
+It is planned as **its own batch after the restructure**.
+
+**And it has a human prerequisite with lead time: an email SENDING DOMAIN.** Today the only
+working transport is the Gmail account that carries auth mail, and there is no sending domain —
+so invites to people who have never heard of Drop In are a deliverability problem no amount of
+correct code fixes. **That is a decision plus a DNS change, not a build step.** Surface it early:
+it is the only part of this feature that cannot be delegated.
 
 ### Slice 8 — hygiene (r1's deferred 7c), folded in rather than run first
 
@@ -325,8 +354,10 @@ clause; the `finishSignup` pre-resolved-zip option; remove `e2e/auth.setup.ts`'s
 3. **Slice 5 deletes the only consumer of a ranked-places function.** The temptation is to leave
    it "in case"; this repo's documented pattern is the opposite — a function pinned by a test and
    read by nobody — so each is wired or deleted **by name**.
-4. **The email invite (slice 7) is the batch's only likely schema change**, and it is the least
-   understood. It is deliberately unplanned rather than guessed at.
+4. **The email invite (slice 7) is the batch's only likely schema change** — and measurement
+   moved it out of this batch altogether: it needs a new table, a token pattern with zero prior
+   art, a sender seam, and a change to the signup path, whose query string is dropped today.
+   **Its real blocker is not code but a sending domain**, which only a human can decide.
 5. **The tour card is now load-bearing for discoverability.** If it ends up as four terse lines,
    the two hidden features stay hidden. Slice 5's acceptance names them explicitly for that
    reason.
@@ -341,4 +372,9 @@ clause; the `finishSignup` pre-resolved-zip option; remove `e2e/auth.setup.ts`'s
   claim was **disproved** by the same pass.
 - Three product decisions recorded (r2-D5 leave linking, r2-D6 keep name search, r2-D7 build
   email invite).
-- `plan.md` r2 written; r1 preserved as `plan-v28-r1-backup.md`. **No builder dispatched yet.**
+- `plan.md` r2 written; r1 preserved as `plan-v28-r1-backup.md`. Slice 1a dispatched.
+- Slice 1a's own acceptance check was **measured before dispatch** and found to be a defect of
+  the plan's making (a blanket `of 5` sweep would have rewritten star ratings); corrected, as
+  was its implication that `progressLabel` needed deriving when it already does.
+- The email explorer returned: **the invite is its own batch, blocked on a sending domain.**
+  Slice 7 rewritten from measurement rather than left as a placeholder.
