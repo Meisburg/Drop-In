@@ -1859,3 +1859,32 @@ Batch: card-by-card onboarding. Worktree `Meisburg/onboarding`
   `ACTION REQUIRED` in this file so `scripts/remind-human.sh` surfaces it:** the seeding
   (decision 14, their hands, in the app) and Nicole's unassisted playtest on her phone.
   AFTER it: the hygiene slice, then launch.
+- **⚠️ THE SHARE LINK WAS BROKEN AND THE SCREENSHOT CAUGHT IT: THE APP HUNG ON ITS OWN
+  BOOT SPLASH.** The human opened the preview and saw only the Drop In logo -- the app's
+  first painted frame, forever. Diagnosed in four measurements:
+  * The document returned **200 and set NO COOKIE** -- Vercel's bypass param does **not**
+    persist on its own.
+  * The entry bundle requested the way a **browser** requests it (no query string) returned
+    **302**, while the same URL WITH the param returned 200. **A browser does not inherit a
+    document's query string onto its subresource requests**, so the JS was blocked.
+  * `index.html:94-133` carries a **STATIC boot splash** -- documented as "the FIRST painted
+    frame, before the JS bundle has [loaded]" -- and `<script type="module" src="/src/main.tsx">`
+    is what replaces it. **So a permanently-blocked bundle renders as a plausible loading
+    state rather than a failure.**
+  * **THE FIX IS A SECOND PARAMETER:** `&x-vercel-set-bypass-cookie=true` returns a **307
+    with `set-cookie: _vercel_jwt=...` (7 days, Path=/)** -- and with THAT cookie the entry
+    JS, /login and even /sw.js all return **200**. No security setting had to change: the
+    narrow choice was right and the link was incomplete.
+  * PROVEN IN A REAL BROWSER, not by curl: headless Chrome on the corrected link reports
+    **boot-splash present 0**, **empty root div 0**, and a DOM carrying Email, Password and
+    "Sign in" x3. **React mounted.**
+- **THE LESSON, WHICH IS THE BATCH'S OWN LESSON AGAIN: I VERIFIED THE WRONG SUBJECT.** curl
+  *can* carry the query string on every hop, so curl said 200 while a browser said hung.
+  **I proved the DOCUMENT loaded, not that the APP loaded -- because the way I tested was
+  the way that was convenient for me rather than the way the consumer uses it.** A link
+  handed to a human is a claim, and it needed the same scrutiny as a build.
+- **AND THE FAILURE MODE READS AS GREEN.** This is the same shape as the trap the playtest
+  doc warns about (an auth-gated route yielding a PASS whose screenshot is the login page):
+  a boot splash is *designed* to look like "still loading", so "did the page load?" passes
+  while the app never runs. **A screenshot from the human was the only thing in this batch
+  that caught it** -- no gate, guard, reviewer or verifier could see it.
