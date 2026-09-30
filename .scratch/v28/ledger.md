@@ -2429,3 +2429,45 @@ contradicts the ruling -- a plan defect is worth hearing about.
   remove the REAL row** -- `removeKidRow` today only drops local state, so a parent could "delete" a
   kid that still exists in the database. That is the defect the ruled shape can cause, and the plan
   was silent on it.
+
+## Slice 4 brief written (grounded, NOT dispatched) -- and it caught a plan defect
+
+### ⚠️ PLAN DEFECT #29: as first written, slice 4 renders a map nobody can see
+The plan said "once an address resolves, render `PlacesMap`". **Measured, that moment does not
+exist.** The address resolves **only inside `handleAreaFinish`** (`OnboardingPage.tsx:419`; the
+`onPrimary` is `:790` and `zipFromAddressQueryBounded` is called exactly once, at `:441`), and that
+handler's success leg calls `saveLocation` (`:464`), which flips `homeZipSet` and renders the run's
+finish card **in place**. So "once the address resolves" IS the instant the card stops existing.
+**Ruled: the resolution moves earlier -- blur, debounced -- through the injected `AddressLookup`
+seam** (`geocode.ts:45`), so that **one Nominatim request yields both the zip and the pin**
+(`zipFromResult` + `coordinatesFromResult`); `handleAreaFinish` then reuses the result and must never
+re-geocode. Acceptance now includes "exactly ONE request per distinct address", assertable by
+counting calls into the injected seam.
+
+**The class is worth naming:** this is the third time grounding has caught a plan step that
+describes a state the system never reaches -- after `of 5` (a sweep that would rewrite review copy)
+and `hasPhoto` (a zero-hit claim colliding with an unrelated local). All three were invisible from
+the plan and obvious from a grep or a read.
+
+### Measured, and it makes this slice much smaller than it looked
+- **`leaflet` is already a dependency** (`package.json:31`, `@types/leaflet:39`) with real CSS work
+  behind it (`src/index.css:410-511` -- touch targets, popup width, and deliberate specificity
+  against leaflet.css's source order). **No new dependency.**
+- **`PlacesMap` already takes `homePin` + `radiusCircle`** (`PlaceMap.tsx:195`), plus an optional
+  `places` array that may be empty -- plan fact 6 confirmed exactly.
+- **`shouldRenderPlacesMap`** (`PlacesMapView.tsx`, whose doc notes at most ONE map is mounted at a
+  time) is the existing render condition -- so the acceptance "no map-shaped claim before the address
+  resolves" has a seam to lean on instead of a new condition.
+- **The lazy wrapper matters and has a history**: `PlaceMapLazy.tsx`'s header records an
+  "Element type is invalid" bug (#306) caused by wrappers resolving the wrong export. The brief tells
+  the builder to copy the three existing callers' usage rather than improvise.
+- `geocodeAddress` returns the full `NominatimResult`, and **`zipFromAddressQueryBounded` throws the
+  coordinates away** -- that is the only reason this slice needs a seam change at all.
+
+### ⚠️ PROCESS VIOLATION, MINE, RECORDED
+While measuring slice 4 I ran **`rg -rn "RadiusEmptyState" src/`** -- and `-r` is `--replace`, so rg
+printed every match **substituted with the letter `n`**. The output looked like plausible code
+(`import { n } from './n'`). **This is exactly what the batch's own rule forbids: "never pass `-r`
+to `rg` (it FABRICATES output)".** I broke a rule I had written down, caught it because the results
+were nonsensical, and re-ran correctly. **Lesson: the rule is not about tidiness, it is about silent
+fabrication that reads as data.**

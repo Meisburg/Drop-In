@@ -318,16 +318,29 @@ such — a red commit nobody explains is indistinguishable from a mistake.
 ### Slice 4 — a map on the area card
 
 - **Objective.** The radius stops being an abstraction.
-- **Files.** `src/pages/OnboardingPage.tsx`, using `src/components/PlaceMapLazy.tsx` /
-  `PlaceMap.tsx` unchanged where possible.
-- **Approach.** Once an address resolves, render `PlacesMap` with `homePin` + `radiusCircle`, and
-  redraw when the radius changes. **The pending-state rule applies (r1's standing invariant):**
-  anything async that gates a card needs a bounded escape — the existing
-  `ADDRESS_LOOKUP_TIMEOUT_MS` behaviour and the ZIP fallback must keep working, and the map must
-  **never** be the thing that traps a parent.
-- **Acceptance.** With a resolved address: a map with a home pin and a radius circle; changing
-  the radius redraws it; an unresolved or failed lookup still leaves Finish reachable by ZIP; no
-  map-shaped claim is rendered before the address resolves.
+- **Files.** `src/pages/OnboardingPage.tsx`; `src/components/PlaceMapLazy.tsx` (the LAZY wrapper —
+  `leaflet` is already a dependency, `package.json:31`); `src/components/PlacesMapView.tsx` for its
+  existing pure `shouldRenderPlacesMap`; `src/lib/geocode.ts` only if the seam needs a parameter.
+- **Approach.** ⚠️ **PLAN DEFECT #29, found by grounding: as written, this slice renders a map
+  nobody can see.** Measured — the address resolves **only inside `handleAreaFinish`**
+  (`OnboardingPage.tsx:419`; its `onPrimary` is `:790` and the sole `zipFromAddressQueryBounded`
+  call is `:441`), and that handler's success leg calls `saveLocation` (`:464`), which flips
+  `homeZipSet` and renders the run's FINISH CARD **in place**. So "once an address resolves" is
+  precisely the instant the card stops existing.
+  **Ruled: the address resolves EARLIER — on blur, debounced — through the injected `AddressLookup`
+  seam** (`src/lib/geocode.ts:45`; `geocodeAddress` `:88`, with the pure `zipFromResult` `:130` and
+  `coordinatesFromResult` `:73`), **so ONE Nominatim request yields BOTH the zip and the pin.**
+  `handleAreaFinish` then reuses the already-resolved result and must **never re-geocode** (the
+  injected seam is also what makes the call count assertable in a test). Render through the LAZY
+  wrapper, and reuse `shouldRenderPlacesMap` (`src/components/PlacesMapView.tsx`) as the render
+  condition rather than inventing one. **The pending-state rule applies (r1's standing invariant):**
+  the early lookup is bounded by the existing `ADDRESS_LOOKUP_TIMEOUT_MS`, and the ZIP fallback must
+  keep working — the map must **never** be the thing that traps a parent.
+- **Acceptance.** With a resolved address: a map with a home pin and a radius circle; changing the
+  radius redraws it **with no new request**; an unresolved or failed lookup still leaves Finish
+  reachable by ZIP; no map-shaped claim is rendered before the address resolves; **and exactly ONE
+  Nominatim request per distinct address** — demonstrable by counting calls into the injected
+  `AddressLookup` seam.
 - **Verify.** `npm run verify`.
 - **Depends on.** 1b. **Budget.** medium.
 
