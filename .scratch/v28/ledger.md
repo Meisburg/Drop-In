@@ -1949,3 +1949,30 @@ where they conflict; the rest of r1 stands.**
   `skipLabel` wire-or-delete both touch `firstRun.ts`, whose card list r2-D2 changes; the
   stale-claim sweep and the `finishSignup` fixture option touch the same specs. **Running
   7c first would mean doing part of it twice.** It runs after, or inside, the restructure.
+
+## The product review packet, and a FOURTH instance of the batch's defect class
+
+- **`docs/product/onboarding-first-run.md`** (+ `docs/design-review/onboarding/*.png`) --
+  written for a PRODUCT reviewer, not an executor. It is self-contained (no code reading),
+  carries the real flow as seven phone screenshots in walking order, quotes every word the
+  parent sees verbatim, separates "built and walked" from "decided and not built" in a table
+  at the top, states the honest defect list, and ends with the questions worth a product
+  opinion. Requested by the human, who wants the Hermes product agent (#playdate) to review it.
+  * **The screenshots were mis-ordered as pasted** -- image 01 was the BRAND SPLASH, not card
+    1. Found by OPENING them rather than trusting the filename order, and every one was then
+    viewed and named for what it actually shows. A packet that mislabels its own evidence is
+    worse than one with no evidence -- the reviewer trusts it.
+  * **The packet carries no secrets** and no preview bypass link.
+  * **The engineering record stays separate** (`plan.md`, `V28-BATCH-SUMMARY.md`, this ledger)
+    and the packet points at it, so product and engineering readers each get the right doc.
+- **NEW DEFECT (4th of the class, found while writing the packet): `skipLabel` is DEAD DATA
+  THAT LIES.** `firstRunCopy.ts:42,48` says the kids and photo cards' skip button reads
+  "Skip for now"; `firstRunCopy.test.ts:28-32` PINS that string; and the app renders **"Skip"**
+  -- `rg -n "Skip for now|skipLabel|>Skip<" src/` returns **0 render sites** outside the
+  module and its test. So the module documented as "the one place the words live" is lying
+  about a word the parent actually sees, and a test proves the lie is still there.
+  **This is exactly the wire-or-delete item already queued for the hygiene slice** (7c), now
+  with a second reason to act: it is not merely unused, it is WRONG.
+  * It also sharpens the batch's named pattern: the highest-risk surface is a string that
+    describes what the app does -- and a string no code renders is the purest form of that,
+    because nothing can contradict it at runtime.
