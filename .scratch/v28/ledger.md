@@ -3187,3 +3187,51 @@ immune to would be a waste of its context.
 is the location.** Five citations in this one brief drifted by a constant offset and none of them
 mattered, because each named a symbol. A brief that cited `db.ts:2946` **without** naming `addKid` would
 have sent a builder somewhere wrong. **Cite the symbol; add the number as a courtesy.**
+
+## Slice 3: DISPATCHED (base c9ab382) -> BUILT (0c08024) -> MY GREP-VERIFICATION -> three lanes out
+
+**Builder: DONE, `Committed as: 0c08024`** (2 files, +602/-12: `OnboardingPage.tsx` +270/-12 and a new
+332-line spec). Tree clean at hand-off. It reported **no deviation** from the ruled shape and one
+self-caught measurement -- see below.
+
+**MY GREP-VERIFICATION (read-only, before spending lane budget) -- the claims hold:**
+- **The ruled shape is real.** `kidRows` is now `Array<{ name, age, kid: Kid | null }>`, and
+  `handleKidPhotoConfirm` implements `validateKid` -> `addKid` (id KEPT) -> `uploadKidPhoto` **inside the
+  photo's onConfirm**, so the upload runs before the hook's `finally` releases the bitmap.
+- **And it handles more than the brief asked for.** Three failure paths, each honest: validate fails (not
+  written, not uploaded, same message Continue would give); `addKid` fails (the cap surfaces as a card
+  error -- "You can add your kids later in settings" -- with nothing written); `uploadKidPhoto` fails
+  (**the row is KEPT in local state, so Continue cannot double-write it and Remove can delete the real
+  row**, with the photo left optional). It also handles a case the plan never named: a **re-pick on an
+  already-persisted row** uploads to the stable canonical path rather than creating a second row.
+- **The converse direction is fixed:** `removeKidRow` now `await removeKid(session.user.id, row.kid.id)`
+  when the row has a kid, and only drops local state when it does not -- the "deleted a kid that still
+  exists in the DB" hole is closed.
+- **Rendering never touches the raw column:** `kidPhotoUrls[row.kid.id]`, sourced from `useKidPhotoUrls`.
+- **The self-caught bug is really gone:** no `void handleKidPhotoConfirm` anywhere.
+- **The fixture is sweepable** per convention: `e2e-okp-<epoch>@gmail.com`, `e2e-okp-` prefix.
+
+**⚠️ THE TRAILING-NEWLINE CLASS FIRED A FOURTH TIME.** The new `e2e/onboarding-kid-photo.e2e.ts` ends in
+`)` (`0x29`) rather than `0a`. **The slice that fixed a newline in one place created a new file without
+one** -- which is exactly what fix round 1 did, and it is the third time a fix for the class has been
+accompanied by a fresh instance. **The sweep's count is now 66, not 65**, and this is the strongest
+evidence yet that the guard (not another one-off fix) is the right remedy. **Ruled to 8b as already
+planned -- not filed against slice 3**, because slice 3's fix would be a one-file change and the batch
+ruled the sweep belongs in its own commit.
+
+**Builder's own escalation, and I have asked the reviewer to settle it rather than deciding alone:** its
+first draft called the wrapper fire-and-forget, so the hook's `finally` closed the bitmap mid-encode and
+the corruption **disguised itself as "the chosen area is outside the image"** -- a wrong diagnosis
+pointing at the crop rect. It fixed the instance and asked for a repo-level guard. **A useCropStep call
+site can lose the `await` through any indirection (a prop, a callback registry), which is precisely what
+happened.** Question put to the reviewer: is such a guard warranted, and what would it actually check --
+**and if it is not practically enforceable, saying so is the right answer**, because a guard that cannot
+fail is worse than none.
+
+### THREE LANES OUT (in parallel, all three)
+- **reviewer + verifier** -- async workflow `1d453e0e-9547-4cba-8adf-f40d58ae76fe` (`runs.all`).
+- **`ocr`** -- pid 2452382, `--from c9ab382 --to 0c08024`; it filtered to 2 files / 614 changed lines.
+
+**The verify brief is explicitly BOUNDED** (three named checks, once each, plus provenance; no probe
+scripts, no polling, no bespoke tests) **because an unbounded "confirm this yourself" killed a verifier
+lane at 30 minutes earlier in this batch. An unanswerable question is answered by saying so.**
