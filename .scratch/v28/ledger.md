@@ -3024,3 +3024,24 @@ storage POST during the test -- currently only the upload, and the spec says so.
 ### Slice 2 status
 Reviewer PASS on BOTH rounds (the slice round and the fix round). **The gate is the remaining half:
 the bounded verifier and `ocr` are running on `2280f01`.** The slice closes when they report.
+
+## Slice 8 SPLIT IN TWO -- a sizing defect fixed before it was dispatched
+
+**Measured: slice 8 had accumulated ELEVEN workstreams** -- five dead symbols, a four-site
+stale-claim sweep, a 65-file newline sweep plus its guard, a duplicated comment, two refactors, two
+spec-hygiene fixes, a route-abort spec, and a diff tool. **The sizing rule is explicit -- if a slice
+cannot plausibly finish in one builder context, split it -- and by the item count it cannot.**
+
+**Split by INDEPENDENCE, not by size.** That is the 1a/1b lesson: there, a token-budget split turned
+out to be type-coupled and had to be re-ruled into one slice in two parts. Here the halves share no
+files and neither blocks the other:
+- **8a** -- make the code and the record honest (source + spec hygiene): the wire-or-delete list, the
+  stale-claim sweep, `resolveCard`, `ProfilePage.tsx:1218`, the `finishSignup` option,
+  `e2e/auth.setup.ts`'s duplicated walk.
+- **8b** -- mechanical determinism and test honesty: the newline sweep **then** its guard, the
+  duplicated `releaseUpload` comment, the redundant `Uploading…` assertion, the route-abort spec
+  pinning the failed-upload path, and `scripts/slice-diff.sh`.
+
+**A dumping ground is a plan defect that looks like tidiness.** Worth naming plainly: "one hygiene
+slice at the end" felt like good hygiene right up until the item count was measured. 8a's brief is
+written; 8b's follows.

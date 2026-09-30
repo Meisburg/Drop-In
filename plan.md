@@ -491,7 +491,26 @@ so invites to people who have never heard of Drop In are a deliverability proble
 correct code fixes. **That is a decision plus a DNS change, not a build step.** Surface it early:
 it is the only part of this feature that cannot be delegated.
 
-### Slice 8 — hygiene (r1's deferred 7c), folded in rather than run first
+### Slice 8 — hygiene (r1's deferred 7c), SPLIT IN TWO because it outgrew one builder context
+
+**Measured: this slice accumulated ELEVEN distinct workstreams** — five dead symbols, a four-site
+stale-claim sweep, a 65-file newline sweep plus a guard, a duplicated comment, two refactors, two
+spec-hygiene fixes, a route-abort spec, and a diff tool. **The slice-sizing rule is explicit: if a
+slice cannot plausibly finish in one builder context, split it** — and this one cannot.
+
+**Split by INDEPENDENCE, not by size.** That is the lesson of 1a/1b, where a token-budget split
+turned out to be type-coupled and had to be re-ruled into one slice in two parts. These two share no
+files and neither blocks the other:
+
+- **8a — make the code and the record honest** (source + spec hygiene, one context): the
+  wire-or-delete list, the stale-claim sweep, `resolveCard`, `ProfilePage.tsx:1218`, the
+  `finishSignup` pre-resolved-zip option, `e2e/auth.setup.ts`'s duplicated walk.
+- **8b — mechanical determinism and test honesty**: the trailing-newline sweep **then** its guard
+  (that order, or the guard cannot go green), the duplicated `releaseUpload` comment, the redundant
+  `Uploading…` assertion, the route-abort spec pinning the failed-upload path, and
+  `scripts/slice-diff.sh`.
+
+Neither is urgent: both touch files slices 3–6 rewrite, so they run last either way.
 
 Its items touch the same files this revision rewrites, so running it earlier would mean doing
 part of it twice.
