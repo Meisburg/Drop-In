@@ -3378,3 +3378,65 @@ plainly *"I did not run the suite myself; the evidence exists in the batch recor
   in 8b's sweep** and was explicitly excluded from this fix round.
 
 **Run: `66cdc413-a6e0-4a6a-84ec-03f97952f102`** (resumed from `8d3bdc40`), base `0c08024`.
+
+## Slice 3 FIX ROUND 1: DONE (`3f51d53`), all six landed, my verification passed, three lanes out
+
+3 files, **+408/-67** (`OnboardingPage.tsx` +200, the spec +260, `ProfilePage.tsx` +15), tree clean at
+hand-off. The spec grew **2 -> 4 tests**.
+
+**MY VERIFICATION -- all six, by their anchors:**
+- **F2 is the substantial one and it is done properly:** `rowKey` is threaded through the row control and
+  the page; **`onConfirm` is now typed `(rowKey, source, rect) => Promise<void>` and awaited at `:112`**;
+  the lock reports and releases by `rowKey` **including an unmount cleanup at `:122-124`**; rows get
+  `crypto.randomUUID()` at add; `updateKidRow`/`removeKidRow`/`handleKidPhotoConfirm` all attach by key;
+  **and no `i === index` survives anywhere.**
+- **F1**: the blank-age conversion and the blank-row skip now live in the photo path too.
+- **F3**: `persistedKidKey` with the memo keyed on it, not on `kidRows`.
+- **F4**: `onBeginError` exists and `if (error !== null) onBeginError(error)` at `:159`.
+- **F5**: the cleanup at `:124` releases the lock.
+- **F6**: exactly as prescribed -- `:1373` no longer passes `void`, the prop is `Promise<void>` at `:2222`,
+  and `:2232` awaits it.
+
+### F3's MEASURED ANSWER -- and my refusal to inherit the severity was right
+I told the builder the re-mint was real but that I could not confirm `ocr`'s claim that it **blanks the
+photos**, and that it must MEASURE rather than repeat. **It did, on a temporary pre-fix revert: the photos
+never blanked. The settled `src` swapped to a fresh signed URL on every keystroke (new JWT, `iat`+1s), the
+browser reloaded the image each time, and every keystroke paid a batched `/object/sign/` round-trip.
+`ocr`'s "blank" was an overstatement; the real symptom was src-swap plus reload plus wasted mints.**
+
+**That is the second `ocr` severity this slice corrected by measurement** -- the first was its `critical`
+claim that the spec held the wrong HTTP verb, refuted by reading the installed SDK. **A pattern worth
+naming: `ocr` reliably finds REAL defects here and reliably OVERSTATES mechanism and severity.** It found
+four defects the reviewer missed; it also mis-described two of them in ways that would have sent a builder
+somewhere wrong. **Both halves of that are why the measurement step is not optional.**
+
+### The builder's self-reported residual -- RULED NEGLIGIBLE, no fix round
+*"Add another kid" still triggers exactly ONE signed-URL mint*: the shared hook keys its effect on the
+`photoKidIds` array's **identity** rather than the `mintKey` **string**, and a row-add changes identity
+without changing the id set. **The fix is a one-line dep change in `useKidPhotoUrls.ts`, outside the
+slice's allowlist, so the builder correctly left it and reported it.**
+
+**Ruled: recorded, not fixed.** A fix round costs three lane passes; the defect costs **at most five
+wasted requests in an entire first run** (the card caps at five kids). **Spending three lanes on that is
+the bad trade, and the honest move is to say so rather than to spend the round because it is cheap for me
+and expensive for the batch.** Note the asymmetry with F3, which WAS worth fixing: F3 fired on **every
+keystroke while typing a name**, this fires **once per row added**.
+
+### One dispute recorded as moot
+The builder calls the literal "remove a row while the dialog is open" path **UI-unreachable**, citing the
+dialog's `fixed inset-0` backdrop intercepting pointer events -- but **`ocr` named the KEYBOARD path**
+(focus is not trapped, so Tab reaches the covered Remove buttons). **Those are different paths, so the
+builder answered a question `ocr` did not ask.** It is moot because the fix landed anyway and Test 4 pins
+the reachable consequence. **Recorded so a future reviewer does not re-raise it as unresolved.**
+
+### The builder's escalation (asked of the reviewer, in flight)
+The `useCropStep` onConfirm-await contract has now bitten **twice** (slice 3, then `ProfilePage`). Its
+proposal: **change the `useCropStep` signature to force the caller to return the awaited promise**, which
+is stronger than a guard. 8b is adding the class-shape guard plus `Promise<void>` typing. **Question put
+to the reviewer: is a signature change warranted on top, or does the guard plus the typing suffice?**
+
+### THREE LANES OUT (a fix round re-runs all three)
+- **reviewer + verifier** -- workflow `63dca006-f078-48bc-bcbe-8d5a876064e3`.
+- **`ocr`** -- pid 2495270, range `0c08024..3f51d53`.
+The reviewer is asked to confirm F3's measurement independently, to judge the one-mint residual, and to
+rule on the signature change; the verifier is bounded to its three checks plus provenance.
