@@ -19,9 +19,19 @@
  *
  * (1) The name card carries the photo: pick a file → confirm the crop dialog →
  *     the upload runs at confirm ("Uploading…" busy line, then "Photo added").
- * (2) The card still walks: Continue creates the profiles row and lands on the
- *     KIDS card (the photo never gates Continue).
- * (3) The row CARRIES the photo: `profiles.avatar_url` holds the `?v=` URL the
+ * (2) THE IN-FLIGHT GATE (fix round 1): while the upload is in flight the
+ *     card's Continue is DISABLED — a row created mid-upload would be born
+ *     with avatar_url NULL and the late URL would be read by nothing (the
+ *     orphan the ruling exists to prevent). The spec widens the window with a
+ *     held storage request (a page route that holds the upload's POST),
+ *     asserts the disabled state, releases it, and asserts the button
+ *     re-enables when the upload settles. (A FAILED upload never gates — the
+ *     photo is optional; the bounded escape for a HUNG one is pinned in
+ *     src/lib/photoUpload.test.ts rather than here, because a 10s wait is too
+ *     slow for a spec that runs on every gate.)
+ * (3) The card still walks: Continue creates the profiles row and lands on the
+ *     KIDS card.
+ * (4) The row CARRIES the photo: `profiles.avatar_url` holds the `?v=` URL the
  *     createProfile INSERT wrote (the 0-row uploadAvatar no-op made load-bearing)
  *     AND the object EXISTS in the avatars bucket at `<uid>/avatar`.
  *
@@ -138,6 +148,30 @@ test('the name card photo lands on the profiles row (object in the bucket + avat
   // 400x300 (not square): the center-crop must square it before upload, so a
   // missing crop step would store a stretched rectangle the read-back catches.
   const png = makePng(400, 300, 79, 70, 229)
+
+  // THE IN-FLIGHT GATE (fix round 1): hold the upload's storage POST so the
+  // in-flight window is wide enough to assert against. The upload is this
+  // page's only POST to the storage object API (the REST read + cleanup
+  // below run in Node, outside the page's routes). `releaseUpload` starts
+  // as a no-op: if the POST never arrives, the release is a no-op too and
+  // the "Photo added" assertion below times out — a failing spec, not a hang.
+  // `releaseUpload` starts as a no-op and only becomes the real release
+  // once the route has captured the POST; the `expect.poll` below (after
+  // the crop confirm) waits for exactly that, so the release can never
+  // land before the hold exists.
+  let releaseUpload = () => {}
+  let uploadHeld = false
+  await page.route('**/storage/v1/object/**', (route) => {
+    if (route.request().method() === 'POST' && !uploadHeld) {
+      uploadHeld = true
+      releaseUpload = () => {
+        void route.continue()
+      }
+      return // held — released explicitly below
+    }
+    void route.continue()
+  })
+
   await page.getByTestId('name-card-photo-input').setInputFiles({
     name: 'parent.png',
     mimeType: 'image/png',
@@ -148,11 +182,31 @@ test('the name card photo lands on the profiles row (object in the bucket + avat
   // label (the card is not skippable, so there is no Skip control under it).
   await page.getByRole('button', { name: 'Use this photo' }).click()
   await expect(page.getByText('Uploading…')).toBeVisible()
+
+  // THE GATE: a Continue tapped while the upload is in flight would create
+  // the row with avatar_url NULL and the late URL would be read by nothing
+  // (the orphan the ruling exists to prevent) — so the button is DISABLED
+  // while the upload is in flight (the crop step's own `busy` flag is the
+  // single source of truth; the page keeps no parallel mirror of it).
+  const continueButton = page.getByRole('button', { name: /^Continue/ })
+  await expect(continueButton).toBeDisabled()
+
+  // Release the held upload; the gate opens when the upload settles.
+  // The release must wait until the route HAS captured the POST (the hold
+  // is what makes the in-flight window assertable): a release that lands
+  // before the request exists is a no-op and the upload would be held
+  // forever (the first draft of this spec raced exactly that).
+  await expect.poll(() => uploadHeld, { timeout: 10_000, message: 'the upload POST is held by the route' }).toBe(
+    true,
+  )
+  releaseUpload()
   await expect(page.getByText('Photo added')).toBeVisible()
+  await expect(continueButton).toBeEnabled()
 
   // --- Continue creates the profiles row; the photo must ride along. ---
-  await page.getByRole('button', { name: /^Continue/ }).click()
-  // Lands on the KIDS card (the photo never gates Continue — the card walks).
+  await continueButton.click()
+  // Lands on the KIDS card (a FAILED or skipped photo walks this same hop —
+  // only an IN-FLIGHT one held the button, and it has settled now).
   await expect(page.getByTestId('first-run-kids-card')).toBeVisible()
 
   // --- Prove the row CARRIES the photo. ---

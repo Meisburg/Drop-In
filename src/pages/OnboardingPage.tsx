@@ -31,8 +31,21 @@ import type { ZipCoords } from '../lib/feed'
 import { finishRunPlaces, type FinishRunPlace } from '../lib/places'
 import { splitSuggestedName, suggestedHandle } from '../lib/oauth'
 import { ADDRESS_LOOKUP_TIMEOUT_MS, zipFromAddressQueryBounded } from '../lib/geocode'
+import { PHOTO_UPLOAD_TIMEOUT_MS, photoUploadBlocksContinue } from '../lib/photoUpload'
 import { resolveOnboardingRedirect } from '../lib/onboarding'
 import { errorId, fieldA11y } from '../lib/a11y'
+
+/**
+ * The name card's photo-picker label (V28 r2 slice 2) — an if/else chain,
+ * not a nested ternary (the project rule, `.opencodereview/rule.json`: "Nested
+ * ternary expressions are not allowed"). Presentation only, so it may live in
+ * the page (the build law: pages may branch on how to RENDER).
+ */
+function photoPickerLabel(uploading: boolean, photoAdded: boolean): string {
+  if (uploading) return 'Uploading…'
+  if (photoAdded) return 'Photo added'
+  return 'Add a photo'
+}
 
 /**
  * /onboarding — post-signup onboarding (slice 2; V2 slice 3).
@@ -166,8 +179,9 @@ export function OnboardingPage() {
   const [zipFallbackShown, setZipFallbackShown] = useState(false)
 
   // The optional completion items (V2 ticket 02): the kid rows. (The photo
-  // states photoUploading / photoError now live above, with the crop step —
-  // V28 r2 slice 2 moved the photo onto the name card.)
+  // states photoError / photoGateEscaped now live above, with the crop step —
+  // V28 r2 slice 2 moved the photo onto the name card; the in-flight state
+  // is the crop step's own `busy` flag, fix round 1.)
   const [kidRows, setKidRows] = useState<Array<{ name: string; age: string }>>([])
   const [kidsError, setKidsError] = useState<string | null>(null)
   // V28 slice 4a: the kids card (3 of 4) is its OWN step, between the name
@@ -233,12 +247,22 @@ export function OnboardingPage() {
   // and handed to `createProfile`'s insert, which links it to the new row.
   //
   // The upload itself runs on the crop step's CONFIRM — the shape the
-  // deleted photo card had: by the time the parent reaches the card's
-  // Continue the photo is either uploaded or not, so Continue never waits on
-  // an upload, and a failed one (the `photoError` below) never blocks it —
-  // the photo is optional and the profile write stands on its own.
-  const [photoUploading, setPhotoUploading] = useState(false)
+  // deleted photo card had. Fix round 1 (the in-flight race the ruling drew
+  // the line on): a FAILED upload never blocks Continue (the photo is
+  // optional, the profile write stands on its own), but an IN-FLIGHT one
+  // does — otherwise a Continue tapped mid-upload creates the row with
+  // avatar_url NULL and the late URL is read by nothing (the orphan the
+  // ruling exists to prevent). The in-flight state has the crop step's own
+  // `busy` flag as its single source of truth (no parallel mirror state —
+  // the hook owns its lifetime); `photoGateEscaped` below is the pending-
+  // state rule's bounded escape: a HUNG upload must never trap the parent,
+  // so after `PHOTO_UPLOAD_TIMEOUT_MS` the card surfaces the photo error
+  // and lets Continue proceed without the photo.
   const [photoError, setPhotoError] = useState<string | null>(null)
+  // The bounded escape's flag: the in-flight wait has expired, so a still-
+  // in-flight (hung) upload no longer blocks Continue. Inert while nothing
+  // is in flight — it only reads together with `photoCrop.busy`.
+  const [photoGateEscaped, setPhotoGateEscaped] = useState(false)
   // The public URL the confirmed crop returned, held until the name card's
   // Continue creates the row it belongs to. It survives a FAILED Continue
   // (a taken handle) so the retry links the same upload — nothing is
@@ -246,17 +270,42 @@ export function OnboardingPage() {
   const [pendingAvatarUrl, setPendingAvatarUrl] = useState<string | null>(null)
   const photoCrop = useCropStep(async (source, rect) => {
     if (session === null) return
-    setPhotoUploading(true)
     setPhotoError(null)
+    // Re-arm the gate for this upload: a re-pick blocks again, even after a
+    // previous upload's escape fired.
+    setPhotoGateEscaped(false)
+    let settled = false
+    // The bounded escape (the ADDRESS_LOOKUP_TIMEOUT_MS idiom): a storage
+    // write that has not settled within the bound flips the flag — the card
+    // surfaces the error and unblocks Continue (the run proceeds without
+    // the photo; the late-arriving upload then leaves an orphaned object,
+    // the documented trade of the escape, strictly better than a wall).
+    const escapeTimer = setTimeout(() => {
+      if (settled) return
+      setPhotoGateEscaped(true)
+      setPhotoError('Your photo is still uploading — continue without it for now. You can add it later in settings.')
+    }, PHOTO_UPLOAD_TIMEOUT_MS)
     try {
       const url = await uploadAvatar(session.user.id, source, rect)
+      settled = true
       setPendingAvatarUrl(url)
+      // The upload settled (before or after the escape fired): clear the
+      // escape's error if it showed, and the flag — both are inert once the
+      // upload is out of flight, but resetting keeps the invariant "the
+      // flag only reads true while an in-flight upload is past the bound".
+      setPhotoError(null)
+      setPhotoGateEscaped(false)
     } catch (err) {
+      settled = true
       setPhotoError(
         err instanceof Error ? err.message : 'Could not upload the photo. You can add it later.',
       )
+      // A failure is SETTLED, not in flight: the gate never reads it
+      // (photoCrop.busy is false by the time this runs), so the escape
+      // flag stays inert — a failed upload never blocks Continue.
+      setPhotoGateEscaped(false)
     } finally {
-      setPhotoUploading(false)
+      clearTimeout(escapeTimer)
     }
   })
 
@@ -559,7 +608,11 @@ export function OnboardingPage() {
       // The confirmed crop's URL (if the parent picked a photo) links into
       // the row this write creates — see the crop step above for why the
       // upload ran before the row existed. Cleared only on SUCCESS: a
-      // failed write keeps the URL so the retry links the same upload.
+      // failed write keeps the URL so the retry links the same upload. (The
+      // escape path — the parent continued WHILE the upload was still in
+      // flight, past the bound — reaches here with `pendingAvatarUrl` still
+      // null: the row is born without the photo, and the late upload leaves
+      // an orphaned object, the escape's documented trade.)
       await createProfile(name, pendingAvatarUrl ?? undefined)
       setPendingAvatarUrl(null)
       await refresh()
@@ -596,11 +649,14 @@ export function OnboardingPage() {
   // V28 r2 slice 2: the parent's PHOTO JOINS THE CARD (the standalone photo
   // card was deleted in 1b): the picker sits under the two name fields,
   // OUTSIDE the form (the photo is not form data — Continue submits the
-  // form alone). The photo never gates Continue: the upload runs on the
-  // crop confirm (see `photoCrop` above) and its URL links into the row
-  // this card's Continue creates; a parent who skips the photo walks the
-  // hop exactly as before (e2e/fixtures' signUpViewer fills the two name
-  // fields and clicks Continue with no photo at all).
+  // form alone). Fix round 1 (the in-flight race): an IN-FLIGHT upload gates
+  // Continue (so the URL is known before the row is written — lib/photoUpload
+  // owns the decision), bounded by PHOTO_UPLOAD_TIMEOUT_MS (the escape:
+  // a hung upload must never trap the parent, it surfaces the error and the
+  // run proceeds without the photo); a FAILED upload never gates it. A
+  // parent who skips the photo walks the hop exactly as before (e2e/fixtures'
+  // signUpViewer fills the two name fields and clicks Continue with no photo
+  // at all).
   if (profile === null) {
     return (
       <FirstRunCard
@@ -609,7 +665,12 @@ export function OnboardingPage() {
         body={FIRST_RUN_COPY.name.body}
         primaryLabel={handleBusy ? 'Saving…' : FIRST_RUN_COPY.name.primaryLabel}
         primaryForm="name"
-        primaryDisabled={handleBusy}
+        // Fix round 1: an IN-FLIGHT photo upload gates Continue (the URL must
+        // be known before the row is written) — but the gate carries the
+        // pending-state rule's bounded escape (photoGateEscaped), so a HUNG
+        // upload never traps the parent. A FAILED upload never gates: it is
+        // settled, so `photoCrop.busy` is false by the time it matters.
+        primaryDisabled={handleBusy || photoUploadBlocksContinue(photoCrop.busy, photoGateEscaped)}
         testId="first-run-name-card"
       >
         <div className="flex flex-col gap-3">
@@ -668,13 +729,13 @@ export function OnboardingPage() {
               photo is simply optional: Continue walks without it). */}
           <div className="flex flex-col gap-1 text-sm">
             <label className="inline-flex min-h-11 cursor-pointer items-center self-start rounded-xl border border-slate-300 bg-white px-3 text-base font-medium text-slate-700">
-              {photoUploading ? 'Uploading…' : pendingAvatarUrl !== null ? 'Photo added' : 'Add a photo'}
+              {photoPickerLabel(photoCrop.busy, pendingAvatarUrl !== null)}
               <input
                 type="file"
                 accept="image/*"
                 className="sr-only"
                 data-testid="name-card-photo-input"
-                disabled={photoUploading}
+                disabled={photoCrop.busy}
                 onChange={(e) => void handleNameCardPhotoChange(e)}
                 {...fieldA11y('name-photo', photoError)}
               />
