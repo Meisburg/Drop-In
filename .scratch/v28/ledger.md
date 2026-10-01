@@ -4646,3 +4646,77 @@ words as data (`lib/firstRunTour.ts`), and deleted four orphaned exports from `l
 
 **THREE LANES OUT** (reviewer + verifier, with the reviewer asked specifically for the completeness of a
 FILE deletion; and `ocr` on `9e532d6..6131991`).
+
+## Slice 5 -- REVIEWER **NEEDS_CHANGES**, and its first blocking finding is the slice's own rule
+
+**VERIFIER: PASS**, exactly: exit 0, **69 files / 2014 tests / 81 warnings / 0 errors**, counted **two
+independent ways** because oxlint prints no summary line. The browser spec ran **three times** (8 passed each),
+`zip-radius` twice, and **`loop-closing` twice — chosen on evidence, not habit**: *"it is the only other spec
+that calls `finishSignup`, whose finish step drives `first-run-finish-card` — the exact testid slice 5 kept
+while replacing the card body."* It caught HEAD advancing mid-lane and stated what its results describe, and it
+**refused to attest to `places.e2e.ts:2759`** — *"unanswerable by these checks, and I did not add a lane to
+guess at it."*
+
+### ⚠️ B1 -- THE CARD LIES, AND I VERIFIED IT FROM THE REPO'S OWN WORDS
+Shipped: `detail: 'look up parks and playgrounds, and see their hours and where they are'` (`firstRunTour.ts:85`).
+
+- **Hours: the migration says *"Measured coverage is thin: 26/239 rows"* (`0059_place_hours.sql:23`), and the
+  app renders the honest fallback *"we don't have their hours yet"* (`PlaceDirectory.tsx:1149`).**
+- **`kind='park'`: the app withholds the chip because *"a chip for either could only ever come back empty"*
+  (`places.ts:180`), and it renders *"No 'Park' places in the directory yet."* (`places.ts:187`).**
+
+**So the run's LAST card promises a brand-new parent hours for 89% of places that have none, and a category the
+app itself says is empty.** The reviewer's framing is the right one and I am keeping it: *"This is r1's 'Here
+are a few real places near you' in a softer voice, on the one card whose acceptance is strictest — and it is
+FURTHER from the acceptance than the plan's own intent for that line ('where you could host', `plan.md:179`)."*
+
+**The builder obeyed the letter of the rule and broke its spirit, and the rule was never about a word.** That
+is the sharpest instance yet of *"a sweep that names one file has not proven there is only one"* — here, a copy
+rule enforced by vocabulary that the copy sailed straight through.
+
+### ⚠️ B2 -- AND ITS TEST IS A SPELL-CHECKER, NOT A GUARD
+`firstRunTour.test.ts:96-97` asserts the card does not match `/\bplaces?\b/i`. **`firstRunTour.ts:85` passed
+that test while making the claim**, because it says "parks and playgrounds". **And the blocklist
+(`firstRunTour.ts:128-136`) is nine literal strings written by the same author as the copy it polices** — it
+already missed this one, and it bans `what's happening near you` while the shipped Drop Ins line says *"see what
+parents near you are putting on"*, **a near-synonym the plan itself blessed.** **A blocklist authored alongside
+its own copy is a spell-checker, not a guard** — recorded because that sentence is the whole finding.
+
+**RULED: the durable answer is the repo-wide guard, which is SLICE 6's** (already routed there, with an
+instruction to stop and report rather than overreach). **This round makes the copy true and asks for a property
+assertion, or a plain statement that a local one would be theatre — NOT a longer blocklist.**
+
+### ⚠️ B3 -- NO EVIDENCE IN THE RECORD, AND **THE THIRD LANE FAILED WITHOUT ME NOTICING**
+The ledger's slice-5 entry carried **no gate counts** (every prior entry has them), and the mutation claim was
+**a paraphrase with no raw output**.
+
+**AND: `.scratch/ocr-slice-5.json` reads `"status": "failed"` — `"0 finding(s); 5 of 5 selected item(s)
+failed"` — because `ocr` was still pointed at a machine that is down. I READ ITS "0 FINDINGS" AS CLEANLINESS.**
+
+**That is my failure, and it is the worst process error of this session, because it is the one shape I had
+already written a rule against:** *"a known-noisy channel must not become a channel you stop reading."* **An
+unread lane's silence is not a pass.** The rule is now sharper: **read a lane's STATUS, never its findings
+count** — a failed run and a clean run both report zero findings.
+
+**AND THE INSTRUCTION "UPDATE THE FACTORY TO USE STRATA-MAX" HAD A SECOND TARGET I HAD MISSED:** `ocr`'s
+provider is the `"ninfer"` entry in `~/.config/opencode/opencode.json:168` (the project's own note says
+*"`ocr config set provider ninfer`"*). **I added a `strata-max` provider there** — `:8081/v1`, the model, and
+limits **measured from two sources that agree** (the server's own `n_ctx: 131072` and pi's
+`contextWindow: 131072 / maxTokens: 32768`) — **verified the JSON parses, verified NInfer's API key survived
+BYTE-IDENTICAL by diffing against the backup**, and re-ran slice 5's review. **The backup is
+`opencode.json.bak-20261001-074653`.**
+
+### The three smaller findings, all the slice's own by the batch's rules
+- **`e2e/fixtures.ts:409`** still describes the deleted card (*"up to 3 real places near the parent…"*) — the
+  builder caught the docs but missed **the shared helper, which this batch treats as a per-slice obligation.**
+- **`places.ts:1601-1602`** still calls `withinRadius` *"the app's existing radius predicate"* while the diff
+  removed that import; **the name now survives only inside that comment** — *"pre-existing staleness this slice
+  made strictly worse."*
+- **The Profile line over-claims too:** it names two capabilities that are one flow, because the only production
+  driver of `searchProfilesByName` is the co-parent link form. *"Find another parent by name"* as a standalone
+  feature **does not exist**.
+- **And its `loadError` argument is UNSOUND:** `homeZipSet` derives from the **DB profile read**, not from a save
+  in this mount, so `runOver && loadError` **is** reachable. The ordering is pre-existing and the behaviour
+  correct — **the reasoning was wrong, not the code.**
+
+**FIX ROUND 1 DISPATCHED** (resume; brief `slice-5-fix-1-r2.md`).
