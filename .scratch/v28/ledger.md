@@ -6069,3 +6069,54 @@ DESCRIBES the next action in the same breath as believing it happened.*** **The 
 verify the action, then describe it -- never the reverse.**
 
 **REVIEWER DISPATCHED** (round 4 review; if this does not converge, **round 5 goes to the cloud model** as ruled).
+
+## ⚙️ MODEL ROUTING CHANGED BY THE HUMAN: **ALL CLOUD FOR THE REST OF THE BATCH**
+
+**The human chose "all cloud for the rest"** after I laid out the trade (I had asked because they had earlier told me
+to minimise cloud spend, and this reverses it). **Applied:** the five `orchestrator-*` agent definitions now carry
+**`model: ollama-cloud/deepseek-v4.1-flash:cloud`** (backups as `.bak-<timestamp>`), and dispatches also pass the
+model explicitly so the switch does not depend on a config reload.
+
+**What this unlocks, and it is not only speed:**
+1. **The OOM constraint disappears.** The local model held ~50 GB of 62 and was killed **twice** -- that was the sole
+   reason for one-lane-at-a-time.
+2. **The reviewer and verifier go back to running as a PARALLEL PAIR.** They are read-only, so parallelising them was
+   never a correctness risk; it was purely a RAM decision. **That is the batch's original design restored.**
+3. **Builders stay SERIALIZED.** They write, one worktree means one writer, and for 6b/6c/6d it would not help
+   anyway -- all three edit `scripts/guards/run-all.sh`.
+
+## Slice 6a fix round 4 REVIEW: **NEEDS_CHANGES -- but the MECHANISM PASSED**, and every blocking finding is a number that lies
+
+**It attacked A8 and COULD NOT BREAK IT:** a same-named local is refused (`{skipLabel}` is not assignable to
+`FirstRunCardCopy`), via `any` it is refused and counted, and via `as`/`interface extends`/alias chains it is
+attributed **only because the compiler itself calls the value a `FirstRunCardCopy`** -- the documented data-flow
+limit, **not a name**. **It also tried the nearest REAL over-report in this repo** -- `FirstRunCard`'s own props --
+**and it fails assignability because `body?: ReactNode` != `body: string`.** A9 likewise: rest, computed hop,
+nested pattern, re-export and parameters are all followed. **And the pre-filter is proven innocent**: `named()` tests
+only the accessed name against `fieldNames` built from the same declared list, so it is a **necessary condition that
+cannot decide identity** -- **and `return` inside the visit callback does not prune the walk.**
+
+### ⚠️ THE FOUR BLOCKING FINDINGS ARE ALL "THE GUARD LIES ABOUT ITSELF" -- and one is the guard violating its own sentence
+- **M1** `:229` says *"735 lines to 818 total"*; the file is **849** (`wc -l`). **Wrong by 31, in the FLATTERING
+  direction** -- **and two lines later the header says *"A header that overstates its own diff is the same defect
+  this guard exists to catch, so the measured number stays."*** **The guard's own sentence, broken by the guard's own
+  header** -- in the slice whose entire subject is *a claim must be measured*.
+- **M2** `:239` says *"it invokes the guard 28 times"*; **it is 32** -- and the reviewer enumerated **all 32 call
+  sites by line number**, noting 28 is 32 minus the four allowlist runs (**which each build a program**), so
+  *"the cost sentence understates its own cost driver by 14%."*
+- **M3** **the previous round's "counts correction" is ITSELF false**, and the builder inherited it: on `dde111a` the
+  **seed count is 28 and the check count is 39** -- exactly what that round's own report said -- and **41 is a raw
+  count of `check(` sites, two of which fire only on failure.** *Third time in four rounds a count here was
+  "corrected" into another wrong count.*
+- **M4** `ladder:` **the `limit——` self-report line is asserted by NO SEED** while the header claims *"the blind spot
+  is in the run and not only in this comment"* -- **and the previous review returned this exact class** (the
+  `namespace imports` line the rewrite never emitted). *"It belongs a rung down, not in a fifth note."*
+
+**Non-blocking, all ruled IN as the same class:** a documented **JSX-spread limit was DELETED while its behaviour
+did not change** (*"a limit that gets deleted by proximity to a fix is how a limit stops existing"*); the data-flow
+over-report is **unfenced**, and *"`FirstRunCardProps` escapes only because `body` is `ReactNode` -- **an accident of
+an unrelated field, not a guard property**"*; parameter destructuring is not walked and undocumented; and the
+evidence form was numbers without transcript -- *"three of the same report's numbers do not reproduce, which is the
+more serious form of the same defect."*
+
+**FIX ROUND 5 DISPATCHED -- fresh builder, ON CLOUD, a measurement round.**
