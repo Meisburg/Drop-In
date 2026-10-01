@@ -6420,3 +6420,19 @@ checkers"* comment was already wrong (six now) -- **left untouched per the no-ad
 quietly.** ✓
 
 **THREE LANES OUT** (review + verify in parallel on cloud; `ocr` local).
+
+### ⚠️ MY DISPATCH DIED ON A JS ESCAPING ERROR -- and the fix is structural, not careful typing
+My combined review+verify `workflowScript` **failed to parse**: `Unexpected token` at line 7. **Cause: I wrote the two
+task strings as SINGLE-QUOTED JavaScript and they contain apostrophes** -- *"the builder's reasoning"*, *"plan.md's own
+references"*. **The commit and `ocr` had already gone out, so only the lanes died.**
+
+**RULED -- and it is the same shape as every other instrument fix this session: stop using an instrument that can be
+mangled.**
+- **Where a `workflowScript` is warranted**, the task strings must be **backtick templates** (and then the text must
+  contain no backticks or `${`), **or** apostrophes must be escaped -- **which is a rule a human has to remember, and
+  I have now demonstrated twice that I do not remember rules like this under load.**
+- **So the default changes: dispatch lanes as SEPARATE `subagent` calls.** Their `task` is a **plain JSON string with
+  no scripting layer at all**, so there is nothing to escape. *They still run in parallel -- two async dispatches are
+  concurrent by construction.* **The only thing a workflow buys me here is a joint receipt, and that is not worth a
+  parse failure that silently kills both lanes.** *This is the `rg -r` lesson one layer up: the tool that can
+  fabricate or fail on quoting is the tool to stop using for anything I type by hand.*
