@@ -5357,3 +5357,27 @@ the SHAPE of the review rather than only its budget.**
 - **And it is asked a question I owe the builder:** *"is a 500-line guard justified for this rule, or
   over-engineered?"* -- with the instruction that a bare "too big" is not an answer. **The builder raised its own
   guard's size; that deserves a verdict, not silence.**
+
+## ⚠️ 6a's VERIFIER ALSO TIMED OUT (25 min) -- and the class is now clear, so the LANE SHAPE changes
+
+**What it actually did: `npm run verify` plus runs 1-3 of 4 e2e runs, in 35 tool calls, killed mid-run-4.** Its
+**last words are evidence it was working well:** *"Confirmed: `:162` clicks `getByRole('button', { name: 'Skip' })`
+-- full-string name match, so **'Skip for now' would fail to match**."* **It died doing exactly the check that
+proves this slice's central claim.** And its 177-byte output artifact means **its evidence lived only in its
+context and died with it.**
+
+### ⚠️ TWO RULES, because four timeouts in one session is a pattern and not bad luck
+1. **BUDGET IN TURNS, NOT IN COMMANDS OR READING.** At this model's speed **a turn costs roughly a minute**, so a
+   lane needing ~35 turns needs ~35 minutes **whatever it is doing**. Every clock I set this session was sized
+   against the wrong quantity -- first reading load, then command count. **The right estimate is: turns x 1 min,
+   plus slack.**
+2. **⚠️ A LANE THAT DIES MUST STILL LEAVE EVIDENCE.** This is the structural fix, and it is the one worth keeping:
+   **the verifier now writes each check's raw tail to `/tmp/verify-6a.md` IMMEDIATELY after running it**, appending
+   as it goes, **rather than composing a report at the end.** Three lanes this session died with their evidence in
+   a context that was discarded -- *an instrument that reports only at the end cannot report at all if the end
+   never comes.* **This is the same shape as the batch's other fixes: make the failure survivable.**
+
+**So the re-dispatch has a 40-minute clock, a REDUCED command set (five commands: the gate, the two guard
+artifacts, two runs of the fix-relevant spec and one of the Skip spec -- three e2e runs total instead of four),
+a SHORT report limit (*"long reports cost turns, and turns are what ran out"*), and the incremental-evidence
+instruction.** And it is told what its predecessor found, so the full-string name-match observation is not lost.
