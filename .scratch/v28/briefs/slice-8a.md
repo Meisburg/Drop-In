@@ -1,5 +1,29 @@
 # Slice 8a — make the code and the record honest
 
+> ## ⚠️ RE-MEASURE BEFORE YOU TRUST ANY LINE NUMBER BELOW
+>
+> This brief was written several slices ago, and **every line number in it has had time to drift**. Measured
+> precedents from this batch: slice 3's brief drifted **+18 and +82** lines; slice 6b's brief quoted a count that
+> had moved from **32 to 12**; `hasPhoto`'s unrelated local moved **five** lines and gained a third mention.
+> **Identifiers are stable; line numbers are not.** Find each item by its symbol and path first, then confirm the
+> line. **Report which numbers you had to re-measure** — that is part of the job, not a nuisance.
+>
+> **⚠️ And if an item below is ALREADY FIXED, say so rather than re-fixing it.** An item that is already done is
+> evidence about this brief, not work for you. This batch has already paid for one slice that "fixed" something a
+> previous fix round had done.
+
+> ## ⚠️ ORCHESTRATOR NOTE — one item here is ALREADY DONE
+> **`src/lib/places.ts`'s "the app's existing radius predicate" docblock was fixed by slice 5's fix round 1.**
+> `rg -n "existing radius predicate" src/` returns **ZERO** today; the comment now says the comparison is inlined
+> and that `feed.ts`'s `withinRadius` is not called by that module. **Do not re-fix it — and if it was the only
+> reason you thought item 1 was alive, say so.**
+> **Confirmed still stale (measured today), so these are real work:** `docs/product/onboarding-first-run.md` still
+> documents the DELETED finish card — `:113` *"Here are a few real places near you"*, `:110` its heading, and
+> `:275`'s defect table row calls it *"Fixed"*; and `V28-BATCH-SUMMARY.md:26-30` still lists **"Add a photo"** as
+> card 4, *"You're all set — a few real places near you"* as the ending, and *"Each card is labelled `N of 5`"* —
+> **all three are false since r2 deleted the photo card and the places list.**
+
+
 You are `orchestrator-builder`. **Read `docs/agents/code-structure.md` before writing anything.**
 Worktree: `/home/jmeisburg/orca/workspaces/playdate-app/onboarding`, branch `Meisburg/onboarding`.
 **Read `plan.md` §6 slice 8** — it was split in two; **this is 8a**, and 8b (the mechanical sweep,

@@ -1,5 +1,28 @@
 # Slice 8b — mechanical determinism and test honesty
 
+> ## ⚠️ RE-MEASURE BEFORE YOU TRUST ANY LINE NUMBER BELOW
+>
+> This brief was written several slices ago, and **every line number in it has had time to drift**. Measured
+> precedents from this batch: slice 3's brief drifted **+18 and +82** lines; slice 6b's brief quoted a count that
+> had moved from **32 to 12**; `hasPhoto`'s unrelated local moved **five** lines and gained a third mention.
+> **Identifiers are stable; line numbers are not.** Find each item by its symbol and path first, then confirm the
+> line. **Report which numbers you had to re-measure** — that is part of the job, not a nuisance.
+>
+> **⚠️ And if an item below is ALREADY FIXED, say so rather than re-fixing it.** An item that is already done is
+> evidence about this brief, not work for you. This batch has already paid for one slice that "fixed" something a
+> previous fix round had done.
+
+> ## ⚠️ ORCHESTRATOR NOTE — CHECK ITEMS 6 AND 7 FIRST; THEY MAY ALREADY BE DONE
+> Your own text (`:122-124`, `:156`) says *"Slice 3's fix round is correcting that"* about the `| void` typing and
+> the `useCropStep` `onConfirm` param. **Slice 3 then ran THREE fix rounds, and slices 4 and 5 followed.**
+> **Measure before working:** `rg -n "onConfirm" src/components/useCropStep.tsx` and
+> `rg -n "handleKidPhotoUpload|void handleKidPhotoUpload" src/pages/ProfilePage.tsx`. If they are fixed, **say so
+> and skip them** — do not re-fix.
+> **And this brief is 219 lines across SEVEN workstreams (a sweep + a script + two specs + three code fixes).**
+> **If it does not fit in one context, STOP after a coherent subset and report which parts you finished** — I will
+> split it. Do not rush the tail to "finish"; an unfinished honest slice beats a finished dishonest one.
+
+
 You are `orchestrator-builder`. **Read `docs/agents/code-structure.md` before writing anything.**
 Worktree: `/home/jmeisburg/orca/workspaces/playdate-app/onboarding`, branch `Meisburg/onboarding`.
 **Read `plan.md` §6 slice 8** — it was split in two; **this is 8b**. **8a is not yours.**
