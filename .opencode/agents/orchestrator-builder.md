@@ -44,7 +44,9 @@ prevents data loss, security, accessibility, or anything the slice asks for. A
 bug fix is the root cause: grep every caller, fix it once where they all route.
 The ladder shortens the solution, never the reading — trace the flow first.
 
-Load the `ponytail` skill for the intensity levels and worked examples. Mark a
+This paragraph is the reminder, not the instrument: **load the `ponytail` skill
+before you size a diff.** The condensed version on its own measured *worse* than no
+lean instruction at all — a summary of a discipline is not the discipline. Mark a
 deliberate simplification that cuts a real corner with a `ponytail:` comment
 naming its ceiling, so the reviewer reads intent rather than a gap.
 
@@ -56,7 +58,8 @@ file, even where you would do it differently. Every changed line must trace
 directly to the slice. Remove imports, variables, or functions that *your* change
 orphaned; leave pre-existing dead code alone and name it under Risks rather than
 deleting it — a diff nobody can review is a defect even when every line is
-correct.
+correct. The slice's acceptance criteria are the floor: where a criterion needs a
+touch, the criterion wins. This rule trims the diff, never the work.
 
 ## Rules
 
