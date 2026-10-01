@@ -100,3 +100,29 @@ still matter**).
 
 **`Committed as: <sha7>`**, the shape-keying fix and what it does differently in one sentence, the seed's red and
 green, the counts, and anything else the brief did not anticipate.
+
+## F4 — [REAL, and `ocr` found it from a different direction] The skippable card's identity now has TWO sources
+
+`ocr`, `firstRunCopy.ts:51`:
+
+> The identity of "the skippable card" is now stated in **two independent places**: `isSkippable` in
+> `src/lib/firstRun.ts` (`return card === 'kids'`) and this **hard-coded `kids` key in the annotation**. The comment
+> above the interface says `isSkippable` is what decides, but **the type restates the decision instead of deriving
+> it**, so the two can drift silently in one direction: **if `kids` stops being skippable, this annotation still
+> REQUIRES `skipLabel` on it — i.e. it re-institutes exactly the required-but-unread field this slice removed**
+> (only the new copy-field guard catches it, at guard time rather than at type time).
+
+**And note the disagreement, because it is instructive rather than confusing:** the REVIEWER said *"drift against
+`isSkippable` is caught at compile time"* — **it is right about the direction it checked, and `ocr` is right about
+the other one.** The type requires `skipLabel` on `kids`; nothing derives **which** card is skippable from the
+authority. **Both lanes are correct; only one of them looked at both directions.** Neither claim is withdrawn.
+
+**THE FIX `ocr` proposes, and I am adopting it:** derive the shape from the authority instead of restating it —
+`export type SkippableFirstRunCardId = Extract<FirstRunCardId, 'kids'>` in `firstRun.ts` (or a `SKIPPABLE_CARDS`
+constant that `isSkippable` also reads), then a mapped type here so the skippable entry is the only one carrying
+`skipLabel`. **It keeps totality, keeps `skipLabel` required on the skippable entry, and removes the second source
+of truth.** *One authority, derived everywhere -- the same rule the escape dedupe and the withheld-category guard
+were each fixed by, now applied to a TYPE.*
+
+**If you find that a mapped type cannot express this without weakening the prop's requiredness, STOP and say so with
+the reason** rather than settling for a comment. **A comment saying "`isSkippable` decides" is not a derivation.**

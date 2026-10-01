@@ -5432,3 +5432,27 @@ nearly right is still a claim* -- **including one that arrives as a good idea.**
 **FIX ROUND 1 BRIEF WRITTEN** (`slice-6a-fix-1.md`) -- **and it will be DISPATCHED only after the verifier finishes,
 because that fix edits `scripts/` while the verifier is running the gate, which is the interference the batch's
 serialization rule exists to prevent.**
+
+## `ocr` on 6a: **complete, 1 finding -- and it is REAL, so fix round 1 grows by one**
+
+**`firstRunCopy.ts:51` -- the skippable card's identity now has TWO sources.** `isSkippable` in `src/lib/firstRun.ts`
+(`return card === 'kids'`) and the **hard-coded `kids` key in the annotation**. *"The comment above the interface
+says `isSkippable` is what decides, but the type restates the decision instead of deriving it, so the two can drift
+silently in one direction: **if `kids` stops being skippable, this annotation still REQUIRES `skipLabel` on it --
+i.e. it re-institutes exactly the required-but-unread field this slice removed** (only the new copy-field guard
+catches it, at guard time rather than at type time)."*
+
+**⚠️ AND TWO LANES DISAGREE, WHICH IS WORTH MORE THAN AGREEMENT -- and BOTH ARE RIGHT.** The **reviewer**:
+*"drift against `isSkippable` is caught at compile time."* **`ocr`:** the drift is silent in the other direction.
+**The type requires `skipLabel` on `kids`; nothing DERIVES which card is skippable from the authority.** Each lane
+checked one direction and reported it correctly. **Neither claim is withdrawn, and the disagreement is what made
+the gap visible** -- an agreement here would have been two lanes making the same single-direction check.
+
+**RULED: adopt `ocr`'s fix** -- derive the shape from the authority (`SkippableFirstRunCardId` =
+`Extract<FirstRunCardId, 'kids'>`, or a `SKIPPABLE_CARDS` constant `isSkippable` also reads) rather than restating
+it. *"One authority, derived everywhere -- the same rule the escape dedupe and the withheld-category guard were each
+fixed by, now applied to a TYPE."* **And if a mapped type cannot express it without weakening the prop's
+requiredness, the builder must STOP and say so -- *a comment saying "`isSkippable` decides" is not a derivation.***
+
+**So fix round 1 is now: F1 (the blocking bare-name keying) + F2 (test-file exclusion) + F3 (destructured read) +
+F4 (`ocr`'s two-sources-of-truth).** All four in the same two artifacts.
