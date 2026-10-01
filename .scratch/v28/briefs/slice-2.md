@@ -104,7 +104,7 @@ list rather than lingering as a third dead export (fact 11 already tracks two).
 2. **The photo does NOT gate Continue.** `signUpViewer` fills the two name fields and clicks
    Continue **with no photo**; **17 spec files** ride that. A gated Continue hangs all of them.
 3. The name-card copy names only fields the card renders, and the hint is actionable.
-4. `rg -n "middle name|middle initial" src/pages/OnboardingPage.tsx` → **0 hits**, while
+4. ACCEPTANCE-GREP: `rg -n "middle name|middle initial" src/pages/OnboardingPage.tsx` → **0 hits**, while
    `src/lib/oauth.ts` and `src/lib/oauth.test.ts` are **untouched**.
 5. `src/lib/firstRunCopy.test.ts` keeps passing **unchanged where it matters**: it asserts only that
    the body is **non-empty** (`:22`), that the name card has **no `skipLabel`** (`:30`), and that

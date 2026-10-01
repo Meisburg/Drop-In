@@ -234,9 +234,11 @@ such — a red commit nobody explains is indistinguishable from a mistake.
 - **Approach.** Delete the photo card's gate, state, JSX and testid; stop passing `hasPhoto`;
   reword every measured "of 5" occurrence — **the list in fact 3 is the scope, and a grep for
   `of 5` afterwards must come back empty in `src/`**.
-- **Acceptance.** The label is gone from the app: `rg -n "of 5" src/pages/OnboardingPage.tsx
-  src/pages/LoginPage.tsx src/components/FirstRunCard.tsx src/lib/firstRun.ts` → **0 hits**, and
-  `rg -n "first-run-photo-card" src/ e2e/` → **0 hits**. ⚠️ **A blanket `rg "of 5" src/` is NOT
+- **Acceptance.** The label is gone from the app.
+  ACCEPTANCE-GREP: `rg -n "of 5" src/pages/OnboardingPage.tsx src/pages/LoginPage.tsx
+  src/components/FirstRunCard.tsx src/lib/firstRun.ts` → **0 hits**.
+  ACCEPTANCE-GREP: `rg -n "first-run-photo-card" src/pages/OnboardingPage.tsx
+  e2e/onboarding-resume.e2e.ts` → **0 hits**. ⚠️ **A blanket `rg "of 5" src/` is NOT
   the check** — see fact 3: 10 hits are star ratings, one is an unrelated live-data note, and one
   is a scanner fixture. Sweeping
   those would be a new defect, not a fix. The run reaches `area` and the ending without a photo
@@ -300,8 +302,9 @@ such — a red commit nobody explains is indistinguishable from a mistake.
     instance of the class slice 6's guard exists for. Measured today, `rg -n "middle name" src/`
     matches **three** files and only one is the defect: `OnboardingPage.tsx:515` (**the defect**) +
     `src/lib/oauth.ts:154` (a comment about OAuth name parsing) + `src/lib/oauth.test.ts:163` (a test
-    name). **Correct criterion:** `rg -n "middle name|middle initial"
-    src/pages/OnboardingPage.tsx` → **0 hits**, with those other two files **untouched**. **A third
+    name). **Correct criterion:**
+    ACCEPTANCE-GREP: `rg -n "middle name|middle initial" src/pages/OnboardingPage.tsx`
+    → **0 hits**, with those other two files **untouched**. **A third
     fixture for slice 6's guard.**
   - Any comment left false by the photo no longer being a *step* (start with
     `e2e/avatar.e2e.ts:3-5`, which explains why the spec drives `/profile` instead) is fixed here —
@@ -434,8 +437,8 @@ such — a red commit nobody explains is indistinguishable from a mistake.
   The checkable rule: **a zero-hit claim must not match in a file the document never mentions.**
   ⚠️ **AND THE MECHANISM AS FIRST WRITTEN WOULD FIRE ON ITS OWN DOCUMENTATION — measured.**
   "Extract every acceptance grep line from `plan.md` and the briefs" fails, because those docs
-  **quote the bad greps as defects**: `plan.md:239` ("⚠️ A blanket `rg "of 5" src/` is NOT
-  [scoped]"), `plan.md:300` ("Measured today, `rg -n "middle name" src/` matches three files"),
+  **quote the bad greps as defects**: `plan.md:241` ("⚠️ A blanket `rg "of 5" src/` is NOT
+  [scoped]"), `plan.md:302` ("Measured today, `rg -n "middle name" src/` matches three files"),
   `.scratch/v28/briefs/slice-2.md:49` ("That criterion is itself a defect") and
   `explore-r2-restructure.md:65`. **A prose parser that cannot tell a CLAIM from a QUOTATION of a
   bad claim fires on the brief that exists to explain the defect** — which is the difference between

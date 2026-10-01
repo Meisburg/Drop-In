@@ -30,6 +30,26 @@
 #                exactly as strong as before: an accepted copy is never a
 #                licence to skip the gate.
 #
+#                ⚠️ WHAT THIS CHECK DOES NOT COVER — stated here because a PASS
+#                from it is NOT evidence about the flag. Git's reflog records
+#                the ACTION TEXT git itself writes — `commit: <subject>` for a
+#                plain commit, `checkout: moving from …`, and so on — and NEVER
+#                the command line that was run. `git commit --no-verify`
+#                therefore leaves the commit SUBJECT in the reflog and the flag
+#                NOWHERE: the grep below reads no hit, and this guard prints
+#                PASS on a tree where a bypass happened. The filter that skips
+#                git's own prose shapes (below) is the same filter that makes
+#                the ordinary bypass invisible — so the common case, a bypass
+#                with no wrapper, is outside this check. What it CAN see is a
+#                bypass a WRAPPER recorded (a reflog action text that is not one
+#                of git's prose shapes) or a line in FAST_PUSH_LOG. The blind
+#                spot is PROVEN rather than asserted by
+#                `scripts/guards/no-bypass-guard.check.mjs`, which builds a real
+#                repo, commits with `--no-verify` on the command line, and
+#                requires this guard to report PASS — an instrument that matches
+#                nothing looks exactly like a clean repo, which is the standard
+#                `run-all.sh` already sets.
+#
 # PROVENANCE: pattern borrowed from affaan-m/ECC's `block-no-verify.js`
 # PreToolUse hook. Reimplemented as a post-hoc deterministic audit, because
 # this repo's harness is OpenCode/DSH, not Claude Code, and a PreToolUse hook
@@ -210,6 +230,16 @@ if [ -n "$BYPASS_HITS" ]; then
   echo "  The gated checks must run; the tracked pre-push hook is not optional."
   FAIL=1
 fi
+
+# STATE THE COVERAGE IN THE RUN, not only in the header. A PASS here is
+# evidence that the tracked hooks are wired; it is NOT evidence that the flag
+# was never used. Git records no command line, so a plain
+# `git commit --no-verify` is invisible to the reflog grep above — the blind
+# spot is proven by no-bypass-guard.check.mjs.
+echo "  COVERAGE: HISTORY reads the reflog's action text and FAST_PUSH_LOG, never a command line."
+echo "    A plain 'git commit --no-verify' leaves no trace this check can read, so the PASS/FAIL"
+echo "    below is NOT evidence about the flag — only a wrapper-recorded bypass or a FAST_PUSH_LOG"
+echo "    line is visible (see scripts/guards/no-bypass-guard.check.mjs)."
 
 echo
 if [ "$FAIL" -eq 0 ]; then

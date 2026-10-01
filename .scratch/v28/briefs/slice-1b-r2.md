@@ -78,9 +78,9 @@ a new defect, not a fix.**
 
 ## Acceptance criteria (each one checkable)
 
-- `rg -n "of 5" src/pages/OnboardingPage.tsx src/pages/LoginPage.tsx src/components/FirstRunCard.tsx src/lib/firstRun.ts` → **0 hits**.
-- `rg -n "first-run-photo-card" src/ e2e/` → **0 hits**.
-- `hasPhoto` is gone from the first-run model and every one of its consumers: `rg -n "hasPhoto"
+- ACCEPTANCE-GREP: `rg -n "of 5" src/pages/OnboardingPage.tsx src/pages/LoginPage.tsx src/components/FirstRunCard.tsx src/lib/firstRun.ts` → **0 hits**.
+- ACCEPTANCE-GREP: `rg -n "first-run-photo-card" src/pages/OnboardingPage.tsx e2e/onboarding-resume.e2e.ts` → **0 hits**.
+- ACCEPTANCE-GREP: `hasPhoto` is gone from the first-run model and every one of its consumers: `rg -n "hasPhoto"
   src/App.tsx src/pages/OnboardingPage.tsx src/lib/avatarUrl.test.ts e2e/onboarding-resume.e2e.ts`
   → **0 hits**.
   ⚠️ **A blanket `rg "hasPhoto" src/` is NOT the check, and cannot be satisfied** —
