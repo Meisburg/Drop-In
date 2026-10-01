@@ -5631,3 +5631,44 @@ re-derive it later.* **It is also the batch's own rule applied one level up: pre
 unconstructable over policing its instances.**
 
 **FIX ROUND 2 DISPATCHED** (`slice-6a-fix-2.md`).
+
+## ⚠️ THE MODEL SERVER WAS OOM-KILLED -- and this is the FIRST failure of the session that was NOT a clock
+
+**Diagnosed from the service's own journal, not guessed:**
+```
+12:13:23  strata-max.service: systemd-oomd killed 59 process(es) in this unit.
+          Main process exited, code=killed, status=9/KILL
+          Failed with result 'oom-kill'.
+          Consumed 2d 12h 15min CPU over 5h 18min wall, 49.6G memory
+12:13:33  Scheduled restart; loading the model (about 55 GB) ...
+12:14:07  ready: http://127.0.0.1:8081/v1
+```
+**So the builder's death at 640s with 69 tool calls was NOT my brief and NOT the clock: the model server was
+killed underneath it mid-rewrite.** The runner's own record says `exitCode: 0`, which is why it read as a generic
+"failed" -- **the failure was upstream of the agent.**
+
+**Its work survived: `+333/-111` across `copy-field-consumption-guard.mjs` and `firstRun.ts`**, and I copied both to
+`.scratch/v28/partials/*.6a-fix2-wip` before touching anything (cheap insurance, and **not product code**).
+
+### ⚠️ AND THE REAL CONSTRAINT IS MEMORY, NOT TIME -- measured
+```
+               total        used        free      shared  buff/cache   available
+Mem:              62          62           1           0           1           0
+```
+**The model holds ~50 GB, and the machine is otherwise at zero available.** **That reframes the whole session's
+troubleshooting:** I diagnosed four timeouts as *clock* problems and fixed them by budgeting turns (correct, and it
+worked); **this fifth failure was the machine running out of memory** -- and **I caused the pressure**: a builder, a
+reviewer, a verifier **and** `ocr` were all live at once, **all four hitting the same local server**, while the
+verifier ran **chromium** e2e specs. **Four lanes x (model context + chromium) on a box whose RAM is fully committed
+to a 50 GB model.**
+
+**OPERATIONAL RULE ADOPTED, effective now:**
+1. **ONE LANE AT A TIME on this machine.** Not "one builder at a time" -- **one lane**, because the readers and the
+   machine-checker use the same model server and the same RAM.
+2. **`ocr` does not overlap** with a builder or an e2e run. It shares the server.
+3. **Browser specs run one at a time**, and never alongside a builder.
+4. This **slows the batch down and that is the correct trade**: a lane killed by the OOM killer costs a full retry,
+   and its evidence dies with it. **The clock is not the binding constraint; the RAM is.**
+
+**RESUMED the builder** with its work intact, told it the server died (not its fault), and told it to be economical
+and to run the browser specs one at a time.
