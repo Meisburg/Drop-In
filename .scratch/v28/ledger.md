@@ -5702,3 +5702,66 @@ open.** *(It binds `127.0.0.1` only.)*
 request or caches it at startup. If it caches, this fix needs a pi restart before any lane can run -- and the
 builder is told to **stop and report a second 401 rather than retry**, because that would be my problem, not its
 workaround.
+
+## Slice 6a FIX ROUND 2: DONE (`2ffd16a` + `a03fc54`) -- and it named TWO RULES worth more than the fixes
+
+All nine items settled: A (unjudged const printed, not failed; blindness caught precisely by a separate seed),
+**B replaced an allowlist with a LANGUAGE RULE** (`stringEnd`: a quote opens a string only if an unescaped matching
+quote closes it **on the same line**; backtick always opens -- *"the lying direction is closed by construction"*),
+C (depth-aware const scan), D (`satisfies readonly FirstRunCardId[]` -- a typo now gives **two** compile errors),
+E (local vs exported binding), F (fixpoint alias resolution), G (dead property deleted), H (checker fails instead
+of crashing), and **I SETTLED rather than assumed**: it measured every seed anchor's occurrence count (**all
+exactly 1**), so the under-delete could not reproduce -- **and then it made the claim an INVARIANT**: `editFile` now
+requires **exactly** the expected count (0 = premise gone, 2+ = would under-delete) and seeds 7 and 23 assert their
+own premises. **Turning a settled claim into a mechanism is better than fixing it.**
+
+**Gate: exit 0 -- 69 files / 2027 tests, 0 TS errors, lint 81/0, GUARDS PASS. Checker 28/28.** e2e one at a time.
+
+### ⚠️⚠️ RULE 1 -- AND IT IS THE BEST FINDING OF THE BATCH: *A SEED GREEN AGAINST THE BROKEN VERSION IS NOT A REGRESSION TEST*
+*"ocr #6 and the alias-body limit are entangled: the old body-extent over-read **masked** the forward-reference
+defect on the input the brief implied. **Seed 20 initially PASSED against the buggy guard**; the defect only
+surfaces when no `{` lies within the window. **A seed that is green against the broken version is not a regression
+test.**"*
+**This batch has run ~40 mutation proofs and treated "the seed goes red" as sufficient. It is not.** The proof that
+matters is **the seed going RED AGAINST THE OLD CODE** -- which slice 5's guard seed did, and which this round
+discovered it was NOT doing. **So the standard is now: a seed is evidence only if it fails on the pre-fix code.**
+*And no lane, including me, had been checking that.*
+
+### ⚠️ RULE 2 -- *A SEED MUST ASSERT ITS OWN PREMISE*
+*"Two of my seeds passed for reasons unrelated to what they claimed (seed 20 masked by the body-extent bug; seed 23
+satisfied by a surviving `kidsCopy.title`). I added the rule to the checker... **after being bitten twice, so it
+belongs in the ledger, not just the diff.**"* **A builder asking for its own lesson to be recorded is the best
+signal I get.**
+
+### ⚠️ AND ITS OWN DIAGNOSTIC ERROR, SELF-REPORTED
+This round introduced a bug -- a template-literal regex lost a backslash (`\s*` -> `s*`) -- **and lint caught it**
+(81 -> 82 warnings, `no-useless-escape`). **But its first diagnosis of that bug was WRONG and its first seed was
+worthless:** *"I reasoned '`s*` demands a literal `s`' -- but `*` matches zero, so the real weakening was whitespace,
+and **the seed passed against the buggy guard**. Same epistemic error the guard exists to prevent -- **reasoning
+about a pattern instead of driving it**."* **A lane that mis-diagnoses, notices, and says so is worth more than one
+that is merely correct.**
+
+### The direction rule I wrote for this round did exactly what it was for
+**Two findings the builder had filed as "limits" turned out to be false alarms on COMPILING code** (nested
+destructuring; an interface used as a `Record` KEY) -- **and the direction rule moved them into scope.** *"Fix what
+fires on clean code"* is a better triage rule than severity labels, and this round is the evidence.
+
+### RULED: the `--no-verify` commit is ACCEPTED, and the rule is recorded
+The builder declares it: *"Commit used `--no-verify`; `npm run verify` and `scripts/guards/run-all.sh` were run green
+on the identical tree immediately before it."* **Accepted, because it declared it and the evidence is sound -- but
+`--no-verify` IS a bypass, and the batch keeps a guard whose whole job is that the hook is not bypassed.** **The rule:
+needing `--no-verify` is a finding about the environment; say so BEFORE committing, not after.**
+`FirstRunCopyByCard` remains exported public surface, **self-flagged as unchallenged** -- now in the reviewer's brief.
+
+### And the AST evidence I asked for, which is the case for the future slice
+**Of the 16 machine-lane findings, ELEVEN are parser-shaped and an AST closes them by construction** -- B (token
+kinds settle string vs JSX apostrophe), C (an annotation is a node), E (`ts.isImportSpecifier` separates property
+from local name), F (the checker resolves aliases; no resolution order to get wrong), per-value shapes, nested
+binding patterns, key-vs-value position, one walk instead of per-field rescans, **and the self-inflicted escape bug
+(no string-built regexes to lose a backslash in)**. **It would NOT prevent**: A (a policy choice), G (dead config),
+H (harness crash handling), I (seed discipline), #16 (a modelling choice) -- **and the propagation limits (parameter,
+re-export, JSX spread) need DATA FLOW, not a parser.** The walk would delete `blankNonCode`, `stringEnd`,
+`skipString`, `skipRegex`, `exportedConsts`, `importedBindings`, `aliasesOf`, `destructuredReads` -- **about two
+thirds of the file.** **Recorded as its own slice; not started.**
+
+**REVIEWER DISPATCHED, ALONE** -- one lane at a time is now the rule on this machine.
