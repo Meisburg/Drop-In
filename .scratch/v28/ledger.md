@@ -5456,3 +5456,43 @@ requiredness, the builder must STOP and say so -- *a comment saying "`isSkippabl
 
 **So fix round 1 is now: F1 (the blocking bare-name keying) + F2 (test-file exclusion) + F3 (destructured read) +
 F4 (`ocr`'s two-sources-of-truth).** All four in the same two artifacts.
+
+## Slice 6a VERIFY: **PASS** -- and the lane REFUSED TO INHERIT its predecessor's claim, which was right, because THE CLAIM WAS FALSE
+
+**PASS, and the shape fix is why it finished:** the incremental evidence file (`/tmp/verify-6a.md`, **320 lines**), a
+**five-command** closed set, and a short report. `verify` exit 0; **69 files / 2024 tests**; lint **81 / 0** counted
+two ways after confirming oxlint prints no summary; **both guard artifacts exit 0**; `signup-zip-fallback` **twice**
+(8 passed each); `onboarding-resume` once (3 passed); provenance clean (`16dd303` is the only source commit;
+HEAD's two extra commits are `.scratch/`-only, `git log 16dd303..HEAD -- src/ e2e/ scripts/` = **0**).
+**It was honest about its limits:** *"Seeded-red half: I did not reproduce it... that is the guard testing itself,
+not my independent red run."*
+
+### ⚠️ AND IT DECLINED TO ADJUDICATE THE PREDECESSOR'S CLAIM -- *"I did not adjudicate it"* -- SO I MEASURED IT, AND BOTH LANES WERE WRONG
+*"Whether Playwright matches that name as full string or substring is **not answerable by these five commands** --
+the run only shows the assertion passed."* **A lane refusing to pass on an unverified claim is exactly what I want
+-- and it was protecting me from a claim I had already written into this ledger as FACT.**
+
+**MEASURED, from Playwright's own typings** (`playwright-core/types/types.d.ts:3084`, `:3114`, `:3144`):
+> *"Whether to find an exact match: case-sensitive and whole-string. **Default to false.**"*
+
+**So `exact` defaults to FALSE = case-insensitive SUBSTRING matching.** And **all six cited Skip sites pass no
+`exact` flag** (`signup-zip-fallback:146`, `onboarding-resume:162,171`, `no-zip-notice:82`, `fixtures:442`,
+`auth.setup:112` -- every one is `{ name: 'Skip' }`), and none matches by regex. **`exact: true` IS used in the repo
+(five places) -- and none of them is a Skip site.**
+
+**CORRECTED, and written here because that is where the false version lives:**
+1. The predecessor verifier's *"full-string name match, so 'Skip for now' would fail to match"* -- **FALSE.**
+2. The reviewer's *"keeping 'Skip for now' would have broken six e2e sites"* -- **FALSE AS A MECHANISM.** Its
+   **conclusion still stands** (the value change was right, for the honesty reason: the module's value must be the
+   rendered word), **but its stated reason does not.**
+3. **And the truth is WORSE than breakage: those six specs would have gone GREEN while the UI said something else**
+   -- substring matching means they never pinned the word at all. **The word is pinned by the UNIT test
+   (`firstRunCopy.test.ts:41` pins `toBe('Skip')`), not by e2e.** *The weaker signal was mistaken for the stronger
+   one* -- **the identical shape to 8c's `src` assertion being weaker than the mint count beside it.** **Two sessions
+   apart, the same mistake: an assertion believed stronger than it is.**
+
+**Both wrong claims came from lanes and both were about a mechanism neither had measured. I had propagated one into
+this ledger as fact. The correction is here, next to it.**
+
+**FIX ROUND 1 DISPATCHED** (4 items: F1 the blocking bare-name keying + its seed, F2 the test-file exclusion,
+F3 the destructured read, F4 `ocr`'s two-sources-of-truth type).
