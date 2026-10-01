@@ -4558,3 +4558,38 @@ has corrected MY instruction by following the RULE I wrote. It also counted lint
 **and verified the pattern catches react-hooks warnings** (`PlaceMap.tsx` alone contributes 7), resolving the
 builder's self-disclosed under-count. And it settled the two lanes' line-number disagreement by **quoting the
 actual `test.fixme(true, 'V27: ...')` text** at `:1459`.
+
+## ✅ SLICE 4 IS CLOSED -- reviewer PASS, verifier PASS, and `ocr` found NO PRODUCT FINDINGS in any fix round
+
+**The full three-lane record across the slice and its three fix rounds:** reviewer PASS (build), NEEDS_CHANGES
+(fix 1), NEEDS_CHANGES (fix 2), PASS (fix 3); verifier PASS every time; **`ocr`: 7 findings on the build,
+4 on fix 1, 0 on fix 2, 1 on fix 3** -- and that one is **the trailing newline**, which is 8b's sweep and is
+absorbed by the *"measure it yourself"* instruction **without a brief edit, for the fifth time.**
+
+**What slice 4 actually cost, and what it bought.** Three fix rounds, every one of which found something real:
+a stale pin republished over edited text, a wrong zip **saved**, and a lying note. **All three were instances of
+one invariant, and the invariant was not in the plan** -- the plan said "render a map on the area card", and the
+invariant that emerged is *every claim the card makes corresponds to the current field text, or nothing.*
+**That is the same shape as the batch's own thesis: the plan's prose describes the feature, and the invariant
+is discovered by the lanes.**
+
+### ⚠️ COST, recorded as the plan requires -- and it is a batch-boundary fact, not a footnote
+**Thirteen fix rounds have now run across slices 3 and 4.** Slice 3 took three, slice 4 took three, and each
+round ran a full three-lane pass. **The plan's slice budget -- one local builder context -- has been exceeded
+by a wide margin on both, and slice 4's own builder hit ~3.9M tokens partly because of a self-inflicted hang
+that cost it the context that would have finished the slice.**
+
+**The honest read: the lanes are finding real defects at roughly the rate they are being run**, which is why the
+rounds keep going -- but **a "round" is not free, and the batch's remaining slices (5, 6) plus four hygiene
+slices (8a-8d) will not each survive three.** **That decision belongs at the batch boundary with the human**,
+and it is now recorded rather than discovered later.
+
+### And the hygiene pile is the other half of the same fact
+**Slice 8 has now split three times** -- 8 -> 8a/8b -> +8c -> +8d -- **because hygiene accumulates from every
+slice's review faster than it is dispatched.** The pile now holds the newline sweep plus its guard, the
+`slice-diff.sh` tool, the await guard, the `| void` drop, the kid-photo spec's honesty items, the timing-beat
+class, the typed-zip family, the rejected-slot residual, the invalidation-site proposal, the wire-or-delete
+list, and the stale-claim sweep. **Running it LAST means it grows until the end; the alternative is running it
+INTERLEAVED.** **Recorded as a batch-boundary question, not decided here.**
+
+**SLICE 5 IS DISPATCHED** (the tour ending -- the run's last card).
