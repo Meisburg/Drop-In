@@ -5205,3 +5205,39 @@ with its boundary written down, is a PASS. A total-looking guard with a hole is 
 back."* Two r2 slices were already split **after** dispatch for exactly this reason.
 
 **ALL FOUR slice-6 BRIEFS ARE NOW ON DISK (6a/6b/6c/6d). 6a IS RUNNING.**
+
+## ⚠️ 6a's builder TIMED OUT at 30 minutes -- and this is the SECOND timeout of the session, so it gets a rule
+
+**Diagnosed rather than retried blindly** (the run's own warning said *"inspect partial changes before retrying"*).
+**The work is intact and UNCOMMITTED:** `git status --porcelain` shows 4 modified files
+(`FirstRunCard.tsx`, `firstRunCopy.ts`, `firstRunCopy.test.ts`, `OnboardingPage.tsx`) and **two new guard files**
+(`scripts/guards/copy-field-consumption-guard.mjs` + its `.check.mjs`). **61 tool calls, and the repeats in the
+event stream are streaming updates of the SAME call, not a loop** -- so this was not the self-matching `pgrep`
+failure mode of slice 4, and not a brief defect: 6a's brief was small and closed.
+
+**What it had already achieved, visible in its final output** -- the checker passing with exactly the sub-checks
+the guards file's own bar demands:
+```
+  ✓ allowlisted with NO reason is a finding
+  ✓ an allowance for a field that IS read is a finding (stale allowance)
+  ✓ an allowance for an undeclared field is a finding (a typo guards nothing)
+  ✓ a module with no parseable fields FAILS instead of passing (the blind-instrument tripwire)
+copy-field-consumption-guard check: all checks passed.
+```
+**That last one is the standard the guards file sets -- *"a checker that matches nothing looks exactly like a clean
+repo"* -- met head-on, including the trap that a stale allowance is itself a finding.**
+
+**What is missing, precisely:** `run-all.sh` is **not** in the modified list, so **the guard is not registered**
+(acceptance 4); and there is no gate run, no commit, no report.
+
+**RULED: REVIVE, do not re-dispatch.** Its context knows the work and the remainder is five short steps; slice 4
+precedent is that reviving a builder whose work survived a hang finished the slice. **Given a 40-minute clock
+rather than the 30-minute default**, because the remainder includes the gate plus two e2e specs.
+
+### ⚠️ THE RULE THIS SECOND TIMEOUT EARNS
+**A local builder doing a FULL slice -- write, register, gate, e2e, commit, report -- can exceed 30 minutes, and
+the 30-minute default is a runner setting, not a slice budget.** Slice 5 spent three fix rounds inside that clock
+without a single timeout because **its rounds were small and resumed**; both timeouts in this session were on
+**first-pass full slices**. **Recorded so the next full-slice dispatch sets its own clock deliberately** rather
+than inheriting the default and losing an almost-finished slice's *context* -- the work survives a timeout, the
+context does not, and the context is what finishes the slice.
