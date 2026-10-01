@@ -4660,7 +4660,7 @@ guess at it."*
 ### ⚠️ B1 -- THE CARD LIES, AND I VERIFIED IT FROM THE REPO'S OWN WORDS
 Shipped: `detail: 'look up parks and playgrounds, and see their hours and where they are'` (`firstRunTour.ts:85`).
 
-- **Hours: the migration says *"Measured coverage is thin: 26/239 rows"* (`0059_place_hours.sql:23`), and the
+- **Hours: the migration says *"Measured coverage is thin: 26/239 [⚠️ STALE — corrected by slice 5 fix round 1: a `city_default` backfill has since run, so live coverage is **184/239**, of which 164 are labelled citywide "typical hours" rather than venue schedules, and **55 rows still have none**. The defect stands; the figure did not.] rows"* (`0059_place_hours.sql:23`), and the
   app renders the honest fallback *"we don't have their hours yet"* (`PlaceDirectory.tsx:1149`).**
 - **`kind='park'`: the app withholds the chip because *"a chip for either could only ever come back empty"*
   (`places.ts:180`), and it renders *"No 'Park' places in the directory yet."* (`places.ts:187`).**
@@ -4720,3 +4720,70 @@ BYTE-IDENTICAL by diffing against the backup**, and re-ran slice 5's review. **T
   correct — **the reasoning was wrong, not the code.**
 
 **FIX ROUND 1 DISPATCHED** (resume; brief `slice-5-fix-1-r2.md`).
+
+## Slice 5 FIX ROUND 1: DONE (`3215557`) -- and it CORRECTED THE REVIEWER'S NUMBER WHILE UPHOLDING THE FINDING
+
+7 files, **+214/-78**. **My verification:** the Places line is now
+`'look up a playground, a pool, a beach, and pick where to host'` -- **no park and no hours promise anywhere**;
+the property test **imports its vocabulary from `places.ts`** (`PLACE_KINDS` / `PLACE_KIND_CHIP_KINDS` /
+`placeKindLabel`) instead of writing it beside the copy, and asserts both directions (a withheld kind may not
+be named; every kind noun in the line must be a chip kind); the word-ban is documented as **retired**; and
+`what's happening near you` is **deliberately absent** from the ban list, with the reason written out.
+
+### ⚠️ THE BEST THING IN THIS ROUND: IT MEASURED, AND THE REVIEWER'S OWN FIGURE WAS STALE
+It ran the distribution live through `scripts/db-sql.sh --read`:
+```
+playground 155 · splash_pad 30 · other 26 · pool 10 · beach 9 · library 6 · indoor_play 2 · museum 1   (239)
+park 0 · trail 0
+hours: 239 total · 184 with hours (osm 20, city_default 164) · 55 without
+```
+**And it found that the migration's `26/239` hours figure -- which the reviewer cited, and which I quoted
+approvingly in the entry above -- is STALE.** A `city_default` backfill ran since. **It said the defect stands
+regardless, and it does:** 55 rows still have no hours, and **164 of the 184 are labelled citywide "typical
+hours" rather than a venue schedule**, so the card promising *"their hours"* was still a promise about data
+that is mostly not there. **`park = 0` was never in dispute.**
+
+**The corrected figure is now written into both places it appeared above, with the correction visible rather
+than swapped** -- because a retraction that is not written where the false number lives leaves the record
+lying. **And the shape is worth keeping: the builder upheld a true finding while correcting its evidence. That
+is harder, and rarer, than either defending a number or dropping the finding.**
+
+### B1/B2, as delivered
+- **B1:** every noun is now a kind with rows (155/10/9) **and a kind the app offers a chip for**, and *"host"* is
+  a **capability** the post form wires (`listPlaces` feeds `NewPlacePage`'s picker) -- **so the line holds even
+  on an empty day**, which is the entire point of the honesty rule. **The module header now carries the
+  distribution, the hours count and the capability driver as "the three measurements that make a line true."**
+- **B2:** the `/\bplaces?\b/i` test is **deleted**, replaced by a **property** whose vocabulary is imported from
+  the app. **And it shrank the blocklist by one**, arguing that banning the never-shipped *"what's happening
+  near you"* forbids the plan's own blessed intent while the **shipped near-synonym** walks past -- *"they
+  cannot both stand"* -- **and it flagged that rather than choosing.** **That is the right instinct: it is a
+  product question about the Drop Ins line, not a test question.**
+- **The honest limit, stated rather than hidden:** *"the hours-coverage half is not checkable locally (it needs
+  a live row count), so the copy makes no such promise instead of testing for one... That is slice 6's guard; I
+  did not build a bigger list."*
+
+### The small ones, and the claim it had got wrong
+Fixture and CTA comment now describe the tour card ✓; `places.ts:1601` no longer calls an inlined comparison
+*"the app's existing radius predicate"* and says plainly that `feed.ts`'s `withinRadius` **is not called by this
+module** ✓; the Profile line is now one flow with the name search as **a step inside it**, pinned by a
+subordination assertion (it even reports `expected 58 to be greater than 68`) ✓. **And it corrected its own
+unsound reasoning**: `runOver && loadError` **is** reachable, **and it gave a better reason than mine for why
+the current behaviour is right** -- *"the tour performs no read, and the error line below is the AREA CARD's
+error state, so showing it would report a failure on a card the parent is no longer on."*
+
+### Raw red PASTED, and the counts in the record
+Three mutations with exact assertion text (unit ×2, the browser lane, and the Profile subordination). **Gate:
+exit 0, 69 files, 2017 tests (+3: the tour file grew 9 -> 12), lint 81 warnings / 0 errors, guards PASS.** E2E
+across the three specs: **11 passed**, including the shared `auth.setup` every spec rides.
+
+### ⚠️ AND THE MODEL SWITCH IS NOW COMPLETE ACROSS ALL THREE TARGETS
+`ocr` was **still pointed at the dead server**, and my first fix was wrong in a precise way: I added an
+**ai-sdk/opencode** provider to `opencode.json`, but **`ocr` keeps its OWN config and validates a `protocol`
+field** -- its error said so exactly: *"custom provider \"strata-max\" requires a protocol field."*
+So I set what its own help documents: `custom_providers.strata-max.protocol=openai`, `.url`, `.api_key`, and
+`model=qwen3.8-flash-next-iq3_s`. **Both `ocr` runs now get past endpoint resolution and are reviewing.**
+**The three targets were: the `factory` launcher (pinned), the agent definitions (already switched), and
+`ocr`'s provider (two places).**
+
+**THREE LANES OUT** for this fix round: reviewer + verifier (workflow `8c7335a5`), and **two** `ocr` runs --
+the slice diff (which had NEVER successfully run) and the fix-1 delta.
