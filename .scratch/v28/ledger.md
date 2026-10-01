@@ -6120,3 +6120,68 @@ evidence form was numbers without transcript -- *"three of the same report's num
 more serious form of the same defect."*
 
 **FIX ROUND 5 DISPATCHED -- fresh builder, ON CLOUD, a measurement round.**
+
+## Slice 6a FIX ROUND 5: DONE (`4dc81d0`) -- the guard tells the truth about itself now, and it corrected MY brief and the REVIEWER
+
+**A measurement round, and the mechanism was NOT touched** -- which is exactly what the reviewer's last verdict
+implied it should be.
+
+- **M1** measured: **734 lines at `dde111a`, 849 at `860893c`** (`wc -l`); code lines **382 either side**. **The header
+  now PINS the numbers to those commits and says why:** *"a line count written as 'this tree' is wrong the moment
+  anyone edits the file, **which is exactly how it was wrong by thirty-one**."*
+- **M2** measured: **32 at the fix-4 commit, 33 here** -- and **the check now COUNTS AND PRINTS ITS OWN INVOCATIONS
+  (33)**, so the header stops asserting a number that moves when a seed is added. *That is the class's actual fix:
+  not a corrected number, a number that cannot go stale.*
+- **M3** measured: on `dde111a` **28 seeds / 39 checks** (**41 raw `check(` sites, two of which fire only on
+  failure**) -- *"exactly the 'check 39 ✓ / 0 ✗' that round's report gave, so the fix-4 'correction' had FLIPPED
+  it."* Today: **34 seeds / 48 checks.**
+- **M4** -- **seed 34** plants `export const zzSkip = zzAny.skipLabel` where `zzAny` is `JSON.parse`'s `any` return
+  (zero type errors), requires the guard to PRINT its `limit——` line, **has a self-verifying premise** (the real read
+  stays standing so the run still exits 0), and **names ONE baseline: `dde111a`**. *The one-seed-one-baseline rule I
+  got wrong two rounds ago, now second nature.*
+
+### ⚠️ IT CORRECTED MY BRIEF'S ACCEPTANCE NUMBERS, and it was right
+**I wrote 6 red vs `a03fc54`, 11 vs `be29027`, 5 vs `340d016`.** Those are **the fix-3 review's PRE-fix-4 counts (6,
+11) plus the pre-seed-34 count (5)** -- *"each grows by the six new seeds / seed 34, giving **12 / 17 / 6**, which is
+what I reproduced and wrote into the check header."* **I had quoted a previous round's matrix as if it were current
+-- the same "a frozen number in a brief is a bug in the brief" mistake, this time with a matrix.**
+
+### ⚠️ AND IT CORRECTED THE REVIEWER, with a measurement
+The reviewer said *"`FirstRunCardProps` escapes only because `body` is `ReactNode`"*. **Measured: `body?: string`
+STILL refuses -- optionality blocks too.** The header now says *"an optional `ReactNode` against the shape's required
+`string`."* **A builder measuring a reviewer's mechanism and finding it imprecise is the two-lane system working as
+designed.**
+
+**And two more honest corrections it volunteered:** the header's *"345 with TypeScript's own libs"* is **399**
+(`program.getSourceFiles()`), and **both file counts were DROPPED because they rot**; plus re-measured timings (old
+guard 0.10s -> new 1.19-1.47s; old check 8.60s -> new 40.3s).
+
+**The non-blocking findings, all in:** the **JSX-spread limit is RESTORED** (fix 4 followed a parameter and a
+re-export and **deleted the bullet with them** -- measured by replacing the read with `{...kidsCopy}`); the data-flow
+over-report **names its nearest input and rules why it cannot be fenced**; **parameter destructuring documented** as
+a missed read.
+
+**Raw output tails pasted** for `verify` (exit 0, 69 files, **2027 tests**, `GUARDS: PASS`) and `typecheck` (exit 0)
+-- which the round-4 review had asked for.
+
+### ⚠️ TWO LADDERS THE BUILDER HANDED TO ME -- *"so the orchestrator owns the climb"*
+1. *"I added a **run counter + self-report** to the check **partly so the guard header stops asserting a cost number
+   it then gets wrong** (the M2 mistake). It is a measurement mechanism, not a guard on code, **but it is a structural
+   constraint added to avoid a repeated class** -- flagging it so the orchestrator owns the climb."*
+2. *"I also introduced a convention -- **pin header numbers to commit SHAs instead of deleting them** -- so a value is
+   measured without being rot-prone. **A reviewer may prefer outright deletion**; the brief allowed either."*
+
+**MY RULINGS (recorded so they are not re-litigated):**
+- **Commit-pinned numbers: ADOPTED as the batch convention.** *Deletion loses the measurement; pinning keeps it and
+  names the state it was true of.* The header's own sentence -- *"a line count written as 'this tree' is wrong the
+  moment anyone edits the file"* -- is the reason.
+- **The data-flow over-report stays UNFENCED, with its ruling.** *Containment needs provenance, and no type answers
+  provenance.* **And NO characterization seed:** a seed asserting a known false-positive output would **pin a wrong
+  behaviour as expected**, which is worse than a written ruling that names the input. *That is my answer to the
+  builder's open question.*
+- **The run counter/self-report: accepted**, precisely because it moves a number from *asserted in prose* to
+  *computed at runtime*. **That is the same move as slice 5's `withheldCategoryPattern()` throwing: make the stale
+  state unrepresentable rather than policed.**
+
+**THREE LANES OUT -- AND FOR THE FIRST TIME SINCE THE OOM, THE REVIEW AND VERIFY RUN AS A PARALLEL PAIR.** *That was
+the batch's original design; the local model's 50 GB made it unsafe, and the switch to cloud restored it.*
