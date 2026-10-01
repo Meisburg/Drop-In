@@ -6320,3 +6320,23 @@ a handover) -> fix 1 `be29027` -> fix 2 `2ffd16a`/`a03fc54` -> fix 3 = **the AST
 - **The `verify-6a.md`/`/tmp` evidence files are scratch**, not tracked.
 
 **6b DISPATCHED** (`slice-6b.md`, fresh builder, cloud). **Queue: 6c, 6d, 8a-8d.**
+
+## ⚠️ 6b's first builder died to a TRANSIENT PROVIDER ERROR -- and it had drifted onto ANOTHER SLICE's subject
+
+**`Connection error`, tree clean, 31 tool calls of reading, and the cloud endpoint answers 200 now** -> transient,
+not systemic. **Nothing was lost (no files written), so this is a same-protocol retry, which is what the protocol
+says to do after capturing state.**
+
+**⚠️ BUT I MEASURED SOMETHING IN ITS OUTPUT THAT MATTERS MORE THAN THE FAILURE.** Its last lines were about
+**the kid-photo crop-confirm upload behaviour** and *"fix the hint at `:515`"* -- **which is another slice's subject
+(the crop/upload path belongs to 6c/8b), not the acceptance-greps guard.**
+
+**Why this is worth a rule rather than a shrug:** the briefs all live in `.scratch/v28/briefs/`, and
+`slice-6b.md`'s own banner **names the sibling slices** (*"the `skipLabel` prop and the copy-field guard are 6a; the
+repo-wide `escapeFromRegExp` dedupe is 6c; the repo-wide honesty guard is 6d"*). **A builder that reads the
+directory rather than its brief finds four plausible subjects and no instruction about which one is its turn.**
+**So the retry brief now says, in as many words: read only `slice-6b.md` among the briefs, and here is the list of
+subjects that are NOT yours.** *Slice 6a's builders never had this problem because I dispatched them one at a time
+against a handover brief -- but the risk has been there since I wrote four briefs ahead.*
+
+**RETRY DISPATCHED** (fresh builder, cloud).
