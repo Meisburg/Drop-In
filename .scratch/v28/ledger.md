@@ -5505,3 +5505,46 @@ is a record that lies**; here the value was not even in the record, it was in a 
 by eye. **The fix was to look the run up by DIRECTORY (`ls -d .../f690938b*`) and copy it.** *An identifier copied
 from the filesystem cannot be mistyped.*
 **FIX ROUND 1 DISPATCHED** as run `a7b50fdb` (resumed, brief `slice-6a-fix-1.md`).
+
+## Slice 6a FIX ROUND 1: DONE (`be29027`) -- and the seed is run against the OLD code, which is the evidence I want
+
+**F1 fixed by DECLARING SHAPE:** a read now satisfies a field only when the read's **root binding actually carries
+that shape**. Added type-alias/mapped-type resolution, `import type` exclusion, destructured-read support, an
+**all-test-files** exclusion, and a `Shape.field`-keyed allowlist. **Check corpus 14 -> 17 seeds** (+ sibling-shape,
++ other-test-file, + destructuring).
+
+**F4 fixed STRUCTURALLY, not by comment:** `SKIPPABLE_CARDS = ['kids'] as const` in `firstRun.ts` is now **the single
+authority**; `SkippableFirstRunCardId` derives from it; `isSkippable` reads it; and the copy module's annotation is
+a **mapped type** (`FirstRunCopyByCard`) that **no longer names a card id**. *"One authority, derived everywhere"*
+-- now applied to a **type**, which is where it is cheapest and hardest to drift.
+
+### ⚠️ THE SEED, AND IT IS THE BEST EVIDENCE OF THE BATCH: the SAME seeded tree, run against the OLD GUARD
+```
+pre-fix guard (from 16dd303), same seeded tree:
+  read — title (interface FirstRunCardCopy) at src/App.tsx:195    -> PASS, exit 0   <- THE DEFECT
+fixed guard, identical tree:
+  FAIL — "FirstRunCardCopy.title" ... READ BY NOTHING
+  (while FIRST_RUN_NUDGE_COPY.title is still reported read)        -> exit 1
+```
+**That is a before/after on the same input against the old implementation** -- it demonstrates the defect rather
+than asserting the fix. **Slice 5's best mutation proof showed the old code was broken; this one does the same
+across two guard versions.** *The bar keeps rising, and this is the right direction for it to rise.*
+
+**Counts:** gate exit 0, **69 files / 2026 tests** (+2 authority pins), lint **81 / 0**, e2e **10 passed** (both
+specs drive the kids Skip by role+name).
+
+### ⚠️ TWO BLOCKERS IT HIT ON THE WAY TO GREEN, PLUS A RETRACTION OF ITS OWN ROUND-1 EVIDENCE
+1. **The comment/string stripper mis-lexed APOSTROPHES IN JSX TEXT** -- `Who's` opened a fake string and swallowed
+   code up to the next apostrophe, **hiding `kidsCopy.skipLabel` and making the guard declare a READ field "READ BY
+   NOTHING"** -- i.e. **a false positive that would have failed the build.** Fixed by only opening a string after an
+   operator or a `from` keyword. **A lexer bug inside the honesty guard, found because the guard was run on the real
+   tree and not only on its fixtures.**
+2. **`aliasesOf` iterated a Map with `for (const b of map)`**, interpolating an `[key,value]` pair into a regex --
+   **and the PRE-EXISTING alias seed caught it.** *"Direct evidence the seeds earn their lines."*
+3. **AND IT RETRACTED ITS OWN EVIDENCE UNPROMPTED**: *"`npx tsc --noEmit` at this repo's root checks **NOTHING** --
+   `tsconfig.json` is `{"files": [], "references": [...]}`. **I quoted it as type evidence in round 1; it was
+   vacuous.** The real command is `npm run typecheck` (`tsc -b --noEmit`)."* **A lane that audits its own prior
+   evidence and withdraws it is worth more than one that is merely right the first time** -- and it is the
+   *"an instrument that reports nothing looks like a clean repo"* class, caught by its own author.
+
+**THREE LANES OUT** (review + verify bounded with incremental evidence; `ocr` on `16dd303..be29027`).
