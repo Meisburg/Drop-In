@@ -101,3 +101,22 @@ is why the ruling is to keep it `Skip`. Kill listeners **by port**, never `pkill
   can see the guard's boundary.
 - `npm run verify`: exit code, test-file count, test count, lint counts.
 - Anything the plan did not anticipate — **say it rather than quietly fixing it.**
+
+## ADDED 2026-10-01 — the repo-wide honesty guard (escalated from slice 5, and it is yours)
+
+Slice 5 mechanically pinned ONE class of dishonesty for ONE card: **copy must not assert content that is not
+there.** Its own words: *"`TOUR_ACTION_VERBS` / `TOUR_FORBIDDEN_CLAIMS` plus the no-'place'-outside-the-label
+test... the climb is a repo-wide guard (every copy module declares its claims, every claim is checked against a
+live count); slice 6's `FIRST_RUN_COPY` field guard is the nearest existing hook. The orchestrator owns that
+row."*
+
+**It is now your row, because your `FIRST_RUN_COPY` field guard is the same shape: a copy module's contents
+declared and then checked.** The reason this matters is measured, not stylistic: **every drop-in in the live
+database is hosted from a single ZIP and NONE are upcoming**, so *"see what's happening near you"* is a lie
+about an empty feed — and an empty feed is what every new parent actually sees. Slice 5 refused the plan's own
+wording for exactly that reason.
+
+**Scope it honestly and say where it stops.** The full climb — every copy module declaring its claims and each
+claim checked against a live count — may not fit alongside `skipLabel` and your two guards. **If it does not
+fit, STOP and report which parts you did**, and I will split it. A guard that pretends to be total is worse
+than one that says what it covers, and this batch has already ruled that twice.

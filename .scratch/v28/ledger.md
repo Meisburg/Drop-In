@@ -4593,3 +4593,56 @@ list, and the stale-claim sweep. **Running it LAST means it grows until the end;
 INTERLEAVED.** **Recorded as a batch-boundary question, not decided here.**
 
 **SLICE 5 IS DISPATCHED** (the tour ending -- the run's last card).
+
+## Slice 5: BUILT (`6131991`) on the new model, FIRST TRY -- and it is the strongest report of the batch
+
+8 files, **+376/-404**. **It deleted `src/components/FinishRunCard.tsx`**, added `HowItWorksCard` + the tour's
+words as data (`lib/firstRunTour.ts`), and deleted four orphaned exports from `lib/places.ts` with their tests.
+
+### MY VERIFICATION -- every anchor holds
+- **The pinned landmine is intact and deliberate:** the testid is produced at `HowItWorksCard.tsx:36` **with a
+  comment saying it is on purpose**, and `TOUR_PRIMARY_LABEL = 'Go to your feed'` at `firstRunTour.ts:102` with
+  a comment naming the consumer. **The consumer sites are untouched** (`fixtures.ts:481,483` and the spec),
+  **and a unit test asserts the label** -- so a future rename fails loudly instead of silently breaking
+  seventeen spec files' shared setup.
+- **THE COMPLETENESS QUESTION I MOST WANTED ASKED: `FinishRunCard` has ZERO references left.** **The deleted
+  FILE is as fully retired as the four deleted symbols**, which is the *"the slice that deletes owns what it
+  orphans"* rule applied to a file and not just to functions. The four orphans are likewise **zero hits**.
+- **`RadiusEmptyState` remains reachable** (`FeedPage.tsx:1272`, `PlaceDirectory.tsx:1117`).
+- **The honesty rule is enforced rather than merely obeyed:** the banned strings appear **only in the
+  forbidden-claims list**, never in the shipped copy.
+
+### Why this report is the best of the batch
+1. **It refused the PLAN'S OWN WORDING, with the measurement as the reason.** The plan wanted *"what's
+   happening near you"* for Drop Ins. It did not use it, because with the cold-start fact measured that
+   phrasing **is precisely the promise the honesty rule bans** -- and it added it to the forbidden list.
+   **A builder overriding the plan for a measured reason, and saying so, is the whole point of the identifier
+   discipline this batch has been building.**
+2. **Both new behaviours were proven red-green, with the mutations stated:** mutating the copy -> **5 of 9
+   unit tests failed**; mutating `TOUR_TITLE` -> the browser leg failed at `toBeVisible`. **Not "the tests
+   pass" -- "here is the mutation, here is the red."**
+3. **It declared its own scope breach:** it edited one e2e spec (+17 lines) **beyond the Files list**, to
+   evidence criteria 1-2 in the browser lane rather than only in a unit test, and proved it non-vacuous.
+   **A declared breach with evidence is the opposite of a silent one.**
+4. **It escalated the honesty class to me rather than pinning one card and calling it closed:** *"the climb is
+   a repo-wide guard... slice 6's `FIRST_RUN_COPY` field guard is the nearest existing hook. The orchestrator
+   owns that row."*
+5. **It flagged the stale docs it did NOT touch** (`docs/product/onboarding-first-run.md:110-124` still
+   documents the places list; the defect table still says "Fixed"; `V28-BATCH-SUMMARY.md:28` likewise)
+   **-> 8a**, because they are outside its Files list. **Flagging rather than fixing out of scope.**
+6. And it reported brief line numbers **off by more than 100 throughout, with every claim holding** when
+   followed by identifier. **That is the identifier rule paying for itself for the fourth slice running.**
+
+### RULINGS on its open items
+- **The tour's line order: the BAR'S order is right, as shipped** (Drop Ins, Inbox, +, Places, Profile). *"The
+  card's job is to orient the parent to what they will see"* -- **correct, and the plan's table order loses.**
+- **The repo-wide honesty guard -> SLICE 6**, whose `FIRST_RUN_COPY` field guard is the same shape. **Its
+  brief now carries the row, with an explicit instruction to STOP and report rather than overreach**, because
+  a guard that pretends to be total is worse than one that states its coverage.
+- **The stale docs -> 8a** (it is now the third document in that sweep, which is itself evidence the sweep is
+  needed).
+- **Pre-existing and left alone:** `places.ts:1604`'s docblock still calls an inlined predicate *"the app's
+  existing radius predicate"* -> a candidate for 8a's stale-claim list, noted.
+
+**THREE LANES OUT** (reviewer + verifier, with the reviewer asked specifically for the completeness of a
+FILE deletion; and `ocr` on `9e532d6..6131991`).
