@@ -6645,3 +6645,50 @@ negotiable just because you found a better fix.**
 
 **ROUTED TO 6c**, which already touches guard scripts -- *a coverage statement printed on every run is the
 most-read claim in the guards lane, and it cannot be the false one.* **VERIFIER DISPATCHED** for this round.
+
+## Slice 6b MICRO-ROUND lanes: **VERIFY PASS** -- and it caught a "nearly right" claim of the builder's
+
+**The central claim HELD, reproduced independently:** all four affected scripts' stdout is **md5-identical
+base<->head** (`7627fc37`, `6c0dc8dd`, `7e6e838d`, `ac9a939d`) ✓. **With a nuance that VALIDATES the builder's
+number rather than disputing it:** the `.sh` hash matches **only when run inside the real repo**, because the guard
+`cd`s to the git toplevel -- *"in a bare /tmp copy it differs, which is expected."* ✓
+
+### ⚠️ THE NAMED DISCREPANCY -- and it is the batch's house specialty: *a claim that is nearly right is still a claim*
+**The builder wrote *"the only non-comment changed lines in the whole round are C2's assertion."*** Measured: **there
+are TWO non-comment lines**, both in `check-acceptance-greps.check.mjs` -- the assertion, **and the failure-detail
+formatter** `` `exit ${r.exit}: ${r.out.split('\n')[0]}` `` (was `findings(r.out)`).
+
+**And then it explained why it does not matter, which is the part that makes the finding useful rather than pedantic:**
+line (2) is part of C2's `check(...)` block and **`check()` prints `detail` only when `ok` is false**, so it prints
+**only on the failure path** and **cannot move PASS stdout** -- *"the identical-output acceptance stands. **But
+'everything else is a comment' is false by one line.**"* **The claim was one line wrong and the conclusion was
+right** -- *which is the exact shape this batch has spent all day catching.*
+
+### ⚠️ AND IT MUTATION-PROVED THE FIX ITSELF -- C2 closed a REAL hole, not a cosmetic one
+Against a guard mutated to drop the blockquote line from the quotation count (**V2**):
+- **the OLD assertion PASSES: "all 14 checks passed"** -- *a genuine FALSE PASS* ✓
+- **the NEW assertion FAILS** (`exit 0: ... 0 untagged quotation line(s) ignored`) ✓
+
+With a control (both checkers pass on the pristine guard) and a discarded variant: **V1** (`>` as a list marker)
+**exits 1 anyway via a bare-scope finding**, so exit code already caught that one -- **V2 is the hole that was
+actually closed.** *That is the mutation-proof standard applied to the fix, not just to the guard.*
+
+### C1's two claims, both MEASURED
+The header now names the mechanism it proves **and** states the blind spot. **And the verifier measured both sides
+itself:** `GIT_REFLOG_ACTION` on a **commit** writes `push-wrapper: git push --no-verify: x` to `.git/logs/HEAD` and
+**survives the filter**; the same env on a **push** leaves `--no-verify` in **NO** `.git/logs` file (`NOT FOUND`).
+**So the header's narrower claim is the true one, and the clause it replaced was provably false.**
+
+**Residual CONFIRMED present and unchanged:** `no-bypass-guard.sh:249-252` still prints *"only a wrapper-recorded
+bypass or a FAST_PUSH_LOG line is visible"* -- **the line routed to 6c.**
+
+`verify` exit 0 (69 files / **2027 tests**, lint **81/0**); `run-all.sh` exit 0; `no-bypass-guard.check.mjs` **6/6**;
+`check-acceptance-greps.check.mjs` **14/14**; ports clear; tree clean.
+
+# ✅ SLICE 6b — **CLOSED** (`59b15c5`)
+Built `09d9af5`; fix 1 `f9ab882` (**review PASS + verify PASS**); micro `bce017e`/`59b15c5` (**verify PASS**).
+**The `check-acceptance-greps` guard exists, is registered in both places, passes on the live corpus while ignoring
+95-97 quotations, fails on both recorded fixtures with the rules isolated, ships a checker whose no-tag case fails,
+implements ruling F1 deliberately with both halves seeded, and states its own coverage.** Plus: **`no-bypass-guard`'s
+blind spot proven rather than asserted**, and its false header clause corrected -- **with the false RUNTIME echo
+routed to 6c.** *The report-on-disk convention was introduced this round and held twice.*
