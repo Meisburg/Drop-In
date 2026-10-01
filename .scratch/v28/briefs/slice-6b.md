@@ -93,3 +93,29 @@ browser has been closed"*. Kill listeners **by port**, never `pkill -f`.
   one on purpose, and finding it is part of the job.
 - `npm run verify`: exit code, test-file count, test count, lint errors **and warnings**.
 - Anything the brief did not anticipate — **say it rather than quietly fixing it.**
+
+---
+
+## APPENDED — a STANDING RULE adopted from 6a's builder, and it applies to EVERY guard you write
+
+6a's builder reported this, and I am adopting it as a rule rather than leaving it to per-guard taste:
+
+> *"The guard's own zero-fields tripwire fired **twice** during development and caught two real parser bugs (a wrong
+> brace index, a wrong literal depth). **A guard that fails when it matches nothing is the only reason those were
+> not shipped as a silently-clean checker.** Worth making a standing rule, not a per-guard act of taste."*
+
+**So: every guard and every `.check.mjs` you write must ship a case where it MATCHES NOTHING and FAILS.** The
+guards file already states the standard (*"a checker that matches nothing looks exactly like a clean repo"*) —
+**your job is to make that structural instead of aspirational**, in the place that states the bar, so the next
+guard author inherits it.
+
+**And it is not hypothetical here: 6b's own guard is prose-shaped.** A tagged-claim parser that finds **zero**
+tagged claims is the single most likely way this guard ships green and useless. **Your checker must include that
+exact case** — a corpus with no tagged claims — and it must **fail**.
+
+**Two more things 6a's builder proved, which apply to you:**
+- **Its seeded-red half was produced in a `/tmp` COPY of the source tree, never in the repo.** That is the standard
+  here: **do not leave a seeded violation in the working tree**, and do not commit one.
+- **It declared its own scope question rather than deciding it silently** (it added a public type its brief had not
+  authorized, and said *"revert it if the reviewer calls it scope"*). **If this brief does not authorize something
+  you find you need, say so in the report rather than absorbing it into the diff.**
