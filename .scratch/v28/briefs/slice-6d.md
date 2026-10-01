@@ -1,5 +1,18 @@
 # Slice 6d — the repo-wide honesty guard (and where the climb has to stop)
 
+> ## ⚠️ RE-MEASURE BEFORE YOU TRUST ANY LINE NUMBER BELOW
+>
+> This brief was written several slices ago and **the anchors have already drifted once** — `FIRST_RUN_COPY` moved
+> from `:27` to `:75` and `FIRST_RUN_NUDGE_COPY` from `:71` to `:123` because another slice edited that module.
+> **Identifiers are stable; line numbers are not.** Find each item by its symbol first, then confirm the line, and
+> **report which numbers you had to re-measure**. `push.ts:63`, `theme.ts:94` and `feed.ts:186,199` were verified
+> unchanged; `verify.yml:24-25` is the CI quote about the database module.
+>
+> **⚠️ And if an item is ALREADY FIXED, say so rather than re-fixing it.** An item that is already done is evidence
+> about this brief, not work for you.
+
+
+
 *(The last of the four subjects slice 6 was split into. **This is the one that may not fit** — read the last
 section before you plan anything.)*
 
@@ -45,8 +58,8 @@ a channel you stop reading."*
 
 | Module | Copy it holds |
 |---|---|
-| `src/lib/firstRunCopy.ts:27` | `FIRST_RUN_COPY` (the r2 first run) |
-| `src/lib/firstRunCopy.ts:71` | `FIRST_RUN_NUDGE_COPY` |
+| `src/lib/firstRunCopy.ts:75` | `FIRST_RUN_COPY` (the r2 first run)  **[RE-MEASURED: was `:27` when this brief was written; slice 6a moved it]** |
+| `src/lib/firstRunCopy.ts:123` | `FIRST_RUN_NUDGE_COPY`  **[RE-MEASURED: was `:71`]** |
 | `src/lib/firstRunTour.ts:229` | `TOUR_BANNED_COPY` + the tour lines (slice 5's local pin) |
 | `src/lib/push.ts:63` | `NOTIFICATION_KIND_COPY` |
 | `src/lib/theme.ts:94` | `THEME_CHOICE_COPY` |

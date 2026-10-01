@@ -6869,3 +6869,26 @@ base `firstRunTour.ts:301` against HEAD `escapeForRegExp.mjs:37` ✓. Provenance
 
 **So 6c = review NEEDS_CHANGES (2 blockers) + verify PASS.** **FIX-1 DISPATCHED**, and **`ocr` launched on 6c**
 (the third lane, which has found real defects on every slice it has completed).
+
+## ⚠️ RE-MEASURING THE REMAINING BRIEFS PAID OFF IMMEDIATELY: 6d had TWO drifted anchors
+
+**The rule is the batch's own -- *a brief that quotes a moving measurement must instruct the reader to measure* --
+and applying it before dispatch caught a real defect rather than a hypothetical one:**
+- **`FIRST_RUN_COPY` moved `src/lib/firstRunCopy.ts:27` -> `:75`**, and **`FIRST_RUN_NUDGE_COPY` `:71` -> `:123`**,
+  because **slice 6a edited that module** (it added the mapped type and moved the module's shape).
+- **`push.ts:63`, `theme.ts:94`, `feed.ts:186,199` verified UNCHANGED** ✓; **`verify.yml:24-25`** is the CI quote
+  about the database module ✓.
+
+**RULED: the numbers are corrected IN PLACE with the old value kept visible** (*"was `:27` when this brief was
+written; slice 6a moved it"*) **and the measurement banner is now on 6d too.** *A stale number silently replaced
+loses the evidence that the identifier is what survived; a stale number kept beside the new one teaches the next
+reader which half to trust.*
+
+**AND 8a's ANCHORS WERE ALL STILL TRUE** ✓ -- including the one that matters: **`plan.md:118` still says `skipLabel`
+is "DEAD AND WRONG" and `:119` still claims `rg -n "skipLabel" src/` returns 0 renders** -- **both made FALSE by slice
+6a**, which gave the field a render site. *Already appended to 8a.* ✓
+
+**AND 8b's ITEM 6 IS STILL LIVE** ✓: `src/components/useCropStep.tsx:27` still types
+`onConfirm: (...) => Promise<void> | void`, so the `| void` the brief asked about is **not yet fixed** -- *which
+matters because 8b's own text said "slice 3's fix round is correcting that", and slice 3 then ran three rounds and two
+more slices followed.* ✓ **The brief's "check items 6 and 7 first" instruction is therefore load-bearing.** ✓
