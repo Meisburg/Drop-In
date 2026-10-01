@@ -80,3 +80,21 @@ browser has been closed"*. Kill listeners **by port**, never `pkill -f`.
   preserved.
 - `npm run verify`: exit code, test-file count, test count, lint errors **and warnings**.
 - Anything the brief did not anticipate — **say it rather than quietly fixing it.**
+
+---
+
+## APPENDED — one line of guard OUTPUT that still makes a false claim (one line, in a file you already touch)
+
+`scripts/guards/no-bypass-guard.sh` has a **runtime `COVERAGE:` echo** that still prints:
+
+> *"only a wrapper-recorded bypass or a FAST_PUSH_LOG line is visible"*
+
+**That is FALSE, and it was measured:** a `GIT_REFLOG_ACTION='… git push --no-verify' git push` writes the flag to
+**no `.git/logs` file at all**, and the guard reads only `logs/HEAD`. The guard's **header** was corrected in a
+comment-only round, which could not touch this line **because it is an `echo` and changing it moves the guard's
+stdout** — the previous round's acceptance required identical output, so the fix was correctly deferred rather than
+smuggled. **The builder named it rather than leaving it**, which is why you have it.
+
+**You already touch guard scripts in this slice, so fix it here: make the echo say what the guard actually sees (a
+non-prose reflog action text on `logs/HEAD`, or a `FAST_PUSH_LOG` line), and keep the blind-spot sentence.** *A
+coverage statement printed on every run is the most-read claim in the guards lane; it cannot be the false one.*

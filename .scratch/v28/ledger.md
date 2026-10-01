@@ -6609,3 +6609,39 @@ fragility instead, with the check that finds it: the key is right when `curl` wi
 `61G used / 0G available` while the model was resident. **So the box recovers on its own after an hour idle, and the
 current split is stable:** cloud does the agent lanes, and **the local model is only needed for `ocr`** (which loads
 it on demand). **The OOM risk is now bounded by `ocr` alone, not by four concurrent lanes.**
+
+## Slice 6b MICRO-ROUND: DONE (`bce017e` + `59b15c5`) -- and it opened by catching an IMPOSSIBILITY in my brief
+
+> *"**Committed as:** `59b15c5` (HEAD); the commit that carries the round's edits and first introduces the report file
+> is `bce017e`, and **that is the id written into the report's `Committed as:` line — a file cannot contain the hash
+> of the commit that creates it**, so a report-only follow-up (`59b15c5`) writes it in."*
+
+**My briefs say "put the sha7 in the report". A report committed BY that commit cannot contain its own hash.** *Fourth
+brief-impossibility a builder has caught this session* (the two-baseline seed, the vacuous `tsc`, the unsupported
+`--no-verify` claim, and now this). **It solved it with a report-only follow-up commit rather than skipping the
+requirement.**
+
+### The corrections
+- **C1** -- the visibility clause now names the proven mechanism **and states a SHARPER blind spot than before:**
+  *"It does not cover a bypass that leaves neither a non-prose reflog action text nor a FAST_PUSH_LOG line."*
+- **C2 -- option A, "assert the count directly"**: case 11's condition is now
+  `r.exit === 0 && /1 untagged quotation line\(s\) ignored/.test(r.out)` -- *"a guard that ignored the blockquote line
+  would report `0` and fail; **not renamed, because the name is now true of what the body asserts and a rename would
+  move printed output.**"*
+- **C4 -- identical output, PROVEN with md5s for all four scripts:**
+  `guard 7627fc37 == 7627fc37`, `nbcheck 6c0dc8dd == 6c0dc8dd`, `agcheck 7e6e838d == 7e6e838d`,
+  `ag ac9a939d == ac9a939d`, **diffs all empty** -- *"the only non-comment changed lines in the whole round are C2's
+  assertion (by C2's own authorization)."*
+
+### ⚠️ AND IT NAMED A RESIDUAL IT COULD NOT FIX IN A COMMENT-ONLY ROUND -- with the reason and the condition
+> *"the run-time `COVERAGE:` echo in `no-bypass-guard.sh` still says 'only a wrapper-recorded bypass or a
+> FAST_PUSH_LOG line is visible'. **It is an EXECUTABLE line (`echo`), so correcting it would move the guard's output
+> and break acceptance 4's identical-output proof**; C1 was scoped to the header. **Named, not silently left** -- a
+> non-micro round that may change output should bring it into line."*
+
+**So the HEADER is now true and the RUNTIME OUTPUT still carries the old overclaim** -- and it refused to smuggle the
+fix past an acceptance it had been given. **That is the correct instinct: an acceptance you were handed is not
+negotiable just because you found a better fix.**
+
+**ROUTED TO 6c**, which already touches guard scripts -- *a coverage statement printed on every run is the
+most-read claim in the guards lane, and it cannot be the false one.* **VERIFIER DISPATCHED** for this round.
