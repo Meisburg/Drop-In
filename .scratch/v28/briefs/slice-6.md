@@ -120,3 +120,21 @@ wording for exactly that reason.
 claim checked against a live count — may not fit alongside `skipLabel` and your two guards. **If it does not
 fit, STOP and report which parts you did**, and I will split it. A guard that pretends to be total is worse
 than one that says what it covers, and this batch has already ruled that twice.
+
+## Appended by the orchestrator -- a fourth guard item, and it came from a lane rather than from me
+
+**The regex-escape one-liner is duplicated across the repo.** Slice 5 single-sourced it for its OWN two callers
+(`escapeForRegExp` in `src/lib/firstRunTour.ts`), and the builder then found the same one-liner in **two other e2e
+specs** (`e2e/weekly-series.e2e.ts:90`, `e2e/place-directory-in-new.e2e.ts:109`) **and in two guard scripts** --
+**outside slice 5's paths, so it flagged them rather than touching them, which was correct.**
+
+**Two independent lanes reached this from opposite directions:** `ocr` called three copies *"three
+implementations that drift independently -- a missed metacharacter in one silently over-matches the pin"*, and the
+reviewer flagged the same duplication as a drift risk. **Four copies total repo-wide.**
+
+**Your job: ONE `escapeForRegExp`, imported everywhere it is needed** -- including the guard scripts if their
+environment allows it. **And the rule this round just demonstrated is worth carrying into every guard you build:
+prefer making a bad state UNCONSTRUCTABLE over asserting that it did not happen.** Slice 5's
+`withheldCategoryPattern()` **throws** instead of returning a pattern that matches nothing, so *"guard green, loop
+empty"* stopped being policed and became impossible to build. **A guard that watches two things which must agree
+should make their disagreement unrepresentable, not merely detectable.**

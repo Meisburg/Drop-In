@@ -4992,3 +4992,57 @@ of the same seam.
 - **The duplicated escape and the `as readonly string[]` cast: closed by the single-sourcing.**
 
 **FIX ROUND 3 DISPATCHED** (`slice-5-fix-3.md`) -- **the final round for this slice.**
+
+## Slice 5 FIX ROUND 3: DONE (`2d88a62`) -- and it made the bad state UNCONSTRUCTABLE, not merely asserted
+
+3 files, **+319/-76**. **My verification:** five exports in `firstRunTour.ts` -- `WithheldPlaceCategory` `:287`,
+`escapeForRegExp` `:300`, `placeCategoryPattern` `:310`, `withheldPlaceCategories` `:320`,
+`withheldCategoryPattern` `:339`; the **throwing** builder `:346-349`; and the e2e imports **both**
+`withheldCategoryPattern` (`:94`, used `:218`) and `TOUR_PRIMARY_LABEL` (`:92`, used `:219`); the test now
+**imports** `escapeForRegExp` (`:63`, used `:117`) -- **its local copy is gone.**
+
+### ⚠️ THE BEST STRUCTURAL MOVE OF THE BATCH: a state that cannot be constructed
+*"`withheldCategoryPattern()` **throws** rather than returning a pattern that matches nothing -- **'guard green,
+loop empty' is no longer policed, it is UNCONSTRUCTABLE.**"* **That is a class better than any assertion:** every
+other guard in this batch detects a bad state; this one makes it unrepresentable. **It is the shape to reach for
+whenever a guard is asked to watch two things that must agree.**
+
+### And it settled the disagreement I asked it to settle, with an argument rather than an average
+**KIND membership is correct**, because *"a label is a LOSSY PROJECTION of a kind, and `placeKindLabel`'s own
+`default: return 'Place'` is in-repo proof that two kinds can share one word."* Reconciled **not averaged**:
+one kind-based derivation feeds the loop, the vacuity guard counts **the exact array the loop iterates**, and
+**the label view's intent is kept as a LOUD assertion** (withheld labels must be distinct and disjoint from
+offered ones) **instead of a silent skip.**
+
+### ⚠️ THE MUTATION PROOF THAT DEMONSTRATES THE OLD CODE WAS BROKEN -- the best of the batch
+Same mutation (`placeKindLabel('trail') -> 'Beach'`) run against **HEAD's** label-based derivation:
+```
+FAIL … > the Places line names only kinds the app offers a chip for
+Tests  1 failed | 12 passed (13)
+```
+**The loop silently lost the trail test (14 -> 13) and the vacuity guard STAYED GREEN**, with the only failure in
+the *positive* half. **Against the new code the same mutation is loud three ways** (the collision guard, the
+negative property, and the positive half), `3 failed | 15 passed (18)`. **Most mutation proofs show the new test
+works; this one shows the OLD code was broken** -- and the difference is the whole point of the round.
+And the second mutation (nothing withheld) empties the loop `18 -> 16` **and trips the throwing builder**.
+
+### The two honesty fixes, and one of them was MINE
+- **Post is no longer classified as navigation** -- it contradicted this module's *own* header and
+  `App.tsx:489-499` (*"an ACTION, not a fifth NavTab destination"*).
+- **The device-class wording is gone** -- *"a phone" / "a tablet or desktop"* mapped a **width** breakpoint to
+  device classes, **the slice's own defect class in miniature, introduced by my R1 fix.** Recorded as mine.
+
+**Counts: tour file 18 (16 static + 2 generated); `verify` exit 0, 69 files, 2023 tests, guards PASS; lint exit 0,
+81 warnings / 0 errors; e2e 11 passed plus `signup-zip-fallback` alone twice more (3 clean runs).**
+
+### ⚠️ FLAGGED RATHER THAN TOUCHED -- and that is the right call
+*"the escape one-liner still exists in two OTHER e2e files (`weekly-series.e2e.ts:90`,
+`place-directory-in-new.e2e.ts:109`) and in two guard scripts. Those are pre-existing and outside slice 5's
+paths, so I did not touch them; if the ledger wants the class closed, it belongs to slice 6's guard work."*
+**Correct on both counts: a slice does not silently absorb work outside its scope, and the class belongs to the
+slice that already owns copy/honesty guards.** → **added to slice 6.**
+
+**A behaviour change, declared:** if nothing is ever withheld, the e2e now **fails by a thrown error at
+pattern-build time** instead of passing vacuously -- intended, and pinned by a unit test.
+
+**THREE LANES OUT (final round):** bounded review + verifier (workflow `f0d231e7`), `ocr` on `99880ef..2d88a62`.
