@@ -5109,3 +5109,33 @@ same as O13.
    the repo's style without reformatting pre-existing ones.
 5. **The stale docs and the migration's `26/239`** remain for **8a**; **the escape/pattern-shape class** for
    **slice 6**; **the live-count guard** (the general form of this whole slice's rule) for **slice 6**.
+
+## ⚠️ SLICE 6 SPLIT INTO FOUR BY SUBJECT -- because its brief had tripled
+
+**Measured before dispatch:** `slice-6.md` (**140 lines**) had grown from its original two guards to **four
+workstreams** -- the original `skipLabel` + `FIRST_RUN_COPY` field guard (`plan.md` §6), **the
+`check-acceptance-greps` guard**, **the repo-wide honesty guard** (escalated from slice 5), **the repo-wide
+`escapeForRegExp` dedupe** (a lane finding from slice 5's final round), and my appended *"prefer unconstructable
+over asserted"* rule. **That is exactly the failure mode I recorded earlier: *"a 'hygiene' slice is a dumping
+ground that GROWS from every review faster than it is dispatched."* I wrote that rule and then let it happen to
+this slice.**
+
+**RULED -- split by SUBJECT, not by token count:**
+- **6a** -- the `skipLabel` lie + the `FIRST_RUN_COPY` field guard. *(the field and the guard that catches it)*
+- **6b** -- the `check-acceptance-greps` guard (tagged claims + the path-scope rule + retrofitting tags).
+- **6c** -- the repo-wide `escapeForRegExp` single-sourcing.
+- **6d** -- the repo-wide honesty guard (copy declares its claims, each checked against a live count) -- **the one
+  that may not fit at all**, and whose brief already grants permission to **stop and report**.
+
+### `slice-6a.md` re-measured before dispatch -- and EVERY claim held, with NO line drift
+This is the first brief of the batch whose line numbers did **not** move (slice 3's drifted +18 and +82):
+`firstRunCopy.ts:19` (`skipLabel?: string`) and `:48` (`skipLabel: 'Skip for now'`, on **`kids` only**);
+`firstRunCopy.test.ts:28-31` (non-empty, and the other three undefined); **`FirstRunCard.tsx:117-119` renders the
+hard-coded word `Skip`**; `rg -n "skipLabel" src/ --glob '!*.test.*'` returns **only those two module lines** --
+**so the field is read by nobody, CONFIRMED by grep rather than inferred from the brief.** The design anchor is
+real too: `FirstRunCard.tsx:14-15,50-51` says skippability is the caller's decision and `primaryLabel` **"is a
+PROP, so the caller keeps its own copy -- the chrome renders it, it never composes it"**; the call sites are
+`OnboardingPage.tsx:1187,1349,1465` and **the kids card is `:1340-1349`**. Guard mechanics are as the brief says:
+the six-guard hard-coded list at `run-all.sh:61`, `run_check()` at `:85` with four callers at `:100-103`.
+
+**DISPATCHED** (`slice-6a.md`).
