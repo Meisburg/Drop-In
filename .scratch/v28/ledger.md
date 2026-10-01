@@ -5870,3 +5870,34 @@ remaining spikes are the browser specs and the sheer size of this session's cont
 constraint with no fix on my side**; the options are (i) accept the flakiness and the retries, (ii) route the
 remaining slices to a cloud model, or (iii) let the human reduce what else is running. **Recorded and surfaced --
 twice is a pattern, and it is the human's box.**
+
+## ⚠️ FOURTH builder failure, and it is a NEW MODE: compaction, then an OVERSIZED TOOL CALL
+
+```
+bash failed (exit 1): Tool call "bash" was not executed: the response hit the output token limit,
+so its arguments may be truncated. Re-issue the tool call with complete arguments.
+Child failure followed session compaction and agent settlement.
+```
+**Not the clock, not the OOM, not auth. The builder's session COMPACTED, and then it tried to emit a ~730-line file
+inside one tool call -- the response hit the OUTPUT TOKEN LIMIT and the call was never executed.**
+**A ~730-line file cannot be written in a single tool call at this model's output limit.**
+
+### ⚠️ BUT THE WORK IS DONE AND IT SURVIVED -- I measured it rather than assuming
+| Fact | Evidence |
+|---|---|
+| **`import ts from 'typescript'`** | `:202` -- **the STOP condition did NOT trigger: the AST walk works in a node-run guard** |
+| **It parses** | `node --check` -> **syntax OK** |
+| **Every lexer function DELETED** | `blankNonCode`, `stringEnd`, `skipString`, `skipRegex`, `exportedConsts`, `importedBindings`, `aliasesOf`, `destructuredReads` -> **all 0** |
+| **860 -> 730 lines** | and the predecessor's **honest correction: "-19% of the CODE lines, not the two thirds the brief implied"** |
+| `582 insertions / 521 deletions` | across the guard, its checker, and `firstRunCopy.ts` (the de-export) |
+
+**So the round's substance is on disk. The failure was in the WRITING, not the work** -- and it is the same shape as
+the timeouts: **an agent that dies mid-flight leaves its product behind, and the product is what I inspect.**
+
+### RULED: FRESH builder, because of *why* it died
+**Resuming was right for the previous three failures -- its context was intact and the remainder was steps. This
+time the context COMPACTED and then produced an oversized call, so the context is the liability, not the asset.**
+So a **fresh** builder with `slice-6a-finish-ast.md`, whose first instruction is *"many small edits, never one giant
+write"* and which opens with **my own measurement of the on-disk state** so it does not redo 1,100 lines of work.
+
+**Backed up to `/tmp/6a-fix3-wip/` (outside the repo) before anything else.**
