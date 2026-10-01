@@ -4833,3 +4833,59 @@ the re-reviewer judges the copy against rather than a thing to check.
 **RE-DISPATCHED** as a closed five-item review (`slice-5-fix-1-review-r2.md`).
 
 **`ocr` (both runs: the slice diff and the fix delta) still running.**
+
+## Slice 5 fix round 1 -- ADJUDICATED: review PASS, `ocr` x2 complete, fix round 2 dispatched
+
+### The bounded review worked, and it is the model for every review brief from here
+**PASS, no blocking findings**, five answerable checklist items, **~10 minutes** where the previous attempt burned
+30. (Yes / Yes / Yes / *wording yes, assertion no* / Yes.) It confirmed the two permitted greps were the only ones
+used, ran nothing, and re-measured nothing -- because **a bounded brief needed no measuring clause once I had
+measured the claim myself.**
+
+**Its best find -- and it is a claim-vs-code defect I would have missed:** the Profile assertion compares
+**first-occurrence indices** of `"link"` and `"name"`, which enforces **SEQUENCE, not SUBORDINATION**:
+*"…link your partner's account. You can also search any parent by name"* **passes** while making exactly the
+standalone claim the test exists to prevent. → R4.
+
+**Its second:** the negative half of the property is generated only from kinds withheld from
+`PLACE_KIND_CHIP_KINDS`, so **if that set ever equals `PLACE_KINDS` the loop emits ZERO tests and the property
+silently degrades to the positive half alone** -- the positive half has a vacuity guard; the negative half has
+none. → R3. (Vacuity class, again.)
+
+**F4 CLOSED BY MY OWN GREP:** `TOUR_BANNED_COPY` appears **only** at its definition (`firstRunTour.ts:170`) and in
+its own test. **No other importer -- the rename is complete.**
+
+### `ocr` -- **BOTH RUNS COMPLETE** (the model switch, proven end to end)
+The slice diff: **4 findings**. The fix delta: **3**. *(The slice diff had NEVER once run -- it failed on the dead
+server, and I had read its zero findings as clean.)* Adjudications, because **`ocr` finds real defects here and
+overstates mechanism and severity** -- both directions paid again:
+
+| # | Finding | Ruling |
+|---|---|---|
+| **O3** | `TOUR_BODY` `:55` makes a positional claim **false at md+** | ⚠️ **REAL, the find of the slice → R1.** I CONFIRMED it myself: `App.tsx:482` is `fixed … bottom-0` **but** `md:sticky md:top-16 md:border-r md:border-t-0`; `:484` is `flex-row md:flex-col`; `:612`'s comment says *"the nav becomes a left rail"*. **A bottom-bar claim is false on every tablet and desktop, in the card whose whole job is telling a new parent where the controls are.** |
+| **O4** | Drop Ins `:71` carries the removed existential claim **reworded** | ⚠️ **REAL → R2.** *"see what parents near you ARE putting on"* asserts nearby drop-ins exist. **And this CONVERGES with the reviewer's warning about the shipped near-synonym** -- two lanes, two routes, same line. The builder's flag is now answered: the wording changes. |
+| **O1/O5** | tour strings **hardcoded** in the e2e spec; the new pin **duplicates** the unit guard | ⚠️ **REAL → R6** (two lanes found it). Import the constants; keep **one** pin, justified by inspecting the **rendered** card. |
+| **O6** | `places.ts:1601` documents a **duplicated** radius predicate | **CODE stands, PROSE changes.** `withinRadius` *is* exported by `feed.ts` and `places.ts` *does* import from `./feed` (`:20`, re-exporting `:33`) -- so the header's *"imported rather than reimplemented"* (`:10`) is in tension with an inlined comparison. Make the prose agree; no mid-slice refactor. |
+| **O7** | the counts measure the **whole directory**, but the tab **defaults to a radius filter** | ⚠️ **REAL → R5.** `PlaceDirectory.tsx:266` sets `distanceChoice` to `'profile'`. **The copy stands** (it names kinds, not counts) **but the header's framing must say the counts justify that a KIND exists, not what a parent sees.** |
+| **O2** | the browser pin is narrower than the ban list | **The pin's EXISTENCE is legitimate** -- a regression pin of a shipped-then-removed wording is a different job from a claim guard (the reviewer ruled the same way independently). R6 makes it derive from the constants so it cannot drift. |
+
+**TWO RULINGS MINE, recorded so they are not re-litigated:** *"pick where to host"* **stays** (authorized by
+`plan.md:179`; the Places tab is where you choose a place to host at -- the reviewer called the mapping looser and
+I accept it as looser-but-true). **And the `loadError` reasoning is now accurate** (the reviewer re-derived
+`runOver && loadError`'s reachability from `OnboardingPage.tsx:250,562-576,591,1289,1293`); only a nit remains --
+the comment cites `useSession` while the page destructures `useSessionContext`.
+
+### ⚠️ F7 -- THE LEDGER GAP WAS MINE, AND HERE IS THE FIX-ROUND EVIDENCE EVERY PRIOR SLICE HAS
+The reviewer's last finding: *"the ledger's slice-5 thread still ends at FIX ROUND 1 DISPATCHED."* **Correct.**
+The fix-round evidence, now in the record: **gate exit 0, 69 files / 2017 tests, lint 81 warnings / 0 errors,
+guards PASS**, e2e **11 passed**; and the **raw red** (pasted, not paraphrased):
+```
+FAIL firstRunTour.test.ts > never names "Park" ... AssertionError: the card names Park places the app
+  does not have: expected '…' not to match /\bParks?\b/i
+FAIL firstRunTour.test.ts > the Places line names only kinds the app offers a chip for
+  AssertionError: the Places line names park, which has no rows: expected false to be true
+  Tests  2 failed | 10 passed (12)
+signup-zip-fallback.e2e.ts:137 › a resolved address writes the home zip … 1 failed
+Profile: "…find another parent by name…" expected 58 to be greater than 68
+```
+**Every finding above is adjudicated, none silently discarded. FIX ROUND 2 DISPATCHED** (brief `slice-5-fix-2.md`).
