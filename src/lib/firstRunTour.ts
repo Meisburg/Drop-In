@@ -22,12 +22,17 @@
  * SAME defect at different volumes, and a test that bans the word "places"
  * catches none of them. What makes a line true is one of four measurements:
  *
- *   - A POSITION the card states must hold in EVERY layout the app renders.
+ *   - A POSITION the card states must hold in EVERY layout the app renders,
+ *     and must be stated in the terms the layout actually switches on.
  *     `App.tsx:482-484` renders the nav TWO ways: `fixed inset-x-0 bottom-0`
  *     below `md`, and `md:sticky md:top-16` + `md:flex-col` + `md:border-r`
  *     above it — the comment at `:612` calls the second one "a left rail". So
  *     the body names BOTH, and a body that says only "the bottom" is wrong on
- *     every tablet and desktop.
+ *     every wide viewport. ⚠️ And it names WIDTH, not a device class: `md:` is
+ *     a width breakpoint, so "a phone" / "a tablet or desktop" is stronger
+ *     than the classes warrant — a narrow desktop window and a wide phone both
+ *     break it (fix round 3, finding C: this slice's own defect class in
+ *     miniature).
  *   - A CATEGORY the card names must be a category the app OFFERS. The test's
  *     proxy is CHIP MEMBERSHIP (`PLACE_KIND_CHIP_KINDS`), not a row count —
  *     `places.ts:157-166` records that a shipped kind can go empty at runtime,
@@ -58,10 +63,15 @@
  * `firstRunTour.test.ts` enforces the category rule as a PROPERTY over the
  * app's OWN taxonomy (`PLACE_KINDS` / `PLACE_KIND_CHIP_KINDS` in places.ts),
  * with a vacuity guard so the negative half cannot silently emit zero tests,
- * and the position rule as a pairing rule. The attribute rule is NOT checkable
- * locally — it needs a live count — so the copy makes no such promise instead
- * of testing for one. The repo-wide guard for this class is V28 r2 slice 6's;
- * this module does not try to close the class.
+ * and the position rule as a pairing rule. The derivation of "which categories
+ * does the app withhold" and the pattern that tests one are exported FROM this
+ * module (see THE GUARD'S DERIVATION below) so the unit test and the e2e spec
+ * cannot disagree — fix round 3 closed four findings as one module, per this
+ * batch's rule that the second occurrence of a defect class gets a guard, not
+ * another one-off fix. The attribute rule is NOT checkable locally — it needs
+ * a live count — so the copy makes no such promise instead of testing for one.
+ * The repo-wide guard for this class is V28 r2 slice 6's; this module does not
+ * try to close the class.
  *
  * ⚠️ The centre control is an ACTION, not a fifth tab. `App.tsx` (the
  * `PostActionButton` block) records that V24 slice 05 deliberately reversed
@@ -69,6 +79,8 @@
  * 2026-09-25 — "Do NOT 'fix' the nav back to the V22 shape." So this module
  * names it as posting, never as a tab, and its test enforces that.
  */
+
+import { PLACE_KINDS, PLACE_KIND_CHIP_KINDS, placeKindLabel } from './places'
 
 /** One line of the tour: a control the parent is about to meet, and its job. */
 export interface TourLine {
@@ -96,12 +108,23 @@ export const TOUR_TITLE = 'How Drop In works'
  * `fixed inset-x-0 bottom-0 … md:sticky md:top-16 … md:border-r md:border-t-0`
  * and `:484` switches the inner flex `flex-row md:flex-col`; `:612` calls the
  * md+ arrangement "a left rail". A body that said only "along the bottom" was
- * wrong on every tablet and desktop — the same class as the Places defect,
- * on the one card whose whole job is saying where the controls are. Do not
- * add a third arrangement: there are exactly two.
+ * wrong on every wide viewport — the same class as the Places defect, on the
+ * one card whose whole job is saying where the controls are. Do not add a
+ * third arrangement: there are exactly two.
+ *
+ * ⚠️ TWO THINGS IT MUST KEEP DOING (both found in fix round 3, both the same
+ * over-claim this slice exists to stamp out):
+ *   - It frames the set as how you USE the app, not how you MOVE AROUND it.
+ *     The third entry is the centre Post action, which `App.tsx:489-499` and
+ *     this module's header record as an ACTION, not a fifth `NavTab`
+ *     destination — posting is not a way to get around the app, and this is
+ *     the module that insists on that.
+ *   - It switches on WIDTH, because that is what `md:` switches on. "a phone"
+ *     / "a tablet or desktop" mapped a breakpoint onto device classes and was
+ *     marginally stronger than the classes warrant.
  */
 export const TOUR_BODY =
-  'Everything below is how you move around the app: along the bottom of the screen on a phone, down the left side on a tablet or desktop. Here is what each part does.'
+  'The parts below are how you use Drop In. On a narrow screen they sit along the bottom of the screen; on a wider one, down the left side. Here is what each one does.'
 
 /**
  * The five lines, in the order the nav renders them (App.tsx: Drop Ins,
@@ -214,3 +237,120 @@ export const TOUR_BANNED_COPY: readonly string[] = [
   'places nearby',
   'parents near you are putting on',
 ]
+
+/**
+ * THE GUARD'S DERIVATION — ONE IMPLEMENTATION, TWO CALLERS.
+ *
+ * Fix round 3, finding A: the reviewer and `ocr` reported the SAME defect from
+ * two sides. The unit test derived the withheld categories BY LABEL while its
+ * vacuity guard counted KINDS; the e2e spec derived them BY KIND MEMBERSHIP and
+ * hand-rolled its own pattern (needing an `as readonly string[]` cast). Two
+ * derivations that disagree, and an escape one-liner in three places. That is
+ * not four small fixes — it is one missing module, so it is now one exported
+ * implementation imported by both callers.
+ *
+ * ⚠️ WHICH DERIVATION IS CORRECT, AND WHY (not averaged — decided):
+ *
+ *   **KIND MEMBERSHIP IS CORRECT.** Withholding is a fact about the taxonomy:
+ *   `PLACE_KIND_CHIP_KINDS` is a subset of `PLACE_KINDS`, and "withheld" is
+ *   exactly that set difference over KINDS. The label view was the wrong one:
+ *   a label is a LOSSY projection of a kind — `placeKindLabel`'s own
+ *   `default: return 'Place'` is proof that two kinds can share one word — so
+ *   filtering by label silently DROPS a withheld kind whose label collides with
+ *   an offered kind's label. The generated loop loses a test, and a guard that
+ *   counts kinds stays green so long as one other withheld kind remains. That
+ *   is precisely the state the reviewer described, and the label view is the
+ *   mechanism that makes it reachable. The e2e's kind filter was the correct
+ *   half; what it lacked was the shared pattern builder.
+ *
+ *   The consequence of getting it right: the vacuity guard now counts the VERY
+ *   ARRAY the loop iterates, and `withheldCategoryPattern` REFUSES to build a
+ *   pattern from an empty set. "Guard green, loop empty" is no longer policed;
+ *   it is unconstructable.
+ *
+ *   The one thing the label view was reaching for is still real, so it is kept
+ *   as an assertion rather than folded into the derivation: if a withheld
+ *   kind's label ever DOES collide with an offered kind's label, the per-kind
+ *   test would forbid this card from using a word the app itself puts on a
+ *   chip. That must be LOUD, not averaged away — `firstRunTour.test.ts` asserts
+ *   the two label sets are disjoint and the withheld labels distinct, and a
+ *   collision fails there with both resolutions spelled out.
+ *
+ * WHY IT LIVES HERE rather than in places.ts: the derivation exists to keep
+ * THIS copy honest, and its sibling test (`firstRunTour.test.ts`) is the guard.
+ * The taxonomy itself stays in places.ts and is imported, never re-declared —
+ * which is the whole point of the property.
+ */
+
+/** A category the app has a kind and a word for, but does not put in front of
+ *  the parent as a discovery chip. */
+export interface WithheldPlaceCategory {
+  /** The taxonomy value withheld from `PLACE_KIND_CHIP_KINDS`. */
+  kind: string
+  /** The word the app would show for it (`placeKindLabel`). */
+  label: string
+}
+
+/**
+ * Escape a value before interpolating it into a RegExp: it is DATA, and an
+ * unescaped metacharacter silently over-matches (or throws). Exported because
+ * the same one-liner existed in THREE places — two here, one in the e2e — and
+ * both review lanes flagged that as drift.
+ */
+export function escapeForRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * The pattern for ONE category word: whole word, optionally plural, case
+ * insensitive. `s?` is the recorded-latent simplification (every current
+ * label is a regular plural); an irregular label would need this changed, not
+ * a second pattern builder.
+ */
+export function placeCategoryPattern(label: string): RegExp {
+  return new RegExp(`\\b${escapeForRegExp(label)}s?\\b`, 'i')
+}
+
+/**
+ * The categories the app withholds, derived over KINDS (see the header: the
+ * label view is lossy and can silently drop one). The taxonomy is a parameter
+ * only so the sibling test can assert the contract over a synthetic set; the
+ * shipped call takes no arguments and reads the app's own taxonomy.
+ */
+export function withheldPlaceCategories(
+  allKinds: readonly string[] = PLACE_KINDS,
+  offeredKinds: readonly string[] = PLACE_KIND_CHIP_KINDS,
+): WithheldPlaceCategory[] {
+  return allKinds
+    .filter((kind) => !offeredKinds.includes(kind))
+    .map((kind) => ({ kind, label: placeKindLabel(kind) }))
+}
+
+/**
+ * The combined pattern for the browser pin, built from the SAME derivation the
+ * unit property iterates — so the e2e cannot drift from it and needs no cast.
+ *
+ * ⚠️ IT THROWS ON AN EMPTY SET rather than returning a pattern that matches
+ * nothing. A `toHaveCount(0)` against an empty alternation is green over every
+ * regression it claims to pin — the vacuity class this batch has paid for
+ * repeatedly — so the empty case is made unconstructable here instead of being
+ * left to a caller's guard. `firstRunTour.test.ts` pins the throw.
+ */
+export function withheldCategoryPattern(
+  allKinds: readonly string[] = PLACE_KINDS,
+  offeredKinds: readonly string[] = PLACE_KIND_CHIP_KINDS,
+): RegExp {
+  const categories = withheldPlaceCategories(allKinds, offeredKinds)
+  if (categories.length === 0) {
+    throw new Error(
+      'withheldCategoryPattern: no kind is withheld, so a pattern built here ' +
+        'would match nothing and an absence assertion over it would be green ' +
+        'by construction. Either a category is genuinely withheld again, or ' +
+        'this pin must be replaced by the live-count guard (V28 r2 slice 6).',
+    )
+  }
+  return new RegExp(
+    `\\b(${categories.map((category) => escapeForRegExp(category.label)).join('|')})s?\\b`,
+    'i',
+  )
+}

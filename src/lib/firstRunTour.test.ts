@@ -1,6 +1,20 @@
 /**
  * V28 r2 slice 5 — the ending card's tour copy.
  *
+ * FIX ROUND 3 changed the shape of the category property. The reviewer and
+ * `ocr` reported one defect from two sides: the negative half derived the
+ * withheld categories BY LABEL while the vacuity guard counted KINDS, and the
+ * e2e derived them BY KIND MEMBERSHIP with its own copy of the escape
+ * one-liner. The label view is lossy (`placeKindLabel`'s `default: 'Place'`
+ * proves two kinds can share a word), so a withheld kind whose label collides
+ * with an offered one vanished from the generated loop while the guard stayed
+ * green. Both derivations now come from ONE exported implementation in
+ * `firstRunTour.ts` (`withheldPlaceCategories` / `withheldCategoryPattern`),
+ * the guard counts the exact array the loop iterates, and the pattern builder
+ * throws rather than emitting a pattern that matches nothing. Which derivation
+ * was correct, and why, is argued at the module; the collision hazard the
+ * label view exposed is kept as a LOUD assertion, not folded away.
+ *
  * FIX ROUND 2 changed two things about these tests.
  *
  * (1) The negative half of the category property GENERATES one test per kind
@@ -8,8 +22,8 @@
  *     `PLACE_KINDS` entry — a future slice re-adding the park chip once rows
  *     appear — the loop emits ZERO tests and the property silently degrades to
  *     its positive half alone. The positive half already had a vacuity guard;
- *     the negative half had none. It has one now (`withheldKinds.length > 0`),
- *     and the labels are escaped before they go into a RegExp.
+ *     the negative half had none. It has one now, and since round 3 the empty
+ *     case is also unconstructable in the pattern builder.
  *
  * (2) The Profile assertion compared the FIRST-OCCURRENCE INDICES of "link"
  *     and "name", which enforces SEQUENCE, not SUBORDINATION: "…link your
@@ -25,14 +39,16 @@
  * 2. PROPERTY: the card names no place category the app itself refuses to
  *    offer — a kind withheld from `PLACE_KIND_CHIP_KINDS` is withheld because
  *    it holds zero rows. This is the test that caught the shipped defect.
- * 3. The body's positional claim covers BOTH layouts the app renders.
+ * 3. The body's positional claim covers BOTH layouts, states them in the terms
+ *    the layout switches on (width, not device class), and does not classify
+ *    the centre Post action as navigation.
  * 4. The built-but-invisible flow (linking a partner) is named as one flow,
  *    with the name search subordinate inside it.
  * 5. The two identifiers the whole e2e suite is built on.
  *
  * The label list is pinned against the REAL nav (`src/App.tsx`: the four
- * `NavTab` labels and `PostActionButton`'s aria-label, in the bar's order), so
- * a tour that drifts from the bar it is describing fails here rather than on a
+ * `NavTab` labels and `PostActionButton`'s aria-label, in the nav's order), so
+ * a tour that drifts from the nav it is describing fails here rather than on a
  * parent's phone.
  */
 import { describe, expect, it } from 'vitest'
@@ -44,6 +60,10 @@ import {
   TOUR_PRIMARY_LABEL,
   TOUR_PROGRESS_LABEL,
   TOUR_TITLE,
+  escapeForRegExp,
+  placeCategoryPattern,
+  withheldCategoryPattern,
+  withheldPlaceCategories,
 } from './firstRunTour'
 import { PLACE_KINDS, PLACE_KIND_CHIP_KINDS, placeKindLabel } from './places'
 
@@ -55,18 +75,12 @@ const CARD_WORDS = [
   ...TOUR_LINES.map((line) => line.detail),
 ].join(' ')
 
-/** A label is DATA interpolated into a pattern; a metacharacter in it would
- *  throw or over-match, so it is escaped at the seam that builds the pattern. */
-function escapeForRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
 describe('TOUR_LINES — the four tabs and the Post action, one line each', () => {
   // The bar's real order (src/App.tsx): Drop Ins, Inbox, the Post action
   // between Inbox and Places, Places, Profile. The labels are the ones the
-  // parent will read in the bar — the four NavTab labels and
+  // parent will read in the nav — the four NavTab labels and
   // PostActionButton's aria-label ("Post a drop-in").
-  it('names exactly the four tabs plus the Post action, in the bar’s order', () => {
+  it('names exactly the four tabs plus the Post action, in the nav’s order', () => {
     expect(TOUR_LINES.map((line) => line.label)).toEqual([
       'Drop Ins',
       'Inbox',
@@ -105,7 +119,6 @@ describe('the honesty rule — every line says what a control DOES', () => {
       expect(hasVerb, `${line.label}: "${line.detail}" names no action`).toBe(true)
     }
   })
-
   // A regression pin of the wordings this batch shipped and removed (r1's
   // ending cost a review round). NOT the guard — see the docblock on
   // TOUR_BANNED_COPY. Measured today (plan.md fact 12): ZERO upcoming
@@ -122,8 +135,8 @@ describe('the honesty rule — every line says what a control DOES', () => {
   // bottom of the screen". App.tsx:482-484 renders the nav TWO ways —
   // `fixed inset-x-0 bottom-0` below md, and `md:sticky md:top-16` +
   // `md:flex-col` + `md:border-r` above it ("a left rail", App.tsx:612) — so
-  // that body was wrong on every tablet and desktop, on the one card whose
-  // whole job is saying where the controls are.
+  // that body was wrong on every wide viewport, on the one card whose whole
+  // job is saying where the controls are.
   //
   // THE RULE IS A PAIRING, NOT A BAN: naming one arrangement is fine only if
   // the other is named too. Its honest limit: it cannot tell that a PAIR of
@@ -131,14 +144,47 @@ describe('the honesty rule — every line says what a control DOES', () => {
   // and it cannot catch a body that names no position at all — which is also
   // legal, and is what a future rewrite should reach for instead of a third
   // layout claim.
+  //
+  // E of fix round 3: the assertion is symmetric, so the MESSAGE has to pick
+  // the direction that actually failed. A body naming only the rail used to
+  // fail with a complaint about the bottom, which mis-described the failure.
   it('the body places the controls in both arrangements, or in neither', () => {
     const lower = TOUR_BODY.toLowerCase()
     const namesBottom = /\bbottom\b/.test(lower)
     const namesRail = /\b(left|side|rail)\b/.test(lower)
+    const message = namesBottom
+      ? `the body names the narrow-screen bottom bar but never the md+ left rail: "${TOUR_BODY}"`
+      : namesRail
+        ? `the body names the md+ left rail but never the narrow-screen bottom bar: "${TOUR_BODY}"`
+        : `the body names neither arrangement, which is legal only if it names no position at all: "${TOUR_BODY}"`
+    expect(namesRail, message).toBe(namesBottom)
+  })
+
+  // B and C of fix round 3, both the same over-claim in one sentence:
+  //
+  // (B) The shipped body called the whole set "how you move around the app".
+  //     The third entry is the centre Post action, which App.tsx:489-499 and
+  //     this module's header record as an ACTION, not a fifth NavTab
+  //     destination — the invariant this file already pins at the LINE level
+  //     ("never as a tab"), violated one level up by the framing sentence.
+  // (C) It mapped the `md:` breakpoint onto DEVICE CLASSES ("a phone" / "a
+  //     tablet or desktop"). The app switches on WIDTH, so that sentence was
+  //     marginally stronger than the classes warrant: a narrow desktop window
+  //     and a wide phone both break it.
+  //
+  // THE HONEST LIMIT: these are word-level checks on ONE sentence. They cannot
+  // catch a navigation-only paraphrase ("the places you go") or a device-class
+  // paraphrase ("smaller devices"). What they do is make the two wrong framings
+  // expensive to re-introduce while the copy itself names USE and WIDTH.
+  it('the body frames the set as use, not navigation, and switches on width, not device class', () => {
     expect(
-      namesRail,
-      `the body puts the controls at the bottom but never names the md+ left rail: "${TOUR_BODY}"`,
-    ).toBe(namesBottom)
+      TOUR_BODY,
+      `the body calls every control a way to get around the app, which reclassifies the centre Post action as navigation: "${TOUR_BODY}"`,
+    ).not.toMatch(/\b(move around|get around|navigat\w*)\b/i)
+    expect(
+      TOUR_BODY,
+      `the body attributes an arrangement to a device class; App.tsx switches on the md WIDTH breakpoint: "${TOUR_BODY}"`,
+    ).not.toMatch(/\b(phone|tablet|desktop|laptop|mobile|monitor)\b/i)
   })
 })
 
@@ -172,16 +218,18 @@ describe('the PROPERTY — every category the card names is one the app offers',
   // V28 r2 slice 6's, not this file's. Nor can a unit test check an
   // attribute's COVERAGE (hours: 184 of 239 rows, 55 without), so the copy
   // makes no such promise at all rather than testing for one.
+  const withheld = withheldPlaceCategories()
+  const offeredKinds = new Set<string>(PLACE_KIND_CHIP_KINDS)
   const offeredLabels = new Set(PLACE_KIND_CHIP_KINDS.map((kind) => placeKindLabel(kind)))
-  const withheldKinds = PLACE_KINDS.filter((kind) => !offeredLabels.has(placeKindLabel(kind)))
 
-  // THE VACUITY GUARD. The loop below is generated, so an empty `withheldKinds`
-  // is not a passing property — it is ZERO TESTS, and the suite stays green
-  // while the negative half quietly disappears. This is the vacuity class this
-  // batch has paid for repeatedly.
+  // THE VACUITY GUARD. The loop below is generated, so an empty `withheld` is
+  // not a passing property — it is ZERO TESTS, and the suite stays green while
+  // the negative half quietly disappears. This is the vacuity class this batch
+  // has paid for repeatedly. Since fix round 3 the guard counts the EXACT array
+  // the loop iterates, so the two cannot drift apart.
   it('the negative half has something to check (it never emits zero tests)', () => {
     expect(
-      withheldKinds.length,
+      withheld.length,
       'PLACE_KIND_CHIP_KINDS now covers every PLACE_KINDS entry, so the ' +
         'withheld-category property generates zero tests and has silently ' +
         'degraded to its positive half alone. Either a kind is genuinely ' +
@@ -190,32 +238,91 @@ describe('the PROPERTY — every category the card names is one the app offers',
     ).toBeGreaterThan(0)
   })
 
-  for (const kind of withheldKinds) {
-    const label = placeKindLabel(kind)
-    it(`never names "${label}", a category the app withholds because it has no rows`, () => {
+  // THE DERIVATION'S CONTRACT, and the finding that made this test necessary.
+  // Withholding is a set difference over KINDS, so its size is fixed by the
+  // taxonomy and no label can shrink it. The round-2 derivation filtered by
+  // LABEL, and a label is a lossy projection of a kind — `placeKindLabel`'s own
+  // `default: return 'Place'` proves two kinds can share one word — so a
+  // withheld kind whose label collided with an offered one dropped out of the
+  // loop while this count stayed green. Proven red both ways: the old
+  // derivation is green over the collision, this assertion is not.
+  it('the withheld set is the KIND difference, so no label can silently shrink it', () => {
+    expect(withheld.length).toBe(PLACE_KINDS.length - PLACE_KIND_CHIP_KINDS.length)
+    expect(withheld.map((category) => category.kind)).toEqual(
+      PLACE_KINDS.filter((kind) => !offeredKinds.has(kind)),
+    )
+  })
+
+  // The hazard the label view was reaching for, kept as a LOUD assertion
+  // instead of being folded into the derivation. If a withheld kind's label
+  // ever equals an offered kind's label, the per-kind test below would forbid
+  // this card from using a word the app itself puts on a chip — a false
+  // positive that must not be papered over by dropping the kind. TWO
+  // RESOLUTIONS, and only these: give the kinds distinct labels in
+  // `placeKindLabel`, or retire this property for the live-count guard (slice
+  // 6) that asks the question the label really answers.
+  it('no withheld category shares a word with an offered one (else the property below is a false positive)', () => {
+    const withheldLabels = withheld.map((category) => category.label)
+    expect(
+      new Set(withheldLabels).size,
+      `two withheld kinds share a display word, so the generated loop would ` +
+        `test it once and lose the other: ${withheldLabels.join(', ')}`,
+    ).toBe(withheldLabels.length)
+    const colliding = withheldLabels.filter((label) => offeredLabels.has(label))
+    expect(
+      colliding,
+      `a withheld kind is labelled "${colliding.join('", "')}", which an ` +
+        'OFFERED kind also shows — fix placeKindLabel, or retire this property ' +
+        "for slice 6's live-count guard; do not drop the kind",
+    ).toEqual([])
+  })
+
+  // The pattern builder the e2e spec uses. It must REFUSE an empty set: a
+  // `toHaveCount(0)` over an empty alternation is green over every regression
+  // it claims to pin, and the caller's guard is not the safety net — this is.
+  it('the browser pattern cannot be built from an empty withheld set', () => {
+    expect(() => withheldCategoryPattern(PLACE_KINDS, PLACE_KINDS)).toThrow(/no kind is withheld/)
+    // …and it is built from the same derivation, not a second copy of it.
+    const pattern = withheldCategoryPattern()
+    for (const category of withheld) {
+      const sample = `a ${category.label} place`
+      expect(pattern.test(sample), `${category.label} missing from the pattern`).toBe(true)
+    }
+    const offeredSample = 'a Playground place'
+    expect(
+      pattern.test(offeredSample),
+      `an OFFERED kind matches the withheld pattern: "${offeredSample}"`,
+    ).toBe(false)
+  })
+
+  for (const category of withheld) {
+    it(`never names "${category.label}", a category the app withholds because it has no rows`, () => {
       expect(
         CARD_WORDS,
-        `the card names ${label} places the app does not have`,
-      ).not.toMatch(new RegExp(`\\b${escapeForRegExp(label)}s?\\b`, 'i'))
+        `the card names ${category.label} places the app does not have`,
+      ).not.toMatch(placeCategoryPattern(category.label))
     })
   }
 
   // The other half of the same property, stated positively: the Places line
   // earns its nouns from kinds the app offers, and its promise is a capability
   // (the post form's place picker is fed by this same directory — `listPlaces`
-  // in NewPlaydatePage.tsx), so it stays true on an empty day.
+  // in NewPlaydatePage.tsx), so it stays true on an empty day. "Offered" is
+  // asked of the SAME derivation the negative half iterates, so the two halves
+  // cannot disagree (and the e2e's `as readonly string[]` cast is gone).
   it('the Places line names only kinds the app offers a chip for', () => {
     const places = TOUR_LINES.find((line) => line.label === 'Places')
     expect(places, 'the Places line is missing from the tour').toBeDefined()
+    const withheldKinds = new Set(withheld.map((category) => category.kind))
     const namesKind = (kind: (typeof PLACE_KINDS)[number]) =>
-      new RegExp(`\\b${escapeForRegExp(placeKindLabel(kind))}s?\\b`, 'i').test(places?.detail ?? '')
+      placeCategoryPattern(placeKindLabel(kind)).test(places?.detail ?? '')
     const named = PLACE_KINDS.filter(namesKind)
     expect(named.length, 'the Places line names no category at all').toBeGreaterThan(0)
     for (const kind of named) {
       expect(
-        (PLACE_KIND_CHIP_KINDS as readonly string[]).includes(kind),
+        withheldKinds.has(kind),
         `the Places line names ${kind}, which the app does not offer`,
-      ).toBe(true)
+      ).toBe(false)
     }
   })
 })

@@ -76,14 +76,23 @@
  */
 import { expect, test, type Browser, type Page } from '@playwright/test'
 import { readMarkerMeta } from './fixtures'
-// The tour's WORDS are data in src/lib/firstRunTour (slice 5). Restating them
-// here meant a legitimate copy change needed three edits and this spec failed
-// for a reason unrelated to zip fallback (fix round 2, R6 — flagged by two
-// lanes). Only the CTA locator stays a literal: `getByRole('button', { name:
-// 'Go to your feed' })` is the load-bearing identifier e2e/auth.setup.ts and
-// e2e/fixtures.ts use as a literal too, and its tripwire is meant to be visible.
-import { TOUR_LINES, TOUR_TITLE } from '../src/lib/firstRunTour'
-import { PLACE_KINDS, PLACE_KIND_CHIP_KINDS, placeKindLabel } from '../src/lib/places'
+// The tour's WORDS and the guard's DERIVATION are both data in
+// src/lib/firstRunTour (slice 5). Restating them here meant a legitimate copy
+// change needed three edits, and the spec built its OWN copy of the
+// withheld-category filter and of the escape one-liner — a second derivation
+// that disagreed with the unit test's (fix round 3, finding A) and a third copy
+// of the escape (flagged by both lanes). One implementation, two callers. The
+// CTA is imported for the same reason: `TOUR_PRIMARY_LABEL` is the identifier
+// this batch pinned deliberately, and a literal here restated it (finding D).
+// The pin's EXISTENCE is ruled fine — only the restatement changed. The
+// literals in e2e/auth.setup.ts and e2e/fixtures.ts stay literals on purpose:
+// that is the shared setup whose tripwire is meant to be visible.
+import {
+  TOUR_LINES,
+  TOUR_PRIMARY_LABEL,
+  TOUR_TITLE,
+  withheldCategoryPattern,
+} from '../src/lib/firstRunTour'
 
 /** The card's Nominatim request (lib/geocode's searchFirst, one URL shape). */
 const NOMINATIM_ROUTE = /https:\/\/nominatim\.openstreetmap\.org\/search\?/
@@ -191,10 +200,12 @@ test('a resolved address writes the home zip with no typed zip (the address-firs
     // EXACTLY ONE browser pin, and it earns its place by inspecting the
     // RENDERED card rather than the constant: the unit layer proves the copy
     // never NAMES a withheld category, but only the browser proves the card
-    // that reaches a parent's screen RENDERS none. The pattern is DERIVED from
-    // the same exported taxonomy the unit guard reads (`PLACE_KINDS` minus
-    // `PLACE_KIND_CHIP_KINDS`), so it cannot drift from it — no hardcoded
-    // "park" to rot here.
+    // that reaches a parent's screen RENDERS none. The pattern comes from
+    // `withheldCategoryPattern()` — the SAME derivation the unit property
+    // iterates — so it cannot drift from it, needs no cast, and CANNOT be built
+    // from an empty withheld set (the builder throws, and the unit test pins
+    // that), which is what stops this `toHaveCount(0)` from passing by matching
+    // nothing.
     const finishCard = page.getByTestId('first-run-finish-card')
     await finishCard.waitFor({ timeout: 30_000 })
     await expect(finishCard.getByRole('heading', { name: TOUR_TITLE })).toBeVisible()
@@ -204,23 +215,8 @@ test('a resolved address writes the home zip with no typed zip (the address-firs
         `the tour names no ${line.label} line`,
       ).toBeVisible()
     }
-    const withheldKindLabels = PLACE_KINDS.filter(
-      (kind) => !(PLACE_KIND_CHIP_KINDS as readonly string[]).includes(kind),
-    ).map((kind) => placeKindLabel(kind))
-    // The same vacuity guard the unit property carries: an empty pattern list
-    // would make the toHaveCount(0) below pass by matching nothing.
-    expect(
-      withheldKindLabels.length,
-      'no kind is withheld, so this pin asserts nothing',
-    ).toBeGreaterThan(0)
-    const withheldPattern = new RegExp(
-      `\\b(${withheldKindLabels
-        .map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-        .join('|')})s?\\b`,
-      'i',
-    )
-    await expect(finishCard.getByText(withheldPattern)).toHaveCount(0)
-    await page.getByRole('button', { name: 'Go to your feed' }).click()
+    await expect(finishCard.getByText(withheldCategoryPattern())).toHaveCount(0)
+    await page.getByRole('button', { name: TOUR_PRIMARY_LABEL }).click()
 
     // Straight to discovery — the feed is about the RESOLVED zip.
     await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible({
@@ -283,7 +279,7 @@ test('an unresolvable address reveals the ZIP fallback (the note + the field, ad
       .selectOption({ label: `${marker.radiusMiles} miles` })
     await page.getByRole('button', { name: 'Finish' }).click()
     await page.getByTestId('first-run-finish-card').waitFor({ timeout: 30_000 })
-    await page.getByRole('button', { name: 'Go to your feed' }).click()
+    await page.getByRole('button', { name: TOUR_PRIMARY_LABEL }).click()
     await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible({
       timeout: 30_000,
     })
@@ -369,7 +365,7 @@ test(
       await page.getByRole('button', { name: 'Finish' }).click()
       await page.getByTestId('first-run-finish-card').waitFor({ timeout: 30_000 })
       expect(nominatimCalls).toBe(1)
-      await page.getByRole('button', { name: 'Go to your feed' }).click()
+      await page.getByRole('button', { name: TOUR_PRIMARY_LABEL }).click()
       await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible({
         timeout: 30_000,
       })
@@ -567,7 +563,7 @@ test(
       await page.getByRole('button', { name: 'Finish' }).click()
       const finishCard = page.getByTestId('first-run-finish-card')
       await finishCard.waitFor({ timeout: 30_000 })
-      await page.getByRole('button', { name: 'Go to your feed' }).click()
+      await page.getByRole('button', { name: TOUR_PRIMARY_LABEL }).click()
       // THE DB-LEVEL CLAIM: the feed is about the NEW address's zip — and
       // NEVER the old one (pre-fix the save had already landed on the old
       // zip's finish card, and the feed would be about 98103).
