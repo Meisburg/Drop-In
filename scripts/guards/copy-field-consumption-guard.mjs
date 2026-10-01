@@ -133,8 +133,33 @@
  *     limit, and fix 4 narrowed it rather than closing it: the stand-in in A8 was
  *     typed `{ skipLabel: string }`, which is not a `FirstRunCardCopy`, and the
  *     checker refuses it; a full-shape stand-in is indistinguishable from the real
- *     value to any type query. Closing the rest means answering "where did this
- *     value come from", which neither an AST nor a type answers;
+ *     value to any type query. The NEAREST such input is not hypothetical: any
+ *     consumer prop type structurally identical to a judged shape reaches it, and
+ *     `FirstRunCardProps` escapes today only because its `body` is an optional
+ *     `ReactNode` while the shape's `body` is a required `string` — an accident of
+ *     one unrelated field, not a property this guard enforces (measured: a read off
+ *     a foreign `{ title: string; body: string; primaryLabel: string; skipLabel?:
+ *     string }` is counted; the same read off `FirstRunCardProps` is counted only
+ *     once `body` is a required `string`, so BOTH the type and the optionality are
+ *     what keep the real prop type out). It CANNOT be fenced the way the parse
+ *     limit below is, and that is a ruling, not a shrug: a fence is guard behavior
+ *     that CONTAINS the limit — the parse fence refuses every read from an
+ *     unparseable file — and containing this one means answering "where did this
+ *     value come from", which neither an AST nor a type answers. A seed can only
+ *     RE-ASSERT the over-report, and asserting an over-report is not containing it;
+ *     so it stays a stated limit with its nearest input named;
+ *   - a copy value SPREAD into a component (`<Card {...FIRST_RUN_COPY.kids} />`)
+ *     contributes no field-named read: a spread's expression is an identifier, so
+ *     there is no property access to attribute, and the guard reads the consumer's
+ *     syntax, not the component's internals. Reaching input: that JSX, measured on
+ *     this tree — replacing the kids card's `skipLabel={kidsCopy.skipLabel}` with
+ *     `{...kidsCopy}` reports both skipLabel fields READ BY NOTHING. The read is
+ *     real and the guard misses it (safe direction): the field comes out unread and
+ *     a human allowlists it. Fix 4 followed a function parameter and a re-export
+ *     because the checker can type them; it does not follow a spread, and this
+ *     bullet is the part of fix 3's `parameter, re-export, JSX spread` limit that
+ *     is still true — the other two closed, and deleting this bullet along with
+ *     them is how a limit stops existing;
  *   - a read whose value the checker types as `any` is NOT attributed, because
  *     every type is assignable FROM `any` and counting it would manufacture
  *     consumption — the direction this guard refuses. Reaching input: an
@@ -149,6 +174,17 @@
  *     used; reaching input: `const { skipLabel } = FIRST_RUN_COPY.kids` with the
  *     binding unused. `noUnusedLocals` is on in tsconfig.app.json, so that file
  *     does not compile — unreachable in clean code;
+ *   - a destructuring in a FUNCTION PARAMETER is not walked: `bindingReads` is
+ *     reached only from `ts.isVariableDeclaration`, so a key bound in a parameter
+ *     pattern contributes no read even though the same destructure in a `const`
+ *     does (seed 9). Reaching input: `const render = ({ skipLabel }:
+ *     FirstRunCardCopy) => skipLabel` (measured on this tree: with the kids card's
+ *     real read replaced by a call to that function, both skipLabel fields report
+ *     READ BY NOTHING). A missed read (safe direction): the field comes out unread
+ *     and a human allowlists it. Binding the whole value in the parameter and
+ *     reading a field off it (`({ copy }: { copy: FirstRunCardCopy }) =>
+ *     copy.skipLabel`) IS followed — that read is a property access the checker
+ *     can type;
  *   - `extends` is not followed: a sub-shape contributes only its OWN declared
  *     fields, and the parent shape is judged on its own. Reaching input:
  *     `interface SkippableFirstRunCardCopy extends FirstRunCardCopy` — the
@@ -226,21 +262,29 @@
  * FIX 4 IS THE SAME LESSON ONE LEVEL DEEPER, AND IT IS NOT MEASURED AS A WIN ON
  * LENGTH. The AST closed the questions a character scanner cannot answer about
  * TOKENS; it left the questions about WHAT A NODE MEANS, and those were being
- * answered by comparing strings. Measured on this tree: 735 lines to 818 total,
- * and 382 code lines to 382 — the code did not grow, the header did, because the
- * name table (`roots`, the import scan, the alias fixpoint, `rootIdentifier`,
- * `patternReads`, `isTypeOnlyImport`, `parseFile`) was replaced by something
- * smaller (`compilerOptions`, `buildProgram`, `shapeTypes`, `shapesOf`,
- * `bindingReads`) and the explanation of WHY is what takes the space. The cost is
- * real and measured too, three runs each on this machine: the guard goes from
- * 0.30s to 1.2–2.4s per run, and the single `ts.createProgram` over the tree (190
- * source files, 345 with TypeScript's own libs) is 0.6–1.6s of that — the rest is
- * the walk and the type queries. The behavior check goes from 8.9s to 35–39s
- * because it invokes the guard 28 times. The spread is machine load, not
- * nondeterminism in the guard: same repo, same findings, same order. That is the
- * price of asking a question that has an answer instead of guessing at one; if it
- * ever becomes a guard people route around, the honest move is to say so, not to
- * re-grow the name table.
+ * answered by comparing strings. Measured at the two COMMITS, `dde111a` and the
+ * fix-4 commit `860893c`: 734 lines to 849 by `wc -l`, and 382 code lines
+ * (comments and blanks excluded) either side — the code did not grow, the header
+ * did, because the name table (`roots`, the import scan, the alias fixpoint,
+ * `rootIdentifier`, `patternReads`, `isTypeOnlyImport`, `parseFile`) was replaced
+ * by something smaller (`compilerOptions`, `buildProgram`, `shapeTypes`,
+ * `shapesOf`, `bindingReads`) and the explanation of WHY is what takes the space.
+ * Those two numbers are pinned to the commits they were measured at, not to "this
+ * tree": a line count of the current file is wrong the moment anyone edits it, and
+ * this header has already been wrong about its own total once (it said 818; the
+ * file was 849, thirty-one short). The cost is real and measured too, three runs
+ * each on this machine: the guard goes from a tenth of a second to one to two
+ * seconds per run, most of it the single `ts.createProgram` over the tree, and the
+ * behavior check from about nine seconds to about forty. The behavior check
+ * invokes the guard once per seed, and its four allowance seeds invoke a FULL COPY
+ * of the guard as well: 32 invocations at the fix-4 commit and 33 here, a count the
+ * check prints for itself rather than one this header asserts — the header used to
+ * assert it, and the number it asserted, 28, was that fix-4 total minus exactly
+ * the four full copies. The spread is machine load, not nondeterminism in the
+ * guard: same repo, same findings, same order. That is the price of asking a
+ * question that has an answer instead of guessing at one; if it ever becomes a
+ * guard people route around, the honest move is to say so, not to re-grow the
+ * name table.
  *
  * What the rewrite buys is not length: it is that the questions the lexer had to
  * GUESS — does this quote open a string, is this identifier a read, is this

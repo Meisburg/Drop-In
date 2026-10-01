@@ -137,18 +137,45 @@
  *      exercise a renamed API is to rename it, and a seed that stubs TypeScript is
  *      not testing the guard.
  *
+ * Seed 34 is the fix-5 round, and it is a MEASUREMENT round: the mechanism passed
+ * review unchanged — the reviewer attacked the checker-based attribution with a
+ * same-named local, `any`, type assertions, interface widening and alias chains
+ * and could not break it. What it found instead was that the numbers in these
+ * headers did not reproduce. So this seed adds the one assertion the rewrite
+ * promised and never made — the `limit——` line the guard prints for an `any`-typed
+ * read — and the numbers below were re-measured rather than inherited.
+ *
+ *  34. a field-named read off an `any`-typed value PRINTS its `limit——` line. The
+ *      header claims the blind spot is "in the run and not only in this comment",
+ *      but no seed read that line: `limit——` appeared only in prose, while seed 17
+ *      asserted the skipped-const line and seed 33 the parse fence. The checker
+ *      refuses to attribute a value it types `any` (every type is assignable FROM
+ *      `any`), so the read is missed — and the guard must SAY SO rather than pass
+ *      in silence. `JSON.parse` returns `any`, so `zzAny.skipLabel` is that read
+ *      with zero type errors, and the real skipLabel read stays standing so the
+ *      run still exits 0.
+ *
  * ONE BASELINE PER SEED, NAMED. A seed that catches a regression is by
  * construction GREEN against the version that was right, so "fail it against two
  * versions" is not satisfiable. Each seed above states the ONE version it must be
  * red against; for seeds 29-33 that is `340d016` (the fix-3 guard, name-keyed
- * roots), and the measured matrix on this tree is: 5 red vs `340d016` (29, 30,
- * 31, 32, 33 — exactly the new ones, so no pre-existing seed depends on the new
- * implementation), 11 red vs `a03fc54` (the 6 the fix-3 review measured — 17, 24,
- * 25, 26, 27, 28 — plus these 5), 16 red vs `be29027` (the 11 that review
- * measured — 15, 16, 17, 18, 19, 20, 21, 22, 24, 26, 27 — plus these 5; seed 25
- * is GREEN on `be29027` because that is where the regression it pins was fixed,
- * and seed 26 is red there only for its added `does not PARSE` half — the older
- * guard exited 1 with the correct finding), and 46 ✓ / 0 ✗ on the current tree.
+ * roots) and for seed 34 it is `dde111a` (that same fix-3 guard; the two commits
+ * are byte-identical for both guard and check). The measured matrix — EVERY number
+ * here re-run this round against the named guard with `COPY_GUARD_UNDER_TEST`, none
+ * inherited — is: 6 red vs `340d016`/`dde111a` (29, 30, 31, 32, 33, 34 — exactly
+ * the new ones, so no pre-existing seed depends on the new implementation), 12 red
+ * vs `a03fc54` (the 6 the fix-3 review measured — 17, 24, 25, 26, 27, 28 — plus
+ * these 6), 17 red vs `be29027` (the 11 that review measured — 15, 16, 17, 18, 19,
+ * 20, 21, 22, 24, 26, 27 — plus these 6; seed 25 is GREEN on `be29027` because that
+ * is where the regression it pins was fixed, and seed 26 is red there only for its
+ * added `does not PARSE` half — the older guard exited 1 with the correct finding),
+ * and 48 ✓ / 0 ✗ on the current tree. The run prints its own size — the check count
+ * and the number of guard invocations it made — and the guard header quotes
+ * neither, because both change whenever a seed is added and a number that must be
+ * re-measured on every edit is a number that will be wrong again. This header has
+ * already been wrong about its own seed-versus-check counts once: the last round
+ * called the prior commit's "39" a SEED count; it was the check count, the prior
+ * commit had 28 seeds, and this round has 34.
  *
  * Every seed added from fix 2 onward asserts its OWN PREMISE (what it deleted,
  * what still exists), because two seeds in fix 2 passed for reasons unrelated to
@@ -230,8 +257,11 @@ const PAGE = path.join(sandbox, 'src', 'pages', 'OnboardingPage.tsx')
 const FOREIGN = path.join(sandbox, 'src', 'lib', 'firstRun.ts')
 
 let failures = 0
+let passes = 0
+let guardRuns = 0
 const check = (name, ok, detail = '') => {
   if (ok) {
+    passes += 1
     console.log(`  ✓ ${name}`)
   } else {
     failures += 1
@@ -292,8 +322,11 @@ const findingLines = (out) =>
     .filter((l) => l.startsWith('  - '))
     .join(' | ')
 
-/** Run the guard (optionally a copy with a patched ALLOWLIST) over the sandbox. */
+/** Run the guard (optionally a copy with a patched ALLOWLIST) over the sandbox.
+ *  Counted, so the run can print how many guard invocations it made — the guard
+ *  header describes that count as its cost driver and must not assert it. */
 function run(script = guard) {
+  guardRuns += 1
   try {
     const out = execSync(`node ${JSON.stringify(script)} ${JSON.stringify(sandbox)}`, {
       encoding: 'utf8',
@@ -943,6 +976,34 @@ try {
     r.exit === 0 && /read\s+— \S*\.skipLabel .*at src\/lib\/zzAliasConsumer\.ts/.test(r.out),
     `exit ${r.exit}: ${findingLines(r.out)}`,
   )
+
+  // 34. fix 5 M4 — the `limit——` line for an `any`-typed READ is ASSERTED, not
+  //     merely printed. The header claims the blind spot is "in the run and not
+  //     only in this comment", but no seed read that line: `limit——` appeared
+  //     only in prose, seed 17 asserted the skipped-const line and seed 33 the
+  //     parse fence, and this was the one line that skipped it — the same class
+  //     the fix-4 review returned for the `namespace imports` label. The checker
+  //     refuses to attribute a read whose value it types `any` (every type is
+  //     assignable FROM `any`), and refuses it OUT LOUD on its own line; a value
+  //     the checker types `any` with zero type errors is `JSON.parse`'s return,
+  //     so `zzAny.skipLabel` reaches the limit and the real read stays standing.
+  //     ONE BASELINE: red against `dde111a` (the fix-3 guard), which had no
+  //     any-typed limit line to print.
+  reset()
+  const ANY_CONSUMER = path.join(sandbox, 'src', 'lib', 'zzAnyConsumer.ts')
+  addFile(ANY_CONSUMER, "export const zzAny = JSON.parse('{}')\nexport const zzSkip = zzAny.skipLabel\n")
+  check(
+    'seed 34 planted a field-named read off an `any`-typed value and left the real skipLabel read standing (self-verifying)',
+    readFileSync(ANY_CONSUMER, 'utf8').includes('export const zzSkip = zzAny.skipLabel') &&
+      readFileSync(PAGE, 'utf8').includes('skipLabel={kidsCopy.skipLabel}'),
+    'the seed must add the any-typed read WITHOUT removing the real one, or the run fails for the wrong reason',
+  )
+  r = run()
+  check(
+    'a field-named read off an `any`-typed value prints its `limit——` line (the blind spot is in the run — fix 5 M4)',
+    r.exit === 0 && /limit—— src\/lib\/zzAnyConsumer\.ts: a field-named read off an `any`-typed value/.test(r.out),
+    `exit ${r.exit}: ${r.out.split('\n').filter((l) => l.includes('limit——')).join(' | ') || '(no limit—— line)'}`,
+  )
 } finally {
   reset()
   rmSync(sandbox, { recursive: true, force: true })
@@ -954,4 +1015,7 @@ if (failures > 0) {
   )
   process.exit(1)
 }
-console.log('copy-field-consumption-guard check: all checks passed.')
+console.log(
+  `copy-field-consumption-guard check: all ${passes} checks passed, 0 failed, across ${guardRuns} guard invocations ` +
+    '(the guard header describes that count as its cost driver and does not assert it).',
+)
