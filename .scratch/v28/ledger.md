@@ -4948,3 +4948,47 @@ signup runs post-edit. No listener left on 4173. Prettier is not a gate and HEAD
 rather than silently reformatting.**
 
 **THREE LANES OUT:** bounded review + verifier (workflow `0102c465`), `ocr` on `3215557..99880ef`.
+
+## Slice 5 fix round 2 -- ADJUDICATED: **REVIEW PASS**, **VERIFY PASS** (3 runs), `ocr` 3 findings -> fix round 3
+
+**Reviewer: PASS, no blocking findings**, and it independently re-derived the arithmetic: *"12 static `it()`s + 2
+generated = the claimed 14 green"*, and it confirmed the R3 red shows 12 when the loop empties. **It verified all
+six checklist items**, including R4's proxy rejecting the counterexample **three independent ways** (sentence
+split, possessive binding, standalone-framing ban) and `places.ts`'s hunk being *entirely inside the module
+docblock* with `withinRadius` appearing **only in comments**.
+
+**Verifier: PASS.** `verify` exit 0, **69 files / 2019 tests**, lint **81 / 0** counted its own way (it *confirmed
+oxlint prints no summary line* by grepping for one), guards PASS with **no-bypass not flaking**;
+`signup-zip-fallback` **three** runs, 8 passed each; `zip-radius` + `loop-closing` once, 4 passed. **HEAD did not
+advance** and the tree was clean, so every result describes `e97df61` whose only source commit is `99880ef`.
+
+### ⚠️ THE FINDING THAT IS STRUCTURAL, NOT COSMETIC -- and it is the batch's own rule firing
+**The reviewer:** `firstRunTour.test.ts:159-160` derives `withheldKinds` **by label** while the vacuity guard at
+`:183` counts **kinds** → **a withheld kind whose label collides with an offered kind's label is silently dropped
+from the loop AND THE GUARD STAYS GREEN** as long as one other withheld kind remains.
+**And `ocr` saw the same seam from the other side:** the **e2e** filters by **kind membership** with an
+`as readonly string[]` cast while the unit test builds a **Set of labels** → **the two derivations disagree.**
+**Plus the escape one-liner now exists in THREE places**, which both lanes flagged as drift.
+
+**RULING: this is not four small fixes; it is one missing module.** → **fix round 3 = ONE exported derivation +
+ONE escape, imported by both callers.** **This is the standing rule working as intended: the second occurrence of
+a defect class gets a guard, not another one-off fix** -- and here two independent lanes delivered the two halves
+of the same seam.
+
+### The other real ones
+- **`ocr`: the body frames every control as *"how you move around the app"* -- but the third entry is Post, which
+  this module's OWN header and `App.tsx:489-499` record as *"an ACTION, not a fifth NavTab destination."***
+  **Posting is not a way to move around the app, and this module is the one that insists on that.** A
+  self-contradiction with a pinned invariant.
+- **Reviewer: `firstRunTour.ts:99` maps the `md` BREAKPOINT to DEVICE CLASSES** (*"a phone" / "a tablet or
+  desktop"*) while the app switches on **width**. **Marginally stronger than the classes warrant -- the slice's
+  own defect class in miniature, introduced by my own R1 fix.**
+- **Reviewer: the CTA is still a literal** (`e2e:222`, restating `TOUR_PRIMARY_LABEL`) -- **R6 imported the title
+  and the lines and left the CTA**, the identifier this batch pinned on purpose.
+- **Cosmetic:** the pairing assertion's failure message is one-directional.
+
+### Accepted with reasons (recorded, not fixed)
+- **Irregular plurals** (`\b<label>s?\b`): **latent -- every current label is regular.**
+- **The duplicated escape and the `as readonly string[]` cast: closed by the single-sourcing.**
+
+**FIX ROUND 3 DISPATCHED** (`slice-5-fix-3.md`) -- **the final round for this slice.**
