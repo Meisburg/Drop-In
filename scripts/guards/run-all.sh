@@ -32,6 +32,10 @@
 #                     ACCEPTANCE-GREP claim names a PATH (not a bare directory)
 #                     and matches the tree it claims about; untagged greps are
 #                     quotations and are never judged
+#   regexp-escape   scripts/guards/regexp-escape-guard.mjs — the repo has ONE
+#                     copy of the regex-escape one-liner; a sixth copy fails
+#                     AND a zero fails (a needle that matched nothing is not
+#                     a clean repo)
 #
 # PROVENANCE: the first two are borrowed patterns from affaan-m/ECC's
 # PostToolUse / PreToolUse hook set, reimplemented as batch gates suited to
@@ -67,7 +71,7 @@ guard_run() {
   esac
 }
 
-for guard in lib-sibling-guard config-guard no-bypass-guard fixture-marker-guard vacuous-absence-guard stale-locator-guard copy-field-consumption-guard check-acceptance-greps; do
+for guard in lib-sibling-guard config-guard no-bypass-guard fixture-marker-guard vacuous-absence-guard stale-locator-guard copy-field-consumption-guard check-acceptance-greps regexp-escape-guard; do
   script="$(guard_script "$guard")"
   echo
   if [ -z "$script" ]; then
@@ -84,7 +88,7 @@ done
 
 # A rule whose own behavior is unchecked is a rule that can silently stop
 # holding — a checker that matches nothing looks exactly like a clean repo. So
-# the two checkers that carry real logic ship a standalone `.check.mjs` that
+# the checkers that carry real logic ship a standalone `.check.mjs` that
 # seeds each failure shape and requires a non-zero exit. They run as part of
 # this gate, because a check nobody runs is a comment.
 #
@@ -113,6 +117,7 @@ run_check "sweep-e2e (decision logic)" scripts/lib/sweep-e2e.check.mjs
 run_check "copy-field-consumption-guard (behavior)" scripts/guards/copy-field-consumption-guard.check.mjs
 run_check "check-acceptance-greps (behavior)" scripts/guards/check-acceptance-greps.check.mjs
 run_check "no-bypass-guard (stated blind spot)" scripts/guards/no-bypass-guard.check.mjs
+run_check "regexp-escape-guard (behavior)" scripts/guards/regexp-escape-guard.check.mjs
 
 echo
 echo "==========================================================="

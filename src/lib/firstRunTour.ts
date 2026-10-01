@@ -80,6 +80,7 @@
  * names it as posting, never as a tab, and its test enforces that.
  */
 
+import { escapeForRegExp } from './escapeForRegExp.mjs'
 import { PLACE_KINDS, PLACE_KIND_CHIP_KINDS, placeKindLabel } from './places'
 
 /** One line of the tour: a control the parent is about to meet, and its job. */
@@ -289,16 +290,6 @@ export interface WithheldPlaceCategory {
   kind: string
   /** The word the app would show for it (`placeKindLabel`). */
   label: string
-}
-
-/**
- * Escape a value before interpolating it into a RegExp: it is DATA, and an
- * unescaped metacharacter silently over-matches (or throws). Exported because
- * the same one-liner existed in THREE places — two here, one in the e2e — and
- * both review lanes flagged that as drift.
- */
-export function escapeForRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /**

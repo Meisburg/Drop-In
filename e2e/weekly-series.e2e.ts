@@ -12,6 +12,7 @@
  * the toggle and that a normal post still works.
  */
 import { expect, test } from '@playwright/test'
+import { escapeForRegExp } from '../src/lib/escapeForRegExp.mjs'
 import { formatDayLabel } from '../src/lib/feed'
 import {
   editTitle,
@@ -84,8 +85,3 @@ test('the repeat-weekly toggle is absent from /new', async ({ page }) => {
   const labelText = new RegExp(dayLabels.map(escapeForRegExp).join('|'), 'i')
   await expect(page.getByText(labelText).first()).toBeVisible()
 })
-
-/** Escape a literal string for safe use inside a RegExp (the labels carry commas). */
-function escapeForRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}

@@ -95,6 +95,7 @@ import { execSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
+import { escapeForRegExp } from '../../src/lib/escapeForRegExp.mjs'
 
 const repoRoot = process.argv[2] ? path.resolve(process.argv[2]) : process.cwd()
 const srcDir = path.join(repoRoot, 'src')
@@ -240,7 +241,7 @@ function routeMatcher(pattern) {
     '^' +
       pattern
         .split('/')
-        .map((seg) => (seg.startsWith(':') ? '[^/]+' : seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+        .map((seg) => (seg.startsWith(':') ? '[^/]+' : escapeForRegExp(seg)))
         .join('/') +
       '$',
   )

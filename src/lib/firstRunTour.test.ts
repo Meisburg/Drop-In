@@ -60,11 +60,11 @@ import {
   TOUR_PRIMARY_LABEL,
   TOUR_PROGRESS_LABEL,
   TOUR_TITLE,
-  escapeForRegExp,
   placeCategoryPattern,
   withheldCategoryPattern,
   withheldPlaceCategories,
 } from './firstRunTour'
+import { escapeForRegExp } from './escapeForRegExp.mjs'
 import { PLACE_KINDS, PLACE_KIND_CHIP_KINDS, placeKindLabel } from './places'
 
 /** Everything the card renders except the tab/control labels themselves. */

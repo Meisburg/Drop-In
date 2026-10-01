@@ -37,6 +37,7 @@
  * claims, and only the second one is the founder's ask.
  */
 import { expect, test } from '@playwright/test'
+import { escapeForRegExp } from '../src/lib/escapeForRegExp.mjs'
 import { settleOnRoute } from './fixtures'
 
 test('the place directory is reachable from /new, with its map and list (V21 t02)', async ({
@@ -106,7 +107,7 @@ test('the place directory is reachable from /new, with its map and list (V21 t02
   // The sheet closes and the pick lands in the form's place field.
   await expect(sheet).toHaveCount(0)
   const placeInput = page.getByPlaceholder('e.g. Green Lake playground, near the boathouse')
-  await expect(placeInput).toHaveValue(new RegExp(firstName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  await expect(placeInput).toHaveValue(new RegExp(escapeForRegExp(firstName)))
 
   // --- 5. THE PAGE RENDERS NO INTERNAL SOURCE PROSE. ---
   // The first-use audit found a block comment that had lost its `{/* … */}`

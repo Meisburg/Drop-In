@@ -87,6 +87,7 @@
  */
 import { readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
+import { escapeForRegExp } from '../../src/lib/escapeForRegExp.mjs'
 
 const ROOT = process.argv[2] ? path.resolve(process.argv[2]) : process.cwd()
 const SRC_DIR = path.join(ROOT, 'src')
@@ -199,8 +200,7 @@ function isBoundedToken(text) {
     boundedTokenCache.set(text, false)
     return false
   }
-  const escaped = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const re = new RegExp(escaped, 'g')
+  const re = new RegExp(escapeForRegExp(text), 'g')
   let found = false
   for (const content of srcContents.values()) {
     re.lastIndex = 0

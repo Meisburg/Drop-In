@@ -246,10 +246,10 @@ fi
 # was never used. Git records no command line, so a plain
 # `git commit --no-verify` is invisible to the reflog grep above — the blind
 # spot is proven by no-bypass-guard.check.mjs.
-echo "  COVERAGE: HISTORY reads the reflog's action text and FAST_PUSH_LOG, never a command line."
+echo "  COVERAGE: HISTORY reads the reflog's action text on logs/HEAD and FAST_PUSH_LOG, never a command line."
 echo "    A plain 'git commit --no-verify' leaves no trace this check can read, so the PASS/FAIL"
-echo "    below is NOT evidence about the flag — only a wrapper-recorded bypass or a FAST_PUSH_LOG"
-echo "    line is visible (see scripts/guards/no-bypass-guard.check.mjs)."
+echo "    below is NOT evidence about the flag — only a non-prose reflog action text on logs/HEAD"
+echo "    or a FAST_PUSH_LOG line is visible (see scripts/guards/no-bypass-guard.check.mjs)."
 
 echo
 if [ "$FAIL" -eq 0 ]; then
