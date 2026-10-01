@@ -5286,3 +5286,53 @@ reasoning or beat it, and must not create a fourth wall.**
 
 **THE SLICE QUEUE IS NOW FULLY BRIEFED: 6a (running), 6b, 6c, 6d, 8a, 8b, 8c, 8d.** Remaining work is execution
 only: dispatch each in turn (one builder at a time), run the three lanes, adjudicate, fix, close.
+
+## Slice 6a: BUILT (`16dd303`) -- and it reported TWO DEFECTS IN MY BRIEF rather than working around them
+
+**It survived the timeout with its work intact** (the revive worked), registered the guard in both places **plus
+the header documentation**, ran the gate, ran the specs, committed and reported.
+
+**Gate: `verify` exit 0 -- 69 files / 2024 tests (+1), lint 81 warnings / 0 errors, GUARDS PASS** with the new guard
+inside the guards lane. **e2e:** `signup-zip-fallback` 8 passed; **`onboarding-resume` 3 passed** -- the spec that
+asserts the Skip control **by role and name**, so it is the one that proves the rendered word did not change.
+**Independent word proof beyond the specs:** `rg -n "Skip for now" src/ e2e/` now matches **only two comments that
+describe the defect**; the data is `firstRunCopy.ts:78 skipLabel: 'Skip'` and the chrome renders `{skipLabel}`
+verbatim.
+
+**Both halves of the guard, and the seeded red was done in a `/tmp` COPY of `src` -- never in the repo.** That is
+the discipline I want and did not ask for.
+```
+PASSING: declared fields: 5 · consumer files: 2 · read — skipLabel at src/pages/OnboardingPage.tsx:1360
+SEEDED RED: FAIL — "skipLabel" is declared and valued but READ BY NOTHING in src — the only sites that mention
+  it are its own declaration, the module's data, and the module's own test, and none of those is a consumer.
+```
+
+**⚠️ THE CONSUMPTION RULE, STATED EXACTLY -- and its non-counting example is the sharpest sentence in the report:**
+a member access on an expression **rooted at an import of the copy module** -- direct, via a local alias, or a
+computed hop -- excluding the declaration, the module's data, **the module's own test**, and anything in a comment.
+*"`firstRunCopy.test.ts:28` asserts the field is PRESENT, not that the UI SHOWS it; that assertion is precisely
+what made the lie look covered, and **if a test counted, every unread field could buy immunity by asserting about
+itself**."* **That is the whole slice's thesis in one line.**
+
+### ⚠️ TWO BRIEF DEFECTS OF MINE, DECLARED RATHER THAN ABSORBED
+1. **`skipLabel` as a required prop did NOT typecheck** -- under `Record<FirstRunCardId, FirstRunCardCopy>` the value
+   is `string | undefined`. **The two cheap outs both re-open the defect** (`?? ''` at the call site = a second
+   source of the word; an optional prop = an empty button). So it exported `SkippableFirstRunCardCopy` and
+   intersected the const -- **totality kept, no fallback** -- and **flagged it: "a public type the brief did not
+   authorize; revert it if the reviewer calls it scope."** **A builder that declares its own scope question is
+   doing the job.**
+2. **My brief said "keep the rendered word `Skip`" but never said the module's VALUE had to change** from
+   `'Skip for now'` to `'Skip'`. **It changed it, on the argument that otherwise the field stays a lie** -- *"a data
+   change, not a UI change."* **Correct: obeying my brief literally would have kept the lie.**
+
+### And the ladder it proposes, which I am adopting
+*"The guard's own zero-fields tripwire fired TWICE during development and caught two real parser bugs. **A guard
+that fails when it matches nothing is the only reason those were not shipped as a silently-clean checker. Worth
+making a STANDING RULE, not a per-guard act of taste.**"* -- **RULED: adopted.** `run-all.sh` already states the bar;
+**6b, the next guard slice, will be told to make it a standing requirement -- every guard ships a no-match case
+that fails** -- rather than leaving it to each guard's author.
+
+**Honest about the guard's size:** *"that stripper is most of the guard's 500 lines -- the guard is over the
+5-minute read bar; the src diff (75 lines) is not."*
+
+**THREE LANES OUT** for 6a: bounded review + verifier (workflow), `ocr` on `6073437..16dd303`.
