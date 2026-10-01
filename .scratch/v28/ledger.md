@@ -6808,3 +6808,27 @@ boundary narrower than the implementation*. **And it found them in the very file
 **6b's status: REOPENED, pending fix 2.**
 
 **6c's lanes are running in parallel** (review `a2b500a2`, verify `694e7bee`).
+
+## ⚠️ 6c's VERIFIER DIED WITH NO OUTPUT -- and it was on CLOUD, so this is a FOURTH failure mode
+
+`Subagent produced no output (possible model cold-start or empty response).` **A lane that emits nothing at all** --
+not a timeout, not an OOM, not auth, not an output-limit truncation. **And it ran on `ollama-cloud`, so the local
+model's troubles are not implicated.**
+
+**Nothing was lost:** a verifier is read-only, `git status --porcelain` is empty, and **no evidence file was written**
+(`/tmp/verify-6c.md` does not exist) -- *so the lane died before its first command, which is consistent with a cold
+start rather than a mid-flight failure.*
+
+**RULED: same-protocol retry, fresh.** *The five failure modes now named this session, and this is the first that
+belongs to the cloud provider rather than to the machine:* **clock** (fixed by budgeting turns), **OOM** (fixed by one
+lane at a time, then by moving to cloud), **auth** (fixed by giving clients the key the server reads),
+**output-limit** (fixed by never writing a large file in one call), and now **empty response** (retry).
+
+**AND A FACT THE HUMAN CONFIRMED, WHICH CLOSES MY OPEN QUESTION:** the clean stop of `strata-max` at 15:49:58 was
+**Hermes**. *I had flagged it as unexplained; the human said Hermes probably killed it, and the journal's
+`stopping (Ctrl+C...)` / systemd `Stopped` -- against the two earlier `Failed with result 'oom-kill'` -- fits that
+exactly.* **AND THE MODEL IS NOW SERVING SOMETHING THAT IS NOT MINE** (`[strata] done: 428 tokens in 4 s` while every
+one of my agent lanes runs on cloud) -- **so Hermes is using the same local model `ocr` needs, and the two are
+competing for it.** *That is a better explanation for `ocr`'s intermittent failures than any of the three I
+measured.* **The human was offered: tell Hermes to leave it alone, or point `ocr` at the cloud so nothing local is
+needed.**
