@@ -5139,3 +5139,41 @@ PROP, so the caller keeps its own copy -- the chrome renders it, it never compos
 the six-guard hard-coded list at `run-all.sh:61`, `run_check()` at `:85` with four callers at `:100-103`.
 
 **DISPATCHED** (`slice-6a.md`).
+
+## Slice 6b and 6c briefs written -- and writing them caught TWO stale-claim defects and ONE false zero of MINE
+
+### `slice-6b.md` -- the brief's own numbers had MOVED, and its predecessor proved it
+The original slice-6 brief said a blanket `rg "of 5" src/` yields **32 hits**. **Measured today: 12** -- r1's sweep
+already removed most of them. **This is the rule I wrote earlier (*"a document that quotes a MOVING measurement
+must instruct the reader to measure"*) earning its keep: copying that 32 into a fresh brief would have shipped a
+number that was wrong before the brief was dispatched.** The new brief carries the corrected figure **and says it
+is moving on purpose**, and asks the builder to report which numbers it had to re-measure.
+Also corrected: `hasPhoto`'s unrelated local has **moved from `places.ts:1070` to `:1075-1076`**, and there is a
+**third** mention at `src/lib/avatarUrl.test.ts:6`. Verified still present: `plan.md:239`, `plan.md:300`,
+`explore-r2-restructure.md:65` -- **the documents genuinely DO quote the bad greps as defects**, which is the trap
+the guard must not fire on. And ruling **F1** (removal-description comments are exempt) is carried into the brief as
+a **deliberate exemption to state**, not an accident of pattern-matching.
+
+### ⚠️ `slice-6c.md` -- and I produced ANOTHER FALSE ZERO, my fifth instrument-lie of the session
+Enumerating the `escapeForRegExp` copies, **my first command returned ZERO.** The pattern was **mangled by shell
+escaping** — a char class full of brackets, unquoted. **A false zero from a broken instrument is exactly the
+failure this batch has paid for repeatedly** (`rg -r` fabricated output four times; a newline count reported 8
+where the truth was 79; two `pgrep` self-matches). **I re-measured with `--fixed-strings '\$&'`, which cannot be
+mangled, and found FIVE copies** -- and **the brief now says my first measurement was wrong and makes reproducing
+the enumeration the builder's first job.** *An instrument that cannot be mangled is worth more than a careful
+reading of a mangled one.*
+
+**The five, measured:** the canonical `src/lib/firstRunTour.ts:300-301`; `e2e/weekly-series.e2e.ts:89-90`
+(a private function of the same name); `e2e/place-directory-in-new.e2e.ts:109` (inline);
+`scripts/guards/stale-locator-guard.mjs:202` and `scripts/guards/vacuous-absence-guard.mjs:243` (inline).
+**And four LOOKALIKES that are deliberately excluded** -- `RsvpConfirmationDialog.tsx:47`, `ModalShell.tsx:112`,
+`photoStorage.ts:209`, `backfill-place-hours.mjs:229`: different character classes, so merging them would be a
+behaviour change.
+
+**⚠️ AND THE BOUNDARY THAT MAKES "ONE IMPLEMENTATION" IMPOSSIBLE AS WRITTEN: a `.mjs` file cannot import a
+TypeScript module.** Two of the five are `.mjs` guard scripts. **So the brief rules: dedupe what CAN share, choose
+the `.mjs` option with a MEASUREMENT, state the surviving copy count and why -- and never pretend the dedupe is
+total.** *"A guard that pretends to be total is worse than one that says what it covers."*
+
+**BRIEFS 6b AND 6c ARE ON DISK. 6a IS RUNNING (one builder at a time -- serialized, per the batch's first
+invariant).**
