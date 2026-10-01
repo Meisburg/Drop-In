@@ -5548,3 +5548,51 @@ specs drive the kids Skip by role+name).
    *"an instrument that reports nothing looks like a clean repo"* class, caught by its own author.
 
 **THREE LANES OUT** (review + verify bounded with incremental evidence; `ocr` on `16dd303..be29027`).
+
+## Slice 6a FIX ROUND 1 lanes: **REVIEW PASS**, **VERIFY PASS** -- and this is the strongest evidence pair of the batch
+
+### The reviewer reproduced the builder's central claim INDEPENDENTLY, then attacked the fix
+- *"**I reproduced the builder's claim independently:** seeded tree ... against the guard extracted from `16dd303`
+  -> `read -- title (interface FirstRunCardCopy) at src/App.tsx:195`, **PASS exit 0**; against `be29027` ->
+  **FAIL exit 1** naming `FirstRunCardCopy.title`. `check.mjs:236-252` is that seed; **it fails against the old code,
+  so it anchors the regression rather than the new implementation.**"* **That is the distinction that matters, and
+  the lane drew it itself.**
+- **It attacked F1 and could not break it:** alias of the nudge const, destructured nudge read, a chain inside a
+  string, a chain inside a JSX attribute value -- **all four still report `FirstRunCardCopy.title` READ BY NOTHING**
+  -- and alias/mapped-type resolution **did not open the sibling bypass**. *"I attacked it and failed to break it."*
+- **It verified F4 with its own probe**, not by reading a report: standalone `tsc --noEmit --strict` -> deleting the
+  kids `skipLabel` gives **`TS2741`**, and totality holds (**`TS2739`** for a missing card).
+
+### The verifier named its instrument AND independently confirmed the retraction
+*"What it actually ran: `tsc -b --noEmit`, and `--verbose` shows it built **tsconfig.app.json, tsconfig.node.json,
+tsconfig.sw.json**, all three 'out of date' so all three were genuinely re-checked (app project = 345 files).
+**Vacuity confirmed independently: `npx tsc --noEmit --listFilesOnly` at root prints 0 files** -- so bare root tsc is
+*not* type evidence; the `-b` form is, because it walks the references."*
+**A lane that names what its instrument actually did, and proves the retraction rather than accepting it, is the
+standard.** Evidence: `/tmp/verify-6a-fix1.md`, **141 lines, written incrementally** -- **the structural fix is now
+just how the lane works.** Gate exit 0, **69 files / 2026 tests**, lint **81 / 0** counted its own way, both guard
+artifacts exit 0 (3 shapes / 8 fields / 2 consumers / **17-17 self-checks**), three e2e runs green, `be29027` the only
+source commit. It stated plainly that it did **not** reproduce the seeded-red half.
+
+### ⚠️ THE ONE FINDING THAT IS A DEFECT THIS ROUND INTRODUCED, NOT A LIMIT
+`copy-field-consumption-guard.mjs:160-178` (`stringCanStart`): **the apostrophe fix trades its false positive for a
+narrow false NEGATIVE -- `as` is missing from `BEFORE_STRING_KEYWORDS`.** Measured by the reviewer: on the seeded
+tree, `const zz = (FIRST_RUN_COPY.name.primaryLabel as 'kidsCopy.title')` at `OnboardingPage.tsx:1185` makes the
+guard report `FirstRunCardCopy.title` **read** and exit **0**, where the seeded tree alone exits **1**. *"A string
+counting as a read is exactly exclusion 5 (`:66-70`); the mechanism is stated at `:95-100`, the consequence is not."*
+
+**RULED -- this gets fixed, and the distinction is the principle: a fix that introduces a false-pass and leaves it
+undocumented is not finished.** *The other three findings are genuine LIMITS (unreachable inputs the author should
+write down); this one is a REGRESSION IN THE ROUND'S OWN FIX.* **The fix is one word plus a seed** -- and that
+asymmetry is why it gets a round and the limits get a paragraph.
+
+### The three limits, recorded here so they are not re-derived (and going into the guard's own KNOWN LIMITS)
+1. **Shape attribution is PER-CONST, not per-value.** Adding `export const EITHER: FirstRunCardCopy | NudgeCopy = {…}`
+   and reading `EITHER.title` makes **one read satisfy BOTH shapes** (same class as F1, one rung inward).
+   **Unreachable today** -- the only multi-shape const is `FIRST_RUN_COPY`, whose two shapes are `extends`-related.
+2. **Test files are excluded BY NAME (`.test.`)** (`:432`), so a non-`.test.` helper under `src/` would count as a
+   consumer. **None exists today** (`find src -path '*test*' ! -name '*.test.*'` is empty).
+3. **`firstRun.ts:31-42` calls `SKIPPABLE_CARDS` "THE AUTHORITY", but `isSkippable` has NO consumer in `src` outside
+   its own module and test** -- what actually decides the rendered control is the **prop pairing**
+   (`FirstRunCard.tsx:71-72` + `OnboardingPage.tsx:1360`). **Pre-existing, not introduced here**; the comment
+   overstates by one rung.
