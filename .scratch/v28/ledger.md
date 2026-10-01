@@ -4787,3 +4787,49 @@ So I set what its own help documents: `custom_providers.strata-max.protocol=open
 
 **THREE LANES OUT** for this fix round: reviewer + verifier (workflow `8c7335a5`), and **two** `ocr` runs --
 the slice diff (which had NEVER successfully run) and the fix-1 delta.
+
+## Slice 5 fix round 1 -- lanes: **VERIFY PASS**, **REVIEW TIMED OUT (my brief's fault, 2nd time)**, ocr running
+
+### VERIFIER: PASS, and it is the most disciplined report of the batch
+`npm run verify` **exit 0**, **69 files / 2017 tests**, lint **81 warnings / 0 errors** -- and it counted the
+lint itself because **oxlint prints no summary line on this config**, stating its method (awk-isolate the lint
+stage, count severity tokens, then **look at the 2 lines containing the string "error" and confirm both carry
+`warning` severity**). It reconstructed the **+3 attribution independently** rather than trusting it: the test
+file's declaration count is 9 -> 11, but the new loop emits 2 tests (10 `PLACE_KINDS` minus 9 chip kinds =
+`park` + `trail`), so **9 -> 12**, which closes `2014 + 3 = 2017` exactly.
+`signup-zip-fallback` **twice** (8 passed each), `zip-radius` + `loop-closing` once (4 passed, 1.0m).
+**And then it refused to launder its own green runs**: *"Two green runs are not proof the fix holds -- the rule
+asks for three-plus on a fix-pinning spec, and my brief specified two. I ran two. I am not offering them as
+proof; I am reporting them as samples."* It also **refused to attest to `places.e2e.ts:2759`** (*"unanswerable
+by these checks, and I did not run it, because it is not in my check set"*), **named every listener it did NOT
+kill** (the human's `orca-ide`, ollama, postgres, the pre-existing `:3080`/`:3100` node processes) and confirmed
+**nothing on 4173** before and after, and **proved the mid-run HEAD movement was source-inert** --
+`git diff --stat 3215557 HEAD -- src e2e scripts docs` is **empty** -- so its results describe `3215557` exactly.
+
+### ⚠️ REVIEWER: **TIMED OUT AT 30 MINUTES** -- and this is MY brief's defect, the SECOND occurrence
+The run made **41 bash calls in 30 minutes** and was killed mid-request (`stopReason: aborted`). **Its final
+thoughts are the diagnosis:** *"Let me quickly verify kids editing exists on ProfilePage"* -- **it had left the
+diff and begun auditing the whole product for true claims.**
+**My brief invited exactly that**, in two ways: it asked *"is every promise on the card true"*, and it said
+*"VERIFY THAT MEASUREMENT if you can"* -- **an unbounded "confirm this yourself", which my own rules already
+name as a brief DEFECT.** Slice 2's verifier died the same way.
+
+**THE GUARD (because this is the second occurrence of the class):**
+1. **A brief must not contain an unbounded confirmation instruction.** If a claim needs measuring, either
+   **the orchestrator measures it and the brief passes it as a FACT**, or the brief gives the exact command
+   **and a bound**.
+2. **A review brief is a CLOSED LIST** with an explicit *"do not open files outside the diff"*, because
+   *"is every promise true"* is a whole-product audit wearing a diff review's clothes.
+3. **A bounded brief gets a bounded clock** -- the re-dispatch runs with `timeoutMs` **15 min**, not the 30 min
+   default, so a wanderer is cut off early enough to be useful.
+
+**AND I TOOK THE MEASUREMENT MYSELF so the re-dispatch needs no measuring clause.** I ran the builder's own
+queries through `scripts/db-sql.sh --read` and **independently confirmed the correction**:
+`total 239 · with_hours 184 · without 55 · city_default 164 · osm 20`, and the distribution
+`playground 155 · splash_pad 30 · other 26 · pool 10 · beach 9 · library 6 · indoor_play 2 · museum 1`,
+with **`park 0 · trail 0`**. **So the builder's correction is CONFIRMED, not accepted** -- and it is now a fact
+the re-reviewer judges the copy against rather than a thing to check.
+
+**RE-DISPATCHED** as a closed five-item review (`slice-5-fix-1-review-r2.md`).
+
+**`ocr` (both runs: the slice diff and the fix delta) still running.**
