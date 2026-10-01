@@ -5847,3 +5847,26 @@ regression anchors**, which is the standard this round established and the revie
 
 **FIX ROUND 3 DISPATCHED** -- the AST rewrite, with K1/K2 seeds, the regression inputs, and an explicit
 **STOP-AND-REPORT if `typescript` cannot be imported into a node-run guard**.
+
+## ⚠️⚠️ SECOND OOM KILL OF THE SESSION (restart counter 2) -- this is a MACHINE-CAPACITY fact, not a process failure
+
+```
+13:12:06  strata-max.service: Consumed 13h32m CPU over 58m42s wall, 49.8G memory peak
+13:12:16  Scheduled restart job, restart counter is at 2
+13:12:19  loading the experts into RAM (about 55 GB) ... YOUR PC CAN BE SLOW FOR 1-3 MINUTES
+```
+**The builder's `Connection error` was the model dying underneath it, for the second time in an hour.** Its work
+survived (**3 modified files** -- both guard files and `firstRunCopy.ts`, i.e. item L2's de-export included), and this
+time I copied it to **`/tmp/6a-fix3-wip/` -- OUTSIDE the repo**, because the last thing I want is another stale
+near-duplicate of this parser in the tree after deleting one for exactly that reason.
+
+### ⚠️ THE HONEST FRAMING: the model needs ~50 GB of a 62 GB machine
+**Measured twice:** peak **49.6G**, then **49.8G**, against `total 62 GB`. That leaves roughly 12 GB for everything
+else -- **chromium, node, my own session's context, every child's context** -- and when that is exceeded,
+**systemd-oomd kills the model server**, not the thing that grew. **So the cost of any memory spike is the model.**
+
+**And the pressure I can actually remove is CONCURRENCY**, which I have already cut to one lane at a time. The
+remaining spikes are the browser specs and the sheer size of this session's context. **This is a machine-capacity
+constraint with no fix on my side**; the options are (i) accept the flakiness and the retries, (ii) route the
+remaining slices to a cloud model, or (iii) let the human reduce what else is running. **Recorded and surfaced --
+twice is a pattern, and it is the human's box.**
