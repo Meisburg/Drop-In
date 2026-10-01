@@ -1,9 +1,11 @@
 # Slice 6c — the escape dedupe + the guard's false COVERAGE echo — builder report
 
-**Committed as:** `<sha7>` — the commit that introduces this file, from
-`git log --oneline -1 -- .scratch/v28/reports/slice-6c.md`. A file cannot name the commit that
-creates it, so the id is written in by the pin commit that immediately follows this one (slice 6b's
-convention, done in-slice instead of deferred to a micro round).
+**Committed as:** `ce3479c` — the commit that introduces this file, from
+`git log --oneline --diff-filter=A -- .scratch/v28/reports/slice-6c.md` (the `--diff-filter=A`
+matters: a bare `-1` on this path returns the *pin* commit below, because the pin also touches the
+file). A file cannot name the commit that creates it, so the id was written in by the pin commit that
+immediately follows this one (slice 6b's convention, done in-slice instead of deferred to a micro
+round).
 
 **Scope:** the regex-escape one-liner deduplicated from five copies to one, the drift guard that
 keeps it at one, and the one appended line of guard OUTPUT that still printed a false claim.
