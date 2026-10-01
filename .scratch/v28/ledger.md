@@ -5496,3 +5496,12 @@ this ledger as fact. The correction is here, next to it.**
 
 **FIX ROUND 1 DISPATCHED** (4 items: F1 the blocking bare-name keying + its seed, F2 the test-file exclusion,
 F3 the destructured read, F4 `ocr`'s two-sources-of-truth type).
+
+### ⚠️ AND I RETYPED A RUN ID INSTEAD OF COPYING IT -- the failure my own ledger rule exists to prevent
+My first fix-round dispatch failed: *"Async run not found."* **I had written `...2c6a8c` where the id is
+`...2c6a8a`** -- one character, because I **retyped an opaque identifier rather than copying it**. The rule I wrote
+earlier says *"identify work by brief path + commit sha"* precisely because **a record storing a value I must guess
+is a record that lies**; here the value was not even in the record, it was in a previous tool result I transcribed
+by eye. **The fix was to look the run up by DIRECTORY (`ls -d .../f690938b*`) and copy it.** *An identifier copied
+from the filesystem cannot be mistyped.*
+**FIX ROUND 1 DISPATCHED** as run `a7b50fdb` (resumed, brief `slice-6a-fix-1.md`).
