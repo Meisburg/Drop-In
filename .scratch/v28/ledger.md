@@ -6845,3 +6845,27 @@ same call.** *Every one is the same act: **writing the sentence that describes t
 moment I expect it, rather than after looking.*** **The mitigation that has actually worked -- not the intention to be
 careful, the MECHANISM -- is: read the value out of the command that produces it, in the same call that records it.**
 *Which is exactly what I failed to do here, with the ls output sitting one line above the sentence I wrote.*
+
+## Slice 6c VERIFY: **PASS** -- and it fixed the MANGLING CLASS structurally rather than carefully
+
+**The instrument was made immune to shell mangling by writing the needle to a FILE** (`git grep -F --line-number -f
+<needle>`, **byte-verified with `od`**) ✓✓. *That is the right fix for the class that has now cost this session five
+false readings: **do not put the pattern on the command line at all.*** **And it is the same move as the guards
+themselves -- make the failure unconstructable rather than avoided by care.**
+
+**The count reproduces exactly:** BEFORE = **5** (the five named sites) ✓; AFTER (code) = **1**
+(`src/lib/escapeForRegExp.mjs:37`) ✓ **+ 14 report quotations** ✓ -- and the nuance I would have missed:
+**"the guard files hold ZERO raw hits (they write the literal escaped/concatenated)"** ✓.
+
+**And it reproduced the FALSE-ZERO MECHANISM non-destructively** in a throwaway `/tmp` git repo: *"plain `git grep -F`
+returns exit 1 / no output on an untracked file; `--untracked` finds it."* ✓✓ *It did not accept the builder's claim --
+**it built the state in which the claim is observable and watched it happen.***
+
+**Step 4 answered properly:** the guard imports **only `node:fs`, `node:path`, `node:process`** ✓, recurses via
+`readdirSync` ✓, and contains **no `child_process`/`exec`/`spawn`/`require`** ✓ -- *"it walks the tree; it never shells
+out to git."* ✓ Registration confirmed in both loops ✓. Flake modes: none ✓. **The escape expression is
+byte-identical at all five base sites and the HEAD implementation (a single sha256 prefix)**, plus a direct `cmp` of
+base `firstRunTour.ts:301` against HEAD `escapeForRegExp.mjs:37` ✓. Provenance clean ✓.
+
+**So 6c = review NEEDS_CHANGES (2 blockers) + verify PASS.** **FIX-1 DISPATCHED**, and **`ocr` launched on 6c**
+(the third lane, which has found real defects on every slice it has completed).
