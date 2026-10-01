@@ -6240,3 +6240,44 @@ correction is** -- *so a third lane would be ceremony over a ruling I am making 
 verifier still runs, because "no executable line may change" is itself a claim that needs checking.**
 
 **MICRO-ROUND DISPATCHED** (`slice-6a-micro.md`).
+
+## Slice 6a MICRO-ROUND: DONE (`067d7ad`) -- provably comment-only, and it found the MECHANISM the old sentence got wrong
+
+**Two independent proofs of "no executable line moved", and the second is the better one:**
+1. **`git show 067d7ad -U0` contains no non-comment line** -- *"every added/removed line begins ` * `."*
+2. **It ran the guard and the check from `e66a1d8`, then from `067d7ad`, and the stdout `diff` is EMPTY -- "IDENTICAL" -- including the summary string.** *Rather than ASSERTING "comments only", it DEMONSTRATED output identity.* **That is the strongest available form of this claim, and it is not the form I asked for.**
+
+### ⚠️ AND THE CORRECTED SENTENCE IS NOT JUST TIDIER -- THE OLD ONE HAD THE MECHANISM WRONG
+**The header used to say the fix-4 total minus "exactly the four full copies" gives 28.** The truth, re-derived by the
+builder at all three commits:
+- **The check invokes the guard once per seed EXCEPT the parse-fence seed**, which reads the guard's **own SOURCE**
+  and never calls `run()` -- **so from fix 4 on, the invocation count is one BELOW the seed count.**
+- **The four allowance seeds add NO invocation**: each `run(guardWithAllowlist(...))` **IS its invocation, not a
+  second one on top.**
+- `860893c` -> **33 seeds / 32 invocations**; `dde111a` -> **28 of each**.
+- **And the real mechanism for 28 -> 32 is the four NEW seeds fix 4 added that DO call `run()` (29-32), alongside
+  seed 33 that does not.** **The four allowance seeds are inside BOTH totals** -- so the old subtraction described
+  nothing. **`ocr` called it "arithmetic that happens to land on 28"; the builder found WHY it landed there.**
+
+### ⚠️ IT HIT A REAL CONSTRAINT AND CHOSE THE READING THE BRIEF ALLOWED, then flagged it
+To make `check.mjs:172-174` true it **scoped the sentence** (*"states neither for the tree it ships in: what it
+quotes, it pins to the commit it was measured at"*) rather than adding a new quote of the current invocation count.
+**Its reason is the sharp part:** *"Quoting `33` (even pinned to `4dc81d0`) would have FALSIFIED the check's own
+printed summary line -- `...and does not assert it` -- which is a **string literal in executable code**, and the brief
+forbids changing one. So the header quotes the invocation count it can keep honest (`32` at `860893c`) and says where
+the other is computed."* **It stopped instead of editing behaviour, and flagged the sentence rather than asking.**
+**That is exactly the handling the brief asked for, applied to a case I did not foresee.**
+
+### The forbidden-form grep, with the leftovers NAMED rather than deleted
+**0 hits** in the guard cost paragraph and **0** in the check matrix paragraph; the reviewer's *"and 48 ✓ / 0 ✗ on
+the current tree"* is now *"at the seed-34 commit `4dc81d0`"*, and the deictic *"EVERY number here"* became
+*"in it"*. **Three remaining `here` occurrences were judged NOT the forbidden form and left in place with reasons**
+(`guard.mjs:330` = "to the ALLOWLIST"; `check.mjs:10` = "in the throwaway sandbox"; `check.mjs:89` = inside a quoted
+seed message). *A sweep that names its exceptions is worth more than one that deletes them.*
+
+`verify` exit 0 (**69 files / 2027 tests**, `GUARDS: PASS`) with the tail pasted.
+
+**⚠️ AND `--no-verify` HAS A BETTER REASON THAN EITHER OF US HAD:** *"`.git/hooks` is not a directory in this linked
+worktree; the only hook present is `core.hooksPath=scripts/git-hooks/pre-push`."* -- **which is a fact neither the
+reviewer's earlier ruling nor mine had (we both said "no pre-commit hook"; the worktree does not even have the
+directory).** **VERIFIER DISPATCHED** with that claim explicitly in its brief.
