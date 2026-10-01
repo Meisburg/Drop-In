@@ -5241,3 +5241,26 @@ without a single timeout because **its rounds were small and resumed**; both tim
 **first-pass full slices**. **Recorded so the next full-slice dispatch sets its own clock deliberately** rather
 than inheriting the default and losing an almost-finished slice's *context* -- the work survives a timeout, the
 context does not, and the context is what finishes the slice.
+
+## `slice-8c.md` written -- and it leads with what I did NOT measure
+
+**Measured, and it changes the slice's shape:** the kid-photo spec's `src` assertion (`:286-290`) is **not** the
+strong one -- `:278-282` asserts the **mint count** is **`.toBe(0)`**, so a re-mint is caught **independently of
+whether the URL changed**. The mint is **batched** (`useKidPhotoUrls.ts:20`, one `createSignedUrls` per list, not
+per path), and **the spec's own comment is already unusually honest**: *"measured: it never BLANKED -- the new URL
+is valid for the same object -- but the `<img>` reloaded on every keystroke."* **That is the shape this batch
+wants: the comment says what was observed, not what would have been convenient.**
+
+**⚠️ NOT measured, and the brief says so in bold**: the second-granularity claim about signed-URL tokens
+(`iat`/`exp`) is **believed, not proven**, and I did not enumerate the file's `src`/mint assertions. **So the
+builder's FIRST job is to settle both** -- with the instruction that *"an unproven mechanism must not be written
+into a comment as a fact."* **A brief that states its own uncertainty is better than one that asserts a mechanism
+it has not measured** -- which is a rule I have broken before and am not repeating here.
+
+**The rule the slice enforces:** *an assertion must be strong enough to fail for the reason it names.* The
+existing message reads *"no re-mint => no swap"* -- **the arrow runs the wrong way**, because the **count** is what
+proves the re-mint and the `src` merely agrees.
+
+**SLICE 8d IS STILL UNWRITTEN** (the typed-zip family: an invalid typed zip becomes invisible once the note hides,
+so `handleAreaFinish` can set the error and return with **no visible feedback**; `homeZip` captured at tap and not
+disabled during `await saveLocation`).
