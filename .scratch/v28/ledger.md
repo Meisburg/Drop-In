@@ -6717,3 +6717,67 @@ because the model is resident again.)*
 **⚠️ AND A FACT FOR THE HUMAN:** **something stopped `strata-max` cleanly at 15:49:58** -- if that was deliberate, it
 is fine; if not, **it is unexplained and worth knowing about**, because nothing I ran calls `systemctl stop` on it.
 *I restarted it, because `ocr` is now the ONLY thing that needs the local model -- the agent lanes are all on cloud.*
+
+## Slice 6c: BUILT (`ce3479c` + pin `32e9f48`) -- the dedupe came out TOTAL (5 -> 1), and A SECOND FALSE ZERO shaped the tool
+
+### The dedupe exceeded the brief's permitted floor
+**5 copies -> 1** (`src/lib/escapeForRegExp.mjs:37`), imported by the app, both e2e specs **and both `.mjs` guards**.
+The brief permitted a "documented two-copy boundary" as the fallback; **it got to one instead** -- via a **plain-JS
+module + a `.d.mts`** for the TS side, with `allowJs` **rejected because `tsconfig.app.json` is a
+`config-guard`-PROTECTED file.** ✓
+
+### ⚠️⚠️ A SECOND FALSE ZERO, INDEPENDENT OF MINE -- and it is why the guard walks the FILESYSTEM
+*"`git grep` printed `0` right after my edits because the surviving copy was in a **NEW UNTRACKED file**.
+`git grep --untracked` is the correct instrument -- **and that is why the new guard WALKS THE FILESYSTEM rather than
+shelling out to git.**"*
+**My false zero was a mangled pattern; this one is a property of `git grep` itself.** *And the second one did not
+just get avoided -- **it changed the design of the tool that will catch it next time.*** *That is the difference
+between fixing an instrument and understanding one.*
+
+**And it enumerated with a POSITIVE CONTROL FIRST** (`--fixed-strings`, against a known site) ✓ -- *so the first
+count is proven to be able to see a copy before it is trusted to say there are five.*
+
+### The `.mjs` boundary, MEASURED TWICE rather than asserted
+- On the **declared floor** (`engines.node >=22`): `ERR_UNKNOWN_FILE_EXTENSION`.
+- **Even on Node 26**: `ERR_MODULE_NOT_FOUND on ./places` -- **because `tsconfig.app.json` is
+  `moduleResolution: bundler`, so every `src/` import is extensionless.** ✓
+**So the "a `.mjs` guard cannot import the app's TypeScript" claim is not a limitation it inherited; it is one it
+demonstrated on two runtimes**, and then routed around. **That is why the outcome is one copy, not two.**
+
+### And five more things it found or fixed that nobody asked for
+1. **A 5th lookalike I did not list**: `fixture-marker-guard.mjs:175` (`stripQuotes`) -- excluded with the other four,
+   *"they strip, they don't escape."*
+2. **A 6th occurrence in GITIGNORED SCRATCH** (`.scratch/guard-a03fc54.mjs:635`, a review lane's frozen snapshot) --
+   not repo code, untouched, `.scratch` a stated skip -- **and it explains why my brief's "four" and the ledger's
+   "five" disagreed.**
+3. **The drift guard's check caught a real bug in its OWN seed on first run** (one backslash short -> **2/6 red**) --
+   *"so the seed is proven, not trusted."*
+4. **It added then DELETED a 4th test case** because it drew a *new* `no-invalid-regexp` lint warning and the
+   round-trip table already covered it -- **net lint delta: 0.** *It kept the baseline clean rather than absorbing a
+   warning.*
+5. **`run-all.sh`'s comment said "the two checkers" when there are EIGHT** -- and since its diff extends that block,
+   **it deleted the word "two".** ✓
+
+**The appended COVERAGE echo is fixed** ✓ and **its checker still passes** on the strings it asserts ✓.
+
+**Gate: `verify` exit 0 on the committed HEAD -- 70 test files / 2030 tests** (the new sibling test), **81 lint
+warnings / 0 errors**, `GUARDS: PASS` ✓. **Both changed e2e specs run TWICE each, 4/4 green**, one at a time ✓.
+
+### ⚠️ AND SIX RESIDUALS, one of which is a GUARD BLIND SPOT it found by looking at its own work
+- **`lib-sibling-guard` walks `src/lib/*.ts` only -- so it CANNOT see `escapeForRegExp.mjs`/`.d.mts`.** *"Its printed
+  module count (55) is unchanged and **does not prove the sibling rule for this module.**"* **A guard whose output
+  looks unchanged while covering one fewer module** -- *the "an instrument that reports nothing looks like a clean
+  repo" class, found by the author about their own artifact.* → **NAMED FOR A FUTURE ITEM.**
+- **`escapeForRegExp.mjs` is not type-checked** (tsc ignores `.js`/`.mjs` without `allowJs`); **only the `.d.mts` is
+  in the program, so it must be kept in step BY HAND** ✓.
+- **A `.mjs` in `src/lib/` is new to this repo** (previously 100% TypeScript) -- the header explains and measures why.
+- **The drift detector DETECTS a sixth copy; it does not make one unconstructable** -- stated in its own header.
+- Pre-existing dead import left alone (`weekly-series.e2e.ts:21`), not orphaned by this diff.
+- **⚠️ AND THE BEST ONE: *"the slice's report quotes the escape literal ~15 times as evidence, so a naive repo-wide
+  grep of HEAD returns those hits; the authoritative instrument is the new guard, which reports exactly one hit in
+  code."*** **It warned that its own REPORT pollutes the instrument a future reader would reach for.** ✓✓
+
+**MY RULING ON ITS OPEN QUESTION: ACCEPT the `.mjs` as the single home**, because it makes the drift
+**structurally impossible rather than documented** -- the batch's own rule -- and touches no protected config. **The
+named cost is real, and the right response to it is a guard improvement, not a retreat: `lib-sibling-guard` seeing
+`.mjs` siblings is now a named item.**
