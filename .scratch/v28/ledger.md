@@ -5942,7 +5942,7 @@ flattened all four into "regressions", and the seed table is now the corrected v
 | 17 L3 | `export const zzLabels: Record<string,string>` | **red (no count line)** | **red** |
 
 **Aggregate: vs `a03fc54` -> 6 red / 33 green; vs `be29027` -> 11 red / 28 green** (exactly the 8 known pre-fix-2
-failures **plus** 24, 26, 27 and seed 17's new count half); **current tree -> 39 green / 0 red.** **And it verified
+failures **plus** 24, 26, 27 **[CORRECTED: seed 17 is ALREADY one of the 8; my parenthetical counted 12 items for 11 measured reds -- the numbers 6/33, 11/28, 39/0 are right, my list was not]**); **current tree -> 39 green / 0 red.** **And it verified
 every one of those twice** -- once with the archived tree's own src, once via `COPY_GUARD_UNDER_TEST` against the
 current src, **both agreeing.** *That is a stronger method than the brief asked for, and it is the method that makes
 "red against the old code" a measurement rather than a claim.*
@@ -5961,3 +5961,62 @@ per-const blind tripwire and the zero-shapes tripwire), not merely via a seed; `
   skill-named capture path.** *Naming what it could not produce is the behaviour I want.*
 
 **REVIEWER DISPATCHED, ALONE** (one lane at a time on this machine).
+
+## Slice 6a fix round 3 REVIEW: **NEEDS_CHANGES** -- and the class has now fired THREE TIMES, so the fix is SYMBOLS
+
+### ⚠️ A8 [BLOCKING] -- A SAME-NAMED LOCAL MANUFACTURES A READ, AND THE INPUT **COMPILES**
+```ts
+const zzRenderSkip = (kidsCopy: { skipLabel: string }) => kidsCopy.skipLabel
+// … skipLabel={zzRenderSkip({ skipLabel: 'Skip' })}     // a hard-coded word, in the chrome
+```
+`tsc --noEmit -p tsconfig.app.json` -> **ZERO errors in that file**; the guard prints
+`read — FirstRunCardCopy.skipLabel … at OnboardingPage.tsx:1339` and **exits 0**. **That is the ORIGINAL DEFECT --
+a hard-coded word while the field looks read -- passing an 860-line guard built to catch it.** It also **falsifies
+two of the file's own claims**, including *"cannot exist in clean code"*, **because this input does exist in clean
+code.**
+
+### ⚠️ A9 [BLOCKING] -- A REST-ELEMENT DESTRUCTURE MAKES A REAL READ INVISIBLE
+`const { ...zzRest } = FIRST_RUN_COPY.kids` then `skipLabel={zzRest.skipLabel}` -> **tsc clean, oxlint clean, guard
+exit 1** reporting both fields unread: **a false positive on clean code.** The reviewer's `ladder:` is the right
+diagnosis -- *"this is the class seed 21 already exists for … **one rung down belongs in the walk, not in a third
+note**."*
+
+### ⚠️⚠️ RULED: THE FOURTH TIME IS NOT A FOURTH NAME RULE -- USE THE TYPE CHECKER
+**The class, three times over:** (1) *"field identity is a bare name within the module"*; (2) the `ladder:`
+**per-const, not per-value**; (3) *"root attribution is by name, not by binding/scope"*. **Each was patched by
+making the name-matching cleverer, and the walk still keys `roots` by STRING.** *"That is what a class looks like
+when it should be made unconstructable rather than policed"* -- **the same rule that produced the AST rewrite,
+applied one level deeper.** `typescript` is imported, the gate runs `tsc`, so a real program is available:
+**`getSymbolAtLocation` says WHICH DECLARATION a node refers to and `getTypeAtLocation` says WHAT SHAPE a value
+has** -- **which is the question the name table has been approximating.** **All three instances close by
+construction.** And the brief is told to **STOP and report the measured cost in seconds** if a full program makes
+the guard too slow for the gate, because *"a slow guard that people route around is worse than a name table."*
+
+### AND THE ESCALATION DECISION, which I am making explicitly rather than by default
+**The batch's ladder says rounds 4-5 dispatch a FRESH builder on CLOUD DeepSeek, because *"a builder and its
+reviewer are siblings, so a hard slice deadlocks: the model that wrote the bug is the model judging it."*
+THE PREMISE DOES NOT HOLD HERE, and that is a measurement, not a preference:** this reviewer is **finding new,
+independent, NARROWER defects every round**, it attacked K1 with **fourteen additional inputs beyond the seeds**
+(all correct), and it **independently reproduced the whole seed matrix** (6 red / 11 red / 39 green). **A deadlocked
+reviewer repeats itself; this one sharpens.** **So: FRESH builder (the structural fix deserves an unattached
+author) but LOCAL model, per the human's explicit token-spend preference. ROUND 5 GOES CLOUD IF THIS DOES NOT
+CONVERGE -- a bright line I will hold.**
+
+### The review's other work, which was thorough
+- **K1 met by construction**: **14 extra falsification inputs** (escaped apostrophes, backticks inside strings,
+  comments with apostrophes, multi-line JSX, `typeof` in a type position, regex bodies, line continuations) --
+  **all behaved correctly.** K2 met, with **variants** (method call in a hole, tagged template, nested hole) all
+  counting as reads and the inverse correctly not.
+- **The builder's correction was CONFIRMED**: seed 24 is exit 0 on `be29027` (predates fix 1), seed 25 is green there
+  (a genuine fix-2 regression). **Plus a nuance the table flattened:** seed 26 is red on `be29027` **only because of
+  its added "does not PARSE" half** -- the older guard exited 1 with the *correct* finding.
+- **Item 7 satisfied AND LOUD**: it copied the guard to a directory with no `node_modules` -> **`ERR_MODULE_NOT_FOUND`, exit 1**, which `run-all.sh` records as FAILED; and `verify.yml:97` runs `npm ci` (devDeps included) before the gate.
+- **Scope clean**; repo untouched (`git status --porcelain` empty).
+
+### ⚠️ AND IT CAUGHT AN ARITHMETIC ERROR IN THIS LEDGER
+*"the aggregate parenthetical names 12 items for 11 measured reds (… **seed 17 is one of the 8**). The numbers
+themselves are exactly right."* **CORRECTED ABOVE. My list double-counted; my totals did not.** *A lane reading my
+own record closely enough to catch my arithmetic is the fourth lane this session to correct me -- and the only
+correction I have received about a number I wrote without measuring it myself.*
+
+**FIX ROUND 4 DISPATCHED -- fresh builder, local model, symbol-based attribution.**
