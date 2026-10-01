@@ -5177,3 +5177,31 @@ total.** *"A guard that pretends to be total is worse than one that says what it
 
 **BRIEFS 6b AND 6c ARE ON DISK. 6a IS RUNNING (one builder at a time -- serialized, per the batch's first
 invariant).**
+
+## `slice-6d.md` written -- the repo-wide honesty guard, with the constraint that decides its design
+
+**Measured, and it rules out the obvious shape:** `.github/workflows/verify.yml:24-25` records that `src/lib/db.ts`
+throws at module load without env vars, *"so `npm run build` and `npm test` both fail -- MEASURED, not guessed."*
+**So a guard that reaches the live database inside the gate adds a live-data dependency to CI**, and *"a guard that
+goes red because the network is down is a guard people learn to ignore"* -- the batch's own rule about noisy
+channels.
+
+**RULED -- two tiers, and the brief requires each claim to be placed in one:**
+- **Tier 1, deterministic and offline, IN the gate:** every copy module that names a taxonomy category declares its
+  claims, checked against **the taxonomy constants the app itself uses** -- the mechanical climb of slice 5's local
+  guard. No network, no database, no clock.
+- **Tier 2, the live-count half, NOT in the gate by default:** a **script** that checks count-claims against live
+  counts and writes a **dated report**. **If its result enters the gate, the gate may depend only on the committed
+  report -- and then an age budget is owed**, because *"a committed count that quietly rots is exactly the defect
+  the reviewer found in slice 5: the dated counts are unpinned and can rot with the suite green."* **If an age
+  budget means red CI on a timer, the brief says to prefer the honest limit over the noisy gate.**
+
+**The copy-holding modules, measured:** `firstRunCopy.ts:27,71`; `firstRunTour.ts:229`; `push.ts:63`;
+`theme.ts:94`; `feed.ts:186,199` -- **and the brief says the `rg -l` list is a starting set, not the answer, and
+requires a written coverage statement including what was EXCLUDED and why.** *Coverage is a claim like any other.*
+
+**And the permission is written into the brief in the strongest terms I have used:** *"an honest partial climb,
+with its boundary written down, is a PASS. A total-looking guard with a hole is a FAIL -- and I will send it
+back."* Two r2 slices were already split **after** dispatch for exactly this reason.
+
+**ALL FOUR slice-6 BRIEFS ARE NOW ON DISK (6a/6b/6c/6d). 6a IS RUNNING.**
