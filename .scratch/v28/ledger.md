@@ -5785,3 +5785,65 @@ its `.check.mjs`, `src/lib/firstRun.ts`, `src/lib/firstRun.test.ts`), **and that
 commit id because it appeared in a tool result -- it is a commit id when `git log` shows it.* **The rule, sharpened:
 record the id FROM THE COMMAND THAT VERIFIES IT (`git log --oneline -1`), never from a report or a mid-flight
 observation.**
+
+## Slice 6a fix round 2 REVIEW: **NEEDS_CHANGES** -- two blocking, one a REGRESSION, and it settles the AST question
+
+### ⚠️ K1 [BLOCKING] The "language rule" does NOT close the lying direction -- I verified the CLAIM, and the reviewer VERIFIED IT WITH THREE INPUTS
+`:83`, `:111`, `:244` all claim the rule *"can only hide, never manufacture"* / *"closed by construction"*.
+**False as written.** **The rule decides whether a quote HAS A SAME-LINE PARTNER, not whether it IS AN OPENER.** So an
+**odd** number of apostrophes in JSX text before a real literal **pairs the apostrophe with the literal's OPENING
+quote**, blanks through it, and **scans the literal's BODY as code** -- orphaning the closer. With the real
+`skipLabel` read deleted, the reviewer measured on the `a03fc54` tree:
+```
+It's 'kidsCopy.skipLabel' here                      new: READ, exit 0   |  fix-1: exit 1
+What's next? See {'docs.kidsCopy.skipLabel'}       new: exit 0         |  fix-1: exit 1   <- REGRESSION
+const zzCont = 'abc<newline>kidsCopy.skipLabel'    new: exit 0         |  fix-1: exit 1   <- REGRESSION
+```
+**Seed 15 covers only the `as` case. There is no pairing-shift seed.** And the reviewer's verdict on the *cause* is
+the sentence that decides this round: **"This is item 5's error class, re-committed: reasoning about the rule
+instead of driving it."** -- **the same error the builder had just self-reported, one round later.**
+
+### ⚠️ K2 [BLOCKING] A read inside a TEMPLATE HOLE is invisible -- and the code claims the opposite
+`:341`: *"A template hole is CODE: scan it (so a real read inside `${...}` counts)"*. **But the closing-backtick
+blank at `:337` erases the hole contents that were JUST scanned.** Measured: `skipLabel={`${kidsCopy.skipLabel}`}`
+-> **`FAIL ... READ BY NOTHING`**. **This is the fires-on-CLEAN-code class, and a template literal is the most
+natural way to render words.**
+
+### ⚠️⚠️ RULED: **STOP PATCHING THE LEXER. REWRITE THE SCANNER ON THE TYPESCRIPT AST.**
+**The evidence: `ocr` found 16 defects, 11 parser-shaped; fix round 2 fixed 9 and retained 2 BLOCKING ones,
+including a regression against the state it started from; and three rounds of patching a lexer keep finding lexer
+bugs.** *"That is the definition of a class that should be made unconstructable rather than policed"* -- **the
+batch's own rule, applied one level up.** `typescript@~6.0.2` **is already a devDependency** so it is available to a
+`node *.mjs` guard and to CI, and **the builder's own list from last round is the specification**: `blankNonCode`,
+`stringEnd`, `skipString`, `skipRegex`, `exportedConsts`, `importedBindings`, `aliasesOf`, `destructuredReads` --
+**about two thirds of the file, DELETED.** **The reviewer's earlier objection ("cross-cutting, no precedent") no
+longer outweighs this**, and the reviewer itself now says *"an AST walk would have prevented every blocking item."*
+
+### The non-blocking findings, all fair
+`patternLeaves` manufactures reads from **computed-key destructures** (same lying direction). **`FirstRunCopyByCard`
+is public surface with NO consumer, and its recorded justification is MEASURABLY FALSE** -- the reviewer de-exported
+it in a sandbox and the guard still reported `declared fields: 8` and PASSED. The item-A skip line names no remedy
+and the escape is invisible in the exit code. **And seed 20's mutation uses `writeFileSync`, bypassing the very
+premise-check invariant this round made.**
+
+### ⚠️ MY OWN HAZARD, REMOVED: the wip partials I saved
+*"`.scratch/v28/partials/copy-field-consumption-guard.mjs.6a-fix2-wip:629` still contains **the bug this round
+fixed** ... a second subtly-wrong copy of an 860-line guard is a hazard -- and `.scratch/check-push-range.sh` will
+not catch them (`^\.scratch/.*\.(cjs|mjs|html)$` does not match `.mjs.6a-fix2-wip`)."*
+**DELETED -- they were mine, they were insurance against an OOM that is now past, and a stale near-duplicate of a
+security-relevant parser is worth less than nothing.**
+
+### ⚠️ AND A CORRECTION TO MY OWN RULING: `--no-verify` skips NOTHING here
+I wrote last round that *"`--no-verify` IS a bypass, and the batch keeps a guard whose whole job is that the hook is
+not bypassed."* **The reviewer measured it:** *"`core.hooksPath=scripts/git-hooks` holds only `pre-push`; **there is
+no pre-commit/commit-msg hook**, so a commit `--no-verify` skips nothing."* **My ruling's PREMISE was wrong** --
+the rule it produced (say so before committing) is still good practice, **but no bypass occurred.** *A correct
+conclusion from a false premise is still a false statement, and this is the second time this session I have made
+one.*
+
+**AND THE CREDIT WHERE IT IS DUE:** the reviewer independently confirmed this round's seed rule --
+**8 of 28 seeds fail against the pre-fix code** (`15,16,17,18,19,20,21,22`) -- so **eight seeds are proven
+regression anchors**, which is the standard this round established and the reviewer verified.
+
+**FIX ROUND 3 DISPATCHED** -- the AST rewrite, with K1/K2 seeds, the regression inputs, and an explicit
+**STOP-AND-REPORT if `typescript` cannot be imported into a node-run guard**.
