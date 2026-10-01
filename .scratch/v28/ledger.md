@@ -6340,3 +6340,83 @@ subjects that are NOT yours.** *Slice 6a's builders never had this problem becau
 against a handover brief -- but the risk has been there since I wrote four briefs ahead.*
 
 **RETRY DISPATCHED** (fresh builder, cloud).
+
+## Slice 6b: BUILT (`09d9af5`) -- the boundary is the design, and the checker proves it matches something
+
+8 files, **no `src/` touched**: the guard (309 lines), its checker (230), **plus `no-bypass-guard.check.mjs` (154) and
+`no-bypass-guard.sh` (+30)**, the registry in both places, `plan.md`, and two briefs retrofitted with tags.
+
+### The convention, and why it is the whole design
+**A claim is a line whose text, after optional whitespace and an optional markdown list marker, BEGINS with
+`ACCEPTANCE-GREP:`.** *"The tag must START the line on purpose, so an inline mention of the convention — which
+`slice-6b.md` itself contains — is not a claim."* **That is what stops the guard firing on the documentation of the
+rule it enforces**, which was the plan's original trap.
+
+### ⚠️ AND THE INSTRUMENT PROVES IT MATCHES SOMETHING -- the standing rule, satisfied with evidence
+```
+check-acceptance-greps: 89 planning document(s), 7 tagged claim(s), 95 untagged quotation line(s) ignored.
+  ok  — plan.md:238 ... → 0 hit(s), observed 0.
+  ok  — plan.md:306 `rg -n "middle name|middle initial" src/pages/OnboardingPage.tsx` → 0 hit(s), observed 0.
+  ...
+clean — every tagged acceptance claim names a path and matches the tree.
+```
+**It COUNTS THE QUOTATIONS IT IGNORED (95) and the claims it inspected (7).** *An instrument that matches nothing
+looks like a clean repo; this one reports both sides of its own boundary.* **And the checker includes the case the
+standing rule demands:** *"a corpus with NO tagged claims FAILS (an instrument that matches nothing is not a
+pass)"* -- **12 checks, exit 0.**
+
+### Both halves, both rules isolated
+Seeded corpus -> **both rules fire on both recorded fixtures** (`rg "of 5" src/` and `rg "hasPhoto" src/` claiming 0):
+```
+- plan.md:1 — scope `src/` is a bare directory — a zero over a directory cannot tell "the thing is gone" from
+  "unrelated hits exist". Name the paths the claim is about.
+- plan.md:1 — claim asserts 0 hit(s); the grep actually reports 1. The claim is false.
+```
+**And the checker isolates each rule**: a bare scope with a *true* zero fails rule 1 alone; a *scoped* claim whose
+grep reports hits fails rule 2 alone.
+
+### **F1 is load-bearing and PROVEN BOTH WAYS**
+The live `hasPhoto` criterion reads **0 hits with all three hits being COMMENTS** (`onboarding-resume.e2e.ts:21,99`,
+`avatarUrl.test.ts:6`) -- and *"without the exemption that live criterion would be red."* The checker proves both
+halves: **a comment-only hit PASSES; the same mention in CODE FAILS.** *Ruling F1, implemented deliberately and
+demonstrated to be load-bearing rather than decorative.*
+
+### ⚠️ IT FOUND THE STALE NUMBER I PLANTED -- and three more things nobody asked for
+| brief/doc claim | measured | verdict |
+|---|---|---|
+| `rg "of 5" src/` = 12 (predecessor said 32) | **12** | brief correct; **32 is stale at `plan.md:85,95,428`, `slice-6.md:45`** |
+| `hasPhoto` at `places.ts:1075-1076` + `avatarUrl.test.ts:6` | **3 hits, exactly those** | brief correct; `plan.md:428`'s `:1070` is stale |
+| **`plan.md:300` "matches three files"** | **2 files** | **← THE STALE NUMBER.** *"The third, `OnboardingPage.tsx:515`, was removed by slice 2's own fix"* -- **the document kept its own obsolete count.** |
+
+1. **A THIRD live bare-directory zero claim** (`first-run-photo-card` over `src/ e2e/`) **trips the scope rule** --
+   benign (a unique testid) **but by the ruled rule it IS a defect.** It **narrowed the scope to the two paths that
+   actually carried the testid** (verified from `525fdcf^`) rather than leave it untagged: *"This weakens 'gone
+   repo-wide' to 'gone from where it lived' -- **stated, not hidden.**"* **MY RULING (now in the review brief):
+   narrowing is correct** -- the claim stays true and checkable, and an allowance mechanism would be new surface the
+   brief did not authorize. **And it declined to invent that mechanism rather than asking.** ✓
+2. **The retrofit moved `plan.md` lines and orphaned `plan.md`'s own references to `plan.md:239`/`:300`** -- it
+   updated them to `:241`/`:302` **in the same commit.** *A self-referential fix, declared.*
+3. **A real FALSE NEGATIVE, named:** `slice-2-review.md:35` restates a zero claim **mid-line**, so it cannot carry a
+   line-leading tag and is ignored -- *"that is the deliberate boundary, but it is a real false negative; the
+   criterion it duplicates IS tagged in `slice-2.md:107`."* **An author naming their own tool's blind spot.**
+4. **Pre-existing stale numbers left ALONE on purpose** (`32`, `places.ts:1070`): *"they are outside this slice's
+   subject and **I report rather than silently sweep them.**"*
+
+### ⚠️ AND THE no-bypass BLIND SPOT: option (b), with a reason I did not have
+*"**Git records action text, never the command line, so `git commit --no-verify` is invisible to the HISTORY grep.**
+The guard now states its coverage in the header and in every run, and `no-bypass-guard.check.mjs` **PROVES** the blind
+spot against a real repo ... **plus the two cases where it does fire.** **I did not claim (a) -- the data needed to
+fix it does not exist in git.**"* **That is the honest floor chosen with the reason, which is what my brief asked
+for.** **And it flagged the consequence:** *"The no-bypass checker PINS the blind spot. If a later slice implements
+(a) and makes the guard see `--no-verify`, this checker will fail loudly -- **that is correct, but it means the fix
+must update the checker and the coverage statement together.**"*
+
+### Risks it volunteered
+Two rules exist **because its first draft was wrong twice** (a count regex that required `→` and silently failed on
+*"must be **0 hits**"*; and `rg` without `-H` dropping the `path:line:` prefix on a single-file scope, which made
+F1's comment detection misfire) -- **both now structural, both with seeds.** `run-all.sh`'s pre-existing *"the two
+checkers"* comment was already wrong (six now) -- **left untouched per the no-adjacent-edits rule, named here.**
+**And rule 2 shells out to `rg`: if `rg` were absent the guard reports a FINDING -- it fails loudly, it does not pass
+quietly.** ✓
+
+**THREE LANES OUT** (review + verify in parallel on cloud; `ocr` local).
