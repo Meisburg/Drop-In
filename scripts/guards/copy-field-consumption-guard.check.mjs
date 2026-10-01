@@ -109,6 +109,47 @@
  *      `patternLeaves` returned `["k","title"]` for `[k]: title`, so a variable
  *      name became consumption — the same lying direction as 24-26.
  *
+ * Seeds 29-33 are the fix-4 round. The class they close had fired three times and
+ * each time was patched by making the NAME matching cleverer; fix 4 stops matching
+ * names and asks the type checker which shape a value carries. Two of these seeds
+ * are the reviewer's reproductions, verbatim, and both compile with zero type
+ * errors:
+ *
+ *  29. A8 — a SAME-NAMED LOCAL manufactures a read. Delete the card's real read,
+ *      define a local whose PARAMETER happens to be called `kidsCopy` with a
+ *      `skipLabel` field, call it with a hard-coded word: the name-keyed `roots`
+ *      table reported the field read and exited 0. That is the original defect — a
+ *      hard-coded word in the chrome while the field looks read — walking through
+ *      the guard built to catch it.
+ *  30. A9 — a REST-ELEMENT destructure of a copy value, then a read off the rest
+ *      binding, is a real read the name table reported READ BY NOTHING. A false
+ *      alarm at the same style seeds 9 and 21 exist to support, so it belongs in
+ *      the walk rather than in a third note.
+ *  31. a NAMESPACE import is followed. The header named a `namespace imports` line
+ *      label the rewrite never printed, and the limit it described is gone: the
+ *      read goes through the value, not the binding.
+ *  32. a `.mts` consumer is in the walk. The file walk matched only `.ts`/`.tsx`
+ *      while the test-file rule accepted `[cm]?[jt]sx?`, so a future `.mts`
+ *      consumer would have been skipped without a word — a missed read.
+ *  33. the parse fence reads PUBLIC API. `sf.parseDiagnostics` is not in the
+ *      .d.ts; a rename would have made it report "no parse errors", which looks
+ *      exactly like a clean repo. Asserted on the source, because the only way to
+ *      exercise a renamed API is to rename it, and a seed that stubs TypeScript is
+ *      not testing the guard.
+ *
+ * ONE BASELINE PER SEED, NAMED. A seed that catches a regression is by
+ * construction GREEN against the version that was right, so "fail it against two
+ * versions" is not satisfiable. Each seed above states the ONE version it must be
+ * red against; for seeds 29-33 that is `340d016` (the fix-3 guard, name-keyed
+ * roots), and the measured matrix on this tree is: 5 red vs `340d016` (29, 30,
+ * 31, 32, 33 — exactly the new ones, so no pre-existing seed depends on the new
+ * implementation), 11 red vs `a03fc54` (the 6 the fix-3 review measured — 17, 24,
+ * 25, 26, 27, 28 — plus these 5), 16 red vs `be29027` (the 11 that review
+ * measured — 15, 16, 17, 18, 19, 20, 21, 22, 24, 26, 27 — plus these 5; seed 25
+ * is GREEN on `be29027` because that is where the regression it pins was fixed,
+ * and seed 26 is red there only for its added `does not PARSE` half — the older
+ * guard exited 1 with the correct finding), and 46 ✓ / 0 ✗ on the current tree.
+ *
  * Every seed added from fix 2 onward asserts its OWN PREMISE (what it deleted,
  * what still exists), because two seeds in fix 2 passed for reasons unrelated to
  * what they claimed. And every new seed must be shown to FAIL against the code
@@ -169,6 +210,11 @@ if (!existsSync(path.join(root, 'src'))) {
 const guardSrc = readFileSync(guard, 'utf8')
 const sandbox = mkdtempSync(path.join(os.tmpdir(), 'copy-field-check-'))
 cpSync(path.join(root, 'src'), path.join(sandbox, 'src'), { recursive: true })
+// The guard now asks the TYPE CHECKER which shape a value carries, so it builds
+// the same program `npm run typecheck` builds — and it reads the compiler options
+// from the tree under test. A sandbox without that config is a sandbox the guard
+// refuses to judge (loudly, on purpose), so it is copied alongside src.
+cpSync(path.join(root, 'tsconfig.app.json'), path.join(sandbox, 'tsconfig.app.json'))
 // The allowance seeds run a PATCHED COPY of the guard that lives inside the
 // sandbox, and the guard imports `typescript` (it walks the AST now). Node
 // resolves packages by walking up from the importing file, so the sandbox needs
@@ -620,14 +666,20 @@ try {
     '    const kidsCopy = FIRST_RUN_COPY.kids\n',
     '    const nameCopyAlias = FIRST_RUN_COPY.name // a local alias of the name card\n    const kidsCopy = FIRST_RUN_COPY.kids\n',
   )
-  editFile(PAGE, 'FIRST_RUN_COPY.name.title', 'nameCopyAlias.title')
+  // The alias read has to sit where the alias is IN SCOPE. Fix 4 made that a
+  // requirement rather than an accident: the guard now asks the checker what type
+  // `nameCopyAlias` has, and an identifier used outside its scope has no type to
+  // ask about, so the old placement (reading the NAME card's title from the kids
+  // component) was an input that never compiled — the name table let it pass
+  // because a name has no scope.
+  editFile(PAGE, '        title={kidsCopy.title}', '        title={nameCopyAlias.title}')
   // Leave no other card-title read standing: if the alias is not recognised as a
   // root, `FirstRunCardCopy.title` has no reader left and the run must fail.
-  // Without this, the surviving `kidsCopy.title` would satisfy the field and the
-  // seed would pass for a reason unrelated to what it claims to test.
+  // Without this, a surviving read would satisfy the field and the seed would
+  // pass for a reason unrelated to what it claims to test.
   for (const [find, repl] of [
+    ['FIRST_RUN_COPY.name.title', 'FIRST_RUN_COPY.name.titleX'],
     ['FIRST_RUN_COPY.area.title', 'FIRST_RUN_COPY.area.titleX'],
-    ['kidsCopy.title', 'kidsCopy.titleX'],
     ['areaCopy.title', 'areaCopy.titleX'],
   ]) {
     editFile(PAGE, find, repl)
@@ -759,6 +811,120 @@ try {
     'a computed-key destructure does not count its local binding as a read (L1)',
     r.exit !== 0 && /FirstRunCardCopy\.title/.test(findingLines(r.out)) && !/does not PARSE/.test(r.out),
     `exit ${r.exit}: ${findingLines(r.out)}`,
+  )
+
+  // 29. fix 4 A8 — a SAME-NAMED LOCAL MANUFACTURES A READ, and the input
+  //     COMPILES. Delete the card's real read, define a local function whose
+  //     PARAMETER happens to be called `kidsCopy` with a `skipLabel` field, and
+  //     call it with a hard-coded word. The name-keyed `roots` table decided the
+  //     parameter carried the card's shapes because its NAME matched, so the
+  //     guard reported the field read and exited 0 — the original defect (a
+  //     hard-coded word in the chrome while the field looks read) passing the
+  //     guard built to catch it. The checker answers a different question: the
+  //     parameter's type is `{ skipLabel: string }`, which is not a
+  //     FirstRunCardCopy, so nothing is consumed.
+  //     ONE BASELINE: red against `340d016` (the fix-3 guard, name-keyed roots),
+  //     which exits 0 on exactly this input.
+  reset()
+  editFile(PAGE, '        skipLabel={kidsCopy.skipLabel}', "        skipLabel={zzRenderSkip({ skipLabel: 'Skip' })}")
+  editFile(
+    PAGE,
+    '    const kidsCopy = FIRST_RUN_COPY.kids\n',
+    '    const kidsCopy = FIRST_RUN_COPY.kids\n    const zzRenderSkip = (kidsCopy: { skipLabel: string }) => kidsCopy.skipLabel\n',
+  )
+  pageText = readFileSync(PAGE, 'utf8')
+  check(
+    'seed 29 left a hard-coded word at the call site and the only skipLabel read inside the local (self-verifying)',
+    pageText.includes("skipLabel={zzRenderSkip({ skipLabel: 'Skip' })}") &&
+      pageText.includes('const zzRenderSkip = (kidsCopy: { skipLabel: string }) => kidsCopy.skipLabel') &&
+      (pageText.match(/kidsCopy\.skipLabel/g) ?? []).length === 1,
+    `kidsCopy.skipLabel occurrences: ${(pageText.match(/kidsCopy\.skipLabel/g) ?? []).length}`,
+  )
+  r = run()
+  check(
+    'a same-named local parameter does NOT manufacture consumption (A8 — the original defect, compiling)',
+    r.exit !== 0 && /"\S*\.skipLabel"/.test(r.out) && !/does not PARSE/.test(r.out),
+    `exit ${r.exit}: ${findingLines(r.out)}`,
+  )
+
+  // 30. fix 4 A9 — a REST-ELEMENT destructure of a copy value, then a read off
+  //     the rest binding, is a REAL read. The name table knew the root
+  //     `FIRST_RUN_COPY` but not the binding `zzRest`, so it reported both
+  //     `skipLabel` fields READ BY NOTHING on code that compiles clean: a false
+  //     alarm at the same style seed 9 and seed 21 exist to support. The checker
+  //     knows what type `zzRest` has, and that is the whole question.
+  //     ONE BASELINE: red against `340d016`, which exits 1 on this input.
+  reset()
+  editFile(PAGE, '        skipLabel={kidsCopy.skipLabel}', '        skipLabel={zzRest.skipLabel}')
+  editFile(
+    PAGE,
+    '    const kidsCopy = FIRST_RUN_COPY.kids\n',
+    '    const kidsCopy = FIRST_RUN_COPY.kids\n    const { ...zzRest } = FIRST_RUN_COPY.kids\n',
+  )
+  pageText = readFileSync(PAGE, 'utf8')
+  check(
+    'seed 30 left the read going through the rest binding only (self-verifying)',
+    pageText.includes('const { ...zzRest } = FIRST_RUN_COPY.kids') &&
+      pageText.includes('skipLabel={zzRest.skipLabel}') &&
+      (pageText.match(/kidsCopy\.skipLabel/g) ?? []).length === 0,
+    `kidsCopy.skipLabel occurrences: ${(pageText.match(/kidsCopy\.skipLabel/g) ?? []).length}`,
+  )
+  r = run()
+  check(
+    'a read off a REST-ELEMENT destructure of a copy value counts as consumption (A9 — fires on clean code)',
+    r.exit === 0 && /read\s+— \S*\.skipLabel .*at src\/pages\/OnboardingPage\.tsx/.test(r.out),
+    `exit ${r.exit}: ${findingLines(r.out)}`,
+  )
+
+  // 31. the header used to print a `namespace imports` label that no line of the
+  //     rewrite emitted, and to claim a namespace import is a missed read. Both
+  //     are now false in the safe direction: attribution goes through the value,
+  //     so `import * as copy from …` then `copy.kids.skipLabel` is followed.
+  //     ONE BASELINE: red against `340d016`, which reports the field READ BY
+  //     NOTHING here (it only printed a `limit—— namespace import …` line).
+  reset()
+  addFile(
+    path.join(sandbox, 'src', 'lib', 'zzNamespaceConsumer.ts'),
+    "import * as copy from './firstRunCopy'\n\nexport const zzSkip = copy.FIRST_RUN_COPY.kids.skipLabel\n",
+  )
+  editFile(PAGE, '        skipLabel={kidsCopy.skipLabel}\n', '')
+  r = run()
+  check(
+    'a NAMESPACE import is followed — the read is real, so the limit the old header printed is gone',
+    r.exit === 0 && /read\s+— \S*\.skipLabel .*at src\/lib\/zzNamespaceConsumer\.ts/.test(r.out),
+    `exit ${r.exit}: ${findingLines(r.out)}`,
+  )
+
+  // 32. the file walk matched only `.ts`/`.tsx` while the test-file rule accepted
+  //     `[cm]?[jt]sx?`, so a `.mts` consumer would have been skipped without a
+  //     word — a blind spot in the instrument, in the direction that hides a
+  //     missed read. The two rules now share one extension set.
+  //     ONE BASELINE: red against `340d016`, whose walk never opens the file.
+  reset()
+  addFile(
+    path.join(sandbox, 'src', 'lib', 'zzMtsConsumer.mts'),
+    "import { FIRST_RUN_COPY } from './firstRunCopy'\n\nexport const zzSkip = FIRST_RUN_COPY.kids.skipLabel\n",
+  )
+  editFile(PAGE, '        skipLabel={kidsCopy.skipLabel}\n', '')
+  r = run()
+  check(
+    'a `.mts` consumer is in the walk (one extension set, shared by the walk and the test rule)',
+    r.exit === 0 && /read\s+— \S*\.skipLabel .*at src\/lib\/zzMtsConsumer\.mts/.test(r.out),
+    `exit ${r.exit}: ${findingLines(r.out)}`,
+  )
+
+  // 33. the parse fence (K1c) used `sf.parseDiagnostics`, which is NOT in the
+  //     public .d.ts — a TypeScript rename would have made it return "no parse
+  //     errors", which looks exactly like a clean repo. It now uses
+  //     `Program.getSyntacticDiagnostics` (public) behind an assertion that the
+  //     method exists, so the fence goes loud rather than silent. This asserts
+  //     the SOURCE, because the only way to exercise a renamed API is to rename
+  //     it, and a seed that stubs TypeScript is not testing the guard.
+  check(
+    'the parse fence reads public API only — no `parseDiagnostics` outside comments (fix 4)',
+    !/parseDiagnostics/.test(guardSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')) &&
+      /getSyntacticDiagnostics/.test(guardSrc),
+    'the guard must take parse errors from Program.getSyntacticDiagnostics, not the non-public sf.parseDiagnostics',
   )
 
   // 19. fix 2 item E — an ALIASED IMPORT. Shapes are keyed by the exported name
