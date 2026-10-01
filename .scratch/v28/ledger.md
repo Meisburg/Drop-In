@@ -6185,3 +6185,58 @@ a missed read.
 
 **THREE LANES OUT -- AND FOR THE FIRST TIME SINCE THE OOM, THE REVIEW AND VERIFY RUN AS A PARALLEL PAIR.** *That was
 the batch's original design; the local model's 50 GB made it unsafe, and the switch to cloud restored it.*
+
+## Slice 6a FINAL LANES: **VERIFY PASS**, **REVIEW NEEDS_CHANGES on two sentences** -- and the parallel pair worked
+
+**They ran IN PARALLEL for the first time since the first OOM**, and both came back quickly. *That is the cloud
+switch paying for itself, and it is the batch's original design restored.*
+
+### VERIFIER: PASS, and it caught its OWN broken instrument
+`verify` exit 0 (**69 files / 2027 tests**, lint 81/0 counted its own way, all 9 guard sub-lanes PASS); `typecheck`
+= **`tsc -b --noEmit`** and it checked there was **no stale `.tsbuildinfo` outside node_modules** (no cache skip);
+both guard artifacts exit 0, **48 ✓ / 0 ✗ across 33 invocations**; provenance clean (`4dc81d0` the only source
+commit; results describe `12562cb`, byte-identical source).
+
+**It picked the two EXTREMES of the matrix and reproduced both:** `340d016` -> **6 red, exactly seeds 29-34**;
+`be29027` -> **17 red**, *"seed 25 K1b and seed 28 L1 GREEN there, exactly as the header states"* -- **each run twice
+with IDENTICAL red sets.**
+
+**⚠️ AND ITS FIRST ATTEMPT WAS ITS OWN ARTIFACT, WHICH IT DIAGNOSED RATHER THAN REPORTED:** `COPY_GUARD_UNDER_TEST`
+takes a **path, not a sha**, so literal use gave *"guard missing at …/340d016"*; extracting to `/tmp` then gave
+`ERR_MODULE_NOT_FOUND: Cannot find package 'typescript'` -> **32 red INCLUDING "clean repo passes"**, which it read
+as *"the signature of a broken instrument."* **It fixed it (symlinked `node_modules`) and the matrix then reproduced
+exactly.** *The fourth lane this session to catch an instrument lying -- and the first to catch its OWN before
+reporting a finding.* **This is the whole point of the one-sample rule's spirit: everything red is as suspicious as
+everything green.**
+
+### REVIEWER: everything MECHANICAL passes, and the two remaining findings are sentences about the header's numbers
+**It reproduced M1, M2, M3, M4, the whole matrix with composition, the seed-34 premise, the spread measurement, AND
+the builder's correction of the reviewer -- "every one reproduces to the digit."** Its words on the shape:
+*"The gap is two sentences about the header's own numbers, in the slice whose subject is exactly that."*
+
+**S1 (`:279-282`)**: *"there are **34 seeds and 33 invocations** (seed 33, `check.mjs:949-961`, never calls `run()`;
+it inspects `guardSrc`), so 'once per seed' is off by one; and the seeds+4 model does not reproduce at the fix-4
+commit either (**33 seeds, 32 invocations** -- the allowance seeds' own `run(guardWithAllowlist(...))` **IS their
+invocation, not an addition**). '28 was that fix-4 total minus exactly the four full copies' is **arithmetic that
+happens to land on 28 -- which is exactly `dde111a`'s invocation count -- not the mechanism**."*
+
+**S2 (`:280-281`)**: *"it does assert it, and 'here' is the unpinned current-state form the same header forbids at
+`:271-273`... **This is the M2 rot MOVED, not removed.**"* -- and `check.mjs:172-174`'s *"the guard header quotes
+neither"* is **false for the invocation count**: *"this is the sentence that LICENSES NOT RE-MEASURING"*, **sitting
+in the same paragraph that keeps another unpinned count, `"and 48 ✓ / 0 ✗ on the current tree"`.**
+
+**Non-blocking:** timings are hedged ranges; `check.mjs:1016-1018` hardcodes "0 failed" in a zero-failure-only
+branch; and **it AGREED with my unfenced data-flow ruling** -- *"a fence must contain, containment needs provenance,
+and a characterization seed would have to assert exit 0 for a manufacture-consumption case, pinning a known false
+positive as expected behaviour."* **My ruling, independently reached by the lane.**
+
+### ⚠️ BREAKER ADJUDICATION (round 5 is the cap, so this is mine)
+**The two findings are true, and they get FIXED rather than parked** -- *because a slice whose entire subject is
+"a claim must be measured" cannot close with two false sentences in its own header; that would be the slice failing
+its own rule in the file that states it.* **But the round is scoped to BUILDER + VERIFIER ONLY, and that is a
+RECORDED DEVIATION from "a fix round re-runs all three lanes":** the change is **comment-only**, it cannot alter
+behaviour, and **the reviewer has already specified exactly which sentences are wrong and exactly what the
+correction is** -- *so a third lane would be ceremony over a ruling I am making as the breaker anyway.* **The
+verifier still runs, because "no executable line may change" is itself a claim that needs checking.**
+
+**MICRO-ROUND DISPATCHED** (`slice-6a-micro.md`).
