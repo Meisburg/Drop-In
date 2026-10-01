@@ -40,17 +40,25 @@
 #                PASS on a tree where a bypass happened. No filter is hiding it:
 #                the plain case writes the flag NOWHERE, so the prose filter below
 #                has nothing to skip — the common case, a bypass with no wrapper,
-#                is outside this check. What it CAN see is a
-#                bypass a WRAPPER recorded (a reflog action text that is not one
-#                of git's prose shapes) or a line in FAST_PUSH_LOG. The blind
+#                is outside this check. What it CAN see is narrower than "a
+#                bypass a WRAPPER recorded": a NON-PROSE reflog action text on
+#                `logs/HEAD` — the one log file the grep below reads — or a line
+#                in FAST_PUSH_LOG. The reflog case is seeded by setting
+#                `GIT_REFLOG_ACTION` on a COMMIT, so what it proves is that the
+#                prose filter admits a non-prose action text on the log the guard
+#                reads; it does NOT prove a wrapper-PUSH is visible — a
+#                `GIT_REFLOG_ACTION='… git push --no-verify' git push` writes the
+#                flag to no `.git/logs` file at all, and this guard reads only
+#                `logs/HEAD`. It does not cover a bypass that leaves neither a
+#                non-prose reflog action text nor a FAST_PUSH_LOG line. The blind
 #                spot AND both visible paths are PROVEN rather than asserted by
 #                `scripts/guards/no-bypass-guard.check.mjs`, which builds real
 #                repos: one commits with `--no-verify` on the command line and
-#                requires this guard to report PASS (the blind spot), one records
-#                a wrapper's reflog action text and one writes FAST_PUSH_LOG, and
-#                both of those require a refusal. An instrument that matches
-#                nothing looks exactly like a clean repo — the standard
-#                `run-all.sh` already sets.
+#                requires this guard to report PASS (the blind spot), one sets a
+#                non-prose reflog action text with `GIT_REFLOG_ACTION` on a commit
+#                and one writes FAST_PUSH_LOG, and both of those require a refusal.
+#                An instrument that matches nothing looks exactly like a clean
+#                repo — the standard `run-all.sh` already sets.
 #
 # PROVENANCE: pattern borrowed from affaan-m/ECC's `block-no-verify.js`
 # PreToolUse hook. Reimplemented as a post-hoc deterministic audit, because

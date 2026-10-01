@@ -256,8 +256,8 @@ try {
   )
   check(
     'a blockquote (`>`) line-leading tag is a QUOTATION, not a claim',
-    r.exit === 0,
-    `exit ${r.exit}: ${findings(r.out)}`,
+    r.exit === 0 && /1 untagged quotation line\(s\) ignored/.test(r.out),
+    `exit ${r.exit}: ${r.out.split('\n')[0]}`,
   )
 } finally {
   for (const dir of created) rmSync(dir, { recursive: true, force: true })

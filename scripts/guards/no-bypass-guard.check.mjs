@@ -26,9 +26,13 @@
  *      `FAST_PUSH_LOG` line — it refuses to certify, exit non-zero. A guard
  *      that failed everything would pass case 1 for the wrong reason; this case
  *      is what proves the instrument still fires where it looks.
- *   3. THE OTHER VISIBLE PATH, SEEDED. A wrapper-recorded reflog action text
- *      (a non-prose action, set with `GIT_REFLOG_ACTION`) is a refusal — the
- *      header names this path, so a case proves it rather than asserting it.
+ *   3. THE OTHER VISIBLE PATH, SEEDED. A NON-PROSE reflog action text on
+ *      `logs/HEAD` — the one log file the guard reads, seeded by setting
+ *      `GIT_REFLOG_ACTION` on a COMMIT — is a refusal. This is narrower than "a
+ *      wrapper recorded a bypass": a wrapper-PUSH that sets the same variable
+ *      writes the flag to no `.git/logs` file at all, and the guard reads only
+ *      `logs/HEAD`. The header names the path, so a case proves it rather than
+ *      asserting it.
  *   4. THE STATIC HALF STILL FIRES. With `core.hooksPath` unwired the guard
  *      fails, so "the guard passed case 1" cannot mean "the guard passes
  *      anything".
@@ -137,9 +141,12 @@ try {
     `exit ${r.exit}: ${r.out.split('\n').filter(Boolean).join(' | ')}`,
   )
 
-  // 3. The OTHER visible path the header names: a WRAPPER-recorded reflog
-  //    action text (a non-prose action, set with GIT_REFLOG_ACTION) is a refusal.
-  //    Seeded so the coverage statement is proven on both visible paths.
+  // 3. The other visible path the header names: a NON-PROSE reflog action text on
+  //    `logs/HEAD` — the log the guard reads — set by `GIT_REFLOG_ACTION` on a
+  //    COMMIT. The mechanism matters: this proves the prose filter admits a
+  //    non-prose action text on that log, NOT that a wrapper-PUSH is visible (a
+  //    push with the variable set writes the flag to no `.git/logs` file). Seeded
+  //    so the coverage statement is proven on both visible paths.
   const dir3 = makeRepo()
   execFileSync('git', ['-C', dir3, 'commit', '-q', '-m', 'wrapper commit'], {
     encoding: 'utf8',

@@ -1,8 +1,9 @@
 # Slice 6b — FIX ROUND 1 — builder report
 
-**Committed as:** the single commit that introduces this file. A report cannot contain the hash
-of the commit that creates it, so the sha7 is in the builder's return message from
-`git log --oneline -1`.
+**Committed as:** `f9ab882` — the commit that introduced this file, from `git log --oneline -1`
+at that commit (`git log --oneline -1 -- .scratch/v28/reports/slice-6b-fix-1.md` names it).
+A report cannot contain the hash of the commit that creates it — this id is written in afterwards,
+by the micro round that follows (whose report records the same limit for its own file).
 
 **Scope:** the six dead locators (B1), the four smaller findings (B2/B3/B5/B6), and this report.
 No `src/` file touched; no public interface changed.
@@ -249,6 +250,15 @@ exit=0
 
 `git show HEAD:scripts/guards/check-acceptance-greps.mjs` was temporarily put back as the guard,
 the new checker was run against it, and the guard was restored (md5 equal afterwards):
+
+```
+$ md5sum scripts/guards/check-acceptance-greps.mjs
+210683546eebb78dd2ded3a6b6ffde91  scripts/guards/check-acceptance-greps.mjs
+```
+
+(re-measured at `f9ab882` and again in the micro round; `check-acceptance-greps.mjs` is untouched
+by the micro round, so this is still the restored file's hash — the raw tail behind "the guard was
+restored (md5 equal afterwards)".)
 
 ```
   ✗ F1 holds when the claim command does NOT carry -n (the guard forces -H -n) — exit 1:
