@@ -5264,3 +5264,25 @@ proves the re-mint and the `src` merely agrees.
 **SLICE 8d IS STILL UNWRITTEN** (the typed-zip family: an invalid typed zip becomes invisible once the note hides,
 so `handleAreaFinish` can set the error and return with **no visible feedback**; `homeZip` captured at tap and not
 disabled during `await saveLocation`).
+
+## `slice-8d.md` written -- **ALL BRIEFS NOW EXIST**; the run is pure execution from here
+
+**Defect 1 measured:** `handleAreaFinish` (`:881-890`) sets `zipError` and returns for an invalid typed zip, and
+that error's **only** render site is **inside the fallback-note block** (`data-testid="area-zip-fallback-note"`
+`:1579`; the input `:1596`; the `<p role="alert">` `:1607-1608`). Slice 4 made **an edited address invalidate the
+note** -- so the shape is: **type an invalid zip, edit the address so the note hides, tap Finish → `setZipError`
+into a block that is off screen. The parent taps Finish and nothing happens, with no feedback.**
+
+**⚠️ And the brief demands the REACHABILITY be verified before anything is fixed** -- *"a fix for an unreachable
+state is theatre, and this batch has already paid for one 'fix' that was pure theatre."* **Both answers are
+acceptable outcomes; an unstated one is not.**
+
+**Defect 2, and it is the same class slice 4 already litigated for the ADDRESS path:** `typedZip` is captured at
+tap, then `await saveLocation(typedZip)` runs **with the field still enabled** -- so the save can write one value
+while the field shows another. **Slice 4's own ruling is the precedent and the brief hands the builder its two
+REJECTED shapes** (`:913-930`: it refused to lock the field because *"locking ... is a new stuck-state surface --
+this batch has found three walls"*, and chose a **re-check at the point of use**). **The builder must match that
+reasoning or beat it, and must not create a fourth wall.**
+
+**THE SLICE QUEUE IS NOW FULLY BRIEFED: 6a (running), 6b, 6c, 6d, 8a, 8b, 8c, 8d.** Remaining work is execution
+only: dispatch each in turn (one builder at a time), run the three lanes, adjudicate, fix, close.
