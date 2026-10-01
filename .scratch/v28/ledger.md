@@ -5596,3 +5596,38 @@ asymmetry is why it gets a round and the limits get a paragraph.
    its own module and test** -- what actually decides the rendered control is the **prop pairing**
    (`FirstRunCard.tsx:71-72` + `OnboardingPage.tsx:1360`). **Pre-existing, not introduced here**; the comment
    overstates by one rung.
+
+## `ocr` on 6a fix 1: **16 findings -- the PARSER is the problem**, and I scoped the round by DIRECTION
+
+**Eleven of the sixteen are defects in the hand-rolled parser**, not in the rules it enforces: unbounded annotation
+groups, exported-vs-local import keys, forward-referenced aliases, over-broad identifier scanning, a dead namespace
+branch, a dead property, a checker that crashes instead of failing, and a string-opening keyword set that trades a
+false positive for a **false PASS**.
+
+**I CONFIRMED THREE MYSELF before briefing them:** the un-allowlistable hard finding on any annotation naming no
+local shape (`:396-400`); the unbounded `([\s\S]*?)` annotation group (`:383`); and `SKIPPABLE_CARDS` having no
+constraint tying it to `FirstRunCardId` (`firstRun.ts:43`). **And one I could NOT reproduce** -- `ocr`'s `editFile`
+claim, where my grep found no such function, so the brief tells the builder to **settle it rather than assume it**.
+
+### ⚠️ THE SCOPING RULE, WHICH IS A SPLIT BY DIRECTION -- and it is the reusable part of this round
+**FIX everything that can fire on CLEAN code, and everything that can make the guard LIE. RECORD as a limit
+everything that merely MISSES an input reachable only by contrivance.**
+*"A guard that fires on clean code gets bypassed, and a guard that can pass vacuously is not a guard -- but a guard
+that misses a contrived input, AND SAYS SO, is still a guard."* **This batch has ruled twice that a guard pretending
+to be total is worse than one stating its coverage; this rule is that ruling applied to a fix round.**
+
+**So: 9 items to fix (false positives, false passes, a crash-instead-of-finding, and the authority's missing type
+constraint), 7 recorded as limits with the input that reaches each.** Including the reviewer's per-const
+coarseness, the destructure-without-use case, and #16's "the mapped type derives which entry MUST carry the field,
+not which MAY".
+
+### ⚠️ AND THE REAL CLOSURE IS ROUTED, NOT PATCHED
+**Eleven parser defects from one lane pass is evidence that the PARSER is the problem, not the rules.** The reviewer
+had already noted that **`typescript@~6.0.2` is a devDependency, so an AST walk would delete the ~180-line
+hand-rolled stripper and close most of the list BY CONSTRUCTION** -- and declined it as cross-cutting.
+**I am recording it as a named future slice and asking the builder to state which findings an AST walk would have
+prevented** -- *that table is the evidence that slice will need, and it is cheaper to collect it now than to
+re-derive it later.* **It is also the batch's own rule applied one level up: prefer making a whole CLASS
+unconstructable over policing its instances.**
+
+**FIX ROUND 2 DISPATCHED** (`slice-6a-fix-2.md`).
