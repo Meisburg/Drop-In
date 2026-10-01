@@ -1,7 +1,7 @@
 ---
 description: Read-only open-web research for the orchestrator via Exa. Answers ONE bounded external question with citations and writes findings to research/.
 mode: subagent
-model: ninfer/qwen3.8-27b
+model: strata-max/qwen3.8-flash-next-iq3_s
 temperature: 0.2
 permission:
   edit:

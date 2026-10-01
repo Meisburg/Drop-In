@@ -1,7 +1,7 @@
 ---
 description: Deterministic verification. Runs the project's real checks (tests, typecheck, lint, build) and reports raw outcomes. Not an LLM opinion — the referee.
 mode: subagent
-model: ninfer/qwen3.8-27b
+model: strata-max/qwen3.8-flash-next-iq3_s
 temperature: 0.1
 permission:
   edit: deny

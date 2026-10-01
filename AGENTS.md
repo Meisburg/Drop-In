@@ -216,7 +216,8 @@ Two layers: agents define WHO does what; skills hold HOW.
   session). Run `/setup-matt-pocock-skills` once per repo.
 - Inside builder slices (model-invoked): `tdd` for red-green-refactor,
   `diagnosing-bugs` when verification fails, `codebase-design` for module
-  boundaries, and `verification-before-completion` before any success claim.
+  boundaries, `ponytail` for the smallest diff that works, and
+  `verification-before-completion` before any success claim.
   Allowed via per-agent `permission.skill`; every other agent has skills
   denied — the reviewer stays skill-free and fresh, because a reviewer that
   loads a workflow skill stops being an independent judge.

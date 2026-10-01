@@ -1,7 +1,7 @@
 ---
 description: Read-only codebase discovery for the orchestrator. Investigates one bounded question and returns a cited, high-signal report.
 mode: subagent
-model: ninfer/qwen3.8-27b
+model: strata-max/qwen3.8-flash-next-iq3_s
 temperature: 0.2
 permission:
   edit: deny

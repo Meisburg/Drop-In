@@ -1,7 +1,7 @@
 ---
 description: Independent fresh-context review of one builder slice. Judges the diff against the plan slice only. Returns a structured PASS/NEEDS_CHANGES/BLOCKED verdict.
 mode: subagent
-model: ninfer/qwen3.8-27b
+model: strata-max/qwen3.8-flash-next-iq3_s
 temperature: 0.2
 permission:
   edit: deny
@@ -31,15 +31,25 @@ repository.
 - Correctness: does the diff do what the slice's acceptance criteria say?
 - Completeness: any criterion unimplemented? tests meaningful, not merely present?
 - Scope: any behavior change outside the slice? public interfaces touched
-  without authorization?
-- Quality: error paths, input validation, edge cases, backward compatibility.
-- Honesty: does the builder's report match the actual diff?
+  without authorization? Cosmetic churn is scope too: reformatting, reordering,
+  renames, or a drive-by refactor the slice never asked for, and orphans the
+  diff itself created (an import or helper its own change left unused). Every
+  changed line should trace to the slice — cite the ones that do not. A diff
+  nobody can review is a defect even when every line is correct.
 - Structure: does the diff obey `docs/agents/code-structure.md`? Read it. Check
   specifically — (a) does a `.tsx` file encode a domain *rule* that belongs in
   `src/lib/`? (b) does a `lib/` function import a module-level Supabase client
   instead of taking one as a parameter? (c) does a new `lib/*.ts` lack its
   `lib/*.test.ts` sibling? (d) do tests assert real behavior or merely execute
   lines? (e) is a logic block duplicated across files?
+- Quality: error paths, input validation, edge cases, backward compatibility.
+  Over-building is a quality finding too: an unrequested abstraction, config for
+  a value that never changes, scaffolding "for later", a new dependency the
+  stdlib or an installed dep already covers, or a fix applied per-caller where
+  one shared guard would do. Cite the line. A `ponytail:` comment that names its
+  ceiling is a deliberate simplification with a stated upgrade path — record it
+  under non-blocking, do not return it.
+- Honesty: does the builder's report match the actual diff?
 
 ## The verification gate
 
