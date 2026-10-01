@@ -119,6 +119,22 @@ describe('SKIPPABLE_CARDS — the one authority for which cards may be skipped',
       expect(isSkippable(card)).toBe((SKIPPABLE_CARDS as readonly string[]).includes(card))
     }
   })
+
+  it('contains only ids that are in FirstRunCardId', () => {
+    // V28 r2 slice 6a fix 2 (item D): `as const` alone did not tie the list to
+    // the card union — `['kidz']` was a valid statement, and it would have made
+    // `SkippableFirstRunCardId` a type no card inhabits, so every card became
+    // non-skippable and the required `skipLabel` vanished from the copy shape
+    // with nothing to catch it. `satisfies readonly FirstRunCardId[]` puts the
+    // error on the constant itself (measured: firstRun.ts(56,33) TS2322 Type
+    // '"kidz"' is not assignable to type 'FirstRunCardId', plus OnboardingPage
+    // reporting `skipLabel: string | undefined` no longer assignable — the exact
+    // degradation the reviewer predicted). This pin is the runtime shadow of a
+    // compile-time tie: cheap, and it says what the tie is for.
+    for (const card of SKIPPABLE_CARDS) {
+      expect(FIRST_RUN_CARDS).toContain(card)
+    }
+  })
 })
 
 describe('isSkippable', () => {

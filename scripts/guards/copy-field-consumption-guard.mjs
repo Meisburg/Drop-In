@@ -51,12 +51,17 @@
  *     kidsCopy.skipLabel                   — an alias (`const kidsCopy = FIRST_RUN_COPY.kids`)
  *     FIRST_RUN_COPY[card].title           — a computed hop inside the chain
  *     const { title } = FIRST_RUN_COPY.name — a destructuring of a copy value (F3)
+ *     const { kids: { skipLabel } } = FIRST_RUN_COPY — the same, nested
+ *     import { FIRST_RUN_COPY as copy } … copy.kids.skipLabel — an ALIASED
+ *       IMPORT. The shapes are keyed by the exported name and the reads by the
+ *       local one; conflating them made every read in such a file invisible and
+ *       reported read fields as unread (fix 2, item E).
  *
  *   NOT CONSUMED (each is a place the word is WRITTEN or ASSERTED, never a
  *   place it is USED — and only use is evidence the word is true):
  *     1. the field's own declaration (`skipLabel?: string`) — a shape
  *        statement. It says the field may exist; it cannot say anyone reads it;
- *     2. the value site in the module (`skipLabel: 'Skip for now'`) — writing
+ *     2. the value site in the module (`skipLabel: 'Skip'`) — writing
  *        data into the module is the definition, not a read of it;
  *     3. ANY TEST FILE, including the module's own (`firstRunCopy.test.ts`) — a
  *        test that reads a field proves the field is present and non-empty, NOT
@@ -73,33 +78,70 @@
  *        documentation about it, not a read of it. Comments are blanked before
  *        scanning.
  *
- * KNOWN LIMITS — all of them false NEGATIVES, stated rather than hidden:
+ * KNOWN LIMITS. Each one names the INPUT that reaches it, because a limit
+ * without an input is a guess. All of them are false NEGATIVES (a missed read)
+ * or false POSITIVES that need a human to allowlist — none of them can report a
+ * word as read when it is not, which is the direction that matters.
+ *
  *   - a copy value carried by something other than an imported binding, a
  *     direct `const X = BINDING.<key>` alias, or a destructuring of one (a
- *     function parameter, a re-export, a JSX spread) is not followed;
- *   - a default import of a copy module is not followed (this repo uses named
- *     imports);
- *   - the keys of a nested object literal are judged through the shape the const
- *     is annotated with, not through their own names — so a `Record<Id, Shape>`
- *     or a mapped type over card ids contributes the SHAPES' fields, not the
- *     card ids;
+ *     function parameter, a re-export, a JSX spread) is not followed; reaching
+ *     input: `renderCopy(FIRST_RUN_COPY.kids)` in a consumer;
+ *   - a default import of a copy module is not followed; reaching input:
+ *     `import copy from '../lib/firstRunCopy'` (this repo uses named imports);
+ *   - a NAMESPACE import is not followed either — `import * as copy from
+ *     '../lib/firstRunCopy'` then `copy.FIRST_RUN_COPY.kids.skipLabel` is a
+ *     missed read, so the field comes out unread (the safe direction). The
+ *     resolver used to collect `* as ns` bindings and then filter them out, so
+ *     the branch was dead code while the comments promised support; the promise
+ *     is gone and the limit is here instead;
+ *   - a read straight off a `Record`-typed binding — `FIRST_RUN_COPY.title` —
+ *     satisfies `FirstRunCardCopy.title` by ROOT attribution, because the guard
+ *     attributes shapes per const, not per value. Reaching input: that line.
+ *     It does not typecheck (`title` is not a key of the record), so it cannot
+ *     exist in clean code; that is why it is a limit and not a defect. Same
+ *     ruling as the reviewer's, and the same reason `const { title } =
+ *     FIRST_RUN_COPY` (a destructure of the whole record) is not chased;
+ *   - a destructured key counts as a read even if the bound variable is never
+ *     used; reaching input: `const { skipLabel } = FIRST_RUN_COPY.kids` with the
+ *     binding unused. `noUnusedLocals` is on in tsconfig.app.json, so that file
+ *     does not compile — again unreachable in clean code;
+ *   - two apostrophes in JSX TEXT on one line (`It's a dog's life`) still pair
+ *     under the same-line string rule, and the span between them is blanked, so
+ *     a read inside that span is missed. It can only hide, never manufacture:
+ *     a real `'`/`"` literal always has its closing quote on its own line, so it
+ *     is always blanked, which is what closes the lying direction;
+ *   - a regex literal whose body contains quote characters is not lexed as a
+ *     regex body; reaching input: `/it's a “dog”/` in a consumer file;
+ *   - `extends` is not followed: a sub-shape contributes only its OWN declared
+ *     fields, and the parent shape is judged on its own. Reaching input:
+ *     `interface RichCardCopy extends FirstRunCardCopy { kicker: string }`;
  *   - an interface that no exported const carries is not judged (it is a type
  *     used elsewhere, not a copy value the app reads);
- *   - `extends` is not followed: a sub-shape contributes only its OWN declared
- *     fields, and the parent shape is judged on its own;
  *   - an excess key in a typed data literal is not this guard's business: tsc's
- *     excess-property check already rejects one;
- *   - the comment/string stripper is a scanner, not a parser: it treats `/` as
- *     a regex start only where an operator precedes it, and treats a quote as a
- *     string start only where an operator or a keyword such as `from` precedes
- *     it, so an apostrophe in JSX text (`Who's`) does not swallow the code
- *     after it. It does not lex regex literals that contain quote characters
- *     (none in the files this guard reads), and it does not understand JSX
- *     attribute values as anything but code.
+ *     excess-property check already rejects one. Note the asymmetry the fix-2
+ *     review raised and this guard does NOT close: `FirstRunCardCopy.skipLabel`
+ *     is optional, so a non-skippable entry CAN carry `skipLabel: 'Skip'` and
+ *     compile, and the guard will call it consumed (the read through the base
+ *     shape is real). Tightening that means `Omit`-ing the key from the
+ *     non-skippable arm of the mapped type, which changes the public shape and
+ *     rewrites the pins in firstRunCopy.test.ts — out of this slice's scope;
  *   - the shape resolver understands `interface`, `Record<Id, Shape>`,
  *     intersections of those, and a mapped type whose branches name interfaces
  *     (`[K in Id]: K extends S ? A : B`). A conditional type with a more
- *     involved body is reported as unresolved rather than guessed at.
+ *     involved body contributes no shapes, which surfaces as the const being
+ *     skipped-with-a-printed-line, not as a silent pass. Key-position type
+ *     arguments (`Record<Id, Shape>`'s `Id`) are blanked before scanning, so an
+ *     interface used as a KEY is not mistaken for a copy shape; an interface in
+ *     a value position that the const does not really carry (`Omit<Other, 'x'>`)
+ *     is still taken as carried — over-approximating, which can only make a
+ *     field look more read, never less;
+ *   - a type alias's BODY is taken to the first `;` at brace depth 0 (or the
+ *     brace-matched region if a `{` comes first). An alias written across two
+ *     statements without a terminator, or a mapped type whose body outlives the
+ *     400-char window, is read short. Reaching input: a ~40-line mapped type.
+ *     This is the one place the guard is still pattern-matching rather than
+ *     parsing — see the note at the bottom of this header.
  *
  * THE GUARD POLICES ITS OWN INSTRUMENT. It prints the shape count, the field
  * count and the consumer-file count it derived, and a run that discovers ZERO
@@ -107,6 +149,22 @@
  * exactly like a clean repo. Its behavior is proven by
  * `copy-field-consumption-guard.check.mjs`, which seeds each shape and requires
  * the right exit code.
+ *
+ * WHY THIS IS STILL A SCANNER, AND WHAT THAT COST. Two review rounds found
+ * eleven defects that a syntax tree would not have had: an apostrophe in JSX
+ * text read as a string opener, a string body read as code, an annotation regex
+ * that crossed a statement boundary, an alias resolved before it was declared,
+ * an import alias conflated with the imported name, a destructure pattern cut at
+ * the first `}`. Every one of them is a question the parser was asked to answer
+ * without a grammar. `typescript` is already a devDependency of this repo, and a
+ * walk of `ts.createSourceFile` would delete `blankNonCode`, `stringEnd`,
+ * `skipString`, `skipRegex`, `exportedConsts`, `importedBindings`, `aliasesOf`
+ * and `destructuredReads` outright — roughly two thirds of this file — and close
+ * the remaining limits by construction, because an AST knows which node is a
+ * string, which identifier is an import alias, and which type a binding carries.
+ * That rewrite is a slice of its own (it changes what the guard can see, so it
+ * needs its own seeds); it is flagged here rather than attempted inside a fix
+ * round.
  *
  * Deterministic: no LLM, no test run. Same repo, same answer.
  *
@@ -119,10 +177,17 @@ import path from 'node:path'
 const ROOT = process.argv[2] ? path.resolve(process.argv[2]) : process.cwd()
 
 /** The copy modules this guard judges: `src/lib/` modules whose whole job is
- *  to hold the UI's words as data. Adding a copy module means adding it here —
- *  a visible act, unlike a field silently going unread. */
+ *  to hold the UI's words as data. `consts` names the exports this guard exists
+ *  to judge — that list is what makes "the parser stopped seeing the copy" a
+ *  finding instead of a pass, without turning every OTHER exported const in the
+ *  file into a build break (see the not-judged rule in `declaredShapes`). Adding
+ *  a copy module, or a copy const, means adding it here — a visible act, unlike
+ *  a field silently going unread. */
 const COPY_MODULES = [
-  { module: 'src/lib/firstRunCopy.ts', ownTest: 'src/lib/firstRunCopy.test.ts' },
+  {
+    module: 'src/lib/firstRunCopy.ts',
+    consts: ['FIRST_RUN_COPY', 'FIRST_RUN_NUDGE_COPY'],
+  },
 ]
 
 /**
@@ -153,28 +218,47 @@ function regexCanStart(prev) {
   return prev === '' || '=(,:[{;!?&|+-*%<>~^'.includes(prev)
 }
 
-/** Words after which a quote really does open a string (`from './x'`,
- *  `return 'x'`). Without this, the previous significant character of a
- *  module's `from './firstRunCopy'` is a letter and the specifier would be
- *  read as code. */
-const BEFORE_STRING_KEYWORDS = new Set([
-  'from', 'return', 'typeof', 'instanceof', 'in', 'of', 'case', 'do', 'else',
-  'await', 'yield', 'new', 'delete', 'void', 'default',
-])
-
-/** Does the quote at `i` open a string? A quote preceded by a word character
- *  that is not one of those keywords is JSX text or an apostrophe (`Who's`),
- *  not a string — mis-lexing that swallows the code between two apostrophes
- *  and hides real reads (measured: it hid `kidsCopy.skipLabel`). */
-function stringCanStart(chars, i) {
-  let j = i - 1
-  while (j >= 0 && /\s/.test(chars[j])) j--
-  if (j < 0) return true
-  const prev = chars[j]
-  if (!/[A-Za-z0-9_$]/.test(prev)) return true
-  let end = j
-  while (j >= 0 && /[A-Za-z0-9_$]/.test(chars[j])) j--
-  return BEFORE_STRING_KEYWORDS.has(chars.slice(j + 1, end + 1).join(''))
+/**
+ * THE RULE for whether the quote at `i` opens a string — and it is a rule, not
+ * an allowlist:
+ *
+ *   A single- or double-quoted literal cannot contain a raw newline. So such a
+ *   quote opens a string ONLY IF an unescaped matching quote closes it on the
+ *   SAME LINE. A quote with no same-line partner is an apostrophe in JSX text
+ *   (`Who's`) or a stray — not a string. A backtick always opens one, because
+ *   a template may span lines.
+ *
+ * This replaced an allowlist of words after which a quote "counted" (`from`,
+ * `return`, `typeof`, …). An allowlist is one keyword short, and three inputs
+ * proved it: `as` (`x as 'a'`), `extends` (`<T extends 'a'>`) and tagged
+ * templates (`` t`…` ``) all fell through as "not a string", so the string
+ * BODY was scanned as code. Measured on the previous version:
+ * `(FIRST_RUN_COPY.name.primaryLabel as 'kidsCopy.title')` made the guard
+ * report `FirstRunCardCopy.title` as READ and exit 0 — a word inside a string
+ * counted as consumption, which is exclusion 5 inverted and the guard lying.
+ *
+ * The direction matters, and the rule is chosen for it: mis-blanking a real
+ * string only HIDES (a missed read, a false alarm); failing to blank a real
+ * string MANUFACTURES a read (a false pass). The same-line rule can never fail
+ * to blank a real `'`/`"` literal — such a literal always has its closing quote
+ * on its own line — so the lying direction is closed by construction. What
+ * remains is the hiding direction: two apostrophes in JSX text on one line
+ * (`It's a dog's life`) still pair, and the span between them is blanked, which
+ * can hide a read. That is a limit, listed below.
+ *
+ * Returns the index of the closing quote, -1 when this quote is not a string
+ * opener, and -2 for a backtick (always a template; `skipString` finds its end).
+ */
+function stringEnd(chars, i, to) {
+  const quote = chars[i]
+  if (quote === '`') return -2
+  const nl = chars.indexOf('\n', i + 1)
+  const lineEnd = nl === -1 ? to : Math.min(nl, to)
+  for (let j = i + 1; j < lineEnd; j++) {
+    if (chars[j] === '\\') { j++; continue }
+    if (chars[j] === quote) return j
+  }
+  return -1
 }
 
 function blankRange(chars, start, end) {
@@ -215,7 +299,14 @@ function scan(chars, from, to, prev, strings = true) {
       i = end
       continue
     }
-    if ((ch === '"' || ch === "'" || ch === '`') && stringCanStart(chars, i)) {
+    if (ch === '"' || ch === "'" || ch === '`') {
+      if (stringEnd(chars, i, to) === -1) {
+        // Not a string opener — an apostrophe inside JSX text. Treat it as an
+        // ordinary character so the code after it is still scanned.
+        i++
+        prevSig = ch
+        continue
+      }
       i = skipString(chars, i, to, ch, strings)
       prevSig = ch
       continue
@@ -331,14 +422,69 @@ function literalKeys(body) {
 /** The shapes a type expression names, restricted to interfaces this module
  *  declares: `Record<Id, Shape>`, an intersection of those, a bare interface,
  *  or a mapped type whose conditional branches name them. */
+/** Generics whose FIRST type argument is a KEY, not a value: `Record<Id, Shape>`
+ *  says the keys are ids and the values are shapes. `shapesInTypeExpr` scans
+ *  every identifier in an expression, which made a key-position interface a
+ *  judged shape — `Record<zzCardKey, FirstRunCardCopy>` added `zzCardKey` and
+ *  its own fields to the copy set, i.e. a hard finding of "unread copy field"
+ *  against code that has no copy field at all. Blanking the key position before
+ *  scanning closes the direction that fires on clean code. The opposite
+ *  direction (an interface named in a value position that the const does not
+ *  really carry, e.g. `Omit<Other, 'x'>`) over-approximates — it can only make a
+ *  field look MORE consumed, never less — and stays a stated limit. */
+const KEY_POSITION_GENERIC = /\b(Record|Partial|Required|Readonly)\s*<\s*[A-Za-z_$][\w$]*\s*,/g
+
 function shapesInTypeExpr(expr, interfaces, aliases) {
   const found = new Set()
-  for (const m of expr.matchAll(/\b([A-Za-z_$][\w$]*)/g)) {
+  for (const m of expr.replace(KEY_POSITION_GENERIC, (_all, generic) => `${generic}< ,`).matchAll(/\b([A-Za-z_$][\w$]*)/g)) {
     const name = m[1]
     if (interfaces.has(name)) found.add(name)
     else if (aliases.has(name)) for (const s of aliases.get(name)) found.add(s)
   }
   return found
+}
+
+/** `export const NAME <annotation> = { … }`, found by scanning rather than by
+ *  one unbounded regex. The annotation runs to the first `=` at depth 0, and
+ *  the search gives up at the first `;` or `}` at depth 0, so a const that is
+ *  NOT an object literal can never borrow the NEXT statement's literal.
+ *
+ *  The previous regex was `/\bexport\s+const\s+(\w+)\s*([\s\S]*?)=\s*\{/`, and
+ *  for `export const A = ['x']` followed by `export const B = { … }` its first
+ *  match bound A's NAME to B's LITERAL (annotation `= ['x']\nexport const B `),
+ *  and because lastIndex landed inside B's body, B was never matched at all — a
+ *  wrong shape attribution that generates false findings downstream. */
+function exportedConsts(code) {
+  const out = []
+  for (const m of code.matchAll(/\bexport\s+const\s+([A-Za-z_$][\w$]*)/g)) {
+    let i = m.index + m[0].length
+    let depth = 0
+    let eq = -1
+    for (; i < code.length; i++) {
+      const ch = code[i]
+      if ('{['.includes(ch) || ch === '(') depth++
+      else if ('}])'.includes(ch)) {
+        if (depth === 0) break // left the statement (a nested block, an array…)
+        depth--
+      } else if (depth === 0 && ch === ';') break
+      else if (depth === 0 && ch === '=') {
+        eq = i
+        break
+      }
+    }
+    if (eq === -1) continue
+    let j = eq + 1
+    while (j < code.length && /\s/.test(code[j])) j++
+    if (code[j] !== '{') continue // not an object-literal const
+    const close = braceEnd(code, j)
+    if (close === -1) continue
+    out.push({
+      name: m[1],
+      annotation: code.slice(m.index + m[0].length, eq),
+      body: code.slice(j + 1, close),
+    })
+  }
+  return out
 }
 
 /**
@@ -360,33 +506,45 @@ function declaredShapes(code) {
   // Type aliases, resolved to the shapes they name. This is what lets a mapped
   // type (`[K in Id]: K extends S ? A : B`) carry shapes without the const's
   // annotation restating which key gets which.
-  const aliases = new Map()
+  //
+  // Bodies are collected FIRST and then resolved to a fixpoint. Resolving in
+  // source order made a forward reference (`const C: Later = {…}` above
+  // `type Later = …`) resolve to the empty set, which read as "this const names
+  // no shape" — a hard finding against perfectly well-formed code, caused by
+  // our own resolution order. Iterating until stable costs nothing at this size
+  // and removes the whole class.
+  const aliasBodies = new Map()
   for (const m of code.matchAll(/\btype\s+([A-Za-z_$][\w$]*)\s*=\s*/g)) {
     const start = m.index + m[0].length
     const brace = code.indexOf('{', start)
     const semi = code.indexOf(';', start)
-    const nl = code.indexOf('\n', start)
     let body
     if (brace !== -1 && brace - start < 400 && (semi === -1 || brace < semi)) {
       const close = braceEnd(code, brace)
       body = code.slice(start, close === -1 ? brace + 400 : close + 1)
     } else {
-      body = code.slice(start, nl === -1 ? code.length : nl)
+      body = code.slice(start, semi === -1 ? code.length : semi)
     }
-    aliases.set(m[1], shapesInTypeExpr(body, interfaces, aliases))
+    if (!aliasBodies.has(m[1])) aliasBodies.set(m[1], body)
+  }
+  const aliases = new Map()
+  for (const name of aliasBodies.keys()) aliases.set(name, new Set())
+  for (let pass = 0; pass <= aliasBodies.size; pass++) {
+    let changed = false
+    for (const [name, body] of aliasBodies) {
+      const into = aliases.get(name)
+      const before = into.size
+      for (const s of shapesInTypeExpr(body, interfaces, aliases)) into.add(s)
+      if (into.size !== before) changed = true
+    }
+    if (!changed) break
   }
 
   const shapes = new Map() // shape name -> { fields, declaredBy }
   const constShapes = new Map() // exported const name -> Set of shape names
-  const unresolved = []
+  const notJudged = [] // exported object-literal consts this guard does not judge
 
-  for (const m of code.matchAll(/\bexport\s+const\s+([A-Za-z_$][\w$]*)\s*([\s\S]*?)=\s*\{/g)) {
-    const constName = m[1]
-    const annotation = m[2]
-    const open = m.index + m[0].length - 1
-    const close = braceEnd(code, open)
-    if (close === -1) continue
-
+  for (const { name: constName, annotation, body } of exportedConsts(code)) {
     const named = shapesInTypeExpr(annotation, interfaces, aliases)
     if (named.size > 0) {
       constShapes.set(constName, named)
@@ -395,20 +553,29 @@ function declaredShapes(code) {
       }
       continue
     }
-    if (/[<>]/.test(annotation) || /:\s*[A-Za-z_$]/.test(annotation)) {
-      unresolved.push(
-        `${constName}: its annotation (${annotation.trim().slice(0, 60)}…) names no shape this module declares — ` +
-          'its fields cannot be judged',
-      )
+    if (/[^\s]/.test(annotation)) {
+      // An annotated const that names no shape this module declares is NOT a
+      // copy value as this guard understands one — a list of ids, a
+      // `Record<string, string>`, a lookup table. It is REPORTED and skipped.
+      //
+      // It used to be a hard finding, and that was wrong in the direction the
+      // batch cares about: an unrelated exported const added to a copy module
+      // broke the build with no way to excuse it (the ALLOWLIST is keyed by
+      // Shape.field, and an unjudged const contributes no shape to allowlist).
+      // The blind case is still caught, precisely: COPY_MODULES names the consts
+      // this guard expects to judge, and a named const that is not judged is a
+      // finding. So the tripwire fires on "the copy const stopped being
+      // parseable", not on "someone added a const".
+      notJudged.push(`${constName} (annotation ${annotation.trim().slice(0, 48)} names no shape this module declares)`)
       continue
     }
     // An unannotated literal: its own keys ARE the shape, and the const's name
     // is the binding the app reads it through.
-    shapes.set(constName, { fields: literalKeys(code.slice(open + 1, close)), declaredBy: `${constName} (literal shape)` })
+    shapes.set(constName, { fields: literalKeys(body), declaredBy: `${constName} (literal shape)` })
     constShapes.set(constName, new Set([constName]))
   }
 
-  return { shapes, constShapes, unresolved }
+  return { shapes, constShapes, notJudged }
 }
 
 // ---------------------------------------------------------------------------
@@ -433,25 +600,41 @@ const isTestFile = (name) => /\.test\.[cm]?[jt]sx?$/.test(name)
 
 const lineOf = (text, index) => text.slice(0, index).split('\n').length
 
-/** Value names this file gets from the copy module: named imports and
- *  `* as ns`. A TYPE import contributes nothing — a type cannot be read from. */
+/** Value names this file gets from the copy module, as `{ local, exported }`.
+ *  `import { FIRST_RUN_COPY as copy }` yields `{ local: 'copy', exported:
+ *  'FIRST_RUN_COPY' }` — the SHAPES are keyed by the exported name and the
+ *  READS go through the local one. Keying one by the other (what the previous
+ *  version did) made every read in an aliased-import file invisible: the file
+ *  was filtered out as a non-consumer and its read fields were reported
+ *  `READ BY NOTHING` — a false alarm on clean code.
+ *
+ *  A TYPE import contributes nothing (a type cannot be read from). A namespace
+ *  import (`import * as copy`) is deliberately NOT followed; the previous
+ *  version collected it and then filtered it out, which made the branch dead
+ *  code while the comments promised support. It is a limit now, stated in both
+ *  places. */
 function importedBindings(code, moduleBase) {
   const bindings = []
   for (const m of code.matchAll(/\bimport\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g)) {
     if (path.basename(m[3]) !== moduleBase) continue
     if (m[1] !== undefined) continue
-    for (const spec of m[2].split(',')) {
-      const name = spec.trim().split(/\s+as\s+/).pop()?.trim()
-      if (name) bindings.push(name)
+    for (const raw of m[2].split(',')) {
+      const spec = raw.trim()
+      if (spec === '' || /^type\s/.test(spec)) continue
+      const parts = spec.split(/\s+as\s+/)
+      const exported = parts[0].trim()
+      const local = parts[parts.length - 1].trim()
+      if (exported !== '' && local !== '') bindings.push({ local, exported })
     }
-  }
-  for (const m of code.matchAll(/\bimport\s+\*\s*as\s+([A-Za-z_$][\w$]*)\s*from\s*['"]([^'"]+)['"]/g)) {
-    if (path.basename(m[2]) === moduleBase) bindings.push(m[1])
   }
   return bindings
 }
 
 const CHAIN = String.raw`(?:\s*(?:\.\s*[A-Za-z_$][\w$]*|\[\s*[^\]]*\s*\]))*`
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+/** Longest first, so `copyFull` is not matched as `copy`. */
+const alternation = (names) => names.map(escapeRe).sort((a, b) => b.length - a.length).join('|')
 
 /** `const kidsCopy = FIRST_RUN_COPY.kids` — a local alias of a copy value. It
  *  inherits the shapes of the binding it is rooted at, because that is the
@@ -460,7 +643,7 @@ function aliasesOf(code, bindings) {
   const aliases = new Map() // alias -> shapes of its root
   for (const b of bindings.keys()) {
     const re = new RegExp(
-      `\\b(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*${b}${CHAIN}\\s*(?:[;\\n]|$)`,
+      `\\b(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*${escapeRe(b)}${CHAIN}\\s*(?:[;\\n]|$)`,
       'g',
     )
     for (const m of code.matchAll(re)) {
@@ -470,36 +653,66 @@ function aliasesOf(code, bindings) {
   return aliases
 }
 
+/** The leaf names of a destructuring pattern. `kids: { skipLabel }` binds
+ *  `skipLabel` (`kids` is a hop, not a read); `title: t` binds `title`; `title`
+ *  binds `title`. The previous version split the pattern text on `,` and stopped
+ *  at the first `}`, so a nested pattern recorded the HOP name as a read and
+ *  missed the field — a false alarm at the very style F3 was added to support. */
+function patternLeaves(pattern) {
+  const tokens = pattern.match(/[A-Za-z_$][\w$]*|[{}[\],:=]/g) ?? []
+  const leaves = []
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i]
+    if (!/^[A-Za-z_$][\w$]*$/.test(tok)) continue
+    const next = tokens[i + 1]
+    if (next === '{' || next === '[') continue // a hop into a nested pattern
+    if (next === ':') {
+      const after = tokens[i + 2]
+      if (after === '{' || after === '[') continue // `kids: { … }` — a hop
+      leaves.push(tok) // `title: t` — the KEY is the field read
+      if (after !== undefined && /^[A-Za-z_$][\w$]*$/.test(after)) i += 2 // skip the local alias
+      continue
+    }
+    leaves.push(tok) // shorthand, or `x = default`
+  }
+  return leaves
+}
+
 /** `const { title, body } = FIRST_RUN_COPY.name` — the destructure IS the read
- *  of each key (F3: without this a destructured field is a false alarm). */
+ *  of each key (without this, a destructured field is a false alarm). The
+ *  pattern is brace-matched, not `[^}]*`, so nesting works. */
 function destructuredReads(code, roots) {
   const sites = []
-  for (const root of roots.keys()) {
-    const re = new RegExp(
-      `\\b(?:const|let|var)\\s*\\{([^}]*)\\}\\s*=\\s*${root}${CHAIN}`,
-      'g',
-    )
-    for (const m of code.matchAll(re)) {
-      for (const part of m[1].split(',')) {
-        const key = part.split(':')[0].split('=')[0].trim()
-        if (/^[A-Za-z_$][\w$]*$/.test(key)) sites.push({ field: key, index: m.index, shapes: roots.get(root) })
-      }
+  const rooted = new RegExp(`^\\s*=\\s*(?:(${alternation([...roots.keys()])}))${CHAIN}`)
+  for (const m of code.matchAll(/\b(?:const|let|var)\s*\{/g)) {
+    const open = m.index + m[0].length - 1
+    const close = matchBrace(code, open, code.length)
+    if (close === -1) continue
+    const hit = rooted.exec(code.slice(close + 1, close + 400))
+    if (hit === null) continue
+    for (const field of patternLeaves(code.slice(open + 1, close))) {
+      sites.push({ field, index: m.index, shapes: roots.get(hit[1]) })
     }
   }
   return sites
 }
 
-/** Every member-access read of `field` rooted at one of `roots`. */
-function readsOf(code, roots, field) {
-  const sites = []
-  for (const root of roots.keys()) {
-    const re = new RegExp(
-      `\\b${root}${CHAIN}\\s*(?:\\?\\.|\\.)\\s*${field}(?![A-Za-z0-9_$])`,
-      'g',
-    )
-    for (const m of code.matchAll(re)) sites.push({ index: m.index, shapes: roots.get(root) })
+/** Every read in this file, grouped by the field name it reads and tagged with
+ *  the shapes its root carries. Computed ONCE per consumer — the previous
+ *  version re-read the file from disk and re-scanned it per field × consumer. */
+function readSitesByField(code, roots) {
+  const byField = new Map()
+  const push = (field, site) => {
+    if (!byField.has(field)) byField.set(field, [])
+    byField.get(field).push(site)
   }
-  return sites
+  const re = new RegExp(
+    `\\b(${alternation([...roots.keys()])})${CHAIN}\\s*(?:\\?\\.|\\.)\\s*([A-Za-z_$][\\w$]*)(?![A-Za-z0-9_$])`,
+    'g',
+  )
+  for (const m of code.matchAll(re)) push(m[2], { index: m.index, shapes: roots.get(m[1]) })
+  for (const s of destructuredReads(code, roots)) push(s.field, s)
+  return byField
 }
 
 // ---------------------------------------------------------------------------
@@ -511,7 +724,7 @@ console.log('===================================================================
 
 const findings = []
 
-for (const { module: moduleRel } of COPY_MODULES) {
+for (const { module: moduleRel, consts: expectedConsts } of COPY_MODULES) {
   const modulePath = path.join(ROOT, moduleRel)
   let raw
   try {
@@ -522,8 +735,21 @@ for (const { module: moduleRel } of COPY_MODULES) {
   }
 
   const code = blankNonCode(raw)
-  const { shapes, constShapes, unresolved } = declaredShapes(code)
-  for (const note of unresolved) findings.push(`${moduleRel}: ${note}`)
+  const { shapes, constShapes, notJudged } = declaredShapes(code)
+
+  // The precise tripwire. COPY_MODULES names the consts this guard exists to
+  // judge; a named const that is no longer recognised is the instrument going
+  // blind, and that IS a finding. A const that is NOT named and carries no
+  // shape is skipped with a printed line instead — an unrelated exported const
+  // must not break the build with no way to excuse it.
+  for (const want of expectedConsts) {
+    if (!constShapes.has(want)) {
+      findings.push(
+        `${moduleRel}: "${want}" is listed as a copy const this guard judges, but it is not recognised as an ` +
+          'annotated (or unannotated) object-literal export — the instrument is blind on it, which is not a pass',
+      )
+    }
+  }
 
   // The instrument's own tripwire: zero shapes or zero fields means the parser
   // stopped matching, which looks exactly like a clean module.
@@ -548,30 +774,30 @@ for (const { module: moduleRel } of COPY_MODULES) {
     // Imports are found in the comment-blanked view (their specifier is a
     // string literal); aliases and reads in the string-blanked view.
     const noComments = blankNonCode(rawFile, false)
-    const valueBindings = importedBindings(noComments, moduleBase).filter((b) => constShapes.has(b))
+    const valueBindings = importedBindings(noComments, moduleBase).filter((b) => constShapes.has(b.exported))
     if (valueBindings.length === 0) continue
-    const roots = new Map(valueBindings.map((b) => [b, constShapes.get(b)]))
+    const roots = new Map(valueBindings.map((b) => [b.local, constShapes.get(b.exported)]))
     for (const [alias, s] of aliasesOf(noComments, roots)) if (!roots.has(alias)) roots.set(alias, s)
-    consumers.push({ file, code: blankNonCode(noComments, true), roots })
+    const code = blankNonCode(noComments, true)
+    consumers.push({ file, raw: rawFile, sites: readSitesByField(code, roots) })
   }
 
   const allow = ALLOWLIST[moduleRel] ?? {}
   console.log(`  module: ${moduleRel}`)
+  console.log(`  judged copy consts: ${expectedConsts.join(', ')}`)
   console.log(`  declared shapes: ${shapes.size} (${[...shapes.keys()].join(', ')})`)
   console.log(`  declared fields: ${declared.length} (${declared.map((d) => `${d.shape}.${d.field}`).join(', ')})`)
   console.log(`  consumer files (import the module; no test file qualifies): ${consumers.length}`)
+  for (const note of notJudged) console.log(`  skipped— exported const ${note} — not judged, and saying so is the difference between a limit and a lie`)
 
   const seenAllow = new Set()
   for (const { shape, field, declaredBy } of declared) {
     const key = `${shape}.${field}`
     let hit = null
     for (const c of consumers) {
-      const rawFile = readFileSync(c.file, 'utf8')
-      const found =
-        readsOf(c.code, c.roots, field).find((s) => s.shapes.has(shape)) ??
-        destructuredReads(c.code, c.roots).find((s) => s.field === field && s.shapes.has(shape))
+      const found = (c.sites.get(field) ?? []).find((s) => s.shapes.has(shape))
       if (found !== undefined) {
-        hit = { file: path.relative(ROOT, c.file), line: lineOf(rawFile, found.index) }
+        hit = { file: path.relative(ROOT, c.file), line: lineOf(c.raw, found.index) }
         break
       }
     }

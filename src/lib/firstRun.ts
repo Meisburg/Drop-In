@@ -35,19 +35,32 @@ export interface FirstRunFacts {
  * V28 r2 slice 6a fix 1: before this, "kids is the skippable card" was written
  * twice — once as `card === 'kids'` in `isSkippable` below, once as the `kids:`
  * key of the copy module's type annotation — with only a comment claiming they
- * agreed. The type below is now DERIVED from this list and
+ * agreed. The type below is DERIVED from this list and
  * `src/lib/firstRunCopy.ts` derives its copy shape from that type, so the
- * skippable card is named exactly once in src and the copy module cannot
- * drift from the thing that decides.
+ * decision lives in one place and the copy module cannot drift from the thing
+ * that decides.
+ *
+ * V28 r2 slice 6a fix 2 (item D): `as const` alone did not tie the list to the
+ * card union — `SKIPPABLE_CARDS = ['kidz']` was a valid statement, and it would
+ * have made `SkippableFirstRunCardId` a type no card can inhabit (every card
+ * non-skippable, `skipLabel` required by no one) with nothing to catch it. The
+ * `satisfies` clause makes a name outside `FirstRunCardId` a compile error while
+ * keeping the literal tuple type the derived id type needs.
+ *
+ * What is and is not true about "named once": the DECISION is named once. The
+ * word `'kids'` still appears elsewhere in src (the page's progress label, its
+ * a11y ids, its copy lookup) for reasons of their own — those sites are tied to
+ * this list by the copy shape and by the `isSkippable` pin in firstRun.test.ts,
+ * not by the text of this comment.
  */
-export const SKIPPABLE_CARDS = ['kids'] as const
+export const SKIPPABLE_CARDS = ['kids'] as const satisfies readonly FirstRunCardId[]
 
 /** The ids of the skippable cards, derived from `SKIPPABLE_CARDS`. */
 export type SkippableFirstRunCardId = (typeof SKIPPABLE_CARDS)[number]
 
 /** Which cards may be left unanswered. account/name/area = false. */
 export function isSkippable(card: FirstRunCardId): boolean {
-  return (SKIPPABLE_CARDS as readonly FirstRunCardId[]).includes(card)
+  return SKIPPABLE_CARDS.some((skippable) => skippable === card)
 }
 
 /**
