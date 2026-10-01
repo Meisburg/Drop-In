@@ -5336,3 +5336,24 @@ that fails** -- rather than leaving it to each guard's author.
 5-minute read bar; the src diff (75 lines) is not."*
 
 **THREE LANES OUT** for 6a: bounded review + verifier (workflow), `ocr` on `6073437..16dd303`.
+
+## ⚠️ 6a's REVIEWER TIMED OUT AT 15 MINUTES -- my clock, and my brief's THIRD defect of this slice
+
+**Not a wandering reviewer and not an unbounded instruction: a READING LOAD I did not account for.** The diff is
+**1105 insertions**, of which **765 lines are the guard and its checker**, and my brief told it to review them and
+"finish inside ~10 minutes or STOP". **At local-model read speed that does not fit, and the reviewer did the
+disciplined thing -- it kept reading and got killed mid-request rather than reporting a partial review.**
+
+**RULED -- and it is a rule, because this is the THIRD timeout and all three have the same cause:**
+**A clock is sized to the READING LOAD, not to the reviewer's virtue.** Saying *"be disciplined, stop at 10 minutes"*
+does not shrink a 765-line artifact. **Size the clock from the diff's size, and when an artifact is large, change
+the SHAPE of the review rather than only its budget.**
+
+**So the re-dispatch has 40 minutes and a different shape** (which is itself worth keeping):
+- **The PRODUCT change (about 75 lines) is reviewed IN FULL** -- the copy module, its test, the chrome, the page.
+- **The GUARD (765 lines) is reviewed by its RULE and its CORPUS, not line-by-line** -- read the header that states
+  the consumption rule, read the 14 sub-checks, **then try to FALSIFY it with a named input.** *"That is worth more
+  than reading every line."* **A parser is reviewed by attacking it, not by auditing it.**
+- **And it is asked a question I owe the builder:** *"is a 500-line guard justified for this rule, or
+  over-engineered?"* -- with the instruction that a bare "too big" is not an answer. **The builder raised its own
+  guard's size; that deserves a verdict, not silence.**
