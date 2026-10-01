@@ -162,3 +162,11 @@ Both are prose that slice 6a's change made **false**, and both are in files that
   changed its value so the field and the rendered word agree).
 
 **Rule them the way you rule the rest: re-measure, then update in place, never delete.**
+
+### One MORE stale claim, measured today, in the same `plan.md` entry
+
+`plan.md:118-119` says **`skipLabel` is "DEAD AND WRONG"** *and* that **`rg -n "skipLabel" src/` returns 0 render
+sites**. **Slice 6a made BOTH false**: the field is now a prop that the chrome renders from the module, and the module's
+value equals the rendered word. *Update them in place, keeping what was true when they were written if the entry is
+dated* -- and note that this is the **third** claim in the planning docs that a later slice falsified without the doc
+being touched, alongside `docs/product/onboarding-first-run.md:275` and `V28-BATCH-SUMMARY.md:28`.
