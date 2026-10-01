@@ -6530,3 +6530,51 @@ a regression test" rule, applied by the builder without being asked, and with an
 - `run-all.sh`'s stale *"the two checkers"* comment (seven now) left untouched.
 
 **THREE LANES OUT** (review + verify as separate parallel calls; `ocr` local).
+
+## Slice 6b fix round 1 lanes: **REVIEW PASS** + **VERIFY PASS** -- and the delta reconciles to the LINE
+
+### VERIFIER: PASS, and its attribution is MORE precise than the reviewer's
+`verify` exit 0 (**69 files / 2027 tests**, 81/0 counted by it, GUARDS PASS); guard exit 0 (**90 docs / 7 claims /
+97 quotations, 7 ok verdicts**); checker exit 0 with **14 ✓ counted itself**; no-bypass check exit 0 (**6 ✓**) and
+`no-bypass-guard.sh` exit 0; `run-all.sh` exit 0 with both new guards and checkers present.
+
+**THE PRE-FIX REGRESSION PROOF REPRODUCED INDEPENDENTLY** -- pre-fix guard from `89e6269` + new checker in a `/tmp`
+sandbox -> **FAIL exit 1, 12 pass / 2 fail**, with BOTH new cases named in the failure lines. *That is the round's
+central claim, re-made by a lane that did not write it.*
+
+**And its count attribution went further than the reviewer's:**
+- **The +1 document came from the BASE commit `89e6269`, NOT from the fix** (briefs 88 -> 89).
+- **The +2 quotations are lines 29 and 38 of the new brief** (raw matching lines 103 -> 105).
+- **Claims stayed 7 at EVERY commit.**
+- **`f9ab882`'s own brief edits are NET-ZERO** -- all four old and four new lines match the quotation regex.
+- **The guard excludes 8 claim-block lines from the raw count** (105-8=97, 103-8=95) -- **so the whole delta
+  reconciles, line by line.**
+- **`.scratch/v28/reports/` is NOT in the corpus** (`corpusFiles()` = `plan.md` + `briefs/*.md`) -- *the new report
+  adds nothing, which is what the convention intends.*
+
+**Byte-identity proven**: tree md5 == `git show f9ab882:` md5; **`git hash-object` == `git rev-parse`**; tree clean;
+**mtime predates the commit** -> *"No revert residue."* And the report file: **15854 bytes, 304 lines, 20+ fenced
+raw-tail blocks** -- *"The new convention holds."*
+
+### REVIEWER: **PASS**, and it confirmed MY count was the wrong one
+*"Pre-fix dead refs = slice-6.md:55,56 + slice-6b.md:21,22,30 + checker:15 + guard:16,17 = **8**, so the builder's
+correction of my 'six' is right."* **At HEAD every touched/added locator measures TRUE**, including the B4 note's
+three new ones. It reproduced the pre-fix red itself; confirmed B2's premise directly (`rg -H` -> `f.ts:// a comment`,
+`rg -H -n` -> `f.ts:1:`); confirmed **B3's tighten is right because `>` is a BLOCKQUOTE marker, not a list marker,
+and no corpus line blockquotes a tag** (measured); and confirmed the delta attribution.
+
+### ⚠️ THE ONE RESIDUAL, AND WHY IT EARNS A MICRO-ROUND
+`ladder:` **the no-bypass header's visibility clause says a bypass *"a WRAPPER recorded"* is visible, but the seed
+proves the guard's read path admits a non-prose action text on `logs/HEAD` -- NOT the wrapper-push reading the clause
+invites.** Measured by the reviewer: `GIT_REFLOG_ACTION='push-wrapper: git push --no-verify' git push` **left
+`--no-verify` in NO `.git/logs` file.** *"Same class as B6, one clause of wording -- **not a re-open: the case exists
+and is red without the mechanism.**"*
+
+**RULED -- and it is the 6a precedent applied again: a slice whose entire subject is CLAIMS MATCHING REALITY gets
+ONE CLAUSE fixed, not a paragraph of apology.** The reviewer's own recommendation is the spec (*"name the mechanism
+it proves … rather than 'a bypass a WRAPPER recorded'"*), and the round is scoped **builder + verifier** -- the same
+recorded deviation, because it is comment-and-report only. **Batched with two report nits** (no `sha7` in the report
+file, and an md5 claim with no command behind it) **and one case named for more than it asserts** (case 11 is called a
+quotation but only asserts a zero exit; the class is covered by case 2).
+
+**MICRO-ROUND DISPATCHED** (`slice-6b-micro.md`).
