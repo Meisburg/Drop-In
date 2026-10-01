@@ -5672,3 +5672,33 @@ to a 50 GB model.**
 
 **RESUMED the builder** with its work intact, told it the server died (not its fault), and told it to be economical
 and to run the browser specs one at a time.
+
+## ⚠️ AND THE OOM RESTART REVEALED A SECOND, UNRELATED BREAKAGE: the server began requiring an API key
+
+**Diagnosed exactly, from the process and the server's own source, not guessed:**
+```
+ps  -> ... server.py --engine strata --config strata-iq3_s.json --port 8081 --idle-unload 3600
+/proc/<pid>/environ -> STRATA_API_KEY=<set>                    # the restarted service HAS it
+server.py:626   self.api_key = ""   # when set, /v1/* needs it (Bearer or x-api-key)
+server.py:1424  self._json(401, {"error": {"type": "authentication_error", ...}})   # <- the builder's exact error
+server.py:1941  svc.api_key = a.api_key or cfg.get("api_key", "")
+```
+**The config the service loads (`strata-iq3_s.json`) has NO `api_key`** -- verified by parsing it. **So the key
+arrives from the ENVIRONMENT**, and the restarted process has `STRATA_API_KEY` where the pre-OOM process did not.
+**That is why the same agent config worked for hours and then got a 401: the SERVER changed, not the client.**
+
+**MEASURED, both ways:** `curl /v1/models` with no key -> **401**; with `Bearer strata-local` -> **401** (the literal
+both configs were sending, 12 chars, **byte-identical in `models.json` and `opencode.json`**).
+
+**FIXED, and the secret was never printed:** read the key from the running process's environment, wrote it into
+`~/.pi/agent/models.json` (strata-max `apiKey`) and `~/.config/opencode/opencode.json`
+(`provider.strata-max.options.apiKey`), **both with timestamped backups** (`.bak-20261001-121644`). **VERIFIED:**
+`/v1/models` -> **200** and **a real chat completion -> 200**. The unit file has **no `Environment=` line**, so the
+variable comes from the **user session environment** -- meaning it survives restarts and the old process was started
+under an older environment. **Nothing was weakened: the key was added to the clients, the server was not made
+open.** *(It binds `127.0.0.1` only.)*
+
+**⚠️ AND THE OPEN QUESTION THE NEXT LANE ANSWERS:** whether a **running** pi session re-reads `models.json` per
+request or caches it at startup. If it caches, this fix needs a pi restart before any lane can run -- and the
+builder is told to **stop and report a second 401 rather than retry**, because that would be my problem, not its
+workaround.
