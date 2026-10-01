@@ -5381,3 +5381,54 @@ context and died with it.**
 artifacts, two runs of the fix-relevant spec and one of the Skip spec -- three e2e runs total instead of four),
 a SHORT report limit (*"long reports cost turns, and turns are what ran out"*), and the incremental-evidence
 instruction.** And it is told what its predecessor found, so the full-string name-match observation is not lost.
+
+## Slice 6a REVIEW: **NEEDS_CHANGES** -- and the reshaped brief is why the defect was found
+
+**The review shape worked exactly as designed.** Told to **attack the guard rather than audit it**, the reviewer
+found a blocking defect that a line-by-line read would very likely have missed. **That is the second time this batch
+has learned that a parser is reviewed by falsification.**
+
+### And it cleared BOTH of my brief's defects, independently
+- **`SkippableFirstRunCardCopy` is NOT scope** -- *"it is the minimal honest fix... a type carries no value so there
+  is no second source of the word, and it cannot re-open the defect -- widening back makes `skipLabel` optional
+  again and fails to COMPILE at the prop rather than silently rendering nothing."* **My ruling, confirmed by a lane
+  that had every reason to call it scope.**
+- **Rejecting `?? ''` was right: *"that fallback IS the defect."***
+- **The value change was forced**: *"once the prop is wired the module's value IS the rendered word; keeping
+  'Skip for now' would have changed the UI and broken six e2e sites"* -- and it lists all six.
+- **500 lines is justified**, in-family (`fixture-marker` 637, `vacuous-absence` 506, `stale-locator` 405).
+
+### ⚠️ F1 [BLOCKING] -- field identity is a BARE NAME, so a SIBLING SHAPE's read counts as consumption
+`:288` + `:375` key a declared field by name **within the module**, and any read on **any binding imported from that
+module** satisfies it. **`firstRunCopy.ts` declares two shapes sharing `title` and `body`** -- `FirstRunCardCopy` and
+the untyped `FIRST_RUN_NUDGE_COPY` (`:100-107`). **So `FIRST_RUN_NUDGE_COPY.title` at `App.tsx:195` is accepted as
+the card's consumption -- and the guard's OWN clean output proves it: "read -- title (interface FirstRunCardCopy) at
+src/App.tsx:195" is the nudge's span, not a card's.**
+**Its falsification input is decisive:** *"delete every card's `title` read and the guard still reports `title` READ
+and exits 0 -- **the skipLabel defect, re-opened for any field name shared between two shapes in one module.**"*
+**And it is NOT in `KNOWN LIMITS` -- and it is the same name-collision class the header's exclusion #4 claims to
+close, ONE RUNG INWARD.** → **the guard's stated rule and its implementation disagree, and the disagreement is the
+very defect the guard exists to catch.**
+
+### ⚠️ AND IT CAUGHT A CLAIM OF THE BUILDER'S THAT I HAD ALREADY ACTED ON
+*"the 'zero-fields tripwire fired TWICE during development' claim has **no artifact in the diff** -- unverifiable,
+and not load-bearing."* **I adopted a standing rule on that anecdote one commit earlier.** **The rule STANDS, and
+for the right reason: the MECHANISM is verified in the code** (zero declared fields is a finding `:409-411`; a
+vanished module is a finding `:399`; the check requires both counts non-zero `check.mjs:139-143`). **But the story is
+a claim like any other, and the ledger now records the mechanism as the evidence, not the story.** *A claim that is
+nearly right is still a claim* -- **including one that arrives as a good idea.**
+
+### Routed, not fixed here
+- `docs/product/onboarding-first-run.md:273` still records the `skipLabel` defect as **"Open"**, and `plan.md:118`
+  still calls the field **DEAD AND WRONG** -- **both made false by 6a** → **appended to 8a** (with the same
+  re-measure-then-update-in-place rule).
+- The reviewer's real suggestion -- **use the TypeScript AST** (`typescript@~6.0.2` is already a devDependency) to
+  delete the ~180-line hand-rolled stripper **and close F1 by construction** -- is **cross-cutting** (no existing
+  guard parses with TS) so it is **noted for a future slice, not done now**.
+- No `src/components/FirstRunCard.test.tsx`: **not a law violation** (the sibling rule is scoped to `lib/`).
+- `COPY_MODULES` is a hand-maintained list of one; documented, so the rule's prose is wider than its enforcement.
+  **Accepted; not grown here.**
+
+**FIX ROUND 1 BRIEF WRITTEN** (`slice-6a-fix-1.md`) -- **and it will be DISPATCHED only after the verifier finishes,
+because that fix edits `scripts/` while the verifier is running the gate, which is the interference the batch's
+serialization rule exists to prevent.**

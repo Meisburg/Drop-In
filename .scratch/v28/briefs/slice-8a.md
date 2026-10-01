@@ -151,3 +151,14 @@ times.
 - For each acceptance criterion: the command and its raw output tail.
 - `npm run verify`: exit code, test-file count, test count, lint counts.
 - Anything the plan did not anticipate — **say it rather than quietly fixing it.**
+
+### Two MORE stale spots, found by slice 6a's review after the fix landed (measured today)
+
+Both are prose that slice 6a's change made **false**, and both are in files that slice did not own:
+
+- **`docs/product/onboarding-first-run.md:273`** -- the defect table still records the `skipLabel` defect as
+  **"Open"**. Slice 6a closed it.
+- **`plan.md:118`** -- still says `skipLabel` is **DEAD AND WRONG**. It is neither any more (6a made it a prop and
+  changed its value so the field and the rendered word agree).
+
+**Rule them the way you rule the rest: re-measure, then update in place, never delete.**
