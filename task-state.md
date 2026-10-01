@@ -2160,3 +2160,15 @@ without either a working cloud lane or a change to how the work is executed.
   is a new DB/privacy decision, not a UI change. **Nothing is blocked on this** — the slice is built,
   gated and under review; it is recorded here so it reaches you with the reminder rather than dying in
   a ledger.
+
+### r2 slice 5 -- CLOSED (final-round lanes all green)
+
+Built `6131991`; fix rounds `3215557`, `99880ef`, `2d88a62`. **Review PASS, verify PASS (`verify` exit 0, 69
+files / 2023 tests, lint 81/0, `signup-zip-fallback` x3), `ocr` complete with all 5 findings adjudicated.**
+Delivered: the standalone finish card **deleted** and replaced by a 4-card run + a how-it-works ending; the tour's
+words **as data** (`firstRunTour.ts`) with the honesty rule pinned by test; **one derivation, two callers** for the
+withheld-category guard, with the pattern builder **throwing** so *"guard green, loop empty"* is unconstructable.
+
+**Carried forward:** the escape/pattern-shape single-sourcing + the unreachable-branch and hardcoded-taxonomy nits
+-> **slice 6**; the stale docs + the migration's `26/239` -> **8a**; **6 marker accounts await the batch-end sweep**;
+`places.e2e.ts:2759` unexercised; the teardown-`close()` flake unobserved at `workers: 1`.

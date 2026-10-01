@@ -5046,3 +5046,66 @@ slice that already owns copy/honesty guards.** → **added to slice 6.**
 pattern-build time** instead of passing vacuously -- intended, and pinned by a unit test.
 
 **THREE LANES OUT (final round):** bounded review + verifier (workflow `f0d231e7`), `ocr` on `99880ef..2d88a62`.
+
+## SLICE 5 -- **CLOSED** (final round lanes all green: review PASS, verify PASS, `ocr` complete)
+
+**Built `6131991` -> fixed `3215557` -> `99880ef` -> `2d88a62`.** Three builder rounds, each with all three lanes.
+
+### REVIEW: PASS, no blocking findings
+It verified the round's central claim **in the code**, not from the report: *"Exactly one derivation exists:
+`withheldPlaceCategories()` (`:320`), consumed by `withheldCategoryPattern()` (`:343`), by the unit property
+(`test.ts:221`), and by the e2e (`e2e:218`). The vacuity guard (`test.ts:232`) counts `withheld` and the generated
+loop iterates that same `withheld` (`test.ts:298`)."* And on the throw: *":344-351 throws **before any `RegExp` is
+constructed**, so no empty alternation can reach a `toHaveCount(0)`."* Its requirements-traceability table maps
+**every acceptance item** to a line, and it was **honest about what it could not do**: *"acceptance 5 is partially
+met from where I sit... I am not permitted to run the suite, so the exit-0 claim is attested by that evidence, not
+reproduced by me."* **The verifier reproduced it. Between the two lanes the acceptance is met -- and neither lane
+pretended to have the other's evidence.**
+
+### ⚠️ AND ITS SHARPEST CATCH IS A CORRECTION OF MY ROUND'S OWN HEADLINE CLAIM
+*"One precision on the comment at `:266-269`: what makes 'guard green, loop empty' unconstructable **in the unit
+lane** is the **shared array, not the throw**; the throw closes the **e2e's** absence assertion. Both mechanisms
+together do make the claim true for both callers."*
+**That is exactly right, and my ledger entry above stated the throw as the single mechanism.** The precise version
+is recorded here: **two mechanisms, two lanes -- the shared array makes the unit lane's vacuity unreachable, and
+the throw makes the e2e's empty-alternation unreachable.** The code comment leans too hard on the throw; the
+reviewer's independent argument (a label is a projection with unenforced injectivity) is the stronger one.
+
+### VERIFY: PASS
+`verify` exit 0; **69 files / 2023 tests**; lint **81 / 0** counted by shape after **confirming oxlint prints no
+summary line**; it **re-derived the file count its own way** (73 `*.test.*|*.check.*` on disk **minus 4
+`.check.mjs` guard files = 69**) and reconciled it exactly. `signup-zip-fallback` **three** runs, 8 passed each;
+the pair once, 4 passed. **Flake handling was affirmative rather than assumed:** *"No red run occurred, so no
+re-run was triggered. I verified that affirmatively rather than by assumption: grepped all four logs for
+`failed|flaky|skipped|Error|Target page|ENOENT|Trace|interrupted` -- the only match in each file was the `N
+passed` summary line."* It also named **every listener before and after** and left 4173 free.
+
+### `ocr`: 5 findings, complete -- adjudicated
+| # | Finding | Ruling |
+|---|---|---|
+| O11 | `firstRunTour.ts:352` -- the **pattern shape** `\b…s?\b` + `i` is written **twice**: `placeCategoryPattern` builds it and `withheldCategoryPattern` **re-inlines** it around an alternation | **Real, and it is a genuine gap in this round's own thesis** ("one implementation, two callers" holds for the *derivation* and the *escape*, not for the *shape*). **Routed to slice 6** with the escape copies. |
+| O12 | `:300` -- a **fourth byte-identical copy** of `escapeForRegExp` still lives at `e2e/weekly-series.e2e.ts:89` | **Already routed** -- the builder flagged it and **I appended it to slice-6.md** before this run. Confirmed, not re-opened: **outside slice 5's paths**, and fixing it here would be the scope-absorbing behaviour the batch forbids. |
+| O13 | `e2e:218` -- the throw fires **after the whole signup flow has run** (~30s, a real account), so a vacuous state wastes a run before failing | **ACCEPTED.** The same guard is pinned in the **unit** lane (`test.ts:284`), so it fails in ~20s there. The cheap fix (hoist the pattern to a file-level const) is recorded in slice 6's list. |
+| O14 | `:287` -- `WithheldPlaceCategory.kind` and both params are `string`, so a caller can pass a value outside `PlaceKind` and `placeKindLabel`'s `default` turns it into `"Place"` | **ACCEPTED as a typing nit** -- no current caller does, and the runtime collision guard (`test.ts:262-279`) is the real net. Noted. |
+| O15 | `:339` -- `withheldCategoryPattern` re-declares the same two taxonomy defaults, so "same derivation, cannot drift" holds only for the **no-argument** path | **Real, same root as O11.** Both are one fix: **compose, don't re-inline.** → slice 6. |
+
+### The reviewer's 5 nits, all accepted with reasons
+`:258` -- **the rationale over-states its proof** (`default: return 'Place'` shows a shared word only for kinds
+reaching the default branch); the **decision** is right on the independent argument, so the *comment* should lean
+on that. `test.ts:291` -- a hardcoded `'a Playground place'` inside the one test that must not restate taxonomy →
+**same class as D, one rung smaller** → slice 6. `test.ts:155-160` -- **the third message branch is unreachable**
+(when neither arrangement is named the assertion *passes*) → cosmetic, routed. `test.ts:250` -- an equality that
+silently assumes offered ⊆ all; **loud**, so acceptable. `e2e:218` -- the throw is at run time, not collection →
+same as O13.
+
+**Nothing was silently discarded. Every finding is either fixed, routed with a reason, or accepted with a reason.**
+
+### Residuals carried forward, named rather than buried
+1. **6 marker accounts await the batch-end sweep** (`e2e-1790871615/713/804/884`, `e2e-la-*`, `e2e-lb-*`) --
+   `loop-closing`'s own log says *"persist by design, orchestrator sweep."* **A batch-end obligation, not a defect.**
+2. **`e2e/places.e2e.ts:2759` remains unexercised** by this lane's check set -- *"not a pass, a gap."*
+3. **The teardown-`close()` flake is unobserved, not eliminated** -- 4 green runs is 4 samples, at `workers: 1`.
+4. **Prettier is not a gate** and HEAD already fails `--check` on these files; the builder kept added lines to
+   the repo's style without reformatting pre-existing ones.
+5. **The stale docs and the migration's `26/239`** remain for **8a**; **the escape/pattern-shape class** for
+   **slice 6**; **the live-count guard** (the general form of this whole slice's rule) for **slice 6**.
