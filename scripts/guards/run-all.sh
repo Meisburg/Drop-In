@@ -23,6 +23,11 @@
 #                     route-unreachable target is structurally vacuous
 #   stale-locator   scripts/guards/stale-locator-guard.mjs — a positively-used
 #                     locator literal must still exist somewhere in src
+#   copy-field      scripts/guards/copy-field-consumption-guard.mjs — every
+#                     field of a copy module is read by the app, or allowed
+#                     with a written reason (the definition site is NOT a
+#                     consumer: not the declaration, not the module's data,
+#                     not the module's own test)
 #
 # PROVENANCE: the first two are borrowed patterns from affaan-m/ECC's
 # PostToolUse / PreToolUse hook set, reimplemented as batch gates suited to
@@ -58,7 +63,7 @@ guard_run() {
   esac
 }
 
-for guard in lib-sibling-guard config-guard no-bypass-guard fixture-marker-guard vacuous-absence-guard stale-locator-guard; do
+for guard in lib-sibling-guard config-guard no-bypass-guard fixture-marker-guard vacuous-absence-guard stale-locator-guard copy-field-consumption-guard; do
   script="$(guard_script "$guard")"
   echo
   if [ -z "$script" ]; then
@@ -101,6 +106,7 @@ run_check "fixture-marker-guard (behavior)" scripts/guards/fixture-marker-guard.
 run_check "vacuous-absence-guard (behavior)" scripts/guards/vacuous-absence-guard.check.mjs
 run_check "stale-locator-guard (behavior)" scripts/guards/stale-locator-guard.check.mjs
 run_check "sweep-e2e (decision logic)" scripts/lib/sweep-e2e.check.mjs
+run_check "copy-field-consumption-guard (behavior)" scripts/guards/copy-field-consumption-guard.check.mjs
 
 echo
 echo "==========================================================="

@@ -31,6 +31,16 @@ describe('FIRST_RUN_COPY', () => {
     expect(FIRST_RUN_COPY.area.skipLabel).toBeUndefined()
   })
 
+  // V28 r2 slice 6a: the field is RENDERED now (OnboardingPage passes it to
+  // FirstRunCard's `skipLabel` prop), so its exact value is the button's
+  // accessible name, and the e2e specs locate the control by
+  // getByRole('button', { name: 'Skip' }). "Non-empty" was never the contract
+  // — the WORD is, and it is exactly what the pin above failed to catch while
+  // the module said "Skip for now" and the chrome said "Skip".
+  it('the kids card\u2019s skip label is exactly the word the button renders', () => {
+    expect(FIRST_RUN_COPY.kids.skipLabel).toBe('Skip')
+  })
+
   // The e2e helpers (finishSignup and friends) locate the name card's button
   // by /^Continue/ — that contract lives in the copy, so it is pinned here.
   it('the name card keeps a Continue-matching primary label', () => {

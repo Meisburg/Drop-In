@@ -1354,6 +1354,10 @@ export function OnboardingPage() {
           // write nothing — the /settings nudge banner keeps the prompt.
           setKidsCardDone(true)
         }}
+        // V28 r2 slice 6a: the chrome renders this word verbatim (it has no
+        // label of its own), so the module's copy is what the button says —
+        // and the e2e specs' getByRole('button', { name: 'Skip' }) targets it.
+        skipLabel={kidsCopy.skipLabel}
         testId="first-run-kids-card"
       >
         <div className="flex flex-col gap-2 text-sm">

@@ -15,16 +15,42 @@ export interface FirstRunCardCopy {
   body: string
   /** The primary action button. */
   primaryLabel: string
-  /** Present only on the skippable card (kids). */
+  /**
+   * The Skip control's label. Present only on the skippable card (kids).
+   *
+   * This value IS the word the button shows: FirstRunCard takes `skipLabel`
+   * as a prop (passed by OnboardingPage from this module) and keeps no label
+   * of its own, so the chrome cannot drift from it. V28 r2 slice 6a: it used
+   * to read "Skip for now" while the chrome rendered a hard-coded "Skip" and
+   * nothing in src read the field at all — a field that described a word the
+   * UI never showed, in the module whose whole job is the UI's words.
+   */
   skipLabel?: string
+}
+
+/**
+ * The copy of a card that CAN be skipped: its Skip word is part of its shape,
+ * not an optional extra. `isSkippable` (lib/firstRun.ts) is what DECIDES which
+ * card that is; this type only states that the entry which is skippable
+ * carries the word — so the caller can hand FirstRunCard's `skipLabel` prop
+ * without a fallback, and the chrome never needs a word of its own.
+ */
+export interface SkippableFirstRunCardCopy extends FirstRunCardCopy {
+  skipLabel: string
 }
 
 /**
  * The copy for all four cards, keyed by card id. `primaryLabel` on the name
  * card must keep matching /^Continue/ — the e2e helpers locate it by that
  * (plan.md, slice 3a).
+ *
+ * The `& { kids: … }` half keeps the Record's totality (every card id must be
+ * present) while making the skippable card's Skip word required — V28 r2 slice
+ * 6a. Which cards leave `skipLabel` absent stays pinned by the test.
  */
-export const FIRST_RUN_COPY: Record<FirstRunCardId, FirstRunCardCopy> = {
+export const FIRST_RUN_COPY: Record<FirstRunCardId, FirstRunCardCopy> & {
+  kids: SkippableFirstRunCardCopy
+} = {
   account: {
     title: 'Create your account',
     body: 'Email and password — that is all it takes to start. The rest of the setup takes about a minute.',
@@ -45,7 +71,11 @@ export const FIRST_RUN_COPY: Record<FirstRunCardId, FirstRunCardCopy> = {
     title: "Who's coming?",
     body: 'Add the kids who will come to drop-ins. A name and an age are all we ask — it helps parents and hosts know who is showing up.',
     primaryLabel: 'Continue',
-    skipLabel: 'Skip for now',
+    // Exactly the word the button renders: the e2e specs (signup-zip-fallback,
+    // onboarding-resume, fixtures, auth.setup) locate this control by
+    // getByRole('button', { name: 'Skip' }), so the copy and that name are one
+    // contract, pinned in firstRunCopy.test.ts.
+    skipLabel: 'Skip',
   },
   area: {
     title: 'Where do you live?',

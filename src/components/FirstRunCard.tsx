@@ -13,7 +13,13 @@ import { BackControl } from './BackControl'
  *   ("Continue") — the chrome renders it, it never composes it
  * - the Skip control draws only when the caller hands an `onSkip` —
  *   skippability is the caller's `isSkippable` decision (lib/firstRun.ts);
- *   the chrome just draws the control when told to
+ *   the chrome just draws the control when told to. Its WORD is the same
+ *   kind of caller decision, so `skipLabel` is a PROP beside `onSkip` (V28 r2
+ *   slice 6a) and the chrome keeps no word of its own: a hard-coded fallback
+ *   here was a second source of the label, and it is the reason
+ *   `FIRST_RUN_COPY.kids.skipLabel` could describe a word nothing rendered.
+ *   The pair is unconstructable apart — `onSkip` without `skipLabel` does not
+ *   compile — so the chrome can neither draw an empty button nor invent one.
  *
  * The back control is a callback (`onBack`, button mode) or a destination
  * (`backTo`, link mode), both drawn through the app's one back control
@@ -46,11 +52,6 @@ export type FirstRunCardProps = {
   primaryLabel: string
   /** Disable the primary control (e.g. while a write is in flight). */
   primaryDisabled?: boolean
-  /**
-   * The chrome draws a Skip control when handed a callback — skippability
-   * is the caller's call (lib/firstRun's `isSkippable`).
-   */
-  onSkip?: () => void
   /** Back, button mode: fires when tapped. */
   onBack?: () => void
   /** Back, link mode: the destination. Mutually exclusive with `onBack`. */
@@ -60,6 +61,15 @@ export type FirstRunCardProps = {
 } & (
   | { onPrimary: () => void; primaryForm?: undefined }
   | { primaryForm: string; onPrimary?: undefined }
+) & (
+  /**
+   * The Skip control's two props travel together: `onSkip` is the caller's
+   * skippability decision, `skipLabel` is the word it renders (from
+   * lib/firstRunCopy). Splitting them apart is a type error, which is what
+   * keeps the chrome from ever holding a label of its own.
+   */
+  | { onSkip?: undefined; skipLabel?: undefined }
+  | { onSkip: () => void; skipLabel: string }
 )
 
 export function FirstRunCard({
@@ -72,6 +82,7 @@ export function FirstRunCard({
   primaryForm,
   primaryDisabled = false,
   onSkip,
+  skipLabel,
   onBack,
   backTo,
   testId,
@@ -116,7 +127,7 @@ export function FirstRunCard({
         )}
         {onSkip !== undefined ? (
           <button type="button" onClick={onSkip} className={skipClasses}>
-            Skip
+            {skipLabel}
           </button>
         ) : null}
       </div>
