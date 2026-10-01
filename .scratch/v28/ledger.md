@@ -5901,3 +5901,63 @@ So a **fresh** builder with `slice-6a-finish-ast.md`, whose first instruction is
 write"* and which opens with **my own measurement of the on-disk state** so it does not redo 1,100 lines of work.
 
 **Backed up to `/tmp/6a-fix3-wip/` (outside the repo) before anything else.**
+
+## Slice 6a: THE AST REWRITE IS IN (`47463ba`) -- and the handover builder CORRECTED MY BRIEF
+
+**The fresh builder did not rewrite anything.** It read the three files, ran the guard and the harness, and found
+the gaps were **(a) three inaccurate sentences in the guard's own header and (b) no regression coverage for L3** --
+so its own delta is small and surgical. *"Read the on-disk state and finish"* is the right brief for a handover, and
+this is the proof.
+
+**The rewrite, verified:** the guard is **860 -> 734 lines** (code lines **472 -> 382, -19%**), **17 named functions
+gone** (grep count 0 in the new file, 1 in the old), `patternReads` (L1), the parse-diagnostic fence, seeds 24-28,
+seed 20's `editFile` routing (L4) and the `FirstRunCopyByCard` de-export (L2) all confirmed. **39 seeds, 39 green.**
+
+### ⚠️⚠️ AND IT CAUGHT A LOGICAL ERROR IN MY BRIEF -- an IMPOSSIBLE requirement
+**I wrote that all three K1 inputs exited 1 against the fix-1 guard, and I required "the two regressions must also
+fail against `be29027`".** It measured otherwise:
+> *"**K1a is exit 0 on `be29027`** -- the apostrophe-pairing bug was already in fix 1, so seed 24 is **not a
+> regression, it is a two-round-old bug**. And 'the two regressions must also fail against `be29027`' **cannot hold
+> for seed 25: a seed that catches a regression is BY CONSTRUCTION green against the version that was right.**
+> Seed 25 is red against `a03fc54`, which is the regression."*
+
+**That is a logical impossibility I wrote into an acceptance criterion, and the builder refused to fake it.** *"A
+seed that catches a regression is by construction green against the version that was right"* -- **of course it is,
+and I had asked for the opposite.** **The rule this earns: when a brief demands that a seed fail against TWO
+versions, it is demanding that the fix and the regression be the same thing. Name ONE baseline per seed, and say
+which.** Recorded in the commit message rather than worked around, which is the correct handling.
+
+**K2 is likewise not a regression** -- fix 1 also reported the template hole as READ BY NOTHING -- so the honest
+picture is **one two-round-old bug, one regression, and two older bugs**, each with its own baseline. **My brief
+flattened all four into "regressions", and the seed table is now the corrected version.**
+
+### The seed evidence, TWO-SIDED, and verified twice by the builder over and above what I asked
+| seed | input | vs `a03fc54` (fix 2) | vs `be29027` (fix 1) |
+|---|---|---|---|
+| 24 K1a | `It's 'kidsCopy.skipLabel' here` | **red (exit 0)** | **red (exit 0)** |
+| 25 K1b | `{'docs.kidsCopy.skipLabel'}` | **red (exit 0)** | green (correct) |
+| 26 K1c | `'abc<newline>kidsCopy.skipLabel'` | **red (exit 0)** | **red** |
+| 27 K2 | `` skipLabel={`${kidsCopy.skipLabel}`} `` | **red (READ BY NOTHING)** | **red** |
+| 28 L1 | `const { [zzKey]: title } = FIRST_RUN_COPY.kids` | **red (exit 0)** | green |
+| 17 L3 | `export const zzLabels: Record<string,string>` | **red (no count line)** | **red** |
+
+**Aggregate: vs `a03fc54` -> 6 red / 33 green; vs `be29027` -> 11 red / 28 green** (exactly the 8 known pre-fix-2
+failures **plus** 24, 26, 27 and seed 17's new count half); **current tree -> 39 green / 0 red.** **And it verified
+every one of those twice** -- once with the archived tree's own src, once via `COPY_GUARD_UNDER_TEST` against the
+current src, **both agreeing.** *That is a stronger method than the brief asked for, and it is the method that makes
+"red against the old code" a measurement rather than a claim.*
+
+**Commands:** `verify` exit 0; `typecheck` exit 0; guard 3 shapes / 8 fields / 2 consumers exit 0; **check 39 ✓ / 0 ✗**;
+**the zero-shapes tripwire proven DIRECTLY** (a tree whose copy module declares nothing -> exit 1, firing both the
+per-const blind tripwire and the zero-shapes tripwire), not merely via a seed; `run-all.sh` exit 0; e2e
+`signup-zip-fallback` **8 passed** and `onboarding-resume` **3 passed**, **one spec at a time**.
+
+### And two more things it was honest about
+- **The header quotes the guard's own line count**, so any header edit invalidates the number it quotes. It set it
+  to the measured **734 and stopped editing the header.** *A document that quotes its own measurement is a document
+  that changes when it is edited* -- my own moving-measurement rule, appearing inside the guard.
+- **This repo has NO `verify-<app>` skill** (`.opencode/skills/` holds only `i-have-adhd` and
+  `verification-before-completion`), so the browser evidence is the Playwright list-reporter output, **not a
+  skill-named capture path.** *Naming what it could not produce is the behaviour I want.*
+
+**REVIEWER DISPATCHED, ALONE** (one lane at a time on this machine).
