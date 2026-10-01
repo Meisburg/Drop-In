@@ -6781,3 +6781,30 @@ warnings / 0 errors**, `GUARDS: PASS` ✓. **Both changed e2e specs run TWICE ea
 **structurally impossible rather than documented** -- the batch's own rule -- and touches no protected config. **The
 named cost is real, and the right response to it is a guard improvement, not a retreat: `lib-sibling-guard` seeing
 `.mjs` siblings is now a named item.**
+
+## `ocr` ON 6b's FIX-1: **8 findings, 7 REAL** -- so **6b REOPENS**, and the third lane earned its keep again
+
+**⚠️ 6b WAS CLOSED ON REVIEW+VERIFY AND THE THIRD LANE CAME BACK LATE.** *Per the late-finding rule, a late finding
+is adjudicated **against the state it will land on** -- so I adjudicated these against the post-micro-round tree, and
+**6b reopens** rather than the findings being quietly folded into a future slice.* **This is exactly why `ocr` is an
+invariant rather than an optional lane.**
+
+| # | Finding | Ruling |
+|---|---|---|
+| **#7** | *"Dropping `>` closed only the blockquote shape; **the identical shape survives for examples inside FENCED code blocks and 4-space indented code blocks**"* (`:110`) | ⚠️ **REAL AND CENTRAL.** *This is the trap the guard was BUILT for* -- a document quoting a bad grep must not be judged as claiming it. The previous round closed one shape and the reviewer could only report *"no corpus line blockquotes a tag."* → **F1** |
+| **#1** | case 3 asserts the guard's refusal but **never asserts its own premise**, unlike case 1 | ⚠️ **REAL** -- *the batch's own "a seed must assert its own premise" rule, missing from one case.* If a git version normalised the reflog, the case would **pass while testing nothing.** → **F2** |
+| **#8** | case 3 seeds only the `--no-verify` alternative; **`core\.hooksPath` is a third bypass vector** | **REAL** → **F3** |
+| **#5** | it **re-runs the exact same `rg` invocation** the `try` block already captured; `commented` is by definition `all.length - observed` | **REAL** -- redundant subprocess → **F4** |
+| **#6** | forcing `-H -n` guarantees `path:line:` **only for line-oriented output**; `-l/--files-with-matches` prints paths only | **REAL, latent** -- the same family as the `-H`/`-n` fixes → **F5** |
+| **#2** | a second `execFileSync('git', ...)` **duplicating the conventions the `git()` helper centralises** | **REAL (DRY)** → **F6** |
+| **#3** | the failure-detail expression is now **repeated FOUR times** | **REAL (DRY)** -- *and it is the same construct the verifier independently caught as "a second non-comment line"* → **F7** |
+| **#4** | *"the check name claims the blockquote tag is counted as a QUOTATION, but the assertion only proves it is not judged as a claim"* | ✅ **ALREADY FIXED BY `bce017e`.** The micro-round made case 11 assert the count, and the **verifier mutation-proved it**: against a guard that drops the line the **old** assertion passed (a real false pass) and the **new** one fails. **Recorded as fixed-by-`bce017e`, not re-litigated.** |
+
+**So `ocr` again found real defects this batch's other lanes did not** -- including **two of the batch's own recurring
+classes living inside the guards' own checkers**: *an assertion that does not assert its premise*, and *a stated
+boundary narrower than the implementation*. **And it found them in the very files written to enforce those rules.**
+
+**FIX-2 DISPATCHER QUEUED** (`slice-6b-fix-2.md`) -- **dispatched after 6c closes**, because builders serialize.
+**6b's status: REOPENED, pending fix 2.**
+
+**6c's lanes are running in parallel** (review `a2b500a2`, verify `694e7bee`).
