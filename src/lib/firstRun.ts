@@ -29,9 +29,25 @@ export interface FirstRunFacts {
   hasZip: boolean // home_zip is set
 }
 
+/**
+ * The cards that may be left unanswered — THE AUTHORITY for which ones.
+ *
+ * V28 r2 slice 6a fix 1: before this, "kids is the skippable card" was written
+ * twice — once as `card === 'kids'` in `isSkippable` below, once as the `kids:`
+ * key of the copy module's type annotation — with only a comment claiming they
+ * agreed. The type below is now DERIVED from this list and
+ * `src/lib/firstRunCopy.ts` derives its copy shape from that type, so the
+ * skippable card is named exactly once in src and the copy module cannot
+ * drift from the thing that decides.
+ */
+export const SKIPPABLE_CARDS = ['kids'] as const
+
+/** The ids of the skippable cards, derived from `SKIPPABLE_CARDS`. */
+export type SkippableFirstRunCardId = (typeof SKIPPABLE_CARDS)[number]
+
 /** Which cards may be left unanswered. account/name/area = false. */
 export function isSkippable(card: FirstRunCardId): boolean {
-  return card === 'kids'
+  return (SKIPPABLE_CARDS as readonly FirstRunCardId[]).includes(card)
 }
 
 /**

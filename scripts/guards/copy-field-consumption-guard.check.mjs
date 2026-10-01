@@ -28,14 +28,31 @@
  *      (OnboardingPage's `skipLabel={kidsCopy.skipLabel}`) and the guard must
  *      name `skipLabel`. This is the exact defect slice 6a fixed; if it ever
  *      comes back, this seed is what says so;
- *   7. an allowlisted field WITH a written reason passes;
- *   8. an allowlisted field with NO reason is a finding;
- *   9. an allowlist entry for a field that IS read is a finding (stale
+ *   7. A FIELD IS (SHAPE, NAME), NOT A NAME — the guard's own defect, found in
+ *      review of slice 6a and fixed in fix 1. Delete every CARD's `title` read
+ *      while the nudge's `title` read stays, and the guard must still name
+ *      `FirstRunCardCopy.title` as unread while reporting
+ *      `FIRST_RUN_NUDGE_COPY.title` as read. The first version keyed fields by
+ *      bare name, so the nudge's read satisfied the card's field and this seed
+ *      is what keeps that from coming back;
+ *   8. NO TEST FILE is a consumer — a read of an unread field in some OTHER
+ *      test file (`firstRun.test.ts`) is still a finding. Exempting only the
+ *      copy module's own test would let an unread field buy immunity one file
+ *      over;
+ *   9. a field read ONLY by destructuring (`const { skipLabel } = …`) counts as
+ *      read — otherwise the guard cries wolf at a legitimate read style;
+ *  10. an allowlisted field WITH a written reason passes;
+ *  11. an allowlisted field with NO reason is a finding;
+ *  12. an allowlist entry for a field that IS read is a finding (stale
  *      allowance);
- *  10. an allowlist entry for a field the module does not declare is a finding
+ *  13. an allowlist entry for a field the module does not declare is a finding
  *      (a typo'd allowance guards nothing);
- *  11. a module the parser reads no fields from is a FAIL, not a pass — the
+ *  14. a module the parser reads no shapes from is a FAIL, not a pass — the
  *      tripwire against the guard itself going blind.
+ *
+ * Allowlist seeds key entries as `Shape.field` (`FirstRunCardCopy.zzUnread`),
+ * because that is what a field IS to this guard. A bare-name entry is the F1
+ * bug wearing an allowance.
  *
  * `.check.mjs`, NOT `.test.mjs`: `npm test` discovers `*.test.mjs`, and a
  * top-level `process.exit()` inside the vitest runner kills the run.
@@ -67,12 +84,13 @@ cpSync(path.join(root, 'src'), path.join(sandbox, 'src'), { recursive: true })
 
 const MOD = path.join(sandbox, 'src', 'lib', 'firstRunCopy.ts')
 const TEST = path.join(sandbox, 'src', 'lib', 'firstRunCopy.test.ts')
+const OTHER_TEST = path.join(sandbox, 'src', 'lib', 'firstRun.test.ts')
 const PAGE = path.join(sandbox, 'src', 'pages', 'OnboardingPage.tsx')
 const FOREIGN = path.join(sandbox, 'src', 'lib', 'firstRun.ts')
 
 // Pristine snapshots of every file a seed touches, so each seed starts clean.
 const pristine = new Map(
-  [MOD, TEST, PAGE, FOREIGN].map((f) => [f, readFileSync(f, 'utf8')]),
+  [MOD, TEST, OTHER_TEST, PAGE, FOREIGN].map((f) => [f, readFileSync(f, 'utf8')]),
 )
 const reset = () => {
   for (const [f, text] of pristine) writeFileSync(f, text)
@@ -142,8 +160,8 @@ try {
     `declared=${declared?.[1]} consumers=${consumers?.[1]}`,
   )
   check(
-    'skipLabel is reported as READ, with a site outside the copy module',
-    /read\s+— skipLabel .*at src\/(pages|components)\//.test(r.out),
+    'skipLabel is reported as READ, with its shape and a site outside the copy module',
+    /read\s+— \S*\.skipLabel .*at src\/(pages|components)\//.test(r.out),
     r.out.split('\n').filter((l) => l.includes('skipLabel')).join(' | '),
   )
 
@@ -211,15 +229,68 @@ try {
     `exit ${r.exit}: ${findingLines(r.out)}`,
   )
 
-  // 7-10. The allowance, in both directions.
+  // 7. A field is (shape, name). The card's `title` and the nudge's `title` are
+  //    different fields; a read of one is not consumption of the other. This is
+  //    the guard's OWN defect class, found in review of slice 6a.
+  reset()
+  for (const [find, repl] of [
+    ['FIRST_RUN_COPY.name.title', 'FIRST_RUN_COPY.name.titleX'],
+    ['FIRST_RUN_COPY.area.title', 'FIRST_RUN_COPY.area.titleX'],
+    ['kidsCopy.title', 'kidsCopy.titleX'],
+    ['areaCopy.title', 'areaCopy.titleX'],
+  ]) {
+    editFile(PAGE, find, repl)
+  }
+  r = run()
+  check(
+    "a sibling shape's read does NOT satisfy a shape's own field (card title unread while the nudge title is read)",
+    r.exit !== 0 &&
+      /FirstRunCardCopy\.title/.test(findingLines(r.out)) &&
+      /read\s+— FIRST_RUN_NUDGE_COPY\.title/.test(r.out),
+    `exit ${r.exit}: ${findingLines(r.out)}`,
+  )
+
+  // 8. No test file is a consumer — not just the copy module's own.
   reset()
   declareField()
-  r = run(guardWithAllowlist("    zzUnread: 'a documented reason, in writing',"))
+  editFile(
+    OTHER_TEST,
+    "describe('FIRST_RUN_CARDS', () => {",
+    "describe('FIRST_RUN_CARDS', () => {\n  it('zz', () => {\n    expect(FIRST_RUN_COPY.kids.zzUnread).toBe('zz')\n  })",
+  )
+  editFile(OTHER_TEST, "} from './firstRun'", "} from './firstRun'\nimport { FIRST_RUN_COPY } from './firstRunCopy'")
+  r = run()
+  check(
+    'a read in ANOTHER test file is NOT consumption either',
+    r.exit !== 0 && r.out.includes('zzUnread'),
+    `exit ${r.exit}: ${findingLines(r.out)}`,
+  )
+
+  // 9. A destructured read IS consumption — the guard must not cry wolf at a
+  //    legitimate way of reading a copy value.
+  reset()
+  editFile(
+    PAGE,
+    '    const kidsCopy = FIRST_RUN_COPY.kids\n',
+    '    const kidsCopy = FIRST_RUN_COPY.kids\n    const { skipLabel: destructuredSkip } = FIRST_RUN_COPY.kids\n',
+  )
+  editFile(PAGE, '        skipLabel={kidsCopy.skipLabel}', '        skipLabel={destructuredSkip}')
+  r = run()
+  check(
+    'a field read only by destructuring passes',
+    r.exit === 0,
+    `exit ${r.exit}: ${findingLines(r.out)}`,
+  )
+
+  // 10-13. The allowance, in both directions.
+  reset()
+  declareField()
+  r = run(guardWithAllowlist("    'FirstRunCardCopy.zzUnread': 'a documented reason, in writing',"))
   check('allowlisted WITH a written reason passes', r.exit === 0, `exit ${r.exit}: ${findingLines(r.out)}`)
 
   reset()
   declareField()
-  r = run(guardWithAllowlist('    zzUnread: \'\','))
+  r = run(guardWithAllowlist("    'FirstRunCardCopy.zzUnread': '',"))
   check(
     'allowlisted with NO reason is a finding',
     r.exit !== 0 && r.out.includes('NO REASON'),
@@ -227,7 +298,7 @@ try {
   )
 
   reset()
-  r = run(guardWithAllowlist("    title: 'stale allowance',"))
+  r = run(guardWithAllowlist("    'FirstRunCardCopy.title': 'stale allowance',"))
   check(
     'an allowance for a field that IS read is a finding (stale allowance)',
     r.exit !== 0 && r.out.includes('stale allowance is a hole'),
@@ -242,13 +313,13 @@ try {
     `exit ${r.exit}: ${findingLines(r.out)}`,
   )
 
-  // 11. The guard's own tripwire: a module it parses no fields from is blind.
+  // 14. The guard's own tripwire: a module it parses no shapes from is blind.
   reset()
   writeFileSync(MOD, 'export {}\n')
   r = run()
   check(
-    'a module with no parseable fields FAILS instead of passing (the blind-instrument tripwire)',
-    r.exit !== 0 && r.out.includes('NO declared copy fields'),
+    'a module with no parseable shapes FAILS instead of passing (the blind-instrument tripwire)',
+    r.exit !== 0 && r.out.includes('NO declared copy shapes'),
     `exit ${r.exit}: ${findingLines(r.out)}`,
   )
 } finally {

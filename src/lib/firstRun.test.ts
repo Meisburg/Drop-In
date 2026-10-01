@@ -15,6 +15,7 @@ import {
   isSkippable,
   nextUnfinishedCard,
   progressLabel,
+  SKIPPABLE_CARDS,
   type FirstRunFacts,
 } from './firstRun'
 
@@ -100,6 +101,23 @@ function firstForbidden(source: string): string | null {
 describe('FIRST_RUN_CARDS', () => {
   it('is exactly the four cards, in order', () => {
     expect(FIRST_RUN_CARDS).toEqual(['account', 'name', 'kids', 'area'])
+  })
+})
+
+describe('SKIPPABLE_CARDS — the one authority for which cards may be skipped', () => {
+  // V28 r2 slice 6a fix 1: `isSkippable` used to decide with its own
+  // `card === 'kids'`, while the copy module pinned the same fact a second time
+  // as a `kids:` key in its type annotation, with only a comment claiming they
+  // agreed. Now the list is the source, the id type is derived from it, and
+  // firstRunCopy.ts derives its copy shape from that type.
+  it('is exactly kids', () => {
+    expect(SKIPPABLE_CARDS).toEqual(['kids'])
+  })
+
+  it('is what isSkippable decides — every card agrees with the list', () => {
+    for (const card of FIRST_RUN_CARDS) {
+      expect(isSkippable(card)).toBe((SKIPPABLE_CARDS as readonly string[]).includes(card))
+    }
   })
 })
 

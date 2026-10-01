@@ -7,7 +7,7 @@
  * a small tested module of labels-as-data (src/lib/vibeChips.ts). Plain
  * strings only — no components, no formatting logic beyond interpolation.
  */
-import type { FirstRunCardId } from './firstRun'
+import type { FirstRunCardId, SkippableFirstRunCardId } from './firstRun'
 
 /** The words one card shows. */
 export interface FirstRunCardCopy {
@@ -16,7 +16,9 @@ export interface FirstRunCardCopy {
   /** The primary action button. */
   primaryLabel: string
   /**
-   * The Skip control's label. Present only on the skippable card (kids).
+   * The Skip control's label. Present only on the skippable card — which card
+   * that is comes from `SkippableFirstRunCardId` via `FirstRunCopyByCard`, not
+   * from a card id named here.
    *
    * This value IS the word the button shows: FirstRunCard takes `skipLabel`
    * as a prop (passed by OnboardingPage from this module) and keeps no label
@@ -30,10 +32,11 @@ export interface FirstRunCardCopy {
 
 /**
  * The copy of a card that CAN be skipped: its Skip word is part of its shape,
- * not an optional extra. `isSkippable` (lib/firstRun.ts) is what DECIDES which
- * card that is; this type only states that the entry which is skippable
- * carries the word — so the caller can hand FirstRunCard's `skipLabel` prop
- * without a fallback, and the chrome never needs a word of its own.
+ * not an optional extra. Which card that is comes from
+ * `SkippableFirstRunCardId` (lib/firstRun.ts) — see `FirstRunCopyByCard` below;
+ * this type only states that the entry which is skippable carries the word, so
+ * the caller can hand FirstRunCard's `skipLabel` prop without a fallback and
+ * the chrome never needs a word of its own.
  */
 export interface SkippableFirstRunCardCopy extends FirstRunCardCopy {
   skipLabel: string
@@ -44,13 +47,26 @@ export interface SkippableFirstRunCardCopy extends FirstRunCardCopy {
  * card must keep matching /^Continue/ — the e2e helpers locate it by that
  * (plan.md, slice 3a).
  *
- * The `& { kids: … }` half keeps the Record's totality (every card id must be
- * present) while making the skippable card's Skip word required — V28 r2 slice
- * 6a. Which cards leave `skipLabel` absent stays pinned by the test.
+ * The skippable entry is the only one whose shape carries `skipLabel`, and
+ * WHICH entry that is is DERIVED from `SkippableFirstRunCardId` — the same
+ * authority `isSkippable` reads — rather than restated here as a `kids:` key.
+ * V28 r2 slice 6a fix 1: the annotation used to be
+ * `Record<FirstRunCardId, FirstRunCardCopy> & { kids: SkippableFirstRunCardCopy }`,
+ * which pinned the skippable card a second time in a file whose job is words,
+ * not decisions; if the authority changed, this module would keep requiring the
+ * word on a card that had stopped being skippable, and the only thing noticing
+ * would be a test that happens to assert which keys lack it.
+ *
+ * Totality is kept: the mapped type has a required key for every
+ * `FirstRunCardId`, so adding a card without copy is still a compile error.
  */
-export const FIRST_RUN_COPY: Record<FirstRunCardId, FirstRunCardCopy> & {
-  kids: SkippableFirstRunCardCopy
-} = {
+export type FirstRunCopyByCard = {
+  [K in FirstRunCardId]: K extends SkippableFirstRunCardId
+    ? SkippableFirstRunCardCopy
+    : FirstRunCardCopy
+}
+
+export const FIRST_RUN_COPY: FirstRunCopyByCard = {
   account: {
     title: 'Create your account',
     body: 'Email and password — that is all it takes to start. The rest of the setup takes about a minute.',
