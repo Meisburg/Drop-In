@@ -1598,8 +1598,11 @@ export function distanceMiles(a: { lat: number; lng: number }, b: { lat: number;
 
 /**
  * V15 ticket 02: keep only the places whose coordinates fall within
- * `radiusMiles` of `center` (boundary inclusive — the app's existing radius
- * predicate, withinRadius). A place with UNKNOWN coordinates (lat/lng null or
+ * `radiusMiles` of `center` (boundary inclusive — the comparison is written
+ * inline here as `distance <= radiusMiles`; the feed's own named predicate for
+ * the same rule is `withinRadius` in feed.ts, which this module does NOT call,
+ * so do not read that name as a dependency of this function). A place with
+ * UNKNOWN coordinates (lat/lng null or
  * unresolvable) is EXCLUDED here: this is a radius filter, not the directory's
  * "unknown never hides" rule — the caller (BrowsePage's "See places") has
  * chosen a specific center and radius, and a place we cannot measure against

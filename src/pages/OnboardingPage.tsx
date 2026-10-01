@@ -1276,9 +1276,16 @@ export function OnboardingPage() {
   // bounces this parent to the feed, so this card is the landing — and it is
   // the bridge: the nav does not render during the run at all (App.tsx's
   // `navRenders`), so this is the first time the parent sees the four tabs and
-  // the centre Post action, and its CTA is the crossing. It reads nothing, so
-  // it also renders ahead of the loadError check below — a finished parent has
-  // no reason to see the area card's error state.
+  // the centre Post action, and its CTA is the crossing. It also renders AHEAD
+  // of the loadError check below — and that combination is REACHABLE, not
+  // theoretical: `homeZipSet` comes from the DB profile read (`useSession`,
+  // db.ts), not from a save in this mount, so a returning parent whose
+  // `loadZipCodes()` (the gazetteer) fails is simultaneously `runOver` and
+  // `loadError`. The tour still wins it, correctly: it performs no read of its
+  // own, and the error line below is the AREA card's error state — showing it
+  // here would report a failure on a card this parent is no longer on.
+  // (Pre-existing ordering; V28 r2 slice 5 only removed the places read that
+  // used to sit on this path.)
   if (runOver) {
     return <HowItWorksCard onGoToFeed={() => navigate('/', { replace: true })} />
   }

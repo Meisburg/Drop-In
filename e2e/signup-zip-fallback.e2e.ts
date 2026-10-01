@@ -178,8 +178,11 @@ test('a resolved address writes the home zip with no typed zip (the address-firs
     // places list with the "How Drop In works" TOUR — asserted here, in the
     // one spec that already rides this card: the four tabs and the centre Post
     // action are each named (this is the first screen where the parent meets
-    // the nav, which is suppressed for the whole run), and the run's old
-    // places claim is gone (the negative pin of a removed literal).
+    // the nav, which is suppressed for the whole run), and the card promises
+    // no content the directory cannot put rows behind. Both negative pins are
+    // pins of REMOVED literals (legal for the stale-locator guard): r1's
+    // "real places near you", and the category the app itself withholds
+    // because it holds ZERO of the directory's 239 rows.
     const finishCard = page.getByTestId('first-run-finish-card')
     await finishCard.waitFor({ timeout: 30_000 })
     await expect(finishCard.getByRole('heading', { name: 'How Drop In works' })).toBeVisible()
@@ -190,6 +193,7 @@ test('a resolved address writes the home zip with no typed zip (the address-firs
       ).toBeVisible()
     }
     await expect(finishCard.getByText(/real places near you/i)).toHaveCount(0)
+    await expect(finishCard.getByText(/\bparks?\b/i)).toHaveCount(0)
     await page.getByRole('button', { name: 'Go to your feed' }).click()
 
     // Straight to discovery — the feed is about the RESOLVED zip.

@@ -14,14 +14,37 @@
  * exactly the four cards, and this card is not one of them.
  *
  * ⚠️ THE HONESTY RULE THAT GOVERNS EVERY LINE (this batch's honesty class —
- * four instances already): a line describes what a control DOES, never what
- * is IN it. Measured on the live database (plan.md fact 12): ZERO upcoming
- * drop-ins, and all 20 existing ones hosted from a single ZIP. So a line
- * promising content that exists would be false for every parent alive, and
- * the card makes NO claim about places at all — the Places tab is named
- * because it is one of the four destinations the parent is about to meet, and
- * its line says only what the tab is for. `firstRunTour.test.ts` pins both
- * halves of that rule.
+ * four instances already): every NOUN and every PROMISE on this card is true
+ * of the app as it is, MEASURED. This is not a vocabulary rule — r1's ending
+ * ("Here are a few real places near you") and a line like "look up parks …
+ * and see their hours" are the SAME defect at different volumes, and a test
+ * that bans the word "places" catches neither while the second one ships.
+ * What makes a line true is one of three measurements:
+ *
+ *   - A CATEGORY the card names must be a category the app can put ROWS
+ *     behind. Measured against the live directory (2026-09-29, 239 rows):
+ *     playground 155 · splash_pad 30 · other 26 · pool 10 · beach 9 ·
+ *     library 6 · indoor_play 2 · museum 1 — and `park` and `trail` hold ZERO
+ *     rows, which is exactly why the app withholds those two chips
+ *     (`PLACE_KIND_CHIP_KINDS`) and renders "No “Park” places in the
+ *     directory yet." So the Places line names playgrounds, pools and beaches
+ *     (155, 10 and 9 rows) and never a park.
+ *   - A CAPABILITY the card names must have a DRIVER in the code. "where to
+ *     host" is true whatever the rows say, because the post form feeds its
+ *     place picker from this same directory (`listPlaces` in
+ *     NewPlaydatePage.tsx) — hosting is a capability, not an inventory.
+ *   - An ATTRIBUTE the card promises must be one a row RELIABLY has. Hours are
+ *     not: 184 of 239 rows carry them (20 real OpenStreetMap schedules, 164
+ *     the LABELLED `city_default` "typical hours") and 55 carry none, which is
+ *     why the directory says "…or we don't have their hours yet"
+ *     (PlaceDirectory.tsx). So this card promises no hours.
+ *
+ * `firstRunTour.test.ts` enforces the first two as PROPERTIES over the app's
+ * OWN taxonomy (`PLACE_KINDS` / `PLACE_KIND_CHIP_KINDS` in places.ts), not
+ * over a word list written next to the copy it polices. The third is not
+ * checkable locally — it needs a live count — so the copy makes no such
+ * promise instead of testing for one. The repo-wide guard for this class is
+ * V28 r2 slice 6's; this module does not try to close the class.
  *
  * ⚠️ The centre control is an ACTION, not a fifth tab. `App.tsx` (the
  * `PostActionButton` block) records that V24 slice 05 deliberately reversed
@@ -61,11 +84,13 @@ export const TOUR_BODY =
  * Places because that is where the bar puts it — the order is the parent's
  * first lesson in where things are.
  *
- * Both of the built-but-invisible capabilities ride the Profile line, because
- * both live there (measured): the parent-name search (`searchProfilesByName`
- * in db.ts, driven from ProfilePage's parent-card link control) and the
- * partner link. The card only NAMES them — the flows themselves are unchanged
- * (r2-D5).
+ * The Profile line carries the built-but-invisible capability, because it
+ * lives there (measured): linking a partner's account, whose form is the ONLY
+ * production driver of `searchProfilesByName` (`ProfilePage.tsx:362` — the
+ * name field and the @handle field sit in the same section). So the name
+ * search is stated as a STEP INSIDE that flow, never as a standalone "find
+ * another parent" feature, which does not exist. The card only NAMES the
+ * flow — the flow itself is unchanged (r2-D5).
  */
 export const TOUR_LINES: readonly TourLine[] = [
   {
@@ -81,13 +106,17 @@ export const TOUR_LINES: readonly TourLine[] = [
     detail: 'the + in the middle — put your own on for the neighborhood',
   },
   {
+    // Every noun here has rows behind it (playground 155 · pool 10 · beach 9)
+    // and "host" is a capability the post form actually wires, so the line is
+    // true on an empty day and a full one. No park (0 rows), no hours (55 rows
+    // have none).
     label: 'Places',
-    detail: 'look up parks and playgrounds, and see their hours and where they are',
+    detail: 'look up a playground, a pool, a beach, and pick where to host',
   },
   {
     label: 'Profile',
     detail:
-      'keep you and your kids up to date, find another parent by name, and link your partner’s account',
+      'keep you and your kids up to date, and link your partner’s account — search their name to find them',
   },
 ]
 
@@ -113,17 +142,32 @@ export const TOUR_ACTION_VERBS: readonly string[] = [
   'message',
   'put',
   'look up',
+  'pick',
   'keep',
   'find',
   'link',
 ]
 
 /**
- * The existential claims the card must never make. Each one asserts that
- * content is already there for THIS parent — measured false today (fact 12),
- * and the reason r1's places list left the run.
+ * A REGRESSION PIN, not the guard. These are wordings this batch actually
+ * shipped and removed (r1's ending is the one that cost a review round), kept
+ * so they cannot come back by copy-paste.
+ *
+ * ⚠️ WHY IT IS NOT THE GUARD: a blocklist written next to the copy it polices
+ * is a spell-checker — it can be satisfied by rewording, which is exactly how
+ * the shipped "look up parks … and see their hours" passed a ban on the word
+ * "places" while making the same claim. The guard is the property test in
+ * `firstRunTour.test.ts` (a named category must be a kind the app offers a
+ * chip for) plus the measurements in this module's header. The repo-wide guard
+ * is slice 6's.
+ *
+ * `what’s happening near you` is deliberately NOT here: it was never shipped,
+ * and banning it would forbid the plan's own blessed intent for the Drop Ins
+ * line ("what's happening near you", plan.md's tour table) while the shipped
+ * "see what parents near you are putting on" sailed past it. A list that
+ * contradicts the copy it governs is worse than no list.
  */
-export const TOUR_FORBIDDEN_CLAIMS: readonly string[] = [
+export const TOUR_BANNED_COPY: readonly string[] = [
   'there are',
   'there is',
   'you’ll find',
@@ -132,5 +176,4 @@ export const TOUR_FORBIDDEN_CLAIMS: readonly string[] = [
   'places near you',
   'nearby places',
   'places nearby',
-  'what’s happening near you',
 ]
