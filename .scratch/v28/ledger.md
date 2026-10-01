@@ -6578,3 +6578,34 @@ file, and an md5 claim with no command behind it) **and one case named for more 
 quotation but only asserts a zero exit; the class is covered by case 2).
 
 **MICRO-ROUND DISPATCHED** (`slice-6b-micro.md`).
+
+## ⚠️⚠️ `ocr` RETURNED `status=failed` WITH `comments=0` -- AND THE RULE I WROTE AFTER 6a IS THE ONLY REASON I NOTICED
+
+```
+Review failed: 0 finding(s); 4 of 4 selected item(s) failed.
+Error: review failed: all 4 file review(s) failed — check your LLM configuration and API key
+```
+**A failed run and a clean run BOTH report zero findings.** *"Read a lane's STATUS, never its findings count"* --
+**the rule I wrote when 6a's `ocr` failed for the same reason, one slice ago.** **It has now paid twice.**
+
+**Cause, measured:** `:8081` -> **401**, service `active`, and the journal says *"model unloaded after 3600 s idle; the
+next request loads it again."* **Two candidate causes, so I measured rather than guessed:**
+- **Auth:** the server needs the **15-char** key from its environment. **`ocr` had `sk-strata-local`** -- a
+  DIFFERENT key (the one I put in `opencode.json` for the opencode provider, which is not this server's key).
+- **Cold reload:** the model had unloaded, so a request would have to reload it.
+**The auth cause was the real one** (`/v1/models` with the server's own key -> **200**, a real completion -> **200**).
+**Re-set ocr's key to the server's, and the re-run is reviewing** -- its log shows `✔ file_read` and it has reached
+`scripts/guards/no-bypass-guard.sh`.
+
+**⚠️ AND THERE IS A STRUCTURAL LESSON IN MY OWN CONFIG DRIFT:** I have now set "the key" in **three** places --
+`~/.pi/agent/models.json`, `~/.config/opencode/opencode.json`, and `ocr`'s own `custom_providers` -- and **they
+disagreed**, because the server's key is a *runtime environment value* that the clients each had to be told about
+separately. **The correct shape is that the CLIENTS read the same source the SERVER does**, which is what the
+environment already is. *I am not going to restructure a third-party tool's config mid-batch; recorded as a known
+fragility instead, with the check that finds it: the key is right when `curl` with it returns 200.*
+
+### ⚠️ AND A GENUINELY GOOD SIDE-EFFECT WORTH KNOWING: the local model SELF-HEALS the memory
+`[strata] model unloaded after 3600 s idle` -- **and `free -g` now reads 19G used / 42G AVAILABLE**, where it was
+`61G used / 0G available` while the model was resident. **So the box recovers on its own after an hour idle, and the
+current split is stable:** cloud does the agent lanes, and **the local model is only needed for `ocr`** (which loads
+it on demand). **The OOM risk is now bounded by `ocr` alone, not by four concurrent lanes.**
