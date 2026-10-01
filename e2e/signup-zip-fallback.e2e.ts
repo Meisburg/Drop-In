@@ -173,10 +173,23 @@ test('a resolved address writes the home zip with no typed zip (the address-firs
     // settle, then the save, then the navigation.
     await page.getByRole('button', { name: 'Finish' }).click()
 
-    // The re-keyed save (V28 slice 6, defect #19) renders the run's FINISH
-    // CARD on /onboarding, never a feed bounce — tap its CTA to land.
+    // The re-keyed save (V28 slice 6, defect #19) renders the run's ENDING
+    // CARD on /onboarding, never a feed bounce. V28 r2 slice 5 replaced its
+    // places list with the "How Drop In works" TOUR — asserted here, in the
+    // one spec that already rides this card: the four tabs and the centre Post
+    // action are each named (this is the first screen where the parent meets
+    // the nav, which is suppressed for the whole run), and the run's old
+    // places claim is gone (the negative pin of a removed literal).
     const finishCard = page.getByTestId('first-run-finish-card')
     await finishCard.waitFor({ timeout: 30_000 })
+    await expect(finishCard.getByRole('heading', { name: 'How Drop In works' })).toBeVisible()
+    for (const control of ['Drop Ins', 'Inbox', 'Post a drop-in', 'Places', 'Profile']) {
+      await expect(
+        finishCard.getByText(control, { exact: true }),
+        `the tour names no ${control} line`,
+      ).toBeVisible()
+    }
+    await expect(finishCard.getByText(/real places near you/i)).toHaveCount(0)
     await page.getByRole('button', { name: 'Go to your feed' }).click()
 
     // Straight to discovery — the feed is about the RESOLVED zip.

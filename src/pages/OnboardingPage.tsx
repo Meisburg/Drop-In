@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router'
 import { useSessionContext } from '../components/SessionProvider'
-import { FinishRunCard } from '../components/FinishRunCard'
+import { HowItWorksCard } from '../components/HowItWorksCard'
 import { FirstRunCard } from '../components/FirstRunCard'
 import { useCropStep } from '../components/useCropStep'
 import { useKidPhotoUrls } from '../components/useKidPhotoUrls'
@@ -15,7 +15,6 @@ import {
   HandleTakenError,
   kidAgeFromInput,
   listKids,
-  listPlaces,
   loadZipCodes,
   MAX_KIDS_PER_PROFILE,
   removeKid,
@@ -34,7 +33,6 @@ import {
   validateHomeZip,
 } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
-import { finishRunPlaces, type FinishRunPlace } from '../lib/places'
 import { splitSuggestedName, suggestedHandle } from '../lib/oauth'
 import { ADDRESS_LOOKUP_TIMEOUT_MS, locationFromAddressQueryBounded, type AddressGeocodeResult } from '../lib/geocode'
 import { PlacesMap } from '../components/PlaceMapLazy'
@@ -235,14 +233,15 @@ function KidRowPhoto({
  * (V28 decision 15 —
  * it stays on /settings and the V27 parent-card editor, never a column).
  *
- * V28 slice 6 (plan defect #19): the run's OWN ending. When the required
- * cards are answered (lib/firstRun's `nextUnfinishedCard` returns null —
- * the single source of truth), the page renders the FINISH CARD in place:
- * up to 3 REAL places near the parent (the directory read `listPlaces()`
- * + the gazetteer the area card's load already fetched, ranked by
- * lib/places' `finishRunPlaces` — hours-published first), each linking
- * into the place page, plus the one CTA that carries the parent to the
- * feed. The re-keyed guard (lib/onboarding's resolveOnboardingRedirect)
+ * V28 slice 6 (plan defect #19) → V28 r2 slice 5: the run's OWN ending. When
+ * the required cards are answered (lib/firstRun's `nextUnfinishedCard` returns
+ * null — the single source of truth), the page renders the ending card in
+ * place: the "How Drop In works" TOUR (lib/firstRunTour's five lines — the
+ * four tabs and the Post action — plus the two Profile capabilities), not the
+ * places list r1 shipped. There is NO places read on this path any more: the
+ * card teaches what each control DOES rather than naming parks this parent may
+ * not have, plus the one CTA that carries the parent to the feed. The re-keyed
+ * guard (lib/onboarding's resolveOnboardingRedirect)
  * no longer bounces the finished parent off /onboarding to the feed, and
  * the area card's save no longer navigates — this card IS the landing.
  */
@@ -292,20 +291,10 @@ export function OnboardingPage() {
   const lastNameValue = lastNameTouched ? lastName : suggestedParts.last
 
   const [knownZips, setKnownZips] = useState<ReadonlySet<string> | null>(null)
-  // V28 slice 6: the gazetteer's FULL coordinate map — the finish card's
-  // place selection ranks distances against it. `knownZips` (the same
-  // read's key set) stays for the area card's zip validation.
+  // V28 slice 4: the gazetteer's FULL coordinate map — the area card's own map
+  // resolves its pin and circle against it. `knownZips` (the same read's key
+  // set) stays for the area card's zip validation.
   const [zipCoords, setZipCoords] = useState<ReadonlyMap<string, ZipCoords> | null>(null)
-  // V28 slice 6: the finish card's ranked picks (lib/places'
-  // finishRunPlaces) + its read's error, stored WITH the zip|radius key of
-  // the profile that produced them: when a radius escape rewrites the
-  // profile (updateHomeZipRadius → refresh), the stored key no longer
-  // matches and the card treats the picks as pending (its loading line),
-  // so a stale selection is never shown. That keying is why the effect
-  // below sets state only inside its async .then/.catch — no synchronous
-  // reset.
-  const [finishPicks, setFinishPicks] = useState<{ key: string; picks: FinishRunPlace[] } | null>(null)
-  const [finishPicksReadError, setFinishPicksReadError] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [homeZip, setHomeZip] = useState('')
   const [zipError, setZipError] = useState<string | null>(null)
@@ -607,46 +596,11 @@ export function OnboardingPage() {
       hasZip: true,
     }) === null
 
-  // V28 slice 6: the finish card's place read — the directory (listPlaces,
-  // db.ts's full read: the SAME query the browse surface issues, no new
-  // shape) ranked by lib/places' finishRunPlaces against the gazetteer
-  // the area card's load above already fetched. Keyed on profile so a
-  // radius escape on the card's empty state (updateHomeZipRadius →
-  // refresh) re-runs the selection with the parent's new radius; the
-  // viewer's radius is the one their profile carries (the area card
-  // just saved it).
-  useEffect(() => {
-    if (!runOver || profile === null || zipCoords === null) return
-    let cancelled = false
-    listPlaces()
-      .then((places) => {
-        if (cancelled) return
-        setFinishPicks({
-          key: `${profile.home_zip ?? 'none'}:${profile.radius_miles ?? DEFAULT_RADIUS_MILES}`,
-          picks: finishRunPlaces(
-            places,
-            {
-              homeZip: profile.home_zip ?? null,
-              radiusMiles: profile.radius_miles ?? DEFAULT_RADIUS_MILES,
-            },
-            zipCoords,
-          ),
-        })
-        // A retry that succeeds clears a stale read error (the read is the
-        // only thing that can fail here; the gazetteer's own failure is
-        // the derived line the card computes below).
-        setFinishPicksReadError(null)
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return
-        setFinishPicksReadError(
-          err instanceof Error ? err.message : 'Could not load the places near you.',
-        )
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [runOver, profile, zipCoords])
+  // V28 r2 slice 5: the ending card needs NO read of its own. The places
+  // selection this effect used to run (the directory read, ranked against the
+  // gazetteer by distance and published hours) left the run with the list it
+  // fed — the tour card teaches what the controls do, which is true whether or
+  // not anything is posted near the parent.
 
   if (loading) {
     return (
@@ -1315,42 +1269,18 @@ export function OnboardingPage() {
     )
   }
 
-  // V28 slice 6 (defect #19): the run is OVER → the FINISH CARD is the
-  // run's ending, rendered IN PLACE (before the kids-fact gate so a
+  // V28 slice 6 (defect #19) → V28 r2 slice 5: the run is OVER → the TOUR CARD
+  // is the run's ending, rendered IN PLACE (before the kids-fact gate so a
   // finished parent never sees "Checking your kids…" or gets the kids card
-  // re-offered after a completed run). The re-keyed guard
-  // above no longer bounces this parent to the feed, so this card is the
-  // landing — its picks come from the effect above (or its honest
-  // loading/empty/error states; the empty state is the shared
-  // RadiusEmptyState, whose escapes re-run the selection), and its
-  // primary CTA is the one way to the feed. Rendered before the loadError
-  // check: a failed gazetteer load shows the card's own honest line
-  // (picksError below), not the area card's error state — the finished
-  // parent has no reason to see the location card at all.
+  // re-offered after a completed run). The re-keyed guard above no longer
+  // bounces this parent to the feed, so this card is the landing — and it is
+  // the bridge: the nav does not render during the run at all (App.tsx's
+  // `navRenders`), so this is the first time the parent sees the four tabs and
+  // the centre Post action, and its CTA is the crossing. It reads nothing, so
+  // it also renders ahead of the loadError check below — a finished parent has
+  // no reason to see the area card's error state.
   if (runOver) {
-    // The key of the profile THIS selection belongs to (the effect stores
-    // it with the picks): a radius escape rewrites it, the stale picks
-    // read as pending, and the card shows its loading line until the
-    // effect's re-run lands the new selection.
-    const picksKey = `${profile.home_zip ?? 'none'}:${profile.radius_miles ?? DEFAULT_RADIUS_MILES}`
-    const livePicks = finishPicks !== null && finishPicks.key === picksKey ? finishPicks.picks : null
-    const picksError =
-      finishPicksReadError !== null
-        ? finishPicksReadError
-        : zipCoords === null && loadError !== null
-          ? 'Could not load the places near you.'
-          : null
-    return (
-      <FinishRunCard
-        picks={livePicks ?? []}
-        picksLoading={
-          finishPicksReadError === null && (zipCoords === null || livePicks === null)
-        }
-        picksError={picksError}
-        radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES}
-        onGoToFeed={() => navigate('/', { replace: true })}
-      />
-    )
+    return <HowItWorksCard onGoToFeed={() => navigate('/', { replace: true })} />
   }
 
   if (loadError !== null) {
