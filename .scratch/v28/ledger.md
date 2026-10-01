@@ -4889,3 +4889,62 @@ signup-zip-fallback.e2e.ts:137 › a resolved address writes the home zip … 1 
 Profile: "…find another parent by name…" expected 58 to be greater than 68
 ```
 **Every finding above is adjudicated, none silently discarded. FIX ROUND 2 DISPATCHED** (brief `slice-5-fix-2.md`).
+
+## Slice 5 FIX ROUND 2: DONE (`99880ef`) -- the tour card is now true in both layouts
+
+4 files, **+267/-105**. **My verification:** `firstRunTour.ts:104` names BOTH arrangements (*"along the bottom of
+the screen on a phone, down the left side on a tablet or desktop"*), and `:98`'s comment records why (*"A body
+that said only 'along the bottom' was…"*); the Drop Ins detail (`:130`) is now
+`'browse drop-ins within your radius, soonest first, and ping one to join'` -- **the feed's RULE, which survives
+an empty database**; the vacuity guard exists (`firstRunTour.test.ts:182`, *"the negative half has something to
+check (it never emits zero tests)"*); the e2e spec **imports** `TOUR_LINES, TOUR_TITLE` (`:85`) and consumes them
+(`:200-201`), and **`real places near you` no longer appears anywhere in it**.
+
+### ⚠️ A NUMBER THAT LOOKED WRONG AND WASN'T -- and the reason is the whole point
+My static grep counted **13** `it(` call sites; the builder reported **14 runtime tests**. **The measurement is
+not wrong and neither is the report:** one call site is **inside the loop that emits 2 tests** (the withheld-kind
+property), so **runtime > static by exactly the loop's output.** Recorded because the next reader will count the
+same way I did -- and because *"when a measurement contradicts a fact you already hold, suspect the measurement
+first"* **worked in reverse here: the measurement was right, the naive comparison was wrong.**
+
+### R1 and R2, solved the same way as B1 -- by naming a RULE or a CAPABILITY
+- **R1:** *"Everything below is how you move around the app: along the bottom of the screen on a phone, down the
+  left side on a tablet or desktop."* **True against `App.tsx:482-484` and `:612`, and no third arrangement
+  invented.**
+- **R2:** *"browse drop-ins within your radius, soonest first, and ping one to join"* -- **the feed's radius filter
+  and `starts_at` ordering**, so it holds with **zero upcoming drop-ins.** *"What the tab does" beat *"what is in
+  it"* three times now: the Places line, this line, and the map's fallback note.
+
+### R3's mutation proof, and it is the best-shaped one of the batch
+With `park`/`trail` temporarily added to the chip set so nothing is withheld:
+```
+FAIL firstRunTour.test.ts > the negative half has something to check (it never emits zero tests)
+AssertionError: PLACE_KIND_CHIP_KINDS now covers every PLACE_KINDS entry, so the withheld-category
+  property generates zero tests and has silently degraded to its positive half alone. … expected 0 to be greater than 0
+Tests  1 failed | 11 passed (12)
+```
+**And the test count itself dropped `14 -> 12` as the loop emptied** -- the vacuity is visible in the arithmetic,
+not only in the assertion. That is the strongest form of this proof I have seen in the batch: **it shows the
+silent-green state and names it.**
+
+### R4's proxy, and its honesty
+Structural, not sequential: **same sentence as the link (no terminator between), possessively bound to the
+partner (`their|his|her` + `name`), plus a ban on standalone framing (`any|every|all|other parent`).** Its stated
+miss: *"it reads the sentence, not the app -- a standalone name search shipped elsewhere while this copy stayed
+possessive would pass."* **That is the right limit to state and the right place to state it** (slice 6's class
+guard).
+
+### ⚠️ A NEW NAMED FLAKE MODE, REPORTED RATHER THAN BURIED -- mode #4
+*"One earlier `signup-zip-fallback` run failed on `Target page, context or browser has been closed` inside a
+`finally { await close() }` -- an artifact, not an assertion; it cleared on re-run and did not recur in the three
+post-edit runs. **Not one of the three named flake modes by name; reporting it rather than burying it.**"*
+**That is exactly the behaviour the one-sample rule exists to produce.** It becomes the **fourth named flake
+mode**: a teardown `close()` throwing on an already-closed context -- **it is not evidence of a defect in the
+product, and it must still be re-run once before being believed.**
+
+**Counts (builder): tour file 14 runtime tests (was 12); `npm run verify` exit 0, 69 files, 2019 tests, guards
+PASS; lint exit 0, 81 warnings / 0 errors; e2e 11 passed plus `signup-zip-fallback` alone twice more = three clean
+signup runs post-edit. No listener left on 4173. Prettier is not a gate and HEAD itself fails `--check` -- stated
+rather than silently reformatting.**
+
+**THREE LANES OUT:** bounded review + verifier (workflow `0102c465`), `ocr` on `3215557..99880ef`.
