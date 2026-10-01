@@ -6490,3 +6490,43 @@ with the slice.** *The verifier did attest `verify` green, so the acceptance is 
 not have to take another lane's word for a command it could have been handed.*
 
 **FIX ROUND 1 DISPATCHED** (`slice-6b-fix-1.md`, fresh builder, cloud).
+
+## Slice 6b FIX ROUND 1: DONE (`f9ab882`) -- all six findings closed, and THE REPORT CONVENTION WORKED FIRST TRY
+
+**The report is on disk at `.scratch/v28/reports/slice-6b-fix-1.md` with the raw tails, committed with the slice.**
+*The convention I invented this round, because the last review could not attest the gate without it.* **It worked
+immediately.**
+
+- **B1 fixed** -- all locators corrected (`239->241`, `300->302`) in the guard, its checker, and the five orphans in
+  two briefs.
+- **B2 fixed** -- `-H -n` forced in both `rg` calls, **and seeded**: case 10 is a comment-only claim whose command
+  carries no line number.
+- **B3 fixed by TIGHTENING** -- `>` dropped from the marker allowance and documented -- *"chosen because a changed
+  rule needs a case that fails pre-fix"* -- with case 11 seeding a blockquote example over a bare directory.
+- **B4 fixed** -- and it noted why the previous attempt had not: *"**the prior builder's report was never committed
+  (no on-disk target)**"*, so the corrected locator and reason now live in the guard's own boundary prose.
+- **B5 fixed** -- *"the plain case writes the flag nowhere, so no filter skips it."*
+- **B6 fixed by SEEDING, not demoting** -- a real `GIT_REFLOG_ACTION` wrapper action text that survives the prose
+  filter, requiring a refusal. **Checker cases 3 -> 4 there, 12 -> 14 for the acceptance guard.**
+
+**⚠️ AND IT CORRECTED MY ARITHMETIC AGAIN: I wrote "six dead locators"; it is EIGHT REFERENCES** (guard 2,
+checker 1, briefs 5) **-- which also shows my own brief mis-stated the reviewer's "five orphans in two briefs" as
+three.** *That is the third time this session I have written a number I did not derive, and the second time a lane
+caught it.*
+
+**Its own regression proof:** reverting the guard to HEAD made **2 of 14 checks FAIL -- both new cases red** -- then
+it restored the file and **verified the md5 was equal.** *That is the "a seed green against the broken version is not
+a regression test" rule, applied by the builder without being asked, and with an integrity check on the restore.*
+
+**Commands:** `verify` exit 0 (69 files / **2027 tests**, lint **81/0**, GUARDS PASS); `run-all.sh` exit 0; guard exit
+0 -- **90 docs / 7 claims / 97 quotations** (up from 89/7/95); checker **14 checks**; no-bypass **6 checks**.
+
+### Risks it volunteered
+- **It did NOT half-build the routed citation check** -- *"it needs a live/dated distinction the brief did not
+  authorize."* ✓
+- **And it flagged a real consequence of its own fix:** *"the B4 note adds NEW `file:line` citations to a file nothing
+  checks for staleness (correct at this commit)."* **So the fix for the citation class added citations, in a repo
+  with no citation guard** -- *which is exactly the gap the reviewer named, now demonstrated a second time.*
+- `run-all.sh`'s stale *"the two checkers"* comment (seven now) left untouched.
+
+**THREE LANES OUT** (review + verify as separate parallel calls; `ocr` local).
