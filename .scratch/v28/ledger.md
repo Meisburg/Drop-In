@@ -6281,3 +6281,42 @@ seed message). *A sweep that names its exceptions is worth more than one that de
 worktree; the only hook present is `core.hooksPath=scripts/git-hooks/pre-push`."* -- **which is a fact neither the
 reviewer's earlier ruling nor mine had (we both said "no pre-commit hook"; the worktree does not even have the
 directory).** **VERIFIER DISPATCHED** with that claim explicitly in its brief.
+
+# ✅ SLICE 6a — **CLOSED** (`067d7ad`) — the first slice finished end-to-end on the new model stack
+
+**Chain:** built `16dd303` (which died to an OOM before committing its own work -- it was revived, then split across
+a handover) -> fix 1 `be29027` -> fix 2 `2ffd16a`/`a03fc54` -> fix 3 = **the AST rewrite** `47463ba` -> fix 4 =
+**checker-based attribution** `860893c` -> fix 5 = the numbers `4dc81d0` -> micro `067d7ad`.
+**Lanes, final round: REVIEW (two sentences) -> fixed -> VERIFY PASS -> `ocr` complete with ZERO findings.**
+
+### What actually shipped
+- **`skipLabel` is a PROP** and the module's value now equals the rendered word (`'Skip'`), so the field is read by
+  the chrome instead of being a lie about it.
+- **A copy-field-consumption guard**, registered in both places, that **fails when a declared copy field is read by
+  nothing** -- and that guard is now a **TypeScript AST walk using the TYPE CHECKER for identity**, not names.
+- **A single authority for "which cards are skippable"** (`SKIPPABLE_CARDS` + a mapped type), so a typo is a compile
+  error rather than a silent degradation.
+- **A second guard** (`copy-field-consumption-guard`'s checker) with **48 checks across 33 guard invocations**, each
+  new seed naming **ONE baseline**, and the two-sided property measured: **6 red vs `340d016`, 12 vs `a03fc54`,
+  17 vs `be29027`, 48 ✓ / 0 ✗ now.**
+
+### The three findings that matter most, and none came from me
+1. **A seed green against the broken version is not a regression test.** *Two of that round's seeds passed for
+   reasons unrelated to what they claimed -- one masked by the very bug it was meant to catch.* **~40 mutation
+   proofs in this batch had been treated as sufficient. They are not.**
+2. **A seed must assert its own premise.** Added to the checker after the builder was bitten **twice**, at its own
+   request.
+3. **The name-vs-identity class fired THREE times** before the fix stopped being a fourth name rule and became
+   *"ask the type checker instead."* **On the first attempt the checker exposed a seed that had been testing
+   NOTHING** -- its read was out of scope, which a name table cannot see. *The mechanism is not only stricter, it is
+   legible.*
+
+### Residuals, carried forward honestly
+- **The guard's header still carries hedged machine-local timings**, the last unpinned-by-construction numbers in it.
+- **The data-flow over-report is deliberately unfenced** (my ruling; the reviewer independently agreed): containment
+  needs provenance, and a characterization seed would assert a known false positive as expected behaviour.
+- **`no-bypass-guard` has a demonstrated blind spot** -- its history grep cannot see `--no-verify` on a plain commit,
+  so its PASS is not evidence about the flag. **APPENDED TO 6b** (guard work, same directory).
+- **The `verify-6a.md`/`/tmp` evidence files are scratch**, not tracked.
+
+**6b DISPATCHED** (`slice-6b.md`, fresh builder, cloud). **Queue: 6c, 6d, 8a-8d.**

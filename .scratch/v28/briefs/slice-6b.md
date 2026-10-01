@@ -119,3 +119,22 @@ exact case** — a corpus with no tagged claims — and it must **fail**.
 - **It declared its own scope question rather than deciding it silently** (it added a public type its brief had not
   authorized, and said *"revert it if the reviewer calls it scope"*). **If this brief does not authorize something
   you find you need, say so in the report rather than absorbing it into the diff.**
+
+---
+
+## APPENDED — a REAL limitation in an existing guard, found by a verifier on another slice
+
+A verification lane checked `scripts/guards/no-bypass-guard` while judging a `--no-verify` commit, and reported this
+about the guard itself:
+
+> *"the no-bypass guard's HISTORY grep only sees `--no-verify` on **non-standard reflog action text** (a plain
+> commit's action text is its subject and is filtered), so **its PASS is not by itself evidence about the flag**."*
+
+**So a guard whose stated job includes catching a bypass cannot see the bypass in the common case, and reports PASS
+on a repo where one happened.** *An instrument that matches nothing looks exactly like a clean repo* — the very
+sentence in the guards file you are already being held to.
+
+**You are building a guard in this same directory, so this is in scope: either (a) fix `no-bypass-guard` so its
+history check actually sees `--no-verify`, or (b) make it state what it does and does not cover, with a checker that
+proves the blind spot exists.** *(b) is the honest floor; (a) is better if it is small.* **Do not silently leave it,
+and do not claim it is fixed without a seeded failure that would previously have passed.**
