@@ -13,14 +13,14 @@
  *
  * THE TRAP THIS GUARD WAS DESIGNED AROUND — a naive parser fires on the
  * documentation of the rule it enforces. These documents QUOTE the bad greps in
- * order to condemn them: `plan.md:239` ("⚠️ A blanket `rg "of 5" src/` is NOT
- * the check"), `plan.md:300`, `.scratch/v28/briefs/slice-2.md:49`, and
+ * order to condemn them: `plan.md:241` ("⚠️ A blanket `rg "of 5" src/` is NOT
+ * the check"), `plan.md:302`, `.scratch/v28/briefs/slice-2.md:49`, and
  * `.scratch/v28/briefs/explore-r2-restructure.md:65`. "Extract every acceptance
  * grep line" fails on the brief that exists to explain the defect.
  *
  * THE TAG CONVENTION — this file is its definition. A **claim** is a line whose
- * text, after optional leading whitespace and an optional markdown list marker
- * (`-`, `*`, `+`, `N.`, `>`), begins with the token:
+ * text, after optional leading whitespace and an optional markdown LIST marker
+ * (`-`, `*`, `+`, `N.`), begins with the token:
  *
  *     ACCEPTANCE-GREP:
  *
@@ -29,6 +29,10 @@
  * purpose: a mention of the convention inline (the brief for this guard says "a
  * line tag such as `ACCEPTANCE-GREP:`") is not a claim, and a line-leading token
  * is what makes a claim machine-distinguishable from a quotation of a bad one.
+ * A `>` blockquote marker is deliberately NOT a list marker here: a quoted
+ * EXAMPLE inside a blockquote would then read as a claim, which is the trap this
+ * guard exists to avoid. (Leading whitespace alone IS allowed, because the live
+ * claims in `plan.md` are indented.)
  *
  * The claim's rest is the command it claims to have run, backticked, and the
  * count it asserts, in the documents' existing shape:
@@ -72,7 +76,15 @@
  *
  * WHAT IT IS NOT.
  *   - It does not read prose. A grep the documents quote to condemn is invisible
- *     to it, which is the whole point of the tag.
+ *     to it, which is the whole point of the tag. That boundary has one real
+ *     false negative, named deliberately: a restatement that is not line-leading
+ *     cannot carry the tag. It lives mid-line at
+ *     `.scratch/v28/reports/slice-2-review.md:38-39` ("`middle name|middle
+ *     initial` in `OnboardingPage.tsx` → **0 hits**"; it names no backticked
+ *     `rg` command), and it is ALSO outside the corpus below, which reads only
+ *     `plan.md` and `.scratch/v28/briefs/*.md`. The criterion it restates IS
+ *     tagged — `.scratch/v28/briefs/slice-2.md:107` and `plan.md:306` — so the
+ *     live claim is still judged.
  *   - It judges no claim that asserts a non-zero count beyond rule 2's arithmetic
  *     (the F1 comment exemption applies to every count, because a comment is
  *     never evidence about the code).
@@ -95,7 +107,7 @@ import process from 'node:process'
 
 const ROOT = process.argv[2] ? path.resolve(process.argv[2]) : process.cwd()
 
-const TAG = /^\s*(?:[-*+]\s+|\d+\.\s+|>\s*)?ACCEPTANCE-GREP:/
+const TAG = /^\s*(?:[-*+]\s+|\d+\.\s+)?ACCEPTANCE-GREP:/
 // The claim shape the documents already use: `… → **0 hits**`. `must be` is
 // accepted because one review doc states the same claim that way.
 const COUNT_RE = /(?:→|\bmust be\b)\s*\*{0,2}(\d+)\*{0,2}\s*hits?\b/
@@ -140,8 +152,9 @@ function isBareDirectory(token) {
 }
 
 /** `rg` output line -> the line's CONTENT, so comment-ness is judged on the code
- *  and not on the path prefix. Forced with `-H` so a single-file scope still
- *  carries the `path:line:` prefix. */
+ *  and not on the path prefix. Forced with `-H -n` so a single-file scope still
+ *  carries the `path:line:` prefix: `-H` adds the path, `-n` adds the line
+ *  number, and `contentOf` needs BOTH to strip the prefix and judge the code. */
 function contentOf(rgLine) {
   const m = /^(.+?):(\d+):(.*)$/.exec(rgLine)
   return m === null ? rgLine : m[3]
@@ -232,7 +245,7 @@ for (const file of files) {
     // RULE 2 — the claim is executed. F1: comment lines are exempt.
     let observed = null
     try {
-      const out = execFileSync('rg', [...flags, '-H', '--', pattern, ...scopes], {
+      const out = execFileSync('rg', [...flags, '-H', '-n', '--', pattern, ...scopes], {
         cwd: ROOT,
         encoding: 'utf8',
       })
@@ -250,7 +263,7 @@ for (const file of files) {
     if (observed !== null && observed !== asserted) {
       const commented = (() => {
         try {
-          const out = execFileSync('rg', [...flags, '-H', '--', pattern, ...scopes], { cwd: ROOT, encoding: 'utf8' })
+          const out = execFileSync('rg', [...flags, '-H', '-n', '--', pattern, ...scopes], { cwd: ROOT, encoding: 'utf8' })
           const all = out.split('\n').filter(Boolean)
           return all.length - all.filter((l) => !isComment(contentOf(l))).length
         } catch {

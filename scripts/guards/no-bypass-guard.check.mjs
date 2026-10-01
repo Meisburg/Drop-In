@@ -13,7 +13,7 @@
  * like a clean repo."*
  *
  * It builds REAL temporary repositories rather than simulating git, because the
- * question is what git actually records. Three cases:
+ * question is what git actually records. Four cases:
  *
  *   1. THE BLIND SPOT, PROVEN. A real repo whose hooks are wired, where a
  *      commit was made with `--no-verify` ON THE COMMAND LINE, passes the guard
@@ -26,7 +26,10 @@
  *      `FAST_PUSH_LOG` line — it refuses to certify, exit non-zero. A guard
  *      that failed everything would pass case 1 for the wrong reason; this case
  *      is what proves the instrument still fires where it looks.
- *   3. THE STATIC HALF STILL FIRES. With `core.hooksPath` unwired the guard
+ *   3. THE OTHER VISIBLE PATH, SEEDED. A wrapper-recorded reflog action text
+ *      (a non-prose action, set with `GIT_REFLOG_ACTION`) is a refusal — the
+ *      header names this path, so a case proves it rather than asserting it.
+ *   4. THE STATIC HALF STILL FIRES. With `core.hooksPath` unwired the guard
  *      fails, so "the guard passed case 1" cannot mean "the guard passes
  *      anything".
  *
@@ -134,10 +137,26 @@ try {
     `exit ${r.exit}: ${r.out.split('\n').filter(Boolean).join(' | ')}`,
   )
 
-  // 3. The static half fires: unwired hooksPath is a finding.
+  // 3. The OTHER visible path the header names: a WRAPPER-recorded reflog
+  //    action text (a non-prose action, set with GIT_REFLOG_ACTION) is a refusal.
+  //    Seeded so the coverage statement is proven on both visible paths.
   const dir3 = makeRepo()
-  git(dir3, ['config', '--unset', 'core.hooksPath'])
+  execFileSync('git', ['-C', dir3, 'commit', '-q', '-m', 'wrapper commit'], {
+    encoding: 'utf8',
+    stdio: 'pipe',
+    env: { ...process.env, GIT_REFLOG_ACTION: 'push-wrapper: git push --no-verify' },
+  })
   r = run(dir3)
+  check(
+    'the HISTORY check fires on a WRAPPER-recorded reflog action text',
+    r.exit !== 0 && /recorded bypass history/.test(r.out),
+    `exit ${r.exit}: ${r.out.split('\n').filter(Boolean).join(' | ')}`,
+  )
+
+  // 4. The static half fires: unwired hooksPath is a finding.
+  const dir4 = makeRepo()
+  git(dir4, ['config', '--unset', 'core.hooksPath'])
+  r = run(dir4)
   check(
     'the STATIC check still fires when core.hooksPath is unwired',
     r.exit !== 0 && /core\.hooksPath is/.test(r.out),

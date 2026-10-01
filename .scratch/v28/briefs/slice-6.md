@@ -52,8 +52,8 @@ The plan says the guard "extracts every acceptance grep line from `plan.md` and
 
 | Where | What it says |
 |---|---|
-| `plan.md:239` | "⚠️ **A blanket `rg "of 5" src/` is NOT [scoped]**" |
-| `plan.md:300` | "Measured today, `rg -n "middle name" src/` matches three files" |
+| `plan.md:241` | "⚠️ **A blanket `rg "of 5" src/` is NOT [scoped]**" |
+| `plan.md:302` | "Measured today, `rg -n "middle name" src/` matches three files" |
 | `.scratch/v28/briefs/slice-2.md:49` | "The plan's first acceptance was `rg -n "middle name" src/` → 0 hits. That criterion is itself a defect." |
 | `.scratch/v28/briefs/explore-r2-restructure.md:65` | `rg -n "of 5" src/ e2e/` |
 

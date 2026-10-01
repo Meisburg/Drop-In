@@ -37,17 +37,19 @@
 #                the command line that was run. `git commit --no-verify`
 #                therefore leaves the commit SUBJECT in the reflog and the flag
 #                NOWHERE: the grep below reads no hit, and this guard prints
-#                PASS on a tree where a bypass happened. The filter that skips
-#                git's own prose shapes (below) is the same filter that makes
-#                the ordinary bypass invisible — so the common case, a bypass
-#                with no wrapper, is outside this check. What it CAN see is a
+#                PASS on a tree where a bypass happened. No filter is hiding it:
+#                the plain case writes the flag NOWHERE, so the prose filter below
+#                has nothing to skip — the common case, a bypass with no wrapper,
+#                is outside this check. What it CAN see is a
 #                bypass a WRAPPER recorded (a reflog action text that is not one
 #                of git's prose shapes) or a line in FAST_PUSH_LOG. The blind
-#                spot is PROVEN rather than asserted by
-#                `scripts/guards/no-bypass-guard.check.mjs`, which builds a real
-#                repo, commits with `--no-verify` on the command line, and
-#                requires this guard to report PASS — an instrument that matches
-#                nothing looks exactly like a clean repo, which is the standard
+#                spot AND both visible paths are PROVEN rather than asserted by
+#                `scripts/guards/no-bypass-guard.check.mjs`, which builds real
+#                repos: one commits with `--no-verify` on the command line and
+#                requires this guard to report PASS (the blind spot), one records
+#                a wrapper's reflog action text and one writes FAST_PUSH_LOG, and
+#                both of those require a refusal. An instrument that matches
+#                nothing looks exactly like a clean repo — the standard
 #                `run-all.sh` already sets.
 #
 # PROVENANCE: pattern borrowed from affaan-m/ECC's `block-no-verify.js`

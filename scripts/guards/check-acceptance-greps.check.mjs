@@ -12,7 +12,7 @@
  *   1. the real `plan.md` + briefs pass — and the run reports a NON-ZERO tagged
  *      claim count, so a green over an empty corpus cannot hide here;
  *   2. an UNTAGGED quotation of a bad grep (`rg "of 5" src/` → 0 hits, the exact
- *      shape `plan.md:239` uses to condemn the class) is IGNORED — the guard
+ *      shape `plan.md:241` uses to condemn the class) is IGNORED — the guard
  *      passes and counts it as a quotation, which is the boundary the tag buys;
  *   3. a ZERO claim over a BARE DIRECTORY fails (rule 1), even when the grep is
  *      genuinely empty — a bare directory cannot make the claim checkable;
@@ -27,7 +27,12 @@
  *   8. a corpus with NO tagged claims FAILS (the standing rule, made structural);
  *   9. a MALFORMED tagged claim (a tag the parser cannot read a command or a
  *      count from) FAILS — a claim that cannot be checked looks like one that
- *      holds.
+ *      holds;
+ *  10. F1 does NOT depend on the claim's own flags: a zero claim whose only hit
+ *      is a COMMENT passes even when the doc's command carries no `-n`, because
+ *      the guard forces `-H -n` so the `path:line:` prefix is always complete;
+ *  11. a `>` blockquote line-leading tag is a QUOTATION, not a claim — the
+ *      list-marker allowance excludes `>`, so a quoted example is not judged.
  *
  * The sandboxes are throwaway temp corpora the checker builds and removes; the
  * repo tree is never seeded. `.check.mjs`, NOT `.test.mjs`: `npm test` discovers
@@ -217,6 +222,41 @@ try {
   check(
     'a tagged claim with no COUNT fails (a claim that cannot be read is not one that holds)',
     r.exit !== 0 && /no `→ N hits` count/.test(r.out),
+    `exit ${r.exit}: ${findings(r.out)}`,
+  )
+
+  // 10. F1 must not depend on the claim's own flags. The guard forces `-H -n`,
+  //     so a comment-only hit is exempt even when the doc's command carries no
+  //     `-n`: without `-n` the `path:line:` prefix is incomplete, `contentOf`
+  //     fails, and a comment reads as a HIT (the residual of the `-H` bug).
+  r = run(
+    sandbox({
+      plan: 'ACCEPTANCE-GREP: `rg "zz" src/lib/zz.ts` → **0 hits**.\n',
+      files: { 'src/lib/zz.ts': '// a removal note mentioning zz\nexport const x = 1\n' },
+    }),
+  )
+  check(
+    'F1 holds when the claim command does NOT carry -n (the guard forces -H -n)',
+    r.exit === 0,
+    `exit ${r.exit}: ${findings(r.out)}`,
+  )
+
+  // 11. A `>` blockquote line-leading tag is a quotation of the convention, not
+  //     a claim: the list-marker allowance excludes `>`, so a quoted example is
+  //     never judged even when it states a bad claim.
+  r = run(
+    sandbox({
+      plan: [
+        '> ACCEPTANCE-GREP: `rg -n "zz" src/` → **0 hits**.',
+        'ACCEPTANCE-GREP: `rg -n "zz" src/aaa.ts` → **0 hits**.',
+        '',
+      ].join('\n'),
+      files: { 'src/aaa.ts': 'export const other = 1\n' },
+    }),
+  )
+  check(
+    'a blockquote (`>`) line-leading tag is a QUOTATION, not a claim',
+    r.exit === 0,
     `exit ${r.exit}: ${findings(r.out)}`,
   )
 } finally {

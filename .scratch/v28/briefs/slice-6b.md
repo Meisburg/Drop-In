@@ -18,8 +18,8 @@ removed most of them. **Copying a moving measurement is how a brief becomes wron
 
 | Instance | State |
 |---|---|
-| `plan.md:239` — *"⚠️ **A blanket `rg "of 5" src/` is NOT [scoped]**"* | **verified present today** |
-| `plan.md:300` — *"Measured today, `rg -n "middle name" src/` matches three files"* | **verified present today** |
+| `plan.md:241` — *"⚠️ **A blanket `rg "of 5" src/` is NOT [scoped]**"* | **verified present today** |
+| `plan.md:302` — *"Measured today, `rg -n "middle name" src/` matches three files"* | **verified present today** |
 | `.scratch/v28/briefs/explore-r2-restructure.md:65` — `rg -n "of 5" src/ e2e/` | **verified present today** |
 | `.scratch/v28/briefs/slice-2.md:49` — *"That criterion is itself a defect."* | re-measure before citing |
 | `rg -n "hasPhoto" src/` — the unrelated local | **moved: now `src/lib/places.ts:1075-1076`**, plus a third mention at `src/lib/avatarUrl.test.ts:6` (was cited as `:1070`) |
@@ -27,7 +27,7 @@ removed most of them. **Copying a moving measurement is how a brief becomes wron
 ## ⚠️ THE TRAP THE PLAN DID NOT SEE — the guard would fire on its own documentation
 
 The plan's mechanism was to *"extract every acceptance grep line from `plan.md` and `.scratch/v28/briefs/*.md`."*
-**Measured: those documents QUOTE the bad greps as defects** — `plan.md:239` is *quoting* a bad grep in order to
+**Measured: those documents QUOTE the bad greps as defects** — `plan.md:241` is *quoting* a bad grep in order to
 condemn it, and `explore-r2-restructure.md:65` quotes another. **A naive prose parser fails on the documentation of
 the rule it enforces, and would fail on the brief that exists to explain the defect.** That is not a nit: it is
 the difference between a guard and a nuisance.
