@@ -14,37 +14,54 @@
  * exactly the four cards, and this card is not one of them.
  *
  * ⚠️ THE HONESTY RULE THAT GOVERNS EVERY LINE (this batch's honesty class —
- * four instances already): every NOUN and every PROMISE on this card is true
- * of the app as it is, MEASURED. This is not a vocabulary rule — r1's ending
- * ("Here are a few real places near you") and a line like "look up parks …
- * and see their hours" are the SAME defect at different volumes, and a test
- * that bans the word "places" catches neither while the second one ships.
- * What makes a line true is one of three measurements:
+ * five instances already): every NOUN, every PROMISE and every POSITION this
+ * card states is true of the app as it is, MEASURED. This is not a vocabulary
+ * rule — r1's ending ("Here are a few real places near you"), a line like
+ * "look up parks … and see their hours", "see what parents near you ARE
+ * PUTTING ON" and a body that puts the controls "along the bottom" are the
+ * SAME defect at different volumes, and a test that bans the word "places"
+ * catches none of them. What makes a line true is one of four measurements:
  *
- *   - A CATEGORY the card names must be a category the app can put ROWS
- *     behind. Measured against the live directory (2026-09-29, 239 rows):
- *     playground 155 · splash_pad 30 · other 26 · pool 10 · beach 9 ·
- *     library 6 · indoor_play 2 · museum 1 — and `park` and `trail` hold ZERO
- *     rows, which is exactly why the app withholds those two chips
- *     (`PLACE_KIND_CHIP_KINDS`) and renders "No “Park” places in the
- *     directory yet." So the Places line names playgrounds, pools and beaches
- *     (155, 10 and 9 rows) and never a park.
+ *   - A POSITION the card states must hold in EVERY layout the app renders.
+ *     `App.tsx:482-484` renders the nav TWO ways: `fixed inset-x-0 bottom-0`
+ *     below `md`, and `md:sticky md:top-16` + `md:flex-col` + `md:border-r`
+ *     above it — the comment at `:612` calls the second one "a left rail". So
+ *     the body names BOTH, and a body that says only "the bottom" is wrong on
+ *     every tablet and desktop.
+ *   - A CATEGORY the card names must be a category the app OFFERS. The test's
+ *     proxy is CHIP MEMBERSHIP (`PLACE_KIND_CHIP_KINDS`), not a row count —
+ *     `places.ts:157-166` records that a shipped kind can go empty at runtime,
+ *     so the counts below are a dated measurement note, not a pinned fact, and
+ *     they can rot while the suite stays green. Measured against the live
+ *     directory (2026-09-29, 239 rows): playground 155 · splash_pad 30 ·
+ *     other 26 · pool 10 · beach 9 · library 6 · indoor_play 2 · museum 1 —
+ *     and `park` and `trail` hold ZERO rows, which is why the app withholds
+ *     those two chips and renders "No “Park” places in the directory yet."
+ *     ⚠️ Those counts are of the WHOLE directory. The Places tab defaults to
+ *     the viewer's own radius (`PlaceDirectory.tsx:266` sets `distanceChoice`
+ *     to `'profile'`), so they justify that a KIND EXISTS — never what a given
+ *     parent will actually see. So the Places line names playgrounds, pools
+ *     and beaches (kinds the app offers) and never a park (a kind it withholds).
  *   - A CAPABILITY the card names must have a DRIVER in the code. "where to
  *     host" is true whatever the rows say, because the post form feeds its
  *     place picker from this same directory (`listPlaces` in
- *     NewPlaydatePage.tsx) — hosting is a capability, not an inventory.
+ *     NewPlaydatePage.tsx) — hosting is a capability, not an inventory. Same
+ *     for Drop Ins: the feed's rule (within your radius, soonest first —
+ *     `feed.ts` filters on the radius and orders by `starts_at`) is true on an
+ *     empty day; "what parents are putting on" is not.
  *   - An ATTRIBUTE the card promises must be one a row RELIABLY has. Hours are
  *     not: 184 of 239 rows carry them (20 real OpenStreetMap schedules, 164
  *     the LABELLED `city_default` "typical hours") and 55 carry none, which is
  *     why the directory says "…or we don't have their hours yet"
  *     (PlaceDirectory.tsx). So this card promises no hours.
  *
- * `firstRunTour.test.ts` enforces the first two as PROPERTIES over the app's
- * OWN taxonomy (`PLACE_KINDS` / `PLACE_KIND_CHIP_KINDS` in places.ts), not
- * over a word list written next to the copy it polices. The third is not
- * checkable locally — it needs a live count — so the copy makes no such
- * promise instead of testing for one. The repo-wide guard for this class is
- * V28 r2 slice 6's; this module does not try to close the class.
+ * `firstRunTour.test.ts` enforces the category rule as a PROPERTY over the
+ * app's OWN taxonomy (`PLACE_KINDS` / `PLACE_KIND_CHIP_KINDS` in places.ts),
+ * with a vacuity guard so the negative half cannot silently emit zero tests,
+ * and the position rule as a pairing rule. The attribute rule is NOT checkable
+ * locally — it needs a live count — so the copy makes no such promise instead
+ * of testing for one. The repo-wide guard for this class is V28 r2 slice 6's;
+ * this module does not try to close the class.
  *
  * ⚠️ The centre control is an ACTION, not a fifth tab. `App.tsx` (the
  * `PostActionButton` block) records that V24 slice 05 deliberately reversed
@@ -56,8 +73,8 @@
 /** One line of the tour: a control the parent is about to meet, and its job. */
 export interface TourLine {
   /**
-   * The control's OWN word, as the parent will read it in the bar — the
-   * `NavTab` labels and `PostActionButton`'s aria-label, in the bar's order.
+   * The control's OWN word, as the parent will read it in the nav — the
+   * `NavTab` labels and `PostActionButton`'s aria-label, in the nav's order.
    * Pinned against App.tsx by firstRunTour.test.ts.
    */
   label: string
@@ -72,17 +89,26 @@ export const TOUR_PROGRESS_LABEL = 'All done'
 export const TOUR_TITLE = 'How Drop In works'
 
 /**
- * The body: it says where the five controls are (the parent has not seen the
- * bar yet — the nav is suppressed for the whole run) and promises nothing.
+ * The body: it says where the controls are (the parent has not seen them —
+ * the nav is suppressed for the whole run) and promises nothing.
+ *
+ * ⚠️ IT NAMES BOTH LAYOUTS BECAUSE THE APP HAS TWO. `App.tsx:482` is
+ * `fixed inset-x-0 bottom-0 … md:sticky md:top-16 … md:border-r md:border-t-0`
+ * and `:484` switches the inner flex `flex-row md:flex-col`; `:612` calls the
+ * md+ arrangement "a left rail". A body that said only "along the bottom" was
+ * wrong on every tablet and desktop — the same class as the Places defect,
+ * on the one card whose whole job is saying where the controls are. Do not
+ * add a third arrangement: there are exactly two.
  */
 export const TOUR_BODY =
-  'Everything below lives in the bar along the bottom of the screen. Here is what each part does.'
+  'Everything below is how you move around the app: along the bottom of the screen on a phone, down the left side on a tablet or desktop. Here is what each part does.'
 
 /**
- * The five lines, in the order the bar renders them (App.tsx: Drop Ins,
+ * The five lines, in the order the nav renders them (App.tsx: Drop Ins,
  * Inbox, the Post action, Places, Profile). The action sits BETWEEN Inbox and
- * Places because that is where the bar puts it — the order is the parent's
- * first lesson in where things are.
+ * Places because that is where the nav puts it — the order is the parent's
+ * first lesson in where things are, in either arrangement (bottom bar below
+ * md, left rail above it).
  *
  * The Profile line carries the built-but-invisible capability, because it
  * lives there (measured): linking a partner's account, whose form is the ONLY
@@ -94,8 +120,14 @@ export const TOUR_BODY =
  */
 export const TOUR_LINES: readonly TourLine[] = [
   {
+    // The feed's RULE, not its contents: `feed.ts` filters the feed to the
+    // viewer's radius and orders it by `starts_at`, and pinging is the join
+    // action. All three hold with zero upcoming drop-ins, which is every
+    // parent today (fact 12). The shipped "see what parents near you ARE
+    // PUTTING ON" asserted current activity — the existential presupposition
+    // r1's places list carried, reworded.
     label: 'Drop Ins',
-    detail: 'see what parents near you are putting on, and ping one to join',
+    detail: 'browse drop-ins within your radius, soonest first, and ping one to join',
   },
   {
     label: 'Inbox',
@@ -106,10 +138,11 @@ export const TOUR_LINES: readonly TourLine[] = [
     detail: 'the + in the middle — put your own on for the neighborhood',
   },
   {
-    // Every noun here has rows behind it (playground 155 · pool 10 · beach 9)
-    // and "host" is a capability the post form actually wires, so the line is
-    // true on an empty day and a full one. No park (0 rows), no hours (55 rows
-    // have none).
+    // Both nouns are kinds the app OFFERS a chip for, and "host" is a
+    // capability the post form actually wires — so the line is true on an
+    // empty day and a full one. It names no park (a kind the app withholds
+    // because it holds zero rows) and promises no hours (55 rows have none).
+    // The measured counts are in this module's header, with their limits.
     label: 'Places',
     detail: 'look up a playground, a pool, a beach, and pick where to host',
   },
@@ -137,7 +170,7 @@ export const TOUR_PRIMARY_LABEL = 'Go to your feed'
  * keeps finding.
  */
 export const TOUR_ACTION_VERBS: readonly string[] = [
-  'see',
+  'browse',
   'ping',
   'message',
   'put',
@@ -158,14 +191,17 @@ export const TOUR_ACTION_VERBS: readonly string[] = [
  * the shipped "look up parks … and see their hours" passed a ban on the word
  * "places" while making the same claim. The guard is the property test in
  * `firstRunTour.test.ts` (a named category must be a kind the app offers a
- * chip for) plus the measurements in this module's header. The repo-wide guard
- * is slice 6's.
+ * chip for, with a vacuity guard) plus the measurements in this module's
+ * header. The repo-wide guard is slice 6's.
  *
- * `what’s happening near you` is deliberately NOT here: it was never shipped,
- * and banning it would forbid the plan's own blessed intent for the Drop Ins
- * line ("what's happening near you", plan.md's tour table) while the shipped
- * "see what parents near you are putting on" sailed past it. A list that
- * contradicts the copy it governs is worse than no list.
+ * `what’s happening near you` is NOT here: it was never shipped verbatim, and
+ * a pin of an unshipped phrase is the spell-checker failure again. The phrase
+ * that DID ship in that shape — "what parents near you are putting on" — IS
+ * here, because fix round 2 removed it (two lanes read it as r1's existential
+ * presupposition reworded: the present-progressive asserts current activity,
+ * and there are zero upcoming drop-ins for every parent today). The lesson
+ * from that round is the order of operations: the WORDING changed, and the pin
+ * followed the wording — not the other way round.
  */
 export const TOUR_BANNED_COPY: readonly string[] = [
   'there are',
@@ -176,4 +212,5 @@ export const TOUR_BANNED_COPY: readonly string[] = [
   'places near you',
   'nearby places',
   'places nearby',
+  'parents near you are putting on',
 ]

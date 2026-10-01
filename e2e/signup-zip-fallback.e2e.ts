@@ -76,6 +76,14 @@
  */
 import { expect, test, type Browser, type Page } from '@playwright/test'
 import { readMarkerMeta } from './fixtures'
+// The tour's WORDS are data in src/lib/firstRunTour (slice 5). Restating them
+// here meant a legitimate copy change needed three edits and this spec failed
+// for a reason unrelated to zip fallback (fix round 2, R6 — flagged by two
+// lanes). Only the CTA locator stays a literal: `getByRole('button', { name:
+// 'Go to your feed' })` is the load-bearing identifier e2e/auth.setup.ts and
+// e2e/fixtures.ts use as a literal too, and its tripwire is meant to be visible.
+import { TOUR_LINES, TOUR_TITLE } from '../src/lib/firstRunTour'
+import { PLACE_KINDS, PLACE_KIND_CHIP_KINDS, placeKindLabel } from '../src/lib/places'
 
 /** The card's Nominatim request (lib/geocode's searchFirst, one URL shape). */
 const NOMINATIM_ROUTE = /https:\/\/nominatim\.openstreetmap\.org\/search\?/
@@ -175,25 +183,43 @@ test('a resolved address writes the home zip with no typed zip (the address-firs
 
     // The re-keyed save (V28 slice 6, defect #19) renders the run's ENDING
     // CARD on /onboarding, never a feed bounce. V28 r2 slice 5 replaced its
-    // places list with the "How Drop In works" TOUR — asserted here, in the
-    // one spec that already rides this card: the four tabs and the centre Post
-    // action are each named (this is the first screen where the parent meets
-    // the nav, which is suppressed for the whole run), and the card promises
-    // no content the directory cannot put rows behind. Both negative pins are
-    // pins of REMOVED literals (legal for the stale-locator guard): r1's
-    // "real places near you", and the category the app itself withholds
-    // because it holds ZERO of the directory's 239 rows.
+    // places list with the "How Drop In works" TOUR: the four tabs and the
+    // centre Post action are each named (this is the first screen where the
+    // parent meets the nav, which is suppressed for the whole run), and the
+    // card promises no category the app withholds.
+    //
+    // EXACTLY ONE browser pin, and it earns its place by inspecting the
+    // RENDERED card rather than the constant: the unit layer proves the copy
+    // never NAMES a withheld category, but only the browser proves the card
+    // that reaches a parent's screen RENDERS none. The pattern is DERIVED from
+    // the same exported taxonomy the unit guard reads (`PLACE_KINDS` minus
+    // `PLACE_KIND_CHIP_KINDS`), so it cannot drift from it — no hardcoded
+    // "park" to rot here.
     const finishCard = page.getByTestId('first-run-finish-card')
     await finishCard.waitFor({ timeout: 30_000 })
-    await expect(finishCard.getByRole('heading', { name: 'How Drop In works' })).toBeVisible()
-    for (const control of ['Drop Ins', 'Inbox', 'Post a drop-in', 'Places', 'Profile']) {
+    await expect(finishCard.getByRole('heading', { name: TOUR_TITLE })).toBeVisible()
+    for (const line of TOUR_LINES) {
       await expect(
-        finishCard.getByText(control, { exact: true }),
-        `the tour names no ${control} line`,
+        finishCard.getByText(line.label, { exact: true }),
+        `the tour names no ${line.label} line`,
       ).toBeVisible()
     }
-    await expect(finishCard.getByText(/real places near you/i)).toHaveCount(0)
-    await expect(finishCard.getByText(/\bparks?\b/i)).toHaveCount(0)
+    const withheldKindLabels = PLACE_KINDS.filter(
+      (kind) => !(PLACE_KIND_CHIP_KINDS as readonly string[]).includes(kind),
+    ).map((kind) => placeKindLabel(kind))
+    // The same vacuity guard the unit property carries: an empty pattern list
+    // would make the toHaveCount(0) below pass by matching nothing.
+    expect(
+      withheldKindLabels.length,
+      'no kind is withheld, so this pin asserts nothing',
+    ).toBeGreaterThan(0)
+    const withheldPattern = new RegExp(
+      `\\b(${withheldKindLabels
+        .map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('|')})s?\\b`,
+      'i',
+    )
+    await expect(finishCard.getByText(withheldPattern)).toHaveCount(0)
     await page.getByRole('button', { name: 'Go to your feed' }).click()
 
     // Straight to discovery — the feed is about the RESOLVED zip.

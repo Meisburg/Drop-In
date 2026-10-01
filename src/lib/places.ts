@@ -7,7 +7,14 @@
  * (ordering, day grouping, radius filtering). This owns the place ENTITY —
  * matching, filtering, distance, and labels over a directory row. The one
  * thing they share is the distance math (feed.haversineMiles), which is
- * imported rather than reimplemented.
+ * imported rather than reimplemented. ⚠️ THAT CLAIM COVERS THE MATH, NOT EVERY
+ * PREDICATE: the radius COMPARISON is written inline here (`distance <=
+ * radiusMiles` in filterPlacesByRadius) rather than calling feed's one-line
+ * `withinRadius`, and that is deliberate — this filter's rule about places
+ * with UNKNOWN coordinates is its own, and it is documented at that function.
+ * So do not read feed.withinRadius as a dependency of this module, and do not
+ * "re-share" the comparison mid-slice without a decision recorded where it
+ * lives.
  */
 import {
   cardWhenLabel,
