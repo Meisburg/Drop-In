@@ -6436,3 +6436,57 @@ mangled.**
   concurrent by construction.* **The only thing a workflow buys me here is a joint receipt, and that is not worth a
   parse failure that silently kills both lanes.** *This is the `rg -r` lesson one layer up: the tool that can
   fabricate or fail on quoting is the tool to stop using for anything I type by hand.*
+
+## Slice 6b lanes: **VERIFY PASS**, **REVIEW NEEDS_CHANGES** -- and the guard's own header documents its trap with FALSE LOCATORS
+
+### VERIFIER: PASS, and it counted the instrument's own output rather than trusting it
+`verify` exit 0 (**69 files / 2027 tests**, lint 81/0 counted its own way, GUARDS PASS, **both new guards registered**
+-- confirmed in `run-all.sh` source at lines 269/402/409). The guard exits 0 and **it counted 7 `ok` lines = 7 tagged
+claims -> MATCH** ✓. **And it judged the 95 ignored quotations `plausible, not suspicious` with a RATIO ARGUMENT it
+built itself:** 87 raw occurrences across 29 files, ~1.07 quotation lines per document, **7:95 ~ 13:1
+tagged-to-quoted boundary ratio** -- *"a ratio argument, not a per-line audit"*, **which it labels as such** ✓. The
+checker's 12 `✓` = MATCH ✓. `no-bypass-guard.check.mjs` exit 0 with its 5 cases ✓. Provenance clean: **`09d9af5` the
+only source commit and NO file under `src/` across the whole range** ✓. **`no-bypass-guard` was GREEN in all three
+invocations** and it said so rather than re-running it until green ✓.
+
+### ⚠️ REVIEW: **B1 [BLOCKING] -- six dead locators, and THREE ARE INSIDE THE NEW GUARD ITSELF**
+**`check-acceptance-greps.mjs:16-17` cites `plan.md:239`/`:300` for the two condemned quotations, but THIS COMMIT
+REFLOWED `plan.md`, so those texts now sit at `:241`/`:302` -- and `plan.md:239` today is ``…firstRun.ts` -> 0
+hits.``** `check-acceptance-greps.check.mjs:15` repeats the dead `:239`. Plus **five orphans in two briefs**
+(`slice-6b.md:21,:22,:30` -- *whose table says "verified present today"* -- and `slice-6.md:55,:56`).
+
+**The reviewer's framing is the finding:** *"The new guard's own header documents the trap with locators that are
+FALSE at HEAD. **Same class the builder already fixed at `plan.md:440-441`** -- the correction was paid for two
+references and skipped in three, **one of them inside the new file itself**."* **A guard built to catch false
+acceptance claims, whose own header makes false locational claims, in the commit that created it.**
+
+**⚠️ AND IT PROPOSED THE RUNG THIS CLASS BELONGS ON:** *"the rung this class belongs on is a
+**`file.md:NNN` citation check, which no guard covers.**"* **That is a genuinely new guard idea and it now has a
+demonstration: this commit created six dead citations and fixed two others by hand.** **ROUTED as a named future
+item** -- *the honest version is hard (a dated record is ALLOWED to cite a line that has since moved, so the rule
+needs a live-vs-dated distinction), and that difficulty is the reason to name it rather than half-build it.*
+
+### The five smaller findings, all fair
+- **`:145,:151,:235`** -- F1's comment detection needs a `path:line:` prefix, but **only `-H` is forced, not `-n`**.
+  Measured: `rg -H -- "zz" f.ts` -> `f.ts:// a comment with zz`, so `contentOf()` fails and **a comment-only hit
+  counts as a HIT**. *"Latent -- all 7 live claims carry `-n` -- but it is the residual of the `-H` bug this slice
+  says it fixed."*
+- **`:98`** -- the `>` marker allowance would read **a line-leading tag inside a quoted example** as a claim
+  (constructed; **no live instance** -- only 4 `ACCEPTANCE-GREP` occurrences across 89 docs, all mid-line).
+- **`:109-130`** -- the named false negative is **out of corpus as well as mid-line**, is at
+  `reports/slice-2-review.md:38-39` (**not `:35`**), names no backticked `rg` command, and **its duplicate IS
+  tagged**. *Naming it was right; the locator and reason are imprecise.*
+- **`no-bypass-guard.sh:40-42`** -- the **mechanism sentence is wrong**: the checker's own premise proves the RAW
+  reflog holds no flag at all, **so no filter is responsible.** *Right conclusion, wrong sentence.*
+- **`no-bypass-guard.sh:44-45`** -- asserts **a second visibility path with no checker case seeding it** ->
+  *"that half of the coverage statement is unproven."*
+
+### ⚠️ AND A CONVENTION DEFECT OF MINE, which cost the review a check
+*"I could not see the builder's raw 'Commands run' output: there is no report on disk
+(`.scratch/v28/reports/` holds only `slice-2-review.md`), only the ledger's paraphrase; **`npm run verify` is
+therefore not independently attested by me.**"* **My briefs say "the report" without saying where a report LIVES.**
+**RULED: from this round, every builder writes `.scratch/v28/reports/<slice>.md` with the raw tails and commits it
+with the slice.** *The verifier did attest `verify` green, so the acceptance is met across lanes -- but a lane should
+not have to take another lane's word for a command it could have been handed.*
+
+**FIX ROUND 1 DISPATCHED** (`slice-6b-fix-1.md`, fresh builder, cloud).
