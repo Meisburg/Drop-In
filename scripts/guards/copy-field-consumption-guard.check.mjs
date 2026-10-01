@@ -81,6 +81,42 @@
  *  22. an interface used as a Record KEY is not mistaken for a copy shape, so
  *      its own fields are not reported as unread copy.
  *
+ * Seeds 24-28 are the fix-3 round, written against the AST rewrite. The two
+ * blocking findings they pin were both measured on the scanner, and one pair was
+ * a REGRESSION against fix 1:
+ *
+ *  24. JSX TEXT with an apostrophe, then a quoted read (`It's 'kidsCopy.skipLabel'
+ *      here`). The scanner's string rule decided whether a quote had a same-line
+ *      PARTNER, not whether it OPENED a string, so an odd number of apostrophes
+ *      paired with the literal's opening quote, blanked through it, and scanned
+ *      the literal's BODY as code — consumption manufactured out of a word inside
+ *      a string. An AST has no such decision to make: the literal is a node.
+ *  25. The same, with the read inside a JSX expression container
+ *      (`What's next? See {'docs.kidsCopy.skipLabel'}`). REGRESSION: fix 1 exited
+ *      1 on this input, fix 2 exited 0.
+ *  26. A string continued across a newline (`const zzCont = 'abc<newline>
+ *      kidsCopy.skipLabel'`). REGRESSION. TypeScript's error recovery turns the
+ *      second line into a REAL property-access node, so the AST alone does not
+ *      close this: the guard refuses every read from a file with parse
+ *      diagnostics AND reports the file, so a broken file can neither fake a read
+ *      nor pass unseen. The seed asserts both halves.
+ *  27. A read inside a TEMPLATE HOLE (`skipLabel={`${kidsCopy.skipLabel}`}`) IS
+ *      consumption. The scanner claimed a hole was code in one line and erased it
+ *      in the next, so the most natural way of rendering words came out `READ BY
+ *      NOTHING` — the fires-on-clean-code class. A hole is an expression node.
+ *  28. A COMPUTED-KEY destructure (`const { [zzKey]: title } = FIRST_RUN_COPY
+ *      .kids`) does not count its LOCAL BINDING as a read. The scanner's
+ *      `patternLeaves` returned `["k","title"]` for `[k]: title`, so a variable
+ *      name became consumption — the same lying direction as 24-26.
+ *
+ * Every seed added from fix 2 onward asserts its OWN PREMISE (what it deleted,
+ * what still exists), because two seeds in fix 2 passed for reasons unrelated to
+ * what they claimed. And every new seed must be shown to FAIL against the code
+ * before the change it guards: `COPY_GUARD_UNDER_TEST=<path to the older guard>`
+ * runs these same seeds against that guard, which is how the pre-fix exits in the
+ * commit message were obtained. The hook exists for that proof and for nothing
+ * else — pointing it at a different file does not make the check pass.
+ *
  * THE HARNESS ITSELF IS NOT ALLOWED TO CRASH (fix 2, item H). Seed inputs are
  * checked for existence and reported as named failures — a renamed or deleted
  * `firstRun.test.ts` used to throw while building the pristine snapshots,
@@ -107,12 +143,19 @@
  */
 
 import { execSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
 const root = path.join(import.meta.dirname, '..', '..')
-const guard = path.join(root, 'scripts', 'guards', 'copy-field-consumption-guard.mjs')
+/** `COPY_GUARD_UNDER_TEST` runs these seeds against a DIFFERENT copy of the
+ *  guard — used once, to prove a new seed fails against the code it was written
+ *  for (a seed that is green against the broken version is not a regression
+ *  test). It is not a way to make this check pass: the default is the guard in
+ *  this repo, and the run says which file it used. */
+const guard = process.env.COPY_GUARD_UNDER_TEST
+  ? path.resolve(process.env.COPY_GUARD_UNDER_TEST)
+  : path.join(root, 'scripts', 'guards', 'copy-field-consumption-guard.mjs')
 
 if (!existsSync(guard)) {
   console.error(`check: guard missing at ${guard}`)
@@ -126,6 +169,13 @@ if (!existsSync(path.join(root, 'src'))) {
 const guardSrc = readFileSync(guard, 'utf8')
 const sandbox = mkdtempSync(path.join(os.tmpdir(), 'copy-field-check-'))
 cpSync(path.join(root, 'src'), path.join(sandbox, 'src'), { recursive: true })
+// The allowance seeds run a PATCHED COPY of the guard that lives inside the
+// sandbox, and the guard imports `typescript` (it walks the AST now). Node
+// resolves packages by walking up from the importing file, so the sandbox needs
+// the repo's node_modules on that path — symlinked, never copied.
+if (existsSync(path.join(root, 'node_modules'))) {
+  symlinkSync(path.join(root, 'node_modules'), path.join(sandbox, 'node_modules'), 'dir')
+}
 
 const MOD = path.join(sandbox, 'src', 'lib', 'firstRunCopy.ts')
 const TEST = path.join(sandbox, 'src', 'lib', 'firstRunCopy.test.ts')
@@ -460,9 +510,16 @@ try {
     "export const zzLabels: Record<string, string> = { a: 'b' }\n\nexport const FIRST_RUN_NUDGE_COPY = {",
   )
   r = run()
+  // Fix 3, L3: the skip must be VISIBLE IN THE COUNTS as well as on its own
+  // line, and the line must name the remedy. A const skipped by a line that
+  // scrolls past is invisible in the exit code, which is the direction this
+  // guard exists to refuse — so both halves are asserted here.
   check(
     'an unrelated annotated const in a copy module is SKIPPED with a printed line, not a finding',
-    r.exit === 0 && /skipped— exported const zzLabels/.test(r.out),
+    r.exit === 0 &&
+      /skipped consts: 1 \(zzLabels\)/.test(r.out) &&
+      /skipped— exported const zzLabels/.test(r.out) &&
+      /do this: if it IS copy/.test(r.out),
     `exit ${r.exit}: ${findingLines(r.out)}`,
   )
 
@@ -488,9 +545,28 @@ try {
   //     named no shape, and the guard emitted a hard finding on well-formed code
   //     while quietly dropping every field of that const from the run (measured:
   //     the old guard reported 3 declared fields instead of 8 on this input).
+  //     Fix 3, L4: the two alias lines used to be appended with `writeFileSync`,
+  //     which bypassed `editFile`'s exactly-once premise check — an invariant
+  //     with one hole is a hole — so they now ride an anchored edit.
   reset()
   editFile(MOD, 'export const FIRST_RUN_COPY: FirstRunCopyByCard = {', 'export const FIRST_RUN_COPY: FirstRunCopyLater = {')
-  writeFileSync(MOD, `${readFileSync(MOD, 'utf8')}\ntype FirstRunCopyLater = FirstRunCopyAlias\ntype FirstRunCopyAlias = FirstRunCopyByCard\n`)
+  editFile(
+    MOD,
+    'export const FIRST_RUN_NUDGE_COPY = {',
+    'type FirstRunCopyLater = FirstRunCopyAlias;\ntype FirstRunCopyAlias = FirstRunCopyByCard;\n\nexport const FIRST_RUN_NUDGE_COPY = {',
+  )
+  check(
+    'seed 20 put the forward aliases after the const, each terminated by a semicolon (self-verifying)',
+    (() => {
+      const t = readFileSync(MOD, 'utf8')
+      return (
+        t.indexOf('type FirstRunCopyLater') > t.indexOf('export const FIRST_RUN_COPY:') &&
+        !t.includes('FIRST_RUN_COPY: FirstRunCopyByCard = {') &&
+        t.includes('type FirstRunCopyLater = FirstRunCopyAlias;')
+      )
+    })(),
+    'the aliases must sit below the const and be terminated, or an extent heuristic swallows the next declaration and the seed tests nothing',
+  )
   r = run()
   check(
     'a forward-referenced alias chain resolves (no hard finding from our own resolution order)',
@@ -566,6 +642,122 @@ try {
   check(
     'a local alias of a hop whose key does not end in s is still a consumer root',
     r.exit === 0 && /read\s+— FirstRunCardCopy\.title/.test(r.out),
+    `exit ${r.exit}: ${findingLines(r.out)}`,
+  )
+
+  // 24. fix 3 K1a — JSX text with an apostrophe, then a quoted read. The
+  //     scanner paired the apostrophe with the literal's opening quote, blanked
+  //     through the literal, and scanned its body as code.
+  reset()
+  editFile(PAGE, '        skipLabel={kidsCopy.skipLabel}\n', '')
+  editFile(PAGE, '              Add a kid\n', "              Add a kid\n              It's 'kidsCopy.skipLabel' here\n")
+  let pageText = readFileSync(PAGE, 'utf8')
+  check(
+    'seed 24 left the quoted text and no real skipLabel read (self-verifying)',
+    pageText.includes("It's 'kidsCopy.skipLabel' here") && !/kidsCopy\.skipLabel/.test(pageText.replace(/'kidsCopy\.skipLabel'/g, '')),
+    'the seed must delete the real read and leave only the word inside a string',
+  )
+  r = run()
+  check(
+    "JSX text with an apostrophe before a quoted read does not manufacture consumption (K1a)",
+    r.exit !== 0 && /"\S*\.skipLabel"/.test(r.out) && !/does not PARSE/.test(r.out),
+    `exit ${r.exit}: ${findingLines(r.out)}`,
+  )
+
+  // 25. fix 3 K1b — the same, with the read inside a JSX expression container.
+  //     REGRESSION: the fix-1 guard exited 1 here, the fix-2 guard exited 0.
+  reset()
+  editFile(PAGE, '        skipLabel={kidsCopy.skipLabel}\n', '')
+  editFile(
+    PAGE,
+    '              Add a kid\n',
+    "              Add a kid\n              What's next? See {'docs.kidsCopy.skipLabel'}\n",
+  )
+  pageText = readFileSync(PAGE, 'utf8')
+  check(
+    "seed 25 left a string in an expression container and no real skipLabel read (self-verifying)",
+    pageText.includes("{'docs.kidsCopy.skipLabel'}") && !/kidsCopy\.skipLabel/.test(pageText.replace(/'docs\.kidsCopy\.skipLabel'/g, '')),
+    'the seed must delete the real read and leave only the string',
+  )
+  r = run()
+  check(
+    'a string in a JSX expression container is not consumption (K1b, the fix-1 regression)',
+    r.exit !== 0 && /"\S*\.skipLabel"/.test(r.out) && !/does not PARSE/.test(r.out),
+    `exit ${r.exit}: ${findingLines(r.out)}`,
+  )
+
+  // 26. fix 3 K1c — a string continued across a newline. REGRESSION. The AST
+  //     alone does NOT close it: TypeScript recovers and makes a real
+  //     property-access node out of the second line, so the fence is the parse
+  //     diagnostic — no read from an unparseable file counts, and the file is
+  //     reported. The seed asserts both halves, because a guard that only went
+  //     quiet would look like the fix.
+  reset()
+  editFile(PAGE, '        skipLabel={kidsCopy.skipLabel}\n', '')
+  editFile(
+    PAGE,
+    '    const kidsCopy = FIRST_RUN_COPY.kids\n',
+    "    const kidsCopy = FIRST_RUN_COPY.kids\n    const zzCont = 'abc\nkidsCopy.skipLabel'\n",
+  )
+  pageText = readFileSync(PAGE, 'utf8')
+  check(
+    'seed 26 left a string spanning a newline and no real skipLabel read (self-verifying)',
+    /const zzCont = 'abc\nkidsCopy\.skipLabel'/.test(pageText) && !/skipLabel=\{/.test(pageText),
+    'the seed must delete the real read and leave the split string',
+  )
+  r = run()
+  check(
+    'a string spanning a newline is not consumption, and the unparseable file is reported (K1c)',
+    r.exit !== 0 && /"\S*\.skipLabel"/.test(r.out) && /does not PARSE/.test(r.out),
+    `exit ${r.exit}: ${findingLines(r.out)}`,
+  )
+
+  // 27. fix 3 K2 — a read inside a TEMPLATE HOLE is consumption. The scanner
+  //     erased the hole it had just scanned, so this came out READ BY NOTHING.
+  reset()
+  editFile(PAGE, '        skipLabel={kidsCopy.skipLabel}', '        skipLabel={`${kidsCopy.skipLabel}`}')
+  pageText = readFileSync(PAGE, 'utf8')
+  check(
+    'seed 27 left exactly one skipLabel read and it is inside a template hole (self-verifying)',
+    (pageText.match(/kidsCopy\.skipLabel/g) ?? []).length === 1 && pageText.includes('skipLabel={`${kidsCopy.skipLabel}`}'),
+    `occurrences: ${(pageText.match(/kidsCopy\.skipLabel/g) ?? []).length}`,
+  )
+  r = run()
+  check(
+    'a copy read inside a template hole counts as consumption (K2 — fires on clean code)',
+    r.exit === 0 && /read\s+— \S*\.skipLabel .*at src\/pages\/OnboardingPage\.tsx/.test(r.out),
+    `exit ${r.exit}: ${findingLines(r.out)}`,
+  )
+
+  // 28. fix 3 L1 — a computed-key destructure. `const { [zzKey]: title } = …`
+  //     reads an UNKNOWN key and binds a local named `title`; the scanner counted
+  //     the local as the read, which is consumption manufactured out of a
+  //     variable name.
+  reset()
+  for (const [find, repl] of [
+    ['FIRST_RUN_COPY.name.title', 'FIRST_RUN_COPY.name.titleX'],
+    ['FIRST_RUN_COPY.area.title', 'FIRST_RUN_COPY.area.titleX'],
+    ['kidsCopy.title', 'kidsCopy.titleX'],
+    ['areaCopy.title', 'areaCopy.titleX'],
+  ]) {
+    editFile(PAGE, find, repl)
+  }
+  editFile(
+    PAGE,
+    '    const kidsCopy = FIRST_RUN_COPY.kids\n',
+    '    const kidsCopy = FIRST_RUN_COPY.kids\n    const { [zzKey]: title } = FIRST_RUN_COPY.kids\n',
+  )
+  pageText = readFileSync(PAGE, 'utf8')
+  check(
+    'seed 28 left no card-title read, only a binding named `title` (self-verifying)',
+    (pageText.match(/\b(?:\w+|FIRST_RUN_COPY(?:\.\w+)?)\.title\b/g) ?? []).length === 0 &&
+      pageText.includes('const { [zzKey]: title } = FIRST_RUN_COPY.kids'),
+    `surviving title reads: ${(pageText.match(/\b(?:\w+|FIRST_RUN_COPY(?:\.\w+)?)\.title\b/g) ?? []).join(', ') || '(none)'}`,
+  )
+  r = run()
+  check(
+    'a computed-key destructure does not count its local binding as a read (L1)',
+    r.exit !== 0 && /FirstRunCardCopy\.title/.test(findingLines(r.out)) && !/does not PARSE/.test(r.out),
     `exit ${r.exit}: ${findingLines(r.out)}`,
   )
 

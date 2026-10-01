@@ -59,8 +59,14 @@ export interface SkippableFirstRunCardCopy extends FirstRunCardCopy {
  *
  * Totality is kept: the mapped type has a required key for every
  * `FirstRunCardId`, so adding a card without copy is still a compile error.
+ *
+ * It is MODULE-LOCAL. V28 r2 slice 6a fix 1 exported it so the copy guard could
+ * resolve the annotation; fix 3 measured that claim by de-exporting it in a
+ * sandbox and re-running the guard, which still reported every field — the walk
+ * reads the module's own type declarations, export or not. An exported type with
+ * no consumer is public surface, so the export is gone and the type stays.
  */
-export type FirstRunCopyByCard = {
+type FirstRunCopyByCard = {
   [K in FirstRunCardId]: K extends SkippableFirstRunCardId
     ? SkippableFirstRunCardCopy
     : FirstRunCardCopy
