@@ -275,16 +275,24 @@
  * file was 849, thirty-one short). The cost is real and measured too, three runs
  * each on this machine: the guard goes from a tenth of a second to one to two
  * seconds per run, most of it the single `ts.createProgram` over the tree, and the
- * behavior check from about nine seconds to about forty. The behavior check
- * invokes the guard once per seed, and its four allowance seeds invoke a FULL COPY
- * of the guard as well: 32 invocations at the fix-4 commit and 33 here, a count the
- * check prints for itself rather than one this header asserts — the header used to
- * assert it, and the number it asserted, 28, was that fix-4 total minus exactly
- * the four full copies. The spread is machine load, not nondeterminism in the
- * guard: same repo, same findings, same order. That is the price of asking a
- * question that has an answer instead of guessing at one; if it ever becomes a
- * guard people route around, the honest move is to say so, not to re-grow the
- * name table.
+ * behavior check from about nine seconds to about forty. The behavior check invokes
+ * the guard once for every seed EXCEPT the parse-fence seed, which reads the guard's
+ * own SOURCE and never calls `run()` — so from fix 4 on the invocation count is one
+ * BELOW the seed count, not once per seed. Its four allowance seeds add no
+ * invocation: each calls `run(guardWithAllowlist(…))` once, and that call IS its
+ * invocation, not a second one on top. At the fix-4 commit `860893c` that is 33
+ * seeds and 32 invocations, and `dde111a` had 28 of each; the 28 this header used
+ * to assert is NOT "the fix-4 total minus exactly the four full copies" — the four
+ * allowance seeds are inside BOTH totals, and what moved 28 to 32 is the four seeds
+ * fix 4 added that DO call `run()` (29-32), alongside seed 33 that does not. The
+ * invocation count for the tree you are reading is not pinned in this header: the
+ * check computes it and prints it, with its check count, at the end of a run —
+ * because a number that moves whenever a seed is added is a number that will be
+ * wrong again. The spread is machine load,
+ * not nondeterminism in the guard: same repo, same findings, same order. That is the
+ * price of asking a question that has an answer instead of guessing at one; if it
+ * ever becomes a guard people route around, the honest move is to say so, not to
+ * re-grow the name table.
  *
  * What the rewrite buys is not length: it is that the questions the lexer had to
  * GUESS — does this quote open a string, is this identifier a read, is this

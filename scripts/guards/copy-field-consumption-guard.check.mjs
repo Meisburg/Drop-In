@@ -161,7 +161,7 @@
  * red against; for seeds 29-33 that is `340d016` (the fix-3 guard, name-keyed
  * roots) and for seed 34 it is `dde111a` (that same fix-3 guard; the two commits
  * are byte-identical for both guard and check). The measured matrix — EVERY number
- * here re-run this round against the named guard with `COPY_GUARD_UNDER_TEST`, none
+ * in it re-run this round against the named guard with `COPY_GUARD_UNDER_TEST`, none
  * inherited — is: 6 red vs `340d016`/`dde111a` (29, 30, 31, 32, 33, 34 — exactly
  * the new ones, so no pre-existing seed depends on the new implementation), 12 red
  * vs `a03fc54` (the 6 the fix-3 review measured — 17, 24, 25, 26, 27, 28 — plus
@@ -169,13 +169,14 @@
  * 20, 21, 22, 24, 26, 27 — plus these 6; seed 25 is GREEN on `be29027` because that
  * is where the regression it pins was fixed, and seed 26 is red there only for its
  * added `does not PARSE` half — the older guard exited 1 with the correct finding),
- * and 48 ✓ / 0 ✗ on the current tree. The run prints its own size — the check count
- * and the number of guard invocations it made — and the guard header quotes
- * neither, because both change whenever a seed is added and a number that must be
- * re-measured on every edit is a number that will be wrong again. This header has
- * already been wrong about its own seed-versus-check counts once: the last round
- * called the prior commit's "39" a SEED count; it was the check count, the prior
- * commit had 28 seeds, and this round has 34.
+ * and 48 ✓ / 0 ✗ at the seed-34 commit `4dc81d0`. The run prints its own size — the
+ * check count and the number of guard invocations it made — and the guard header
+ * states neither for the tree it ships in: what it quotes, it pins to the commit it
+ * was measured at, because both change whenever a seed is added and a number that
+ * must be re-measured on every edit is a number that will be wrong again. This
+ * header has already been wrong about its own seed-versus-check counts once: the
+ * last round called the prior commit's "39" a SEED count; it was the check count,
+ * the prior commit had 28 seeds, and `4dc81d0` has 34.
  *
  * Every seed added from fix 2 onward asserts its OWN PREMISE (what it deleted,
  * what still exists), because two seeds in fix 2 passed for reasons unrelated to
