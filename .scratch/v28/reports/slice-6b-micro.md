@@ -1,6 +1,6 @@
 # Slice 6b — MICRO-ROUND — builder report
 
-**Committed as:** `<sha7>` — the commit that carries this round's three edits and first introduces
+**Committed as:** `bce017e` — the commit that carries this round's three edits and first introduces
 this file. Its id is written into this line by the report-only commit that follows, because a file
 cannot contain the hash of the commit that creates it: the one field this report format cannot
 self-satisfy.
