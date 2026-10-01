@@ -6692,3 +6692,28 @@ Built `09d9af5`; fix 1 `f9ab882` (**review PASS + verify PASS**); micro `bce017e
 implements ruling F1 deliberately with both halves seeded, and states its own coverage.** Plus: **`no-bypass-guard`'s
 blind spot proven rather than asserted**, and its false header clause corrected -- **with the false RUNTIME echo
 routed to 6c.** *The report-on-disk convention was introduced this round and held twice.*
+
+## ⚠️ `ocr` FAILED THREE TIMES, WITH THREE DIFFERENT CAUSES -- and the third one was NOT the OOM killer
+
+**Cause 1 (6a):** the provider was pointed at **NInfer, which was dead** -- fixed by adding a `strata-max` provider.
+**Cause 2 (6b, first run):** the server was up (`:8081 -> 401`) and **ocr's stored key was a DIFFERENT key**
+(`len 0` from `config get`; `sk-strata-local` versus the server's 15-char environment value). **Fixed, and the re-run
+STARTED REVIEWING** -- its log showed `✔ file_read` reaching `no-bypass-guard.sh`.
+**Cause 3 (6b, second run):** **the service was `inactive dead` with `MainPID 0`**, and `curl` returned **`000` in
+0.0001s** -- connection refused, not auth. **`curl`'s timing is what distinguished them:** a 401 is an ANSWER; 000 is
+silence.
+
+```
+15:49:58  [strata] stopping (Ctrl+C again to end the engine at once) ...
+15:50:02  Stopped Strata local inference server ... Consumed 15h54m CPU over 2h37m wall, 48.9G
+```
+**A CLEAN STOP, not an OOM kill** -- systemd's record says `Stopped`, where the two earlier deaths said
+`Failed with result 'oom-kill'`. **So the three failures were: a dead provider, a wrong key, and a stopped service**
+-- *three different causes, each needing its own measurement, and the generic error text
+("check your LLM configuration and API key") is printed for ALL THREE.* **That message is a liar by design, and the
+only way through it was to measure the endpoint each time.** *(Restarted; `:8081 -> up (401)`; memory back to 61G/0
+because the model is resident again.)*
+
+**⚠️ AND A FACT FOR THE HUMAN:** **something stopped `strata-max` cleanly at 15:49:58** -- if that was deliberate, it
+is fine; if not, **it is unexplained and worth knowing about**, because nothing I ran calls `systemctl stop` on it.
+*I restarted it, because `ocr` is now the ONLY thing that needs the local model -- the agent lanes are all on cloud.*
