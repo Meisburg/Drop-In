@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "id": "v28-r2-8d",
+  "title": "Slice 8d — the typed-zip family: an error nobody can see, an",
+  "plan_ref": "plan.md#slice-8d",
+  "track": null,
+  "base": null,
+  "depends_on": [
+    "v28-r2-8c"
+  ],
+  "created_at": "2026-10-02T16:22:52.199Z",
+  "lanes": {
+    "implementation": {
+      "state": "pending",
+      "owner": null,
+      "model": null,
+      "artifacts": [],
+      "evidence": []
+    },
+    "verification": {
+      "state": "pending",
+      "owner": null,
+      "model": null,
+      "artifacts": [],
+      "evidence": []
+    },
+    "review": {
+      "state": "pending",
+      "owner": null,
+      "model": null,
+      "artifacts": [],
+      "evidence": []
+    },
+    "visual_validation": {
+      "state": "pending",
+      "owner": null,
+      "model": null,
+      "artifacts": [],
+      "evidence": []
+    },
+    "acceptance": {
+      "state": "pending",
+      "owner": null,
+      "model": null,
+      "artifacts": [],
+      "evidence": [],
+      "reason": null
+    }
+  },
+  "history": []
+}

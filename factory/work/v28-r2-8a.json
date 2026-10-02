@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "id": "v28-r2-8a",
+  "title": "Slice 8a — make the code and the record honest",
+  "plan_ref": "plan.md#slice-8a",
+  "track": null,
+  "base": null,
+  "depends_on": [
+    "v28-r2-6d"
+  ],
+  "created_at": "2026-10-02T16:22:52.115Z",
+  "lanes": {
+    "implementation": {
+      "state": "pending",
+      "owner": null,
+      "model": null,
+      "artifacts": [],
+      "evidence": []
+    },
+    "verification": {
+      "state": "pending",
+      "owner": null,
+      "model": null,
+      "artifacts": [],
+      "evidence": []
+    },
+    "review": {
+      "state": "pending",
+      "owner": null,
+      "model": null,
+      "artifacts": [],
+      "evidence": []
+    },
+    "visual_validation": {
+      "state": "pending",
+      "owner": null,
+      "model": null,
+      "artifacts": [],
+      "evidence": []
+    },
+    "acceptance": {
+      "state": "pending",
+      "owner": null,
+      "model": null,
+      "artifacts": [],
+      "evidence": [],
+      "reason": null
+    }
+  },
+  "history": []
+}
