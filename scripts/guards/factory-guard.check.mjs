@@ -17,7 +17,7 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import process from 'node:process'
 
 const GUARD = join(import.meta.dirname, 'factory-guard.mjs')
@@ -32,8 +32,11 @@ const lanes = (over = {}) => ({
   ...over,
 })
 
-/** Build a throwaway root and let `mutate` write its contents. */
-function run(mutate) {
+/** Build a throwaway root and let `mutate` write its contents. `guard` and
+ * `args` are the seams the mutation checks below need: a mutated COPY of the
+ * instrument, and `--repo <dir>` so a temp root with no `.git` can still have
+ * its provenance shas resolved (see the guard header's not-a-worktree note). */
+function run(mutate, { guard = GUARD, args = [] } = {}) {
   const root = mkdtempSync(join(os.tmpdir(), 'factory-guard-'))
   const write = (rel, value) => {
     const path = join(root, rel)
@@ -42,7 +45,7 @@ function run(mutate) {
   }
   try {
     mutate({ root, write })
-    const out = execFileSync('node', [GUARD, '--root', root], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+    const out = execFileSync('node', [guard, '--root', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
     return { exit: 0, out }
   } catch (e) {
     return { exit: e.status ?? 1, out: `${e.stdout ?? ''}${e.stderr ?? ''}` }
@@ -50,6 +53,33 @@ function run(mutate) {
     rmSync(root, { recursive: true, force: true })
   }
 }
+
+/**
+ * A throwaway COPY of the instrument with named textual mutations applied. This
+ * is how a check proves it CAN fail: mutate the mechanism the check names, run
+ * the same seeded root against the mutant, and require the seed's verdict to
+ * flip. A check whose named failure mode cannot be reached by any mutation is a
+ * claim, not a check — which is why the mutation count is asserted here: an
+ * anchor that no longer exists is a silent no-op, and a silent no-op would make
+ * every mutation check below pass vacuously.
+ */
+const MUTANT_DIRS = []
+function mutatedGuard(replacements) {
+  let text = readFileSync(GUARD, 'utf8')
+  for (const [from, to] of replacements) {
+    const hits = text.split(from).length - 1
+    if (hits !== 1) throw new Error(`mutation anchor occurs ${hits} time(s), not once: ${JSON.stringify(from)}`)
+    text = text.split(from).join(to)
+  }
+  const dir = mkdtempSync(join(os.tmpdir(), 'factory-guard-mutant-'))
+  MUTANT_DIRS.push(dir)
+  const path = join(dir, 'factory-guard.mutant.mjs')
+  writeFileSync(path, text)
+  return path
+}
+
+/** A real repository for `--repo`: this repo, which the provenance shas live in. */
+const REPO = resolve(import.meta.dirname, '..', '..')
 
 let failures = 0
 let ran = 0
@@ -452,7 +482,7 @@ console.log('===========================================================')
   // arm matched nothing while MOVING_REV still listed it. It is now `(?![\w])`.
   // These two cases are the fix's own guard: the first goes red if `@` stops
   // matching; the second goes red if the wider boundary starts firing on an
-  // email address, a decorator, or a bare reflog. Neither is vacuous.
+  // email address, a decorator, or a bare reflog.
   const atForm = run((ctx) => {
     cleanRoot()(ctx)
     ctx.write(
@@ -468,22 +498,284 @@ console.log('===========================================================')
     `exit ${atForm.exit}`,
   )
 
-  const notARevision = run((ctx) => {
+  // ROUND 6 repair. Round 5 called this root a control and said it could fail;
+  // it could not — none of its four lines put a `@{…}` token within four tokens
+  // of a count, so no mutation to the `@` lookahead changed its verdict. The
+  // `@{2}` line below does, and the mutation proves it. The email and
+  // `@decorator` lines stay in the root as regression seeds: a `@` followed by a
+  // word character is unreachable by construction (the token must end at a
+  // non-word character), so they are not the control's named failure mode.
+  const notARevision = (ctx) => {
     cleanRoot()(ctx)
     ctx.write(
       '.scratch/v28/reports/zz-not-a-rev.md',
       'write to user@example.com about it\n' +
         'the @decorator style is used\n' +
-        'the @{2} form means no revision here\n' +
+        '4 files mention the @{2} form\n' +
         'the count is 5 at user@example.com\n',
+    )
+  }
+  const notARevisionRun = run(notARevision)
+  check(
+    'email, @decorator and a bare @{…} next to a count are NOT flagged (control)',
+    notARevisionRun.exit === 0,
+    `exit ${notARevisionRun.exit}`,
+  )
+  const noAtLookahead = mutatedGuard([['@(?![{\\w])', '@']])
+  const atControlFired = run(notARevision, { guard: noAtLookahead })
+  check(
+    'MUTATION: removing the `@` lookahead turns that control red (so the control CAN fail)',
+    atControlFired.exit === 1 && /no-bare-head-count/.test(atControlFired.out),
+    `exit ${atControlFired.exit}`,
+  )
+}
+
+
+// 19. no-bare-head-count, ARM 1 — widened from a set of English PHRASINGS to the
+//     moving-rev TOKEN adjacent to a count in EITHER word order. Round 5's arm
+//     matched the literal word `at` after the number, so it PASSED the reverse
+//     order — a shape live in the corpus at
+//     `.scratch/v28/reports/slice-6b-fix-1.md:292` — and it could not spell a
+//     label like (tracked), src/lib or .scratch. Every case below is paired with
+//     the mutation that reaches its failure mode.
+{
+  const reverseOrder = (ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-rev-order.md', 'brief; at HEAD the corpus reports 90 documents / 7 claims / 97 quotations. Nothing regressed —\n')
+  }
+  const reverse = run(reverseOrder)
+  check(
+    'a count AFTER a bare moving revision is CAUGHT (either word order)',
+    reverse.exit === 1 && /no-bare-head-count/.test(reverse.out),
+    `exit ${reverse.exit}`,
+  )
+  const forwardOnly = mutatedGuard([['|${REV_TOKEN}${COUNT_GAP}${COUNT_TOKEN}', '']])
+  const missed = run(reverseOrder, { guard: forwardOnly })
+  check(
+    'MUTATION: dropping the reverse alternative lets that seed PASS (so the check can fail)',
+    missed.exit === 0,
+    `exit ${missed.exit}`,
+  )
+
+  const wordClass = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write(
+      '.scratch/v28/reports/zz-wordclass.md',
+      '280 tracked `.scratch` files at HEAD\n280 files in src/lib at HEAD\n280 files (tracked) at HEAD\n87, taken at HEAD\nthe count was 87 as of HEAD\n',
     )
   })
   check(
-    'email, @decorator and bare @{…} are NOT flagged (control)',
-    notARevision.exit === 0,
-    `exit ${notARevision.exit}`,
+    'labels the round-5 word class could not spell are CAUGHT',
+    wordClass.exit === 1 && /no-bare-head-count/.test(wordClass.out),
+    `exit ${wordClass.exit}`,
+  )
+
+  // The reachable control for ARM 1's proximity window: the same two tokens in
+  // one sentence, far enough apart that the number's subject is not the
+  // revision. It passes — and the mutation below turns it red, which is what
+  // makes the window a control rather than a claim.
+  const farApart = (ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-far.md', 'HEAD is the moving revision this rule is about, and this report measured 231 files in total.\n')
+  }
+  const far = run(farApart)
+  check('a moving revision and a number >4 tokens away are NOT flagged (control)', far.exit === 0, `exit ${far.exit}`)
+  const wideWindow = mutatedGuard([["(?:\\s[^\\s'\"“”]+){0,4}\\s+", "(?:\\s[^\\s'\"“”]+){0,60}\\s+"]])
+  const overMatch = run(farApart, { guard: wideWindow })
+  check(
+    'MUTATION: widening ARM 1\'s window turns that control red (over-matching is reachable)',
+    overMatch.exit === 1 && /no-bare-head-count/.test(overMatch.out),
+    `exit ${overMatch.exit}`,
+  )
+
+  // The revision-token boundary. `MERGE_HEAD` and `ORIG_HEAD` hold the bare
+  // token as a substring and are other moving refs (a disclosed ceiling), and
+  // `<HEAD>` is how a report names the bare token while quoting it. Neither is
+  // read as a revision. This control is REACHABLE — dropping the left token
+  // boundary turns it red below — which is the repair for round 5's unreachable
+  // `@` control.
+  const placeholder = (ctx) => {
+    cleanRoot()(ctx)
+    ctx.write(
+      '.scratch/v28/reports/zz-placeholder.md',
+      'the header names MERGE_HEAD and this lane measured 276 files with it\nthe header writes the placeholder `<HEAD>` and this lane measured 276 files with it\n',
+    )
+  }
+  const held = run(placeholder)
+  check('the `MERGE_HEAD` substring and the `<HEAD>` placeholder are NOT flagged (control)', held.exit === 0, `exit ${held.exit}`)
+  const looseBoundary = mutatedGuard([['(?<![\\w<])', '']])
+  const fired = run(placeholder, { guard: looseBoundary })
+  check(
+    'MUTATION: dropping the token boundary turns that control red (so the control CAN fail)',
+    fired.exit === 1 && /no-bare-head-count/.test(fired.out),
+    `exit ${fired.exit}`,
   )
 }
+
+// 20. count-provenance-unresolvable — THE DECIDABLE HALF. A count's provenance is
+//     a commit sha, and the sha is CHECKED against a real repository instead of
+//     guessed at. `N at <valid sha>` passes; `N at <bogus sha>` fails. This is
+//     the ceiling D-021 closed: "a wrong named commit" was declared for five
+//     rounds and now produces a finding.
+{
+  const canonical = (sha) => (ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-canon.md', `The tree held 276 tracked \`.scratch\` files at ${sha}.\n`)
+  }
+  const valid = run(canonical('1c3471a'), { args: ['--repo', REPO] })
+  check(
+    'a count naming a sha that IS a commit passes (canonical form accepted)',
+    valid.exit === 0,
+    `exit ${valid.exit}`,
+  )
+  const bogus = run(canonical('deadbee'), { args: ['--repo', REPO] })
+  check(
+    'a count naming a sha that is NOT a commit is CAUGHT',
+    bogus.exit === 1 && /count-provenance-unresolvable/.test(bogus.out) && /deadbee/.test(bogus.out),
+    `exit ${bogus.exit}`,
+  )
+  const noVerification = mutatedGuard([['for (const pattern of [COUNT_AT_SHA, COUNT_CMD_SHA])', 'for (const pattern of [])']])
+  const uncaught = run(canonical('deadbee'), { guard: noVerification, args: ['--repo', REPO] })
+  check(
+    'MUTATION: removing the sha scan lets that bogus sha PASS (so the check can fail)',
+    uncaught.exit === 0,
+    `exit ${uncaught.exit}`,
+  )
+
+  // The counted-command position: the revision of a `git … | wc` count is the
+  // count's provenance too, and it is verified the same way.
+  const countedCommand = (sha) => (ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-cmd.md', `$ git ls-tree -r --name-only ${sha} .scratch | wc -l\n280\n`)
+  }
+  const cmdValid = run(countedCommand('1c3471a'), { args: ['--repo', REPO] })
+  check('the revision of a counted git command is verified too (valid sha passes)', cmdValid.exit === 0, `exit ${cmdValid.exit}`)
+  const cmdBogus = run(countedCommand('deadbee'), { args: ['--repo', REPO] })
+  check(
+    'the revision of a counted git command is verified too (bogus sha is CAUGHT)',
+    cmdBogus.exit === 1 && /count-provenance-unresolvable/.test(cmdBogus.out),
+    `exit ${cmdBogus.exit}`,
+  )
+
+  // The control for the canonical form's CONNECTOR: a content hash next to a
+  // count is a hash of bytes, not a commit, and is not a provenance token. It
+  // passes — and making the connector optional turns it red, so the control is
+  // reachable rather than decorative.
+  const contentHash = (ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-hash.md', 'md5sum before/after 3 files: 7627fc37f932a2e66352e31e709beb81 -> 7627fc37f932a2e66352e31e709beb81\n')
+  }
+  const hashControl = run(contentHash, { args: ['--repo', REPO] })
+  check('an md5/sha256 content hash next to a count is NOT a provenance token (control)', hashControl.exit === 0, `exit ${hashControl.exit}`)
+  const looseConnector = mutatedGuard([
+    ['}at\\s+(?:the\\s+)?', '}(?:at\\s+(?:the\\s+)?)?'],
+    ['|at\\s+(?:the\\s+)?', '|(?:at\\s+(?:the\\s+)?)?'],
+  ])
+  const hashCaught = run(contentHash, { guard: looseConnector, args: ['--repo', REPO] })
+  check(
+    'MUTATION: dropping the `at` connector turns that control red (over-matching is reachable)',
+    hashCaught.exit === 1 && /count-provenance-unresolvable/.test(hashCaught.out),
+    `exit ${hashCaught.exit}`,
+  )
+
+  // NOT A GIT WORKTREE. The behaviour checks live in git-less temp roots; with
+  // `--repo` naming a directory that is not a worktree the run must SAY the
+  // shas were not verified, report no finding for them, and drop the claim from
+  // its summary — never a manufactured finding, never a silent pass.
+  const notARepo = mkdtempSync(join(os.tmpdir(), 'factory-guard-norepo-'))
+  MUTANT_DIRS.push(notARepo)
+  const unverifiable = run(canonical('deadbee'), { args: ['--repo', notARepo] })
+  check(
+    'with no worktree to resolve against, the sha is a NOTE and not a finding',
+    unverifiable.exit === 0 && /no git worktree to resolve provenance shas against/.test(unverifiable.out) && !/count-provenance-unresolvable/.test(unverifiable.out),
+    `exit ${unverifiable.exit}`,
+  )
+  check(
+    '... and the summary does NOT claim the shas were resolved (control)',
+    unverifiable.exit === 0 && /ok —/.test(unverifiable.out) && !/provenance sha resolving as a commit/.test(unverifiable.out),
+    `exit ${unverifiable.exit}`,
+  )
+}
+
+// 21. no-bare-head-count, ARM 3 — the eight-name subcommand LIST replaced by the
+//     PROPERTY: a counted git command that names no fixed revision. The list was
+//     wrong in both directions, and the reviewer measured both:
+//       missed — `git show | wc -l` (327), `git reflog | wc -l` (281),
+//                `git blame <file> | wc -l` (55), `git annotate <file> | wc -l`
+//       fired  — `git branch | wc -l`, `git stash | wc -l`
+//     Under the property all of them fire, because a count whose command names no
+//     commit is unreproducible — including `git status --porcelain | wc -l`, the
+//     working-tree count the human named. Naming a fixed revision is the fix, and
+//     the control below proves that.
+{
+  const byProperty = (ctx) => {
+    cleanRoot()(ctx)
+    ctx.write(
+      '.scratch/v28/reports/zz-arm3.md',
+      '$ git show | wc -l\n327\n$ git reflog | wc -l\n281\n$ git blame package.json | wc -l\n55\n$ git annotate package.json | wc -l\n55\n$ git branch | wc -l\n11\n$ git stash | wc -l\n1\n$ git status --porcelain | wc -l\n3\n',
+    )
+  }
+  const property = run(byProperty)
+  check(
+    'every counted git command naming no fixed revision is CAUGHT (the property, not the list)',
+    property.exit === 1 && /no-bare-head-count/.test(property.out),
+    `exit ${property.exit}`,
+  )
+  const listAgain = mutatedGuard([['[a-z][a-z-]*\\b', '(?:log|rev-list)\\b']])
+  const listMiss = run(byProperty, { guard: listAgain })
+  check(
+    'MUTATION: narrowing ARM 3 back to a name list lets those seeds PASS (so the check can fail)',
+    listMiss.exit === 0,
+    `exit ${listMiss.exit}`,
+  )
+
+  const named = (ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-arm3-named.md', '$ git log --oneline 1c3471a | wc -l\n5\n')
+  }
+  const namedRun = run(named, { args: ['--repo', REPO] })
+  check('the same count once it names a resolvable revision passes (control)', namedRun.exit === 0, `exit ${namedRun.exit}`)
+}
+
+// 22. ARM 2 with the spelling the old pattern could not see: global options
+//     before the subcommand, and a quoted revision. Both are real invocations,
+//     both were measured unflagged by round 5.
+{
+  const options = (ctx) => {
+    cleanRoot()(ctx)
+    ctx.write(
+      '.scratch/v28/reports/zz-git-options.md',
+      '$ git --no-pager log HEAD | wc -l\n412\n$ git -C /tmp/ws show HEAD:scripts/guards/factory-guard.mjs | wc -l\n500\n$ git -c core.pager=cat show HEAD | wc -l\n500\n',
+    )
+  }
+  const optRun = run(options)
+  check('a git read behind a global option is CAUGHT', optRun.exit === 1 && /no-bare-head-count/.test(optRun.out), `exit ${optRun.exit}`)
+  const noOpts = mutatedGuard([['(?:--?[A-Za-z][\\w-]*(?:[=\\s]\\S{1,40})?\\s+){0,4}', '(?:){0,4}']])
+  const optMiss = run(options, { guard: noOpts })
+  check(
+    'MUTATION: dropping the global-option prefix lets those seeds PASS (so the check can fail)',
+    optMiss.exit === 0,
+    `exit ${optMiss.exit}`,
+  )
+
+  const quoted = (ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-git-quoted.md', '$ git show "HEAD"\n$ git rev-parse \'HEAD\'\n')
+  }
+  const quoteRun = run(quoted)
+  check('a quoted moving revision is CAUGHT', quoteRun.exit === 1 && /no-bare-head-count/.test(quoteRun.out), `exit ${quoteRun.exit}`)
+  const unquoted = mutatedGuard([["[\\s\"'", '[\\s']])
+  const quoteMiss = run(quoted, { guard: unquoted })
+  check(
+    'MUTATION: dropping the quote from the rev lead lets those seeds PASS (so the check can fail)',
+    quoteMiss.exit === 0,
+    `exit ${quoteMiss.exit}`,
+  )
+}
+
+process.on('exit', () => {
+  for (const dir of MUTANT_DIRS) rmSync(dir, { recursive: true, force: true })
+})
 
 console.log()
 if (failures === 0) {
