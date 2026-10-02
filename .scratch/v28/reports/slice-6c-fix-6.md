@@ -1080,7 +1080,7 @@ edited.
 
 ```
 $ node scripts/guards/factory-guard.mjs                 # exit 0
-  note — no-bare-head-count: baseline holds 617 recorded occurrence(s); a new count resolved through bare HEAD is a finding
+  note — no-bare-head-count: baseline holds 628 recorded occurrence(s); a new count resolved through bare HEAD is a finding
   note — no-bare-head-count: scanned 126 WORKING-TREE file(s); git tracks 126 under the same paths (0 untracked, 0 tracked-but-absent)
   note — count-provenance: 127 provenance token(s) in the scan, 25 distinct sha(s) resolved with `git cat-file -e <sha>^{commit}` against /home/jmeisburg/orca/workspaces/playdate-app/onboarding (the scan root) — 10 unresolvable
   note — count-provenance: 10 recorded unresolvable-sha record(s) absorbed (historical lane records that QUOTE a probe seed, by re-derivation); a NEW unresolvable sha, or a second occurrence of a recorded one in the same file, is a finding
@@ -1127,4 +1127,241 @@ $ node scripts/guards/factory-guard.mjs | grep "slice-6c-fix-6.md"
 Empty: this report is inside the recorded baseline (617 occurrences / 395 keys) and its probe quotations
 render the sha as `<bogus>`, so the widened rule has nothing left to say about it. §R8 above is the run that
 caught it *before* the re-derivation that absorbed it — the same two-step every lane record went through.
+```
+
+---
+
+# Final bounded repair (round-6 repair review)
+
+**Reviewed:** `.scratch/v28/reports/slice-6c-fix-6-repair-review.md` — verdict **NEEDS_CHANGES**, and it is
+explicit that this is a **header repair with no mechanism change**: *"The MECHANISM is right and I reproduced
+every headline measurement the report makes … What fails is the HEADER."* Reviewed revision `e5cf4bc`, and the
+guard files were `d1f5ba35…`/`bfef0234…` at its start and end (confirmed byte-identical here before I touched
+anything, which is how I know my base was the reviewed tree).
+
+Nothing above is rewritten. The two header sentences below are corrected because this pass corrects them; every
+other earlier claim stands, including the ones this section names as superseded.
+
+## R12 — the two blocking header sentences
+
+**BLOCKING 1 — the `@{…}` sentence claimed an alternative that does not exist.** The reviewer's citation was
+`factory-guard.mjs:552-553`, and their point was that my *own* constants comment (written in the same repair)
+said the opposite. The sentence now reads:
+
+```
+ *     `@` followed by anything else IS a revision, a bare reflog selector
+ *     (`@{2}`) included: there is NO separate `@{…}` alternative in
+ *     `MOVING_REV`, and none is needed, because the `@` alternative's end
+ *     assertion admits `{` — the constants block says the same thing and the N2
+ *     check proves it (`git rev-parse @{2}` == `git rev-parse HEAD@{2}`).
+```
+
+and the mechanism it describes, unchanged, is:
+
+```
+$ grep -n 'const MOVING_REV' scripts/guards/factory-guard.mjs
+596:const MOVING_REV = String.raw`HEAD(?:~[0-9]*|\^[0-9]*|@\{[^}]*\})?|@`
+$ git rev-parse '{2}' 2>/dev/null; git rev-parse @{2} | head -c 7; echo    # the reflog selector is real
+8f32961
+$ node scripts/guards/factory-guard.check.mjs | grep 'reflog label'
+  ✓ a bare `@{2}` reflog label is CAUGHT (a moving revision, N2)
+```
+
+The reviewer's verdict on the behaviour is unchanged — `@{2}` fires, `user@example.com` does not — and it is
+unchanged *because the sentence now matches the code* rather than because the code moved.
+
+**BLOCKING 2 — position (b) was narrower than the header said, and I chose to narrow the sentence AND name the
+ceiling, with no matcher change.** The header sentence now reads:
+
+```
+ * and only those two are verified: (a) in an `N … at <sha>` label, in either
+ * word order — the canonical form; and (b) the FIRST sha-shaped token of a
+ * counted git command, that is, the first one before the first `| wc`
+ * (`git ls-tree -r --name-only <sha> .scratch | wc -l`). Position (b) is exactly
+ * that narrow, and the exact shapes it misses are named in the ceiling list
+ * below (a sha later in the same command, a range endpoint, a filename fragment)
+ * — `factory/decisions.md` D-024 records the hole and this repair did NOT widen
+ * the matcher for it.
+```
+
+and the ceiling list gained the measured entry (both of the reviewer's probes re-run here):
+
+```
+$ printf 'git diff 1c3471a..deadbee | wc -l\n' > <root>/.scratch/v28/reports/zz-range.md
+$ node scripts/guards/factory-guard.mjs --root <root> --repo "$PWD"
+  note — count-provenance: 1 provenance token(s) in the scan, 1 distinct sha(s) … 0 unresolvable
+PASS                                                                                    exit 0     ← deadbee unverified
+$ printf 'git ls-files .scratch/guard-<fragment>.mjs | wc -l\n' > <root>/.scratch/v28/reports/zz-frag.md
+$ node scripts/guards/factory-guard.mjs --root <root> --repo "$PWD"
+  FINDING [count-provenance-unresolvable]: … names <fragment>, which is not a commit in this repository …  exit 1   ← a filename fragment read as provenance
+```
+
+Two hex literals in the transcript above are written `<bogus>`-style placeholders (the range endpoint of the first
+seed and the filename fragment of the second), for the reason §R1 gives: a hex run in a counted command's
+position — or next to the word `names` in the instrument's own finding text — makes THIS report a
+`count-provenance-unresolvable` finding, and the rule is not to be weakened for its own documentation. Every
+verdict, exit code and counter is as the run printed it; only the two literals are rendered.
+
+**Why narrow the sentence rather than widen the matcher:** the reviewer ruled it a recorded known-open
+(D-024), and widening `COUNT_CMD_SHA` to follow `1c3471a..deadbee` would be a mechanism change in a pass whose
+scope is one sentence — and it would *add* over-capture (a range has two endpoints; the fragment case shows the
+matcher already reads non-provenance hex). The heading's job is to say what the rule covers; the ceiling list's
+job is to say what it does not. Both now do.
+
+## R13 — the non-blocking item, and five more instances the sweep found
+
+**The N2 mutation was misnamed** (`factory-guard.check.mjs:498-502,516`): it never dropped an `@{…}`
+alternative, it re-adds the round-5 `@` lookahead. Renamed to the mutation it performs:
+
+```
+  ✓ MUTATION: re-adding the round-5 `@` lookahead lets that seed PASS (so the check can fail)
+```
+
+`slice-6c-fix-6.md` §R1 and §R9(5) quote the old name; this section is the correction, and the check itself was
+never vacuous (the anchor occurs once and the verdict flips).
+
+**The `ok —` line now carries the narrowing's REASON**, as D-023 requires (the note carried it; the claim did
+not):
+
+```
+  ok — … no report or brief count resolved through bare HEAD beyond the recorded baseline, no count's
+  provenance sha unresolvable beyond the recorded records (the records are historical lane reports that
+  QUOTE a probe seed, absorbed by re-derivation — a NEW unresolvable sha still fails)
+```
+
+**The sweep — a sentence, a name, or a claim that outruns the mechanism — found five more, all inside this
+slice's two files, all fixed by making the prose match the code (no mechanism changed):**
+
+1. **A check whose named failure mode could never fire.** `... and the summary does NOT claim the shas were
+   resolved (control)` asserted the *absence* of the round-6 wording `provenance sha resolving as a commit` —
+   a phrase D-023 deleted from the guard, so the negative could never fire: a claim, not a check. It now
+   asserts the LIVE claim text, and a new mutation (`if (provenanceChecked) claims.push(` →
+   `if (true) claims.push(`) prints the claim unconditionally and turns it red. Same shape, same file, at
+   `... and the note no longer claims all three candidates were consulted (N3, control)`: it asserted the
+   absence of `looked for --repo`, dead since N3 rewrote the note. It now asserts the live sentence and has a
+   mutation that restores the old step-order sentence — which makes the control red.
+2. **A header block claiming every repaired shape had a mutation, when N3 had none.** The `REPAIRED BY THE
+   ROUND-6 REVIEW'S BOUNDED REPAIR` block said *"each with a behaviour check that CAN fail (a mutation of its
+   own anchor makes the check red)"*. True for B1/B1′/B2/N1/N2; **false for N3**. The header stayed as written
+   and the missing mutation was added (item 1 above), which is the honest direction — the claim is now true.
+3. **`discloseScanProvenance`'s JSDoc said the disclosure was "silent where the root is a throwaway temp dir".**
+   It is not silent: it prints `note — no-bare-head-count: this root is not a git worktree; the scan read
+   FILESYSTEM (working-tree) content only`. Corrected to say it *says so*, and why silence would be wrong
+   there.
+4. **The `residency-declared` rule bullet claimed enforcement it does not do.** *"every model says whether it
+   is resident, on-demand or remote, and every remote-capable probe can be run"* — the probe half is
+   `health-declared`'s (`probe tcp needs an endpoint`, `probe service needs a systemd unit name`), and
+   `residency-declared` enforces the enum plus "resident ⇒ local". Re-attributed; the capability exists, the
+   heading was wrong about where.
+5. **`MUTANT_DIRS` held a directory that is not a mutant** (`notARepo`, pushed only for cleanup) — D-024's LOW,
+   and the same family as the N2 name: a name asserting something about its contents. Renamed
+   `SCRATCH_DIRS`, with the comment saying what it holds.
+
+**One more claim that outran the mechanism, named rather than fixed (no mechanism change in this pass):** the
+not-a-worktree paragraph promised the run *"never manufactures one"* where the repository cannot answer. That
+holds when git runs — but D-024 records that `isCommit()`'s bare `catch` maps **every** failure to `false`, so
+on a machine with no `git` binary every provenance sha is reported unresolvable. The header now carries that as
+a ceiling entry (`A \`git\` BINARY THAT CANNOT RUN INVERTS THIS CHECK … the findings are false and this bullet
+is the ceiling`), and the mechanism is untouched. Likewise `resolveRepo`'s `--repo`-with-no-value crash and
+D-024's two check-harness notes (cleanup handler registered after the checks) are recorded there and were
+**not** touched.
+
+**Claims verified and left as they stand** (each read against the code this pass, not assumed): the sha is
+resolved with `git cat-file -e <sha>^{commit}` and a blob/tree/nonexistent is a finding (except the recorded
+quotations — the sentence now says so); quoting the sha is accepted; `--repo` is an instruction and a
+non-worktree one is reported as the reason with the other candidates *not* substituted; the summary omits the
+provenance claim when the check could not run (now with a reachable mutation); ARM 1 is token adjacency in
+either order within five tokens with a dressed count; ARM 2 matches global options and quoted revs; ARM 3
+crosses pipes and stands down when a fixed revision is named; the count token's dress window is three attached
+punctuation characters with the label within two tokens; both baselines are printed at run time; the absorber
+is keyed `file::sha` **with a count** (the header now says "the recorded COUNT … not line identity", which is
+the wording the review asked for); the SCOPE list matches the directories the walks read.
+
+**And the point of the pass: I read all 74 check NAMES against their bodies and the whole guard header against
+the code, and the list above is every instance found.** Two were blocking (the `@{…}` sentence, the position
+(b) sentence), one was the reviewer's rename, and the other five are the sweep's own. I found no *further* one
+after those: what remains in the header is either a claim with a check whose mutation flips it, or a named
+ceiling with a measurement beside it.
+
+## R14 — the derivation, re-run once, and the final state
+
+The repaired prose that enters the scan is **this section**: the guard and the check file are not read by the
+report/brief scan at all (the guard's own header block is read only by `instrument-headers-honest`), so the
+only new occurrences are this section's own quotations of the mechanism. The derivation was re-run as the brief
+requires — absorbed by re-derivation, never by hand, and twice, so the second run proves it is stable:
+
+```
+$ node /tmp/derive-baseline.mjs "$PWD"
+re-derived: no-bare-head-count 628 occurrence(s) / 399 key(s); unresolvable-sha 10 record(s) / 2 keys
+$ node /tmp/derive-baseline.mjs "$PWD"      # idempotent
+re-derived: no-bare-head-count 628 occurrence(s) / 399 key(s); unresolvable-sha 10 record(s) / 2 keys
+```
+
+**The growth is this section's, and it is stated rather than explained away: 617 occurrences / 395 keys → the
+figures above**, every added occurrence a quotation of the mechanism this pass repaired (`@{2}`, a counted
+`git … | wc` in a pasted transcript) absorbed by the same re-derivation every other lane record went through.
+Nothing was hand-added; the absorber's own map is unchanged at 10 records / 2 keys, because this report's sha
+literals are rendered rather than recorded.
+
+```
+$ node scripts/guards/factory-guard.mjs                 # exit 0
+  note — no-bare-head-count: baseline holds 628 recorded occurrence(s); a new count resolved through bare HEAD is a finding
+  note — no-bare-head-count: scanned 126 WORKING-TREE file(s); git tracks 126 under the same paths (0 untracked, 0 tracked-but-absent)
+  note — count-provenance: 128 provenance token(s) in the scan, 25 distinct sha(s) resolved with `git cat-file -e <sha>^{commit}` against /home/jmeisburg/orca/workspaces/playdate-app/onboarding (the scan root) — 10 unresolvable
+  note — count-provenance: 10 recorded unresolvable-sha record(s) absorbed (historical lane records that QUOTE a probe seed, by re-derivation); a NEW unresolvable sha, or a second occurrence of a recorded one in the same file, is a finding
+  ok — 5 model(s), 8 task kind(s), 1 work item(s); every floor meetable, every artifact present, every instrument header stating only what it can point at, no report or brief count resolved through bare HEAD beyond the recorded baseline, no count's provenance sha unresolvable beyond the recorded records (the records are historical lane reports that QUOTE a probe seed, absorbed by re-derivation — a NEW unresolvable sha still fails)
+
+PASS — the registry can be trusted and no work item claims evidence it does not have.
+
+$ node scripts/guards/factory-guard.check.mjs           # exit 0
+factory-guard check: all 74 checks passed.
+$ node scripts/guards/regexp-escape-guard.check.mjs     # exit 0
+regexp-escape-guard check: all 12 checks passed.
+$ bash scripts/guards/run-all.sh                        # exit 0
+GUARDS: PASS — all deterministic rules hold.
+$ npm run verify                                        # exit 0
+ Test Files  71 passed (71)
+      Tests  2067 passed (2067)
+$ grep -c ': warning ' /tmp/verify7e.log
+81
+$ grep -c ': error ' /tmp/verify7e.log
+0
+  ok — AGENTS.md (1789 words, ceiling 1800)
+```
+
+| Measure | Round 6 | This repair | Delta |
+|---|---|---|---|
+| test files | 71 | **71** | 0 |
+| tests | 2067 | **2067** | 0 |
+| oxlint warnings (`: warning `) | 81 | **81** | 0 |
+| oxlint errors (`: error `) | 0 | **0** | 0 |
+| `AGENTS.md` words / ceiling | 1789/1800 | **1789/1800** | 0 |
+| `factory-guard.check.mjs` | 72 checks | **74 checks** (+2 mutation checks for the two controls that had none) | +2 |
+| `factory-guard.mjs` | exit 0 PASS | **exit 0 PASS** | 0 |
+
+Every verify delta is zero: this pass touched `scripts/guards/*.mjs` and this report only — no `src/`, no
+`e2e/`, no `*.test.mjs`. The check count moved by two because two controls gained the mutations that make them
+checks; §R10's "72" and §R9(5)'s 72-line list are the state before this pass and are superseded by this
+section, as are §11's heading ("the only way the baseline changes" — there are two baselines now, and the
+absorber's map is re-derived by the same script) and §R1's substitution sentence, which said the sha is written
+`<bogus>` "in the instrument's own output lines below" while three of those lines keep the literal. The
+`<bogus>` device itself stands, disclosed; the *transcript* it is applied to is inconsistent, and the two lane
+reports the absorber holds are the only files whose records were not rewritten.
+
+## R15 — grepping this section with the rule
+
+```
+```
+$ node scripts/guards/factory-guard.mjs | grep "slice-6c-fix-6.md"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:1156: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "git rev-parse @"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:1156: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "2}` == `git rev-parse HEAD@{2}"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:1164: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "git rev-parse '{2}' 2>/dev/null; git rev-parse @"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:1180: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "git ls-tree -r --name-only <sha> .scratch | wc"
+  FINDING [count-provenance-unresolvable]: .scratch/v28/reports/slice-6c-fix-6.md:1194: a count's provenance names badc0de, which is not a commit in this repository (`git cat-file -e badc0de^{commit}` fails) — name a commit a reader can resolve
+```
+
+Five detector-half findings on this report's own new prose, every one of them a quotation of the mechanism
+(`git rev-parse @{2}`, `git ls-tree … <sha> … | wc`) — absorbed by the re-derivation below, exactly like every
+other lane record. After it, the same grep prints nothing for this file. No weakening: the sha half's two
+literals are rendered `<bogus>`-style and disclosed rather than baselined away.
 ```
