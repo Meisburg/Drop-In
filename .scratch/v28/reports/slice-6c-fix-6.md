@@ -391,6 +391,11 @@ exit `0`. `bash scripts/guards/run-all.sh` → `GUARDS: PASS — all determinist
 
 ## 8. The ceiling, stated plainly (the header and this report agree)
 
+**BOUNDED REPAIR (round 6 review).** This list did not name four shapes the review measured
+(B1, B1′, B2, N1, N2). They are now CLOSED and behaviour-checked, not added to the list as ceilings — the
+guard header carries them in a `REPAIRED BY THE ROUND-6 REVIEW` block, and the appended *Bounded repair*
+section below is the evidence. Everything else here stands.
+
 **Decidable and enforced — a violation FAILS:**
 
 1. **A count's provenance sha must be a commit.** `N at <sha>` (either word order) and the revision of a
@@ -584,3 +589,322 @@ $ grep -c ': error ' /tmp/verify6.log
 
 The baseline holds 38 keys for this report's own quotations; they are printed on every run by the note above,
 and any *new* occurrence of any of those shapes still fails — proved in §3.1 on a real lane file.
+
+---
+
+# Bounded repair (round 6 review)
+
+**Reviewed:** `.scratch/v28/reports/slice-6c-fix-6-review.md` (the reviewer's verdict was
+**NEEDS_CHANGES**, and it ruled the four findings an **implementation** defect inside D-021, not a
+specification defect: *"they are token definitions plus the ceiling wording, all inside the artifact D-021
+already authorises."* No new ruling was sought and none is needed.)
+
+**Base for this repair:** `ef21f96`. The whole of the round-6 report above is unchanged except for the
+ceiling pointer at §8 and this section. Nothing in it is re-litigated; three of its numbers are superseded
+by the repair and are named in §R4 below.
+
+## R1 — the four measured shapes, and what happened to each
+
+The reviewer measured these against the committed instrument and proved each with a command. All four are
+now **CLOSED** — not declared, not narrowed: the token definitions were widened to the form the header
+already wrote down, and each has a behaviour check that goes red when its own anchor is mutated.
+
+| # | Shape (the reviewer's measurement) | Was | Now | Check that proves it |
+|---|---|---|---|---|
+| **B1** | a dressed count naming a WRONG sha: `The tree held **412** tracked files at <bogus>.`, `412 (tracked) files at <bogus>`, `\| 412 \| tracked files at <bogus> \|` — all PASS, 76 tokens (*not one counted*) | PASS | **FINDING** `count-provenance-unresolvable`, and the run reports **3** provenance tokens | `a dressed count naming a bogus sha is CAUGHT (B1: the decidable half)` + `... and all three dressed counts are COUNTED as provenance tokens, not skipped` |
+| **B1′** | the same dress with `at HEAD`: `**412** tracked files at HEAD`, `\| 412 \| tracked files \| at HEAD \|`, `"412" … at HEAD`, `412: … at HEAD` | PASS | **FINDING** `no-bare-head-count` | `a dressed count resolved through bare HEAD is CAUGHT (B1: the detector half)` |
+| **B2** | punctuation directly after the sha: `The corpus stands at <bogus>, 276 …`, `… at <bogus>: 276 …`, `The corpus, at <bogus>, held 276 …` — PASS and the token counter did not move | PASS | **FINDING**, and those tokens are **counted** (3) | `a canonical \`at <sha>\` followed by a comma or a colon is CAUGHT when the sha is bogus (B2)` + `... and those tokens are COUNTED` |
+| **N1** | a counted git command piped through a filter: `git log --oneline \| grep -c "round 6" \| wc -l`, `git ls-files src \| grep -c "\.ts$" \| wc -l` | PASS | **FINDING** | `a counted git command piped through a filter is CAUGHT (N1: the property, not the spelling)` |
+| **N2** | a bare `@{2}` reflog label: `276 tracked files at @{2}` (`git rev-parse @{2}` == `git rev-parse HEAD@{2}`, measured) | PASS | **FINDING** | `a bare \`@{2}\` reflog label is CAUGHT (a moving revision, N2)` |
+| **N3** | `resolveRepo()` short-circuits the header's three-step order and the NOTE claims all three were consulted | false NOTE | the NOTE names what happened; a stale `--repo` is reported as the reason | `a stale \`--repo\` is reported as the reason, naming the argument (N3)` + `... and the note no longer claims all three candidates were consulted (N3, control)` |
+
+The reviewer's own words for the seeds, with the bogus sha written `<bogus>`: pasting that 7-hex string
+*literally* next to a count makes **this report** a `count-provenance-unresolvable` finding, which is exactly
+what B1 says and exactly what the widened rule now does — §R8 pastes the run that caught it. The raw output
+below carries the string as the instrument printed it, where it sits in prose rather than in a provenance
+token.
+
+Raw, on fresh roots, with the repaired instrument. The bogus sha is written `<bogus>` in every seed,
+and in the instrument's own output lines below; the string the run used is the 7-hex `deadbee` named in the
+paragraph above. The substitution is of the string only — every verdict, exit code and token count is as the
+run printed it — and it is necessary for the same reason §2.3 gives: a bogus sha sitting in a provenance
+position makes THIS report a `count-provenance-unresolvable` finding, which is exactly what B1 reports.
+
+```
+$ node scripts/guards/factory-guard.mjs --root /tmp/r6seed-xxxx --repo "$PWD"   # seed "The tree held **412** tracked files at <bogus>."
+  note — count-provenance: 1 provenance token(s) in the scan, 1 distinct sha(s) … — 1 unresolvable
+  FINDING [count-provenance-unresolvable]: .scratch/v28/reports/b1-dress-bogus.md:1: a count's provenance names deadbee, which is not a commit in this repository …                                                                     exit 1
+$ … seed "The tree held 412 (tracked) files at <bogus>."          → same FINDING                              exit 1
+$ … seed "| 412 | tracked files at <bogus> |"                     → same FINDING                              exit 1
+$ … seed "The tree held **412** tracked files at HEAD."           → FINDING [no-bare-head-count] "412** tracked files at HEAD"                exit 1
+$ … seed "| 412 | tracked files | at HEAD |"                      → FINDING [no-bare-head-count] "412 | tracked files | at HEAD"              exit 1
+$ … seed "The tree held \"412\" tracked files at HEAD."           → FINDING [no-bare-head-count] "412\" tracked files at HEAD"               exit 1
+$ … seed "The tree held 412: tracked files at HEAD."              → FINDING [no-bare-head-count] "412: tracked files at HEAD"                 exit 1
+$ … seed "The corpus stands at <bogus>, 276 tracked files were counted."   → FINDING [count-provenance-unresolvable] “deadbee …”            exit 1
+$ … seed "The corpus stands at <bogus>: 276 tracked files were counted."   → FINDING [count-provenance-unresolvable] “deadbee …”            exit 1
+$ … seed "The corpus, at 1c3471a, held 276 tracked files."        → 1 provenance token, 0 unresolvable, PASS                                  exit 0
+$ … seed "git log --oneline | grep -c \"round 6\" | wc -l"        → FINDING [no-bare-head-count]                                            exit 1
+$ … seed "git ls-files src | grep -c \"\.ts$\" | wc -l"           → FINDING [no-bare-head-count]                                            exit 1
+$ … seed "The tree held 276 tracked files at @{2}."               → FINDING [no-bare-head-count] "276 tracked files at @{2}"                 exit 1
+```
+
+### What changed, mechanically
+
+```
+-MOVING_REV   HEAD(?:~[0-9]*|\^[0-9]*|@\{[^}]*\})?|@(?![{\w])
++MOVING_REV   HEAD(?:~[0-9]*|\^[0-9]*|@\{[^}]*\})?|@
+-COUNT_TOKEN  (?<![\d/.\w])\d+(?![/\d])[.,]?(?=\s+[a-zA-Z`])
++COUNT_TOKEN  (?<![\d/.\w])\d+(?![/\d])[^\s\w/]{0,3}(?=\s[^\s]*\s?[a-zA-Z`])
+-COUNT_GAP    (?:\s[^\s'"“”]+){0,4}\s+
++COUNT_GAP    [^\s]*?(?:\s[^\s'"“”]+){0,5}\s+
+-ARM 3 middle [^\n|`]{0,120}?
++ARM 3 middle [^\n`]{0,160}?
+```
+
+- **`COUNT_TOKEN`** now accepts the dress a report puts around a count: up to three attached punctuation
+  characters (`**412**`, `"412"`, `` `412` ``, `412:`) and up to two tokens of label between the number and
+  its word (`412 (tracked) files`, `| 412 | tracked files`). The label lookahead is kept, so a number that is
+  not a quantity (a version fragment, a table cell holding another number) is still not a count.
+- **`COUNT_GAP`** now tolerates punctuation attached to the token that precedes it, on either side of the
+  connector (`at 1c3471a, 276 files`), and the window is **five** tokens, not four, because a table row puts
+  a cell separator between a count and its label (`| 412 | tracked files | at HEAD |`).
+- **`MOVING_REV`** drops the `@` lookahead. The end assertion `(?!\w)` is the single mechanism that keeps
+  `@` off `user@example.com` and `@decorator`, and the bare shorthand covers `@{2}` as well as `at @`, so the
+  separate `@\{[^}]*\}` alternative I first added was unreachable and was removed — an arm that cannot fire
+  is the defect shape this rule exists to stop, not something to leave in the diff.
+- **ARM 3's middle** crosses pipes. A command piped through a filter names no more revision than one piped
+  straight to `wc`, and the arm's stated property is *a counted git command that names no fixed revision*.
+- **`MOVING_REV_RE`** is now built from `REV_TOKEN`, so the arm-3 fixed-sha exemption asks the same question
+  the arms do ("does this text carry a standalone moving rev?") instead of "does it contain `@` or `HEAD`".
+- **`resolveRepo()`** returns `{ repo, why }`; `--repo` is an instruction (a non-worktree `--repo` is
+  reported as the reason and the other candidates are *not* substituted silently), and the NOTE prints the
+  reason instead of a step-order sentence that was not true.
+
+## R2 — the four LIVE corpus lines the reviewer named
+
+They were absorbed by **re-derivation** (D-011 item 2 — historical records keep their labels), never by
+hand-adding a key. Two of them are detector-half instances and now fire; the other two carry a *real* sha in
+a dressed count, so what they needed was the sha to be **counted and verified** — and that is what changed
+for them:
+
+```
+$ node scripts/guards/factory-guard.mjs | grep -E 'slice-6c-fix-2-review.md:226|slice-6c-fix-3-review.md:165'
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-2-review.md:226: … : "3** at HEAD"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-3-review.md:165: … : "2067** at its HEAD"
+```
+
+and the token counter, before → after, for the same corpus:
+
+```
+before:  note — count-provenance: 76 provenance token(s) in the scan, 21 distinct sha(s) … 0 unresolvable
+after:   note — count-provenance: 100 provenance token(s) in the scan, 23 distinct sha(s) … 0 unresolvable
+```
+
+`slice-6c-fix-1-review.md:18` and `briefs/slice-6c-fix-2.md:60` are "**265** at `c2ec32e`/HEAD." — the sha
+is `c2ec32e`, a real commit, so those two lines are *counted and verified* rather than flagged: the defect
+was that they were invisible to the verification, not that they were wrong.
+
+## R3 — the baseline: re-derived, and no occurrence lost
+
+```
+$ node /tmp/derive-baseline.mjs "$PWD"
+re-derived: 488 occurrence(s) / 304 key(s)
+$ node /tmp/derive-baseline.mjs "$PWD"      # again, once this appended section existed
+re-derived: 551 occurrence(s) / 336 key(s)
+```
+
+**`442` occurrences / `255` keys → `488` / `304`.** That is the state after the mechanism change. Running the
+same derivation again once *this appended section* existed — §R8's own grep output quotes the class, exactly
+as §9 of the round-6 report does — took it to **`551` / `336`**, absorbed the same way and never by hand; the
+size the run prints is the live one, and both figures are re-derived, not typed. The
+re-keying is a consequence of a wider token: a match can now start earlier (`262 @` instead of
+`@ c484648 / 23`), so the same occurrence is recorded under a different span. **It is not a coverage loss,
+and that was measured rather than asserted** — the two instruments' own regexes were run over the corpus and
+the per-line match sets compared:
+
+```
+lines with a match — old instrument: 330, new instrument: 369
+lines that LOST every match: 0
+lines newly matched: 39
+```
+
+The 11 re-keyed keys, named (each line still matches; only the span moved):
+
+```
+.scratch/v28/briefs/slice-2-verify.md::git rev-parse HEAD                         (x6, the slice-2 family)
+.scratch/v28/reports/slice-6c-fix-1-verify.md::@ c484648 / 23
+.scratch/v28/reports/slice-6c-fix-1-verify.md::@ c484648, 265 after staging, 23
+.scratch/v28/reports/slice-6c-fix-4-review.md::259 at `32e9f48`, 265 at HEAD
+.scratch/v28/reports/slice-6c-fix-4-verify.md::265 at HEAD\n265 at HEAD
+.scratch/v28/reports/slice-6c-fix-5-review.md::git blame package.json' 'git annotate … | wc
+```
+
+**Independent agreement with the run-time counter** (a separate script, the token definitions the header
+documents, counted the way the guard counts them — non-overlapping):
+
+```
+independent count: 100 provenance token(s), 23 distinct sha(s), 0 unresolvable
+run-time counter:  100 provenance token(s) in the scan, 23 distinct sha(s) … 0 unresolvable
+
+(Those two are the corpus before this section existed. Live, with this section's own provenance lines in the
+scan, both print **105** tokens / 23 distinct shas / 0 unresolvable — the run's note is the one to read.)
+```
+
+## R4 — behaviour checks: 57 → 72, and each new claim has its mutation
+
+```
+$ node scripts/guards/factory-guard.check.mjs
+factory-guard check: all 72 checks passed.                                        exit 0
+```
+
+```
+  ✓ a dressed count naming a bogus sha is CAUGHT (B1: the decidable half)
+  ✓ ... and all three dressed counts are COUNTED as provenance tokens, not skipped (B1)
+  ✓ MUTATION: narrowing the count token back lets that bogus sha PASS (so the check can fail)
+  ✓ a dressed count resolved through bare HEAD is CAUGHT (B1: the detector half)
+  ✓ a canonical `at <sha>` followed by a comma or a colon is CAUGHT when the sha is bogus (B2)
+  ✓ ... and those tokens are COUNTED, so the run does not silently skip them (B2)
+  ✓ MUTATION: dropping the attached-punctuation lead lets that bogus sha PASS (so the check can fail)
+  ✓ the same parenthetical naming a real commit passes and is counted (control)
+  ✓ a counted git command piped through a filter is CAUGHT (N1: the property, not the spelling)
+  ✓ MUTATION: restoring the pipe-excluding middle lets that seed PASS (so the check can fail)
+  ✓ a bare `@{2}` reflog label is CAUGHT (a moving revision, N2)
+  ✓ MUTATION: dropping the `@{…}` alternative lets that seed PASS (so the check can fail)
+  ✓ a stale `--repo` is reported as the reason, naming the argument (N3)
+  ✓ ... and the note no longer claims all three candidates were consulted (N3, control)
+  ✓ with no --repo, the fallback to this instrument's repository is named (control)
+  ✓ an email and a @decorator next to a count are NOT flagged (control)
+  ✓ MUTATION: dropping the token END assertion turns that control red (so the control CAN fail)
+```
+
+Two notes on the checks themselves, because the reviewer measured the previous versions as claims:
+
+- The **`@` control is now reachable by one mutation**. The `@{2}` line moved OUT of the control root and
+  into its own seed (it is a moving revision, not a false positive — the reviewer's N2), and the control's
+  failure mode is now the token's END assertion, with a seeded `@decorator … in 4 files` line so removing
+  the assertion turns the root red.
+- The **`MUTATION: narrowing the count token back`** anchor is the guard's own `String.raw` + `BACKTICK`
+  concatenation crossing the regex text; `mutatedGuard` asserts the anchor occurs exactly once, so a moved
+  anchor is an error rather than a silent no-op.
+
+## R5 — verification, re-measured
+
+```
+$ node scripts/guards/factory-guard.mjs      → 1 finding, exit 1   (see §R6 — NOT this slice's)
+$ node scripts/guards/factory-guard.check.mjs → all 72 checks passed, exit 0
+$ node scripts/guards/regexp-escape-guard.check.mjs → all 12 checks passed, exit 0
+$ bash scripts/guards/run-all.sh             → GUARDS: FAIL — 1 guard(s) reported findings: - factory-guard
+$ npm run verify                             → VERIFY EXIT 1
+```
+
+`npm run verify` reaches the guards step green everywhere else, and every number is unchanged from round 6:
+
+| Measure | Round 6 | This repair | Delta |
+|---|---|---|---|
+| test files | 71 | **71** | 0 |
+| tests | 2067 | **2067** | 0 |
+| oxlint warnings (`: warning `) | 81 | **81** | 0 |
+| oxlint errors (`: error `) | 0 | **0** | 0 |
+| `AGENTS.md` words / ceiling | 1789/1800 | **1789/1800** | 0 |
+
+The deltas are zero because this repair touches `scripts/guards/*.mjs` and this report only: no `src/`, no
+`e2e/`, no `*.test.mjs`. **The one non-zero is the exit code**, and its cause is §R6.
+
+## R6 — the red that is NOT this slice's (blocking the exit-0 claim)
+
+`factory-guard.mjs` exits 1 with exactly one finding, and it is the orchestrator's own state file naming
+another lane's artifact:
+
+```
+  FINDING [artifacts-exist]: v28-r2-6c.json: lane 'review' names artifact '.scratch/v28/reports/slice-6c-fix-6-review.md', which is not on disk
+
+FAIL — 1 factory finding(s).
+```
+
+It is **pre-existing on this branch, not caused by, and not fixable inside, this slice** — measured against
+the committed instrument at `ef21f96` (the tree this repair started from, before any edit of mine):
+
+```
+$ git show HEAD:scripts/guards/factory-guard.mjs > /tmp/guard-ef21f96.mjs
+$ node /tmp/guard-ef21f96.mjs --root "$PWD"
+  FINDING [artifacts-exist]: v28-r2-6c.json: lane 'review' names artifact '.scratch/v28/reports/slice-6c-fix-6-review.md', which is not on disk
+
+FAIL — 1 factory finding(s).
+```
+
+`factory/work/v28-r2-6c.json` is the orchestrator's work state, and the missing file is the round-6
+reviewer's report, which lives in the lane's artifacts directory (`~/.pi/agent/sessions/…/subagent-artifacts/
+outputs/e6ac2432-…/.scratch/v28/reports/slice-6c-fix-6-review.md`) and has not been copied into the repo.
+Both halves of the fix — copying the report in, or amending the work item — are the orchestrator's to make;
+manufacturing another lane's artifact, or hand-editing the work state to silence the rule, is not something
+this slice may do. **Every rule of this instrument is green**; the only finding is that one, and it is
+reported here rather than worked around. It was sent to the supervisor as a blocking decision.
+
+## R7 — the ceiling, re-stated so this report and the guard header agree
+
+The guard header now carries a **REPAIRED BY THE ROUND-6 REVIEW'S BOUNDED REPAIR** block naming the four
+shapes above as closed with their checks, and the round-6 ceiling list at §8 is unchanged for everything
+else. Corrected by this section, and superseded: §4's and §12's `442 / 255` (now `551 / 336`, re-derived), and
+§8's list, which did not name the four shapes — it does now, in the header, as closed.
+
+What remains a declared ceiling, unchanged:
+
+- **A resolvable but WRONG commit** — `… at 1c3471a` passes when `1c3471a` is *a* commit. Verification closes
+  existence and commit-ness, not identity; D-021 prescribes exactly `git cat-file -e <sha>^{commit}`.
+- **A count whose provenance is implied and not written** (`2067 passed (2067)`).
+- **A sha provenance written without the `at` connector** (`… from 1c3471a`) — the connector is what keeps a
+  `->`-separated content-hash table out of the rule.
+- **A provenance token that is neither a moving rev nor a sha** (`… at latest`, `… at 71bdd5`).
+- **`<HEAD>`, `MERGE_HEAD`-style refs, a bare `@` inside a word** — the token boundaries, behaviour-checked.
+- **Other moving refs** (branch names, tags, `refs/heads/*`).
+- **ARM 1's proximity window**, now five tokens, with the dress window on the count: a lexical rule's
+  precision cost, declared and measured (39 newly matched lines, absorbed by re-derivation).
+- **ARM 3 does not tell a template from a measurement** (`git ls-tree -r --name-only <c> .scratch | wc -l`).
+- **Filesystem counts** (`ls | wc -l`) and **files outside `.scratch/v28/{reports,briefs}/*.md`**.
+
+## R8 — grepping this section with the widened rule
+
+The widened rule run against this report, before the re-derivation that absorbs it — pasted whether or not
+it is empty, as the brief requires. After the last re-derivation the same grep prints **nothing** for this
+file (measured, §R3), so the round-6 report joins every other lane record in the baseline rather than being
+exempted from the rule.
+
+```
+```
+$ node scripts/guards/factory-guard.mjs | grep "slice-6c-fix-6.md"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:610: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "412** tracked files at HEAD"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:610: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "412 \\| tracked files \\| at HEAD"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:610: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "412\" … at HEAD"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:610: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "412: … at HEAD"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:612: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "git log --oneline \\| grep -c \"round 6\" \\| wc"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:612: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "git ls-files src \\| grep -c \"\\.ts$\" \\| wc"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:613: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "276 tracked files at @"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:613: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "2}` (`git rev-parse @"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:613: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "2}` == `git rev-parse HEAD@{2}"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:634: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "412** tracked files at HEAD"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:634: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "412** tracked files at HEAD"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:635: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "412 | tracked files | at HEAD"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:635: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "412 | tracked files | at HEAD"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:636: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "412\\\" tracked files at HEAD"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:636: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "412\\\" tracked files at HEAD"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:637: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "412: tracked files at HEAD"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:637: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "412: tracked files at HEAD"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:641: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "git log --oneline | grep -c \\\"round 6\\\" | wc"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:642: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "git ls-files src | grep -c \\\"\\.ts$\\\" | wc"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:643: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "276 tracked files at @"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:643: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "276 tracked files at @"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:665: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "412 | tracked files | at HEAD"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:667: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "2}` as well as `at @"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:687: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "3** at HEAD"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:688: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "2067** at its HEAD"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:710: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "262 @"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:711: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "@ c484648 / 23`),"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:724: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "git rev-parse HEAD"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:726: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "@ c484648, 265"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:727: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "259 at `32e9f48`, 265 at HEAD"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:728: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "265 at HEAD\\n265 at HEAD"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:729: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "git blame package.json' 'git annotate … | wc"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:815: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "git show HEAD"
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:849: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "git ls-tree -r --name-only <c> .scratch | wc"
+```
+```
