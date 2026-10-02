@@ -822,3 +822,27 @@ gate rejects. The two agents and the guard had been pointed at **product** code 
 instrument that *creates the record of the work* disagreed with the instrument that *checks it*. **A guard is
 only as good as its coverage, and the orchestrator's own tooling was outside it.** Worth asking of every
 generator in this repo: *does its default output satisfy its own validator?*
+
+## D-030 — an empty measurement read as a clean result (three instances, now a named class)
+
+**Found 2026-10-02 as slice 6d review's B3, and recognised immediately as the third sighting.** The pattern is
+not "a claim the mechanism does not support" (D-025) — it is sharper: **a measurement that did not happen, or
+came back empty, being consumed as evidence of health.** A failure to measure, read as a measurement result.
+
+| # | Where | The empty measurement | Read as |
+|---|---|---|---|
+| 1 | `scheduler.mjs:427-429` (**D-022**) | a health probe that failed → `available === null` | **ADMITTED** — `if (usable !== null && required > usable)` short-circuits, so *an unprobeable machine passes the RAM check the module exists to enforce* |
+| 2 | `factory-guard.mjs:863` (**D-024**) | `git` absent → bare `catch` → `false` | **"unresolvable sha"** — on a machine without git, *every* sha would be condemned |
+| 3 | `copy-taxonomy-guard.mjs:450` (**B3**) | every label collapsed → `scanned words: 0 (none)` | **PASS** — rule 3 never ran, rule 4 matched nothing, and the guard's own header at `:71-72` says *"an instrument that matches nothing looks exactly like a clean repo"* — **which is the precise state it just passed in** |
+
+**Instance 3 is the sharpest because the guard REFUTES ITSELF.** Its header names the exact failure mode, and
+then its implementation commits it: there is no tripwire on the scan set, so a zero-word scan reports clean.
+
+**The rule for every instrument in this repo, now written down:** **zero and `null` are findings, never passes.**
+An instrument that scanned nothing, probed nothing, or resolved nothing has not established health — it has
+established that it did not look. Whatever produced the empty set must be reported, and the run must fail.
+This is the same invariant as the module's own stated contract (`null` is *unknown*, never *fine*) — the
+scheduler inverted it (D-022), the sha resolver inverted it (D-024), and now the taxonomy guard inverted it.
+
+**Consequence for the hardening set:** D-022's one-line fix, D-024's cluster, and B3 are **one repair in three
+places**, and B3 ships with the slice because it is a mechanism defect with a live refutation in its own header.
