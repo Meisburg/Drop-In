@@ -298,6 +298,15 @@ compaction.
   servers. Preserve the human's existing work and undelivered artifacts.
 - Factual drift check before you dispatch: if a doc you are about to rely on has
   changed since you last read it, re-read it.
+- **A lane's artifact is that lane's record, and no one else edits it.** When a
+  builder's guard goes red because ANOTHER LANE's report quotes a moving-revision
+  spelling, the repair is **re-derivation of the baseline** — which is the
+  orchestrator's to run or delegate, never a builder's to hand-edit. Found live:
+  a builder silently rewrote two provenance tokens inside a verifier's report to
+  turn `no-bare-head-count` green when re-derivation was available (D-011 item 2 /
+  D-021 item 2). **A red guard traceable to a lane's own record is reported to
+  you, not resolved by whoever happens to be holding the file.** Rule written
+  here because a rule kept only in a slice report is a rule that stops running.
 
 ## Completion requires ALL of
 

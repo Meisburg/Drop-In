@@ -688,6 +688,10 @@ Two pushes came back from the review. Both accepted:
 
 ### Slice 6c — CLOSED 2026-10-02 (the slice that taught the batch its defect class)
 
+### A SECOND 8b DEFERRAL — `factory-guard`'s report/brief scan passes on zero files
+
+When no `.scratch/v28/reports`/`briefs` exists under the root it returns `reportFiles: 0`, prints "unchecked here", and **PASSES** — the same `checked=0` shape. Found by 8a's round-3 review and registered here and in `factory/work/v28-r2-8b.json` for the same reason the first one was: **an unowned deferral is a lost one.**
+
 ### DEFERRAL REGISTERED FOR 8b — `lib-sibling-guard.sh` passes at `checked=0`
 
 A guard that reports health while checking **zero** files. Found by slice 8a's round-2 review, **declared in that slice but owned nowhere** — which is why it is written here and in `factory/work/v28-r2-8b.json` rather than left to memory. This is D-030's own class inside the guard suite, and 8b owns guards: it must **fail when it checks nothing**, with a seed and a mutation proving it.

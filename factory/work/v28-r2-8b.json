@@ -65,6 +65,15 @@
       "note": "DEFERRED IN FROM SLICE 8a, and registered here so it is owned rather than remembered: `scripts/guards/lib-sibling-guard.sh` passes at `checked=0` \u2014 it reports health while checking ZERO files. That is D-030 (an empty measurement consumed as health) sitting in the guard suite itself, and slice 8a's round-2 review found it DECLARED in that slice but registered nowhere (not in plan.md, not here). 8b owns guards, so it is 8b's: the guard must FAIL when it checks nothing, with its own seed and mutation.",
       "actor": "orchestrator",
       "model": null
+    },
+    {
+      "at": "2026-10-02T19:16:53.943649Z",
+      "lane": "implementation",
+      "from": "pending",
+      "to": "pending",
+      "note": "SECOND DEFERRED-IN D-030 INSTANCE, registered so it is owned rather than remembered: `factory-guard.mjs`'s report/brief scan returns `reportFiles: 0` when no `.scratch/v28/reports` or `briefs` directory exists under the root, prints 'unchecked here', and PASSES \u2014 the same `checked=0` shape as the lib-sibling hole. Found by slice 8a's round-3 review. Two zero-check paths in the guard suite report health without looking; 8b owns guards, so both are 8b's: the run must FAIL when it checked nothing, each with its own seed and mutation.",
+      "actor": "orchestrator",
+      "model": null
     }
   ]
 }
