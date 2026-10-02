@@ -6931,3 +6931,18 @@ machine to ~42 GB free; and the lanes that run many turns (verifier) stay on clo
 **And the scope cut is PREPENDED to `slice-8b.md`, not appended**, because the failure mode is a builder reading the
 whole document and finding seven plausible subjects for one dispatch -- *which is exactly what one of 6b's builders
 did, drifting onto the crop-confirm upload path.* **The cut names each moved section and who owns it.** ✓
+
+## 📦 HANDOVER WRITTEN (`HANDOVER.md`) -- the human asked whether to start a new session, and the answer is YES
+
+**The session is at 52% context and the state is fully durable in FILES** -- `plan.md` (55 KB), `task-state.md`
+(470 KB), `.scratch/v28/ledger.md` (530 KB), one brief per unit, and reports for the lanes that have run. **That is the
+whole design: files are the system of record and chat is not.** *A new session costs one read of `HANDOVER.md`, which
+now names: what is closed, what is open and in what order, the model routing, the ten rules that have actually caught
+things, the known fragilities, and the four batch-boundary items that need the HUMAN rather than an agent.*
+
+**⚠️ AND ONE THING I FOUND WHILE ANSWERING: `6c-fix-1`'s BUILDER IS GONE AND ITS WORK IS UNCOMMITTED.** No run dir, no
+status -- but the working tree holds its four files at **+181/-19** (`regexp-escape-guard{,.check}.mjs`,
+`docs/agents/code-structure.md` -- **which is G4, the code-structure rule the review demanded** -- and its report).
+**Copied to `/tmp/6c-fix1-wip/` so a new session cannot lose it**, and named in the handover as *work on disk,
+uncommitted, builder died* rather than as "not started". *A slice that did the work and died before committing is not a
+slice that was never attempted, and a handover that calls it "not started" would throw the work away.*
