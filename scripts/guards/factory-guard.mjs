@@ -89,13 +89,21 @@
 //                         names no sha, another rule's transcript — is a named
 //                         ceiling, not a covered shape.
 //   transcript-summary-agrees  EVERY fenced block whose marker starts a line is
-//                         read, by CommonMark's own fence rules: an opener is a
-//                         run of three or more backticks or tildes (after leading
-//                         whitespace), and a same-kind line closes it only when
-//                         its run is at least as long, is indented at most three
-//                         spaces, and carries nothing but spaces and tabs — so a
+//                         read, using the reference CommonMark implementation's
+//                         own fence recognition, vendored once in
+//                         `scripts/lib/fence-scanner.mjs` and called by BOTH
+//                         this guard and the conformance fixture that judges it
+//                         (D-039) — so there is no hand-written clause left to
+//                         drift from the reference. An opener is three or more
+//                         backticks (with no backtick later on the line) or
+//                         three or more tildes, indented at most three columns;
+//                         a same-kind line closes it only when its run is at
+//                         least as long and it carries nothing but spaces or
+//                         tabs — so a
 //                         nested fence's content stays inside
-//                         the block that opened first, where it is read. A line
+//                         the block that opened first, where it is read. Line
+//                         endings are normalised before scanning, so a CRLF
+//                         file is ordinary text. A line
 //                         inside one that states a step range beside a count must
 //                         agree with its own arithmetic. There is no label and
 //                         no attribution between the two — the rule was
@@ -153,6 +161,12 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import process from 'node:process'
+
+// The fence scanner is the reference CommonMark implementation's own fence
+// recognition, vendored once and shared with the conformance fixture (D-039).
+// One implementation, two callers: the guard cannot read blocks differently from
+// the table that judges it.
+import { scanFences, splitLines } from '../lib/fence-scanner.mjs'
 
 const argv = process.argv.slice(2)
 const rootFlag = argv.indexOf('--root')
@@ -1668,11 +1682,10 @@ function checkTranscripts(files) {
  *     line, the count AFTER the range. `through`/`to`/`..`, a count BEFORE the
  *     range, a count split across two lines, and a `PASS` line with no `✓`
  *     escape;
- *   - Markdown INDENTED code is not read as such. An OPENER is read after leading
- *     whitespace with NO indentation limit — recognising more openers reads
- *     MORE, which is the safe direction — while a CLOSER obeys CommonMark: a
- *     same-kind run indented at most three spaces and followed by spaces or tabs
- *     only. A deeper- or tab-indented same-kind line is CONTENT, the block stays
+ *   - Markdown INDENTED code is not read as such: an opener indented four
+ *     columns or more is an indented code block, exactly as the reference reads
+ *     it, so a fence run inside indented code opens nothing. A deeper- or
+ *     tab-indented same-kind line is CONTENT, the block stays
  *     open, and the lines below it stay inside the scan set. An indented run with
  *     NO fence marker in it is outside the
  *     scan set — DECLARED, per D-033 item 3, because it is a scope boundary and
@@ -1749,10 +1762,21 @@ const STEP_RANGE_COUNT = /✓\s*(\d+)\s*[–—-]\s*(\d+)\b[^\n]*?\(all\s+([a-z]
 //     PROSE quotation of the round-5 seed and carries TWO range/count pairs, so
 //     its count is 2. Re-derived the same way: the map blanked, the run read
 //     every site back.
+//   - The fourth re-derivation (fix round 7, the D-039 scanner swap) added the
+//     three sites in `slice-8b-verify-6.md`. The shared scanner reads the
+//     reference's blocks, so it reads MORE of a lane report than the hand-written
+//     recogniser did: the verifier's own quotations of the probe seed, which that
+//     report must quote to prove the rule fires, are the evidence trail D-033
+//     exists to absorb. Counts 2, 1 and 1: the first line occurs twice in the
+//     file. Re-derived the same way: the map blanked, the run read every site
+//     back.
 const TRANSCRIPT_QUOTATION_BASELINE = new Map([
   [".scratch/v28/reports/slice-8a-verify-5.md::> \u2713 7\u201313 zz-spec.e2e.ts (all six legs)", 1],
   [".scratch/v28/reports/slice-8b-review.md::\u2713 7\u201313 zz-spec.e2e.ts (all six legs)", 1],
   [".scratch/v28/reports/slice-8b-review.md::(the round-5 seed ``✓ 1–6 … (all six legs)  ✓ 7–13 … (all six legs)``: pre-fix exit 0, HEAD exit 1), but **there is", 2],
+  [".scratch/v28/reports/slice-8b-verify-6.md::✓ 7–13 zz-spec.e2e.ts (all six legs)", 2],
+  [".scratch/v28/reports/slice-8b-verify-6.md::fabricated `✓ 7–13 … (all six legs)` line is its **content** (`_isFenced: true`, literal that line). The guard", 1],
+  [".scratch/v28/reports/slice-8b-verify-6.md::seed (`    ``` / ``` / ✓ 7–13 … (all six legs) / ``` `) makes the guard print `2 fenced block(s) read, 0", 1],
 ])
 const TRANSCRIPT_QUOTATION_BASELINE_SIZE = [...TRANSCRIPT_QUOTATION_BASELINE.values()].reduce((sum, n) => sum + n, 0)
 
@@ -1764,49 +1788,31 @@ function checkRawBlockSummaries(files) {
   let absorbed = 0
   for (const path of files) {
     const rel = relative(ROOT, path)
-    const lines = readFileSync(path, 'utf8').split('\n')
+    const text = readFileSync(path, 'utf8')
 
     // EVERY fenced block. No label, no nearest-above search, no region kind that
     // can take a label from the block that follows it: there is nothing to
     // associate, so there is nothing to break (D-032).
     //
-    // THE FENCE RULES ARE COMMONMARK'S, implemented rather than guessed at. An
-    // OPENER is a run of three or more backticks or tildes at the start of a line
-    // after leading whitespace — ANY amount, the declared safe over-read, where
-    // recognising more openers reads more; CommonMark's own limit is three — and
-    // a BACKTICK opener's info string may not itself contain a backtick. A
-    // same-kind line CLOSES the block only when its run is at least as long as
-    // the opener's, it is indented at most three spaces (spaces only), and after
-    // the run it carries nothing but spaces and tabs; any other same-kind line is
-    // CONTENT. That is what keeps a nested fence's content — the standard idiom
-    // for QUOTING a fenced block, an inner ```js info string inside an outer
-    // fence — INSIDE the block that opened first, where this rule reads it.
-    // Closing on any same-kind marker line put that content in no parsed block at
-    // all: the `0 … compared`, PASS, exit 0 signature D-031/D-032 exist for,
-    // reached by content. The same signature came back through the closer's own
-    // whitespace — a closer indented four spaces, or tab-indented — where
-    // CommonMark keeps the block open and this parser used to close it and drop
-    // the lines below. This is conformance to a closed specification, not a
-    // fourth condition on a guess. A fence line of the OTHER kind inside an open
-    // block is content too.
-    const fenced = []
-    let open = null
-    for (const [index, line] of lines.entries()) {
-      const marker = /^(\s*)(`{3,}|~{3,})(.*)$/.exec(line)
-      if (!marker) continue
-      const indent = marker[1]
-      const run = marker[2]
-      const info = marker[3]
-      const kind = run[0]
-      if (!open) {
-        if (kind === '`' && info.includes('`')) continue
-        open = { kind, length: run.length, at: index }
-      } else if (kind === open.kind && run.length >= open.length && /^ {0,3}$/.test(indent) && /^[ \t]*$/.test(info)) {
-        fenced.push({ content: open.at + 1, end: index })
-        open = null
-      }
-    }
-    if (open) fenced.push({ content: open.at + 1, end: lines.length })
+    // AND THE BOUNDARIES COME FROM THE SHARED SCANNER (D-039). Line endings are
+    // normalised and the blocks are derived by `scripts/lib/fence-scanner.mjs` —
+    // the reference CommonMark implementation's own fence recognition, vendored
+    // once and called by this guard AND the conformance fixture that judges it.
+    // The guard carries no fence parser of its own, so there is no clause here to
+    // drift from the reference the fixture was derived from.
+    //
+    // WHY THAT REPLACED A HAND-WRITTEN PARSER. Six shapes were closed one clause
+    // at a time and a seventh still arrived: `\r` was never normalised, so a CRLF
+    // file recognised NO fence at all, and the opener's any-whitespace over-read
+    // swallowed the NEXT real opener as a phantom closer and left a
+    // reference-fenced line outside every block — both the `0 … compared`, PASS,
+    // exit 0 signature D-031/D-032 exist for. D-038 put a rung below D-032's
+    // delete: stop hand-writing the recogniser. The scanner's clauses are the
+    // reference's, taken verbatim (its header records what was taken, from where,
+    // and what was refused), so the shape that kept moving the hole has no clause
+    // left to move.
+    const lines = splitLines(text)
+    const fenced = scanFences(text)
 
     for (const block of fenced) {
       blocks += 1

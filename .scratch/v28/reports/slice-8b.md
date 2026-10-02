@@ -1457,3 +1457,235 @@ fixed, both gate commands exit 0 as shown above.
 - The guard was red on another lane's report when this round was dispatched; see Gate. Reported rather than
   fixed, per the brief; that report's author fixed it in the same commit.
 
+
+# TAKE THE RUNG (fix round 7) — the hand-written fence parser is retired for ONE reference-derived scanner
+
+Authorised by D-039. D-037's seventh-shape trigger fired — the CRLF divergence at the old
+`factory-guard.mjs:1766` — and D-038's rung was taken instead of D-032's delete: **stop hand-writing the
+recogniser and take the reference's fence recognition**, vendored once, in one module imported by both the guard
+and the checker that judges it. The hard limit was observed: none of the six shapes was patched; the recogniser
+was replaced.
+
+The measured claim, in one line: **the guard's fence recognition now diverges from `commonmark@0.31.2` on 0 of
+160 000 fuzz inputs across every indent (0..8 spaces and tabs) and every line-ending kind (LF, CRLF, bare CR,
+mixed), where the hand-written parser diverged on 10 359 inputs in the all-indents run alone (2 227 of them
+UNDER-reads, all opener-rooted).**
+
+## 1. The scanner — what was taken, from where, what was refused
+
+New file: `scripts/lib/fence-scanner.mjs`, ~50 lines, **no imports at all** (node built-ins included). Source:
+`commonmark` 0.31.2, `lib/blocks.js` (BSD-2-Clause) — the canonical reference implementation, and the authority
+the conformance fixture names. Transcribed rather than imported, because a guard whose meaning moves when a
+package bumps is the exact failure this suite exists to prevent:
+
+| taken | from |
+|---|---|
+| `CODE_INDENT = 4` | blocks.js:7 |
+| `reCodeFence = /^`{3,}(?!.*`)\|^~{3,}/` | blocks.js:48, verbatim |
+| `reClosingCodeFence = /^(?:`{3,}\|~{3,})(?=[ \t]*$)/` | blocks.js:50, verbatim |
+| the leading-whitespace column: space = 1, tab to the next multiple of four; opener refused at `column >= 4`, closer accepted only at `column <= 3` | blocks.js:744-765 |
+| `reLineEnding = /\r\n\|\n\|\r/`: line endings normalised before scanning | blocks.js:54 |
+| the closer's remaining conditions: same fence char, run at least the opener's length | blocks.js:404-409 |
+
+**Refused.** commonmark's full block parser and its container machinery (blockquotes, lists, lazy
+continuation): this scanner is top-level and line-based, which is the boundary the fixture already declared, and
+the guard's scan set is prose reports. `marked 18.0.14`'s fence tokeniser: its closer suffix admits spaces only
+(` *`), so it keeps a tab-suffixed closing run as CONTENT where commonmark — the authority — closes. That is the
+one reference disagreement, and per D-037 §2 it is settled by taking the authority's clause, not by adjudicating
+it in prose. And `_fenceOffset` de-indentation, info-string unescaping and NUL replacement, which answer
+questions this rule does not ask.
+
+**The four `docs/agents/borrowed-guards.md` criteria**, stated in the module header: it enforces a rule already
+written down (`transcript-summary-agrees`); it is deterministic (a pure function of its input text); it cannot be
+satisfied by editing itself without a visible diff (no config, no allow-list, and the fixture fails on any
+divergence); and it is dependency-free with a behaviour test.
+
+**Not a dependency.** `package.json` and `package-lock.json` are untouched. Nothing in the tree gained a markdown
+parser.
+
+## 2. One implementation, two callers — and the swap is not a seventh clause
+
+`scripts/guards/factory-guard.mjs` now does:
+
+    const lines = splitLines(text)
+    const fenced = scanFences(text)
+
+and carries no fence recogniser of its own. `factory-guard.check.mjs` imports **the same module** and runs the
+fixture table against those exact bytes; the `new Function` anchor-lift that used to extract a private parser
+from the guard is gone, because there is no private parser left to extract. The mutant copies the checker builds
+now include a copy of the scanner beside the guard copy, in the guard's own relative layout, so a mutant's
+`../lib/fence-scanner.mjs` import resolves to the copy and either file can be mutated.
+
+What that buys: the checker cannot judge a parser other than the one the guard reads blocks with, and it cannot
+silently lift nothing — an anchor that no longer exists is now an import that fails loudly.
+
+## 3. The wide fuzz — before and after
+
+Same harness, same alphabet, seed `t+1`, 20 000 inputs per run, per-line membership against
+`commonmark@0.31.2`. The "before" parser is the committed one at `5bdbe05`, lifted by the checker's old anchors.
+
+| run (20 000 inputs each) | PRE-SWAP diverging | PRE-SWAP UNDER | PRE-SWAP OVER | POST-SWAP diverging | POST-SWAP UNDER | POST-SWAP OVER |
+|---|---|---|---|---|---|---|
+| closure-only, LF | 0 | 0 | 0 | **0** | 0 | 0 |
+| closure-only, CRLF | — | — | — | **0** | 0 | 0 |
+| closure-only, bare CR | — | — | — | **0** | 0 | 0 |
+| closure-only, MIXED endings | — | — | — | **0** | 0 | 0 |
+| all indents (0..8 spaces + tabs), LF | **10 359** | **2 227** | 9 603 | **0** | 0 | 0 |
+| all indents, CRLF | — | — | — | **0** | 0 | 0 |
+| all indents, bare CR | — | — | — | **0** | 0 | 0 |
+| all indents, MIXED endings | — | — | — | **0** | 0 | 0 |
+
+**Target 0 — reached on every run: 160 000 inputs, 0 divergences.** The pre-swap all-indents numbers reproduce
+the round-6 verifier's exactly (10 359 / 2 227 / 9 603), which is the check that this harness measures the same
+thing theirs did. The closure-only LF row is 0 both before and after, as the verifier found — the closure family
+was already closed; what the rung removes is the OPENERS' contribution, which is where every one of the 2 227
+under-reads came from.
+
+End-to-end, on throwaway roots with the real binaries (a clean LF report plus the seeded file):
+
+    SEVENTH SHAPE (CRLF), PRE-SWAP 5bdbe05:
+      note — transcript-summary-agrees: 1 fenced block(s) read, 0 range summaries checked — NOTHING was compared
+      PASS — ... ; exit 0            <- the fabricated CRLF line is read by NOTHING
+    SEVENTH SHAPE (CRLF), POST-SWAP:
+      note — transcript-summary-agrees: 2 fenced block(s) read, 1 range summary checked
+      FINDING [transcript-summary-agrees]: .../zz-crlf.md:5: ... covers 7 entries (7–13) but states "(all six"
+      exit 1
+
+    OPENER OVER-READ (the P0 seed), PRE-SWAP 5bdbe05:
+      note — transcript-summary-agrees: 2 fenced block(s) read, 0 range summaries checked — NOTHING was compared
+      PASS — ... ; exit 0
+    OPENER OVER-READ (the P0 seed), POST-SWAP:
+      note — transcript-summary-agrees: 1 fenced block(s) read, 1 range summary checked
+      FINDING [transcript-summary-agrees]: .../zz-p0.md:5: ... covers 7 entries (7–13) but states "(all six"
+      exit 1
+
+The P0 seed is the construction both lanes used to falsify the "safe direction" sentence: a four-space-indented
+opener, a bare same-kind line the old parser consumed as its phantom closer, the fabricated range line, and a
+closer. The new scanner reads that indented line as an indented code block — which is what the reference does —
+so nothing is over-read and the fabricated line is inside the one real block.
+
+## 4. The new check, and both halves of its mutation
+
+The checker gained, at the rule's own block:
+
+    ✓ the guard reads fenced blocks through the SHARED scanner module, not a private parser (D-039)
+    ✓ a CRLF report is READ: its fabricated transcript is CAUGHT (the seventh shape)
+    ✓ MUTATION: restoring the old \r-sensitive recogniser lets that CRLF seed PASS (exit 1 -> 0 — a DETECTION flip)
+
+The seed half drives the **real guard binary** on a composite root (one clean LF report, one CRLF report whose
+fence holds the fabricated range line): exit 1, `covers 7 entries`. The mutation half restores the old
+recogniser — no line-ending normalisation **and** an opener that cannot match a `\r`-suffixed line — in the
+copied scanner; the same root then prints `NOTHING was compared` and exits 0. The verdict MOVES, so the check is
+not a comment.
+
+Honest note on the mutation's shape: a single-anchor mutation on the normalisation alone does **not** flip this
+seed, and that is itself a measurement — the new opener clause does not require the end of the line, so an
+unnormalised CRLF fence is still opened (and the block over-reads). The drop only returns when the recogniser is
+returned to the old **end-anchored** shape as well. That is what the two-anchor mutation restores, and it is why
+the mutation is written as the old recogniser rather than as "normalisation off".
+
+## 5. The two false sentences, deleted
+
+`factory-guard.mjs` carried, in two places, the pricing both lanes falsified by construction — that the OPENER's
+any-whitespace over-read was *"recognising more openers reads MORE, which is the safe direction"*:
+
+- the docblock CEILING bullet (`:1671-1673` at the round-6 tip), and
+- the parser comment (`:1774-1776` at the round-6 tip).
+
+Both are **deleted, not softened** (D-028). The ceiling bullet is rewritten to state what the mechanism now
+does, since the over-read it described no longer exists: an opener indented four columns or more is an indented
+code block, exactly as the reference reads it, so a fence run inside indented code opens nothing. The parser
+comment is deleted with the parser. No sentence about that boundary survives, because the boundary does not.
+
+## 6. The derivation re-run, and the mechanism the header only described
+
+`MDREF=/tmp/mdref node scripts/guards/fence-conformance.derive.mjs` — run against the real references
+(`commonmark 0.31.2`, `marked 18.0.14`) — now emits **30 cases, 0 reference-vs-reference disagreements**, and the
+re-run is **byte-identical**:
+
+    $ MDREF=/tmp/mdref node scripts/guards/fence-conformance.derive.mjs > /tmp/xf/derived.json
+    30 case(s); 0 reference-vs-reference disagreement(s)
+    $ MDREF=/tmp/mdref node scripts/guards/fence-conformance.derive.mjs > /tmp/xf/derived2.json
+    $ diff /tmp/xf/derived.json /tmp/xf/derived2.json   -> no output
+    fixture sha256 1fd15786e41f12d6b47fab54c185e778e4c76ac512edb936610c1cc1b1520530
+
+Four cases were added, all line-ending shapes — "CRLF line endings: a closed fence", "CRLF line endings: the
+line between the fences is content", "mixed line endings: CRLF then LF then CRLF", "bare-CR line endings: a
+closed fence". On each, `commonmark` and `marked` agree (measured: 4 of 4), which is the case the task asked for:
+a shape where the two references agree and the guard must too. The checker's fixture block now runs the shared
+scanner over 34 case-checks, and all of them pass.
+
+**The fourth item — the derivation's false sentence.** `fence-conformance.derive.mjs:19-23` claimed a disagreeing
+case "is NOT recorded"; the code recorded it regardless (counted to stderr, `return`ed into the table). The
+committed table was correct only because the tab-suffix case had been deleted BY HAND. The mechanism now does
+what the sentence says: a `continue` drops a disagreeing case from the table, so a blind re-derive can no longer
+commit a disagreement-pinned case. The committed 30 cases are unaffected (there are 0 disagreements), so the
+re-derivation stays byte-identical.
+
+## 7. The quotation baseline, re-derived
+
+The shared scanner reads the reference's blocks, so it reads **more** of a lane report than the hand-written
+recogniser did — 702 fenced blocks where the round-6 tip's parse covered fewer, because the old recogniser
+mis-parsed around its own over-reads. Four true positives the old parser did not reach appeared in
+`slice-8b-verify-6.md`, all of them that report's own quotations of the probe seed, which a lane report must
+quote to prove the rule fires. They are the evidence trail D-033's absorber exists for, and the baseline was
+re-derived by the documented procedure (the map blanked, the run reads every site back): three new sites, counts
+2, 1 and 1, are now recorded. The guard prints `7 of the 8 ABSORBED this scan (LOST COVERAGE 1)` — the 1 is the
+pre-existing correct-count pair in a two-pair recorded line.
+
+Worth recording so the next reader does not misread it: **the guard was already RED at the dispatched tip** on
+one of those sites (`slice-8b-verify-6.md:87`), before this slice touched anything — reproduced by running the
+committed `5bdbe05` guard over the same working tree. Both lane reports at that tip are UNTRACKED working-tree
+content (D-036's class); neither was edited, and neither is mine to edit.
+
+## 8. Gate
+
+Both gate commands exit 0, measured at the state committed below.
+
+    $ npm run verify
+     Test Files  71 passed (71)
+          Tests  2063 passed (2063)
+      lint            81 warnings, 0 errors
+      ok — AGENTS.md (1789 words, ceiling 1800)
+      factory-guard check: all 185 checks passed.
+      GUARDS: PASS — all deterministic rules hold.
+    VERIFY EXIT=0
+
+    $ node scripts/guards/factory-guard.check.mjs
+    factory-guard check: all 185 checks passed.       EXIT=0
+
+    $ node scripts/guards/factory-guard.mjs
+      note — transcript-summary-agrees: 702 fenced block(s) read, 10 range summaries checked
+      note — transcript-summary-agrees: quotation baseline holds 8 recorded site(s) ... (LOST COVERAGE 1)
+      PASS — the registry can be trusted and no work item claims evidence it does not have.
+    EXIT=0
+
+**185 checks**, up from 178: +4 (the four new fixture cases), +3 (the shared-scanner check, the CRLF seed and its
+mutation). The fixture block contributes 31 of them — **30 case-checks** plus the non-empty-table guard.
+
+## 9. Where this stops
+
+The hard limit was the brief's: **if a divergence still appears after taking the rung, report it and stop** — do
+not patch it. None appeared: 0 divergences on 160 000 fuzz inputs and 30 of 30 reference-derived fixture cases.
+The scanner is now the reference's clauses; there is no hand-written clause left for a seventh shape to move.
+The two known-open items are unchanged and NOT patched: the trailing-TAB closer is a reference disagreement
+(commonmark closes, marked does not) and stays out of the table per D-037; and the top-level, line-based boundary
+(containers — blockquotes and lists — are outside the table and the scanner, as the fixture's own header says).
+
+## Risks
+
+- **The baseline grew by three sites from an untracked lane report.** That is a re-derivation, not a widening to
+  silence a finding: the sites are that report's quotations of the probe seed, the class D-033's absorber exists
+  for, and the record's size and absorbed count are printed every run. But a reader should note the coupling:
+  the guard's green now depends on this round's lane reports not changing. If the verify-6 report is edited, the
+  run prints `LOST COVERAGE N` (truthful, non-gating) or, if the same text is added again, fires.
+- **A single-anchor "normalisation off" mutation does not flip the CRLF seed.** The mutation is therefore written
+  as the old end-anchored recogniser (two anchors). A reader checking "is the CRLF check real" should use the
+  mutation as written, not a normalisation-only mutant — measured and explained in §4.
+- **`scripts/lib/fence-scanner.mjs` is outside the factory guard's instrument-header scan**, which reads
+  `scripts/guards/*.mjs` one level deep. Its provenance header is therefore for a human and for
+  `borrowed-guards.md`, not machine-checked. Placing it under `scripts/guards/` would put it inside the header
+  rules but would also widen the guard's own scope in the same commit; that trade was left to the orchestrator.
+- **The fixture's four line-ending cases pin the shared scanner, not the guard's use of it.** The guard-uses-the-
+  scanner property is pinned by a text assertion plus the end-to-end seeds; a future edit that kept the import
+  but bypassed `scanFences` in one call site would be caught by the seeds, not by the text check.

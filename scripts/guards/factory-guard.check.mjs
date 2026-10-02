@@ -20,6 +20,12 @@ import os from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import process from 'node:process'
 
+// The SHARED fence scanner (D-039): the guard imports this same module, so the
+// conformance table below is compared against the exact bytes the guard reads
+// blocks with — one implementation, two callers, nothing for the two to drift
+// apart.
+import { scanFences } from '../lib/fence-scanner.mjs'
+
 const GUARD = join(import.meta.dirname, 'factory-guard.mjs')
 const REAL_CONFIG = JSON.parse(readFileSync(join(import.meta.dirname, '..', '..', 'factory', 'config.json'), 'utf8'))
 
@@ -81,52 +87,64 @@ function emptyMapCopy(mapVar, alsoNeuter = '') {
   }
   const dir = mkdtempSync(join(os.tmpdir(), 'factory-guard-emptied-'))
   SCRATCH_DIRS.push(dir)
-  const path = join(dir, 'factory-guard.emptied.mjs')
+  const libDir = join(dir, 'scripts', 'lib')
+  const guardsDir = join(dir, 'scripts', 'guards')
+  mkdirSync(libDir, { recursive: true })
+  mkdirSync(guardsDir, { recursive: true })
+  writeFileSync(join(libDir, 'fence-scanner.mjs'), readFileSync(SCANNER, 'utf8'))
+  const path = join(guardsDir, 'factory-guard.emptied.mjs')
   writeFileSync(path, text)
   return path
 }
 
 const SCRATCH_DIRS = [] // mutant copies AND scratch roots — not only mutants (D-024)
-/**
- * A throwaway COPY of the instrument with named textual mutations applied. This
- * is how a check proves it CAN fail: mutate the mechanism the check names, run
- * the same seeded root against the mutant, and require the seed's verdict to
- * flip. A check whose named failure mode cannot be reached by any mutation is a
- * claim, not a check — which is why the mutation count is asserted here: an
- * anchor that no longer exists is a silent no-op, and a silent no-op would make
- * every mutation check below pass vacuously.
- */
-function mutatedGuard(replacements) {
-  let text = readFileSync(GUARD, 'utf8')
+
+/** Replace each anchor exactly ONCE, or throw. An anchor that no longer exists is
+ * a silent no-op, and a silent no-op would make every mutation check below pass
+ * vacuously. */
+function applyMutations(text, replacements, what) {
   for (const [from, to] of replacements) {
     const hits = text.split(from).length - 1
-    if (hits !== 1) throw new Error(`mutation anchor occurs ${hits} time(s), not once: ${JSON.stringify(from)}`)
+    if (hits !== 1) throw new Error(`${what} mutation anchor occurs ${hits} time(s), not once: ${JSON.stringify(from)}`)
     text = text.split(from).join(to)
   }
+  return text
+}
+
+/** A throwaway copy of the instrument and its vendored fence scanner, with named
+ * textual mutations applied to EITHER file. The copy keeps the guard's own
+ * relative layout — `scripts/guards/…` beside `scripts/lib/…` — so the mutant's
+ * `../lib/fence-scanner.mjs` import resolves to the copy, never the repo's.
+ *
+ * This is how a check proves it CAN fail: mutate the mechanism the check names,
+ * run the same seeded root against the mutant, and require the seed's verdict to
+ * flip. A check whose named failure mode cannot be reached by any mutation is a
+ * claim, not a check — which is why the mutation count is asserted: an anchor
+ * that no longer exists is a silent no-op. */
+function mutantCopy({ guard = [], scanner = [] } = {}) {
   const dir = mkdtempSync(join(os.tmpdir(), 'factory-guard-mutant-'))
   SCRATCH_DIRS.push(dir)
-  const path = join(dir, 'factory-guard.mutant.mjs')
-  writeFileSync(path, text)
+  const guardsDir = join(dir, 'scripts', 'guards')
+  const libDir = join(dir, 'scripts', 'lib')
+  mkdirSync(guardsDir, { recursive: true })
+  mkdirSync(libDir, { recursive: true })
+  writeFileSync(join(libDir, 'fence-scanner.mjs'), applyMutations(readFileSync(SCANNER, 'utf8'), scanner, 'scanner'))
+  const path = join(guardsDir, 'factory-guard.mutant.mjs')
+  writeFileSync(path, applyMutations(readFileSync(GUARD, 'utf8'), guard, 'guard'))
   return path
 }
 
-/** The guard's OWN fenced-block parser, lifted from the committed instrument by
- * anchors and compiled here. The conformance table below is compared against
- * THESE bytes, not a hand-copied parser, so the check cannot drift from the
- * parser it judges; if an anchor moves, this throws rather than passing over
- * nothing. `new Function` is the seam: the guard is a script that exits, so its
- * parts cannot be imported. */
-function guardFenceParser() {
-  const text = readFileSync(GUARD, 'utf8')
-  const start = text.indexOf('\n    const fenced = []\n')
-  const endAnchor = '    if (open) fenced.push({ content: open.at + 1, end: lines.length })'
-  const end = text.indexOf(endAnchor, start)
-  if (start === -1 || end === -1) throw new Error('the fence-parser anchors are not in factory-guard.mjs')
-  return new Function('lines', `${text.slice(start + 1, end + endAnchor.length)}\nreturn fenced`)
+function mutatedGuard(replacements) {
+  return mutantCopy({ guard: replacements })
+}
+function mutatedScanner(replacements) {
+  return mutantCopy({ scanner: replacements })
 }
 
 /** A real repository for `--repo`: this repo, which the provenance shas live in. */
 const REPO = resolve(import.meta.dirname, '..', '..')
+/** The vendored fence scanner, shared with the guard (D-039). */
+const SCANNER = resolve(import.meta.dirname, '..', 'lib', 'fence-scanner.mjs')
 
 let failures = 0
 let ran = 0
@@ -1504,7 +1522,7 @@ console.log('===========================================================')
     nested.exit === 1 && /covers 7 entries/.test(nested.out) && /transcript-summary-agrees/.test(nested.out),
     `exit ${nested.exit}`,
   )
-  const looseCloser = mutatedGuard([["} else if (kind === open.kind && run.length >= open.length && /^ {0,3}$/.test(indent) && /^[ \\t]*$/.test(info)) {", '} else if (kind === open.kind) {']])
+  const looseCloser = mutatedScanner([['      if (column > 3) continue\n      if (rest.charAt(0) !== open.char) continue\n      const match = rest.match(reClosingCodeFence)\n      if (!match || match[0].length < open.length) continue\n', '      if (rest.charAt(0) !== open.char) continue\n']])
   const nestedMiss = run((ctx) => {
     cleanRoot()(ctx)
     ctx.write('.scratch/v28/reports/zz-raw.md', nestedSeed)
@@ -1536,7 +1554,7 @@ console.log('===========================================================')
     shorterCaught.exit === 1 && /covers 7 entries/.test(shorterCaught.out) && /1 fenced block\(s\) read, 1 range summary checked/.test(shorterCaught.out),
     `exit ${shorterCaught.exit}`,
   )
-  const looseLength = mutatedGuard([['run.length >= open.length && /^ {0,3}$/.test(indent)', '/^ {0,3}$/.test(indent)']])
+  const looseLength = mutatedScanner([['      if (!match || match[0].length < open.length) continue', '      if (!match) continue']])
   const shorterMiss = run((ctx) => {
     cleanRoot()(ctx)
     ctx.write('.scratch/v28/reports/zz-raw.md', shorterCloserSeed)
@@ -1568,7 +1586,7 @@ console.log('===========================================================')
     indentCaught.exit === 1 && /covers 7 entries/.test(indentCaught.out) && /1 fenced block\(s\) read, 1 range summary checked/.test(indentCaught.out),
     `exit ${indentCaught.exit}`,
   )
-  const looseIndent = mutatedGuard([['&& /^ {0,3}$/.test(indent) &&', '&&']])
+  const looseIndent = mutatedScanner([['      if (column > 3) continue', '      if (false) continue']])
   const indentMiss = run((ctx) => {
     cleanRoot()(ctx)
     ctx.write('.scratch/v28/reports/zz-raw.md', indentCloserSeed)
@@ -1711,8 +1729,12 @@ console.log('===========================================================')
   }, { report: false, args: ['--repo', REPO] })
   check(
     'the DECLARED path-occupancy boundary: the recorded text AT a recorded path is absorbed (the record cannot tell a quotation there from a fabrication that copied the citation — see the rule header)',
-    absorbedRun.exit === 0 && /quotation baseline holds 4 recorded site\(s\)/.test(absorbedRun.out),
+    absorbedRun.exit === 0 && /quotation baseline holds \d+ recorded site\(s\), re-derived and never hand-added/.test(absorbedRun.out),
     `exit ${absorbedRun.exit}`,
+    // The SIZE is not pinned: the record is re-derived as the scanner reads more
+    // of a lane report (it grew at the D-039 swap), and a typed count of a derived
+    // quantity goes stale the moment the corpus moves — the class this suite has
+    // spent rounds on. That the record is non-empty and re-derived is the property.
   )
   const noAbsorber = mutatedGuard([['const baselined = seenCount <= (TRANSCRIPT_QUOTATION_BASELINE.get(key) ?? 0)', 'const baselined = false']])
   const absorbedMiss = run((ctx) => {
@@ -1859,7 +1881,7 @@ console.log('===========================================================')
     midLineOutside.exit === 0 && /1 fenced block\(s\) read/.test(midLineOutside.out),
     `exit ${midLineOutside.exit}`,
   )
-  const readsMidLineMarkers = mutatedGuard([['const marker = /^(\\s*)(`{3,}|~{3,})(.*)$/.exec(line)', 'const marker = /^(.*)(`{3,}|~{3,})(.*)$/.exec(line)']])
+  const readsMidLineMarkers = mutatedScanner([['const reCodeFence = /^`{3,}(?!.*`)|^~{3,}/', 'const reCodeFence = /`{3,}(?!.*`)|~{3,}/']])
   const midLineMiss = run((ctx) => {
     cleanRoot()(ctx)
     ctx.write('.scratch/v28/reports/zz-raw.md', midLineSeed)
@@ -1868,6 +1890,56 @@ console.log('===========================================================')
     'MUTATION: reading a mid-line marker makes that content FIRE (exit 0 -> 1) — reading markers only at line start is what keeps it out',
     midLineMiss.exit === 1 && /covers 7 entries/.test(midLineMiss.out),
     `exit ${midLineMiss.exit}`,
+  )
+
+  // The guard must READ blocks through the SHARED scanner (D-039): one
+  // implementation, two callers. The seeds above and below drive the real
+  // binary, so a private parser that diverged from the module would redden one
+  // of those as well.
+  {
+    const guardText = readFileSync(GUARD, 'utf8')
+    check(
+      'the guard reads fenced blocks through the SHARED scanner module, not a private parser (D-039)',
+      /import\s*\{\s*scanFences\s*,\s*splitLines\s*\}\s*from\s*'\.\.\/lib\/fence-scanner\.mjs'/.test(guardText) &&
+        /const lines = splitLines\(text\)\n\s*const fenced = scanFences\(text\)/.test(guardText),
+      'the guard must import scanFences from ../lib/fence-scanner.mjs and derive its blocks with it',
+    )
+  }
+
+  // THE SEVENTH SHAPE — CRLF line endings, the shape D-039 fired on. The
+  // hand-written recogniser split on '\n' without normalising '\r', and its
+  // marker regex ended `(.*)$`, which cannot match a '\r'-suffixed line: a CRLF
+  // file recognised NO fence at all. In a COMPOSITE scan — one ordinary LF report
+  // supplies a real block, so the empty-set tripwire stays silent — a
+  // reference-fenced fabricated transcript passed at exit 0. The shared scanner
+  // normalises line endings first, as the reference does, and its opener clause
+  // does not require the end of the line, so the CRLF report's block is read.
+  // Both references agree this line is fenced content. The mutation restores the
+  // old recogniser (no normalisation, an opener that cannot match '\r') and the
+  // seed's verdict flips — that is the half that proves the check can fail.
+  const crlfSeed =
+    '# zz crlf\r\n\r\n```md\r\nharmless\r\n✓ 7–13 zz-spec.e2e.ts (all six legs)\r\n```\r\n'
+  const crlfFound = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-crlf.md', crlfSeed)
+  }, { args: ['--repo', REPO] })
+  check(
+    'a CRLF report is READ: its fabricated transcript is CAUGHT (the seventh shape)',
+    crlfFound.exit === 1 && /covers 7 entries/.test(crlfFound.out) && /1 range summary checked/.test(crlfFound.out),
+    `exit ${crlfFound.exit}`,
+  )
+  const noNormalize = mutatedScanner([
+    ["return text.replace(/\\r\\n|\\r/g, '\\n')", 'return text'],
+    ['const reCodeFence = /^`{3,}(?!.*`)|^~{3,}/', 'const reCodeFence = /^`{3,}(?!.*`)(?!.*\\r)|^~{3,}(?!.*\\r)/'],
+  ])
+  const crlfMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-crlf.md', crlfSeed)
+  }, { guard: noNormalize, args: ['--repo', REPO] })
+  check(
+    'MUTATION: restoring the old \\r-sensitive recogniser lets that CRLF seed PASS (exit 1 -> 0 — a DETECTION flip)',
+    crlfMiss.exit === 0 && /NOTHING was compared/.test(crlfMiss.out),
+    `exit ${crlfMiss.exit}`,
   )
 
   // THE FENCE PARSER AGAINST A REFERENCE (this round's Repair 2). Three rounds were
@@ -1879,7 +1951,6 @@ console.log('===========================================================')
   // and fails on any divergence. A fixture whose expectations came from a reference
   // is evidence; one typed from a reading of the spec is a second opinion.
   const fixture = JSON.parse(readFileSync(join(import.meta.dirname, 'fence-conformance.fixture.json'), 'utf8'))
-  const parseFence = guardFenceParser()
   check(
     'the fence-closure fixture holds cases (an empty table would pass over nothing — D-030)',
     fixture.cases.length > 0,
@@ -1887,7 +1958,7 @@ console.log('===========================================================')
   )
   let fenceDivergences = 0
   for (const c of fixture.cases) {
-    const got = parseFence(c.source.split('\n')).map((b) => [b.content, b.end])
+    const got = scanFences(c.source).map((b) => [b.content, b.end])
     const ok = JSON.stringify(got) === JSON.stringify(c.blocks)
     if (!ok) fenceDivergences += 1
     check(`fence fixture: ${c.name}`, ok, `guard ${JSON.stringify(got)} vs reference ${JSON.stringify(c.blocks)}`)

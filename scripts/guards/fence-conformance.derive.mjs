@@ -17,20 +17,22 @@
 // `commonmark` is the canonical reference and the authority for every case.
 // `marked` is parsed alongside it only as a second opinion: the script counts
 // their disagreements and prints them to stderr. A case on which the two
-// references disagree is NOT recorded — the seed is shrunk until they agree,
-// rather than the disagreement being settled in prose (D-037). The one such
-// shape measured here is a closing fence with a tab after the run: the spec
-// allows the tab and commonmark closes on it, marked does not. It is left out of
-// the table for that reason, and the guard's behaviour on it is reported, not
-// pinned by the fixture.
+// references disagree is NOT recorded — the loop below DROPS it from the table,
+// rather than the disagreement being settled in prose (D-037). The one such shape
+// measured here is a closing fence with a tab after the run: the spec allows the
+// tab and commonmark closes on it, marked does not. It is left out of the table
+// for that reason, and the guard's behaviour on it is reported, not pinned by the
+// fixture.
 //
 // `source` is the case text WITHOUT a trailing newline, so the guard's own
 // `split('\n')` line indices are the reference's. `blocks` is the guard's own
 // representation: zero-based, half-open content ranges `[content, end)` — the
-// lines BETWEEN a fence and its closer, which is what the rule reads. The opener
-// is never indented more than three spaces, because the guard reads an opener at
-// any indent as a fence by a deliberate, declared over-read; a case past that
-// would measure the declared ceiling rather than the closure rules.
+// lines BETWEEN a fence and its closer, which is what the rule reads. Every case
+// opens with a fence at the reference's own indent limit (at most three columns)
+// and closes at the reference's own rule; the guard reads blocks through the
+// shared scanner in `scripts/lib/fence-scanner.mjs`, which implements those
+// clauses, and this table is what proves it. Fences nested in blockquotes or
+// lists are outside this line-based table, a declared ceiling.
 //
 // Exit: 0 = the table printed on stdout; 1 = the reference could not be loaded.
 
@@ -114,28 +116,39 @@ const CASES = [
   ['closer run longer than the opener closes', '```\ncontent\n~~~~\n✓ seven\n~~~~'],
   ['a same-kind closer with an info string is content', '```\ncontent\n```js\nmore\n```\n✓ seven'],
   ['a tilde opener with a backtick info string still opens', '~~~ `x`\ncontent\n~~~\n✓ seven'],
+  ['CRLF line endings: a closed fence', '```md\r\ncontent\r\n```'],
+  ['CRLF line endings: the line between the fences is content', '```md\r\ncontent\r\n✓ seven (all six legs)\r\n```'],
+  ['mixed line endings: CRLF then LF then CRLF', '```md\r\ncontent\n✓ seven (all six legs)\r\n```'],
+  ['bare-CR line endings: a closed fence', '~~~md\rcontent\r~~~'],
 ]
 
 const version = (pkg) => JSON.parse(readFileSync(refPath(`${pkg}/package.json`), 'utf8')).version
 
 let disagreements = 0
-const cases = CASES.map(([name, source]) => {
+const cases = []
+for (const [name, source] of CASES) {
   const blocks = commonmarkBlocks(source)
   const second = markedBlocks(source)
   if (JSON.stringify(blocks) !== JSON.stringify(second)) {
+    // A DISAGREEMENT IS NOT RECORDED. The seed is shrunk to where the two
+    // references agree rather than the disagreement being settled in prose
+    // (D-037 §2). This filter IS the mechanism the header states: before it,
+    // the script recorded every case regardless and the committed table honoured
+    // the rule only because the one such case had been deleted by hand.
     disagreements += 1
-    console.error(`reference disagreement — ${name}: commonmark ${JSON.stringify(blocks)} vs marked ${JSON.stringify(second)}`)
+    console.error(`reference disagreement — ${name}: commonmark ${JSON.stringify(blocks)} vs marked ${JSON.stringify(second)} — NOT recorded (shrink to agreement, D-037)`)
+    continue
   }
-  return { name, source, blocks }
-})
+  cases.push({ name, source, blocks })
+}
 
 const fixture = {
   _header: {
-    what: 'Fence-closure cases for the factory guard\'s fenced-block parser (the transcript-summary-agrees rule), each with the code-content boundaries the reference CommonMark implementation derives. Guarded by the fence-fixture block in factory-guard.check.mjs, which runs the guard\'s own parser over every case.',
+    what: 'Fence-closure cases for the shared fence scanner (`scripts/lib/fence-scanner.mjs`, which the factory guard reads blocks with), each with the code-content boundaries the reference CommonMark implementation derives. Guarded by the fence-fixture block in factory-guard.check.mjs, which runs that scanner over every case.',
     reference: `commonmark ${version('commonmark')} (the authority) cross-checked against marked ${version('marked')}`,
     derivation: 'MDREF=/tmp/mdref node scripts/guards/fence-conformance.derive.mjs > scripts/guards/fence-conformance.fixture.json',
     blocks: 'zero-based, half-open [content, end) line ranges: the lines between a fence and its closer, which is what the rule reads',
-    boundary: 'every case opens with a fence indented at most three spaces; the guard reads any leading whitespace on an OPENER as a fence by a deliberate declared over-read, so an opener past three spaces would measure that ceiling rather than these closure rules. Fences nested in blockquotes or lists are likewise a declared ceiling, outside this line-based table.',
+    boundary: 'every case opens with a fence at the reference\'s own indent limit (at most three columns) and closes at the reference\'s own rule; the scanner implements the reference clauses, so a case past that would measure the boundary rather than the closure rules. Fences nested in blockquotes or lists are likewise a declared ceiling, outside this line-based table.',
   },
   cases,
 }

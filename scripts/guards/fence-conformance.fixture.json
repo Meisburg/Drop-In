@@ -1,10 +1,10 @@
 {
   "_header": {
-    "what": "Fence-closure cases for the factory guard's fenced-block parser (the transcript-summary-agrees rule), each with the code-content boundaries the reference CommonMark implementation derives. Guarded by the fence-fixture block in factory-guard.check.mjs, which runs the guard's own parser over every case.",
+    "what": "Fence-closure cases for the shared fence scanner (`scripts/lib/fence-scanner.mjs`, which the factory guard reads blocks with), each with the code-content boundaries the reference CommonMark implementation derives. Guarded by the fence-fixture block in factory-guard.check.mjs, which runs that scanner over every case.",
     "reference": "commonmark 0.31.2 (the authority) cross-checked against marked 18.0.14",
     "derivation": "MDREF=/tmp/mdref node scripts/guards/fence-conformance.derive.mjs > scripts/guards/fence-conformance.fixture.json",
     "blocks": "zero-based, half-open [content, end) line ranges: the lines between a fence and its closer, which is what the rule reads",
-    "boundary": "every case opens with a fence indented at most three spaces; the guard reads any leading whitespace on an OPENER as a fence by a deliberate declared over-read, so an opener past three spaces would measure that ceiling rather than these closure rules. Fences nested in blockquotes or lists are likewise a declared ceiling, outside this line-based table."
+    "boundary": "every case opens with a fence at the reference's own indent limit (at most three columns) and closes at the reference's own rule; the scanner implements the reference clauses, so a case past that would measure the boundary rather than the closure rules. Fences nested in blockquotes or lists are likewise a declared ceiling, outside this line-based table."
   },
   "cases": [
     {
@@ -264,6 +264,46 @@
     {
       "name": "a tilde opener with a backtick info string still opens",
       "source": "~~~ `x`\ncontent\n~~~\n✓ seven",
+      "blocks": [
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    {
+      "name": "CRLF line endings: a closed fence",
+      "source": "```md\r\ncontent\r\n```",
+      "blocks": [
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    {
+      "name": "CRLF line endings: the line between the fences is content",
+      "source": "```md\r\ncontent\r\n✓ seven (all six legs)\r\n```",
+      "blocks": [
+        [
+          1,
+          3
+        ]
+      ]
+    },
+    {
+      "name": "mixed line endings: CRLF then LF then CRLF",
+      "source": "```md\r\ncontent\n✓ seven (all six legs)\r\n```",
+      "blocks": [
+        [
+          1,
+          3
+        ]
+      ]
+    },
+    {
+      "name": "bare-CR line endings: a closed fence",
+      "source": "~~~md\rcontent\r~~~",
       "blocks": [
         [
           1,
