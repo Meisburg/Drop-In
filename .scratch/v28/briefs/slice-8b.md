@@ -1,5 +1,21 @@
 # Slice 8b — mechanical determinism and test honesty
 
+> # ⚠️ SCOPE CUT — READ THIS FIRST
+>
+> **This brief was 219 lines across SEVEN workstreams and TEN top-level sections, which is a dumping ground, and I
+> have split it by SUBJECT.** **You do ONLY items 1 and 2:**
+> 1. **the trailing-newline sweep, and then its guard — in that order, in two commits** (the guard does **not** exist
+>    yet: `ls scripts/guards/ | grep -i newline` is empty), and
+> 2. **`scripts/slice-diff.sh`** (also **missing**).
+>
+> **⚠️ EVERY OTHER SECTION OF THIS DOCUMENT IS SOMEONE ELSE'S TURN.** The two specs' test honesty and the honesty
+> fixes beside them are **`slice-8b-2.md`**. The three code fixes (`useCropStep`'s `| void`, the post-unmount effect,
+> slice 3's leftovers) are **`slice-8b-3.md`**. **Do not read those sections as work for you, and do not do them.**
+>
+> *This is the third time this batch has had to split a hygiene slice after writing it. The rule it learned: **split
+> by subject, not by line count**, and **a slice that keeps growing from every review is a slice to cut, not to
+> dispatch.***
+
 > ## ⚠️ RE-MEASURE BEFORE YOU TRUST ANY LINE NUMBER BELOW
 >
 > This brief was written several slices ago, and **every line number in it has had time to drift**. Measured

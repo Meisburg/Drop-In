@@ -6913,3 +6913,21 @@ tokens.** A local builder is ~1 min/turn where cloud is a fraction of that. **Th
 `ocr` shares the same server. **Mitigation already in force:** the model idle-unloads after an hour, which returns the
 machine to ~42 GB free; and the lanes that run many turns (verifier) stay on cloud, so the local load is builders only.
 *If OOM kills resume, the fallback is to move the builder back to cloud for the affected slice and say so.*
+
+## ⚠️ `slice-8b` SPLIT BY SUBJECT -- the THIRD hygiene slice this batch has had to cut, and the rule is now proven
+**Measured before spliting: 219 lines, SEVEN workstreams, TEN top-level sections -- and nearly all of it still live**
+(the trailing-newline guard **does not exist**, `scripts/slice-diff.sh` **does not exist**, and `useCropStep.tsx:27`
+**still carries `| void`**, which matters because 8b's own text claimed *"slice 3's fix round is correcting that"* --
+**slice 3 then ran three rounds and two more slices followed, and it is still there**).
+
+**Split BY SUBJECT, not by line count:**
+- **8b-1** (this document, items 1-2) -- the mechanical half: **the trailing-newline sweep then its guard, and
+  `scripts/slice-diff.sh`.** *Ordered deliberately: the sweep first, in its own commit, so the guard has something
+  already-clean to protect.*
+- **8b-2** -- the **test-honesty** half: the Enter-key guard spec, the failed-upload abort, and the two honesty fixes
+  in `name-card-photo.e2e.ts`.
+- **8b-3** -- the **code-fix** half: `useCropStep`'s `| void`, the post-unmount effect, and slice 3's leftovers.
+
+**And the scope cut is PREPENDED to `slice-8b.md`, not appended**, because the failure mode is a builder reading the
+whole document and finding seven plausible subjects for one dispatch -- *which is exactly what one of 6b's builders
+did, drifting onto the crop-confirm upload path.* **The cut names each moved section and who owns it.** ✓
