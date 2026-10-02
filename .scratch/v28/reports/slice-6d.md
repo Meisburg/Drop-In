@@ -122,6 +122,7 @@ Copy-taxonomy guard — a category this copy names must be one the app has and o
   copy consts read: 1 of 1 named; declared claims: 0 (none)
   module: src/lib/feed.ts
   copy consts read: 2 of 2 named; declared claims: 0 (none)
+  declared claims CHECKED by rule 3: 3 of 3 the taxonomy accepts
 
 PASS — every declared taxonomy claim exists, is offered, is backed by the copy, and the copy names no category it did not declare.
 ```
@@ -999,3 +1000,7 @@ instead of a green check over a mutation that did nothing.
 81 warnings (`grep -c ': warning '`), 0 errors, `ok — AGENTS.md (1789 words, ceiling 1800)` and `^  FINDING` = 0
 (`grep -c FINDING` returns 2 — this round's own passing check names for B2b and B3). **No test delta**: this round
 touched `.check.mjs` and the guard, never a `.test.mjs`.
+
+**§2's pasted run was refreshed for the one line this round added** (the positive half of the claim measurement,
+`declared claims CHECKED by rule 3: 3 of 3 the taxonomy accepts`), and the whole block was compared against a live
+run afterwards, verbatim.
