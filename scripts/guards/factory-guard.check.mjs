@@ -36,7 +36,7 @@ const lanes = (over = {}) => ({
  * `args` are the seams the mutation checks below need: a mutated COPY of the
  * instrument, and `--repo <dir>` so a temp root with no `.git` can still have
  * its provenance shas resolved (see the guard header's not-a-worktree note). */
-function run(mutate, { guard = GUARD, args = [] } = {}) {
+function run(mutate, { guard = GUARD, args = [], report = true } = {}) {
   const root = mkdtempSync(join(os.tmpdir(), 'factory-guard-'))
   const write = (rel, value) => {
     const path = join(root, rel)
@@ -45,6 +45,11 @@ function run(mutate, { guard = GUARD, args = [] } = {}) {
   }
   try {
     mutate({ root, write })
+    // Every root the report/brief scan reads must CARRY a report: a scan that
+    // read no file is now a finding (D-030). This file makes no claim the rules
+    // below read (no bare HEAD, no provenance sha, no label), so it changes no
+    // verdict except the empty scan's; `report: false` reaches that state.
+    if (report) write('.scratch/v28/reports/zz-check-root.md', '# zz-check root — a clean report file; it makes no claim\n')
     const out = execFileSync('node', [guard, '--root', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
     return { exit: 0, out }
   } catch (e) {
@@ -1386,6 +1391,39 @@ console.log('===========================================================')
     'a fence-INLINE label is READ, and its contradiction is CAUGHT',
     inline.exit === 1 && /covers 7 entries/.test(inline.out),
     `exit ${inline.exit}`,
+  )
+
+  // THE REPORT/BRIEF SCAN'S OWN ZERO CASE (D-030). The scan used to print
+  // "unchecked here" and exit 0 when the root carried no report or brief, so a
+  // run that read nothing reported health over four rules (the bare-HEAD counts,
+  // the provenance shas, the pasted transcripts, the raw-block arithmetic). An
+  // empty scan and a clean repo must not print the same green. `report: false`
+  // is the seam that reaches the empty state, and the control is the same root
+  // WITH a report file.
+  const noReportSeed = run((ctx) => {
+    cleanRoot()(ctx)
+  }, { report: false })
+  check(
+    'a report/brief scan that read no file is a FINDING, not a pass (D-030)',
+    noReportSeed.exit === 1 && /report-scan-empty/.test(noReportSeed.out),
+    `exit ${noReportSeed.exit}`,
+  )
+  const noEmptyScan = mutatedGuard([['if (!files.length) {', 'if (false) {']])
+  const noReportSeedMiss = run((ctx) => {
+    cleanRoot()(ctx)
+  }, { guard: noEmptyScan, report: false })
+  check(
+    'MUTATION: dropping the empty-scan finding lets that seed PASS (so the check can fail)',
+    noReportSeedMiss.exit === 0,
+    `exit ${noReportSeedMiss.exit}`,
+  )
+  const reportControl = run((ctx) => {
+    cleanRoot()(ctx)
+  })
+  check(
+    'control: the same clean root WITH a report file passes (so the rule is not simply always red)',
+    reportControl.exit === 0,
+    `exit ${reportControl.exit}`,
   )
 }
 

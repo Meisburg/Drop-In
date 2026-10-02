@@ -176,3 +176,34 @@ its seed is not a mutation).
 
 Committed as: **see commit 4 below.**
 
+### Item 4 — `factory-guard.mjs`'s report/brief scan passed at `reportFiles: 0` (registered D-030 instance)
+
+**Re-measured:** the hole is LIVE at `aa331d0`. The early return was at
+`scripts/guards/factory-guard.mjs:1403-1406` (symbol: the `if (!files.length)` guard in
+`checkReportHeadCounts`) — it printed `no .scratch/v28/reports or briefs under this root; … unchecked here`
+and `count-provenance: … unchecked here`, returned `{ reportFiles: 0, provenanceChecked: false,
+transcriptsChecked: false }` — **omitting `rawSummaryLines` entirely**, so by round 5 the early return silently
+covered FOUR rules while naming three (the registered "now covers three" was already one short).
+
+**Fix:** the empty scan is a FINDING (`report-scan-empty`), and the return carries `rawSummaryLines: 0` so the
+destructuring sees every rule's result. The two "unchecked here" comfort notes are deleted, not restated
+(D-028) — the finding carries the explanation.
+
+The harness consequence, disclosed: every throwaway root the behavior checker builds must now actually carry a
+report, or every check in it would find `report-scan-empty`. `run()` seeds one clean, claim-free report per
+root by default; `report: false` is the seam that reaches the empty state for the new seed. That is one change
+in one place rather than a hundred.
+
+```
+$ node scripts/guards/factory-guard.check.mjs        # 104 checks before this item
+  …
+  ✓ a report/brief scan that read no file is a FINDING, not a pass (D-030)
+  ✓ MUTATION: dropping the empty-scan finding lets that seed PASS (so the check can fail)
+  ✓ control: the same clean root WITH a report file passes (so the rule is not simply always red)
+
+factory-guard check: all 107 checks passed.
+EXIT=0
+```
+
+Committed as: **see commit 5 below.**
+

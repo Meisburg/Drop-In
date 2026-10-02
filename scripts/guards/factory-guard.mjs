@@ -1401,9 +1401,17 @@ function checkReportHeadCounts() {
     for (const f of readdirSync(dir).filter((f) => f.endsWith('.md'))) files.push(join(dir, f))
   }
   if (!files.length) {
-    console.log('  note — no .scratch/v28/reports or briefs under this root; report and brief counts unchecked here')
-    console.log('  note — count-provenance: no report or brief to verify a provenance sha in; unchecked here')
-    return { reportFiles: 0, provenanceChecked: false, transcriptsChecked: false }
+    // D-030. There is no report or brief under this root, so every rule below —
+    // the bare-HEAD counts, the provenance shas, the pasted transcripts and the
+    // raw-block arithmetic — examined nothing. That is a FINDING, not a pass: an
+    // empty scan and a clean repo print the same green, and this one used to
+    // print "unchecked here" and exit 0. The return carries rawSummaryLines so
+    // the destructuring below sees every rule's result rather than a hole.
+    fail(
+      'report-scan-empty',
+      'the report/brief scan read no .md file under .scratch/v28/reports or .scratch/v28/briefs — an empty scan has established nothing about the rules that read it (D-030)',
+    )
+    return { reportFiles: 0, provenanceChecked: false, transcriptsChecked: false, rawSummaryLines: 0 }
   }
   discloseScanProvenance(files)
   const transcriptsChecked = checkTranscripts(files)
