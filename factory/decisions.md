@@ -767,3 +767,29 @@ deliverable is an honest declaration: each rule's literal key stated in the head
 its number** (11 constructed, 11 escaped, listed), and §1/§2's "covers the shape" claims corrected to "detects
 the recorded phrasing". This is the ninth instance of the class in this slice, and it is closed the only way
 that works — by lowering the claim to the mechanism, not by raising the mechanism to the claim.
+
+## D-028 — the terminal method: where a claim cannot be kept true, DELETE it
+
+**Ruled 2026-10-02 after the tenth instance of the class.** The pass that existed to correct under-declared
+claims introduced two fresh ones — **a pointer at `factory-guard.mjs:1424` where the mechanism is at `:1446`,
+and a "fourteen matcher constants" where the reproducible count is thirteen.** The second is the sharper
+lesson: **it replaced a true number with a false one while asserting a measurement.**
+
+**The evidence, over ten rounds:** the *mechanism* was verified correct every single time. Every failure was
+prose *about* the mechanism, and eleven passes of writing that prose produced a fresh instance each time. So
+the activity, not any individual sentence, is what fails.
+
+**The ruling: where a claim cannot be made reproducible, DELETE THE CLAIM rather than restate it.**
+1. A wrong pointer or a wrong number — **delete it**, do not correct it. A sentence that needs no line number
+   cannot have a wrong one.
+2. Where a number is load-bearing, make it reproducible or **drop the quantification**.
+3. Where a referent is unclear (a true "26 of 90" whose 90 live in a different file), **name the file or delete
+   the ratio** — a true number with a wrong referent is still a false claim.
+4. **Do not add a sentence to explain a deleted one.** Net prose must SHRINK, and the shrink is reported as a
+   measurement, not asserted.
+
+**This is the terminal move of the slice, and it generalises past it.** A guard header's job is to tell a
+reader what the instrument does; a *number* or a *line* in it is a claim that will rot the moment the code
+moves, and every rot is a false statement. The durable form is fewer, coarser claims — which is also why the
+guard's own header is the authoritative statement of scope (`code-structure.md:121-127`) rather than a report's
+prose: it must stay small enough to stay true.
