@@ -355,15 +355,20 @@ regardless.
 
 ## §8 Files changed, and what a reviewer should read first
 
-`git diff --stat ba4dd93..6b6a630` — **mine only** (the range also carries the orchestrator's `38eb722`):
+`git diff --stat 38eb722..HEAD -- . ':!factory'` — **mine only** (the base is the orchestrator's registry commit,
+so the range carries no file of theirs):
 
 | file | +/- |
 |---|---|
 | `docs/agents/code-structure.md` | +23 |
 | `src/lib/firstRunTour.ts` | +27 |
-| `scripts/guards/copy-taxonomy-guard.mjs` | +449 |
+| `scripts/guards/copy-taxonomy-guard.mjs` | +467 |
 | `scripts/guards/copy-taxonomy-guard.check.mjs` | +368 |
-| `scripts/guards/run-all.sh` | +9 / −1 |
+| `scripts/guards/run-all.sh` | +8 / −1 |
+| `.scratch/v28/reports/slice-6d.md` | +432 |
+
+(Line counts of the two new files as `wc -l` reads them at this commit, which is the same statement `diff --stat`
+makes: 467 and 368.)
 
 sha256 of the instrument at `79991bd`, so a reviewer can tell what they read:
 `copy-taxonomy-guard.mjs` `fd52b49cc282400d…03cf0c2`, `copy-taxonomy-guard.check.mjs` `88c07af30cc696f5…3aedb1`.
@@ -382,9 +387,10 @@ both directions, and every rule is proven to be able to fail.
 ## §9 The final gate, at `79991bd`, with this report on disk
 
 `npm run verify` run once at **`79991bd`** (the guard's last change committed; this report on disk and uncommitted,
-which is the only part of the tree that is not code). The lines added to this report after that run are the table's
-final column and this sentence and the one below it, so the run and the artifact differ by nothing the gate reads
-except the report itself, whose own numbers are the ones below. Raw output in `.scratch/v28/tmp/verify-final2.log`:
+which is the only part of the tree that is not code). The lines added to this report after that run are prose: the
+table's final column, the §8 stat table, and these two sentences — so the run and the artifact differ by nothing the
+gate reads except the report itself, whose own numbers are the ones below. Raw output in
+`.scratch/v28/tmp/verify-final2.log`:
 
 | what | at `ba4dd93` | at `6b6a630` | at `79991bd` (final) |
 |---|---|---|---|
