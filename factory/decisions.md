@@ -1008,3 +1008,11 @@ diversity of the kind D-015 said the rule was groping toward.**
 "cleared by EXACTLY ONE registered model" — true when written, false one commit later. It now records the
 **resolution**, and the original measurement survives in D-007/D-008. **A note about a gap is a claim like any
 other, and it expires with the gap.**
+
+**D-034 addendum — TWO registries, and one of them needs a reload.** A model must be registered in **both** places to be usable by a lane, and they are separate files with separate lifecycles:
+- **`factory/config.json`** — the factory's registry: routing, capability floors, cost tiers, residency, health. This is what `route`, `admit` and the guards read. **Registered there: done, guard green.**
+- **`~/.pi/agent/models.json`** — Pi's own registry, which is what a **subagent** needs. The model id was added there and enriched with only sourced fields (`contextWindow` 1048576 read from the model's metadata, `input: ["text"]`, `reasoning: true`); a backup of the previous file was taken first.
+
+**Measured, and worth knowing before anyone repeats this:** `pi --list-models` in a **fresh process** sees it (`ollama-cloud  glm-5.3  1.0M  thinking yes`), but the **running session's registry was loaded at startup and does not reload** — a subagent spawned in this session reports `Unknown subagent model`. **So a model registered mid-session is usable by the NEXT session, not the current one.** That is a fact about the harness, not a defect in the registration, and it is the kind of thing that otherwise gets discovered as a mystery.
+
+**And it did not block the work:** Pi already knew `ollama/glm-5.3-flash:cloud` — **also GLM, also a different family from the DeepSeek builder** — so the first genuinely independent review of this batch was dispatched on that model immediately rather than waiting for a reload. *The independence was available; it took looking for the route rather than assuming the missing one.*
