@@ -102,11 +102,13 @@ test('a returning parent with kids (and no zip) re-enters at the area card — n
   const viewerSession = await readSessionFromBrowserPage(page)
   expect(viewerSession, 'the viewer page holds a Supabase session').not.toBeNull()
   const { url, anonKey } = readSupabaseEnv()
+  // READ-ONLY headers: the only request this object feeds is the GET below.
+  // `Content-Type` and `Prefer: return=representation` were written for the
+  // avatar-seed PATCH that V28 r2 slice 1b deleted with the photo card — with
+  // no writer left they were write-only headers on a read (slice 8a).
   const restHeaders: Record<string, string> = {
     apikey: anonKey,
     Authorization: `Bearer ${viewerSession!.accessToken}`,
-    'Content-Type': 'application/json',
-    Prefer: 'return=representation',
   }
 
   // --- RE-ENTER, cold. ---
