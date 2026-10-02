@@ -218,6 +218,13 @@
   },
   "_lane_states_why": "States for a WORK lane. complete is terminal: evidence does not un-exist. failed is the honest state for a verdict of NEEDS_CHANGES — the lane ran and its outcome was negative, so acceptance stays blocked and the next fix round moves it failed -> running.",
 
+  "lane_reopen": {
+    "from": ["complete"],
+    "allowed": ["running"],
+    "requires_reason": true,
+    "_why": "A fix round re-opens a COMPLETED lane, and that has to be representable or the batch's own escalating fix loop cannot be written down: found live when `factory work transition v28-r2-6c implementation running` was refused on a completed lane during slice 6c fix round 3. It is a deliberate exception, not a relaxation — it fires only when the caller passes --reopen \"<why>\", the reason is recorded on the lane, and the guard's reopen-has-reason re-checks that a re-opened lane carries one. A silent re-open is still refused, so 'evidence does not un-exist' survives: the previous round's artifacts stay named and the reason for reopening joins them."
+  },
+
   "acceptance_states": {
     "blocked": ["pass", "waived"],
     "pass": [],

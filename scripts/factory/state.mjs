@@ -119,6 +119,32 @@ export function applyTransition(item, lane, to, meta = {}) {
   return { ok: true, from, to }
 }
 
+/**
+ * Record fields on a lane WITHOUT moving its state.
+ *
+ * Needed the moment a lane has already reached the state a caller wants to
+ * announce itself in — the live case was `implementation` sitting in `running`
+ * (re-opened for a fix round) with no model recorded, so `implementerOf` returned
+ * nothing and independence was unenforceable (D-008). `running -> running` is
+ * correctly refused as a transition, so without this the field is unreachable and
+ * the work item silently keeps reading as "nobody implemented this".
+ */
+export function applyFields(item, lane, fields = {}) {
+  if (!item.lanes[lane]) return { ok: false, why: `no lane '${lane}' on ${item.id}` }
+  const before = item.lanes[lane]
+  item.lanes[lane] = { ...before, ...fields }
+  item.history.push({
+    at: new Date().toISOString(),
+    lane,
+    from: before.state,
+    to: before.state,
+    note: 'fields set (no state change)',
+    actor: fields.actor ?? null,
+    model: fields.model ?? null,
+  })
+  return { ok: true, changed: Object.keys(fields) }
+}
+
 // ---------------------------------------------------------------------------
 // Reservations — the leases the scheduler admits against
 // ---------------------------------------------------------------------------

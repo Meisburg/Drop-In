@@ -586,10 +586,29 @@ export function selectModel({ config, kind, probes = systemProbes, reservations 
 
 export const DEFAULT_LANES = ['implementation', 'verification', 'review', 'visual_validation', 'acceptance']
 
-export function laneTransitionAllowed(config, from, to) {
+/**
+ * Is this lane transition legal?
+ *
+ * `complete` is terminal for a ROUND — evidence does not un-exist, and the
+ * artifacts a completed lane names stay named. But a fix round legitimately
+ * re-opens a completed lane, and pretending otherwise means the batch's own
+ * escalating fix loop cannot be represented in the work state at all. Found by
+ * using it: `factory work transition <id> implementation running` on a completed
+ * lane was REFUSED, and the lane model had no way to say "this is round 2".
+ *
+ * So a re-open is allowed ONLY when it declares itself and says why: `opts.reopen`
+ * with a reason. Silent re-opens stay refused, and the guard's `reopen-has-reason`
+ * re-checks that every lane standing in a re-opened state carries its reason.
+ */
+export function laneTransitionAllowed(config, from, to, opts = {}) {
   const table = config.lane_states ?? {}
   if (!(from in table)) return false
-  return table[from].includes(to)
+  if (table[from].includes(to)) return true
+  const reopen = config.lane_reopen
+  if (opts.reopen && reopen?.allowed?.includes(to) && reopen?.from?.includes(from)) {
+    return Boolean(opts.reason && String(opts.reason).trim())
+  }
+  return false
 }
 
 /**

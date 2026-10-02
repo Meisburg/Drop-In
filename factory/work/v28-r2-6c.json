@@ -9,14 +9,20 @@
   "created_at": "2026-10-02T12:22:22.965Z",
   "lanes": {
     "implementation": {
-      "state": "complete",
-      "owner": "orchestrator-builder",
-      "model": null,
+      "state": "running",
+      "owner": "r2-6c-fix3-build",
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
       "artifacts": [
         ".scratch/v28/reports/slice-6c-fix-2.md"
       ],
       "evidence": [
         "04921d8"
+      ],
+      "reopened": [
+        {
+          "at": "2026-10-02T12:41:30.125Z",
+          "why": "slice 6c fix round 3 — reviewer verdict NEEDS_CHANGES"
+        }
       ]
     },
     "verification": {
@@ -118,6 +124,24 @@
       "note": null,
       "actor": null,
       "model": null
+    },
+    {
+      "at": "2026-10-02T12:41:30.126Z",
+      "lane": "implementation",
+      "from": "complete",
+      "to": "running",
+      "note": null,
+      "actor": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud"
+    },
+    {
+      "at": "2026-10-02T12:41:46.910Z",
+      "lane": "implementation",
+      "from": "running",
+      "to": "running",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud"
     }
   ]
 }

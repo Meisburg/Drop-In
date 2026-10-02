@@ -37,6 +37,7 @@ import {
 } from './scheduler.mjs'
 import {
   addReservation,
+  applyFields,
   applyTransition,
   implementerOf,
   listWorkItems,
@@ -410,6 +411,25 @@ function cmdWork(args) {
     process.exit(0)
   }
 
+  if (sub === 'set') {
+    const lane = positional[2] ?? die('usage: factory work set <id> <lane> [--model ...] [--owner ...] [--artifacts ...] [--evidence ...]')
+    const item = readWorkItem(id) ?? die(`no work item '${id}'`)
+    if (!DEFAULT_LANES.includes(lane)) die(`unknown lane '${lane}' (known: ${DEFAULT_LANES.join(', ')})`)
+    const fields = {
+      ...(flags.model ? { model: flags.model } : {}),
+      ...(flags.owner ? { owner: flags.owner } : {}),
+      ...(flags.artifacts ? { artifacts: String(flags.artifacts).split(',').map((s) => s.trim()) } : {}),
+      ...(flags.evidence ? { evidence: String(flags.evidence).split(',').map((s) => s.trim()) } : {}),
+      ...(flags.reason ? { reason: flags.reason } : {}),
+    }
+    if (!Object.keys(fields).length) die('factory work set: nothing to set (--model, --owner, --artifacts, --evidence, --reason)')
+    const { ok, why } = applyFields(item, lane, fields)
+    if (!ok) die(why, 4)
+    writeWorkItem(item)
+    console.log(`${id}: ${lane} ${Object.keys(fields).join(', ')} recorded (state unchanged: ${item.lanes[lane].state})`)
+    process.exit(0)
+  }
+
   if (sub === 'transition') {
     const lane = positional[2] ?? die('usage: factory work transition <id> <lane> <state> [--note ...]')
     const to = positional[3] ?? die('usage: factory work transition <id> <lane> <state>')
@@ -424,7 +444,11 @@ function cmdWork(args) {
       if (to === 'waived' && !flags.reason) die('REFUSED: acceptance may be waived only with --reason "<why>"', 4)
     } else {
       const from = item.lanes[lane]?.state
-      if (!laneTransitionAllowed(config, from, to)) die(`REFUSED: ${lane} cannot go ${from} -> ${to}`, 4)
+      const reopen = Boolean(flags.reopen)
+      if (!laneTransitionAllowed(config, from, to, { reopen, reason: flags.reopen })) {
+        const hint = from === 'complete' ? ' — a completed lane re-opens only with --reopen "<why>", which is the fix-round case' : ''
+        die(`REFUSED: ${lane} cannot go ${from} -> ${to}${hint}`, 4)
+      }
     }
 
     const meta = {
@@ -436,6 +460,13 @@ function cmdWork(args) {
         ...(flags.evidence ? { evidence: String(flags.evidence).split(',').map((s) => s.trim()) } : {}),
         ...(flags.owner ? { owner: flags.owner } : {}),
         ...(flags.reason ? { reason: flags.reason } : {}),
+        // The lane must CARRY the model, not just the history entry: implementerOf
+        // reads `lanes.<lane>.model`, and independence is unenforceable without it
+        // (D-008). A model recorded only in the history is a model nobody can route on.
+        ...(flags.model ? { model: flags.model } : {}),
+        ...(flags.reopen
+          ? { reopened: [...(item.lanes[lane]?.reopened ?? []), { at: new Date().toISOString(), why: flags.reopen }] }
+          : {}),
       },
     }
     const before = item.lanes[lane]?.state

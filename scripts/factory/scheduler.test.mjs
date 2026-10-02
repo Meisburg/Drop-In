@@ -30,7 +30,7 @@ import {
   residentModel,
   selectModel,
 } from './scheduler.mjs'
-import { newWorkItem } from './state.mjs'
+import { applyFields, applyTransition, implementerOf, newWorkItem } from './state.mjs'
 
 const realConfig = JSON.parse(readFileSync(new URL('../../factory/config.json', import.meta.url), 'utf8'))
 
@@ -330,6 +330,36 @@ describe('the registry itself', () => {
       expect(task.resources, `task kind '${kind}' has no resources block`).toBeTruthy()
       expect(task.resources.footprint_source, `task kind '${kind}' does not say where its number came from`).toBeTruthy()
     }
+  })
+
+  it('refuses a SILENT re-open of a completed lane, and allows a declared one (the fix-round case)', () => {
+    // Found live: `factory work transition v28-r2-6c implementation running` was
+    // refused on a completed lane during fix round 3, so the batch's own escalating
+    // fix loop could not be written down at all. The exception is narrow: the
+    // caller declares it AND says why.
+    expect(laneTransitionAllowed(realConfig, 'complete', 'running')).toBe(false)
+    expect(laneTransitionAllowed(realConfig, 'complete', 'running', { reopen: true })).toBe(false)
+    expect(laneTransitionAllowed(realConfig, 'complete', 'running', { reopen: false, reason: 'x' })).toBe(false)
+    expect(laneTransitionAllowed(realConfig, 'complete', 'running', { reopen: true, reason: 'fix round 3' })).toBe(true)
+    // Only the declared target is reachable, and only from `complete`.
+    expect(laneTransitionAllowed(realConfig, 'complete', 'failed', { reopen: true, reason: 'x' })).toBe(false)
+    expect(laneTransitionAllowed(realConfig, 'pending', 'running', { reopen: true, reason: 'x' })).toBe(true) // the normal path still works
+  })
+
+  it('records lane fields without moving state, so the implementer is reachable (D-008)', () => {
+    // `running -> running` is correctly refused as a transition, so without a
+    // field-only write the model is unreachable on a lane already in the state a
+    // caller wants to announce itself in — and the work item keeps reading as
+    // "nobody implemented this", which is how independence silently vanished.
+    const item = newWorkItem({ id: 'w', title: 't', planRef: 'p' })
+    applyTransition(item, 'implementation', 'running')
+    applyTransition(item, 'implementation', 'complete')
+    expect(implementerOf(item).model).toBe(null)
+    const r = applyFields(item, 'implementation', { model: 'some/model' })
+    expect(r.ok).toBe(true)
+    expect(item.lanes.implementation.state).toBe('complete') // state untouched
+    expect(implementerOf(item).model).toBe('some/model')
+    expect(item.history.at(-1).note).toMatch(/no state change/)
   })
 
   it('gives every model a capability set, a footprint source and a cost tier', () => {
