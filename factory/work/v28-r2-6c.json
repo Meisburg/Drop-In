@@ -30,11 +30,11 @@
       ]
     },
     "verification": {
-      "state": "running",
+      "state": "complete",
       "owner": null,
       "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
       "artifacts": [
-        ".scratch/v28/reports/slice-6c-fix-4-verify.md"
+        ".scratch/v28/reports/slice-6c-fix-5-verify.md"
       ],
       "evidence": [
         "VERIFY: PASS 70/2030/81/0 GUARDS PASS"
@@ -51,11 +51,11 @@
       ]
     },
     "review": {
-      "state": "running",
+      "state": "failed",
       "owner": null,
       "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
       "artifacts": [
-        ".scratch/v28/reports/slice-6c-fix-4-review.md"
+        ".scratch/v28/reports/slice-6c-fix-5-review.md"
       ],
       "evidence": [],
       "reopened": [
@@ -82,7 +82,7 @@
       "model": null,
       "artifacts": [],
       "evidence": [],
-      "reason": "review failed: fix round 4 owed"
+      "reason": "review failed: SPECIFICATION ruling owed per D-016, NOT a sixth fix round"
     }
   },
   "history": [
@@ -289,6 +289,51 @@
       "lane": "review",
       "from": "failed",
       "to": "running",
+      "note": null,
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T13:39:48.754Z",
+      "lane": "verification",
+      "from": "running",
+      "to": "running",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T13:39:48.782Z",
+      "lane": "verification",
+      "from": "running",
+      "to": "complete",
+      "note": null,
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T13:45:24.134Z",
+      "lane": "review",
+      "from": "running",
+      "to": "running",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T13:45:24.161Z",
+      "lane": "review",
+      "from": "running",
+      "to": "failed",
+      "note": "NEEDS_CHANGES: instrument still matches examples not the class (15 unflagged shapes, 2 false positives); SPECIFICATION question raised for the human",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T13:45:24.188Z",
+      "lane": "acceptance",
+      "from": "blocked",
+      "to": "blocked",
       "note": null,
       "actor": null,
       "model": null
