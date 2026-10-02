@@ -810,7 +810,18 @@ $ npm run verify                             → VERIFY EXIT 1
 The deltas are zero because this repair touches `scripts/guards/*.mjs` and this report only: no `src/`, no
 `e2e/`, no `*.test.mjs`. **The one non-zero is the exit code**, and its cause is §R6.
 
-## R6 — the red that is NOT this slice's (blocking the exit-0 claim)
+## R6 — the red that was NOT this slice's (resolved: the orchestrator's missing copy)
+
+**RESOLVED — and it was the orchestrator's omission, caught by this rule doing its job.** The red below was
+real when it was written and it is kept for the record: `artifacts-exist` fired because
+`factory/work/v28-r2-6c.json` named `.scratch/v28/reports/slice-6c-fix-6-review.md`, which lived only in the
+lane's artifacts directory. The orchestrator's commit `6fbc2ad` updated the work state naming that artifact
+WITHOUT performing the evidence-persistence copy it had performed for rounds 1-5. It has now copied both
+round-6 lane reports into `.scratch/v28/reports/` verbatim (`slice-6c-fix-6-review.md`, 368 lines;
+`slice-6c-fix-6-verify.md`, 447 lines), the finding is gone, and the growth it caused is **expected and is
+not this slice's error** — the two reports quote the class on nearly every line, including the probe seeds.
+I did not copy them myself and did not silence the rule: the builder's job is to name the cause, and the
+rule's job is to have one. The raw measurement is kept here because the finding was real.
 
 `factory-guard.mjs` exits 1 with exactly one finding, and it is the orchestrator's own state file naming
 another lane's artifact:
@@ -907,4 +918,213 @@ $ node scripts/guards/factory-guard.mjs | grep "slice-6c-fix-6.md"
   FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:815: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "git show HEAD"
   FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:849: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "git ls-tree -r --name-only <c> .scratch | wc"
 ```
+```
+
+## R9 — the two lane reports: the absorber, and the property it narrows
+
+The orchestrator copied the round-6 review and verify reports into `.scratch/v28/reports/` (the
+evidence-persistence step for rounds 1-5 that `6fbc2ad` skipped). They are other lanes' historical records and
+they quote the class on nearly every line — so the re-derivation absorbed the detector half, and the
+**decidable** half produced two findings that re-derivation could not absorb, because round 6 deliberately
+left SHA findings out of the baseline:
+
+```
+$ node scripts/guards/factory-guard.mjs
+  FINDING [count-provenance-unresolvable]: .scratch/v28/reports/slice-6c-fix-6-review.md:109: a count's provenance names <bogus>, which is not a commit in this repository … — name a commit a reader can resolve
+  FINDING [count-provenance-unresolvable]: .scratch/v28/reports/slice-6c-fix-6-verify.md:223: a count's provenance names <bogus>, which is not a commit in this repository … — name a commit a reader can resolve
+```
+
+Both lines are the lane QUOTING a probe seed — `"The tree held **412** tracked files at <bogus>."  PASS`,
+`$ printf '… at <bogus>.\n' > …/zz-bogus.md` — written down precisely to show that the rule fires on them.
+The rule firing is *correct*: the sentence does claim a count's provenance is `deadbee`. What makes them
+different from a violation is the **use/mention distinction**: the class is a report **using** a bogus sha as
+its own provenance; these are a report **mentioning** one to demonstrate the rule. The HEAD half already
+absorbs exactly this case, and the human ruled the mechanic himself — `factory/decisions.md` D-021 item 2,
+verbatim: *"all in lane reports that discuss the class and therefore quote it … absorbed by a re-derivation,
+never by hand-adding a key."* A permanently red gate over ten quotation lines would teach the next reader that
+red is normal, which is the failure this whole batch exists to prevent.
+
+**The ruling, and how it is bounded: the absorber exists ONLY for historical quotations.** `UNRESOLVABLE_SHA_
+BASELINE` records them, keyed `file::sha` **with a count**, re-derived (never typed), and the run prints the
+size on every run.
+
+```
+$ node /tmp/derive-baseline.mjs "$PWD"
+re-derived: no-bare-head-count 617 occurrence(s) / 395 key(s); unresolvable-sha 10 record(s) / 2 key(s)
+  sha record: .scratch/v28/reports/slice-6c-fix-6-review.md::deadbee x9
+  sha record: .scratch/v28/reports/slice-6c-fix-6-verify.md::deadbee x1
+```
+
+`10` records across `2` keys — not `2`, because the review report quotes the seed nine times. The count is
+load-bearing, which the proofs below are the point of.
+
+**One reconciliation with D-023, which says "the printed counter reads 2."** It reads **10** — because it
+counts OCCURRENCES across 2 keys, exactly as the detector arm's baseline counts its own occurrences across
+its own keys,
+and the review report quotes the seed nine times (compare the other arm, whose recorded occurrences are
+counted the same way). Counting occurrences is what makes the per-file count
+load-bearing (proof 2 above: a tenth occurrence in that file fails while the nine recorded ones pass); a
+per-file boolean would let a report add quotations indefinitely. If D-023's "2" was meant as the key count,
+nothing is wrong and the note above it says "10 recorded … record(s) … 2 keys" would be clearer — say the word
+and I will reword the note rather than the mechanism.
+
+### The property NARROWS, and it is named in three places
+
+**"Never a broken sha" became "never a NEW broken sha."** The round-6 report claimed the strong form and the
+round-6 reviewer validated it ("A bogus sha **is** a finding, it is **not** in the baseline"). That sentence is
+now false as stated, so it is corrected where it lives: the guard header (a `THE PROPERTY IS "NEVER A NEW
+BROKEN SHA"` paragraph that says who narrowed it, when, and why), §R7 below, the per-rule header bullet
+("NEVER A NEW BROKEN SHA: a historical lane record that QUOTES a probe seed is absorbed by re-derivation"),
+and the run's own summary line, which now reads:
+
+```
+  ok — 5 model(s), 8 task kind(s), 1 work item(s); every floor meetable, every artifact present, every
+  instrument header stating only what it can point at, no report or brief count resolved through bare HEAD
+  beyond the recorded baseline, no count's provenance sha unresolvable beyond the recorded records
+```
+
+and the run prints the absorber's size, and whether it applied to this scan at all:
+
+```
+  note — count-provenance: 10 recorded unresolvable-sha record(s) absorbed (historical lane records that QUOTE
+  a probe seed, by re-derivation); a NEW unresolvable sha, or a second occurrence of a recorded one in the
+  same file, is a finding
+  note — count-provenance: … a NEW unresolvable sha, or a second occurrence of a recorded one in the same
+  file, is a finding — 0 of the 10 matched this scan        (a throwaway root: the absorber did NOT apply)
+```
+
+### The mandatory proofs — the absorber cannot swallow a violation
+
+All six were run with the repository's own reports present in the root, so the baseline is live and a `PASS`
+means something. Raw:
+
+**(1) a NEW unresolvable sha in a FRESH file → FINDING, exit 1**
+
+```
+$ printf 'The tree held 276 tracked files at <bogus-2>.\n' > <root>/.scratch/v28/reports/zz-fresh.md
+$ node scripts/guards/factory-guard.mjs --root <root> --repo "$PWD"
+  note — count-provenance: 128 provenance token(s) … 26 distinct sha(s) … 11 unresolvable
+  FINDING [count-provenance-unresolvable]: .scratch/v28/reports/zz-fresh.md:1: a count's provenance names <bogus-2>, which is not a commit in this repository …                                                                              exit 1
+```
+
+**(2) a SECOND occurrence of a recorded sha in the SAME file → FINDING (the count is load-bearing)**
+
+```
+$ printf 'The tree held 276 tracked files at <bogus>.\n' >> <root>/.scratch/v28/reports/slice-6c-fix-6-verify.md   # recorded x1
+$ node scripts/guards/factory-guard.mjs --root <root> --repo "$PWD"
+  FINDING [count-provenance-unresolvable]: .scratch/v28/reports/slice-6c-fix-6-verify.md:448: … names <bogus> …                                                                                                                            exit 1
+
+$ printf 'A tenth: 276 tracked files at <bogus>.\n' >> <root>/.scratch/v28/reports/slice-6c-fix-6-review.md      # recorded x9
+$ node scripts/guards/factory-guard.mjs --root <root> --repo "$PWD"
+  FINDING [count-provenance-unresolvable]: .scratch/v28/reports/slice-6c-fix-6-review.md:369: … names <bogus> …
+  FINDING [count-provenance-unresolvable]: .scratch/v28/reports/slice-6c-fix-6-verify.md:448: … names <bogus> …                                                                                                                             exit 1
+```
+
+Nine recorded occurrences still pass; the tenth fails. That is the whole bounded-ness of the absorber.
+
+**(3) the B1 dressed-count seed → FINDING, with the absorber in place**
+
+```
+$ … seed "The tree held **412** tracked files at <bogus>."                 → FINDING [count-provenance-unresolvable]  exit 1
+$ … seed "The tree held 412 (tracked) files at <bogus>."                  → FINDING …                                exit 1
+$ … seed "| 412 | tracked files at <bogus> |"                             → FINDING …                                exit 1
+```
+
+**(4) the B2 seed → FINDING**
+
+```
+$ … seed "The corpus stands at <bogus>, 276 tracked files were counted."  → FINDING [count-provenance-unresolvable]  exit 1
+$ … seed "The corpus stands at <bogus>: 276 tracked files were counted."  → FINDING …                                exit 1
+```
+
+**(5) all 72 checks still exit 0 and their mutation proofs still flip** — including the two the round-6
+review named, because a check whose seed the absorber now eats would be the trap:
+
+```
+  ✓ a dressed count naming a bogus sha is CAUGHT (B1: the decidable half)
+  ✓ MUTATION: narrowing the count token back lets that bogus sha PASS (so the check can fail)
+  ✓ a dressed count resolved through bare HEAD is CAUGHT (B1: the detector half)
+  ✓ a canonical `at <sha>` followed by a comma or a colon is CAUGHT when the sha is bogus (B2)
+  ✓ MUTATION: dropping the attached-punctuation lead lets that bogus sha PASS (so the check can fail)
+  ✓ a counted git command piped through a filter is CAUGHT (N1: the property, not the spelling)
+  ✓ a bare `@{2}` reflog label is CAUGHT (a moving revision, N2)
+factory-guard check: all 72 checks passed.                                          exit 0
+```
+
+The check roots are throwaway directories with no baseline files, so the absorber cannot reach their seeds —
+and the run says so (`0 of the 10 matched this scan`).
+
+**(6) the printed counter reads 10 across 2 keys**, and the `ok —` claim is reworded as above.
+
+**(7) no matched line was lost across the widening** — re-measured after the absorber, both instruments'
+regexes over the corpus (now 126 files):
+
+```
+lines with a match — old instrument: 388, new instrument: 482
+lines that LOST every match: 0
+lines newly matched: 94
+```
+
+### The baseline, final
+
+| | round 6 | after the repair | after the two lane reports |
+|---|---|---|---|
+| no-bare-head-count baseline | 442 / 255 | 488 / 304 | **617 occurrences / 395 keys** |
+| unresolvable-sha records | — (none possible) | — | **10 occurrences / 2 keys** |
+| provenance tokens in the scan | 76 / 21 | 100 / 23 | **127 / 25** |
+
+Every figure is re-derived from the instrument's own matches; nothing was typed, and neither lane report was
+edited.
+
+## R10 — final state, end to end
+
+```
+$ node scripts/guards/factory-guard.mjs                 # exit 0
+  note — no-bare-head-count: baseline holds 617 recorded occurrence(s); a new count resolved through bare HEAD is a finding
+  note — no-bare-head-count: scanned 126 WORKING-TREE file(s); git tracks 126 under the same paths (0 untracked, 0 tracked-but-absent)
+  note — count-provenance: 127 provenance token(s) in the scan, 25 distinct sha(s) resolved with `git cat-file -e <sha>^{commit}` against /home/jmeisburg/orca/workspaces/playdate-app/onboarding (the scan root) — 10 unresolvable
+  note — count-provenance: 10 recorded unresolvable-sha record(s) absorbed (historical lane records that QUOTE a probe seed, by re-derivation); a NEW unresolvable sha, or a second occurrence of a recorded one in the same file, is a finding
+  ok — 5 model(s), 8 task kind(s), 1 work item(s); every floor meetable, every artifact present, every instrument header stating only what it can point at, no report or brief count resolved through bare HEAD beyond the recorded baseline, no count's provenance sha unresolvable beyond the recorded records
+
+PASS — the registry can be trusted and no work item claims evidence it does not have.
+
+$ node scripts/guards/factory-guard.check.mjs            # exit 0
+factory-guard check: all 72 checks passed.
+$ node scripts/guards/regexp-escape-guard.check.mjs      # exit 0
+regexp-escape-guard check: all 12 checks passed.
+$ bash scripts/guards/run-all.sh                         # exit 0
+GUARDS: PASS — all deterministic rules hold.
+$ npm run verify                                         # exit 0
+ Test Files  71 passed (71)
+      Tests  2067 passed (2067)
+$ grep -c ': warning ' /tmp/verify7c.log
+81
+$ grep -c ': error ' /tmp/verify7c.log
+0
+  ok — AGENTS.md (1789 words, ceiling 1800)
+```
+
+| Measure | Round 6 | This repair | Delta |
+|---|---|---|---|
+| test files | 71 | **71** | 0 |
+| tests | 2067 | **2067** | 0 |
+| oxlint warnings (`: warning `) | 81 | **81** | 0 |
+| oxlint errors (`: error `) | 0 | **0** | 0 |
+| `AGENTS.md` words / ceiling | 1789/1800 | **1789/1800** | 0 |
+| `factory-guard.mjs` | exit 1 (98→100 findings at the base) | **exit 0, PASS** | — |
+| `run-all.sh` | — | **GUARDS: PASS** | — |
+
+Every delta is zero: this repair touches `scripts/guards/*.mjs` and this report, and the two lane reports the
+orchestrator copied in. No `src/`, no `e2e/`, no `*.test.mjs`.
+
+## R11 — grepping this section too
+
+```
+```
+$ node scripts/guards/factory-guard.mjs | grep "slice-6c-fix-6.md"
+```
+
+Empty: this report is inside the recorded baseline (617 occurrences / 395 keys) and its probe quotations
+render the sha as `<bogus>`, so the widened rule has nothing left to say about it. §R8 above is the run that
+caught it *before* the re-derivation that absorbed it — the same two-step every lane record went through.
 ```
