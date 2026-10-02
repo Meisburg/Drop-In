@@ -16,8 +16,8 @@ commit that carries this line. **Not pushed** — production is V27 and this bat
 
 ## §0 Baseline, measured before any edit — and it is NOT green
 
-`npm run verify` at `ba4dd93`, run once before any edit. Raw output kept in `.scratch/v28/tmp/verify-baseline.log`
-(uncommitted scratch) and quoted here, because a path is a weaker record than the lines:
+`npm run verify` at `ba4dd93`, run once before any edit. The raw output is quoted here rather than pointed at,
+because a path is a weaker record than the lines and the scratch directory it lived in is gone (§11):
 
 | what | measured |
 |---|---|
@@ -316,7 +316,7 @@ paraphrase escapes); kinds whose word collapses to the label function's default 
 
 ## §6 The gate: exit codes, counts, and the delta accounted for
 
-`npm run verify` after the change, at `6b6a630`, one run. Raw output in `.scratch/v28/tmp/verify-after.log`:
+`npm run verify` after the change, at `6b6a630`, one run. The raw numbers:
 
 | what | baseline at `ba4dd93` | after, at `6b6a630` | delta |
 |---|---|---|---|
@@ -393,8 +393,7 @@ which is the only part of the tree that is not code). The lines added to this re
 table's final column, the §8 stat table (whose range command was then given a fixed endpoint, because a bare
 `..HEAD` endpoint is a count that cannot be reproduced), and these two sentences — so the run and the artifact
 differ by nothing the
-gate reads except the report itself, whose own numbers are the ones below. Raw output in
-`.scratch/v28/tmp/verify-final2.log`:
+gate reads except the report itself, whose own numbers are the ones below.
 
 | what | at `ba4dd93` | at `6b6a630` | at `79991bd` (final) |
 |---|---|---|---|
@@ -451,8 +450,7 @@ was then re-run; its numbers are §9.
 (71)`; `Tests  2067 passed (2067)`; 81 warnings, 0 errors; `ok — AGENTS.md (1789 words, ceiling 1800)`;
 the new guard `PASS` and its check `23/23` inside the lane; `run-all.sh` `GUARDS: FAIL — 1 guard(s) reported
 findings: - factory-guard`, the same five registry lines. `bash scripts/steering-lint.sh` run on its own:
-exit 0. Nothing this slice touched changed any of them, and the raw output is
-`.scratch/v28/tmp/verify-end.log`.
+exit 0. Nothing this slice touched changed any of them.
 
 ---
 
