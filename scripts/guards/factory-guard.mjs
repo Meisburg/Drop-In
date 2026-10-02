@@ -31,7 +31,9 @@
 //   health-declared       every model says HOW it is known to be reachable. A
 //                         model with no probe is a fallback that fails late.
 //   residency-declared    every model says whether it is resident, on-demand or
-//                         remote, and every remote-capable probe can be run
+//                         remote, and a model declared resident is a LOCAL one
+//                         (the endpoint a remote model's probe needs is
+//                         health-declared's, not this rule's)
 //   one-resident-local    at most one LOCAL model is declared resident, because
 //                         they share `exclusive: local-inference` and cannot
 //                         coexist — and policy and the per-model fields agree
@@ -62,8 +64,9 @@
 //                         `git cat-file -e <sha>^{commit}` — the decidability
 //                         this slice exists for. NEVER A NEW BROKEN SHA: a
 //                         historical lane record that QUOTES a probe seed is
-//                         absorbed by re-derivation (D-021 item 2), and every
-//                         occurrence beyond the recorded count still fails.
+//                         absorbed by re-derivation (D-021 item 2, ruled for
+//                         this half by D-023), and every occurrence beyond the
+//                         recorded count still fails.
 //
 // SCOPE — the boundary this instrument reads, and therefore the boundary of its
 // claims. `docs/agents/code-structure.md` makes THIS header, not any report's
@@ -408,9 +411,11 @@ function checkInstrumentHeaders() {
  * THE SHA IS VERIFIED, and that is the decidability this slice exists for. Every
  * token in provenance position is resolved with `git cat-file -e <sha>^{commit}`.
  * A sha that does not exist, names a blob or a tree rather than a commit, or is
- * otherwise unresolvable is a FINDING (`count-provenance-unresolvable`) — so "a
- * wrong named commit" is no longer a declared ceiling. Naming a commit is
- * necessary AND sufficient here: the run checks it instead of guessing.
+ * otherwise unresolvable is a FINDING (`count-provenance-unresolvable`) — except
+ * for the recorded historical quotations named below, which the absorber holds —
+ * so "a wrong named commit" is no longer a declared ceiling. Naming a commit is
+ * necessary AND sufficient here, for the two positions below: the run checks it
+ * instead of guessing.
  *
  * THE PROPERTY IS "NEVER A NEW BROKEN SHA", and that narrowing is deliberate,
  * written down, and was made after the fact. The round-6 report claimed "never a
@@ -424,10 +429,12 @@ function checkInstrumentHeaders() {
  * the failure this whole batch exists to prevent, so `factory/decisions.md` D-021
  * item 2's own mechanic — "all in lane reports that discuss the class and
  * therefore quote it … absorbed by a re-derivation, never by hand-adding a key" —
- * is applied to them: `UNRESOLVABLE_SHA_BASELINE` records the historical
+ * is applied to them by **D-023**, which ruled the sha half into the same
+ * forward-only mechanic: `UNRESOLVABLE_SHA_BASELINE` records the historical
  * quotations, keyed `file::sha` WITH A COUNT, and the run prints the size. The
- * absorber can only swallow what was recorded: a NEW unresolvable sha, or a
- * second occurrence of a recorded one in the same file, still FAILS — both
+ * absorber can only swallow what was recorded — the recorded COUNT for a
+ * `file::sha` key, not line identity: a NEW unresolvable sha, or a second
+ * occurrence of a recorded one in the same file, still FAILS — both
  * measured in `.scratch/v28/reports/slice-6c-fix-6.md` ("Bounded repair").
  * The round-6 reviewer validated the property this narrows; the narrowing is
  * named here, in that report, and in the `ok —` wording, rather than left to be
@@ -435,12 +442,16 @@ function checkInstrumentHeaders() {
  *
  * PROVENANCE POSITION. A sha-shaped token is a count's provenance in two places,
  * and only those two are verified: (a) in an `N … at <sha>` label, in either
- * word order — the canonical form; and (b) as the revision of a counted git
- * command (`git ls-tree -r --name-only <sha> .scratch | wc -l`). A sha-shaped
- * token anywhere else is not a provenance token and is not verified: an
- * md5/sha256 content hash in an evidence tail is a hash of bytes, not a commit.
- * Quoting the sha (`` `1c3471a` ``, `"1c3471a"`, `'1c3471a'`) is the usual dress
- * of the canonical spelling and is accepted.
+ * word order — the canonical form; and (b) the FIRST sha-shaped token of a
+ * counted git command, that is, the first one before the first `| wc`
+ * (`git ls-tree -r --name-only <sha> .scratch | wc -l`). Position (b) is exactly
+ * that narrow, and the exact shapes it misses are named in the ceiling list
+ * below (a sha later in the same command, a range endpoint, a filename fragment)
+ * — `factory/decisions.md` D-024 records the hole and this repair did NOT widen
+ * the matcher for it. A sha-shaped token anywhere else is not a provenance token
+ * and is not verified: an md5/sha256 content hash in an evidence tail is a hash
+ * of bytes, not a commit. Quoting the sha (`` `1c3471a` ``, `"1c3471a"`,
+ * `'1c3471a'`) is the usual dress of the canonical spelling and is accepted.
  *
  * NOT A GIT WORKTREE — the decision, because the behaviour checks run in
  * git-less temp roots and the rule must not be untestable through its own seam.
@@ -452,7 +463,7 @@ function checkInstrumentHeaders() {
  * the note names the `--repo` argument as the reason. When none of those is a
  * worktree, the run prints a note saying the provenance shas were NOT verified
  * and reports no sha finding for them — it never manufactures one — and the
- * `ok —` summary omits the resolved-as-a-commit claim, exactly as it omits any
+ * `ok —` summary omits the provenance claim, exactly as it omits any
  * other check that did not run. A check that cannot run must not pass as if it
  * had.
  *
@@ -538,6 +549,24 @@ function checkInstrumentHeaders() {
  *     `… at 71bdd5` (six hex characters, below the 7-character sha floor). A
  *     non-commit-looking token is indistinguishable from ordinary prose; the
  *     floor is 7 because that is the shortest sha git itself prints.
+ *   - POSITION (b) READS THE FIRST SHA-SHAPED TOKEN ONLY, and that ceiling is
+ *     named here because it is measured, recorded and deliberately NOT fixed
+ *     (`factory/decisions.md` D-024): `COUNT_CMD_SHA` captures the first 7-40 hex
+ *     run before the first `| wc`, so a sha later in the same counted command is
+ *     not verified — `git diff 1c3471a..deadbee | wc -l` passes with `deadbee`
+ *     unchecked — while a filename fragment CAN be read as the provenance
+ *     (`git ls-files .scratch/guard-badc0de.mjs | wc -l` is a finding naming
+ *     `badc0de`). The header sentence above used to claim the wider rule
+ *     ("the revision of a counted git command"); it was narrowed to what the
+ *     mechanism does, and the hole stays a recorded known-open rather than a
+ *     half-closed matcher.
+ *   - A `git` BINARY THAT CANNOT RUN INVERTS THIS CHECK, and that too is recorded
+ *     rather than fixed (D-024): `isCommit()` catches every failure as `false`,
+ *     so on a machine without git EVERY provenance sha is reported unresolvable
+ *     — a failure to measure read as a measurement result, the shape D-022 named.
+ *     The not-a-worktree promise above ("it never manufactures one") therefore
+ *     holds where git runs and the repository is not a worktree; where git
+ *     cannot run at all, the findings are false and this bullet is the ceiling.
  *   - A MOVING REV WRITTEN AS A PLACEHOLDER OR AS PART OF ANOTHER REF: `<HEAD>`
  *     is how a report names the bare token while quoting it, and `MERGE_HEAD`,
  *     `ORIG_HEAD`, `FETCH_HEAD`, `REBASE_HEAD` hold the token as a substring.
@@ -549,8 +578,11 @@ function checkInstrumentHeaders() {
  *     The token's own `(?!\w)` END assertion is the mechanism — `@` followed by
  *     a word character is not a standalone token — and it is behaviour-checked
  *     (removing the assertion turns the seeded email/decorator control red).
- *     `@` followed by anything else IS a revision, and `@{…}` is matched by its
- *     own alternative (see N2 above).
+ *     `@` followed by anything else IS a revision, a bare reflog selector
+ *     (`@{2}`) included: there is NO separate `@{…}` alternative in
+ *     `MOVING_REV`, and none is needed, because the `@` alternative's end
+ *     assertion admits `{` — the constants block says the same thing and the N2
+ *     check proves it (`git rev-parse @{2}` == `git rev-parse HEAD@{2}`).
  *   - OTHER MOVING REFS: a branch name (`main`), a tag, `ORIG_HEAD`,
  *     `MERGE_HEAD`, `FETCH_HEAD`, `REBASE_HEAD`, `refs/heads/*`. They move on a
  *     push or a fetch exactly as HEAD moves on a commit, but they are
@@ -1009,7 +1041,7 @@ const BARE_HEAD_BASELINE = new Map([
   [".scratch/v28/reports/slice-6c-fix-6.md::280 files in src/lib at HEAD", 4],
   [".scratch/v28/reports/slice-6c-fix-6.md::280 tracked .scratch files at HEAD", 4],
   [".scratch/v28/reports/slice-6c-fix-6.md::2}` (`git rev-parse @", 2],
-  [".scratch/v28/reports/slice-6c-fix-6.md::2}` == `git rev-parse HEAD@{2}", 2],
+  [".scratch/v28/reports/slice-6c-fix-6.md::2}` == `git rev-parse HEAD@{2}", 4],
   [".scratch/v28/reports/slice-6c-fix-6.md::2}` as well as `at @", 2],
   [".scratch/v28/reports/slice-6c-fix-6.md::3** at HEAD", 2],
   [".scratch/v28/reports/slice-6c-fix-6.md::4 files mention the @", 2],
@@ -1040,14 +1072,18 @@ const BARE_HEAD_BASELINE = new Map([
   [".scratch/v28/reports/slice-6c-fix-6.md::git log --oneline \\| grep -c \"round 6\" \\| wc", 1],
   [".scratch/v28/reports/slice-6c-fix-6.md::git log --oneline | grep -c \\\"round 6\\\" | wc", 1],
   [".scratch/v28/reports/slice-6c-fix-6.md::git log --oneline | grep -c \\\\\\\"round 6\\\\\\\" | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git ls-files .scratch/guard-<fragment>.mjs | wc", 1],
   [".scratch/v28/reports/slice-6c-fix-6.md::git ls-files src \\\\| grep -c \\\"\\\\.ts$\\\" \\\\| wc", 1],
   [".scratch/v28/reports/slice-6c-fix-6.md::git ls-files src \\| grep -c \"\\.ts$\" \\| wc", 1],
   [".scratch/v28/reports/slice-6c-fix-6.md::git ls-files src | grep -c \\\"\\.ts$\\\" | wc", 1],
   [".scratch/v28/reports/slice-6c-fix-6.md::git ls-files src | grep -c \\\\\\\"\\\\.ts$\\\\\\\" | wc", 1],
   [".scratch/v28/reports/slice-6c-fix-6.md::git ls-tree -r --name-only <c> .scratch | wc", 4],
-  [".scratch/v28/reports/slice-6c-fix-6.md::git ls-tree -r --name-only <sha> .scratch | wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git ls-tree -r --name-only <sha> .scratch | wc", 4],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git ls-tree … <sha> … | wc", 1],
   [".scratch/v28/reports/slice-6c-fix-6.md::git reflog | wc", 2],
   [".scratch/v28/reports/slice-6c-fix-6.md::git rev-parse 'HEAD", 4],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git rev-parse '{2}' 2>/dev/null; git rev-parse @", 2],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git rev-parse @", 3],
   [".scratch/v28/reports/slice-6c-fix-6.md::git rev-parse HEAD", 2],
   [".scratch/v28/reports/slice-6c-fix-6.md::git show \"HEAD", 1],
   [".scratch/v28/reports/slice-6c-fix-6.md::git show HEAD", 2],
@@ -1221,7 +1257,9 @@ function checkReportHeadCounts() {
  * happens to equal the tracked set. A scanned file git does not track is
  * working-tree content: reproducible in this worktree, at no commit. A
  * disclosure, not a rule — a round legitimately writes reports before they are
- * committed — and silent where the root is a throwaway temp dir.
+ * committed — and it SAYS SO rather than going quiet where the root is a
+ * throwaway temp dir: silence there would read as "the tracked set was equal",
+ * which is the assumption this function exists to replace with a printed answer.
  */
 function discloseScanProvenance(files) {
   if (!existsSync(join(ROOT, '.git'))) {
@@ -1269,7 +1307,7 @@ if (!findings.length) {
   const claims = ['every floor meetable', 'every artifact present']
   if (headerFiles) claims.push('every instrument header stating only what it can point at')
   if (reportFiles) claims.push('no report or brief count resolved through bare HEAD beyond the recorded baseline')
-  if (provenanceChecked) claims.push("no count's provenance sha unresolvable beyond the recorded records")
+  if (provenanceChecked) claims.push("no count's provenance sha unresolvable beyond the recorded records (the records are historical lane reports that QUOTE a probe seed, absorbed by re-derivation — a NEW unresolvable sha still fails)")
   console.log(`  ok — ${models} model(s), ${kinds} task kind(s), ${items} work item(s); ${claims.join(', ')}`)
   console.log()
   console.log('PASS — the registry can be trusted and no work item claims evidence it does not have.')
