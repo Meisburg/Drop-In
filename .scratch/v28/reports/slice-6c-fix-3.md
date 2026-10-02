@@ -562,3 +562,32 @@ fe98ace1b44af3f7c8dec687200bd43ebdc9c956531cfef4b884802569711101  scripts/guards
   seeding path is separately proved red, so the two are not confused.
 - **No verification lane was needed for product behaviour:** this slice changes guard scripts and reports. The
   four required commands above are the whole of its surface, and each was run fresh after the last edit.
+
+---
+
+## Post-commit proof
+
+The seven fixes and this report are commit **`20773ee`** (parent `71bdd55`). Run on the committed tree, after
+that commit, in the same session:
+
+```
+$ git status --porcelain
+                                  # empty: the working tree is the commit
+$ npm run verify ; echo exit=$?
+ Test Files  71 passed (71)
+      Tests  2067 passed (2067)
+ warnings: 81
+ errors:   0
+  ok — AGENTS.md (1789 words, ceiling 1800)
+GUARDS: PASS — all deterministic rules hold.
+exit=0
+
+$ sha256sum scripts/guards/factory-guard.mjs scripts/guards/factory-guard.check.mjs scripts/guards/regexp-escape-guard.mjs scripts/guards/regexp-escape-guard.check.mjs
+5d384806a7d6a596832b80c536d011a8f2019358a3ba5ee7e47b17e3a72769b3  scripts/guards/factory-guard.mjs
+fe98ace1b44af3f7c8dec687200bd43ebdc9c956531cfef4b884802569711101  scripts/guards/factory-guard.check.mjs
+2922f042c0e2a59564c0c999467920cdf93f191438166ae9efdda1cd270f17f8  scripts/guards/regexp-escape-guard.mjs
+8493f7e8f3ad4a7799a248138aea3d928e6615122607441461b394f68a4d7bde  scripts/guards/regexp-escape-guard.check.mjs
+```
+
+Those four hashes are the ones in the table above, so the bytes every tail in this report was produced on are
+the bytes `20773ee` contains. **Not pushed** — production is V27 and this batch does not push mid-batch.
