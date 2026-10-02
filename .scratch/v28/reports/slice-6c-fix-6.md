@@ -1196,11 +1196,15 @@ $ node scripts/guards/factory-guard.mjs --root <root> --repo "$PWD"
   FINDING [count-provenance-unresolvable]: … names <fragment>, which is not a commit in this repository …  exit 1   ← a filename fragment read as provenance
 ```
 
-Two hex literals in the transcript above are written `<bogus>`-style placeholders (the range endpoint of the first
-seed and the filename fragment of the second), for the reason §R1 gives: a hex run in a counted command's
-position — or next to the word `names` in the instrument's own finding text — makes THIS report a
-`count-provenance-unresolvable` finding, and the rule is not to be weakened for its own documentation. Every
-verdict, exit code and counter is as the run printed it; only the two literals are rendered.
+One hex literal in the transcript above is rendered `<fragment>`-style — the filename fragment of the second
+seed — because a literal hex run sits in the first sha position of a counted command (`git ls-files` over that
+path, piped to `wc`), which would make THIS report a `count-provenance-unresolvable`
+finding. The range endpoint of the first seed is **printed literally** — `deadbee` on the line above — and is not
+a provenance token at all: the run reads the FIRST sha-shaped token of a counted command, so
+`git diff 1c3471a..deadbee | wc -l` names only `1c3471a`, which resolves. (An earlier draft of this sentence
+claimed the range endpoint was rendered too, and cited a `names`-adjacency reason the committed `:1360` — which
+prints the literal `badc0de` — contradicts; this sentence is the correction.) Every verdict, exit code and
+counter is as the run printed it.
 
 **Why narrow the sentence rather than widen the matcher:** the reviewer ruled it a recorded known-open
 (D-024), and widening `COUNT_CMD_SHA` to follow `1c3471a..deadbee` would be a mechanism change in a pass whose
@@ -1350,7 +1354,11 @@ reports the absorber holds are the only files whose records were not rewritten.
 
 ## R15 — grepping this section with the rule
 
-```
+**HISTORICAL DRAFT TRANSCRIPT — it does not reproduce at this commit, and is kept as a record.** It was taken
+from a draft in which `:1194` still held the literal `badc0de`; the committed `:1194` renders the fragment, so
+the fifth line cannot be produced by re-running the command, and the four above it cite line numbers that have
+since moved under this section's own insertion.
+
 ```
 $ node scripts/guards/factory-guard.mjs | grep "slice-6c-fix-6.md"
   FINDING [no-bare-head-count]: .scratch/v28/reports/slice-6c-fix-6.md:1156: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: "git rev-parse @"
@@ -1360,8 +1368,10 @@ $ node scripts/guards/factory-guard.mjs | grep "slice-6c-fix-6.md"
   FINDING [count-provenance-unresolvable]: .scratch/v28/reports/slice-6c-fix-6.md:1194: a count's provenance names badc0de, which is not a commit in this repository (`git cat-file -e badc0de^{commit}` fails) — name a commit a reader can resolve
 ```
 
-Five detector-half findings on this report's own new prose, every one of them a quotation of the mechanism
-(`git rev-parse @{2}`, `git ls-tree … <sha> … | wc`) — absorbed by the re-derivation below, exactly like every
-other lane record. After it, the same grep prints nothing for this file. No weakening: the sha half's two
-literals are rendered `<bogus>`-style and disclosed rather than baselined away.
-```
+The first four findings are the **detector half** (`no-bare-head-count`), each a quotation of the mechanism
+(`git rev-parse @{2}`, `git ls-tree … <sha> … | wc`). The fifth is the **decidable half**
+(`count-provenance-unresolvable`, the sha rule this slice exists for) — an earlier draft of this paragraph called
+all five detector-half findings, which was wrong, and is corrected here. The absorber holds the detector-half
+quotations by re-derivation; the decidable half's literals are rendered or recorded, never baselined away. The
+grep prints nothing for this file at the commit below — that is a statement about the committed file, not about
+this historical draft, which is why the draft's five lines and today's empty grep do not conflict.

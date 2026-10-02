@@ -1322,9 +1322,10 @@ function checkReportHeadCounts() {
   if (!files.length) {
     console.log('  note — no .scratch/v28/reports or briefs under this root; report and brief counts unchecked here')
     console.log('  note — count-provenance: no report or brief to verify a provenance sha in; unchecked here')
-    return { reportFiles: 0, provenanceChecked: false }
+    return { reportFiles: 0, provenanceChecked: false, transcriptsChecked: false }
   }
   discloseScanProvenance(files)
+  const transcriptsChecked = checkTranscripts(files)
 
   // THE DECIDABLE HALF. Every count's provenance token is resolved against a
   // real repository; a sha that is not a commit there is a finding. The ONE
@@ -1396,7 +1397,46 @@ function checkReportHeadCounts() {
     console.log(`  note — count-provenance: ${provenanceTokens} provenance token(s) in the scan, ${shaIsCommit.size} distinct sha(s) resolved with \`git cat-file -e <sha>^{commit}\` against ${label && !label.startsWith('..') ? label : repo} (${why}) — ${unresolvable} unresolvable`)
   }
   console.log(`  note — count-provenance: ${UNRESOLVABLE_SHA_BASELINE_SIZE} recorded unresolvable-sha record(s) absorbed (historical lane records that QUOTE a probe seed, by re-derivation); a NEW unresolvable sha, or a second occurrence of a recorded one in the same file, is a finding${absorbed === UNRESOLVABLE_SHA_BASELINE_SIZE ? '' : ` — ${absorbed} of the ${UNRESOLVABLE_SHA_BASELINE_SIZE} matched this scan`}`)
-  return { reportFiles: files.length, provenanceChecked: Boolean(repo) }
+  return { reportFiles: files.length, provenanceChecked: Boolean(repo), transcriptsChecked }
+}
+
+/**
+ * A pasted run is a claim that the command in it produces the lines under it.
+ * The decidable subset this rule can check without re-running anything: a
+ * `count-provenance-unresolvable` finding pasted into a report that cites a file
+ * IN this repository must cite a line that carries the sha the finding names.
+ * The sha half is mechanical — the finding names one, the line either has it or
+ * not — so a transcript that cites a line without it did not come from this
+ * commit. A draft transcript written before a later edit is allowed to stay, but
+ * it must SAY it is a draft: a `historical`/`superseded` marker within the dozen
+ * lines above the finding stands it down. Ceiling (D-020): the detector half's
+ * matched-text and cross-file citations are not re-derived here — only the
+ * decidable half's own sha is checked. See `factory/decisions.md` D-025/D-026.
+ */
+function checkTranscripts(files) {
+  for (const path of files) {
+    const rel = relative(ROOT, path)
+    const lines = readFileSync(path, 'utf8').split('\n')
+    for (const [index, line] of lines.entries()) {
+      const found = /FINDING \[count-provenance-unresolvable\]: (\S+):(\d+):/.exec(line)
+      if (!found) continue
+      const cited = found[1]
+      if (!cited.startsWith('.scratch/')) continue
+      const target = join(ROOT, cited)
+      if (!existsSync(target)) continue
+      const sha = (/names\s+([^\s,]+)/.exec(line) ?? [])[1]
+      if (!sha || /[<>…]/.test(sha)) continue
+      if (/historical|superseded/i.test(lines.slice(Math.max(0, index - 12), index).join(' '))) continue
+      const targetLine = readFileSync(target, 'utf8').split('\n')[Number(found[2]) - 1] ?? ''
+      if (!targetLine.includes(sha)) {
+        fail(
+          'transcript-reproduces',
+          `${rel}:${index + 1}: the pasted run cites ${cited}:${found[2]}, which does not carry \`${sha}\` — a transcript that cannot reproduce at this commit (mark it historical if it is a draft)`,
+        )
+      }
+    }
+  }
+  return true
 }
 
 /**
@@ -1444,7 +1484,7 @@ checkRegistry(config)
 checkWorkItems(config)
 checkAgentModels(config)
 const headerFiles = checkInstrumentHeaders()
-const { reportFiles, provenanceChecked } = checkReportHeadCounts()
+const { reportFiles, provenanceChecked, transcriptsChecked } = checkReportHeadCounts()
 
 if (!findings.length) {
   const items = existsSync(join(FACTORY, 'work')) ? readdirSync(join(FACTORY, 'work')).filter((f) => f.endsWith('.json')).length : 0
@@ -1457,6 +1497,7 @@ if (!findings.length) {
   if (headerFiles) claims.push('every instrument header stating only what it can point at')
   if (reportFiles) claims.push('no report or brief count resolved through bare HEAD beyond the recorded baseline')
   if (provenanceChecked) claims.push("no count's provenance sha unresolvable beyond the recorded records (the records are historical lane reports that QUOTE a probe seed, absorbed by re-derivation — a NEW unresolvable sha still fails)")
+  if (transcriptsChecked) claims.push('every pasted provenance transcript that cites this repository still carries the sha it names (or is marked historical)')
   console.log(`  ok — ${models} model(s), ${kinds} task kind(s), ${items} work item(s); ${claims.join(', ')}`)
   console.log()
   console.log('PASS — the registry can be trusted and no work item claims evidence it does not have.')

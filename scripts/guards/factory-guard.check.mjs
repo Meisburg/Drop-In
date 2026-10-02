@@ -1162,6 +1162,37 @@ console.log('===========================================================')
     `exit ${numberMiss.exit}`,
   )
 
+  // RULE 4 — a pasted `count-provenance-unresolvable` transcript that cites a
+  // file in the repo must cite a line that carries the sha. The seed cites its
+  // own line 9, which does not name the sha; marking it historical stands it
+  // down, which the second control proves.
+  const badTranscript =
+    '# zz-seeded transcript\n\n' +
+    '```\n' +
+    '$ node scripts/guards/factory-guard.mjs --root /tmp/zz\n' +
+    "  FINDING [count-provenance-unresolvable]: .scratch/v28/reports/zz-transcript.md:9: a count's provenance names deadbee, which is not a commit here — name a commit a reader can resolve\n" +
+    '```\n\n' +
+    'the cited line is filler\n' +
+    'filler nine — no sha here\n'
+  const transcript = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-transcript.md', badTranscript)
+  }, { args: ['--repo', REPO] })
+  check(
+    'a pasted transcript citing a line without its sha is CAUGHT (reproducibility)',
+    transcript.exit === 1 && /transcript-reproduces/.test(transcript.out),
+    `exit ${transcript.exit}`,
+  )
+  const noTranscript = mutatedGuard([['if (!targetLine.includes(sha)) {', 'if (false) {']])
+  const transcriptMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-transcript.md', badTranscript)
+  }, { guard: noTranscript, args: ['--repo', REPO] })
+  check(
+    'MUTATION: dropping the transcript test lets that seed PASS (so the check can fail)',
+    transcriptMiss.exit === 0,
+    `exit ${transcriptMiss.exit}`,
+  )
 }
 
 process.on('exit', () => {
