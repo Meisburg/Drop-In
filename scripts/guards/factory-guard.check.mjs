@@ -480,9 +480,6 @@ console.log('===========================================================')
   // The `@` shorthand — a declared arm that used to be DEAD. Both composed
   // patterns ended in `\b`, and `@` ends in a non-word character, so the `@`
   // arm matched nothing while MOVING_REV still listed it. It is now `(?![\w])`.
-  // These two cases are the fix's own guard: the first goes red if `@` stops
-  // matching; the second goes red if the wider boundary starts firing on an
-  // email address, a decorator, or a bare reflog.
   const atForm = run((ctx) => {
     cleanRoot()(ctx)
     ctx.write(
@@ -498,33 +495,53 @@ console.log('===========================================================')
     `exit ${atForm.exit}`,
   )
 
-  // ROUND 6 repair. Round 5 called this root a control and said it could fail;
-  // it could not — none of its four lines put a `@{…}` token within four tokens
-  // of a count, so no mutation to the `@` lookahead changed its verdict. The
-  // `@{2}` line below does, and the mutation proves it. The email and
-  // `@decorator` lines stay in the root as regression seeds: a `@` followed by a
-  // word character is unreachable by construction (the token must end at a
-  // non-word character), so they are not the control's named failure mode.
+  // N2, REPAIRED. `@{2}` is a moving revision in its own right — measured,
+  // `git rev-parse @{2}` == `git rev-parse HEAD@{2}` — and until the bounded
+  // repair the `@` lookahead suppressed the bare reflog form while the header
+  // called `@` a moving revision. The seed below fires; the mutation that drops
+  // the `@{…}` alternative makes it PASS, so the check can fail.
+  const bareReflog = (ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-reflog.md', 'The tree held 276 tracked files at @{2}.\n')
+  }
+  const reflogRun = run(bareReflog)
+  check(
+    'a bare `@{2}` reflog label is CAUGHT (a moving revision, N2)',
+    reflogRun.exit === 1 && /no-bare-head-count/.test(reflogRun.out),
+    `exit ${reflogRun.exit}`,
+  )
+  const noBareReflog = mutatedGuard([['|@`', '|@(?![{\\w])`']])
+  const reflogMiss = run(bareReflog, { guard: noBareReflog })
+  check(
+    'MUTATION: dropping the `@{…}` alternative lets that seed PASS (so the check can fail)',
+    reflogMiss.exit === 0,
+    `exit ${reflogMiss.exit}`,
+  )
+
+  // The false-positive control for the `@` token. `@` followed by a word
+  // character is not a standalone token, and the mechanism that says so is the
+  // token's own END assertion — no separate lookahead. The control root carries
+  // a decorator and a count so the failure mode is REACHABLE: the mutation
+  // removes the end assertion and the root goes red.
   const notARevision = (ctx) => {
     cleanRoot()(ctx)
     ctx.write(
       '.scratch/v28/reports/zz-not-a-rev.md',
       'write to user@example.com about it\n' +
-        'the @decorator style is used\n' +
-        '4 files mention the @{2} form\n' +
+        'the @decorator style was used in 4 files\n' +
         'the count is 5 at user@example.com\n',
     )
   }
   const notARevisionRun = run(notARevision)
   check(
-    'email, @decorator and a bare @{…} next to a count are NOT flagged (control)',
+    'an email and a @decorator next to a count are NOT flagged (control)',
     notARevisionRun.exit === 0,
     `exit ${notARevisionRun.exit}`,
   )
-  const noAtLookahead = mutatedGuard([['@(?![{\\w])', '@']])
-  const atControlFired = run(notARevision, { guard: noAtLookahead })
+  const looseEnd = mutatedGuard([['working (?:tree|copy|directory))(?!\\w)', 'working (?:tree|copy|directory))']])
+  const atControlFired = run(notARevision, { guard: looseEnd })
   check(
-    'MUTATION: removing the `@` lookahead turns that control red (so the control CAN fail)',
+    'MUTATION: dropping the token END assertion turns that control red (so the control CAN fail)',
     atControlFired.exit === 1 && /no-bare-head-count/.test(atControlFired.out),
     `exit ${atControlFired.exit}`,
   )
@@ -580,7 +597,7 @@ console.log('===========================================================')
   }
   const far = run(farApart)
   check('a moving revision and a number >4 tokens away are NOT flagged (control)', far.exit === 0, `exit ${far.exit}`)
-  const wideWindow = mutatedGuard([["(?:\\s[^\\s'\"“”]+){0,4}\\s+", "(?:\\s[^\\s'\"“”]+){0,60}\\s+"]])
+  const wideWindow = mutatedGuard([["(?:\\s[^\\s'\"“”]+){0,5}\\s+", "(?:\\s[^\\s'\"“”]+){0,60}\\s+"]])
   const overMatch = run(farApart, { guard: wideWindow })
   check(
     'MUTATION: widening ARM 1\'s window turns that control red (over-matching is reachable)',
@@ -770,6 +787,167 @@ console.log('===========================================================')
     'MUTATION: dropping the quote from the rev lead lets those seeds PASS (so the check can fail)',
     quoteMiss.exit === 0,
     `exit ${quoteMiss.exit}`,
+  )
+}
+
+
+// 23. B1 (round-6 review, BLOCKING) — a DRESSED COUNT naming a sha. The count
+//     token used to require whitespace then a letter immediately after the
+//     digits, so `**412**`, `412 (tracked)` and `| 412 |` were not counts at all,
+//     `COUNT_AT_SHA` never saw the provenance, and A WRONG SHA PASSED — in the
+//     spellings lane reports actually use (four live corpus lines). Both halves
+//     are checked here: the decidable half (a bogus sha in a dressed count is a
+//     finding) and the detector half (`at HEAD` in the same dress is a finding).
+{
+  const dressedSha = (ctx) => {
+    cleanRoot()(ctx)
+    ctx.write(
+      '.scratch/v28/reports/zz-dress-sha.md',
+      'The tree held **412** tracked files at deadbee.\n' +
+        'The tree held 412 (tracked) files at deadbee.\n' +
+        '| 412 | tracked files at deadbee |\n',
+    )
+  }
+  const dressed = run(dressedSha, { args: ['--repo', REPO] })
+  check(
+    'a dressed count naming a bogus sha is CAUGHT (B1: the decidable half)',
+    dressed.exit === 1 && /count-provenance-unresolvable/.test(dressed.out) && /deadbee/.test(dressed.out),
+    `exit ${dressed.exit}`,
+  )
+  check(
+    '... and all three dressed counts are COUNTED as provenance tokens, not skipped (B1)',
+    /count-provenance: 3 provenance token\(s\)/.test(dressed.out),
+    `note: ${(/note — count-provenance: [^\n]*/.exec(dressed.out) ?? [''])[0]}`,
+  )
+  const narrowCount = mutatedGuard([['[^\\s\\w/]{0,3}(?=\\s[^\\s]*\\s?[a-zA-Z`', '(?=\\s+[a-zA-Z`']])
+  const dressedMiss = run(dressedSha, { guard: narrowCount, args: ['--repo', REPO] })
+  check(
+    'MUTATION: narrowing the count token back lets that bogus sha PASS (so the check can fail)',
+    dressedMiss.exit === 0,
+    `exit ${dressedMiss.exit}`,
+  )
+
+  const dressedHead = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write(
+      '.scratch/v28/reports/zz-dress-head.md',
+      'The tree held **412** tracked files at HEAD.\n' +
+        'The tree held 412 (tracked) files at HEAD.\n' +
+        '| 412 | tracked files | at HEAD |\n' +
+        'The tree held "412" tracked files at HEAD.\n' +
+        'The tree held 412: tracked files at HEAD.\n',
+    )
+  })
+  check(
+    'a dressed count resolved through bare HEAD is CAUGHT (B1: the detector half)',
+    dressedHead.exit === 1 && /no-bare-head-count/.test(dressedHead.out),
+    `exit ${dressedHead.exit}`,
+  )
+}
+
+// 24. B2 (round-6 review, BLOCKING) — punctuation directly after the SHA. The
+//     gap required whitespace immediately after the sha, so a canonical
+//     `at <sha>` written inside a comma or a colon was not a provenance token at
+//     all: a bogus sha passed and the run's own token counter did not move, so a
+//     reader was not even told a token had been skipped.
+{
+  const punctBogus = (ctx) => {
+    cleanRoot()(ctx)
+    ctx.write(
+      '.scratch/v28/reports/zz-punct-sha.md',
+      'The corpus stands at deadbee, 276 tracked files were counted.\n' +
+        'The corpus stands at deadbee: 276 tracked files were counted.\n' +
+        'The corpus, at deadbee, held 276 tracked files.\n',
+    )
+  }
+  const punct = run(punctBogus, { args: ['--repo', REPO] })
+  check(
+    'a canonical `at <sha>` followed by a comma or a colon is CAUGHT when the sha is bogus (B2)',
+    punct.exit === 1 && /count-provenance-unresolvable/.test(punct.out),
+    `exit ${punct.exit}`,
+  )
+  check(
+    '... and those tokens are COUNTED, so the run does not silently skip them (B2)',
+    /count-provenance: 3 provenance token\(s\)/.test(punct.out),
+    `note: ${(/note — count-provenance: [^\n]*/.exec(punct.out) ?? [''])[0]}`,
+  )
+  const noAttachedPunct = mutatedGuard([['[^\\s]*?(?:\\s[^\\s\'"“”]+){0,5}\\s+', '(?:\\s[^\\s\'"“”]+){0,5}\\s+']])
+  const punctMiss = run(punctBogus, { guard: noAttachedPunct, args: ['--repo', REPO] })
+  check(
+    'MUTATION: dropping the attached-punctuation lead lets that bogus sha PASS (so the check can fail)',
+    punctMiss.exit === 0,
+    `exit ${punctMiss.exit}`,
+  )
+  // Control: the same parenthetical with a RESOLVABLE sha passes AND is counted —
+  // the recognised half the reviewer measured as skipped.
+  const punctValid = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-punct-ok.md', 'The corpus, at 1c3471a, held 276 tracked files.\n')
+  }, { args: ['--repo', REPO] })
+  check(
+    'the same parenthetical naming a real commit passes and is counted (control)',
+    punctValid.exit === 0 && /count-provenance: 1 provenance token\(s\)/.test(punctValid.out),
+    `exit ${punctValid.exit}`,
+  )
+}
+
+// 25. N1 + N3 (round-6 review, non-blocking) — a count taken through a FILTER,
+//     and the `--repo` NOTE's step-order sentence.
+{
+  const filtered = (ctx) => {
+    cleanRoot()(ctx)
+    ctx.write(
+      '.scratch/v28/reports/zz-filter.md',
+      '$ git log --oneline | grep -c "round 6" | wc -l\n12\n$ git ls-files src | grep -c "\\.ts$" | wc -l\n340\n',
+    )
+  }
+  const filter = run(filtered)
+  check(
+    'a counted git command piped through a filter is CAUGHT (N1: the property, not the spelling)',
+    filter.exit === 1 && /no-bare-head-count/.test(filter.out),
+    `exit ${filter.exit}`,
+  )
+  // The mutation has to cross the guard's own `String.raw` + BACKTICK concatenation,
+  // so the anchor is assembled from the two spellings the arm is written in.
+  const BT = String.fromCharCode(96)
+  const arm3Middle = '[^\\n' + BT + ' + BACKTICK + String.raw' + BT + ']{0,160}?\\|\\s*wc\\b'
+  const oldMiddle = mutatedGuard([[arm3Middle, arm3Middle.replace('[^\\n', '[^\\n|')]])
+  const filterMiss = run(filtered, { guard: oldMiddle })
+  check(
+    'MUTATION: restoring the pipe-excluding middle lets that seed PASS (so the check can fail)',
+    filterMiss.exit === 0,
+    `exit ${filterMiss.exit}`,
+  )
+
+  // N3: with `--repo` given, the note must say what actually happened — an
+  // explicit --repo is an instruction, so the scan root was NOT consulted — and
+  // must not repeat the old sentence claiming all three candidates were tried.
+  const notARepo = mkdtempSync(join(os.tmpdir(), 'factory-guard-norepo2-'))
+  MUTANT_DIRS.push(notARepo)
+  const staleRepo = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-canon.md', 'The tree held 276 tracked `.scratch` files at deadbee.\n')
+  }, { args: ['--repo', notARepo] })
+  check(
+    'a stale `--repo` is reported as the reason, naming the argument (N3)',
+    staleRepo.exit === 0 && new RegExp(`--repo ${notARepo} was given and is not a git worktree`).test(staleRepo.out),
+    `exit ${staleRepo.exit}`,
+  )
+  check(
+    '... and the note no longer claims all three candidates were consulted (N3, control)',
+    staleRepo.exit === 0 && !/looked for --repo/.test(staleRepo.out),
+    `exit ${staleRepo.exit}`,
+  )
+  // Control: with no --repo at all and a git-less root, the fallback still works
+  // and says so — the root was not a worktree, this instrument's repository was.
+  const fallback = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-canon.md', 'The tree held 276 tracked `.scratch` files at 1c3471a.\n')
+  })
+  check(
+    'with no --repo, the fallback to this instrument\'s repository is named (control)',
+    fallback.exit === 0 && /this instrument's own repository/.test(fallback.out),
+    `exit ${fallback.exit}`,
   )
 }
 
