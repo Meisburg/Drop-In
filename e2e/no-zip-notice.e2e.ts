@@ -21,8 +21,10 @@
  * HOW THE VIEWER BECOMES ZIP-LESS. The interview's AREA card is REQUIRED, so
  * walking it to the end always sets a zip. Instead this spec signs the
  * viewer up and completes the NAME card only (the card that creates the
- * profile row, which never touches `home_zip`) and stops BEFORE the photo and
- * area cards — a parent who abandons after their name is exactly the settled
+ * profile row, which never touches `home_zip`) and stops BEFORE the kids and
+ * area cards — the walk ends one hop after the name card, because V28 r2
+ * slice 1b deleted the photo card that used to sit between them — a parent who
+ * abandons after their name is exactly the settled
  * no-zip state, reached through the product's own flow rather than a lab-only
  * REST null. (A REST `home_zip: null` PATCH of an onboarded profile would
  * reach the same state; stopping the walk is simpler and one less live
