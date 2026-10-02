@@ -273,7 +273,7 @@ try {
   check(
     'the declaration deleted while the words still name categories is a finding on both counts',
     r.exit === 1 &&
-      r.out.includes('"TOUR_TAXONOMY_CLAIMS" is not an exported array of string literals') &&
+      r.out.includes('"TOUR_TAXONOMY_CLAIMS" is not an exported top-level const holding an array of string') &&
       r.out.includes('the copy names "Playground"'),
     `exit ${r.exit}: ${findingLines(r.out)}`,
   )

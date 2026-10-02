@@ -285,19 +285,36 @@ if (!existsSync(taxonomyPath)) {
 const allKindSet = new Set(allKinds ?? [])
 const offeredKindSet = new Set(offeredKinds ?? [])
 
-/** A kind's word, or null when the guard must not scan for it. Two cases, both
- *  printed: the word is the label function's generic fallback, or two kinds
- *  share one word (so a match cannot be attributed to a kind). */
+/** A kind's word, or null when the label function names none for it. */
 const wordOf = (kind) => labels.get(kind) ?? fallback
-const kindsByLabel = new Map()
-for (const kind of allKindSet) {
-  const word = wordOf(kind)
-  if (word === null || word === fallback) continue
-  if (!kindsByLabel.has(word)) kindsByLabel.set(word, [])
-  kindsByLabel.get(word).push(kind)
+
+/** The words the guard may scan for, one kind per word, and the kinds it must
+ *  NOT scan for — each of those printed rather than silently dropped:
+ *    - the word is the label function's generic fallback (every kind without
+ *      its own case resolves to it, so a match could not be attributed);
+ *    - two kinds resolve to ONE word, and a match could not be attributed to
+ *      either of them. Those kinds are kept OUT of the scan, because a printed
+ *      sentence saying they are unattributable is false if the scan still
+ *      attributes them. */
+const kindsByLabel = new Map() // word -> the ONE kind it names
+const genericWordKinds = []
+const ambiguousWords = []
+{
+  const kindsByWord = new Map()
+  for (const kind of allKindSet) {
+    const word = wordOf(kind)
+    if (word === null || word === fallback) {
+      genericWordKinds.push(kind)
+      continue
+    }
+    if (!kindsByWord.has(word)) kindsByWord.set(word, [])
+    kindsByWord.get(word).push(kind)
+  }
+  for (const [word, kinds] of kindsByWord) {
+    if (kinds.length > 1) ambiguousWords.push([word, kinds])
+    else kindsByLabel.set(word, kinds[0])
+  }
 }
-const unscannable = [...allKindSet].filter((kind) => !kindsByLabel.get(wordOf(kind))?.includes(kind))
-const ambiguousWords = [...kindsByLabel.entries()].filter(([, kinds]) => kinds.length > 1)
 
 /** Whole word, optionally plural, case insensitive — the same shape
  *  `firstRunTour.ts` builds for its own pin, over the one escaped-by-module
@@ -307,16 +324,16 @@ const matchesCopy = (word, text) => new RegExp(`\\b${escapeForRegExp(word)}s?\\b
 console.log(`  taxonomy: ${TAXONOMY_MODULE}`)
 console.log(`  kinds read: ${allKindSet.size}; offered: ${offeredKindSet.size}; words: ${labels.size}`)
 console.log(`  scanned words: ${kindsByLabel.size} (${[...kindsByLabel.keys()].join(', ') || 'none'})`)
-for (const kind of unscannable) {
+for (const kind of genericWordKinds) {
   console.log(
-    `  limit—— kind "${kind}" is not scannable: its word resolves to the label function's own default or is ` +
-      'shared with another kind, so a match could not be attributed to it (see WHERE IT STOPS in the header)',
+    `  limit—— kind "${kind}" is not scannable: its word resolves to the label function's own default, so a ` +
+      'match could not be attributed to it (see WHERE IT STOPS in the header)',
   )
 }
 for (const [word, kinds] of ambiguousWords) {
   console.log(
     `  limit—— the word "${word}" is the label of ${kinds.length} kinds (${kinds.join(', ')}), so a copy match ` +
-      'is not attributed to either of them',
+      'is not attributed to either of them and neither is scanned',
   )
 }
 
@@ -363,8 +380,9 @@ for (const entry of COPY_MODULES) {
     const list = stringArrayConst(source, entry.claims)
     if (list === null) {
       fail(
-        `${entry.module}: "${entry.claims}" is not an exported array of string literals — a declaration the ` +
-          'guard cannot read is a declaration that checks nothing',
+        `${entry.module}: "${entry.claims}" is not an exported top-level const holding an array of string ` +
+          'literals — either it is not there at all, or what it holds is not a list of category names, and a ' +
+          'declaration the guard cannot read is a declaration that checks nothing',
       )
     } else {
       declared = list
@@ -396,7 +414,7 @@ for (const entry of COPY_MODULES) {
   // 3. The declaration must be backed by the words it is a declaration about.
   for (const kind of declared) {
     const word = wordOf(kind)
-    if (word === null || !kindsByLabel.get(word)?.includes(kind)) continue
+    if (word === null || kindsByLabel.get(word) !== kind) continue
     if (!matchesCopy(word, text)) {
       fail(
         `${entry.module}: the declaration names "${kind}", whose word "${word}" appears nowhere in the copy ` +
@@ -408,9 +426,9 @@ for (const entry of COPY_MODULES) {
   // 4. And the copy must not name a category the declaration omits — the
   //    direction that catches a withheld kind in the words, declared or not.
   const namedInCopy = [...kindsByLabel.keys()].filter((word) => matchesCopy(word, text))
-  const undeclared = namedInCopy.filter((word) => !declared.includes(kindsByLabel.get(word)[0]))
+  const undeclared = namedInCopy.filter((word) => !declared.includes(kindsByLabel.get(word)))
   for (const word of undeclared) {
-    const kind = kindsByLabel.get(word)[0]
+    const kind = kindsByLabel.get(word)
     const standing = offeredKindSet.has(kind)
       ? 'an offered kind, and still undeclared'
       : `a kind the app WITHHOLDS (it is absent from ${OFFERED_KINDS_CONST})`
