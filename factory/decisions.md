@@ -230,3 +230,38 @@ route reviewer -> NO ELIGIBLE MODEL          exit 3
 
 Does **not** authorize: leaving a lane's model empty and calling independence
 satisfied.
+
+## D-011 — three adjudications on the slice 6c fix-round-3 report
+
+**Decided 2026-10-02.** The builder raised two open questions and flagged one
+apparent discrepancy. All three are ruled in, none silently discarded.
+
+**1. The N7 history half is NOT widened. Upheld.** The builder narrowed the rule
+to header lines about *the instrument's own text and numbers* and named a ceiling:
+a literal reading would also fire on `scripts/guards/copy-field-consumption-guard.check.mjs:67`
+(`it used to be a hard, un-allowlistable finding`) and
+`scripts/guards/check-acceptance-greps.mjs:61`. **Independently confirmed by the
+orchestrator, read-only.** The ceiling is real, not convenient.
+Widening it would create findings in *another lane's* guard file, outside the seven
+findings this round was bounded to. So the two lines are **recorded as known-open
+with file:line** — a decision rather than a silence — and the widening gets its own
+work item, not a hijacked fix round.
+
+**2. The historical records are NOT rewritten. Upheld.** The builder declined to
+rewrite the bare `HEAD` label in the briefs, the ledger and four review/verify
+records, on the grounds that those are other lanes' measurements and rewriting them
+falsifies a record. That is **correct and consistent with D-002**: the record keeps
+its original label; the corrected label goes in the round that owns the artifact.
+A record that is retro-edited to look like it was always right is not evidence.
+
+**3. The 2065-vs-2067 discrepancy is the ORCHESTRATOR's error, not the builder's.**
+The fix-3 brief carried a stale baseline of 2065 tests; the tree already had 2067,
+because D-009/D-010 added two `it(` sites to `scripts/factory/scheduler.test.mjs`
+after the brief was written. The builder measured 2067 and **named the delta instead
+of quietly matching its brief** — which is the behaviour this batch wants. It also
+means the brief committed **the exact defect this round exists to fix**: a stated
+count that does not match its instrument. Recorded as the orchestrator's, and the
+cause is named: a baseline was copied forward instead of re-measured at dispatch.
+
+Does **not** authorize: treating a stale baseline in a brief as the builder's
+failure, or widening a guard rule past the round's stated scope without a ruling.

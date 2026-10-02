@@ -9,11 +9,11 @@
   "created_at": "2026-10-02T12:22:22.965Z",
   "lanes": {
     "implementation": {
-      "state": "running",
+      "state": "complete",
       "owner": "r2-6c-fix3-build",
       "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
       "artifacts": [
-        ".scratch/v28/reports/slice-6c-fix-2.md"
+        ".scratch/v28/reports/slice-6c-fix-3.md"
       ],
       "evidence": [
         "04921d8"
@@ -26,24 +26,36 @@
       ]
     },
     "verification": {
-      "state": "complete",
+      "state": "running",
       "owner": null,
-      "model": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
       "artifacts": [
         ".scratch/v28/reports/slice-6c-fix-2-verify.md"
       ],
       "evidence": [
         "VERIFY: PASS 70/2030/81/0 GUARDS PASS"
+      ],
+      "reopened": [
+        {
+          "at": "2026-10-02T12:55:17.407Z",
+          "why": "fix round 3 — re-verify the round-3 delta"
+        }
       ]
     },
     "review": {
-      "state": "failed",
+      "state": "running",
       "owner": null,
-      "model": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
       "artifacts": [
         ".scratch/v28/reports/slice-6c-fix-2-review.md"
       ],
-      "evidence": []
+      "evidence": [],
+      "reopened": [
+        {
+          "at": "2026-10-02T12:55:15.477Z",
+          "why": "fix round 3 review"
+        }
+      ]
     },
     "visual_validation": {
       "state": "pending",
@@ -140,6 +152,42 @@
       "from": "running",
       "to": "running",
       "note": "fields set (no state change)",
+      "actor": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud"
+    },
+    {
+      "at": "2026-10-02T12:55:15.397Z",
+      "lane": "implementation",
+      "from": "running",
+      "to": "running",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T12:55:15.426Z",
+      "lane": "implementation",
+      "from": "running",
+      "to": "complete",
+      "note": null,
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T12:55:15.477Z",
+      "lane": "review",
+      "from": "failed",
+      "to": "running",
+      "note": null,
+      "actor": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud"
+    },
+    {
+      "at": "2026-10-02T12:55:17.407Z",
+      "lane": "verification",
+      "from": "complete",
+      "to": "running",
+      "note": null,
       "actor": null,
       "model": "ollama-cloud/deepseek-v4.1-flash:cloud"
     }
