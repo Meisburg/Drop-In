@@ -82,12 +82,17 @@ function readNudgeDismissed(): boolean {
  * page reload.
  *
  * The line itself is GENERIC by design (fix round 1): it says "Finish
- * setting up" + a card-agnostic body and never names the card it points at,
- * because today no card reads FIRST_RUN_COPY — the cards hard-code their own
- * titles — and the kids/photo/area cards do not exist yet (slices 4/5).
- * Naming one would tell the parent a question the app does not actually
- * ask. FIRST_RUN_NUDGE_COPY (src/lib/firstRunCopy.ts) holds the words; slice
- * 4 can swap in card-specific titles as the cards start rendering.
+ * setting up" + a card-agnostic body and never names the card it points at.
+ * V28 r2 slice 8a re-measured the two reasons given for that choice when it was
+ * made, because a later slice had falsified both without touching this
+ * paragraph: today the cards DO read FIRST_RUN_COPY (OnboardingPage renders the
+ * name, kids and area cards from it — `FIRST_RUN_COPY.name/.kids/.area`), and
+ * the kids and area cards DO exist (slices 4a/5), while the photo card slice 4b
+ * added was deleted in r2 slice 1b with its picker re-homed onto the name card.
+ * The generic line is KEPT anyway, and the reason is now the durable one: a
+ * nudge that named a card would carry a claim that has to stay true as the run
+ * changes, and this one cannot go stale. FIRST_RUN_NUDGE_COPY
+ * (src/lib/firstRunCopy.ts) holds the words.
  *
  * Fact sourcing (the slice's decision (a)): hasName / hasZip come free off
  * the shell's session — the profiles row + homeZipSet (3a feeds
