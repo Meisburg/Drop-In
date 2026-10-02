@@ -58,7 +58,7 @@
         lib-sibling genuinely FAILS at checked=0 (measured live on an empty and an exempt-only src/lib); the
         factory-family empty-record seeds assert each record's OWN message with exit-moving mutations (re-measured
         by me for all three maps); the claim-gate mutation is honestly declared as a claim-flop. The ONE checker
-        that does not run green at HEAD is factory-guard.check — check 13 — for the D-034 reason above.
+        that does not run green at e2c18b2 is factory-guard.check — check 13 — for the D-034 reason above.
       - Q4 (the sweep) -> verified: 78 files, every one exactly +1/-1, `git diff d75c5e9^ d75c5e9 -w` empty, byte
         spot-checks across src/ e2e/ scripts/ (6 files: prefix byte-identical, delta exactly 1, one trailing 0x0a);
         the guard run against aa331d0 via worktree reports exactly 78 findings; on the swept tree 327 files and
@@ -182,7 +182,7 @@ Real, with one red exception at HEAD. Evidence:
   (exempt-only) both FAIL with the D-030 finding — so yes, **the guard genuinely FAILS when it checks zero
   files**, and its checker seeds both zero paths (`elif [ "$checked" -eq 0 ]` and the missing-dir branch) with
   exit-moving mutations, including the two-anchors-together mutant that would otherwise stay red on the seed.
-- `node scripts/guards/factory-guard.check.mjs` — **exit 1 at HEAD: 1 of 137 checks failed** (check 13), for the
+- `node scripts/guards/factory-guard.check.mjs` — **exit 1 at e2c18b2: 1 of 137 checks failed** (check 13), for the
   D-034 interaction documented at the top. At the slice's own handover commit the same run is
   `factory-guard check: all 137 checks passed.` (worktree at 7c16e7a). I audited the harness's mutation set: no
   surviving mutation changes printing only (the anchors are comparisons, gates, and record lookups; the two
