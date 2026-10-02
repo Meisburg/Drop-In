@@ -30,11 +30,11 @@
       ]
     },
     "verification": {
-      "state": "complete",
+      "state": "running",
       "owner": null,
       "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
       "artifacts": [
-        ".scratch/v28/reports/slice-6c-fix-3-verify.md"
+        ".scratch/v28/reports/slice-6c-fix-4-verify.md"
       ],
       "evidence": [
         "VERIFY: PASS 70/2030/81/0 GUARDS PASS"
@@ -43,21 +43,29 @@
         {
           "at": "2026-10-02T12:55:17.407Z",
           "why": "fix round 3 — re-verify the round-3 delta"
+        },
+        {
+          "at": "2026-10-02T13:12:52.255Z",
+          "why": "re-verify the round-5 delta"
         }
       ]
     },
     "review": {
-      "state": "failed",
+      "state": "running",
       "owner": null,
       "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
       "artifacts": [
-        ".scratch/v28/reports/slice-6c-fix-3-review.md"
+        ".scratch/v28/reports/slice-6c-fix-4-review.md"
       ],
       "evidence": [],
       "reopened": [
         {
           "at": "2026-10-02T12:55:15.477Z",
           "why": "fix round 3 review"
+        },
+        {
+          "at": "2026-10-02T13:12:52.281Z",
+          "why": "re-review the round-5 delta"
         }
       ]
     },
@@ -248,6 +256,42 @@
       "note": null,
       "actor": null,
       "model": "ollama-cloud/deepseek-v4.1-flash:cloud"
+    },
+    {
+      "at": "2026-10-02T13:12:52.127Z",
+      "lane": "verification",
+      "from": "complete",
+      "to": "complete",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T13:12:52.178Z",
+      "lane": "review",
+      "from": "failed",
+      "to": "failed",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T13:12:52.255Z",
+      "lane": "verification",
+      "from": "complete",
+      "to": "running",
+      "note": null,
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T13:12:52.281Z",
+      "lane": "review",
+      "from": "failed",
+      "to": "running",
+      "note": null,
+      "actor": null,
+      "model": null
     }
   ]
 }
