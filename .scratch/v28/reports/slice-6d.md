@@ -111,7 +111,7 @@ Copy-taxonomy guard — a category this copy names must be one the app has and o
   taxonomy: src/lib/places.ts
   kinds read: 10; offered: 8; words: 9
   scanned words: 9 (Park, Playground, Indoor play, Museum, Pool, Splash pad, Library, Beach, Trail)
-  limit—— kind "other" is not scannable: its word resolves to the label function's own default, so a match could not be attributed to it (see WHERE IT STOPS in the header)
+  limit—— kind "other" is not scannable: its word is the label function default, which every kind without its own case shares, so a match could not be attributed to it (see WHERE IT STOPS in the header)
   module: src/lib/firstRunCopy.ts
   copy consts read: 2 of 2 named; declared claims: 0 (none)
   module: src/lib/firstRunTour.ts
@@ -597,8 +597,8 @@ copy-taxonomy-guard check: all 27 checks passed, 0 failed, across 24 guard invoc
 
 The seed asserts its own premise (the rewrite is scoped to the one function and every case return was rewritten)
 and the mutation branch asserts the restored state contains `scanned words: 0 (none)` **and** exits 0 — i.e. the
-same input the review reproduced as a silent pass. **The check count is now 27 across 24 invocations, 7 of them
-mutated** — one check and two invocations more than §2 recorded, from this seed's premise and mutation.
+same input the review reproduced as a silent pass. **The check count at the end of this round was 27 across 24
+invocations, 7 of them mutated.**
 
 ### B1 — the build law named a paragraph the guard does not have
 
@@ -741,3 +741,134 @@ that was already being read.
 4 are byte-identical in behaviour and their seeds are unchanged), the declaration in `firstRunTour.ts`, the
 Tier-2 ceiling, the unscanned-copy ceiling, and the scanner's scope. No rule was weakened to make a check pass;
 the only rule-side change is the tripwire that makes an empty scan FAIL.
+
+---
+
+## §13 Fix round 2 — instance 4 (D-030), the sets the repair stopped watching, and two rungs under it
+
+**Reviewed:** `.scratch/v28/reports/slice-6d-review-2.md` (223 lines, **NEEDS_CHANGES**): B2b (mechanism), two
+non-blocking mechanisms (N2, N4) and one wrong number (N1). Verdict accepted in full; the two ceilings, the
+declaration, rules 1/2/4's semantics and the scanner's scope are untouched, and no rule was weakened.
+**B1b was already closed by the orchestrator** (D-030 now names *what* each site is, never *where*) and is not
+touched here. **Base for this round:** the tree as left after fix round 1 (the guard and its check at
+`45cd77b`, the lane record at `3e395ad`).
+
+### B2b — the run could test NONE of a module's declared claims and still print PASS
+
+The review's repro, reproduced as a pair so both halves are mine and raw: two throwaway trees, the same input in
+both — the three **declared** kinds' `case` returns (`playground`, `pool`, `beach`) set to the label function's
+own default, the other six left scannable.
+
+```
+$ node /tmp/zt6d3-old/scripts/guards/copy-taxonomy-guard.mjs /tmp/zt6d3-old | grep -E "scanned words|not check its claim|^PASS|^FAIL|^  - "
+  scanned words: 6 (Park, Indoor play, Museum, Splash pad, Library, Trail)      ← non-empty, so round 1's tripwire stays silent
+  limit—— src/lib/firstRunTour.ts: the declared kind "playground" is not scannable, so rule 3 does not check its claim (…)
+  limit—— src/lib/firstRunTour.ts: the declared kind "pool" is not scannable, so rule 3 does not check its claim (…)
+  limit—— src/lib/firstRunTour.ts: the declared kind "beach" is not scannable, so rule 3 does not check its claim (…)
+PASS — every declared taxonomy claim exists, is offered, is backed by the copy, and the copy names no category it did not declare.
+OLD_EXIT=0                            ← the guard at 45cd77b
+$ node /tmp/zt6d3-new/scripts/guards/copy-taxonomy-guard.mjs /tmp/zt6d3-new | grep -E "scanned words|not check its claim|^PASS|^FAIL|^  - "
+  scanned words: 6 (Park, Indoor play, Museum, Splash pad, Library, Trail)
+  … the same three limit—— lines, with their reason spelled out …
+FAIL — 1 finding(s):
+  - 3 declared claim(s) this guard accepted as kinds could not be CHECKED by rule 3 — src/lib/firstRunTour.ts claims "playground", src/lib/firstRunTour.ts claims "pool", src/lib/firstRunTour.ts claims "beach". An unscannable declared kind leaves the run unable to call that declaration backed, so a PASS would claim backup the mechanism did not test (D-030): the limit—— line above says why, and THIS is the finding
+NEW_EXIT=1
+```
+
+**What changed.** A counter — the declared claims rule 3 could actually CHECK — now exists beside the tripwires,
+and a declared kind it could not check is a FINDING. The PASS sentence ("… is backed by the copy") is therefore
+unreachable in that state, and the tripwires' own comment no longer claims a rule it does not hold: it now reads
+that **every measurement this guard consumes as evidence must come back with something in it**, which is the
+invariant as a counter rather than as a comment.
+
+**The round's own check pinned the class green, and that is fixed with a mutation proof.** The single-kind seed
+(the one the review found asserting exit 0) is now the review's repro: it requires the finding *and* both limit
+lines, and the mutation removes the counter and requires the seed back at **exit 0 with the claim still
+unchecked** — the silent state, proven to come from that rule:
+
+```
+  ✓ a declared claim rule 3 cannot CHECK is a FINDING, not a limit line (B2b)
+  ✓ B2b — MUTATION: dropping the counter lets that seed PASS with the claim unchecked — printing is not failing
+  ✓ a kind the label function names no word for is reported as that, not as the default word (N4)
+  ✓ B3 — MUTATION: with the scan-set tripwire removed AND the claim counter removed that seed PASSES — the two are one invariant at two granularities
+copy-taxonomy-guard check: all 29 checks passed, 0 failed, across 26 guard invocations (8 of them against a mutated copy of the guard), against scripts/guards/copy-taxonomy-guard.mjs.
+```
+
+Two interactions the fix had to settle rather than discover later:
+
+- **a declared kind the taxonomy does not have is rule 1's finding, not the counter's.** The counter counts only
+  declared kinds the guard ACCEPTED as kinds (`allKindSet.has(kind)`), because such a kind is unattributable by
+  construction — counting it there would make one defect fire two rules and would leave each of their mutations
+  unable to clear its seed alone. The finding's own words say so.
+- **with every word collapsed, B2b's counter fires before B3's tripwire**, which is correct (both are the same
+  invariant) but means the B3 seed's mutation now removes both. Its check name says exactly that.
+
+### The sweep: every other measurement on this path that can come back empty
+
+The question D-030 asks is not "is this set empty?" but **"which set did I just stop watching?"**, so the whole
+path was walked rather than the one set the review named.
+
+| measurement on the path | can it be empty? | what it is consumed as | outcome now |
+|---|---|---|---|
+| `allKindSet` (`PLACE_KINDS`) | yes | the taxonomy every rule is asked against | FAIL (tripwire predates this slice) |
+| `offeredKindSet` (`PLACE_KIND_CHIP_KINDS`) | yes | rule 2's authority | FAIL (predates this slice) |
+| `labels` (`placeKindLabel`'s words) | yes | rules 3 and 4's vocabulary | FAIL (predates this slice) |
+| `kindsByLabel` (words attributable to a kind) | yes | the scan rules 3 and 4 run over | FAIL — **closed in round 1 (B3)** |
+| `claimsChecked` (declared claims rule 3 actually tested) | yes | the PASS sentence's "is backed by the copy" | FAIL — **closed this round (B2b)** |
+| `constsRead` / `stringsRead` / `claimsRead` | yes | that the registry, the copy text and the declaration mechanism were really read | FAIL (predate this slice) |
+| `constsHere` (per module) | yes | that a registered const was found | FAIL when one is renamed or deleted (predates this slice) |
+| `fallback` (the label function's default word) | `null` is legitimate | a kind's word | **deliberately not a failure**: a label function with no default clause is a real shape; the third unattributable REASON now covers it (N4) |
+| `ambiguousWords` (a word two kinds share) | a word can be unwatched while the scan is non-empty | rule 4's coverage of a copy word | **deliberately not a failure**: it is a taxonomy shape, not an empty measurement, and it is printed per word and named in `WHERE IT STOPS`. A **declared** kind on such a word *is* a finding (the counter) |
+| the check's own premises (`mutate`'s anchor count, `collapseEveryWord`'s rewrite count, `editFile`'s occurrence count) | yes | that a seed is the input it claims | FAIL as a seed failure, and N2 made the strongest of them real |
+| `offeredKinds ⊄ allKinds` (a chip naming a kind the taxonomy lacks) | not empty, just unset | rule 2 | **not this guard's rule**: the taxonomy's own test pins subset membership; named here rather than silently assumed |
+
+The rule the sweep produced, and the reason it is a table rather than a sentence: **a repair that watches one set
+has told you which other sets to look at.** Round 1 watched the scan set and left the claims behind it; this
+round watched the claims and checked the rest of the path, and closes them all with the two deliberate
+exceptions above, each with its reason.
+
+### N4 — the third way a word cannot be attributed, and the printed reason that was false
+
+A kind with no `case` **and** no `default` makes `wordOf` return `null`, which the two-case enumeration did not
+name — and in that state the printed reason ("its word resolves to the label function's own default") was false.
+Both halves, same input (the `default` clause deleted, so `other` has no word at all):
+
+```
+$ node /tmp/ztN4-old/scripts/guards/copy-taxonomy-guard.mjs /tmp/ztN4-old | grep 'limit—— kind "other"'
+  limit—— kind "other" is not scannable: its word resolves to the label function's own default, so a match could not be attributed to it (see WHERE IT STOPS in the header)
+$ node /tmp/ztN4-new/scripts/guards/copy-taxonomy-guard.mjs /tmp/ztN4-new | grep 'limit—— kind "other"'
+  limit—— kind "other" is not scannable: the label function names no word for it at all (no case and no default), so a match could not be attributed to it (see WHERE IT STOPS in the header)
+```
+
+`WHERE IT STOPS` now says **three ways** (the default word; two kinds sharing one word; no word named at all),
+the per-kind `limit——` line carries that kind's own reason, and the declared-skip line carries the same reason
+instead of a second, separately-maintained enumeration. A check seeds it (exit 0 is right there: `other` is not
+declared, so no claim went unchecked).
+
+### N2 — the assertion that could not fail
+
+The identity check compared `readFileSync(guard, 'utf8')` with `guardSrc`, which *is* that same read: a
+tautology. It now makes one throwaway copy through `mutate()` and compares the **file on disk** with the named
+guard's text plus that one replacement — plus asserts the shipped guard contains the anchor and does not already
+contain the mutated line. If the mutation path ever derived from a different file, that check goes red; a re-read
+of the same read could not. The name says what it does: *"the guard under test is … — and every mutation derives
+from that file's text"*.
+
+### N1 — the wrong number
+
+The sentence in §12 that called the check growth "one check" was wrong (§2 recorded 23, the count was then 27).
+Per D-028 the comparison is **deleted, not corrected**: §12 now states the count and the composition without an
+arithmetic claim. §2's pasted run was also refreshed for the one line this round's per-kind reason reworded — the
+whole block was compared against a fresh run, verbatim, and this round's changes are why.
+
+### The gate at the end of fix round 2
+
+| what | result |
+|---|---|
+| `node scripts/guards/copy-taxonomy-guard.mjs` | **exit 0**, PASS, 0 findings — `scanned words: 9`, `declared claims: 3` |
+| `node scripts/guards/copy-taxonomy-guard.check.mjs` | **exit 0**, `all 29 checks passed, 0 failed, across 26 guard invocations (8 of them against a mutated copy of the guard)` |
+| `npx oxlint` on both instruments | no output — the gate's warning count is unchanged |
+| `bash scripts/guards/run-all.sh` | **exit 0**, `GUARDS: PASS — all deterministic rules hold.` |
+| `npm run verify` | **exit 0** — `Test Files  71 passed (71)`, `Tests  2068 passed (2068)`, 81 warnings, 0 errors, `ok — AGENTS.md (1789 words, ceiling 1800)`, `^  FINDING` = 0 (`grep -c FINDING` returns 2 here: this round's own check NAMES for B2b and B3, both passing lines) |
+| test delta | **none**: this round touched `.check.mjs` and the guard only, never a `.test.mjs`; test FILES stay 71 and tests stay 2068 |
+| the seven new `no-bare-head-count` findings | the two round-2 lane reports' quotations, absorbed by re-deriving `factory-guard`'s baseline (new 7, lost 0, decreased 0, derivation run twice byte-identically). The map's size is the run's own note line and is not typed here |

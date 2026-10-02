@@ -53,12 +53,17 @@
  *     predicate is what it is, and what the rule really holds is the phrasing it
  *     keys on.
  *   - A kind is UNSCANNABLE when its word cannot be attributed to it, and there
- *     are two ways that happens: the word is the label function's own default, or
- *     two kinds resolve to the SAME word. Rules 3 and 4 skip such a kind
+ *     are three ways that happens: the word is the label function's own default;
+ *     two kinds resolve to the SAME word; or the label function names no word for
+ *     it at all (no `case` and no `default`). Rules 3 and 4 skip such a kind
  *     entirely — a match on it is neither required of the copy nor caught in it —
  *     and the guard prints a `limit——` line per such kind or per shared word,
- *     including one naming each DECLARED kind whose claim rule 3 therefore left
- *     unchecked, so the blind spot is in the run and not only in this sentence.
+ *     NAMING WHICH of the three applies, because a printed reason that is not the
+ *     real one is the same defect as a claim the mechanism does not support.
+ *   - A DECLARED kind that is unscannable makes rule 3 unable to check that
+ *     claim, and the run then cannot call the declaration backed. That is a
+ *     FINDING, not a `limit——` line: the line says why, and the exit code says
+ *     whether the guard established anything. See THE INSTRUMENT POLICES ITSELF.
  *   - COUNT CLAIMS are NOT declared and NOT checked here. "most rows have no
  *     hours" is a live-measurement claim, and asking it needs the database:
  *     `src/lib/db.ts` throws at module load without its environment (measured,
@@ -73,11 +78,13 @@
  * detector over named phrasings; a restatement in other words escapes them.
  *
  * THE INSTRUMENT POLICES ITSELF. A run that sees no kinds, no words for them, no
- * word it can attribute to a kind, no registered const, no copy text or no
- * declaration at all is a FAIL, never a pass: an instrument that matches nothing
- * looks exactly like a clean repo, and one that scanned nothing has established
- * that it did not look rather than that the tree is healthy. Its
- * behavior is proven by `copy-taxonomy-guard.check.mjs`, which seeds a violation
+ * word it can attribute to a kind, no registered const, no copy text, no
+ * declaration at all, or a DECLARED claim rule 3 could not CHECK is a FAIL, never
+ * a pass: an instrument that matches nothing looks exactly like a clean repo, and
+ * one that scanned nothing has established that it did not look rather than that
+ * the tree is healthy. The last of those was the repair's own blind spot (D-030):
+ * the set of claims actually tested can be empty while the scan itself is not.
+ * Its behavior is proven by `copy-taxonomy-guard.check.mjs`, which seeds a violation
  * for each rule, requires the finding, then MUTATES that rule and requires the
  * seed to stop firing.
  *
@@ -295,33 +302,47 @@ const offeredKindSet = new Set(offeredKinds ?? [])
 /** A kind's word, or null when the label function names none for it. */
 const wordOf = (kind) => labels.get(kind) ?? fallback
 
-/** The words the guard may scan for, one kind per word, and the kinds it must
- *  NOT scan for — each of those printed rather than silently dropped:
- *    - the word is the label function's generic fallback (every kind without
- *      its own case resolves to it, so a match could not be attributed);
- *    - two kinds resolve to ONE word, and a match could not be attributed to
- *      either of them. Those kinds are kept OUT of the scan, because a printed
- *      sentence saying they are unattributable is false if the scan still
- *      attributes them. */
+/** The words the guard may scan for — one kind per word — and the kinds it must
+ *  NOT scan for, each with the REASON it cannot be attributed, because the run
+ *  prints that reason and a printed reason that is not the real one is a claim
+ *  the mechanism does not support. Three cases:
+ *    - the label function names no word at all (no `case` and no `default`);
+ *    - the word is the label function's generic fallback, which every kind
+ *      without its own case shares;
+ *    - two or more kinds resolve to ONE word, so a match on it cannot be
+ *      attributed to any of them. Those kinds are kept OUT of the scan, because
+ *      a printed sentence saying they are unattributable is false if the scan
+ *      still attributes them. */
 const kindsByLabel = new Map() // word -> the ONE kind it names
-const genericWordKinds = []
+const unattributableKinds = [] // { kind, why }
 const ambiguousWords = []
 {
   const kindsByWord = new Map()
   for (const kind of allKindSet) {
     const word = wordOf(kind)
-    if (word === null || word === fallback) {
-      genericWordKinds.push(kind)
+    if (word === null) {
+      unattributableKinds.push({ kind, why: `the label function names no word for it at all (no case and no default)` })
+      continue
+    }
+    if (word === fallback) {
+      unattributableKinds.push({ kind, why: `its word is the label function default, which every kind without its own case shares` })
       continue
     }
     if (!kindsByWord.has(word)) kindsByWord.set(word, [])
     kindsByWord.get(word).push(kind)
   }
   for (const [word, kinds] of kindsByWord) {
-    if (kinds.length > 1) ambiguousWords.push([word, kinds])
-    else kindsByLabel.set(word, kinds[0])
+    if (kinds.length > 1) {
+      ambiguousWords.push([word, kinds])
+      for (const kind of kinds) {
+        unattributableKinds.push({ kind, why: `its word "${word}" is the label of ${kinds.length} kinds (${kinds.join(', ')})` })
+      }
+      continue
+    }
+    kindsByLabel.set(word, kinds[0])
   }
 }
+const whyUnattributable = new Map(unattributableKinds.map(({ kind, why }) => [kind, why]))
 
 /** Whole word, optionally plural, case insensitive — the same shape
  *  `firstRunTour.ts` builds for its own pin, over the one escaped-by-module
@@ -331,22 +352,18 @@ const matchesCopy = (word, text) => new RegExp(`\\b${escapeForRegExp(word)}s?\\b
 console.log(`  taxonomy: ${TAXONOMY_MODULE}`)
 console.log(`  kinds read: ${allKindSet.size}; offered: ${offeredKindSet.size}; words: ${labels.size}`)
 console.log(`  scanned words: ${kindsByLabel.size} (${[...kindsByLabel.keys()].join(', ') || 'none'})`)
-for (const kind of genericWordKinds) {
-  console.log(
-    `  limit—— kind "${kind}" is not scannable: its word resolves to the label function's own default, so a ` +
-      'match could not be attributed to it (see WHERE IT STOPS in the header)',
-  )
-}
-for (const [word, kinds] of ambiguousWords) {
-  console.log(
-    `  limit—— the word "${word}" is the label of ${kinds.length} kinds (${kinds.join(', ')}), so a copy match ` +
-      'is not attributed to either of them and neither is scanned',
-  )
+for (const { kind, why } of unattributableKinds) {
+  console.log(`  limit—— kind "${kind}" is not scannable: ${why}, so a match could not be attributed to it (see WHERE IT STOPS in the header)`)
 }
 
 let constsRead = 0
 let stringsRead = 0
 let claimsRead = 0
+/** How many declared claims rule 3 could actually CHECK, and the ones it could
+ *  not — the measurement the round-1 repair stopped watching, and the reason the
+ *  counter is here rather than only a `limit——` line (D-030). */
+let claimsChecked = 0
+const claimsUnchecked = []
 
 for (const entry of COPY_MODULES) {
   const file = path.join(ROOT, entry.module)
@@ -426,16 +443,24 @@ for (const entry of COPY_MODULES) {
     )
   }
 
-  // 3. The declaration must be backed by the words it is a declaration about.
+  // 3. The declaration must be backed by the words it is a declaration about. A
+  //    declared kind whose word cannot be attributed leaves that claim UNCHECKED
+  //    — the line below says why, and the counter makes it a finding, because
+  //    printing a reason is not establishing anything (D-030, instance 4).
   for (const kind of declared) {
     const word = wordOf(kind)
     if (word === null || kindsByLabel.get(word) !== kind) {
+      // A kind the taxonomy does not have is rule 1's finding, not this
+      // counter's: counting it here would make one defect fire two rules and
+      // would leave each of their mutations unable to clear the seed alone.
+      if (allKindSet.has(kind)) claimsUnchecked.push({ module: entry.module, kind })
       console.log(
         `  limit—— ${entry.module}: the declared kind "${kind}" is not scannable, so rule 3 does not check its ` +
-          'claim (its word is the label function default or is shared with another kind — see WHERE IT STOPS)',
+          `claim (${whyUnattributable.get(kind) ?? 'the guard cannot attribute its word'} — see WHERE IT STOPS)`,
       )
       continue
     }
+    claimsChecked += 1
     if (!matchesCopy(word, text)) {
       fail(
         `${entry.module}: the declaration names "${kind}", whose word "${word}" appears nowhere in the copy ` +
@@ -460,12 +485,23 @@ for (const entry of COPY_MODULES) {
   }
 }
 
-// The instrument's own tripwires: zero is a finding, in every direction.
+// The instrument's own tripwires. Every measurement this guard consumes as
+// evidence must come back with something in it, and one that came back empty is a
+// FAIL rather than a quiet pass (D-030) — including the set the first repair
+// stopped watching: the declared claims rule 3 could actually CHECK.
 if (kindsByLabel.size === 0) {
   fail(
-    `${TAXONOMY_MODULE}: the scan found NO word it can attribute to a kind — every kind's word resolves to the ` +
-      "label function's own default or is shared with another kind, so rules 3 and 4 would test NOTHING and a " +
-      'report of health would mean the guard did not look (see limit—— lines above)',
+    `${TAXONOMY_MODULE}: the scan found NO word it can attribute to a kind — every kind word resolves to the ` +
+      'label function default, is shared with another kind, or is not named at all, so rules 3 and 4 would ' +
+      'test NOTHING and a report of health would mean the guard did not look (see limit—— lines above)',
+  )
+}
+if (claimsUnchecked.length > 0) {
+  fail(
+    `${claimsUnchecked.length} declared claim(s) this guard accepted as kinds could not be CHECKED by rule 3 — ` +
+      `${claimsUnchecked.map(({ module, kind }) => `${module} claims "${kind}"`).join(', ')}. An unscannable ` +
+      'declared kind leaves the run unable to call that declaration backed, so a PASS would claim backup the ' +
+      'mechanism did not test (D-030): the limit—— line above says why, and THIS is the finding',
   )
 }
 if (constsRead === 0) {

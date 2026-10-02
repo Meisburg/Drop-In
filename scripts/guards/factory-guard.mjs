@@ -1269,6 +1269,17 @@ const BARE_HEAD_BASELINE = new Map([
   [".scratch/v28/reports/slice-6d-verify.md::2068 at HEAD", 1],
   [".scratch/v28/reports/slice-6d-verify.md::37 tests; HEAD", 1],
   [".scratch/v28/reports/slice-6d-verify.md::HEAD the gate prints `Test Files  71", 1],
+  // Fix round 2: seven quotations in the two round-2 lane reports for this slice,
+  // absorbed by RE-DERIVING this map from the instrument's own matches (D-011 item
+  // 2 / D-021 item 2 — a historical record keeps its label). Never typed, never
+  // hand-extended: the run prints the size below instead.
+  [".scratch/v28/reports/slice-6d-review-2.md::HEAD), 9", 1],
+  [".scratch/v28/reports/slice-6d-review-2.md::git diff 248d897..HEAD", 1],
+  [".scratch/v28/reports/slice-6d-review-2.md::git rev-parse HEAD", 1],
+  [".scratch/v28/reports/slice-6d-verify-2.md::2068 at HEAD", 1],
+  [".scratch/v28/reports/slice-6d-verify-2.md::37 tests; HEAD", 1],
+  [".scratch/v28/reports/slice-6d-verify-2.md::git diff --stat 35e3f20..HEAD", 1],
+  [".scratch/v28/reports/slice-6d-verify-2.md::git diff 3e395ad HEAD", 1],
 ])
 
 const BARE_HEAD_BASELINE_SIZE = [...BARE_HEAD_BASELINE.values()].reduce((sum, n) => sum + n, 0)

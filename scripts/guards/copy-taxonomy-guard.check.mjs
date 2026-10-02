@@ -182,6 +182,9 @@ function mutate(replacements) {
   return file
 }
 
+const B3_ANCHOR = 'if (kindsByLabel.size === 0) {'
+const B3_MUTATED = 'if (false) {'
+
 /** Every word `placeKindLabel` gives a kind, collapsed onto ONE word that is not
  *  its default — the ambiguous case, in which the guard can attribute a copy
  *  match to no kind at all. A LINE WALK scoped to that one function: `places.ts`
@@ -230,11 +233,19 @@ function rule(name, expect, mutation, seed) {
 
 let r = { exit: 0, out: '' }
 try {
-  // --- which guard this run is about, stated by the run ----------------------
+  // --- which guard this run is about, stated by the run, and PROVEN -------------
+  //     The second half is evidence rather than a re-read: `mutate()` is made to
+  //     produce one copy here, and the file it wrote is compared with the named
+  //     guard's own text plus that single replacement. If the mutation path ever
+  //     derived from a different file this line goes red; a re-read of the same
+  //     read could not (round-2 review N2).
+  const identityCopy = mutate([[B3_ANCHOR, B3_MUTATED]])
   check(
-    `the guard under test is ${guardDisplay}${usingOverride ? ' (from COPY_TAXONOMY_GUARD_UNDER_TEST)' : ' (this repo)'} — and it is the file the mutations are built from`,
-    readFileSync(guard, 'utf8') === guardSrc,
-    'the resolved guard file and the text every mutation derives from disagree',
+    `the guard under test is ${guardDisplay}${usingOverride ? ' (from COPY_TAXONOMY_GUARD_UNDER_TEST)' : ' (this repo)'} — and every mutation derives from that file's text`,
+    guardSrc.includes(B3_ANCHOR) &&
+      !guardSrc.includes(B3_MUTATED) &&
+      readFileSync(identityCopy, 'utf8') === guardSrc.replace(B3_ANCHOR, B3_MUTATED),
+    'the mutated copy on disk is not this guard file with the one replacement applied',
   )
 
   // --- the tree as it stands -------------------------------------------------
@@ -375,15 +386,51 @@ try {
     `exit ${r.exit}: ${findingLines(r.out)}`,
   )
 
-  // --- the stated limit is IN THE RUN, not only in the header ----------------
+  // --- B2b (D-030 instance 4): the DECLARED claims rule 3 actually CHECKED are a
+  //     set too, and the round-1 repair left it unwatched — with the declared
+  //     kinds unscannable the run printed `scanned words: 6`, printed why on a
+  //     limit line, and PASSED, which is this seed. The round-1 check asserted
+  //     that exit; this one asserts the finding, and the mutation restores the
+  //     silent pass so the finding is proven to come from the counter.
   reset()
   editFile(PLACES, "    case 'beach':\n      return 'Beach'\n", '')
   r = run()
   check(
-    'a kind whose word collapses to the generic default is not judged, and the run prints its limit line',
-    r.exit === 0 &&
+    'a declared claim rule 3 cannot CHECK is a FINDING, not a limit line (B2b)',
+    r.exit === 1 &&
+      r.out.includes('1 declared claim(s) this guard accepted as kinds could not be CHECKED by rule 3') &&
       r.out.includes('limit—— kind "beach" is not scannable') &&
       r.out.includes('the declared kind "beach" is not scannable, so rule 3 does not check its claim'),
+    `exit ${r.exit}: ${findingLines(r.out) || '(no findings)'}`,
+  )
+  let b2b = null
+  try {
+    b2b = mutate([['if (claimsUnchecked.length > 0) {', 'if (false) {']])
+  } catch (e) {
+    check('B2b — MUTATION: the counter tripwire can be removed (so the seed proves it)', false, e instanceof Error ? e.message : String(e))
+  }
+  if (b2b !== null) {
+    mutationRuns += 1
+    const after = run(b2b)
+    check(
+      'B2b — MUTATION: dropping the counter lets that seed PASS with the claim unchecked — printing is not failing',
+      after.exit === 0 && after.out.includes('the declared kind "beach" is not scannable'),
+      `exit ${after.exit}: ${findingLines(after.out)}`,
+    )
+  }
+
+  // --- N4 (round-2 review): the THIRD way a kind's word cannot be attributed —
+  //     the label function names none for it at all — prints its own reason, not
+  //     the default word's. Deleting the `default` clause leaves `other` (no
+  //     `case`) with no word, and nothing else changes: no declared claim is
+  //     affected, so the run still passes and the line is the evidence.
+  reset()
+  editFile(PLACES, "    default:\n      return 'Place'\n", '')
+  r = run()
+  check(
+    'a kind the label function names no word for is reported as that, not as the default word (N4)',
+    r.exit === 0 &&
+      r.out.includes('limit—— kind "other" is not scannable: the label function names no word for it at all'),
     `exit ${r.exit}: ${r.out.split('\n').filter((l) => l.includes('limit——')).join(' | ') || '(no limit line)'}`,
   )
 
@@ -409,7 +456,7 @@ try {
   )
   let b3 = null
   try {
-    b3 = mutate([['if (kindsByLabel.size === 0) {', 'if (false) {']])
+    b3 = mutate([[B3_ANCHOR, B3_MUTATED], ['if (claimsUnchecked.length > 0) {', 'if (false) {']])
   } catch (e) {
     check('B3 — MUTATION: the tripwire can be removed (so the seed proves it)', false, e instanceof Error ? e.message : String(e))
   }
@@ -417,7 +464,7 @@ try {
     mutationRuns += 1
     const after = run(b3)
     check(
-      'B3 — MUTATION: dropping the scan-set tripwire lets that seed PASS — the silent state the review reproduced',
+      'B3 — MUTATION: with the scan-set tripwire removed AND the claim counter removed that seed PASSES — the two are one invariant at two granularities',
       after.exit === 0 && after.out.includes('scanned words: 0 (none)'),
       `exit ${after.exit}: ${findingLines(after.out)}`,
     )
