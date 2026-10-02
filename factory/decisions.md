@@ -823,7 +823,7 @@ instrument that *creates the record of the work* disagreed with the instrument t
 only as good as its coverage, and the orchestrator's own tooling was outside it.** Worth asking of every
 generator in this repo: *does its default output satisfy its own validator?*
 
-## D-030 — an empty measurement read as a clean result (three instances, now a named class)
+## D-030 — an empty measurement read as a clean result (four instances, now a named class)
 
 **Found 2026-10-02 as slice 6d review's B3, and recognised immediately as the third sighting.** The pattern is
 not "a claim the mechanism does not support" (D-025) — it is sharper: **a measurement that did not happen, or
@@ -851,11 +851,12 @@ established that it did not look. Whatever produced the empty set must be report
 This is the same invariant as the module's own stated contract (`null` is *unknown*, never *fine*) — the
 scheduler inverted it (D-022), the sha resolver inverted it (D-024), and twice now the taxonomy guard has.
 
-**On pointers in this file (B1b, the review that found instance 4 found this too):** the first draft of this
-entry cited line numbers for three of the four instances, and **the fix it described moved two of them** — a
-stale pointer, written by the hand that named the class. **Decisions are read after the code moves, so a line
-number in a decisions entry is a claim with a shelf life.** Per D-028 they are **deleted, not corrected**: this
-entry names *what* each site is, never *where* it is. The file, the symbol, or the sentence carries enough.
+**On counting in this file (B1b and F5, both found by reviews of entries I wrote):** the first draft of this
+entry cited line numbers for three of its four instances, and **the fix it described moved two of them**; and
+its heading said "three instances" over a table of four. Both were the same defect the entry is about — a
+written claim the artifact no longer supports. Per D-028 they are **deleted, not corrected**: this entry names
+*what* each site is, never *where* it is, and it counts nothing it cannot see. **The file, the symbol, or the
+sentence carries enough.**
 
 **Consequence for the hardening set:** D-022's one-line fix, D-024's cluster, and B3 are **one repair in three
 places**, and B3 ships with the slice because it is a mechanism defect with a live refutation in its own header.
