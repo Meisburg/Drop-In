@@ -618,5 +618,42 @@ advised against it, correctly.
 
 **Mandatory proofs, required of the builder:** a new unresolvable sha in a fresh file fails; a second
 occurrence in the same file fails; the B1 dressed-count seed and the B2 punctuation seed still fail (the
-absorber must not eat the very findings the repair was for); all 72 checks still exit 0 **with their mutation
-proofs still flipping**; and the printed counter reads 2.
+absorber must not eat the very findings the repair was for); and all 72 checks still exit 0 **with their
+mutation proofs still flipping**.
+
+**CORRECTION (orchestrator's own error, 2026-10-02).** This entry first required "the printed counter reads
+2". It reads **10**, and the builder was right: the guard prints **occurrences**, and the absorber holds **2
+keys** — `.scratch/v28/reports/slice-6c-fix-6-review.md::deadbee -> 9` and
+`.scratch/v28/reports/slice-6c-fix-6-verify.md::deadbee -> 1`. The `2` was the count of FINDINGS (one reported
+per file), which is not the same quantity as the occurrences absorbed. **The instruction was imprecise, not the
+mechanism** — recorded rather than quietly dropped, because a stale number in a decision record is the exact
+class this slice exists to kill, and this one was mine.
+
+## D-024 — the completed `ocr` run: seven more, and one is the class again
+
+**Recorded, not fixed** (the round-6 repair's lanes are running). The narrower `ocr` re-run finished cleanly
+(no round-2 timeout) over `3920065..HEAD`: 2 files reviewed, 7 comments, 26 minutes.
+
+**MEDIUM, all in `scripts/guards/factory-guard.mjs` — the guard the whole slice is about:**
+- `:856` — `resolve(argv[repoFlag + 1])` **throws** when `--repo` is passed with no value (e.g. as the final
+  argument): `argv[repoFlag + 1]` is `undefined`.
+- `:863` — a **bare `catch` maps every failure to `false`**, including `ENOENT` when the `git` binary is
+  absent. So a machine without `git` would report **every sha as unresolvable** — a false-finding generator of
+  the same shape as D-022 (a failure to *measure* read as a *measurement result*). The two defects rhyme: the
+  unprobeable machine was ADMITTED; an uncheckable sha would be CONDEMNED.
+- `:577` — the counted-command matcher does **not implement what the header claims** for provenance position
+  (b), "the revision of a counted git command". **A header/implementation disagreement** — which
+  `docs/agents/code-structure.md:121-127` makes *the* defect, and which is the fourth time this batch has found
+  it.
+
+**LOW:** `:895` a NOTE claiming a lookup order it does not always walk (the same shape the round-6 review
+already caught once); and on `factory-guard.check.mjs` — `:567` **Section 19 claims "Every case below is paired
+with the mutation that reaches its failure mode", and the `wordClass` seed is not paired** (the vacuity class
+again, inside the check file that exists to prevent it); `:686` `MUTANT_DIRS` holding a non-mutant scratch dir;
+`:776` the `exit` cleanup handler registered *after* the checks run, so temp dirs are created before it is
+installed.
+
+**The pattern worth naming:** `ocr`'s two runs found defects of a kind the agent lanes did not — a crash path,
+a failure-read-as-result, and an unpaired check whose section claims otherwise. The agent lanes found the
+prose/class defects `ocr` is blind to. **Neither is a substitute for the other** (D-022 made the same point
+from the other direction).
