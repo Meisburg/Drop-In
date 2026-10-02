@@ -28,6 +28,12 @@
 #                     with a written reason (the definition site is NOT a
 #                     consumer: not the declaration, not the module's data,
 #                     not the module's own test)
+#   copy-taxonomy   scripts/guards/copy-taxonomy-guard.mjs — a copy const this
+#                     guard is given may only name a PLACE CATEGORY the app has
+#                     and OFFERS, every category it names must be declared in
+#                     the module, and the declaration must be backed by the
+#                     words. One taxonomy, one direction of scan per rule, and
+#                     a written boundary: see WHERE IT STOPS in its header.
 #   acceptance-greps scripts/guards/check-acceptance-greps.mjs — every tagged
 #                     ACCEPTANCE-GREP claim names a PATH (not a bare directory)
 #                     and matches the tree it claims about; untagged greps are
@@ -78,7 +84,7 @@ guard_run() {
   esac
 }
 
-for guard in lib-sibling-guard config-guard no-bypass-guard fixture-marker-guard vacuous-absence-guard stale-locator-guard copy-field-consumption-guard check-acceptance-greps regexp-escape-guard factory-guard; do
+for guard in lib-sibling-guard config-guard no-bypass-guard fixture-marker-guard vacuous-absence-guard stale-locator-guard copy-field-consumption-guard copy-taxonomy-guard check-acceptance-greps regexp-escape-guard factory-guard; do
   script="$(guard_script "$guard")"
   echo
   if [ -z "$script" ]; then
@@ -122,6 +128,7 @@ run_check "vacuous-absence-guard (behavior)" scripts/guards/vacuous-absence-guar
 run_check "stale-locator-guard (behavior)" scripts/guards/stale-locator-guard.check.mjs
 run_check "sweep-e2e (decision logic)" scripts/lib/sweep-e2e.check.mjs
 run_check "copy-field-consumption-guard (behavior)" scripts/guards/copy-field-consumption-guard.check.mjs
+run_check "copy-taxonomy-guard (behavior)" scripts/guards/copy-taxonomy-guard.check.mjs
 run_check "check-acceptance-greps (behavior)" scripts/guards/check-acceptance-greps.check.mjs
 run_check "no-bypass-guard (stated blind spot)" scripts/guards/no-bypass-guard.check.mjs
 run_check "regexp-escape-guard (behavior)" scripts/guards/regexp-escape-guard.check.mjs
