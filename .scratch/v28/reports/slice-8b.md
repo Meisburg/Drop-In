@@ -317,3 +317,72 @@ orchestrator's. The corrected measurements, for whoever retires them:
 
 Committed as: **see commit 6 below.**
 
+## Per-item table (the summary)
+
+| # | item | symbol / anchor | re-measured line | change | proving command | raw result |
+|---|---|---|---|---|---|---|
+| 1a | newline sweep | the 78 files themselves | no line anchors; the COUNT was stale (65 / 78 / 79) | +1 newline at EOF on 78 files under `src/ e2e/ scripts/` | `git diff -w --stat` | empty (whitespace-only) |
+| 1b | trailing-newline guard | `scripts/guards/trailing-newline-guard.mjs` (new) | n/a | new guard + `.check.mjs` + both `run-all.sh` registrations | `node …guard.mjs` / `node …check.mjs` | guard PASS; 8/8 checks |
+| 2 | `slice-diff.sh` | `scripts/slice-diff.sh` (new) | file absent at `aa331d0` | slice-name tool, ledger base, refuses to guess | `bash scripts/slice-diff.sh 8b` | REFUSING, exit 1 |
+| 3 | lib-sibling `checked=0` | `lib-sibling-guard.sh` (`if [ ! -d "$LIB_DIR" ]`, the tail `if/elif`) | `:53-56`, `:105` before; moved by the edit | missing `src/lib` and `checked=0` are FINDINGS | `node …lib-sibling-guard.check.mjs` | 7/7 checks |
+| 4 | report scan `reportFiles: 0` | `factory-guard.mjs` `checkReportHeadCounts` early return | `:1403-1406` before; `:1405-1415` after | finding `report-scan-empty`; return carries `rawSummaryLines` | `node …factory-guard.check.mjs` | 107/107 at this commit |
+| 5 | `transcript-summary-agrees` | `LABEL_LINE` / `checkRawBlockSummaries` / the claim at the summary | `:1523`, `:1525`, `:1609-1612`, `:1644-1648`, `:1656`, `:1719`, `:1715` before; all moved | exemption deleted, window deleted, blockquote regions added, `matchAll`, left word boundary, claim + note + `ls-files` depth corrected | `node …factory-guard.mjs --root <quoted-fabrication root>` | FAIL with `covers 7 entries` (was PASS) |
+| 5b | the escape, against the PRE-fix binary | `git show aa331d0:scripts/guards/factory-guard.mjs` | n/a | — | pre-fix on `r1..r4` | PASS exit 0 (r4 publishes the claim); current: exit 1 |
+| 5c | unreproduced number + report prose | `slice-8a.md` (`:931`, `:953`, `:990`, `:1056`) | not re-measured line-by-line (not edited) | **not touched** — another slice's report | `grep -n "31 of 104" .scratch/v28/reports/slice-8a.md` | present; corrected measurement below |
+
+## Evidence about the brief — items ALREADY fixed, or already re-assigned
+
+The brief warns that a stale item is evidence about the brief, not work. Measured at `eeac917`:
+
+| brief item | measured | verdict |
+|---|---|---|
+| `slice-8b.md` §6/§7 — the `ProfilePage.tsx` call site passes `void handleKidPhotoUpload(...)` at `:1373` | `grep -rn "void handleKidPhotoUpload" src/` → **no match**; the live call site is `src/pages/ProfilePage.tsx:1382` `onUpload={(k, source, rect) => handleKidPhotoUpload(k, source, rect)}` (an expression body, so the promise is returned) | **ALREADY FIXED** — slice 3's fix round landed it. Evidence about the brief. |
+| `slice-8b.md` §7 — `src/components/useCropStep.tsx:27` still admits `\| void` | `grep -n onConfirm src/components/useCropStep.tsx` → `:27  onConfirm: (source: ImageBitmap, rect: CropRect) => Promise<void> \| void,` | **STILL LIVE** — and it is `slice-8b-3.md`'s item A, not mine. Not touched. |
+| `slice-8b.md` §7 — `e2e/onboarding-kid-photo.e2e.ts` now ends `)\n\n` (an extra blank line) | `tail -c 20 … \| xxd` → `… 2c0a 290a` = `,\n)\n` — it ends with exactly one newline, no blank line; it was **not** in the sweep's 78 | **ALREADY FIXED** (or never as written). Evidence about the brief. |
+| `slice-8b-3.md` item C — `e2e/weekly-series.e2e.ts:21` imports `readMarkerSession` unused | `grep -n readMarkerSession e2e/weekly-series.e2e.ts` → **one** hit, the import at `:21` | **STILL LIVE**, and it is 8b-3's item C. Not touched. |
+| `slice-8b.md` §6 — "the useCropStep await guard, and its own proof" (a NEW guard in `scripts/guards/`) | not in `slice-8b.md`'s SCOPE CUT items 1-2, not in `slice-8b-2.md` (specs), not in `slice-8b-3.md` (the `\| void` type fix only) | **UNASSIGNED across the three variants** — see Unresolved questions. Not built. |
+
+## The guard-rule ruling, stated plainly, with before/after
+
+**D-031 asked: take the rule back to its last reviewed-good form where that is simpler than a fourth condition.
+I did that. I did NOT add a fourth condition, and I did not tune the existing ones — I DELETED the two
+additions that produced the escape and the false claims, and ADDED exactly one region kind.**
+
+| aspect | BEFORE (`aa331d0`) | AFTER (`eeac917`) |
+|---|---|---|
+| label predicate | `/(?:raw\|verbatim):\s*\*{0,2}\s*$/i` — no left boundary, so `draw:`/`withdraw:` were labels | `/(?:\braw:\|\bverbatim:)\s*\*{0,2}\s*$/i` — left word boundary added |
+| regions read | fenced + Markdown-indented | fenced + indented + **blockquote run** (the fix that closes the escape) |
+| label→region attribution | nearest label within **12 lines**, outside an earlier block | nearest label above, outside an earlier region — **no line window** |
+| quotation exemption | **YES** — a label whose next non-blank line began `>` was exempted, and its block was never read | **DELETED** |
+| range summaries per line | first pair only (`exec`) | **every** pair (`matchAll`) |
+| label tripwire | a label with no block → finding, *minus the exemption* | a label with no region → finding, no exemption |
+| escape reachable? | **YES** — `>` prefix ⇒ `0 … NOTHING was checked`, exit 0; with an agreeing block the claim was PUBLISHED over the fabrication | **NO** — the quoted block is read; `covers 7 entries`, exit 1 |
+| live-corpus read count | 8 blocks | **16 blocks** (the 8 briefs `>`-introduced labels are read now) |
+| harness | 104 checks | **115 checks** |
+| declared boundary | "every step-range summary inside a raw-/verbatim-labelled block agrees" (wider than the mechanism) | "every step-range-and-count line read inside a region whose introducing line ENDS with raw:/verbatim" |
+
+## The three registered `checked=0` paths — all closed
+
+| guard | before | after |
+|---|---|---|
+| `lib-sibling-guard.sh` | `SKIP … exit 0` on a missing `src/lib`; `ok — all 0 non-exempt module(s)` at `checked=0` | both are FINDINGS; `lib-sibling-guard.check.mjs`, 7 checks with a seed and a mutation for each path |
+| `factory-guard.mjs` report/brief scan | `reportFiles: 0` + `unchecked here` + exit 0 | FINDING `report-scan-empty`; 3 new checks (seed, mutation, control) |
+| the early return "covering three" | returned without `rawSummaryLines`, so it had grown to cover four rules | fails, and its return carries every rule's result |
+
+## Raw verify (fresh, this turn)
+
+```
+$ npm run verify
+> npm run build && npm run test && npm run lint && npm run a11y:focus && npm run steering-lint && npm run guards
+ Test Files  71 passed (71)
+      Tests  2063 passed (2063)
+ oxlint: 81 warning lines, 0 errors          # re-counted from the lint block; the 2 the first run added were fixed
+  ok — AGENTS.md (1789 words, ceiling 1800)
+PASS — steering layer is clean.
+GUARDS: PASS — all deterministic rules hold.
+VERIFY EXIT=0
+```
+
+`bash scripts/guards/run-all.sh` → `GUARDS: PASS — all deterministic rules hold.` exit 0. `scripts/steering-lint.sh`
+→ `PASS — steering layer is clean.` Every number above is re-measured in this turn, not carried.
+

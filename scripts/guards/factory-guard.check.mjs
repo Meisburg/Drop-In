@@ -1474,7 +1474,7 @@ console.log('===========================================================')
     ctx.write('.scratch/v28/reports/zz-raw.md', quotedLabel.replace('(all six legs)', '(all seven legs)'))
   }, { args: ['--repo', REPO] })
   check(
-    'control: an AGREEING quote passes (so reading quotes is not \"any quote fails\")',
+    'control: an AGREEING quote passes (so reading quotes is not any-quote-fails)',
     quotedControl.exit === 0,
     `exit ${quotedControl.exit}`,
   )
