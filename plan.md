@@ -670,6 +670,30 @@ Two pushes came back from the review. Both accepted:
 
 ### Slice 6c — CLOSED 2026-10-02 (the slice that taught the batch its defect class)
 
+### Slice 6d — CLOSED 2026-10-02 (the repo-wide honesty guard, and where the climb stops)
+
+**Shipped:** `copy-taxonomy-guard.mjs` — 4 rules (a declared category must EXIST, be OFFERED, be BACKED by the
+words, and the words must name NOTHING UNDECLARED), **29 checks / 26 invocations / 8 mutations**, every rule
+paired with a mutation proving it can fail. Plus the declaration it reads, and the rule written into
+`code-structure.md` first.
+
+**Two ceilings declared rather than overclaimed:** Tier 2 (live counts) is **unbuilt** — a live count in the gate
+adds a live dependency and a committed dated report rots with the suite green, so *an instrument that cannot run
+in the gate must not be claimed by the gate*; and the unscanned copy is **reported with file:line, not fixed**.
+
+**Five rounds, every fix measured.** Round 1: the guard's own header named *"an instrument that matches nothing
+looks exactly like a clean repo"* and its implementation committed it — a zero-word scan returned PASS. Round 2:
+the repair **repeated the class one level down** (a tripwire on the whole scan set, none on the DECLARED set rule
+3 actually tests) and its new check **pinned that bad exit green**. Round 3: two orphaned arrays the diff itself
+created. Round 4: the boundary list's specifics were wrong. Round 5: **the shrink introduced a falsehood by
+over-coarsening.** Mechanism declared clean by the final review.
+
+**D-030** came out of it — *an empty measurement read as a clean result* — and its instances span the factory:
+the scheduler admitting an unprobeable machine (D-022), the sha resolver condemning every sha when git is absent
+(D-024), and this guard twice. **§14's boundary shrank 1615 → 1451 words by deletion**, and the final pass added
+**no new section** — because every earlier round's self-describing section became the next round's finding.
+
+
 **Behaviour was verified correct every round; every failure for eleven rounds was PROSE ABOUT the
 mechanism.** Ten instances of one class: *a claim the mechanism does not support* — a docstring count, a
 bare-`HEAD` label, an `@{…}` alternative that had been deleted, "the only git call is `cat-file`" against a
