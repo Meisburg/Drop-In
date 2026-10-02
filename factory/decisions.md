@@ -851,12 +851,8 @@ established that it did not look. Whatever produced the empty set must be report
 This is the same invariant as the module's own stated contract (`null` is *unknown*, never *fine*) — the
 scheduler inverted it (D-022), the sha resolver inverted it (D-024), and twice now the taxonomy guard has.
 
-**On counting in this file (two reviews of entries I wrote found this):** the first draft cited line numbers for
-its instances, and **the fix it described moved them**; the heading also carried an instance **count** — which was
-wrong, and wrong again the moment a row was added. Both are the same defect this entry is about: a written claim
-the artifact no longer supports. **So this entry now counts nothing and points at nothing.** It names *what* each
-site is and never *where*, and it does not say how many instances there are, because that number moves with the
-table. **The file, the symbol, or the sentence carries enough.**
+**Consequence for the hardening set:** D-022's one-line fix, D-024's cluster, and B3 are **one repair in three
+places**, and B3 ships with the slice because it is a mechanism defect with a live refutation in its own header.
 
 **Consequence for the hardening set:** D-022's one-line fix, D-024's cluster, and B3 are **one repair in three
 places**, and B3 ships with the slice because it is a mechanism defect with a live refutation in its own header.
