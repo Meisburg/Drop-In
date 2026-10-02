@@ -142,7 +142,8 @@
       "role": "reader",
       "capabilities": { "reasoning": 3, "coding": 2, "tool_use": 3, "context_window": 98304 },
       "resources": { "ram_gb": 2, "exclusive": null, "footprint_source": "estimated" },
-      "independence": { "required": true, "same_model": false, "same_run": false }
+      "independence": { "required": true, "same_model": false, "same_run": false },
+      "_independence_gap": "MEASURED 2026-10-02: this lane's floor (reasoning 3, tool_use 3) is cleared by EXACTLY ONE registered model — ollama-cloud/deepseek-v4.1-flash:cloud. same_model:false is therefore UNSATISFIABLE whenever that model is the implementer, and the router will say INDEPENDENCE UNSATISFIABLE rather than silently returning a sibling. Fix it by registering a second model that clears the floor — NOT by raising a declared capability value to make the complaint go away, which would be editing the measurement to fit the answer."
     },
     "verifier": {
       "label": "runs the deterministic gate",

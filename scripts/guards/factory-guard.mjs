@@ -37,6 +37,9 @@
 //                         coexist — and policy and the per-model fields agree
 //   reclaim-opt-in        reclamation is not automatic (D-004)
 //   remote-verified       an unverified remote endpoint is never a fallback (D-003)
+//   independence-satisfiable  a lane requiring same_model:false has a second
+//                         model that clears its floor, or says in writing that
+//                         it does not — independence is not a slogan
 //
 // Usage:  node scripts/guards/factory-guard.mjs [--root <dir>]
 // Exit:   0 = clean, 1 = findings
@@ -142,6 +145,23 @@ function checkRegistry(config) {
     const eligible = models.filter((m) => gaps(m, floors).length === 0 && (!task.requires_local_inference || m.provider === 'local'))
     if (!eligible.length) {
       fail('floors-meetable', `task kind '${kind}' has a capability floor (or a local-inference requirement) no registered model can meet — route can never succeed`)
+    }
+  }
+
+  // Independence is a property, not a slogan. A lane that declares
+  // `same_model: false` needs at least TWO models that clear its floor, or the
+  // rule cannot be satisfied and the router will hand back the implementer's own
+  // sibling. Either register a second model, or ACKNOWLEDGE the gap in the
+  // registry — an unacknowledged gap is one nobody has decided about.
+  for (const [kind, task] of Object.entries(config.task_kinds ?? {})) {
+    if (!task.independence?.required || task.independence.same_model !== false) continue
+    const floors = task.capabilities ?? {}
+    const qualified = Object.entries(config.models ?? {}).filter(([, m]) => gaps(m, floors).length === 0)
+    if (qualified.length < 2 && !task._independence_gap) {
+      fail(
+        'independence-satisfiable',
+        `task kind '${kind}' requires same_model:false but only ${qualified.length} model(s) clear its floor — either register a second, or record task_kinds.${kind}._independence_gap saying so`,
+      )
     }
   }
 

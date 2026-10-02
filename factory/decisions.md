@@ -142,3 +142,50 @@ rediscovered, and so the gap is a known one rather than an assumption.
 
 Does **not** authorize: building it now, or weakening the current convention on
 the grounds that "the layer will enforce it eventually".
+
+## D-007 — an unsatisfiable independence rule is reported, never silently ignored
+
+**Decided 2026-10-02, from a measurement.** The reviewer lane declares
+`same_model: false` — the reviewer must not be the implementer's sibling, because
+a sibling cannot break the deadlock the escalation ladder exists for. Measuring
+the registry showed the rule is **unsatisfiable by construction**: the reviewer's
+floor (`reasoning 3`, `tool_use 3`) is cleared by **exactly one** registered
+model, `ollama-cloud/deepseek-v4.1-flash:cloud`.
+
+Worse, it failed *silently*. `factory/work/v28-r2-6c.json` recorded `model: null`
+on every lane, so `implementerOf` returned nothing, so
+`--independence-of <work-id>` excluded **nothing** — and `route reviewer` returned
+the implementer's own model while looking like it had honoured the rule. A rule
+that reports success when it cannot act is worse than no rule.
+
+Two mechanisms, both enforced now:
+
+1. `route` prints `INDEPENDENCE UNVERIFIABLE` when the work item records no
+   implementer model, and `INDEPENDENCE UNSATISFIABLE — <model> is the ONLY
+   registered model that clears its floor` when excluding the implementer leaves
+   nothing. Both go to the telemetry log. Measured: `route reviewer
+   --independence-of ollama-cloud/deepseek-v4.1-flash:cloud` → **exit 3, NO
+   ELIGIBLE MODEL**, with all five models named and the reason for each.
+2. `factory-guard.mjs` **fails** an independence-required lane that has fewer
+   than two qualified models, unless the registry records the gap in writing
+   (`task_kinds.<lane>._independence_gap`). The acknowledgement is in
+   `factory/config.json` for `reviewer`.
+
+The gap is closed by **registering a second model that clears the floor**. It is
+explicitly **not** closed by raising a declared capability value — those are
+`DECLARED policy, not a benchmark`, and editing one to silence a warning would be
+editing the measurement to fit the answer.
+
+Does **not** authorize: treating a sibling reviewer as acceptable, or deleting
+`_independence_gap` without registering the second model.
+
+## D-008 — every dispatch records the model that ran it
+
+**Decided 2026-10-02, as the precondition for D-007.** `factory/work/<id>.json`
+lane records must carry the `model` that did the work, because `implementerOf`
+reads it and independence is unenforceable without it. An empty model field is a
+hole that reads as a pass, which is how the v28 r2 slice 6c work item silently
+had no independence at all.
+
+Does **not** authorize: inferring the model from the agent definition's `model:`
+default, which is a declared default and not the routed decision.

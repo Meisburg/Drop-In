@@ -239,6 +239,23 @@ console.log('===========================================================')
   check('dropping the remote-verification requirement is CAUGHT', result2.exit === 1 && /remote-verified/.test(result2.out), `exit ${result2.exit}`)
 }
 
+// 13. independence-satisfiable — a lane demanding same_model:false with only one
+//     qualified model is a rule that cannot be obeyed. It must be acknowledged.
+{
+  const result = run((ctx) => {
+    cleanRoot()(ctx)
+    const config = JSON.parse(JSON.stringify(REAL_CONFIG))
+    delete config.task_kinds.reviewer._independence_gap
+    ctx.write('factory/config.json', config)
+  })
+  check('an unacknowledged independence gap is CAUGHT', result.exit === 1 && /independence-satisfiable/.test(result.out), `exit ${result.exit}`)
+
+  // Control: the same registry WITH the acknowledgement passes, so the rule is
+  // a demand for a decision, not a demand for a particular registry.
+  const control = run(cleanRoot())
+  check('the acknowledged gap passes (control)', control.exit === 0, `exit ${control.exit}`)
+}
+
 console.log()
 if (failures === 0) {
   // Counted at run time, not typed: a hand-maintained total goes stale here just

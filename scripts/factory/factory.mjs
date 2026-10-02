@@ -24,6 +24,7 @@ import {
   acceptanceDecision,
   admit,
   checkHealth,
+  capabilityGaps,
   dependencyGraph,
   laneTransitionAllowed,
   liveReservations,
@@ -90,16 +91,50 @@ const die = (msg, code = 1) => {
 const config = loadConfig(paths.config)
 const reservationsNow = () => liveReservations(readReservations(), systemProbes.now())
 
-/** Resolve --independence-of to a set of model keys that must be excluded. */
+/** Resolve --independence-of to a model set, and say whether it could be resolved. */
 function avoidModelsFrom(independenceOf) {
-  if (!independenceOf) return []
-  if (config.models[independenceOf]) return [independenceOf]
+  if (!independenceOf) return { avoid: [], requested: false, unverifiable: false }
+  if (config.models[independenceOf]) return { avoid: [independenceOf], requested: true, unverifiable: false }
   const item = readWorkItem(independenceOf)
   const impl = implementerOf(item)
   if (!impl) die(`--independence-of '${independenceOf}' is neither a registered model nor a work item with an implementation lane`)
-  // same_model:false is the mechanism. same_run:false is satisfied by this being
-  // a fresh dispatch, and is recorded rather than enforced.
-  return impl.model ? [impl.model] : []
+  // same_model:false is the mechanism. same_run:false is satisfied by this being a
+  // fresh dispatch, and is recorded rather than enforced.
+  //
+  // A lane with no recorded model is a HOLE, not a pass: nothing can be excluded,
+  // and the router would hand back the implementer's own model while looking like
+  // it had honoured the rule. That is reported, never assumed away.
+  return { avoid: impl.model ? [impl.model] : [], requested: true, unverifiable: !impl.model }
+}
+
+/**
+ * The truth about independence for one routing decision, or null when it is not
+ * in question.
+ *
+ * Why this exists: on the live registry the reviewer's floor (reasoning 3,
+ * tool_use 3) is cleared by EXACTLY ONE model. So same_model:false is
+ * unsatisfiable by construction whenever that model is the implementer — the
+ * router's own preference order will quietly select the sibling, and a reviewer
+ * that is the builder's sibling cannot break the deadlock the escalation ladder
+ * exists for. Silence is the failure; a named loss is survivable.
+ */
+function independenceNote(kind, chosen, indep) {
+  if (!indep.requested || !chosen) return null
+  if (indep.unverifiable) {
+    return 'INDEPENDENCE UNVERIFIABLE — the work item records no implementer model, so nothing could be excluded. Record the model on the implementation lane.'
+  }
+  const rule = config.task_kinds[kind]?.independence
+  if (!rule?.required) return null
+  if (indep.avoid.includes(chosen)) {
+    return `INDEPENDENCE VIOLATED — ${chosen} IS the implementer's model.`
+  }
+  const floors = config.task_kinds[kind]?.capabilities ?? {}
+  const qualified = Object.entries(config.models).filter(([, m]) => capabilityGaps(m, floors).length === 0).map(([k]) => k)
+  const independent = qualified.filter((k) => !indep.avoid.includes(k))
+  if (qualified.length && !independent.length) {
+    return `INDEPENDENCE UNSATISFIABLE — '${kind}' requires same_model:false, but ${chosen} is the ONLY registered model that clears its floor. This dispatch is a SIBLING of the implementer.`
+  }
+  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -171,16 +206,21 @@ function cmdDoctor() {
 function cmdRoute(args) {
   const { flags, positional } = parse(args)
   const kind = positional[0] ?? die('usage: factory route <task-kind> [--independence-of <work-id|model>]')
-  const avoid = avoidModelsFrom(flags['independence-of'])
-  const decision = selectModel({ config, kind, reservations: reservationsNow(), avoidModels: avoid })
+  const indep = avoidModelsFrom(flags['independence-of'])
+  const decision = selectModel({ config, kind, reservations: reservationsNow(), avoidModels: indep.avoid })
   if (flags.json) {
-    json(decision)
+    json({ ...decision, independence: independenceNote(kind, decision.modelKey, indep) })
     process.exit(0)
   }
+  const note = independenceNote(kind, decision.modelKey, indep)
   console.log(`route ${kind} -> ${decision.modelKey ?? 'NO ELIGIBLE MODEL'}`)
   console.log(`  ${decision.reason}`)
   if (decision.provider) console.log(`  provider ${decision.provider}  cost_tier ${decision.costTier}${decision.fallback ? '  (fallback)' : ''}`)
-  if (avoid.length) console.log(`  independence: excluded ${avoid.join(', ')} (same model as the implementer)`)
+  if (indep.avoid.length) console.log(`  independence: excluded ${indep.avoid.join(', ')} (same model as the implementer)`)
+  if (note) {
+    console.log(`  ⚠ ${note}`)
+    logTelemetry({ event: 'independence_unsatisfied', kind, chosen: decision.modelKey, note, avoid: indep.avoid })
+  }
   for (const r of decision.rejected) console.log(`  rejected ${r.modelKey}: ${r.why}`)
   for (const r of decision.reclaimable ?? []) console.log(`  reclaimable: ${r.what} (${gb(r.gb)}) — ${r.how}`)
   process.exit(decision.modelKey ? 0 : 3)
