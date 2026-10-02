@@ -7027,3 +7027,86 @@ licence for a bulk edit; it is a licence for one scoped edit, and a verification
 a real problem I did fix; but **`models.json` needed no change at all**, and the most consequential thing I did in this
 stretch was damage it and undo it. *The correct output of "is it stopped?" was three lines: it is crash-looping,
 NInfer holds the VRAM, here is the fix -- not a config rewrite.*
+
+## 🔁 SESSION HANDOVER TOOK EFFECT — and the first thing the new session found was a SECOND ORCHESTRATOR
+
+**The old session (`pi` pid 29233, session `2026-09-29T15-50-48`) was still alive and mid-turn 13 minutes
+after the handover was written.** It was not idle-stale: it had written the ledger at 21:11:27 and committed
+`c484648` at 21:19:47. **Two orchestrators on one worktree is the one thing the batch invariant forbids**
+("one builder at a time"), and a post-compaction session re-reading the ledger is exactly the state that
+re-dispatches the slice already in flight. **The human was asked and ruled: THIS session owns the batch.**
+The old session was SIGTERMed only after confirming it was idle with **no git operation in flight** and no
+child processes. *Its work was all committed, so nothing was at risk; the check came first, the kill second.*
+
+**AND IT LEFT A RECORD WORTH KEEPING:** `c484648` — its own account of a bulk edit that wrote a local API key
+into **five other providers in `~/.pi/agent/models.json`** (two remote, one tailnet) and the same-command
+backup that made it recoverable. **Its stated rule is this batch's rule in another costume:** *"when a
+diagnosis ends in a write to a shared config, scope the write to the block identified by the structural key
+you measured, never to the first match — and take the backup in the same command that writes."*
+
+## ⚠️ `strata-max` WAS NOT "STOPPED", IT WAS CRASH-LOOPING 55 TIMES — and the cause was a VRAM conflict
+
+**Starting it cold at 21:01 produced 55 attempts in ~11 minutes**, each dying ~1.5 s in with
+`RuntimeError: the engine exited before it was ready`, ending at `mtp: the 512 experts do not fit in VRAM`.
+**The old session found the actual cause before it stood down: `ninfer-serve` was holding 23.4 of 32.6 GB
+VRAM**, and the unit's config declares the two mutually exclusive (`Conflicts=`). **Stopping `ninfer-serve`
+fixed it** — the model came up, served a real completion (`model=qwen3.8-flash-next-iq3_s`), and reloaded
+from page cache in **19.9 s**. *The service was never broken; my first diagnosis — "it's stopped" — was about
+the state I expected rather than the state it was in.*
+
+## ⚠️ AND THEN `systemd-oomd` KILLED IT MID-SLICE — the fourth OOM kill today, so the BUILDER MOVES TO CLOUD
+
+**At 04:56:29, during the fix-round-2 builder, `systemd-oomd killed 58 process(es)` in the unit** (`memory
+peak 53.8G`). The builder died with `Connection error` — **the local model was the connection.** Measured at
+the time: **`strata` 41.8 GB + `ollaya` 12.6 GB of 62 GB total, 0 GB available.** *`ollaya` is the user's own
+local Ollama on `:11434` and was left alone.*
+
+**The conflict is structural, not bad luck: the local model needs ~55 GB resident, and the builder must run
+`npm run verify` — tsc, vite and vitest workers — inside the same 62 GB.** Four oomd kills today
+(12:13, 13:12, 16:21, 04:56) is the measurement, not a hunch.
+
+**RULED, per `HANDOVER.md`'s own fallback ("if OOM kills resume, move the builder back to cloud for the
+affected slice and say so"):**
+- **`strata-max` is STOPPED for the duration of this slice's build** — it is the 55 GB, and `ocr` is the only
+  remaining lane that needs it. It restarts when `ocr` runs.
+- **The fix-round-2 builder is a FRESH builder on `ollama-cloud/deepseek-v4.1-flash:cloud`.** ⚠️ **This is a
+  RECORDED DEVIATION from the escalation ladder**, which says rounds 1–3 *resume* the original builder on
+  local. **The reason is environmental, not a judgment about the builder's work** — the resumed local builder
+  did good work and died to memory pressure. *The ladder's other requirement is still met: the reviewer is
+  cloud and the builder is now cloud too, so the "reviewer is not the builder's sibling" property is lost for
+  this round and that is named here rather than glossed.* **Round 4–5's cloud treatment is pulled forward.**
+
+## 6c FIX ROUND 1 — three lanes: **verify PASS, review NEEDS_CHANGES, `ocr` 6 findings**
+
+- **verifier: VERIFY PASS.** `npm run verify` exit 0, **70 files / 2030 tests / 81 warnings / 0 errors /
+  GUARDS PASS**; guard exit 0 (one hit); check exit 0 (`all 9 checks passed`); `run-all.sh` exit 0. **Every
+  figure the report quoted reproduced** — including the 620-line verify log and the 436-line run-all log. *It
+  also caught that oxlint prints no summary banner off-TTY and counted the finding lines instead of trusting a
+  banner that does not exist.*
+- **reviewer: NEEDS_CHANGES** — 1 blocking, 4 non-blocking.
+- **`ocr`: status `complete`** (not a zero-finding failure), 6 findings, 2 medium and 4 low, on 2 files.
+
+**THE BLOCKING FINDING, AND WHY THE REVIEWER'S OWN FIX WAS NOT THE FIX I TOOK:** `slice-6c.md:267` states
+*"git TRACKS 260 files under `.scratch/`"* **as the reviewer's measurement.** Measured: **262 at `c484648`,
+259 at `32e9f48`, 265 at HEAD — 260 reproduces at no commit**, and the ledger holds no such reviewer
+measurement. **The round corrected that same figure in the guard header and the case-4 comment and left the
+third copy standing** — the identical class as its own GAP B. *The reviewer recommended 260 → 262; **I ruled
+the number DELETED and pointed at the header's dated figure** instead, because this round's own rule is that
+a total over a corpus the report itself grows is stale the moment anyone writes about it.* **A correction that
+installs a fresh stale number is not a correction.**
+
+**AND THE OTHER TEN ARE ALL ONE CLASS — a sentence that states something other than the mechanism:**
+`docs/agents/code-structure.md:100` puts words in **two** lanes' mouths that **only `ocr` said** (the record at
+`slice-6c.md:11-13` says the second lane flagged *the same duplication*) — **a paraphrase inside quotation
+marks, in the build law**; the guard's own **PASS line claims "every other caller imports it"**, which the
+guard never measures; case 4's git step pins the *premise* not the skip, and its **unguarded `execSync` with
+no `catch` would silently stop pinning five behaviours**; the header's authoritative **"at any depth"** claim
+has **no case at the sandbox root's depth** to pin it; **`.cts` is stated and never seeded**; and the report's
+`+181/−19` is **unreproducible by construction** (the committed four-file diff is `+191/−19`).
+
+**ALL ELEVEN RULED IN — none is cosmetic; each is a claim a future reader would act on.** Brief:
+`.scratch/v28/briefs/slice-6c-fix-2.md`.
+
+**AND THE INCREMENTAL-EVIDENCE RULE EARNED ITS KEEP:** the OOM-killed builder left **both guard files edited
+on disk and a `.scratch/v28/reports/slice-6c-fix-2.md` skeleton with its per-finding table already filled in**,
+because it was told to write the report FIRST and append as it went. *The lane died; its evidence did not.*
