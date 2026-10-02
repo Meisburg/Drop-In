@@ -74,6 +74,15 @@
       "note": "SECOND DEFERRED-IN D-030 INSTANCE, registered so it is owned rather than remembered: `factory-guard.mjs`'s report/brief scan returns `reportFiles: 0` when no `.scratch/v28/reports` or `briefs` directory exists under the root, prints 'unchecked here', and PASSES \u2014 the same `checked=0` shape as the lib-sibling hole. Found by slice 8a's round-3 review. Two zero-check paths in the guard suite report health without looking; 8b owns guards, so both are 8b's: the run must FAIL when it checked nothing, each with its own seed and mutation.",
       "actor": "orchestrator",
       "model": null
+    },
+    {
+      "at": "2026-10-02T19:55:25.083233Z",
+      "lane": "implementation",
+      "from": "pending",
+      "to": "pending",
+      "note": "GUARD FINDINGS ADJUDICATED IN FROM SLICE 8a's BREAKER (D-031) \u2014 the rule `transcript-summary-agrees` added by 8a has these OPEN, and 8b owns guards, so they are to be FIXED here, not merely noted: (1) A REACHABLE ESCAPE \u2014 quotation-introduced labels are exempted so the tripwire stops firing on 8 legitimate labels in briefs/; a fabricated transcript escapes by prefixing `>` (measured: `0 raw-labelled block(s) read \u2026 NOTHING was checked` + PASS exit 0), and in a root holding one agreeing block the guard PUBLISHES its claim over the fabrication. (2) COVERAGE LOSS \u2014 the narrowed label form dropped SIX live blocks of which THREE are genuine raw-labelled blocks (`slice-6c-fix-5-review.md:606`, `slice-8a.md:408` and one more); the exact defect written in that intro style is caught pre-fix and missed now. (3) THE EXEMPT SET IS UNWATCHED \u2014 a new path in the same commit with no seed, mutation or control. (4) FALSE CLAIMS \u2014 `factory-guard.mjs:1550-1551`'s 'the zero case is unreachable while a label is unread' is falsified by the guard's own live output; `slice-8a.md:931/:1056`'s narrowing accounting; `slice-8a.md:990`'s 'seed+mutation+control for every new path'; `factory-guard.mjs:1719`'s claim universal is wider than the mechanism in two reachable states. (5) an UNREPRODUCED NUMBER \u2014 '31 of 104 checks break' could not be reproduced (38/104 measured; 37/93 where the review recorded 30/93). (6) a missing MUTATION for the fence-inline check while the other five new areas each ship one. (7) `factory-guard.mjs:1523` LABEL_LINE has no left word boundary, so `withdraw:` and `the sketch is a draw:` are labels (false fails). (8) `:1609-1612` INTRO_LINES counts lines, so a legitimately long prose intro is a FAIL rather than a skip. (9) `:1403-1406`'s early return now omits rawSummaryLines for THREE rules. (10) `:1679`'s recursive git-ls-files set vs a top-level-only scan set. PLUS the three `checked=0` paths already registered above. Note the breaker's method ruling (D-031): take the rule back to its LAST REVIEWED-GOOD form where that is simpler than a fourth condition \u2014 do not add a fourth condition to a rule that has been wrong in three ways.",
+      "actor": "orchestrator",
+      "model": null
     }
   ]
 }

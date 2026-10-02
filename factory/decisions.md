@@ -856,3 +856,38 @@ places**, and B3 ships with the slice because it is a mechanism defect with a li
 
 **Consequence for the hardening set:** D-022's one-line fix, D-024's cluster, and B3 are **one repair in three
 places**, and B3 ships with the slice because it is a mechanism defect with a live refutation in its own header.
+
+## D-031 — a repair that introduces a reachable escape while closing a smaller hole is a net regression
+
+**Ruled 2026-10-02 at slice 8a's breaker, on the fifth and final review round.** Round 4 rewrote the
+`transcript-summary-agrees` rule to close two real holes — an out-of-vocabulary count word silently skipping
+the comparison, and a coverage number that was wrong in both directions. It closed both. **It also created a
+worse one.**
+
+**What it created, measured by two independent lanes:**
+
+- **A reachable escape.** To stop the rule's tripwire firing on 8 legitimate labels in `briefs/` (where a label
+  introduces a blockquote), it **exempted quotation-introduced labels**. A fabricated transcript then escapes by
+  **prefixing `>`**: the run prints `0 raw-labelled block(s) read … NOTHING was checked` and **PASS, exit 0**.
+  An independent reviewer reached the same state three ways, and **in a root holding one agreeing block the guard
+  PUBLISHES ITS CLAIM** over the fabrication. The exemption's *price* was declared; its *reachability* is the
+  defect.
+- **Coverage loss.** The label form narrowed to "the line ends with the token", so live blocks went 11 → 8 — but
+  the diff is **5 kept / 6 dropped / 3 gained**, and **three of the six dropped are genuine raw-labelled blocks**
+  the previous form read. "The exact defect written in that intro style is caught pre-fix and missed by the
+  current guard."
+- **And the exempted set is unwatched** — a new code path in the same commit, with no seed, no mutation and no
+  control, while the round's own report claimed seed+mutation+control for every new path. *Which set did I just
+  stop watching?* (D-030.)
+
+**The ruling, and why it is not another patch.** The guard suite already owns a slice — **8b** — and already
+holds three registered `checked=0` paths. These findings are guard internals; **consolidating them there is one
+coherent change, where a sixth patch inside a product slice is a third attempt at the same rule in three rounds.**
+So: **every open finding on this rule is adjudicated to 8b, enumerated rather than summarised — not re-registered
+as a note, but FIXED there.** 8a closes on its product work, which five rounds verified.
+
+**The lesson, which generalises past guards:** a repair is not judged by what it closes. **A repair that trades a
+small hole for a reachable escape has made the instrument less trustworthy, and the honest response is to take it
+back to its last reviewed-good form and do the work in the slice that owns it — not to add a fourth condition to a
+rule that has already been wrong in three different ways.** This is the same shape as D-028 (when the same thing
+is the finding for the third time, stop correcting it) applied to a MECHANISM instead of a sentence.

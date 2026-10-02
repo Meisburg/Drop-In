@@ -688,6 +688,10 @@ Two pushes came back from the review. Both accepted:
 
 ### Slice 6c — CLOSED 2026-10-02 (the slice that taught the batch its defect class)
 
+### 8b INHERITS slice 8a's guard rule, with its findings enumerated (D-031)
+
+The `transcript-summary-agrees` rule 8a added has a **reachable escape** (a quotation exemption a fabricator reaches by prefixing `>` — measured PASS exit 0 with "NOTHING was checked"), **coverage loss** (the narrowed label form dropped three genuine raw-labelled blocks), an **unwatched exempt set**, several **false claims**, an **unreproduced number**, and a **missing mutation**. All enumerated in `factory/work/v28-r2-8b.json`. **8b fixes them** — the breaker's method ruling is to take the rule back to its last reviewed-good form where that is simpler than a fourth condition, because a repair that trades a small hole for a reachable escape is a net regression.
+
 ### A SECOND 8b DEFERRAL — `factory-guard`'s report/brief scan passes on zero files
 
 When no `.scratch/v28/reports`/`briefs` exists under the root it returns `reportFiles: 0`, prints "unchecked here", and **PASSES** — the same `checked=0` shape. Found by 8a's round-3 review and registered here and in `factory/work/v28-r2-8b.json` for the same reason the first one was: **an unowned deferral is a lost one.**
