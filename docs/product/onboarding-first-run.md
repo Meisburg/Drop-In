@@ -13,8 +13,8 @@ the same thing:
 
 | | State | What that means |
 |---|---|---|
-| **v1** — screenshots and words in §2 | **Built, tested, walked on a phone** | This is real. It exists on a branch and a preview. |
-| **v2** — the shape in §3 | **Decided, not built** | Agreed with the product owner after the playtest. No code yet. |
+| **v1** — screenshots and words in §2 | **Built, tested, walked on a phone — then SUPERSEDED** | It was real: it shipped on this branch and was walked on a phone. §2 is its record, and its screenshots are v1's. The run no longer has v1's photo card or its places-list ending. |
+| **v2** — the shape in §3 | **BUILT — V28 r2 (re-measured 2026-10-02 at `8d1170d`)** | Agreed with the product owner after the playtest, then built in the second half of this batch: the photo moves onto the name card, the kids card gains kid photos, the area card gains a map, and the "How Drop In works" card replaces the places list. **§3 is what the app does now; §2 is the history.** |
 
 **Nothing here is live to the public.** The app in production is an earlier version with no
 first-run flow at all.
@@ -34,13 +34,14 @@ for an app you have not yet seen do anything.
 
 So this work does three things:
 
-1. **Asks for the essentials in a short, honest sequence** — five small screens, each
-   labelled `N of 5`, each one question.
+1. **Asks for the essentials in a short, honest sequence** — four small screens, each
+   labelled `N of 4`, each one question (v1 had five; V28 r2 deleted the photo card).
 2. **Stops the location from being a gate.** Your location is now asked for *at the moment
    you actually need it* — when you post a drop-in or RSVP to one — not at the front door.
    You can browse freely first.
-3. **Ends on something real.** The run finishes by showing actual places near you where you
-   could host, so a brand-new parent lands on possibility rather than an empty screen.
+3. **Ends by teaching the app.** The run finishes with a "How Drop In works" card that names
+   the four tabs and the centre Post action — v1 ended on a list of real places near you, which
+   V28 r2 removed because it promised content the app cannot show on an empty day.
 
 **The business hypothesis:** a parent who is personally set up, standing near something
 real, and oriented in the app becomes an active parent instead of a signup that never
@@ -107,19 +108,33 @@ park.
 **Required.** Address-first with ZIP as the fallback. The radius is what the whole feed is
 filtered by, so it is asked here rather than buried in settings.
 
-### The ending — You're all set — `06-finish-card.png`
+### The ending — v1's `06-finish-card.png` shows the SUPERSEDED card
 
 > `All done` — **You're all set**
 > Here are a few real places near you to host a drop-in. Pick one and start from its page.
-> Woodland Park · Playground · 1 mi · 6:00 AM – 10:00 PM
-> Green Lake Park (West) · Beach · 1 mi · 6:00 AM – 10:00 PM
-> Meridian Playground · Playground · 1 mi · 6:00 AM – 10:00 PM
+> `[ three places, distance-ranked, with hours ]`   [ **Go to your feed** ]
+
+That card — and the places read behind it — is GONE (V28 r2 slice 5). v1 ranked real
+places by distance and showed the sentence only when the list was genuinely on screen,
+which was honest about the list and still wrong about the day: there are zero upcoming
+drop-ins for every parent today, so the list was empty and the card fell back to its
+honest state on every real screen. The run now ends by teaching the app instead:
+
+> `All done` — **How Drop In works**
+> The parts below are how you use Drop In. On a narrow screen they sit along the bottom of
+> the screen; on a wider one, down the left side. Here is what each one does.
+> **Drop Ins** — browse drop-ins within your radius, soonest first, and ping one to join
+> **Inbox** — message the parents you're arranging a drop-in with
+> **Post a drop-in** — the + in the middle — put your own on for the neighborhood
+> **Places** — look up a playground, a pool, a beach, and pick where to host
+> **Profile** — keep you and your kids up to date, and link your partner's account
 > [ **Go to your feed** ]
 
-Real places, ranked by distance, only ones with published hours. **The card is careful
-about what it claims:** that sentence about "a few real places" only appears when the list
-is genuinely on screen. If the list is empty it shows its own honest state instead — no
-sentence promising places above an empty area.
+Every line is a capability or a category the app OFFERS. The words live in
+`src/lib/firstRunTour.ts`, whose header records the four measurements a line has to pass
+(a position that holds in both layouts, a category the directory offers a chip for, a
+capability with a driver in the code, and an attribute rows reliably carry), and
+`firstRunTour.test.ts` enforces the category rule against the app's own taxonomy.
 
 ### Two behaviours that matter more than the screens
 
@@ -133,10 +148,11 @@ sentence promising places above an empty area.
 
 ---
 
-## 3. What the playtest changed (v2 — decided, not built)
+## 3. What the playtest changed (v2 — BUILT in V28 r2)
 
 The product owner walked the v1 flow on a phone. The flow worked end to end. The review
-then changed the shape. **Five changes, all decided, none built yet:**
+then changed the shape. **Five changes, all decided — and all five BUILT in V28 r2
+(re-measured 2026-10-02 at `8d1170d`):**
 
 1. **The standalone photo card goes away** — the parent's photo moves onto the *name* card.
    One less screen for something the parent will do anyway while they are already typing.
@@ -151,10 +167,10 @@ then changed the shape. **Five changes, all decided, none built yet:**
 **The corrected run:**
 
 ```
-1 of 5   Create your account        email + password
-2 of 5   What should we call you?   first, last, YOUR photo
-3 of 5   Who's coming?              kid name + age, kid photo (optional)
-4 of 5   Where do you live?         address + radius + MAP
+1 of 4   Create your account        email + password
+2 of 4   What should we call you?   first, last, YOUR photo
+3 of 4   Who's coming?              kid name + age, kid photo (optional)
+4 of 4   Where do you live?         address + radius + MAP
 All done How Drop In works          Drop Ins / the + button / Places / Inbox / Profile
          → into the app
 ```
@@ -205,11 +221,11 @@ Settled before a line was written, by structured Q&A with the product owner.
 
 | Question | Answer |
 |---|---|
-| Does it build, test, and lint clean? | Yes — **1,989 automated tests**, zero lint errors, all gates green. |
-| Does the whole app still work? | Yes — **161 end-to-end browser tests pass**. |
+| Does it build, test, and lint clean? | Yes — **2,068 automated tests** and zero lint errors, measured 2026-10-02 at `8d1170d` (the count moves with every commit; 1,989 was the v1-era snapshot). |
+| Does the whole app still work? | Yes — **175 end-to-end browser tests** across 60 files, measured 2026-10-02 (`npx playwright test --list`). The lane that ran them green was 161 at v1. |
 | Did a real person walk it? | **Yes** — the product owner completed all five cards plus the finish card on a phone. Screenshots in §2. |
 | Do any screens throw errors in a real browser? | No — **9/9 routes, zero JavaScript errors**. |
-| Is the ending honest? | Yes — the places claim renders only when the list exists. This was a *found and fixed* defect, not an assumption. |
+| Is the ending honest? | Yes — and since V28 r2 the question is moot: the places claim and the list behind it both left the run (the ending is the "How Drop In works" card, §3). v1 made the claim conditional on the list, which was a *found and fixed* defect, not an assumption. |
 | Did anyone get stuck? | No wall, no dead end — but see the gap below. |
 
 **The one thing nobody has confirmed:** the *quit-halfway-and-come-back* behaviour is
@@ -263,16 +279,16 @@ verification, and it is stated here rather than rounded up to "verified."
 ## 7. Known defects and gaps
 
 **Defects in the words — the highest-risk surface in this product.** Every serious bug
-found in this batch was *copy that described something the app did not actually do.* Three
-are fixed; three are open:
+found in this batch was *copy that described something the app did not actually do.* **All
+six are fixed, the last four of them in V28 r2** (re-measured 2026-10-02 at `8d1170d`):
 
 | # | The app says | The truth | Status |
 |---|---|---|---|
-| 1 | *"try adding a middle name or initial"* (when a name is taken) | **There is no middle-name field.** It advises a slot that does not exist. | **Open** — fix in v2 |
-| 2 | *"A first name is plenty"* | Sits directly above a **Last name** field. It contradicts the form under it. | **Open** — fix in v2 |
-| 3 | The copy module says the skip button reads *"Skip for now"* | **The app renders "Skip".** The module is supposed to be the one place the words live, so it is currently lying about a word the parent sees. | **Open** — verify in v2 |
+| 1 | *"try adding a middle name or initial"* (when a name is taken) | **There is no middle-name field.** It advised a slot that does not exist. | **Fixed** — the message now says *"is already taken — try a different first or last name"* (`OnboardingPage.tsx`) |
+| 2 | *"A first name is plenty"* | Sat directly above a **Last name** field, contradicting the form under it. | **Fixed** — v2 rewrote the name card's body to say what the name is FOR (`firstRunCopy.ts`) |
+| 3 | The copy module said the skip button reads *"Skip for now"* | **The app rendered "Skip".** The module was supposed to be the one place the words live, so it was lying about a word the parent sees. | **Fixed** — V28 r2 slice 6a made the field a prop the chrome renders verbatim, and its value is the rendered word (`firstRunCopy.ts` + `FirstRunCard.tsx`) |
 | 4 | A nudge named cards that did not exist | Fixed. | Fixed |
-| 5 | A finish card claimed "real places near you" above an empty list | Fixed — the claim is now conditional on the list. | Fixed |
+| 5 | A finish card claimed "real places near you" above an empty list | The claim went conditional, and then the claim AND the list both left the run in V28 r2 slice 5 — the ending is the "How Drop In works" card. | Fixed |
 | 6 | Some automated tests asserted things that could not fail | Fixed — plus a guard so that class of test cannot recur. | Fixed |
 
 **Gaps:**
@@ -281,8 +297,10 @@ are fixed; three are open:
   either one to be *usable* — it needs surfacing and explaining.
 - **The resume behaviour is unconfirmed by a human** (§5).
 - **Nothing is live.** Production runs an earlier version with no first-run flow.
-- **No app tour exists today** — the "How Drop In works" card is decided but unbuilt, so the
-  orientation gap the product owner identified is still open in the shipped product.
+- **The app tour is built but NOT live** — the "How Drop In works" card ships in the first run
+  (V28 r2 slice 5, `src/lib/firstRunTour.ts`); production still runs the earlier version with no
+  first-run flow at all, so the orientation gap the product owner identified is still open for
+  every parent using the live app.
 
 ---
 
