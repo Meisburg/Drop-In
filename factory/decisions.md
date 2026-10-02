@@ -925,3 +925,40 @@ association moves the hole; it does not close it.
 hole until it stops guessing.** D-020 found this in a *semantic-vs-lexical* mismatch; this is the same lesson
 one level down — a rule that must infer an association it cannot see should be **re-scoped to what it can
 observe**, even at the price of firing on things it would rather not.
+
+## D-033 — a declared cost must be PAYABLE, and the payable form is a record, not a syntax
+
+**Ruled 2026-10-02 at slice 8b, immediately after D-032 was executed successfully.** D-032 chose a **declared cost**
+over an exemption: *check every fenced block, attribute nothing, and accept that a block quoting a bad transcript
+now fires.* The rule was rebuilt that way by deletion, and proved — **eleven escape attempts, all caught.**
+
+**Then the cost came due, and it cannot be paid:**
+- the rule fires on two LANE REPORTS (`.scratch/v28/reports/slice-8a-verify-5.md:37`, `slice-8b-review.md:89`) —
+- **because those reports QUOTE the fabricated block to prove the fix**, which they must;
+- and **hand-editing another lane's report is forbidden** (D-011 item 2 / D-021 item 2).
+
+So a rule whose cost falls on the repo's own evidence trail **reddens the gate permanently** — and a permanently
+red gate is not a cost, it is a broken instrument. **A declared cost that cannot be paid is just a hole with
+better manners.**
+
+**The ruling — and the distinction that makes it safe.** The exemption D-032 removed was **a SYNTAX a fabricator
+can write**: any block prefixed `>` was exempt, so the content itself chose whether the rule looked. **That is
+forgeable by the very thing the rule is meant to catch.** A **recorded baseline** is not: it is a map of
+`file::matched-text → count`, committed in the guard, and **a fabricator cannot produce a baselined citation from
+a report** — they would have to edit the guard, which is a reviewed diff.
+
+**So `transcript-summary-agrees` gets the same absorber every other rule in this suite uses:**
+1. **A recorded baseline** of known quotation sites, **re-derived, never hand-added**, printing its size on every
+   run and shrinking only by re-derivation — exactly `no-bare-head-count`'s established form.
+2. **Proven unforgeable:** a *new* report quoting the *same* text must still **FIRE**. If a baseline entry can be
+   reached by writing a new file, the absorber is a syntax wearing a record's clothes and it fails this ruling.
+3. **The indented-code boundary is declared, not implied:** this rule reads **fenced** blocks; an indented code
+   block is outside its scan set. That is a scope boundary and must be stated where the rule states its scope —
+   and it is why a lane report can also clear a quotation by indenting it, at the cost of no longer being a
+   fenced block.
+
+**The general law:** *a rule may not impose a cost that its own evidence trail cannot pay.* Where a defect must be
+quoted to be reported, the instrument needs **a record of what it has already seen** — not a rule about what the
+quotation looks like. **This is the third form of the same lesson in three rulings: D-028 (stop correcting the
+sentence), D-030 (zero is a finding), D-032 (stop guessing at structure), and now D-033 (do not charge the
+evidence trail). Every one of them is the same move: put the judgement where it can be checked.**
