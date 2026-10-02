@@ -1,0 +1,286 @@
+{
+  "_header": {
+    "what": "Fence-closure cases for the factory guard's fenced-block parser (the transcript-summary-agrees rule), each with the code-content boundaries the reference CommonMark implementation derives. Guarded by the fence-fixture block in factory-guard.check.mjs, which runs the guard's own parser over every case.",
+    "reference": "commonmark 0.31.2 (the authority) cross-checked against marked 18.0.14",
+    "derivation": "MDREF=/tmp/mdref node scripts/guards/fence-conformance.derive.mjs > scripts/guards/fence-conformance.fixture.json",
+    "blocks": "zero-based, half-open [content, end) line ranges: the lines between a fence and its closer, which is what the rule reads",
+    "boundary": "every case opens with a fence indented at most three spaces; the guard reads any leading whitespace on an OPENER as a fence by a deliberate declared over-read, so an opener past three spaces would measure that ceiling rather than these closure rules. Fences nested in blockquotes or lists are likewise a declared ceiling, outside this line-based table."
+  },
+  "cases": [
+    {
+      "name": "simplest closed fence",
+      "source": "```md\ncontent\n```",
+      "blocks": [
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    {
+      "name": "nested same-kind fence (info-string closer)",
+      "source": "```md\ncontent\n```js\n✓ seven\n```",
+      "blocks": [
+        [
+          1,
+          4
+        ]
+      ]
+    },
+    {
+      "name": "shorter closer run stays content",
+      "source": "````md\ncontent\n```\n✓ seven\n````",
+      "blocks": [
+        [
+          1,
+          4
+        ]
+      ]
+    },
+    {
+      "name": "longer closer run closes",
+      "source": "```md\ncontent\n`````\n✓ seven",
+      "blocks": [
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    {
+      "name": "closer indented three spaces closes",
+      "source": "```md\ncontent\n   ```\n✓ seven",
+      "blocks": [
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    {
+      "name": "closer indented four spaces stays content",
+      "source": "```md\ncontent\n    ```\n✓ seven",
+      "blocks": [
+        [
+          1,
+          4
+        ]
+      ]
+    },
+    {
+      "name": "closer indented eight spaces stays content",
+      "source": "```md\ncontent\n        ```\n✓ seven\n```",
+      "blocks": [
+        [
+          1,
+          4
+        ]
+      ]
+    },
+    {
+      "name": "tab-indented closer stays content",
+      "source": "```md\ncontent\n\t```\n✓ seven\n```",
+      "blocks": [
+        [
+          1,
+          4
+        ]
+      ]
+    },
+    {
+      "name": "closer with trailing text stays content",
+      "source": "```md\ncontent\n``` trailing\n✓ seven\n```",
+      "blocks": [
+        [
+          1,
+          4
+        ]
+      ]
+    },
+    {
+      "name": "closer with trailing spaces closes",
+      "source": "```md\ncontent\n```   \n✓ seven",
+      "blocks": [
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    {
+      "name": "closer with a trailing tab closes",
+      "source": "```md\ncontent\n```\t\n✓ seven",
+      "blocks": [
+        [
+          1,
+          2
+        ]
+      ],
+      "note": "commonmark closes on a tab after the run; marked 18.0.14 keeps the line as content. The spec allows spaces or tabs, so commonmark is the boundary recorded here."
+    },
+    {
+      "name": "closer with a vertical-tab suffix stays content",
+      "source": "```md\ncontent\n```\u000b\n✓ seven\n```",
+      "blocks": [
+        [
+          1,
+          4
+        ]
+      ]
+    },
+    {
+      "name": "closer with an NBSP suffix stays content",
+      "source": "```md\ncontent\n``` \n✓ seven\n```",
+      "blocks": [
+        [
+          1,
+          4
+        ]
+      ]
+    },
+    {
+      "name": "unclosed fence reads to the end",
+      "source": "```md\ncontent\n✓ seven",
+      "blocks": [
+        [
+          1,
+          3
+        ]
+      ]
+    },
+    {
+      "name": "empty closed fence",
+      "source": "```\n```\n✓ seven",
+      "blocks": [
+        [
+          1,
+          1
+        ]
+      ]
+    },
+    {
+      "name": "tilde fence closes on a tilde run",
+      "source": "~~~md\ncontent\n~~~\n✓ seven",
+      "blocks": [
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    {
+      "name": "backtick closer does not close a tilde fence",
+      "source": "~~~md\ncontent\n```\n✓ seven\n~~~",
+      "blocks": [
+        [
+          1,
+          4
+        ]
+      ]
+    },
+    {
+      "name": "tilde closer indented four spaces stays content",
+      "source": "~~~md\ncontent\n    ~~~\n✓ seven\n~~~",
+      "blocks": [
+        [
+          1,
+          4
+        ]
+      ]
+    },
+    {
+      "name": "other-kind fence nested inside is content",
+      "source": "```md\ncontent\n~~~\n✓ seven\n~~~\n```",
+      "blocks": [
+        [
+          1,
+          5
+        ]
+      ]
+    },
+    {
+      "name": "backtick opener info string with a backtick is not a fence",
+      "source": "``` a`b\nparagraph\n\n```md\n✓ seven\n```",
+      "blocks": [
+        [
+          4,
+          5
+        ]
+      ]
+    },
+    {
+      "name": "two separate blocks",
+      "source": "```\nfirst\n```\n\n```\nsecond\n```",
+      "blocks": [
+        [
+          1,
+          2
+        ],
+        [
+          5,
+          6
+        ]
+      ]
+    },
+    {
+      "name": "opener indented three spaces",
+      "source": "   ```md\ncontent\n   ```\n✓ seven",
+      "blocks": [
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    {
+      "name": "opener indented two, closer one",
+      "source": "  ```md\ncontent\n ```\n✓ seven",
+      "blocks": [
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    {
+      "name": "five-run opener, three-run line inside is content",
+      "source": "`````md\ncontent\n```\n✓ seven\n`````",
+      "blocks": [
+        [
+          1,
+          4
+        ]
+      ]
+    },
+    {
+      "name": "closer run longer than the opener closes",
+      "source": "```\ncontent\n~~~~\n✓ seven\n~~~~",
+      "blocks": [
+        [
+          1,
+          5
+        ]
+      ]
+    },
+    {
+      "name": "a same-kind closer with an info string is content",
+      "source": "```\ncontent\n```js\nmore\n```\n✓ seven",
+      "blocks": [
+        [
+          1,
+          4
+        ]
+      ]
+    },
+    {
+      "name": "a tilde opener with a backtick info string still opens",
+      "source": "~~~ `x`\ncontent\n~~~\n✓ seven",
+      "blocks": [
+        [
+          1,
+          2
+        ]
+      ]
+    }
+  ]
+}

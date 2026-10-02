@@ -92,8 +92,9 @@
 //                         read, by CommonMark's own fence rules: an opener is a
 //                         run of three or more backticks or tildes (after leading
 //                         whitespace), and a same-kind line closes it only when
-//                         its run is at least as long and carries nothing but
-//                         whitespace — so a nested fence's content stays inside
+//                         its run is at least as long, is indented at most three
+//                         spaces, and carries nothing but spaces and tabs — so a
+//                         nested fence's content stays inside
 //                         the block that opened first, where it is read. A line
 //                         inside one that states a step range beside a count must
 //                         agree with its own arithmetic. There is no label and
@@ -1641,7 +1642,8 @@ function checkTranscripts(files) {
  * of EITHER markdown fence kind (```` ``` ```` and `~~~`), read by CommonMark's
  * own closure rules: an opener is a run of three or more of one character (after
  * leading whitespace), and a same-kind line closes the block only when its run is
- * at least as long and carries nothing but whitespace — any other same-kind line
+ * at least as long, is indented at most three spaces, and carries nothing but
+ * spaces and tabs — any other same-kind line
  * is content, so a nested fence's block stays inside the outer one. Inside each,
  * every line that states a step range beside
  * a count (`✓ A–B` … `(all <word|digit>`) is compared. EVERY such pair on a line
@@ -1666,12 +1668,13 @@ function checkTranscripts(files) {
  *     line, the count AFTER the range. `through`/`to`/`..`, a count BEFORE the
  *     range, a count split across two lines, and a `PASS` line with no `✓`
  *     escape;
- *   - Markdown INDENTED code is not read as such. The fence regex deliberately
- *     accepts LEADING WHITESPACE, so an indented fence marker IS a fence and its
- *     block IS read — over-reading is the safe direction, and tightening the
- *     regex to `^ {0,3}` would open exactly the escape this sentence would then
- *     have to declare (a four-space-indented fence around a fabricated
- *     transcript). An indented run with NO fence marker in it is outside the
+ *   - Markdown INDENTED code is not read as such. An OPENER is read after leading
+ *     whitespace with NO indentation limit — recognising more openers reads
+ *     MORE, which is the safe direction — while a CLOSER obeys CommonMark: a
+ *     same-kind run indented at most three spaces and followed by spaces or tabs
+ *     only. A deeper- or tab-indented same-kind line is CONTENT, the block stays
+ *     open, and the lines below it stay inside the scan set. An indented run with
+ *     NO fence marker in it is outside the
  *     scan set — DECLARED, per D-033 item 3, because it is a scope boundary and
  *     not an accident: it is also the second way a lane report can clear a
  *     quotation, by indenting it, at the cost of no longer being a fenced block.
@@ -1736,7 +1739,7 @@ const STEP_RANGE_COUNT = /✓\s*(\d+)\s*[–—-]\s*(\d+)\b[^\n]*?\(all\s+([a-z]
  */
 // Re-derived from THIS instrument's own matches: the emptied-map run reported
 // exactly these sites, and the derivation run twice produced byte-identical
-// output. LOST COVERAGE 0 — every recorded key still matches.
+// output.
 //   - The first two are the two lane-report quotations D-032's cost fell on,
 //     absorbed rather than paid by editing a report (re-derived at fix round 2).
 //   - The third arrived at fix round 5 with the CommonMark closure fix: the
@@ -1769,31 +1772,36 @@ function checkRawBlockSummaries(files) {
     //
     // THE FENCE RULES ARE COMMONMARK'S, implemented rather than guessed at. An
     // OPENER is a run of three or more backticks or tildes at the start of a line
-    // (after leading whitespace — ANY amount, the declared safe over-read;
-    // CommonMark's own limit is three), optionally followed by an info string —
-    // and a BACKTICK opener's info string may not itself contain a backtick. A
+    // after leading whitespace — ANY amount, the declared safe over-read, where
+    // recognising more openers reads more; CommonMark's own limit is three — and
+    // a BACKTICK opener's info string may not itself contain a backtick. A
     // same-kind line CLOSES the block only when its run is at least as long as
-    // the opener's and carries nothing but whitespace; any other same-kind line
-    // is CONTENT. That is what keeps a nested fence's content — the standard
-    // idiom for QUOTING a fenced block, an inner ```js info string inside an
-    // outer fence — INSIDE the block that opened first, where this rule reads
-    // it. Closing on any same-kind marker line put that content in no parsed
-    // block at all: the `0 … compared`, PASS, exit 0 signature D-031/D-032
-    // exist for, reached by content. This is conformance to a closed
-    // specification, not a fourth condition on a guess. A fence line of the
-    // OTHER kind inside an open block is content too.
+    // the opener's, it is indented at most three spaces (spaces only), and after
+    // the run it carries nothing but spaces and tabs; any other same-kind line is
+    // CONTENT. That is what keeps a nested fence's content — the standard idiom
+    // for QUOTING a fenced block, an inner ```js info string inside an outer
+    // fence — INSIDE the block that opened first, where this rule reads it.
+    // Closing on any same-kind marker line put that content in no parsed block at
+    // all: the `0 … compared`, PASS, exit 0 signature D-031/D-032 exist for,
+    // reached by content. The same signature came back through the closer's own
+    // whitespace — a closer indented four spaces, or tab-indented — where
+    // CommonMark keeps the block open and this parser used to close it and drop
+    // the lines below. This is conformance to a closed specification, not a
+    // fourth condition on a guess. A fence line of the OTHER kind inside an open
+    // block is content too.
     const fenced = []
     let open = null
     for (const [index, line] of lines.entries()) {
-      const marker = /^\s*(`{3,}|~{3,})(.*)$/.exec(line)
+      const marker = /^(\s*)(`{3,}|~{3,})(.*)$/.exec(line)
       if (!marker) continue
-      const run = marker[1]
-      const info = marker[2]
+      const indent = marker[1]
+      const run = marker[2]
+      const info = marker[3]
       const kind = run[0]
       if (!open) {
         if (kind === '`' && info.includes('`')) continue
         open = { kind, length: run.length, at: index }
-      } else if (kind === open.kind && run.length >= open.length && info.trim() === '') {
+      } else if (kind === open.kind && run.length >= open.length && /^ {0,3}$/.test(indent) && /^[ \t]*$/.test(info)) {
         fenced.push({ content: open.at + 1, end: index })
         open = null
       }

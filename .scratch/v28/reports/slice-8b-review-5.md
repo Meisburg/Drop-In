@@ -126,7 +126,7 @@ STILL constructible — the shape moved to the closure's whitespace dimension ra
     claim classes publish over measured scans only; at a true zero the claim is correctly absent, which is the
     form D-030's fix established last round.
   - FIX 4 (lib-sibling), the sentence deletion, is in the diff verbatim and its checker still passes 8/8; the
-    guard is green at HEAD (the 8 D-036 findings were cured by the lanes' own edits, "8 findings -> 0"
+    guard is green at 341c0bb (the 8 D-036 findings were cured by the lanes' own edits, "8 findings -> 0"
     reproduced: exit 0).
 
 ## Requirements traceability (the brief's audit list)

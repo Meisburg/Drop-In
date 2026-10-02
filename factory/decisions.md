@@ -1064,3 +1064,47 @@ commit it measured at.** `at HEAD` is not a provenance token. The lanes' reports
 write, so these 8 are recorded **known-open with file:line** rather than edited or absorbed — **absorbing them into
 the `no-bare-head-count` baseline would be re-deriving a record to silence a true finding, which D-027 forbids: you
 lower the claim, you never widen the mechanism.**
+
+## D-037 — the fence-parser stop condition, sharpened by the independent reviewer
+
+**The hard stop was mine; the reviewer that found the fifth shape improved it, and its sharpenings are adopted
+verbatim because each one is a failure mode I would have hit.** The stop: *this is the last repair to the fence
+parser; a SEVENTH fence-closure divergence triggers D-032 and the RULE IS DELETED, recorded known-open, never
+silent.* Four sharpenings:
+
+1. **The stop fires on a PROSE narrowing too.** *"A fifth rewrite of the same sentence with the parser still
+   divergent is not a repair, it is the ladder finding arriving on schedule."* — **A repair attempt is an attempt
+   whether it touches the parser or the sentence about the parser.** Otherwise the stop is evadable by rewording.
+2. **The oracle is the REFERENCE'S BEHAVIOUR, not anyone's reading of the spec.** Run the reference over the
+   checker's seeds and the reviewer's constructions; **if the references agree with each other and the guard still
+   parses differently, the trigger fires.** *Where the references disagree among themselves that is an ORACLE BUG,
+   not a seventh divergence — shrink the seed to where they agree rather than adjudicating by prose.* **A stop
+   condition decided by argument is not a stop condition.**
+3. **UNDER-read only.** Every one of the six shapes is *a reference-fenced line the guard DROPS*. An **over-read**
+   — the declared indented-opener boundary, already priced in the ceiling — **must not trip the stop, or it fires
+   on day one from our own declared boundary.**
+4. **Constructible counts; latency does not exempt.** Shapes 5 and 6 were both **latent on the live corpus** when
+   found. *Latency is what makes a repair AFFORDABLE; it is never what DEFINES the trigger.* If only live
+   divergences could fire it, the ceiling would re-open the same `NOTHING was compared` signature every third round.
+
+## D-038 — the rung BELOW the stop: hand the parser the reference's fence recognition
+
+**The reviewer's amendment, recorded because it is a better structural answer than the stop.** If the next
+divergence appears against a **hand-written** parser, the move is **not** deletion and **not** a seventh clause: it
+is to **stop hand-writing the parser and take the reference's fence recognition** — import `marked` or **vendor its
+fence scanner (~15 lines)**. Then the seventh divergence is **structurally impossible rather than merely
+forbidden.**
+
+**Why the trade-off is real and must be decided with the fixture in hand:**
+- **A dependency is a supply-chain surface AND a meaning risk** — a `marked` major bump could parse differently and
+  thereby **shift the guard's scope silently**, which is the exact failure this suite exists to prevent.
+- **Vendoring avoids that** but puts borrowed code in the guard — which is what **`docs/agents/borrowed-guards.md`
+  exists for**: provenance, what was taken and refused, and the four tests.
+- **The reference-derived fixture required this round is the instrument that makes the swap provable** — a swap
+  demonstrated behaviour-preserving against a fixture whose expectations came from the reference is a one-call
+  derivation, not a transcription.
+
+**And deletion is not free, which is why the rung sits BELOW the stop rather than replacing it:** deleting
+`transcript-summary-agrees` stops watching fenced fabricated-count arithmetic — **a class that paid off once for
+real.** So: **the rung is taken before the delete, and if the rung is skipped and a divergence recurs anyway, D-032's
+terminal clause fires — delete, record known-open, never silent.**

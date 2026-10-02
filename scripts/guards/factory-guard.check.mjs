@@ -110,6 +110,21 @@ function mutatedGuard(replacements) {
   return path
 }
 
+/** The guard's OWN fenced-block parser, lifted from the committed instrument by
+ * anchors and compiled here. The conformance table below is compared against
+ * THESE bytes, not a hand-copied parser, so the check cannot drift from the
+ * parser it judges; if an anchor moves, this throws rather than passing over
+ * nothing. `new Function` is the seam: the guard is a script that exits, so its
+ * parts cannot be imported. */
+function guardFenceParser() {
+  const text = readFileSync(GUARD, 'utf8')
+  const start = text.indexOf('\n    const fenced = []\n')
+  const endAnchor = '    if (open) fenced.push({ content: open.at + 1, end: lines.length })'
+  const end = text.indexOf(endAnchor, start)
+  if (start === -1 || end === -1) throw new Error('the fence-parser anchors are not in factory-guard.mjs')
+  return new Function('lines', `${text.slice(start + 1, end + endAnchor.length)}\nreturn fenced`)
+}
+
 /** A real repository for `--repo`: this repo, which the provenance shas live in. */
 const REPO = resolve(import.meta.dirname, '..', '..')
 
@@ -1489,7 +1504,7 @@ console.log('===========================================================')
     nested.exit === 1 && /covers 7 entries/.test(nested.out) && /transcript-summary-agrees/.test(nested.out),
     `exit ${nested.exit}`,
   )
-  const looseCloser = mutatedGuard([["} else if (kind === open.kind && run.length >= open.length && info.trim() === '') {", '} else if (kind === open.kind) {']])
+  const looseCloser = mutatedGuard([["} else if (kind === open.kind && run.length >= open.length && /^ {0,3}$/.test(indent) && /^[ \\t]*$/.test(info)) {", '} else if (kind === open.kind) {']])
   const nestedMiss = run((ctx) => {
     cleanRoot()(ctx)
     ctx.write('.scratch/v28/reports/zz-raw.md', nestedSeed)
@@ -1498,6 +1513,70 @@ console.log('===========================================================')
     'MUTATION: restoring the loose closer (any same-kind marker) lets that seed PASS (exit 1 -> 0 — a DETECTION flip)',
     nestedMiss.exit === 0,
     `exit ${nestedMiss.exit}`,
+  )
+
+  // THE LENGTH FACE of the same shape (review-5, non-blocking). The nested seed
+  // above exercises the info-string face only; the parser also implements a run
+  // LENGTH comparison, and a partial reversion that kept one and dropped the other
+  // would leave the harness green. A THREE-backtick line inside a FOUR-backtick
+  // block is CONTENT, so the transcript below it is read.
+  const shorterCloserSeed =
+    '# zz shorter closer\n\n' +
+    '````md\n' +
+    'content\n' +
+    '```\n' +
+    '✓ 7–13 zz-spec.e2e.ts (all six legs)\n' +
+    '````\n'
+  const shorterCaught = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', shorterCloserSeed)
+  }, { report: false, args: ['--repo', REPO] })
+  check(
+    'a SHORTER closer run does NOT close a longer opener: the transcript below it is CAUGHT',
+    shorterCaught.exit === 1 && /covers 7 entries/.test(shorterCaught.out) && /1 fenced block\(s\) read, 1 range summary checked/.test(shorterCaught.out),
+    `exit ${shorterCaught.exit}`,
+  )
+  const looseLength = mutatedGuard([['run.length >= open.length && /^ {0,3}$/.test(indent)', '/^ {0,3}$/.test(indent)']])
+  const shorterMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', shorterCloserSeed)
+  }, { guard: looseLength, report: false, args: ['--repo', REPO] })
+  check(
+    'MUTATION: dropping the run-length comparison lets that shorter-closer seed PASS (exit 1 -> 0 — a DETECTION flip)',
+    shorterMiss.exit === 0 && /0 range summaries checked/.test(shorterMiss.out),
+    `exit ${shorterMiss.exit}`,
+  )
+
+  // THE SIXTH SHAPE — a CLOSER indented four spaces (both lanes measured it).
+  // CommonMark closes only on a same-kind run indented at most three spaces, so
+  // this line is CONTENT and the transcript below it is read; the old parser
+  // closed on it and the transcript landed in no parsed block at all. The seed is
+  // the verifier's exact input.
+  const indentCloserSeed =
+    '# zz indented closer\n\n' +
+    '```md\n' +
+    'harmless\n' +
+    '    ```\n' +
+    '✓ 7–13 zz-spec.e2e.ts (all six legs)\n' +
+    '```\n'
+  const indentCaught = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', indentCloserSeed)
+  }, { report: false, args: ['--repo', REPO] })
+  check(
+    'a CLOSER indented four spaces is CONTENT, so the transcript below it is CAUGHT',
+    indentCaught.exit === 1 && /covers 7 entries/.test(indentCaught.out) && /1 fenced block\(s\) read, 1 range summary checked/.test(indentCaught.out),
+    `exit ${indentCaught.exit}`,
+  )
+  const looseIndent = mutatedGuard([['&& /^ {0,3}$/.test(indent) &&', '&&']])
+  const indentMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', indentCloserSeed)
+  }, { guard: looseIndent, report: false, args: ['--repo', REPO] })
+  check(
+    'MUTATION: dropping the closer indent limit lets that seed PASS (exit 1 -> 0 — a DETECTION flip)',
+    indentMiss.exit === 0 && /0 range summaries checked/.test(indentMiss.out),
+    `exit ${indentMiss.exit}`,
   )
 
   // NO SEPARATOR CAN HIDE A BLOCK (the family, swept). Each of these separates a
@@ -1780,7 +1859,7 @@ console.log('===========================================================')
     midLineOutside.exit === 0 && /1 fenced block\(s\) read/.test(midLineOutside.out),
     `exit ${midLineOutside.exit}`,
   )
-  const readsMidLineMarkers = mutatedGuard([['const marker = /^\\s*(`{3,}|~{3,})(.*)$/.exec(line)', 'const marker = /.*(`{3,}|~{3,})(.*)$/.exec(line)']])
+  const readsMidLineMarkers = mutatedGuard([['const marker = /^(\\s*)(`{3,}|~{3,})(.*)$/.exec(line)', 'const marker = /^(.*)(`{3,}|~{3,})(.*)$/.exec(line)']])
   const midLineMiss = run((ctx) => {
     cleanRoot()(ctx)
     ctx.write('.scratch/v28/reports/zz-raw.md', midLineSeed)
@@ -1789,6 +1868,34 @@ console.log('===========================================================')
     'MUTATION: reading a mid-line marker makes that content FIRE (exit 0 -> 1) — reading markers only at line start is what keeps it out',
     midLineMiss.exit === 1 && /covers 7 entries/.test(midLineMiss.out),
     `exit ${midLineMiss.exit}`,
+  )
+
+  // THE FENCE PARSER AGAINST A REFERENCE (this round's Repair 2). Three rounds were
+  // spent because the parser's conformance to CommonMark lived only in prose: the
+  // instrument said "as markdown says" and nothing tested it. The table in
+  // `fence-conformance.fixture.json` carries fence cases and the content boundaries
+  // the reference CommonMark implementation derives (its header records the versions
+  // and the derivation command); this block runs the guard's OWN parser over each
+  // and fails on any divergence. A fixture whose expectations came from a reference
+  // is evidence; one typed from a reading of the spec is a second opinion.
+  const fixture = JSON.parse(readFileSync(join(import.meta.dirname, 'fence-conformance.fixture.json'), 'utf8'))
+  const parseFence = guardFenceParser()
+  check(
+    'the fence-closure fixture holds cases (an empty table would pass over nothing — D-030)',
+    fixture.cases.length > 0,
+    `${fixture.cases.length} case(s)`,
+  )
+  let fenceDivergences = 0
+  for (const c of fixture.cases) {
+    const got = parseFence(c.source.split('\n')).map((b) => [b.content, b.end])
+    const ok = JSON.stringify(got) === JSON.stringify(c.blocks)
+    if (!ok) fenceDivergences += 1
+    check(`fence fixture: ${c.name}`, ok, `guard ${JSON.stringify(got)} vs reference ${JSON.stringify(c.blocks)}`)
+  }
+  check(
+    "the guard's own parser diverges from the reference on NO case in the table",
+    fenceDivergences === 0,
+    `${fenceDivergences} divergence(s)`,
   )
 
   // THE CLAIM GATE AT ZERO COMPARISONS (review NB-d). The summary publishes
