@@ -880,3 +880,188 @@ documents the slice's browser legs.
   absorbed by re-derivation, as round 2's rule now says.
 - **No test or guard weakened.** The new rule ADDS a failure mode (and its own check proves it can fail); the
   `avatarUrl` legs kept their strictness and gained a measured ceiling.
+
+# FIX ROUND 4 (appended 2026-10-02)
+
+**Commits this round:** one commit, `scripts/guards/factory-guard.mjs` + `scripts/guards/factory-guard.check.mjs`
++ this section. `factory/`, the ledger and every other lane's report are untouched.
+
+Round-4 review: **NEEDS_CHANGES**, 2 blocking (both in the rule added last round) + 7 non-blocking. Round-4
+verify: **PASS** (93 checks, baseline 435/669 with 0 coverage loss, scanner position-set-equal to
+`@babel/parser`). This round is the reviewer's two blockers, the zero case it adjudicated, and the verifier's
+adversarial sweep — all inside `checkRawBlockSummaries` and its checks.
+
+## FR4-1. BLK-1 — a range SEEN and not COMPARED is a FINDING now, not a published pass
+
+The old loop incremented its "range summaries checked" counter **before** resolving the count word, then
+`continue`d when the word was outside `WORDS` (`one`…`twelve`). So `(all thirteen legs)` was counted as
+checked, skipped, and the run still published *"every step-range summary … agrees with its own `all N` count"*
+with exit 0. The mechanism is now: resolve the count **first**; a count this rule cannot resolve to a number is
+a finding in its own right, so the claim list (which is only printed when there are no findings) can never name
+a comparison that did not run. `WORDS` was NOT widened — an unknown count word fails loudly, which is the
+"did not look, reported health" case the batch exists for. Measured on a throwaway root, current guard vs HEAD,
+same three-seed file (A = `all thirteen` on a 7–13 range, B = a label with no block, C = an **indented**
+raw block with `all six` on a 7–13 range):
+
+```
+=== HEAD GUARD (before) ===
+  note — transcript-summary-agrees: 1 block(s) introduced as raw:/verbatim read, 1 range summary checked
+PASS — the registry can be trusted and no work item claims evidence it does not have.
+EXIT=0
+
+=== CURRENT GUARD ===
+  note — transcript-summary-agrees: 2 raw-labelled block(s) read, 1 range summary checked
+  FINDING [transcript-summary-agrees]: .scratch/v28/reports/zz-seeds.md:9: a raw block's summary line states a count this rule cannot resolve to a number: "(all thirteen" — a range SEEN and not compared is a finding, not a pass
+  FINDING [transcript-summary-agrees]: .scratch/v28/reports/zz-seeds.md:23: a raw block's summary line covers 7 entries (7–13) but states "(all six" — a block claiming to be raw must reproduce its own arithmetic
+  FINDING [transcript-summary-agrees]: .scratch/v28/reports/zz-seeds.md:14: a line introduces a block as raw:/verbatim but no captured-output block was attributed to it: "proof — raw:" — a label this rule saw and did not read
+FAIL — 3 factory finding(s).
+EXIT=1
+```
+
+That pair is the whole round in one paste: HEAD reads **1** of the three blocks, counts the unresolvable
+comparison as checked, and publishes the claim — PASS. The current rule reads 2, compares 1, and fails loudly.
+
+## FR4-2. BLK-2 — the coverage number was wrong in both directions; all three parts fixed
+
+1. **Count what was actually read.** The old `blocks` counted fences whose *nearest non-empty line above*
+   contained the substring `raw:`/`verbatim` — 11 on the live corpus, of which **5 were prose** ("the mutation
+   anchors still exist verbatim at HEAD …" and four like it) and **3 real labelled blocks were not read at
+   all**. A label is now a line whose LAST token is the token (`… raw:` / `Verbatim:` / `… raw:**`), a block is
+   fenced code, Markdown indented code, or a fence with the label inline, and the printed number is blocks
+   **read**: **11 → 8** on the live corpus, all 8 real, none prose.
+2. **Associate a label with its fence across prose.** The introducing label is now the nearest label above a
+   block within `INTRO_LINES` (12) lines and outside the previous block — not "the last non-empty line within
+   4". One prose line between label and fence used to leave the identical fabrication **unlabelled while the
+   run said NOTHING was checked**; it is now read and caught. A label further than 12 lines above its block is
+   a **finding** (below), so the window cannot narrow silently either.
+3. **An indented raw block is read.** `slice-8a-verify.md`'s transcript stood as a 4-space indented code block
+   with no fence; the old `/^\s*```/` walk could not see it. Indented runs (a 4-space/tab-indented line after a
+   blank one) are block regions now, and the live corpus's one such block is read (`8 raw-labelled block(s)`
+   includes it). Escape (3) from the sweep — a label ≥4 blank lines above its fence — is closed by (2).
+
+## FR4-3. The zero case — the reviewer's narrow tripwire, implemented, with its price measured
+
+**Watch the LABEL set: a label attributed to NO block is a finding.** That is the mechanism now. Its purpose is
+the D-030 invariant at this rule's own granularity: "no raw block exists here" and "raw blocks I failed to
+attribute" must not look alike, and no parse-window narrowing may turn a fabrication silent — the zero case is
+unreachable while any label is unread. A fourth zero-check path in this file, and it is closed here rather than
+registered for 8b, which is the reviewer's ruling and the right one.
+
+**The cost, measured both ways** (throwaway mutant guards + the committed harness):
+
+```
+blunt tripwire  (fire when ranges === 0):  31 of 104 checks break
+narrow tripwire (label with no block):      0 of 104 checks break   <- shipped
+```
+
+The committed 93 check names are all in that 104 and all pass, so **0 of 93** is confirmed at this tree.
+
+**A declared deviation from the reviewer's literal form, and its price.** The literal form ("a label line
+attributed to no fence") fires on the live corpus: 16 label lines match the exact label form, 8 are attributed
+and read, and the other 8 sit in **briefs** where the label introduces a **blockquote** — prose quoting prose,
+not captured output. Firing there would make the guard red on other lanes' briefs, i.e. commit a gate that is
+red on its own repo. So the tripwire exempts a label whose next non-blank line begins `>` and the exempted shape
+is named in the ceiling. The price is stated: a label that introduces a quotation and no code block is not a
+fire. Everything else — a label with no block at all, a label more than 12 lines above its block, a label whose
+fence is not attributed — is a finding, proven by seed + mutation + control (FR4-6).
+
+## FR4-4. The verifier's four undeclared escapes — three closed, one named
+
+| # | escape | ruling | how |
+|---|---|---|---|
+| 1 | a count word **above twelve** | **CLOSED** | FR4-1: an unresolvable count is a finding (the review's `all thirteen` seed is now a check) |
+| 2 | a **fence-inline** label (``` ```raw: ``` as the opening line) | **CLOSED** | the fence's own line is tested for the label, so the block is read (new check) |
+| 3 | a label **≥4 blank lines above** the fence | **CLOSED** | `INTRO_LINES` (12) is read through; beyond it the label tripwire fires (pinned by a mutation check) |
+| 4 | **any block outside top-level `reports/*.md` + `briefs/*.md`** | **NAMED**, not closed | the ceiling now states the scan set in words; widening it is not this rule's to do |
+
+The other escapes the sweep found (`through`/`to`/`..`, a phrase with no `all`, a count split across two lines,
+`PASS` without `✓`, other label spellings) stay declared in the ceiling, as the brief instructed.
+
+## FR4-5. The verifier's own first draft tripped the rule — quoted as a known tension, with the absorber
+
+The strongest single piece of evidence that this rule is non-vacuous is that the round-4 verification report's
+**first write** failed the gate, because it rendered the probe seed faithfully — a label directly above its
+fence. That is now written into the rule's docblock as a **known tension (use vs mention)**, so the next author
+meets it there rather than rediscovering it. There is no mechanism here that can separate a quotation from a
+use; the cheap absorber is in the report's hands and is stated: introduce the quoted block with wording that
+does **not END** in the label token (describe it, or `raw, quoted:`), or drop the label line. This section obeys
+its own rule — the seed above is described and the transcripts are introduced with `=== … ===` headings.
+
+## FR4-6. Seed + mutation + control for every new path (93 → 104 checks)
+
+```
+  ✓ a raw block's step range contradicting its own count is CAUGHT (transcript-summary-agrees)
+  ✓ MUTATION: dropping the range/count agreement lets that seed PASS (so the check can fail)
+  ✓ control: the same raw block with its count RIGHT passes (so the rule is not just a fence detector)
+  ✓ an out-of-vocabulary count word (all thirteen) is CAUGHT, not skipped
+  ✓ MUTATION: an unresolvable count assumed to agree lets that seed PASS (so the check can fail)
+  ✓ control: the same range with its count as a DIGIT passes (so the rule is not "big words fail")
+  ✓ a raw:/verbatim label with no block to read is CAUGHT (the label tripwire)
+  ✓ MUTATION: dropping the label tripwire lets that seed PASS (so the check can fail)
+  ✓ control: a label with a block passes, and the note states what it READ (2 blocks, 1 range summary)
+  ✓ a label one PROSE line above its fence is still read, and the fabrication CAUGHT
+  ✓ MUTATION: narrowing the intro window turns that CAUGHT comparison into the tripwire (so the width is pinned)
+  ✓ an INDENTED raw block is READ, and its contradiction is CAUGHT
+  ✓ MUTATION: dropping indented-block detection reads 0 blocks and lets the fabrication hide (tripwire instead)
+  ✓ a fence-INLINE label is READ, and its contradiction is CAUGHT
+factory-guard check: all 104 checks passed.
+```
+
+The three mutation anchors, run standalone against one-seed roots (raw):
+
+```
+--- MUTANT: unresolvable count assumed to agree, seed A ---
+  note — transcript-summary-agrees: 1 raw-labelled block(s) read, 1 range summary checked
+  ok — … every step-range summary inside a raw-/verbatim-labelled block agrees with its own "all N" count …
+PASS   exit=0                       <- the BLK-1 bug reproduced by mutation
+
+--- MUTANT: tripwire disabled, seed B ---
+  note — transcript-summary-agrees: 0 raw-labelled block(s) read, 0 range summaries checked — NOTHING was checked
+PASS   exit=0                       <- the silent zero reproduced by mutation
+
+--- MUTANT: indented detection off, seed C ---
+  note — transcript-summary-agrees: 0 raw-labelled block(s) read, 0 range summaries checked — NOTHING was checked
+  FINDING [transcript-summary-agrees]: …:1: a line introduces a block as raw:/verbatim but no captured-output block was attributed to it … — a label this rule saw and did not read
+FAIL   exit=1                       <- the block cannot hide: the tripwire names the label it did not read
+```
+
+**The verifier's residual — the INPUT number asserted by nothing — is closed** by the witness control: a
+two-block seed must make the note say exactly `2 raw-labelled block(s) read, 1 range summary checked`, so a
+narrowed parse window that silently reads fewer blocks fails a check instead of hiding behind a zero.
+
+## FR4-7. Verification at this tree (raw)
+
+```
+$ npm run verify
+EXIT=0
+ Test Files  71 passed (71)
+      Tests  2063 passed (2063)
+warning lines=81 error lines=0
+  ok — AGENTS.md (1789 words, ceiling 1800)
+PASS — steering layer is clean.
+  note — transcript-summary-agrees: 8 raw-labelled block(s) read, 0 range summaries checked — NOTHING was checked: no range summary inside a raw-labelled block exists in this scan
+GUARDS: PASS — all deterministic rules hold.
+
+$ bash scripts/guards/run-all.sh     -> exit 0, GUARDS: PASS — all deterministic rules hold.
+$ bash scripts/steering-lint.sh      -> exit 0, PASS — steering layer is clean.
+$ node scripts/guards/factory-guard.check.mjs  -> exit 0, all 104 checks passed (104 ✓, 0 ✗)
+$ node scripts/guards/factory-guard.mjs        -> exit 0, 8 raw-labelled block(s) read, 0 findings
+```
+
+**Test delta: 2063 → 2063 (ZERO)** — the round changed two guard files and this report; no test file, no e2e
+file, no `src/` file moved. **Baseline: untouched** — the round changed no report/brief count or provenance sha
+on the live corpus (the run's own `baseline holds 669 recorded occurrence(s)` and `10 recorded
+unresolvable-sha record(s) absorbed` are unchanged), so no re-derivation was needed and none was done.
+**Live-corpus delta, accounted:** the rule's note moved `11 block(s) … 0 ranges` → `8 raw-labelled block(s)
+read, 0 ranges`; the 3 lost were prose false-attributions, the 3 gained are the previously unread real blocks
+(2 fenced, 1 indented). Findings: **0** before and after.
+
+## FR4-8. Not done, with the reason
+
+- **`factory/` untouched**; the ledger and both round-4 lane reports untouched.
+- **The `factory-guard.mjs` no-report-dirs early return** still omits `rawSummaryLines`, so the new rule does
+  not run (and does not say so) on a root with no reports. That path is the pre-existing one registered for 8b;
+  it is one level up from the zero path this round closed, and the brief scoped this round to the rule's own.
+- **The scan set is not widened** — escape (4) is named in the ceiling, not closed.
+- **No test or guard weakened.** The round removed a false claim and added three failure modes, each with its
+  own mutation-proven check.

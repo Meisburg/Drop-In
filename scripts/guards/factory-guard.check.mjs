@@ -1215,7 +1215,7 @@ console.log('===========================================================')
     raw.exit === 1 && /transcript-summary-agrees/.test(raw.out),
     `exit ${raw.exit}`,
   )
-  const noRawSummaries = mutatedGuard([['if (count === undefined || count === span) continue', 'if (true) continue']])
+  const noRawSummaries = mutatedGuard([['if (count === span) continue', 'if (true) continue']])
   const rawMiss = run((ctx) => {
     cleanRoot()(ctx)
     ctx.write('.scratch/v28/reports/zz-raw.md', rawSeed)
@@ -1233,6 +1233,159 @@ console.log('===========================================================')
     'control: the same raw block with its count RIGHT passes (so the rule is not just a fence detector)',
     rawControl.exit === 0,
     `exit ${rawControl.exit}`,
+  )
+
+  // A count OUTSIDE the vocabulary (`all thirteen`) used to be counted as CHECKED
+  // and the rule's claim published over a comparison that never ran. It is now a
+  // finding: a range SEEN and not COMPARED cannot pass.
+  const thirteen = rawSeed.replace('(all six legs)', '(all thirteen legs)')
+  const outOfTable = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', thirteen)
+  }, { args: ['--repo', REPO] })
+  check(
+    'an out-of-vocabulary count word (all thirteen) is CAUGHT, not skipped',
+    outOfTable.exit === 1 && /transcript-summary-agrees/.test(outOfTable.out) && /cannot resolve to a number/.test(outOfTable.out),
+    `exit ${outOfTable.exit}`,
+  )
+  const wordAssumesAgreement = mutatedGuard([['const count = /^\\d+$/.test(word) ? Number(word) : WORDS[word]', 'const count = /^\\d+$/.test(word) ? Number(word) : span']])
+  const outOfTableMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', thirteen)
+  }, { guard: wordAssumesAgreement, args: ['--repo', REPO] })
+  check(
+    'MUTATION: an unresolvable count assumed to agree lets that seed PASS (so the check can fail)',
+    outOfTableMiss.exit === 0,
+    `exit ${outOfTableMiss.exit}`,
+  )
+  const digitCount = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', thirteen.replace('(all thirteen legs)', '(all 7 legs)'))
+  }, { args: ['--repo', REPO] })
+  check(
+    'control: the same range with its count as a DIGIT passes (so the rule is not "big words fail")',
+    digitCount.exit === 0,
+    `exit ${digitCount.exit}`,
+  )
+
+  // THE LABEL TRIPWIRE — "no raw block exists" must not look like "raw blocks I
+  // failed to attribute". A label the rule saw and read no block for is a finding.
+  const orphanLabel =
+    '# zz-orphan label\n\n' +
+    'proof — raw:\n\n' +
+    'Running 3 tests using 1 worker\n'
+  const orphan = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', orphanLabel)
+  }, { args: ['--repo', REPO] })
+  check(
+    'a raw:/verbatim label with no block to read is CAUGHT (the label tripwire)',
+    orphan.exit === 1 && /transcript-summary-agrees/.test(orphan.out) && /did not read/.test(orphan.out),
+    `exit ${orphan.exit}`,
+  )
+  const noTripwire = mutatedGuard([['const unreadLabel =', 'const unreadLabel = false &&']])
+  const orphanMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', orphanLabel)
+  }, { guard: noTripwire, args: ['--repo', REPO] })
+  check(
+    'MUTATION: dropping the label tripwire lets that seed PASS (so the check can fail)',
+    orphanMiss.exit === 0,
+    `exit ${orphanMiss.exit}`,
+  )
+
+  // The witness for the INPUT number, and the tripwire's control: a label WITH a
+  // block is attributed and passed, and the note says how many blocks were READ
+  // and how many compared — so a narrowed parse window cannot hide behind a zero.
+  const twoLabels =
+    '# zz-raw count witness\n\n' +
+    'first — raw:\n\n' +
+    '```\n' +
+    '✓ 7–13 zz-spec.e2e.ts (all seven legs)\n' +
+    '```\n\n' +
+    'second — raw:\n\n' +
+    '```\n' +
+    'nothing to compare here\n' +
+    '```\n'
+  const witness = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', twoLabels)
+  }, { args: ['--repo', REPO] })
+  check(
+    'control: a label with a block passes, and the note states what it READ (2 blocks, 1 range summary)',
+    witness.exit === 0 && /2 raw-labelled block\(s\) read, 1 range summary checked/.test(witness.out),
+    `exit ${witness.exit}`,
+  )
+
+  // The label may sit above a PROSE line, not only directly above its fence. One
+  // prose line between the two used to leave the identical fabrication unlabelled
+  // while the run said NOTHING was checked.
+  const proseCrossed = rawSeed.replace('proof — raw:\n\n```', 'proof — raw:\n\nthe transcript follows.\n\n```')
+  const crossed = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', proseCrossed)
+  }, { args: ['--repo', REPO] })
+  check(
+    'a label one PROSE line above its fence is still read, and the fabrication CAUGHT',
+    crossed.exit === 1 && /covers 7 entries/.test(crossed.out),
+    `exit ${crossed.exit}`,
+  )
+  const narrowWindow = mutatedGuard([['const INTRO_LINES = 12', 'const INTRO_LINES = 1']])
+  const crossedMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', proseCrossed)
+  }, { guard: narrowWindow, args: ['--repo', REPO] })
+  check(
+    'MUTATION: narrowing the intro window turns that CAUGHT comparison into the tripwire (so the width is pinned)',
+    crossedMiss.exit === 1 && /did not read/.test(crossedMiss.out) && !/covers 7 entries/.test(crossedMiss.out),
+    `exit ${crossedMiss.exit}`,
+  )
+
+  // A raw-labelled block written as an INDENTED code block (no fence) used to be
+  // invisible: the rule walked fences only.
+  const indentedSeed =
+    '# zz-indented raw block\n\n' +
+    'proof — raw:\n\n' +
+    '    Running 3 tests using 1 worker\n' +
+    '    ✓ 7–13 zz-spec.e2e.ts (all six legs)\n'
+  const indented = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', indentedSeed)
+  }, { args: ['--repo', REPO] })
+  check(
+    'an INDENTED raw block is READ, and its contradiction is CAUGHT',
+    indented.exit === 1 && /covers 7 entries/.test(indented.out) && /1 raw-labelled block\(s\) read/.test(indented.out),
+    `exit ${indented.exit}`,
+  )
+  const noIndented = mutatedGuard([
+    ["if (/^(\\t| {4,})\\S/.test(line) && (index === 0 || lines[index - 1].trim() === '')) {", "if (/^(\\t| {9999,})\\S/.test(line) && (index === 0 || lines[index - 1].trim() === '')) {"],
+  ])
+  const indentedMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', indentedSeed)
+  }, { guard: noIndented, args: ['--repo', REPO] })
+  check(
+    'MUTATION: dropping indented-block detection reads 0 blocks and lets the fabrication hide (tripwire instead)',
+    indentedMiss.exit === 1 && /0 raw-labelled block\(s\) read/.test(indentedMiss.out) && /did not read/.test(indentedMiss.out),
+    `exit ${indentedMiss.exit}`,
+  )
+
+  // A fence-INLINE label (the fence's own line carries it) is read, rather than
+  // escaping because the label is not on a line of its own.
+  const inlineSeed =
+    '# zz-fence-inline label\n\n' +
+    '```raw:\n' +
+    'Running 3 tests using 1 worker\n' +
+    '✓ 7–13 zz-spec.e2e.ts (all six legs)\n' +
+    '```\n'
+  const inline = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', inlineSeed)
+  }, { args: ['--repo', REPO] })
+  check(
+    'a fence-INLINE label is READ, and its contradiction is CAUGHT',
+    inline.exit === 1 && /covers 7 entries/.test(inline.out),
+    `exit ${inline.exit}`,
   )
 }
 
