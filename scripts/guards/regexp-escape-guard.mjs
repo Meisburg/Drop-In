@@ -80,8 +80,8 @@
  * Behavior is proven by `regexp-escape-guard.check.mjs` — seeded sixth copies
  * in e2e/ AND in scripts/, a `.scratch` copy, `.vitest` at the root and nested,
  * a `.d.mts` and a `.d.cts` copy, a deleted implementation, a lone copy in the
- * wrong file. It prints its own case count rather than quoting one here, because
- * a typed count in this header went stale once already. run-all.sh runs it in
+ * wrong file. It prints its own case count rather than quoting one here: the
+ * printed line is the fact, a map in a comment is not. run-all.sh runs it in
  * the same gate.
  *
  * Usage:  node scripts/guards/regexp-escape-guard.mjs [root]

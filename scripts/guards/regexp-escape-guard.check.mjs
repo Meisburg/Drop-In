@@ -35,15 +35,20 @@
  *  10. a ZERO count FAILS — delete the implementation and the guard refuses,
  *      instead of reporting a clean tree it cannot actually see;
  *  11. ONE copy in the WRONG file FAILS — the count alone is not the rule; the
- *      location is.
+ *      location is;
+ *  12. the sandbox is RESTORED and green again — case 10 deleted the
+ *      implementation, so this is the case that says the seed-and-restore
+ *      sequence left no residue: a green sandbox here is a statement about the
+ *      repo, not about the seeds.
  *
  * Run: node scripts/guards/regexp-escape-guard.check.mjs
  * Exit 0 = check passes, 1 = the guard is not doing its job.
  *
- * The number in the summary line is COUNTED at run time (`ran`), not typed. A
- * hand-typed total here went stale in fix round 1 ("all 9 checks passed" out of
- * a script that had grown), so the script no longer states a count it did not
- * produce. The numbered list above is the map; the printed line is the fact.
+ * The number in the summary line is COUNTED at run time (`ran`), not typed. What
+ * used to be typed here was a hand-maintained total (`c2ec32e`): it matched the
+ * script at that commit, and fix round 2 replaced it with the derived count when
+ * the script had grown past it (`04921d8`). The numbered list above is the map;
+ * the printed line is the fact.
  */
 
 import { execSync } from 'node:child_process'
@@ -78,6 +83,9 @@ const run = () => {
 }
 let failures = 0
 let ran = 0
+// Set when the wrapped git step (the case-4 PREMISE) failed — the summary line
+// has to be able to tell an environment failure apart from a broken guard.
+let premiseFailed = false
 const check = (name, ok, detail = '') => {
   ran += 1
   if (ok) {
@@ -145,17 +153,34 @@ try {
   const scratchSeed = path.join(sandbox, '.scratch', 'zz-probe.mjs')
   mkdirSync(path.dirname(scratchSeed), { recursive: true })
   writeFileSync(scratchSeed, seedBody('escapeScratch'))
+  // `execSync`'s own message names the COMMAND, never git's reason for refusing:
+  // it reads "Command failed: git init -q && git add -f .scratch/zz-probe.mjs",
+  // and the reason lives on stderr. stderr is only captured when stdio says so —
+  // left at its default, git's `fatal:` line goes straight to this process's
+  // stderr and the thrown error has nothing to report. Both calls below pin
+  // stdio for that reason, and the ✗ line quotes git's own last stderr line.
+  const gitReason = (e) => {
+    const stderr = String(e?.stderr ?? '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .pop()
+    // No stderr at all (git absent, spawn failure) — then the command name is
+    // the only thing that exists to report, and it is better than nothing.
+    return stderr || String(e?.message ?? e).split('\n')[0]
+  }
   let premise = { tracked: false, note: '' }
   try {
-    execSync('git init -q && git add -f .scratch/zz-probe.mjs', { cwd: sandbox, stdio: 'pipe' })
-    const listed = execSync('git ls-files .scratch/zz-probe.mjs', { cwd: sandbox, encoding: 'utf8' }).trim()
+    execSync('git init -q && git add -f .scratch/zz-probe.mjs', { cwd: sandbox, stdio: ['ignore', 'pipe', 'pipe'] })
+    const listed = execSync('git ls-files .scratch/zz-probe.mjs', { cwd: sandbox, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
     premise = { tracked: listed === '.scratch/zz-probe.mjs', note: `git ls-files -> "${listed}"` }
   } catch (e) {
-    premise = { tracked: false, note: `git step failed: ${String(e && e.message ? e.message : e).split('\n')[0]}` }
+    premise = { tracked: false, note: `git step failed: ${gitReason(e)}` }
   }
+  premiseFailed = !premise.tracked
   check(
     'PREMISE: the .scratch seed is TRACKED — the state the header\u2019s uncounted-hole sentence describes (not a verdict about the guard)',
-    premise.tracked,
+    !premiseFailed,
     `${premise.note || 'no output'} \u2014 case 5 still runs either way, because the guard never consults git`,
   )
 
@@ -220,6 +245,17 @@ console.log()
 if (failures === 0) {
   console.log(`regexp-escape-guard check: all ${ran} checks passed.`)
   process.exit(0)
+}
+// A wrapped environment premise is not a verdict about the guard. Saying "the
+// guard is not doing its job" when git was the only thing that failed sends a CI
+// reader to the wrong artifact. Exit stays 1 either way: a run whose premise did
+// not hold is not a green run.
+if (failures === 1 && premiseFailed) {
+  console.error(`regexp-escape-guard check: ${failures} check(s) failed — the wrapped git PREMISE, not the guard.`)
+  console.error('Every case about the guard\u2019s own behavior passed; what failed is the environment the premise')
+  console.error('needs (git\u2019s own message is on the ✗ line above). Fix the environment, re-run, and read the')
+  console.error('count again — this red is not a broken guard, but it is not a pass either.')
+  process.exit(1)
 }
 console.error(`regexp-escape-guard check: ${failures} check(s) failed — the guard is not doing its job.`)
 process.exit(1)

@@ -256,6 +256,52 @@ console.log('===========================================================')
   check('the acknowledged gap passes (control)', control.exit === 0, `exit ${control.exit}`)
 }
 
+// 14. instrument-headers-honest — a header is the statement of what the guard
+//     covers, so a header that types a count of its own cases goes stale the
+//     moment the file grows, and a header that claims its own prose changed with
+//     no commit to check is the claim that turned out false. Three roots: the
+//     typed count, that exact sentence, and a control that keeps both the
+//     vocabulary and the number out of it by pointing at a commit.
+{
+  const TYPED = '#!/usr/bin/env node\n// zz-seeded — all 9 checks passed on a clean tree.\nprocess.exit(0)\n'
+  const HISTORY =
+    '#!/usr/bin/env node\n// zz-seeded — a typed count in this header went stale once already.\nprocess.exit(0)\n'
+  const HONEST = '#!/usr/bin/env node\n// zz-honest — prints its own totals at run time; the map of what it covers is\n// the numbered list in the usage line.\nprocess.exit(0)\n'
+  const HONEST_POINTED =
+    '#!/usr/bin/env node\n// zz-honest-pointed — the typed count in this header used to be wrong and was corrected at c2ec32e.\nprocess.exit(0)\n'
+
+  const typed = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('scripts/guards/zz-seeded.mjs', TYPED)
+  })
+  check(
+    'a header that types a count of its own cases is CAUGHT',
+    typed.exit === 1 && /instrument-headers-honest/.test(typed.out),
+    `exit ${typed.exit}`,
+  )
+
+  const history = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('scripts/guards/zz-seeded.mjs', HISTORY)
+  })
+  check(
+    'a header claiming its own text changed with no commit to check is CAUGHT',
+    history.exit === 1 && /instrument-headers-honest/.test(history.out),
+    `exit ${history.exit}`,
+  )
+
+  // Control: the second header carries BOTH the count vocabulary and a
+  // staleness claim, and passes because the claim names the commit that shows
+  // it. The rule is about a resolvable pointer, not about the words — a rule
+  // that fired on the words alone would fire on this repo's own headers.
+  const honest = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('scripts/guards/zz-honest.mjs', HONEST)
+    ctx.write('scripts/guards/zz-honest-pointed.mjs', HONEST_POINTED)
+  })
+  check('the same root with honest headers passes (control)', honest.exit === 0, `exit ${honest.exit}`)
+}
+
 console.log()
 if (failures === 0) {
   // Counted at run time, not typed: a hand-maintained total goes stale here just

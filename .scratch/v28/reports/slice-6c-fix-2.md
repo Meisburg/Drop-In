@@ -27,7 +27,7 @@ Where a finding's stated number did not reproduce, that is said, with the measur
 
 | Finding | Verdict | Status | The measurement it rests on |
 |---|---|---|---|
-| **B1** — `slice-6c.md:267` states "git TRACKS 260 files under `.scratch/`" as the reviewer's measurement; 260 reproduces at no commit and the ledger has no such reviewer measurement | reviewer | **fixed per the ruling — the number is DELETED, not replaced with 262** | `git ls-files .scratch \| wc -l` → 262 at `c484648`, 265 at HEAD; the ledger's reviewer text (`.scratch/v28/briefs/slice-6c-fix-1.md:20`) records "23 tracked `.scratch/**/*.mjs`", never 260. see "B1" below |
+| **B1** — `slice-6c.md:267` states "git TRACKS 260 files under `.scratch/`" as the reviewer's measurement; 260 reproduces at no commit and the ledger has no such reviewer measurement | reviewer | **fixed per the ruling — the number is DELETED, not replaced with 262** | `git ls-files .scratch \| wc -l` → 262 at `c484648`, 265 at `0205c8d`; the ledger's reviewer text (`.scratch/v28/briefs/slice-6c-fix-1.md:20`) records "23 tracked `.scratch/**/*.mjs`", never 260. see "B1" below |
 | **N1** — `docs/agents/code-structure.md:100-101` puts words in two lanes' mouths that only `ocr` said | reviewer | **fixed** — `ocr` quoted verbatim, second lane described as flagging the same duplication | the only wording on record is `.scratch/v28/briefs/slice-6c.md:12-13`; the guard header carried the same false attribution and was fixed the same way — see "N1" below |
 | **N2** — the guard's success line claims "every other caller imports it", which the guard never measures | reviewer | **fixed** — the printed line now states only what the instrument establishes | `onlyCopy` is `hits.length === 1 && hits[0].startsWith(SANCTIONED)`; the callers are real but measured by hand, not by the guard |
 | **N3 / O1 / O3** — case 4's git step pins the premise, not the mechanism, and its unguarded `execSync` can kill cases 5–9 | reviewer + `ocr` | **fixed in the ruled shape** — premise becomes its own named, wrapped check; the guard case asserts only exit + naming; **proven able to fail**, and a git failure still lets cases 5–12 and the summary run | see "N3/O1/O3" |
@@ -68,7 +68,7 @@ $ grep -n "23 tracked" .scratch/v28/briefs/slice-6c-fix-1.md
 ```
 
 The reviewer's own measurement on record is **23 tracked `.mjs`**, never a total: **260 sits at no commit
-in the range** (262 at `c484648`, 259 at `ce3479c`/`32e9f48`, 265 at `c2ec32e`/`0205c8d`/HEAD). So the
+in the range** (262 at `c484648`, 259 at `ce3479c`/`32e9f48`, 265 at `c2ec32e`/`0205c8d`). So the
 paragraph now:
 keeps the 23 (on record and reproducible), **deletes the total**, and points the reader at the guard
 header's SCOPE — which is the one place that carries the number dated, with the command that
@@ -174,6 +174,18 @@ exit=0
 restored: guard f0fc47a07c932e9331dc90dacde0e81e8ac617374d8e34c3a255f488bce08ba -> f0fc47a07c932e9331dc90dacde0e81e8ac617374d8e34c3a255f488bce08ba ; check 6a5aa3d321d2f1479aae833dde818ff6e160fc8ed0ed5ddd9df0a2b992728aeb -> 6a5aa3d321d2f1479aae833dde818ff6e160fc8ed0ed5ddd9df0a2b992728aeb
 ```
 
+**Provenance of the `guard` hash in the four mutation tails of this report** (fix round 3, N4). The
+quoted `guard f0fc47a0…` is the hash of the **pre-edit copy the proofs ran against**, not of HEAD's guard.
+Measured: `sha256sum /tmp/fix2-bak-*/guard.mjs` → four backups, all
+`f0fc47a07c932e9331dc90dacde0e81e8ac617374d8e34c3a255f488bce08aba`; the guard as committed at `04921d8` — and
+at `68080b0`, this round's base — is `34fa7aa50bc16a28d013c26d273ae13222c5528df09650594f9c791c220fd7bb`; and
+`diff -u <(git show 04921d8:scripts/guards/regexp-escape-guard.mjs) /tmp/fix2-bak-root-anchored/guard.mjs | grep -c '^@@'` → **1** hunk, the lane-attribution prose in the WHY paragraph. So the mutated code was
+identical to that commit's guard in everything the cases exercise. The copy also still carries the header
+clause fix round 3 deleted (`grep -c "went stale once already" /tmp/fix2-bak-root-anchored/guard.mjs` → 1),
+which is why the hash is not the one `sha256sum` returns today. The `check` hash `6a5aa3d3…` in these tails
+is byte-exact for `04921d8`; fix round 3's own edits to the check (N2/N3/N5/N6) move that file on, so read it
+as a claim about the commit as well.
+
 That is the whole of requirement 2 and 3 of the ruling in one run: a git failure is **a named failing
 check** (case 4, ✗, with the premise's name in the message), **cases 5–12 still run**, and the summary
 still prints (`1 check(s) failed`, exit 1) instead of a stack trace.
@@ -233,6 +245,9 @@ exit=1
 restored: guard f0fc47a07c932e9331dc90dacde0e81e8ac617374d8e34c3a255f488bce08ba -> f0fc47a07c932e9331dc90dacde0e81e8ac617374d8e34c3a255f488bce08ba ; check 6a5aa3d321d2f1479aae833dde818ff6e160fc8ed0ed5ddd9df0a2b992728aeb -> 6a5aa3d321d2f1479aae833dde818ff6e160fc8ed0ed5ddd9df0a2b992728aeb
 ```
 
+**Provenance (N4).** The `guard f0fc47a0…` above is the pre-edit copy's hash, not HEAD's — the measurement
+is in the provenance note after the first mutation tail of this section.
+
 **Exactly one check fails, and it is the nested one** — the root-level `.vitest` and `.scratch` cases
 stay green, which is precisely `ocr`'s point: an implementation that anchors the skip to the root keeps
 cases 5 and 6 green while the header sentence goes false. Case 7 is a regression test, not decoration.
@@ -266,6 +281,9 @@ exit=1
 restored: guard f0fc47a07c932e9331dc90dacde0e81e8ac617374d8e34c3a255f488bce08ba -> f0fc47a07c932e9331dc90dacde0e81e8ac617374d8e34c3a255f488bce08ba ; check 6a5aa3d321d2f1479aae833dde818ff6e160fc8ed0ed5ddd9df0a2b992728aeb -> 6a5aa3d321d2f1479aae833dde818ff6e160fc8ed0ed5ddd9df0a2b992728aeb
 ```
 
+**Provenance (N4).** The `guard f0fc47a0…` above is the pre-edit copy's hash, not HEAD's — the measurement
+is in the provenance note after the first mutation tail of this section.
+
 The seed is a silent pass (`exit 0`, not named) under the broken list and a caught copy (`exit 1`,
 named) under the real one — the header's closing claim about `.cts` is now pinned, not seeded.
 
@@ -298,6 +316,9 @@ exit=1
 
 restored: guard f0fc47a07c932e9331dc90dacde0e81e8ac617374d8e34c3a255f488bce08ba -> f0fc47a07c932e9331dc90dacde0e81e8ac617374d8e34c3a255f488bce08ba ; check 6a5aa3d321d2f1479aae833dde818ff6e160fc8ed0ed5ddd9df0a2b992728aeb -> 6a5aa3d321d2f1479aae833dde818ff6e160fc8ed0ed5ddd9df0a2b992728aeb
 ```
+
+**Provenance (N4).** The `guard f0fc47a0…` above is the pre-edit copy's hash, not HEAD's — the measurement
+is in the provenance note after the first mutation tail of this section.
 
 ## O5 — the seed scaffold
 

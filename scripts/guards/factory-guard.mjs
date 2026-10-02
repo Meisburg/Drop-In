@@ -40,6 +40,10 @@
 //   independence-satisfiable  a lane requiring same_model:false has a second
 //                         model that clears its floor, or says in writing that
 //                         it does not — independence is not a slogan
+//   instrument-headers-honest  a guard's header block states only what a reader
+//                         can point at: the counts it reports are derived at run
+//                         time, and a claim about its own text names the commit
+//                         or the line that shows it
 //
 // Usage:  node scripts/guards/factory-guard.mjs [--root <dir>]
 // Exit:   0 = clean, 1 = findings
@@ -268,6 +272,63 @@ function checkAgentModels(config) {
   }
 }
 
+/**
+ * A guard's header is the statement of what the guard covers —
+ * `docs/agents/code-structure.md` names `regexp-escape-guard.mjs`'s header as
+ * authoritative for its scope — so a header that states something other than the
+ * mechanism is a defect a reader acts on. Two shapes have actually gone wrong,
+ * and both are cheap to catch:
+ *
+ *   - a COUNT of the instrument's own cases typed into the header ("all 9 checks
+ *     passed", "12 cases"). The file grows, the sentence does not, and the
+ *     sentence is what a reviewer trusts. Print the derived count instead.
+ *   - a HISTORY claim about the header's own text with nothing that resolves it
+ *     ("a typed count in this header went stale once already" — a sentence whose
+ *     claimed commit does not exist). A commit sha or a `file:line` is what makes
+ *     the claim checkable; without one, a reader has to take it on faith, and the
+ *     pointer has to sit on the line that makes the claim — a header is short,
+ *     and a claim whose evidence is three lines away is the shape that failed.
+ *
+ * The second shape is matched only where the line is about THIS instrument's own
+ * text or numbers (count/number/total/header/sentence/prose/label/map). A header
+ * that says some OTHER file's comment "used to be X" is documentation of the
+ * codebase, not a claim about this header; flagging that would fire the rule on
+ * prose about the repo.
+ */
+const HEADER_TYPED_COUNT = /\d+\s*[-\s]?\s*(?:check|checks|case|cases|test|tests)\b|checks?\s+passed|\ball\s+\d+\s+check/i
+const HEADER_HISTORY = /\b(?:went stale|was once|used to be|has grown)\b/i
+const HEADER_SELF_SUBJECT = /\b(?:count|counts|number|total|header|sentence|prose|label|map)\b/i
+const HEADER_POINTER = /\b[0-9a-f]{7,40}\b|[\w@./-]+:\d+/
+
+function checkInstrumentHeaders() {
+  const dir = join(ROOT, 'scripts', 'guards')
+  if (!existsSync(dir)) {
+    console.log('  note — no scripts/guards under this root; instrument headers unchecked here')
+    return
+  }
+  for (const file of readdirSync(dir).filter((f) => f.endsWith('.mjs'))) {
+    const lines = readFileSync(join(dir, file), 'utf8').split('\n')
+    for (const [index, line] of lines.entries()) {
+      const text = line.trim()
+      // The header block: the leading comment lines, before the first line of
+      // code. `#` covers the shebang; the rest are the block-comment spellings.
+      if (!/^(?:\/\/|\/\*|\*|#)/.test(text)) break
+      if (HEADER_TYPED_COUNT.test(text)) {
+        fail(
+          'instrument-headers-honest',
+          `${file}:${index + 1}: the header types a count of this instrument's own cases — print the count the run derives instead: ${JSON.stringify(text)}`,
+        )
+      }
+      if (HEADER_HISTORY.test(text) && HEADER_SELF_SUBJECT.test(text) && !HEADER_POINTER.test(text)) {
+        fail(
+          'instrument-headers-honest',
+          `${file}:${index + 1}: the header claims its own text changed and names no commit sha or file:line to check it against: ${JSON.stringify(text)}`,
+        )
+      }
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 
 console.log('Factory guard — the scheduler registry and the work state')
@@ -277,12 +338,13 @@ const config = readConfig()
 checkRegistry(config)
 checkWorkItems(config)
 checkAgentModels(config)
+checkInstrumentHeaders()
 
 if (!findings.length) {
   const items = existsSync(join(FACTORY, 'work')) ? readdirSync(join(FACTORY, 'work')).filter((f) => f.endsWith('.json')).length : 0
   const models = Object.keys(config?.models ?? {}).length
   const kinds = Object.keys(config?.task_kinds ?? {}).length
-  console.log(`  ok — ${models} model(s), ${kinds} task kind(s), ${items} work item(s); every floor meetable, every artifact present`)
+  console.log(`  ok — ${models} model(s), ${kinds} task kind(s), ${items} work item(s); every floor meetable, every artifact present, every instrument header stating only what it can point at`)
   console.log()
   console.log('PASS — the registry can be trusted and no work item claims evidence it does not have.')
   process.exit(0)

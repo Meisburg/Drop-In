@@ -269,9 +269,9 @@ directions: `.scratch` is skipped WHOLE while git tracks code files inside it �
 copy seeded in one passed silently while the header called that directory gitignored harness state; and
 `.vitest/`, which IS gitignored, was **not** skipped, so a generated cache file holding the literal
 **failed the lane**. The tracked-file count itself lives in the header's SCOPE, dated, with the command
-that re-measures it (`regexp-escape-guard.mjs`), because it grows with every committed report. This
+that re-measures it — `git ls-files .scratch | wc -l` — because it grows with every committed report. This
 paragraph used to state that count as "the reviewer measured", and it reproduced at no commit — 262 at
-`c484648`, 259 at `ce3479c`/`32e9f48`, 265 at HEAD — with no such reviewer measurement on record, so
+`c484648`, 259 at `ce3479c`/`32e9f48`, 265 at `0205c8d` — with no such reviewer measurement on record, so
 fix round 2 **deleted the number** rather than restating it at today's value. The header and the
 printed scope line state the mechanism (directory names, `.scratch` uncounted and why, `.vitest`
 skipped), `.mts`/`.cts` joined the scanned extensions, and `regexp-escape-guard.check.mjs` pins both
