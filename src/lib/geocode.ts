@@ -8,26 +8,38 @@
  * on ANY failure (network error, non-OK status, empty result) — a failed
  * geocode must never invent coordinates.
  *
- * V20 t06 adds `zipFromAddressQuery`, one Nominatim request that answers
- * with a ZIP instead of a point. V28 slice 5 adds `zipFromAddressQueryBounded`,
- * the first run's area card's (its 5th card, OnboardingPage) use of the same
- * seam: the card-gating lookup is BOUNDED — a Nominatim answer that does not
- * settle in time settles to "absent" (`null`) instead of stalling the card
- * (the pending-state rule's escape), which reveals the card's ZIP fallback
- * rather than leaving the run a wall (decision 6). Both functions share one
- * request builder, so there is exactly one place the User-Agent header, the
- * URL shape and the failure contract live.
+ * TWO EXTRACTIONS, ONE REQUEST. `zipFromResult` and `coordinatesFromResult`
+ * are the pure policies over one Nominatim answer, and `locationFromResult`
+ * pairs them: the area card needs BOTH the ZIP (the value every distance in
+ * the product keys on) and the pin (its own map), and pairing them here is
+ * what makes "one request per distinct address" a property of the seam rather
+ * than a discipline the caller has to remember.
  *
- * FIRST-USE AUDIT (ticket 02) adds the TEST SEAM. `zipFromAddressQuery`'s two
- * outcomes — a resolved address and an unresolved one — are the two paths the
- * area card's fallback note (V28 slice 5) hangs on ("the address could not be
- * matched to a ZIP"), and
- * neither was reachable without the live network: the module had no sibling
+ * V28 slice 4/5: the area card (the first run's last card, OnboardingPage)
+ * runs that lookup through `locationFromAddressQueryBounded`, which is
+ * BOUNDED — a Nominatim answer that does not settle in time settles to
+ * "absent" (`null`) instead of stalling the card (the pending-state rule's
+ * escape), which reveals the card's ZIP fallback rather than leaving the run a
+ * wall (decision 6). `geocodeAddress` (the directory's "See places" path) is
+ * the same seam, unbounded. Every function shares one request builder, so
+ * there is exactly one place the User-Agent header, the URL shape and the
+ * failure contract live.
+ *
+ * V28 r2 slice 8a: the ZIP-ONLY pair (`zipFromResult`'s async wrappers
+ * `zipFromAddressQuery` and `zipFromAddressQueryBounded`) was DELETED —
+ * measured at 8d1170d they had zero production callers, because the card
+ * replaced its zip-only call with the location one in slice 4. `zipFromResult`
+ * itself stays: `locationFromResult` calls it.
+ *
+ * FIRST-USE AUDIT (ticket 02) adds the TEST SEAM. The two outcomes the area
+ * card's fallback note (V28 slice 5) hangs on — a resolved address and an
+ * unresolved one ("the address could not be matched to a ZIP") — were
+ * previously unreachable without the live network: the module had no sibling
  * test, and the only way to exercise the failure was for Nominatim to fail for
- * real. So the policy is now two pure functions over a PRE-FETCHED lookup, and
- * both async functions accept an optional `lookup` (the ONE dependency
- * injected). Production passes nothing and gets the fetch; a test passes a fake
- * and gets the same decision the app would make.
+ * real. So the policy is a pure function over a PRE-FETCHED lookup, and every
+ * async function accepts an optional `lookup` (the ONE dependency injected).
+ * Production passes nothing and gets the fetch; a test passes a fake and gets
+ * the same decision the app would make.
  */
 
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
@@ -142,68 +154,13 @@ export function zipFromResult(query: string, result: NominatimResult | null): st
   return precise ? postcode : null
 }
 
-export async function zipFromAddressQuery(
-  query: string,
-  lookup: AddressLookup = searchFirst,
-): Promise<string | null> {
-  const trimmed = query.trim()
-  if (trimmed === '') return null
-  return zipFromResult(trimmed, await lookup(trimmed))
-}
-
 /**
- * V28 slice 5 — the bounded escape the pending-state rule requires for any
- * lookup that may gate a card: a card that awaits a promise that might never
- * settle (a Nominatim answer stalling on the network) would stall the run,
- * and decision 6 says the run is never a wall. The area card is the run's
- * REQUIRED card (no Skip), so its escape is the rule's first form — a
- * timeout that settles to "absent" (`null`) plus the card's skippable ZIP
- * fallback (the note + the typed zip), never a wait.
- *
- * Races the injected lookup against a timer: a lookup that has not settled
- * in `timeoutMs` settles to `null` (the card reveals the fallback); a fast
- * lookup wins the race and settles to its zip exactly as
- * `zipFromAddressQuery` does. Same seam discipline as the rest of this
- * module — the fetch is injected, and `timeoutMs` is the caller's (tests pass
- * a small value; the page passes `ADDRESS_LOOKUP_TIMEOUT_MS`).
+ * V28 slice 5 — the deadline the area card's bounded address lookup races
+ * against: the pending-state rule's first form (the run is never a wall).
+ * The page passes it to `locationFromAddressQueryBounded`; the sibling tests
+ * pass a small value.
  */
 export const ADDRESS_LOOKUP_TIMEOUT_MS = 10_000
-
-export function zipFromAddressQueryBounded(
-  query: string,
-  timeoutMs: number,
-  lookup: AddressLookup = searchFirst,
-): Promise<string | null> {
-  const trimmed = query.trim()
-  if (trimmed === '') return Promise.resolve(null)
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const deadline = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), timeoutMs)
-  })
-  // Cancel the still-pending timer ONLY when the lookup itself settles —
-  // either outcome: a fast lookup leaves no timer behind, and the rejection
-  // leg cleans up too (it still rethrows — a lookup that rejects before the
-  // deadline is a real failure the caller may see). Clearing it up front
-  // would be the bug this function exists to prevent: with no live timer the
-  // deadline never fires, and a never-settling lookup would stall the race
-  // forever — exactly the wall the pending-state rule forbids.
-  const resolved = zipFromAddressQuery(trimmed, lookup).then(
-    (zip) => {
-      if (timer !== undefined) clearTimeout(timer)
-      return zip
-    },
-    (err) => {
-      if (timer !== undefined) clearTimeout(timer)
-      throw err
-    },
-  )
-  // The race itself: a deadline that fires first settles to "absent" (null)
-  // — the card reveals its ZIP fallback, the run is never a wall. A lookup
-  // that wins the race leaves its loser (the pending, or already-fired,
-  // timer) behind harmlessly: a fired timer is inert, and a never-settling
-  // loser promise is ignored by the race.
-  return Promise.race([resolved, deadline])
-}
 
 /**
  * V28 slice 4 — ONE NOMINATIM RESULT, TWO EXTRACTIONS.
@@ -251,12 +208,14 @@ export async function locationFromAddressQuery(
  * blur: one Nominatim request (the same seam the ZIP lookup used) racing
  * against a deadline, returning BOTH the ZIP and the pin in one result.
  *
- * Same race discipline as `zipFromAddressQueryBounded` above: a lookup that
- * does not settle within `timeoutMs` settles to the null shape (absent is the
- * only honest value — there is no answer to decide from), a fast lookup wins
- * the race, and a lookup that REJECTS still rethrows: a rejection before the
- * deadline is a real failure the caller may see (the card catches it and
- * reveals its ZIP fallback; it never stalls).
+ * The race discipline: a lookup that does not settle within `timeoutMs`
+ * settles to the null shape (absent is the only honest value — there is no
+ * answer to decide from), a fast lookup wins the race, and a lookup that
+ * REJECTS still rethrows: a rejection before the deadline is a real failure
+ * the caller may see (the card catches it and reveals its ZIP fallback; it
+ * never stalls). V28 r2 slice 8a deleted the ZIP-only sibling that used to
+ * carry this paragraph's cross-reference; this is now the module's only
+ * bounded lookup.
  */
 export function locationFromAddressQueryBounded(
   query: string,
@@ -275,12 +234,11 @@ export function locationFromAddressQueryBounded(
       if (timer !== undefined) clearTimeout(timer)
       return result
     },
-    // THE REJECTION LEG CLEANS UP TOO — mirroring the two-arg `.then` the
-    // zip sibling above has: a lookup that rejects before the deadline still
-    // clears its deadline timer (a dangling timer is an invisible defect, the
-    // sibling's `vi.getTimerCount()` pin exists for exactly this), and it
-    // still rethrows — a rejection before the deadline is a real failure the
-    // caller may see.
+    // THE REJECTION LEG CLEANS UP TOO: a lookup that rejects before the
+    // deadline still clears its deadline timer — a dangling timer is an
+    // invisible defect, so the sibling test pins `vi.getTimerCount() === 0` on
+    // this leg — and it still rethrows, because a rejection before the
+    // deadline is a real failure the caller may see.
     (err) => {
       if (timer !== undefined) clearTimeout(timer)
       throw err

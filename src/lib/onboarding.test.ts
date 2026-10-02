@@ -114,4 +114,4 @@ describe('resolveOnboardingGate (the shell gate, ticket 06 cold-load race)', () 
 // exercised by e2e/signup-zip-fallback.e2e.ts (a resolvable address writes
 // the home zip with no typed ZIP; an unresolvable one reveals the ZIP field
 // and the notice), and the card-gating lookup's timeout behavior is pinned
-// here by geocode.test.ts's `zipFromAddressQueryBounded` tests.
+// in geocode.test.ts (`locationFromAddressQueryBounded`'s legs).

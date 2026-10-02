@@ -16,8 +16,9 @@ import { LOGIN_PATH, resolveAuthRedirect } from './auth'
  * slice 3b, so the flag's producer (LoginPage's failed geocode) and its
  * consumer (OnboardingPage's one-shot note) were both dead code, and the
  * fallback note is now the AREA CARD's OWN in-card notice, triggered by the
- * card's bounded address lookup (lib/geocode's `zipFromAddressQueryBounded`)
- * — never a cross-screen flag.
+ * card's bounded address lookup (lib/geocode's
+ * `locationFromAddressQueryBounded` — the one bounded lookup the module has
+ * left; slice 8a deleted its ZIP-only sibling) — never a cross-screen flag.
  */
 
 /** Pinned route path for the post-signup location (zip + radius) step. */

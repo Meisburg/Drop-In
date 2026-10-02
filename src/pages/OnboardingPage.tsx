@@ -214,7 +214,7 @@ function KidRowPhoto({
  * V28 slice 5: that final view IS the area card (4 of 4, the run's last
  * card) — address-first, ZIP as the fallback it reveals (decision 9): the
  * address is the entry (its bounded lookup, lib/geocode's
- * `zipFromAddressQueryBounded` — the pending-state rule's escape for a
+ * `locationFromAddressQueryBounded` — the pending-state rule's escape for a
  * required card with no Skip — resolves it to the home zip without the
  * parent typing a ZIP), an unresolvable address (or a timeout that settled
  * to "absent") reveals the ZIP field + the in-card notice, and a typed ZIP
