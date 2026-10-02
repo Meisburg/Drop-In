@@ -352,6 +352,7 @@ for (const entry of COPY_MODULES) {
   }
   const source = parseModule(file)
   const words = []
+  let constsHere = 0
   for (const name of entry.consts) {
     const init = exportedConstInitializer(source, name)
     if (init === null) {
@@ -370,6 +371,7 @@ for (const entry of COPY_MODULES) {
       continue
     }
     constsRead += 1
+    constsHere += 1
     stringsRead += strings.length
     words.push(...strings)
   }
@@ -391,7 +393,13 @@ for (const entry of COPY_MODULES) {
   claimsRead += declared.length
 
   console.log(`  module: ${entry.module}`)
-  console.log(`  copy consts read: ${entry.consts.length}; declared claims: ${declared.length} (${declared.join(', ') || 'none'})`)
+  // The count printed is the number of consts whose text was actually READ, not
+  // the number the registry names: a label that reports the configuration while
+  // claiming to report the walk is the defect class this batch spent eleven
+  // rounds on, and a const that drops out must show up as a smaller number here.
+  console.log(
+    `  copy consts read: ${constsHere} of ${entry.consts.length} named; declared claims: ${declared.length} (${declared.join(', ') || 'none'})`,
+  )
 
   // 1. A claimed category must EXIST in the taxonomy.
   const missing = allKindSet.size > 0 ? declared.filter((kind) => !allKindSet.has(kind)) : []

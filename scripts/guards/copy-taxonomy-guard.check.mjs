@@ -206,7 +206,7 @@ try {
     clean.exit === 0 &&
       /kinds read: 10; offered: 8; words: 9/.test(clean.out) &&
       /declared claims: 3 \(playground, pool, beach\)/.test(clean.out) &&
-      /copy consts read: 4; declared claims: 3/.test(clean.out),
+      /copy consts read: 4 of 4 named; declared claims: 3/.test(clean.out),
     `exit ${clean.exit}: ${clean.out.split('\n').slice(2, 6).join(' | ')}`,
   )
   check(
@@ -283,9 +283,11 @@ try {
   editFile(TOUR, "export const TOUR_PROGRESS_LABEL = 'All done'", "export const TOUR_PROGRESS_LABEL_X = 'All done'")
   r = run()
   check(
-    'a registered copy const that was renamed is a finding (not a silent drop)',
-    r.exit === 1 && r.out.includes('the copy const "TOUR_PROGRESS_LABEL" is not an exported top-level const'),
-    `exit ${r.exit}: ${findingLines(r.out)}`,
+    'a registered copy const that was renamed is a finding, and the READ count drops with it (not a silent drop)',
+    r.exit === 1 &&
+      r.out.includes('the copy const "TOUR_PROGRESS_LABEL" is not an exported top-level const') &&
+      r.out.includes('copy consts read: 3 of 4 named'),
+    `exit ${r.exit}: ${findingLines(r.out)} | ${r.out.split('\n').filter((l) => l.includes('copy consts read')).join(' | ')}`,
   )
 
   reset()
