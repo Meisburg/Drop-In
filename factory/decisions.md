@@ -831,18 +831,31 @@ came back empty, being consumed as evidence of health.** A failure to measure, r
 
 | # | Where | The empty measurement | Read as |
 |---|---|---|---|
-| 1 | `scheduler.mjs:427-429` (**D-022**) | a health probe that failed → `available === null` | **ADMITTED** — `if (usable !== null && required > usable)` short-circuits, so *an unprobeable machine passes the RAM check the module exists to enforce* |
-| 2 | `factory-guard.mjs:863` (**D-024**) | `git` absent → bare `catch` → `false` | **"unresolvable sha"** — on a machine without git, *every* sha would be condemned |
-| 3 | `copy-taxonomy-guard.mjs:450` (**B3**) | every label collapsed → `scanned words: 0 (none)` | **PASS** — rule 3 never ran, rule 4 matched nothing, and the guard's own header at `:71-72` says *"an instrument that matches nothing looks exactly like a clean repo"* — **which is the precise state it just passed in** |
+| 1 | the scheduler's admission check (**D-022**) | a health probe that failed → `available === null` | **ADMITTED** — the `usable !== null` guard short-circuits, so *an unprobeable machine passes the RAM check the module exists to enforce* |
+| 2 | the sha resolver's bare `catch` (**D-024**) | `git` absent → every lookup fails | **"unresolvable sha"** — on a machine without git, *every* sha would be condemned |
+| 3 | the taxonomy guard's scan set (**B3**) | every label collapsed → `scanned words: 0 (none)` | **PASS** — rule 3 never ran, rule 4 matched nothing, and the guard's own header says *"an instrument that matches nothing looks exactly like a clean repo"* — **which is the precise state it just passed in** |
+| 4 | the SAME guard, one granularity down (**B2b**, found by the round-1 fix review) | only the *declared* kinds collapsed → `scanned words: 6`, three `limit——` lines saying rule 3 checks nothing | **PASS, exit 0** — and the round-1 check *required* that exit to be 0, so the instrument **pinned the class green while fixing it** |
 
 **Instance 3 is the sharpest because the guard REFUTES ITSELF.** Its header names the exact failure mode, and
 then its implementation commits it: there is no tripwire on the scan set, so a zero-word scan reports clean.
+
+**Instance 4 is the one to remember.** The fix for instance 3 added a tripwire on *the whole scan set* and left
+the next set — the declared kinds that rule 3 actually tests — with no tripwire at all. **The repair repeated
+the class one level down, and shipped a check that asserted the repetition was correct.** That is the general
+hazard: *an invariant declared at one granularity is a claim at every other granularity.* When you fix one of
+these, the question to ask is not "is this set empty?" but **"which set did I just stop watching?"**
 
 **The rule for every instrument in this repo, now written down:** **zero and `null` are findings, never passes.**
 An instrument that scanned nothing, probed nothing, or resolved nothing has not established health — it has
 established that it did not look. Whatever produced the empty set must be reported, and the run must fail.
 This is the same invariant as the module's own stated contract (`null` is *unknown*, never *fine*) — the
-scheduler inverted it (D-022), the sha resolver inverted it (D-024), and now the taxonomy guard inverted it.
+scheduler inverted it (D-022), the sha resolver inverted it (D-024), and twice now the taxonomy guard has.
+
+**On pointers in this file (B1b, the review that found instance 4 found this too):** the first draft of this
+entry cited line numbers for three of the four instances, and **the fix it described moved two of them** — a
+stale pointer, written by the hand that named the class. **Decisions are read after the code moves, so a line
+number in a decisions entry is a claim with a shelf life.** Per D-028 they are **deleted, not corrected**: this
+entry names *what* each site is, never *where* it is. The file, the symbol, or the sentence carries enough.
 
 **Consequence for the hardening set:** D-022's one-line fix, D-024's cluster, and B3 are **one repair in three
 places**, and B3 ships with the slice because it is a mechanism defect with a live refutation in its own header.
