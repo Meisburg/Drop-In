@@ -73,6 +73,28 @@ function run(mutate, { guard = GUARD, args = [], report = true } = {}) {
  * anchor that no longer exists is a silent no-op, and a silent no-op would make
  * every mutation check below pass vacuously.
  */
+/** A throwaway copy of the guard with a named `new Map([...])` literal EMPTIED,
+ * and optionally one anchor replaced by `if (false) {`. Emptying a map is the
+ * seam a textual anchor cannot reach — the body is hundreds of lines — and it is
+ * the only way to reach the EMPTY-RECORD state the run must not pass over
+ * (D-030). */
+function emptyMapCopy(mapVar, alsoNeuter = '') {
+  let text = readFileSync(GUARD, 'utf8')
+  const re = new RegExp(`(const ${mapVar} = new Map\\(\\[)[\\s\\S]*?(\\]\\))`)
+  if (!re.test(text)) throw new Error(`map ${mapVar} not found`)
+  text = text.replace(re, '$1$2')
+  if (alsoNeuter) {
+    const hits = text.split(alsoNeuter).length - 1
+    if (hits !== 1) throw new Error(`anchor occurs ${hits} time(s), not once: ${JSON.stringify(alsoNeuter)}`)
+    text = text.split(alsoNeuter).join('if (false) {')
+  }
+  const dir = mkdtempSync(join(os.tmpdir(), 'factory-guard-emptied-'))
+  SCRATCH_DIRS.push(dir)
+  const path = join(dir, 'factory-guard.emptied.mjs')
+  writeFileSync(path, text)
+  return path
+}
+
 const SCRATCH_DIRS = [] // mutant copies AND scratch roots — not only mutants (D-024)
 function mutatedGuard(replacements) {
   let text = readFileSync(GUARD, 'utf8')
@@ -1364,6 +1386,33 @@ console.log('===========================================================')
     )
   }
 
+  // THE ROUND-1 SWEEP'S REMAINING SHAPES, now harness-seeded (review NB5): round
+  // 1 measured eleven separations and the harness carried five of them. These are
+  // the other six, each a seed plus the same detection mutation.
+  const sweepShapes = {
+    'an indented line between': '# zz\n\nproof — raw:\n\n    an indented line between\n\n```\n✓ 7–13 zz-spec.e2e.ts (all six legs)\n```\n',
+    'an HTML comment between': '# zz\n\nproof — raw:\n\n<!-- a comment between -->\n\n```\n✓ 7–13 zz-spec.e2e.ts (all six legs)\n```\n',
+    'two labels before one fence': '# zz\n\nproof — raw:\n\nanother — raw:\n\n```\n✓ 7–13 zz-spec.e2e.ts (all six legs)\n```\n',
+    'the block in a ~~~ fence only': '# zz\n\nproof — raw:\n\n~~~text\n✓ 7–13 zz-spec.e2e.ts (all six legs)\n~~~\n',
+    'a label on the ~~~ fence line': '# zz\n\n~~~raw:\n✓ 7–13 zz-spec.e2e.ts (all six legs)\n~~~\n',
+    'a label on the ``` fence line': '# zz\n\n```raw:\n✓ 7–13 zz-spec.e2e.ts (all six legs)\n```\n',
+  }
+  for (const [shape, seed] of Object.entries(sweepShapes)) {
+    const caught = run((ctx) => {
+      cleanRoot()(ctx)
+      ctx.write('.scratch/v28/reports/zz-raw.md', seed)
+    }, { report: false, args: ['--repo', REPO] })
+    const missed = run((ctx) => {
+      cleanRoot()(ctx)
+      ctx.write('.scratch/v28/reports/zz-raw.md', seed)
+    }, { guard: assumesAgreement, report: false, args: ['--repo', REPO] })
+    check(
+      `round-1 sweep shape, now seeded: ${shape} does NOT hide the block — CAUGHT, and the mutant PASSES`,
+      caught.exit === 1 && /covers 7 entries/.test(caught.out) && missed.exit === 0,
+      `caught exit ${caught.exit} / mutant exit ${missed.exit}`,
+    )
+  }
+
   // THE DECLARED COST (D-032). A fenced block that QUOTES a bad transcript FIRES.
   // That is the price of having no association to break: there is no exemption to
   // construct an escape out of, and a run that quotes will say so.
@@ -1443,7 +1492,7 @@ console.log('===========================================================')
     ctx.write(BASELINED_PATH, baselinedSeed)
   }, { report: false, args: ['--repo', REPO] })
   check(
-    'a RECORDED quotation site is absorbed — the baseline absorbs it, not its shape',
+    'the DECLARED path-occupancy boundary: the recorded text AT a recorded path is absorbed (the record cannot tell a quotation there from a fabrication that copied the citation — see the rule header)',
     absorbedRun.exit === 0 && /quotation baseline holds 2 recorded site\(s\)/.test(absorbedRun.out),
     `exit ${absorbedRun.exit}`,
   )
@@ -1512,6 +1561,43 @@ console.log('===========================================================')
     'MUTATION: a count-free lookup absorbs the second occurrence too (exit 1 -> 0 — a DETECTION flip)',
     twiceMiss.exit === 0,
     `exit ${twiceMiss.exit}`,
+  )
+
+  // THE RECORD CANNOT BE EMPTY (BLK2 / D-030). `0 of 0` used to print the greenest
+  // value over the maximal version of the failure the coverage clause exists to
+  // catch, and PASS. Emptying the map reaches that state; the mutation removes the
+  // finding and the same seed PASSES, so the verdict moves.
+  const emptyBareHead = run((ctx) => {
+    cleanRoot()(ctx)
+  }, { guard: emptyMapCopy('BARE_HEAD_BASELINE') })
+  check(
+    'an EMPTY bare-head record is a FINDING (D-030: 0 of 0 cannot read as fully covered)',
+    emptyBareHead.exit === 1 && /recorded baseline is EMPTY/.test(emptyBareHead.out),
+    `exit ${emptyBareHead.exit}`,
+  )
+  const emptyBareHeadMiss = run((ctx) => {
+    cleanRoot()(ctx)
+  }, { guard: emptyMapCopy('BARE_HEAD_BASELINE', 'if (BARE_HEAD_BASELINE_SIZE === 0) {') })
+  check(
+    'MUTATION: dropping that finding lets the empty record PASS (exit 1 -> 0 — a DETECTION flip)',
+    emptyBareHeadMiss.exit === 0,
+    `exit ${emptyBareHeadMiss.exit}`,
+  )
+  const emptyQuotation = run((ctx) => {
+    cleanRoot()(ctx)
+  }, { guard: emptyMapCopy('TRANSCRIPT_QUOTATION_BASELINE') })
+  check(
+    'an EMPTY quotation record is a FINDING (D-030), the same shape one rule over',
+    emptyQuotation.exit === 1 && /quotation baseline is EMPTY/.test(emptyQuotation.out),
+    `exit ${emptyQuotation.exit}`,
+  )
+  const emptyQuotationMiss = run((ctx) => {
+    cleanRoot()(ctx)
+  }, { guard: emptyMapCopy('TRANSCRIPT_QUOTATION_BASELINE', 'if (TRANSCRIPT_QUOTATION_BASELINE_SIZE === 0) {') })
+  check(
+    'MUTATION: dropping that finding lets the empty quotation record PASS (exit 1 -> 0 — a DETECTION flip)',
+    emptyQuotationMiss.exit === 0,
+    `exit ${emptyQuotationMiss.exit}`,
   )
 
   // THE INDENTED-CODE BOUNDARY, DECLARED (D-033 item 3). This rule reads FENCED

@@ -98,11 +98,14 @@
 //                         and a rule that must infer an association it cannot
 //                         see will keep moving its hole. The price is DECLARED
 //                         and paid rather than exempted: a block that QUOTES a
-//                         bad transcript fires — and is absorbed only by the
-//                         RECORDED baseline (D-033), which a report cannot
-//                         forge: the key carries the FILE, so the same text in a
-//                         new file, or a second occurrence in the same file,
-//                         still fires. The run prints the baseline's size. A scan
+//                         bad transcript fires, and is absorbed only by the
+//                         RECORDED baseline (D-033). Not by CONTENT: the key
+//                         carries the FILE, so the same text at a new path, or a
+//                         second occurrence at a recorded path, still fires. It
+//                         IS reachable at a recorded path — the recorded text
+//                         there is absorbed, and the record cannot separate a
+//                         quotation there from a fabrication that copied the
+//                         citation. The run prints the baseline's size. A scan
 //                         that read no fenced block is a finding, never a pass
 //                         (D-030).
 //
@@ -1510,11 +1513,22 @@ function checkReportHeadCounts() {
       }
     }
   }
-  // LOST COVERAGE is a PRINTED NUMBER, not a claim: a baselined key that no
-  // longer matches is a stale record, and a record that quietly stops matching
-  // would make this guard green on a smaller corpus. The clause appears only when
-  // the number is non-zero, exactly like the unresolvable-sha note beside it.
-  console.log(`  note — no-bare-head-count: ${bareHeadAbsorbed} of the ${BARE_HEAD_BASELINE_SIZE} recorded occurrence(s) matched this scan (LOST COVERAGE ${BARE_HEAD_BASELINE_SIZE - bareHeadAbsorbed})`)
+  // LOST COVERAGE is a PRINTED NUMBER, not a claim: a baselined key that no longer
+  // matches is a stale record, and a record that quietly stops matching would make
+  // this guard green on a smaller corpus. It is a SNAPSHOT and not a tripwire —
+  // the number moves and the exit code does not (making a partial loss fatal would
+  // redden every temp-root run, because this map covers THIS corpus and a fixture
+  // root is not it). What it must not do is print the greenest value over NO
+  // record at all: `0 of 0` cannot be told from fully-covered, so an EMPTY record
+  // is a FINDING (D-030) and the clause is printed only when there is a record.
+  if (BARE_HEAD_BASELINE_SIZE === 0) {
+    fail(
+      'no-bare-head-count',
+      'the recorded baseline is EMPTY — there is no record to absorb anything with, so a run must not print a coverage clause over it as if the record were fully covered (D-030)',
+    )
+  } else {
+    console.log(`  note — no-bare-head-count: ${bareHeadAbsorbed} of the ${BARE_HEAD_BASELINE_SIZE} recorded occurrence(s) matched this scan (LOST COVERAGE ${BARE_HEAD_BASELINE_SIZE - bareHeadAbsorbed})`)
+  }
   if (repo) {
     const label = relative(ROOT, repo)
     console.log(`  note — count-provenance: ${provenanceTokens} provenance token(s) in the scan, ${shaIsCommit.size} distinct sha(s) resolved with \`git cat-file -e <sha>^{commit}\` against ${label && !label.startsWith('..') ? label : repo} (${why}) — ${unresolvable} unresolvable`)
@@ -1629,8 +1643,11 @@ function checkTranscripts(files) {
  *   - the size printed each run is what was READ, and a zero says in words that
  *     NOTHING was compared, while the guard's claim list names only checks that ran;
  *   - the QUOTATION BASELINE absorbs only sites RE-DERIVED from the instrument's
- *     own matches, keyed `file::line-text` with a count. A new file quoting the
- *     same text, or a second occurrence in the same file, still fires.
+ *     own matches, keyed `file::line-text` with a count. The same text at a NEW
+ *     path, or a second occurrence at a recorded path, still fires; the recorded
+ *     text AT the recorded path is absorbed, and the record cannot tell a
+ *     quotation there from a fabrication that copied the citation. An empty
+ *     record is a finding (D-030).
  */
 const STEP_RANGE_COUNT = /✓\s*(\d+)\s*[–—-]\s*(\d+)\b[^\n]*?\(all\s+([a-z]+|\d+)\b/gi
 
@@ -1644,19 +1661,31 @@ const STEP_RANGE_COUNT = /✓\s*(\d+)\s*[–—-]\s*(\d+)\b[^\n]*?\(all\s+([a-z]
  *
  * WHY A RECORD AND NOT A RULE ABOUT WHAT A QUOTATION LOOKS LIKE. The exemption
  * D-032 removed was a SYNTAX a fabricator can write — any block prefixed `>` was
- * exempt, so the CONTENT chose whether the rule looked. A baseline is not
- * forgeable from a report: the key is `file::the offending line's text`, counted,
- * so a NEW report quoting the SAME text is a NEW key and still fires, and a
- * second occurrence of a recorded one in the same FILE exceeds its recorded count
- * and still fires. Producing a baselined citation requires editing THIS guard,
- * which is a reviewed diff.
+ * exempt, so the CONTENT chose whether the rule looked. The record is not
+ * reachable by CONTENT: the key is `file::the offending line's text`, counted, so
+ * the same text at a NEW path is a new key and still fires, and a second
+ * occurrence at a recorded path exceeds its recorded count and still fires.
+ *
+ * THE BOUNDARY THE RECORD DOES NOT CROSS, stated here because the mechanism does
+ * not enforce it (D-033, review round 2 BLK1): the key names a PATH, and a path is
+ * writable. A report that REUSES a recorded path and carries the recorded text up
+ * to its recorded count is absorbed — the record cannot tell such a report's
+ * quotation from a fabrication that copied the citation. So the guarantee is
+ * about CONTENT and COUNT, not about which prose a path holds: same text at a new
+ * path fires; the recorded text at the recorded path passes; a second occurrence
+ * in the same file fires. Closing the path half would need a defence this rule
+ * deliberately does not carry.
  *
  * RE-DERIVED, NEVER HAND-ADDED, FORWARD-ONLY. The map is the instrument's own
- * matches, recorded; the run prints its size every time and says how many of the
- * recorded sites it saw, so lost coverage is a printed number rather than a
- * claim. A site leaves the map only by re-derivation — never by typing an entry
- * away, which is the mechanic `no-bare-head-count` and `UNRESOLVABLE_SHA_BASELINE`
- * already use (D-021 item 2 / D-023).
+ * matches, recorded; the run prints its size every time, and prints how many it
+ * ABSORBED when that is fewer than the record. Both of those are PROCESS
+ * promises, not mechanisms — the map can be edited, and this guard cannot tell;
+ * what it can do is print the number, so shrinking the record is visible rather
+ * than silent. An EMPTY record cannot be covered by that number at all (0 of 0
+ * prints the greenest value over the maximal failure), so it is a finding
+ * (D-030). A site leaves the map only by re-derivation, the mechanic
+ * `no-bare-head-count` and `UNRESOLVABLE_SHA_BASELINE` already use (D-021 item 2
+ * / D-023).
  */
 // Re-derived from THIS instrument's own matches (2026-10-02, slice 8b fix round
 // 2): the emptied-map run reported exactly these two sites, and the SAME
@@ -1756,7 +1785,20 @@ function checkRawBlockSummaries(files) {
   }
 
   console.log(`  note — transcript-summary-agrees: ${blocks} fenced block(s) read, ${ranges} range summar${ranges === 1 ? 'y' : 'ies'} checked${ranges === 0 ? ' — NOTHING was compared: no fenced block in this scan states a step range beside its count' : ''}`)
-  console.log(`  note — transcript-summary-agrees: quotation baseline holds ${TRANSCRIPT_QUOTATION_BASELINE_SIZE} recorded site(s), re-derived and never hand-added; a NEW site, or a second occurrence of a recorded one in the same file, is a finding${absorbed === TRANSCRIPT_QUOTATION_BASELINE_SIZE ? '' : ` — ${absorbed} of the ${TRANSCRIPT_QUOTATION_BASELINE_SIZE} matched this scan (LOST COVERAGE ${TRANSCRIPT_QUOTATION_BASELINE_SIZE - absorbed})`}`)
+  // THE RECORD CANNOT BE EMPTY. `0 of 0` would print the greenest possible value
+  // over the maximal version of the failure this clause exists to catch — a record
+  // that shrank to nothing reads exactly like a record that is fully covered — so
+  // the empty record is a FINDING (D-030) and the clause is printed only when
+  // there IS a record to cover. The number printed is `size − ABSORBED` (absorbed
+  // FINDINGS, not matched sites: a line whose arithmetic had become correct would
+  // return before the count and read as lost coverage).
+  if (TRANSCRIPT_QUOTATION_BASELINE_SIZE === 0) {
+    fail(
+      'transcript-summary-agrees',
+      'the quotation baseline is EMPTY — there is no record for this rule to absorb anything with, so a run that printed its coverage over that state would assert a property it does not have (D-030)',
+    )
+  }
+  console.log(`  note — transcript-summary-agrees: quotation baseline holds ${TRANSCRIPT_QUOTATION_BASELINE_SIZE} recorded site(s), re-derived and never hand-added; a NEW site, or a second occurrence of a recorded one in the same file, is a finding${TRANSCRIPT_QUOTATION_BASELINE_SIZE > 0 && absorbed < TRANSCRIPT_QUOTATION_BASELINE_SIZE ? ` — ${absorbed} of the ${TRANSCRIPT_QUOTATION_BASELINE_SIZE} ABSORBED this scan (LOST COVERAGE ${TRANSCRIPT_QUOTATION_BASELINE_SIZE - absorbed})` : ''}`)
   return ranges
 }
 

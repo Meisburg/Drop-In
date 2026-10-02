@@ -725,14 +725,20 @@ the content can write. The gate is green again and nothing in a lane report was 
 Copied from `no-bare-head-count`'s form, mechanism and all: a committed map of `file::line-text → count`,
 re-derived from the instrument's own matches, never hand-added, printing its size on every run, and
 **forward-only** — a new key, or a second occurrence of a recorded one in the same file, exceeds the record and
-still fires. The run prints, verbatim:
+still fires. The line the run prints on this repo, verbatim:
 
 ```
   note — transcript-summary-agrees: quotation baseline holds 2 recorded site(s), re-derived and never hand-added;
          a NEW site, or a second occurrence of a recorded one in the same file, is a finding
-  note — transcript-summary-agrees: quotation baseline holds … — 1 of the 2 matched this scan (LOST COVERAGE 1)
-         [that clause appears only when a recorded site stops matching; on this repo it is ABSENT, i.e. 0]
 ```
+
+When a recorded site stops matching, that line gains a clause naming the shortfall (measured in a copy with one
+stale key, so this one is described rather than pasted as if it were this repo's output):
+`— N of the 2 ABSORBED this scan (LOST COVERAGE 2 − N)`. On this repo the clause is **absent**, which is the
+fully-covered state. **Round 3 correction (review NB3/NB4):** "ABSORBED" is the honest word, not "matched" —
+the counter counts absorbed FINDINGS, so a recorded line whose arithmetic had become correct would return before
+the count and read as lost coverage; and the sibling `UNRESOLVABLE_SHA_BASELINE` clause is conditional while this
+one is not, so round 2's claim that this one "mirrors" it was false.
 
 The two entries, derived by blanking the map in a throwaway copy and recording the instrument's own findings:
 
@@ -774,8 +780,9 @@ can fail, and the property it asserts is the mechanism, not the wording. Harness
     what keeps it out
 ```
 
-`factory-guard.check.mjs`: **112 → 120 checks**, every one of the six new checks with a mutation whose **exit code
-moves**.
+`factory-guard.check.mjs`: **112 → 120 checks** (round 3 adds ten more — six sweep shapes and four empty-record
+verdicts — for **130**, re-measured). Every new check carries a mutation whose **exit code moves**. *(Round 2
+said "the six new checks", which matched no subset: eight were added, and the reviewer counted them.)*
 
 ## 3. The indented-code boundary, DECLARED — with its own seed
 
@@ -817,9 +824,10 @@ intermediate state was 435 keys / 669 occurrences + the two new `slice-8b-review
 **671** as printed, which is `669 + 2`.)
 
 **One addition beyond the literal ask, declared:** `no-bare-head-count`'s run now also prints
-`671 of the 671 recorded occurrence(s) matched this scan (LOST COVERAGE 0)`, mirroring the clause
-`UNRESOLVABLE_SHA_BASELINE` already prints one rule over. Without it, "lost coverage" is a claim made in a report
-rather than a number the run produces — the shape D-030 exists to catch.
+`671 of the 671 recorded occurrence(s) matched this scan (LOST COVERAGE 0)`. *(Round 2 called this a "mirror" of
+`UNRESOLVABLE_SHA_BASELINE`'s clause; the reviewer measured that the sibling is conditional on loss and this one
+was unconditional, so the word was false — see the round-3 correction above.)* Without it, "lost coverage" is a
+claim made in a report rather than a number the run produces — the shape D-030 exists to catch.
 
 ## RAW VERIFY — `npm run verify` is exit 0
 
@@ -855,3 +863,105 @@ never as prose.
 - **The indented boundary remains a boundary**: a fabricated transcript written as indented code is not read by
   this rule. That is declared in the ceiling, is now seeded in the harness, and is the one shape the next reader
   should attack if they want a fifth attempt at this rule.
+
+---
+
+# FIX ROUND 3 — the claims come down to what the mechanism keeps (D-028/D-030)
+
+Scope: **lowering claims**, plus the two real fixes the review named. D-032's shape is untouched; the absorber's
+design is untouched; no lane report and no `factory/` file was edited. The gate stays exit 0 with both baselines
+derived and lost coverage 0.
+
+## BLK1 — the absorber's claim was too strong; the sentences now say what it does
+
+The reviewer answered the converse question with a measurement: **a report alone CAN reach a pass by rewriting a
+report AT a recorded path** (throwaway root, exit 0, PASS, and no `LOST COVERAGE` clause — silent). The key names a
+*path*, and a path is writable. The mechanism's real guarantee is about **content and count**, not about which prose
+a path holds. Both over-claims are lowered to that, and the boundary is now declared where the rule states its
+scope:
+
+| | before | after |
+|---|---|---|
+| docblock | *"A baseline is not forgeable from a report … **Producing a baselined citation requires editing THIS guard**, which is a reviewed diff."* | *"The record is not reachable by CONTENT … **THE BOUNDARY THE RECORD DOES NOT CROSS, stated here because the mechanism does not enforce it (D-033, review round 2 BLK1): the key names a PATH, and a path is writable.** A report that REUSES a recorded path and carries the recorded text up to its recorded count is absorbed — the record cannot tell such a report's quotation from a fabrication that copied the citation."* |
+| header (the build law's authoritative statement) | *"absorbed only by the RECORDED baseline (D-033), **which a report cannot forge**"* | *"absorbed only by the RECORDED baseline (D-033). **Not by CONTENT**: the key carries the FILE, so the same text at a new path, or a second occurrence at a recorded path, still fires. **It IS reachable at a recorded path** — the recorded text there is absorbed, and the record cannot separate a quotation there from a fabrication that copied the citation."* |
+| the ceiling bullet | "a new file … or a second occurrence … still fires" | the same, plus: "the recorded text AT the recorded path is absorbed, and the record cannot tell a quotation there from a fabrication that copied the citation." |
+
+**No machinery was added to close it** — the fix is the sentence, as instructed. The existing harness check was
+**re-named to name the boundary**, so it is declared *and* seeded rather than declared and unmentioned:
+
+```
+  ✓ the DECLARED path-occupancy boundary: the recorded text AT a recorded path is absorbed (the record cannot tell
+    a quotation there from a fabrication that copied the citation — see the rule header)
+  ✓ MUTATION: with no absorber the recorded site goes RED (exit 0 -> 1 — a DETECTION flip)
+```
+
+**For the orchestrator, one thing I could not fix:** `factory/decisions.md` D-033 carries the same overstatement
+("they would have to edit the guard, which is a reviewed diff"). `factory/` is off-limits to this lane, so the
+ruling's sentence still promises more than the mechanism keeps; the guard's header, which
+`docs/agents/code-structure.md` makes authoritative for coverage, no longer does.
+
+## BLK2 — the coverage clause: its comment was false, and `0 of 0` was vacuous
+
+The comment said the clause "appears only when the number is non-zero, exactly like the unresolvable-sha note
+beside it". **The `console.log` was unconditional and the sibling IS conditional** — D-028's shape, a sentence about
+the mechanism shipped in the same commit as the mechanism. Fixed in the direction D-030 requires: **the empty record
+is now a FINDING and the clause is printed only when there is a record to print it about.**
+
+```
+  note — no-bare-head-count: baseline holds 671 recorded occurrence(s); a new count resolved through bare HEAD is a finding
+  note — no-bare-head-count: 671 of the 671 recorded occurrence(s) matched this scan (LOST COVERAGE 0)
+  [with an EMPTY record:  FINDING [no-bare-head-count]: the recorded baseline is EMPTY — there is no record to
+   absorb anything with, so a run must not print a coverage clause over it as if the record were fully covered (D-030)]
+  [transcript, same shape: FINDING [transcript-summary-agrees]: the quotation baseline is EMPTY …]
+```
+
+Proven with a seed **and a mutation whose exit code moves** (`emptyMapCopy` empties the map literal — the seam a
+textual anchor cannot reach, and the only way to reach the state):
+
+```
+  ✓ an EMPTY bare-head record is a FINDING (D-030: 0 of 0 cannot read as fully covered)
+  ✓ MUTATION: dropping that finding lets the empty record PASS (exit 1 -> 0 — a DETECTION flip)
+  ✓ an EMPTY quotation record is a FINDING (D-030), the same shape one rule over
+  ✓ MUTATION: dropping that finding lets the empty quotation record PASS (exit 1 -> 0 — a DETECTION flip)
+```
+
+**What is still only a snapshot, stated rather than implied (review NB2):** a *partial* loss prints
+`LOST COVERAGE N` and does not move the exit code. Making it fatal would redden every temp-root run — the map
+covers **this** corpus and a fixture root is not it — so it is declared as a process promise: the number is printed,
+the map can be edited, and the guard cannot tell. What it can no longer do is print the greenest value over **no
+record at all**.
+
+## The non-blocking findings
+
+| finding | disposition |
+|---|---|
+| **NB1** wrong number | FIXED — round 2 said "the six new checks"; eight were added. Round 3's own count is stated as **130**, re-measured. |
+| **NB2** the clause is a snapshot, not a tripwire | FIXED **by stating it** — the docblock now says both the printed number and the process promise are process-level, and the empty case gates. |
+| **NB3** "mirroring" the conditional sha clause | FIXED — both the report and the docblock corrected; the transcript note's word is `ABSORBED`, not "matched". |
+| **NB4** `absorbed` counts absorbed FINDINGS, not matched sites | FIXED in the wording — the note prints `ABSORBED`, and the docblock says so with the reason (an agreeing line returns before the count). |
+| **NB5** the eleven-shape sweep was harness-seeded for five | FIXED — the other **six are now seeds**, each with the shared detection mutation: an indented line between, an HTML comment between, two labels before one fence, the block in a `~~~` fence only, a label on the `~~~` fence line, a label on the ``` fence line (all CAUGHT, all mutants PASS). The review's reading of my ambiguous "label inside the fence's opening line" is the *unfenced* ceiling — now declared and seeded as such. |
+| **NB6** §1's "verbatim" block mixed real and synthetic output | FIXED — the real line is pasted verbatim; the conditional clause is described as measured-in-a-copy, not pasted. |
+
+## "Which set did I just stop watching?" — round 3's answers
+
+1. **The two recorded sites** — watched by the derivation (emptied map reproduces them exactly) and by the
+   declared path-occupancy check.
+2. **The two added bare-head keys** — same derivation, and `LOST COVERAGE 0` is printed every run.
+3. **The path-occupancy direction** — DECLARED in the docblock, the authoritative header and the ceiling list, and
+   seeded by the re-named check. Not closed, and no longer claimed closed.
+4. **The six unseeded separators** — now six seeds in the harness.
+5. **The `LOST COVERAGE` clause itself** — the empty state is a FINDING with an exit-moving mutation; the partial
+   state is a declared snapshot with its reason printed in the docblock.
+6. **The claim list when coverage is lost** — the claim is about *findings* ("beyond the recorded baseline"), which
+   stays true; and the state where it was published over an EMPTY record now fails instead.
+
+## RAW VERIFY (fresh, at the committed state)
+
+```
+ Test Files  71 passed (71)      Tests  2063 passed (2063)
+ oxlint: 81 warnings / 0 errors   ok — AGENTS.md (1789 words, ceiling 1800)
+PASS — steering layer is clean.   GUARDS: PASS — all deterministic rules hold.
+VERIFY EXIT=0                     RUNALL EXIT=0
+checkers: factory-guard 130/130, trailing-newline 10/10, lib-sibling 8/8
+baselines as printed: no-bare-head-count 671 ; transcript-summary-agrees 2 ; LOST COVERAGE 0
+```
