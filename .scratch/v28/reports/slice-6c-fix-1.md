@@ -1,6 +1,8 @@
 # Slice 6c — FIX ROUND 1 — report
 
-Committed as: `<sha7>` <!-- the orchestrator's report-only follow-up writes the hash in -->
+Committed as: `c2ec32e` — the slice commit. *(This line is written by a report-only follow-up commit: a file cannot name its own creating commit, so the hash here is the slice commit's, not this file's.)*
+
+**Two report-only corrections in that follow-up**, both measured against `c2ec32e` rather than typed: the `Committed as` placeholder above, and the `+827` in "What this commit contains" below, which was the **pre-amend** figure — `git show --stat c2ec32e` reports **828 insertions(+), 19 deletions(-)**. Self-referential arithmetic on a file that describes itself went stale twice in this round; this is the second.
 
 **Round:** V28 round 2, slice 6c, fix round 1. Findings G1–G4 come from
 `.scratch/v28/briefs/slice-6c-fix-1.md`. This file is the artifact of record for that round: the
@@ -406,8 +408,10 @@ One commit, not pushed (batch rule: no push mid-batch).
  docs/agents/code-structure.md                    |  38 ++
  scripts/guards/regexp-escape-guard.check.mjs     |  64 +++-
  scripts/guards/regexp-escape-guard.mjs           |  46 ++-
- 7 files changed, 827 insertions(+), 19 deletions(-)
+ 7 files changed, 828 insertions(+), 19 deletions(-)
 ```
+
+*(Corrected from `827` by the report-only follow-up — the `827` was measured before the amend. Re-measured with `git show --stat c2ec32e`.)*
 
 - **The four files the previous builder left on disk** (its part of the round: G1 sentence + `.vitest` +
   `.mts`/`.cts`, the three new check cases, G4's docs section, G2's inline correction). Not redone. Two
