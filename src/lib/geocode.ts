@@ -4,7 +4,8 @@
  * `geocodeAddress` turns a typed address into lat/lng via Nominatim (OpenStreetMap's
  * free geocoder — no key, no browser geolocation: the app's pinned invariant).
  * The pure decisions live here so the modal's "See places" path and the area
- * card's (the first run's 5th card, V28 slice 5) ZIP derivation are testable; the fetch itself is thin and returns null
+ * card's (the first run's LAST card — 4 of 4 since V28 r2 deleted the photo card;
+ * it was 5 of 5 when this line was written) address derivation are testable; the fetch itself is thin and returns null
  * on ANY failure (network error, non-OK status, empty result) — a failed
  * geocode must never invent coordinates.
  *
@@ -107,11 +108,13 @@ export async function geocodeAddress(
 /**
  * V20 t06 — the HOME ZIP for a typed address, or null.
  *
- * This is the area card's (the first run's 5th card, since V28 slice 5 — the
- * signup form's address left /login in slice 3b) "your address sets your
- * location" step: the parent types their address once, and the app derives the
- * ZIP that the rest of the product keys on (the onboarding gate, `filterFeed`'
- * s radius, every distance on every card).
+ * This is the area card's (the first run's LAST card — 5 of 5 when V28 slice 5
+ * wrote this, 4 of 4 since V28 r2 deleted the photo card — and the signup form's
+ * address left /login in slice 3b) "your address sets your location" step: the
+ * parent types their address once, and the app derives the ZIP that the rest of
+ * the product keys on (`filterFeed`'s radius, every distance on every card, and
+ * the write paths' `hasHomeZip` — NOT an onboarding gate, which V28 slice 2b
+ * removed, see docs/adr/0001-home-zip-stops-being-a-gate.md).
  *
  * IT RETURNS A ZIP, NOT COORDINATES, and that is deliberate. The product's
  * location model is ZIP-based end to end — `profiles.home_zip`, the seeded
