@@ -26,15 +26,36 @@
  *     pass. An instrument that matches nothing looks exactly like a clean repo;
  *     this one cannot.
  *
- * SCOPE — a written boundary, not a claim of totality.
- *   It walks the whole tree except the directories below, and only files with a
- *   code extension (.ts/.tsx/.js/.jsx/.mjs/.cjs). Skipped: `node_modules`,
- *   `dist`, `dist-ssr`, `test-results`, `playwright-report` (build output) and
- *   `.git`, `.scratch`, `.qa`, `.agents`, `.omo` (gitignored harness state —
- *   `.scratch/**\/*.mjs` is ignored precisely because a probe script is not
- *   source; see .gitignore). A copy is caught anywhere in shipped code,
- *   including in supabase/functions/ and any untracked file the author has not
- *   `git add`ed yet.
+ * SCOPE — a written boundary, not a claim of totality. Read this as the
+ *   mechanism, because the mechanism IS this list: SKIP_DIRS is matched against
+ *   a directory's NAME at any depth. It is not a gitignore query, and the
+ *   difference is measured, not waved at.
+ *   - Walked: every file whose name ends in a code extension —
+ *     .ts/.mts/.cts/.tsx/.js/.jsx/.mjs/.cjs (the declaration-file spellings
+ *     included, so a copy in a `.d.mts` is caught).
+ *   - Skipped as build output: `node_modules`, `dist`, `dist-ssr`,
+ *     `test-results`, `playwright-report`.
+ *   - Skipped as generated/harness state: `.git` (the object store), `.qa`,
+ *     `.agents`, `.omo`, `.scratch`, and `.vitest` (.gitignore: "Vitest's own
+ *     cache directory. Never source, never committed.") — a generated cache
+ *     file holding the literal is not a sixth copy, and failing the lane on one
+ *     is how a guard gets routed around.
+ *   - `.scratch` is skipped WHOLE, and that hole has a number on it: git TRACKS
+ *     262 files under `.scratch/` (`git ls-files .scratch | wc -l`, measured at
+ *     c484648 — it grows with every committed report, so re-measure it rather
+ *     than trust this figure), 23 of them `.mjs` (all `.scratch/v4/*.mjs`,
+ *     one-off probe scripts). A copy in one of those 23 is UNCCOUNTED — this
+ *     guard will pass it. They are left out because `.scratch` also holds
+ *     snapshots frozen by review lanes, and one of them —
+ *     `.scratch/guard-a03fc54.mjs:635` — really does contain the one-liner:
+ *     walking `.scratch` measurably fails this lane on a clean tree. A probe
+ *     script that hand-rolls the escape is not drift in shipped code; a lane
+ *     that is red for reasons its owner may not touch is a lane people delete.
+ *   - Net: a copy IS caught in shipped code — src/, e2e/, scripts/,
+ *     supabase/functions/ — and in any untracked file outside the skipped dirs
+ *     that the author has not `git add`ed yet. It is NOT counted anywhere under
+ *     `.scratch`, `.qa`, `.agents`, `.omo`, `.vitest`, or build output. Both
+ *     directions are pinned by `regexp-escape-guard.check.mjs`.
  *
  * A note on this file's own prose: it does not write the one-liner out with its
  * `g` flag, so that THIS file does not itself contain the literal it searches
@@ -77,13 +98,15 @@ const SKIP_DIRS = new Set([
   'test-results',
   'playwright-report',
   '.git',
+  // Vitest's own cache (.gitignore). Generated, never source — see SCOPE.
+  '.vitest',
   '.scratch',
   '.qa',
   '.agents',
   '.omo',
 ])
 
-const SCAN_EXT = /\.(ts|tsx|js|jsx|mjs|cjs)$/
+const SCAN_EXT = /\.(ts|mts|cts|tsx|js|jsx|mjs|cjs)$/
 
 // This guard necessarily CONTAINS the needle — it searches for it — so it is
 // not a copy and does not count itself.
@@ -122,7 +145,8 @@ const onlyCopy = hits.length === 1 && hits[0].startsWith(`${SANCTIONED}:`)
 
 if (onlyCopy) {
   console.log(`  ok — one implementation, at ${hits[0]}`)
-  console.log(`  ok — every other caller imports it (scope: the whole tree minus generated/harness dirs)`)
+  console.log('  ok — every other caller imports it (scope: the tree minus build output and the')
+  console.log('       harness dirs named in SCOPE — `.scratch` skipped whole and uncounted)')
   console.log()
   console.log('PASS — the escape has exactly one home.')
   process.exit(0)

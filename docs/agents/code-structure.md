@@ -90,6 +90,44 @@ imports for rule logic, no direct Supabase calls.
 - Prefer testing the *pure decision* over the execution path. `planPing` gets
   a table of inputs; `togglePingWithClient` gets one round-trip test.
 
+## The one-copy rule
+
+**If the same expression is written in two files, it has two futures. A
+one-liner is a module, not a habit.**
+
+The escape one-liner — `value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')`, "escape
+a value before interpolating it into a `RegExp`" — was written in five files
+(V28 slice 6c). Two review lanes named the risk in the same words: *a missed
+metacharacter in one copy silently over-matches the pin it builds*. It now lives
+once, in `src/lib/escapeForRegExp.mjs`, and every caller — the app, the e2e
+suite, and the plain-`.mjs` guards in `scripts/guards/` — imports it. One module
+is reachable from all three because it is vanilla JS: a `.mjs` guard cannot
+import the TypeScript tree (`tsconfig.app.json` sets
+`moduleResolution: "bundler"`, so every `src/` import is extensionless), and a
+second copy kept to sidestep that is the drift this rule exists to stop. A
+`src/lib/*.mjs` module takes its types from a sibling `.d.mts`.
+
+`scripts/guards/regexp-escape-guard.mjs` enforces it: exactly one occurrence, in
+the sanctioned file, or the guards lane fails. Two properties are part of the
+rule, not commentary on it:
+
+- **It is a detector, not a prohibition.** Retyping the one-liner is always
+  possible; the guard makes the result loud instead of silent.
+- **A zero count fails too.** An instrument that matches nothing looks exactly
+  like a clean repo, so "no copies found" is a finding, never a pass.
+
+The guard's header states its SCOPE — the directories and extensions it reads,
+and what it therefore does not count — and that header, not this paragraph, is
+the authoritative statement of what the guard covers. When the header and the
+implementation disagree, that mismatch *is* the defect: fix the code and the
+sentence in the same change, as V28 slice 6c fix round 1 had to.
+
+**Write the rule here first, then the guard** (`docs/agents/borrowed-guards.md`,
+rule 1 for adding a guard). A guard for a rule that is not written down is a rule
+nobody agreed to; and `scripts/guards/regexp-escape-guard.check.mjs` is the
+worked example of the shape the rule takes — a seeded defect per class, in a
+throwaway copy, each required to fail.
+
 ## What the reviewer checks
 
 Against the diff, not the builder's description:

@@ -68,6 +68,36 @@ $ grep -rn --fixed-strings --exclude-dir=node_modules --exclude-dir=dist --exclu
 ./src/lib/escapeForRegExp.mjs:37:  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 ```
 
+**⚠️ CORRECTION — added in fix round 1, post-verification. The `1` above no longer reproduces, and
+its successor number is NOT a copy count.** The reviewer found the report presenting that command's
+output as the after-count while it had already become false, and the builder's warning about it
+lived only in a return message — ephemeral — and reached neither this report nor a commit message.
+**So the authoritative instrument is named here, in the artifact: `node
+scripts/guards/regexp-escape-guard.mjs`, which reports exactly one hit in code (the implementation at
+`src/lib/escapeForRegExp.mjs:37`, exit 0).** Re-running the `git grep` above counts *this report's own
+prose*, because the pattern is quoted whenever it is discussed:
+
+```
+$ git grep --untracked --fixed-strings -- "$PAT" -- . | cut -d: -f1 | sort | uniq -c | sort -rn
+     14 .scratch/v28/reports/slice-6c.md
+      1 src/lib/escapeForRegExp.mjs
+      1 docs/agents/code-structure.md
+```
+
+Fourteen of them are the places this report writes the pattern out to discuss it, and one is the prose
+quotation in `docs/agents/code-structure.md`'s "The one-copy rule" section — `.md` is not in the guard's
+extension list, so that is not a code hit. Measured in fix round 1 with the needle written to a file and
+matched with `git grep --untracked -F -f <needle-file> -- .` rather than put on a command line; the code
+trees alone — `-- src e2e scripts supabase` — return **1**.
+
+**Do not quote a total from that command, including the one above: it grows by one every time the pattern
+is written down anywhere, including in the sentence that explains it.** The breakdown was re-measured twice
+inside fix round 1 and moved (15 report hits and no docs hit, then 14 plus one docs hit, then this file's
+own paste of the pattern) — which is the drift this correction exists to name. The only stable figure is
+the guard's: **one hit, in `src/lib/escapeForRegExp.mjs`, exit 0**. The two guard files hold **zero** raw
+hits — they write it split or escaped so the detector cannot count itself. **Read the guard's number, not
+this command's.**
+
 **Both instruments agree on the truth: one copy in repo code.** `--untracked` respects `.gitignore`
 and sees the new file; the raw `grep -r` additionally surfaces one occurrence in gitignored scratch.
 
@@ -230,8 +260,19 @@ silent pass. That is the batch's own doctrine ("an instrument that matches nothi
 a clean repo") built into the exit code rather than promised in a comment.
 
 It also deliberately avoids the trap I fell into in §1: it **walks the filesystem**, so a copy in a
-file the author has not staged is caught. Its scope is written down (skips generated and gitignored
-harness dirs; only code extensions) and the header states it.
+file the author has not staged is caught. Its scope is written down (a list of directory **NAMES**,
+plus the code extensions; `.scratch` skipped whole and stated as uncounted) and the header states it.
+
+**⚠️ CORRECTION — fix round 1.** The parenthetical above once read "skips generated and gitignored
+harness dirs", which was FALSE twice over, and the reviewer measured both directions: git TRACKS 260
+files under `.scratch/` (23 of them `.mjs`), so a copy seeded in one passed silently while the header
+called that directory gitignored harness state; and `.vitest/`, which IS gitignored, was **not**
+skipped, so a generated cache file holding the literal **failed the lane**. The header and the
+printed scope line now state the mechanism (directory names, `.scratch` uncounted and why,
+`.vitest` skipped), `.mts`/`.cts` joined the scanned extensions, and
+`regexp-escape-guard.check.mjs` pins both directions in three new cases — **9 checks, not 6**, so the
+`all 6 checks passed` line quoted below is the `ce3479c` tail, not today's. Current tails:
+`.scratch/v28/reports/slice-6c-fix-1.md`.
 
 **What the drift the two review lanes named actually is:** `ocr` said *"implementations that drift
 independently — a missed metacharacter in one silently over-matches the pin."* With **one**
@@ -490,3 +531,20 @@ new: .scratch/v28/reports/slice-6c.md   (this file)
 - **The drift detector is a detector, not a prohibition.** A future author can still hand-copy the
   one-liner; they will simply be told. Making a sixth copy *unconstructable* is not available here —
   that is stated in the guard's own header, not only here.
+
+---
+
+## Fix round 1 (post-verification) — what this report got wrong
+
+Two blockers and two smaller items, all fixed in this round. Measurements and raw tails:
+`.scratch/v28/reports/slice-6c-fix-1.md`.
+
+| Finding | Status |
+|---|---|
+| **G1** — the guard's stated scope was not `SKIP_DIRS`: a copy in a TRACKED `.scratch` code file was uncounted while the header called that directory gitignored, AND a generated `.vitest` cache file failed the lane | **fixed** — the sentence and the mechanism now say the same thing (skip is by directory NAME; `.scratch` skipped whole, uncounted, with the number and the reason; `.vitest` added). Both directions are pinned in the check, which now runs 9 cases |
+| **G2** — the `git grep` after-count above was presented as one and had become sixteen | **fixed** — correction inline in §1, naming `scripts/guards/regexp-escape-guard.mjs` as the authoritative instrument |
+| **G3** — `.mts` excluded from `SCAN_EXT` | **fixed** — `.mts`/`.cts` are scanned; a seeded `.d.mts` copy is caught, and that case is proven load-bearing |
+| **G4** — the batch's guard-authoring rule (write the rule into `docs/` first) was unmet | **fixed** — `docs/agents/code-structure.md`, new section "The one-copy rule" |
+
+Unchanged, because they are the orchestrator's rulings rather than defects: the dedupe itself (5 → 1),
+the `.d.mts` declaration-drift cost, and the `lib-sibling-guard` blind spot (still globs `*.ts`).
