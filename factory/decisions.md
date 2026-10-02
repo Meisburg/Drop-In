@@ -951,9 +951,10 @@ a report** — they would have to edit the guard, which is a reviewed diff.
 1. **A recorded baseline** of known quotation sites, **re-derived, never hand-added**, printing its size on every
    run and shrinking only by re-derivation — exactly `no-bare-head-count`'s established form.
 2. **Not forgeable BY CONTENT:** a *new path* quoting the *same* text still **FIRE**s, and a *second* occurrence at
-   a recorded path still fires. Both are seeded and mutation-proven.
+   a recorded path still fires. Both are seeded and mutation-proven. **This is the WHOLE of it — see the correction
+   below for the boundary it does not cross.**
 
-**CORRECTION, ruled at 8b's round-2 review — the sentence above promiseed more than the mechanism keeps.** The
+**CORRECTION, ruled at 8b's round-2 review — the sentence above promised more than the mechanism keeps.** The
 first draft of this ruling said the record was "unforgeable" and that "a fabricator cannot produce a baselined
 citation from a report". **Measured, it can: the key names a PATH, and a path is writable.** A report that
 **reuses a recorded path** and carries the recorded text up to its recorded count **is absorbed** — the record
@@ -964,6 +965,11 @@ occurrence to a recorded one.** The boundary is declared in the rule's own docbl
 **The ruling stands; its reach did not.** That distinction is the point: **D-033's decision — use a record, not a
 syntax — is right and verified; the claim about how far it reaches was an over-claim of exactly the class this
 batch spent 6c on, and the repair was the sentence, not new machinery.**
+
+**And the same rung applies to the OTHER two baselines in this suite** — ruled one round later at 8b's round-3
+review (BLK3): `UNRESOLVABLE_SHA_BASELINE` still kept the 0-of-0 state, passing while publishing its claim over an
+empty record, while the other two had been fixed. **A rung is a SHARED FORM over every baseline of the family, not
+a third hand-written `if`** — the fix is one form, one check each.
 3. **The indented-code boundary is declared, not implied:** this rule reads **fenced** blocks; an indented code
    block is outside its scan set. That is a scope boundary and must be stated where the rule states its scope —
    and it is why a lane report can also clear a quotation by indenting it, at the cost of no longer being a
