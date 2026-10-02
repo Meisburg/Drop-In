@@ -1377,7 +1377,7 @@ fifth-shape seed covered only the info-string variant):
 ## Repair 2 — the conformance claim is now a check
 
 The tree ships no markdown parser, and none was added. Instead a differential fixture is committed:
-`scripts/guards/fence-conformance.fixture.json`, 27 fence cases with the code-content boundaries a REFERENCE
+`scripts/guards/fence-conformance.fixture.json`, 26 fence cases with the code-content boundaries a REFERENCE
 implementation derives, and `factory-guard.check.mjs` runs the guard's OWN parser — the bytes lifted from
 `factory-guard.mjs` by anchors, not a copy — over every case, failing on any divergence. A fixture whose
 expectations came from a reference is evidence; one typed from a reading of the spec is a second opinion.
@@ -1390,26 +1390,28 @@ expectations came from a reference is evidence; one typed from a reading of the 
       MDREF=/tmp/mdref node scripts/guards/fence-conformance.derive.mjs > scripts/guards/fence-conformance.fixture.json
 
 - Coverage: nested same-kind fences; info-string closers; shorter and longer runs; the ≤3-space and ≥4-space
-  closer indents; tab-indented closers; trailing text after a closer; trailing spaces, a trailing tab and other
-  suffix kinds; tilde fences; a backtick opener whose info string contains a backtick; unclosed fences; other-kind
+  closer indents; tab-indented closers; trailing text after a closer; trailing spaces and other suffix kinds;
+  tilde fences; a backtick opener whose info string contains a backtick; unclosed fences; other-kind
   nesting inside; two blocks; indented openers.
 
 Result, measured this turn — the guard's own parser against the fixture table:
 
-    PRE-FIX f3cf360: divergences=6 of 27
+    PRE-FIX f3cf360: divergences=6 of 26
        - closer indented four spaces stays content
        - closer indented eight spaces stays content
        - tab-indented closer stays content
        - closer with a vertical-tab suffix stays content
        - closer with an NBSP suffix stays content
        - tilde closer indented four spaces stays content
-    CURRENT: divergences=0 of 27
+    CURRENT: divergences=0 of 26
 
 All six are the same closing-fence clause — its indentation bound and its suffix kinds — not a seventh shape.
 
-ONE reference-vs-reference disagreement is recorded in the fixture's own header: a closing fence with a TAB after
-the run. The spec allows the tab, `commonmark 0.31.2` closes on it, `marked 18.0.14` does not; commonmark is the
-boundary the fixture records, and the guard matches it.
+The one shape the brief names as "tab-suffixed" is where the two references DISAGREE, and per D-037 the seed is
+shrunk to where they agree rather than the disagreement settled in prose: it is NOT in the table. Measured — the
+spec allows spaces or tabs after a closing run, `commonmark 0.31.2` closes on the tab, `marked 18.0.14` keeps the
+line as content. The guard closes, matching the spec and commonmark. The derive script prints the disagreement
+count, which is 0 for the committed table.
 
 ## Repair 3 — the false number, deleted not softened
 
@@ -1419,34 +1421,39 @@ counter counts PAIRS, `absorbed` counts FAILING pairs). D-028: the claim is DELE
 own copy of the same false claim — the fix-round-5 sentence "on the live corpus it is `LOST COVERAGE 0`" — is
 deleted here too.
 
-## Gate
+## Gate (final)
 
-`node scripts/guards/factory-guard.check.mjs` -> `factory-guard check: all 179 checks passed.` (exit 0). The new
-fixture block contributes 29 of those (27 cases + the non-empty-table guard + the divergence summary); the rest
-of the increase is the closer-indent seed/mutation pair and the length seed/mutation pair.
+`node scripts/guards/factory-guard.check.mjs` -> `factory-guard check: all 178 checks passed.` (exit 0). The new
+fixture block contributes 28 of those (26 cases + the non-empty-table guard + the divergence summary); the rest of
+the increase is the closer-indent seed/mutation pair and the length seed/mutation pair.
 
-`npm run verify` reaches the guards with everything else green — `Test Files 71 passed (71)`,
-`Tests 2063 passed (2063)`, lint 81 warnings / 0 errors, AGENTS.md 1789 words of a 1800 ceiling — and then fails on
-ONE factory finding that is NOT from this slice:
+`npm run verify` -> exit 0: `Test Files 71 passed (71)`, `Tests 2063 passed (2063)`, lint 81 warnings / 0 errors,
+AGENTS.md 1789 words of a 1800 ceiling, `GUARDS: PASS — all deterministic rules hold.`
+
+At dispatch the guard was red on ONE factory finding that was NOT from this slice:
 
     FINDING [no-bare-head-count]: .scratch/v28/reports/slice-8b-review-5.md:129: a count is resolved through bare HEAD …
 
-`f3cf360`, the tip this round was dispatched from, added that lane report, so the guard is red at the tip before
-this change: stashing this entire diff and re-running reproduces the identical single finding. It is D-036's class
-— a lane report's own sentence making a true statement in an unreproducible form. Editing another lane's report is
-forbidden and absorbing a true finding into the baseline is forbidden (D-027), so the finding stands, recorded
-here, and the gate is reported RED on that one external cause. This slice's own files add zero findings.
+`f3cf360` — the tip this round was dispatched from — added that lane report, so the guard was red at the tip before
+this change: stashing this entire diff and re-running reproduced the identical single finding. It is D-036's class:
+a lane report's own sentence making a true statement in an unreproducible form. Editing another lane's report is
+forbidden and absorbing a true finding into the baseline is forbidden (D-027), so this lane left it standing and
+reported it rather than touching it. That report's OWN author then fixed the provenance token in the same commit
+that carries these repairs; that edit is not this slice's, and this slice's own files add zero findings. With it
+fixed, both gate commands exit 0 as shown above.
 
 ## Unanticipated
 
 - The reference table caught FIVE divergences beyond the one clause the brief named — the eight-space and
   tab-indented closers, the vertical-tab and NBSP suffixes, and the tilde-indented closer. All are the SAME named
   clause (the closing fence's whitespace), so this completes the clause; it is not a seventh shape.
-- The brief lists a "tab-suffixed" closer among the shapes CommonMark keeps open. Measured against both
-  references, that is wrong: the spec allows spaces OR TABS after a closing run, and commonmark closes on a
-  trailing tab — so does the guard. `marked` disagrees with the spec here, and that is the single case recorded as
-  a reference disagreement.
+- The brief lists a "tab-suffixed" closer among the shapes CommonMark keeps open, and both lanes repeated it.
+  Measured against the references, it is wrong: the spec allows spaces OR TABS after a closing run, and commonmark
+  closes on a trailing tab. `marked` disagrees with the spec on exactly that input, so per D-037 the case was
+  DROPPED from the table (shrink to where the references agree) rather than adjudicated in prose; the guard's
+  behaviour — it closes, matching the spec — is reported here and not pinned by the fixture.
 - The opener's any-whitespace over-read is left in place (declared). Every fixture case opens at ≤3 spaces, so the
   table measures the closure rules and not that declared ceiling.
-- The guard is red on another lane's report at dispatch; see Gate. Reported rather than fixed, per the brief.
+- The guard was red on another lane's report when this round was dispatched; see Gate. Reported rather than
+  fixed, per the brief; that report's author fixed it in the same commit.
 

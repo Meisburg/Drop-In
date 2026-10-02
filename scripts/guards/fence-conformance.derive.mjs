@@ -16,10 +16,13 @@
 //
 // `commonmark` is the canonical reference and the authority for every case.
 // `marked` is parsed alongside it only as a second opinion: the script counts
-// their disagreements and prints them to stderr. One case is a known
-// disagreement — a closing fence with a tab after the run — where the spec (and
-// commonmark) allow the tab and marked does not; the case is kept with
-// commonmark's boundary and a note.
+// their disagreements and prints them to stderr. A case on which the two
+// references disagree is NOT recorded — the seed is shrunk until they agree,
+// rather than the disagreement being settled in prose (D-037). The one such
+// shape measured here is a closing fence with a tab after the run: the spec
+// allows the tab and commonmark closes on it, marked does not. It is left out of
+// the table for that reason, and the guard's behaviour on it is reported, not
+// pinned by the fixture.
 //
 // `source` is the case text WITHOUT a trailing newline, so the guard's own
 // `split('\n')` line indices are the reference's. `blocks` is the guard's own
@@ -95,7 +98,6 @@ const CASES = [
   ['tab-indented closer stays content', '```md\ncontent\n\t```\n✓ seven\n```'],
   ['closer with trailing text stays content', '```md\ncontent\n``` trailing\n✓ seven\n```'],
   ['closer with trailing spaces closes', '```md\ncontent\n```   \n✓ seven'],
-  ['closer with a trailing tab closes', '```md\ncontent\n```\t\n✓ seven', 'commonmark closes on a tab after the run; marked 18.0.14 keeps the line as content. The spec allows spaces or tabs, so commonmark is the boundary recorded here.'],
   ['closer with a vertical-tab suffix stays content', '```md\ncontent\n```\v\n✓ seven\n```'],
   ['closer with an NBSP suffix stays content', '```md\ncontent\n```\u00a0\n✓ seven\n```'],
   ['unclosed fence reads to the end', '```md\ncontent\n✓ seven'],
@@ -117,17 +119,14 @@ const CASES = [
 const version = (pkg) => JSON.parse(readFileSync(refPath(`${pkg}/package.json`), 'utf8')).version
 
 let disagreements = 0
-const cases = CASES.map(([name, source, note]) => {
+const cases = CASES.map(([name, source]) => {
   const blocks = commonmarkBlocks(source)
   const second = markedBlocks(source)
-  const agrees = JSON.stringify(blocks) === JSON.stringify(second)
-  if (!agrees) {
+  if (JSON.stringify(blocks) !== JSON.stringify(second)) {
     disagreements += 1
     console.error(`reference disagreement — ${name}: commonmark ${JSON.stringify(blocks)} vs marked ${JSON.stringify(second)}`)
   }
-  const entry = { name, source, blocks }
-  if (note) entry.note = note
-  return entry
+  return { name, source, blocks }
 })
 
 const fixture = {
