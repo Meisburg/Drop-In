@@ -488,7 +488,13 @@ $ npx vitest run scripts/factory/scheduler.test.mjs
 `\b`, and `@` ends in a non-word character, so the composed arms could never fire on it. An arm written down
 that cannot fire is the same defect shape as every earlier round. Fixed by ending each arm with `(?![\w])` — a
 correct end-of-token assertion for a non-word token, equivalent to `\b` for word-terminated ones like `HEAD` —
-which also restored `HEAD^` and `HEAD@{2}` (both were silently dropped by the same `\b`).
+which also restored `HEAD^` and `HEAD@{2}`.
+
+**ROUND 6 CORRECTION — this sentence was FALSE.** It said both "were silently dropped by the same `\b`".
+Measured, that is wrong in both halves: the pre-repair `\b` **truncated the token**, so the guard still
+flagged `HEAD^`/`HEAD@{…}` lines, with the label cut back to `HEAD`; and only the `@` arm was actually
+dropped. Commit `37b8dd8`'s subject repeats the same overstatement — that commit cannot be rewritten, so the
+correction lives here.
 
 Measured, current guard (the `@` token rendered `<@>` here, as `HEAD` is rendered `<HEAD>`; the seeds carried
 the literal):
