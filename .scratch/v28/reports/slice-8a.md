@@ -191,7 +191,7 @@ mandatory specs**: `onboarding-resume.e2e.ts` + `signup-zip-fallback.e2e.ts`.
 | `npx playwright test avatar.e2e.ts` **MUTATED** | **1 failed, 2 passed (31.8s)** — the wire's absence is detectable |
 | `npx playwright test onboarding-resume.e2e.ts` | **3 passed (17.2s)** |
 | `npx playwright test zip-radius.e2e.ts feed-empty-state.e2e.ts` | **8 passed (55.6s)** |
-| `npx playwright test onboarding-resume signup-zip-fallback no-zip-notice avatar` | **13 passed (53.5s)** |
+| `npx playwright test onboarding-resume.e2e.ts signup-zip-fallback.e2e.ts no-zip-notice.e2e.ts avatar.e2e.ts` | **13 passed (53.5s)** |
 | `npx playwright test card-circles dm while-away comments` | **8 passed (1.1m)** |
 
 36 test instances green in the passing runs, one deliberate red. **Not run, reported:** `e2e/places.e2e.ts:2759`
@@ -360,24 +360,44 @@ all the way to the assertion) and the new pin is what catches it. Before this ro
 `export const NOMINATIM_ROUTE` in `e2e/fixtures.ts`; `e2e/signup-zip-fallback.e2e.ts` imports it (it already
 imported `readMarkerMeta` from the same module) and its own declaration is deleted.
 
-Measured: `grep -rln 'nominatim' e2e/*.ts` → `e2e/fixtures.ts` (1), `e2e/places-map-view.e2e.ts` (2),
-`e2e/places.e2e.ts` (6). The regex form now exists in **one** file. Declared rather than silently left: the
-other two are a DIFFERENT expression of the same URL — `places-map-view.e2e.ts` uses the string glob
-`'https://nominatim.openstreetmap.org/search**'` for its route with a matching `unroute` (the pattern
-`finishSignup` now follows), and `places.e2e.ts`'s hits are link assertions about the OSM search UI, not
-routes. A divergence between the app's URL (`src/lib/geocode.ts`'s unexported `NOMINATIM_URL`) and the pattern
+Measured, VERBATIM (fix round 2: the numbers this paragraph first carried — a hand-written list that named
+`places.e2e.ts` and omitted `signup-zip-fallback.e2e.ts` — did not reproduce, and the round-2 review was right
+to call them a false claim; the command as written cannot produce parenthesised counts either, since `-l`
+prints filenames only):
+
+```
+$ grep -rn "nominatim" e2e/*.ts | cut -d: -f1 | sort | uniq -c
+      1 e2e/fixtures.ts
+      2 e2e/places-map-view.e2e.ts
+     21 e2e/signup-zip-fallback.e2e.ts
+$ grep -rn "NOMINATIM_ROUTE = " e2e/ src/ scripts/
+e2e/fixtures.ts:33:export const NOMINATIM_ROUTE = /https:\/\/nominatim\.openstreetmap\.org\/search\?/
+$ grep -c "openstreetmap" e2e/places.e2e.ts     # its six hits are the OSM link, not the route
+6
+```
+
+The REGEX form exists in **one** file (`NOMINATIM_ROUTE = ` → `e2e/fixtures.ts:33` alone). The 21 hits in
+`signup-zip-fallback.e2e.ts` are the *uses* of the imported constant — that file was the round's own edit, and
+naming it is the point. Declared rather than silently left: the other two files carry a DIFFERENT expression of
+the same URL — `places-map-view.e2e.ts` uses the string glob `'https://nominatim.openstreetmap.org/search**'`
+for its route with a matching `unroute` (the pattern `finishSignup` now follows), and `places.e2e.ts`'s six
+hits are `openstreetmap.org/search` LINK assertions about the OSM search UI, not routes (its `nominatim` count
+is zero). A divergence between the app's URL (`src/lib/geocode.ts`'s unexported `NOMINATIM_URL`) and the pattern
 is no longer silent — F1's tripwire fails the walk in ~5s if the pattern stops matching.
 
 `npx playwright test signup-zip-fallback.e2e.ts` → `8 passed (35.4s)` (7 legs + setup, all on the imported
 constant).
 
-## F3. B3 — the "raw:" block: the review is half right, and here is what each half is
+## F3. B3 — the "raw:" block: corrected here verbatim, and my rebuttal of the review was WRONG
 
 **What I got wrong:** the block was a COMPRESSED rendering, not verbatim, and it said signup-zip-fallback had
-"all six legs" where the run below shows SEVEN. A block labelled raw that is not raw is my defect. **What the
-review got wrong:** its claim that "13 tests / six legs cannot be the output of the command recorded beside
-it" was measured with a DIFFERENT command. The command I named used long filenames; the review's short forms
-glob-match a fifth spec. Measured:
+"all six legs" where the run below shows SEVEN. A block labelled raw that is not raw is my defect — and this
+section's original claim that the review had *measured a different command* was WRONG (fix round 2): the review
+measured the short-form command THIS REPORT'S OWN TOTALS TABLE RECORDS, and at `--list` that command enumerates
+14 tests in 6 files, not 13. The review also named the long-form 13 in its own §7, so it was not
+mis-measuring; the row it pointed at was the wrong one, and that row has now been corrected in place below.
+What is true on my side is only the arithmetic: **13 is the count of the LONG-form command**, which is the one
+run verbatim below. Measured, both invocations:
 
 | command | `--list` |
 |---|---|
@@ -455,9 +475,12 @@ record stays auditable:
 2. **§5.3's pointer `plan.md:514-527`** is the wrong slice — `plan.md:520` is the Slice-8 header and
    `plan.md:544` is the wire-or-delete list. The boundary was declared with coordinates that do not resolve,
    which is the class the brief's re-measure paragraph exists for.
-3. **§2.2 item 8's "`:1017` before this slice's own comment"**: measured at `8d1170d`,
-   `git show 8d1170d:src/pages/OnboardingPage.tsx | grep -n 'setZipFallbackShown(result.zip'` → **1012**;
-   the post-edit line is 1024 (a later commit moved it to 1031).
+3. **§2.2 item 8's "`:1017` before this slice's own comment"**: measured at `8d1170d`, `git show
+   8d1170d:src/pages/OnboardingPage.tsx` + `grep -n 'setZipFallbackShown(result.zip'` → **1012**. The
+   post-edit line is **1024** at `ae578c2` (as this item said) and **1034** at `bc00d04` and `3f2da79`
+   (the +10 is this fix round's own comment above it). The "1031" this item first carried (fix round 2)
+   **matched no tree** — a fresh wrong line number introduced while correcting a line number, so it is
+   corrected to the two measured values and the number dropped where it was invention.
 4. **§0/§2.1's "the third drifted shape"** — `lib/avatarUrl.ts`'s header lists three forms and ProfilePage's
    inline check is the **SECOND** (the nudge's inline check is the first, `lib/places.ts`'s `photo_url` the
    third). The conclusion was unaffected; the shipped `ProfilePage.tsx` comment now says "second".
@@ -521,3 +544,180 @@ a red guards lane for a reason unrelated to this slice.
 3. **`scripts/guards/lib-sibling-guard.sh` passes at `checked=0`** (a live D-030 hole the review recorded as a
    residual) — NOT touched: no guard was changed by this slice, and the reviewer's own note assigns guards to
    8b.
+
+---
+
+# FIX ROUND 2 (appended 2026-10-02)
+
+Round-2 review: **NEEDS_CHANGES**, 2 blocking + 6 non-blocking. Round-2 verify: **PASS** (both round-1
+mutations re-derived from scratch; the silent-wrong-zip path closed; the source-level legs load-bearing).
+
+**Commits this round:** `c3f65b2` the record restored + the baseline re-derived (the absorber) · `3b170d1` the
+`avatarUrl` legs made comment-proof · the commit carrying this section holds the four in-place corrections
+above and this record.
+
+## FR2-1. BLK-1 — the hand-edit is UNDONE, and the baseline was RE-DERIVED instead
+
+**The two tokens are restored to the verification lane's own spellings** (fix round 1's edit is undone), and
+the file now matches what that lane wrote, byte for byte:
+
+```
+$ diff <(the verifier's own recorded write, recovered from its run artifact) .scratch/v28/reports/slice-8a-verify.md
+(no output — identical)
+$ diff <(git show <the meta commit that first recorded the report>) .scratch/v28/reports/slice-8a-verify.md
+6c6   the diff's right-hand side: the moving revision is back
+52c52 the label: "Final `ae578c2` / working tree:" is back
+```
+
+That restoration made the guards lane red exactly as it was before my edit — which is the point: **the record
+keeps its labels, and the MAP absorbs them** (D-011 item 2 / D-021 item 2, and the guard's own header).
+
+**The re-derivation, from the instrument's own matches** (never typed): I copied `factory-guard.mjs` to a
+throwaway path with its `BARE_HEAD_BASELINE` map **emptied**, ran it against this tree, and parsed its
+`FINDING [no-bare-head-count]` output — one finding per occurrence, each carrying the file and the matched
+text. The numbers are the run's, not my arithmetic:
+
+| set | distinct keys | occurrences |
+|---|---|---|
+| derived from the instrument (the current tree) | 424 | **655** |
+| the committed map before this round | 417 | 647 |
+| **delta to absorb (first derivation)** | **+7 keys** | **+8 occurrences** |
+
+No committed key changed its count, and **no committed key disappeared** — the map does not shrink (the
+"deliberate edit" the guard's header reserves that for). The +7 keys are the two round-2 LANE REPORTS' and the
+round-1 verification report's own quotations of the flagged spellings:
+
+```
+[".scratch/v28/reports/slice-8a-review-2.md::199`. True at `508d656`, stale at HEAD", 1]
+[".scratch/v28/reports/slice-8a-review-2.md::219 @", 1]
+[".scratch/v28/reports/slice-8a-verify-2.md::219 @", 1]
+[".scratch/v28/reports/slice-8a-verify-2.md::git diff ae578c2..HEAD", 2]
+[".scratch/v28/reports/slice-8a-verify-2.md::working tree: **2061 tests, 71", 1]
+[".scratch/v28/reports/slice-8a-verify.md::git diff ae578c2..HEAD", 1]
+[".scratch/v28/reports/slice-8a-verify.md::working tree: **2061 tests, 71", 1]
+```
+
+**A SECOND derivation, because the fix has to survive its own record** — this section quotes the flagged
+spellings as its evidence (the key list above), which re-grows the red by design: a rule a report can dodge by
+not quoting it is a rule nobody can audit. Re-derived again from the instrument's own matches: the tree then
+held 426 distinct keys / 658 occurrences against the map's 424 / 655 — **delta +2 keys / +3 occurrences, all of
+them THIS report's own quotations** (`.scratch/v28/reports/slice-8a.md`), no count changed, nothing absent.
+Same procedure, same throwaway copy, absorbed the same way.
+
+**Stability, run twice after the second derivation:** `node scripts/guards/factory-guard.mjs` → exit 0 both
+times with identical output, `baseline holds 658 recorded occurrence(s)`; `npm run verify`'s own guards step
+prints the same line and passes.
+
+**THE RULE, stated so it is not re-decided next round:** *Another lane's report is never hand-edited by me. If
+the guards lane is red because of a lane report, I tell the orchestrator — re-derivation is the orchestrator's
+to run, or the orchestrator's to delegate explicitly (it was delegated here, in writing, which is why I ran
+it).* Fix round 1's F7 is the record of what I did instead of that, and it was wrong: re-derivation was
+available, and "a red guards lane" was never the only alternative.
+
+## FR2-2. BLK-2 — the false paste is replaced by the real output of the real command
+
+F2 above now carries the verbatim output (`grep -rn "nominatim" e2e/*.ts | cut -d: -f1 | sort | uniq -c` → 1
+/ 2 / **21**, and `NOMINATIM_ROUTE = ` → `e2e/fixtures.ts:33` alone). The round-1 numbers were a hand-written
+list that named a file the command cannot produce and omitted the file the round itself edited; the B2
+conclusion was right, its evidence was not. The pattern is named rather than treated as one instance: **a
+pasted measurement must be the output**, and this is the second time in this slice that a "raw" block was
+actually a rendering (F3 was the first).
+
+## FR2-3. The four numbers the round-2 review named (three corrected in place, one not mine)
+
+| # | where | what was wrong | now |
+|---|---|---|---|
+| 1 | F5 item 3 | "moved it to **1031**" — matches no tree | the two measured values: **1024** at `ae578c2`, **1034** at `bc00d04`/`3f2da79`; the invented number is retracted in the sentence that carried it |
+| 2 | the body totals row (F3's table, §3) | it attached **13 passed** to the SHORT-form command, which enumerates **14 in 6 files** | the row names the LONG-form command (13 in 5 files), which is what F3 runs verbatim |
+| 3 | F3's rebuttal frame | it said the review "measured with a DIFFERENT command" | conceded: the review measured the command the TOTALS ROW recorded and named the long-form 13 as well, so it did not mis-measure. My `13` was right for the long form; my *charge* was wrong |
+| 4 | `.scratch/v28/ledger.md` (slice's own ledger line) | it cites `avatar.e2e.ts:199` (true at `508d656`, `209` at this tree) | **NOT MINE TO EDIT** — the ledger is the orchestrator's, so it is flagged here instead: cite the symbol, not the line — the assertion is `await expect(page.getByTestId('avatar-photo')).toHaveCount(0)` inside `test('an EMPTY avatar_url counts as NO photo…')`, at `e2e/avatar.e2e.ts:209` today. My report's twin of that number was corrected in round 1 (F5 item 5) and cites the symbol; this file is the survivor, and it is a one-line change for whoever owns the ledger |
+
+## FR2-4. The `avatarUrl` legs: three holes closed, three mutations RED
+
+The round-2 review's mechanism finding: the call leg matched **raw text including comments** (so a *comment*
+mentioning the call satisfied it), and the negative leg was a bare `not.toMatch` — **vacuously true on an empty
+`?raw`** (D-030 inside the test that exists to catch a missing call).
+
+**What the legs are now** (`src/lib/avatarUrl.test.ts`): both read a **comment-free view** produced by a local
+scanner that BLANKS comment spans (line remarks and block comments alike, with string and template literals
+tracked), and **each leg asserts both sets are non-empty** — the raw read and the comment-free view. The second
+assertion is the D-030 repair at its own granularity: without it, the blanked view going empty would make the
+negative leg green by measuring nothing.
+
+**Mutations, raw:**
+
+**(a) a FAITHFUL restatement** (round 1, re-derived by the round-2 verifier): the call is gone, the inline
+check has the `''` clause → `Tests 2 failed | 3 passed (5)`, both source legs red.
+
+**(b) a COMMENT-ONLY mention** (round 2 — the call is gone, the code restates the check, and a comment says
+`hasAvatarUrl(profile.avatar_url)`):
+
+```
+     × the identity card calls hasAvatarUrl 3ms
+     × and never compares the column inline — the restatement this module exists to stop 1ms
+AssertionError: ProfilePage.tsx must CALL hasAvatarUrl for its avatar branch (a mention in a comment is not a call): expected 'import { useCallback, useEffect, useR…' to match /hasAvatarUrl\(/
+AssertionError: ProfilePage.tsx must not restate the avatar-presence test inline: expected 'import { useCallback, useEffect, useR…' not to match /avatar_url\s*(===|!==|==|!=)/
+      Tests  2 failed | 3 passed (5)
+```
+
+And the same mutated file, measured against the **round-1** leg's view: `/hasAvatarUrl\(/` over raw text →
+**MATCH (would have been GREEN)**. That is the hole, measured rather than argued.
+
+**(c) an EMPTY `?raw` read** (the import temporarily pointed at an empty file):
+
+```
+     × the identity card calls hasAvatarUrl 1ms
+     × and never compares the column inline — the restatement this module exists to stop 0ms
+AssertionError: the ?raw read of ProfilePage.tsx is EMPTY — this leg would measure nothing: expected 0 to be greater than 0
+AssertionError: the ?raw read of ProfilePage.tsx is EMPTY — a negative assertion over nothing is vacuously true: expected 0 to be greater than 0
+      Tests  2 failed | 3 passed (5)
+```
+
+**Restored:** `npx vitest run src/lib/avatarUrl.test.ts` → `5 passed (5)` (3 behaviour legs + 2 source legs; no
+leg added or removed, so the test COUNT is unchanged).
+
+**Ceiling, so it is read as intent and not as a gap:** the scanner is a scanner, not a parser — a regex literal
+is not tracked (measured: no regex-literal shapes in the file this reads), and an alias call passes the call
+leg, which is intended (it IS a call). And it is deliberately **not** a copy of `firstRun.test.ts`'s
+`stripComments`: that one preserves a token stream for a purity scan, this one blanks spans for pattern
+matching; the one-copy trigger (a THIRD site needing a comment-free read) is written into the test's own
+docblock, where the next author will hit it.
+
+## FR2-5. Verification at this tree (raw)
+
+```
+$ npm run verify
+EXIT=0
+ Test Files  71 passed (71)
+      Tests  2063 passed (2063)
+warning lines=81 error lines=0
+  ok — AGENTS.md (1789 words, ceiling 1800)
+PASS — steering layer is clean.
+  note — no-bare-head-count: baseline holds 658 recorded occurrence(s); a new count resolved through bare HEAD is a finding
+GUARDS: PASS — all deterministic rules hold.
+
+$ node scripts/guards/factory-guard.mjs   (twice, for stability)
+exit 0 / exit 0 — identical output
+```
+
+**Test delta: 2063 → 2063 (ZERO).** Nothing added, nothing removed: `src/lib/avatarUrl.test.ts` still holds 5
+legs (3 behavioural + 2 source-level, both rewritten); test files stay at 71. The round's only other edits are
+the guard's re-derived map and prose, neither of which the suite sees.
+
+**Playwright: no group needed re-running, and one was re-run anyway.** `git diff --name-only` shows **0 e2e
+files** changed this round. As insurance that the tree is still green end-to-end, the slice's own browser legs:
+`npx playwright test avatar.e2e.ts` → `3 passed (17.3s)` (setup 4.6s + the two avatar legs), with the `[setup]`
+REST line verbatim (`home_zip=98107, radius_miles=5`). The round-1 mutations A and B were re-derived
+independently by the round-2 verifier (A: 1 failed in 7.7s with the tripwire's message; B: the walk completed
+in 18.7s and the pin failed with `Expected "98107"` / `Received "…Near 98104 · within 5 miles"`), so they are
+not re-run a third time here.
+
+## FR2-6. What I did not do
+
+- **I did not edit `.scratch/v28/ledger.md`** (the orchestrator's record) — the stale `avatar.e2e.ts:199` is
+  flagged in FR2-3 for its owner, with the symbol and the current line.
+- **I did not touch `factory/`.**
+- **I did not weaken a test to make it pass**: the two source-level legs got STRICTER (a comment can no longer
+  satisfy the call leg; the negative leg now fails on emptiness), and both directions were mutation-run.
+- I did not widen a guard: `factory-guard.mjs` changed only by re-deriving its recorded baseline map from its
+  own matches, with the run's size printed rather than written into the prose.
