@@ -980,3 +980,31 @@ quoted to be reported, the instrument needs **a record of what it has already se
 quotation looks like. **This is the third form of the same lesson in three rulings: D-028 (stop correcting the
 sentence), D-030 (zero is a finding), D-032 (stop guessing at structure), and now D-033 (do not charge the
 evidence trail). Every one of them is the same move: put the judgement where it can be checked.**
+
+## D-034 — independence is FAMILY independence, and it is bought by registering a model, never by raising a value
+
+**Done 2026-10-02, on the human's instruction ("I'll register a second model").** D-007/D-008 measured the hole:
+the reviewer/verifier floor (`reasoning 3` + `tool_use 3`) was cleared by **exactly one registered model**, which
+was also the implementer, so **`same_model: false` was unsatisfiable by construction** and every review this batch
+received was a **sibling** — disclosed in every lane, and never a substitute for independence.
+
+**Registered: `ollama-cloud/glm-5.3`** — and the choice is the point. **Not another DeepSeek.** A second size of the
+same family is a *different model* and not a *different mind*; the builder is DeepSeek, so a DeepSeek reviewer
+would have satisfied the letter of the rule and none of its purpose. **GLM is a different family, so this is
+diversity of the kind D-015 said the rule was groping toward.**
+
+**Every declared number carries its source, and the three kinds of source are kept distinct:**
+- **`tool_use` — VERIFIED EMPIRICALLY, not assumed.** A tool-call round trip against `https://ollama.com/v1`
+  returned **HTTP 200 in 2099 ms** with a correct `tool_calls` payload. **A capability declared for a model that
+  cannot tool-call would be this batch's own class**, so the one axis a reviewer's floor actually turns on was
+  measured before registration rather than after.
+- **`context_window` — READ from the model's own metadata** (`glm_dsa_moe.context_length = 1048576` via
+  `/api/show`), not typed.
+- **`reasoning` and `coding` — DECLARED POLICY** from the model's class, **explicitly NOT benchmarked here** and
+  labelled as declarations in `_capability_source`. *Capability levels are declared policy, not a benchmark* —
+  the field exists so a reader can tell which is which.
+
+**And the gap note was itself a claim that went false the moment the second model existed.** It said the floor was
+"cleared by EXACTLY ONE registered model" — true when written, false one commit later. It now records the
+**resolution**, and the original measurement survives in D-007/D-008. **A note about a gap is a claim like any
+other, and it expires with the gap.**
