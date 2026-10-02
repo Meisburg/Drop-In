@@ -23,9 +23,9 @@
       ],
       "evidence": [
         "npm run verify at fa3f24b -> exit 0 / GUARDS: PASS — 71 test files / 2068 tests / 81 warnings / 0 errors / AGENTS.md 1789 of 1800 / 0 real finding lines",
-        "node scripts/guards/copy-taxonomy-guard.mjs -> exit 0 PASS 0 findings and its check -> exit 0 (29 of 29 checks across 26 invocations ; 8 of them mutated)",
+        "node scripts/guards/copy-taxonomy-guard.mjs -> exit 0 PASS 0 findings (and it prints 'declared claims CHECKED by rule 3: 3 of 3 the taxonomy accepts') while its check -> exit 0 with 29 of 29 checks across 26 invocations and 8 mutations",
         "bash scripts/steering-lint.sh -> exit 0 and bash scripts/guards/run-all.sh -> exit 0 GUARDS PASS with the guard registered in both places",
-        "fix round 1 committed at 45cd77b (B1 B2 B3) and fix round 2 at a6d72f6 (B2b mechanism ; N1 ; N2 ; N4) — B2b closed with a claim counter: the old guard exits 0 PASS on the three-declared-kind collapse while the fixed guard exits 1 with the counter finding ; both halves raw in report section 13 ; the seven no-bare-head-count findings in the two round-2 lane reports absorbed by re-deriving the factory-guard baseline (new 7 ; lost 0 ; decreased 0 ; derivation run twice byte-identical) ; no test delta — 71 files and 2068 tests at every commit"
+        "fix rounds 1-3 committed at 45cd77b / a6d72f6 / ad817cc — round 3 closed F3 (ambiguousWords deleted ; claimsChecked wired into the tripwire and printed) plus F1 F2 F4 (three stale clauses deleted) and F6 (the taxonomy-absent declared kind prints its own reason) ; the reviewer falsified 8 of the 13 sweep rows and every row behaved as claimed ; the round-3 lane reports' bare-HEAD quotations measured at four (all in slice-6d-verify-3.md) and absorbed by re-derivation (new 4 ; lost 0 ; decreased 0 ; twice byte-identical) ; no test delta — 71 files and 2068 tests at every commit"
       ],
       "reopened": [
         {
@@ -278,6 +278,15 @@
     },
     {
       "at": "2026-10-02T17:17:09.902Z",
+      "lane": "implementation",
+      "from": "complete",
+      "to": "complete",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:27:08.762Z",
       "lane": "implementation",
       "from": "complete",
       "to": "complete",
