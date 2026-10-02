@@ -688,6 +688,10 @@ Two pushes came back from the review. Both accepted:
 
 ### Slice 6c — CLOSED 2026-10-02 (the slice that taught the batch its defect class)
 
+### UNASSIGNED ACROSS ALL THREE 8b BRIEF VARIANTS — `useCropStep`'s await guard
+
+Slice 8b's builder read all three brief variants (`slice-8b.md`, `slice-8b-2.md`, `slice-8b-3.md`) and reports that **§6's `useCropStep` await guard appears in none of them** — it is in 8b's items 1–2, not in 8b-2, not in 8b-3. So it was **not built**, and `onConfirm` at `src/components/useCropStep.tsx:27` is still live. **Recorded here because a brief item that belongs to no slice is one that quietly does not happen** — the same failure mode as an unowned deferral. It needs an owner (8c or 8d) once their briefs are read, and the reason a brief has three variants for one slice needs answering too.
+
 ### Slice 8a — CLOSED 2026-10-02 (source + spec hygiene, and the guard rule's failure)
 
 **Product work, verified across five rounds:** the wire-or-delete list resolved (with `hasAvatarUrl` **wired** rather than deleted, slice 2 getting first refusal), the `finishSignup` stub's address intercept **given a tripwire and its written zip PINNED** — the mutation proving it: with the stub answering a *different seeded* zip the walk completes and the pin fails (`Expected 98107 / Received …Near 98104 · within 5 miles`). The `hasAvatarUrl` **call** is pinned by source-level legs that a faithful restatement fails. Gate green: 71 files / 2063 tests / 81 warnings / 0 errors.
