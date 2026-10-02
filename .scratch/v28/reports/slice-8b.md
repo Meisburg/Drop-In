@@ -386,3 +386,67 @@ VERIFY EXIT=0
 `bash scripts/guards/run-all.sh` → `GUARDS: PASS — all deterministic rules hold.` exit 0. `scripts/steering-lint.sh`
 → `PASS — steering layer is clean.` Every number above is re-measured in this turn, not carried.
 
+## Commits (one per item; the sweep FIRST, its guard second)
+
+| commit | item |
+|---|---|
+| `d75c5e9` | item 1, commit A — the trailing-newline sweep (78 files, whitespace-only) |
+| `3bd7eb3` | item 1, commit B — the `trailing-newline-guard` + `.check.mjs` + both `run-all.sh` registrations |
+| `ccd9c19` | item 2 — `scripts/slice-diff.sh` + the `code-structure.md` note |
+| `6cef89d` | item 3 — `lib-sibling-guard.sh` fails at `checked=0`, + its checker |
+| `f55bc12` | item 4 — the report/brief scan fails on an empty scan (D-030) |
+| `eeac917` | item 5 — the `transcript-summary-agrees` escape is closed (D-031) |
+| `2ff8888` | the lint-warning regression from a check NAME removed, + this report's tables |
+
+**Order was load-bearing and is satisfied.** The guard in `3bd7eb3` exists only after the sweep in `d75c5e9`;
+run against the sweep's parent `aa331d0` it reports 78 findings and exits 1, and against the swept tree it is
+green. Had they landed together, the guard would have been red from birth.
+
+## Risks
+
+- **`ponytail:`-class simplifications, named.** (1) The newline guard's scan set is the repo's CODE TREE
+  (`src/ e2e/ scripts/`, 323 tracked files), not every tracked text file (166): `.scratch/**` history (61),
+  `supabase/migrations` (20), `docs/agents` + `.opencode/agents` (9) and eight root files are out, and the
+  guard's header says so. Two of the excluded root files are PROTECTED check configs — sweeping them would
+  leave `config-guard` red against the merge-base for the rest of the batch. Ceiling: a missing newline in
+  `.scratch/`, `docs/` or `supabase/` is invisible to this guard, by declaration. (2) `slice-diff.sh` refuses
+  on an ambiguous ledger rather than selecting a round; the ceiling is a `ponytail:` comment in the file.
+- **The `transcript-summary-agrees` coverage loss is declared, not restored** — see item 5. Widening the label
+  to a mid-line token makes the live corpus red (100+ findings, measured). This is the one dispatch item not
+  done as written.
+- **`slice-8a.md`'s false claims are NOT edited.** `:931`, `:953` (31 of 104 — unreproducible, and the harness
+  is now 115 checks), `:990`, `:1056` stand as written. The dispatch says never hand-edit another lane's
+  report, and re-derivation of another slice's record is the orchestrator's. Corrected measurements are above.
+- **The rule's live signal is still zero.** It compares **0** range summaries on this corpus every run; its
+  entire firing evidence is synthetic. That was true before this slice and is unchanged — but it means the
+  escape proof is a seeded proof, not a live one.
+- **`slice-diff.sh 8b` refuses for 8b itself**, because the ledger's 8b dispatch line records no base. That is
+  the tool working (it must not guess) and also a gap the orchestrator owns: the ledger, not this slice.
+- **`ladder:`** — I copied `mutatedGuard`'s uniqueness assertion (`throw` unless the anchor occurs exactly once)
+  from `factory-guard.check.mjs` into both new checkers, because I had already shipped two mutation checks in
+  `lib-sibling-guard.check.mjs` whose anchors mutated the *printing* of a failure (so the seed stayed red and
+  the "mutation" proved nothing). A mutation anchor that no longer exists is a silent no-op, and a silent no-op
+  makes every mutation check pass vacuously; the throw is the structural constraint that keeps that out.
+- **Two mutation anchors were corrected mid-item** (lib-sibling): the first two mutated the failure's *printing*
+  and not its *detection*, so both seeds stayed red and neither mutation could flip. Recorded rather than
+  quietly fixed.
+- `scripts/guards/no-bypass-guard` and `e2e/places.e2e.ts:2759` are the brief's two named flakes. Neither was
+  touched and neither failed in the two full `npm run verify` runs (`no-bypass-guard` is in the suite and
+  passed both times); no e2e spec was run by this slice, because no e2e file changed.
+
+## Unresolved questions (for the orchestrator)
+
+1. **`slice-8b.md` §6 — "the `useCropStep` await guard, and its own proof" — is unassigned across the three
+   brief variants.** It is not in 8b's SCOPE CUT (items 1-2), not in `slice-8b-2.md` (specs), and not in
+   `slice-8b-3.md` (which takes the `| void` type tightening). `grep -n onConfirm src/components/useCropStep.tsx`
+   shows `:27` still admits `| void` and `:167` still passes `onConfirm={(rect) => void confirm(rect)}`. If the
+   guard is wanted, it is one more `scripts/guards/*.mjs` + `.check.mjs` + two registrations; if the type
+   tightening in 8b-3 is judged sufficient, §6 should be deleted from the brief rather than left unowned.
+2. **May `slice-8a.md`'s four false claims be edited?** I read "never hand-edit another lane's report" as
+   covering it and left it alone. If you want them retired (D-028: delete, do not restate), it is a
+   delete-only diff in a closed slice's report and I can do it on one word from you.
+3. **The coverage-loss call.** I chose the label form as the boundary over widening into a red gate. If you
+   would rather have the three prose-introduced blocks read, the only green options I measured are a wide label
+   with a small window plus a COARSE (whole-scan) tripwire — which trades the per-label tripwire away, the one
+   D-030 property the round-5 reviewer explicitly asked for. Say which you prefer and I will re-cut it.
+

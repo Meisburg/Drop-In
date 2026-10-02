@@ -86,6 +86,9 @@ if [ "${#bases[@]}" -eq 0 ]; then
 fi
 
 if [ "${#bases[@]}" -gt 1 ]; then
+  # ponytail: no round selector — an ambiguous ledger REFUSES rather than picking,
+  # because picking is the failure this tool exists to prevent. Add a round
+  # argument when a slice's fix rounds genuinely need separate diffs.
   echo "slice-diff: REFUSING — the ledger records ${#bases[@]} different bases for slice '$slice' (${bases[*]})."
   echo "  Choosing one would be a guess; name the round in the ledger or diff by hand."
   exit 1
