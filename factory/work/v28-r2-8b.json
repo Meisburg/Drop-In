@@ -1,7 +1,7 @@
 {
   "version": 1,
   "id": "v28-r2-8b",
-  "title": "Slice 8b — mechanical determinism and test honesty",
+  "title": "Slice 8b \u2014 mechanical determinism and test honesty",
   "plan_ref": "plan.md#slice-8b",
   "track": null,
   "base": null,
@@ -55,6 +55,15 @@
       "to": "blocked",
       "note": "repair: newWorkItem defaulted acceptance to pending, which its own guard rejects (lane-states-legal). Constructor fixed; this item repaired.",
       "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T18:58:53.267608Z",
+      "lane": "implementation",
+      "from": "pending",
+      "to": "pending",
+      "note": "DEFERRED IN FROM SLICE 8a, and registered here so it is owned rather than remembered: `scripts/guards/lib-sibling-guard.sh` passes at `checked=0` \u2014 it reports health while checking ZERO files. That is D-030 (an empty measurement consumed as health) sitting in the guard suite itself, and slice 8a's round-2 review found it DECLARED in that slice but registered nowhere (not in plan.md, not here). 8b owns guards, so it is 8b's: the guard must FAIL when it checks nothing, with its own seed and mutation.",
+      "actor": "orchestrator",
       "model": null
     }
   ]

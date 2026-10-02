@@ -688,6 +688,10 @@ Two pushes came back from the review. Both accepted:
 
 ### Slice 6c — CLOSED 2026-10-02 (the slice that taught the batch its defect class)
 
+### DEFERRAL REGISTERED FOR 8b — `lib-sibling-guard.sh` passes at `checked=0`
+
+A guard that reports health while checking **zero** files. Found by slice 8a's round-2 review, **declared in that slice but owned nowhere** — which is why it is written here and in `factory/work/v28-r2-8b.json` rather than left to memory. This is D-030's own class inside the guard suite, and 8b owns guards: it must **fail when it checks nothing**, with a seed and a mutation proving it.
+
 ### Slice 6d — CLOSED 2026-10-02 (the repo-wide honesty guard, and where the climb stops)
 
 **Shipped:** `copy-taxonomy-guard.mjs` — 4 rules (a declared category must EXIST, be OFFERED, be BACKED by the
