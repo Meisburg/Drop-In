@@ -22,6 +22,16 @@ import { TIME_STEP_MINUTES, formatTimeLabel, stepTimeMinutes } from '../src/lib/
 
 const CWD = process.cwd()
 
+/** The card's Nominatim request (lib/geocode's searchFirst, one URL shape). */
+const NOMINATIM_ROUTE = /https:\/\/nominatim\.openstreetmap\.org\/search\?/
+/**
+ * The address `finishSignup` types into the area card. A REAL street, because
+ * the answer the fixture returns claims it (postcode + house_number 1200, the
+ * precision rule's proof): the pair has to be consistent or the walk is
+ * asserting a resolution that does not match the text.
+ */
+const FINISH_SIGNUP_ADDRESS = '1200 1st Ave S, Seattle'
+
 /** The repo .env (gitignored; holds the Supabase project credentials). */
 export const ENV_PATH = path.join(CWD, '.env')
 
@@ -394,15 +404,28 @@ export async function signUpViewer(
  * and then the AREA card ("4 of 4", V28 slice 5 — address-first,
  * decision 9).
  *
- * THE AREA CARD: the card's bounded address lookup must not hang this
- * 17-spec helper on a network answer, so the helper types an address that
- * NEVER resolves (no such street exists anywhere): the lookup settles to
- * "absent" (Nominatim answers empty — or the sandbox has no network at
- * all), the card reveals the ZIP field + the in-card notice, and the
- * caller's own zip + radius finish the card. The RESOLVED-address path
- * (home zip set with no typed zip) is exercised by
- * e2e/signup-zip-fallback.e2e.ts, which intercepts the card's Nominatim
- * lookup.
+ * ⚠️ THE ADDRESS LOOKUP IS ANSWERED BY THIS FIXTURE, NOT BY THE NETWORK
+ * (V28 r2 slice 8a). Until this slice the helper typed an address that could
+ * not resolve and walked the ZIP fallback — which put a REAL Nominatim request
+ * in every one of this helper's consumers (bounded at `ADDRESS_LOOKUP_TIMEOUT_MS`
+ * = 10s, ~170s of suite-wide worst case) and left a tail risk that the fake
+ * address resolved into the seeded gazetteer. Now the helper intercepts the
+ * card's one request and fulfils it with the CALLER'S OWN ZIP
+ * (`postcode: options.homeZip` + a house number, the precision rule), so:
+ *
+ *   - the walk types an address, picks the radius, and taps Finish ONCE — the
+ *     intercepted answer resolves to the caller's zip, `handleAreaFinish` writes
+ *     zip + radius, and the run renders its ending card. No typed ZIP, no
+ *     fallback notice, no network.
+ *   - the radius is chosen BEFORE that tap, because on the resolved path the one
+ *     Finish is the last thing the card does.
+ *   - the caller's zip must be one the gazetteer knows (`validateHomeZip` is the
+ *     same gate the typed path used — every existing consumer already passed it).
+ *
+ * Both faces of the fallback remain pinned where they belong:
+ * e2e/signup-zip-fallback.e2e.ts intercepts the same request and pins the
+ * resolved leg AND the empty-answer leg (note + field + the typed zip) — the
+ * helper no longer re-walks the empty leg for 17 specs that never asserted it.
  *
  * THE ENDING CARD (V28 slice 6, plan defect #19 → V28 r2 slice 5): the area
  * card's save no longer navigates — the re-keyed guard renders the run's OWN
@@ -432,6 +455,23 @@ export async function finishSignup(
 ): Promise<void> {
   const feed = page.getByRole('heading', { name: 'Near you' })
 
+  // THE ONE REQUEST THE CARD MAKES IS ANSWERED HERE (V28 r2 slice 8a — see the
+  // docblock: no real Nominatim call, and the answer is the caller's own zip).
+  // Installed before the address is typed, so no lookup can escape it.
+  await page.route(NOMINATIM_ROUTE, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          lat: '47.6205',
+          lon: '-122.3414',
+          address: { postcode: options.homeZip, house_number: '1200' },
+        },
+      ]),
+    }),
+  )
+
   // V28 slice 4a: the kids card (3 of 4) sits between the name card and the
   // area card. It is the ONLY view that renders the card's Skip control
   // (the area card has none — it is required), so waiting for it is the hop
@@ -444,20 +484,18 @@ export async function finishSignup(
   await skip.click()
 
   // V28 slice 5: the AREA card ("4 of 4") is the last view — address-first
-  // (decision 9). The helper types an address that never resolves (see the
-  // doc above), so the card's bounded lookup reveals the ZIP fallback and
-  // the caller's zip + radius finish the card. Waiting on the card's
-  // testid rather than the DOM keeps a cold-load beat harmless: the card
-  // renders once the profile load settles, and the wait absorbs that. The
-  // fill below auto-waits for the revealed ZIP field.
+  // (decision 9). The address is the entry (the card has no Skip), and the
+  // intercepted lookup above resolves it to the CALLER'S zip, so nothing is
+  // typed into a ZIP field. Waiting on the card's testid rather than the DOM
+  // keeps a cold-load beat harmless: the card renders once the profile load
+  // settles, and the wait absorbs that.
   const areaCard = page.getByTestId('first-run-area-card')
   await areaCard.waitFor({ timeout: 30_000 })
-  await page.getByPlaceholder('e.g. 1200 1st Ave S, Seattle').fill('1 E2E Loop, Nowhere')
-  // The card's primary reads "Finish" (FIRST_RUN_COPY.area; the busy label
-  // "Checking your address…" is disabled while the lookup is in flight, so
-  // the click auto-waits for the settle).
-  await page.getByRole('button', { name: 'Finish' }).click()
-  await page.getByPlaceholder('e.g. 98107').fill(options.homeZip)
+  await page.getByPlaceholder('e.g. 1200 1st Ave S, Seattle').fill(FINISH_SIGNUP_ADDRESS)
+  // The radius is chosen BEFORE the Finish tap, because on the resolved path
+  // that one tap is the last thing the card does (it writes the zip the lookup
+  // returned + this radius and renders the ending card).
+  //
   // The radius only matters to specs that assert on distance; anything else
   // takes the app's own default (5 mi) rather than restating it. The select's
   // options are LABELS ("20 miles"), so the option may be given as one of
@@ -476,6 +514,9 @@ export async function finishSignup(
     .locator('select')
     .first()
     .selectOption({ label: radiusLabel })
+  // The card's primary reads "Finish" (FIRST_RUN_COPY.area); while the lookup
+  // is in flight it reads "Checking your address…" and is disabled, so the
+  // click auto-waits for the (intercepted, instant) settle and the save.
   await page.getByRole('button', { name: 'Finish' }).click()
 
   // V28 slice 6 (defect #19) → V28 r2 slice 5: the area card's save renders
