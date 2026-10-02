@@ -950,8 +950,20 @@ a report** — they would have to edit the guard, which is a reviewed diff.
 **So `transcript-summary-agrees` gets the same absorber every other rule in this suite uses:**
 1. **A recorded baseline** of known quotation sites, **re-derived, never hand-added**, printing its size on every
    run and shrinking only by re-derivation — exactly `no-bare-head-count`'s established form.
-2. **Proven unforgeable:** a *new* report quoting the *same* text must still **FIRE**. If a baseline entry can be
-   reached by writing a new file, the absorber is a syntax wearing a record's clothes and it fails this ruling.
+2. **Not forgeable BY CONTENT:** a *new path* quoting the *same* text still **FIRE**s, and a *second* occurrence at
+   a recorded path still fires. Both are seeded and mutation-proven.
+
+**CORRECTION, ruled at 8b's round-2 review — the sentence above promiseed more than the mechanism keeps.** The
+first draft of this ruling said the record was "unforgeable" and that "a fabricator cannot produce a baselined
+citation from a report". **Measured, it can: the key names a PATH, and a path is writable.** A report that
+**reuses a recorded path** and carries the recorded text up to its recorded count **is absorbed** — the record
+cannot tell that report's quotation from a fabrication that copied the citation. What the record buys is
+narrower and still worth having: **you cannot reach a pass by writing a NEW file, and you cannot add a second
+occurrence to a recorded one.** The boundary is declared in the rule's own docblock, header and ceiling list.
+
+**The ruling stands; its reach did not.** That distinction is the point: **D-033's decision — use a record, not a
+syntax — is right and verified; the claim about how far it reaches was an over-claim of exactly the class this
+batch spent 6c on, and the repair was the sentence, not new machinery.**
 3. **The indented-code boundary is declared, not implied:** this rule reads **fenced** blocks; an indented code
    block is outside its scan set. That is a scope boundary and must be stated where the rule states its scope —
    and it is why a lane report can also clear a quotation by indenting it, at the cost of no longer being a
