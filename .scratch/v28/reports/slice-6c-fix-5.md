@@ -524,8 +524,15 @@ the @{2} form means no revision here         not flagged
 the count is 5 at user@example.com           not flagged
 ```
 
-New behaviour checks (each can fail): `the `@` shorthand (a git read and a count label) is CAUGHT` and
+New behaviour checks: `the `@` shorthand (a git read and a count label) is CAUGHT` and
 `email, @decorator and bare @{…} are NOT flagged (control)`. **Check count `31` → `33`.**
+
+**ROUND 6 CORRECTION — "each can fail" was FALSE for the second check.** With `MOVING_REV`'s `@` lookahead
+removed entirely, that control root still exits `0`: none of its four lines put a `@{…}` token within four
+tokens of a count, so no mutation to the lookahead reached it. A check whose named failure mode is
+unreachable is a claim, not a check. Round 6 rebuilt the root so the control IS reachable — the line
+`4 files mention the @{2} form` fires the moment the lookahead goes — and added the mutation that proves it
+(`factory-guard.check.mjs`, "MUTATION: removing the `@` lookahead turns that control red").
 
 **Baseline: DID NOT MOVE — still `87` occurrences / `47` keys.** Re-derived independently under the fixed
 boundary and diffed against the in-file Map: `occurrences 87 keys 47`, `diffs: 0`. No `@`, `HEAD^` or
