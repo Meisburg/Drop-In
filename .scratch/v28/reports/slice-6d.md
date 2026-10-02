@@ -6,8 +6,8 @@ below). **Report status:** written FIRST, appended as produced.
 
 **Committed as:** `b92b83e` the rule in the build law · `327b8a5` the declaration · `13af7a2` the guard, its
 check and the gate registration · `6b6a630` two needless escapes · `2c2bc23` this report's first commit ·
-`79991bd` the accuracy fix · and this text, in the last commit of the slice (named in §9). **Not pushed** —
-production is V27 and this batch does not push mid-batch.
+`79991bd` the accuracy fix · `f02245c` this report's final gate section · `64b6ac6` the §8 stat table · and the
+commit that carries this line. **Not pushed** — production is V27 and this batch does not push mid-batch.
 **Tree measured for every number below:** `6b6a630` plus this report (prose only); the final gate run is §9.
 **Base I read:** `ba4dd93` (slice 6c close entry). While I was reading, the orchestrator committed `38eb722`
 ("work registry: initialize 6d/8a/8b/8c/8d …"), so the tree I built on is `38eb722`.
@@ -355,8 +355,9 @@ regardless.
 
 ## §8 Files changed, and what a reviewer should read first
 
-`git diff --stat 38eb722..HEAD -- . ':!factory'` — **mine only** (the base is the orchestrator's registry commit,
-so the range carries no file of theirs):
+`git diff --stat 38eb722..f02245c -- . ':!factory'` — **mine only** (the base is the orchestrator's registry
+commit, so the range carries no file of theirs, and the endpoint is the commit the table was READ at; the report's
+own row grows with every later edit to the report, so read that row as of `f02245c`):
 
 | file | +/- |
 |---|---|
@@ -388,7 +389,9 @@ both directions, and every rule is proven to be able to fail.
 
 `npm run verify` run once at **`79991bd`** (the guard's last change committed; this report on disk and uncommitted,
 which is the only part of the tree that is not code). The lines added to this report after that run are prose: the
-table's final column, the §8 stat table, and these two sentences — so the run and the artifact differ by nothing the
+table's final column, the §8 stat table (whose range command was then given a fixed endpoint, because a bare
+`..HEAD` endpoint is a count that cannot be reproduced), and these two sentences — so the run and the artifact
+differ by nothing the
 gate reads except the report itself, whose own numbers are the ones below. Raw output in
 `.scratch/v28/tmp/verify-final2.log`:
 
@@ -412,8 +415,9 @@ passes. If those five files are cleared, the same command returns `GUARDS: PASS`
 file this slice touched.
 
 **Committed as:** `b92b83e` the rule · `327b8a5` the declaration · `13af7a2` the guard, its check and the gate
-registration · `6b6a630` the escapes · `2c2bc23` the report's first commit · `79991bd` the accuracy fix · and the
-commit that carries this text, which is the last of the slice. **Not pushed** — production is V27.
+registration · `6b6a630` the escapes · `2c2bc23` the report's first commit · `79991bd` the accuracy fix ·
+`f02245c` this report's final gate section · `64b6ac6` the §8 stat table · and the commit that carries this text,
+which is the last of the slice. **Not pushed** — production is V27.
 
 ---
 
