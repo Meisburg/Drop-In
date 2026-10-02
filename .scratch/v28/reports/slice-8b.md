@@ -52,7 +52,7 @@ rather than pretending to a scope it does not read.
 $ node /tmp/sweep.mjs
 files to sweep: 78
 swept: 78
-$ git show --stat --oneline HEAD | tail -1
+$ git show --stat --oneline d75c5e9 | tail -1
  78 files changed, 78 insertions(+), 78 deletions(-)
 $ git diff -w --stat          # whitespace-only proof
 (empty)
@@ -141,4 +141,38 @@ resolves it. A slice with two different recorded bases is a REFUSAL, not a coin-
 not know about is a tool nobody runs.
 
 Committed as: **see commit 3 below.**
+
+### Item 3 — `lib-sibling-guard.sh` passes at `checked=0` (registered D-030 instance)
+
+**Re-measured:** the hole is LIVE at `aa331d0`. `scripts/guards/lib-sibling-guard.sh:53-56` returned
+`SKIP — src/lib not found` / `exit 0`, and `:105` printed `ok — all $checked non-exempt module(s)…` with
+`checked=0` when every entry was exempt or a test. The line numbers moved with this edit, so the anchors
+below are the symbol, not the number.
+
+**Fix:** a missing `src/lib` is now a FINDING (was a `SKIP … exit 0`), and `checked=0` after the loop is a
+FINDING. Both are the D-030 rule: the guard had examined nothing and reported health.
+
+```
+$ bash scripts/guards/lib-sibling-guard.sh          # real repo: 55 non-exempt modules
+  ok — all 55 non-exempt module(s) have a sibling .test.ts
+PASS — build law holds.
+EXIT=0
+$ node scripts/guards/lib-sibling-guard.check.mjs
+  ✓ a module with no sibling test is CAUGHT and named
+  ✓ MUTATION: dropping the missing-sibling test lets that seed PASS (so check 1 can fail)
+  ✓ control: a module WITH its sibling passes and the run says what it read
+  ✓ a module on the EXEMPT list is skipped, not failed
+  ✓ the exempt-only root really did examine zero modules (the premise check 4 asserts)
+  ✓ MUTATION: dropping the empty-scan test lets that seed PASS (so check 4 can fail)
+  ✓ a MISSING src/lib is a FINDING, not a SKIP
+PASS — all 7 checks: the guard fires on both defects and only on them.
+EXIT=0
+```
+
+The new `lib-sibling-guard.check.mjs` is registered in the `run_check` block of `run-all.sh`. Two mutation
+anchors were corrected while writing this (the first two tried to mutate the *printing* of the failure rather
+than its *detection*, so the seed stayed red and the mutation proved nothing — a mutation that does not flip
+its seed is not a mutation).
+
+Committed as: **see commit 4 below.**
 

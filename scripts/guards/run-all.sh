@@ -127,6 +127,7 @@ run_check() {
   fi
 }
 
+run_check "lib-sibling-guard (behavior)" scripts/guards/lib-sibling-guard.check.mjs
 run_check "fixture-marker-guard (behavior)" scripts/guards/fixture-marker-guard.check.mjs
 run_check "vacuous-absence-guard (behavior)" scripts/guards/vacuous-absence-guard.check.mjs
 run_check "stale-locator-guard (behavior)" scripts/guards/stale-locator-guard.check.mjs

@@ -16,23 +16,43 @@
 # anything (code-structure.md covers that: "A test that asserts nothing is a
 # defect"). It checks one thing: does the file exist.
 #
+# ZERO IS A FINDING (D-030). If the scan examines no non-exempt module — an
+# empty or missing src/lib, or a src/lib whose every entry is exempt or a test —
+# the run FAILS. It has not established that the build law holds; it has
+# established that it did not look, and an empty scan looks exactly like a clean
+# repo. See `lib-sibling-guard.check.mjs` for the seed and the mutation.
+#
 # PROVENANCE: pattern borrowed from affaan-m/ECC's PostToolUse guard hooks
 # (`scripts/hooks/quality-gate.js`, `config-protection.js`), reimplemented for
 # this repo's layout and run as a batch gate rather than per-edit. See
 # docs/agents/borrowed-guards.md.
 #
-# Usage:  bash scripts/guards/lib-sibling-guard.sh
+# Usage:  bash scripts/guards/lib-sibling-guard.sh [root]
 # Exit:   0 = clean, 1 = findings
 
 set -uo pipefail
-cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+# The scan root: an explicit argument wins, so the behaviour check can point the
+# guard at a throwaway tree the way the other guards' checkers do; otherwise this
+# repository.
+if [ -n "${1:-}" ]; then
+  cd "$1" || { echo "lib-sibling: cannot enter root '$1'"; exit 2; }
+else
+  cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+fi
 
 LIB_DIR="src/lib"
 FAIL=0
 
 if [ ! -d "$LIB_DIR" ]; then
-  echo "SKIP — $LIB_DIR not found"
-  exit 0
+  echo "Build-law guard — sibling tests under $LIB_DIR/"
+  echo "==========================================================="
+  echo "  FINDING: $LIB_DIR does not exist — the scan read no module at all."
+  echo "  Zero is a finding, never a pass (D-030): a guard that examined nothing has"
+  echo "  established nothing, which is exactly what a clean repo also looks like."
+  echo
+  echo "FAIL — build law not checked."
+  exit 1
 fi
 
 # Declared exemptions. Every entry must carry a reason, because an unexplained
@@ -96,6 +116,15 @@ if [ -n "$missing" ]; then
   echo "  code-structure.md: an untested lib module is an incomplete slice."
   echo "  Fix: write $LIB_DIR/<name>.test.ts, or add <name>.ts to EXEMPT in"
   echo "       scripts/guards/lib-sibling-guard.sh WITH a written reason."
+  FAIL=1
+elif [ "$checked" -eq 0 ]; then
+  # D-030. Every module in the scan set was skipped (exempt, or a *.test.ts), so
+  # the run examined nothing and the old `ok — all 0 module(s)` line reported
+  # health over an empty measurement. Zero is a finding, never a pass.
+  echo "  FINDING: $LIB_DIR holds no non-exempt module — the scan read nothing."
+  echo "  $LIB_DIR had entries, but all were exempt or test files, so this guard"
+  echo "  checked zero modules. An empty scan is not a clean repo (D-030)."
+  FAIL=1
 else
   echo "  ok — all $checked non-exempt module(s) have a sibling .test.ts"
 fi
