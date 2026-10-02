@@ -596,6 +596,16 @@ export function OnboardingPage() {
   // own authority for which card may be skipped at all: a skipped optional card
   // is indistinguishable from a not-reached one in the profile, so only a Skip
   // recorded here can advance past the kids card within a run.
+  //
+  // ⚠️ NO SESSION TERM IN THE STATE, deliberately (fix round 1 asked for the
+  // `session !== null` term the old `runOver` carried). Signed-out is not a
+  // card: it is the redirect guard's, and that guard returns `<Navigate>` ABOVE
+  // every branch below (`resolveOnboardingRedirect(false)` → '/login', pinned by
+  // onboarding.test.ts), so a signed-out frame never reaches one of them —
+  // `view` is read only at the four card branches under the guard. The old term
+  // was unreachable at its own point of use for the same reason, which is why
+  // dropping it changed nothing; adding it back would put an unreachable
+  // condition inside the pure decision.
   const view = resolveCard(
     { hasProfile: profile !== null, hasKids, hasZip: homeZipSet },
     kidsCardDone ? SKIPPABLE_CARDS : [],

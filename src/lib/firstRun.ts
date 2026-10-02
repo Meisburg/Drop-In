@@ -136,10 +136,17 @@ export interface FirstRunState {
  * Order matters and is the whole decision: the NAME card owns a parent with no
  * row; a set zip ENDS the run regardless of kids; then the kids card (or its
  * pending state) comes before the area card.
+ *
+ * ⚠️ `skippedCards` IS REQUIRED, and it used to default to `[]` (V28 r2 slice 8a
+ * fix round 1). The default made an OMITTED argument the decision "nothing was
+ * skipped" — the page always passed one, so no behaviour changed, but that is
+ * D-030's shape exactly: a measurement that did not happen, read as a fact. A
+ * caller with no session fact must now say `[]` out loud, and a new call site
+ * cannot inherit an answer it never computed.
  */
 export function resolveCard(
   state: FirstRunState,
-  skippedCards: readonly FirstRunCardId[] = [],
+  skippedCards: readonly FirstRunCardId[],
 ): FirstRunView {
   if (!state.hasProfile) return 'name'
   if (state.hasZip) return 'finish'
@@ -150,6 +157,7 @@ export function resolveCard(
   return 'area'
 }
 
-/** "2 of 4" — 1-based position within `FIRST_RUN_CARDS`. */export function progressLabel(card: FirstRunCardId): string {
+/** "2 of 4" — 1-based position within `FIRST_RUN_CARDS`. */
+export function progressLabel(card: FirstRunCardId): string {
   return `${FIRST_RUN_CARDS.indexOf(card) + 1} of ${FIRST_RUN_CARDS.length}`
 }
