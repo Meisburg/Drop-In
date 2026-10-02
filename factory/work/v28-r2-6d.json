@@ -29,17 +29,21 @@
       ]
     },
     "verification": {
-      "state": "running",
+      "state": "complete",
       "owner": null,
       "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
-      "artifacts": [],
+      "artifacts": [
+        ".scratch/v28/reports/slice-6d-verify.md"
+      ],
       "evidence": []
     },
     "review": {
       "state": "running",
       "owner": null,
       "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
-      "artifacts": [],
+      "artifacts": [
+        ".scratch/v28/reports/slice-6d-review.md"
+      ],
       "evidence": []
     },
     "visual_validation": {
@@ -164,6 +168,51 @@
       "from": "running",
       "to": "running",
       "note": "artifact names withdrawn: the reports do not exist yet, and a named artifact not on disk is a claim with nothing behind it (artifacts-exist has teeth). Re-named when the lane lands.",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:55:04.138Z",
+      "lane": "verification",
+      "from": "running",
+      "to": "running",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:55:04.169Z",
+      "lane": "verification",
+      "from": "running",
+      "to": "complete",
+      "note": "VERIFY: PASS — all four mutation proofs re-derived independently; blob-id table confirmed; +1 test accounted (71 files unchanged)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:55:04.198Z",
+      "lane": "review",
+      "from": "running",
+      "to": "running",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:55:04.228Z",
+      "lane": "review",
+      "from": "running",
+      "to": "failed",
+      "note": "NEEDS_CHANGES: B1 false claim (code-structure.md names a SCOPE paragraph the guard does not have, contradicting the law 20 lines above), B2 false claim (check claims it prints which file it used), B3 MECHANISM DEFECT (zero scanned words passes; the guard's own header names that exact failure)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:55:04.254Z",
+      "lane": "review",
+      "from": "failed",
+      "to": "running",
+      "note": "fix round 1/5: resume original builder; B3 fixed as the D-030 invariant (zero is a finding), B1/B2 per D-028 (delete rather than restate)",
       "actor": null,
       "model": null
     }
