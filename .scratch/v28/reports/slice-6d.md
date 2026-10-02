@@ -544,3 +544,200 @@ proofs. Measured: byte-identical to `src/lib/firstRunTour.ts`, referenced by not
 live module is a trap for the next reader, and this report states that directory is uncommitted scratch, so the
 file and the rest of that scratch directory are removed in the commit that carries this section. Every log it held
 is quoted verbatim in the sections that cite it, which is why the pointers to it are convenience and not evidence.
+
+---
+
+## §12 Fix round 1 — three blockers, and the boundary rungs under them
+
+**Reviewed:** `.scratch/v28/reports/slice-6d-review.md` (229 lines, **NEEDS_CHANGES**, 3 blocking + 2
+non-blocking). **Verdict accepted in full**; nothing in it is re-litigated here and no rule was weakened to make
+a check pass. **Base for this round:** `248d897`. Nothing above is rewritten — this is appended.
+
+### B3 — the scan set had no tripwire, and the guard refuted itself (a MECHANISM defect, D-030)
+
+The review's repro, reproduced as a pair so both halves are mine and raw. Two throwaway trees, same input in
+both — every `case '<kind>':` return in `placeKindLabel` collapsed onto the label function's own default word,
+which is the state where the guard can attribute a copy match to no kind at all:
+
+```
+$ for d in zt6d-old zt6d-new; do rm -rf /tmp/$d; mkdir -p /tmp/$d/scripts/guards; cp -r src /tmp/$d/src; ln -s "$PWD/node_modules" /tmp/$d/node_modules; done
+$ git show 248d897:scripts/guards/copy-taxonomy-guard.mjs > /tmp/zt6d-old/scripts/guards/copy-taxonomy-guard.mjs
+$ cp scripts/guards/copy-taxonomy-guard.mjs        /tmp/zt6d-new/scripts/guards/copy-taxonomy-guard.mjs
+$ python3 - <<'PY'   # collapse every case return, in BOTH trees, onto the default word
+/tmp/zt6d-old: collapsed 9 case returns onto the default word
+/tmp/zt6d-new: collapsed 9 case returns onto the default word
+PY
+$ node /tmp/zt6d-old/scripts/guards/copy-taxonomy-guard.mjs /tmp/zt6d-old | grep -E "scanned words|^PASS|^FAIL|^  - "
+  scanned words: 0 (none)
+PASS — every declared taxonomy claim exists, is offered, is backed by the copy, and the copy names no category it did not declare.
+OLD_EXIT=0
+$ node /tmp/zt6d-new/scripts/guards/copy-taxonomy-guard.mjs /tmp/zt6d-new | grep -E "scanned words|^PASS|^FAIL|^  - "
+  scanned words: 0 (none)
+FAIL — 1 finding(s):
+  - src/lib/places.ts: the scan found NO word it can attribute to a kind — every kind's word resolves to the label function's own default or is shared with another kind, so rules 3 and 4 would test NOTHING and a report of health would mean the guard did not look (see limit—— lines above)
+NEW_EXIT=1
+```
+
+**What changed.** The zero-tripwires covered `allKindSet`, `labels`, `constsRead`, `stringsRead` and
+`claimsRead`; the **scan** set (`kindsByLabel`) had none, so rules 3 and 4 ran against an empty set and the
+guard printed health. The invariant is now the one D-030 writes down — **zero and `null` are findings, never
+passes** — as a tripwire on `kindsByLabel.size === 0`, and the header's self-policing sentence gained the case
+it was missing ("no word it can attribute to a kind"). The PASS line is now unreachable in that state.
+
+**The check proves it fires, and that the tripwire is why it fires** — a premise, a finding, and a mutation of
+the rule that restores the silent pass the review reproduced:
+
+```
+$ node scripts/guards/copy-taxonomy-guard.check.mjs | grep -E "label function only|no word to any kind|27 checks"
+  ✓ the B3 seed shared one word across every kind, inside the label function only (its own premise)
+  ✓ a scan that can attribute no word to any kind is a FINDING, not a pass (B3)
+  ✓ B3 — MUTATION: dropping the scan-set tripwire lets that seed PASS — the silent state the review reproduced
+copy-taxonomy-guard check: all 27 checks passed, 0 failed, across 24 guard invocations (7 of them against a mutated copy of the guard), against scripts/guards/copy-taxonomy-guard.mjs.
+```
+
+The seed asserts its own premise (the rewrite is scoped to the one function and every case return was rewritten)
+and the mutation branch asserts the restored state contains `scanned words: 0 (none)` **and** exits 0 — i.e. the
+same input the review reproduced as a silent pass. **The check count is now 27 across 24 invocations, 7 of them
+mutated** — one check and two invocations more than §2 recorded, from this seed's premise and mutation.
+
+### B1 — the build law named a paragraph the guard does not have
+
+`docs/agents/code-structure.md` said *"whose SCOPE paragraph"*; `grep -n "SCOPE"` on the guard exits 1 (the
+boundary paragraph is `WHERE IT STOPS`), while `run-all.sh`'s new comment names it correctly — two coverage
+claims this slice added, disagreeing, 20 lines under the law that calls that disagreement the defect. Fixed by
+**D-028**: the paragraph name is DELETED, not corrected — the sentence now names nothing a reader has to resolve:
+
+```
+$ grep -n "SCOPE" scripts/guards/copy-taxonomy-guard.mjs ; echo "exit=$?"
+exit=1
+$ sed -n '144,146p' docs/agents/code-structure.md
+The rule, the declaration it reads and the boundary of the scan are stated in
+`scripts/guards/copy-taxonomy-guard.mjs`, whose header — not this section — is the
+authoritative statement of what it covers: the copy consts the guard is
+$ sed -n '34,36p' scripts/guards/run-all.sh
+#                     words. One taxonomy, one direction of scan per rule, and
+#                     a written boundary: see WHERE IT STOPS in its header.
+```
+
+Both now point at the header; `run-all.sh` adds the section's name, which exists.
+
+### B2 — "the run says which file it used" was not true of the run that matters
+
+The sentence is now backed rather than deleted, because printing the resolved path is trivial: the check's
+FIRST line names the guard it resolved, whether the override is in force, and asserts that the file it names is
+the file every mutation is built from. The reviewer's own repro command, before → after:
+
+```
+$ node scripts/guards/copy-taxonomy-guard.check.mjs | sed -n '1p;$p'      # shipped
+  ✓ the guard under test is scripts/guards/copy-taxonomy-guard.mjs (this repo) — and it is the file the mutations are built from
+copy-taxonomy-guard check: all 27 checks passed, 0 failed, across 24 guard invocations (7 of them against a mutated copy of the guard), against scripts/guards/copy-taxonomy-guard.mjs.
+  grep -c copy-taxonomy-guard.mjs = 2
+
+$ COPY_TAXONOMY_GUARD_UNDER_TEST=/tmp/zt6d/scripts/guards/copy-taxonomy-guard.mjs node scripts/guards/copy-taxonomy-guard.check.mjs   # override
+  ✓ the guard under test is /tmp/zt6d/scripts/guards/copy-taxonomy-guard.mjs (from COPY_TAXONOMY_GUARD_UNDER_TEST) — and it is the file the mutations are built from
+copy-taxonomy-guard check: all 27 checks passed, 0 failed, across 24 guard invocations (7 of them against a mutated copy of the guard), against /tmp/zt6d/scripts/guards/copy-taxonomy-guard.mjs.
+  grep -c copy-taxonomy-guard.mjs = 2     ← was 0 before this fix
+```
+
+**What is proven and what is not.** The path in that line is built from the resolved file (`path.relative` for
+a path inside the repo, the absolute path for one outside it), the override marker reflects the environment
+variable, and the check asserts the named file is byte-identical to the text every mutation derives from. A
+green override run and a green shipped run therefore print different identity lines — the property the sentence
+claims. It is not a proof that a human reads the line; the reviewer's grep is that half, and it returns 2 either
+way now. (The override must sit at the same depth as the shipped guard — its `../../src/lib/escapeForRegExp.mjs`
+import is resolved from its own location — which is why the pair above uses `/tmp/zt6d/scripts/guards/`.)
+
+### The two non-blocking findings, both the same shape: a boundary list narrower than the boundary
+
+**Rule 3's sentence and the boundary list now name both exclusions.** There are two ways a kind's word becomes
+unattributable — it is the label function's default, or two kinds resolve to the SAME word — and both keep the
+kind out of the scan; rules 3 and 4 skip it. The list carries both now, `WHERE IT STOPS` says rules 3 and 4 skip
+such a kind entirely, and rule 3's own sentence in the rules list is qualified to "every declared kind whose word
+the guard can attribute a match to". The mechanism additionally now **names each DECLARED kind whose claim rule 3
+left unchecked**, so the skip is visible for the claim it skipped and not only for the kind:
+
+```
+$ node scripts/guards/copy-taxonomy-guard.check.mjs | grep -E "collapses to the generic default"
+  ✓ a kind whose word collapses to the generic default is not judged, and the run prints its limit line
+$ … that seed also requires, and the review's own repro prints:
+  limit—— src/lib/firstRunTour.ts: the declared kind "beach" is not scannable, so rule 3 does not check its claim (its word is the label function default or is shared with another kind — see WHERE IT STOPS)
+```
+
+No rule's semantics changed beyond B3's tripwire; no rule was weakened; the declaration, the two ceilings and the
+scanner's scope are untouched.
+
+### Anchors re-measured — including the ones the brief's own table had stale
+
+The review's non-blocking item 2 is right: my §1 said which module anchors I re-measured but not the
+`run-all.sh` ones. Measured now, with the brief's numbers beside them:
+
+| brief's anchor | at base `38eb722` | after this slice (`248d897`) |
+|---|---|---|
+| `run-all.sh:61` — `for guard in …` | **`:81`** | **`:87`** |
+| `run-all.sh:85` — the `run_check` block | **`:105`** (`run_check()`), invocations `:120-128` | **`:126-135`**, the new line at `:131` |
+| `run-all.sh:100-103` | the invocation block is `:120-128` | `:126-135` |
+
+So the brief was 20 lines short on the first anchor and off the block entirely on the others; no number this
+report quotes is stale, and this is the note that was missing.
+
+### What the lane reads now, and the four findings this round has to absorb
+
+- `node scripts/guards/copy-taxonomy-guard.mjs` → **exit 0**, output byte-identical to §2's paste (the clean tree
+  prints no new line: no declared kind is unscannable, and the tripwire's state does not arise).
+- `node scripts/guards/copy-taxonomy-guard.check.mjs` → **exit 0**, `all 27 checks passed, 0 failed, across 24
+  guard invocations (7 of them against a mutated copy of the guard)`.
+- `npx oxlint` on both instruments → no output, so the gate's warning count is unchanged.
+- `bash scripts/guards/run-all.sh` → **exit 1 on four `no-bare-head-count` findings, and every one of them is in
+  another lane's historical record**: `slice-6d-review.md` and `slice-6d-verify.md` quote bare-HEAD counts in
+  their own prose. Per **D-011 item 2 / D-021 item 2** those records KEEP their labels; they are absorbed by
+  re-deriving the instrument's own baseline, never by editing them, and that derivation is done once at the end
+  of this round so that this section's own prose is inside it too. The baseline's size is printed by every run
+  and is not typed here — the map in `scripts/guards/factory-guard.mjs` is the authority.
+
+### The four lane-report findings, absorbed by re-derivation — not edited, not hand-keyed
+
+`slice-6d-review.md` and `slice-6d-verify.md` are other lanes' historical records and they keep their labels
+(D-011 item 2): the reviewer's own counted `git diff` against a moving revision, and the verifier's counts pinned
+to the bare token, are theirs to keep. The map was re-derived from the instrument's own matches, which is the
+mechanism the map's comment and D-021 item 2 both name:
+
+1. a throwaway copy of `scripts/guards/factory-guard.mjs` (in `/tmp`, never committed) has ONE line patched — the
+   baseline comparison becomes a print of the pair the absorber itself computes (`key = file::matched-text`, and
+   the running count for it). Nothing else about the scan changes, so the keys and counts are the instrument's;
+2. it ran against this worktree twice; the two derived maps were byte-identical;
+3. the derived map was compared with the committed one **before** anything was inserted:
+   `new: 4 · lost: 0 · decreased: 0` — no previously-matched key or occurrence disappeared, so nothing had to be
+   reported as lost coverage;
+4. the four keys were inserted (script-generated text, sorted, with a comment naming the derivation), and the
+   comparison was then re-run: **new: 0, lost: 0, decreased: 0** — the map and the derivation now agree exactly.
+
+The four keys are the four findings `run-all.sh` reported. The map's SIZE is printed by every run of
+`factory-guard.mjs` and is deliberately not typed here or in any header (D-028): the map in
+`scripts/guards/factory-guard.mjs` is the authority, and the run's own note line is the size.
+
+### The gate at the end of fix round 1
+
+`npm run verify`, one run on the fix-round tree (the two instruments fixed, the build law corrected, the map
+re-derived, and this section appended after the run):
+
+| what | result |
+|---|---|
+| exit code | **0** |
+| build, test, lint, a11y, steering | all ran and passed (`GUARDS: PASS — all deterministic rules hold.`) |
+| test files | `Test Files  71 passed (71)` — **unchanged**: this round added `.check.mjs` code only, never a `.test.mjs` |
+| tests | `Tests  2068 passed (2068)` — **unchanged from `248d897`**: the one-test step from 2067 was D-029's, and this round adds none |
+| warnings / errors | 81 warnings (`grep -c ': warning '`), **0 errors** |
+| AGENTS.md | `ok — AGENTS.md (1789 words, ceiling 1800)` |
+| real finding lines | `grep -c '^  FINDING'` → **0**. (`grep -c FINDING` returns 1: the match is this round's own check NAME, `✓ a scan that can attribute no word to any kind is a FINDING, not a pass (B3)`, which is a passing line — worth saying rather than leaving a count that looks like a finding) |
+| `copy-taxonomy-guard.mjs` | exit 0, PASS, 0 findings |
+| `copy-taxonomy-guard.check.mjs` | exit 0, `all 27 checks passed, 0 failed, across 24 guard invocations (7 of them against a mutated copy of the guard)` |
+| `bash scripts/guards/run-all.sh` | exit 0, `GUARDS: PASS — all deterministic rules hold.` |
+
+**No clock, network or database dependency was added**: the guard's imports are unchanged (`node:fs`,
+`node:path`, `typescript`, the one `escapeForRegExp` module), and everything B3 added reads the taxonomy source
+that was already being read.
+
+**What this round did NOT touch**, per the brief: the four rules' semantics beyond B3's tripwire (rules 1, 2 and
+4 are byte-identical in behaviour and their seeds are unchanged), the declaration in `firstRunTour.ts`, the
+Tier-2 ceiling, the unscanned-copy ceiling, and the scanner's scope. No rule was weakened to make a check pass;
+the only rule-side change is the tripwire that makes an empty scan FAIL.

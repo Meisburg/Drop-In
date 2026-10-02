@@ -70,6 +70,12 @@ if (!existsSync(path.join(root, 'src'))) {
 }
 
 const guardSrc = readFileSync(guard, 'utf8')
+/** The file this run is ABOUT, as the run itself names it. The claim the docblock
+ *  above makes — that a run says which guard it used — is carried by a check line
+ *  below, so a green override run is distinguishable from a green run of the
+ *  shipped guard; without it both print the same summary. */
+const usingOverride = Boolean(process.env.COPY_TAXONOMY_GUARD_UNDER_TEST)
+const guardDisplay = guard.startsWith(root + path.sep) ? path.relative(root, guard) : guard
 const sandbox = mkdtempSync(path.join(os.tmpdir(), 'copy-taxonomy-check-'))
 cpSync(path.join(root, 'src'), path.join(sandbox, 'src'), { recursive: true })
 // A mutated guard is written INSIDE the sandbox, so the sandbox needs the two
@@ -176,6 +182,32 @@ function mutate(replacements) {
   return file
 }
 
+/** Every word `placeKindLabel` gives a kind, collapsed onto ONE word that is not
+ *  its default — the ambiguous case, in which the guard can attribute a copy
+ *  match to no kind at all. A LINE WALK scoped to that one function: `places.ts`
+ *  holds other switches and other returns, and a rewrite that leaked into them
+ *  would be a silent side effect rather than this seed's stated input. It returns
+ *  the counts so the seed reports its own premise. */
+function collapseEveryWord(sharedWord) {
+  const lines = readFileSync(PLACES, 'utf8').split('\n')
+  const from = lines.findIndex((l) => l.startsWith('export function placeKindLabel('))
+  const to = lines.findIndex((l, i) => i > from && l === '}')
+  const scoped = from >= 0 && to > from
+  const caseLines = []
+  if (scoped) {
+    for (let i = from + 1; i < to; i += 1) if (/^\s*case '[^']+':$/.test(lines[i])) caseLines.push(i)
+  }
+  let rewrote = 0
+  for (const i of caseLines) {
+    const m = /^(\s*)return '[^']*'$/.exec(lines[i + 1] ?? '')
+    if (m === null) continue
+    lines[i + 1] = `${m[1]}return '${sharedWord}'`
+    rewrote += 1
+  }
+  writeFileSync(PLACES, lines.join('\n'))
+  return { scoped, cases: caseLines.length, rewrote }
+}
+
 /** Run one seed against the shipped guard and then against the mutated one: the
  *  seed must find the finding, and the mutation must make it stop. `expect` is
  *  the fragment of the finding line the seed is about. */
@@ -198,6 +230,13 @@ function rule(name, expect, mutation, seed) {
 
 let r = { exit: 0, out: '' }
 try {
+  // --- which guard this run is about, stated by the run ----------------------
+  check(
+    `the guard under test is ${guardDisplay}${usingOverride ? ' (from COPY_TAXONOMY_GUARD_UNDER_TEST)' : ' (this repo)'} — and it is the file the mutations are built from`,
+    readFileSync(guard, 'utf8') === guardSrc,
+    'the resolved guard file and the text every mutation derives from disagree',
+  )
+
   // --- the tree as it stands -------------------------------------------------
   reset()
   const clean = run()
@@ -342,9 +381,47 @@ try {
   r = run()
   check(
     'a kind whose word collapses to the generic default is not judged, and the run prints its limit line',
-    r.exit === 0 && r.out.includes('limit—— kind "beach" is not scannable'),
+    r.exit === 0 &&
+      r.out.includes('limit—— kind "beach" is not scannable') &&
+      r.out.includes('the declared kind "beach" is not scannable, so rule 3 does not check its claim'),
     `exit ${r.exit}: ${r.out.split('\n').filter((l) => l.includes('limit——')).join(' | ') || '(no limit line)'}`,
   )
+
+  // --- B3 (D-030): the SCAN set has a tripwire, not only an enumeration. A run
+  //     that can attribute no word to any kind tested rules 3 and 4 with an
+  //     empty set and reported health, which is the state the header calls out.
+  //     Written out rather than routed through `rule()`, because the premise
+  //     worth asserting here is the empty SCAN SET itself, not just the finding.
+  reset()
+  const collapsed = collapseEveryWord('ZzShared')
+  check(
+    'the B3 seed shared one word across every kind, inside the label function only (its own premise)',
+    collapsed.scoped && collapsed.cases > 0 && collapsed.rewrote === collapsed.cases,
+    `scoped=${collapsed.scoped}, rewrote ${collapsed.rewrote} of ${collapsed.cases} case returns`,
+  )
+  r = run()
+  check(
+    'a scan that can attribute no word to any kind is a FINDING, not a pass (B3)',
+    r.exit === 1 &&
+      r.out.includes('scanned words: 0 (none)') &&
+      r.out.includes('the scan found NO word it can attribute to a kind'),
+    `exit ${r.exit}: ${findingLines(r.out) || '(no findings)'}`,
+  )
+  let b3 = null
+  try {
+    b3 = mutate([['if (kindsByLabel.size === 0) {', 'if (false) {']])
+  } catch (e) {
+    check('B3 — MUTATION: the tripwire can be removed (so the seed proves it)', false, e instanceof Error ? e.message : String(e))
+  }
+  if (b3 !== null) {
+    mutationRuns += 1
+    const after = run(b3)
+    check(
+      'B3 — MUTATION: dropping the scan-set tripwire lets that seed PASS — the silent state the review reproduced',
+      after.exit === 0 && after.out.includes('scanned words: 0 (none)'),
+      `exit ${after.exit}: ${findingLines(after.out)}`,
+    )
+  }
 
   // --- the check itself is not vacuous --------------------------------------
   reset()
@@ -366,5 +443,5 @@ if (failures > 0) {
 }
 console.log(
   `copy-taxonomy-guard check: all ${passes} checks passed, 0 failed, across ${guardRuns} guard invocations ` +
-    `(${mutationRuns} of them against a mutated copy of the guard).`,
+    `(${mutationRuns} of them against a mutated copy of the guard), against ${guardDisplay}.`,
 )

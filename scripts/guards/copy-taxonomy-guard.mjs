@@ -17,8 +17,10 @@
  *   1. every category a module's DECLARATION names must EXIST in `PLACE_KINDS`;
  *   2. it must be a kind the app OFFERS (`PLACE_KIND_CHIP_KINDS`) — not one the
  *      app withholds;
- *   3. the declaration must be BACKED by the words: each declared kind's label
- *      appears in the copy text;
+ *   3. the declaration must be BACKED by the words: for every declared kind whose
+ *      word the guard can ATTRIBUTE a match to, that word appears in the copy
+ *      text. A kind whose word cannot be attributed is skipped by this rule, and
+ *      the run says so — see the unscannable case in WHERE IT STOPS below;
  *   4. and the copy must not name a category the declaration omits — a withheld
  *      kind's word in the copy is the defect this guard was written for, and it
  *      fails whether or not a declaration exists.
@@ -50,10 +52,13 @@
  *     D-027's limit and not a defect: a lexical detector over a semantic
  *     predicate is what it is, and what the rule really holds is the phrasing it
  *     keys on.
- *   - A kind whose label cannot be told apart from the generic word — the label
- *     function's own default — is UNSCANNABLE. The guard prints a `limit——`
- *     line per such kind rather than pretending to judge it, so the blind spot
- *     is in the run and not only in this sentence.
+ *   - A kind is UNSCANNABLE when its word cannot be attributed to it, and there
+ *     are two ways that happens: the word is the label function's own default, or
+ *     two kinds resolve to the SAME word. Rules 3 and 4 skip such a kind
+ *     entirely — a match on it is neither required of the copy nor caught in it —
+ *     and the guard prints a `limit——` line per such kind or per shared word,
+ *     including one naming each DECLARED kind whose claim rule 3 therefore left
+ *     unchecked, so the blind spot is in the run and not only in this sentence.
  *   - COUNT CLAIMS are NOT declared and NOT checked here. "most rows have no
  *     hours" is a live-measurement claim, and asking it needs the database:
  *     `src/lib/db.ts` throws at module load without its environment (measured,
@@ -68,8 +73,10 @@
  * detector over named phrasings; a restatement in other words escapes them.
  *
  * THE INSTRUMENT POLICES ITSELF. A run that sees no kinds, no words for them, no
- * registered const, no copy text or no declaration at all is a FAIL, never a
- * pass: an instrument that matches nothing looks exactly like a clean repo. Its
+ * word it can attribute to a kind, no registered const, no copy text or no
+ * declaration at all is a FAIL, never a pass: an instrument that matches nothing
+ * looks exactly like a clean repo, and one that scanned nothing has established
+ * that it did not look rather than that the tree is healthy. Its
  * behavior is proven by `copy-taxonomy-guard.check.mjs`, which seeds a violation
  * for each rule, requires the finding, then MUTATES that rule and requires the
  * seed to stop firing.
@@ -422,7 +429,13 @@ for (const entry of COPY_MODULES) {
   // 3. The declaration must be backed by the words it is a declaration about.
   for (const kind of declared) {
     const word = wordOf(kind)
-    if (word === null || kindsByLabel.get(word) !== kind) continue
+    if (word === null || kindsByLabel.get(word) !== kind) {
+      console.log(
+        `  limit—— ${entry.module}: the declared kind "${kind}" is not scannable, so rule 3 does not check its ` +
+          'claim (its word is the label function default or is shared with another kind — see WHERE IT STOPS)',
+      )
+      continue
+    }
     if (!matchesCopy(word, text)) {
       fail(
         `${entry.module}: the declaration names "${kind}", whose word "${word}" appears nowhere in the copy ` +
@@ -448,6 +461,13 @@ for (const entry of COPY_MODULES) {
 }
 
 // The instrument's own tripwires: zero is a finding, in every direction.
+if (kindsByLabel.size === 0) {
+  fail(
+    `${TAXONOMY_MODULE}: the scan found NO word it can attribute to a kind — every kind's word resolves to the ` +
+      "label function's own default or is shared with another kind, so rules 3 and 4 would test NOTHING and a " +
+      'report of health would mean the guard did not look (see limit—— lines above)',
+  )
+}
 if (constsRead === 0) {
   fail('no registered copy const yielded any text — the registry and the modules disagree, and nothing was judged')
 }

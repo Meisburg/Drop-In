@@ -1261,6 +1261,14 @@ const BARE_HEAD_BASELINE = new Map([
   [".scratch/v28/reports/slice-6c.md::git grep --untracked --fixed-strings -- \"$PAT\" -- . | wc", 1],
   [".scratch/v28/reports/slice-6c.md::git ls-files .scratch | wc", 1],
   [".scratch/v28/reports/slice-6c.md::git show HEAD", 4],
+  // Slice 6d fix round 1: four quotations in the two lanes' own reports for this
+  // slice, absorbed by RE-DERIVING this map from the instrument's own matches
+  // (D-011 item 2 / D-021 item 2 — a historical record keeps its label; the run
+  // prints the size below and it is never typed here).
+  [".scratch/v28/reports/slice-6d-review.md::git diff --stat 35e3f20..HEAD", 1],
+  [".scratch/v28/reports/slice-6d-verify.md::2068 at HEAD", 1],
+  [".scratch/v28/reports/slice-6d-verify.md::37 tests; HEAD", 1],
+  [".scratch/v28/reports/slice-6d-verify.md::HEAD the gate prints `Test Files  71", 1],
 ])
 
 const BARE_HEAD_BASELINE_SIZE = [...BARE_HEAD_BASELINE.values()].reduce((sum, n) => sum + n, 0)

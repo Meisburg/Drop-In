@@ -142,8 +142,8 @@ names a category is making a claim about content, and a claim about content can
 be checked, so it is.
 
 The rule, the declaration it reads and the boundary of the scan are stated in
-`scripts/guards/copy-taxonomy-guard.mjs`, whose SCOPE paragraph — not this one —
-is the authoritative statement of what it covers: the copy consts the guard is
+`scripts/guards/copy-taxonomy-guard.mjs`, whose header — not this section — is the
+authoritative statement of what it covers: the copy consts the guard is
 given, one taxonomy, one lexical phrasing per category word. It is a detector,
 not a proof that the copy is true; a restatement in other words escapes it, which
 is why the reviewer still reads the copy against the app.
