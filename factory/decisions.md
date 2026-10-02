@@ -539,3 +539,46 @@ means by the header being the authoritative statement of scope.
 false *"both were silently dropped by the same `\b`"* in `.scratch/v28/reports/slice-6c-fix-5.md:482`, a
 behaviour check whose named failure mode is unreachable, and a pasted grep printing `0` where the command
 returns `3`.
+
+## D-022 — RECORDED, NOT FIXED: an unprobeable machine is ADMITTED (the `ocr` lane's critical find)
+
+**Found by the `ocr` CLI lane** on the 6c delta, and **independently verified by the orchestrator** by reading
+the code and by controlled execution. Factory infrastructure, **not** slice 6c — recorded here so it is a
+decision rather than a silence, and deliberately **not fixed** while 6c is in flight.
+
+**The defect.** `scripts/factory/scheduler.mjs:427-429`:
+
+    const usable = available === null ? null : available - held
+    if (usable !== null && required > usable) {   // ← short-circuits when the probe failed
+
+When the RAM probe fails, `available` is `null`, so `usable` is `null`, the `usable !== null` guard
+short-circuits, and **the RAM check is skipped entirely**. Admission then proceeds.
+
+**Measured, controlled** (real `systemProbes`, only `availableRamGb` replaced; `admit(kind: 'builder')`):
+
+    healthy machine (48 GB)   available=48    usable=48    required=7  -> ADMITTED
+    honest low RAM (1 GB)     available=1     usable=1     required=7  -> BLOCKED_RESOURCE
+    UNPROBEABLE MACHINE       available=null  usable=null  required=7  -> ADMITTED    ← THE BUG
+
+**A machine with 1 GB is correctly refused; a machine whose RAM cannot be read at all is admitted.** This
+**inverts the module's own stated contract** — *"a probe that fails returns null, and null is treated as
+'unknown', never as 'fine'"* — and it re-opens precisely the over-admission that produced the four
+`systemd-oomd` kills recorded in this batch. **The stricter the machine's unreadability, the weaker the gate.**
+
+`ocr` reported the same shape for VRAM (`freeVramGb()` returning `null` lets a local model be selected whose
+weights may not fit), which the orchestrator did not verify independently.
+
+**Why this was missed.** Six rounds of agent review — reviewer, verifier, and the orchestrator — all read
+`scheduler.mjs` and none found it. The `ocr` lane found it because it read the *code* against the *contract*,
+not the *diff* against the *brief*. That is the argument for keeping a non-agentic lane, and it is the answer
+to D-020's coverage question: **the lanes fail in different directions and neither is a substitute for the other.**
+
+**Also recorded from the same `ocr` run (18 comments, unverified by the orchestrator beyond the two above):**
+a bare `--reopen` flag parsed as boolean `true` and accepted as a valid re-open reason, defeating
+`lane_reopen.requires_reason`; the acceptance lane not validated against `config.acceptance_states`, so it can
+move out of a terminal state; `factory work init` with the id omitted writing `factory/work/undefined.json`;
+`checkWorkItems` parsing each work file with an unguarded `JSON.parse`, so a malformed file kills the guard
+instead of producing a named finding; and `checkAgentModels` always reading the machine-local
+`~/.pi/agent/agents` regardless of `--root`, contradicting the checker's own hermeticity claim.
+**`ocr`'s round 2 timed out (`context deadline exceeded`) and its findings are round-1 only** — the run is
+partial and should be repeated on a narrower range.
