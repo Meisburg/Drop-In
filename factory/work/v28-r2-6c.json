@@ -26,11 +26,11 @@
       ]
     },
     "verification": {
-      "state": "running",
+      "state": "complete",
       "owner": null,
       "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
       "artifacts": [
-        ".scratch/v28/reports/slice-6c-fix-2-verify.md"
+        ".scratch/v28/reports/slice-6c-fix-3-verify.md"
       ],
       "evidence": [
         "VERIFY: PASS 70/2030/81/0 GUARDS PASS"
@@ -43,11 +43,11 @@
       ]
     },
     "review": {
-      "state": "running",
+      "state": "failed",
       "owner": null,
       "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
       "artifacts": [
-        ".scratch/v28/reports/slice-6c-fix-2-review.md"
+        ".scratch/v28/reports/slice-6c-fix-3-review.md"
       ],
       "evidence": [],
       "reopened": [
@@ -70,7 +70,7 @@
       "model": null,
       "artifacts": [],
       "evidence": [],
-      "reason": "review failed: fix round 3 owed"
+      "reason": "review failed: fix round 4 owed"
     }
   },
   "history": [
@@ -190,6 +190,51 @@
       "note": null,
       "actor": null,
       "model": "ollama-cloud/deepseek-v4.1-flash:cloud"
+    },
+    {
+      "at": "2026-10-02T12:59:42.186Z",
+      "lane": "verification",
+      "from": "running",
+      "to": "running",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T12:59:42.212Z",
+      "lane": "verification",
+      "from": "running",
+      "to": "complete",
+      "note": null,
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T12:59:42.238Z",
+      "lane": "review",
+      "from": "running",
+      "to": "running",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T12:59:42.264Z",
+      "lane": "review",
+      "from": "running",
+      "to": "failed",
+      "note": "NEEDS_CHANGES: 1 blocking (a NEW bare-HEAD count label at slice-6c-fix-3.md:526) + 4 non-blocking",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T12:59:42.291Z",
+      "lane": "acceptance",
+      "from": "blocked",
+      "to": "blocked",
+      "note": null,
+      "actor": null,
+      "model": null
     }
   ]
 }
