@@ -130,6 +130,29 @@ nobody agreed to; and `scripts/guards/regexp-escape-guard.check.mjs` is the
 worked example of the shape the rule takes — a seeded defect per class, in a
 throwaway copy, each required to fail.
 
+## Copy that names a category
+
+**Copy may name only a category the app has and offers, and a copy module says
+which categories its words name.**
+
+The instance (V28 r2 slice 5; the measurements live in `firstRunTour.ts`'s own
+header): the first run's closing card named category content the directory
+withholds and promised an attribute rows do not reliably carry. A card that
+names a category is making a claim about content, and a claim about content can
+be checked, so it is.
+
+The rule, the declaration it reads and the boundary of the scan are stated in
+`scripts/guards/copy-taxonomy-guard.mjs`, whose SCOPE paragraph — not this one —
+is the authoritative statement of what it covers: the copy consts the guard is
+given, one taxonomy, one lexical phrasing per category word. It is a detector,
+not a proof that the copy is true; a restatement in other words escapes it, which
+is why the reviewer still reads the copy against the app.
+
+A count in copy is the same class of claim and is **not** machine-checked: asking
+it needs the live database, and the gate stays offline (`src/lib/db.ts` throws at
+module load without its environment). That half is a lane's job, and pinning it
+with a committed dated report would rot while the suite stayed green.
+
 ## What the reviewer checks
 
 Against the diff, not the builder's description:
