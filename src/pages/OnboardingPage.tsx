@@ -7,7 +7,7 @@ import { FirstRunCard } from '../components/FirstRunCard'
 import { useCropStep } from '../components/useCropStep'
 import { useKidPhotoUrls } from '../components/useKidPhotoUrls'
 import { addressFieldError, composeDisplayName, displayNameFieldError } from '../lib/account'
-import { progressLabel, nextUnfinishedCard } from '../lib/firstRun'
+import { progressLabel, resolveCard, SKIPPABLE_CARDS } from '../lib/firstRun'
 import { FIRST_RUN_COPY } from '../lib/firstRunCopy'
 import {
   addKid,
@@ -580,21 +580,26 @@ export function OnboardingPage() {
     }
   }, [])
 
-  // V28 slice 6 (defect #19): the run is OVER when the required cards are
-  // answered — lib/firstRun's own null rule is the single source of truth
-  // (signed in + named + zip set; the kids fact cannot block it
-  // once the zip is set). While it is, the page ends on the FINISH CARD
-  // (rendered below), never a feed bounce.
-  const runOver =
-    session !== null &&
-    profile !== null &&
-    homeZipSet &&
-    nextUnfinishedCard({
-      signedIn: true,
-      hasName: true,
-      hasKids: hasKids === true,
-      hasZip: true,
-    }) === null
+  // V28 r2 slice 8a: WHICH VIEW THIS PAGE PAINTS IS NOW A PURE FUNCTION.
+  // The ladder below used to be four `if`s over session/profile state plus a
+  // `runOver` re-derivation of lib/firstRun's own null rule — a rule decided
+  // in a .tsx, which docs/agents/code-structure.md's one rule forbids. Now
+  // `resolveCard` (lib/firstRun) answers once, and the branches below render
+  // its answer.
+  //
+  // The run is OVER (view 'finish') when the required cards are answered —
+  // signed in + named + zip set; the kids fact cannot block it once the zip is
+  // set — and the page then ends on its FINISH CARD, never a feed bounce
+  // (V28 slice 6, defect #19).
+  //
+  // `kidsCardDone` is the SESSION's skip fact and SKIPPABLE_CARDS is the app's
+  // own authority for which card may be skipped at all: a skipped optional card
+  // is indistinguishable from a not-reached one in the profile, so only a Skip
+  // recorded here can advance past the kids card within a run.
+  const view = resolveCard(
+    { hasProfile: profile !== null, hasKids, hasZip: homeZipSet },
+    kidsCardDone ? SKIPPABLE_CARDS : [],
+  )
 
   // V28 r2 slice 5: the ending card needs NO read of its own. The places
   // selection this effect used to run (the directory read, ranked against the
@@ -1178,7 +1183,7 @@ export function OnboardingPage() {
   // parent who skips the photo walks the hop exactly as before (e2e/fixtures'
   // signUpViewer fills the two name fields and clicks Continue with no photo
   // at all).
-  if (profile === null) {
+  if (view === 'name') {
     return (
       <FirstRunCard
         progressLabel={progressLabel('name')}
@@ -1269,8 +1274,9 @@ export function OnboardingPage() {
     )
   }
 
-  // V28 slice 6 (defect #19) → V28 r2 slice 5: the run is OVER → the TOUR CARD
-  // is the run's ending, rendered IN PLACE (before the kids-fact gate so a
+  // V28 slice 6 (defect #19) → V28 r2 slice 5: the run is OVER (`resolveCard`
+  // answers 'finish') → the TOUR CARD is the run's ending, rendered IN PLACE
+  // (before the kids-fact gate so a
   // finished parent never sees "Checking your kids…" or gets the kids card
   // re-offered after a completed run). The re-keyed guard above no longer
   // bounces this parent to the feed, so this card is the landing — and it is
@@ -1280,13 +1286,13 @@ export function OnboardingPage() {
   // of the loadError check below — and that combination is REACHABLE, not
   // theoretical: `homeZipSet` comes from the DB profile read (`useSession`,
   // db.ts), not from a save in this mount, so a returning parent whose
-  // `loadZipCodes()` (the gazetteer) fails is simultaneously `runOver` and
+  // `loadZipCodes()` (the gazetteer) fails resolves to 'finish' AND carries a
   // `loadError`. The tour still wins it, correctly: it performs no read of its
   // own, and the error line below is the AREA card's error state — showing it
   // here would report a failure on a card this parent is no longer on.
   // (Pre-existing ordering; V28 r2 slice 5 only removed the places read that
   // used to sit on this path.)
-  if (runOver) {
+  if (view === 'finish') {
     return <HowItWorksCard onGoToFeed={() => navigate('/', { replace: true })} />
   }
 
@@ -1326,15 +1332,20 @@ export function OnboardingPage() {
   // gate instead — the parent already has kids, so resume at the card they
   // LEFT (the area card — the run's last card), never a restart. The flag
   // keeps advancing a Skip within the session (see `hasKids` above).
-  const kidsFactPending = !kidsCardDone && hasKids === null
-  if (kidsFactPending) {
+  //
+  // V28 r2 slice 8a: both clauses of that gate are now `resolveCard`'s (the
+  // pure seam above), which is why this branch reads `view` rather than
+  // `!kidsCardDone && hasKids === null` — the rule and its table of inputs live
+  // in lib/firstRun, and firstRun.test.ts pins each branch including the
+  // 'kids-pending' gap.
+  if (view === 'kids-pending') {
     return (
       <div className="flex min-h-64 items-center justify-center text-base text-slate-600">
         Checking your kids…
       </div>
     )
   }
-  if (!kidsCardDone && !hasKids) {
+  if (view === 'kids') {
     const kidsCopy = FIRST_RUN_COPY.kids
     return (
       <FirstRunCard

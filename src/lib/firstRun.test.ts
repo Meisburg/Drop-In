@@ -15,8 +15,10 @@ import {
   isSkippable,
   nextUnfinishedCard,
   progressLabel,
+  resolveCard,
   SKIPPABLE_CARDS,
   type FirstRunFacts,
+  type FirstRunState,
 } from './firstRun'
 
 /** A complete facts object; each test overrides only what it exercises. */
@@ -209,6 +211,66 @@ describe('nextUnfinishedCard', () => {
     expect(
       nextUnfinishedCard(facts({ hasName: true, hasKids: false, hasZip: false })),
     ).toBe('kids')
+  })
+})
+
+describe('resolveCard — the render-site decision (V28 r2 slice 8a)', () => {
+  /** A complete state; each test overrides only what it exercises. */
+  function state(over: Partial<FirstRunState> = {}): FirstRunState {
+    return { hasProfile: true, hasKids: null, hasZip: false, ...over }
+  }
+
+  it('no profiles row → the NAME card, whatever else is true', () => {
+    // The row is what the name card creates, so this branch owns every parent
+    // without one — including a session whose zip/kids facts are stale.
+    expect(resolveCard(state({ hasProfile: false }))).toBe('name')
+    expect(resolveCard(state({ hasProfile: false, hasZip: true }))).toBe('name')
+    expect(resolveCard(state({ hasProfile: false, hasKids: true }))).toBe('name')
+  })
+
+  it('a SET zip ends the run → the ending view, whatever the kids fact says', () => {
+    expect(resolveCard(state({ hasZip: true, hasKids: null }))).toBe('finish')
+    expect(resolveCard(state({ hasZip: true, hasKids: false }))).toBe('finish')
+    expect(resolveCard(state({ hasZip: true, hasKids: true }))).toBe('finish')
+    // Even a card the session skipped does not outrank the completion clause.
+    expect(resolveCard(state({ hasZip: true, hasKids: false }), ['kids'])).toBe('finish')
+  })
+
+  it('an unsettled kids fact renders the PENDING state, never the kids card', () => {
+    // The gap is the defect's write path: offering the card while the read is
+    // in flight lets a returning parent with kids answer it again (addKid).
+    expect(resolveCard(state({ hasKids: null }))).toBe('kids-pending')
+  })
+
+  it('a settled empty kids fact → the kids card', () => {
+    expect(resolveCard(state({ hasKids: false }))).toBe('kids')
+  })
+
+  it('a settled kids fact with kids present → straight to the area card', () => {
+    expect(resolveCard(state({ hasKids: true }))).toBe('area')
+  })
+
+  it('a SKIPPED kids card advances to the area card, settled or not', () => {
+    // The session's Skip is the only thing that can advance past a card whose
+    // fact still says "offer again" — firstRun's documented rule for a skipped
+    // optional card, and the reason the page owns `kidsCardDone` as well as the
+    // lazy read. Without this clause a Skip would re-render the card forever.
+    expect(resolveCard(state({ hasKids: false }), ['kids'])).toBe('area')
+    expect(resolveCard(state({ hasKids: null }), ['kids'])).toBe('area')
+  })
+
+  it('skipping is the SESSION fact: no list means the card is offered again', () => {
+    // The control direction of the clause above — a skip recorded as `[]` (or
+    // not recorded at all) must NOT advance, or the resume rule is lost.
+    expect(resolveCard(state({ hasKids: false }), [])).toBe('kids')
+    expect(resolveCard(state({ hasKids: null }), [])).toBe('kids-pending')
+  })
+
+  it('a non-skippable card in the list does not advance anything', () => {
+    // `skippedCards` is typed as any card id, so a caller that handed in the
+    // wrong id must not silently skip a REQUIRED card: only `kids` advances.
+    expect(resolveCard(state({ hasKids: null }), ['area', 'name'])).toBe('kids-pending')
+    expect(resolveCard(state({ hasKids: false }), ['area', 'name'])).toBe('kids')
   })
 })
 
