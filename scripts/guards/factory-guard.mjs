@@ -44,13 +44,18 @@
 //                         can point at: the counts it reports are derived at run
 //                         time, and a claim about its own text names the commit
 //                         or the line that shows it
+//   no-bare-head-count    a count in a report or a brief names the commit it was
+//                         measured at: "N at HEAD" is unreproducible by
+//                         construction, because the commit carrying the sentence
+//                         is the one that moves HEAD. Forward-only, and the run
+//                         prints the size of the recorded baseline it passes.
 //
 // Usage:  node scripts/guards/factory-guard.mjs [--root <dir>]
 // Exit:   0 = clean, 1 = findings
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { isAbsolute, join, resolve } from 'node:path'
+import { isAbsolute, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 
 const argv = process.argv.slice(2)
@@ -304,14 +309,19 @@ function checkInstrumentHeaders() {
   const dir = join(ROOT, 'scripts', 'guards')
   if (!existsSync(dir)) {
     console.log('  note — no scripts/guards under this root; instrument headers unchecked here')
-    return
+    return 0
   }
-  for (const file of readdirSync(dir).filter((f) => f.endsWith('.mjs'))) {
+  const files = readdirSync(dir).filter((f) => f.endsWith('.mjs'))
+  for (const file of files) {
     const lines = readFileSync(join(dir, file), 'utf8').split('\n')
     for (const [index, line] of lines.entries()) {
       const text = line.trim()
       // The header block: the leading comment lines, before the first line of
       // code. `#` covers the shebang; the rest are the block-comment spellings.
+      // A BLANK line is part of the block, not the end of it — treating it as
+      // "not a comment" used to stop the scan silently, so a typed count after
+      // one went unflagged (the gap this scan's own behaviour check now seeds).
+      if (!text) continue
       if (!/^(?:\/\/|\/\*|\*|#)/.test(text)) break
       if (HEADER_TYPED_COUNT.test(text)) {
         fail(
@@ -327,6 +337,75 @@ function checkInstrumentHeaders() {
       }
     }
   }
+  return files.length
+}
+
+/**
+ * A count in a report or a brief must name the commit it was measured at.
+ *
+ * WHY THIS EXISTS. `instrument-headers-honest` reads guard HEADERS; this class
+ * kept recurring in report PROSE, where no instrument was looking. A count
+ * written as "N at HEAD" is unreproducible BY CONSTRUCTION — the commit that
+ * carries the sentence is the one that moves HEAD, so the number was measured at
+ * one commit and read at another. It has now cost four review rounds.
+ *
+ * FORWARD-ONLY, and that is a hard requirement. `factory/decisions.md` D-011
+ * item 2 rules that a historical record KEEPS its original label: a record
+ * retro-edited to look always-right is not evidence. So the known occurrences
+ * are recorded in the baseline below, the run PRINTS the baseline's size at run
+ * time (a size typed into the header would go stale in this file's own text),
+ * and only an occurrence that is not in it fails. The baseline shrinks only by a
+ * deliberate edit.
+ */
+const BARE_HEAD_COUNT = /(?<![\d/.\w])\d+(?![/\d])\s+(?:[a-z`][\w`.-]*\s+){0,4}\bat (?:the )?HEAD\b/
+const BARE_HEAD_BASELINE = new Map([
+  ['.scratch/v28/briefs/slice-6c-fix-2.md::265 at HEAD', 1],
+  ['.scratch/v28/briefs/slice-6c-fix-3.md::265 at HEAD', 2],
+  ['.scratch/v28/briefs/slice-6c-fix-4.md::265 at HEAD', 1],
+  ['.scratch/v28/reports/slice-6c-fix-1-review.md::265 at HEAD', 4],
+  ['.scratch/v28/reports/slice-6c-fix-1-verify.md::265 at HEAD', 1],
+  ['.scratch/v28/reports/slice-6c-fix-2-review.md::265 at HEAD', 4],
+  ['.scratch/v28/reports/slice-6c-fix-2-review.md::271 at HEAD', 1],
+  ['.scratch/v28/reports/slice-6c-fix-2-review.md::439 at HEAD', 1],
+  ['.scratch/v28/reports/slice-6c-fix-2-verify.md::265 at HEAD', 3],
+  ['.scratch/v28/reports/slice-6c-fix-3-review.md::265 at HEAD', 1],
+  ['.scratch/v28/reports/slice-6c-fix-3-review.md::276 tracked `.scratch` files at HEAD', 1],
+  ['.scratch/v28/reports/slice-6c-fix-3-verify.md::265 at HEAD', 1],
+  ['.scratch/v28/reports/slice-6c-fix-3.md::265 at HEAD', 2],
+])
+const BARE_HEAD_BASELINE_SIZE = [...BARE_HEAD_BASELINE.values()].reduce((sum, n) => sum + n, 0)
+
+function checkReportHeadCounts() {
+  console.log(`  note — no-bare-head-count: baseline holds ${BARE_HEAD_BASELINE_SIZE} recorded occurrence(s); a count labelled HEAD must not be added`)
+  const dirs = ['reports', 'briefs'].map((d) => join(ROOT, '.scratch', 'v28', d))
+  const files = []
+  for (const dir of dirs) {
+    if (!existsSync(dir)) continue
+    for (const f of readdirSync(dir).filter((f) => f.endsWith('.md'))) files.push(join(dir, f))
+  }
+  if (!files.length) {
+    console.log('  note — no .scratch/v28/reports or briefs under this root; report and brief counts unchecked here')
+    return 0
+  }
+  const seen = new Map()
+  for (const path of files) {
+    const rel = relative(ROOT, path)
+    const lines = readFileSync(path, 'utf8').split('\n')
+    for (const [index, line] of lines.entries()) {
+      const match = BARE_HEAD_COUNT.exec(line)
+      if (!match) continue
+      const key = `${rel}::${match[0].trim()}`
+      const seenCount = (seen.get(key) ?? 0) + 1
+      seen.set(key, seenCount)
+      if (seenCount > (BARE_HEAD_BASELINE.get(key) ?? 0)) {
+        fail(
+          'no-bare-head-count',
+          `${rel}:${index + 1}: a count is labelled HEAD and cannot be reproduced — name the commit it was measured at: ${JSON.stringify(match[0].trim())}`,
+        )
+      }
+    }
+  }
+  return files.length
 }
 
 // ---------------------------------------------------------------------------
@@ -338,13 +417,20 @@ const config = readConfig()
 checkRegistry(config)
 checkWorkItems(config)
 checkAgentModels(config)
-checkInstrumentHeaders()
+const headerFiles = checkInstrumentHeaders()
+const reportFiles = checkReportHeadCounts()
 
 if (!findings.length) {
   const items = existsSync(join(FACTORY, 'work')) ? readdirSync(join(FACTORY, 'work')).filter((f) => f.endsWith('.json')).length : 0
   const models = Object.keys(config?.models ?? {}).length
   const kinds = Object.keys(config?.task_kinds ?? {}).length
-  console.log(`  ok — ${models} model(s), ${kinds} task kind(s), ${items} work item(s); every floor meetable, every artifact present, every instrument header stating only what it can point at`)
+  // The summary claims only the checks that were actually run: a root with no
+  // scripts/guards has no header to vouch for, and saying otherwise is the same
+  // failure this guard exists to catch.
+  const claims = ['every floor meetable', 'every artifact present']
+  if (headerFiles) claims.push('every instrument header stating only what it can point at')
+  if (reportFiles) claims.push('every report and brief count naming the commit it was measured at')
+  console.log(`  ok — ${models} model(s), ${kinds} task kind(s), ${items} work item(s); ${claims.join(', ')}`)
   console.log()
   console.log('PASS — the registry can be trusted and no work item claims evidence it does not have.')
   process.exit(0)

@@ -13,8 +13,8 @@ because it had been appending as it went).
 `strata-max` worker needs 30 GB VRAM and `ninfer-serve` holds the GPU. Neither was started nor stopped.
 
 **Convention held this round:** every number, count and history fact below was produced by the command quoted
-beside it, in the same call that recorded it. One finding **rejects the brief's own wording** on that basis —
-N2's "went stale in fix round 1" — and N4's provenance note keeps a hash the brief's text got right while the
+beside it, in the same call that recorded it. One finding **rejects the brief's quotation of the old docstring**, not the brief's
+instruction — N2's "went stale in fix round 1" — and N4's provenance note keeps a hash the brief's text got right while the
 tails did not say where it came from.
 
 ---
@@ -126,7 +126,7 @@ $ git show 0205c8d:scripts/guards/regexp-escape-guard.check.mjs | grep -cE "^\s*
 9
 $ git show 0205c8d:scripts/guards/regexp-escape-guard.check.mjs | grep -c "seedCase"
 0
-$ node scripts/guards/regexp-escape-guard.check.mjs | grep -c "^  [✓✗]"      # HEAD's check == 04921d8's, same sha256
+$ node scripts/guards/regexp-escape-guard.check.mjs | grep -c "^  [✓✗]"      # this run's check == 04921d8's check, same sha256
 12
 $ git show 04921d8 -- scripts/guards/regexp-escape-guard.check.mjs | grep -nE "^[-+].*checks passed"
 287:-  console.log('regexp-escape-guard check: all 9 checks passed.')
@@ -523,7 +523,7 @@ fe98ace1b44af3f7c8dec687200bd43ebdc9c956531cfef4b884802569711101  scripts/guards
    a summary, not an enumeration, and the brief asked for the rule list *in `factory-guard.mjs`*, which is
    where the authoritative list lives.
 5. **`regexp-escape-guard.mjs`'s `262` at `c484648`** is now two rounds behind the tree (this round measured
-   276 tracked `.scratch` files at HEAD — see the N1 table). Left alone and **correct as written**: it is
+   276 tracked `.scratch` files at 71bdd55 — see the N1 table). Left alone and **correct as written**: it is
    dated to a commit and carries its own re-measuring command, which is the whole of N1's lesson.
 6. **`.scratch/v28/reports/slice-6c-fix-2-review.md`'s quotations of `slice-6c-fix-2.md:30,71`** no longer
    match those lines byte-for-byte, because this round edited the lines the brief ordered edited (and added

@@ -302,6 +302,82 @@ console.log('===========================================================')
   check('the same root with honest headers passes (control)', honest.exit === 0, `exit ${honest.exit}`)
 }
 
+// 15. instrument-headers-honest — a BLANK line inside the header block must not
+//     end the scan. It used to: an empty line is not a comment, so the scan
+//     stopped and a typed count after it went unflagged. Seeded with exactly
+//     that shape (the gap the reviewer found latent in the scan).
+{
+  const BLANK_THEN_TYPED =
+    '#!/usr/bin/env node\n// zz-seeded — the first header comment.\n\n// all 9 checks passed after a blank line.\nprocess.exit(0)\n'
+  const result = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('scripts/guards/zz-blank.mjs', BLANK_THEN_TYPED)
+  })
+  check(
+    'a typed count AFTER a blank line in the header is CAUGHT',
+    result.exit === 1 && /instrument-headers-honest/.test(result.out),
+    `exit ${result.exit}`,
+  )
+}
+
+// 16. The summary line claims only the checks that actually ran. A root with no
+//     scripts/guards has no instrument header to vouch for, and a summary that
+//     claims a check it skipped is the failure this whole guard is about.
+{
+  const bare = run(cleanRoot())
+  check(
+    'with no scripts/guards the summary does NOT claim the headers were checked',
+    bare.exit === 0 && /PASS/.test(bare.out) && !/ok — .*instrument header/.test(bare.out),
+    `exit ${bare.exit}`,
+  )
+  const withHeaders = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('scripts/guards/zz-honest.mjs', '#!/usr/bin/env node\n// zz-honest — prints its own totals at run time.\nprocess.exit(0)\n')
+  })
+  check(
+    'with a scanned guard the summary DOES claim the headers were checked (control)',
+    withHeaders.exit === 0 && /ok — .*every instrument header stating only what it can point at/.test(withHeaders.out),
+    `exit ${withHeaders.exit}`,
+  )
+}
+
+// 17. no-bare-head-count — a count labelled HEAD in a report or a brief cannot be
+//     reproduced: the commit that carries the sentence is the one that moves
+//     HEAD. Forward-only (D-011 item 2), so a recorded historical label still
+//     passes; a report that names its commit passes. A rule whose check cannot
+//     fail is a comment.
+{
+  const seeded = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-seeded.md', 'The tree holds 276 tracked `.scratch` files at HEAD.\n')
+  })
+  check(
+    'a report labelling a count HEAD is CAUGHT',
+    seeded.exit === 1 && /no-bare-head-count/.test(seeded.out),
+    `exit ${seeded.exit}`,
+  )
+
+  const baselined = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/slice-6c-fix-1-review.md', 'measured across the lane: 265 at HEAD, listed for the record\n')
+  })
+  check(
+    'a RECORDED historical label still passes (D-011 control)',
+    baselined.exit === 0,
+    `exit ${baselined.exit}`,
+  )
+
+  const dated = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-dated.md', 'The tree held 276 tracked `.scratch` files at 71bdd55.\n')
+  })
+  check(
+    'a report naming the commit it measured at passes (control)',
+    dated.exit === 0,
+    `exit ${dated.exit}`,
+  )
+}
+
 console.log()
 if (failures === 0) {
   // Counted at run time, not typed: a hand-maintained total goes stale here just
