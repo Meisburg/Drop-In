@@ -891,3 +891,37 @@ small hole for a reachable escape has made the instrument less trustworthy, and 
 back to its last reviewed-good form and do the work in the slice that owns it — not to add a fourth condition to a
 rule that has already been wrong in three different ways.** This is the same shape as D-028 (when the same thing
 is the finding for the third time, stop correcting it) applied to a MECHANISM instead of a sentence.
+
+## D-032 — when the same rule opens a new escape on each of three fixes, the rule is the wrong object
+
+**Ruled 2026-10-02 at slice 8b, one round after D-031, on the same rule.** D-031 said a repair that trades a
+small hole for a reachable escape is a net regression. **This rule has now done exactly that twice more.**
+
+| attempt | what it did | what it cost |
+|---|---|---|
+| 8a round 3 | the rule, as first written | worked — **it caught the live fabricated transcript** |
+| 8a round 4 | closed two real holes | **opened a reachable escape** — a fabricator prefixed `>` and the exemption let it pass |
+| 8b | closed that escape **by deletion**, as D-031's method required | **opened a new reachable escape with the identical signature** — the blockquote region arm **steals the label from the fence the label actually introduces**, so a `raw:` label, a blank line, a blockquote line, a blank line, then the fence passes at exit 0 |
+
+**The diagnosis, and it is structural, not another defect.** Every form of this rule requires **attributing a
+label to a block**, and attribution is a *parsing* problem being solved by regex. **Any rule that needs the
+attribution can be evaded by breaking the association** — which is precisely what both escapes did. Fixing the
+association moves the hole; it does not close it.
+
+**Therefore the ruling: the rule's shape changes, not its conditions.**
+
+- **Check EVERY fenced block. Attribute nothing.** A `✓ A–B` line and a stated count on the same line, inside a
+  fenced block, must agree — whoever wrote the block and whatever precedes it. There is no association to break,
+  so there is **no escape of this family left to find**.
+- **The price changes from a hole into a cost, and costs are allowed.** A report that *quotes* a bad block will
+  fire. That is a **cost**, declared and paid in the report — where the old exemption was a **hole**, undeclared
+  until a reviewer found it. **A declared cost beats an undeclared escape**, and any future exemption for quoted
+  content must itself ship a seed and a mutation, which is exactly what the last one lacked.
+- **This is the last attempt on this rule.** If this shape opens a hole of the same family, the rule is **deleted
+  and the defect recorded as known-open** — because a guard that has been wrong in four ways is worse than no
+  guard: it teaches that a green run means something it does not.
+
+**The general law, and it outranks the rule:** **a heuristic that has to guess at structure will keep moving its
+hole until it stops guessing.** D-020 found this in a *semantic-vs-lexical* mismatch; this is the same lesson
+one level down — a rule that must infer an association it cannot see should be **re-scoped to what it can
+observe**, even at the price of firing on things it would rather not.
