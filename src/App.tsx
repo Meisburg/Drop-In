@@ -93,11 +93,11 @@ function readNudgeDismissed(): boolean {
  * the shell's session — the profiles row + homeZipSet (3a feeds
  * both, so the nudge needs no new fetch for them; a null profile row IS the
  * name card, because display_name is NOT NULL, so any row is a name). hasKids
- * is the one fact that is NOT free: the shell knows nothing about kids. The
- * completeness seam does not save it — missingProfileItems (db.ts) takes a
- * kidsCount it must be handed, and feeding it a null on a failed read would
- * mean "kids is missing", i.e. it would GUESS hasKids=false, exactly the
- * silent guessing the brief forbids. So: a lazy listKids read, and ONLY on
+ * is the one fact that is NOT free: the shell knows nothing about kids. No
+ * cheap substitute saves it — nothing the shell already holds implies hasKids,
+ * and a kids read that fails must not be read as "kids is missing", because
+ * that is a GUESS of hasKids=false, exactly the silent guessing the brief
+ * forbids. So: a lazy listKids read, and ONLY on
  * the routes where the nudge is already eligible (parent signed in, has a
  * profile, has no zip, is not on /onboarding, and the push prompt does not
  * own the slot). The read is best-effort: if it fails, the nudge hides

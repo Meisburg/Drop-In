@@ -2536,27 +2536,6 @@ export function validateKid(firstName: string, age: number): string | null {
 }
 
 /**
- * The profile items missing for the /settings nudge banner (V2 ticket 02):
- * photo + bio + kids all present dismisses it. `kidsCount` is null when the
- * kids load has not settled (it counts as not-present — the nudge is
- * best-effort, never hides what is there).
- */
-export type MissingProfileItem = 'photo' | 'bio' | 'kids'
-
-export function missingProfileItems(
-  profile: Pick<Profile, 'avatar_url' | 'bio'> | null,
-  kidsCount: number | null,
-): MissingProfileItem[] {
-  const missing: MissingProfileItem[] = []
-  const avatarUrl = profile?.avatar_url ?? null
-  const bio = profile?.bio ?? null
-  if (avatarUrl === null || avatarUrl === '') missing.push('photo')
-  if (bio === null || bio.trim() === '') missing.push('bio')
-  if (kidsCount === null || kidsCount === 0) missing.push('kids')
-  return missing
-}
-
-/**
  * The pixel size of a canvas source, whatever kind it is. `CanvasImageSource` is a
  * union (ImageBitmap, HTMLImageElement, HTMLCanvasElement, ImageData, VideoFrame…)
  * and they do not agree on where the size lives, so the guard in
