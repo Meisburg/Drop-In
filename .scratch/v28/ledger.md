@@ -6892,3 +6892,24 @@ is "DEAD AND WRONG" and `:119` still claims `rg -n "skipLabel" src/` returns 0 r
 `onConfirm: (...) => Promise<void> | void`, so the `| void` the brief asked about is **not yet fixed** -- *which
 matters because 8b's own text said "slice 3's fix round is correcting that", and slice 3 then ran three rounds and two
 more slices followed.* ✓ **The brief's "check items 6 and 7 first" instruction is therefore load-bearing.** ✓
+
+## ⚙️ MODEL ROUTING: HYBRID, BY THE HUMAN'S DECISION -- and it is a BETTER architecture than all-cloud, not just a cheaper one
+
+| role | model | why |
+|---|---|---|
+| **orchestrator** (me) | **cloud** | the judgment layer: briefs, adjudication, scope. Errors here propagate to every lane. |
+| **builder** | **LOCAL Qwen Next** | the most token-heavy role, and the one the local model has demonstrably done excellent work on (the 860->730-line AST rewrite, the checker-based identity rewrite, several self-caught misdiagnoses). **Saves the most tokens.** |
+| **explorer** | **LOCAL** | read-only research; token-heavy, judgment-light. |
+| **reviewer** | **CLOUD** | ⚠️ **AND THIS IS THE REAL WIN: the reviewer is no longer the builder's SIBLING.** The batch's own escalation ladder exists because *"a builder and its reviewer are siblings, so a hard slice deadlocks: the model that wrote the bug is the model judging it."* **A local builder + a cloud reviewer satisfies that rule by construction** -- *which all-cloud did NOT, since both were then the same cloud model.* **The hybrid is more independent than either pure option.** |
+| **verifier** | **CLOUD** | the most turn-heavy lane (many commands), and turn count is exactly what the local model is slow at. |
+| **researcher** | **CLOUD** | low volume, synthesis-heavy, and it grounds whole slices -- errors there poison a dispatch. |
+| **`ocr`** (machine lane) | **LOCAL** | already structurally independent (own scaffolding, own rules), so it needs no model diversity. |
+
+**RULED: this is adopted for the rest of the batch, and the trade is stated plainly: wall-clock time in exchange for
+tokens.** A local builder is ~1 min/turn where cloud is a fraction of that. **The human chose that trade explicitly.**
+
+**⚠️ THE ONE COST TO WATCH, and it is measured not hypothetical:** the local model holds ~50 of 62 GB and has been
+**OOM-killed twice** and **stopped once (Hermes)**. Routing builders back to local raises that pressure again, and
+`ocr` shares the same server. **Mitigation already in force:** the model idle-unloads after an hour, which returns the
+machine to ~42 GB free; and the lanes that run many turns (verifier) stay on cloud, so the local load is builders only.
+*If OOM kills resume, the fallback is to move the builder back to cloud for the affected slice and say so.*
