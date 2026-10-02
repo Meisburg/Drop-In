@@ -513,3 +513,29 @@ forward-only, over a corpus that must accumulate discussions of the rule, cannot
 order alternative and a wider word class to arm 1, allow `--no-pager`/`-C`/quotes in arm 2 — after which arm 3
 is *still* a list (any command can be absent), arm 1 *still* a phrase set (any phrasing can be absent), and the
 round would again find a fresh instance of the class in its own report (it did, in rounds 1-6).
+
+## D-021 — RULING: the reporting form is made decidable (closes D-020)
+
+**Human ruling 2026-10-02, on the D-020 escalation. Two decisions:**
+
+1. **Make the reporting form decidable.** Counts in reports and briefs must carry their provenance in a
+   **canonical, machine-checkable token** — a commit sha — and the instrument must **verify** it. A token
+   naming a sha is checkable with `git cat-file -e <sha>^{commit}`, so **"a wrong named commit" stops being a
+   declared ceiling and becomes a finding.** This is the ruling that ends the widening treadmill: the class is
+   made *decidable* rather than *hunted*. It is the only design under which "detects the class" is achievable
+   rather than asymptotic (D-020's option 1).
+2. **Absorb the red into a re-derived baseline.** The guard currently fails with **98 findings**, all in lane
+   reports that *discuss* the class and therefore quote it. They are absorbed by a **re-derivation** — never by
+   hand-adding a key — so the guard is green while this specification is implemented.
+
+**What the ruling does NOT license.** It does not license weakening the rule to make it pass, and it does not
+make the residue disappear: the *prose* half of the class (a count whose provenance is implied in a shape no
+token carries) remains a lexical detector with a declared ceiling. The difference is that from here the
+**canonical form is enforceable and verified**, and whatever remains is a named ceiling rather than an
+open-ended hunt. The header must say which half is which — this is what `docs/agents/code-structure.md:121-127`
+means by the header being the authoritative statement of scope.
+
+**Also owed from the round-5 review, in the same change** (D-019's own artifacts asserted otherwise): the
+false *"both were silently dropped by the same `\b`"* in `.scratch/v28/reports/slice-6c-fix-5.md:482`, a
+behaviour check whose named failure mode is unreachable, and a pasted grep printing `0` where the command
+returns `3`.
