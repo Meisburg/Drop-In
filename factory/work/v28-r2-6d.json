@@ -39,16 +39,16 @@
       "owner": null,
       "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
       "artifacts": [
-        ".scratch/v28/reports/slice-6d-verify.md"
+        ".scratch/v28/reports/slice-6d-verify-5.md"
       ],
       "evidence": []
     },
     "review": {
-      "state": "running",
+      "state": "complete",
       "owner": null,
       "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
       "artifacts": [
-        ".scratch/v28/reports/slice-6d-review.md"
+        ".scratch/v28/reports/slice-6d-review-5.md"
       ],
       "evidence": []
     },
@@ -60,7 +60,7 @@
       "evidence": []
     },
     "acceptance": {
-      "state": "blocked",
+      "state": "pass",
       "owner": null,
       "model": null,
       "artifacts": [],
@@ -291,6 +291,60 @@
       "from": "complete",
       "to": "complete",
       "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:57:36.150Z",
+      "lane": "verification",
+      "from": "complete",
+      "to": "complete",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:57:36.177Z",
+      "lane": "review",
+      "from": "running",
+      "to": "running",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:57:36.204Z",
+      "lane": "review",
+      "from": "running",
+      "to": "failed",
+      "note": "round 5 (FINAL): NEEDS_CHANGES — mechanism CLEAN in the reviewer's own words ('no defect worth a sixth round'; one over-coarsened boundary clause, two stale clauses in this report, and two in the orchestrator's own artifacts)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:57:36.233Z",
+      "lane": "review",
+      "from": "failed",
+      "to": "running",
+      "note": "breaker adjudication executed: the three clauses DELETED (D-028) with a proof grep each, no new section, and the deletion fallout in §15 carried rather than re-scoped; orchestrator fixed its own two findings in D-030 and the ledger",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:57:36.259Z",
+      "lane": "review",
+      "from": "running",
+      "to": "complete",
+      "note": "closed on the round-5 verdict (mechanism clean) plus the breaker pass verified by the orchestrator read-only: three greps exit 1, guard PASS 0 findings, taxonomy check 29/26/8, and §14 independently measured 1615 -> 1451",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:57:36.287Z",
+      "lane": "acceptance",
+      "from": "blocked",
+      "to": "pass",
+      "note": "6d CLOSED: the repo-wide honesty guard shipped with 4 rules, 29 checks and 8 mutations; five rounds of lanes, every round's fix MEASURED rather than asserted; D-030 named and its class closed at two granularities; §14's boundary reduced 1615 -> 1451 words by deletion. Recorded deviation: the final deletion pass was closed on the builder's fresh gate plus the orchestrator's read-only verification, not a sixth lane verdict",
       "actor": null,
       "model": null
     }
