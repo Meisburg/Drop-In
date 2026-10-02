@@ -440,3 +440,11 @@ changed — the limit line — and the pasted block in §2 is the output as it n
 `node scripts/guards/copy-taxonomy-guard.check.mjs` → exit 0, `all 23 checks passed, 0 failed, across 22 guard
 invocations (6 of them against a mutated copy of the guard)`; `npx oxlint` on both files → no warning. The full gate
 was then re-run; its numbers are §9.
+
+**One more run, at the commit that follows that one.** `npm run verify` was run a second time at `99ccdfc`
+(the state above plus this report's §8 command fix), and every number is identical: exit 1; `Test Files  71 passed
+(71)`; `Tests  2067 passed (2067)`; 81 warnings, 0 errors; `ok — AGENTS.md (1789 words, ceiling 1800)`;
+the new guard `PASS` and its check `23/23` inside the lane; `run-all.sh` `GUARDS: FAIL — 1 guard(s) reported
+findings: - factory-guard`, the same five registry lines. `bash scripts/steering-lint.sh` run on its own:
+exit 0. Nothing this slice touched changed any of them, and the raw output is
+`.scratch/v28/tmp/verify-end.log`.
