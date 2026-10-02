@@ -113,15 +113,15 @@ Copy-taxonomy guard — a category this copy names must be one the app has and o
   scanned words: 9 (Park, Playground, Indoor play, Museum, Pool, Splash pad, Library, Beach, Trail)
   limit—— kind "other" is not scannable: its word resolves to the label function's own default, so a match could not be attributed to it (see WHERE IT STOPS in the header)
   module: src/lib/firstRunCopy.ts
-  copy consts read: 2; declared claims: 0 (none)
+  copy consts read: 2 of 2 named; declared claims: 0 (none)
   module: src/lib/firstRunTour.ts
-  copy consts read: 4; declared claims: 3 (playground, pool, beach)
+  copy consts read: 4 of 4 named; declared claims: 3 (playground, pool, beach)
   module: src/lib/push.ts
-  copy consts read: 1; declared claims: 0 (none)
+  copy consts read: 1 of 1 named; declared claims: 0 (none)
   module: src/lib/theme.ts
-  copy consts read: 1; declared claims: 0 (none)
+  copy consts read: 1 of 1 named; declared claims: 0 (none)
   module: src/lib/feed.ts
-  copy consts read: 2; declared claims: 0 (none)
+  copy consts read: 2 of 2 named; declared claims: 0 (none)
 
 PASS — every declared taxonomy claim exists, is offered, is backed by the copy, and the copy names no category it did not declare.
 ```
@@ -368,11 +368,12 @@ own row grows with every later edit to the report, so read that row as of `f0224
 | `scripts/guards/run-all.sh` | +8 / −1 |
 | `.scratch/v28/reports/slice-6d.md` | +432 |
 
-(Line counts of the two new files as `wc -l` reads them at this commit, which is the same statement `diff --stat`
-makes: 467 and 368.)
+The two new instruments grew by a few lines after that endpoint — three accuracy fixes, §10 — so their size in the
+tree you are reading is given the one way a reader can check it in a single command: `wc -l` reads
+`scripts/guards/copy-taxonomy-guard.mjs` at 475 and `scripts/guards/copy-taxonomy-guard.check.mjs` at 370.
 
-sha256 of the instrument at `79991bd`, so a reviewer can tell what they read:
-`copy-taxonomy-guard.mjs` `fd52b49cc282400d…03cf0c2`, `copy-taxonomy-guard.check.mjs` `88c07af30cc696f5…3aedb1`.
+sha256 of the instrument in the tree you are reading, so a reviewer can tell what they read:
+`copy-taxonomy-guard.mjs` `42ae1649b401da3b…581d5066`, `copy-taxonomy-guard.check.mjs` `dccdec2516401e6a…35f61cce`.
 
 **The 5-minute read:** `docs/agents/code-structure.md`'s new section (the rule), then
 `src/lib/firstRunTour.ts:205` (the declaration), then the guard's header — "WHERE IT STOPS" is the coverage
@@ -434,9 +435,13 @@ not support:
   that prints the line covers the reachable half (`other`, whose word is the label function's default).
 - the unreadable-declaration finding said the const *is not an exported array of string literals* whether the const
   was absent or merely held a non-literal element. It now names both causes instead of asserting one.
+- the per-module line printed `copy consts read: N` from the REGISTRY — the configured count — while the label said
+  READ, so a const that dropped out of the walk would still have printed the full number. It now prints what it
+  read and what the registry names (`4 of 4 named`), and the rename seed asserts the drop (`copy consts read: 3 of
+  4 named`), so the sentence and the mechanism agree in the direction a reviewer would test.
 
-Re-verified after that commit, raw: `node scripts/guards/copy-taxonomy-guard.mjs` → exit 0 (one line of its output
-changed — the limit line — and the pasted block in §2 is the output as it now reads);
+Re-verified after those commits, raw: `node scripts/guards/copy-taxonomy-guard.mjs` → exit 0 (two lines of its
+output changed — the limit line and the per-module count — and the pasted block in §2 is the output as it now reads);
 `node scripts/guards/copy-taxonomy-guard.check.mjs` → exit 0, `all 23 checks passed, 0 failed, across 22 guard
 invocations (6 of them against a mutated copy of the guard)`; `npx oxlint` on both files → no warning. The full gate
 was then re-run; its numbers are §9.
