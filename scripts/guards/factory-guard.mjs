@@ -384,6 +384,7 @@ const PROSE_NEGATION = /\b(?:no|not|none|never|without)\b/i
 const ABANDON_MARKER = /used to claim|was narrowed|it was narrowed/g
 const ABANDON_QUOTE = /(?:`([^`\n]{10,140})`|"([^"\n]{10,140})"|\(([^()\n]{10,140})\))/g
 const POINTER_RESOLUTION_CLAIM = /\bresolvable\s+pointer\b|\bmakes the claim checkable\b|\bthe line that shows it\b/
+const BASELINE_NUMBER_CLAIM = /\bthe baseline\b[^.\n]{0,80}?\b(?:is|holds)\s+(\d+)\b/i
 
 /** The prose positions of an instrument file: every comment line (its decor
  * stripped) and each `check('…')` name on the line that opens its call, with the
@@ -480,6 +481,13 @@ function checkInstrumentHeaders() {
             `${f.file}:${seg.line}: the prose names a \`${alt[1]}\` alternative, but no such construct appears in the file's own source`,
           )
         }
+      }
+      const baseline = BASELINE_NUMBER_CLAIM.exec(seg.text)
+      if (baseline && Number(baseline[1]) !== BARE_HEAD_BASELINE_SIZE) {
+        fail(
+          'instrument-headers-honest',
+          `${f.file}:${seg.line}: the prose says the baseline is ${baseline[1]}, but the map derives ${BARE_HEAD_BASELINE_SIZE} — point at the map instead of typing its size`,
+        )
       }
       // RULE 1d — a claim of a CAPABILITY the rule does not have. The pointer
       // test is a lexical shape test, so prose calling the pointer resolvable —

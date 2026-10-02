@@ -457,24 +457,31 @@ console.log('===========================================================')
   })
   check('the same shapes naming the commit pass (control)', named.exit === 0, `exit ${named.exit}`)
 
-  // F2: the baseline for this key is 4 (a recorded historical file). Five
-  // occurrences on disk, TWO of them on one line, is the reviewer's proof:
-  // single-match counting saw 4 and passed; counting every match sees 5 and
-  // fails. If that baseline count ever moves, this seed moves with it.
-  const doubled = run((ctx) => {
+  // F2: this key's recorded baseline is 2 (a historical lane file). The seed
+  // writes THREE occurrences, TWO of them on one line — single-match counting
+  // sees two and passes, counting every match sees three and fails — and the
+  // mutation below restores single-match counting and turns the seed green,
+  // which is what makes per-line counting load-bearing rather than claimed.
+  const doubledSeed = (ctx) => {
     cleanRoot()(ctx)
     ctx.write(
       '.scratch/v28/reports/slice-6c-fix-1-review.md',
-      'measured: 265 at HEAD\n' +
-        'two on one line: 265 at HEAD and 265 at HEAD\n' +
-        'again 265 at HEAD\n' +
-        'finally 265 at HEAD\n',
+      'first: 265 at HEAD\n' +
+        'two here: 265 at HEAD "then" 265 at HEAD\n',
     )
-  })
+  }
+  const doubled = run(doubledSeed)
   check(
     'a SECOND occurrence on an already-counted line is CAUGHT (per-line counting)',
     doubled.exit === 1 && /no-bare-head-count/.test(doubled.out),
     `exit ${doubled.exit}`,
+  )
+  const singleMatch = mutatedGuard([['for (const match of line.matchAll(BARE_HEAD_COUNT)) {', 'for (const match of [line.match(new RegExp(BARE_HEAD_COUNT.source))].filter(Boolean)) {']])
+  const doubledMiss = run(doubledSeed, { guard: singleMatch })
+  check(
+    'MUTATION: restoring single-match counting lets that seed PASS (so per-line counting is load-bearing)',
+    doubledMiss.exit === 0,
+    `exit ${doubledMiss.exit}`,
   )
 
   // The `@` shorthand — a declared arm that used to be DEAD. Both composed
@@ -1127,6 +1134,32 @@ console.log('===========================================================')
     'MUTATION: not reading check names lets that seed PASS (so the coverage can fail)',
     byNameMiss.exit === 0,
     `exit ${byNameMiss.exit}`,
+  )
+
+  // RULE 3 — a number written about a derived quantity must equal the
+  // quantity. The seed states a baseline the map does not derive.
+  const wrongBaseline =
+    '#!/usr/bin/env node\n' +
+    '// zz-seeded — the baseline is 999 recorded occurrences.\n' +
+    'process.exit(0)\n'
+  const number = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('scripts/guards/zz-number.mjs', wrongBaseline)
+  })
+  check(
+    'a prose number the map contradicts is CAUGHT (prose number vs artifact)',
+    number.exit === 1 && /instrument-headers-honest/.test(number.out) && /999/.test(number.out),
+    `exit ${number.exit}`,
+  )
+  const noNumber = mutatedGuard([['if (baseline && Number(baseline[1]) !== BARE_HEAD_BASELINE_SIZE) {', 'if (false) {']])
+  const numberMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('scripts/guards/zz-number.mjs', wrongBaseline)
+  }, { guard: noNumber })
+  check(
+    'MUTATION: dropping the number-vs-artifact test lets that seed PASS (so the check can fail)',
+    numberMiss.exit === 0,
+    `exit ${numberMiss.exit}`,
   )
 
 }
