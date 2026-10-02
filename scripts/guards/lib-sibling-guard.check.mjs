@@ -16,7 +16,11 @@
 //   2. the same module WITH its sibling passes                     (control);
 //   3. a module on the declared EXEMPT list is skipped, not failed  (control);
 //   4. a src/lib whose ONLY entry is exempt ⇒ checked=0 ⇒ FINDING   (seed + mutation);
-//   5. a MISSING src/lib ⇒ FINDING naming the missing directory     (seed + mutation).
+//   5. a MISSING src/lib ⇒ FINDING naming the missing directory     (seed + mutation);
+//   6. the REACH matches the NAME: `src/lib/*.mjs` and `scripts/lib/*.mjs`
+//      are each scanned, and dropping either scan lets its orphan escape
+//      (slice 8b — the guard read `src/lib/*.ts` alone, so a `lib/` module one
+//      directory over was invisible)                                     (2 seeds + 2 mutations).
 //
 // Usage: node scripts/guards/lib-sibling-guard.check.mjs
 // Exit:  0 = every check ran and passed, 1 = at least one is not doing its job
@@ -99,7 +103,7 @@ const orphanRoot = rootWith({ 'src/lib/orphan.ts': 'export const x = 1\n' })
 const orphan = run(orphanRoot)
 check('a module with no sibling test is CAUGHT and named', orphan.exit === 1 && /MISSING: src\/lib\/orphan\.ts/.test(orphan.out), `exit ${orphan.exit}`)
 
-const noMissing = mutatedGuard('if [ ! -f "$LIB_DIR/$base.test.ts" ]; then', 'if [ "x" = "y" ]; then')
+const noMissing = mutatedGuard('if [ ! -f "$dir/$base$sibling" ]; then', 'if [ "x" = "y" ]; then')
 const orphanMiss = run(orphanRoot, noMissing)
 check('MUTATION: dropping the missing-sibling test lets that seed PASS (so check 1 can fail)', orphanMiss.exit === 0, `exit ${orphanMiss.exit}`)
 
@@ -134,11 +138,51 @@ const noZeroPaths = mutatedGuard2([
 const noLibMiss = run(noLibRoot, noZeroPaths)
 check('MUTATION: dropping BOTH zero-checks lets that seed PASS (exit 1 -> 0, a DETECTION flip)', noLibMiss.exit === 0, `exit ${noLibMiss.exit}`)
 
+// 6. THE REACH MATCHES THE NAME (slice 8b). A `lib/` module one directory over,
+// or with the other extension, is a module the rule named and the guard did not
+// read. Each new scan set carries its own seed and its own exit-moving mutation,
+// so a future edit that narrowed the reach back would move a verdict, not a
+// message. The seeds carry a passing src/lib/*.ts pair so that the D-030
+// checked=0 path is NOT what fires: what fires is the MISSING sibling.
+const mjsRoot = rootWith({
+  'src/lib/ok.ts': 'export const x = 1\n',
+  'src/lib/ok.test.ts': 'test("x", () => {})\n',
+  'src/lib/plain.mjs': 'export const x = 1\n',
+})
+const mjsOrphan = run(mjsRoot)
+check('a src/lib/*.mjs module with no sibling test is CAUGHT and named', mjsOrphan.exit === 1 && /MISSING: src\/lib\/plain\.mjs/.test(mjsOrphan.out), `exit ${mjsOrphan.exit}`)
+
+const noSrcMjs = mutatedGuard('scan_set "$LIB_DIR" ".mjs" ".test.ts"', ': # the src/lib .mjs scan is dropped by this mutation')
+const mjsMiss = run(mjsRoot, noSrcMjs)
+check('MUTATION: dropping the src/lib/*.mjs scan lets that seed PASS (exit 1 -> 0, a DETECTION flip)', mjsMiss.exit === 0, `exit ${mjsMiss.exit}`)
+
+const scriptLibRoot = rootWith({
+  'src/lib/ok.ts': 'export const x = 1\n',
+  'src/lib/ok.test.ts': 'test("x", () => {})\n',
+  'scripts/lib/orphan.mjs': 'export const x = 1\n',
+})
+const scriptLibOrphan = run(scriptLibRoot)
+check('a scripts/lib/*.mjs module with no sibling check is CAUGHT and named', scriptLibOrphan.exit === 1 && /MISSING: scripts\/lib\/orphan\.mjs has no scripts\/lib\/orphan\.check\.mjs/.test(scriptLibOrphan.out), `exit ${scriptLibOrphan.exit}`)
+
+const noScriptLib = mutatedGuard('scan_set "scripts/lib" ".mjs" ".check.mjs"', ': # the scripts/lib scan is dropped by this mutation')
+const scriptLibMiss = run(scriptLibRoot, noScriptLib)
+check('MUTATION: dropping the scripts/lib scan lets that seed PASS (exit 1 -> 0, a DETECTION flip)', scriptLibMiss.exit === 0, `exit ${scriptLibMiss.exit}`)
+
+// 7. Control: the scripts/lib convention (a sibling .check.mjs, not a .test.ts)
+// is honored, so the new reach is not simply always red.
+const scriptLibClean = run(rootWith({
+  'src/lib/ok.ts': 'export const x = 1\n',
+  'src/lib/ok.test.ts': 'test("x", () => {})\n',
+  'scripts/lib/ok.mjs': 'export const x = 1\n',
+  'scripts/lib/ok.check.mjs': 'console.log("ok")\n',
+}))
+check('control: a scripts/lib module WITH its .check.mjs sibling passes', scriptLibClean.exit === 0 && /all 2 non-exempt module\(s\)/.test(scriptLibClean.out), `exit ${scriptLibClean.exit}`)
+
 for (const dir of SCRATCH) rmSync(dir, { recursive: true, force: true })
 
 console.log()
 if (failures === 0) {
-  console.log(`PASS — all ${ran} checks: the guard fires on both defects and only on them.`)
+  console.log(`PASS — all ${ran} checks: the guard fires on every seeded defect and only on them.`)
   process.exit(0)
 }
 console.log(`FAIL — ${failures} of ${ran} checks failed.`)

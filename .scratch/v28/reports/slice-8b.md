@@ -1689,3 +1689,153 @@ The two known-open items are unchanged and NOT patched: the trailing-TAB closer 
 - **The fixture's four line-ending cases pin the shared scanner, not the guard's use of it.** The guard-uses-the-
   scanner property is pinned by a text assertion plus the end-to-end seeds; a future edit that kept the import
   but bypassed `scanFences` in one call site would be caught by the seeds, not by the text check.
+
+# FINAL ROUND (8b close-out) — three declarations, and one of them is a rule's reach
+
+The rung was cleared in round 7 (VERIFY: PASS — the wide fuzz reproduced both ways, the checker's 185 green, the
+scanner verified verbatim against `commonmark 0.31.2`). Three items stood between 8b and closing: a boundary the
+reviewer found undeclared, a rule whose name was general and whose reach was one directory, and a provenance entry
+D-039 named that nobody wrote. All three are declarations or rule-reach. No parser change, no clause, no new check
+machinery.
+
+## Item 1 — the HTML over-read is DECLARED (the reviewer's one blocking item)
+
+The reviewer found a constructible input where the scanner reads a fenced block BOTH references deny: a fence
+marker inside a raw HTML block. The scanner has no HTML state, so it opens a fence on a marker an HTML block
+swallows. Measured end-to-end this turn — the shape, then the two references, then the real guard binary:
+
+    <div class=x>
+    ```md
+    ✓ 7–13 zz-spec.e2e.ts (all six legs)
+    ```
+
+    $ node -e '<commonmark 0.31.2 + marked 18.0.14 on that file>'
+      commonmark fenced code_blocks: 0 | marked top tokens: ["html"]
+
+    $ node scripts/guards/factory-guard.mjs --root /tmp/s8b-html --repo .
+      note — transcript-summary-agrees: 1 fenced block(s) read, 1 range summary checked
+      FINDING [transcript-summary-agrees]: .scratch/v28/reports/zz-html.md:3: a fenced block's summary line
+              covers 7 entries (7–13) but states "(all six" — ...
+      exit 1
+
+Both references derive no fenced block there; the guard fires on a line both keep unfenced. That is an OVER-read,
+so per D-037 §3 it can never produce the `NOTHING was compared` escape signature the whole family exists to close —
+it only ADDS a read. It is therefore DECLARED, not fixed and not deleted: D-028's direction, the smallest true
+sentence, naming the boundary and its direction.
+
+`factory-guard.mjs`'s CEILING now carries one new bullet (no neighbouring bullet reworded, no mechanism added):
+
+    - a fence marker INSIDE an HTML block is ALSO read: the scanner carries no
+      HTML state, so a marker a raw HTML block swallows is opened as a fence
+      where both references derive none. It is an OVER-read by construction — it
+      can only ADD a read, so it cannot produce the `NOTHING was compared`
+      signature this rule exists to close (D-037 §3);
+
+That is the whole change: five comment lines in `factory-guard.mjs`, zero behavioural lines.
+
+## Item 2 — the sibling rule's reach now matches its name
+
+`lib-sibling-guard.sh` hard-coded `LIB_DIR="src/lib"` and globbed `*.ts`, so a `lib/`-named rule reached one
+directory and one extension. `scripts/lib/fence-scanner.mjs` — a `lib/` module with no sibling file — was
+invisible, and `src/lib/*.mjs` was invisible too. The guard now runs THREE scan sets, one per directory/extension
+pair, each with that directory's own sibling convention:
+
+    src/lib/*.ts       -> <base>.test.ts    (the build law's own sentence; vitest)
+    src/lib/*.mjs      -> <base>.test.ts    (the vanilla-JS escape hatch; vitest)
+    scripts/lib/*.mjs  -> <base>.check.mjs  (standalone gate checkers, run by run-all.sh)
+
+What it already covered is unchanged: the `src/lib/*.ts` set and its EXEMPT list behave exactly as before, the
+missing-`src/lib` finding and the D-030 zero-scan finding are untouched, and the run now reads 57 non-exempt
+modules (55 before + `escapeForRegExp.mjs` + `sweep-e2e.mjs`). The one module under `scripts/lib/` with no sibling
+of its own — `fence-scanner.mjs`, whose behaviour test is `factory-guard.check.mjs`'s fixture block — carries a
+WRITTEN exemption naming that test, so its absence is declared rather than silently uncovered; the next module
+there with no sibling is caught.
+
+Both halves of the new rule (throwaway roots, the real script, raw output):
+
+    # SEED: a scripts/lib module with no sibling, plus a passing src/lib pair so the
+    # MISSING is what fires and not the D-030 zero-check
+    $ bash scripts/guards/lib-sibling-guard.sh /tmp/s8b-lib
+      MISSING: src/lib/plain.mjs has no src/lib/plain.test.ts
+      MISSING: scripts/lib/orphan.mjs has no scripts/lib/orphan.check.mjs
+      FINDING: 2 module(s) ship no sibling test.
+    FAIL — build law violated.        EXIT=1
+
+    # MUTATION: the scripts/lib scan dropped (the old reach restored)
+    $ bash /tmp/s8b-lib-neuter/lib-sibling-guard.sh /tmp/s8b-lib
+      ok — all 1 non-exempt module(s) have a sibling test
+    PASS — build law holds.           EXIT=0
+
+The checker carries both new reaches as their own checks, each with an exit-moving mutation:
+
+    ✓ a src/lib/*.mjs module with no sibling test is CAUGHT and named
+    ✓ MUTATION: dropping the src/lib/*.mjs scan lets that seed PASS (exit 1 -> 0, a DETECTION flip)
+    ✓ a scripts/lib/*.mjs module with no sibling check is CAUGHT and named
+    ✓ MUTATION: dropping the scripts/lib scan lets that seed PASS (exit 1 -> 0, a DETECTION flip)
+    ✓ control: a scripts/lib module WITH its .check.mjs sibling passes
+    PASS — all 13 checks: the guard fires on every seeded defect and only on them.
+
+## Item 3 — the provenance entry D-039 named, and nobody wrote
+
+D-039 directs the scanner be vendored with provenance under `docs/agents/borrowed-guards.md`; that doc had no
+mention of it. The doc now carries the entry its own format asks for ("Vendored, not adopted: the fence scanner
+borrowed from CommonMark"):
+
+- **what was taken** — `commonmark` 0.31.2's fence-recognition clauses, transcribed (the opener, the closer and
+  its three conditions, `CODE_INDENT`, the leading-whitespace column, `reLineEnding`), which the round-7 reviewer
+  verified VERBATIM against the installed `lib/blocks.js`;
+- **from which reference and version** — `commonmark` 0.31.2, and why `marked` 18.0.14 was not the source (its
+  closer suffix admits spaces only);
+- **what was refused** — a dependency, because a guard whose meaning moves when a package bumps is the failure the
+  suite exists to prevent (D-039), plus commonmark's container machinery; and
+- **the four tests** the doc's "Adding a fourth guard" requires, each named with its evidence.
+
+Two facts the entry states rather than fills in, because no measurement establishes them: the scanner's
+provenance header is NOT machine-checked (the instrument-header rule reads `scripts/guards/*.mjs` one level deep,
+and this module is under `scripts/lib/`), and it ships no sibling test of its own (Item 2's exemption names that).
+The doc's "What was taken" table row for `lib-sibling-guard.sh` was also updated to the reach Item 2 gave it.
+
+## Gate (fresh, this turn, at the committed state)
+
+    $ npm run verify
+     Test Files  71 passed (71)
+          Tests  2063 passed (2063)
+      lint            81 warnings, 0 errors
+      ok — AGENTS.md (1789 words, ceiling 1800)
+      factory-guard check: all 185 checks passed.
+      GUARDS: PASS — all deterministic rules hold.
+    VERIFY EXIT=0
+
+    $ node scripts/guards/factory-guard.check.mjs
+    factory-guard check: all 185 checks passed.            EXIT=0
+
+    $ node scripts/guards/factory-guard.mjs
+      note — transcript-summary-agrees: 702 fenced block(s) read, 10 range summaries checked
+      note — no-bare-head-count: 671 of the 671 recorded occurrence(s) matched this scan (LOST COVERAGE 0)
+      PASS — the registry can be trusted and no work item claims evidence it does not have.
+    EXIT=0
+    # ZERO guard findings on the real tree; no lane report was edited.
+
+    $ bash scripts/guards/lib-sibling-guard.sh
+      ok — all 57 non-exempt module(s) have a sibling test
+    PASS — build law holds.                                EXIT=0
+
+    $ node scripts/guards/lib-sibling-guard.check.mjs
+    PASS — all 13 checks.                                  EXIT=0
+
+The factory checker is unchanged at 185 (Item 1 added a ceiling sentence, not a check). The lib-sibling checker
+rose 8 -> 13: five checks for the widened reach (two seeds, two exit-moving mutations, one control).
+
+## Risks
+
+- **The widening exempts the very module that motivated it.** `scripts/lib/fence-scanner.mjs` has no sibling of
+  its own; its behaviour test is `factory-guard.check.mjs`'s fixture block. The exemption carries that reason, and
+  the rule now reaches the next module there — but a reviewer should read the exemption as the deliberate,
+  reviewable act the guard's header says it is, not as the hole left open.
+- **The scanner's provenance header stays outside the machine-checked header scan.** Item 3 records this in the
+  doc rather than closing it; closing it means moving the module under `scripts/guards/` or widening the header
+  rule, which is a larger change than this round was authorised for.
+- **`scripts/lib` has no missing-directory finding.** If that directory vanished, the reach would silently shrink
+  back to `src/lib`; only the global D-030 zero-check would notice a fully empty scan. Deliberate: a
+  missing-`scripts/lib` finding would red every existing checker seed (which roots carry only `src/lib`).
+

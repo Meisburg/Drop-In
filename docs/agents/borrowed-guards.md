@@ -25,7 +25,7 @@ So: take the enforcement idea, take three specific rules, refuse the rest.
 
 | Guard | Rule it enforces | Source pattern in ECC |
 |---|---|---|
-| `scripts/guards/lib-sibling-guard.sh` | every non-exempt `src/lib/*.ts` ships a sibling `.test.ts` | `scripts/hooks/quality-gate.js` PostToolUse gate |
+| `scripts/guards/lib-sibling-guard.sh` | every non-exempt `lib/` module ships a sibling test — both `lib/` directories, both module extensions (`src/lib/*.ts` and `src/lib/*.mjs` → `<base>.test.ts`; `scripts/lib/*.mjs` → `<base>.check.mjs`) | `scripts/hooks/quality-gate.js` PostToolUse gate |
 | `scripts/guards/config-guard.sh` | no protected check-config changes without a recorded reason | `scripts/hooks/config-protection.js` PreToolUse block |
 | `scripts/guards/no-bypass-guard.sh` | the repository's own `core.hooksPath` layer still points at the tracked dir; hooks executable | `scripts/hooks/block-no-verify.js` PreToolUse block |
 | `scripts/guards/fixture-marker-guard.mjs` | every e2e fixture account/title stays inside the sweep's marker convention, and every test `DELETE` is owner-scoped | `scripts/hooks/quality-gate.js` PostToolUse gate (same pattern, different rule) |
@@ -197,3 +197,77 @@ Rule 3 was the one that mattered most here, and it is what the behavior test
 buys: the guard's findings are falsifiable, in the gate, with no model.
 
 Run the suite: `npm run guards` (also part of `npm run verify`).
+
+## Vendored, not adopted: the fence scanner borrowed from CommonMark
+
+The first borrowed artifact this doc records that is **not** from ECC.
+`scripts/lib/fence-scanner.mjs` is ONE fence recogniser shared by the factory
+guard (`transcript-summary-agrees`) and its reference-derived conformance
+fixture. It exists because the batch spent three rounds clause-patching a
+hand-written parser: D-038 put a rung BELOW D-032's delete — stop hand-writing the
+recogniser and take the reference's own fence recognition — and D-039 fired that
+rung when the seventh fence-closure divergence (a CRLF file recognised no fence at
+all) appeared.
+
+**What was taken.** `commonmark`'s fence-recognition clauses, transcribed rather
+than imported:
+
+    CODE_INDENT = 4                                        (lib/blocks.js:7)
+    the opener  reCodeFence = /^`{3,}(?!.*`)|^~{3,}/       (lib/blocks.js:48)
+    the closer  reClosingCodeFence = /^(?:`{3,}|~{3,})(?=[ \t]*$)/  (lib/blocks.js:50)
+    the leading-whitespace column: a space is one column and a tab
+      advances to the next multiple of four; an opener is refused at
+      column >= 4, a closer accepted only at column <= 3  (lib/blocks.js:744-765)
+    reLineEnding = /\r\n|\n|\r/ — line endings are normalised before
+      scanning, so a CRLF file is ordinary text          (lib/blocks.js:54)
+    a closer must be the opener's own fence character, and a run at
+      least as long as the opener's                     (lib/blocks.js:404-409)
+
+The independent reviewer checked each clause **verbatim against
+`commonmark` 0.31.2's `lib/blocks.js`** on the installed package, on 17
+adversarial shapes the fixture does not contain and on whole-corpus per-line
+parity — not against this doc's word for the file. If the two ever diverge, the
+check is the reference, not this sentence.
+
+**From which reference, and which version.** `commonmark`, version **0.31.2**,
+`lib/blocks.js` (BSD-2-Clause) — the canonical reference implementation, and the
+authority the conformance fixture names. It was taken instead of the fixture's
+second reference, `marked` 18.0.14, because that one's closer suffix admits spaces
+only (` *`): it keeps a tab-suffixed closing run as CONTENT where the authority
+closes. That is a reference disagreement, not a scanner divergence (D-037 §2), and
+the authority's clause settles it without adjudicating it in prose.
+
+**What was refused, and why.** A **dependency**. Importing `commonmark` or
+`marked` would let the guard's meaning move when the package bumps — the exact
+failure this whole suite exists to prevent (D-039). Clauses transcribed into a
+module that imports nothing cannot do that. Also refused: commonmark's full block
+parser and its container machinery (blockquotes, lists, lazy continuation), which
+sit outside the scanner's top-level, line-based scope; and `_fenceOffset`
+de-indentation, info-string unescaping and NUL replacement, which answer questions
+the rule does not ask.
+
+**The four tests a new guard passes** (`## Adding a fourth guard` above), applied
+to the guard this scanner serves:
+
+1. **A written rule** — `transcript-summary-agrees`, whose scope statement in
+   `factory-guard.mjs`'s header names this scanner.
+2. **Deterministic** — a pure function of its input text: no model, no clock, no
+   filesystem, no network.
+3. **Cannot be satisfied by editing itself without a visible diff** — no
+   configuration, no allow-list; the conformance fixture in
+   `factory-guard.check.mjs` fails on any divergence from the reference-derived
+   cases.
+4. **Dependency-free, with a behaviour test** — it imports nothing at all, and its
+   behaviour test is the fence-fixture block in `factory-guard.check.mjs`.
+
+Two facts this entry states rather than fills in, because no measurement
+establishes them:
+
+- The scanner's **provenance header is not machine-checked**: the
+  instrument-header rule reads `scripts/guards/*.mjs` one level deep, and this
+  module is under `scripts/lib/`. Its BEHAVIOUR is machine-checked (the fixture
+  above); the prose about where it came from is not.
+- It ships **no sibling test of its own** — the behaviour test sits in another
+  directory. The lib-sibling guard now scans `scripts/lib/` (slice 8b) and carries
+  a written exemption for this module that names that test, so the sibling's
+  absence is declared rather than silently uncovered.
