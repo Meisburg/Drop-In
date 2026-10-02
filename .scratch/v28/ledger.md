@@ -6946,3 +6946,41 @@ status -- but the working tree holds its four files at **+181/-19** (`regexp-esc
 **Copied to `/tmp/6c-fix1-wip/` so a new session cannot lose it**, and named in the handover as *work on disk,
 uncommitted, builder died* rather than as "not started". *A slice that did the work and died before committing is not a
 slice that was never attempted, and a handover that calls it "not started" would throw the work away.*
+
+## 🔌 THE LOCAL MODEL: it was CRASH-LOOPING, not stopped -- and TWO MORE INSTRUMENTS LIED while I found that out
+
+**The human asked "is strata stopped? start it for the next session." The answer was worse than stopped:**
+`strata-max.service` was **`inactive dead` as the END STATE of a 54-attempt restart loop** (`Restart=on-failure`,
+counter 54, each attempt dying in ~11 s). **Cause, measured:** the engine kept reaching
+`mtp: the 512 experts do not fit in VRAM` and exiting -- because **`ninfer-serve` was holding 23.4 of 32.6 GB of
+VRAM**. The unit's own config says *"Mutual exclusion vs NInfer lives in the config's `before_load` list"*: **strata-max
+is SUPPOSED to evict NInfer before loading, and that eviction was not happening.** The same log shows it **working
+earlier the same day** (`the prompt path borrows 2327 CUDA0 cache slots` and six clean `verify` windows), so this is a
+regression in the exclusion, not a broken install.
+
+**FIXED, reversibly:** `systemctl --user stop ninfer-serve` (graceful, not a kill; VRAM went 25.4 GB -> 1.5 GB used),
+then `systemctl --user start strata-max`. **It loaded in ~40 s and is serving:** journal shows
+`[strata] ready: http://127.0.0.1:8081/v1 (OpenAI: /v1/chat/completions, Anthropic: /v1/messages, context 131072
+tokens)` and `the model unloads after 3600.0 s without requests`. **`ninfer-serve` is intentionally NOT restarted --
+they cannot co-exist; `systemctl --user start ninfer-serve` brings it back (and will need strata-max stopped first).**
+
+### ⚠️ ⚠️ AND TWO INSTRUMENTS LIED, IN THE SAME TEN MINUTES, BOTH ABOUT SERVICE STATE
+1. **`systemctl --user is-active` returns `activating` while a 55 GB model loads** -- and my first wait loop treated
+   anything that was not `active` as failure and **quit at 5 s**, reporting "service is not active" about a service
+   that was loading exactly as designed. **The unit file literally warns:** *"First load pins ~55 GB into RAM: give it
+   time before restarting a crashed load."*
+2. **`http=401` is the server ANSWERING, not failing.** My second loop's success test was `http == 200` **while
+   ignoring 401**, so it ran the full 450 s printing `http=401` and then declared `❌ still not answering` --
+   **about a server that had been `ready` since second 40.** *It had printed the disproof on fifteen consecutive
+   lines and I still read the verdict off my own condition.*
+
+**RULED, and this is the same class the batch has now hit four times (rg -r, the mangled pattern, git grep on an
+untracked file, and these two): an instrument that is RIGHT about the world and WRONG about your question is worse
+than no instrument, because it prints a verdict you will believe.** *The specific tell each time: the instrument
+answers a PROXY for the question ("is the process state exactly `active`", "is the status exactly 200") instead of the
+question ("did it come up").* **For a service whose states include `activating` and whose healthy answer includes
+401, the check must be a PREDICATE -- `ready` in the journal, or `401|200` -- not an equality.** *And in both cases the
+truth was already on screen: the journal said `ready`, and the header said `activating`.*
+
+**AND: a wrong "not answering" would have had me restart a healthy server and possibly kill a 47 GB load** -- *the
+failure mode is not the wasted minutes, it is the destructive remedy applied to a healthy system.*
