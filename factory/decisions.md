@@ -265,3 +265,74 @@ cause is named: a baseline was copied forward instead of re-measured at dispatch
 
 Does **not** authorize: treating a stale baseline in a brief as the builder's
 failure, or widening a guard rule past the round's stated scope without a ruling.
+
+## D-012 — the resident worker and the admission reserve are mutually exclusive on this machine
+
+**Measured 2026-10-02, live.** The human authorized "stop ninfer, start strata-max" to
+unblock `ocr`. Both halves were executed and both worked:
+`ninfer-serve` stopped; `strata-max` **started clean and reached ready in 20 s**
+(`ready: http://127.0.0.1:8081/v1`, `NRestarts=0`) — so its 88 historical restarts were the
+VRAM conflict with `ninfer-serve`, and the log line `mtp: the 512 experts do not fit in VRAM`
+is a **normal host-memory fallback message, not the fault**. The declared 55 GB footprint is
+real: the engine child holds **Pss 49.2 GB private** (not reclaimable cache).
+
+**And it did not achieve the goal.** With the resident worker up, `MemAvailable` fell to
+**2 GB** against a declared reserve of **4 GB**, so *every* admission was refused — including
+`ocr`'s own lease:
+
+    admit r2-6c-ocr (ocr) -> BLOCKED_RESOURCE
+      strata-max: RAM: needs 6 GB (task 2 + reserve 4), usable -17.1 GB (available 2.9 - promised 20)
+
+**The arithmetic is not wrong; the policy pair is unsatisfiable at 62 GB.** Subtracting a
+resident worker of 49.2 GB and a machine reserve of 4 GB from 62 GB, with a desktop resident,
+leaves no room for any task. **A `residency: resident` worker and a satisfiable admission
+reserve cannot both hold on this machine** — the reserve can never be met while the resident
+model is loaded. Recorded as the measured ceiling, not as a bug.
+
+**Does not authorize:** lowering `machine.reserve_gb` to make the refusal disappear — that is
+editing the measurement to fit the answer, the same refusal made for strata-max's `reasoning`.
+
+**Consequence for independence:** `ocr` is pinned to that one worker, because the `ocr` task
+kind declares `requires_local_inference: true` **and** `strata-max` is the only local model
+clearing its floor (`tool_use 3`). Note what `factory/config.json` already says about why ocr
+is independent: *"its own scaffolding, its own rule resolution — so it does NOT need model
+diversity."* Independence comes from the **scaffolding**, not from where the model is hosted —
+so `requires_local_inference: true` is orthogonal to ocr's independence and is the single
+declared value that pins this lane to a 49 GB worker. **Reconsidering that flag is a policy
+decision for the human, not a defect to fix silently.**
+
+## D-013 — two measured admission defects, found by using the scheduler
+
+**1. `reserve_gb` is charged once per reservation instead of once per machine.**
+`held` sums every ADMITTED reservation's `requiredGb` (`scheduler.mjs:178`), and
+`requiredGb` already includes `reserveGb` (`.mjs:454/468`). Three concurrent lanes therefore
+promised **20 GB, of which 12 GB was phantom reserve** (3 × 4 GB) — a machine-level constant
+multiplied by concurrency. Measured: the three fix-4 lanes (build 7 + verify 7 + review 6)
+reported as `promised 20` while all three ran **on cloud**.
+
+**2. A remote-residency model charges local task RAM it will never use.** The builder kind
+charges `task 3 + reserve 4` against **local** RAM even when the model is
+`residency: remote`. `additionalRamGb` is correctly 0 for a remote model
+(`scheduler.mjs:310`), but the task's own RAM is still charged locally.
+
+Both make local admission look tighter than the machine is, which is the **opposite** failure
+to the one this batch fears: not a hidden resource failure, but a *phantom* one — three cloud
+lanes starving a local lane. Recorded; **not fixed** (a fix round was in flight, and changing
+the admission arithmetic mid-verification would invalidate the evidence being gathered).
+
+## D-014 — `factory reclaim` mutates without being asked to
+
+**Measured.** `node scripts/factory/factory.mjs reclaim`, run **intending a read-only listing
+of who holds what**, executed `systemctl --user stop ninfer-serve` (`factory.mjs:373-374`:
+log `stopping …` then `spawnSync('systemctl', ['--user','stop', …])`). The human's inference
+server was stopped by a command invoked as an inspection — the **second** time this pattern has
+cost the batch (the first was the botched D-004 demo).
+
+The guard's own rule (D-004) is *reclaim is opt-in, never kill in-use* — and it honoured the
+in-use half (there was no live reservation holding ninfer). What it lacks is the **opt-in half
+for the caller**: there is no dry-run default and no `--apply`. A query that stops a service
+cannot be a query.
+
+**Fix direction (not built):** `reclaim` prints the plan unless `--apply` is passed, and the
+plan is what the human reads before authorizing. Until then, **the orchestrator does not run
+`reclaim` to look at reservations** — it reads `factory/state/reservations.json`.
