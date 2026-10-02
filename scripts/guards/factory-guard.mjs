@@ -1255,6 +1255,8 @@ const BARE_HEAD_BASELINE = new Map([
   [".scratch/v28/reports/slice-6c-fix-6.md::git status --porcelain \\\\| wc", 3],
   [".scratch/v28/reports/slice-6c-fix-6.md::git status --porcelain \\| wc", 3],
   [".scratch/v28/reports/slice-6c-fix-6.md::git status --porcelain | wc", 4],
+  [".scratch/v28/reports/slice-6c-fix-7-final-verify.md::git diff --name-only 1f29068..HEAD", 2],
+  [".scratch/v28/reports/slice-6c-fix-7-final-verify.md::git rev-parse HEAD", 1],
   [".scratch/v28/reports/slice-6c.md::git grep --fixed-strings -- \"$PAT\" -- . | wc", 2],
   [".scratch/v28/reports/slice-6c.md::git grep --untracked --fixed-strings -- \"$PAT\" -- . | wc", 1],
   [".scratch/v28/reports/slice-6c.md::git ls-files .scratch | wc", 1],
