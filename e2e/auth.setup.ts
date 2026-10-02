@@ -4,138 +4,86 @@
  * /login + /onboarding UI, then save the resulting signed-in browser state
  * (storageState) for the specs to reuse.
  *
- * V2 slice 3: the onboarding gate keys on the home zip (neighborhoods are
- * display labels only), so the setup completes the location step — home
- * zip 98107 (a seeded WA zip) + the default 5-mi radius — and then SETS
- * + VERIFIES both via REST (the marker's own JWT, read out of
- * localStorage): the marker must satisfy the new onboarding gate AND the
- * radius feed. Pre-0012-apply this step fails (the profiles columns +
- * zip_codes table don't exist yet) — an expected failure until the
- * orchestrator applies migration 0012 live.
+ * V2 slice 3: the setup completes the location step — home zip 98107 (a
+ * seeded WA zip) + the default 5-mi radius — and then SETS + VERIFIES both
+ * via REST (the marker's own JWT, read out of localStorage). ⚠️ The line
+ * this paragraph used to carry, "the marker must satisfy the new onboarding
+ * gate", is FALSE since V28 slice 2b: nothing is gated on the home zip any
+ * more (docs/adr/0001-home-zip-stops-being-a-gate.md). What the marker needs
+ * the zip for is the radius FEED (a no-zip parent gets the location notice
+ * instead of rows), which is why the REST write below still exists.
+ * Pre-0012-apply the REST step failed (the profiles columns + the zip_codes
+ * table did not exist yet) — an expected failure until the orchestrator
+ * applied migration 0012 live, kept as history.
  *
  * Marker pattern (same as the orchestrator's live checks, lv1–lv5): the
  * email + display name carry a deterministic `e2e-<epoch>` prefix so the
  * orchestrator can sweep stray rows later. The password is generated
  * in-memory here and never written anywhere (no secrets in specs).
  *
- * V28 slice 3b: the account is card 1 of 4, so the marker's first run goes
- * through the real UI end to end — email + password on /login (the signup
- * form is email + password ONLY now; the name and address fields moved onto
- * the first run's cards), then the NAME card creates the profiles row, then
- * the AREA card sets the marker's home zip + radius. There is no more
- * geocode branch to settle: every new parent lands on /onboarding, so the
- * location step is deterministic. The REST PATCH below stays as the
- * marker's backstop.
+ * ⚠️ THE WALK ITSELF IS NOT WRITTEN HERE (V28 r2 slice 8a). This spec used to
+ * hold its own copy of the sequence — signup, the name card, the kids Skip, the
+ * area card with its address/Finish/zip/radius/Finish and the ending card's CTA
+ * — which is exactly what e2e/fixtures.ts's `signUpViewer` + `finishSignup`
+ * already own. Two walks that must agree is the drift the one-copy rule exists
+ * to stop, and this is the walk 60 spec files depend on: the helpers are now the
+ * only copy, so a renamed control cannot leave this spec behind (which is the
+ * failure the ledger records three times for specs that carried their own
+ * locator). The helpers' own docblocks carry what the walk does and why —
+ * including that `finishSignup` answers the card's address lookup with the
+ * caller's zip instead of making a real Nominatim request.
  *
- * V28 slice 5: the location step IS the area card (4 of 4, decision 9 —
- * address-first, ZIP as fallback). This walk types an address that never
- * resolves (no such street exists), so the card's bounded lookup settles to
- * "absent" and reveals the ZIP field + the in-card notice, and the typed
- * marker zip + radius finish the card — the same deterministic outcome the
- * old location step gave. (The RESOLVED-address path — home zip set with no
- * typed zip — is exercised by e2e/signup-zip-fallback.e2e.ts, which
- * intercepts the card's Nominatim lookup.)
+ * The REST PATCH below stays as the marker's backstop, and the /profile
+ * @handle assertion below stays here: it is this spec's own proof that the row
+ * exists under the composed handle.
  */
 import { expect, test as setup } from '@playwright/test'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { AUTH_DIR, MARKER_META_PATH, MARKER_STATE_PATH, readSupabaseEnv } from './fixtures'
+import {
+  AUTH_DIR,
+  finishSignup,
+  MARKER_META_PATH,
+  MARKER_STATE_PATH,
+  readSupabaseEnv,
+  signUpViewer,
+} from './fixtures'
 
 /** Seeded by migration 0002 — the display label the marker's posts use. */
 const MARKER_NEIGHBORHOOD = 'Ballard'
 /** The marker's discovery location (V2 slice 3): a seeded WA zip + default radius. */
 const MARKER_HOME_ZIP = '98107'
 const MARKER_RADIUS_MILES = 5
-/**
- * V28 slice 5 — the area card's address entry in THIS walk. It must never
- * resolve to a seeded gazetteer zip: no such street exists anywhere, so the
- * card's bounded lookup settles to "absent" (Nominatim answers empty, or
- * the sandbox has no network at all) and reveals the ZIP fallback the walk
- * fills. A REAL street here would make the marker's zip depend on the
- * network's answer — exactly the non-determinism the deterministic zip below
- * exists to avoid.
- */
-const MARKER_ADDRESS = '1 E2E Loop, Nowhere'
-
 setup('sign up the marker, onboard it (zip + radius), save the signed-in state', async ({ page, context }) => {
   const epoch = Math.floor(Date.now() / 1000)
   const email = `e2e-${epoch}@gmail.com` // gmail.com: the project rejects example.com (logged lesson)
 
-  // --- Sign up through the real /login UI (signup mode). ---
+  // --- Sign up + walk the run with the SHARED HELPERS (V28 r2 slice 8a) ---
   //
-  // V28 slice 3b: the form is EMAIL + PASSWORD ONLY (the account is card 1
-  // of 4). The marker's handle is still COMPOSED — "e2e-<epoch> Marker" —
-  // but now by the NAME CARD on /onboarding (card 2, V28 slice 3a): same
-  // two halves, same composeDisplayName join, so every downstream
-  // `@handle` assertion that looks for `${displayName}` keeps holding.
-  // The address field is gone from the signup flow entirely (the location
-  // card owns it), so there is nothing to geocode and no branch to settle.
+  // The marker's handle is still COMPOSED — "e2e-<epoch> Marker" — and the NAME
+  // CARD on /onboarding composes it from the same two halves with the same
+  // `composeDisplayName` join, so every downstream `@handle` assertion that looks
+  // for `${displayName}` keeps holding.
+  //
+  // This block used to be the walk itself (signup → name card → kids Skip → the
+  // area card's address/Finish/zip/radius/Finish → the ending card's CTA). All of
+  // it is e2e/fixtures.ts's `signUpViewer` + `finishSignup`, and keeping a second
+  // copy of a walk 60 spec files depend on is the drift this slice removed. The
+  // details a reader of THIS file needs are in the helpers' docblocks:
+  // `signUpViewer`'s pre-fill tripwire (the marker's `e2e-<epoch>` name EQUALS the
+  // card's pre-fill, the email's local part, so the given-name fill is a no-op
+  // change and the field's visible value comes from the pre-fill) and
+  // `finishSignup`'s intercepted address lookup (the card's one Nominatim request
+  // is fulfilled with MARKER_HOME_ZIP — no network, and the radius is picked
+  // before the single Finish tap).
   const firstName = `e2e-${epoch}`
   const lastName = 'Marker'
   const displayName = `${firstName} ${lastName}`
   const password = `e2e-pw-${epoch}` // in-memory only — never written, never committed
 
-  await page.goto('/login')
-  await page.getByRole('button', { name: 'New here? Create an account' }).click()
-  await page.locator('input[type="email"]').fill(email)
-  await page.locator('input[type="password"]').fill(password)
-  await page.getByRole('button', { name: 'Create account' }).click()
+  await signUpViewer(page, { name: displayName, email, password })
+  // Ends on the feed — signed in, onboarded (home zip set + radius).
+  await finishSignup(page, { homeZip: MARKER_HOME_ZIP, radiusMiles: MARKER_RADIUS_MILES })
 
-  // Signup lands on /onboarding (V28 slice 3b: card 1 of 4 is done, card 2
-  // is next). The NAME card creates the profiles row — the first use of the
-  // card's form-attribute association in a spec file (its Continue button
-  // lives outside the <form> and is joined to it by the HTML form
-  // attribute; if the two drift, the profile row is never created and the
-  // location step below never renders).
-  //
-  // NOTE (V28 slice 3b): `firstName` here EQUALS the card's prefill — the
-  // email's local part (suggestedHandle's fallback) — so this fill is a no-op
-  // change and the field's VISIBLE value comes from the prefill, not from
-  // this line. The name card keeps each prefill half until THAT field is
-  // edited (per-field touched flags in OnboardingPage); with the old shared
-  // flag the family-name fill wiped the first-name prefill and the required
-  // field silently blocked this submit. If the card's touched handling ever
-  // regresses, this is the line that breaks — and it breaks as a 120s
-  // timeout waiting for the location step below, not an assertion.
-  await page.locator('input[autocomplete="given-name"]').fill(firstName)
-  await page.locator('input[autocomplete="family-name"]').fill(lastName)
-  await page.getByRole('button', { name: /^Continue/ }).click()
-
-  // V28 slice 4a: the KIDS card ("3 of 4") now sits between the name card
-  // and the location step — the new parent's first run is account → name →
-  // kids → area (V28 r2 slice 1b deleted the photo card, which used to sit
-  // fourth; the photo now joins the name card in slice 2). This spec's
-  // walk predates the cards and used to land
-  // straight on the location step, so it taps the skippable card's Skip
-  // control (Skip writes NOTHING — the marker gets its kids, if any, via
-  // the /profile editor or REST, never through onboarding). The Skip button
-  // is FirstRunCard's chrome control, and the location view has none.
-  await page.getByRole('button', { name: 'Skip' }).click()
-
-  // V28 slice 5: the AREA card ("4 of 4", decision 9): address-first, ZIP as
-  // fallback. This walk types an address that never resolves (MARKER_ADDRESS
-  // above), so the card's bounded lookup settles to "absent" and reveals the
-  // ZIP field + the in-card notice; the typed marker zip + radius then finish
-  // the card. (The card's primary reads "Finish" — FIRST_RUN_COPY.area; while
-  // the lookup is in flight it reads "Checking your address…" and is
-  // disabled, so the second click below auto-waits for the settle.)
-  const addressField = page.getByPlaceholder('e.g. 1200 1st Ave S, Seattle')
-  await addressField.fill(MARKER_ADDRESS)
-  await page.getByRole('button', { name: 'Finish' }).click()
-  // The unresolvable address reveals the ZIP fallback (never blocks, never
-  // loses the address). The zip select renders its pinned options
-  // (1/2/5/10/20/35; 5 mi is the default).
-  await page.getByPlaceholder('e.g. 98107').fill(MARKER_HOME_ZIP)
-  await page.locator('select').first().selectOption({ label: `${MARKER_RADIUS_MILES} miles` })
-  await page.getByRole('button', { name: 'Finish' }).click()
-
-  // V28 slice 6 (defect #19): the area card's save renders the run's FINISH
-  // CARD on /onboarding (the re-keyed guard removed the feed bounce) — tap
-  // its CTA before the feed assertions below.
-  await page.getByTestId('first-run-finish-card').waitFor()
-  await page.getByRole('button', { name: 'Go to your feed' }).click()
-
-  // Back on the feed — signed in, onboarded (home zip set).
-  await page.getByRole('heading', { name: 'Near you' }).waitFor()
   // The handle round-trip is still proven, but NOT from the header: V21 t10
   // removed the header's duplicate `@handle` link (founder: "it bothers me to
   // have a profile section in two different areas"), so the header renders it
@@ -149,9 +97,10 @@ setup('sign up the marker, onboard it (zip + radius), save the signed-in state',
   await page.goto('/')
 
   // Set + verify the marker's location via REST (the marker's own JWT, read
-  // out of the session blob localStorage): the UI's Continue already wrote
-  // it (updateHomeZipRadius), this PATCH is the idempotent backstop and the
-  // GET proves the row (the marker must satisfy the gate + radius feed).
+  // out of the session blob localStorage): the walk's Finish already wrote it
+  // (updateHomeZipRadius), this PATCH is the idempotent backstop and the GET
+  // proves the row (the marker needs the zip for the radius FEED — there is no
+  // zip gate since V28 slice 2b).
   // Pre-0012-apply this is an expected failure — logged, not fatal.
   const markerCreds = await page.evaluate((): { accessToken: string; userId: string } | null => {
     for (const raw of Object.values(localStorage)) {

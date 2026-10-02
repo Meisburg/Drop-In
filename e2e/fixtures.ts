@@ -366,6 +366,18 @@ export function runLiveSql(sql: string): { ok: boolean; output: string } {
  * The password is whatever the caller already generated; it is only typed
  * here. The home location is set by the caller's `finishSignup` on the
  * location step that follows the name card.
+ *
+ * ⚠️ THE PRE-FILL TRIPWIRE (moved here from e2e/auth.setup.ts by V28 r2 slice
+ * 8a, which made this helper the marker's walk too): when the caller's `name`
+ * EQUALS the card's pre-fill — the email's local part, `suggestedHandle`'s
+ * fallback, which is exactly what the marker's `e2e-<epoch>` name is — the
+ * given-name fill above is a no-op change and the field's VISIBLE value comes
+ * from the pre-fill, not from the line. The card keeps each pre-fill half until
+ * THAT field is edited (per-field touched flags in OnboardingPage); with the old
+ * shared flag the family-name fill wiped the first-name pre-fill and the
+ * required field silently blocked the submit. If that handling ever regresses,
+ * THESE fills are what break — and it breaks as a 120s timeout waiting for the
+ * next card, not as an assertion.
  */
 export async function signUpViewer(
   page: Page,
