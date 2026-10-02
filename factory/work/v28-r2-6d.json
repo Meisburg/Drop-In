@@ -32,18 +32,14 @@
       "state": "running",
       "owner": null,
       "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
-      "artifacts": [
-        ".scratch/v28/reports/slice-6d-verify.md"
-      ],
+      "artifacts": [],
       "evidence": []
     },
     "review": {
       "state": "running",
       "owner": null,
       "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
-      "artifacts": [
-        ".scratch/v28/reports/slice-6d-review.md"
-      ],
+      "artifacts": [],
       "evidence": []
     },
     "visual_validation": {
@@ -150,6 +146,24 @@
       "from": "pending",
       "to": "running",
       "note": "fresh reviewer dispatched: briefed to hunt THE CLASS in the new guard (each claim vs the code below it), and to label findings WRONG NUMBER / UNDER-DECLARED BOUNDARY / FALSE CLAIM / MECHANISM",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:51:30.616Z",
+      "lane": "verification",
+      "from": "running",
+      "to": "running",
+      "note": "artifact names withdrawn: the reports do not exist yet, and a named artifact not on disk is a claim with nothing behind it (artifacts-exist has teeth). Re-named when the lane lands.",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:51:30.616Z",
+      "lane": "review",
+      "from": "running",
+      "to": "running",
+      "note": "artifact names withdrawn: the reports do not exist yet, and a named artifact not on disk is a claim with nothing behind it (artifacts-exist has teeth). Re-named when the lane lands.",
       "actor": null,
       "model": null
     }
