@@ -336,3 +336,71 @@ cannot be a query.
 **Fix direction (not built):** `reclaim` prints the plan unless `--apply` is passed, and the
 plan is what the human reads before authorizing. Until then, **the orchestrator does not run
 `reclaim` to look at reservations** — it reads `factory/state/reservations.json`.
+
+## D-015 — the factory's meaning of "independence" is weaker than the word (recorded, NOT built)
+
+**Raised by the human 2026-10-02**, while unblocking the `ocr` lane: *"A separate lane or separate run is
+not sufficient if it uses the same model and reasoning context as the builder."*
+
+**What the factory means today — read out of `factory/config.json`, not assumed:**
+
+| lane | independence | meaning |
+|---|---|---|
+| `reviewer` | `required: true, same_model: false` | must not be the implementer's model |
+| `verifier` | `required: true, same_model: false` | same |
+| `ocr` | `required: true, same_model: true` | **model diversity explicitly waived** |
+
+and the router implements exactly one exclusion (`scheduler.mjs:522`): a model is filtered out by NAME when
+`same_model` is false. So the factory's entire notion of independence is **"a different registered model"** —
+and for `ocr`, **nothing at all is enforced about the model.**
+
+**Two measured facts make this the weak spot it is:**
+1. The reviewer floor is cleared by **exactly one** registered model (D-007), so `same_model: false` is
+   unsatisfiable by construction and **every review this batch has received is a sibling**.
+2. `ocr`'s independence claim rests on its **scaffolding** (own tool-use loop, own rule resolution, own rules
+   file). That is a real and separate axis — but routing `ocr` to cloud now means it runs the **same model as
+   the builder**, so it contributes **scaffolding diversity, not model independence.**
+
+**The stronger semantics to model (future work, deliberately NOT built while 6c is in flight):** independence
+is a property of a tuple — **model identity, reasoning context, harness/scaffolding, and information access** —
+and a lane is independent only if it differs on the axes that could make it repeat the author's mistake. A
+distinct lane or a distinct run is not sufficient; neither is a distinct model that shares the same reasoning
+context.
+
+**Not a defect in the factory's honesty:** the config already concedes `ocr` is not model-independent
+(`same_model: true`). The gap is that the *word* `independence.required` reads stronger than the property it
+enforces, and a consumer of `route` output can mistake "independence: satisfied" for "a genuinely independent
+judgment happened." **When this is built, `route` should report which axes were actually satisfied and which
+were waived, rather than a boolean.**
+
+## D-016 — "independent" must be earned in the report, and the loop stops instead of guessing
+
+**Human instruction, 2026-10-02.** Two rules for how this batch reports and escalates:
+
+1. **Verify what independence means before calling a lane independent** — and do not use the word for a lane
+   that shares the implementer's model and reasoning context. Report the axis that was satisfied
+   (scaffolding) and the axis that was not (model), so a reader cannot mistake the one for the other. See D-015.
+2. **The class-matching loop stops rather than repeats.** The 6c round-5 instrument was matching *examples* of
+   a violation class rather than the class. If review fails **again** for another instance of the same class,
+   do **not** start another blind fix round. **Stop and present, in one read: the invariant, the detection
+   rule, and the missed shape** — so the human can decide whether the *specification itself* is incomplete.
+   A fifth round that fixes the fifth example is evidence the specification is wrong, not the builder.
+
+## D-017 — `ocr` routed to cloud: a temporary routing change, with its cost named
+
+**Human-authorized 2026-10-02, "for this round" only.** `task_kinds.ocr.requires_local_inference` was `true`,
+which pinned the lane to `strata-max` — the one local model clearing its floor — and that model holds
+**49.2 GB private** and is mutually exclusive with a satisfiable admission reserve at 62 GB (D-012). So the
+lane could not run at all.
+
+**Change:** `requires_local_inference: false` (commit `ec47f15`), with the rationale recorded inline in
+`factory/config.json`. The lane's **capability floor and `independence.required` are untouched** — only the
+*placement* requirement was removed. `admit ocr` now succeeds, routing to
+`ollama-cloud/deepseek-v4.1-flash:cloud`.
+
+**What this does NOT buy, stated plainly:** the routed model is the same model the builder uses. So this
+purchase is **scaffolding diversity**, not model independence (D-015). The ocr lane brings its own tool-use
+loop, its own rule resolution and its own rules file, which is a genuinely different failure mode from the
+agent reviewer — but it is **not** an independent judgment in the sense the human asked about.
+
+**Revert when the human says so.** The flag went from `true` to `false`; restoring it is a one-line edit.
