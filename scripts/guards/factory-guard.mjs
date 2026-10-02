@@ -1294,6 +1294,26 @@ const BARE_HEAD_BASELINE = new Map([
   // item 2 — a historical record keeps its label). Never typed, never
   // hand-extended — the run prints the size below instead.
   [".scratch/v28/reports/slice-6d-verify-4.md::git rev-parse HEAD", 1],
+  // V28 r2 slice 8a fix round 2: the two round-2 LANE REPORTS quote the flagged
+  // spellings themselves (and the round-1 verification report keeps its own, as
+  // D-011 item 2 requires). Absorbed by RE-DERIVING this map from the
+  // instrument's own matches — the keys below are that run's output, verbatim,
+  // never typed, and the run prints the size instead of anyone writing it down
+  // (a count typed into this comment would rot on the next re-derivation).
+  [".scratch/v28/reports/slice-8a-review-2.md::199`. True at `508d656`, stale at HEAD", 1],
+  [".scratch/v28/reports/slice-8a-review-2.md::219 @", 1],
+  [".scratch/v28/reports/slice-8a-verify-2.md::219 @", 1],
+  [".scratch/v28/reports/slice-8a-verify-2.md::git diff ae578c2..HEAD", 2],
+  [".scratch/v28/reports/slice-8a-verify-2.md::working tree: **2061 tests, 71", 1],
+  [".scratch/v28/reports/slice-8a-verify.md::git diff ae578c2..HEAD", 1],
+  [".scratch/v28/reports/slice-8a-verify.md::working tree: **2061 tests, 71", 1],
+  // V28 r2 slice 8a fix round 2, second derivation: THIS slice's OWN report quotes
+  // the flagged spellings as its evidence (the key list FR2-1 pasted), which
+  // re-grows the red by design — a rule that a report can dodge by not quoting it
+  // is a rule nobody can audit. Absorbed here from the instrument's own matches,
+  // exactly as the lane reports above were.
+  [".scratch/v28/reports/slice-8a.md::199`. True at `508d656`, stale at HEAD", 1],
+  [".scratch/v28/reports/slice-8a.md::git diff ae578c2..HEAD", 2],
 ])
 
 const BARE_HEAD_BASELINE_SIZE = [...BARE_HEAD_BASELINE.values()].reduce((sum, n) => sum + n, 0)

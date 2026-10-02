@@ -3,7 +3,7 @@
 Worktree: `/home/jmeisburg/orca/workspaces/playdate-app/onboarding`, branch `Meisburg/onboarding`.
 Slice under test: `8d1170d..ae578c2` (18 commits, 23 files, +606/−514 — confirmed with `git log`/`git diff --stat`).
 Note on provenance: the worktree's HEAD is **`322902f`** = `ae578c2` + one meta-only commit
-(`.scratch/v28/ledger.md`, `.scratch/v28/reports/slice-8a.md`, `factory/work/v28-r2-8a.json`; `git diff ae578c2..322902f` shows
+(`.scratch/v28/ledger.md`, `.scratch/v28/reports/slice-8a.md`, `factory/work/v28-r2-8a.json`; `git diff ae578c2..HEAD` shows
 no source/test file). Every code measurement below is identical at `ae578c2` and `322902f`.
 
 **VERIFY: PASS** — every commanded lane ran and exited green; the one headline claim worth doubting (the wire
@@ -49,7 +49,7 @@ Baseline `8d1170d` (clean clone, real `.git`):
 
     2068 tests, 71 test files, exit 0.
 
-Final `ae578c2` (tree `322902f`, `git status` clean): **2061 tests, 71 test files** (§1). Test-FILE list is byte-identical between
+Final `ae578c2` / working tree: **2061 tests, 71 test files** (§1). Test-FILE list is byte-identical between
 the trees (68 `src/**/*.test.ts(x)` files at each; 71 total vitest files at each) — **no test file was added,
 deleted, renamed, or silently dropped.**
 
