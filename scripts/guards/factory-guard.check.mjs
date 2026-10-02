@@ -303,19 +303,55 @@ console.log('===========================================================')
 
 // 13. independence-satisfiable — a lane demanding same_model:false with only one
 //     qualified model is a rule that cannot be obeyed. It must be acknowledged.
+//     THE SEED IS A FIXTURE, NOT THE LIVE REGISTRY (D-030 one level up, found by
+//     review round 4 and the independent reviewer). It used to delete the
+//     acknowledgement from REAL_CONFIG and REQUIRE the live registry to hold
+//     exactly one reviewer-qualified model — a world D-034 destroyed by
+//     registering a second. A check whose fixture is the live system changes
+//     meaning when the system does, so the one-qualified world is BUILT here by
+//     reducing whatever the registry actually holds to a single qualifier: the
+//     seed keeps the two-qualifier world it lives in and still reaches the rule.
 {
-  const result = run((ctx) => {
-    cleanRoot()(ctx)
+  const FLOOR = REAL_CONFIG.task_kinds.reviewer.capabilities
+  const capabilityTotal = (model) => Object.values(model.capabilities ?? {}).reduce((sum, n) => sum + (Number.isFinite(n) ? n : 0), 0)
+  const reviewerQualified = (config) =>
+    Object.entries(config.models ?? {})
+      .filter(([, m]) => Object.entries(FLOOR).every(([name, floor]) => Number.isFinite(m.capabilities?.[name]) && m.capabilities[name] >= floor))
+      .map(([key]) => key)
+  const oneQualifiedWorld = () => {
     const config = JSON.parse(JSON.stringify(REAL_CONFIG))
+    // Keep the STRONGEST qualifier, so the other task kinds' floors stay
+    // meetable; the control below asserts exit 0, which fails loudly if a future
+    // registry makes that impossible.
+    const qualified = reviewerQualified(config).sort((a, b) => capabilityTotal(config.models[b]) - capabilityTotal(config.models[a]))
+    if (qualified.length < 2)
+      throw new Error(`the live registry holds ${qualified.length} reviewer-qualified model(s); this check needs at least 2 to build the one-qualified world`)
+    for (const key of qualified.slice(1)) delete config.models[key]
+    return config
+  }
+  const seedWorld = (ctx) => {
+    cleanRoot()(ctx)
+    const config = oneQualifiedWorld()
     delete config.task_kinds.reviewer._independence_gap
     ctx.write('factory/config.json', config)
-  })
+  }
+
+  const result = run(seedWorld)
   check('an unacknowledged independence gap is CAUGHT', result.exit === 1 && /independence-satisfiable/.test(result.out), `exit ${result.exit}`)
 
-  // Control: the same registry WITH the acknowledgement passes, so the rule is
-  // a demand for a decision, not a demand for a particular registry.
-  const control = run(cleanRoot())
-  check('the acknowledged gap passes (control)', control.exit === 0, `exit ${control.exit}`)
+  // MUTATION: neuter the `qualified.length < 2` condition and the SAME seed
+  // passes — the seed's exit code moves, so the check is not a comment.
+  const gapAlwaysOk = mutatedGuard([['if (qualified.length < 2 && !task._independence_gap) {', 'if (false) {']])
+  const gapMiss = run(seedWorld, { guard: gapAlwaysOk })
+  check('MUTATION: dropping the gap condition lets the one-model registry PASS (exit 1 -> 0 — a DETECTION flip)', gapMiss.exit === 0, `exit ${gapMiss.exit}`)
+
+  // Control: the SAME fixture world WITH the acknowledgement passes, so the rule
+  // is a demand for a decision, not a demand for a particular registry.
+  const control = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('factory/config.json', oneQualifiedWorld())
+  })
+  check('the one-qualified world WITH the acknowledgement passes (control)', control.exit === 0, `exit ${control.exit}`)
 }
 
 // 14. instrument-headers-honest — a header is the statement of what the guard
@@ -769,12 +805,78 @@ console.log('===========================================================')
     unverifiable.exit === 0 && /ok —/.test(unverifiable.out) && !/unresolvable beyond the recorded records/.test(unverifiable.out),
     `exit ${unverifiable.exit}`,
   )
-  const claimAlways = mutatedGuard([['if (provenanceChecked) claims.push(', 'if (true) claims.push(']])
+  const claimAlways = mutatedGuard([['if (provenanceTokens) claims.push(', 'if (true) claims.push(']])
   const claimFired = run(canonical('deadbee'), { guard: claimAlways, args: ['--repo', notARepo] })
   check(
     'MUTATION: printing the claim unconditionally turns that control red (so the control CAN fail)',
     claimFired.exit === 0 && /unresolvable beyond the recorded records/.test(claimFired.out),
     `exit ${claimFired.exit}`,
+  )
+}
+
+// 20B. THE TWO CLAIM GATES OVER ZERO MEASUREMENTS (D-030, elevated this round;
+//      both independent reports name it). `provenanceChecked = Boolean(repo)` and
+//      a constant `true` from `checkTranscripts` published their universals over
+//      ZERO provenance tokens and ZERO pasted transcripts. Both now return a
+//      COUNT, the same form `rawSummaryLines` already uses, so the summary
+//      publishes the claim only when there is something to publish it about.
+//      A claim gate cannot move an exit code, which is exactly why it needs a
+//      check: an edit restoring the constant would keep the harness green while
+//      the claim printed over nothing.
+{
+  const zeroTokens = run(cleanRoot(), { args: ['--repo', REPO] })
+  check(
+    'at zero provenance tokens the summary does NOT claim the shas were verified (D-030)',
+    zeroTokens.exit === 0 && !/unresolvable beyond the recorded records/.test(zeroTokens.out),
+    `exit ${zeroTokens.exit}`,
+  )
+  const oneToken = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-token.md', 'The tree held 276 tracked `.scratch` files at 1c3471a.\n')
+  }, { args: ['--repo', REPO] })
+  check(
+    'with a provenance token read the summary DOES claim the shas were verified (control)',
+    oneToken.exit === 0 && /unresolvable beyond the recorded records/.test(oneToken.out),
+    `exit ${oneToken.exit}`,
+  )
+  const claimUnconditional = mutatedGuard([['if (provenanceTokens) claims.push(', 'if (true) claims.push(']])
+  const zeroTokensMiss = run(cleanRoot(), { guard: claimUnconditional, args: ['--repo', REPO] })
+  check(
+    'MUTATION: printing the provenance claim unconditionally publishes it over ZERO tokens (so the seed can fail)',
+    zeroTokensMiss.exit === 0 && /unresolvable beyond the recorded records/.test(zeroTokensMiss.out),
+    `exit ${zeroTokensMiss.exit}`,
+  )
+
+  const zeroTranscripts = run(cleanRoot(), { args: ['--repo', REPO] })
+  check(
+    'at zero pasted transcripts the summary does NOT claim the transcripts reproduce (D-030)',
+    zeroTranscripts.exit === 0 && !/every pasted provenance transcript/.test(zeroTranscripts.out),
+    `exit ${zeroTranscripts.exit}`,
+  )
+  const transcriptRoot = (ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-cited.md', 'filler\nfiller\nfiller\nfiller\nsha is 1c3471a on this line\n')
+    ctx.write(
+      '.scratch/v28/reports/zz-paste.md',
+      '# zz pasted transcript\n\n' +
+        '```\n' +
+        '$ node scripts/guards/factory-guard.mjs --root /tmp/zz\n' +
+        "  FINDING [count-provenance-unresolvable]: .scratch/v28/reports/zz-cited.md:5: a count's provenance names 1c3471a, which is not a commit here — name a commit a reader can resolve\n" +
+        '```\n',
+    )
+  }
+  const oneTranscript = run(transcriptRoot, { args: ['--repo', REPO] })
+  check(
+    'with a pasted transcript compared the summary DOES claim they reproduce (control)',
+    oneTranscript.exit === 0 && /every pasted provenance transcript/.test(oneTranscript.out),
+    `exit ${oneTranscript.exit}`,
+  )
+  const transcriptUnconditional = mutatedGuard([["if (transcriptsCompared) claims.push('every pasted provenance transcript", "if (true) claims.push('every pasted provenance transcript"]])
+  const zeroTranscriptsMiss = run(cleanRoot(), { guard: transcriptUnconditional, args: ['--repo', REPO] })
+  check(
+    'MUTATION: printing the transcript claim unconditionally publishes it over ZERO transcripts (so the seed can fail)',
+    zeroTranscriptsMiss.exit === 0 && /every pasted provenance transcript/.test(zeroTranscriptsMiss.out),
+    `exit ${zeroTranscriptsMiss.exit}`,
   )
 }
 
@@ -1361,6 +1463,43 @@ console.log('===========================================================')
     `exit ${stealMiss.exit}`,
   )
 
+  // THE FIFTH SHAPE — the family D-031/D-032 fought (found by the independent
+  // review this round, a different model family). A NESTED fence, the standard
+  // markdown idiom for QUOTING a fenced block: an outer ```md, an inner ```js
+  // with an INFO STRING, the fabricated ✓ line between them. CommonMark reads
+  // that line inside the OUTER fence; the previous parser closed the outer block
+  // on the same-kind ` ```js ` line (info string ignored) and on a shorter run,
+  // leaving the content in no parsed block at all — the `0 … compared`, PASS,
+  // exit 0 signature, reached by content. The parser now applies CommonMark's
+  // closure rules, so the line IS read here. Ground truth: `marked` renders this
+  // input with the ✓ line inside a <pre><code> (see the fix-round-5 report).
+  const nestedSeed =
+    '# zz nested fences\n\n' +
+    '```md\n' +
+    '```js\n' +
+    '✓ 7–13 zz-spec.e2e.ts (all six legs)\n' +
+    '```\n' +
+    '```\n'
+  const nested = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', nestedSeed)
+  }, { report: false, args: ['--repo', REPO] })
+  check(
+    'a NESTED fence (outer ```md, inner ```js) does NOT hide the transcript: CAUGHT',
+    nested.exit === 1 && /covers 7 entries/.test(nested.out) && /transcript-summary-agrees/.test(nested.out),
+    `exit ${nested.exit}`,
+  )
+  const looseCloser = mutatedGuard([["} else if (kind === open.kind && run.length >= open.length && info.trim() === '') {", '} else if (kind === open.kind) {']])
+  const nestedMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', nestedSeed)
+  }, { guard: looseCloser, report: false, args: ['--repo', REPO] })
+  check(
+    'MUTATION: restoring the loose closer (any same-kind marker) lets that seed PASS (exit 1 -> 0 — a DETECTION flip)',
+    nestedMiss.exit === 0,
+    `exit ${nestedMiss.exit}`,
+  )
+
   // NO SEPARATOR CAN HIDE A BLOCK (the family, swept). Each of these separates a
   // label from the fence it would introduce; with attribution deleted the
   // separation has nothing to act on, which is the property under test.
@@ -1493,7 +1632,7 @@ console.log('===========================================================')
   }, { report: false, args: ['--repo', REPO] })
   check(
     'the DECLARED path-occupancy boundary: the recorded text AT a recorded path is absorbed (the record cannot tell a quotation there from a fabrication that copied the citation — see the rule header)',
-    absorbedRun.exit === 0 && /quotation baseline holds 2 recorded site\(s\)/.test(absorbedRun.out),
+    absorbedRun.exit === 0 && /quotation baseline holds 4 recorded site\(s\)/.test(absorbedRun.out),
     `exit ${absorbedRun.exit}`,
   )
   const noAbsorber = mutatedGuard([['const baselined = seenCount <= (TRANSCRIPT_QUOTATION_BASELINE.get(key) ?? 0)', 'const baselined = false']])
@@ -1641,7 +1780,7 @@ console.log('===========================================================')
     midLineOutside.exit === 0 && /1 fenced block\(s\) read/.test(midLineOutside.out),
     `exit ${midLineOutside.exit}`,
   )
-  const readsMidLineMarkers = mutatedGuard([['const marker = /^\\s*(```|~~~)/.exec(line)', 'const marker = /.*(```|~~~)/.exec(line)']])
+  const readsMidLineMarkers = mutatedGuard([['const marker = /^\\s*(`{3,}|~{3,})(.*)$/.exec(line)', 'const marker = /.*(`{3,}|~{3,})(.*)$/.exec(line)']])
   const midLineMiss = run((ctx) => {
     cleanRoot()(ctx)
     ctx.write('.scratch/v28/reports/zz-raw.md', midLineSeed)

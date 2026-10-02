@@ -122,8 +122,7 @@ elif [ "$checked" -eq 0 ]; then
   # the run examined nothing and the old `ok — all 0 module(s)` line reported
   # health over an empty measurement. Zero is a finding, never a pass.
   echo "  FINDING: $LIB_DIR holds no non-exempt module — the scan read nothing."
-  echo "  $LIB_DIR had entries, but all were exempt or test files, so this guard"
-  echo "  checked zero modules. An empty scan is not a clean repo (D-030)."
+  echo "  An empty scan is not a clean repo (D-030)."
   FAIL=1
 else
   echo "  ok — all $checked non-exempt module(s) have a sibling .test.ts"

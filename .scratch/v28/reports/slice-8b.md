@@ -1089,3 +1089,241 @@ Run twice at the committed state; the printed derivation is byte-identical acros
   the unit that keeps the finding and the note-suppression together.
 - **`ponytail:`** — the derivation comparison is a script under `/tmp`, not a committed instrument; a future round
   must re-derive rather than trust this number. The committed maps are still the only absorber.
+
+# FIX ROUND 5 — the fence parser is made CommonMark-conformant, check 13's fixture leaves the live registry, and two claim gates stop publishing over zero
+
+Scope: **FIX 1** (the fence parser + the three sentences it falsified), **FIX 2** (check 13's seed), **FIX 3** (the two
+claim gates), **FIX 4** (the `lib-sibling-guard.sh` sentence). `transcript-summary-agrees`'s RULE shape is untouched
+(D-032), the declared path-occupancy boundary is untouched (D-033), no `factory/` file and no ledger was edited, and
+neither of the two lane reports was hand-edited. All probes ran in `/tmp` throwaway roots or against the real corpus;
+the only files changed are the two factory-guard files and `lib-sibling-guard.sh`.
+
+## FIX 1 — the fence parser now follows CommonMark's closure rules (not a fourth guess)
+
+**The escape, reproduced against the old parser at `HEAD`** (a throwaway root holding one report file, the standard
+nested-fence idiom with a fabricated transcript inside):
+
+```
+$ node /tmp/g-head.mjs --root /tmp/probe8b --repo .     # the HEAD guard
+  note — transcript-summary-agrees: 2 fenced block(s) read, 0 range summaries checked — NOTHING was compared: no fenced block in this scan states a step range beside its count
+  note — transcript-summary-agrees: quotation baseline holds 2 recorded site(s) … 0 of the 2 ABSORBED this scan (LOST COVERAGE 2)
+PASS — the registry can be trusted and no work item claims evidence it does not have.
+OLD_EXIT=0
+```
+
+The seed file is (indented, with `FENCE-OPEN`/`FENCE-CLOSE` standing in for the markers — this report's own
+convention, so that quoting the seed does not put a bad range line inside a fence OF THIS REPORT and make the report
+fire the rule it documents; a literal fence here would read the fabricated line):
+
+    # zz nested fence probe
+
+    FENCE-OPEN md
+    FENCE-OPEN js
+    ✓ 7–13 zz-spec.e2e.ts (all six legs)
+    FENCE-CLOSE
+    FENCE-CLOSE
+
+The old parser closed the outer block on ANY same-kind marker line — the inner `` ```js `` info string, or a shorter
+run — so the fabricated line fell in NO parsed block. **The fix is conformance, not a heuristic:** an opener is `≥3`
+of one char, a backtick opener's info string may not contain a backtick, and a closer is a same-kind run `≥` the
+opener's length carrying nothing but whitespace; any other same-kind line is content. The parser branch:
+
+```js
+      const marker = /^\s*(`{3,}|~{3,})(.*)$/.exec(line)
+      if (!marker) continue
+      const run = marker[1]
+      const info = marker[2]
+      const kind = run[0]
+      if (!open) {
+        if (kind === '`' && info.includes('`')) continue
+        open = { kind, length: run.length, at: index }
+      } else if (kind === open.kind && run.length >= open.length && info.trim() === '') {
+        fenced.push({ content: open.at + 1, end: index })
+        open = null
+      }
+```
+
+**The same input, the new guard:** the fabricated line is now read and the contradiction caught, exit 1:
+
+```
+$ node scripts/guards/factory-guard.mjs --root /tmp/probe8b --repo .
+  note — transcript-summary-agrees: 2 fenced block(s) read, 1 range summary checked
+  FINDING [transcript-summary-agrees]: .scratch/v28/reports/zz-nest.md:5: a fenced block's summary line covers 7 entries (7–13) but states "(all six" — a captured transcript must reproduce its own arithmetic
+FAIL — 1 factory finding(s).
+NEW_EXIT=1
+```
+
+### The CommonMark cross-check (the guard's parse and `marked`'s parse agree on that input)
+
+```
+$ node /tmp/cm-agree.mjs
+guard fenced-block ranges: [{"content":3,"end":5},{"content":7,"end":8}]
+the ✓ line is line 5 -> guard reads it: true
+CommonMark (marked): the same line is inside <pre><code>: true
+AGREE
+```
+
+The `marked` render of the same file (indented, so the literal fabricated line is not inside a fence of this report):
+
+    $ node -e "…marked.parse(seed)…"
+    <h1>zz nested fence probe</h1>
+    <pre><code class="language-md">```js
+    ✓ 7–13 zz-spec.e2e.ts (all six legs)
+    </code></pre>
+    <pre><code></code></pre>
+
+`marked` puts the fabricated line inside the outer `<pre><code class="language-md">`; the guard's parse now puts it in
+block `[3,5)` — line 5 — i.e. the same block. The two parses agree.
+
+### Both halves of the new check
+
+```
+  ✓ a NESTED fence (outer ```md, inner ```js) does NOT hide the transcript: CAUGHT
+  ✓ MUTATION: restoring the loose closer (any same-kind marker) lets that seed PASS (exit 1 -> 0 — a DETECTION flip)
+```
+
+The mutation replaces the closer condition with the old loose `} else if (kind === open.kind) {`; the seed then
+PASSES, so the check's verdict moves and the closure rules are load-bearing.
+
+### The three sentences the escape falsified
+
+| where | before | after |
+|---|---|---|
+| header (`:91-95`) | "EVERY fenced block, of either markdown fence kind **and however it is introduced**, is read" | "EVERY fenced block **whose marker starts a line** is read, by CommonMark's own fence rules: an opener is a run of three or more backticks or tildes (after leading whitespace), and a same-kind line closes it only when its run is at least as long and carries nothing but whitespace — so a nested fence's content stays inside the block that opened first, where it is read." |
+| docblock (`:1629-1632`) | "Every fenced block in the scan set, **wherever it sits in the file**, … **paired with a fence of its own kind**" | "Every fenced block **whose marker starts a line**, in the scan set, … read by CommonMark's own closure rules: an opener is a run of three or more of one character (after leading whitespace), and a same-kind line closes the block only when its run is at least as long and carries nothing but whitespace — any other same-kind line is content." |
+| parser comment (`:1745-1749`) | "a fence line of the OTHER kind inside an open block is content, **as markdown says**" | "THE FENCE RULES ARE COMMONMARK'S, implemented rather than guessed at … A same-kind line CLOSES the block only when its run is at least as long as the opener's and carries nothing but whitespace; any other same-kind line is CONTENT … a fence line of the OTHER kind inside an open block is content too." |
+
+None was restated into a new shape; each now states what the fixed parser does, and the two over-claiming phrases
+("however it is introduced", "wherever it sits in the file", "as markdown says") are gone.
+
+### The ninth finding the brief did not anticipate — and why it is a TRUE positive
+
+The fixed parser reads one block boundary the old parser split: `.scratch/v28/reports/slice-8b-review.md` opens a
+`~~~text` fence and **never closes it** — a `~~~text` line carries an info string, so per CommonMark it is not a
+closer — which keeps line 193 (a PROSE quotation of the round-5 seed) inside that code block. `marked` agrees: the
+file's only `<pre><code>` contains it. So line 193 **is** read now and its `✓ 7–13 … (all six legs)` pair genuinely
+contradicts its count. It is exactly the D-033 cost — a report quoting a bad block — so it is paid by the recorded
+baseline, re-derived, not by widening the rule:
+
+```
+$ node /tmp/g-empty-quot.mjs --root "$PWD" --repo "$PWD"   # the quotation baseline blanked
+  FINDING [transcript-summary-agrees]: .scratch/v28/reports/slice-8a-verify-5.md:37: … covers 7 entries (7–13) but states "(all six" …
+  FINDING [transcript-summary-agrees]: .scratch/v28/reports/slice-8b-review.md:89: … covers 7 entries (7–13) but states "(all six" …
+  FINDING [transcript-summary-agrees]: .scratch/v28/reports/slice-8b-review.md:193: … covers 7 entries (7–13) but states "(all six" …
+  FINDING [transcript-summary-agrees]: the quotation baseline is EMPTY …
+```
+
+The re-derived set is exactly three sites; the third is line 193, whose line text carries TWO range/count pairs, so
+its recorded count is 2 (`TRANSCRIPT_QUOTATION_BASELINE_SIZE` 2 → 4). The run then reports `0 of the 4` for a clean
+fixture root and `2 of the 4 ABSORBED … LOST COVERAGE 1` for the earlier partial world; on the live corpus it is
+`LOST COVERAGE 0`.
+
+## FIX 2 — check 13's fixture leaves the live registry
+
+The checker was RED at the base commit — and only on check 13, exactly as the two reviews found:
+
+```
+$ (worktree at HEAD) node scripts/guards/factory-guard.check.mjs
+  ✗ an unacknowledged independence gap is CAUGHT — exit 0
+factory-guard check: 1 check(s) failed — the factory guard is not doing its job.
+HEAD_CHECKER_EXIT=1
+```
+
+The seed deleted `task_kinds.reviewer._independence_gap` from the LIVE `REAL_CONFIG` and required the live registry
+to hold exactly one reviewer-qualified model. `D-034` (`c4a981d`) registered a second, so the seed's world stopped
+existing. The seed is now a FIXTURE **built by reducing whatever the registry actually holds to one qualifier**
+(strongest kept, so the other task kinds' floors stay meetable) — it keeps the two-qualifier world it now lives in
+and still reaches the rule. Both halves plus the control:
+
+```
+  ✓ an unacknowledged independence gap is CAUGHT
+  ✓ MUTATION: dropping the gap condition lets the one-model registry PASS (exit 1 -> 0 — a DETECTION flip)
+  ✓ the one-qualified world WITH the acknowledgement passes (control)
+```
+
+The mutation neuters `if (qualified.length < 2 && !task._independence_gap) {`; the same seed then passes, so the
+check is not always-red.
+
+## FIX 3 — two claim gates stop publishing over ZERO measurements
+
+`provenanceChecked = Boolean(repo)` and `checkTranscripts`' constant `true` published their universals over zero
+provenance tokens and zero pasted transcripts. Both now return **a count** — the same form `rawSummaryLines` already
+uses — so the `claims.push` gates that were already there publish only when there is something to publish about. Raw
+measurement at `HEAD`'s guard on a root with a clean report: both claims appeared after `0 provenance token(s)`;
+now they do not. Both halves for each gate:
+
+```
+  ✓ at zero provenance tokens the summary does NOT claim the shas were verified (D-030)
+  ✓ with a provenance token read the summary DOES claim the shas were verified (control)
+  ✓ MUTATION: printing the provenance claim unconditionally publishes it over ZERO tokens (so the seed can fail)
+  ✓ at zero pasted transcripts the summary does NOT claim the transcripts reproduce (D-030)
+  ✓ with a pasted transcript compared the summary DOES claim they reproduce (control)
+  ✓ MUTATION: printing the transcript claim unconditionally publishes it over ZERO transcripts (so the seed can fail)
+```
+
+No third hand-written condition was added: the gate is the existing `if (provenanceTokens)` / `if (transcriptsCompared)`
+over a count, exactly like `if (rawSummaryLines)`.
+
+## FIX 4 — the false `lib-sibling-guard.sh` sentence DELETED
+
+`scripts/guards/lib-sibling-guard.sh:117-119` printed "`src/lib` had entries, but all were exempt or test files" for
+an EMPTY directory. The sentence could not be kept true without a second branch, so it is deleted (D-028 item 4, net
+prose shrinks); the remaining two lines are true of both the empty and the exempt-only case:
+
+```
+$ bash scripts/guards/lib-sibling-guard.sh /tmp/glsib-empty   # EMPTY src/lib
+  FINDING: src/lib holds no non-exempt module — the scan read nothing.
+  An empty scan is not a clean repo (D-030).
+FAIL — build law violated.   exit=1
+$ bash scripts/guards/lib-sibling-guard.sh /tmp/glsib-exempt  # exempt-only src/lib
+  (identical)                exit=1
+```
+
+## RAW VERIFY (fresh, this turn)
+
+```
+ Test Files  71 passed (71)
+      Tests  2063 passed (2063)
+ oxlint: 81 warning lines, 0 errors
+  ok — AGENTS.md (1789 words, ceiling 1800)
+PASS — steering layer is clean.
+PASS — every positively-used e2e locator literal still exists in src.
+PASS — the escape has exactly one home.
+PASS — the newline convention holds across the scan set.
+FAIL — 8 factory finding(s).                       <- all 8 are no-bare-head-count, in the two lane reports
+PASS — all 8 checks: the guard fires on both defects and only on them.   (lib-sibling)
+PASS — all 10 checks: the guard fires on the defect and only on it.      (trailing-newline)
+factory-guard check: all 146 checks passed.        (was 137; +9 = check-13 mutation, nested seed+mutation, 20B's six)
+GUARDS: FAIL — 1 guard(s) reported findings: - factory-guard
+VERIFY EXIT=1
+```
+
+**`npm run verify` is NOT exit 0 at this handoff, and the ONLY cause is the 8 `no-bare-head-count` findings in
+`.scratch/v28/reports/slice-8b-review-4.md` and `slice-8b-review-independent.md`** — the two lane reports the brief
+assigned to the orchestrator ("that is the orchestrator's to settle, not yours"), now recorded **known-open with
+file:line by D-036** rather than edited or absorbed (D-027: lower the claim, never widen the mechanism). The guard's
+findings are exactly those 8 and nothing else; the ninth — the `slice-8b-review.md:193` site the CommonMark fix newly
+reads — is a QUOTATION of the bad seed, which is the D-033 baseline's job, and it is absorbed there by re-derivation
+above; the two are different rules with different absorbers, which is why one is recorded known-open and the other is
+recorded in the quotation baseline. Correcting the two reports to name the commit they measured at is what turns
+`GUARDS: PASS` and `VERIFY EXIT=0`; that is the reports' authors' work, not this round's.
+
+## Fix-round-5 risks
+
+- **`npm run verify` is red on the 8 lane-report counts, not on this round's work.** D-036 records them known-open
+  with file:line; the checker (137 → 146, all green, including this round's `check 13`) and `factory-guard.check.mjs`
+  are the round's gate-critical instruments and both are green now.
+- **The quotation baseline grew 2 → 4 occurrences (3 keys), by re-derivation, not hand-adding.** The third site is a
+  CONSEQUENCE of the CommonMark fix reading a `~~~text` region the old parser split; it is a quotation of the bad
+  seed, the exact object the D-033 baseline records, and a future round re-derives rather than trusting the number.
+  This is NOT the same move D-036 forbids for the 8 bare-HEAD counts: those are true findings in lane prose with no
+  absorber of their kind, so they stay known-open.
+- **The checker's one-qualified world is still DERIVED from the live registry** (reduced to one qualifier). It no
+  longer REQUIRES a registry shape, but if a future registry is legal with <2 reviewer-qualified models the seed
+  throws loudly instead of passing vacuously; if deleting the weaker qualifier would break another task kind's floor,
+  the control fails loudly. Both are loud, not silent.
+- **`ladder:`** the parser fix is conformance to a closed specification (CommonMark), not another shape guess; if a
+  future reviewer finds a fence shape the guard reads differently from CommonMark, the rung is the reference
+  implementation, not a fifth condition.
+- **FIX 4 deleted a sentence rather than restating it.** The empty-dir case is now covered by the same true sentence
+  as exempt-only; the `lib-sibling` checker still passes 8/8 (its check 4 asserts `/the scan read nothing/`).

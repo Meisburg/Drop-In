@@ -88,9 +88,14 @@
 //                         other path, a cited file not on disk, a finding that
 //                         names no sha, another rule's transcript — is a named
 //                         ceiling, not a covered shape.
-//   transcript-summary-agrees  EVERY fenced block, of either markdown fence kind
-//                         and however it is introduced, is read; a line inside
-//                         one that states a step range beside a count must
+//   transcript-summary-agrees  EVERY fenced block whose marker starts a line is
+//                         read, by CommonMark's own fence rules: an opener is a
+//                         run of three or more backticks or tildes (after leading
+//                         whitespace), and a same-kind line closes it only when
+//                         its run is at least as long and carries nothing but
+//                         whitespace — so a nested fence's content stays inside
+//                         the block that opened first, where it is read. A line
+//                         inside one that states a step range beside a count must
 //                         agree with its own arithmetic. There is no label and
 //                         no attribution between the two — the rule was
 //                         re-scoped by D-032, because three repairs each opened
@@ -1465,10 +1470,10 @@ function checkReportHeadCounts() {
       'report-scan-empty',
       'the report/brief scan read no .md file under .scratch/v28/reports or .scratch/v28/briefs — an empty scan has established nothing about the rules that read it (D-030)',
     )
-    return { reportFiles: 0, provenanceChecked: false, transcriptsChecked: false, rawSummaryLines: 0 }
+    return { reportFiles: 0, provenanceTokens: 0, transcriptsCompared: 0, rawSummaryLines: 0 }
   }
   discloseScanProvenance(files)
-  const transcriptsChecked = checkTranscripts(files)
+  const transcriptsCompared = checkTranscripts(files)
   const rawSummaryLines = checkRawBlockSummaries(files)
 
   // THE DECIDABLE HALF. Every count's provenance token is resolved against a
@@ -1558,13 +1563,13 @@ function checkReportHeadCounts() {
     console.log(`  note — count-provenance: ${provenanceTokens} provenance token(s) in the scan, ${shaIsCommit.size} distinct sha(s) resolved with \`git cat-file -e <sha>^{commit}\` against ${label && !label.startsWith('..') ? label : repo} (${why}) — ${unresolvable} unresolvable`)
   }
   // The same shared decision one record over: an empty unresolvable-sha record
-  // used to print this note over `0 of 0` and pass, while `provenanceChecked`
-  // published a universal over it. Now the empty state is a finding and the note
-  // is printed only when there is a record to cover.
+  // used to print this note over `0 of 0` and pass. The claim the return carries
+  // is now the token COUNT, so the summary publishes the provenance universal
+  // only when tokens were actually read (D-030).
   if (recordIsAbsorbable('count-provenance-unresolvable', 'unresolvable-sha record', UNRESOLVABLE_SHA_BASELINE_SIZE)) {
     console.log(`  note — count-provenance: ${UNRESOLVABLE_SHA_BASELINE_SIZE} recorded unresolvable-sha record(s) absorbed (historical lane records that QUOTE a probe seed, by re-derivation); a NEW unresolvable sha, or a second occurrence of a recorded one in the same file, is a finding${absorbed === UNRESOLVABLE_SHA_BASELINE_SIZE ? '' : ` — ${absorbed} of the ${UNRESOLVABLE_SHA_BASELINE_SIZE} matched this scan`}`)
   }
-  return { reportFiles: files.length, provenanceChecked: Boolean(repo), transcriptsChecked, rawSummaryLines }
+  return { reportFiles: files.length, provenanceTokens: repo ? provenanceTokens : 0, transcriptsCompared, rawSummaryLines }
 }
 
 /**
@@ -1577,8 +1582,13 @@ function checkReportHeadCounts() {
  * transcript may stay if it SAYS it is a draft: a `historical`/`superseded`
  * marker within the dozen lines above the finding stands it down. See
  * `factory/decisions.md` D-025/D-026.
+ *
+ * Returns the number of pasted transcripts actually COMPARED, so the summary can
+ * claim this rule only over a measurement that happened: the constant `true` this
+ * used to return published the universal over zero transcripts (D-030).
  */
 function checkTranscripts(files) {
+  let compared = 0
   for (const path of files) {
     const rel = relative(ROOT, path)
     const lines = readFileSync(path, 'utf8').split('\n')
@@ -1593,6 +1603,7 @@ function checkTranscripts(files) {
       if (!sha || /[<>…]/.test(sha)) continue
       if (/historical|superseded/i.test(lines.slice(Math.max(0, index - 12), index).join(' '))) continue
       const targetLine = readFileSync(target, 'utf8').split('\n')[Number(found[2]) - 1] ?? ''
+      compared += 1
       if (!targetLine.includes(sha)) {
         fail(
           'transcript-reproduces',
@@ -1601,7 +1612,7 @@ function checkTranscripts(files) {
       }
     }
   }
-  return true
+  return compared
 }
 
 /**
@@ -1626,9 +1637,13 @@ function checkTranscripts(files) {
  * to break, so this family of escape is gone by construction rather than by a
  * fourth condition.
  *
- * WHAT IT READS. Every fenced block in the scan set, wherever it sits in the
- * file, of EITHER markdown fence kind (```` ``` ```` and `~~~`), paired with a
- * fence of its own kind; inside each, every line that states a step range beside
+ * WHAT IT READS. Every fenced block whose marker starts a line, in the scan set,
+ * of EITHER markdown fence kind (```` ``` ```` and `~~~`), read by CommonMark's
+ * own closure rules: an opener is a run of three or more of one character (after
+ * leading whitespace), and a same-kind line closes the block only when its run is
+ * at least as long and carries nothing but whitespace — any other same-kind line
+ * is content, so a nested fence's block stays inside the outer one. Inside each,
+ * every line that states a step range beside
  * a count (`✓ A–B` … `(all <word|digit>`) is compared. EVERY such pair on a line
  * is read, each paired with the count that follows IT, so two pairs on one line
  * are not compared against one another's count. A count word outside the
@@ -1719,14 +1734,22 @@ const STEP_RANGE_COUNT = /✓\s*(\d+)\s*[–—-]\s*(\d+)\b[^\n]*?\(all\s+([a-z]
  * `no-bare-head-count` and `UNRESOLVABLE_SHA_BASELINE` already use (D-021 item 2
  * / D-023).
  */
-// Re-derived from THIS instrument's own matches (2026-10-02, slice 8b fix round
-// 2): the emptied-map run reported exactly these two sites, and the SAME
-// derivation run twice produced byte-identical output. LOST COVERAGE 0 — every
-// recorded key still matches — and the two entries are the two lane-report
-// quotations D-032's cost fell on, absorbed rather than paid by editing a report.
+// Re-derived from THIS instrument's own matches: the emptied-map run reported
+// exactly these sites, and the derivation run twice produced byte-identical
+// output. LOST COVERAGE 0 — every recorded key still matches.
+//   - The first two are the two lane-report quotations D-032's cost fell on,
+//     absorbed rather than paid by editing a report (re-derived at fix round 2).
+//   - The third arrived at fix round 5 with the CommonMark closure fix: the
+//     `~~~text` region in slice-8b-review.md opens a fence and never closes it
+//     (a `~~~text` line carries an info string, so it is not a closer), so
+//     CommonMark — and now this guard — keeps line 193 inside that block. It is a
+//     PROSE quotation of the round-5 seed and carries TWO range/count pairs, so
+//     its count is 2. Re-derived the same way: the map blanked, the run read
+//     every site back.
 const TRANSCRIPT_QUOTATION_BASELINE = new Map([
   [".scratch/v28/reports/slice-8a-verify-5.md::> \u2713 7\u201313 zz-spec.e2e.ts (all six legs)", 1],
   [".scratch/v28/reports/slice-8b-review.md::\u2713 7\u201313 zz-spec.e2e.ts (all six legs)", 1],
+  [".scratch/v28/reports/slice-8b-review.md::(the round-5 seed ``✓ 1–6 … (all six legs)  ✓ 7–13 … (all six legs)``: pre-fix exit 0, HEAD exit 1), but **there is", 2],
 ])
 const TRANSCRIPT_QUOTATION_BASELINE_SIZE = [...TRANSCRIPT_QUOTATION_BASELINE.values()].reduce((sum, n) => sum + n, 0)
 
@@ -1743,17 +1766,34 @@ function checkRawBlockSummaries(files) {
     // EVERY fenced block. No label, no nearest-above search, no region kind that
     // can take a label from the block that follows it: there is nothing to
     // associate, so there is nothing to break (D-032).
-    // BOTH markdown fence kinds, each paired with a fence of its own kind — a
-    // fence line of the OTHER kind inside an open block is content, as markdown
-    // says. Reading only backticks would leave `~~~`-fenced content unread: the
-    // same family of gap, a block the rule cannot see.
+    //
+    // THE FENCE RULES ARE COMMONMARK'S, implemented rather than guessed at. An
+    // OPENER is a run of three or more backticks or tildes at the start of a line
+    // (after leading whitespace — ANY amount, the declared safe over-read;
+    // CommonMark's own limit is three), optionally followed by an info string —
+    // and a BACKTICK opener's info string may not itself contain a backtick. A
+    // same-kind line CLOSES the block only when its run is at least as long as
+    // the opener's and carries nothing but whitespace; any other same-kind line
+    // is CONTENT. That is what keeps a nested fence's content — the standard
+    // idiom for QUOTING a fenced block, an inner ```js info string inside an
+    // outer fence — INSIDE the block that opened first, where this rule reads
+    // it. Closing on any same-kind marker line put that content in no parsed
+    // block at all: the `0 … compared`, PASS, exit 0 signature D-031/D-032
+    // exist for, reached by content. This is conformance to a closed
+    // specification, not a fourth condition on a guess. A fence line of the
+    // OTHER kind inside an open block is content too.
     const fenced = []
     let open = null
     for (const [index, line] of lines.entries()) {
-      const marker = /^\s*(```|~~~)/.exec(line)
+      const marker = /^\s*(`{3,}|~{3,})(.*)$/.exec(line)
       if (!marker) continue
-      if (!open) open = { kind: marker[1], at: index }
-      else if (open.kind === marker[1]) {
+      const run = marker[1]
+      const info = marker[2]
+      const kind = run[0]
+      if (!open) {
+        if (kind === '`' && info.includes('`')) continue
+        open = { kind, length: run.length, at: index }
+      } else if (kind === open.kind && run.length >= open.length && info.trim() === '') {
         fenced.push({ content: open.at + 1, end: index })
         open = null
       }
@@ -1880,7 +1920,7 @@ checkRegistry(config)
 checkWorkItems(config)
 checkAgentModels(config)
 const headerFiles = checkInstrumentHeaders()
-const { reportFiles, provenanceChecked, transcriptsChecked, rawSummaryLines } = checkReportHeadCounts()
+const { reportFiles, provenanceTokens, transcriptsCompared, rawSummaryLines } = checkReportHeadCounts()
 
 if (!findings.length) {
   const items = existsSync(join(FACTORY, 'work')) ? readdirSync(join(FACTORY, 'work')).filter((f) => f.endsWith('.json')).length : 0
@@ -1892,8 +1932,8 @@ if (!findings.length) {
   const claims = ['every floor meetable', 'every artifact present']
   if (headerFiles) claims.push('every instrument header stating only what it can point at')
   if (reportFiles) claims.push('no report or brief count resolved through bare HEAD beyond the recorded baseline')
-  if (provenanceChecked) claims.push("no count's provenance sha unresolvable beyond the recorded records (the records are historical lane reports that QUOTE a probe seed, absorbed by re-derivation — a NEW unresolvable sha still fails)")
-  if (transcriptsChecked) claims.push('every pasted provenance transcript that cites a `.scratch/` file still carries the sha it names (or is marked historical; other paths and other rules are ceilings)')
+  if (provenanceTokens) claims.push("no count's provenance sha unresolvable beyond the recorded records (the records are historical lane reports that QUOTE a probe seed, absorbed by re-derivation — a NEW unresolvable sha still fails)")
+  if (transcriptsCompared) claims.push('every pasted provenance transcript that cites a `.scratch/` file still carries the sha it names (or is marked historical; other paths and other rules are ceilings)')
   if (rawSummaryLines) claims.push("every step-range-and-count line read inside a fenced block agrees with its own count (that one shape only; a block that QUOTES a bad transcript fires unless its site is one of the recorded quotation baseline's, and a NEW site or a second occurrence in the same file still fires — see transcript-summary-agrees's ceiling)")
   console.log(`  ok — ${models} model(s), ${kinds} task kind(s), ${items} work item(s); ${claims.join(', ')}`)
   console.log()
