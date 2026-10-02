@@ -27,15 +27,25 @@
  * — which is exactly what e2e/fixtures.ts's `signUpViewer` + `finishSignup`
  * already own. Two walks that must agree is the drift the one-copy rule exists
  * to stop, and this is the walk 60 spec files depend on: the helpers are now the
- * only copy, so a renamed control cannot leave this spec behind (which is the
- * failure the ledger records three times for specs that carried their own
- * locator). The helpers' own docblocks carry what the walk does and why —
+ * only copy, so a renamed control cannot leave this spec behind. (An earlier
+ * draft of this paragraph cited the ledger as recording "three times" that specs
+ * carried their own locator; measured, the ledger's entry says something
+ * different — three BRIEFS' out-of-scope lists named the wrong files, one of them
+ * e2e/fixtures.ts, which is a module and not a spec. The claim is deleted rather
+ * than restated: the architectural reason above stands without a record's
+ * support.) The helpers' own docblocks carry what the walk does and why —
  * including that `finishSignup` answers the card's address lookup with the
- * caller's zip instead of making a real Nominatim request.
+ * caller's zip, and that the stub is OBSERVED (it fails the walk if it did not
+ * fire, and asserts the zip the walk wrote).
  *
- * The REST PATCH below stays as the marker's backstop, and the /profile
- * @handle assertion below stays here: it is this spec's own proof that the row
- * exists under the composed handle.
+ * ⚠️ AND THE REST PATCH BELOW IS A BACKSTOP, NOT THE PROOF OF WHAT THE WALK
+ * WROTE (round 1): it re-PATCHes the same zip, so on its own it would mask a walk
+ * that wrote a different one. What proves the walk is `finishSignup`'s own
+ * assertion on the feed's location line, which runs before this spec's PATCH.
+ * The GET below then proves the ROW, independently of the write path.
+ *
+ * The /profile @handle assertion below stays here: it is this spec's own proof
+ * that the row exists under the composed handle.
  */
 import { expect, test as setup } from '@playwright/test'
 import { mkdirSync, writeFileSync } from 'node:fs'

@@ -14,7 +14,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
-import { expect, type Page } from '@playwright/test'
+import { expect, type Page, type Route } from '@playwright/test'
 // The stepper's own pure math — imported so a spec's expectation is the same
 // rule the form applies, never a copy of it (feed.ts is pure: its only
 // imports are `import type`, erased at runtime).
@@ -416,28 +416,55 @@ export async function signUpViewer(
  * and then the AREA card ("4 of 4", V28 slice 5 — address-first,
  * decision 9).
  *
- * ⚠️ THE ADDRESS LOOKUP IS ANSWERED BY THIS FIXTURE, NOT BY THE NETWORK
- * (V28 r2 slice 8a). Until this slice the helper typed an address that could
- * not resolve and walked the ZIP fallback — which put a REAL Nominatim request
- * in every one of this helper's consumers (bounded at `ADDRESS_LOOKUP_TIMEOUT_MS`
- * = 10s, ~170s of suite-wide worst case) and left a tail risk that the fake
- * address resolved into the seeded gazetteer. Now the helper intercepts the
- * card's one request and fulfils it with the CALLER'S OWN ZIP
- * (`postcode: options.homeZip` + a house number, the precision rule), so:
+ * ⚠️ THE ADDRESS LOOKUP IS ANSWERED BY THIS FIXTURE, AND THE FIXTURE IS
+ * OBSERVED (V28 r2 slice 8a; the observation is round 1's fix). Until this
+ * slice the helper typed an address that could not resolve and walked the ZIP
+ * fallback — which put a REAL Nominatim request in every one of this helper's
+ * consumers (bounded at `ADDRESS_LOOKUP_TIMEOUT_MS` = 10s, ~170s of suite-wide
+ * worst case) and left a tail risk that the fake address resolved into the
+ * seeded gazetteer. Now the helper intercepts the card's request and fulfils it
+ * with the CALLER'S OWN ZIP (`postcode: options.homeZip` + a house number, the
+ * precision rule), so:
  *
  *   - the walk types an address, picks the radius, and taps Finish ONCE — the
  *     intercepted answer resolves to the caller's zip, `handleAreaFinish` writes
  *     zip + radius, and the run renders its ending card. No typed ZIP, no
- *     fallback notice, no network.
+ *     fallback notice.
  *   - the radius is chosen BEFORE that tap, because on the resolved path the one
  *     Finish is the last thing the card does.
  *   - the caller's zip must be one the gazetteer knows (`validateHomeZip` is the
  *     same gate the typed path used — every existing consumer already passed it).
  *
+ * ⚠️ AND THE STUB IS NOT ALLOWED TO FAIL SILENTLY (D-030: an instrument that
+ * did not look must not report health). A route that matched nothing looks
+ * exactly like a healthy one, and this walk's failure mode is NOT
+ * self-refuting: the address typed is REAL, so with the stub absent the network
+ * answers — `zipFromResult` accepts that answer, the postcode Nominatim returns
+ * for THIS address is a SEEDED gazetteer zip (0012 holds 98104 and 98134), so
+ * `validateHomeZip` passes and the walk lands GREEN having written the WRONG
+ * home zip. With no network it would instead hang ~30s at the ending-card wait,
+ * which says nothing about the cause. So the helper carries TWO instruments,
+ * which all 18 consumers inherit:
+ *
+ *   1. THE STUB COUNTS ITS OWN MATCHES and the count is ASSERTED (>= 1)
+ *      immediately after the Finish tap — a zero-match run FAILS in ~5s saying
+ *      the stub never fired, rather than proceeding or timing out;
+ *   2. THE ZIP THE WALK WROTE IS ASSERTED, on the feed's own location line
+ *      (`feedLocationSummary` renders `Near <home_zip> · within <radius> miles`),
+ *      so green cannot mean "one of the seeded postcodes, whichever arrived".
+ *      No consumer pinned the written zip before round 1 — `zip-radius` asserts
+ *      only `N mi`, and `auth.setup.ts` re-PATCHes the column afterwards.
+ *
+ * The old "an address that can never resolve" guard is gone WITH the mechanism
+ * it guarded: it made a network failure loud by landing on a fallback the
+ * fixture then filled by hand. The two assertions above are strictly stronger —
+ * they fail on a WRONG ZIP, where the old guard could only fail on a hang.
+ *
  * Both faces of the fallback remain pinned where they belong:
  * e2e/signup-zip-fallback.e2e.ts intercepts the same request and pins the
  * resolved leg AND the empty-answer leg (note + field + the typed zip) — the
- * helper no longer re-walks the empty leg for 17 specs that never asserted it.
+ * helper no longer re-walks the empty leg for the 18 specs that never asserted
+ * it.
  *
  * THE ENDING CARD (V28 slice 6, plan defect #19 → V28 r2 slice 5): the area
  * card's save no longer navigates — the re-keyed guard renders the run's OWN
@@ -452,8 +479,9 @@ export async function signUpViewer(
  * (The photo card that used to sit between them was deleted in V28 r2
  * slice 1b; the photo now joins the name card in slice 2.) The Skip
  * button (FirstRunCard's chrome) is the card's only control
- * that advances without touching the DB, which keeps the 17 specs that
- * consume this helper on the deterministic no-kids path: their assertions
+ * that advances without touching the DB, which keeps the 18 specs that
+ * consume this helper (measured: `grep -rln 'await finishSignup(' e2e/*.ts |
+ * wc -l` → 18) on the deterministic no-kids path: their assertions
  * about kids (kid-names-privacy and friends) create their kids through the
  * /profile editor or REST, never through onboarding. A spec that wants the
  * kids WRITE is one that should not be using this helper.
@@ -467,11 +495,15 @@ export async function finishSignup(
 ): Promise<void> {
   const feed = page.getByRole('heading', { name: 'Near you' })
 
-  // THE ONE REQUEST THE CARD MAKES IS ANSWERED HERE (V28 r2 slice 8a — see the
-  // docblock: no real Nominatim call, and the answer is the caller's own zip).
-  // Installed before the address is typed, so no lookup can escape it.
-  await page.route(NOMINATIM_ROUTE, (route) =>
-    route.fulfill({
+  // THE CARD'S ONE REQUEST IS ANSWERED HERE, AND COUNTED (V28 r2 slice 8a — see
+  // the docblock for why the count is asserted and not merely kept). Installed
+  // before the address is typed, so no lookup can escape it, and removed at the
+  // end of this helper so no LATER request on this page is answered by a stub
+  // built for the walk.
+  let intercepted = 0
+  const answerAddressLookup = (route: Route): Promise<void> => {
+    intercepted += 1
+    return route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify([
@@ -481,8 +513,9 @@ export async function finishSignup(
           address: { postcode: options.homeZip, house_number: '1200' },
         },
       ]),
-    }),
-  )
+    })
+  }
+  await page.route(NOMINATIM_ROUTE, answerAddressLookup)
 
   // V28 slice 4a: the kids card (3 of 4) sits between the name card and the
   // area card. It is the ONLY view that renders the card's Skip control
@@ -530,6 +563,23 @@ export async function finishSignup(
   // is in flight it reads "Checking your address…" and is disabled, so the
   // click auto-waits for the (intercepted, instant) settle and the save.
   await page.getByRole('button', { name: 'Finish' }).click()
+  // ⚠️ THE TRIPWIRE, AND WHY IT SITS HERE RATHER THAN AFTER THE WALK. The tap
+  // above is what issues the request, so a stub that did not fire is provable
+  // NOW — and it must fail HERE, in ~5s and with this message, because the two
+  // alternatives both lie: the ending-card wait below would time out for 30s
+  // (silent about the cause), and a real answer that happens to be a seeded
+  // postcode would let the walk finish green with the wrong zip.
+  await expect
+    .poll(() => intercepted, {
+      timeout: 5_000,
+      message:
+        `finishSignup's address-lookup stub NEVER FIRED: the area card's Nominatim request did not reach ` +
+        `page.route(NOMINATIM_ROUTE). Either the route pattern no longer matches the URL the app requests, or the ` +
+        `card never asked. This is a FINDING, not a flake — without the stub the walk is answered by the REAL ` +
+        `network, whose postcode for "${FINISH_SIGNUP_ADDRESS}" is a SEEDED gazetteer zip, so validateHomeZip would ` +
+        `pass and this walk would write a DIFFERENT home zip while still going green. Fix the stub or the address.`,
+    })
+    .toBeGreaterThan(0)
 
   // V28 slice 6 (defect #19) → V28 r2 slice 5: the area card's save renders
   // the run's ENDING CARD (the tour) on /onboarding, never a feed bounce —
@@ -540,6 +590,22 @@ export async function finishSignup(
 
   // A signed-in, onboarded parent now stands on the feed.
   await feed.waitFor({ timeout: 30_000 })
+
+  // The stub's job is over: it answered the walk's ONE request, and leaving it
+  // installed would silently answer any LATER Nominatim request this page makes
+  // (a "See places" geocode, the directory) with this walk's zip and pin. That
+  // is latent today — no consumer geocodes after the walk — so this is the
+  // boundary rather than a comment claiming there is one.
+  await page.unroute(NOMINATIM_ROUTE, answerAddressLookup)
+
+  // ⚠️ THE ZIP THE WALK WROTE IS PINNED HERE, and this is the assertion that
+  // makes the fixture honest: `feedLocationSummary` renders
+  // `Near <home_zip> · within <radius> miles` off the profile row the save just
+  // wrote, so a walk that wrote some OTHER seeded postcode — the shape of every
+  // silent-stub failure — cannot pass. Green now means "the zip the caller asked
+  // for reached the database", not "a walk finished". No consumer asserted this
+  // before round 1.
+  await expect(page.getByTestId('feed-location-control')).toContainText(options.homeZip)
 }
 
 /**
